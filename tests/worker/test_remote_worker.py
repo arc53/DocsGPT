@@ -462,6 +462,39 @@ class TestRemoteWorkerWebsite:
         # Not redirected: no requested address.
         assert "requested_url" not in leaf
 
+    def test_a_nul_in_a_page_title_stays_out_of_the_tree(
+        self, pg_conn, patch_worker_db, tmp_path, task_self, monkeypatch,
+    ):
+        # The tree is stored as JSONB, which refuses a NUL.
+        import json as _json
+
+        from docsgpt import worker
+
+        loader = MagicMock(name="website_loader")
+        loader.load_data.return_value = [
+            Document(
+                text="body",
+                extra_info={"source": "https://docs.x.io/p", "title": "Ti\x00tle", "file_path": "p.md"},
+                doc_id="d1",
+            )
+        ]
+        loader.report = {"pages": 1, "sites": []}
+        monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
+        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
+        uploaded: list[dict] = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploaded.append(file_data))
+        monkeypatch.setattr(worker, "publish_user_event", lambda *a, **kw: None)
+
+        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
+        config = {"entries": [{"url": "https://docs.x.io/", "mode": "site"}], "skip": [], "keep_links": False}
+        worker.remote_worker(
+            task_self, config, "Docs", "bob", "website",
+            directory=str(tmp_path / "temp"), operation_mode="upload", source_id=str(source["id"]),
+        )
+
+        assert "\\u0000" not in uploaded[0]["directory_structure"]
+        assert _json.loads(uploaded[0]["directory_structure"])["p.md"]["title"] == "Title"
+
     def test_a_redirected_page_keeps_the_address_it_was_asked_for(
         self, pg_conn, patch_worker_db, tmp_path, task_self, monkeypatch,
     ):

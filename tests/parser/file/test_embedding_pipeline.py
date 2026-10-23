@@ -352,6 +352,18 @@ def test_add_texts_to_store_with_retry_sanitizes_and_skips_empty():
     store.add_texts.assert_not_called()
 
 
+def test_add_texts_to_store_with_retry_strips_nul_from_metadata():
+    # pgvector stores metadata as JSONB, which refuses a NUL (a page title, say).
+    store = MagicMock()
+    docs = [MagicMock(page_content="body", metadata={"title": "Ti\x00tle", "tags": ["a\x00"], "n": 1})]
+
+    add_texts_to_store_with_retry(store, docs, "sid")
+
+    assert store.add_texts.call_args.kwargs["metadatas"] == [
+        {"title": "Title", "tags": ["a"], "n": 1, "source_id": "sid"},
+    ]
+
+
 def test_resolve_batch_size_falls_back_on_bad_setting(monkeypatch):
     fake = MagicMock()  # attribute access yields a MagicMock, not an int
     monkeypatch.setattr("docsgpt.parser.embedding_pipeline.settings", fake)

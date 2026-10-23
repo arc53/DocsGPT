@@ -33,6 +33,7 @@ from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.embedding_pipeline import (
     assert_index_complete,
     embed_and_store_documents,
+    sanitize_content,
 )
 from docsgpt.parser.file.base_parser import DocumentParseError, NoTextLayerError
 from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
@@ -82,6 +83,7 @@ from docsgpt.utils import (
     get_encoding,
     num_tokens_from_string,
     safe_filename,
+    strip_null_bytes,
     truncate_to_line_boundary,
 )
 
@@ -1649,12 +1651,13 @@ def remote_worker(
                 # every entry that leads to it.
                 page = None
                 if loader in _WEB_PAGE_LOADERS and doc.extra_info and doc.extra_info.get("source"):
-                    page = {
+                    # The tree is stored as JSONB, which refuses a NUL (a page title, say).
+                    page = strip_null_bytes({
                         "url": doc.extra_info["source"],
                         **_alias_fields(_page_aliases(doc.extra_info["source"], doc.extra_info)),
                         "title": doc.extra_info.get("title"),
                         "fetched_at": fetched_at,
-                    }
+                    })
 
                 # Build nested directory structure from path
                 # e.g., "guides/setup.md" -> {"guides": {"setup.md": {...}}}
@@ -5408,6 +5411,9 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
     url = doc.extra_info["source"]
     aliases = _page_aliases(url, doc.extra_info)
     doc.extra_info["file_path"] = path
+    # pgvector refuses a NUL in a chunk's text, and JSONB one in its metadata
+    # or the tree's leaf; the full ingest strips them too.
+    title = strip_null_bytes(doc.extra_info.get("title"))
     # A copy stored under an asked-for address (before it redirected) is this page too.
     old_ids = store.chunk_ids_by_source_paths([u for u in dict.fromkeys([old_url, url, *aliases]) if u])
     texts: List[str] = []
@@ -5415,14 +5421,15 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
     token_count = 0
     size_bytes = 0
     for chunk in chunker.chunk(documents=[doc]):
-        metadata = dict(chunk.extra_info or {})
+        metadata = strip_null_bytes(dict(chunk.extra_info or {}))
         metadata.update({"source": url, "file_path": path})
-        if doc.extra_info.get("title"):
-            metadata["title"] = doc.extra_info["title"]
-        texts.append(chunk.text)
+        if title:
+            metadata["title"] = title
+        text = sanitize_content(chunk.text)
+        texts.append(text)
         metadatas.append(metadata)
-        token_count += num_tokens_from_string(chunk.text)
-        size_bytes += len(chunk.text.encode("utf-8"))
+        token_count += num_tokens_from_string(text)
+        size_bytes += len(text.encode("utf-8"))
     # One batch per page: FAISS saves the whole index once, not once per chunk.
     added = store.add_chunks(texts, metadatas) if texts else []
     new_ids = [chunk_id for chunk_id in added if chunk_id is not None]
@@ -5431,7 +5438,7 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
         "size_bytes": size_bytes,
         "token_count": token_count,
         "url": url,
-        "title": doc.extra_info.get("title"),
+        "title": title,
         "fetched_at": fetched_at,
         **_alias_fields(aliases),
     }

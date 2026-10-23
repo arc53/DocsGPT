@@ -10,6 +10,7 @@ from docsgpt.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
 from docsgpt.storage.db.session import db_session
+from docsgpt.utils import strip_null_bytes
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
 
@@ -96,8 +97,10 @@ def add_texts_to_store_with_retry(
         texts: List[str] = []
         metadatas: List[Any] = []
         for doc in docs:
-            # Sanitize content to remove NUL characters that cause ingestion failures
+            # Sanitize content to remove NUL characters that cause ingestion failures,
+            # and the metadata too: pgvector stores it as JSONB, which refuses a NUL.
             doc.page_content = sanitize_content(doc.page_content)
+            doc.metadata = strip_null_bytes(doc.metadata)
             doc.metadata["source_id"] = str(source_id)
             texts.append(doc.page_content)
             metadatas.append(doc.metadata)

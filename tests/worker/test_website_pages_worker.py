@@ -1302,6 +1302,26 @@ class TestARefreshStaysInScope:
 
 
 @pytest.mark.unit
+class TestNulBytes:
+    """pgvector refuses a NUL in a chunk's text, and JSONB one in its metadata or the tree."""
+
+    def test_an_added_page_is_stored_without_nul(self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch):
+        from docsgpt import worker
+        from docsgpt.parser.remote import web_loader
+
+        def load(self, inputs):
+            return [Document("hello\x00world", extra_info={"source": u, "title": "Ti\x00tle"}) for u in inputs]
+
+        monkeypatch.setattr(web_loader.WebLoader, "load_data", load)
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        [chunk] = [c for c in pipeline["store"].chunks.values() if c["metadata"]["source"] == "https://docs.x.io/b"]
+        assert chunk["text"] == "helloworld"
+        assert chunk["metadata"]["title"] == "Title"
+        assert _tree(pg_conn, source)["b.md"]["title"] == "Title"
+
+
+@pytest.mark.unit
 class TestTheCapHolds:
     """A queued add whose pages no longer fit (a sync filled the tree meanwhile) syncs instead of appending."""
 
