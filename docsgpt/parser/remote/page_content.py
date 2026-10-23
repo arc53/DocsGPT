@@ -839,6 +839,22 @@ def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
                 item.append(link.extract())
 
 
+def _page_title(soup: BeautifulSoup) -> str:
+    """The page's ``<title>``: the first one outside inline SVG or MathML, whose titles name an icon.
+
+    Args:
+        soup: The parsed page.
+
+    Returns:
+        Its text, or ``""`` when the page has none.
+    """
+    in_graphic: Dict[int, bool] = {}
+    for tag in soup.find_all("title"):
+        if not _has_ancestor(tag, ("svg", "math"), in_graphic):
+            return tag.get_text(strip=True)
+    return ""
+
+
 def _first_heading(root: Tag) -> Optional[str]:
     """The text of the first ``<h1>``, or ``None``."""
     heading = root.find("h1")
@@ -900,7 +916,7 @@ def _extract(soup: BeautifulSoup, url: str, keep_links: bool, plain_when_too_dee
     Raises:
         MarkupTooDeepError: The page is too deep and ``plain_when_too_deep`` is off.
     """
-    title = soup.title.get_text(strip=True) if soup.title else ""
+    title = _page_title(soup)
     language = (soup.html.get("lang") if soup.html else None) or None
     root = _pick_root(soup)
     title = title or _first_heading(root)

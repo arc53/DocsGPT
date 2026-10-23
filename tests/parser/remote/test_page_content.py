@@ -198,6 +198,12 @@ class TestMetadataAndGuards:
 
         assert page.title == "Setup guide"
 
+    def test_an_inline_svg_title_is_not_the_page_title(self):
+        body = "<svg><title>Close icon</title></svg><main><h1>Real heading</h1><p>Body text.</p></main>"
+
+        assert extract_page(_page(body, head=""), URL).title == "Real heading"
+        assert extract_page(_page(body), URL).title == "Setup | Example"
+
     def test_charset_is_read_from_the_page_bytes(self):
         html = (
             "<html><head><meta charset='windows-1252'><title>Caf\xe9</title></head>"
