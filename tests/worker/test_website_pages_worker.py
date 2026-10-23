@@ -177,6 +177,43 @@ class TestAddPages:
         assert kinds == ["source.ingest.queued", "source.ingest.completed"]
         assert pipeline["events"][-1][1]["operation"] == "add_pages"
 
+    def test_pages_that_could_not_be_fetched_are_named_in_the_result(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline,
+    ):
+        from docsgpt import worker
+
+        pipeline["pages"]["https://docs.x.io/b"] = "B one\n\nB two"
+        # /c is listed in the config but its fetch yields nothing (404, timeout, refused, empty).
+        result = worker.website_pages_worker(
+            task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b", "https://docs.x.io/c"],
+        )
+
+        assert result == {"status": "ok", "pages": 1, "failed_pages": ["https://docs.x.io/c"]}
+        kind, payload = pipeline["events"][-1]
+        assert kind == "source.ingest.completed" and payload["failed_pages"] == ["https://docs.x.io/c"]
+        assert "c.md" not in _tree(pg_conn, source)
+
+    def test_a_full_add_names_no_failed_pages(self, pg_conn, patch_worker_db, task_self, source, pipeline):
+        from docsgpt import worker
+
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        result = worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert result == {"status": "ok", "pages": 1}
+        assert "failed_pages" not in pipeline["events"][-1][1]
+
+    def test_a_redirected_page_counts_as_fetched(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        _redirecting_loader(monkeypatch, pipeline, {"https://docs.x.io/old": "https://docs.x.io/new"})
+        result = worker.website_pages_worker(
+            task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/old", "https://docs.x.io/b"],
+        )
+
+        assert "failed_pages" not in result and result["pages"] == 2
+
     def test_events_carry_the_task_id(self, pg_conn, patch_worker_db, task_self, source, pipeline):
         # The UI matches the events to the request that queued the task.
         from docsgpt import worker

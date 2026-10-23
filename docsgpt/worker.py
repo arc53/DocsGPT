@@ -5752,11 +5752,14 @@ def website_pages_worker(
 
     try:
         task_id = envelope.get("task_id")
+        failed_pages: List[str] = []
         with source_index_lock(source_id):
             if operation == "remove":
                 changes = _remove_web_pages(source_id, user, file_paths, task_id, pages=pages)
             else:
-                changes = _run_website_pages(source_id, user, operation, urls, file_path, task_id, url=url)
+                changes, failed_pages = _run_website_pages(
+                    source_id, user, operation, urls, file_path, task_id, url=url,
+                )
     except Exception as e:
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
         failed = {**envelope, "error": str(e)[:1024]}
@@ -5768,22 +5771,29 @@ def website_pages_worker(
             failed["reason"] = e.reason
         publish_user_event(user, "source.ingest.failed", failed, scope={"kind": "source", "id": source_id})
         raise
+    # Addresses asked for that gave no page: the run still succeeded with the rest.
+    failed_field = {"failed_pages": failed_pages} if failed_pages else {}
     publish_user_event(
-        user, "source.ingest.completed", {**envelope, "pages": len(changes), "limited": False},
+        user, "source.ingest.completed", {**envelope, "pages": len(changes), "limited": False, **failed_field},
         scope={"kind": "source", "id": source_id},
     )
-    return {"status": "ok", "pages": len(changes)}
+    return {"status": "ok", "pages": len(changes), **failed_field}
 
 
 def _run_website_pages(
     source_id: str, user: str, operation: str, urls: Optional[List[str]], file_path: Optional[str],
     task_id: Optional[str] = None, url: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], List[str]]:
     """The body of ``website_pages_worker``, run holding the source's index lock.
 
     Once the pages are saved, a graphrag source's graph drops the replaced
     chunks and extracts the new ones (``_update_page_graph``), failure or not:
     the pages finished before a failure are in the source.
+
+    An address that gave no page (a 404, a timeout, a refused or empty
+    page) is reported, not failed, when another gave one: it counts as
+    fetched when a page came back under it or named it among the addresses
+    it was asked for (``requested_urls``).
 
     Args:
         source_id: The source.
@@ -5795,7 +5805,8 @@ def _run_website_pages(
         url: For ``refresh``: the page's address.
 
     Returns:
-        The page changes written.
+        ``(changes, failed_pages)``: the page changes written, and the
+        addresses fetched that gave no page.
 
     Raises:
         ValueError: As ``website_pages_worker``.
@@ -5830,7 +5841,7 @@ def _run_website_pages(
         urls = [page_url for page_url in urls or [] if _web_page_key(page_url) in listed]
         if not urls:
             logging.info("website_pages add on %s: every page left the config before the run", source_id)
-            return []
+            return [], []
     # Every leaf's path is taken, not only the pages': a leaf from before
     # leaves carried their address must not be overwritten by a new page.
     leaves = _tree_leaves(structure)
@@ -5857,6 +5868,11 @@ def _run_website_pages(
             if aliases:
                 doc.extra_info["requested_urls"] = aliases
                 doc.extra_info["requested_url"] = doc.extra_info.get("requested_url") or aliases[0]
+    fetched = {
+        _web_page_key(address) for doc in docs
+        for address in (doc.extra_info["source"], *_page_aliases(doc.extra_info["source"], doc.extra_info))
+    }
+    failed_pages = [page_url for page_url in fetch if _web_page_key(page_url) not in fetched]
 
     cfg = SourceConfig.parse(source.get("config"))
     chunker = ChunkerCreator.create_chunker(
@@ -5950,7 +5966,7 @@ def _run_website_pages(
         _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids)
     if failure is not None:
         raise failure
-    return kept
+    return kept, failed_pages
 
 
 def _wiki_page_path_from_rel(rel_path):
