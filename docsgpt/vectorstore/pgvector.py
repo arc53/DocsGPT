@@ -6,6 +6,7 @@ from typing import Iterable, List, Optional, Any, Dict
 from psycopg.types.json import Jsonb
 
 from docsgpt.core.settings import settings
+from docsgpt.utils import strip_null_bytes
 from docsgpt.vectorstore import pgconn
 from docsgpt.vectorstore.base import BaseVectorStore
 from docsgpt.vectorstore.document_class import Document
@@ -570,12 +571,17 @@ class PGVectorStore(BaseVectorStore):
         *args,
         **kwargs,
     ) -> List[str]:
-        """Add texts with their embeddings to the vector store"""
+        """Add texts with their embeddings to the vector store.
+
+        NUL bytes are dropped from the texts and metadata first: Postgres
+        refuses them in text and jsonb, and one would fail the whole batch.
+        """
         if not texts:
             return []
 
+        texts = [strip_null_bytes(text) for text in texts]
         embeddings = self._embedding.embed_documents(texts)
-        metadatas = metadatas or [{}] * len(texts)
+        metadatas = [strip_null_bytes(metadata or {}) for metadata in (metadatas or [{}] * len(texts))]
 
         self._ensure_schema_once()
         conn = self._get_connection()
@@ -717,11 +723,9 @@ class PGVectorStore(BaseVectorStore):
         return row
 
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Add a single chunk to the vector store"""
-        metadata = metadata or {}
-
-        final_metadata = metadata.copy()
-
+        """Add a single chunk to the vector store, NUL bytes dropped as :meth:`add_texts` does."""
+        text = strip_null_bytes(text)
+        final_metadata = strip_null_bytes(dict(metadata or {}))
         final_metadata["source_id"] = self._source_id
 
         embeddings = self._embedding.embed_documents([text])
@@ -761,7 +765,8 @@ class PGVectorStore(BaseVectorStore):
 
         One ``UPDATE`` scoped to this source. The embedding is computed first,
         so a failed embed writes nothing. ``get_chunks`` orders by id, so the
-        chunk also keeps its place in the list.
+        chunk also keeps its place in the list. NUL bytes are dropped from the
+        text and metadata as :meth:`add_texts` does.
 
         Args:
             chunk_id: Id of the chunk to replace.
@@ -776,7 +781,8 @@ class PGVectorStore(BaseVectorStore):
             KeyError: If this source has no chunk with that id.
             ValueError: If no embedding could be generated.
         """
-        final_metadata = dict(metadata or {})
+        text = strip_null_bytes(text)
+        final_metadata = strip_null_bytes(dict(metadata or {}))
         final_metadata["source_id"] = self._source_id
 
         embeddings = self._embedding.embed_documents([text])

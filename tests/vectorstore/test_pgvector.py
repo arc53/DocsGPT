@@ -645,6 +645,54 @@ class TestPGVectorStoreUpdateChunk:
 
 
 @pytest.mark.unit
+class TestPGVectorStoreStripsNulBytes:
+    """Postgres refuses NUL in text and jsonb: one in a page's text or title would fail the whole write."""
+
+    _METADATA = {"title": "Ti\x00tle", "nested": {"k\x00ey": ["v\x00"]}}
+    _CLEAN = {"title": "Title", "nested": {"key": ["v"]}}
+
+    def _jsonb(self):
+        return patch("docsgpt.vectorstore.pgvector.Jsonb", side_effect=lambda v: ("jsonb", v))
+
+    def test_add_texts(self):
+        store, _, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1]]
+        mock_cursor.fetchone.return_value = (1,)
+
+        with self._jsonb():
+            store.add_texts(["he\x00llo"], [dict(self._METADATA)])
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[0] == "hello"
+        assert params[2] == ("jsonb", self._CLEAN)
+        mock_emb.embed_documents.assert_called_once_with(["hello"])
+
+    def test_add_chunk(self):
+        store, _, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1]]
+        mock_cursor.fetchone.return_value = (1,)
+
+        with self._jsonb():
+            store.add_chunk("he\x00llo", dict(self._METADATA))
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[0] == "hello"
+        assert params[2] == ("jsonb", {**self._CLEAN, "source_id": "src1"})
+
+    def test_update_chunk(self):
+        store, _, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1]]
+        mock_cursor.rowcount = 1
+
+        with self._jsonb():
+            store.update_chunk("42", "he\x00llo", dict(self._METADATA))
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[0] == "hello"
+        assert params[2] == ("jsonb", {**self._CLEAN, "source_id": "src1"})
+
+
+@pytest.mark.unit
 def test_get_chunks_orders_by_id():
     """An UPDATE writes a new tuple, so an unordered scan could move the row."""
     store, _, mock_cursor, _ = _make_store()
