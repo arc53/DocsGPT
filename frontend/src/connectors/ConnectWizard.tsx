@@ -256,6 +256,11 @@ export default function ConnectWizard({
     if (!resumeMode) return false;
     setMode(resumeMode);
     setResumeMode(null);
+    // The file pickers keep their selection to themselves and remount
+    // empty, so drop what they reported. The repository and Linear pickers
+    // are drawn from the wizard's value and show it again.
+    setSelectedFiles([]);
+    setSelectedFolders([]);
     setPickerKey((key) => key + 1);
     setError('');
     setStep('setup');
@@ -584,6 +589,12 @@ export default function ConnectWizard({
     setMode('sync');
     setSyncOn(true);
     setSources([]);
+    // A new setup over pickers that remount empty: anything picked before
+    // Just connect folded the form away is dropped, not synced unseen.
+    setSelectedFiles([]);
+    setSelectedFolders([]);
+    setSelectedRepo(null);
+    setLinearSelection(EMPTY_LINEAR_SELECTION);
     setError('');
     setIdempotencyKey(nanoid());
     setPickerKey((key) => key + 1);

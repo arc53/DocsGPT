@@ -47,23 +47,34 @@ vi.mock('../components/ConnectorAuth', () => ({
     () =>
       onSuccess({ connection_id: 'conn-drive', user_email: 'a@example.com' }),
 }));
+// Like the real picker, the selection is its own: a remount starts empty.
 vi.mock('../components/FilePicker', () => ({
   FilePicker: ({
     onSelectionChange,
     onFirstPickName,
+    onReconnect,
   }: {
     onSelectionChange: (files: string[], folders?: string[]) => void;
     onFirstPickName?: (name: string) => void;
+    onReconnect?: () => void;
   }) => (
-    <button
-      type="button"
-      onClick={() => {
-        onFirstPickName?.('Handbook');
-        onSelectionChange([], ['folder-1']);
-      }}
-    >
-      pick-folder
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          onFirstPickName?.('Handbook');
+          onSelectionChange([], ['folder-1']);
+        }}
+      >
+        pick-folder
+      </button>
+      <button type="button" onClick={() => onSelectionChange(['file-9'], [])}>
+        pick-file
+      </button>
+      <button type="button" onClick={onReconnect}>
+        file-picker-reconnect
+      </button>
+    </>
   ),
 }));
 
@@ -949,6 +960,29 @@ describe('ConnectWizard', () => {
     expect(onClose).toHaveBeenCalledWith(true);
   });
 
+  it('starts a file picker over after a reconnect, with nothing picked', async () => {
+    service.setup.mockResolvedValue({
+      success: true,
+      tools: [],
+      sources: [{ id: 'src-3', name: 'Report' }],
+    });
+    await render(drive, vi.fn(), { mode: 'sync', connectionId: 'conn-drive' });
+    await click('pick-folder');
+    expect(button('modals.uploadDoc.train')?.disabled).toBe(false);
+    await click('file-picker-reconnect');
+    expect(title()).toBe('settings.connectors.wizard.reconnectTitle');
+    await click('settings.connectors.wizard.signIn');
+    // Back on the picker, which remounted empty: the wizard holds nothing.
+    expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
+    expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
+    await click('pick-file');
+    await click('modals.uploadDoc.train');
+    expect(service.setup.mock.calls[0][1].sync.items).toEqual({
+      file_ids: ['file-9'],
+      folder_ids: [],
+    });
+  });
+
   it('opens a new chat over no sources from Try it in chat', async () => {
     service.createConnection.mockResolvedValue({
       success: true,
@@ -1045,6 +1079,37 @@ describe('ConnectWizard', () => {
       await click('modals.uploadDoc.train');
       expect(service.setup.mock.calls[0][0]).toBe('conn-drive');
       expect(title()).toBe('settings.connectors.wizard.doneTitle');
+    });
+
+    it('starts Sync content with nothing picked, even after a folded pick', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [{ id: 'src-2', name: 'Notes' }],
+      });
+      await render(drive, vi.fn(), {}, [
+        {
+          id: 'conn-drive',
+          connector_key: 'google_drive',
+          status: 'connected',
+        } as Connection,
+      ]);
+      await click('settings.connectors.wizard.signIn');
+      // Picked, then folded away by Just connect: nothing is set up.
+      await click('pick-folder');
+      await act(async () => justConnectCard().click());
+      await click('settings.connectors.wizard.finishSetup');
+      expect(service.setup).not.toHaveBeenCalled();
+      await click('settings.connectors.syncContent');
+      // The picker starts over, and so does what the wizard would sync.
+      expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
+      await click('pick-file');
+      expect(button('modals.uploadDoc.train')?.disabled).toBe(false);
+      await click('modals.uploadDoc.train');
+      expect(service.setup.mock.calls[0][1].sync.items).toEqual({
+        file_ids: ['file-9'],
+        folder_ids: [],
+      });
     });
 
     it('records the sync so the drawer can show it while it indexes', async () => {
