@@ -7,7 +7,7 @@ import userService from '../api/services/userService';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import { pageKey, websiteRefusal } from '../upload/website';
+import { isQueueFailed, pageKey, websiteRefusal } from '../upload/website';
 import { formatCount, formatRelative } from '../utils/dateTimeUtils';
 import AddWebsitePagesModal from './AddWebsitePagesModal';
 import type { LinkedChunk } from './chunkUtils';
@@ -55,6 +55,13 @@ interface WebsiteTreeProps {
   syncFrequency?: string;
   /** When the source was last ingested or synced. */
   syncedAt?: string;
+  /**
+   * A sync of this source the host started (the source's ⋯ → Sync now), with
+   * when its request went out and the task it queued. The tree waits for it
+   * as for its own changes: busy meanwhile, then read again. A new object
+   * starts a new wait; the same one is waited for once.
+   */
+  sync?: { startedAt: number; taskId: string | null } | null;
   canEdit?: boolean;
   initialPath?: string;
   linkedChunk?: LinkedChunk;
@@ -115,17 +122,31 @@ function pageAt(structure: DirectoryStructure, path: string): FileNode | null {
     : null;
 }
 
+/**
+ * The keys a page answers to: its address, and the one it was added under
+ * when fetching it was redirected (`requested_url`), so a page added as
+ * `/old` that landed on `/new` still matches its entry.
+ */
+function pageKeysOf(node: FileNode | null | undefined): string[] {
+  return [node?.url, node?.requested_url]
+    .filter((url): url is string => typeof url === 'string' && !!url)
+    .map(pageKey);
+}
+
 /** A remove the server refused; its message is what the dialog shows. */
 class RemoveRefused extends Error {}
+
+/** A change the server saved but couldn't queue; its message is the warning. */
+class QueueFailed extends Error {}
 
 /** What a remove asks to confirm: its copy depends on where the page came from. */
 type PendingRemoval = {
   name: string;
   path: string;
   isFile: boolean;
-  /** `entry`: added by its address; `crawled`: found by a site; `folder`. */
-  kind: 'entry' | 'crawled' | 'folder';
-  /** The page's host (crawled) or the folder's address (folder). */
+  /** A page's keys (see {@link pageKeysOf}); none for a folder. */
+  keys: string[];
+  /** The page's host, or the folder's address. */
   where: string;
 };
 
@@ -152,6 +173,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   onPagesChanged,
   syncFrequency,
   syncedAt,
+  sync,
   canEdit = true,
   initialPath,
   linkedChunk,
@@ -168,8 +190,10 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   // Read by a change's wait, which outlives the render that started it.
   const structureRef = useRef(structure);
   structureRef.current = structure;
-  // Keys of the pages the source lists by address (from its config).
-  const [pageEntries, setPageEntries] = useState<Set<string>>(new Set());
+  // Keys of the pages the source lists by address (from its config); null
+  // until the config has loaded, and when it couldn't be read, so no page is
+  // called crawled (or an entry) on a guess.
+  const [pageEntries, setPageEntries] = useState<Set<string> | null>(null);
   // The origin of the config's first entry (scheme, host and port).
   const [firstEntryOrigin, setFirstEntryOrigin] = useState<string | null>(null);
   const [configKey, setConfigKey] = useState(0);
@@ -182,6 +206,8 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   tokenRef.current = token;
   const onPagesChangedRef = useRef(onPagesChanged);
   onPagesChangedRef.current = onPagesChanged;
+  // Another source's entries never stand in for this one's.
+  useEffect(() => setPageEntries(null), [docId]);
   useEffect(() => {
     if (!canEdit) return;
     let cancelled = false;
@@ -189,7 +215,11 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       .getWebsite(docId, tokenRef.current)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (cancelled || !data?.config) return;
+        if (cancelled) return;
+        if (!data?.config) {
+          setPageEntries(null);
+          return;
+        }
         const entries = data.config.entries as { url: string; mode: string }[];
         setFirstEntryOrigin(originOf(entries[0]?.url));
         setPageEntries(
@@ -198,7 +228,9 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
           ),
         );
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) setPageEntries(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -216,6 +248,15 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     // tr reads t, which is stable per language.
     [dispatch, t],
   );
+
+  /**
+   * A change the server saved but couldn't queue: it runs at the next sync.
+   * Says so, and reads the source's list again (it may have changed).
+   */
+  const warnQueueFailed = (message: string) => {
+    dispatch(showActionToast({ variant: 'warning', message }));
+    setConfigKey((key) => key + 1);
+  };
 
   /**
    * Waits for a background change to finish, then reloads the tree and the
@@ -242,7 +283,8 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     const { terminal, reason } = await waitForChange(docId, startedAt, {
       taskId,
     });
-    if (!mountedRef.current) return;
+    // An unmount (StrictMode's too) ends the wait; a later one owns the status.
+    if (!mountedRef.current || terminal === 'unmounted') return;
     setStatus(null);
     if (terminal === 'completed') {
       await controllerRef.current?.refreshDirectory();
@@ -274,7 +316,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     }
   };
 
-  const refreshPage = async (path: string, name: string) => {
+  const refreshPage = async (path: string, name: string, url?: string) => {
     const startedAt = Date.now();
     let taskId: string | null = null;
     // Taken at once: the menu turns its changes off until this one is done.
@@ -282,18 +324,21 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     let refusal: string | null = null;
     try {
       const response = await userService.refreshWebsitePage(
-        { source_id: docId, file_path: path },
+        // The address too: the server refreshes the page the tree shows.
+        { source_id: docId, file_path: path, ...(url ? { url } : {}) },
         token,
       );
       const data = await response.json().catch(() => null);
       if (!response.ok) {
         refusal = websiteRefusal(t, response.status, data);
+        if (refusal && isQueueFailed(data)) throw new QueueFailed(refusal);
         throw new Error('refresh failed');
       }
       taskId = typeof data?.task_id === 'string' ? data.task_id : null;
-    } catch {
+    } catch (error) {
       if (mountedRef.current) setStatus(null);
-      toastFailure('refreshFailed', name, refusal);
+      if (error instanceof QueueFailed) warnQueueFailed(error.message);
+      else toastFailure('refreshFailed', name, refusal);
       return;
     }
     await awaitChange(tr('refreshing'), startedAt, 'refreshFailed', {
@@ -316,10 +361,15 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       : { source_id: docId, directory_path: removal.path };
     const response = await userService.removeWebsitePages(body, token);
     const data = await response.json().catch(() => null);
+    const refusal = websiteRefusal(t, response.status, data);
+    if (refusal && isQueueFailed(data)) {
+      // Saved: the next sync removes the pages, so the dialog's job is done.
+      setRemoval(null);
+      warnQueueFailed(refusal);
+      return;
+    }
     if (!response.ok || !data?.success)
-      throw new RemoveRefused(
-        websiteRefusal(t, response.status, data) ?? tr('removeFailed'),
-      );
+      throw new RemoveRefused(refusal ?? tr('removeFailed'));
     const { name } = removal;
     setRemoval(null);
     void awaitChange(tr('removing'), startedAt, 'removeFailed', {
@@ -336,7 +386,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         name,
         path,
         isFile,
-        kind: 'folder',
+        keys: [],
         where: folderAddress(structure, path) ?? path,
       });
       return;
@@ -347,10 +397,43 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         (typeof node?.display_name === 'string' && node.display_name) || name,
       path,
       isFile,
-      kind: url && pageEntries.has(pageKey(url)) ? 'entry' : 'crawled',
+      keys: pageKeysOf(node),
       where: hostOf(url),
     });
   };
+
+  /**
+   * Where a page to remove came from, decided as the dialog draws, so the
+   * copy follows the source's list once it loads: `unknown` until then (and
+   * when it can't be read).
+   */
+  const removalKind = (
+    pending: PendingRemoval,
+  ): 'entry' | 'crawled' | 'folder' | 'unknown' => {
+    if (!pending.isFile) return 'folder';
+    if (!pageEntries) return 'unknown';
+    return pending.keys.some((key) => pageEntries.has(key))
+      ? 'entry'
+      : 'crawled';
+  };
+
+  // A sync the host started is waited for like the tree's own changes.
+  const awaitChangeRef = useRef(awaitChange);
+  awaitChangeRef.current = awaitChange;
+  const waitedSync = useRef<typeof sync>(null);
+  useEffect(() => {
+    if (!sync || waitedSync.current === sync) return;
+    waitedSync.current = sync;
+    void awaitChangeRef.current(tr('syncing'), sync.startedAt, 'syncFailed', {
+      taskId: sync.taskId,
+    });
+    // StrictMode's second run starts the wait again; the first one ends
+    // with the unmount it saw and leaves the status alone.
+    return () => {
+      waitedSync.current = null;
+    };
+    // tr reads t, which is stable per language.
+  }, [sync]);
 
   const openLink = (url: string | null, label: string) =>
     url ? (
@@ -446,6 +529,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
           void refreshPage(
             [...currentPathRef.current, name].join('/'),
             displayName ?? name,
+            url,
           ),
       });
     }
@@ -478,9 +562,13 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
 
   const removalCopy = (() => {
     if (!removal) return { description: '', submit: '' };
-    if (removal.kind === 'entry')
+    const kind = removalKind(removal);
+    if (kind === 'entry')
       return { description: tr('removeEntry'), submit: tr('remove') };
-    if (removal.kind === 'folder')
+    // Not known yet where it came from: only what holds either way.
+    if (kind === 'unknown')
+      return { description: tr('removeGeneric'), submit: tr('remove') };
+    if (kind === 'folder')
       return {
         description: tr('removeFolder', {
           address: removal.where,
@@ -564,20 +652,22 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
           graph={graph}
           onClose={() => setAddOpen(false)}
           onQueued={(startedAt, taskId, change) => {
-            // Appended pages replace only the pages they name; a rebuild
-            // may change any page.
+            // Appended pages replace only the pages they name (by the
+            // address they were added under, too); a rebuild may change any
+            // page.
             const added = new Set(change.urls.map(pageKey));
             void awaitChange(tr('addingPages'), startedAt, 'addFailed', {
               taskId,
               affects:
                 change.mode === 'append'
-                  ? (path) => {
-                      const url = pageAt(structureRef.current, path)?.url;
-                      return typeof url === 'string' && added.has(pageKey(url));
-                    }
+                  ? (path) =>
+                      pageKeysOf(pageAt(structureRef.current, path)).some(
+                        (key) => added.has(key),
+                      )
                   : undefined,
             });
           }}
+          onQueueFailed={warnQueueFailed}
         />
       )}
     </>

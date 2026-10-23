@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   defaultWebsiteDraft,
+  isQueueFailed,
   isWebsiteDraftValid,
   nameFromUrl,
   normalizeUrl,
@@ -268,6 +269,15 @@ describe('isWebsiteDraftValid', () => {
   });
 });
 
+describe('isQueueFailed', () => {
+  it('knows a change saved but not queued by its code', () => {
+    expect(isQueueFailed({ success: false, code: 'queue_failed' })).toBe(true);
+    expect(isQueueFailed({ success: false, code: 'wiki' })).toBe(false);
+    expect(isQueueFailed(null)).toBe(false);
+    expect(isQueueFailed('queue_failed')).toBe(false);
+  });
+});
+
 describe('websiteRefusal', () => {
   const t = ((key: string, opts?: Record<string, unknown>) =>
     opts ? `${key} ${JSON.stringify(opts)}` : key) as unknown as TFunction;
@@ -297,6 +307,7 @@ describe('websiteRefusal', () => {
     ['bad_sync_frequency', {}, 'badSyncFrequency'],
     ['too_many_paths', { max_paths: 500 }, 'tooManyPaths {"count":500}'],
     ['not_website', {}, 'notWebsite'],
+    ['queue_failed', { message: 'Saved, not queued' }, 'queueFailed'],
     // The UI never builds these; one line covers them.
     ['invalid_body', {}, 'badRequest'],
     ['missing_fields', { fields: ['source_id'] }, 'badRequest'],

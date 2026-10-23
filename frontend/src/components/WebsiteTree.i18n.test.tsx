@@ -22,7 +22,12 @@ vi.mock('react-redux', () => {
 
 vi.mock('../api/services/userService', () => ({
   default: {
-    getWebsite: vi.fn(async () => ({ ok: false, json: async () => ({}) })),
+    getWebsite: vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        config: { entries: [{ url: 'https://docs.x.io/', mode: 'site' }] },
+      }),
+    })),
   },
 }));
 

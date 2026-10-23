@@ -67,6 +67,7 @@ describe('AddWebsitePagesModal', () => {
   let container: HTMLDivElement;
   let root: Root;
   const onQueued = vi.fn();
+  const onQueueFailed = vi.fn();
   const onClose = vi.fn();
 
   beforeEach(() => {
@@ -99,6 +100,7 @@ describe('AddWebsitePagesModal', () => {
           graph={graph}
           onClose={onClose}
           onQueued={onQueued}
+          onQueueFailed={onQueueFailed}
         />,
       );
     });
@@ -238,6 +240,27 @@ describe('AddWebsitePagesModal', () => {
 
     expect(document.body.textContent).toContain(
       'A source holds up to 20 sites',
+    );
+  });
+
+  it('pages saved but not queued close the dialog with a warning, in its own words', async () => {
+    service.addWebsitePages.mockResolvedValue(
+      reply(500, {
+        success: false,
+        code: 'queue_failed',
+        message:
+          "The change was saved, but its task couldn't be queued; the next sync picks it up.",
+      }),
+    );
+    await submit();
+
+    expect(onQueueFailed).toHaveBeenCalledWith(
+      'settings.sources.website.queueFailed',
+    );
+    expect(onQueued).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain(
+      'settings.sources.website.addFailed',
     );
   });
 

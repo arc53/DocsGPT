@@ -363,11 +363,28 @@ const REFUSAL_KEYS = new Map<unknown, string>([
   ['not_found', 'notFound'],
   ['bad_sync_frequency', 'badSyncFrequency'],
   ['not_website', 'notWebsite'],
+  // Saved, but its task couldn't be queued: the next sync runs it.
+  ['queue_failed', 'queueFailed'],
   // A body the UI never builds: one line for all three.
   ['invalid_body', 'badRequest'],
   ['missing_fields', 'badRequest'],
   ['invalid_field', 'badRequest'],
 ]);
+
+/**
+ * Whether a /api/website answer says the change was saved but its task
+ * couldn't be queued (HTTP 500, `code: queue_failed`): the next sync runs
+ * it, so it is a warning, not a failure, and retrying would repeat it.
+ *
+ * @param body The response's JSON, if it parsed.
+ */
+export function isQueueFailed(body: unknown): boolean {
+  return (
+    !!body &&
+    typeof body === 'object' &&
+    (body as Record<string, unknown>).code === 'queue_failed'
+  );
+}
 
 /** Codes worded with the limit the refusal names: [key, detail field]. */
 const LIMIT_KEYS = new Map<unknown, [string, string]>([

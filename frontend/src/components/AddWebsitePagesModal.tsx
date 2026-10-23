@@ -10,6 +10,7 @@ import useWebPageLimits, {
 } from '../upload/useWebPageLimits';
 import {
   defaultWebsiteDraft,
+  isQueueFailed,
   isWebsiteDraftValid,
   type WebsiteDraft,
   websiteConfig,
@@ -39,6 +40,9 @@ export type WebsitePagesChange = { mode: 'append' | 'sync'; urls: string[] };
  *   out, the task it queued, and what it changes (the server's `mode` and the
  *   page addresses sent), so the caller can wait for the ingest to finish and
  *   reload only what it touched.
+ * @param onQueueFailed Called, before the dialog closes, when the server
+ *   saved the pages but couldn't queue their fetch (`queue_failed`; the next
+ *   sync fetches them), with the message to warn with.
  */
 export default function AddWebsitePagesModal({
   sourceId,
@@ -46,6 +50,7 @@ export default function AddWebsitePagesModal({
   graph = false,
   onClose,
   onQueued,
+  onQueueFailed,
 }: {
   sourceId: string;
   sourceName: string;
@@ -56,6 +61,7 @@ export default function AddWebsitePagesModal({
     taskId: string | null,
     change: WebsitePagesChange,
   ) => void;
+  onQueueFailed: (message: string) => void;
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -79,11 +85,15 @@ export default function AddWebsitePagesModal({
         token,
       );
       const data = await response.json().catch(() => null);
+      const refusal = websiteRefusal(t, response.status, data);
+      if (refusal && isQueueFailed(data)) {
+        // Saved: submitting again would add them twice.
+        onQueueFailed(refusal);
+        onClose();
+        return;
+      }
       if (!response.ok || !data?.success) {
-        setError(
-          websiteRefusal(t, response.status, data) ??
-            t('settings.sources.website.addFailed'),
-        );
+        setError(refusal ?? t('settings.sources.website.addFailed'));
         return;
       }
       // `mode: 'sync'` (a site, a new host, or a store that can't add single

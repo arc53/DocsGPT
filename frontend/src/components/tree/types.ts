@@ -5,6 +5,10 @@ export interface FileNode {
   token_count?: number;
   size_bytes?: number;
   display_name?: string;
+  /** A web page's address: where its fetch landed, after any redirect. */
+  url?: string;
+  /** A web page's address as it was added, when fetching it was redirected. */
+  requested_url?: string;
   [key: string]: any;
 }
 
