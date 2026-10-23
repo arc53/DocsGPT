@@ -24,7 +24,8 @@ import { Modal, ModalActions } from './ui/modal';
  * @param sourceName Shown under the title.
  * @param onClose Closes the dialog.
  * @param onQueued Called once the server accepts, with when the request went
- *   out, so the caller can wait for the ingest to finish.
+ *   out and the task it queued, so the caller can wait for the ingest to
+ *   finish.
  */
 export default function AddWebsitePagesModal({
   sourceId,
@@ -35,7 +36,7 @@ export default function AddWebsitePagesModal({
   sourceId: string;
   sourceName: string;
   onClose: () => void;
-  onQueued: (startedAt: number) => void;
+  onQueued: (startedAt: number, taskId: string | null) => void;
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -70,7 +71,10 @@ export default function AddWebsitePagesModal({
         );
         return;
       }
-      onQueued(startedAt);
+      onQueued(
+        startedAt,
+        typeof data.task_id === 'string' ? data.task_id : null,
+      );
       onClose();
     } catch {
       setError(t('settings.sources.website.addFailed'));

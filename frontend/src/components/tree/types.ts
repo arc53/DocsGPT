@@ -36,4 +36,9 @@ export interface TreeBrowserController {
   refreshDirectory: () => Promise<boolean>;
   /** Resets the breadcrumb path back to the root. */
   resetPath: () => void;
+  /**
+   * Lists the open file's chunks again (its content changed: a refreshed
+   * page). With a path, only when that file is the open one.
+   */
+  reloadFile: (path?: string) => void;
 }

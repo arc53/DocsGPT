@@ -18,7 +18,7 @@ import {
 import { formatBytes } from '../../utils/stringUtils';
 import userService from '../../api/services/userService';
 import { ExternalLink, Eye, File, FileText, Folder } from 'lucide-react';
-import { pageAddress, withPageTitles } from './pages';
+import { pageAddress, webHref, withPageTitles } from './pages';
 import { EmptyState } from '../ui/empty-state';
 import { useLoaderState } from '../../hooks';
 import Chunks, {
@@ -351,12 +351,6 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     setCurrentPath([]);
   }, []);
 
-  useImperativeHandle(
-    controllerRef as React.MutableRefObject<TreeBrowserController | null>,
-    () => ({ refreshDirectory, resetPath }),
-    [refreshDirectory, resetPath],
-  );
-
   useEffect(() => {
     if (!docId) return;
     let cancelled = false;
@@ -437,6 +431,21 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   const openFile = singleFile
     ? { id: singleFile.path, name: singleFile.label }
     : selectedFile;
+  const openFileId = openFile?.id ?? null;
+
+  const reloadFile = useCallback(
+    (path?: string) => {
+      if (!openFileId || (path !== undefined && path !== openFileId)) return;
+      chunksControllerRef.current?.reload();
+    },
+    [openFileId],
+  );
+
+  useImperativeHandle(
+    controllerRef as React.MutableRefObject<TreeBrowserController | null>,
+    () => ({ refreshDirectory, resetPath, reloadFile }),
+    [refreshDirectory, resetPath, reloadFile],
+  );
 
   // The open file's chunk count, for its bar (reported by its chunk list).
   const [openFileChunks, setOpenFileChunks] = useState<{
@@ -839,7 +848,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         option !== defaultViewOption &&
         !(singleFile && option.variant === 'destructive'),
     );
-    const url = pages && typeof node?.url === 'string' ? node.url : null;
+    const url = pages ? webHref(node?.url) : null;
     const tokens = node?.token_count ?? 0;
     const fetched =
       pages && typeof node?.fetched_at === 'string'
@@ -857,7 +866,10 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         ? t('settings.sources.item.tokens', { tokens: formatCount(tokens) })
         : null,
       fetched
-        ? t('settings.sources.website.fetchedAt', { when: fetched })
+        ? t('settings.sources.website.fetchedAt', {
+            when: fetched,
+            interpolation: { escapeValue: false },
+          })
         : null,
     ]
       .filter(Boolean)

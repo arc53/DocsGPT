@@ -127,7 +127,10 @@ export function ScheduleRow({
       label={t('modals.uploadDoc.website.sync')}
       description={
         lastSynced
-          ? t('settings.sources.website.lastSynced', { when: lastSynced })
+          ? t('settings.sources.website.lastSynced', {
+              when: lastSynced,
+              interpolation: { escapeValue: false },
+            })
           : undefined
       }
       htmlFor={id}

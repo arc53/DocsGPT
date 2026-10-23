@@ -12,7 +12,7 @@ import { formatCount, formatRelative } from '../utils/dateTimeUtils';
 import AddWebsitePagesModal from './AddWebsitePagesModal';
 import type { LinkedChunk } from './chunkUtils';
 import TreeBrowser from './tree/TreeBrowser';
-import { folderAddress } from './tree/pages';
+import { folderAddress, webHref } from './tree/pages';
 import type {
   DirectoryStructure,
   FileNode,
@@ -41,6 +41,49 @@ interface WebsiteTreeProps {
   canEdit?: boolean;
   initialPath?: string;
   linkedChunk?: LinkedChunk;
+}
+
+/** A URL's origin (`http://docs.x.io:8080`), or null when it isn't a web one. */
+function originOf(url: unknown): string | null {
+  const href = webHref(url);
+  if (!href) return null;
+  try {
+    return new URL(href).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** A URL's host with its port, or '' when it doesn't parse. */
+function hostOf(url: string): string {
+  try {
+    return url ? new URL(url).host : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The origin of the first page on `host` (a hostname without `www.` or a
+ * port, as the sources list gives it), so the link keeps the site's own
+ * scheme and port.
+ */
+function pageOrigin(
+  structure: DirectoryStructure,
+  host: string,
+): string | null {
+  for (const node of Object.values(structure ?? {})) {
+    if (!node || typeof node !== 'object') continue;
+    if (!('token_count' in node)) {
+      const origin = pageOrigin(node as DirectoryStructure, host);
+      if (origin) return origin;
+      continue;
+    }
+    const origin = originOf(node.url);
+    if (origin && new URL(origin).hostname.replace(/^www\./, '') === host)
+      return origin;
+  }
+  return null;
 }
 
 /** What a remove asks to confirm: its copy depends on where the page came from. */
@@ -87,6 +130,8 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   const [structure, setStructure] = useState<DirectoryStructure>({});
   // Keys of the pages the source lists by address (from its config).
   const [pageEntries, setPageEntries] = useState<Set<string>>(new Set());
+  // The origin of the config's first entry (scheme, host and port).
+  const [firstEntryOrigin, setFirstEntryOrigin] = useState<string | null>(null);
   const [configKey, setConfigKey] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [removal, setRemoval] = useState<PendingRemoval | null>(null);
@@ -104,6 +149,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       .then((data) => {
         if (cancelled || !data?.config) return;
         const entries = data.config.entries as { url: string; mode: string }[];
+        setFirstEntryOrigin(originOf(entries[0]?.url));
         setPageEntries(
           new Set(
             entries.filter((e) => e.mode === 'page').map((e) => pageKey(e.url)),
@@ -128,19 +174,29 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     [dispatch, t],
   );
 
-  /** Waits for a background change to finish, then reloads the tree. */
+  /**
+   * Waits for a background change to finish, then reloads the tree and the
+   * open page's chunks (all of them, or only when `changedPath` is open).
+   */
   const awaitChange = async (
     label: string,
     startedAt: number,
     failure: string,
-    name?: string,
+    {
+      name,
+      taskId,
+      changedPath,
+    }: { name?: string; taskId?: string | null; changedPath?: string } = {},
   ) => {
     setStatus(label);
-    const terminal = await waitForTerminal(docId, startedAt);
+    const terminal = await waitForTerminal(docId, startedAt, { taskId });
     if (!mountedRef.current) return;
     setStatus(null);
     if (terminal === 'completed') {
       await controllerRef.current?.refreshDirectory();
+      if (changedPath !== undefined)
+        controllerRef.current?.reloadFile(changedPath);
+      else controllerRef.current?.reloadFile();
       setConfigKey((key) => key + 1);
     } else if (terminal === 'failed') {
       toastFailure(failure, name);
@@ -149,17 +205,27 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
 
   const refreshPage = async (path: string, name: string) => {
     const startedAt = Date.now();
+    let taskId: string | null = null;
+    // Taken at once: the menu turns its changes off until this one is done.
+    setStatus(tr('refreshing'));
     try {
       const response = await userService.refreshWebsitePage(
         { source_id: docId, file_path: path },
         token,
       );
       if (!response.ok) throw new Error('refresh failed');
+      const data = await response.json().catch(() => null);
+      taskId = typeof data?.task_id === 'string' ? data.task_id : null;
     } catch {
+      if (mountedRef.current) setStatus(null);
       toastFailure('refreshFailed', name);
       return;
     }
-    await awaitChange(tr('refreshing'), startedAt, 'refreshFailed', name);
+    await awaitChange(tr('refreshing'), startedAt, 'refreshFailed', {
+      name,
+      taskId,
+      changedPath: path,
+    });
   };
 
   const confirmRemove = async () => {
@@ -195,18 +261,21 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       path,
       isFile,
       kind: url && pageEntries.has(pageKey(url)) ? 'entry' : 'crawled',
-      where: url ? new URL(url).host : '',
+      where: hostOf(url),
     });
   };
 
-  const openLink = (url: string, label: string) => (
-    <Button variant="link" size="inline" asChild>
-      <a href={url} target="_blank" rel="noopener noreferrer">
-        {label}
-        <ExternalLink />
-      </a>
-    </Button>
-  );
+  const openLink = (url: string | null, label: string) =>
+    url ? (
+      <Button variant="link" size="inline" asChild>
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          {label}
+          <ExternalLink />
+        </a>
+      </Button>
+    ) : (
+      label
+    );
 
   const synced = !!syncFrequency && syncFrequency !== 'never';
   const frequencyLabel = synced
@@ -216,6 +285,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     ? tr('synced', {
         frequency: frequencyLabel,
         when: formatRelative(syncedAt) ?? '',
+        interpolation: { escapeValue: false },
       })
     : tr('notSynced');
 
@@ -232,7 +302,12 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       parts.push(
         <span className="inline-flex items-center gap-1.5">
           <Globe className="size-4" aria-hidden="true" />
-          {openLink(`https://${hosts[0]}`, hosts[0])}
+          {openLink(
+            firstEntryOrigin ??
+              pageOrigin(structure, hosts[0]) ??
+              `https://${hosts[0]}`,
+            hosts[0],
+          )}
         </span>,
       );
     } else if (hosts.length > 1) {
@@ -263,19 +338,23 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     node,
   }: RowMenuContext): MenuOption[] => {
     const url = typeof node?.url === 'string' ? node.url : null;
+    const href = webHref(url);
     const options: MenuOption[] = [defaultViewOption];
-    if (url) {
+    if (href) {
       options.push({
         icon: ExternalLink,
         label: tr('openPage'),
-        onClick: () => window.open(url, '_blank', 'noopener,noreferrer'),
+        onClick: () => window.open(href, '_blank', 'noopener,noreferrer'),
       });
     }
     if (!canEdit) return options;
+    // One change at a time: a refresh, add or remove waits for the last.
+    const busy = !!status;
     if (url) {
       options.push({
         icon: RefreshCw,
         label: tr('refreshPage'),
+        disabled: busy,
         onClick: () =>
           void refreshPage(
             [...currentPathRef.current, name].join('/'),
@@ -287,6 +366,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       icon: Trash2,
       label: tr('removeFromSource'),
       onClick: () => askRemove(name, isFile, node),
+      disabled: busy,
       variant: 'destructive',
       separatorBefore: true,
     });
@@ -315,11 +395,17 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       return { description: tr('removeEntry'), submit: tr('remove') };
     if (removal.kind === 'folder')
       return {
-        description: tr('removeFolder', { address: removal.where }),
+        description: tr('removeFolder', {
+          address: removal.where,
+          interpolation: { escapeValue: false },
+        }),
         submit: tr('removeAndSkip'),
       };
     return {
-      description: tr('removeCrawled', { host: removal.where }),
+      description: tr('removeCrawled', {
+        host: removal.where,
+        interpolation: { escapeValue: false },
+      }),
       submit: tr('removeAndSkip'),
     };
   })();
@@ -349,7 +435,10 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
           canEdit && synced ? (
             <Alert variant="info" role="note">
               <AlertDescription>
-                {tr('handEditsNote', { frequency: frequencyLabel })}
+                {tr('handEditsNote', {
+                  frequency: frequencyLabel,
+                  interpolation: { escapeValue: false },
+                })}
               </AlertDescription>
             </Alert>
           ) : undefined
@@ -383,8 +472,10 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
           sourceId={docId}
           sourceName={sourceName}
           onClose={() => setAddOpen(false)}
-          onQueued={(startedAt) =>
-            void awaitChange(tr('addingPages'), startedAt, 'addFailed')
+          onQueued={(startedAt, taskId) =>
+            void awaitChange(tr('addingPages'), startedAt, 'addFailed', {
+              taskId,
+            })
           }
         />
       )}

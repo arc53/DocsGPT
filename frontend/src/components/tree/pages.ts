@@ -134,3 +134,14 @@ export function folderAddress(
 export function pageAddress(url: string): string {
   return url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/(?=$|\?)/, '');
 }
+
+/**
+ * A page's address as a link target, only when a browser opens it as a web
+ * page (`http:` or `https:`), as `sourceHref` does for an answer's sources.
+ *
+ * @param url The stored address.
+ * @returns The address, or null.
+ */
+export function webHref(url: unknown): string | null {
+  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
+}

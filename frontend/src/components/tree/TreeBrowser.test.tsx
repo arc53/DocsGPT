@@ -551,6 +551,48 @@ describe('TreeBrowser', () => {
     expect(container.querySelector('table')).not.toBeNull();
   });
 
+  it('reloadFile lists the open file again and closes its open chunk', async () => {
+    const controllerRef: { current: TreeBrowserController | null } = {
+      current: null,
+    };
+    state.chunks = [{ doc_id: 'c1', text: '# Rates', metadata: {} }];
+    await render(NESTED, { controllerRef } as Partial<
+      React.ComponentProps<typeof TreeBrowser>
+    >);
+    await openRow('readme.md');
+    await act(async () => tile()!.click());
+    const listed = () =>
+      vi
+        .mocked(userService.getDocumentChunks)
+        .mock.calls.filter((call) => call[4] === 'readme.md').length;
+    const before = listed();
+
+    // Another file isn't the open one: nothing to reload.
+    await act(async () => controllerRef.current?.reloadFile('legal/x.md'));
+    expect(listed()).toBe(before);
+
+    state.chunks = [{ doc_id: 'c2', text: '# New rates', metadata: {} }];
+    await act(async () => controllerRef.current?.reloadFile('readme.md'));
+    expect(listed()).toBe(before + 1);
+    expect(crumbs()).toEqual([SOURCES, 'Contracts', 'readme.md']);
+    expect(tile()?.textContent).toContain('New rates');
+  });
+
+  it('a page bar links only a web address', async () => {
+    await render(
+      {
+        'air.md': {
+          type: 'md',
+          token_count: 40,
+          url: 'javascript:alert(1)',
+          display_name: 'Air',
+        },
+      },
+      { variant: 'pages' } as Partial<React.ComponentProps<typeof TreeBrowser>>,
+    );
+    expect(itemBar()!.querySelector('a')).toBeNull();
+  });
+
   it('canEdit false reaches the chunk list: no Add chunk', async () => {
     await render({ 'report.pdf': { type: 'pdf' } }, { canEdit: false });
     expect(chunkListOpen()).toBe(true);

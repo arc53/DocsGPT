@@ -130,6 +130,21 @@ describe('WebsiteTree', () => {
     expect(container.textContent).toContain('settings.sources.website.synced');
   });
 
+  it("links the host by a page's own origin: its scheme and port", async () => {
+    await render(
+      {},
+      {
+        'a.md': page('http://docs.x.io:8080/a', 'A'),
+        'b.md': page('http://docs.x.io:8080/b', 'B'),
+      },
+    );
+    const link = container.querySelector<HTMLAnchorElement>(
+      'p.text-muted-foreground a',
+    );
+    expect(link?.getAttribute('href')).toBe('http://docs.x.io:8080');
+    expect(link?.textContent).toBe('docs.x.io');
+  });
+
   it('counts the sites of a source with several hosts', async () => {
     await render({
       hosts: ['docs.x.io', 'github.com'],

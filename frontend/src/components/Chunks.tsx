@@ -66,6 +66,11 @@ export type OpenChunkPosition = number | 'unplaced' | null;
 /** Lets the host's crumbs close the open chunk (see TreeBrowser). */
 export interface ChunksController {
   closeChunk: () => void;
+  /**
+   * Lists the file again after its content changed elsewhere (a refreshed
+   * web page): the open chunk closes, since its id is gone.
+   */
+  reload: () => void;
 }
 
 const TILE_GRID =
@@ -425,6 +430,13 @@ const Chunks: React.FC<ChunksProps> = ({
 
   useImperativeHandle(controllerRef, () => ({
     closeChunk: () => closeChunk(),
+    reload: () => {
+      stepRef.current++;
+      setStepping(false);
+      setOpenChunk(null);
+      setPositionLost(false);
+      void fetchChunks();
+    },
   }));
 
   const openChunkPosition: OpenChunkPosition = !openChunk
