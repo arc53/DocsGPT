@@ -536,12 +536,15 @@ class _LinkConverter(MarkdownConverter):
         # Each text block's text, read once: a paragraph of a thousand links
         # re-read its whole text per link.
         self._block_text: Dict[int, str] = {}
+        # Each element's text block, found once: links nested deep in one
+        # block each walked up to it.
+        self._block_of: Dict[int, Optional[Tag]] = {}
 
     def convert_a(self, el, text, *args, **kwargs):
         text = (text or "").strip()
         if not text:
             return ""
-        if not self.keep_links or _is_bare_link(el, self._block_text):
+        if not self.keep_links or _is_bare_link(el, self._block_text, self._block_of):
             return text
         href = (el.get("href") or "").strip()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
@@ -569,18 +572,54 @@ def _link_destination(url: str) -> str:
     return f"<{url}>" if "(" in url or ")" in url else url
 
 
-def _is_bare_link(link: Tag, block_text: Optional[Dict[int, str]] = None) -> bool:
+def _text_block(link: Tag, memo: Dict[int, Optional[Tag]]) -> Optional[Tag]:
+    """The nearest text block (``_TEXT_BLOCKS``) above a link, each ancestor looked at once per tree.
+
+    Args:
+        link: The ``<a>`` element.
+        memo: By element ``id``, the block at or above it; shared across
+            calls on one tree, so links nested deep in a block don't each
+            walk up to it.
+
+    Returns:
+        The block, or ``None`` when the link sits in none.
+    """
+    path = []
+    node = link.parent
+    block = None
+    while node is not None:
+        if id(node) in memo:
+            block = memo[id(node)]
+            break
+        if node.name in _TEXT_BLOCKS:
+            block = node
+            break
+        path.append(node)
+        node = node.parent
+    if block is not None:
+        memo[id(block)] = block
+    # Every element walked through has the block the walk ended at.
+    for walked in path:
+        memo[id(walked)] = block
+    return block
+
+
+def _is_bare_link(
+    link: Tag, block_text: Optional[Dict[int, str]] = None, block_of: Optional[Dict[int, Optional[Tag]]] = None,
+) -> bool:
     """Whether a link is the whole text of its block (a menu item, a card, a TOC entry).
 
     Args:
         link: The ``<a>`` element.
         block_text: Block texts by ``id``, cached for one conversion (the tree
             doesn't change while it is converted); ``None`` reads each anew.
+        block_of: Each element's text block by ``id`` (``_text_block``),
+            cached for one conversion; ``None`` looks each one up anew.
 
     Returns:
         True when the link's text is all of its block's text, or it has no block.
     """
-    block = link.find_parent(_TEXT_BLOCKS)
+    block = link.find_parent(_TEXT_BLOCKS) if block_of is None else _text_block(link, block_of)
     if block is None:
         return True
     if block_text is None:

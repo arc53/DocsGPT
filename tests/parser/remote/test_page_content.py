@@ -451,6 +451,17 @@ class TestKeepLinksCost:
         assert time.monotonic() - started < 5
         assert "[x3999](https://docs.example.com/l3999)" in doc.text
 
+    def test_links_nested_deep_in_one_block_find_it_once(self):
+        # Each link used to walk up every element between it and its paragraph.
+        links = "<a href='/y'>l</a> word " * 8000
+        body = f"<html><body><main><p>{'<b>' * 400}{links}{'</b>' * 400}</p></main></body></html>".encode()
+
+        started = time.monotonic()
+        doc = page_document(body, "text/html", URL, keep_links=True)
+
+        assert time.monotonic() - started < 4
+        assert "[l](https://docs.example.com/y)" in doc.text
+
     def test_nested_asides_are_measured_once(self):
         # Each aside used to re-read the text and links of every aside inside it.
         soup = html_soup("<html><body>" + "<aside>t " * 4000 + "</body></html>")
