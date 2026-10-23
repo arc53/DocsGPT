@@ -1,5 +1,4 @@
 import logging
-import re
 from typing import List, Optional, Set
 
 import defusedxml.ElementTree as ET
@@ -164,7 +163,7 @@ class SitemapLoader(BaseRemote):
         whole ingest.
 
         Args:
-            sitemap_content: Raw sitemap XML.
+            sitemap_content: Raw XML bytes, including any encoding declaration.
             visited: Sitemap URLs already fetched in this walk.
             depth: How many sitemap indexes deep this sitemap is.
             budget: How many more URLs the walk may collect. ``None`` starts
@@ -177,18 +176,24 @@ class SitemapLoader(BaseRemote):
         budget = self.limit if budget is None else budget
         visited = set() if visited is None else visited
         try:
-            # Remove namespaces
-            text = re.sub(' xmlns="[^"]+"', '', sitemap_content.decode('utf-8'), count=1)
-            root = ET.fromstring(text)
+            try:
+                root = ET.fromstring(sitemap_content)
+            except DefusedXmlException:
+                raise
+            except (LookupError, ValueError):
+                # Preserve UTF-8 parsing when Expat cannot use the declared encoding.
+                root = ET.fromstring(sitemap_content.decode("utf-8"))
         except (ET.ParseError, DefusedXmlException, UnicodeDecodeError) as e:
             logger.warning(f"Skipping sitemap that could not be parsed: {e}")
             return []
+
+        namespace = root.tag.split("}", 1)[0] + "}" if root.tag.startswith("{") else ""
 
         def remaining() -> Optional[int]:
             return None if budget is None else budget - len(urls)
 
         urls: List[str] = []
-        for loc in root.findall('.//url/loc'):
+        for loc in root.findall(f'.//{namespace}url/{namespace}loc'):
             if remaining() == 0:
                 return urls
             if not loc.text or not loc.text.strip():
@@ -196,7 +201,7 @@ class SitemapLoader(BaseRemote):
             urls.append(loc.text.strip())
 
         # Check for nested sitemaps
-        for sitemap in root.findall('.//sitemap/loc'):
+        for sitemap in root.findall(f'.//{namespace}sitemap/{namespace}loc'):
             if remaining() == 0:
                 break
             nested_sitemap_url = (sitemap.text or "").strip()
