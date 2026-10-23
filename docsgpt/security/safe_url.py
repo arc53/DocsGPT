@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import time
 from typing import Any, Iterable
 from urllib.parse import unquote, urlsplit, urlunsplit
 
@@ -432,6 +433,48 @@ def pinned_request(
         session.close()
 
 
+# The least a body read gets in all when ``total_timeout`` is left to default,
+# so a large download on a short per-read timeout still has room.
+_MIN_TOTAL_TIMEOUT = 30.0
+_BODY_CHUNK = 65536
+
+
+def _body_chunks(response: requests.Response, chunk_size: int) -> Iterable[bytes]:
+    """The decoded body, in pieces that arrive as soon as the socket has data.
+
+    ``iter_content`` blocks until a whole ``chunk_size`` arrives, so a server
+    sending a byte at a time holds one read for as long as it likes and a
+    deadline between chunks never fires. ``read1`` returns after a single
+    socket read. Errors are raised as ``iter_content`` raises them.
+
+    Args:
+        response: A streamed response.
+        chunk_size: The most bytes per piece.
+
+    Yields:
+        Body bytes, Content-Encoding undone.
+    """
+    raw = getattr(response, "raw", None)
+    if not isinstance(raw, urllib3.response.BaseHTTPResponse):
+        # Not a urllib3 stream (a stand-in): it has only iter_content.
+        yield from response.iter_content(chunk_size=chunk_size)
+        return
+    while True:
+        try:
+            data = raw.read1(chunk_size, decode_content=True)
+        except urllib3.exceptions.ProtocolError as exc:
+            raise requests.exceptions.ChunkedEncodingError(exc) from exc
+        except urllib3.exceptions.DecodeError as exc:
+            raise requests.exceptions.ContentDecodingError(exc) from exc
+        except urllib3.exceptions.ReadTimeoutError as exc:
+            raise requests.exceptions.ConnectionError(exc) from exc
+        except urllib3.exceptions.SSLError as exc:
+            raise requests.exceptions.SSLError(exc) from exc
+        if not data:
+            return
+        yield data
+
+
 def pinned_fetch_bytes(
     url: str,
     *,
@@ -440,6 +483,7 @@ def pinned_fetch_bytes(
     timeout: float = 10.0,
     allow_redirects: bool = False,
     truncate: bool = False,
+    total_timeout: float | None = None,
 ) -> tuple[bytes, requests.Response]:
     """GET ``url`` with SSRF pinning, streaming at most ``max_bytes`` of body.
 
@@ -450,6 +494,22 @@ def pinned_fetch_bytes(
     ``truncate`` the read stops at the ceiling and returns the first
     ``max_bytes`` instead of raising (a page watched for changes).
 
+    ``timeout`` bounds the connect and each socket read; the body read as a
+    whole is bounded by ``total_timeout``, so a server that trickles bytes
+    just inside the read timeout can't hold the fetch open forever.
+
+    Args:
+        url: Absolute http(s) URL to GET.
+        max_bytes: The body ceiling, counted after Content-Encoding is undone.
+        headers: Extra request headers; ``Host`` is always the validated one.
+        timeout: Seconds for the connect and for each socket read.
+        allow_redirects: Forwarded to ``requests``; off, since only the
+            given URL is validated.
+        truncate: Return the first ``max_bytes`` of a larger body instead of
+            raising.
+        total_timeout: Seconds the body read may take in all; ``None`` for
+            twice ``timeout``, at least ``_MIN_TOTAL_TIMEOUT``.
+
     Returns:
         Tuple of the body bytes and the (already-closed) ``Response``,
         kept for its status code and headers.
@@ -457,9 +517,12 @@ def pinned_fetch_bytes(
     Raises:
         UnsafeUserUrlError: If the URL fails the SSRF guard.
         ResponseTooLargeError: If the body exceeds ``max_bytes``.
+        requests.Timeout: If the body takes longer than ``total_timeout``.
         requests.RequestException: For network-level failures.
     """
 
+    if total_timeout is None:
+        total_timeout = max(2 * timeout, _MIN_TOTAL_TIMEOUT)
     session, pinned_url, request_headers = _pinned_session(url, headers)
     try:
         response = session.request(
@@ -484,7 +547,12 @@ def pinned_fetch_bytes(
                 )
             chunks: list[bytes] = []
             received = 0
-            for chunk in response.iter_content(chunk_size=65536):
+            deadline = time.monotonic() + total_timeout
+            for chunk in _body_chunks(response, _BODY_CHUNK):
+                if time.monotonic() > deadline:
+                    raise requests.exceptions.ReadTimeout(
+                        f"response body took longer than {total_timeout:g}s"
+                    )
                 received += len(chunk)
                 if received > max_bytes and truncate:
                     chunks.append(chunk[: max_bytes - (received - len(chunk))])
