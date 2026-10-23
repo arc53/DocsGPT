@@ -170,6 +170,21 @@ class TestMongoDBVectorStoreInsertTexts:
         assert inserted_docs[0]["embedding"] == [0.1, 0.2]
         assert inserted_docs[0]["source"] == "test"
 
+    def test_insert_texts_stamps_its_own_source_and_reserved_fields_last(self):
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1, 0.2]]
+        mock_collection.insert_many.return_value = Mock(inserted_ids=["id1"])
+
+        store._insert_texts(
+            ["hello"], [{"source_id": "victim", "_id": "forged", "text": "other", "embedding": [9.0]}]
+        )
+
+        inserted = mock_collection.insert_many.call_args[0][0][0]
+        assert inserted["source_id"] == "src1"
+        assert inserted["text"] == "hello"
+        assert inserted["embedding"] == [0.1, 0.2]
+        assert "_id" not in inserted
+
 
 @pytest.mark.unit
 class TestMongoDBVectorStoreDeleteIndex:
@@ -262,6 +277,24 @@ class TestMongoDBVectorStoreAddChunk:
 
         inserted = mock_collection.insert_one.call_args[0][0]
         assert "source_id" in inserted
+
+    def test_add_chunk_metadata_cannot_override_reserved_fields(self):
+        # POST /api/add_chunk passes caller metadata through: it must not move the chunk to another source.
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1, 0.2]]
+        mock_collection.insert_one.return_value = Mock(inserted_id="new_id")
+
+        store.add_chunk(
+            "hello chunk",
+            metadata={"source_id": "victim", "_id": "forged", "text": "other", "embedding": [9.0], "key": "val"},
+        )
+
+        inserted = mock_collection.insert_one.call_args[0][0]
+        assert inserted["source_id"] == "src1"
+        assert inserted["text"] == "hello chunk"
+        assert inserted["embedding"] == [0.1, 0.2]
+        assert "_id" not in inserted
+        assert inserted["key"] == "val"
 
     def test_add_chunk_raises_on_empty_embedding(self):
         store, _, mock_emb = _make_mongodb_store()
