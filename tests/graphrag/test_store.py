@@ -717,6 +717,23 @@ class TestGraphStoreLive:
         finally:
             store.delete_by_source(source_id)
 
+    def test_a_deleted_chunk_is_never_written_back(self, store, source_id):
+        # A build that snapshotted the chunk before a page removal deleted it.
+        try:
+            self._apply(store, source_id, "c1", ["ada"], [])
+            store.delete_chunks(source_id, ["c2"])
+
+            store.apply_chunk(
+                source_id, "c2", [{"name": "Bob", "normalized_name": "bob", "type": "t", "description": "b"}], [], {},
+            )
+            store.mark_chunk(source_id, "c2", "done")
+
+            assert store.get_node_by_normalized(source_id, "bob") is None
+            assert store.get_progress(source_id)["c2"] == "deleted"
+            assert store.pending_chunks(source_id, ["c1", "c2", "c3"]) == ["c3"]
+        finally:
+            store.delete_by_source(source_id)
+
     def test_checkpoint_pending_and_mark(self, store, source_id):
         try:
             all_chunks = ["c1", "c2", "c3"]
@@ -1147,6 +1164,42 @@ class TestGraphStoreParameterization:
 
         assert store.delete_chunks("sid", []) == {"nodes": 0, "edges": 0}
         cursor.execute.assert_not_called()
+
+    def test_delete_chunks_leaves_a_tombstone_per_chunk(self):
+        # A build that listed the chunks before they were deleted must not write them back.
+        store, cursor = self._store_with_mock_conn()
+        store._write_with_reconnect = lambda write: write(store._connection)
+
+        store.delete_chunks("sid", ["c-1", "c-2"])
+
+        progress = [c.args for c in cursor.execute.call_args_list if "graph_ingest_progress" in c.args[0]]
+        [(sql, params)] = progress
+        assert "DELETE FROM" not in sql.upper() and "'deleted'" in sql
+        assert params == ("sid", ["c-1", "c-2"])
+
+    @pytest.mark.parametrize("status", ["done", "deleted"])
+    def test_apply_chunk_skips_a_done_or_deleted_chunk(self, status):
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchone.return_value = [status]
+        upserts = []
+        store._upsert_node = lambda *a, **k: upserts.append(a) or "n1"
+
+        result = store.apply_chunk(
+            "sid", "c1", [{"name": "Bob", "normalized_name": "bob", "type": "t", "description": "b"}], [], {},
+        )
+
+        assert result == (0, 0) and upserts == []
+        store._connection.commit.assert_not_called()
+
+    def test_mark_chunk_never_overwrites_a_tombstone(self):
+        store, cursor = self._store_with_mock_conn()
+        store._write_with_reconnect = lambda write: write(store._connection)
+
+        store.mark_chunk("sid", "c1", "failed")
+
+        sql, params = cursor.execute.call_args.args
+        assert "WHERE graph_ingest_progress.status IS DISTINCT FROM 'deleted'" in sql
+        assert params == ("sid", "c1", "failed")
 
     def test_node_detail_survives_a_relationships_failure(self):
         # A failed relationships read degrades to an empty list; the node and

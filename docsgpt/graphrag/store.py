@@ -49,6 +49,14 @@ GRAPH_NODE_LIST_MAX_PAGE = 1_000_000
 
 MAX_NODE_RELATIONSHIPS = 300
 
+# ``graph_ingest_progress.status`` values. ``deleted`` is a tombstone: the
+# chunk was deleted from the vector store (a page removed or refreshed), and
+# chunk ids are never reused (pgvector's serial ids, FAISS/Qdrant uuids, Mongo
+# ObjectIds), so a build still holding it in its snapshot skips it. A full
+# reset (``delete_by_source``) clears tombstones with the rest of the graph.
+_DONE = "done"
+_DELETED = "deleted"
+
 PGVECTOR_SOURCE_COLUMN = "source_id"
 
 def graph_type_key(type_value: Optional[str]) -> str:
@@ -705,7 +713,9 @@ class GraphStore:
         The chunk's ``graph_ingest_progress`` row is written in this same
         transaction, so the checkpoint and the rows it describes commit
         together and a replay of an already-applied chunk returns ``(0, 0)``
-        without touching the graph. Returns ``(nodes_upserted, edges_added)``.
+        without touching the graph. So does a chunk ``delete_chunks`` has
+        deleted (its tombstone), checked under the same source lock.
+        Returns ``(nodes_upserted, edges_added)``.
         """
         self._ensure_tables_once()
 
@@ -728,7 +738,10 @@ class GraphStore:
                     (source_id, str(chunk_id)),
                 )
                 applied = cursor.fetchone()
-                if applied is not None and applied[0] == "done":
+                # ``deleted`` is the tombstone ``delete_chunks`` leaves: a build
+                # that listed the chunk before a page change deleted it must not
+                # bring its entities and relationships back.
+                if applied is not None and applied[0] in (_DONE, _DELETED):
                     conn.rollback()
                     return 0, 0
 
@@ -1811,7 +1824,11 @@ class GraphStore:
             cursor.close()
 
     def mark_chunk(self, source_id: str, chunk_id: str, status: str):
-        """Record a chunk's extraction status, reconnecting once if the connection died."""
+        """Record a chunk's extraction status, reconnecting once if the connection died.
+
+        A chunk's ``deleted`` tombstone is kept: a build marking a chunk that
+        was deleted meanwhile would otherwise clear it.
+        """
         self._ensure_tables_once()
 
         def _write(conn):
@@ -1821,7 +1838,8 @@ class GraphStore:
                     """
                     INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
                     VALUES (%s, %s, %s)
-                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status;
+                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status
+                    WHERE graph_ingest_progress.status IS DISTINCT FROM 'deleted';
                     """,
                     (source_id, str(chunk_id), status),
                 )
@@ -1918,8 +1936,10 @@ class GraphStore:
         * a node those changes touched that has no chunk link and no edge
           left is deleted; a relationship endpoint with no chunk link of its
           own keeps its place while an edge holds it;
-        * the chunks' extraction checkpoints go, and the degrees of the nodes
-          that lost an edge are recounted, as ``set_node_degrees`` counts them.
+        * each chunk's extraction checkpoint becomes a ``deleted`` tombstone,
+          so a build that listed the chunk before it was deleted can't write
+          it back (``apply_chunk``), and the degrees of the nodes that lost an
+          edge are recounted, as ``set_node_degrees`` counts them.
 
         A merged node's description keeps text from the deleted chunks:
         merged text can't be split, so only a full rebuild clears it.
@@ -2029,8 +2049,14 @@ class GraphStore:
                     """,
                     (source_id, list(endpoints)),
                 )
+                # A tombstone per chunk rather than no row: a build that listed
+                # the chunks before they were deleted skips them in apply_chunk.
                 cursor.execute(
-                    "DELETE FROM graph_ingest_progress WHERE source_id = %s AND chunk_id = ANY(%s);",
+                    """
+                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
+                    SELECT CAST(%s AS uuid), chunk_id, 'deleted' FROM unnest(%s::text[]) AS t(chunk_id)
+                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = 'deleted';
+                    """,
                     (source_id, ids),
                 )
                 conn.commit()
@@ -2045,7 +2071,7 @@ class GraphStore:
         return self._write_with_reconnect(_write)
 
     def pending_chunks(self, source_id: str, all_chunk_ids: List[str]) -> List[str]:
-        """Chunk ids from ``all_chunk_ids`` not yet marked ``done`` for the source."""
+        """Chunk ids from ``all_chunk_ids`` not yet marked ``done`` (nor deleted) for the source."""
         if not all_chunk_ids:
             return []
         conn = self._get_connection()
@@ -2054,7 +2080,7 @@ class GraphStore:
             cursor.execute(
                 """
                 SELECT chunk_id FROM graph_ingest_progress
-                WHERE source_id = %s AND status = 'done';
+                WHERE source_id = %s AND status IN ('done', 'deleted');
                 """,
                 (source_id,),
             )
