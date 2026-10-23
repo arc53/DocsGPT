@@ -45,6 +45,13 @@ class FakeStore:
         self.log.append(("add", chunk_id))
         return chunk_id
 
+    def add_chunks(self, texts, metadatas=None):
+        # The base store's all-or-none loop over add_chunk; each call is one batch (one FAISS save).
+        from docsgpt.vectorstore.base import BaseVectorStore
+
+        self.log.append(("batch", len(texts)))
+        return BaseVectorStore.add_chunks(self, texts, metadatas)
+
     def chunk_ids_by_source_paths(self, paths):
         wanted = set(paths)
         return [cid for cid, c in self.chunks.items() if c["metadata"].get("source") in wanted]
@@ -183,9 +190,9 @@ class TestAddPages:
 
         store = pipeline["store"]
         assert store.texts_for("https://docs.x.io/a") == ["# A", "The new text of page A."]
-        # The new copy is stored before the old one goes.
+        # The new copy is stored (in one batch) before the old one goes.
         kinds = [kind for kind, _ in store.log]
-        assert kinds == ["add", "add", "delete", "delete"]
+        assert kinds == ["batch", "add", "add", "delete", "delete"]
         tree = _tree(pg_conn, source)
         assert list(tree) == ["a.md"]
         assert tree["a.md"]["fetched_at"] != OLD
@@ -669,6 +676,117 @@ class TestAddOnALegacyTree:
         assert tree["a.md"] == legacy_leaf
         assert tree["a-2.md"]["url"] == "https://docs.x.io/a"
         assert store.texts_for("https://docs.x.io/a.html") == ["legacy html page"]
+
+
+@pytest.mark.unit
+class TestTheTreeAndTheChunksAgree:
+    """New chunks, then the tree, then the old chunks: no page loses its content and no chunk is unlisted."""
+
+    def test_the_old_copy_goes_only_once_the_tree_lists_the_new_one(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline,
+    ):
+        from docsgpt import worker
+
+        store = pipeline["store"]
+        real_delete = store.delete_chunks
+        fetched_at_delete = []
+
+        def delete_and_look(chunk_ids):
+            fetched_at_delete.append(_tree(pg_conn, source)["a.md"]["fetched_at"])
+            return real_delete(chunk_ids)
+
+        store.delete_chunks = delete_and_look
+        pipeline["pages"]["https://docs.x.io/a"] = "New A"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
+
+        assert fetched_at_delete and OLD not in fetched_at_delete
+        assert store.texts_for("https://docs.x.io/a") == ["New A"]
+
+    @pytest.mark.parametrize("operation", ["refresh", "add"])
+    def test_a_failed_tree_write_takes_the_new_chunks_out_and_keeps_the_old(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch, operation,
+    ):
+        from docsgpt import worker
+
+        def db_down(self, *args, **kwargs):
+            raise RuntimeError("database unavailable")
+
+        monkeypatch.setattr(worker.SourcesRepository, "get_for_update", db_down)
+        pipeline["pages"]["https://docs.x.io/a"] = "New A"
+        pipeline["pages"]["https://docs.x.io/b"] = "New B"
+        store = pipeline["store"]
+
+        with pytest.raises(RuntimeError, match="database unavailable"):
+            if operation == "refresh":
+                worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
+            else:
+                worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert store.texts_for("https://docs.x.io/a") == ["old A one", "old A two"]
+        assert store.texts_for("https://docs.x.io/b") == []
+        assert _tree(pg_conn, source) == {"a.md": _leaf("https://docs.x.io/a", 40)}
+
+    def test_a_page_is_added_in_one_batch(self, pg_conn, patch_worker_db, task_self, source, pipeline):
+        from docsgpt import worker
+
+        pipeline["pages"]["https://docs.x.io/b"] = "B one\n\nB two\n\nB three"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert [entry for entry in pipeline["store"].log if entry[0] == "batch"] == [("batch", 3)]
+
+    def test_a_redirected_refresh_replaces_the_page_it_was_asked_for(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch,
+    ):
+        # Pages are stored under the address they redirect to.
+        from docsgpt import worker
+        from docsgpt.parser.remote import web_loader
+
+        def redirected(self, inputs):
+            return [Document("Moved A", extra_info={"source": "https://docs.x.io/new-a", "title": "A"})]
+
+        monkeypatch.setattr(web_loader.WebLoader, "load_data", redirected)
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
+
+        tree = _tree(pg_conn, source)
+        assert list(tree) == ["a.md"] and tree["a.md"]["url"] == "https://docs.x.io/new-a"
+        store = pipeline["store"]
+        assert store.texts_for("https://docs.x.io/a") == [] and store.texts_for("https://docs.x.io/new-a") == ["Moved A"]
+
+
+@pytest.mark.unit
+class TestThePageCount:
+    """Settings show ``metadata.website.pages``; page changes keep it to the tree."""
+
+    def _with_report(self, pg_conn, src):
+        SourcesRepository(pg_conn).set_metadata_key(
+            str(src["id"]), USER, "website", {"pages": 99, "sites": [], "fetched_at": OLD},
+        )
+
+    def test_an_add_counts_the_new_page(self, pg_conn, patch_worker_db, task_self, source, pipeline):
+        from docsgpt import worker
+
+        self._with_report(pg_conn, source)
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        report = _source_row(pg_conn, source)["metadata"]["website"]
+        assert report["pages"] == 2 and report["fetched_at"] == OLD
+
+    def test_a_removal_counts_the_pages_left(self, pg_conn, patch_worker_db, task_self, two_pages, pipeline):
+        from docsgpt import worker
+
+        self._with_report(pg_conn, two_pages)
+        worker.website_pages_worker(task_self, str(two_pages["id"]), USER, "remove", file_paths=["a.md"])
+
+        assert _source_row(pg_conn, two_pages)["metadata"]["website"]["pages"] == 1
+
+    def test_a_source_without_a_report_gets_none(self, pg_conn, patch_worker_db, task_self, source, pipeline):
+        from docsgpt import worker
+
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert "website" not in (_source_row(pg_conn, source)["metadata"] or {})
 
 
 @pytest.mark.unit

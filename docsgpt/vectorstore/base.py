@@ -2,7 +2,7 @@ import hashlib
 import logging
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import requests
 
@@ -654,6 +654,44 @@ class BaseVectorStore(ABC):
             for chunk in self._scan_chunks()
             if (chunk.get("metadata") or {}).get("source") in wanted
         ]
+
+    def add_chunks(self, texts: List[str], metadatas: Optional[List[Dict[str, Any]]] = None) -> List[str]:
+        """Add several chunks, all or none; stores that save per write override this to save once.
+
+        Adds them one by one with :meth:`add_chunk`. If one fails, the ones
+        already added are deleted again (best effort, logged when it falls
+        short) and the error is raised, so a caller is never left holding
+        chunks it has no ids for.
+
+        Args:
+            texts: The chunks' texts.
+            metadatas: Their metadata, one dict per text; ``None`` for none.
+
+        Returns:
+            The new chunks' ids, in order.
+
+        Raises:
+            Exception: Whatever adding a chunk raised, after the rollback.
+        """
+        metadatas = list(metadatas) if metadatas is not None else [{} for _ in texts]
+        ids: List[str] = []
+        try:
+            for text, metadata in zip(texts, metadatas):
+                ids.append(self.add_chunk(text, metadata))
+        except Exception:
+            added = [chunk_id for chunk_id in ids if chunk_id is not None]
+            if added:
+                try:
+                    deleted = self.delete_chunks(added)
+                except Exception:  # noqa: BLE001 - the original error is the one to report
+                    deleted = 0
+                    logging.error("delete_chunks failed during the rollback", exc_info=True)
+                if not isinstance(deleted, int) or deleted < len(added):
+                    logging.error(
+                        "Could not roll back the chunks added before a failure; they may stay stored: %s", added,
+                    )
+            raise
+        return ids
 
     def chunk_ids_by_file_paths(self, paths: Iterable[str]) -> List[str]:
         """Ids of the chunks whose ``metadata.file_path`` is one of ``paths``.

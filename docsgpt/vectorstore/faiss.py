@@ -341,6 +341,35 @@ class FaissStore(BaseVectorStore):
         self._save_to_storage()
         return ids[0]
 
+    def add_chunks(self, texts: List[str], metadatas: Optional[List[Dict[str, Any]]] = None) -> List[str]:
+        """Add several chunks and save to storage once.
+
+        Each save rewrites the whole index, so adding a page one chunk at a
+        time would rewrite it once per chunk. All the texts are embedded
+        before any is added, so a failed embed adds nothing; a failed save
+        takes the chunks back out of the loaded index, which then matches the
+        stored one again.
+
+        Args:
+            texts: The chunks' texts.
+            metadatas: Their metadata, one dict per text; ``source_id`` is
+                this index's source whatever it says.
+
+        Returns:
+            The new chunks' ids, in order.
+        """
+        texts = list(texts)
+        if not texts:
+            return []
+        metadatas = list(metadatas) if metadatas is not None else [{} for _ in texts]
+        ids = self.add_texts(texts, [self._own_metadata(metadata) for metadata in metadatas])
+        try:
+            self._save_to_storage()
+        except Exception:
+            self.delete_index(ids)
+            raise
+        return ids
+
     def update_chunk(self, chunk_id: str, text: str, metadata: Dict[str, Any]) -> str:
         """Replace a chunk in place, keeping its id and its place in the docstore.
 

@@ -460,6 +460,20 @@ class TestRemoteWorkerWebsite:
         assert stored["sites"] == loader.report["sites"]
         assert stored["fetched_at"] == leaf["fetched_at"]
 
+    @pytest.mark.parametrize("report, reached", [
+        # Page entries cut by the page cap: no site reached its own limit.
+        ({"pages": 3, "limit_reached": True, "sites": [{"url": "https://x.io/", "limit_reached": False}]}, True),
+        ({"pages": 3, "sites": [{"url": "https://x.io/", "limit_reached": True}]}, True),
+        ({"pages": 3, "limit_reached": False, "sites": []}, False),
+    ])
+    def test_the_limit_notice_covers_a_cut_made_by_page_entries(self, pg_conn, patch_worker_db, report, reached):
+        from docsgpt import worker
+
+        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
+        summary = worker._record_website_report(str(source["id"]), "bob", report, "2026-01-01T00:00:00+00:00")
+
+        assert summary == {"pages": 3, "page_limit_reached": reached}
+
 
 @pytest.mark.unit
 class TestSyncUsesTheSourcesConfig:

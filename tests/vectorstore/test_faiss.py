@@ -427,3 +427,35 @@ class TestFaissDeleteChunks:
         with patch.object(populated, "_save_to_storage") as save:
             assert populated.delete_chunks_by_source_paths(["geo.txt", "db.txt"]) == 2
         save.assert_called_once()
+
+
+@pytest.mark.unit
+class TestFaissAddChunks:
+    def test_adds_several_chunks_with_one_save(self, populated):
+        with patch.object(populated, "_save_to_storage") as save:
+            ids = populated.add_chunks(
+                ["Redis caches things.", "Kafka streams things."],
+                [{"source": "cache.txt"}, {"source": "stream.txt", "source_id": "other"}],
+            )
+
+        save.assert_called_once()
+        assert len(ids) == 2
+        stored = {c["doc_id"]: c["metadata"] for c in populated.get_chunks()}
+        assert stored[ids[0]]["source"] == "cache.txt"
+        # Each keeps this index's source, as add_chunk does.
+        assert stored[ids[1]]["source_id"] != "other"
+        _assert_rows_match_documents(populated)
+
+    def test_nothing_to_add_saves_nothing(self, populated):
+        with patch.object(populated, "_save_to_storage") as save:
+            assert populated.add_chunks([], []) == []
+        save.assert_not_called()
+
+    def test_a_failed_save_takes_the_chunks_back_out(self, populated):
+        before = [c["doc_id"] for c in populated.get_chunks()]
+        with patch.object(populated, "_save_to_storage", side_effect=OSError("disk full")):
+            with pytest.raises(OSError):
+                populated.add_chunks(["Redis caches things."], [{"source": "cache.txt"}])
+
+        assert [c["doc_id"] for c in populated.get_chunks()] == before
+        _assert_rows_match_documents(populated)

@@ -1649,7 +1649,8 @@ def _record_website_report(source_id: str, user: str, report: dict, fetched_at: 
     sites = report.get("sites") or []
     summary = {
         "pages": int(report.get("pages") or 0),
-        "page_limit_reached": any(site.get("limit_reached") for site in sites),
+        # The top-level flag covers page entries the page cap left out, where no site reached its own limit.
+        "page_limit_reached": bool(report.get("limit_reached")) or any(site.get("limit_reached") for site in sites),
     }
     try:
         with db_session() as conn:
@@ -4834,7 +4835,7 @@ def _web_page_key(url: str) -> str:
     Returns:
         A key that is the same for address variants of one page.
     """
-    from docsgpt.parser.remote.website_loader import page_key
+    from docsgpt.parser.remote.page_content import page_key
 
     try:
         return page_key(url)
@@ -5018,12 +5019,13 @@ def _update_page_graph(
 
 def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_url: Optional[str],
                       fetched_at: str) -> Dict[str, Any]:
-    """Store a fetched page's chunks, then delete its previous copy.
+    """Store a fetched page's new chunks, in one batch; its previous copy stays until the tree is written.
 
-    The new chunks go in first: if one fails (an embedding error), the ones
-    already added are deleted again and the old copy is left as it was, so
-    the page is never left with partial or no content. The old chunks are
-    listed before anything is added, so only they are deleted afterwards.
+    The chunks go in through ``add_chunks``, all or none: if one fails (an
+    embedding error) the store takes the ones already added out again, so
+    the page is never left with partial content. The old chunks are listed
+    before anything is added, so only they are deleted once the tree lists
+    the new copy (``_save_page_changes``).
 
     Args:
         store: The source's vector store.
@@ -5035,45 +5037,30 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
 
     Returns:
         ``{"key", "path", "leaf", "old_url", "old_ids", "new_ids"}``: the tree
-        change for the page, and the chunks it replaced and added.
+        change for the page, the chunks it replaces and the ones it added.
 
     Raises:
-        Exception: Whatever adding a chunk raised, after the rollback.
+        Exception: Whatever adding the chunks raised; none of them stay.
     """
     url = doc.extra_info["source"]
     doc.extra_info["file_path"] = path
     old_ids = store.chunk_ids_by_source_paths([u for u in dict.fromkeys([old_url, url]) if u])
-    new_ids: List[str] = []
+    texts: List[str] = []
+    metadatas: List[Dict[str, Any]] = []
     token_count = 0
     size_bytes = 0
-    try:
-        for chunk in chunker.chunk(documents=[doc]):
-            metadata = dict(chunk.extra_info or {})
-            metadata.update({"source": url, "file_path": path})
-            if doc.extra_info.get("title"):
-                metadata["title"] = doc.extra_info["title"]
-            chunk_id = store.add_chunk(chunk.text, metadata=metadata)
-            if chunk_id is not None:
-                new_ids.append(chunk_id)
-            token_count += num_tokens_from_string(chunk.text)
-            size_bytes += len(chunk.text.encode("utf-8"))
-    except Exception:
-        if new_ids:
-            try:
-                _delete_chunks_checked(store, new_ids, lambda: store.chunk_ids_by_source_paths([url]))
-            except Exception:  # noqa: BLE001 - the original error is the one to report
-                logging.error(
-                    "Could not roll back the new chunks of %s; %d chunks stay indexed beside the old copy: %s",
-                    url, len(new_ids), new_ids, exc_info=True,
-                )
-        raise
-    if old_ids:
-        try:
-            _delete_chunks_checked(
-                store, old_ids, lambda: store.chunk_ids_by_source_paths([u for u in (old_url, url) if u]),
-            )
-        except Exception:  # noqa: BLE001 - the new copy is stored; the old one only lingers
-            logging.error("Could not delete the previous chunks of %s", url, exc_info=True)
+    for chunk in chunker.chunk(documents=[doc]):
+        metadata = dict(chunk.extra_info or {})
+        metadata.update({"source": url, "file_path": path})
+        if doc.extra_info.get("title"):
+            metadata["title"] = doc.extra_info["title"]
+        texts.append(chunk.text)
+        metadatas.append(metadata)
+        token_count += num_tokens_from_string(chunk.text)
+        size_bytes += len(chunk.text.encode("utf-8"))
+    # One batch per page: FAISS saves the whole index once, not once per chunk.
+    added = store.add_chunks(texts, metadatas) if texts else []
+    new_ids = [chunk_id for chunk_id in added if chunk_id is not None]
     return {
         "key": _web_page_key(url),
         "path": path,
@@ -5091,11 +5078,20 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
     }
 
 
+def _change_keys(change: Dict[str, Any]) -> set:
+    """The ``page_key``s a page change covers: its fetched address and, after a redirect, the one it replaced."""
+    keys = {change["key"]}
+    if change.get("old_url"):
+        keys.add(_web_page_key(change["old_url"]))
+    return keys
+
+
 def _apply_page_changes(structure: Dict[str, Any], changes: List[Dict[str, Any]]) -> None:
     """Put replaced and added pages into a tree, in place.
 
-    Any entry for the same page (by ``page_key``) is removed first, so an
-    address variant doesn't leave a second entry behind.
+    Any entry for the same page (by ``page_key``, the replaced address
+    included) is removed first, so an address variant or a page that now
+    redirects doesn't leave a second entry behind.
 
     Args:
         structure: ``directory_structure``.
@@ -5104,20 +5100,76 @@ def _apply_page_changes(structure: Dict[str, Any], changes: List[Dict[str, Any]]
     from docsgpt.parser.remote.website_tree import remove_pages, set_page, web_pages
 
     for change in changes:
-        stale = [path for path, url in web_pages(structure) if _web_page_key(url) == change["key"]]
+        keys = _change_keys(change)
+        stale = [path for path, url in web_pages(structure) if _web_page_key(url) in keys]
         remove_pages(structure, stale)
         set_page(structure, change["path"], change["leaf"])
 
 
+def _tree_fields(row: Dict[str, Any], structure: Dict[str, Any]) -> Dict[str, Any]:
+    """The fields a page change writes with a source's new tree.
+
+    ``tokens`` follows the tree, and so does the page count the Website
+    settings show (``metadata.website.pages``, written by an ingest or a
+    sync): an add or a removal must not leave it at the last sync's count.
+    A source with no report yet gets none.
+
+    Args:
+        row: The source row the tree was read from.
+        structure: Its new ``directory_structure``.
+
+    Returns:
+        The fields for ``SourcesRepository.update``.
+    """
+    from docsgpt.parser.remote.website_tree import count_pages, total_tokens
+
+    fields: Dict[str, Any] = {"directory_structure": structure, "tokens": str(total_tokens(structure))}
+    metadata = row.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("website"), dict):
+        fields["metadata"] = {**metadata, "website": {**metadata["website"], "pages": count_pages(structure)}}
+    return fields
+
+
+def _delete_change_chunks(store: Any, change: Dict[str, Any], which: str) -> None:
+    """Delete a page change's old or new chunks, logging rather than raising.
+
+    Args:
+        store: The source's vector store.
+        change: A ``_replace_web_page`` result.
+        which: ``"old_ids"`` or ``"new_ids"``.
+    """
+    ids = change[which]
+    if not ids:
+        return
+    urls = [change["leaf"]["url"]] + ([change["old_url"]] if change.get("old_url") else [])
+    try:
+        _delete_chunks_checked(store, ids, lambda: store.chunk_ids_by_source_paths(urls))
+    except Exception:  # noqa: BLE001 - the tree is settled; the caller reports the rest
+        logging.error(
+            "Could not delete the %s chunks of %s; they stay stored: %s",
+            "previous" if which == "old_ids" else "new", change["leaf"]["url"], ids, exc_info=True,
+        )
+
+
 def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Write a ``website_pages`` run's page changes onto the source's current tree.
+    """Write a ``website_pages`` run's page changes onto the source's current tree, then drop the old chunks.
+
+    The order is new chunks (already stored), then the tree, then the old
+    chunks, so no page is ever without content and no chunk is left that no
+    tree entry lists:
+
+    * the tree write fails (a database error): the new chunks are deleted
+      and the error raised; every page keeps its old copy and its entry;
+    * the tree is written: each kept page's previous chunks are deleted. If
+      that fails, the old copy lingers beside the new one under the same
+      listed address (logged), rather than a page losing its content.
 
     The row is re-read under a row lock inside the write, so a change made
     while the pages were fetched (a sync's new tree, a removal, a config
     edit) is kept: only this run's pages are set. A page this run replaced
-    that has since left the tree (removed meanwhile) is not brought back, and
-    its new chunks are deleted. A source that became a wiki meanwhile is not
-    touched at all.
+    that has since left the tree (removed meanwhile) is not brought back:
+    its new and old chunks are deleted. A source that became a wiki or was
+    deleted meanwhile is not touched: only the new chunks are deleted.
 
     Args:
         store: The source's vector store.
@@ -5130,31 +5182,34 @@ def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict
 
     Raises:
         ValueError: The source is gone or became a wiki; the new chunks were deleted.
+        Exception: The tree write failed; the new chunks were deleted.
     """
-    from docsgpt.parser.remote.website_tree import total_tokens, web_pages
+    from docsgpt.parser.remote.website_tree import web_pages
 
     kept: List[Dict[str, Any]] = []
-    with db_session() as conn:
-        repo = SourcesRepository(conn)
-        row = repo.get_for_update(source_id, user)
-        gone = row is None or _is_wiki_config(row.get("config"))
-        if not gone:
-            structure = row.get("directory_structure") if isinstance(row.get("directory_structure"), dict) else {}
-            present = {_web_page_key(url) for _, url in web_pages(structure)}
-            kept = [
-                change for change in changes
-                if change["old_url"] is None or change["key"] in present or _web_page_key(change["old_url"]) in present
-            ]
-            _apply_page_changes(structure, kept)
-            repo.update(source_id, user, {"directory_structure": structure, "tokens": str(total_tokens(structure))})
+    try:
+        with db_session() as conn:
+            repo = SourcesRepository(conn)
+            row = repo.get_for_update(source_id, user)
+            gone = row is None or _is_wiki_config(row.get("config"))
+            if not gone:
+                structure = row.get("directory_structure") if isinstance(row.get("directory_structure"), dict) else {}
+                present = {_web_page_key(url) for _, url in web_pages(structure)}
+                kept = [change for change in changes if change["old_url"] is None or _change_keys(change) & present]
+                _apply_page_changes(structure, kept)
+                repo.update(source_id, user, _tree_fields(row, structure))
+    except Exception:
+        # No entry lists the new chunks: take them out, and the old copies stay as they were.
+        for change in changes:
+            _delete_change_chunks(store, change, "new_ids")
+        raise
     for change in changes:
-        if change in kept or not change["new_ids"]:
+        if gone:
+            _delete_change_chunks(store, change, "new_ids")
             continue
-        url = change["leaf"]["url"]
-        try:
-            _delete_chunks_checked(store, change["new_ids"], lambda: store.chunk_ids_by_source_paths([url]))
-        except Exception:  # noqa: BLE001 - nothing references them; report the rest
-            logging.error("Could not delete the unused chunks of %s", change["leaf"]["url"], exc_info=True)
+        _delete_change_chunks(store, change, "old_ids")
+        if change not in kept:
+            _delete_change_chunks(store, change, "new_ids")
     if gone:
         raise ValueError("The source was deleted or became a wiki while its pages were fetched; nothing was changed")
     return kept
@@ -5234,7 +5289,7 @@ def _remove_web_pages(
         Exception: Whatever deleting the chunks raised, or some are still
             stored; nothing was written.
     """
-    from docsgpt.parser.remote.website_tree import remove_pages, total_tokens
+    from docsgpt.parser.remote.website_tree import remove_pages
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
     if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
@@ -5277,7 +5332,7 @@ def _remove_web_pages(
             if (_web_page_key(leaf["url"]) in removed_keys if leaf.get("url") else path in legacy_paths)
         ]
         remove_pages(tree, stale)
-        repo.update(source_id, user, {"directory_structure": tree, "tokens": str(total_tokens(tree))})
+        repo.update(source_id, user, _tree_fields(row, tree))
     _update_page_graph(SourceConfig.parse(source.get("config")), source_id, user, task_id, chunk_ids, extract=False)
     return found
 
@@ -5438,6 +5493,9 @@ def _run_website_pages(
     store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
     fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     taken = leaf_paths | {t["path"] for t in targets.values()}
+    in_tree: Dict[str, Dict[str, Any]] = {}
+    for path, page_url in web_pages(structure):
+        in_tree.setdefault(_web_page_key(page_url), {"path": path, "old_url": page_url})
     changes: List[Dict[str, Any]] = []
     failure: Optional[BaseException] = None
     for doc in docs:
@@ -5446,7 +5504,14 @@ def _run_website_pages(
         if any(change["key"] == key for change in changes):
             continue
         target = targets.get(key)
-        if target is None:
+        if target is None and operation == "refresh":
+            # A page is stored under the address it redirects to: a refreshed
+            # page that now redirects replaces itself, in place.
+            target = next(iter(targets.values()))
+        elif target is None and key in in_tree:
+            # An added address that redirects to a page already in the source.
+            target = in_tree[key]
+        elif target is None:
             # The loader normalised the address past recognition.
             target = {"path": _unique_page_path(url_to_virtual_path(url, include_host), taken), "old_url": None}
             taken.add(target["path"])
@@ -5458,7 +5523,8 @@ def _run_website_pages(
 
     kept = _save_page_changes(store, source_id, user, changes) if changes else []
     if changes:
-        # Every replaced copy's chunks are gone, kept or not; only kept pages add any.
+        # The tree is written: every replaced copy's chunks were deleted, kept or
+        # not (a page removed meanwhile loses both copies); only kept pages add any.
         old_ids = [chunk_id for change in changes for chunk_id in change["old_ids"]]
         added = any(change["new_ids"] for change in kept)
         _update_page_graph(cfg, source_id, user, task_id, old_ids, extract=added)

@@ -1032,6 +1032,28 @@ class TestBaseChunksBySourcePath:
         assert store.chunk_ids_by_file_paths(["a.md"]) == ["1"]
         assert store.chunk_ids_by_file_paths([]) == []
 
+    def test_add_chunks_adds_each_in_order(self):
+        store = ConcreteVectorStore()
+        store.add_chunk = Mock(side_effect=["1", "2"])
+        assert store.add_chunks(["a", "b"], [{"source": "x"}, {"source": "y"}]) == ["1", "2"]
+        assert [c.args for c in store.add_chunk.call_args_list] == [("a", {"source": "x"}), ("b", {"source": "y"})]
+
+    def test_add_chunks_takes_the_added_ones_back_out_on_a_failure(self):
+        store = ConcreteVectorStore()
+        store.add_chunk = Mock(side_effect=["1", RuntimeError("embedding down")])
+        store.delete_chunks = Mock(return_value=1)
+        with pytest.raises(RuntimeError, match="embedding down"):
+            store.add_chunks(["a", "b"], [{}, {}])
+        store.delete_chunks.assert_called_once_with(["1"])
+
+    def test_add_chunks_reports_the_original_error_when_the_rollback_fails(self, caplog):
+        store = ConcreteVectorStore()
+        store.add_chunk = Mock(side_effect=["1", RuntimeError("embedding down")])
+        store.delete_chunks = Mock(return_value=0)
+        with pytest.raises(RuntimeError, match="embedding down"):
+            store.add_chunks(["a", "b"], [{}, {}])
+        assert "roll back" in caplog.text
+
     def test_listing_by_tree_path_raises_on_a_failed_scan(self):
         class _Down(ConcreteVectorStore):
             def _scan_chunks(self):
