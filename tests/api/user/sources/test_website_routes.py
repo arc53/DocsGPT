@@ -376,7 +376,7 @@ class TestRemovePages:
         assert response.json["task_id"] == "remove-task"
         # The worker finds each page by its URL, so a sync that moved it meanwhile doesn't matter.
         self.pages_task.delay.assert_called_once_with(
-            str(src["id"]), USER, "remove", pages=[{"path": "extra.md", "url": "https://docs.x.io/extra"}],
+            str(src["id"]), USER, "remove", pages=[{"path": "extra.md", "url": "https://docs.x.io/extra", "requested_urls": []}],
             actor_id=USER,
         )
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
@@ -464,7 +464,7 @@ class TestRemovePages:
         assert saved["remote_data"]["skip"] == ["https://docs.x.io/Deploying/Docker"]
         self.pages_task.delay.assert_called_once_with(
             str(src["id"]), USER, "remove",
-            pages=[{"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker"}], actor_id=USER,
+            pages=[{"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker", "requested_urls": []}], actor_id=USER,
         )
 
     def test_a_folder_becomes_one_section_rule(self, app, pg_conn):
@@ -476,8 +476,8 @@ class TestRemovePages:
         # One task for the whole folder (FAISS saves once).
         self.pages_task.delay.assert_called_once_with(
             str(src["id"]), USER, "remove", pages=[
-                {"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker"},
-                {"path": "Deploying/Kubernetes.md", "url": "https://docs.x.io/Deploying/Kubernetes"},
+                {"path": "Deploying/Docker.md", "url": "https://docs.x.io/Deploying/Docker", "requested_urls": []},
+                {"path": "Deploying/Kubernetes.md", "url": "https://docs.x.io/Deploying/Kubernetes", "requested_urls": []},
             ], actor_id=USER,
         )
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
@@ -519,7 +519,7 @@ class TestRemovePages:
         assert response.status_code == 200
         assert response.json["removed"] == 1
         assert self.pages_task.delay.call_args.kwargs["pages"] == [
-            {"path": "extra.md", "url": "https://docs.x.io/extra"}
+            {"path": "extra.md", "url": "https://docs.x.io/extra", "requested_urls": []}
         ]
 
     def test_a_page_inside_the_removed_folder_counts_once(self, app, pg_conn):
@@ -558,8 +558,41 @@ class TestRemovePages:
         # The site reaches both addresses, so neither brings the page back.
         assert saved["skip"] == ["https://docs.x.io/new", "https://docs.x.io/old"]
         self.pages_task.delay.assert_called_once_with(str(src["id"]), USER, "remove", pages=[
-            {"path": "new.md", "url": "https://docs.x.io/new", "requested_url": "https://docs.x.io/old"},
+            {"path": "new.md", "url": "https://docs.x.io/new", "requested_urls": ["https://docs.x.io/old"]},
         ], actor_id=USER)
+
+    def test_a_page_several_entries_redirect_to_drops_every_entry(self, app, pg_conn):
+        # /old-a and /old-b both redirect to /new: one page, kept under both addresses.
+        leaf = {**_leaf("https://docs.x.io/new", 3), "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]}
+        tree = {**TREE, "new.md": leaf}
+        config = {"entries": CONFIG["entries"] + [
+            {"url": "https://docs.x.io/old-a", "mode": "page"}, {"url": "https://docs.x.io/old-b/", "mode": "page"},
+        ], "skip": []}
+        src = _seed(pg_conn, remote_data=config, directory_structure=tree)
+        response = self._remove(app, pg_conn, src, file_paths=["new.md"])
+
+        assert response.status_code == 200, response.json
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]
+        assert [e["url"] for e in saved["entries"]] == ["https://docs.x.io/", "https://docs.x.io/extra"]
+        # The site reaches every address, so none brings the page back.
+        assert saved["skip"] == ["https://docs.x.io/new", "https://docs.x.io/old-a", "https://docs.x.io/old-b"]
+        self.pages_task.delay.assert_called_once_with(str(src["id"]), USER, "remove", pages=[{
+            "path": "new.md", "url": "https://docs.x.io/new",
+            "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"],
+        }], actor_id=USER)
+
+    def test_a_leaf_with_both_alias_fields_lists_each_address_once(self, app, pg_conn):
+        leaf = {
+            **_leaf("https://docs.x.io/new", 3),
+            "requested_url": "https://docs.x.io/old-a",
+            "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"],
+        }
+        src = _seed(pg_conn, directory_structure={**TREE, "new.md": leaf})
+        response = self._remove(app, pg_conn, src, file_paths=["new.md"])
+
+        assert response.status_code == 200, response.json
+        pages = self.pages_task.delay.call_args.kwargs["pages"]
+        assert pages[0]["requested_urls"] == ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]
 
     def test_a_redirected_page_entry_in_a_removed_folder_leaves_the_list(self, app, pg_conn):
         tree = {"index.md": _leaf("https://docs.x.io/", 5), "guide": {
@@ -803,6 +836,20 @@ class TestAddPages:
 
         assert response.status_code == 200
 
+    def test_a_page_several_listed_addresses_redirect_to_counts_once(self, app, pg_conn):
+        # /old-a and /old-b are listed and both stored as extra.md: 4 pages in the tree.
+        leaf = {**_leaf("https://docs.x.io/new", 7), "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]}
+        src = _seed(pg_conn, directory_structure={**TREE, "extra.md": leaf}, remote_data={**CONFIG, "entries": [
+            CONFIG["entries"][0],
+            {"url": "https://docs.x.io/old-a", "mode": "page"},
+            {"url": "https://docs.x.io/old-b", "mode": "page"},
+        ]})
+        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 5
+            response, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
+
+        assert response.status_code == 200, response.json
+
     def test_the_merged_config_is_validated(self, app, pg_conn):
         src = _seed(pg_conn)
         with patch(
@@ -876,6 +923,16 @@ class TestRefreshPage:
         tree = {**TREE, "new.md": {**_leaf("https://docs.x.io/new", 3), "requested_url": "https://docs.x.io/old"}}
         src = _seed(pg_conn, directory_structure=tree)
         response, pages_task = self._refresh(app, pg_conn, src, "old.md", url="https://docs.x.io/old")
+
+        assert response.status_code == 200
+        pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "refresh", file_path="new.md", url="https://docs.x.io/new", actor_id=USER,
+        )
+
+    def test_a_page_is_found_by_any_address_that_redirected_to_it(self, app, pg_conn):
+        leaf = {**_leaf("https://docs.x.io/new", 3), "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]}
+        src = _seed(pg_conn, directory_structure={**TREE, "new.md": leaf})
+        response, pages_task = self._refresh(app, pg_conn, src, "old.md", url="https://docs.x.io/old-b")
 
         assert response.status_code == 200
         pages_task.delay.assert_called_once_with(

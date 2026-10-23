@@ -430,13 +430,13 @@ class RemoveWebsitePages(Resource):
         except Exception as err:
             current_app.logger.error(f"Error removing website pages: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
-        # Each page goes with its URL (and, after a redirect, the address it
-        # was asked for): the worker finds it by that in the tree as it is
-        # then, so a sync that moved it meanwhile still removes the right page.
+        # Each page goes with its URL and every address that redirected to
+        # it: the worker finds it by those in the tree as it is then, so a
+        # sync that moved it meanwhile still removes the right page.
         try:
             task = website_pages.delay(
                 str(doc["id"]), ra.owner_id, "remove", pages=[
-                    {"path": path, "url": url, **({"requested_url": requested[path]} if path in requested else {})}
+                    {"path": path, "url": url, "requested_urls": requested.get(path, [])}
                     for path, url in pages
                 ], actor_id=user,
             )
@@ -633,7 +633,7 @@ class RefreshWebsitePage(Resource):
 
 
 def _find_page(
-    pages: list, file_path: str, url: Optional[str], requested: Optional[Dict[str, str]] = None,
+    pages: list, file_path: str, url: Optional[str], requested: Optional[Dict[str, List[str]]] = None,
 ) -> Optional[Tuple[str, str]]:
     """The tree page a refresh names: by address when it gives one, else by path.
 
@@ -641,8 +641,8 @@ def _find_page(
         pages: ``(path, url)`` of the tree's pages.
         file_path: The tree path the caller saw.
         url: The address the caller saw, if any; matched by ``page_key``
-            against each page's address and the one it was asked for.
-        requested: ``{path: requested_url}`` of the pages stored after a redirect.
+            against each page's address and every address that redirected to it.
+        requested: ``{path: [requested addresses]}`` of the pages stored after a redirect.
 
     Returns:
         ``(path, url)`` as the tree holds it now, or ``None``.
@@ -653,7 +653,7 @@ def _find_page(
     requested = requested or {}
     matches = [
         (path, page_url) for path, page_url in pages
-        if key in {_key(u) for u in (page_url, requested.get(path)) if u}
+        if key in {_key(u) for u in (page_url, *requested.get(path, ())) if u}
     ]
     return next((m for m in matches if m[0] == file_path), matches[0] if matches else None)
 
@@ -699,7 +699,7 @@ def _held_pages(config: dict, structure) -> dict:
     Its page entries count from when they are listed (one still queued, or
     one whose fetch failed, keeps its place), and so do the pages in its tree
     (a site's crawl). A page that is both counts once, a redirected one too
-    (its entry lists the address its leaf keeps as ``requested_url``).
+    (its entries list the addresses its leaf keeps as ``requested_urls``).
 
     Args:
         config: The Website config.
@@ -712,7 +712,7 @@ def _held_pages(config: dict, structure) -> dict:
     tree = structure if isinstance(structure, dict) else {}
     tree_pages = web_pages(tree)
     tree_keys = {_key(url) for _path, url in tree_pages}
-    asked_keys = {_key(url) for url in _requested_urls(tree).values()} - tree_keys
+    asked_keys = {_key(url) for urls in _requested_urls(tree).values() for url in urls} - tree_keys
     entry_keys = {_key(e["url"]) for e in config["entries"] if e["mode"] == "page"}
     held = len(tree_keys) + len(entry_keys - tree_keys - asked_keys)
     return {"keys": tree_keys | asked_keys | entry_keys, "count": held + count_pages(tree) - len(tree_pages)}
@@ -736,26 +736,39 @@ def _reachable(entries: list, skip: list, url: str) -> bool:
     )
 
 
-def _requested_urls(structure: Any, prefix: str = "") -> Dict[str, str]:
-    """``{tree path: requested_url}`` for the pages stored after a redirect.
+def _requested_urls(structure: Any, prefix: str = "") -> Dict[str, List[str]]:
+    """``{tree path: [requested addresses]}`` for the pages stored after a redirect.
 
-    A redirected page's leaf keeps the address it was asked for beside the
-    one it was stored under (``url``); a page entry is listed as typed, so
-    removing the page has to find the entry by that address.
+    A redirected page's leaf keeps every address it was asked for
+    (``requested_urls``; a leaf from before keeps one, ``requested_url``)
+    beside the one it was stored under (``url``). Page entries are listed as
+    typed, so removing the page has to find each entry by those addresses:
+    several entries can redirect to one page.
 
     Args:
         structure: ``directory_structure``.
         prefix: Path of ``structure`` within the whole tree.
 
     Returns:
-        The asked-for address of each page leaf that has one.
+        The asked-for addresses of each page leaf that has any, one per
+        ``page_key`` and none the same page as its ``url``, in stored order.
     """
-    found: Dict[str, str] = {}
+    found: Dict[str, List[str]] = {}
     for name, node in structure.items() if isinstance(structure, dict) else ():
         path = f"{prefix}/{name}" if prefix else name
         if isinstance(node, dict) and "token_count" in node:
-            if node.get("url") and isinstance(node.get("requested_url"), str) and node["requested_url"]:
-                found[path] = node["requested_url"]
+            if not node.get("url"):
+                continue
+            listed = node.get("requested_urls")
+            asked = [u for u in listed if isinstance(u, str) and u] if isinstance(listed, list) else []
+            if isinstance(node.get("requested_url"), str) and node["requested_url"]:
+                asked.append(node["requested_url"])
+            aliases: Dict[str, str] = {}
+            for address in asked:
+                aliases.setdefault(_key(address), address)
+            aliases.pop(_key(node["url"]), None)
+            if aliases:
+                found[path] = list(aliases.values())
         elif isinstance(node, dict):
             found.update(_requested_urls(node, path))
     return found
@@ -765,7 +778,7 @@ def _without_pages(
     config: dict,
     pages: list,
     section_rule: Optional[str],
-    requested: Optional[Dict[str, str]] = None,
+    requested: Optional[Dict[str, List[str]]] = None,
     section_paths: Iterable[str] = (),
 ) -> dict:
     """The config after removing pages: page entries leave, and what a site could find again is skipped.
@@ -776,16 +789,16 @@ def _without_pages(
     when a remaining site reaches any of its pages or the section itself; a
     page named beside the folder but outside it gets its own rule.
 
-    A redirected page is one page under two addresses: the one it was stored
-    under and the one it was asked for (its leaf's ``requested_url``). A page
-    entry leaves when it lists either, and each address a site reaches gets
-    a rule.
+    A redirected page is one page under several addresses: the one it was
+    stored under and each one it was asked for (its leaf's
+    ``requested_urls``). A page entry leaves when it lists any of them, and
+    each address a site reaches gets a rule.
 
     Args:
         config: The Website config.
         pages: ``(tree path, url)`` of the pages being removed.
         section_rule: A folder's ``https://host/path/*`` rule, when a folder is removed.
-        requested: ``{tree path: requested_url}`` of the pages stored after a redirect.
+        requested: ``{tree path: [requested addresses]}`` of the pages stored after a redirect.
         section_paths: Tree paths of the pages the folder (``section_rule``) holds.
 
     Returns:
@@ -794,7 +807,7 @@ def _without_pages(
     requested = requested or {}
 
     def addresses(path: str, url: str) -> List[str]:
-        return list(dict.fromkeys(u for u in (url, requested.get(path)) if u))
+        return list(dict.fromkeys(u for u in (url, *requested.get(path, ())) if u))
 
     removed = {_key(address) for path, url in pages for address in addresses(path, url)}
     entries = [e for e in config["entries"] if not (e["mode"] == "page" and _key(e["url"]) in removed)]
