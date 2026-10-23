@@ -112,6 +112,49 @@ vi.mock('../Chunks', async () => {
     },
   };
 });
+vi.mock('../WebsiteTree', async () => {
+  const { createPortal } = await import('react-dom');
+  const { useEffect } = await import('react');
+  return {
+    default: (props: {
+      embedded?: boolean;
+      canEdit?: boolean;
+      docId: string;
+      sourceName: string;
+      hosts: string[];
+      syncFrequency?: string;
+      syncedAt?: string;
+      initialPath?: string;
+      linkedChunk?: { id?: string };
+      actionsTarget?: HTMLElement | null;
+      onCrumbsChange?: (crumbs: { label: string }[]) => void;
+    }) => {
+      const { onCrumbsChange } = props;
+      useEffect(() => {
+        onCrumbsChange?.([{ label: 'Key Accounts' }, { label: 'Deploying' }]);
+      }, [onCrumbsChange]);
+      return (
+        <div
+          data-testid="website-tree"
+          data-can-edit={String(props.canEdit)}
+          data-doc={props.docId}
+          data-hosts={props.hosts.join(',')}
+          data-sync={`${props.syncFrequency ?? ''}|${props.syncedAt ?? ''}`}
+          data-initial-path={props.initialPath ?? ''}
+          data-linked={props.linkedChunk?.id ?? ''}
+        >
+          {props.embedded ? 'embedded' : 'page'}
+          {props.actionsTarget
+            ? createPortal(
+                <button type="button">ADD PAGES</button>,
+                props.actionsTarget,
+              )
+            : null}
+        </div>
+      );
+    },
+  };
+});
 vi.mock('../ConnectorTree', () => ({
   default: (props: { canEdit?: boolean }) => (
     <div data-testid="connector-tree" data-can-edit={String(props.canEdit)} />
@@ -534,6 +577,73 @@ describe('GraphSourceView', () => {
     expect(
       container.querySelector('[data-testid="connector-tree"]'),
     ).not.toBeNull();
+  });
+
+  const renderWebsite = async (
+    props: Partial<React.ComponentProps<typeof GraphSourceView>> = {},
+  ) => {
+    await act(async () => {
+      root.render(
+        <GraphSourceView
+          docId="doc"
+          sourceName="Key Accounts"
+          sourceType="website"
+          // A scheduled website source is synced too: its pages still list.
+          synced
+          isNested
+          website={{ hosts: ['docs.x.io'], pages: 2 }}
+          syncFrequency="weekly"
+          syncedAt="2026-10-20"
+          onBackToDocuments={vi.fn()}
+          headerAction={<button type="button">Test retrieval</button>}
+          {...props}
+        />,
+      );
+    });
+    await flush();
+  };
+
+  it("lists a website source's pages on the Files tab", async () => {
+    await renderWebsite({ canEdit: false });
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    const tree = container.querySelector('[data-testid="website-tree"]');
+    expect(tree?.textContent).toBe('embedded');
+    expect(tree?.getAttribute('data-doc')).toBe('doc');
+    expect(tree?.getAttribute('data-hosts')).toBe('docs.x.io');
+    expect(tree?.getAttribute('data-sync')).toBe('weekly|2026-10-20');
+    expect(tree?.getAttribute('data-can-edit')).toBe('false');
+    expect(
+      container.querySelector('[data-testid="connector-tree"]'),
+    ).toBeNull();
+    expect(container.querySelector('[data-testid="file-tree"]')).toBeNull();
+    expect(crumbs()).toEqual([
+      'settings.sources.label',
+      'Key Accounts',
+      'Deploying',
+    ]);
+  });
+
+  it("puts a website source's Add pages in the header", async () => {
+    await renderWebsite();
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    const add = buttonByText('ADD PAGES')!;
+    expect(add).toBeDefined();
+    expect(add.previousElementSibling).toBeNull();
+    expect(add.parentElement?.previousElementSibling?.textContent).toBe(
+      'Test retrieval',
+    );
+    expect(
+      container.querySelector('[data-testid="website-tree"]')?.contains(add),
+    ).toBe(false);
+  });
+
+  it("opens a cited chunk in a website source's page list", async () => {
+    await renderWebsite({
+      linkedChunk: { id: 'c7', search: 'Docker', path: 'Deploying/Docker.md' },
+    });
+    const tree = container.querySelector('[data-testid="website-tree"]');
+    expect(tree?.getAttribute('data-initial-path')).toBe('Deploying/Docker.md');
+    expect(tree?.getAttribute('data-linked')).toBe('c7');
   });
 
   it('uses the connector tree for a synced source typed by its loader', async () => {

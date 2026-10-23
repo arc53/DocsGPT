@@ -435,6 +435,33 @@ describe('WebsiteTree page management', () => {
     expect(captured.props!.headerMenu).toBe(headerMenu);
   });
 
+  it("embedded, it hands the host's header slot and crumbs to the tree", async () => {
+    const target = document.createElement('div');
+    const onCrumbsChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <WebsiteTree
+          docId="src-1"
+          sourceName="Docs"
+          onBackToDocuments={() => undefined}
+          hosts={['docs.x.io']}
+          embedded
+          actionsTarget={target}
+          onCrumbsChange={onCrumbsChange}
+          headerAction={<button type="button">Test retrieval</button>}
+        />,
+      );
+    });
+    expect(captured.props!.embedded).toBe(true);
+    expect(captured.props!.actionsTarget).toBe(target);
+    expect(captured.props!.onCrumbsChange).toBe(onCrumbsChange);
+    // The host draws Test retrieval; Add pages stays.
+    expect(container.textContent).not.toContain('Test retrieval');
+    expect(container.textContent).toContain(
+      'settings.sources.website.addPages',
+    );
+  });
+
   it('opens Add pages from the header', async () => {
     await render();
     const add = Array.from(container.querySelectorAll('button')).find((b) =>

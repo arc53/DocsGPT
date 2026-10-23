@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
+import type { Doc } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatCount } from '../../utils/dateTimeUtils';
 import type { LinkedChunk } from '../chunkUtils';
@@ -22,6 +23,7 @@ import ConnectorTree from '../ConnectorTree';
 import FileTree from '../FileTree';
 import GraphView, { type GraphLoadStatus } from '../GraphView';
 import PathHeader, { type Crumb } from '../tree/PathHeader';
+import WebsiteTree from '../WebsiteTree';
 import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
@@ -54,6 +56,15 @@ interface GraphSourceViewProps {
    * does. Defaults to true.
    */
   isNested?: boolean;
+  /**
+   * A Website source's hosts and page count (the sources list's `website`):
+   * the Files tab lists its pages, with Add pages, Refresh and Remove.
+   */
+  website?: Doc['website'];
+  /** `sources.sync_frequency`, for a Website source's byline. */
+  syncFrequency?: string;
+  /** When the source was last ingested or synced (a Website source's byline). */
+  syncedAt?: string;
   onBackToDocuments: () => void;
   /** Extra header control (Test retrieval), right-aligned in the title row. */
   headerAction?: ReactNode;
@@ -84,6 +95,9 @@ export default function GraphSourceView({
   sourceType,
   synced = false,
   isNested = true,
+  website,
+  syncFrequency,
+  syncedAt,
   onBackToDocuments,
   headerAction,
   headerMenu,
@@ -212,6 +226,23 @@ export default function GraphSourceView({
       onOpenChunkChange={setOpenChunkPosition}
       linkedChunk={linked}
     />
+  ) : website ? (
+    // Before the connector tree: a website on a schedule is synced too, but
+    // its pages are added, refreshed and removed one by one.
+    <WebsiteTree
+      embedded
+      canEdit={canEdit}
+      docId={docId}
+      sourceName={sourceName}
+      hosts={website.hosts}
+      syncFrequency={syncFrequency}
+      syncedAt={syncedAt}
+      onBackToDocuments={onBackToDocuments}
+      initialPath={filesPath}
+      linkedChunk={linked}
+      actionsTarget={filesActions}
+      onCrumbsChange={setFilesCrumbs}
+    />
   ) : synced || sourceType === 'connector:file' ? (
     <ConnectorTree
       embedded
@@ -278,8 +309,9 @@ export default function GraphSourceView({
         actions={
           <>
             {headerAction}
-            {/* The Files tab's own action (Add file, Sync) portals in here,
-                beside Test retrieval, like on a plain source. */}
+            {/* The Files tab's own action (Add file, Add pages, Sync)
+                portals in here, beside Test retrieval, like on a plain
+                source. */}
             {tab === 'files' && isNested ? (
               <div ref={setFilesActions} className="flex items-center gap-2" />
             ) : null}

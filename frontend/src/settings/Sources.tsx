@@ -531,6 +531,9 @@ export default function Sources({
           headerAction={testRetrievalAction}
           headerMenu={viewMenu}
           linkedChunk={link?.chunk}
+          website={documentToView.website}
+          syncFrequency={documentToView.syncFrequency}
+          syncedAt={documentToView.date}
         />
       ) : documentToView.isNested ? (
         documentToView.website ? (

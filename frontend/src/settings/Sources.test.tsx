@@ -806,6 +806,28 @@ describe('Sources access', () => {
     expect(await viewMenu()).toContain('settings.sources.syncNow');
   });
 
+  it('a GraphRAG website source hands its pages to the graph view', async () => {
+    const website = { hosts: ['docs.x.io'], pages: 9 };
+    await openView(
+      doc({
+        isNested: true,
+        config: { kind: 'graphrag' } as Doc['config'],
+        website,
+        syncFrequency: 'weekly',
+        date: '2026-10-20T10:00:00Z',
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+      }),
+    );
+    expect(viewProps.graph).toEqual(
+      expect.objectContaining({
+        website,
+        syncFrequency: 'weekly',
+        syncedAt: '2026-10-20T10:00:00Z',
+      }),
+    );
+  });
+
   it.each([
     ['an S3 source', { type: 's3', connectionId: 'conn-1' }],
     ['a scheduled GitHub source', { type: 'github', syncFrequency: 'weekly' }],

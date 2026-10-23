@@ -11,6 +11,7 @@ import { pageKey, websiteRefusal } from '../upload/website';
 import { formatCount, formatRelative } from '../utils/dateTimeUtils';
 import AddWebsitePagesModal from './AddWebsitePagesModal';
 import type { LinkedChunk } from './chunkUtils';
+import type { Crumb } from './tree/PathHeader';
 import TreeBrowser from './tree/TreeBrowser';
 import { folderAddress, webHref } from './tree/pages';
 import type {
@@ -28,10 +29,19 @@ interface WebsiteTreeProps {
   docId: string;
   sourceName: string;
   onBackToDocuments: () => void;
-  /** Extra header control (Test retrieval). */
+  /** Extra header control (Test retrieval); not drawn when embedded. */
   headerAction?: React.ReactNode;
-  /** The source's ⋯, last in the title row. */
+  /** The source's ⋯, last in the title row; not drawn when embedded. */
   headerMenu?: React.ReactNode;
+  /**
+   * Inside another source view (the graph source's Files tab): no Sources
+   * crumb, badge or byline, and no headerAction; Add pages stays.
+   */
+  embedded?: boolean;
+  /** Embedded only: the host header's action slot (see TreeBrowser). */
+  actionsTarget?: HTMLElement | null;
+  /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
+  onCrumbsChange?: (crumbs: Crumb[]) => void;
   /** The hosts the source fetches from (the sources list's `website.hosts`). */
   hosts: string[];
   /** `sources.sync_frequency`; never (or empty) reads "Not synced". */
@@ -115,6 +125,9 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   onBackToDocuments,
   headerAction,
   headerMenu,
+  embedded = false,
+  actionsTarget,
+  onCrumbsChange,
   hosts,
   syncFrequency,
   syncedAt,
@@ -394,7 +407,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
 
   const topRightAction = (
     <>
-      {headerAction}
+      {embedded ? null : headerAction}
       {canEdit && !status ? (
         <Button
           type="button"
@@ -435,6 +448,9 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         docId={docId}
         sourceName={sourceName}
         onBackToDocuments={onBackToDocuments}
+        embedded={embedded}
+        actionsTarget={actionsTarget}
+        onCrumbsChange={onCrumbsChange}
         columnOrder="size-first"
         variant="pages"
         renderByline={renderByline}
