@@ -629,40 +629,33 @@ class PGVectorStore(BaseVectorStore):
         pass
 
     def get_chunks(self) -> List[Dict[str, Any]]:
-        """Get all chunks for this source_id"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
+        """Every chunk of this source, or ``[]`` (logged) when the database errors.
+
+        Lenient for display callers; a lookup that acts on the answer uses
+        :meth:`_scan_chunks`, which raises.
+        """
         try:
-            select_query = f"""
-            SELECT id, {self._text_column}, {self._metadata_column}
-            FROM {self._table_name}
-            WHERE source_id = %s ORDER BY id;
-            """
-            cursor.execute(select_query, (self._source_id,))
-            results = cursor.fetchall()
-            
-            chunks = []
-            for doc_id, text, metadata in results:
-                chunks.append({
-                    "doc_id": str(doc_id),
-                    "text": text,
-                    "metadata": metadata or {}
-                })
-
-            conn.commit()
-            return chunks
-
+            return self._scan_chunks()
         except Exception as e:
             logging.error(f"Error getting chunks: {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                # Connection already gone; nothing left to roll back.
-                pass
             return []
-        finally:
-            cursor.close()
+
+    def _scan_chunks(self) -> List[Dict[str, Any]]:
+        """Every chunk of this source, lowest id first; a database error is raised.
+
+        Returns:
+            ``{"doc_id", "text", "metadata"}`` per chunk.
+        """
+        rows = self._run_statement(
+            f"SELECT id, {self._text_column}, {self._metadata_column} "
+            f"FROM {self._table_name} WHERE source_id = %s ORDER BY id;",
+            (self._source_id,),
+            fetch=True,
+        )
+        return [
+            {"doc_id": str(doc_id), "text": text, "metadata": metadata or {}}
+            for doc_id, text, metadata in rows
+        ]
 
     def get_chunk_by_key(self, key: str, excerpt: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Find this source's chunk by its text's MD5 in one query.
@@ -881,6 +874,29 @@ class PGVectorStore(BaseVectorStore):
         rows = self._run_statement(
             f"SELECT id FROM {self._table_name} "
             f"WHERE source_id = %s AND {self._metadata_column}->>'source' = ANY(%s) ORDER BY id;",
+            (self._source_id, wanted),
+            fetch=True,
+        )
+        return [str(row[0]) for row in rows]
+
+    def chunk_ids_by_file_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of this source's chunks whose ``metadata.file_path`` is one of ``paths``.
+
+        One targeted ``SELECT`` that raises on error: a page removal reads
+        "no chunks" as safe to drop the page's tree entry.
+
+        Args:
+            paths: ``metadata.file_path`` values.
+
+        Returns:
+            The ids, lowest first.
+        """
+        wanted = list(dict.fromkeys(paths))
+        if not wanted:
+            return []
+        rows = self._run_statement(
+            f"SELECT id FROM {self._table_name} "
+            f"WHERE source_id = %s AND {self._metadata_column}->>'file_path' = ANY(%s) ORDER BY id;",
             (self._source_id, wanted),
             fetch=True,
         )

@@ -627,6 +627,40 @@ class TestRemoveByAddress:
         assert store.texts_for("https://docs.x.io/keep.html") == ["other page"]
         assert list(_tree(pg_conn, src)) == ["keep.md"]
 
+    def test_a_pgvector_outage_while_listing_a_legacy_leaf_keeps_the_leaf(
+        self, pg_conn, patch_worker_db, monkeypatch,
+    ):
+        """An outage must not read as "no chunks": the leaf would go while its chunks stay."""
+        from unittest.mock import MagicMock
+
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
+        from docsgpt.vectorstore import vector_creator
+        from docsgpt.vectorstore.pgvector import PGVectorStore
+
+        legacy = {"type": "text/markdown", "size_bytes": 10, "token_count": 5}
+        src = SourcesRepository(pg_conn).create(
+            "site", user_id=USER, type="crawler", remote_data="https://x/",
+            directory_structure={"guide.md": dict(legacy), "intro.md": dict(legacy)},
+        )
+        store = PGVectorStore.__new__(PGVectorStore)
+        store._source_id, store._table_name = str(src["id"]), "documents"
+        store._text_column, store._metadata_column = "text", "metadata"
+        conn = MagicMock(closed=False)
+        conn.cursor.return_value.execute.side_effect = ConnectionError("server closed the connection")
+        store._get_connection = lambda: conn
+        store._connection = None
+        deletes = []
+        store.delete_chunks = lambda ids: deletes.append(list(ids)) or 0
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
+        monkeypatch.setattr(vector_creator.VectorCreator, "create_vectorstore", lambda *a, **k: store)
+
+        with pytest.raises(ConnectionError):
+            worker._remove_web_pages(str(src["id"]), USER, None, pages=[{"path": "guide.md", "url": ""}])
+
+        assert deletes == []
+        assert sorted(_tree(pg_conn, src)) == ["guide.md", "intro.md"]
+
     def test_the_task_passes_pages_through(self, monkeypatch):
         from docsgpt import worker
         from docsgpt.api.user import tasks

@@ -423,6 +423,32 @@ class TestPGVectorStoreChunksBySourcePaths:
             store.delete_chunks(["4"])
         mock_conn.rollback.assert_called_once()
 
+    def test_file_path_lookup_is_one_targeted_select(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchall.return_value = [(3,), (7,)]
+
+        assert store.chunk_ids_by_file_paths(["a.md", "b/c.md", "a.md"]) == ["3", "7"]
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "metadata->>'file_path' = ANY(%s)" in sql and "source_id = %s" in sql
+        assert params == ("src1", ["a.md", "b/c.md"])
+
+    def test_a_file_path_lookup_error_is_raised_not_read_as_no_chunks(self):
+        """A page removal reads "no chunks" as safe to drop the tree entry; an outage must not look like that."""
+        store, mock_conn, mock_cursor, _ = _make_store()
+        mock_cursor.execute.side_effect = Exception("server closed the connection")
+
+        with pytest.raises(Exception, match="server closed"):
+            store.chunk_ids_by_file_paths(["guide.md"])
+        mock_conn.rollback.assert_called_once()
+
+    def test_the_mutation_scan_raises_while_get_chunks_stays_lenient(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.execute.side_effect = Exception("down")
+
+        assert store.get_chunks() == []
+        with pytest.raises(Exception, match="down"):
+            store._scan_chunks()
+
 
 @pytest.mark.unit
 class TestPGVectorStoreConnection:
