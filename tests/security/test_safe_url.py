@@ -1180,6 +1180,72 @@ def test_body_chunks_raises_a_decoding_error_for_a_corrupt_body():
         list(_body_chunks(_raw_response([b"this is not gzip at all"], "gzip"), 4096))
 
 
+def _test_hosts_to_loopback(monkeypatch) -> list[str]:
+    """Send every ``*.test`` lookup to 127.0.0.1 and record the names looked up."""
+    real = socket.getaddrinfo
+    asked: list[str] = []
+
+    def fake(host, *args, **kwargs):
+        if isinstance(host, str) and host.endswith(".test"):
+            asked.append(host)
+            host = "127.0.0.1"
+        return real(host, *args, **kwargs)
+
+    monkeypatch.setattr("socket.getaddrinfo", fake)
+    return asked
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("host", "ascii_host"), [
+    ("bücher.test", "xn--bcher-kva.test"),
+    ("пример.test", "xn--e1afmkfd.test"),
+    ("straße.test", "xn--strae-oqa.test"),
+])
+def test_pinned_fetch_bytes_sends_an_internationalized_host_as_its_ascii_name(
+    host, ascii_host, local_server, monkeypatch,
+):
+    base, routes = local_server
+    port = base.rsplit(":", 1)[1]
+    asked = _test_hosts_to_loopback(monkeypatch)
+    seen: list[str] = []
+
+    def record_host(handler):
+        seen.append(handler.headers["Host"])
+        handler.send_response(200)
+        handler.send_header("Content-Length", "2")
+        handler.end_headers()
+        handler.wfile.write(b"ok")
+
+    routes["/"] = record_host
+
+    body, _ = pinned_fetch_bytes(f"http://{host}:{port}/", max_bytes=100, timeout=5)
+
+    assert body == b"ok"
+    assert seen == [f"{ascii_host}:{port}"]
+    # The name resolved is the one sent, not an IDNA 2003 reading of it.
+    assert asked == [ascii_host]
+
+
+@pytest.mark.unit
+def test_pinned_session_verifies_tls_against_the_ascii_name(monkeypatch):
+    captured = _capture_send(monkeypatch)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("104.18.6.192")):
+        pinned_post("https://bücher.example/v1", json={}, timeout=5)
+
+    assert captured["adapters"]["https://"]._server_hostname == "xn--bcher-kva.example"
+    assert captured["prepared"].headers["Host"] == "xn--bcher-kva.example"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("url", [
+    "http://" + "a" * 64 + ".com/",
+    "http://x..y.com/",
+])
+def test_a_host_dns_cannot_encode_is_a_validation_error(url):
+    with pytest.raises(UnsafeUserUrlError):
+        validate_user_base_url(url)
+
+
 # guarded_async_client: per-request SSRF guard for async SDKs (MCP)
 
 

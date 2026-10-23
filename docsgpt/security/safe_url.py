@@ -152,6 +152,10 @@ def _resolve(host: str) -> Iterable[ipaddress.IPv4Address | ipaddress.IPv6Addres
         results = socket.getaddrinfo(host, None)
     except socket.gaierror as exc:  # noqa: PERF203 — re-raise as our own type
         raise UnsafeUserUrlError(f"could not resolve hostname {host!r}: {exc}") from exc
+    except UnicodeError as exc:
+        # The resolver's IDNA codec refuses a name DNS can't carry (an empty
+        # or over-long label): an invalid host, not a crash.
+        raise UnsafeUserUrlError(f"hostname {host!r} is not a valid DNS name: {exc}") from exc
 
     addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
     for entry in results:
@@ -178,6 +182,30 @@ def _urllib3_host(url: str) -> str | None:
         return urllib3.util.parse_url(url).host
     except urllib3.exceptions.LocationParseError:
         return None
+
+
+def _ascii_host(host: str) -> str:
+    """``host`` as DNS and the wire carry it: an internationalized name in its IDNA (punycode) form.
+
+    The encoding is urllib3's (IDNA 2008), so the name resolved, the ``Host``
+    header and the TLS name all agree with the host the libraries dial.
+
+    Args:
+        host: A hostname as ``urlsplit`` reads it.
+
+    Returns:
+        The ASCII hostname; an ASCII ``host`` comes back as is.
+
+    Raises:
+        UnsafeUserUrlError: If the name has no IDNA form.
+    """
+
+    if host.isascii():
+        return host
+    encoded = _urllib3_host(f"http://{host}/")
+    if not encoded or not encoded.isascii():
+        raise UnsafeUserUrlError(f"hostname {host!r} is not a valid internationalized domain name")
+    return encoded
 
 
 def reject_ambiguous_url(url: str) -> None:
@@ -255,12 +283,13 @@ def _validate_and_pick_ip(
         raise UnsafeUserUrlError(f"url {url!r} has no hostname")
 
     host = raw_host.lower()
+    ascii_host = _ascii_host(host)
 
     # Check the literal-string blocklist first. urlsplit().hostname strips
     # IPv6 brackets, so we also test the bracketed form for completeness
     # (matches the public-spec note about ``[::]``).
     bracketed = f"[{host}]"
-    if host in _BLOCKED_HOSTNAMES or bracketed in _BLOCKED_HOSTNAMES:
+    if host in _BLOCKED_HOSTNAMES or ascii_host in _BLOCKED_HOSTNAMES or bracketed in _BLOCKED_HOSTNAMES:
         raise UnsafeUserUrlError(
             f"hostname {raw_host!r} is not allowed (matches internal-only name)"
         )
@@ -282,8 +311,9 @@ def _validate_and_pick_ip(
             )
         return host, literal, parts
 
-    # Hostname (not an IP literal) — resolve and validate every record.
-    addresses = list(_resolve(host))
+    # Hostname (not an IP literal) — resolve and validate every record. The
+    # IDNA form is resolved: it is the name the request will carry.
+    addresses = list(_resolve(ascii_host))
     for ip in addresses:
         if _is_blocked_ip(ip):
             raise UnsafeUserUrlError(
@@ -516,6 +546,9 @@ def _pinned_session(
     """
 
     host, ip, parts = _validate_and_pick_ip(url)
+    # ``Host``, SNI and the certificate check all take the IDNA form: http.client
+    # can't send a non-Latin-1 header, and certificates name the ASCII form.
+    host = _ascii_host(host)
 
     # The dialed URL is rebuilt from the validated IP alone: userinfo is sent
     # as Basic auth, never copied, so no user-written authority text reaches
