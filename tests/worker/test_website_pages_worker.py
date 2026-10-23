@@ -145,6 +145,13 @@ def _tree(pg_conn, source):
     return _source_row(pg_conn, source)["directory_structure"]
 
 
+def _unlist(pg_conn, source, *urls):
+    """Drop page entries from the config, as the removal route does before it queues the task."""
+    config = dict(_source_row(pg_conn, source)["remote_data"])
+    config["entries"] = [e for e in config["entries"] if e["url"] not in urls]
+    SourcesRepository(pg_conn).update(str(source["id"]), USER, {"remote_data": config})
+
+
 @pytest.mark.unit
 class TestAddPages:
     def test_appends_pages_without_touching_the_others(self, pg_conn, patch_worker_db, task_self, source, pipeline):
@@ -1156,6 +1163,7 @@ class TestAPageSeveralAddressesLeadTo:
             },
         }})
         pipeline["store"].seed("new page", "https://docs.x.io/new", "new.md")
+        _unlist(pg_conn, aliased, "https://docs.x.io/old-a", "https://docs.x.io/old-b")
 
         result = worker.website_pages_worker(
             task_self, str(aliased["id"]), USER, "remove", pages=[{"path": "gone.md", "url": alias}],
@@ -1175,6 +1183,7 @@ class TestAPageSeveralAddressesLeadTo:
             "other.md": _leaf("https://docs.x.io/other", 1), "old-b.md": _leaf("https://docs.x.io/old-b", 4),
         }})
         pipeline["store"].seed("old b", "https://docs.x.io/old-b", "old-b.md")
+        _unlist(pg_conn, aliased, "https://docs.x.io/old-a", "https://docs.x.io/old-b")
 
         worker.website_pages_worker(task_self, str(aliased["id"]), USER, "remove", pages=[{
             "path": "new.md", "url": "https://docs.x.io/new",
@@ -1386,6 +1395,55 @@ class TestConcurrentChanges:
         assert list(_tree(pg_conn, source)) == ["a.md"]
         assert pipeline["events"][-1][0] == "source.ingest.completed"
 
+    def test_a_removal_queued_before_a_re_add_leaves_the_page_listed_again(
+        self, pg_conn, patch_worker_db, task_self, pipeline,
+    ):
+        # Remove /a (entry dropped, task R queued), then add it back (entry
+        # listed, task A queued); A takes the lock first. R must not take out
+        # the page the config lists again.
+        from docsgpt import worker
+
+        def entries(urls):
+            return {"entries": [{"url": u, "mode": "page"} for u in urls]}
+
+        repo = SourcesRepository(pg_conn)
+        src = repo.create(
+            "Docs", user_id=USER, type="website", remote_data=entries(["https://docs.x.io/a", "https://docs.x.io/b"]),
+            directory_structure={"a.md": _leaf("https://docs.x.io/a", 40), "b.md": _leaf("https://docs.x.io/b", 5)},
+        )
+        sid = str(src["id"])
+        repo.update(sid, USER, {"remote_data": entries(["https://docs.x.io/b"])})
+        repo.update(sid, USER, {"remote_data": entries(["https://docs.x.io/b", "https://docs.x.io/a"])})
+        pipeline["pages"]["https://docs.x.io/a"] = "fresh A"
+        worker.website_pages_worker(task_self, sid, USER, "add", urls=["https://docs.x.io/a"])
+
+        result = worker.website_pages_worker(
+            task_self, sid, USER, "remove", pages=[{"path": "a.md", "url": "https://docs.x.io/a", "requested_urls": []}],
+        )
+
+        assert result["pages"] == 0
+        assert sorted(_tree(pg_conn, src)) == ["a.md", "b.md"]
+        assert pipeline["store"].texts_for("https://docs.x.io/a") == ["fresh A"]
+
+    def test_a_removal_takes_only_the_pages_the_config_no_longer_lists(
+        self, pg_conn, patch_worker_db, task_self, pipeline,
+    ):
+        from docsgpt import worker
+
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website",
+            remote_data={"entries": [{"url": "https://docs.x.io/b", "mode": "page"}]},
+            directory_structure={"a.md": _leaf("https://docs.x.io/a", 40), "b.md": _leaf("https://docs.x.io/b", 5)},
+        )
+        result = worker.website_pages_worker(
+            task_self, str(src["id"]), USER, "remove",
+            pages=[{"path": "a.md", "url": "https://docs.x.io/a"}, {"path": "b.md", "url": "https://docs.x.io/b"}],
+        )
+
+        assert result["pages"] == 1
+        assert sorted(_tree(pg_conn, src)) == ["b.md"]
+        assert pipeline["store"].texts_for("https://docs.x.io/a") == []
+
     def test_a_page_removed_mid_refresh_is_not_brought_back(
         self, pg_conn, patch_worker_db, task_self, source, pipeline,
     ):
@@ -1525,6 +1583,7 @@ class TestAGraphSource:
         SourcesRepository(pg_conn).update(str(source["id"]), USER, {"directory_structure": {
             "a.md": _leaf("https://docs.x.io/a", 40), "b.md": _leaf("https://docs.x.io/b", 1),
         }})
+        _unlist(pg_conn, source, "https://docs.x.io/a")
         worker.website_pages_worker(task_self, str(source["id"]), USER, "remove", file_paths=["a.md"])
 
         assert graph["store"].deleted == [(str(source["id"]), ["old-1", "old-2"])]
@@ -1588,6 +1647,7 @@ class TestAGraphSource:
                 raise RuntimeError("tree write failed")
             return real_update(self, sid, user, fields)
 
+        _unlist(pg_conn, source, "https://docs.x.io/a")
         monkeypatch.setattr(SourcesRepository, "update", flaky_update)
         pages = [{"path": "a.md", "url": "https://docs.x.io/a"}]
         with pytest.raises(RuntimeError):
@@ -1611,6 +1671,7 @@ class TestAGraphSource:
             return 1
 
         store.delete_chunks = delete_one
+        _unlist(pg_conn, source, "https://docs.x.io/a")
         with pytest.raises(RuntimeError, match="could not be deleted"):
             worker.website_pages_worker(task_self, str(source["id"]), USER, "remove", file_paths=["a.md"])
 
@@ -1648,6 +1709,7 @@ class TestAGraphSource:
         store.storage.save_file.side_effect = OSError("S3 PutObject failed")
         monkeypatch.setattr(settings, "VECTOR_STORE", "faiss")
         monkeypatch.setattr(vector_creator.VectorCreator, "create_vectorstore", lambda *a, **k: store)
+        _unlist(pg_conn, source, url)
 
         with pytest.raises(OSError):
             worker.website_pages_worker(

@@ -5615,6 +5615,51 @@ def _pages_to_remove(
     return list(dict.fromkeys(found))
 
 
+def _not_listed_again(
+    source: Dict[str, Any], structure: Dict[str, Any], found: List[Tuple[str, Optional[str]]],
+    pages: Optional[List[Dict[str, str]]],
+) -> List[Tuple[str, Optional[str]]]:
+    """The pages to remove, less those the source's config lists as page entries now.
+
+    The route drops a page's entry before it queues the removal. When the
+    page is added back before the removal gets the lock, the add (which
+    fetches only listed addresses) stores it again; the removal must not
+    then take out a page the config lists. The counterpart of the add's
+    filter in ``_run_website_pages``.
+
+    Args:
+        source: The source row, read under the index lock.
+        structure: Its ``directory_structure``.
+        found: ``_pages_to_remove`` results.
+        pages: The removal's pages, for the address the route resolved for a leaf without one.
+
+    Returns:
+        ``found`` without the pages any of whose addresses an entry lists.
+    """
+    from docsgpt.parser.remote.website_tree import config_from_legacy
+
+    config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
+    listed = {_web_page_key(e["url"]) for e in config.get("entries") or [] if e.get("mode") == "page"}
+    if not listed:
+        return found
+    leaves = dict(_tree_leaves(structure))
+    resolved = {
+        page["path"]: page["url"] for page in pages or []
+        if isinstance(page, dict) and page.get("url") and page.get("path")
+    }
+    kept: List[Tuple[str, Optional[str]]] = []
+    for path, url in found:
+        if url:
+            addresses = [url, *_page_aliases(url, leaves.get(path))]
+        else:
+            addresses = [resolved[path]] if path in resolved else []
+        if any(_web_page_key(address) in listed for address in addresses):
+            logging.info("Not removing %s from %s: the config lists it again", url or path, source.get("id"))
+            continue
+        kept.append((path, url))
+    return kept
+
+
 def _remove_web_pages(
     source_id: str, user: str, file_paths: Optional[List[str]], task_id: Optional[str] = None,
     pages: Optional[List[Dict[str, str]]] = None,
@@ -5625,7 +5670,9 @@ def _remove_web_pages(
     as it is now (``_pages_to_remove``): by address, so a sync that moved a
     page to another path can't make the removal take whichever page holds the
     old one, and a page that has left the tree (a retried task, a sync that
-    dropped it) is ignored. The chunks go in one batched delete (FAISS saves
+    dropped it) is ignored, and so is one the config lists as a page entry
+    again (added back before this got the lock; ``_not_listed_again``). The
+    chunks go in one batched delete (FAISS saves
     once) and are checked gone (``_delete_chunks_checked``); if any is still
     stored, the tree is not written, so every page still listed keeps its
     chunks and the removal can be tried again. The tree is written on the
@@ -5668,6 +5715,7 @@ def _remove_web_pages(
         raise ValueError("This source is a wiki now; its pages are edited in place")
     structure = source.get("directory_structure") if isinstance(source.get("directory_structure"), dict) else {}
     found = _pages_to_remove(structure, pages, file_paths)
+    found = _not_listed_again(source, structure, found, pages)
     if not found:
         return []
 
