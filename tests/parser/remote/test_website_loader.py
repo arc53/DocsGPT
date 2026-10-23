@@ -572,6 +572,39 @@ class TestParseWebsiteConfig:
         assert config["entries"][2]["url"] == "http://z.io/"
         assert config["skip"] == ["https://y.io/old", "https://y.io/blog/*", "https://y.io/a"]
 
+    @pytest.mark.parametrize(
+        "written, stored",
+        [
+            ("y.io:8080/c", "https://y.io:8080/c"),
+            ("y.io:8080", "https://y.io:8080"),
+            ("docs.y.io:443?lang=de", "https://docs.y.io:443?lang=de"),
+            ("localhost:3000/docs", "https://localhost:3000/docs"),
+            ("[::1]:8080/a", "https://[::1]:8080/a"),
+            ("http://y.io:8080/c", "http://y.io:8080/c"),
+            ("HTTPS://y.io/c", "HTTPS://y.io/c"),
+        ],
+    )
+    def test_a_scheme_less_host_and_port_gets_https(self, written, stored):
+        from docsgpt.parser.remote.website_loader import is_web_address, parse_website_config
+
+        assert is_web_address(written)
+        config = parse_website_config({"entries": [{"url": written, "mode": "page"}], "skip": [written]})
+
+        assert config["entries"][0]["url"] == stored
+        assert config["skip"] == [stored]
+
+    @pytest.mark.parametrize(
+        "url",
+        ["mailto:team@y.io", "tel:911", "javascript:alert(1)", "ftp://y.io/a", "y.io:99999/c", "data:text/html,x"],
+    )
+    def test_other_schemes_are_still_not_web_addresses(self, url):
+        from docsgpt.parser.remote.website_loader import WebsiteConfigError, is_web_address, parse_website_config
+
+        assert not is_web_address(url)
+        with pytest.raises(WebsiteConfigError) as caught:
+            parse_website_config({"entries": [{"url": url, "mode": "page"}]})
+        assert caught.value.code == "invalid_address"
+
     def test_a_stored_scheme_less_site_still_has_a_host(self, web):
         web({"https://x.io/docs": page("Docs", links=["/docs/a"]), "https://x.io/docs/a": page("A")})
 

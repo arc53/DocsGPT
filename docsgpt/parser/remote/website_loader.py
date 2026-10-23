@@ -326,11 +326,33 @@ def _clamp_pages(requested: Optional[int]) -> int:
     return max(1, min(limit, int(settings.WEB_MAX_PAGES)))
 
 
+# ``host:port`` at the start of an address: ``urlsplit`` reads ``y.io:8080/c``
+# as scheme ``y.io``. A dotted host, or localhost, is never a scheme people
+# use, so it is taken as a host; ``tel:911`` or ``mailto:x`` stay schemes.
+_HOST_PORT = re.compile(r"^(?:[^:/?#@\s]*\.[^:/?#@\s]*|localhost):\d+(?:[/?#]|$)", re.IGNORECASE)
+
+
+def _has_scheme(url: str) -> bool:
+    """Whether an address names its scheme (``https://``, ``mailto:``), not ``host:port``.
+
+    Args:
+        url: A stripped address.
+
+    Returns:
+        True when the part before the first ``:`` is a scheme.
+
+    Raises:
+        ValueError: If the address cannot be parsed.
+    """
+    return bool(urlsplit(url).scheme) and not _HOST_PORT.match(url)
+
+
 def is_web_address(url: str) -> bool:
     """Whether ``url`` names a fetchable http(s) address, as the loaders would dial it.
 
-    A missing scheme is taken as ``http://``, as ``validate_url`` does. No DNS
-    lookup: the SSRF check runs at fetch time.
+    A missing scheme is taken as ``http://``, as ``validate_url`` does;
+    ``host:port/path`` counts as missing one. No DNS lookup: the SSRF check
+    runs at fetch time.
 
     Args:
         url: An address as the user wrote it.
@@ -340,7 +362,7 @@ def is_web_address(url: str) -> bool:
         port, when it has one).
     """
     try:
-        candidate = url if urlsplit(url).scheme else "http://" + url
+        candidate = url if _has_scheme(url) else "http://" + url
         parts = urlsplit(candidate)
         host = parts.hostname
         parts.port  # noqa: B018 - raises ValueError on a port out of range
@@ -376,7 +398,7 @@ class WebsiteConfigError(ValueError):
 
 
 def _with_scheme(url: str) -> str:
-    """``url`` with ``https://`` in front when it was written without a scheme (``example.com/docs``).
+    """``url`` with ``https://`` in front when it was written without a scheme (``example.com/docs``, ``y.io:8080``).
 
     Args:
         url: A stripped address.
@@ -385,7 +407,7 @@ def _with_scheme(url: str) -> str:
         The address, so ``urlparse`` finds its host.
     """
     try:
-        return url if urlsplit(url).scheme else "https://" + url
+        return url if _has_scheme(url) else "https://" + url
     except ValueError:
         return url
 
