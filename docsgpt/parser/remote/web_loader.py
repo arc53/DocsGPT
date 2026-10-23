@@ -40,8 +40,9 @@ class WebLoader(BaseRemote):
 
         Returns:
             One document per page that loaded, its ``source`` the address a
-            redirect led to; a blocked address, a failed fetch or a response
-            with no text is skipped.
+            redirect led to (and ``requested_url`` the address asked for,
+            only when the two differ); a blocked address, a failed fetch or a
+            response with no text is skipped.
         """
         urls = inputs
         if isinstance(urls, str):
@@ -63,17 +64,21 @@ class WebLoader(BaseRemote):
             try:
                 response = fetch_page(url, headers=headers, timeout=30, budget=self.budget)
                 response.raise_for_status()
+                page_url = final_url(response, url)
                 document = page_document(
                     response.content,
                     response.headers.get("Content-Type"),
                     # Stored under the address it redirected to.
-                    final_url(response, url),
+                    page_url,
                     include_host=include_host,
                     keep_links=self.keep_links,
                     # Each address was asked for: JSON there is wanted text.
                     explicit=True,
                 )
                 if document is not None:
+                    if page_url != url:
+                        # The worker matches the tree entry by either address.
+                        document.extra_info["requested_url"] = url
                     documents.append(document)
             except Exception as e:
                 logging.error(f"Error processing URL {url}: {e}", exc_info=True)

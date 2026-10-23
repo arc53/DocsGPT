@@ -863,6 +863,103 @@ class TestRedirects:
         assert sources(docs) == ["https://x.io/a"]
         assert loader.report["sites"][0]["found_with"] == "sitemap"
 
+    def test_a_start_page_that_redirects_into_scope_counts_toward_the_limit(self, web):
+        # Start at / with Stay under /docs: / redirects into /docs/ and is kept.
+        web({
+            "https://x.io/": (301, "/docs/"),
+            "https://x.io/docs/": page("Docs", links=["/docs/a", "/docs/b", "/docs/c"]),
+            "https://x.io/docs/a": page("A"),
+            "https://x.io/docs/b": page("B"),
+            "https://x.io/docs/c": page("C"),
+        })
+        loader = WebsiteLoader()
+
+        docs = loader.load_data({"entries": [
+            {"url": "https://x.io/", "mode": "site", "discovery": "links", "path_prefix": "/docs", "max_pages": 2},
+        ]})
+
+        assert sources(docs) == ["https://x.io/docs/", "https://x.io/docs/a"]
+        assert loader.report["sites"][0]["limit_reached"] is True
+
+    def test_a_start_page_redirect_cannot_pass_the_source_cap(self, web):
+        sites = {
+            "https://x.io/": (301, "/docs/"),
+            "https://x.io/docs/": page("Docs", links=[f"/docs/p{i}" for i in range(10)]),
+        }
+        sites.update({f"https://x.io/docs/p{i}": page(f"P{i}") for i in range(10)})
+        web(sites)
+
+        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
+            fake_settings.WEB_MAX_PAGES = 3
+            fake_settings.WEB_DEFAULT_PAGES = 3
+            docs = WebsiteLoader().load_data({"entries": [
+                {"url": "https://x.io/", "mode": "site", "discovery": "links", "path_prefix": "/docs"},
+            ]})
+
+        assert len(docs) == 3
+
+    def test_links_already_reached_by_a_redirect_are_not_left_over(self, web):
+        web({
+            "https://x.io/": page("Home", links=["/a", "/b"]),
+            "https://x.io/a": (301, "/b"),
+            "https://x.io/b": page("B"),
+        })
+        loader = WebsiteLoader()
+
+        docs = loader.load_data({"entries": [
+            {"url": "https://x.io/", "mode": "site", "discovery": "links", "max_pages": 2},
+        ]})
+
+        assert sources(docs) == ["https://x.io/", "https://x.io/b"]
+        assert loader.report["limit_reached"] is False
+
+    def test_a_www_redirect_cannot_bypass_a_section_skip(self, web):
+        # page_key ignores www., but a section rule names its host exactly.
+        web({
+            "https://x.io/": page("Home", links=["/docs/a", "/docs/b"]),
+            "https://x.io/docs/a": (301, "https://www.x.io/docs/a"),
+            "https://www.x.io/docs/a": page("Secret A"),
+            "https://x.io/docs/b": page("B"),
+        })
+
+        docs = WebsiteLoader().load_data({
+            "entries": [{"url": "https://x.io/", "mode": "site", "discovery": "links"}],
+            "skip": ["https://www.x.io/docs/*"],
+        })
+
+        assert sources(docs) == ["https://x.io/", "https://x.io/docs/b"]
+
+    def test_a_redirected_page_names_the_address_it_was_asked_under(self, web):
+        web({
+            "https://x.io/old": (301, "/new"),
+            "https://x.io/new": page("New"),
+            "https://x.io/same": page("Same"),
+            "https://x.io/sitemap.xml": urlset("https://x.io/moved", "https://x.io/kept"),
+            "https://x.io/moved": (301, "/landed"),
+            "https://x.io/landed": page("Landed"),
+            "https://x.io/kept": page("Kept"),
+            "https://y.io/": page("Y", links=["/hop"]),
+            "https://y.io/hop": (302, "/target"),
+            "https://y.io/target": page("Target"),
+        })
+
+        docs = WebsiteLoader().load_data({"entries": [
+            {"url": "https://x.io/old", "mode": "page"},
+            {"url": "https://x.io/same", "mode": "page"},
+            {"url": "https://x.io/", "mode": "site", "sitemap_url": "https://x.io/sitemap.xml"},
+            {"url": "https://y.io/", "mode": "site", "discovery": "links"},
+        ]})
+
+        requested = {d.extra_info["source"]: d.extra_info.get("requested_url") for d in docs}
+        assert requested == {
+            "https://x.io/new": "https://x.io/old",
+            "https://x.io/same": None,
+            "https://x.io/landed": "https://x.io/moved",
+            "https://x.io/kept": None,
+            "https://y.io/": None,
+            "https://y.io/target": "https://y.io/hop",
+        }
+
     def test_a_relative_robots_sitemap_line_is_resolved(self, web):
         web({"https://x.io/robots.txt": robots("/maps/sitemap.xml", "https://x.io/other.xml")})
 

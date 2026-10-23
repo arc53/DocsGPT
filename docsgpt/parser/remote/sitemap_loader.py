@@ -254,7 +254,9 @@ class SitemapLoader(BaseRemote):
             urls: Page URLs in the order to load them.
 
         Returns:
-            One document per page that loaded, at most ``limit``.
+            One document per page that loaded, at most ``limit``. A page that
+            redirected is stored under where it landed, with the address it
+            was listed under in ``requested_url``.
         """
         include_host = spans_multiple_hosts(urls)
         documents = []
@@ -305,6 +307,9 @@ class SitemapLoader(BaseRemote):
                     keep_links=self.keep_links,
                 )
                 if document is not None:
+                    if page_url != url:
+                        # The worker matches the tree entry by either address.
+                        document.extra_info["requested_url"] = url
                     documents.append(document)
                 processed_urls += 1  # Increment the counter after processing each URL
             except Exception as e:

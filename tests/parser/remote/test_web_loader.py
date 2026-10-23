@@ -366,3 +366,22 @@ class TestWebLoaderMalformedUrl:
 
         assert [d.extra_info["source"] for d in result] == ["https://x.io/good"]
         assert result[0].extra_info["file_path"] == "good.md"
+
+
+@pytest.mark.unit
+class TestWebLoaderRequestedUrl:
+    @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_a_redirected_page_keeps_the_address_it_was_asked_under(self, mock_fetch, mock_validate, web_loader):
+        def fetch(url, *args, **kwargs):
+            response = _fake_response("<html><body><p>Page</p></body></html>")
+            response.url = "https://x.io/new" if url == "https://x.io/old" else url
+            return response
+
+        mock_fetch.side_effect = fetch
+
+        result = web_loader.load_data(["https://x.io/old", "https://x.io/same"])
+
+        assert [d.extra_info["source"] for d in result] == ["https://x.io/new", "https://x.io/same"]
+        assert result[0].extra_info["requested_url"] == "https://x.io/old"
+        assert "requested_url" not in result[1].extra_info

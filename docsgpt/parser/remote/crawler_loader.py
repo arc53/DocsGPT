@@ -56,7 +56,8 @@ class CrawlerLoader(BaseRemote):
         Returns:
             One document per page that loaded, at most ``limit`` fetches. A
             page that redirects is stored under its final address, and only
-            when the scope accepts that address too.
+            when the scope accepts that address too; ``requested_url`` holds
+            the link it was reached by.
         """
         url = inputs
         if isinstance(url, list) and url:
@@ -94,7 +95,8 @@ class CrawlerLoader(BaseRemote):
             # Checked before each fetch, so failed and non-page fetches count
             # toward the limit too instead of letting the crawl run past it.
             if self.limit is not None and charged >= self.limit:
-                self.limit_reached = True
+                # Left over only if a queued page wasn't reached by a redirect.
+                self.limit_reached = any(page_key(link) not in done for link in queue)
                 break
             current_url = queue.popleft()
             current_key = page_key(current_url)
@@ -116,18 +118,25 @@ class CrawlerLoader(BaseRemote):
                 response.raise_for_status()
                 page_url = final_url(response, current_url)
                 keep = keep_seed if is_seed else True
-                final_key = page_key(page_url)
-                if final_key != current_key:
+                if page_url != current_url:
                     # Redirected: the page is where it landed, which must be
-                    # new and in scope like any link.
-                    if final_key in done:
-                        continue
-                    done.add(final_key)
-                    seen.add(final_key)
+                    # new and in scope like any link. Checked even when the
+                    # key stays (``x.io/a`` to ``www.x.io/a``): a section
+                    # rule names its host exactly.
+                    final_key = page_key(page_url)
+                    if final_key != current_key:
+                        if final_key in done:
+                            continue
+                        done.add(final_key)
+                        seen.add(final_key)
                     keep = self._on_site(page_url, site_host)
                     if not keep and not is_seed:
                         logging.info(f"Dropping {current_url}: it redirects out of scope to {page_url}")
                         continue
+                    if keep and is_seed and not keep_seed:
+                        # A start page outside the scope that lands inside it
+                        # is kept, so it counts toward the limit after all.
+                        charged += 1
                 body = response.content
                 content_type = response.headers.get("Content-Type")
                 document = page_document(body, content_type, page_url, keep_links=self.keep_links)
@@ -135,6 +144,9 @@ class CrawlerLoader(BaseRemote):
                     # Not a page (a PDF or image the site links to): no text
                     # to keep and no links to follow.
                     continue
+                if page_url != current_url:
+                    # The worker matches the tree entry by either address.
+                    document.extra_info["requested_url"] = current_url
                 if keep:
                     loaded_content.append(document)
                 if not is_html(content_type):
