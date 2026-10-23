@@ -1501,7 +1501,11 @@
           "testFailed": "Échec du test de connexion",
           "saveFailed": "Échec de l’enregistrement du serveur MCP",
           "oauthFailed": "La connexion OAuth a échoué ou a été annulée",
-          "timeoutRange": "Le délai d’expiration doit être compris entre 1 et 300 secondes"
+          "timeoutRange": "Le délai d’expiration doit être compris entre 1 et 300 secondes",
+          "headerNameInvalid": "Saisissez un nom d’en-tête valide, par exemple X-Tenant-Id",
+          "headerDuplicate": "{{name}} figure deux fois",
+          "headerReserved": "{{name}} est défini par l’authentification ci-dessus et ne peut pas être un en-tête personnalisé",
+          "headerValueRequired": "Saisissez une valeur pour {{name}}"
         },
         "sharedByEditor": "Partagé par {{owner}} · vous êtes éditeur",
         "aTeammate": "un coéquipier",
@@ -1518,7 +1522,12 @@
         "testBeforeSave": "Testez la connexion avant d’enregistrer.",
         "discoveredTools_one": "{{formatted}} action trouvée",
         "discoveredTools_other": "{{formatted}} actions trouvées",
-        "discoveredTools_many": "{{formatted}} actions trouvées"
+        "discoveredTools_many": "{{formatted}} actions trouvées",
+        "customHeaders": "En-têtes personnalisés",
+        "customHeadersHint": "Envoyés avec chaque requête vers ce serveur. Les valeurs sont enregistrées comme une clé et ne sont plus jamais affichées.",
+        "headerValue": "Valeur de l’en-tête",
+        "addHeader": "Ajouter un en-tête",
+        "removeHeader": "Supprimer l’en-tête"
       },
       "configErrors": {
         "required": "{{field}} est obligatoire",

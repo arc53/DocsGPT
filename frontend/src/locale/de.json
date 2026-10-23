@@ -1455,7 +1455,11 @@
           "testFailed": "Verbindungstest fehlgeschlagen",
           "saveFailed": "MCP-Server konnte nicht gespeichert werden",
           "oauthFailed": "OAuth-Anmeldung fehlgeschlagen oder abgebrochen",
-          "timeoutRange": "Timeout muss zwischen 1 und 300 Sekunden liegen"
+          "timeoutRange": "Timeout muss zwischen 1 und 300 Sekunden liegen",
+          "headerNameInvalid": "Gib einen gültigen Header-Namen ein, z. B. X-Tenant-Id",
+          "headerDuplicate": "{{name}} ist doppelt aufgeführt",
+          "headerReserved": "{{name}} wird von der Authentifizierung oben gesetzt und kann kein benutzerdefinierter Header sein",
+          "headerValueRequired": "Gib einen Wert für {{name}} ein"
         },
         "sharedByEditor": "Geteilt von {{owner}} · du bist Bearbeiter",
         "aTeammate": "einem Teammitglied",
@@ -1471,7 +1475,12 @@
         "advanced": "Erweiterte Einstellungen",
         "testBeforeSave": "Teste die Verbindung, bevor du speicherst.",
         "discoveredTools_one": "{{formatted}} Aktion gefunden",
-        "discoveredTools_other": "{{formatted}} Aktionen gefunden"
+        "discoveredTools_other": "{{formatted}} Aktionen gefunden",
+        "customHeaders": "Benutzerdefinierte Header",
+        "customHeadersHint": "Wird mit jeder Anfrage an diesen Server gesendet. Werte werden wie ein Schlüssel gespeichert und nie wieder angezeigt.",
+        "headerValue": "Header-Wert",
+        "addHeader": "Header hinzufügen",
+        "removeHeader": "Header entfernen"
       },
       "configErrors": {
         "required": "{{field}} ist erforderlich",

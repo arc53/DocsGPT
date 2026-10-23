@@ -1501,7 +1501,11 @@
           "testFailed": "La prueba de conexión falló",
           "saveFailed": "No se pudo guardar el servidor MCP",
           "oauthFailed": "El inicio de sesión con OAuth falló o se canceló",
-          "timeoutRange": "El tiempo de espera debe estar entre 1 y 300 segundos"
+          "timeoutRange": "El tiempo de espera debe estar entre 1 y 300 segundos",
+          "headerNameInvalid": "Introduce un nombre de encabezado válido, como X-Tenant-Id",
+          "headerDuplicate": "{{name}} aparece dos veces",
+          "headerReserved": "{{name}} lo define la autenticación de arriba, así que no puede ser un encabezado personalizado",
+          "headerValueRequired": "Introduce un valor para {{name}}"
         },
         "sharedByEditor": "Compartido por {{owner}} · eres editor",
         "aTeammate": "un compañero",
@@ -1518,7 +1522,12 @@
         "testBeforeSave": "Prueba la conexión antes de guardar.",
         "discoveredTools_one": "{{formatted}} acción encontrada",
         "discoveredTools_other": "{{formatted}} acciones encontradas",
-        "discoveredTools_many": "{{formatted}} acciones encontradas"
+        "discoveredTools_many": "{{formatted}} acciones encontradas",
+        "customHeaders": "Encabezados personalizados",
+        "customHeadersHint": "Se envían en cada solicitud a este servidor. Los valores se guardan como una clave y no se vuelven a mostrar.",
+        "headerValue": "Valor del encabezado",
+        "addHeader": "Añadir encabezado",
+        "removeHeader": "Quitar encabezado"
       },
       "configErrors": {
         "required": "{{field}} es obligatorio",

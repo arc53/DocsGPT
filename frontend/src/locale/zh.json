@@ -1453,7 +1453,11 @@
           "testFailed": "连接测试失败",
           "saveFailed": "无法保存 MCP 服务器",
           "oauthFailed": "OAuth 登录失败或已取消",
-          "timeoutRange": "超时必须介于 1 到 300 秒之间"
+          "timeoutRange": "超时必须介于 1 到 300 秒之间",
+          "headerNameInvalid": "请输入有效的请求头名称，例如 X-Tenant-Id",
+          "headerDuplicate": "{{name}} 重复出现",
+          "headerReserved": "{{name}} 由上方的身份验证设置，不能作为自定义请求头",
+          "headerValueRequired": "请输入 {{name}} 的值"
         },
         "sharedByEditor": "由 {{owner}} 共享 · 你是编辑者",
         "aTeammate": "一位队友",
@@ -1469,7 +1473,12 @@
         "advanced": "高级设置",
         "testBeforeSave": "保存前先测试连接。",
         "discoveredTools_one": "发现 {{formatted}} 个操作",
-        "discoveredTools_other": "发现 {{formatted}} 个操作"
+        "discoveredTools_other": "发现 {{formatted}} 个操作",
+        "customHeaders": "自定义请求头",
+        "customHeadersHint": "随每个发往此服务器的请求一起发送。值会像密钥一样保存，且不会再次显示。",
+        "headerValue": "请求头值",
+        "addHeader": "添加请求头",
+        "removeHeader": "移除请求头"
       },
       "configErrors": {
         "required": "{{field}}为必填项",
