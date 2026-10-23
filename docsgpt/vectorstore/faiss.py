@@ -144,9 +144,12 @@ def store_uploaded_index(storage: Any, directory: str, index_bytes: bytes, pickl
         pickle_bytes: The uploaded index.pkl.
 
     Raises:
-        pickle.UnpicklingError: The pickle is not a FAISS sidecar.
+        ValueError: The pickle is not a FAISS sidecar; nothing was stored.
     """
-    documents, mapping = load_pickle_sidecar(pickle_bytes)
+    try:
+        documents, mapping = load_pickle_sidecar(pickle_bytes)
+    except Exception as error:  # noqa: BLE001 - any failure to read it means the upload is unusable
+        raise ValueError(f"{PICKLE_SIDECAR} is not a FAISS sidecar: {error}") from error
     payloads = {
         FAISS_INDEX: index_bytes,
         PICKLE_SIDECAR: pickle_bytes,

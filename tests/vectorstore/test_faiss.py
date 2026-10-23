@@ -847,3 +847,49 @@ class TestFaissLoadDuringASave:
         reader = make_store_on(storage)
 
         _assert_rows_match_documents(reader)
+
+
+@pytest.mark.unit
+class TestStoreUploadedIndex:
+    """What /api/upload_index stores: the worker's index.faiss and index.pkl, plus an index.json naming them."""
+
+    def _upload(self, storage, tmp_path, make_store_on, docs):
+        from docsgpt.vectorstore.faiss import store_uploaded_index
+
+        built = make_store_on(storage, docs_init=docs)
+        folder = tmp_path / "built"
+        built._write_index_files(str(folder))
+        store_uploaded_index(
+            storage, "indexes/src", (folder / "index.faiss").read_bytes(), (folder / "index.pkl").read_bytes(),
+        )
+
+    def test_the_upload_loads_through_its_json(self, legacy, tmp_path, make_store_on):
+        self._upload(legacy, tmp_path, make_store_on, list(reversed(_seed_docs())))
+
+        reloaded = make_store_on(legacy)
+
+        assert reloaded._paired_sidecar == "index.json"
+        _assert_rows_match_documents(reloaded)
+
+    @pytest.mark.parametrize("named", [False, True])
+    @pytest.mark.parametrize("refused", ["index.json", "index.faiss", "index.pkl"])
+    def test_an_upload_that_stops_part_way_reloads_consistently(
+        self, legacy, tmp_path, make_store_on, named, refused,
+    ):
+        if named:
+            make_store_on(legacy).save_local()
+        legacy.refuse = {refused}
+
+        with pytest.raises(OSError):
+            self._upload(legacy, tmp_path, make_store_on, list(reversed(_seed_docs())))
+
+        legacy.refuse = set()
+        _assert_rows_match_documents(make_store_on(legacy))
+
+    def test_an_unreadable_pickle_stores_nothing(self, legacy):
+        from docsgpt.vectorstore.faiss import store_uploaded_index
+
+        with pytest.raises(ValueError, match="not a FAISS sidecar"):
+            store_uploaded_index(legacy, "indexes/src", b"faiss", b"not a pickle")
+
+        assert legacy.written == []

@@ -59,7 +59,12 @@ def download_file():
 
 @internal.route("/api/upload_index", methods=["POST"])
 def upload_index_files():
-    """Upload two files(index.faiss, index.pkl) to the user's folder."""
+    """Store a worker's index and the source's fields.
+
+    For FAISS the form carries index.faiss and index.pkl; index.json, which
+    names the index.faiss it belongs to, is built here from the pickle and
+    stored with them. An unreadable pickle answers 400 and stores nothing.
+    """
     if "user" not in request.form:
         return {"status": "no user"}
     user = request.form["user"]
@@ -160,13 +165,16 @@ def upload_index_files():
         # a settings change (or the Knowledge listing's row lock) would wait
         # on it. Two jobs on one index never save at once: the workers hold
         # the source's index lock (source_index_lock) across their upload.
-        # The upload carries no index.json, so one an earlier page edit wrote
-        # belongs to the old index: drop it first, so a load reads the pickle.
-        json_sidecar = f"{index_base_path}/index.json"
-        if storage.file_exists(json_sidecar):
-            storage.delete_file(json_sidecar)
-        storage.save_file(faiss_files[0], f"{index_base_path}/index.faiss")
-        storage.save_file(faiss_files[1], f"{index_base_path}/index.pkl")
+        # The upload carries no index.json: one is built here, naming the
+        # uploaded index.faiss, and the three files go in an order that a stop
+        # part way can't leave paired wrongly (store_uploaded_index).
+        from docsgpt.vectorstore.faiss import store_uploaded_index
+
+        try:
+            store_uploaded_index(storage, index_base_path, faiss_files[0].read(), faiss_files[1].read())
+        except ValueError as error:
+            logger.error(f"Refusing the FAISS index uploaded for source {source_id}: {error}")
+            return {"status": "invalid index"}, 400
     with db_session() as conn:
         repo = SourcesRepository(conn)
         # Locked until the write: a settings change waits instead of landing

@@ -567,11 +567,14 @@ class TestUploadIndexSavesFilesOutsideTheRowLock:
     def _form(self, src, **extra):
         import io
 
+        from docsgpt.vectorstore.faiss_docstore import dump_pickle_sidecar
+
+        pickle_bytes = dump_pickle_sidecar({}, {})
         return {
             "user": USER, "name": "Docs", "tokens": "5", "retriever": "classic", "id": str(src["id"]),
             "type": "website", "sync_frequency": "weekly", "remote_data": json.dumps(SITE),
             "directory_structure": json.dumps({"new.md": {"token_count": 5}}),
-            "file_faiss": (io.BytesIO(b"faiss"), "index.faiss"), "file_pkl": (io.BytesIO(b"pkl"), "index.pkl"),
+            "file_faiss": (io.BytesIO(b"faiss"), "index.faiss"), "file_pkl": (io.BytesIO(pickle_bytes), "index.pkl"),
             **extra,
         }
 
@@ -617,7 +620,7 @@ class TestUploadIndexSavesFilesOutsideTheRowLock:
 
         assert response.json == {"status": "ok"}
         saves = [i for i, event in enumerate(events) if event == "save"]
-        assert len(saves) == 2
+        assert len(saves) == 3  # index.faiss, index.pkl and the index.json built from it
         opened = 0
         for i, event in enumerate(events):
             opened += {"begin": 1, "commit": -1}.get(event, 0)
