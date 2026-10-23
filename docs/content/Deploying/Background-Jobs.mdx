@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Data Retention
 description: The periodic tasks the Celery beat scheduler runs in DocsGPT - source syncs, scheduled agent runs, reconciliation, conversation analytics and cleanups - what each one trims and when, what is kept until someone deletes it, and how to make sure beat is running.
-lastUpdated: 2026-10-22
+lastUpdated: 2026-10-23
 ---
 
 import { Callout } from 'nextra/components'
@@ -36,9 +36,9 @@ Beat schedules these tasks. Each runs on the worker, so the worker must also be 
 
 | Task | Every | What it does | Controlled by |
 | --- | --- | --- | --- |
-| `schedule-syncs-daily` | day | Re-ingests sources whose sync frequency is **Daily**. | The source's **Sync** setting in Knowledge. |
-| `schedule-syncs-weekly` | week | The same for **Weekly** sources. | The source's **Sync** setting. |
-| `schedule-syncs-monthly` | 30 days | The same for **Monthly** sources. | The source's **Sync** setting. |
+| `schedule-syncs-daily` | day | Re-ingests sources whose sync frequency is **Daily**. | **Keep up to date** in the source's **Settings** in Knowledge. |
+| `schedule-syncs-weekly` | week | The same for **Weekly** sources. | The source's **Keep up to date** setting. |
+| `schedule-syncs-monthly` | 30 days | The same for **Monthly** sources. | The source's **Keep up to date** setting. |
 | `dispatch-scheduled-runs` | 30 s | Queues [scheduled agent runs](/Agents/schedules) that are due. | `SCHEDULE_DISPATCHER_INTERVAL` (`30`, minimum 15 s). |
 | `cleanup-schedule-runs` | day | Deletes scheduled-run records and their output older than the retention window, keeping the 50 most recent runs of each schedule. | `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS` (`90`). |
 | `reconciliation` | 30 s | Marks stuck work as failed and logs an alert: answers that stopped streaming, tool calls left mid-way, stalled ingests, stuck idempotency claims and scheduled runs. | None. |

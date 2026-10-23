@@ -56,7 +56,7 @@ Event types:
 | `source.ingest.queued` | source | An upload, remote ingest or re-ingest was queued. | `source_id`, `filename` or `job_name`, `operation` |
 | `source.ingest.progress` | source | Parsing or embedding progressed. | `current`, `total`, `stage` (`parsing` or `embedding`) |
 | `source.ingest.completed` | source | The source is ready. | `source_id`, `tokens`, `operation`, and `filename` (uploads and re-ingests) or `job_name` and `loader` (remote and connector sources) |
-| `source.ingest.failed` | source | Ingestion failed, or a sync you started didn't run. | `source_id`, `operation`, `error`; for a sync that didn't run, `reason` (`busy`, `wiki` or `gone`) |
+| `source.ingest.failed` | source | Ingestion failed, or a sync or page change you started didn't run. | `source_id`, `operation`, `error`; `reason` when it didn't run: `busy`, `wiki` or `gone` for a sync, `busy` for a page change (another change held the source) |
 | `graph.extract.progress`, `graph.extract.completed`, `graph.extract.failed` | source | [GraphRAG](/Sources/GraphRAG) extraction progressed, finished or failed. | `source_id`; `progress`: `current`, `total`, `nodes`, `edges`; `completed`: `nodes`, `edges`, `chunks_processed`, `skipped_over_cap`, `failed_chunks`; `failed`: `error` |
 | `attachment.queued`, `attachment.progress`, `attachment.completed`, `attachment.failed` | attachment | A chat attachment is being processed. | `attachment_id`, `filename` |
 | `tool.approval.required` | conversation | A turn paused on tools that need approval. | `conversation_id`, `message_id`, `pending_tool_calls` |
