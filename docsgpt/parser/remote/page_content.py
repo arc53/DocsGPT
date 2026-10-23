@@ -16,11 +16,11 @@ import codecs
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsplit
 
 import requests
-from bs4 import BeautifulSoup, Comment, NavigableString, Tag
+from bs4 import BeautifulSoup, CData, Comment, NavigableString, Tag
 from markdownify import MarkdownConverter
 
 from docsgpt.core.settings import settings
@@ -380,6 +380,51 @@ def _text_length(element: Tag) -> int:
     return len(element.get_text(" ", strip=True))
 
 
+# The strings ``get_text`` reads inside an ordinary element.
+_TEXT_STRINGS = (NavigableString, CData)
+
+
+def _measure_text(root: Tag) -> Dict[int, Tuple[int, int]]:
+    """Every element's ``_text_length`` and the share of it inside links, in one pass.
+
+    Asking each element for its own text re-reads the elements nested in it,
+    so a page of nested asides or spans cost time quadratic in its depth.
+    This walks the tree once, children before parents.
+
+    Args:
+        root: The element whose descendants (and itself) are measured.
+
+    Returns:
+        By element ``id``: ``(text length, link text length)``, the second
+        the sum of ``_text_length`` of every ``<a>`` inside it (itself too),
+        as summing them one by one would count it.
+    """
+    # By element id: [characters, non-blank strings, link characters].
+    sums: Dict[int, List[int]] = {}
+    measures: Dict[int, Tuple[int, int]] = {}
+    nodes = [root, *root.descendants]
+    for node in reversed(nodes):
+        parent = node.parent if node is not root else None
+        if isinstance(node, Tag):
+            chars, count, linked = sums.pop(id(node), (0, 0, 0))
+            length = chars + max(count - 1, 0)
+            if node.name == "a":
+                linked += length
+            measures[id(node)] = (length, linked)
+        elif type(node) in _TEXT_STRINGS:
+            chars, count, linked = len(node.strip()), 1, 0
+            if not chars:
+                continue
+        else:
+            continue
+        if parent is not None:
+            total = sums.setdefault(id(parent), [0, 0, 0])
+            total[0] += chars
+            total[1] += count
+            total[2] += linked
+    return measures
+
+
 def _pick_root(soup: BeautifulSoup) -> Tag:
     """The page's main content element: a single ``main``/``article``, else ``body``."""
     body = soup.body or soup
@@ -389,6 +434,41 @@ def _pick_root(soup: BeautifulSoup) -> Tag:
         if len(found) == 1 and total and _text_length(found[0]) / total >= _MIN_ROOT_SHARE:
             return found[0]
     return body
+
+
+def _has_ancestor(tag: Tag, names: Tuple[str, ...], memo: Dict[int, bool]) -> bool:
+    """Whether an element sits inside one named ``names``, each ancestor looked at once per tree.
+
+    Args:
+        tag: The element.
+        names: Tag names to look for above it.
+        memo: Answers by element ``id``, shared across calls on one tree, so
+            elements nested thousands deep don't each walk up to the root.
+
+    Returns:
+        True when an ancestor's name is in ``names``.
+    """
+    path = []
+    node = tag.parent
+    found = False
+    while node is not None:
+        if id(node) in memo:
+            found = memo[id(node)]
+            break
+        if node.name in names:
+            found = True
+            break
+        path.append(node)
+        node = node.parent
+    # Every element walked through has the answer of the one the walk ended at.
+    for walked in path:
+        memo[id(walked)] = found
+    return found
+
+
+def _is_link_list(total: int, linked: int) -> bool:
+    """Whether an aside measured ``total`` characters of text, ``linked`` of them in links, is a menu."""
+    return total == 0 or linked / total >= _ASIDE_LINK_SHARE
 
 
 def _strip_chrome(root: Tag) -> None:
@@ -402,15 +482,23 @@ def _strip_chrome(root: Tag) -> None:
         for tag in root.select(f"[role={role}]"):
             tag.decompose()
     # A page-level header is site chrome; an article's own header holds its title.
-    for tag in root.find_all("header"):
-        if not tag.find_parent(["article", "main"]):
-            tag.decompose()
-    for tag in root.find_all("aside") + root.select("[role=complementary]"):
-        if tag.decomposed:
-            continue
-        total = _text_length(tag)
-        linked = sum(_text_length(a) for a in tag.find_all("a"))
-        if total == 0 or linked / total >= _ASIDE_LINK_SHARE:
+    in_article: Dict[int, bool] = {}
+    page_headers = [tag for tag in root.find_all("header") if not _has_ancestor(tag, ("article", "main"), in_article)]
+    # Innermost first, so no header is removed after the one around it.
+    for tag in reversed(page_headers):
+        tag.decompose()
+    complementary = {id(tag) for tag in root.select("[role=complementary]")}
+    asides = [tag for tag in root.find_all(True) if tag.name == "aside" or id(tag) in complementary]
+    if asides:
+        # Each aside is judged on the tree as it is before any aside goes, so
+        # one measure of the whole tree serves them all. Asking each aside
+        # for its text re-read every aside inside it.
+        measures = _measure_text(root)
+        menus = [tag for tag in asides if _is_link_list(*measures[id(tag)])]
+        # Innermost first, so no aside is removed after the one around it
+        # (and none needs a ``decomposed`` check, which bs4 answers by
+        # searching the subtree for a tag of that name).
+        for tag in reversed(menus):
             tag.decompose()
     for tag in root.select(_ANCHOR_SELECTORS):
         tag.decompose()
@@ -429,11 +517,13 @@ def _images_to_alt_text(root: Tag) -> None:
         img.replace_with(NavigableString(alt))
 
 
-def _holds_running_text(parent: Tag) -> bool:
+def _holds_running_text(parent: Tag, measures: Optional[Dict[int, Tuple[int, int]]] = None) -> bool:
     """Whether an element's own children include text: a sentence, not a stack of blocks.
 
     Args:
         parent: The element whose children are checked.
+        measures: ``_measure_text`` of a tree holding ``parent``, so a child's
+            text isn't read anew at every level; ``None`` reads it.
 
     Returns:
         True when a direct child is non-blank text, or an inline element
@@ -446,7 +536,11 @@ def _holds_running_text(parent: Tag) -> bool:
             if child.strip():
                 return True
         elif isinstance(child, Tag) and child.name != "a" and child.name not in _BLOCK_TAGS:
-            if child.get_text(strip=True):
+            if measures is not None and id(child) in measures:
+                has_text = measures[id(child)][0] > 0
+            else:
+                has_text = bool(child.get_text(strip=True))
+            if has_text:
                 return True
     return False
 
@@ -459,6 +553,8 @@ def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
     conda or from source") stay in their sentence, a space put between any
     that touch.
     """
+    # Measured once up front: moving links into a list changes no element's text.
+    measures = _measure_text(root)
     for parent in [root, *root.find_all(True)]:
         run = []
         runs = []
@@ -473,7 +569,7 @@ def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
                 run = []
         if len(run) > 1:
             runs.append(run)
-        if runs and _holds_running_text(parent):
+        if runs and _holds_running_text(parent, measures):
             for links in runs:
                 for link in links[1:]:
                     if getattr(link.previous_sibling, "name", None) == "a":

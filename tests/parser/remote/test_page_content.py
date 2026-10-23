@@ -9,7 +9,16 @@ from unittest.mock import patch
 import pytest
 import requests
 
-from docsgpt.parser.remote.page_content import FetchBudget, RedirectError, extract_page, fetch_page, page_document
+from docsgpt.parser.remote.page_content import (
+    FetchBudget,
+    RedirectError,
+    _listify_link_runs,
+    _strip_chrome,
+    extract_page,
+    fetch_page,
+    html_soup,
+    page_document,
+)
 
 URL = "https://docs.example.com/guide/setup"
 
@@ -363,6 +372,49 @@ class TestKeepLinksCost:
 
         assert time.monotonic() - started < 5
         assert "[x3999](https://docs.example.com/l3999)" in doc.text
+
+    def test_nested_asides_are_measured_once(self):
+        # Each aside used to re-read the text and links of every aside inside it.
+        soup = html_soup("<html><body>" + "<aside>t " * 4000 + "</body></html>")
+
+        started = time.monotonic()
+        _strip_chrome(soup.body)
+
+        assert time.monotonic() - started < 2
+        assert len(soup.find_all("aside")) == 4000
+
+    def test_nested_link_runs_read_their_text_once(self):
+        # Each level's running-text check used to read the whole subtree below it.
+        soup = html_soup("<html><body>" + "<span><a href=/a>a</a><a href=/b>b</a>" * 4000 + "</body></html>")
+
+        started = time.monotonic()
+        _listify_link_runs(soup, soup.body)
+
+        assert time.monotonic() - started < 2
+        # The nested span beside each run holds text: the links stay in it,
+        # spaced. Only the innermost run stands alone and becomes a list.
+        assert len(soup.find_all("ul")) == 1
+        assert soup.body.span.get_text().startswith("a b")
+
+    def test_nested_page_headers_inside_an_article_are_looked_up_once(self):
+        soup = html_soup("<html><body><article>" + "<header>t " * 4000 + "</article></body></html>")
+
+        started = time.monotonic()
+        _strip_chrome(soup.body)
+
+        assert time.monotonic() - started < 2
+        assert len(soup.find_all("header")) == 4000
+
+    def test_a_link_list_aside_inside_a_kept_aside_is_still_dropped(self):
+        body = _page(
+            "<main>" + ARTICLE + "<aside><p>A footnote that explains the setup in a full sentence of text.</p>"
+            "<aside><a href='/x'>Related one</a> <a href='/y'>Related two</a></aside></aside></main>"
+        )
+
+        page = extract_page(body, URL)
+
+        assert "A footnote that explains" in page.text
+        assert "Related one" not in page.text
 
     def test_bare_and_inline_links_are_still_told_apart(self):
         body = _page(
