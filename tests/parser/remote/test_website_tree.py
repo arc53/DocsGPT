@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
+from docsgpt.parser.remote.sitemap_loader import SitemapLoader
+from docsgpt.parser.remote.website_loader import WebsiteLoader
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
     folder_skip_rule,
@@ -13,6 +15,7 @@ from docsgpt.parser.remote.website_tree import (
     total_tokens,
     web_pages,
 )
+from tests.parser.remote.test_website_loader import page, sources, urlset
 
 
 def leaf(url, tokens=10, title=None):
@@ -112,7 +115,12 @@ class TestLegacyConfig:
              [{"url": "https://x.io/", "mode": "site", "discovery": "links", "max_pages": 10}]),
             ("sitemap", {"url": "https://x.io/sitemap.xml"},
              [{"url": "https://x.io/sitemap.xml", "mode": "site", "discovery": "sitemap", "max_pages": 20,
-               "sitemap_url": "https://x.io/sitemap.xml"}]),
+               "sitemap_url": "https://x.io/sitemap.xml", "include_subdomains": True}]),
+            # Not named like a sitemap: it may be a page, as the old loader took it.
+            ("sitemap", {"url": "https://x.io/guide"},
+             [{"url": "https://x.io/guide", "mode": "page"},
+              {"url": "https://x.io/guide", "mode": "site", "discovery": "sitemap", "max_pages": 20,
+               "sitemap_url": "https://x.io/guide", "include_subdomains": True}]),
         ],
     )
     def test_converts_the_old_loaders_with_their_old_limits(self, source_type, remote_data, expected):
@@ -153,3 +161,35 @@ class TestLegacyConfig:
         assert config_from_legacy("url", "http://[x") is None
         assert config_from_legacy("crawler", {"url": "http://[x"}) is None
         assert config_from_legacy("website", {"entries": [{"url": "http://[x", "mode": "page"}]}) is None
+
+
+class TestLegacySitemapLoadsWhatItLoaded:
+    """A converted sitemap source fetches the pages the old sitemap loader did."""
+
+    def test_pages_a_sitemap_lists_on_a_subdomain_stay(self, web):
+        web({
+            "https://x.io/sitemap.xml": urlset("https://docs.x.io/a", "https://docs.x.io/b", "https://x.io/c"),
+            "https://docs.x.io/a": page("A"),
+            "https://docs.x.io/b": page("B"),
+            "https://x.io/c": page("C"),
+        })
+        legacy = SitemapLoader().load_data("https://x.io/sitemap.xml")
+
+        converted = WebsiteLoader().load_data(config_from_legacy("sitemap", "https://x.io/sitemap.xml"))
+
+        assert sources(converted) == sources(legacy) == ["https://docs.x.io/a", "https://docs.x.io/b", "https://x.io/c"]
+
+    def test_an_address_that_is_a_page_is_loaded_as_one(self, web):
+        web({"https://x.io/guide": page("Guide", links=["/other"]), "https://x.io/other": page("Other")})
+        legacy = SitemapLoader().load_data("https://x.io/guide")
+
+        converted = WebsiteLoader().load_data(config_from_legacy("sitemap", "https://x.io/guide"))
+
+        assert sources(converted) == sources(legacy) == ["https://x.io/guide"]
+
+    def test_a_sitemap_without_an_xml_name_is_not_also_a_page(self, web):
+        web({"https://x.io/sitemap": urlset("https://x.io/a"), "https://x.io/a": page("A")})
+
+        converted = WebsiteLoader().load_data(config_from_legacy("sitemap", "https://x.io/sitemap"))
+
+        assert sources(converted) == ["https://x.io/a"]

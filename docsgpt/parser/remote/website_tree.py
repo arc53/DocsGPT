@@ -11,7 +11,7 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from docsgpt.parser.remote.website_loader import is_web_address, parse_website_config
+from docsgpt.parser.remote.website_loader import is_sitemap_url, is_web_address, parse_website_config
 
 # The old loaders' fixed page limits, kept when their sources are converted.
 _LEGACY_CRAWL_PAGES = 10
@@ -197,6 +197,16 @@ def _urls(remote_data: Any) -> List[str]:
 def config_from_legacy(source_type: str, remote_data: Any) -> Optional[Dict[str, Any]]:
     """A Website config for a source, converting the old web loaders.
 
+    Each conversion keeps what the old loader fetched: ``url`` sources become
+    page entries; a ``crawler`` source a link-following site of 10 pages; a
+    ``sitemap`` source a sitemap-only site of 20 pages with its subdomains in
+    scope (a sitemap's pages often sit on one, and the old loader took any
+    host it listed), plus a page entry for the address when it isn't named
+    like a sitemap (``.xml``/``.xml.gz``), since the old loader loaded an
+    address that wasn't a sitemap as a page. A real sitemap fetched as that
+    page is XML, which yields no page. Pages a sitemap lists on an unrelated
+    domain are the one thing the conversion drops.
+
     Args:
         source_type: ``sources.type``.
         remote_data: The stored ``remote_data``.
@@ -221,10 +231,18 @@ def config_from_legacy(source_type: str, remote_data: Any) -> Optional[Dict[str,
     elif loader == "crawler":
         entries = [{"url": urls[0], "mode": "site", "discovery": "links", "max_pages": _LEGACY_CRAWL_PAGES}]
     elif loader == "sitemap":
+        # The old loader took every page its sitemap listed and loaded an
+        # address that wasn't a sitemap as a page. Sitemaps list pages of
+        # their own site, often on a subdomain (x.io/sitemap.xml naming
+        # docs.x.io/...), so subdomains stay in scope; and an address not
+        # named like a sitemap is also kept as a page entry, which a real
+        # sitemap answers with XML that yields no page.
         entries = [{
-            "url": urls[0], "mode": "site", "discovery": "sitemap",
+            "url": urls[0], "mode": "site", "discovery": "sitemap", "include_subdomains": True,
             "max_pages": _LEGACY_SITEMAP_PAGES, "sitemap_url": urls[0],
         }]
+        if not is_sitemap_url(urls[0]):
+            entries.insert(0, {"url": urls[0], "mode": "page"})
     else:
         return None
     try:

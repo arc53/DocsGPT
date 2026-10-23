@@ -280,7 +280,7 @@ def _looks_like_sitemap(response: requests.Response) -> bool:
     return b"<urlset" in head or b"<sitemapindex" in head
 
 
-def _is_sitemap_url(url: str) -> bool:
+def is_sitemap_url(url: str) -> bool:
     """Whether an address names a sitemap file (``.xml`` or ``.xml.gz``).
 
     Args:
@@ -651,7 +651,7 @@ class WebsiteLoader(BaseRemote):
             limit = max(1, min(limit, budget))
         scope = SiteScope(url, entry.get("path_prefix", ""), entry.get("include_subdomains", False), skip)
         discovery = entry.get("discovery", "auto")
-        pasted_sitemap = _is_sitemap_url(url)
+        pasted_sitemap = is_sitemap_url(url)
 
         if entry.get("sitemap_url"):
             sitemaps = [entry["sitemap_url"]]
