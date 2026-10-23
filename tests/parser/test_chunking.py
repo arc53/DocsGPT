@@ -6,9 +6,11 @@ classic_chunk, chunk), edge cases, token counting.
 
 import pytest
 
+from docsgpt.parser import tokenization
 from docsgpt.parser.chunking import Chunker
 from docsgpt.parser.schema.base import Document
-from tests.parser.counter_fakes import wordpiece_counter
+from docsgpt.parser.tokenization import HuggingFaceCounter
+from tests.parser.counter_fakes import CharTokenizer, wordpiece_counter
 
 
 # =====================================================================
@@ -411,3 +413,35 @@ class TestSpecialTokenText:
         chunks = chunker.chunk([doc])
         assert chunks
         assert all("<|endoftext|>" in c.text for c in chunks[:1])
+
+
+
+# =====================================================================
+# Chunker - bounded tokenizer calls
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestChunkerTokenizerCallsAreBounded:
+    """Through classic_chunk and split_document, no encode sees more than two windows."""
+
+    WINDOW = 256
+
+    @pytest.mark.parametrize("duplicate_headers", [False, True])
+    def test_large_document(self, monkeypatch, duplicate_headers):
+        monkeypatch.setattr(tokenization, "_WINDOW_CHARS", self.WINDOW, raising=False)
+        tokenizer = CharTokenizer()
+        chunker = Chunker(max_tokens=100, min_tokens=10, duplicate_headers=duplicate_headers)
+        chunker.counter = HuggingFaceCounter(tokenizer, "spy")
+        header = "Title\nSubtitle\nAuthor\n"
+        body = "検索は自然言語でできます。The quick brown fox jumps.\n" * 400
+
+        chunks = chunker.chunk([Document(text=header + body, doc_id="big")])
+
+        assert max(tokenizer.encode_lengths) <= 2 * self.WINDOW
+        assert all(c.extra_info["token_count"] <= 100 for c in chunks)
+        if duplicate_headers:
+            assert all(c.text.startswith(header) for c in chunks)
+            assert "".join(c.text[len(header):] for c in chunks) == body
+        else:
+            assert "".join(c.text for c in chunks) == header + body

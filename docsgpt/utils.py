@@ -202,12 +202,19 @@ def num_tokens_from_object_or_list(thing):
         return 0
 
 
-def count_tokens_docs(docs):
-    docs_content = ""
-    for doc in docs:
-        docs_content += doc.page_content
-    tokens = num_tokens_from_string(docs_content)
-    return tokens
+def count_tokens_docs(docs: List) -> int:
+    """Count the cl100k tokens of a list of documents, one document at a time.
+
+    Args:
+        docs: Documents with a ``page_content`` string.
+
+    Returns:
+        The summed token count.
+    """
+    # Function-local: docsgpt.parser.tokenization imports this module.
+    from docsgpt.parser.tokenization import count_tokens_windowed
+
+    return sum(count_tokens_windowed(doc.page_content) for doc in docs)
 
 
 def calculate_doc_token_budget(

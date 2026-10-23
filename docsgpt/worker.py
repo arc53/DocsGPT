@@ -46,6 +46,7 @@ from docsgpt.parser.remote.remote_creator import (
     normalize_remote_data,
 )
 from docsgpt.parser.schema.base import Document
+from docsgpt.parser.tokenization import count_tokens_windowed
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
     safe_zip_error_message,
@@ -78,7 +79,6 @@ from docsgpt.upload_limits import (
 from docsgpt.utils import (
     count_tokens_docs,
     get_encoding,
-    num_tokens_from_string,
     safe_filename,
     truncate_to_line_boundary,
 )
@@ -1438,7 +1438,7 @@ def remote_worker(
 
             if file_path:
                 # Calculate token count
-                token_count = num_tokens_from_string(doc.text) if doc.text else 0
+                token_count = count_tokens_windowed(doc.text) if doc.text else 0
 
                 # Estimate size in bytes from text content
                 size_bytes = len(doc.text.encode("utf-8")) if doc.text else 0
