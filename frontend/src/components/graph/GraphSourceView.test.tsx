@@ -145,6 +145,7 @@ vi.mock('../WebsiteTree', async () => {
       actionsTarget?: HTMLElement | null;
       onCrumbsChange?: (crumbs: { label: string }[]) => void;
       onPagesChanged?: () => void;
+      sync?: { startedAt: number; taskId: string | null } | null;
     }) => {
       const { onCrumbsChange } = props;
       useEffect(() => {
@@ -165,6 +166,7 @@ vi.mock('../WebsiteTree', async () => {
             data-sync={`${props.syncFrequency ?? ''}|${props.syncedAt ?? ''}`}
             data-initial-path={props.initialPath ?? ''}
             data-linked={props.linkedChunk?.id ?? ''}
+            data-sync-task={props.sync?.taskId ?? ''}
           >
             {props.embedded ? 'embedded' : 'page'}
             {props.actionsTarget
@@ -670,6 +672,21 @@ describe('GraphSourceView', () => {
     // A removal changes the graph without a build.
     await act(async () => buttonByText('PAGES CHANGED')!.click());
     await flush();
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands a sync to its page list, and tells the host a page change finished', async () => {
+    const onPagesChanged = vi.fn();
+    await renderWebsite({
+      sync: { startedAt: 1, taskId: 'task-s' },
+      onPagesChanged,
+    });
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    const tree = container.querySelector('[data-testid="website-tree"]');
+    expect(tree?.getAttribute('data-sync-task')).toBe('task-s');
+    await act(async () => buttonByText('PAGES CHANGED')!.click());
+    await flush();
+    expect(onPagesChanged).toHaveBeenCalledTimes(1);
     expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
   });
 

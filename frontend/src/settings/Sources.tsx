@@ -569,6 +569,12 @@ export default function Sources({
           website={documentToView.website}
           syncFrequency={documentToView.syncFrequency}
           syncedAt={documentToView.date}
+          sync={
+            startedSync?.sourceId === documentToView.id ? startedSync : null
+          }
+          onPagesChanged={() =>
+            documentToView.id && refreshOpenSource(documentToView.id)
+          }
         />
       ) : documentToView.isNested ? (
         documentToView.website ? (

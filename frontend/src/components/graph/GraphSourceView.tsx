@@ -66,6 +66,14 @@ interface GraphSourceViewProps {
   syncFrequency?: string;
   /** When the source was last ingested or synced (a Website source's byline). */
   syncedAt?: string;
+  /** A Website source: a sync the host started, for its page list to wait on. */
+  sync?: { startedAt: number; taskId: string | null } | null;
+  /**
+   * A Website source: called once a page change (add, refresh, remove, a
+   * sync) has finished, after the graph is read again, so the host can read
+   * the source again too.
+   */
+  onPagesChanged?: () => void;
   onBackToDocuments: () => void;
   /** Extra header control (Test retrieval), right-aligned in the title row. */
   headerAction?: ReactNode;
@@ -99,6 +107,8 @@ export default function GraphSourceView({
   website,
   syncFrequency,
   syncedAt,
+  sync,
+  onPagesChanged,
   onBackToDocuments,
   headerAction,
   headerMenu,
@@ -254,8 +264,12 @@ export default function GraphSourceView({
       linkedChunk={linked}
       actionsTarget={filesActions}
       onCrumbsChange={setFilesCrumbs}
+      sync={sync}
       // A removal changes the graph without a build.
-      onPagesChanged={retry}
+      onPagesChanged={() => {
+        retry();
+        onPagesChanged?.();
+      }}
     />
   ) : synced || sourceType === 'connector:file' ? (
     <ConnectorTree
