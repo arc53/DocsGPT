@@ -2016,7 +2016,7 @@
         "syncRefusedConnector": "Esta fuente se sincroniza a través de su conexión.",
         "syncRefusedInvalid": "No se encontró esta fuente.",
         "syncRefusedReconnect": "El propietario debe volver a conectar la cuenta de esta fuente antes de poder sincronizarla.",
-        "syncRefusedConnectionMissing": "La cuenta de esta fuente se desconectó. Vuelve a conectar la cuenta para sincronizarla."
+        "syncRefusedConnectionMissing": "La cuenta de esta fuente se desconectó, así que no puede sincronizarse hasta que se vuelva a conectar la cuenta."
       },
       "permission": {
         "always": "Permitir",

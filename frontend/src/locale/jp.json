@@ -1946,7 +1946,7 @@
         "syncRefusedConnector": "このソースは接続を通じて同期されます。",
         "syncRefusedInvalid": "このソースが見つかりませんでした。",
         "syncRefusedReconnect": "同期する前に、所有者がこのソースのアカウントを再接続する必要があります。",
-        "syncRefusedConnectionMissing": "このソースのアカウントは切断されました。同期するには、アカウントを再接続してください。"
+        "syncRefusedConnectionMissing": "このソースのアカウントは切断されました。アカウントが再接続されるまで同期できません。"
       },
       "permission": {
         "always": "許可",

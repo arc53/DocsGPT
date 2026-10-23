@@ -1946,7 +1946,7 @@
         "syncRefusedConnector": "此來源透過其連線進行同步。",
         "syncRefusedInvalid": "找不到此來源。",
         "syncRefusedReconnect": "擁有者需要重新連接此來源的帳戶，才能進行同步。",
-        "syncRefusedConnectionMissing": "此來源的帳戶已中斷連線。請重新連接該帳戶以進行同步。"
+        "syncRefusedConnectionMissing": "此來源的帳戶已中斷連線，重新連接該帳戶之前無法同步。"
       },
       "permission": {
         "always": "允許",
