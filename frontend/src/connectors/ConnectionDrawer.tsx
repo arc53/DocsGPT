@@ -688,12 +688,15 @@ function AccountContent({
   };
 
   /**
-   * A source row's ⋯: Sync now (only while the account works and the
-   * source isn't paused for it), then Open in Knowledge. Further source
-   * actions join this list.
+   * A source row's ⋯: Sync now (only while the account works, the source
+   * isn't paused for it and isn't a wiki, which is edited in place and
+   * never syncs), then Open in Knowledge. Further source actions join this
+   * list.
    */
   const sourceOptions = (source: ConnectionSource): MenuOption[] => [
-    ...(connected && source.sync_state !== 'paused_reconnect'
+    ...(connected &&
+    source.sync_state !== 'paused_reconnect' &&
+    source.kind !== 'wiki'
       ? [
           {
             icon: RotateCw,
@@ -793,6 +796,7 @@ function AccountContent({
                       <button
                         type="button"
                         data-source-open=""
+                        title={source.name}
                         className="block max-w-full cursor-pointer truncate text-left outline-none after:absolute after:inset-0"
                         onClick={() => openSource(source)}
                       >
@@ -1240,7 +1244,18 @@ export default function ConnectionDrawer({
         ? await userService.syncConnector(source.id, token)
         : await userService.syncSource({ source_id: source.id }, token);
       const data = await response.json();
-      if (!data?.success) throw new Error('sync failed');
+      if (!data?.success) {
+        // The server says why it refused (a wiki, a paused account).
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message:
+              (typeof data?.error === 'string' && data.error) ||
+              t('settings.connectors.detail.syncFailed'),
+          }),
+        );
+        return;
+      }
       dispatch(
         showActionToast({
           variant: 'success',

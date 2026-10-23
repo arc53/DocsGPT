@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Check, Cloud, RefreshCw } from 'lucide-react';
@@ -12,7 +12,11 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import { formatCount, formatRelative } from '../utils/dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatCount,
+  formatRelative,
+} from '../utils/dateTimeUtils';
 import type { Crumb } from './tree/PathHeader';
 import TreeBrowser from './tree/TreeBrowser';
 import type { TreeBrowserController } from './tree/types';
@@ -228,25 +232,29 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   );
 
   // The files and tokens, then the schedule when it runs:
-  // "12 files · 13,080 tokens · Weekly · synced 2 days ago".
+  // "12 files · 13,080 tokens · Weekly · synced 2 days ago"; an unknown
+  // sync time is the dash, as on the source's card.
   const schedule =
     syncFrequency && syncFrequency !== 'never' ? syncFrequency : null;
-  const renderByline = ({ files, tokens }: { files: number; tokens: number }) =>
-    [
-      t('settings.sources.filesByline', {
-        count: files,
-        files: formatCount(files),
-        tokens: formatCount(tokens),
-      }),
-      schedule
-        ? t('settings.sources.website.synced', {
-            frequency: t(`settings.sources.syncFrequency.${schedule}`),
-            when: formatRelative(syncedAt) ?? '',
-          })
-        : null,
-    ]
-      .filter(Boolean)
-      .join(' · ');
+  const renderByline = useCallback(
+    ({ files, tokens }: { files: number; tokens: number }) =>
+      [
+        t('settings.sources.filesByline', {
+          count: files,
+          files: formatCount(files),
+          tokens: formatCount(tokens),
+        }),
+        schedule
+          ? t('settings.sources.website.synced', {
+              frequency: t(`settings.sources.syncFrequency.${schedule}`),
+              when: formatRelative(syncedAt) ?? EMPTY_VALUE,
+            })
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    [t, schedule, syncedAt],
+  );
 
   const extraContent = (
     <ConfirmationModal

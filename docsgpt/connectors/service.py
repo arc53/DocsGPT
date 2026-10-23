@@ -19,6 +19,7 @@ from docsgpt.storage.db.repositories.connector_sessions import (
     owns_connector_session,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.storage.db.source_config import SourceConfig
 
 STATUS_CONNECTED = "connected"
 STATUS_RECONNECT = "reconnect_needed"
@@ -210,7 +211,11 @@ def list_connections(conn, user_id: str) -> list[dict]:
 
 
 def serialize_source(row: dict, connection_status: Optional[str] = None) -> dict:
-    """A source linked to a connection, as the connection drawer lists it."""
+    """A source linked to a connection, as the connection drawer lists it.
+
+    ``kind`` is the source's behaviour (``classic``, ``wiki``, ``graphrag``):
+    a source converted to a wiki doesn't sync, so the drawer offers no Sync now.
+    """
     metadata = _json(row.get("metadata")) or {}
     sync_state = metadata.get("sync_state") if isinstance(metadata, dict) else None
     if connection_status in (STATUS_RECONNECT, STATUS_DISCONNECTED) and not sync_state:
@@ -219,6 +224,7 @@ def serialize_source(row: dict, connection_status: Optional[str] = None) -> dict
         "id": str(row["id"]),
         "name": row.get("name"),
         "type": row.get("type"),
+        "kind": SourceConfig.parse(_json(row.get("config"))).kind,
         "last_sync": _iso(row.get("date")),
         "sync_frequency": row.get("sync_frequency") or "never",
         "sync_state": sync_state or "active",

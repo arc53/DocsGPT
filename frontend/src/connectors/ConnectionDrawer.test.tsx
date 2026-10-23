@@ -537,6 +537,49 @@ describe('ConnectionDrawer', () => {
     ).toBe('success');
   });
 
+  it('offers no Sync now on a source converted to a wiki', async () => {
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: {
+        ...DETAIL,
+        sources: [{ ...DETAIL.sources[0], kind: 'wiki' }],
+      },
+    });
+    await render();
+    await openSourceMenu();
+    expect(menuLabels()).toEqual(['settings.connectors.openInKnowledge']);
+  });
+
+  it('says why a sync was refused, in the server’s words', async () => {
+    users.syncConnector.mockResolvedValue({
+      json: async () => ({ success: false, error: 'Sign in again first.' }),
+    });
+    await render();
+    await openSourceMenu();
+    await act(async () =>
+      menuItem('settings.connectors.detail.syncNow').click(),
+    );
+    const toast = selectActionToast(
+      store.getState() as Parameters<typeof selectActionToast>[0],
+    );
+    expect(toast?.variant).toBe('destructive');
+    expect(toast?.message).toBe('Sign in again first.');
+  });
+
+  it('falls back to a localized sync failure with no server message', async () => {
+    users.syncConnector.mockRejectedValue(new Error('offline'));
+    await render();
+    await openSourceMenu();
+    await act(async () =>
+      menuItem('settings.connectors.detail.syncNow').click(),
+    );
+    expect(
+      selectActionToast(
+        store.getState() as Parameters<typeof selectActionToast>[0],
+      )?.message,
+    ).toBe('settings.connectors.detail.syncFailed');
+  });
+
   it('offers no Sync now while the connection is not connected', async () => {
     connectors.getConnection.mockResolvedValue({
       success: true,
@@ -567,6 +610,8 @@ describe('ConnectionDrawer', () => {
       'button[data-source-open]',
     )!;
     expect(open.textContent).toBe('Handbook');
+    // It truncates, so the full name is on the node.
+    expect(open.title).toBe('Handbook');
     await act(async () => open.click());
     expect(text()).toContain('KNOWLEDGE?source=src-1');
   });

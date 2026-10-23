@@ -113,6 +113,21 @@ class TestListing:
         assert actions["create_page"]["access"] == "write"
         assert actions["create_page"]["permission"] == "ask"
 
+    def test_detail_names_each_sources_kind(self, pg_conn):
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        drive = _session(pg_conn)
+        _source(pg_conn, drive, name="Handbook")
+        wiki = _source(pg_conn, drive, name="Policies")
+        pg_conn.execute(
+            text("UPDATE sources SET config = CAST(:c AS jsonb) WHERE id = CAST(:id AS uuid)"),
+            {"c": json.dumps({"kind": "wiki"}), "id": wiki},
+        )
+        row = ConnectorSessionsRepository(pg_conn).get(drive)
+        kinds = {s["name"]: s["kind"] for s in service.connection_detail(pg_conn, row)["sources"]}
+        # A converted wiki doesn't sync, so the drawer offers no Sync now.
+        assert kinds == {"Handbook": "classic", "Policies": "wiki"}
+
 
 class TestCatalogForUser:
     def test_states(self, pg_conn, monkeypatch):
