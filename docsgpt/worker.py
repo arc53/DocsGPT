@@ -4897,7 +4897,7 @@ def _delete_chunks_checked(store: Any, chunk_ids: List[str], relist: Callable[[]
 
 def _website_page_targets(
     operation: str, pages: List[Tuple[str, str]], urls: Optional[List[str]], file_path: Optional[str],
-    taken_paths: Iterable[str] = (),
+    taken_paths: Iterable[str] = (), url: Optional[str] = None,
 ) -> Tuple[List[str], Dict[str, Dict[str, Any]], bool]:
     """What a ``website_pages`` run fetches, and where each page goes in the tree.
 
@@ -4907,27 +4907,41 @@ def _website_page_targets(
     it when another leaf already has that path (a page, or a leaf from before
     leaves carried their address).
 
+    A refreshed page is found by its address (``page_key``) in the tree as it
+    is now: a sync that ran after the route re-derives the ``-N`` paths, so
+    the path the route saw may hold another page. Only a task queued before
+    refreshes carried the address falls back to ``file_path``.
+
     Args:
         operation: ``add`` or ``refresh``.
         pages: ``(path, url)`` of the pages in the tree.
         urls: For ``add``: the addresses to fetch.
-        file_path: For ``refresh``: the page's tree path.
+        file_path: For ``refresh``: the page's tree path when the route checked it.
         taken_paths: Every leaf path in the tree, pages or not.
+        url: For ``refresh``: the page's address when the route checked it.
 
     Returns:
         ``(urls to fetch, {page key: {"path", "old_url"}}, include_host)``;
         ``old_url`` is the stored address of the page being replaced, or ``None``.
 
     Raises:
-        ValueError: An unknown operation, or no page at ``file_path``.
+        ValueError: An unknown operation, or the page to refresh is no longer in the tree.
     """
     from docsgpt.parser.remote.base import url_to_virtual_path
 
     if operation == "refresh":
-        url = dict(pages).get(file_path)
-        if not url:
-            raise ValueError(f"No page at {file_path!r} in this source")
-        return [url], {_web_page_key(url): {"path": file_path, "old_url": url}}, False
+        if url:
+            key = _web_page_key(url)
+            matches = [(path, page_url) for path, page_url in pages if _web_page_key(page_url) == key]
+            if not matches:
+                raise ValueError(f"The page {url} is no longer in this source")
+            # The path the route saw first, should two leaves share the page.
+            path, stored_url = next((m for m in matches if m[0] == file_path), matches[0])
+        else:
+            path, stored_url = file_path, dict(pages).get(file_path)
+            if not stored_url:
+                raise ValueError(f"No page at {file_path!r} in this source")
+        return [stored_url], {_web_page_key(stored_url): {"path": path, "old_url": stored_url}}, False
     if operation != "add":
         raise ValueError(f"Unknown operation {operation!r}")
     stored = {}
@@ -5348,6 +5362,7 @@ def website_pages_worker(
     file_path: Optional[str] = None,
     file_paths: Optional[List[str]] = None,
     pages: Optional[List[Dict[str, str]]] = None,
+    url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Add pages to a Website source, refresh one or remove some, without re-fetching the rest.
 
@@ -5376,13 +5391,16 @@ def website_pages_worker(
         source_id: The Website source.
         user: Its owner (the route resolves it).
         operation: ``add`` (fetch ``urls``), ``refresh`` (re-fetch the page
-            at ``file_path``) or ``remove`` (delete ``pages``).
+            ``url``) or ``remove`` (delete ``pages``).
         urls: Page URLs to add; they are already in the source's config.
-        file_path: Tree path of the page to refresh.
+        file_path: Tree path of the page to refresh; only a task queued
+            without ``url`` finds the page by it.
         file_paths: Tree paths of pages to remove, from a task queued before
             ``pages``; matched by path.
         pages: ``{"path", "url"}`` of the pages to remove, matched by address
             (by path only for a leaf without one).
+        url: Address of the page to refresh, matched by ``page_key`` in the
+            tree as it is when the run starts.
 
     Returns:
         ``{"status": "ok", "pages": n}``.
@@ -5424,7 +5442,7 @@ def website_pages_worker(
             if operation == "remove":
                 changes = _remove_web_pages(source_id, user, file_paths, task_id, pages=pages)
             else:
-                changes = _run_website_pages(source_id, user, operation, urls, file_path, task_id)
+                changes = _run_website_pages(source_id, user, operation, urls, file_path, task_id, url=url)
     except Exception as e:
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
         failed = {**envelope, "error": str(e)[:1024]}
@@ -5443,7 +5461,7 @@ def website_pages_worker(
 
 def _run_website_pages(
     source_id: str, user: str, operation: str, urls: Optional[List[str]], file_path: Optional[str],
-    task_id: Optional[str] = None,
+    task_id: Optional[str] = None, url: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """The body of ``website_pages_worker``, run holding the source's index lock.
 
@@ -5456,8 +5474,9 @@ def _run_website_pages(
         user: Its owner.
         operation: ``add`` or ``refresh``.
         urls: For ``add``: the addresses to fetch.
-        file_path: For ``refresh``: the page's tree path.
+        file_path: For ``refresh``: the page's tree path, for a task queued without ``url``.
         task_id: The page task's id.
+        url: For ``refresh``: the page's address.
 
     Returns:
         The page changes written.
@@ -5490,7 +5509,7 @@ def _run_website_pages(
     # leaves carried their address must not be overwritten by a new page.
     leaf_paths = {path for path, _leaf in _tree_leaves(structure)}
     fetch, targets, include_host = _website_page_targets(
-        operation, web_pages(structure), urls, file_path, taken_paths=leaf_paths,
+        operation, web_pages(structure), urls, file_path, taken_paths=leaf_paths, url=url,
     )
 
     docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(fetch)

@@ -286,6 +286,7 @@ def website_pages(
     file_path: Optional[str] = None,
     file_paths: Optional[List[str]] = None,
     pages: Optional[List[Dict[str, str]]] = None,
+    url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Add pages to a Website source, refresh one, or remove some (``website_pages_worker``).
 
@@ -293,12 +294,14 @@ def website_pages(
     the worker has already reported it. A failed removal changes nothing, so
     it can be asked for again. A removal names its pages as ``pages``
     (``{"path", "url"}``, found by address); ``file_paths`` is still accepted
-    from tasks queued before it.
+    from tasks queued before it. A refresh names its page by ``url`` too;
+    a task queued before that has only ``file_path``.
     """
     from docsgpt.worker import website_pages_worker
 
     return website_pages_worker(
         self, source_id, user, operation, urls=urls, file_path=file_path, file_paths=file_paths, pages=pages,
+        url=url,
     )
 
 

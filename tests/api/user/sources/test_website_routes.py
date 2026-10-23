@@ -681,13 +681,14 @@ class TestAddPages:
 
 
 class TestRefreshPage:
-    def _refresh(self, app, pg_conn, src, file_path):
+    def _refresh(self, app, pg_conn, src, file_path, **body):
         from docsgpt.api.user.sources.website import RefreshWebsitePage
 
         with patch("docsgpt.api.user.sources.website.website_pages") as pages_task:
             pages_task.delay.return_value = MagicMock(id="refresh-task")
             response = _call(
-                app, pg_conn, RefreshWebsitePage, "POST", json={"source_id": str(src["id"]), "file_path": file_path}
+                app, pg_conn, RefreshWebsitePage, "POST",
+                json={"source_id": str(src["id"]), "file_path": file_path, **body},
             )
         return response, pages_task
 
@@ -697,7 +698,30 @@ class TestRefreshPage:
 
         assert response.status_code == 200
         assert response.json["task_id"] == "refresh-task"
-        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "refresh", file_path="Deploying/Docker.md")
+        # With its address: the worker finds it by that, wherever a sync moved it.
+        pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "refresh", file_path="Deploying/Docker.md", url="https://docs.x.io/Deploying/Docker",
+        )
+
+    def test_a_page_named_by_address_is_found_wherever_it_is(self, app, pg_conn):
+        # The UI's tree is older than a sync that moved the page to another path.
+        src = _seed(pg_conn)
+        response, pages_task = self._refresh(
+            app, pg_conn, src, "extra.md", url="https://docs.x.io/Deploying/Docker#top",
+        )
+
+        assert response.status_code == 200
+        pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "refresh", file_path="Deploying/Docker.md", url="https://docs.x.io/Deploying/Docker",
+        )
+
+    def test_an_address_no_longer_in_the_source_is_400(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, pages_task = self._refresh(app, pg_conn, src, "extra.md", url="https://docs.x.io/gone")
+
+        assert response.status_code == 400
+        assert response.json["code"] == "not_found"
+        pages_task.delay.assert_not_called()
 
     def test_an_unknown_page_is_400(self, app, pg_conn):
         src = _seed(pg_conn)
@@ -812,6 +836,7 @@ class TestBodyTypes:
             ("RemoveWebsitePages", {"file_paths": "extra.md"}, "file_paths"),
             ("RemoveWebsitePages", {"file_paths": ["extra.md", 3]}, "file_paths"),
             ("RefreshWebsitePage", {"file_path": ["extra.md"]}, "file_path"),
+            ("RefreshWebsitePage", {"file_path": "extra.md", "url": 3}, "url"),
             ("WebsiteSettings", {"entries": CONFIG["entries"], "skip": "https://docs.x.io/a"}, "skip"),
             ("WebsiteSettings", {"entries": CONFIG["entries"], "skip": [1]}, "skip"),
             ("WebsiteSettings", {"entries": CONFIG["entries"], "keep_links": "yes"}, "keep_links"),

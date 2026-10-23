@@ -331,6 +331,49 @@ class TestRefreshPage:
         with pytest.raises(ValueError):
             worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="nope.md")
 
+    def test_the_page_is_found_by_its_address_wherever_a_sync_moved_it(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline,
+    ):
+        # The route saw /a at a.md; a sync queued before re-derived the tree, so a.md holds /b now.
+        from docsgpt import worker
+
+        SourcesRepository(pg_conn).update(str(source["id"]), USER, {"directory_structure": {
+            "a.md": _leaf("https://docs.x.io/b", 5), "a-2.md": _leaf("https://docs.x.io/a", 40),
+        }})
+        pipeline["pages"]["https://docs.x.io/a"] = "fresh A"
+        pipeline["pages"]["https://docs.x.io/b"] = "fresh B"
+        worker.website_pages_worker(
+            task_self, str(source["id"]), USER, "refresh", file_path="a.md", url="https://docs.x.io/a",
+        )
+
+        assert pipeline["fetch_calls"][0][0] == ["https://docs.x.io/a"]
+        tree = _tree(pg_conn, source)
+        assert tree["a.md"] == _leaf("https://docs.x.io/b", 5)
+        assert tree["a-2.md"]["fetched_at"] != OLD
+
+    def test_a_page_that_left_the_tree_is_an_error_not_another_page(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline,
+    ):
+        from docsgpt import worker
+
+        pipeline["pages"]["https://docs.x.io/a"] = "fresh A"
+        with pytest.raises(ValueError, match="no longer"):
+            worker.website_pages_worker(
+                task_self, str(source["id"]), USER, "refresh", file_path="a.md", url="https://docs.x.io/gone",
+            )
+
+        assert pipeline["fetch_calls"] == []
+
+    def test_the_task_passes_the_address_through(self, monkeypatch):
+        from docsgpt import worker
+        from docsgpt.api.user import tasks
+
+        seen = []
+        monkeypatch.setattr(worker, "website_pages_worker", lambda *a, **k: seen.append(k) or {"status": "ok"})
+        tasks.website_pages.run("src", USER, "refresh", file_path="a.md", url="https://docs.x.io/a")
+
+        assert seen[0]["file_path"] == "a.md" and seen[0]["url"] == "https://docs.x.io/a"
+
 
 @pytest.fixture
 def two_pages(pg_conn, pipeline):

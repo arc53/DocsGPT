@@ -75,6 +75,7 @@ _FIELD_TYPES: Dict[str, Tuple[Callable[[Any], bool], str]] = {
     "file_paths": (_is_str_list, "a list of strings"),
     "directory_path": (lambda value: isinstance(value, str), "a string"),
     "file_path": (lambda value: isinstance(value, str), "a string"),
+    "url": (lambda value: isinstance(value, str), "a string"),
 }
 
 
@@ -524,6 +525,12 @@ class RefreshWebsitePage(Resource):
         {
             "source_id": fields.String(required=True, description="Source ID"),
             "file_path": fields.String(required=True, description="Tree path of the page"),
+            "url": fields.String(
+                description=(
+                    "The page's address, as its tree leaf shows it; when given, the page is found by it "
+                    "wherever a sync moved it"
+                )
+            ),
         },
     )
 
@@ -548,10 +555,32 @@ class RefreshWebsitePage(Resource):
         if refusal is not None:
             return refusal
         structure = doc.get("directory_structure") if isinstance(doc.get("directory_structure"), dict) else {}
-        if data["file_path"] not in dict(web_pages(structure)):
+        page = _find_page(web_pages(structure), data["file_path"], data.get("url"))
+        if page is None:
             return _error("No such page in this source", code="not_found")
-        task = website_pages.delay(str(doc["id"]), ra.owner_id, "refresh", file_path=data["file_path"])
+        path, url = page
+        # The worker finds the page by its address under the index lock: a
+        # sync that runs first can give its path to another page.
+        task = website_pages.delay(str(doc["id"]), ra.owner_id, "refresh", file_path=path, url=url)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
+
+
+def _find_page(pages: list, file_path: str, url: Optional[str]) -> Optional[Tuple[str, str]]:
+    """The tree page a refresh names: by address when it gives one, else by path.
+
+    Args:
+        pages: ``(path, url)`` of the tree's pages.
+        file_path: The tree path the caller saw.
+        url: The address the caller saw, if any; matched by ``page_key``.
+
+    Returns:
+        ``(path, url)`` as the tree holds it now, or ``None``.
+    """
+    if not url:
+        return next(((path, page_url) for path, page_url in pages if path == file_path), None)
+    key = _key(url)
+    matches = [(path, page_url) for path, page_url in pages if _key(page_url) == key]
+    return next((m for m in matches if m[0] == file_path), matches[0] if matches else None)
 
 
 def _key(url: str) -> str:
