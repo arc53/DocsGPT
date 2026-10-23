@@ -20,6 +20,7 @@ removed by hand survive a sync:
 import json
 import logging
 import re
+import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from urllib.parse import SplitResult, urljoin, urlparse, urlsplit
 
@@ -101,6 +102,28 @@ def fetch_budget_for(cap: int) -> int:
         The fetch budget.
     """
     return _FETCHES_PER_PAGE * int(cap) + _DISCOVERY_FETCHES
+
+
+# A load also stops starting fetches after a time that grows with the cap:
+# each fetch may take a minute (a 30 s read timeout, twice over), so the fetch
+# budget alone let a site that answers just inside it hold a worker for
+# hours. Ten seconds a page plus five minutes of discovery is far past a
+# real site's pace (a 100-page source: about 22 minutes, inside the hour a
+# broker waits before redelivering a task).
+_SECONDS_PER_PAGE = 10
+_DISCOVERY_SECONDS = 300
+
+
+def load_deadline_for(cap: int) -> float:
+    """How many seconds one load of a source may keep starting fetches.
+
+    Args:
+        cap: The source's page cap (``WEB_MAX_PAGES``).
+
+    Returns:
+        The seconds from the start of the load.
+    """
+    return float(_SECONDS_PER_PAGE * int(cap) + _DISCOVERY_SECONDS)
 
 # The bundled public-suffix snapshot is enough to tell a registered domain;
 # the default extractor would fetch the live list on first use. Its private
@@ -653,7 +676,9 @@ class WebsiteLoader(BaseRemote):
             cap was lowered) are left out in entry order, and ``report``
             says so. Every fetch, discovery included, is charged to one
             budget (``fetch_budget_for``), so failed or non-HTML fetches can't
-            multiply across sites. Each document's ``requested_urls`` lists
+            multiply across sites; no fetch starts after the load's deadline
+            (``load_deadline_for``), and what is left then is reported like
+            pages past the limit. Each document's ``requested_urls`` lists
             the other addresses that led to its page (``note_requested_url``):
             entries or links that redirect to a page already loaded are
             merged into its document instead of dropped.
@@ -662,14 +687,16 @@ class WebsiteLoader(BaseRemote):
         config = parse_website_config(inputs, enforce_page_cap=False)
         keep_links = config["keep_links"]
         cap = int(settings.WEB_MAX_PAGES)
-        fetches = FetchBudget(fetch_budget_for(cap))
+        fetches = FetchBudget(fetch_budget_for(cap), deadline=time.monotonic() + load_deadline_for(cap))
         documents: List[Document] = []
         # The document of each page, by page_key.
         seen: Dict[str, Document] = {}
         site_reports = []
 
-        # Page entries the cap left out (a stored config past a lowered cap).
+        # Page entries the cap left out (a stored config past a lowered cap),
+        # and those left when the load ran out of time.
         pages_cut = 0
+        pages_late = 0
 
         entries = sorted(config["entries"], key=lambda entry: entry["mode"] != "page")
         for entry in entries:
@@ -685,9 +712,12 @@ class WebsiteLoader(BaseRemote):
                 if len(documents) >= cap:
                     pages_cut += 1
                     continue
+                if fetches.deadline is not None and time.monotonic() >= fetches.deadline:
+                    pages_late += 1
+                    continue
                 docs = WebLoader(keep_links=keep_links, budget=fetches).load_data([entry["url"]])
             else:
-                pages_left = min(cap - len(documents), fetches.remaining)
+                pages_left = 0 if fetches.spent() else min(cap - len(documents), fetches.remaining)
                 if pages_left < 1:
                     site_reports.append({
                         "url": entry["url"], "found_with": None, "pages": 0, "limit_reached": True,
@@ -714,6 +744,8 @@ class WebsiteLoader(BaseRemote):
 
         if pages_cut:
             logger.info(f"Website load: {pages_cut} page entries left out at the {cap}-page cap")
+        if pages_late:
+            logger.warning(f"Website load: {pages_late} page entries left out when the load ran out of time")
         # Name pages after the whole load, so one host stays path-only and
         # several hosts get a folder each.
         include_host = spans_multiple_hosts([d.extra_info["source"] for d in documents])
@@ -723,8 +755,8 @@ class WebsiteLoader(BaseRemote):
             "pages": len(documents),
             "sites": site_reports,
             # Whether the page limit left anything out: a page entry past the
-            # cap, or a site cut short.
-            "limit_reached": bool(pages_cut) or any(site["limit_reached"] for site in site_reports),
+            # cap or the load's deadline, or a site cut short.
+            "limit_reached": bool(pages_cut or pages_late) or any(site["limit_reached"] for site in site_reports),
         }
         return dedupe_virtual_paths(documents)
 

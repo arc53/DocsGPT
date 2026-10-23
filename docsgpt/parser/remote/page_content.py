@@ -15,6 +15,7 @@ lists of bare links never carry them.
 import codecs
 import logging
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsplit, urlunsplit
@@ -541,22 +542,38 @@ def merge_requested_urls(kept: Document, duplicate: Document) -> None:
 
 
 class FetchBudget:
-    """Fetches one load may still make, shared by every loader it runs."""
+    """Fetches one load may still make, and until when, shared by every loader it runs."""
 
-    def __init__(self, limit: int):
+    def __init__(self, limit: int, deadline: Optional[float] = None):
         """
         Args:
             limit: How many fetches the load may make in all.
+            deadline: The ``time.monotonic()`` past which it may start none;
+                ``None`` for no time limit. A slow site (a tarpit answering
+                each fetch just inside its timeout) can't hold a worker for
+                hours on a budget of fetches alone.
         """
         self.remaining = max(0, int(limit))
+        self.deadline = deadline
+
+    def spent(self) -> bool:
+        """Whether the load may start no more fetches: none left, or its deadline passed.
+
+        Returns:
+            True when spent; a budget past its deadline has no fetches left.
+        """
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            self.remaining = 0
+        return self.remaining <= 0
 
     def take(self) -> bool:
         """Spend one fetch.
 
         Returns:
-            False, spending nothing, when the budget is used up.
+            False, spending nothing, when the budget is used up or its
+            deadline has passed.
         """
-        if self.remaining <= 0:
+        if self.spent():
             return False
         self.remaining -= 1
         return True

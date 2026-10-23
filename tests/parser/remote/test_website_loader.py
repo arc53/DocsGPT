@@ -1422,6 +1422,65 @@ class TestBoundedFetching:
 
         assert discover_sitemaps("https://x.io/") == listed[:MAX_ROBOTS_SITEMAPS]
 
+    @staticmethod
+    def _slow_web(web, sites, seconds_per_fetch):
+        """A fake web whose every fetch moves a fake clock on; returns it and the clock patches."""
+        clock = [0.0]
+        fake = web(sites)
+        real = fake.__call__
+
+        def slow(url, **kwargs):
+            clock[0] += seconds_per_fetch
+            return real(url, **kwargs)
+
+        stack = ExitStack()
+        stack.enter_context(patch("docsgpt.parser.remote.page_content.pinned_fetch_bytes", slow))
+        for module in ("page_content", "website_loader"):
+            timer = stack.enter_context(patch(f"docsgpt.parser.remote.{module}.time"))
+            timer.monotonic.side_effect = lambda: clock[0]
+        return fake, stack
+
+    def test_a_tarpit_site_is_cut_off_at_the_load_deadline(self, web):
+        from docsgpt.parser.remote import website_loader
+
+        links = [f"/p{i}" for i in range(20)]
+        sites = {"https://x.io/": page("Home", links=links)}
+        sites.update({f"https://x.io{link}": page(link) for link in links})
+        fake, stack = self._slow_web(web, sites, 10)
+        loader = WebsiteLoader()
+        with stack, patch.object(website_loader, "load_deadline_for", return_value=25):
+            docs = loader.load_data({"entries": [{"url": "https://x.io/", "mode": "site", "discovery": "links"}]})
+
+        # Fetches start at 0, 10 and 20 seconds; the one due at 30 is past the deadline.
+        assert sources(docs) == ["https://x.io/", "https://x.io/p0", "https://x.io/p1"]
+        assert len(fake.fetched) == 3
+        assert loader.report["limit_reached"] is True
+        assert loader.report["sites"][0]["limit_reached"] is True
+
+    def test_page_entries_past_the_load_deadline_are_left_out(self, web):
+        from docsgpt.parser.remote import website_loader
+
+        sites = {f"https://x.io/{name}": page(name) for name in "abcd"}
+        _, stack = self._slow_web(web, sites, 10)
+        loader = WebsiteLoader()
+        with stack, patch.object(website_loader, "load_deadline_for", return_value=15):
+            docs = loader.load_data({"entries": [
+                {"url": f"https://x.io/{name}", "mode": "page"} for name in "abcd"
+            ] + [{"url": "https://y.io/", "mode": "site"}]})
+
+        assert sources(docs) == ["https://x.io/a", "https://x.io/b"]
+        assert loader.report["limit_reached"] is True
+        assert loader.report["sites"] == [
+            {"url": "https://y.io/", "found_with": None, "pages": 0, "limit_reached": True},
+        ]
+
+    def test_the_load_deadline_grows_with_the_page_cap(self):
+        from docsgpt.parser.remote.website_loader import load_deadline_for
+
+        assert load_deadline_for(1) < load_deadline_for(100) < load_deadline_for(1000)
+        # A default source (100 pages) is cut off well before a tarpit's hours.
+        assert load_deadline_for(100) <= 30 * 60
+
     def test_dead_sites_share_one_fetch_budget(self, web):
         # Every site lists pages that aren't HTML: no documents, so a budget
         # that only shrinks for documents would let each site fetch its fill.
