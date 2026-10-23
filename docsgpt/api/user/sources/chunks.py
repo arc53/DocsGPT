@@ -2,6 +2,7 @@
 
 import math
 import re
+from typing import Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -18,6 +19,7 @@ from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.utils import check_required_fields, num_tokens_from_string
 from docsgpt.vectorstore.base import InvalidChunkMetadataError
+from docsgpt.vectorstore.index_lock import SourceBusy, source_index_lock
 
 sources_chunks_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
@@ -26,6 +28,38 @@ sources_chunks_ns = Namespace(
 #: Chunk texts one source's owner may mark safe from prompt-injection screening.
 INJECTION_REVIEW_MAX = 1000
 _CONTENT_HASH = re.compile(r"[0-9a-f]{64}")
+
+#: How long a chunk edit waits for a sync or page change on the source to finish before a 409.
+CHUNK_EDIT_LOCK_WAIT_SECONDS = 3.0
+_BUSY_NOTE = " 409 (code source_busy) while a sync or page change on the source runs."
+
+
+def _index_lock(source_id: str):
+    """The source's index lock, as a chunk edit takes it: a few seconds' wait, then ``SourceBusy``.
+
+    A sync or a Website page change loads a FAISS index once and saves the
+    whole of it, so a chunk edit made meanwhile would be lost (or lose the
+    job's chunks). The index is loaded under the lock, after the job's save.
+
+    Args:
+        source_id: The source.
+
+    Returns:
+        The lock's context manager.
+    """
+    return source_index_lock(source_id, wait_seconds=CHUNK_EDIT_LOCK_WAIT_SECONDS, poll_seconds=0.25)
+
+
+def _busy_response():
+    """The 409 for a chunk edit while another change to the source runs."""
+    return make_response(
+        jsonify({
+            "success": False,
+            "error": "Another change to this source is still running; try again when it finishes",
+            "code": "source_busy",
+        }),
+        409,
+    )
 
 
 def _resolve_source(doc_id: str, user: str, action: str = "use") -> dict:
@@ -419,7 +453,7 @@ class AddChunk(Resource):
         )
     )
     @api.doc(
-        description="Adds a new chunk to the document",
+        description="Adds a new chunk to the document." + _BUSY_NOTE,
     )
     def post(self):
         decoded_token = request.decoded_token
@@ -445,12 +479,15 @@ class AddChunk(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
-            store = get_vector_store(str(doc["id"]))
-            chunk_id = store.add_chunk(text, metadata)
+            with _index_lock(str(doc["id"])):
+                store = get_vector_store(str(doc["id"]))
+                chunk_id = store.add_chunk(text, metadata)
             return make_response(
                 jsonify({"message": "Chunk added successfully", "chunk_id": chunk_id}),
                 201,
             )
+        except SourceBusy:
+            return _busy_response()
         except Exception as e:
             current_app.logger.error(f"Error adding chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
@@ -459,7 +496,7 @@ class AddChunk(Resource):
 @sources_chunks_ns.route("/delete_chunk")
 class DeleteChunk(Resource):
     @api.doc(
-        description="Deletes a specific chunk from the document.",
+        description="Deletes a specific chunk from the document." + _BUSY_NOTE,
         params={"id": "The document ID", "chunk_id": "The ID of the chunk to delete"},
     )
     def delete(self):
@@ -478,8 +515,9 @@ class DeleteChunk(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
-            store = get_vector_store(str(doc["id"]))
-            deleted = store.delete_chunk(chunk_id)
+            with _index_lock(str(doc["id"])):
+                store = get_vector_store(str(doc["id"]))
+                deleted = store.delete_chunk(chunk_id)
             if deleted:
                 return make_response(
                     jsonify({"message": "Chunk deleted successfully"}), 200
@@ -489,6 +527,8 @@ class DeleteChunk(Resource):
                     jsonify({"message": "Chunk not found or could not be deleted"}),
                     404,
                 )
+        except SourceBusy:
+            return _busy_response()
         except Exception as e:
             current_app.logger.error(f"Error deleting chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
@@ -515,7 +555,7 @@ class UpdateChunk(Resource):
         )
     )
     @api.doc(
-        description="Updates an existing chunk in the document.",
+        description="Updates an existing chunk in the document." + _BUSY_NOTE,
     )
     def put(self):
         decoded_token = request.decoded_token
@@ -545,50 +585,69 @@ class UpdateChunk(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
-            store = get_vector_store(str(doc["id"]))
-
-            chunks = store.get_chunks()
-            existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
-            if not existing_chunk:
-                return make_response(jsonify({"error": "Chunk not found"}), 404)
-            new_text = text if text is not None else existing_chunk["text"]
-
-            if metadata is not None:
-                new_metadata = existing_chunk["metadata"].copy()
-                new_metadata.update(metadata)
-            else:
-                new_metadata = existing_chunk["metadata"].copy()
-            if text is not None:
-                new_metadata["token_count"] = num_tokens_from_string(new_text)
-            try:
-                # In place where the store supports it (same id, same list
-                # position); the base fallback re-adds under a new id.
-                new_chunk_id = store.update_chunk(chunk_id, new_text, new_metadata)
-                if new_chunk_id != chunk_id:
-                    _remap_graph_chunk(doc, chunk_id, new_chunk_id)
-                return make_response(
-                    jsonify(
-                        {
-                            "message": "Chunk updated successfully",
-                            "chunk_id": new_chunk_id,
-                            "original_chunk_id": chunk_id,
-                        }
-                    ),
-                    200,
-                )
-            except InvalidChunkMetadataError as meta_error:
-                current_app.logger.warning(
-                    f"Rejected metadata for chunk {chunk_id}: {meta_error}"
-                )
-                return make_response(jsonify({"error": "Invalid metadata"}), 400)
-            except Exception as add_error:
-                current_app.logger.error(f"Failed to update chunk {chunk_id}: {add_error}")
-                return make_response(
-                    jsonify({"error": "Failed to update chunk - addition failed"}), 500
-                )
+            with _index_lock(str(doc["id"])):
+                return _update_chunk(doc, chunk_id, text, metadata)
+        except SourceBusy:
+            return _busy_response()
         except Exception as e:
             current_app.logger.error(f"Error updating chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
+
+
+def _update_chunk(doc: dict, chunk_id: str, text: Optional[str], metadata: Optional[dict]):
+    """Change one chunk's text and metadata; the caller holds the source's index lock.
+
+    Args:
+        doc: The source row.
+        chunk_id: The chunk.
+        text: Its new text, or ``None`` to keep it.
+        metadata: Fields merged into its metadata, or ``None``.
+
+    Returns:
+        Response: 200 with the chunk's (possibly new) id, 404 when it is
+        gone, 400 for metadata the store refuses, 500 when the store fails.
+    """
+    store = get_vector_store(str(doc["id"]))
+
+    chunks = store.get_chunks()
+    existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
+    if not existing_chunk:
+        return make_response(jsonify({"error": "Chunk not found"}), 404)
+    new_text = text if text is not None else existing_chunk["text"]
+
+    if metadata is not None:
+        new_metadata = existing_chunk["metadata"].copy()
+        new_metadata.update(metadata)
+    else:
+        new_metadata = existing_chunk["metadata"].copy()
+    if text is not None:
+        new_metadata["token_count"] = num_tokens_from_string(new_text)
+    try:
+        # In place where the store supports it (same id, same list
+        # position); the base fallback re-adds under a new id.
+        new_chunk_id = store.update_chunk(chunk_id, new_text, new_metadata)
+        if new_chunk_id != chunk_id:
+            _remap_graph_chunk(doc, chunk_id, new_chunk_id)
+        return make_response(
+            jsonify(
+                {
+                    "message": "Chunk updated successfully",
+                    "chunk_id": new_chunk_id,
+                    "original_chunk_id": chunk_id,
+                }
+            ),
+            200,
+        )
+    except InvalidChunkMetadataError as meta_error:
+        current_app.logger.warning(
+            f"Rejected metadata for chunk {chunk_id}: {meta_error}"
+        )
+        return make_response(jsonify({"error": "Invalid metadata"}), 400)
+    except Exception as add_error:
+        current_app.logger.error(f"Failed to update chunk {chunk_id}: {add_error}")
+        return make_response(
+            jsonify({"error": "Failed to update chunk - addition failed"}), 500
+        )
 
 
 @sources_chunks_ns.route("/sources/<string:source_id>/injection_review")

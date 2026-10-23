@@ -1854,7 +1854,7 @@
     },
     "/api/add_chunk": {
       "post": {
-        "description": "Adds a new chunk to the document",
+        "description": "Adds a new chunk to the document. 409 (code source_busy) while a sync or page change on the source runs.",
         "operationId": "post_add_chunk",
         "parameters": [
           {
@@ -3833,7 +3833,7 @@
     },
     "/api/delete_chunk": {
       "delete": {
-        "description": "Deletes a specific chunk from the document.",
+        "description": "Deletes a specific chunk from the document. 409 (code source_busy) while a sync or page change on the source runs.",
         "operationId": "delete_delete_chunk",
         "parameters": [
           {
@@ -6797,7 +6797,7 @@
     },
     "/api/update_chunk": {
       "put": {
-        "description": "Updates an existing chunk in the document.",
+        "description": "Updates an existing chunk in the document. 409 (code source_busy) while a sync or page change on the source runs.",
         "operationId": "put_update_chunk",
         "parameters": [
           {
