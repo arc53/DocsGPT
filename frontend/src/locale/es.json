@@ -645,7 +645,7 @@
         "fetchedAt": "obtenida {{when}}",
         "addPages": "Añadir páginas",
         "addPagesHint": "Se obtienen ahora y se conservan en cada sincronización. Un sitio completo reconstruye la fuente.",
-        "graphCost": "Esta fuente tiene un grafo de conocimiento. Las páginas nuevas se añaden a él con un LLM, aproximadamente una llamada por fragmento.",
+        "graphCost": "Esta fuente tiene un grafo de conocimiento. Las páginas nuevas se añaden a él con un LLM, aproximadamente una llamada por fragmento. Si añadirlas reconstruye la fuente (una página de otro sitio), se reconstruye todo el grafo: aproximadamente una llamada por fragmento de toda la fuente.",
         "addFailed": "No se pudieron añadir las páginas.",
         "pageLimit_one": "Esta fuente puede tener hasta {{count}} página.",
         "pageLimit_many": "Esta fuente puede tener hasta {{count}} páginas.",
@@ -693,7 +693,8 @@
         "invalidAddress": "«{{url}}» no es una dirección que esta fuente pueda obtener.",
         "invalidConfig": "Esta configuración no es válida. Revisa las direcciones y los límites.",
         "notFound": "Esa página o carpeta ya no está en esta fuente. Vuelve a cargarla e inténtalo de nuevo.",
-        "badSyncFrequency": "Esa frecuencia de sincronización no está disponible."
+        "badSyncFrequency": "Esa frecuencia de sincronización no está disponible.",
+        "graphCostRebuild": "Esta fuente tiene un grafo de conocimiento. Un sitio completo reconstruye la fuente, así que el grafo también se reconstruye con un LLM: aproximadamente una llamada por fragmento de toda la fuente."
       },
       "deleteSource": "Eliminar fuente",
       "syncStarted": "Sincronizando {{name}}…",

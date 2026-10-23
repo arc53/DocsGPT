@@ -31,8 +31,9 @@ export type WebsitePagesChange = { mode: 'append' | 'sync'; urls: string[] };
  *
  * @param sourceId The source.
  * @param sourceName Shown under the title.
- * @param graph The source has a knowledge graph: a note says new pages are
- *   extracted into it with an LLM.
+ * @param graph The source has a knowledge graph: a note says what the LLM
+ *   extraction costs (new pages' chunks, or the whole source when it is
+ *   rebuilt).
  * @param onClose Closes the dialog.
  * @param onQueued Called once the server accepts, with when the request went
  *   out, the task it queued, and what it changes (the server's `mode` and the
@@ -137,10 +138,15 @@ export default function AddWebsitePagesModal({
         <p className="text-muted-foreground text-xs">
           {t('settings.sources.website.addPagesHint')}
         </p>
+        {/* A whole site always rebuilds the source, and so its graph; pages
+            are appended unless the server rebuilds (another host, or a store
+            that can't add single chunks), which graphCost covers too. */}
         {graph && (
           <Alert variant="info" role="note">
             <AlertDescription>
-              {t('settings.sources.website.graphCost')}
+              {draft.mode === 'site'
+                ? t('settings.sources.website.graphCostRebuild')
+                : t('settings.sources.website.graphCost')}
             </AlertDescription>
           </Alert>
         )}

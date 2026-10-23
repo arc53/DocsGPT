@@ -622,7 +622,7 @@
         "fetchedAt": "{{when}}擷取",
         "addPages": "新增頁面",
         "addPagesHint": "立即擷取，並在每次同步時保留。新增整個網站會重建此來源。",
-        "graphCost": "此來源有知識圖譜。新頁面會透過 LLM 加入圖譜，每個區塊約呼叫一次。",
+        "graphCost": "此來源有知識圖譜。新頁面會透過 LLM 加入圖譜，每個區塊約呼叫一次。如果新增會重建此來源（例如來自其他網站的頁面），整個圖譜都會重建：整個來源的每個區塊約呼叫一次。",
         "addFailed": "無法新增頁面。",
         "pageLimit_other": "此來源最多可包含 {{count}} 個頁面。",
         "addingPages": "正在新增頁面…",
@@ -665,7 +665,8 @@
         "invalidAddress": "「{{url}}」不是此來源可以擷取的網址。",
         "invalidConfig": "這些設定無效。請檢查網址和限制。",
         "notFound": "此來源中已沒有該頁面或資料夾。請重新載入後再試一次。",
-        "badSyncFrequency": "該同步排程無法使用。"
+        "badSyncFrequency": "該同步排程無法使用。",
+        "graphCostRebuild": "此來源有知識圖譜。新增整個網站會重建此來源，因此圖譜也會透過 LLM 重建：整個來源的每個區塊約呼叫一次。"
       },
       "deleteSource": "刪除來源",
       "syncStarted": "正在同步 {{name}}…",

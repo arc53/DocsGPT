@@ -624,7 +624,7 @@
         "fetchedAt": "fetched {{when}}",
         "addPages": "Add pages",
         "addPagesHint": "Fetched now and kept in every sync. A whole site rebuilds the source.",
-        "graphCost": "This source has a knowledge graph. New pages are added to it with an LLM, about one call per chunk.",
+        "graphCost": "This source has a knowledge graph. New pages are added to it with an LLM, about one call per chunk. If adding them rebuilds the source (a page on another site), the whole graph is rebuilt: about one call per chunk of the whole source.",
         "addFailed": "Couldn’t add the pages.",
         "pageLimit_one": "This source can hold up to {{count}} page.",
         "pageLimit_other": "This source can hold up to {{count}} pages.",
@@ -668,7 +668,8 @@
         "invalidAddress": "“{{url}}” isn’t an address this source can fetch.",
         "invalidConfig": "These settings aren’t valid. Check the addresses and limits.",
         "notFound": "That page or folder isn’t in this source any more. Reload it and try again.",
-        "badSyncFrequency": "That sync schedule isn’t available."
+        "badSyncFrequency": "That sync schedule isn’t available.",
+        "graphCostRebuild": "This source has a knowledge graph. A whole site rebuilds the source, so the graph is rebuilt with an LLM too: about one call per chunk of the whole source."
       },
       "deleteSource": "Delete source",
       "syncStarted": "Syncing {{name}}…",

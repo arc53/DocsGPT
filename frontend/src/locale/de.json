@@ -624,7 +624,7 @@
         "fetchedAt": "abgerufen {{when}}",
         "addPages": "Seiten hinzufügen",
         "addPagesHint": "Wird jetzt abgerufen und bei jeder Synchronisierung beibehalten. Eine ganze Website baut die Quelle neu auf.",
-        "graphCost": "Diese Quelle hat einen Wissensgraphen. Neue Seiten werden ihm mit einem LLM hinzugefügt, etwa ein Aufruf pro Chunk.",
+        "graphCost": "Diese Quelle hat einen Wissensgraphen. Neue Seiten werden ihm mit einem LLM hinzugefügt, etwa ein Aufruf pro Chunk. Baut das Hinzufügen die Quelle neu auf (eine Seite einer anderen Website), wird der ganze Graph neu erstellt: etwa ein Aufruf pro Chunk der gesamten Quelle.",
         "addFailed": "Die Seiten konnten nicht hinzugefügt werden.",
         "pageLimit_one": "Diese Quelle kann bis zu {{count}} Seite enthalten.",
         "pageLimit_other": "Diese Quelle kann bis zu {{count}} Seiten enthalten.",
@@ -668,7 +668,8 @@
         "invalidAddress": "„{{url}}“ ist keine Adresse, die diese Quelle abrufen kann.",
         "invalidConfig": "Diese Einstellungen sind ungültig. Prüfe die Adressen und Limits.",
         "notFound": "Diese Seite oder dieser Ordner ist nicht mehr in der Quelle. Lade sie neu und versuche es erneut.",
-        "badSyncFrequency": "Dieser Synchronisierungsplan ist nicht verfügbar."
+        "badSyncFrequency": "Dieser Synchronisierungsplan ist nicht verfügbar.",
+        "graphCostRebuild": "Diese Quelle hat einen Wissensgraphen. Eine ganze Website baut die Quelle neu auf, daher wird auch der Graph mit einem LLM neu erstellt: etwa ein Aufruf pro Chunk der gesamten Quelle."
       },
       "deleteSource": "Quelle löschen",
       "syncStarted": "{{name}} wird synchronisiert…",

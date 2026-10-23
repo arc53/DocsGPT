@@ -622,7 +622,7 @@
         "fetchedAt": "{{when}}获取",
         "addPages": "添加页面",
         "addPagesHint": "立即获取，并在每次同步时保留。添加整个网站会重建此来源。",
-        "graphCost": "此来源有知识图谱。新页面会通过 LLM 添加到图谱中，每个文本块约调用一次。",
+        "graphCost": "此来源有知识图谱。新页面会通过 LLM 添加到图谱中，每个文本块约调用一次。如果添加会重建此来源（例如来自其他网站的页面），整个图谱都会重建：整个来源的每个文本块约调用一次。",
         "addFailed": "无法添加页面。",
         "pageLimit_other": "此来源最多可包含 {{count}} 个页面。",
         "addingPages": "正在添加页面…",
@@ -665,7 +665,8 @@
         "invalidAddress": "“{{url}}”不是此来源可以获取的地址。",
         "invalidConfig": "这些设置无效。请检查地址和限制。",
         "notFound": "此来源中已没有该页面或文件夹。请重新加载后再试。",
-        "badSyncFrequency": "该同步计划不可用。"
+        "badSyncFrequency": "该同步计划不可用。",
+        "graphCostRebuild": "此来源有知识图谱。添加整个网站会重建此来源，因此图谱也会通过 LLM 重建：整个来源的每个文本块约调用一次。"
       },
       "deleteSource": "删除来源",
       "syncStarted": "正在同步 {{name}}…",

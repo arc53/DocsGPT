@@ -115,6 +115,13 @@ describe('AddWebsitePagesModal', () => {
     );
   });
 
+  it('says a whole site rebuilds the graph of the whole source', async () => {
+    await open(true);
+    await click('fill site');
+    const note = document.body.querySelector('[role="note"]');
+    expect(note?.textContent).toBe('settings.sources.website.graphCostRebuild');
+  });
+
   const submit = async (fill = 'fill') => {
     await open();
     await click(fill);

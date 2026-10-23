@@ -645,7 +645,7 @@
         "fetchedAt": "récupérée {{when}}",
         "addPages": "Ajouter des pages",
         "addPagesHint": "Récupérées maintenant et conservées à chaque synchronisation. Un site entier reconstruit la source.",
-        "graphCost": "Cette source a un graphe de connaissances. Les nouvelles pages y sont ajoutées avec un LLM, environ un appel par fragment.",
+        "graphCost": "Cette source a un graphe de connaissances. Les nouvelles pages y sont ajoutées avec un LLM, environ un appel par fragment. Si leur ajout reconstruit la source (une page d’un autre site), tout le graphe est reconstruit : environ un appel par fragment de toute la source.",
         "addFailed": "Impossible d’ajouter les pages.",
         "pageLimit_one": "Cette source peut contenir jusqu’à {{count}} page.",
         "pageLimit_many": "Cette source peut contenir jusqu’à {{count}} pages.",
@@ -693,7 +693,8 @@
         "invalidAddress": "« {{url}} » n’est pas une adresse que cette source peut récupérer.",
         "invalidConfig": "Ces paramètres ne sont pas valides. Vérifiez les adresses et les limites.",
         "notFound": "Cette page ou ce dossier ne fait plus partie de la source. Rechargez-la et réessayez.",
-        "badSyncFrequency": "Cette fréquence de synchronisation n’est pas disponible."
+        "badSyncFrequency": "Cette fréquence de synchronisation n’est pas disponible.",
+        "graphCostRebuild": "Cette source a un graphe de connaissances. Un site entier reconstruit la source, donc le graphe est lui aussi reconstruit avec un LLM : environ un appel par fragment de toute la source."
       },
       "deleteSource": "Supprimer la source",
       "syncStarted": "Synchronisation de {{name}}…",
