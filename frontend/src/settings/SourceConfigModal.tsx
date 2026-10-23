@@ -17,7 +17,11 @@ import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
 import { cn, focusRing } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
-import { type SyncFrequency, websiteRefusal } from '../upload/website';
+import {
+  type SyncFrequency,
+  websiteRefusal,
+  websiteRefusalForCode,
+} from '../upload/website';
 import { can } from '../utils/accessUtils';
 import { canSyncSource } from './sourceKinds';
 import WebsiteSettingsFields, {
@@ -179,10 +183,13 @@ export default function SourceConfigModal({
         token,
       );
       if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        // A wiki or an unknown schedule is worded; anything else is generic.
         setError(
           response.status === 403
             ? t('settings.sources.configModal.errors.forbidden')
-            : t('settings.sources.errors.syncFrequency'),
+            : (websiteRefusalForCode(t, data) ??
+                t('settings.sources.errors.syncFrequency')),
         );
         return null;
       }

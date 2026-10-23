@@ -694,7 +694,12 @@
         "invalidConfig": "Esta configuración no es válida. Revisa las direcciones y los límites.",
         "notFound": "Esa página o carpeta ya no está en esta fuente. Vuelve a cargarla e inténtalo de nuevo.",
         "badSyncFrequency": "Esa frecuencia de sincronización no está disponible.",
-        "graphCostRebuild": "Esta fuente tiene un grafo de conocimiento. Un sitio completo reconstruye la fuente, así que el grafo también se reconstruye con un LLM: aproximadamente una llamada por fragmento de toda la fuente."
+        "graphCostRebuild": "Esta fuente tiene un grafo de conocimiento. Un sitio completo reconstruye la fuente, así que el grafo también se reconstruye con un LLM: aproximadamente una llamada por fragmento de toda la fuente.",
+        "tooManyPaths_one": "Puedes quitar hasta {{count}} página a la vez.",
+        "tooManyPaths_other": "Puedes quitar hasta {{count}} páginas a la vez.",
+        "tooManyPaths_many": "Puedes quitar hasta {{count}} páginas a la vez.",
+        "notWebsite": "Esta fuente no es una fuente de sitio web.",
+        "badRequest": "No se pudo leer la solicitud. Recarga la página e inténtalo de nuevo."
       },
       "deleteSource": "Eliminar fuente",
       "syncStarted": "Sincronizando {{name}}…",
@@ -1993,7 +1998,9 @@
         "sourceMenu": "Acciones de la fuente",
         "syncStarting": "Iniciando la sincronización…",
         "syncRefusedWiki": "Esta fuente ahora es una wiki: se edita directamente y ya no se sincroniza.",
-        "syncRefusedNotSyncable": "Esta fuente no se puede sincronizar."
+        "syncRefusedNotSyncable": "Esta fuente no se puede sincronizar.",
+        "syncRefusedConnector": "Esta fuente se sincroniza a través de su conexión.",
+        "syncRefusedInvalid": "No se encontró esta fuente."
       },
       "permission": {
         "always": "Permitir",

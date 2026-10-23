@@ -543,6 +543,14 @@ function indexingSyncs(
   );
 }
 
+/** /api/sync_source and /api/connectors/sync refusal codes, and the key each. */
+const SYNC_REFUSAL_KEYS = new Map<unknown, string>([
+  ['wiki', 'syncRefusedWiki'],
+  ['not_syncable', 'syncRefusedNotSyncable'],
+  ['connector_source', 'syncRefusedConnector'],
+  ['invalid_source', 'syncRefusedInvalid'],
+]);
+
 /**
  * A refused sync in the user's language: the server's `code` when it has a
  * key, else its own words (`error`, or `message` from /api/sync_source),
@@ -554,10 +562,8 @@ function syncRefusal(t: TFunction, data: unknown): string {
     error?: unknown;
     message?: unknown;
   };
-  if (body.code === 'wiki')
-    return t('settings.connectors.detail.syncRefusedWiki');
-  if (body.code === 'not_syncable')
-    return t('settings.connectors.detail.syncRefusedNotSyncable');
+  const key = SYNC_REFUSAL_KEYS.get(body.code);
+  if (key) return t(`settings.connectors.detail.${key}`);
   const text = [body.error, body.message].find(
     (value): value is string => typeof value === 'string' && !!value,
   );

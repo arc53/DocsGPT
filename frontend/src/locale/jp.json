@@ -666,7 +666,11 @@
         "invalidConfig": "この設定は無効です。アドレスと上限を確認してください。",
         "notFound": "そのページまたはフォルダーはこのソースにもうありません。再読み込みしてもう一度お試しください。",
         "badSyncFrequency": "その同期スケジュールは使用できません。",
-        "graphCostRebuild": "このソースにはナレッジグラフがあります。サイト全体を追加するとソースが作り直されるため、グラフもLLMで作り直され、ソース全体のチャンクごとに約1回の呼び出しが行われます。"
+        "graphCostRebuild": "このソースにはナレッジグラフがあります。サイト全体を追加するとソースが作り直されるため、グラフもLLMで作り直され、ソース全体のチャンクごとに約1回の呼び出しが行われます。",
+        "tooManyPaths_one": "一度に削除できるページは最大 {{count}} 件です。",
+        "tooManyPaths_other": "一度に削除できるページは最大 {{count}} 件です。",
+        "notWebsite": "このソースはウェブサイトのソースではありません。",
+        "badRequest": "リクエストを読み取れませんでした。ページを再読み込みしてもう一度お試しください。"
       },
       "deleteSource": "ソースを削除",
       "syncStarted": "{{name}} を同期しています…",
@@ -1925,7 +1929,9 @@
         "sourceMenu": "ソースの操作",
         "syncStarting": "同期を開始しています…",
         "syncRefusedWiki": "このソースは Wiki になりました。直接編集するもので、同期はしません。",
-        "syncRefusedNotSyncable": "このソースは同期できません。"
+        "syncRefusedNotSyncable": "このソースは同期できません。",
+        "syncRefusedConnector": "このソースは接続を通じて同期されます。",
+        "syncRefusedInvalid": "このソースが見つかりませんでした。"
       },
       "permission": {
         "always": "許可",

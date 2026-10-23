@@ -669,7 +669,11 @@
         "invalidConfig": "These settings aren’t valid. Check the addresses and limits.",
         "notFound": "That page or folder isn’t in this source any more. Reload it and try again.",
         "badSyncFrequency": "That sync schedule isn’t available.",
-        "graphCostRebuild": "This source has a knowledge graph. A whole site rebuilds the source, so the graph is rebuilt with an LLM too: about one call per chunk of the whole source."
+        "graphCostRebuild": "This source has a knowledge graph. A whole site rebuilds the source, so the graph is rebuilt with an LLM too: about one call per chunk of the whole source.",
+        "tooManyPaths_one": "You can remove up to {{count}} page at once.",
+        "tooManyPaths_other": "You can remove up to {{count}} pages at once.",
+        "notWebsite": "This source isn’t a website source.",
+        "badRequest": "The request couldn’t be read. Reload the page and try again."
       },
       "deleteSource": "Delete source",
       "syncStarted": "Syncing {{name}}…",
@@ -1928,7 +1932,9 @@
         "sourceMenu": "Source actions",
         "syncStarting": "Starting the sync…",
         "syncRefusedWiki": "This source is a wiki now: it’s edited in place and no longer syncs.",
-        "syncRefusedNotSyncable": "This source can’t be synced."
+        "syncRefusedNotSyncable": "This source can’t be synced.",
+        "syncRefusedConnector": "This source syncs through its connection.",
+        "syncRefusedInvalid": "This source couldn’t be found."
       },
       "permission": {
         "always": "Allow",

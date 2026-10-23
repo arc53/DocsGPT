@@ -572,6 +572,8 @@ describe('ConnectionDrawer', () => {
   it.each([
     ['wiki', 'settings.connectors.detail.syncRefusedWiki'],
     ['not_syncable', 'settings.connectors.detail.syncRefusedNotSyncable'],
+    ['connector_source', 'settings.connectors.detail.syncRefusedConnector'],
+    ['invalid_source', 'settings.connectors.detail.syncRefusedInvalid'],
   ])('says in its own words why a sync was refused (%s)', async (code, key) => {
     users.syncConnector.mockResolvedValue({
       json: async () => ({ success: false, code, error: 'English text' }),

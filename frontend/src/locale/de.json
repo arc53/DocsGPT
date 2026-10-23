@@ -669,7 +669,11 @@
         "invalidConfig": "Diese Einstellungen sind ungültig. Prüfe die Adressen und Limits.",
         "notFound": "Diese Seite oder dieser Ordner ist nicht mehr in der Quelle. Lade sie neu und versuche es erneut.",
         "badSyncFrequency": "Dieser Synchronisierungsplan ist nicht verfügbar.",
-        "graphCostRebuild": "Diese Quelle hat einen Wissensgraphen. Eine ganze Website baut die Quelle neu auf, daher wird auch der Graph mit einem LLM neu erstellt: etwa ein Aufruf pro Chunk der gesamten Quelle."
+        "graphCostRebuild": "Diese Quelle hat einen Wissensgraphen. Eine ganze Website baut die Quelle neu auf, daher wird auch der Graph mit einem LLM neu erstellt: etwa ein Aufruf pro Chunk der gesamten Quelle.",
+        "tooManyPaths_one": "Du kannst bis zu {{count}} Seite auf einmal entfernen.",
+        "tooManyPaths_other": "Du kannst bis zu {{count}} Seiten auf einmal entfernen.",
+        "notWebsite": "Diese Quelle ist keine Website-Quelle.",
+        "badRequest": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut."
       },
       "deleteSource": "Quelle löschen",
       "syncStarted": "{{name}} wird synchronisiert…",
@@ -1928,7 +1932,9 @@
         "sourceMenu": "Quellenaktionen",
         "syncStarting": "Synchronisierung wird gestartet…",
         "syncRefusedWiki": "Diese Quelle ist jetzt ein Wiki: Sie wird direkt bearbeitet und nicht mehr synchronisiert.",
-        "syncRefusedNotSyncable": "Diese Quelle lässt sich nicht synchronisieren."
+        "syncRefusedNotSyncable": "Diese Quelle lässt sich nicht synchronisieren.",
+        "syncRefusedConnector": "Diese Quelle wird über ihre Verbindung synchronisiert.",
+        "syncRefusedInvalid": "Diese Quelle wurde nicht gefunden."
       },
       "permission": {
         "always": "Erlauben",

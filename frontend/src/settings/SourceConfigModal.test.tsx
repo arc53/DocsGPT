@@ -282,6 +282,22 @@ describe('SourceConfigModal first section, by kind', () => {
     expect(setModalState).toHaveBeenCalledWith('INACTIVE');
   });
 
+  it.each([
+    ['wiki', 'settings.sources.website.wikiSource'],
+    ['bad_sync_frequency', 'settings.sources.website.badSyncFrequency'],
+  ])('says why a schedule change was refused (%s)', async (code, key) => {
+    service.manageSync.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ success: false, code, error: 'English' }),
+    });
+    await render(doc({ type: 'github', syncFrequency: 'daily' }));
+    await pickSchedule('monthly');
+    await act(async () => button('settings.sources.configModal.save')!.click());
+    expect(document.body.textContent).toContain(key);
+    expect(document.body.textContent).not.toContain('English');
+  });
+
   it('keeps a failed schedule change in the dialog', async () => {
     service.manageSync.mockResolvedValue({
       ok: false,

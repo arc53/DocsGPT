@@ -694,7 +694,12 @@
         "invalidConfig": "Ces paramètres ne sont pas valides. Vérifiez les adresses et les limites.",
         "notFound": "Cette page ou ce dossier ne fait plus partie de la source. Rechargez-la et réessayez.",
         "badSyncFrequency": "Cette fréquence de synchronisation n’est pas disponible.",
-        "graphCostRebuild": "Cette source a un graphe de connaissances. Un site entier reconstruit la source, donc le graphe est lui aussi reconstruit avec un LLM : environ un appel par fragment de toute la source."
+        "graphCostRebuild": "Cette source a un graphe de connaissances. Un site entier reconstruit la source, donc le graphe est lui aussi reconstruit avec un LLM : environ un appel par fragment de toute la source.",
+        "tooManyPaths_one": "Vous pouvez retirer jusqu’à {{count}} page à la fois.",
+        "tooManyPaths_other": "Vous pouvez retirer jusqu’à {{count}} pages à la fois.",
+        "tooManyPaths_many": "Vous pouvez retirer jusqu’à {{count}} pages à la fois.",
+        "notWebsite": "Cette source n’est pas une source de site web.",
+        "badRequest": "La requête n’a pas pu être lue. Rechargez la page et réessayez."
       },
       "deleteSource": "Supprimer la source",
       "syncStarted": "Synchronisation de {{name}}…",
@@ -1993,7 +1998,9 @@
         "sourceMenu": "Actions de la source",
         "syncStarting": "Lancement de la synchronisation…",
         "syncRefusedWiki": "Cette source est désormais un wiki : elle se modifie sur place et ne se synchronise plus.",
-        "syncRefusedNotSyncable": "Cette source ne peut pas être synchronisée."
+        "syncRefusedNotSyncable": "Cette source ne peut pas être synchronisée.",
+        "syncRefusedConnector": "Cette source se synchronise par sa connexion.",
+        "syncRefusedInvalid": "Cette source est introuvable."
       },
       "permission": {
         "always": "Autoriser",

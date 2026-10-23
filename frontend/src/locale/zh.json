@@ -666,7 +666,11 @@
         "invalidConfig": "这些设置无效。请检查地址和限制。",
         "notFound": "此来源中已没有该页面或文件夹。请重新加载后再试。",
         "badSyncFrequency": "该同步计划不可用。",
-        "graphCostRebuild": "此来源有知识图谱。添加整个网站会重建此来源，因此图谱也会通过 LLM 重建：整个来源的每个文本块约调用一次。"
+        "graphCostRebuild": "此来源有知识图谱。添加整个网站会重建此来源，因此图谱也会通过 LLM 重建：整个来源的每个文本块约调用一次。",
+        "tooManyPaths_one": "一次最多可移除 {{count}} 个页面。",
+        "tooManyPaths_other": "一次最多可移除 {{count}} 个页面。",
+        "notWebsite": "此来源不是网站来源。",
+        "badRequest": "无法读取该请求。请重新加载页面后再试。"
       },
       "deleteSource": "删除来源",
       "syncStarted": "正在同步 {{name}}…",
@@ -1925,7 +1929,9 @@
         "sourceMenu": "来源操作",
         "syncStarting": "正在开始同步…",
         "syncRefusedWiki": "此来源现在是 Wiki：直接在此编辑，不再同步。",
-        "syncRefusedNotSyncable": "此来源无法同步。"
+        "syncRefusedNotSyncable": "此来源无法同步。",
+        "syncRefusedConnector": "此来源通过其连接进行同步。",
+        "syncRefusedInvalid": "找不到此来源。"
       },
       "permission": {
         "always": "允许",

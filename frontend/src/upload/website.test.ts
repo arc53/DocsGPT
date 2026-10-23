@@ -256,6 +256,12 @@ describe('websiteRefusal', () => {
     ['invalid_config', {}, 'invalidConfig'],
     ['not_found', {}, 'notFound'],
     ['bad_sync_frequency', {}, 'badSyncFrequency'],
+    ['too_many_paths', { max_paths: 500 }, 'tooManyPaths {"count":500}'],
+    ['not_website', {}, 'notWebsite'],
+    // The UI never builds these; one line covers them.
+    ['invalid_body', {}, 'badRequest'],
+    ['missing_fields', { fields: ['source_id'] }, 'badRequest'],
+    ['invalid_field', { field: 'entries' }, 'badRequest'],
   ])('words %s with its details', (code, details, worded) => {
     expect(websiteRefusal(t, 400, { code, error: 'English', ...details })).toBe(
       key(worded),

@@ -299,6 +299,11 @@ const REFUSAL_KEYS = new Map<unknown, string>([
   ['invalid_config', 'invalidConfig'],
   ['not_found', 'notFound'],
   ['bad_sync_frequency', 'badSyncFrequency'],
+  ['not_website', 'notWebsite'],
+  // A body the UI never builds: one line for all three.
+  ['invalid_body', 'badRequest'],
+  ['missing_fields', 'badRequest'],
+  ['invalid_field', 'badRequest'],
 ]);
 
 /** Codes worded with the limit the refusal names: [key, detail field]. */
@@ -307,6 +312,7 @@ const LIMIT_KEYS = new Map<unknown, [string, string]>([
   ['site_limit', ['siteLimit', 'max_sites']],
   ['skip_limit', ['skipLimit', 'max_skip']],
   ['url_too_long', ['urlTooLong', 'max_length']],
+  ['too_many_paths', ['tooManyPaths', 'max_paths']],
 ]);
 
 /**
