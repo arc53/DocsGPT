@@ -13,7 +13,7 @@ aiofiles==25.1.0
     # via daytona
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.4
+aiohttp==3.14.5
     # via
     #   aiohttp-retry
     #   daytona
@@ -39,7 +39,7 @@ annotated-doc==0.0.5
     # via typer
 annotated-types==0.8.0
     # via pydantic
-anthropic==1.11.0
+anthropic==1.15.0
     # via docsgpt
 anyio==4.15.1
     # via
@@ -63,9 +63,9 @@ attrs==26.1.0
     #   jsonschema
     #   jsonschema-path
     #   referencing
-authlib==1.8.0
+authlib==1.9.1
     # via fastmcp-slim
-beartype==0.22.9
+beartype==0.23.1
     # via py-key-value-aio
 beautifulsoup4==4.15.0
     # via
@@ -77,13 +77,13 @@ billiard==4.3.1
     # via celery
 blinker==1.9.0
     # via flask
-boto3==1.43.108
+boto3==1.43.114
     # via docsgpt
-botocore==1.43.108
+botocore==1.43.114
     # via
     #   boto3
     #   s3transfer
-cachetools==7.2.1
+cachetools==7.2.2
     # via py-key-value-aio
 caio==0.12.9
     # via aiofile
@@ -104,7 +104,7 @@ cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.5.2
     # via requests
-click==8.1.8
+click==8.5.0
     # via
     #   celery
     #   click-didyoumean
@@ -144,19 +144,19 @@ cyclopts==5.2.0
     # via fastmcp-slim
 dataclasses-json==0.6.7
     # via docsgpt
-daytona==0.222.0
+daytona==0.225.0
     # via docsgpt
-daytona-analytics-api-client==0.222.0
+daytona-analytics-api-client==0.225.0
     # via daytona
-daytona-analytics-api-client-async==0.222.0
+daytona-analytics-api-client-async==0.225.0
     # via daytona
-daytona-api-client==0.222.0
+daytona-api-client==0.225.0
     # via daytona
-daytona-api-client-async==0.222.0
+daytona-api-client-async==0.225.0
     # via daytona
-daytona-toolbox-api-client==0.222.0
+daytona-toolbox-api-client==0.225.0
     # via daytona
-daytona-toolbox-api-client-async==0.222.0
+daytona-toolbox-api-client-async==0.225.0
     # via daytona
 ddgs==9.16.0
     # via docsgpt
@@ -170,7 +170,7 @@ deprecated==1.3.1
     # via daytona
 distro==1.9.0
     # via google-genai
-dnspython==2.8.0
+dnspython==2.9.0
     # via email-validator
 docstring-parser==0.18.0
     # via
@@ -178,7 +178,7 @@ docstring-parser==0.18.0
     #   cyclopts
 docx2txt==0.9
     # via docsgpt
-elevenlabs==2.71.0
+elevenlabs==2.73.0
     # via docsgpt
 email-validator==2.3.0
     # via pydantic
@@ -190,13 +190,13 @@ faiss-cpu==1.15.1
     # via docsgpt
 fast-ebook==0.2.0
     # via docsgpt
-fastembed==0.8.1
+fastembed==0.9.0
     # via docsgpt
-fastmcp==4.0.11
+fastmcp==4.1.0
     # via docsgpt
-fastmcp-slim==4.0.11
+fastmcp-slim==4.1.0
     # via fastmcp
-filelock==4.0.12
+filelock==4.2.0
     # via
     #   huggingface-hub
     #   tldextract
@@ -216,11 +216,11 @@ frozenlist==1.8.0
     #   aiosignal
 fsspec==2026.9.0
     # via huggingface-hub
-google-api-core==2.41.0
+google-api-core==2.42.0
     # via google-api-python-client
 google-api-python-client==2.201.0
     # via docsgpt
-google-auth==2.60.0
+google-auth==2.62.0
     # via
     #   google-api-core
     #   google-api-python-client
@@ -231,7 +231,7 @@ google-auth-httplib2==0.4.4
     # via google-api-python-client
 google-auth-oauthlib==1.5.0
     # via docsgpt
-google-genai==2.28.0
+google-genai==2.31.0
     # via docsgpt
 google-re2==1.1.20251105
     # via cel-python
@@ -276,7 +276,7 @@ httplib2==0.32.0
     # via
     #   google-api-python-client
     #   google-auth-httplib2
-httptools==0.8.0
+httptools==0.9.0
     # via uvicorn
 httpx==0.28.1
     # via
@@ -392,7 +392,7 @@ mdurl==0.1.2
     # via markdown-it-py
 mmh3==5.3.1
     # via fastembed
-more-itertools==11.1.0
+more-itertools==11.2.1
     # via
     #   jaraco-classes
     #   jaraco-functools
@@ -406,7 +406,7 @@ mypy-extensions==1.1.0
     # via typing-inspect
 networkx==3.7
     # via docsgpt
-numpy==2.5.3
+numpy==2.5.4
     # via
     #   docsgpt
     #   faiss-cpu
@@ -416,13 +416,13 @@ numpy==2.5.3
     #   qdrant-client
 oauthlib==4.0.0
     # via requests-oauthlib
-obstore==0.11.1
+obstore==0.12.0
     # via daytona
-onnxruntime==1.30.0
+onnxruntime==1.31.0
     # via
     #   docsgpt
     #   fastembed
-openai==3.26.0
+openai==3.32.0
     # via docsgpt
 openapi-pydantic==0.6.0
     # via fastmcp-slim
@@ -567,9 +567,9 @@ pathable==0.6.0
     # via jsonschema-path
 pdf2image==1.17.0
     # via docsgpt
-pendulum==3.2.0
+pendulum==3.3.0
     # via cel-python
-pgvector==0.5.0
+pgvector==0.5.1
     # via docsgpt
 pillow==12.3.0
     # via
@@ -577,7 +577,7 @@ pillow==12.3.0
     #   fastembed
     #   pdf2image
     #   python-pptx
-platformdirs==4.12.3
+platformdirs==4.13.3
     # via fastmcp-slim
 portalocker==3.2.0
     # via qdrant-client
@@ -615,13 +615,13 @@ py-key-value-aio==0.4.6
     # via fastmcp-slim
 py-rust-stemmers==0.1.8
     # via fastembed
-py-vapid==1.9.4
+py-vapid==1.9.6
     # via pywebpush
 pyasn1==0.6.4
     # via pyasn1-modules
 pyasn1-modules==0.4.2
     # via google-auth
-pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+pycparser==3.11 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
 pydantic==2.13.5
     # via
@@ -644,11 +644,11 @@ pydantic==2.13.5
     #   openapi3-parser
     #   pydantic-settings
     #   qdrant-client
-pydantic-core==2.46.5
+pydantic-core==2.50.1
     # via
     #   elevenlabs
     #   pydantic
-pydantic-settings==2.15.0
+pydantic-settings==2.16.0
     # via
     #   docsgpt
     #   fastmcp-slim
@@ -792,19 +792,19 @@ sniffio==1.3.1
     #   openai
 soupsieve==2.10
     # via beautifulsoup4
-sqlalchemy==2.1.3
+sqlalchemy==2.1.5
     # via
     #   alembic
     #   docsgpt
 sse-starlette==3.5.0
     # via mcp
-starlette==1.7.0
+starlette==1.8.0
     # via
     #   docsgpt
     #   fastmcp-slim
     #   mcp
     #   sse-starlette
-tenacity==9.1.4
+tenacity==9.2.1
     # via
     #   celery-redbeat
     #   google-genai
@@ -812,7 +812,7 @@ tiktoken==0.14.0
     # via docsgpt
 tldextract==5.4.0
     # via docsgpt
-tokenizers==0.23.2
+tokenizers==0.23.3
     # via
     #   docsgpt
     #   fastembed
@@ -823,11 +823,11 @@ tqdm==4.70.1
     #   docsgpt
     #   fastembed
     #   huggingface-hub
-truststore==0.10.4 ; sys_platform != 'emscripten'
+truststore==0.10.5 ; sys_platform != 'emscripten'
     # via
     #   httpcore2
     #   httpx2
-typer==0.26.8
+typer==0.27.3
     # via huggingface-hub
 typing-extensions==4.16.0
     # via
@@ -888,9 +888,9 @@ tzdata==2026.5
     #   tzlocal
 tzlocal==5.4.4
     # via celery
-uncalled-for==0.4.0
+uncalled-for==0.4.1
     # via fastmcp-slim
-update-checker==1.0.0
+update-checker==1.0.1
     # via praw
 uritemplate==4.2.0
     # via google-api-python-client
@@ -942,7 +942,7 @@ werkzeug==3.1.9
     #   flask-restx
 win32-setctime==1.2.0 ; sys_platform == 'win32'
     # via loguru
-wrapt==2.5.0
+wrapt==2.5.1
     # via
     #   deprecated
     #   opentelemetry-instrumentation
