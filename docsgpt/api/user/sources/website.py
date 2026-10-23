@@ -446,9 +446,15 @@ class AddWebsitePages(Resource):
         if refusal is not None:
             return refusal
         try:
-            new_entries = parse_website_config({"entries": data["entries"]})["entries"]
+            parsed = parse_website_config({"entries": data["entries"]})["entries"]
         except ValueError as err:
             return _config_error(err)
+        # One page named several ways (``/new``, ``/new/``, ``www.…/new#a``)
+        # is one entry: the first spelling is kept, so the cap counts it once.
+        firsts: Dict[Tuple[str, str], dict] = {}
+        for entry in parsed:
+            firsts.setdefault((entry["mode"], _key(entry["url"])), entry)
+        new_entries = list(firsts.values())
         try:
             with db_session() as conn:
                 doc, ra = _load_locked(conn, data["source_id"], user, "edit")

@@ -601,6 +601,19 @@ class TestAddPages:
         assert [e["url"] for e in entries] == ["https://docs.x.io/", "https://docs.x.io/extra"]
         pages_task.delay.assert_called_once()
 
+    def test_one_page_named_several_ways_in_one_request_is_listed_once(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, pages_task, _ = self._add(app, pg_conn, src, [
+            {"url": "https://docs.x.io/new", "mode": "page"},
+            {"url": "https://docs.x.io/new/", "mode": "page"},
+            {"url": "https://www.docs.x.io/new#a", "mode": "page"},
+        ])
+
+        assert response.status_code == 200
+        entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
+        assert [e["url"] for e in entries] == ["https://docs.x.io/", "https://docs.x.io/extra", "https://docs.x.io/new"]
+        pages_task.delay.assert_called_once_with(str(src["id"]), USER, "add", urls=["https://docs.x.io/new"])
+
     def test_a_whole_site_rebuilds_the_source(self, app, pg_conn):
         src = _seed(pg_conn)
         response, pages_task, sync_task = self._add(
