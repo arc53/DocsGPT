@@ -60,10 +60,11 @@ vi.mock('./tree/TreeBrowser', () => ({
 
 vi.mock('./AddWebsitePagesModal', () => ({
   default: (props: {
+    graph?: boolean;
     onQueued: (startedAt: number, taskId?: string) => void;
   }) => {
     captured.onQueued = props.onQueued;
-    return <div>add-pages-modal</div>;
+    return <div>add-pages-modal{props.graph ? ' graph' : ''}</div>;
   },
 }));
 
@@ -460,6 +461,25 @@ describe('WebsiteTree page management', () => {
     expect(container.textContent).toContain(
       'settings.sources.website.addPages',
     );
+  });
+
+  it('tells Add pages when the source has a knowledge graph', async () => {
+    await act(async () => {
+      root.render(
+        <WebsiteTree
+          docId="src-1"
+          sourceName="Docs"
+          onBackToDocuments={() => undefined}
+          hosts={['docs.x.io']}
+          graph
+        />,
+      );
+    });
+    const add = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('settings.sources.website.addPages'),
+    )!;
+    await act(async () => add.click());
+    expect(document.body.textContent).toContain('add-pages-modal graph');
   });
 
   it('opens Add pages from the header', async () => {

@@ -90,17 +90,30 @@ describe('AddWebsitePagesModal', () => {
         .click(),
     );
 
-  const open = () =>
+  const open = (graph?: boolean) =>
     act(async () => {
       root.render(
         <AddWebsitePagesModal
           sourceId="src-1"
           sourceName="Docs"
+          graph={graph}
           onClose={onClose}
           onQueued={onQueued}
         />,
       );
     });
+
+  it("says a graph source's new pages are extracted with an LLM", async () => {
+    await open(true);
+    const note = document.body.querySelector('[role="note"]');
+    expect(note?.textContent).toBe('settings.sources.website.graphCost');
+    expect(note?.getAttribute('data-variant')).toBe('info');
+
+    await open(false);
+    expect(document.body.textContent).not.toContain(
+      'settings.sources.website.graphCost',
+    );
+  });
 
   const submit = async (fill = 'fill') => {
     await open();

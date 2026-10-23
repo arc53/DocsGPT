@@ -42,6 +42,8 @@ interface WebsiteTreeProps {
   actionsTarget?: HTMLElement | null;
   /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
   onCrumbsChange?: (crumbs: Crumb[]) => void;
+  /** The source has a knowledge graph: Add pages says new pages are extracted into it. */
+  graph?: boolean;
   /** The hosts the source fetches from (the sources list's `website.hosts`). */
   hosts: string[];
   /** `sources.sync_frequency`; never (or empty) reads "Not synced". */
@@ -128,6 +130,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   embedded = false,
   actionsTarget,
   onCrumbsChange,
+  graph = false,
   hosts,
   syncFrequency,
   syncedAt,
@@ -506,6 +509,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         <AddWebsitePagesModal
           sourceId={docId}
           sourceName={sourceName}
+          graph={graph}
           onClose={() => setAddOpen(false)}
           onQueued={(startedAt, taskId) =>
             void awaitChange(tr('addingPages'), startedAt, 'addFailed', {

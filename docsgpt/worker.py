@@ -4715,6 +4715,51 @@ def _website_page_targets(
     return fetch, targets, include_host
 
 
+def _update_page_graph(
+    cfg: SourceConfig, source_id: str, user: str, task_id: Optional[str], old_chunk_ids: List[str], extract: bool,
+) -> None:
+    """Bring a graphrag source's graph up to date after a page change, chunk by chunk.
+
+    The deleted chunks' entities and relationships come out first
+    (``GraphStore.delete_chunks``, no LLM call). Then, for added or refreshed
+    pages, ``extract_graph`` is queued without the reset a full rebuild does:
+    extraction skips every chunk already done, so only the new chunks are
+    sent to the model. The key carries the page task's id, so each change
+    queues its own run rather than deduping against the last full build.
+
+    A no-op for any other source, or when GraphRAG is unavailable. Never
+    raises: a failure is logged and leaves the graph as it was (nothing is
+    extracted on top of entries that couldn't be dropped), and the page
+    change stands.
+
+    Args:
+        cfg: The source's config.
+        source_id: The source.
+        user: Its owner.
+        task_id: The page task's id, for the extraction's idempotency key.
+        old_chunk_ids: Ids of the chunks the change deleted.
+        extract: Whether the change stored new chunks to extract.
+    """
+    if cfg.kind != "graphrag":
+        return
+    from docsgpt.graphrag import graphrag_available
+
+    if not graphrag_available():
+        return
+    try:
+        if old_chunk_ids:
+            from docsgpt.graphrag.store import GraphStore
+
+            GraphStore().delete_chunks(source_id, old_chunk_ids)
+        if extract:
+            from docsgpt.api.user.tasks import extract_graph
+
+            key = f"extract-graph:{source_id}:pages:{task_id or uuid.uuid4().hex}"
+            extract_graph.delay(source_id, user, idempotency_key=key)
+    except Exception as e:  # noqa: BLE001 - the page change is done; the graph catches up at the next build
+        logging.warning(f"Could not update the graph of {source_id} after a page change: {e}", exc_info=True)
+
+
 def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_url: Optional[str],
                       fetched_at: str) -> Dict[str, Any]:
     """Store a fetched page's chunks, then delete its previous copy.
@@ -4733,8 +4778,8 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
         fetched_at: When it was fetched (ISO 8601).
 
     Returns:
-        ``{"key", "path", "leaf", "old_url", "new_ids"}``: the tree change for
-        the page, and what it replaced and added.
+        ``{"key", "path", "leaf", "old_url", "old_ids", "new_ids"}``: the tree
+        change for the page, and the chunks it replaced and added.
 
     Raises:
         Exception: Whatever adding a chunk raised, after the rollback.
@@ -4772,6 +4817,7 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
         "key": _web_page_key(url),
         "path": path,
         "old_url": old_url,
+        "old_ids": old_ids,
         "new_ids": new_ids,
         "leaf": {
             "type": "text/markdown",
@@ -4852,7 +4898,9 @@ def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict
     return kept
 
 
-def _remove_web_pages(source_id: str, user: str, file_paths: Optional[List[str]]) -> List[Tuple[str, str]]:
+def _remove_web_pages(
+    source_id: str, user: str, file_paths: Optional[List[str]], task_id: Optional[str] = None,
+) -> List[Tuple[str, str]]:
     """Delete pages from a Website source: their chunks first, then their tree entries.
 
     Run holding the source's index lock. The pages are looked up in the tree
@@ -4861,12 +4909,14 @@ def _remove_web_pages(source_id: str, user: str, file_paths: Optional[List[str]]
     saves once); if it fails, the tree is not written, so every page still
     listed keeps its chunks and the removal can be tried again. The tree is
     written on the row re-read under a row lock, so a change made meanwhile
-    is kept.
+    is kept. A graphrag source's graph then drops the chunks' entities and
+    relationships (``_update_page_graph``).
 
     Args:
         source_id: The source.
         user: Its owner.
         file_paths: Tree paths of the pages to remove.
+        task_id: The page task's id.
 
     Returns:
         ``(path, url)`` of the pages removed.
@@ -4911,6 +4961,7 @@ def _remove_web_pages(source_id: str, user: str, file_paths: Optional[List[str]]
         stale = [path for path, url in web_pages(tree) if removed.get(path) == url]
         remove_pages(tree, stale)
         repo.update(source_id, user, {"directory_structure": tree, "tokens": str(total_tokens(tree))})
+    _update_page_graph(SourceConfig.parse(source.get("config")), source_id, user, task_id, chunk_ids, extract=False)
     return pages
 
 
@@ -4935,7 +4986,9 @@ def website_pages_worker(
     pages on a new host to a sync instead: those rename the tree.
 
     A removal (``_remove_web_pages``) deletes the pages' chunks, then their
-    tree entries; the route has already saved the skip rules.
+    tree entries; the route has already saved the skip rules. On a graphrag
+    source, the graph follows each change without a full rebuild
+    (``_update_page_graph``).
 
     The run holds the source's index lock (``source_index_lock``), so it
     waits for a sync or another page change on the same source, and writes
@@ -4975,11 +5028,12 @@ def website_pages_worker(
     publish_user_event(user, "source.ingest.queued", envelope, scope={"kind": "source", "id": source_id})
 
     try:
+        task_id = envelope.get("task_id")
         with source_index_lock(source_id):
             if operation == "remove":
-                changes = _remove_web_pages(source_id, user, file_paths)
+                changes = _remove_web_pages(source_id, user, file_paths, task_id)
             else:
-                changes = _run_website_pages(source_id, user, operation, urls, file_path)
+                changes = _run_website_pages(source_id, user, operation, urls, file_path, task_id)
     except Exception as e:
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
         publish_user_event(
@@ -4996,8 +5050,13 @@ def website_pages_worker(
 
 def _run_website_pages(
     source_id: str, user: str, operation: str, urls: Optional[List[str]], file_path: Optional[str],
+    task_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """The body of ``website_pages_worker``, run holding the source's index lock.
+
+    Once the pages are saved, a graphrag source's graph drops the replaced
+    chunks and extracts the new ones (``_update_page_graph``), failure or not:
+    the pages finished before a failure are in the source.
 
     Args:
         source_id: The source.
@@ -5005,6 +5064,7 @@ def _run_website_pages(
         operation: ``add`` or ``refresh``.
         urls: For ``add``: the addresses to fetch.
         file_path: For ``refresh``: the page's tree path.
+        task_id: The page task's id.
 
     Returns:
         The page changes written.
@@ -5069,6 +5129,11 @@ def _run_website_pages(
             break
 
     kept = _save_page_changes(store, source_id, user, changes) if changes else []
+    if changes:
+        # Every replaced copy's chunks are gone, kept or not; only kept pages add any.
+        old_ids = [chunk_id for change in changes for chunk_id in change["old_ids"]]
+        added = any(change["new_ids"] for change in kept)
+        _update_page_graph(cfg, source_id, user, task_id, old_ids, extract=added)
     if failure is not None:
         raise failure
     return kept

@@ -25,6 +25,8 @@ import { Modal, ModalActions } from './ui/modal';
  *
  * @param sourceId The source.
  * @param sourceName Shown under the title.
+ * @param graph The source has a knowledge graph: a note says new pages are
+ *   extracted into it with an LLM.
  * @param onClose Closes the dialog.
  * @param onQueued Called once the server accepts, with when the request went
  *   out and the task it queued, so the caller can wait for the ingest to
@@ -33,11 +35,13 @@ import { Modal, ModalActions } from './ui/modal';
 export default function AddWebsitePagesModal({
   sourceId,
   sourceName,
+  graph = false,
   onClose,
   onQueued,
 }: {
   sourceId: string;
   sourceName: string;
+  graph?: boolean;
   onClose: () => void;
   onQueued: (startedAt: number, taskId: string | null) => void;
 }) {
@@ -118,6 +122,13 @@ export default function AddWebsitePagesModal({
         <p className="text-muted-foreground text-xs">
           {t('settings.sources.website.addPagesHint')}
         </p>
+        {graph && (
+          <Alert variant="info" role="note">
+            <AlertDescription>
+              {t('settings.sources.website.graphCost')}
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
     </Modal>
   );

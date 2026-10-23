@@ -566,3 +566,123 @@ class TestConcurrentChanges:
         worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
 
         assert held == [str(source["id"]), "fetching", "released"]
+
+
+class FakeGraph:
+    """Records ``GraphStore.delete_chunks`` calls; ``fail`` makes them raise."""
+
+    def __init__(self):
+        self.deleted = []
+        self.reset = []
+        self.fail = False
+
+    def delete_chunks(self, source_id, chunk_ids):
+        if self.fail:
+            raise RuntimeError("graph database unavailable")
+        self.deleted.append((source_id, list(chunk_ids)))
+        return {"nodes": 0, "edges": 0}
+
+    def delete_by_source(self, source_id):
+        self.reset.append(source_id)
+
+
+@pytest.fixture
+def graph(monkeypatch):
+    """A graphrag deployment: GraphRAG available, the graph store and extraction task faked."""
+    from docsgpt.api.user import tasks
+    from docsgpt.graphrag import store as graph_store
+
+    fake = FakeGraph()
+    queued = []
+    monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: True)
+    monkeypatch.setattr(graph_store, "GraphStore", lambda *a, **k: fake)
+    monkeypatch.setattr(tasks.extract_graph, "delay", lambda *a, **k: queued.append((a, k)))
+    return {"store": fake, "queued": queued}
+
+
+def _make_graph(pg_conn, source):
+    SourcesRepository(pg_conn).update(str(source["id"]), USER, {"config": {"kind": "graphrag"}})
+
+
+@pytest.mark.unit
+class TestAGraphSource:
+    """A page change updates the graph by chunk instead of rebuilding it."""
+
+    def test_a_refresh_drops_the_old_chunks_and_extracts_only_the_new(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, graph,
+    ):
+        from docsgpt import worker
+
+        _make_graph(pg_conn, source)
+        task_self.request.id = "task-g1"
+        pipeline["pages"]["https://docs.x.io/a"] = "New A"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
+
+        assert graph["store"].deleted == [(str(source["id"]), ["old-1", "old-2"])]
+        # No reset: the rest of the graph stays, and only unextracted chunks are billed.
+        assert graph["store"].reset == []
+        [(args, kwargs)] = graph["queued"]
+        assert args == (str(source["id"]), USER)
+        assert "task-g1" in kwargs["idempotency_key"]
+
+    def test_an_added_page_is_extracted(self, pg_conn, patch_worker_db, task_self, source, pipeline, graph):
+        from docsgpt import worker
+
+        _make_graph(pg_conn, source)
+        pipeline["pages"]["https://docs.x.io/b"] = "B"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/b"])
+
+        assert graph["store"].deleted == []
+        assert len(graph["queued"]) == 1
+
+    def test_a_removal_drops_the_pages_chunks_without_extracting(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, graph,
+    ):
+        from docsgpt import worker
+
+        _make_graph(pg_conn, source)
+        SourcesRepository(pg_conn).update(str(source["id"]), USER, {"directory_structure": {
+            "a.md": _leaf("https://docs.x.io/a", 40), "b.md": _leaf("https://docs.x.io/b", 1),
+        }})
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "remove", file_paths=["a.md"])
+
+        assert graph["store"].deleted == [(str(source["id"]), ["old-1", "old-2"])]
+        assert graph["queued"] == []
+
+    def test_a_graph_failure_leaves_the_page_change_done(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, graph,
+    ):
+        from docsgpt import worker
+
+        _make_graph(pg_conn, source)
+        graph["store"].fail = True
+        pipeline["pages"]["https://docs.x.io/a"] = "New A"
+        result = worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
+
+        assert result["pages"] == 1
+        assert pipeline["store"].texts_for("https://docs.x.io/a") == ["New A"]
+        # The graph is left as it was: nothing extracted on top of stale entries.
+        assert graph["queued"] == []
+        assert pipeline["events"][-1][0] == "source.ingest.completed"
+
+    def test_a_classic_source_has_no_graph_to_update(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, graph,
+    ):
+        from docsgpt import worker
+
+        pipeline["pages"]["https://docs.x.io/a"] = "New A"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
+
+        assert graph["store"].deleted == [] and graph["queued"] == []
+
+    def test_nothing_happens_when_graphrag_is_unavailable(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, graph, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: False)
+        _make_graph(pg_conn, source)
+        pipeline["pages"]["https://docs.x.io/a"] = "New A"
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "refresh", file_path="a.md")
+
+        assert graph["store"].deleted == [] and graph["queued"] == []

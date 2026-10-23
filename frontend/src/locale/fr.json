@@ -644,6 +644,7 @@
         "fetchedAt": "récupérée {{when}}",
         "addPages": "Ajouter des pages",
         "addPagesHint": "Récupérées maintenant et conservées à chaque synchronisation. Un site entier reconstruit la source.",
+        "graphCost": "Cette source a un graphe de connaissances. Les nouvelles pages y sont ajoutées avec un LLM, environ un appel par fragment.",
         "addFailed": "Impossible d’ajouter les pages.",
         "pageLimit_one": "Cette source peut contenir jusqu’à {{count}} page.",
         "pageLimit_many": "Cette source peut contenir jusqu’à {{count}} pages.",

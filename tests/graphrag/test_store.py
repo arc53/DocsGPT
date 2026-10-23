@@ -635,6 +635,88 @@ class TestGraphStoreLive:
             store.delete_by_source(source_id)
             store.delete_by_source(other)
 
+    def _apply(self, store, source_id, chunk_id, entities, relationships):
+        """Write one chunk the way a build does: entities linked, edges recorded, degrees counted."""
+        store.apply_chunk(
+            source_id,
+            chunk_id,
+            [{"name": n.title(), "normalized_name": n, "type": "t", "description": n} for n in entities],
+            [{"source": a.title(), "target": b.title(), "type": "rel", "description": "x"} for a, b in relationships],
+            {},
+        )
+        store.set_node_degrees(source_id)
+
+    def _edges(self, store, source_id):
+        conn = store._get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT s.normalized_name, d.normalized_name, e.source_chunk_ids FROM graph_edges e "
+                "JOIN graph_nodes s ON s.id = e.src_node_id JOIN graph_nodes d ON d.id = e.dst_node_id "
+                "WHERE e.source_id = %s ORDER BY 1, 2;",
+                (source_id,),
+            )
+            rows = [(a, b, ids) for a, b, ids in cursor.fetchall()]
+        conn.rollback()
+        return rows
+
+    def test_delete_chunks_drops_only_what_the_chunks_alone_held(self, store, source_id):
+        try:
+            # c1 and c2 both mention Ada; only c2 mentions Bob, and only c2
+            # relates Ada to Bob and Ada to Engine (an edge-only endpoint).
+            self._apply(store, source_id, "c1", ["ada", "carol"], [("ada", "carol")])
+            self._apply(store, source_id, "c2", ["ada", "bob"], [("ada", "bob"), ("ada", "engine"), ("ada", "carol")])
+            other = str(uuid.uuid4())
+            self._apply(store, other, "c2", ["bob"], [])
+
+            result = store.delete_chunks(source_id, ["c2", "never-extracted"])
+
+            assert result == {"nodes": 2, "edges": 2}
+            assert store.get_node_by_normalized(source_id, "bob") is None
+            assert store.get_node_by_normalized(source_id, "engine") is None
+            ada = store.get_node_by_normalized(source_id, "ada")
+            carol = store.get_node_by_normalized(source_id, "carol")
+            assert ada["doc_freq"] == 1
+            assert ada["degree"] == 1 and carol["degree"] == 1
+            # The shared edge keeps the chunk it still comes from.
+            assert self._edges(store, source_id) == [("ada", "carol", ["c1"])]
+            assert store.get_chunk_ids_for_nodes(source_id, [ada["id"]]) == {ada["id"]: ["c1"]}
+            # The chunk's checkpoint goes, so a new chunk of that id would be extracted.
+            assert store.get_progress(source_id) == {"c1": "done"}
+            # Another source's chunk of the same id is untouched.
+            assert store.get_node_by_normalized(other, "bob") is not None
+            assert store.get_progress(other) == {"c2": "done"}
+        finally:
+            store.delete_by_source(source_id)
+            store.delete_by_source(other)
+
+    def test_delete_chunks_keeps_an_endpoint_another_chunk_relates(self, store, source_id):
+        try:
+            # Engine has no chunk link of its own: c1 and c2 each relate a
+            # different entity to it.
+            self._apply(store, source_id, "c1", ["ada"], [("ada", "engine")])
+            self._apply(store, source_id, "c2", ["bob"], [("bob", "engine")])
+
+            store.delete_chunks(source_id, ["c1"])
+
+            engine = store.get_node_by_normalized(source_id, "engine")
+            assert engine is not None and engine["degree"] == 1
+            assert store.get_node_by_normalized(source_id, "ada") is None
+            assert self._edges(store, source_id) == [("bob", "engine", ["c2"])]
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_delete_chunks_twice_is_a_no_op(self, store, source_id):
+        try:
+            self._apply(store, source_id, "c1", ["ada"], [])
+            self._apply(store, source_id, "c2", ["ada"], [])
+            store.delete_chunks(source_id, ["c2"])
+
+            assert store.delete_chunks(source_id, ["c2"]) == {"nodes": 0, "edges": 0}
+            assert store.get_node_by_normalized(source_id, "ada")["doc_freq"] == 1
+            assert store.delete_chunks(source_id, []) == {"nodes": 0, "edges": 0}
+        finally:
+            store.delete_by_source(source_id)
+
     def test_checkpoint_pending_and_mark(self, store, source_id):
         try:
             all_chunks = ["c1", "c2", "c3"]
@@ -1044,6 +1126,27 @@ class TestGraphStoreParameterization:
             assert sid not in sql and "old-id" not in sql and "new-id" not in sql
             assert {sid, "old-id", "new-id"} <= set(params)
         store._connection.commit.assert_called_once()
+
+    def test_delete_chunks_binds_ids_under_the_source_lock(self):
+        store, cursor = self._store_with_mock_conn()
+        store._write_with_reconnect = lambda write: write(store._connection)
+        sid = str(uuid.uuid4())
+
+        assert store.delete_chunks(sid, ["c-1", "c-2", "c-1"]) == {"nodes": 0, "edges": 0}
+
+        calls = cursor.execute.call_args_list
+        assert "pg_advisory_xact_lock" in calls[0].args[0]
+        for sql, params in (c.args for c in calls[1:]):
+            assert sid not in sql and "c-1" not in sql
+        chunk_params = [p for c in calls[1:] for p in c.args[1] if isinstance(p, list) and "c-1" in p]
+        assert chunk_params and all(p == ["c-1", "c-2"] for p in chunk_params)
+        store._connection.commit.assert_called_once()
+
+    def test_delete_chunks_without_ids_touches_nothing(self):
+        store, cursor = self._store_with_mock_conn()
+
+        assert store.delete_chunks("sid", []) == {"nodes": 0, "edges": 0}
+        cursor.execute.assert_not_called()
 
     def test_node_detail_survives_a_relationships_failure(self):
         # A failed relationships read degrades to an empty list; the node and

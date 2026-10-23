@@ -623,6 +623,7 @@
         "fetchedAt": "fetched {{when}}",
         "addPages": "Add pages",
         "addPagesHint": "Fetched now and kept in every sync. A whole site rebuilds the source.",
+        "graphCost": "This source has a knowledge graph. New pages are added to it with an LLM, about one call per chunk.",
         "addFailed": "Couldn’t add the pages.",
         "pageLimit_one": "This source can hold up to {{count}} page.",
         "pageLimit_other": "This source can hold up to {{count}} pages.",

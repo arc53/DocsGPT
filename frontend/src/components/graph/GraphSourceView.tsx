@@ -1,4 +1,4 @@
-import { Waypoints } from 'lucide-react';
+import { Network, Waypoints } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -34,6 +34,7 @@ import {
 } from '../graphViewUtils';
 import GraphEntities from './GraphEntities';
 import type { GraphNodeRef } from './GraphNodePanel';
+import useGraphBuild from './useGraphBuild';
 
 const DEFAULT_LIMIT = 100;
 
@@ -158,6 +159,16 @@ export default function GraphSourceView({
   const fold = useMemo(() => foldGraphTypes(data.nodes), [data.nodes]);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
+  // A build running for this source (an Add pages or Refresh page extracting
+  // its new chunks, a sync rebuilding): the badge shows it, and the graph and
+  // its totals are read again once it ends.
+  const build = useGraphBuild(docId);
+  const wasBuilding = useRef(build.building);
+  useEffect(() => {
+    if (wasBuilding.current && !build.building) retry();
+    wasBuilding.current = build.building;
+  }, [build.building, retry]);
+
   // "Open in Files" is a one-off request: leaving the Files tab drops it, so
   // a later visit opens the tree at its root rather than on that file again.
   const changeTab = useCallback(
@@ -231,6 +242,7 @@ export default function GraphSourceView({
     // its pages are added, refreshed and removed one by one.
     <WebsiteTree
       embedded
+      graph
       canEdit={canEdit}
       docId={docId}
       sourceName={sourceName}
@@ -283,10 +295,19 @@ export default function GraphSourceView({
             : [{ label: sourceName }]
         }
         badge={
-          <Badge variant="neutral">
-            <Waypoints />
-            {t('settings.sources.graphrag.view.title')}
-          </Badge>
+          build.building ? (
+            <Badge variant="neutral">
+              <Network aria-hidden="true" />
+              {build.pct !== null
+                ? t('settings.sources.graphrag.buildingPct', { pct: build.pct })
+                : t('settings.sources.graphrag.building')}
+            </Badge>
+          ) : (
+            <Badge variant="neutral">
+              <Waypoints />
+              {t('settings.sources.graphrag.view.title')}
+            </Badge>
+          )
         }
         byline={
           stats

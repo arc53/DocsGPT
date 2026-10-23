@@ -14,13 +14,27 @@ vi.mock('react-i18next', () => ({
       if (key === 'settings.sources.graphrag.view.relationshipCount' && opts) {
         return `${opts.formatted} ${opts.count === 1 ? 'relationship' : 'relationships'}`;
       }
+      if (opts && 'pct' in opts) return `${key}:${opts.pct}`;
       return opts && 'count' in opts ? `${key}:${opts.count}` : key;
     },
   }),
 }));
 
+// The graph builds the SSE stream records (graphBuildSlice); the token reads null.
+const { redux } = vi.hoisted(() => ({
+  redux: { builds: {} as Record<string, unknown> },
+}));
 vi.mock('react-redux', () => ({
-  useSelector: () => null,
+  useSelector: (selector: (state: unknown) => unknown) => {
+    try {
+      return (
+        selector({ preference: {}, graphBuild: { builds: redux.builds } }) ??
+        null
+      );
+    } catch {
+      return null;
+    }
+  },
   useDispatch: () => vi.fn(),
 }));
 
@@ -119,6 +133,7 @@ vi.mock('../WebsiteTree', async () => {
     default: (props: {
       embedded?: boolean;
       canEdit?: boolean;
+      graph?: boolean;
       docId: string;
       sourceName: string;
       hosts: string[];
@@ -137,6 +152,7 @@ vi.mock('../WebsiteTree', async () => {
         <div
           data-testid="website-tree"
           data-can-edit={String(props.canEdit)}
+          data-graph={String(props.graph)}
           data-doc={props.docId}
           data-hosts={props.hosts.join(',')}
           data-sync={`${props.syncFrequency ?? ''}|${props.syncedAt ?? ''}`}
@@ -612,6 +628,8 @@ describe('GraphSourceView', () => {
     expect(tree?.getAttribute('data-hosts')).toBe('docs.x.io');
     expect(tree?.getAttribute('data-sync')).toBe('weekly|2026-10-20');
     expect(tree?.getAttribute('data-can-edit')).toBe('false');
+    // Its Add pages says new pages go through the graph's LLM extraction.
+    expect(tree?.getAttribute('data-graph')).toBe('true');
     expect(
       container.querySelector('[data-testid="connector-tree"]'),
     ).toBeNull();
@@ -644,6 +662,48 @@ describe('GraphSourceView', () => {
     const tree = container.querySelector('[data-testid="website-tree"]');
     expect(tree?.getAttribute('data-initial-path')).toBe('Deploying/Docker.md');
     expect(tree?.getAttribute('data-linked')).toBe('c7');
+  });
+
+  const badge = () =>
+    container.querySelector('[data-slot="badge"]')?.textContent ?? '';
+
+  it('the header badge follows a graph build, and the totals reload when it ends', async () => {
+    redux.builds = {};
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.view.title');
+
+    redux.builds = {
+      doc: { status: 'building', current: 2, total: 5, nodes: 0, edges: 0 },
+      other: { status: 'building', current: 1, total: 2, nodes: 0, edges: 0 },
+    };
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.buildingPct:40');
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(1);
+
+    redux.builds = {
+      doc: { status: 'building', current: 0, total: 0, nodes: 0, edges: 0 },
+    };
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.building');
+
+    service.getSourceGraph.mockResolvedValue(
+      ok({ ...OVERVIEW, stats: { nodes: 380, edges: 1200 } }),
+    );
+    redux.builds = {
+      doc: { status: 'completed', current: 5, total: 5, nodes: 9, edges: 3 },
+    };
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.view.title');
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('380 entities');
+
+    // Another source's build leaves this view alone.
+    redux.builds = {
+      other: { status: 'building', current: 1, total: 2, nodes: 0, edges: 0 },
+    };
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.view.title');
+    redux.builds = {};
   });
 
   it('uses the connector tree for a synced source typed by its loader', async () => {

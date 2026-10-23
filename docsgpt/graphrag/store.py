@@ -1903,6 +1903,147 @@ class GraphStore:
 
         return self._write_with_reconnect(_write)
 
+    def delete_chunks(self, source_id: str, chunk_ids: List[str]) -> Dict[str, int]:
+        """Take deleted chunks' contributions out of a source's graph, with no LLM call.
+
+        For a page removed or replaced on its own, so the rest of the graph
+        stays and only new chunks need extracting. In one transaction:
+
+        * the chunks' node links go, and each linked node's ``doc_freq``
+          drops by one per link (an edge-only endpoint's count isn't tracked
+          per chunk, so it stays);
+        * the chunk ids leave every edge's ``source_chunk_ids``, and an edge
+          left with none is deleted (an edge that never recorded a chunk is
+          kept);
+        * a node those changes touched that has no chunk link and no edge
+          left is deleted; a relationship endpoint with no chunk link of its
+          own keeps its place while an edge holds it;
+        * the chunks' extraction checkpoints go, and the degrees of the nodes
+          that lost an edge are recounted, as ``set_node_degrees`` counts them.
+
+        A merged node's description keeps text from the deleted chunks:
+        merged text can't be split, so only a full rebuild clears it.
+
+        Args:
+            source_id: The source.
+            chunk_ids: Ids of the deleted chunks; unknown ones are ignored.
+
+        Returns:
+            ``{"nodes": n, "edges": n}``: how many nodes and edges were deleted.
+
+        Raises:
+            Exception: The underlying write failure, after a rollback.
+        """
+        ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids or []))
+        if not ids:
+            return {"nodes": 0, "edges": 0}
+        self._ensure_tables_once()
+
+        def _write(conn):
+            cursor = conn.cursor()
+            try:
+                # Not in the middle of a build's chunk, nor of another delete.
+                _lock_source(cursor, source_id)
+                cursor.execute(
+                    """
+                    UPDATE graph_nodes n
+                    SET doc_freq = GREATEST(COALESCE(n.doc_freq, 0) - links.cnt, 0)
+                    FROM (
+                        SELECT node_id, count(*) AS cnt
+                        FROM graph_node_chunks
+                        WHERE source_id = %s AND chunk_id = ANY(%s)
+                        GROUP BY node_id
+                    ) links
+                    WHERE n.source_id = %s AND n.id = links.node_id;
+                    """,
+                    (source_id, ids, source_id),
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM graph_node_chunks
+                    WHERE source_id = %s AND chunk_id = ANY(%s)
+                    RETURNING node_id;
+                    """,
+                    (source_id, ids),
+                )
+                touched = {str(row[0]) for row in cursor.fetchall()}
+                cursor.execute(
+                    """
+                    UPDATE graph_edges
+                    SET source_chunk_ids = (
+                        SELECT COALESCE(jsonb_agg(t.v ORDER BY t.ord), '[]'::jsonb)
+                        FROM jsonb_array_elements(source_chunk_ids)
+                             WITH ORDINALITY AS t(v, ord)
+                        WHERE NOT (t.v #>> '{}' = ANY(%s))
+                    )
+                    WHERE source_id = %s
+                      AND jsonb_typeof(source_chunk_ids) = 'array'
+                      AND EXISTS (
+                          SELECT 1 FROM jsonb_array_elements(source_chunk_ids) AS s(v)
+                          WHERE s.v #>> '{}' = ANY(%s)
+                      )
+                    RETURNING id;
+                    """,
+                    (ids, source_id, ids),
+                )
+                stripped = [str(row[0]) for row in cursor.fetchall()]
+                cursor.execute(
+                    """
+                    DELETE FROM graph_edges
+                    WHERE source_id = %s AND id = ANY(%s::uuid[])
+                      AND source_chunk_ids = '[]'::jsonb
+                    RETURNING src_node_id, dst_node_id;
+                    """,
+                    (source_id, stripped),
+                )
+                deleted_edges = cursor.fetchall()
+                endpoints = {str(node) for row in deleted_edges for node in row if node is not None}
+                candidates = list(touched | endpoints)
+                cursor.execute(
+                    """
+                    DELETE FROM graph_nodes n
+                    WHERE n.source_id = %s AND n.id = ANY(%s::uuid[])
+                      AND NOT EXISTS (
+                          SELECT 1 FROM graph_node_chunks c
+                          WHERE c.source_id = n.source_id AND c.node_id = n.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM graph_edges e
+                          WHERE e.source_id = n.source_id
+                            AND (e.src_node_id = n.id OR e.dst_node_id = n.id)
+                      )
+                    RETURNING n.id;
+                    """,
+                    (source_id, candidates),
+                )
+                nodes_deleted = len(cursor.fetchall())
+                cursor.execute(
+                    """
+                    UPDATE graph_nodes n
+                    SET degree = (
+                        SELECT count(*) FROM graph_edges e
+                        WHERE e.source_id = n.source_id
+                          AND (e.src_node_id = n.id OR e.dst_node_id = n.id)
+                    )
+                    WHERE n.source_id = %s AND n.id = ANY(%s::uuid[]);
+                    """,
+                    (source_id, list(endpoints)),
+                )
+                cursor.execute(
+                    "DELETE FROM graph_ingest_progress WHERE source_id = %s AND chunk_id = ANY(%s);",
+                    (source_id, ids),
+                )
+                conn.commit()
+                return {"nodes": nodes_deleted, "edges": len(deleted_edges)}
+            except Exception as e:
+                _safe_rollback(conn)
+                logging.error(f"Error deleting graph chunks: {e}")
+                raise
+            finally:
+                cursor.close()
+
+        return self._write_with_reconnect(_write)
+
     def pending_chunks(self, source_id: str, all_chunk_ids: List[str]) -> List[str]:
         """Chunk ids from ``all_chunk_ids`` not yet marked ``done`` for the source."""
         if not all_chunk_ids:

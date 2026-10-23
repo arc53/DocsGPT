@@ -644,6 +644,7 @@
         "fetchedAt": "obtenida {{when}}",
         "addPages": "Añadir páginas",
         "addPagesHint": "Se obtienen ahora y se conservan en cada sincronización. Un sitio completo reconstruye la fuente.",
+        "graphCost": "Esta fuente tiene un grafo de conocimiento. Las páginas nuevas se añaden a él con un LLM, aproximadamente una llamada por fragmento.",
         "addFailed": "No se pudieron añadir las páginas.",
         "pageLimit_one": "Esta fuente puede tener hasta {{count}} página.",
         "pageLimit_many": "Esta fuente puede tener hasta {{count}} páginas.",

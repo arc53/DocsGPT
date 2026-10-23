@@ -621,6 +621,7 @@
         "fetchedAt": "{{when}}擷取",
         "addPages": "新增頁面",
         "addPagesHint": "立即擷取，並在每次同步時保留。新增整個網站會重建此來源。",
+        "graphCost": "此來源有知識圖譜。新頁面會透過 LLM 加入圖譜，每個區塊約呼叫一次。",
         "addFailed": "無法新增頁面。",
         "pageLimit_other": "此來源最多可包含 {{count}} 個頁面。",
         "addingPages": "正在新增頁面…",
