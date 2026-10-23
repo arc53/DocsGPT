@@ -9,6 +9,11 @@ export interface FileNode {
   url?: string;
   /** A web page's address as it was added, when fetching it was redirected. */
   requested_url?: string;
+  /**
+   * Every address the page was added under that redirected to it (one page
+   * can be the landing of several); `requested_url` is the first.
+   */
+  requested_urls?: string[];
   [key: string]: any;
 }
 

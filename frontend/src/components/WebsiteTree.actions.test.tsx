@@ -877,6 +877,29 @@ describe('WebsiteTree page management', () => {
     expect(submit).toBe('settings.sources.website.remove');
   });
 
+  it('a page that several redirected addresses landed on is an entry by any of them', async () => {
+    service.getWebsite.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        config: {
+          entries: [
+            { url: 'https://docs.x.io/', mode: 'site' },
+            { url: 'https://docs.x.io/old', mode: 'page' },
+          ],
+        },
+      }),
+    });
+    await render();
+    const { text } = await askRemovePage('new.md', {
+      type: 'text/markdown',
+      url: 'https://docs.x.io/new',
+      requested_url: 'https://docs.x.io/linked',
+      requested_urls: ['https://docs.x.io/linked', 'https://docs.x.io/old'],
+    });
+    expect(text).toContain('settings.sources.website.removeEntry');
+    expect(text).not.toContain('settings.sources.website.removeCrawled');
+  });
+
   it("says only what holds for any page until the source's list has loaded", async () => {
     let answer: (value: unknown) => void = () => undefined;
     service.getWebsite.mockReturnValue(
@@ -966,6 +989,54 @@ describe('WebsiteTree page management', () => {
     ) => boolean;
     expect(affects('new.md')).toBe(true);
     expect(affects('extra.md')).toBe(false);
+  });
+
+  it('after appended pages, tests the open page against the tree just read', async () => {
+    await render();
+    const before = {
+      type: 'text/markdown',
+      token_count: 1,
+      url: 'https://docs.x.io/new',
+    };
+    await act(async () => {
+      captured.props!.onDirectoryDataLoaded!({
+        directory_structure: { 'new.md': before },
+      });
+    });
+    // As TreeBrowser does: the new tree reaches onDirectoryDataLoaded
+    // before refreshDirectory resolves, and the reload tests it at once.
+    const atCall: boolean[] = [];
+    const reloadFile = vi.fn((affects?: unknown) => {
+      if (typeof affects === 'function')
+        atCall.push((affects as (path: string) => boolean)('new.md'));
+    });
+    captured.props!.controllerRef!.current = {
+      refreshDirectory: vi.fn(async () => {
+        captured.props!.onDirectoryDataLoaded!({
+          directory_structure: {
+            'new.md': {
+              ...before,
+              requested_urls: ['https://docs.x.io/old'],
+            },
+          },
+        });
+        return true;
+      }),
+      resetPath: vi.fn(),
+      reloadFile,
+    };
+    const add = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('settings.sources.website.addPages'),
+    )!;
+    await act(async () => add.click());
+    await act(async () =>
+      captured.onQueued!(Date.now(), 'task-2', {
+        mode: 'append',
+        urls: ['https://docs.x.io/old'],
+      }),
+    );
+    await act(async () => emitTerminal('completed', 'task-2'));
+    expect(atCall).toEqual([true]);
   });
 
   describe('a sync the host started', () => {

@@ -145,14 +145,22 @@ function pageAt(structure: DirectoryStructure, path: string): FileNode | null {
 }
 
 /**
- * The keys a page answers to: its address, and the one it was added under
- * when fetching it was redirected (`requested_url`), so a page added as
- * `/old` that landed on `/new` still matches its entry.
+ * The keys a page answers to: its address, and every one it was added under
+ * when fetching it was redirected (`requested_urls`, or the older single
+ * `requested_url`), so a page added as `/old` that landed on `/new` still
+ * matches its entry.
  */
 function pageKeysOf(node: FileNode | null | undefined): string[] {
-  return [node?.url, node?.requested_url]
-    .filter((url): url is string => typeof url === 'string' && !!url)
-    .map(pageKey);
+  const aliases = Array.isArray(node?.requested_urls)
+    ? node.requested_urls
+    : [];
+  return Array.from(
+    new Set(
+      [node?.url, node?.requested_url, ...aliases]
+        .filter((url): url is string => typeof url === 'string' && !!url)
+        .map(pageKey),
+    ),
+  );
 }
 
 /** A remove the server refused; its message is what the dialog shows. */
@@ -587,7 +595,11 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         }}
         onDirectoryDataLoaded={(data) => {
           const value = data?.directory_structure;
-          setStructure(value && typeof value === 'object' ? value : {});
+          const next = value && typeof value === 'object' ? value : {};
+          // At once, not at the next render: a finished change's reload
+          // tests the new tree as soon as refreshDirectory resolves.
+          structureRef.current = next;
+          setStructure(next);
         }}
         chunksNotice={
           canEdit && synced ? (
