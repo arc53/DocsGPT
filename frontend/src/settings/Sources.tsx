@@ -101,6 +101,13 @@ const firstIngestState = (
   return null;
 };
 
+// A sync with no word on its first ingest (live events off, or the stream
+// resumed past the event) is looked for on the list instead: from 2 minutes
+// after it started, every 30 s, until 15 minutes, when the page stops.
+const POLL_AFTER_MS = 2 * 60_000;
+const POLL_EVERY_MS = 30_000;
+const GIVE_UP_MS = 15 * 60_000;
+
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
 
@@ -173,9 +180,9 @@ export default function Sources({
   const knowledge = useSelector(selectSourceDocs);
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewLink, setViewLink] = useState<KnowledgeLink | null>(null);
-  // The wizard's Open in Knowledge can come before the source exists: a
-  // sync started this session is listed once its first ingest finishes,
-  // and the link waits for that (the upload toast shows it indexing).
+  // A sync started this session is listed once its first ingest finishes.
+  // Until then it shows as a card of its own, and the wizard's Open in
+  // Knowledge, which can come before the source exists, waits for it.
   const startedSyncs = useSelector(selectStartedSyncs);
   const events = useSelector(selectEvents);
   const linkedId = searchParams.get('source');
@@ -183,37 +190,24 @@ export default function Sources({
     linkedId && startedSyncs.some((sync) => sync.id === linkedId)
       ? (firstIngestState(events, linkedId) ?? 'indexing')
       : null;
-  // The source whose finished ingest has been read back into the list.
-  const [reloadedFor, setReloadedFor] = useState<string | null>(null);
+  // The finished syncs whose lists have been read again.
+  const [reloaded, setReloaded] = useState<string[]>([]);
+  const reloading = useRef(new Set<string>());
+  const isListed = (id: string) =>
+    !!paginatedDocuments?.some((d) => d.id === id) ||
+    !!knowledge?.some((d) => d.id === id);
+  // Started but not listed. A finished one still missing after the reload
+  // (one the caller can't list) is no longer shown as indexing.
+  const unlistedSyncs = startedSyncs
+    .map((sync) => ({ ...sync, state: firstIngestState(events, sync.id) }))
+    .filter(
+      (sync) =>
+        !isListed(sync.id) &&
+        !(sync.state === 'completed' && reloaded.includes(sync.id)),
+    );
   // A link that waited opens only if the user hasn't opened another source.
   const waitedFor = useRef<string | null>(null);
-  useEffect(() => {
-    const link = readKnowledgeLink(searchParams);
-    if (!link) return;
-    const listed =
-      paginatedDocuments?.find((d) => d.id === link.sourceId) ??
-      knowledge?.find((d) => d.id === link.sourceId);
-    if (!listed && knowledge == null) return; // the list is still loading
-    if (!listed && linkedSyncState === 'indexing') {
-      waitedFor.current = link.sourceId;
-      return;
-    }
-    if (
-      !listed &&
-      linkedSyncState === 'completed' &&
-      reloadedFor !== link.sourceId
-    ) {
-      // Finished: read the lists again, then open it or give up.
-      waitedFor.current = link.sourceId;
-      refreshDocs(undefined, currentPage, rowsPerPage);
-      getDocs(token)
-        .then((docs) => {
-          if (docs) dispatch(setSourceDocs(docs));
-        })
-        .catch((error) => console.error(error))
-        .finally(() => setReloadedFor(link.sourceId));
-      return;
-    }
+  const dropLink = () =>
     setSearchParams(
       (params) => {
         const next = new URLSearchParams(params);
@@ -222,6 +216,23 @@ export default function Sources({
       },
       { replace: true },
     );
+  useEffect(() => {
+    const link = readKnowledgeLink(searchParams);
+    if (!link) return;
+    const listed =
+      paginatedDocuments?.find((d) => d.id === link.sourceId) ??
+      knowledge?.find((d) => d.id === link.sourceId);
+    if (!listed && knowledge == null) return; // the list is still loading
+    if (
+      !listed &&
+      (linkedSyncState === 'indexing' ||
+        (linkedSyncState === 'completed' && !reloaded.includes(link.sourceId)))
+    ) {
+      // Still indexing, or finished and the lists are being read again.
+      waitedFor.current = link.sourceId;
+      return;
+    }
+    dropLink();
     const waited = waitedFor.current === link.sourceId;
     waitedFor.current = null;
     if (!listed) return;
@@ -230,13 +241,15 @@ export default function Sources({
     const linked = { ...listed, isNested: listed.isNested ?? raw.is_nested };
     setDocumentToView((open) => (waited && open ? open : linked));
     setViewLink(link);
-  }, [
-    searchParams,
-    knowledge,
-    paginatedDocuments,
-    linkedSyncState,
-    reloadedFor,
-  ]);
+  }, [searchParams, knowledge, paginatedDocuments, linkedSyncState, reloaded]);
+  // Opening another source while the link waits spends it: the waited-for
+  // source then just appears on the list when it's ready.
+  useEffect(() => {
+    const waiting = waitedFor.current;
+    if (!waiting || !documentToView || documentToView.id === waiting) return;
+    waitedFor.current = null;
+    dropLink();
+  }, [documentToView]);
   // A refreshed page carries the open source's new state (converted to a
   // wiki, a finished graph build), and the view follows it.
   useEffect(() => {
@@ -367,6 +380,85 @@ export default function Sources({
     refreshDocs(undefined, currentPage, rowsPerPage);
   }, [graphBuilds, dispatch, refreshDocs, currentPage, rowsPerPage]);
 
+  // A started sync's first ingest finished: read this page and the app's
+  // knowledge list again, once, so its real card replaces the pending one.
+  const finishedKey = unlistedSyncs
+    .filter((sync) => sync.state === 'completed')
+    .map((sync) => sync.id)
+    .join(',');
+  useEffect(() => {
+    const ids = finishedKey
+      .split(',')
+      .filter((id) => id && !reloading.current.has(id));
+    if (ids.length === 0) return;
+    ids.forEach((id) => reloading.current.add(id));
+    refreshDocs(undefined, currentPage, rowsPerPage);
+    getDocs(token)
+      .then((docs) => {
+        if (docs) dispatch(setSourceDocs(docs));
+      })
+      .catch((error) => console.error(error))
+      .finally(() => setReloaded((done) => [...done, ...ids]));
+  }, [finishedKey]);
+
+  // The fallback when no event comes (see POLL_AFTER_MS): read the app's
+  // knowledge list, and this page too once a waited-for source is on it.
+  // Past GIVE_UP_MS the link is dropped, so nothing opens by surprise later;
+  // the card stays as indexing until a list holds the source.
+  const pollLists = useRef<(ids: string[]) => void>(() => undefined);
+  const giveUp = useRef<(ids: string[]) => void>(() => undefined);
+  useEffect(() => {
+    pollLists.current = (ids) => {
+      getDocs(token)
+        .then((docs) => {
+          if (!docs) return;
+          dispatch(setSourceDocs(docs));
+          if (docs.some((d) => d.id && ids.includes(d.id)))
+            refreshDocs(undefined, currentPage, rowsPerPage);
+        })
+        .catch((error) => console.error(error));
+    };
+    giveUp.current = (ids) => {
+      if (!linkedId || !ids.includes(linkedId)) return;
+      waitedFor.current = null;
+      dropLink();
+    };
+  });
+  const waitingKey = unlistedSyncs
+    .filter((sync) => sync.state === null)
+    .map((sync) => sync.id)
+    .join(',');
+  useEffect(() => {
+    const waiting = startedSyncs.filter((sync) =>
+      waitingKey.split(',').includes(sync.id),
+    );
+    if (waiting.length === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = (poll: boolean) => {
+      const now = Date.now();
+      const ages = waiting
+        .map((sync) => ({ id: sync.id, age: now - Date.parse(sync.startedAt) }))
+        .filter(({ age }) => Number.isFinite(age));
+      const expired = ages.filter(({ age }) => age >= GIVE_UP_MS);
+      if (expired.length > 0) giveUp.current(expired.map(({ id }) => id));
+      const active = ages.filter(({ age }) => age < GIVE_UP_MS);
+      if (active.length === 0) return;
+      const due = active.filter(({ age }) => age >= POLL_AFTER_MS);
+      if (poll && due.length > 0) pollLists.current(due.map(({ id }) => id));
+      const next = Math.min(
+        ...active.map(({ age }) =>
+          age < POLL_AFTER_MS
+            ? POLL_AFTER_MS - age
+            : Math.min(POLL_EVERY_MS, GIVE_UP_MS - age),
+        ),
+      );
+      timer = setTimeout(() => check(true), next);
+    };
+    // The page has just loaded the list, so the first check only schedules.
+    check(false);
+    return () => clearTimeout(timer);
+  }, [waitingKey, startedSyncs]);
+
   // Chunk, file, wiki and graph writes follow the source's `edit` action.
   const viewCanEdit = documentToView ? can(documentToView, 'edit') : false;
 
@@ -402,6 +494,18 @@ export default function Sources({
   // The link only applies to the source it opened.
   const link =
     viewLink && viewLink.sourceId === documentToView?.id ? viewLink : null;
+  // The syncs still indexing lead the first page, newest first, filtered by
+  // name the way the search filters the listed cards.
+  const pendingTerm = debouncedSearchTerm.trim().toLowerCase();
+  const pendingSyncs =
+    currentPage === 1
+      ? [...unlistedSyncs]
+          .reverse()
+          .filter(
+            (sync) =>
+              !pendingTerm || sync.name.toLowerCase().includes(pendingTerm),
+          )
+      : [];
 
   return documentToView ? (
     <div className="flex flex-col">
@@ -544,7 +648,7 @@ export default function Sources({
               title={t('settings.sources.loadError')}
               onRetry={() => refreshDocs(undefined, currentPage, rowsPerPage)}
             />
-          ) : !currentDocuments?.length ? (
+          ) : !currentDocuments?.length && pendingSyncs.length === 0 ? (
             searchTerm ? (
               <EmptyState
                 size="xs"
@@ -573,6 +677,67 @@ export default function Sources({
             )
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {pendingSyncs.map((sync) => {
+                const connection = connections.find(
+                  (c) => c.id === sync.connectionId,
+                );
+                return (
+                  // Not a source yet: nothing to open or manage, so no
+                  // stretched button and no ⋯ until its real card is listed.
+                  <Card
+                    key={`pending-${sync.id}`}
+                    variant="filled"
+                    padding="lg"
+                    className="min-h-[130px] self-start"
+                  >
+                    <div className="flex w-full flex-1 flex-col items-start">
+                      <CardTitle
+                        className="line-clamp-2 w-full min-w-0 wrap-anywhere"
+                        title={sync.name}
+                      >
+                        {sync.name}
+                      </CardTitle>
+                    </div>
+                    <div className="flex flex-col items-start justify-start gap-1">
+                      {sync.state === 'failed' ? (
+                        <Badge variant="destructive">
+                          {t('settings.sources.ingestFailed')}
+                        </Badge>
+                      ) : (
+                        <Badge variant="neutral">
+                          {t('settings.sources.ingestProcessing')}
+                        </Badge>
+                      )}
+                      <CardFooter className="w-full flex-col items-start gap-1">
+                        {connection && (
+                          <span className="flex max-w-full min-w-0 items-center gap-2">
+                            <ConnectorIcon
+                              icon={connection.icon}
+                              className="text-muted-foreground size-3.5 shrink-0"
+                            />
+                            <span
+                              className="truncate"
+                              title={connection.account_label}
+                            >
+                              {t('settings.sources.viaConnection', {
+                                name: connection.name,
+                                interpolation: { escapeValue: false },
+                              })}
+                            </span>
+                          </span>
+                        )}
+                        <span className="flex items-center gap-2">
+                          <RefreshCw className="size-3.5 shrink-0" />
+                          {t('settings.connectors.detail.firstSyncStarted', {
+                            time: formatRelative(sync.startedAt) ?? '',
+                            interpolation: { escapeValue: false },
+                          })}
+                        </span>
+                      </CardFooter>
+                    </div>
+                  </Card>
+                );
+              })}
               {currentDocuments.map((document) => {
                 const docId = document.id ? document.id.toString() : '';
                 const connection = document.connectionId

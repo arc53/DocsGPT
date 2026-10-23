@@ -1237,7 +1237,8 @@ describe('Sources citation link', () => {
       id: 'src-new',
       name: 'Handbook',
       connectionId: 'conn-drive',
-      startedAt: '2026-10-23T10:00:00Z',
+      // Just started, so the page still waits for its event.
+      startedAt: new Date().toISOString(),
     };
     const ingest = (type: string) => ({
       id: `evt-${type}`,
@@ -1300,6 +1301,234 @@ describe('Sources citation link', () => {
       // Read again once; still missing, so the plain list stays.
       expect(getDocs).toHaveBeenCalledTimes(1);
       expect(where()).toBe('');
+    });
+  });
+
+  describe('a sync still indexing shows on the list', () => {
+    const START = '2026-10-23T10:00:00.000Z';
+    const started = {
+      id: 'src-new',
+      name: 'Handbook',
+      connectionId: 'conn-drive',
+      startedAt: START,
+    };
+    const fresh = {
+      ...doc({ id: 'src-new', name: 'Handbook' }),
+      is_nested: true,
+    };
+    const ingest = (type: string) => ({
+      id: `evt-${type}`,
+      type,
+      scope: { kind: 'source', id: 'src-new' },
+    });
+    const cards = () =>
+      Array.from(container.querySelectorAll<HTMLElement>('[data-slot="card"]'));
+    const pendingCard = () =>
+      cards().find((card) => card.textContent?.includes('Handbook'));
+    // Lets the poll's promises settle inside act.
+    const advance = async (ms: number) => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+      await act(async () => undefined);
+    };
+    const search = async (value: string) => {
+      const input = container.querySelector<HTMLInputElement>(
+        '#document-search-input',
+      )!;
+      await act(async () => {
+        const setValue = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        setValue.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({
+        toFake: ['setTimeout', 'clearTimeout', 'Date'],
+      });
+      vi.setSystemTime(new Date(START));
+      dispatch.mockReset();
+      // The store applies the list read back, as the real slice does.
+      dispatch.mockImplementation(
+        (action: { type?: string; payload?: unknown }) => {
+          if (action?.type === 'preference/setSourceDocs')
+            knowledge.docs = action.payload;
+        },
+      );
+      vi.mocked(getDocs).mockReset();
+      vi.mocked(getDocs).mockResolvedValue([]);
+      connectors.connections = [
+        {
+          id: 'conn-drive',
+          connector_key: 'google_drive',
+          name: 'Google Drive',
+          icon: 'drive',
+          status: 'connected',
+        },
+      ];
+      connectors.startedSyncs = [started];
+      connectors.events = [];
+    });
+
+    afterEach(() => {
+      connectors.connections = [];
+      connectors.startedSyncs = [];
+      connectors.events = [];
+      vi.useRealTimers();
+    });
+
+    it('is the first card: Indexing…, its connection and start, no menu', async () => {
+      await render('/settings/knowledge', [doc()]);
+      const first = cards()[0];
+      expect(first.textContent).toContain('Handbook');
+      expect(first.textContent).toContain('settings.sources.ingestProcessing');
+      expect(first.textContent).toContain('settings.sources.viaConnection');
+      expect(first.textContent).toContain(
+        'settings.connectors.detail.firstSyncStarted',
+      );
+      // Nothing to open or manage until the source exists.
+      expect(first.querySelector('button')).toBeNull();
+      expect(first.querySelector('[data-testid^="menu-button"]')).toBeNull();
+      expect(cards()[1].textContent).toContain('Contracts');
+    });
+
+    it('shows on an empty list instead of the empty state', async () => {
+      await render('/settings/knowledge');
+      expect(pendingCard()).toBeDefined();
+      expect(container.querySelector('[data-slot="empty-state"]')).toBeNull();
+    });
+
+    it('shows only on the first page', async () => {
+      vi.mocked(getDocsWithPagination).mockResolvedValue({
+        docs: [],
+        totalDocuments: 30,
+        totalPages: 3,
+        currentPage: 2,
+        nextCursor: '',
+      } as never);
+      await render('/settings/knowledge?page=2', [doc()]);
+      expect(pendingCard()).toBeUndefined();
+    });
+
+    it('shows while its name matches the search', async () => {
+      await render('/settings/knowledge', [doc()]);
+      await search('HAND');
+      expect(pendingCard()).toBeDefined();
+      await search('tender');
+      expect(pendingCard()).toBeUndefined();
+    });
+
+    it('shows every sync in flight, not only the linked one', async () => {
+      connectors.startedSyncs = [
+        started,
+        { ...started, id: 'src-two', name: 'Price lists' },
+      ];
+      await render('/settings/knowledge');
+      const names = cards().map((card) => card.textContent);
+      // Newest first.
+      expect(names[0]).toContain('Price lists');
+      expect(names[1]).toContain('Handbook');
+    });
+
+    it('goes once the real source is listed', async () => {
+      await render('/settings/knowledge', [fresh]);
+      expect(cards()).toHaveLength(1);
+      expect(cards()[0].textContent).not.toContain(
+        'settings.sources.ingestProcessing',
+      );
+    });
+
+    it('reads the lists again when its first sync finishes', async () => {
+      connectors.events = [ingest('source.ingest.completed')];
+      vi.mocked(getDocs).mockResolvedValue([fresh] as never);
+      const pages = vi.mocked(getDocsWithPagination).mock.calls.length;
+      await render('/settings/knowledge');
+      expect(getDocs).toHaveBeenCalledTimes(1);
+      // The mount's load, then the reload for the finished source.
+      expect(vi.mocked(getDocsWithPagination).mock.calls.length).toBe(
+        pages + 2,
+      );
+      expect(pendingCard()).toBeUndefined();
+    });
+
+    it('says the sync failed, and stops waiting for it', async () => {
+      await render('/settings/knowledge?source=src-new');
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      connectors.events = [ingest('source.ingest.failed')];
+      await render('/settings/knowledge?source=src-new');
+      const card = pendingCard()!;
+      expect(card.textContent).toContain('settings.sources.ingestFailed');
+      expect(card.textContent).not.toContain(
+        'settings.sources.ingestProcessing',
+      );
+      expect(where()).toBe('');
+      // Nothing left to poll for.
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('checks the list every 30 s after 2 minutes, and opens the source once it appears', async () => {
+      await render('/settings/knowledge?source=src-new');
+      await advance(119_000);
+      expect(getDocs).not.toHaveBeenCalled();
+      await advance(1_000);
+      expect(getDocs).toHaveBeenCalledTimes(1);
+      await advance(30_000);
+      expect(getDocs).toHaveBeenCalledTimes(2);
+      expect(viewOf('file-tree')).toBeNull();
+      expect(where()).toBe('?source=src-new');
+
+      vi.mocked(getDocs).mockResolvedValue([fresh] as never);
+      await advance(30_000);
+      expect(getDocs).toHaveBeenCalledTimes(3);
+      // The store hands the page the list read back.
+      expect(knowledge.docs).toEqual([fresh]);
+      await render('/settings/knowledge?source=src-new');
+      expect(viewOf('file-tree')).not.toBeNull();
+      expect(where()).toBe('');
+    });
+
+    it('gives up after 15 minutes: the link is dropped and never opens later', async () => {
+      await render('/settings/knowledge?source=src-new');
+      await advance(15 * 60_000);
+      expect(where()).toBe('');
+      const polls = vi.mocked(getDocs).mock.calls.length;
+      expect(polls).toBeGreaterThan(0);
+      await advance(10 * 60_000);
+      expect(getDocs).toHaveBeenCalledTimes(polls);
+      expect(vi.getTimerCount()).toBe(0);
+      // Still indexing as far as the page knows.
+      expect(pendingCard()?.textContent).toContain(
+        'settings.sources.ingestProcessing',
+      );
+
+      // The list reloads for another reason and now holds the source: it
+      // appears, but nothing opens.
+      knowledge.docs = [fresh];
+      await render('/settings/knowledge', [fresh]);
+      expect(viewOf('file-tree')).toBeNull();
+      expect(cards()).toHaveLength(1);
+    });
+
+    it('drops the link when another source is opened meanwhile', async () => {
+      await render('/settings/knowledge?source=src-new', [doc()]);
+      const open = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Contracts"]',
+      )!;
+      await act(async () => open.click());
+      expect(viewOf('chunks')).not.toBeNull();
+      expect(where()).toBe('');
+    });
+
+    it('leaves no timers behind', async () => {
+      await render('/settings/knowledge?source=src-new');
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      await act(async () => root.unmount());
+      expect(vi.getTimerCount()).toBe(0);
+      root = createRoot(container);
     });
   });
 
