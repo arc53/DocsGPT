@@ -838,6 +838,25 @@ class TestUploadRemote:
         assert kwargs["source_data"]["entries"][0]["discovery"] == "auto"
         assert kwargs["source_data"]["keep_links"] is True
 
+    def test_a_page_given_twice_is_stored_once(self, app):
+        config = {"entries": [
+            {"url": "https://docs.example.com/a", "mode": "page"},
+            {"url": "https://docs.example.com/b", "mode": "page"},
+            # The same page as the first, written another way.
+            {"url": "docs.example.com/a/", "mode": "page"},
+            {"url": "https://www.docs.example.com/a#intro", "mode": "page"},
+            {"url": "https://docs.example.com/", "mode": "site"},
+        ]}
+        response, apply_async = self._post_website(app, {"data": json.dumps(config)})
+
+        assert response.status_code == 200
+        entries = apply_async.call_args.kwargs["kwargs"]["source_data"]["entries"]
+        assert [(entry["url"], entry["mode"]) for entry in entries] == [
+            ("https://docs.example.com/a", "page"),
+            ("https://docs.example.com/b", "page"),
+            ("https://docs.example.com/", "site"),
+        ]
+
     def test_website_source_defaults_to_no_sync(self, app):
         config = {"entries": [{"url": "https://docs.example.com/a", "mode": "page"}]}
         response, apply_async = self._post_website(app, {"data": json.dumps(config)})

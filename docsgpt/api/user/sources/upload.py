@@ -21,6 +21,7 @@ from docsgpt.core.settings import settings
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from docsgpt.parser.remote.page_content import page_key
 from docsgpt.parser.remote.website_loader import parse_website_config
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
@@ -77,6 +78,34 @@ def _website_config_error(err: ValueError):
     body = {k: v for k, v in details.items() if k not in ("success", "error", "code")}
     body.update({"success": False, "error": str(err), "code": getattr(err, "code", None) or "invalid_config"})
     return make_response(jsonify(body), 400)
+
+
+def _pages_once(config: dict) -> dict:
+    """A validated Website config with each page entry kept once, matched by ``page_key``.
+
+    ``/a``, ``/a/``, ``www.`` and ``#intro`` variants are one page: stored
+    twice, it would count twice toward the page limit and stay listed after
+    one copy is removed. The first copy stays; site entries are kept as given.
+
+    Args:
+        config: ``parse_website_config``'s result.
+
+    Returns:
+        The config, without the repeated page entries.
+    """
+    seen = set()
+    entries = []
+    for entry in config.get("entries") or []:
+        if entry.get("mode") == "page":
+            try:
+                key = page_key(entry["url"])
+            except ValueError:
+                key = entry["url"]
+            if key in seen:
+                continue
+            seen.add(key)
+        entries.append(entry)
+    return {**config, "entries": entries}
 
 
 def _read_idempotency_key():
@@ -731,7 +760,7 @@ class UploadRemote(Resource):
                 # Stored as remote_data and repeated by every sync, so it is
                 # validated here rather than failing later in the worker.
                 try:
-                    source_data = parse_website_config(config)
+                    source_data = _pages_once(parse_website_config(config))
                 except ValueError as err:
                     if scoped_key:
                         _release_claim(scoped_key)
