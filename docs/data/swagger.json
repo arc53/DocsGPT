@@ -7419,7 +7419,7 @@
     },
     "/api/website/remove": {
       "post": {
-        "description": "Remove pages or a folder from a Website source. The config changes now: a page added by address leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs. Their chunks and tree entries go in a background task (task_id), after any running sync; a 500 with code queue_failed when the config was saved but the task couldn't be queued.",
+        "description": "Remove pages or a folder from a Website source. The config changes now: a page added by address leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs. Their chunks and tree entries go in a background task (task_id), after any running sync; a 500 with code queue_failed when the config was saved but the task couldn't be queued. A page an older url, crawler or sitemap source stored without its address is matched by the address on its chunks; when none is found it is still removed, by its path, and the config is left as it is.",
         "operationId": "post_remove_website_pages",
         "parameters": [
           {

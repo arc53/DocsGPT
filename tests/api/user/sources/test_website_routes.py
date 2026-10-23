@@ -622,6 +622,150 @@ class TestRemovePages:
         assert repeated.status_code == 200
 
 
+def _legacy_leaf(tokens):
+    """A leaf an older loader wrote: no ``url`` (or title)."""
+    return {"type": "application/octet-stream", "size_bytes": 10, "token_count": tokens}
+
+
+LEGACY_TREE = {
+    "index.md": _legacy_leaf(5),
+    "Deploying": {"Docker.md": _legacy_leaf(20), "Kubernetes.md": _legacy_leaf(30)},
+    "extra.md": _legacy_leaf(7),
+}
+# What each leaf's chunks carry: the page's address and the tree path it was stored under.
+LEGACY_CHUNKS = [
+    {"doc_id": "c1", "text": "home", "metadata": {"source": "https://docs.x.io/", "file_path": "index.md"}},
+    {"doc_id": "c2", "text": "docker", "metadata": {
+        "source": "https://docs.x.io/Deploying/Docker", "file_path": "Deploying/Docker.md"}},
+    {"doc_id": "c3", "text": "k8s", "metadata": {
+        "source": "https://docs.x.io/Deploying/Kubernetes", "file_path": "Deploying/Kubernetes.md"}},
+    {"doc_id": "c4", "text": "extra", "metadata": {"source": "https://docs.x.io/extra", "file_path": "extra.md"}},
+]
+
+
+class TestRemoveFromAnOlderSource:
+    """A source from the older url/crawler/sitemap loaders: its leaves carry no address.
+
+    Each leaf's address is read from its chunks; the removal then edits the
+    config as for any page. A page whose address can't be found is still
+    removed, by its path, and the config is left as it is.
+    """
+
+    def _remove(self, app, pg_conn, src, chunks=LEGACY_CHUNKS, **body):
+        from docsgpt.api.user.sources.website import RemoveWebsitePages
+
+        store = MagicMock()
+        store.get_chunks.return_value = chunks
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.api.user.sources.website.get_vector_store", return_value=store
+        ):
+            pages_task.delay.return_value = MagicMock(id="remove-task")
+            response = _call(app, pg_conn, RemoveWebsitePages, "POST", json={"source_id": str(src["id"]), **body})
+        return response, pages_task
+
+    def _saved(self, pg_conn, src):
+        return SourcesRepository(pg_conn).get(str(src["id"]), USER)
+
+    def test_a_crawled_page_is_skipped_in_later_syncs(self, app, pg_conn):
+        src = _seed(pg_conn, type="crawler", remote_data="https://docs.x.io/", directory_structure=LEGACY_TREE)
+        response, pages_task = self._remove(app, pg_conn, src, file_paths=["extra.md"])
+
+        assert response.status_code == 200, response.json
+        saved = self._saved(pg_conn, src)
+        assert saved["type"] == "website"
+        assert saved["remote_data"]["skip"] == ["https://docs.x.io/extra"]
+        # The leaf has no address, so the worker finds it by its path.
+        pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "remove", pages=[{"path": "extra.md", "url": "", "requested_urls": []}],
+            actor_id=USER,
+        )
+
+    def test_a_folder_becomes_one_section_rule(self, app, pg_conn):
+        src = _seed(pg_conn, type="crawler", remote_data="https://docs.x.io/", directory_structure=LEGACY_TREE)
+        response, pages_task = self._remove(app, pg_conn, src, directory_path="Deploying")
+
+        assert response.status_code == 200, response.json
+        assert response.json["removed"] == 2
+        assert self._saved(pg_conn, src)["remote_data"]["skip"] == ["https://docs.x.io/Deploying/*"]
+        assert [p["path"] for p in pages_task.delay.call_args.kwargs["pages"]] == [
+            "Deploying/Docker.md", "Deploying/Kubernetes.md",
+        ]
+
+    def test_a_sitemap_page_is_skipped(self, app, pg_conn):
+        src = _seed(
+            pg_conn, type="sitemap", remote_data="https://docs.x.io/sitemap.xml", directory_structure=LEGACY_TREE,
+        )
+        response, _ = self._remove(app, pg_conn, src, file_paths=["Deploying/Docker.md"])
+
+        assert response.status_code == 200, response.json
+        assert self._saved(pg_conn, src)["remote_data"]["skip"] == ["https://docs.x.io/Deploying/Docker"]
+
+    def test_a_page_added_by_address_leaves_the_list(self, app, pg_conn):
+        src = _seed(
+            pg_conn, type="url", remote_data={"urls": ["https://docs.x.io/", "https://docs.x.io/extra"]},
+            directory_structure=LEGACY_TREE,
+        )
+        response, _ = self._remove(app, pg_conn, src, file_paths=["extra.md"])
+
+        assert response.status_code == 200, response.json
+        saved = self._saved(pg_conn, src)["remote_data"]
+        assert [e["url"] for e in saved["entries"]] == ["https://docs.x.io/"]
+        assert saved["skip"] == []
+
+    def test_a_page_keyed_by_its_title_is_found(self, app, pg_conn):
+        # The url loader's chunks carry no file_path: the leaf was named after the page's title.
+        tree = {"Home": _legacy_leaf(5), "Extra page": _legacy_leaf(7)}
+        chunks = [
+            {"doc_id": "c1", "text": "home", "metadata": {"source": "https://docs.x.io/", "title": "Home"}},
+            {"doc_id": "c2", "text": "x", "metadata": {"source": "https://docs.x.io/extra", "title": "Extra page"}},
+        ]
+        src = _seed(
+            pg_conn, type="url", remote_data={"urls": ["https://docs.x.io/", "https://docs.x.io/extra"]},
+            directory_structure=tree,
+        )
+        response, _ = self._remove(app, pg_conn, src, chunks=chunks, file_paths=["Extra page"])
+
+        assert response.status_code == 200, response.json
+        assert [e["url"] for e in self._saved(pg_conn, src)["remote_data"]["entries"]] == ["https://docs.x.io/"]
+
+    def test_a_website_source_not_synced_since_is_handled_too(self, app, pg_conn):
+        src = _seed(pg_conn, directory_structure=LEGACY_TREE)
+        response, _ = self._remove(app, pg_conn, src, file_paths=["Deploying/Docker.md"])
+
+        assert response.status_code == 200, response.json
+        assert self._saved(pg_conn, src)["remote_data"]["skip"] == ["https://docs.x.io/Deploying/Docker"]
+
+    def test_a_page_whose_address_cant_be_found_is_removed_by_path(self, app, pg_conn):
+        src = _seed(pg_conn, type="crawler", remote_data="https://docs.x.io/", directory_structure=LEGACY_TREE)
+        response, pages_task = self._remove(app, pg_conn, src, chunks=[], file_paths=["extra.md"])
+
+        assert response.status_code == 200, response.json
+        pages_task.delay.assert_called_once_with(
+            str(src["id"]), USER, "remove", pages=[{"path": "extra.md", "url": "", "requested_urls": []}],
+            actor_id=USER,
+        )
+        # Nothing to edit the config by: it is left as stored.
+        saved = self._saved(pg_conn, src)
+        assert saved["type"] == "crawler" and saved["remote_data"] == src["remote_data"]
+
+    def test_a_store_that_fails_to_list_still_removes_by_path(self, app, pg_conn):
+        from docsgpt.api.user.sources.website import RemoveWebsitePages
+
+        src = _seed(pg_conn, type="crawler", remote_data="https://docs.x.io/", directory_structure=LEGACY_TREE)
+        store = MagicMock()
+        store.get_chunks.side_effect = RuntimeError("store down")
+        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
+            "docsgpt.api.user.sources.website.get_vector_store", return_value=store
+        ):
+            pages_task.delay.return_value = MagicMock(id="remove-task")
+            response = _call(app, pg_conn, RemoveWebsitePages, "POST", json={
+                "source_id": str(src["id"]), "file_paths": ["extra.md"],
+            })
+
+        assert response.status_code == 200, response.json
+        assert pages_task.delay.call_args.kwargs["pages"] == [{"path": "extra.md", "url": "", "requested_urls": []}]
+
+
 class TestAddPages:
     def _add(self, app, pg_conn, src, entries):
         from docsgpt.api.user.sources.website import AddWebsitePages

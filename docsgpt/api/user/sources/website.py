@@ -6,7 +6,8 @@ that list, so every change survives a sync. A page found by a site's crawl is
 added to ``skip`` when it is removed, so the next sync leaves it out. The
 chunks and tree entries change in ``website_pages_worker``: removed pages are
 deleted there, and added pages are fetched and appended. Sources made by the older url/crawler/sitemap
-loaders read as Website sources and are converted on their first save.
+loaders read as Website sources and are converted on their first save; their
+tree leaves carry no address, so a removal reads each one's from its chunks.
 """
 
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
@@ -16,13 +17,14 @@ from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Resource
 
 from docsgpt.api import api
+from docsgpt.api.user.base import get_vector_store
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.api.user.sources.routes import _WIKI_NO_SYNC, _is_wiki, _with_scheme, sources_ns
 from docsgpt.api.user.tasks import sync_source, website_pages
 from docsgpt.core.settings import settings
 from docsgpt.parser.remote import website_loader
-from docsgpt.parser.remote.website_loader import SiteScope, page_key, parse_website_config
+from docsgpt.parser.remote.website_loader import SiteScope, is_web_address, page_key, parse_website_config
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
     count_pages,
@@ -356,7 +358,9 @@ class RemoveWebsitePages(Resource):
             "Remove pages or a folder from a Website source. The config changes now: a page added by address "
             "leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs. Their "
             "chunks and tree entries go in a background task (task_id), after any running sync; a 500 with code "
-            "queue_failed when the config was saved but the task couldn't be queued."
+            "queue_failed when the config was saved but the task couldn't be queued. A page an older url, crawler "
+            "or sitemap source stored without its address is matched by the address on its chunks; when none is "
+            "found it is still removed, by its path, and the config is left as it is."
         ),
     )
     def post(self):
@@ -388,21 +392,30 @@ class RemoveWebsitePages(Resource):
                 if not isinstance(structure, dict):
                     structure = {}
 
-                known = dict(web_pages(structure))
+                # An older loader's leaves carry no address (listed with "").
+                known = dict(web_pages(structure, include_unaddressed=True))
                 requested = _requested_urls(structure)
                 pages = [(path, known[path]) for path in file_paths if path in known]
-                section_rule = None
                 folder_paths: set = set()
                 if directory_path:
-                    folder_pages = pages_under(structure, directory_path)
+                    folder_pages = pages_under(structure, directory_path, include_unaddressed=True)
                     folder_paths = {path for path, _url in folder_pages}
                     named = {path for path, _url in pages}
                     pages.extend(p for p in folder_pages if p[0] not in named)
-                    section_rule = folder_skip_rule(directory_path, folder_pages)
                 if not pages:
                     return _error("No such pages in this source", code="not_found")
+                # Their addresses come from their chunks; one that can't be
+                # found edits nothing, and the worker removes it by its path.
+                unaddressed = [path for path, url in pages if not url]
+                found = _addresses_from_chunks(str(doc["id"]), unaddressed) if unaddressed else {}
+                addressed = [(path, url or found.get(path, "")) for path, url in pages]
+                section_rule = None
+                if directory_path:
+                    section_rule = folder_skip_rule(
+                        directory_path, [(path, url) for path, url in addressed if path in folder_paths and url]
+                    )
 
-                config = _without_pages(stored, pages, section_rule, requested, folder_paths)
+                config = _without_pages(stored, addressed, section_rule, requested, folder_paths)
                 if not config["entries"]:
                     return _error(
                         "That would leave the source with nothing to fetch; delete the source instead",
@@ -418,10 +431,12 @@ class RemoveWebsitePages(Resource):
                     return refusal
 
                 # Saved now, so a sync that starts before the worker runs
-                # already leaves the pages out.
-                SourcesRepository(conn).update(
-                    str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"}
-                )
+                # already leaves the pages out. With no address to go by,
+                # an older source is left as stored rather than converted.
+                if any(url for _path, url in addressed):
+                    SourcesRepository(conn).update(
+                        str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"}
+                    )
             # The chunks and tree entries go in the worker, under the source's
             # index lock: a running sync is waited for rather than refused, and
             # no request is held open while a large folder's chunks are deleted.
@@ -432,7 +447,8 @@ class RemoveWebsitePages(Resource):
             return make_response(jsonify({"success": False}), 500)
         # Each page goes with its URL and every address that redirected to
         # it: the worker finds it by those in the tree as it is then, so a
-        # sync that moved it meanwhile still removes the right page.
+        # sync that moved it meanwhile still removes the right page. A leaf
+        # stored without an address goes with "", so it is found by its path.
         try:
             task = website_pages.delay(
                 str(doc["id"]), ra.owner_id, "remove", pages=[
@@ -630,6 +646,41 @@ class RefreshWebsitePage(Resource):
         except Exception as err:
             return _queue_failed(QUEUE_FAILED_REFRESH, err)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
+
+
+def _addresses_from_chunks(source_id: str, paths: List[str]) -> Dict[str, str]:
+    """The address of each tree leaf an older loader stored without one, read from its chunks.
+
+    The url/crawler/sitemap loaders kept a page's address only on its
+    chunks (``metadata.source``), under the tree path the leaf was named
+    after: ``metadata.file_path``, or for chunks without one (the url
+    loader's) ``metadata.title``.
+
+    Args:
+        source_id: The source.
+        paths: Tree paths of leaves without a ``url``.
+
+    Returns:
+        ``{path: address}`` for each path whose chunks name a web address;
+        empty when the store can't list its chunks (logged).
+    """
+    wanted = set(paths)
+    try:
+        chunks = get_vector_store(source_id).get_chunks() or []
+    except Exception as err:
+        current_app.logger.warning(f"Could not read the chunks of source {source_id}: {err}", exc_info=True)
+        return {}
+    found: Dict[str, str] = {}
+    for chunk in chunks:
+        metadata = chunk.get("metadata") or {}
+        address = metadata.get("source")
+        if not isinstance(address, str) or not is_web_address(address):
+            continue
+        file_path = metadata.get("file_path")
+        path = file_path if file_path else (None if metadata.get("key") else metadata.get("title"))
+        if isinstance(path, str) and path in wanted:
+            found.setdefault(path, address)
+    return found
 
 
 def _find_page(

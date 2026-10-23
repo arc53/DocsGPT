@@ -25,15 +25,18 @@ def _is_leaf(node: Any) -> bool:
     return isinstance(node, dict) and "token_count" in node
 
 
-def web_pages(structure: Dict[str, Any], prefix: str = "") -> List[Page]:
+def web_pages(structure: Dict[str, Any], prefix: str = "", include_unaddressed: bool = False) -> List[Page]:
     """Every web page in a tree, depth first in stored order.
 
     Args:
         structure: ``directory_structure``.
         prefix: Path of ``structure`` within the whole tree.
+        include_unaddressed: Also list the leaves without a ``url`` (an
+            older loader's), with ``""`` for it.
 
     Returns:
-        ``(path, url)`` for each leaf that carries a ``url``.
+        ``(path, url)`` for each leaf that carries a ``url``, and with
+        ``include_unaddressed`` each one that doesn't.
     """
     pages: List[Page] = []
     for name, node in (structure or {}).items():
@@ -41,17 +44,20 @@ def web_pages(structure: Dict[str, Any], prefix: str = "") -> List[Page]:
         if _is_leaf(node):
             if node.get("url"):
                 pages.append((path, node["url"]))
+            elif include_unaddressed:
+                pages.append((path, ""))
         elif isinstance(node, dict):
-            pages.extend(web_pages(node, path))
+            pages.extend(web_pages(node, path, include_unaddressed))
     return pages
 
 
-def pages_under(structure: Dict[str, Any], dir_path: str) -> List[Page]:
+def pages_under(structure: Dict[str, Any], dir_path: str, include_unaddressed: bool = False) -> List[Page]:
     """The web pages inside a folder of the tree.
 
     Args:
         structure: ``directory_structure``.
         dir_path: The folder's path, e.g. ``"Deploying"``.
+        include_unaddressed: Also list the leaves without a ``url``, as ``web_pages``.
 
     Returns:
         ``(path, url)`` for each page in the folder and its subfolders.
@@ -61,7 +67,7 @@ def pages_under(structure: Dict[str, Any], dir_path: str) -> List[Page]:
         node = node.get(part) if isinstance(node, dict) else None
         if node is None or _is_leaf(node):
             return []
-    return web_pages(node, dir_path.strip("/"))
+    return web_pages(node, dir_path.strip("/"), include_unaddressed)
 
 
 def remove_pages(structure: Dict[str, Any], paths: List[str]) -> None:

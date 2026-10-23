@@ -54,6 +54,20 @@ class TestTree:
         ]
         assert pages_under(tree(), "Nope") == []
 
+    def test_leaves_without_an_address_are_listed_on_request(self):
+        # An older crawl's leaves carry no ``url``: listed with "" so a removal can name them.
+        old_leaf = {"type": "application/octet-stream", "size_bytes": 10, "token_count": 5}
+        structure = {**tree(), "old.md": old_leaf, "Deploying": {**TREE["Deploying"], "Helm.md": old_leaf}}
+
+        assert ("old.md", "") not in web_pages(structure)
+        assert web_pages(structure, include_unaddressed=True)[-1] == ("old.md", "")
+        assert pages_under(structure, "Deploying", include_unaddressed=True) == [
+            ("Deploying/Docker.md", "https://docs.x.io/Deploying/Docker"),
+            ("Deploying/Kubernetes.md", "https://docs.x.io/Deploying/Kubernetes"),
+            ("Deploying/Helm.md", ""),
+        ]
+        assert ("Deploying/Helm.md", "") not in pages_under(structure, "Deploying")
+
     def test_remove_pages_prunes_empty_folders(self):
         structure = tree()
         remove_pages(structure, ["Deploying/Docker.md", "Deploying/Kubernetes.md", "missing.md"])
@@ -109,6 +123,11 @@ class TestLegacyConfig:
         "source_type, remote_data, expected",
         [
             ("url", "https://x.io/a", [{"url": "https://x.io/a", "mode": "page"}]),
+            # Older rows stored the address itself, not JSON.
+            ("crawler", "https://x.io/",
+             [{"url": "https://x.io/", "mode": "site", "discovery": "links", "max_pages": 10}]),
+            ("sitemap", "https://x.io/sitemap.xml",
+             [{"url": "https://x.io/sitemap.xml", "mode": "site", "discovery": "sitemap", "max_pages": 20}]),
             ("url", {"urls": ["https://x.io/a", "https://x.io/b"]},
              [{"url": "https://x.io/a", "mode": "page"}, {"url": "https://x.io/b", "mode": "page"}]),
             ("crawler", {"url": "https://x.io/"},
