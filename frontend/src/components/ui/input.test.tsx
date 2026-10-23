@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import { FormField } from './form-field';
 import { Input, inputVariants } from './input';
 
 describe('Input variants', () => {
@@ -160,6 +161,17 @@ describe('Input required', () => {
     const html = renderToStaticMarkup(<Input required />);
     expect(html).toContain('aria-required="true"');
     expect(html).not.toMatch(/\srequired=""/);
+  });
+
+  it('stays aria-required inside a FormField that is not required', () => {
+    // The field's context hands every control an aria-required key, even
+    // when it is undefined; the control's own `required` must still win.
+    const html = renderToStaticMarkup(
+      <FormField label="Name">
+        <Input required />
+      </FormField>,
+    );
+    expect(/<input[^>]*>/.exec(html)![0]).toContain('aria-required="true"');
   });
 
   it('leaves an optional field unmarked', () => {
