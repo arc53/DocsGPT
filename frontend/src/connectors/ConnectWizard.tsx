@@ -889,6 +889,7 @@ export default function ConnectWizard({
             </FormField>
           </div>
           <RetrievalOptions
+            variant="create"
             title={t('settings.connectors.wizard.retrievalSettings')}
             value={retrievalOptions}
             onChange={setRetrievalOptions}

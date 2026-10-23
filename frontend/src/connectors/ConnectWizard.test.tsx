@@ -599,22 +599,47 @@ describe('ConnectWizard', () => {
       );
     });
 
-    it('blocks the sync while the prescreen settings do not add up', async () => {
+    it('leaves filtering to after the first sync, and offers no screening', async () => {
+      await render(drive, vi.fn(), { purpose: 'knowledge' });
+      await click('settings.connectors.wizard.signIn');
+      await click('settings.connectors.wizard.retrievalSettings');
+      expect(document.body.querySelector('#retrieval-prescreen')).toBeNull();
+      expect(document.body.textContent).toContain(
+        'settings.sources.retrievalOptions.createHint',
+      );
+    });
+
+    it('blocks the sync while the prescreen settings do not add up, and shows them', async () => {
+      // The admin's defaults screen 40 candidates.
+      mcpApi.getSourceDefaults.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          retrieval: {
+            prescreen: {
+              candidate_k: 40,
+              model: null,
+              batch_size: 10,
+              max_keep: 8,
+            },
+          },
+        }),
+      });
       await render(drive, vi.fn(), { purpose: 'knowledge' });
       await click('settings.connectors.wizard.signIn');
       await click('pick-folder');
       await click('settings.connectors.wizard.retrievalSettings');
-      await act(async () =>
-        document.body
-          .querySelector<HTMLButtonElement>('#retrieval-prescreen')!
-          .click(),
-      );
+      expect(document.body.querySelector('#retrieval-prescreen')).toBeNull();
       // More chunks than prescreen candidates.
       await typeInto(
         document.body.querySelector<HTMLInputElement>('#retrieval-chunks')!,
         '50',
       );
       expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
+      // The rows come back so the conflict can be fixed here.
+      expect(
+        document.body.querySelector('#retrieval-prescreen'),
+      ).not.toBeNull();
     });
 
     it('is not asked about when syncing more from an account', async () => {

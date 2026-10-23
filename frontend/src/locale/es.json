@@ -438,7 +438,6 @@
       "searchAlt": "Buscar",
       "retrievalOptions": {
         "title": "Configuración avanzada",
-        "advanced": "Avanzado",
         "retrieval": {
           "title": "Recuperación",
           "note": "Estos cambios surten efecto de inmediato, sin necesidad de reindexar.",
@@ -534,7 +533,12 @@
           "minRelevanceHint": "La relevancia exacta (0–1) que necesita un fragmento para conservarse. Flexible es 0,1, Equilibrado 0,3 y Estricto 0,5.",
           "candidates": "Candidatos a puntuar",
           "candidatesHint": "Cuántos fragmentos obtiene el recuperador para que el modelo de relevancia los puntúe, hasta {{max}}. Predeterminado: {{default}}."
-        }
+        },
+        "filtering": {
+          "title": "Filtrado",
+          "tag": "sin reindexar"
+        },
+        "createHint": "Ajusta el filtrado tras la primera ingesta, en Configuración de la fuente o en Probar recuperación."
       },
       "configModal": {
         "title": "Configuración de la fuente",
@@ -2194,14 +2198,13 @@
       "start": "Comenzar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
-      "dropzoneText": "Haz clic para subir o arrastra y suelta",
+      "dropzoneText": "Haz clic para subir, o arrastra aquí archivos o una carpeta",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, imágenes, audio, EPUB, JSON o ZIP, hasta 25 MB cada uno",
       "filesRejected": "No se añadieron (más de 25 MB o tipo no admitido): {{files}}",
-      "selectFolder": "Seleccionar una carpeta",
+      "selectFolder": "O elige una carpeta entera",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Añadir al conocimiento",
-      "create": "Crear",
       "link": "Enlace",
       "urlLink": "Enlace URL",
       "repoUrl": "URL del Repositorio",
@@ -2270,7 +2273,8 @@
         }
       },
       "fields": {
-        "initialContent": "Contenido inicial (opcional)"
+        "initialContent": "Contenido inicial",
+        "initialContentHint": "Markdown. Puedes añadir y editar páginas una vez creado."
       },
       "website": {
         "pageUrl": "Dirección de la página",
@@ -2309,7 +2313,8 @@
         "privateHint": "¿Repositorio privado? Conecta tu cuenta de GitHub para sincronizarlo.",
         "connect": "Conectar GitHub"
       },
-      "fromService": "De un servicio"
+      "fromService": "De un servicio",
+      "removeFile": "Quitar {{name}}"
     },
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",

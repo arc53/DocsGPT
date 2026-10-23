@@ -27,14 +27,18 @@ const DISCOVERY: WebsiteDiscovery[] = ['auto', 'sitemap', 'links'];
 
 /**
  * The Website source's fields: the addresses, "This page" or "Whole site",
- * a whole site's scope, and (when `syncFrequency` is passed) how often to
- * re-fetch. Used by Add knowledge and by a source's "Add pages".
+ * a whole site's scope, whether to keep links in the page text (when
+ * `keepLinks` is passed) and how often to re-fetch (when `syncFrequency` is
+ * passed). Used by Add knowledge and by a source's "Add pages".
  *
  * @param draft The form's state (see `website.ts`).
  * @param onChange Receives the next draft.
  * @param maxPages The admin's cap on a site's page limit (WEB_MAX_PAGES).
  * @param syncFrequency The schedule; the row is hidden without it.
  * @param onSyncFrequencyChange Receives the picked schedule.
+ * @param keepLinks The source's "Keep links in page text"; the row is hidden
+ *   without it.
+ * @param onKeepLinksChange Receives the switch's new state.
  */
 export default function WebsiteFields({
   draft,
@@ -42,12 +46,16 @@ export default function WebsiteFields({
   maxPages,
   syncFrequency,
   onSyncFrequencyChange,
+  keepLinks,
+  onKeepLinksChange,
 }: {
   draft: WebsiteDraft;
   onChange: (draft: WebsiteDraft) => void;
   maxPages: number;
   syncFrequency?: SyncFrequency;
   onSyncFrequencyChange?: (value: SyncFrequency) => void;
+  keepLinks?: boolean;
+  onKeepLinksChange?: (value: boolean) => void;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -58,6 +66,7 @@ export default function WebsiteFields({
     onChange({ ...draft, ...patch });
   const isSite = draft.mode === 'site';
   const showSync = !!syncFrequency && !!onSyncFrequencyChange;
+  const showKeepLinks = keepLinks !== undefined && !!onKeepLinksChange;
   // A whole site starts from one address.
   const urls = isSite ? draft.urls.slice(0, 1) : draft.urls;
 
@@ -126,7 +135,7 @@ export default function WebsiteFields({
         </p>
       </div>
 
-      {(isSite || showSync) && (
+      {(isSite || showSync || showKeepLinks) && (
         <SettingRows>
           {isSite && (
             <>
@@ -216,6 +225,20 @@ export default function WebsiteFields({
                 />
               </SettingRow>
             </>
+          )}
+          {showKeepLinks && (
+            <SettingRow
+              label={tr('keepLinks')}
+              description={tr('keepLinksHint')}
+              htmlFor={`${id}-keep-links`}
+              alignStart
+            >
+              <Switch
+                id={`${id}-keep-links`}
+                checked={keepLinks}
+                onCheckedChange={onKeepLinksChange}
+              />
+            </SettingRow>
           )}
           {showSync && (
             <SettingRow

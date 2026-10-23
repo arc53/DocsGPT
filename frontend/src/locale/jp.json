@@ -422,7 +422,6 @@
       "searchAlt": "検索",
       "retrievalOptions": {
         "title": "詳細設定",
-        "advanced": "詳細",
         "retrieval": {
           "title": "検索",
           "note": "これらの変更は即時に反映されます。再インデックスは不要です。",
@@ -518,7 +517,12 @@
           "minRelevanceHint": "チャンクを残すのに必要な正確な関連度（0〜1）です。緩めは 0.1、標準は 0.3、厳しめは 0.5 です。",
           "candidates": "採点する候補数",
           "candidatesHint": "関連度モデルが採点するためにリトリーバーが取得するチャンク数です（最大 {{max}}）。既定値は {{default}} です。"
-        }
+        },
+        "filtering": {
+          "title": "フィルタリング",
+          "tag": "再インデックス不要"
+        },
+        "createHint": "フィルタリングは最初の取り込み後に、ソース設定または検索テストで調整できます。"
       },
       "configModal": {
         "title": "ソース設定",
@@ -2115,14 +2119,13 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "dropzoneText": "クリックしてアップロード、またはドラッグ＆ドロップ",
+      "dropzoneText": "クリックしてアップロード、またはファイルやフォルダをここにドラッグ",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、画像、音声、EPUB、JSON、ZIP（各 25 MB まで）",
       "filesRejected": "追加されませんでした（25 MB を超えているか、未対応の形式です）: {{files}}",
-      "selectFolder": "フォルダを選択",
+      "selectFolder": "またはフォルダごと選択",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "ナレッジに追加",
-      "create": "作成",
       "link": "リンク",
       "urlLink": "URLリンク",
       "repoUrl": "リポジトリURL",
@@ -2191,7 +2194,8 @@
         }
       },
       "fields": {
-        "initialContent": "初期コンテンツ（任意）"
+        "initialContent": "初期コンテンツ",
+        "initialContentHint": "Markdown。作成後にページを追加・編集できます。"
       },
       "website": {
         "pageUrl": "ページのアドレス",
@@ -2230,7 +2234,8 @@
         "privateHint": "プライベートリポジトリですか？同期するには GitHub アカウントを接続してください。",
         "connect": "GitHub を接続"
       },
-      "fromService": "サービスから"
+      "fromService": "サービスから",
+      "removeFile": "{{name}} を取り除く"
     },
     "createAPIKey": {
       "label": "新しいAPIキーを作成",

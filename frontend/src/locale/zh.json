@@ -422,7 +422,6 @@
       "searchAlt": "搜索",
       "retrievalOptions": {
         "title": "高级设置",
-        "advanced": "高级",
         "retrieval": {
           "title": "检索",
           "note": "这些更改立即生效，无需重新索引。",
@@ -518,7 +517,12 @@
           "minRelevanceHint": "文本块被保留所需的确切相关度（0–1）。宽松为 0.1，均衡为 0.3，严格为 0.5。",
           "candidates": "评分候选数",
           "candidatesHint": "检索器为相关度模型获取并评分的文本块数量，最多 {{max}} 个。默认 {{default}} 个。"
-        }
+        },
+        "filtering": {
+          "title": "过滤",
+          "tag": "无需重新索引"
+        },
+        "createHint": "首次导入后，可在来源设置或测试检索中微调过滤。"
       },
       "configModal": {
         "title": "来源设置",
@@ -2114,14 +2118,13 @@
       "start": "开始聊天",
       "name": "名称",
       "choose": "选择文件",
-      "dropzoneText": "点击上传或拖放文件",
+      "dropzoneText": "点击上传，或将文件或文件夹拖到此处",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、图片、音频、EPUB、JSON 或 ZIP，每个最大 25 MB",
       "filesRejected": "未添加（超过 25 MB 或不支持的类型）：{{files}}",
-      "selectFolder": "选择文件夹",
+      "selectFolder": "或选择整个文件夹",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
       "train": "添加到知识库",
-      "create": "创建",
       "link": "链接",
       "urlLink": "URL 链接",
       "repoUrl": "存储库 URL",
@@ -2190,7 +2193,8 @@
         }
       },
       "fields": {
-        "initialContent": "初始内容（可选）"
+        "initialContent": "初始内容",
+        "initialContentHint": "Markdown。创建后可以添加和编辑页面。"
       },
       "website": {
         "pageUrl": "页面地址",
@@ -2229,7 +2233,8 @@
         "privateHint": "私有仓库？连接你的 GitHub 账号即可同步。",
         "connect": "连接 GitHub"
       },
-      "fromService": "来自服务"
+      "fromService": "来自服务",
+      "removeFile": "移除 {{name}}"
     },
     "createAPIKey": {
       "label": "创建新的 API 密钥",

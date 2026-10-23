@@ -22,6 +22,8 @@ export interface FormField {
   /** English fallback; the form shows `t(labelKey)` when one is set. */
   label: string;
   labelKey?: string;
+  /** A muted line under the field, as `t(hintKey)`. */
+  hintKey?: string;
   type: FieldType;
   required?: boolean;
 }
@@ -94,8 +96,9 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     fields: [
       {
         name: 'initial_content',
-        label: 'Initial content (optional)',
+        label: 'Initial content',
         labelKey: 'modals.uploadDoc.fields.initialContent',
+        hintKey: 'modals.uploadDoc.fields.initialContentHint',
         type: 'textarea',
         required: false,
       },

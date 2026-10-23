@@ -96,6 +96,10 @@ function Input(inputProps: InputProps) {
   const floating = useFormFieldFloating();
   const generatedId = React.useId();
   const inputId = id ?? (label ? generatedId : undefined);
+  // Most fields have no <form> around them, so a native `required` would only
+  // bring the browser's "Please fill in this field" tooltip. The star says it
+  // to sighted users and aria-required to the rest, as in FormField.
+  const ariaRequired = props['aria-required'] ?? (required || undefined);
 
   if (!label) {
     const field = (
@@ -105,7 +109,7 @@ function Input(inputProps: InputProps) {
         // Under a FormField's floating label a blank placeholder drives the
         // resting position; a real one stays hidden until focus.
         placeholder={placeholder ?? (floating ? ' ' : undefined)}
-        required={required}
+        aria-required={ariaRequired}
         data-slot="input"
         data-size={size}
         data-shape={shape}
@@ -145,7 +149,7 @@ function Input(inputProps: InputProps) {
         // Use a single-space placeholder so :placeholder-shown drives the
         // floating-label peer-trick even when the caller didn't pass one.
         placeholder={placeholder ?? ' '}
-        required={required}
+        aria-required={ariaRequired}
         className={cn(
           inputVariants({ size, shape, variant }),
           'peer focus:placeholder:text-muted-foreground placeholder:text-transparent',

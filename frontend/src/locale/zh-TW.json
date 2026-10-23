@@ -422,7 +422,6 @@
       "searchAlt": "搜尋",
       "retrievalOptions": {
         "title": "進階設定",
-        "advanced": "進階",
         "retrieval": {
           "title": "檢索",
           "note": "這些變更立即生效，無需重新索引。",
@@ -518,7 +517,12 @@
           "minRelevanceHint": "區塊被保留所需的確切相關度（0–1）。寬鬆為 0.1，均衡為 0.3，嚴格為 0.5。",
           "candidates": "評分候選數",
           "candidatesHint": "檢索器為相關度模型擷取並評分的區塊數量，最多 {{max}} 個。預設 {{default}} 個。"
-        }
+        },
+        "filtering": {
+          "title": "篩選",
+          "tag": "無需重新索引"
+        },
+        "createHint": "首次匯入後，可在來源設定或測試檢索中微調篩選。"
       },
       "configModal": {
         "title": "來源設定",
@@ -2115,14 +2119,13 @@
       "start": "開始對話",
       "name": "名稱",
       "choose": "選擇檔案",
-      "dropzoneText": "點擊上傳或拖放檔案",
+      "dropzoneText": "點擊上傳，或將檔案或資料夾拖曳到此處",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、圖片、音訊、EPUB、JSON 或 ZIP，每個最大 25 MB",
       "filesRejected": "未新增（超過 25 MB 或不支援的類型）：{{files}}",
-      "selectFolder": "選擇資料夾",
+      "selectFolder": "或選擇整個資料夾",
       "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "新增到知識庫",
-      "create": "建立",
       "link": "連結",
       "urlLink": "URL 連結",
       "repoUrl": "儲存庫 URL",
@@ -2191,7 +2194,8 @@
         }
       },
       "fields": {
-        "initialContent": "初始內容（選填）"
+        "initialContent": "初始內容",
+        "initialContentHint": "Markdown。建立後可以新增和編輯頁面。"
       },
       "website": {
         "pageUrl": "頁面網址",
@@ -2230,7 +2234,8 @@
         "privateHint": "私人儲存庫？連結你的 GitHub 帳號即可同步。",
         "connect": "連結 GitHub"
       },
-      "fromService": "來自服務"
+      "fromService": "來自服務",
+      "removeFile": "移除 {{name}}"
     },
     "createAPIKey": {
       "label": "建立新的 API 金鑰",

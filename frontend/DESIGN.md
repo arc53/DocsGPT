@@ -710,7 +710,9 @@ and moves up to the 12px border label on focus; on a `SelectTrigger`, combobox,
 red (`text-destructive`) with an `error`, and dims while `disabled`. Under
 the field come a muted `text-xs` hint and a red `text-xs` error
 (`role="alert"`), 6px apart. The required star follows the label
-(`aria-hidden`; the field gets `aria-required`, not native `required`). A
+(`aria-hidden`; the field gets `aria-required`, not native `required`). `Input`
+and `Textarea` turn a `required` prop into `aria-required` themselves, so no browser "Please fill in this
+field" tooltip shows on a field with no `<form>` around it. A
 placeholder is an example: hidden while the label rests, shown on focus.
 Stack floating fields with `gap-5` so each label clears the field above.
 
@@ -981,7 +983,12 @@ preview and validation logic) and the Import agent / Import API
 specification dialogs; don't hand-roll a `border-2 border-dashed` target
 around `useDropzone`. Picked files show under it as `ListRows` (name and
 size) in an `outline` Card, and rejected files (too large, wrong type) as the
-Dropzone's `error`, never dropped silently. The chat composer is the one other
+Dropzone's `error`, never dropped silently. A new pick adds to the list (one row
+per path), and each row ends with a remove `IconButton variant="ghost-destructive"
+size="icon-sm"` (`X`, "Remove {name}"). Upload from device takes folders by drop
+(react-dropzone reads them); clicking the target picks files, so the folder
+picker is a `link inline` Button "Or choose a whole folder" right under the
+target, never a second outline button. The chat composer is the one other
 `useDropzone` host: the whole composer is the drop area, with its own
 overlay, whose prompt is a Title (see Typography roles).
 
@@ -1335,7 +1342,8 @@ goes from `0fr` to `1fr` rows and fades over 300ms (`motion-reduce` turns the
 transition off), its content clipped in one track and kept mounted while
 closed but `inert`, so its fields leave the tab order. The body clips only
 while closed or moving, so focus rings inside it show once it is open. There
-is no Accordion.
+is no Accordion. A disclosure never sits inside another: a group that would
+hide behind a second toggle is a flat group with its own eyebrow instead.
 
 The trigger is `CollapsibleTrigger` (same file): `open`, `onOpenChange` and
 `controls` (the Collapsible's `id`). It sets `aria-expanded` and
@@ -1343,7 +1351,7 @@ The trigger is `CollapsibleTrigger` (same file): `open`, `onOpenChange` and
 open; pass layout only. Never hand-roll the Button.
 
 - `look="inline"` (the default) is the `link sm` toggle for a group in a
-  form, modal or drawer (RetrievalOptions' Advanced, a device's audit log,
+  form, modal or drawer (Upload's Advanced settings, a device's audit log,
   the connect wizard's tools, Share's Access settings). `chevron="sm"` draws
   a 12px chevron.
 - `look="section"` is a section panel's header (NewAgent's Advanced,

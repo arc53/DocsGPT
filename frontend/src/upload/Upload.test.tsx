@@ -775,6 +775,87 @@ describe('Upload source-type tiles', () => {
     expect(train!.className).not.toContain('bg-gray-300');
     expect(train!.className).toContain('bg-primary');
   });
+
+  const openType = async (type: string) => {
+    await render();
+    const tile = tiles().find((el) =>
+      el.textContent?.includes(`modals.uploadDoc.ingestors.${type}.label`),
+    )!;
+    await act(async () => tile.click());
+  };
+
+  it('ends the wiki form like the others, with an outline content field and its hint', async () => {
+    await openType('wiki');
+    const footer = document.body.querySelector('[data-slot="modal-footer"]');
+    const submit = Array.from(
+      (footer ?? document.body).querySelectorAll('button'),
+    ).find((b) => b.textContent === 'modals.uploadDoc.train');
+    expect(submit).toBeDefined();
+    expect(document.body.textContent).not.toContain('modals.uploadDoc.create');
+    const content = document.body.querySelector('textarea')!;
+    expect(content.getAttribute('data-variant')).toBe('default');
+    expect(content.getAttribute('aria-required')).toBeNull();
+    expect(document.body.textContent).toContain(
+      'modals.uploadDoc.fields.initialContent',
+    );
+    const hint = document.getElementById(
+      content.getAttribute('aria-describedby')!,
+    );
+    expect(hint?.textContent).toBe(
+      'modals.uploadDoc.fields.initialContentHint',
+    );
+  });
+
+  it('marks the name required without a native required (no browser tooltip)', async () => {
+    await openType('wiki');
+    const name =
+      document.body.querySelector<HTMLInputElement>('input[type="text"]')!;
+    expect(name.required).toBe(false);
+    expect(name.getAttribute('aria-required')).toBe('true');
+    expect(name.parentElement!.querySelector('label')!.textContent).toBe(
+      'modals.uploadDoc.name*',
+    );
+  });
+
+  it('keeps links in page text with the website fields, not under Chunking', async () => {
+    const sent: FormData[] = [];
+    class FakeXhr {
+      upload = { addEventListener() {} };
+      addEventListener() {}
+      open() {}
+      setRequestHeader() {}
+      send(body: FormData) {
+        sent.push(body);
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    await openType('website');
+    const keepLinks = document.body.querySelector<HTMLButtonElement>(
+      'button[id$="-keep-links"]',
+    )!;
+    expect(keepLinks).not.toBeNull();
+    // In view without opening Advanced settings.
+    expect(keepLinks.closest('[data-slot="collapsible"]')).toBeNull();
+    const chunking = document.body.querySelector('#chunking-strategy')!;
+    expect(chunking.closest('[data-slot="collapsible"]')).not.toBeNull();
+    await act(async () => keepLinks.click());
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      const url =
+        document.body.querySelector<HTMLInputElement>('input[type="url"]')!;
+      setter.call(url, 'https://docs.example.com/guide');
+      url.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const train = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'modals.uploadDoc.train',
+    )!;
+    await act(async () => train.click());
+    expect(JSON.parse(String(sent[0].get('data'))).keep_links).toBe(true);
+    vi.unstubAllGlobals();
+  });
 });
 
 // A service connected from Connect your data syncs its content like an upload
@@ -963,6 +1044,15 @@ describe('Upload local file step', () => {
     expect(document.body.querySelector('[data-slot="list-rows"]')).toBeNull();
   });
 
+  it('shows the create form of the retrieval options: no filtering rows', async () => {
+    await openLocalFile();
+    expect(document.body.querySelector('#retrieval-prescreen')).toBeNull();
+    expect(document.body.querySelector('#chunking-strategy')).not.toBeNull();
+    expect(document.body.textContent).toContain(
+      'settings.sources.retrievalOptions.createHint',
+    );
+  });
+
   it('lists picked files as rows with their size and fills the name', async () => {
     await openLocalFile();
     await pick([
@@ -989,13 +1079,126 @@ describe('Upload local file step', () => {
     expect(train!.disabled).toBe(false);
   });
 
-  it('replaces the selection on a new drop', async () => {
+  it('adds a new pick to the list, once per path', async () => {
     await openLocalFile();
     await pick([makeFile('a.pdf', 'application/pdf')]);
-    await pick([makeFile('b.pdf', 'application/pdf')]);
-    const rows = document.body.querySelectorAll('[data-slot="list-row"]');
+    await pick([
+      makeFile('b.pdf', 'application/pdf'),
+      makeFile('a.pdf', 'application/pdf', 4096),
+    ]);
+    const rows = Array.from(
+      document.body.querySelectorAll('[data-slot="list-row"]'),
+    );
+    expect(rows).toHaveLength(2);
+    // The second pick of a.pdf replaces the first, in its place.
+    expect(rows[0].textContent).toContain('a.pdf');
+    expect(rows[0].textContent).toContain('4 KB');
+    expect(rows[1].textContent).toContain('b.pdf');
+  });
+
+  const removeButtons = () =>
+    Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="list-row"] button',
+      ),
+    );
+
+  it('removes a picked file with the remove button on its row', async () => {
+    await openLocalFile();
+    await pick([
+      makeFile('a.pdf', 'application/pdf'),
+      makeFile('b.pdf', 'application/pdf'),
+    ]);
+    const buttons = removeButtons();
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0].getAttribute('aria-label')).toBe(
+      'modals.uploadDoc.removeFile',
+    );
+    expect(buttons[0].getAttribute('data-variant')).toBe('ghost-destructive');
+    expect(buttons[0].getAttribute('type')).toBe('button');
+    await act(async () => buttons[0].click());
+    const rows = Array.from(
+      document.body.querySelectorAll('[data-slot="list-row"]'),
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0].textContent).toContain('b.pdf');
+    // The name keeps what the pick filled in.
+    const textInputs = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('input[type="text"]'),
+    );
+    expect(textInputs.some((el) => el.value === 'a.pdf')).toBe(true);
+    // Removing the last file leaves nothing to add.
+    await act(async () => removeButtons()[0].click());
+    expect(document.body.querySelector('[data-slot="list-rows"]')).toBeNull();
+    const train = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === 'modals.uploadDoc.train');
+    expect(train!.disabled).toBe(true);
+  });
+
+  /**
+   * Drops a folder on the dropzone the way a browser does: one directory
+   * entry whose reader yields its files (react-dropzone's file-selector walks
+   * it and gives each file a `path`).
+   */
+  const dropFolder = async (name: string, files: File[]) => {
+    const fileEntry = (file: File) => ({
+      isFile: true,
+      isDirectory: false,
+      name: file.name,
+      fullPath: `/${name}/${file.name}`,
+      file: (resolve: (f: File) => void) => resolve(file),
+    });
+    let read = false;
+    const directory = {
+      isFile: false,
+      isDirectory: true,
+      name,
+      fullPath: `/${name}`,
+      createReader: () => ({
+        // The first read yields the files, the next one says it is done.
+        readEntries: (resolve: (batch: unknown[]) => void) => {
+          const batch = read ? [] : files.map(fileEntry);
+          read = true;
+          resolve(batch);
+        },
+      }),
+    };
+    const item = {
+      kind: 'file',
+      type: '',
+      getAsFile: () => null,
+      webkitGetAsEntry: () => directory,
+    };
+    const zone = document.body.querySelector('[data-slot="dropzone"]')!;
+    const drop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, 'dataTransfer', {
+      value: { types: ['Files'], items: [item], files: [] },
+    });
+    await act(async () => {
+      zone.dispatchEvent(drop);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  };
+
+  it('lists a folder dropped on the dropzone by path, named after the folder', async () => {
+    await openLocalFile();
+    await dropFolder('Handbook', [
+      makeFile('setup.md', 'text/markdown'),
+      makeFile('intro.pdf', 'application/pdf'),
+    ]);
+    const rows = Array.from(
+      document.body.querySelectorAll('[data-slot="list-row"]'),
+    ).map((row) => row.textContent);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain('Handbook/setup.md');
+    expect(rows[1]).toContain('Handbook/intro.pdf');
+    const textInputs = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('input[type="text"]'),
+    );
+    expect(textInputs.some((el) => el.value === 'Handbook')).toBe(true);
   });
 
   it('reports files that are too large or of an unsupported type', async () => {
@@ -1047,6 +1250,11 @@ describe('Upload local file step', () => {
       (b) => b.textContent === 'modals.uploadDoc.selectFolder',
     )!;
     expect(button.getAttribute('type')).toBe('button');
+    // A link right under the field, part of it rather than a second step.
+    expect(button.getAttribute('data-variant')).toBe('link');
+    expect(button.querySelector('svg')).toBeNull();
+    const zone = document.body.querySelector('[data-slot="dropzone"]')!;
+    expect(zone.parentElement!.nextElementSibling).toBe(button);
     const click = vi.spyOn(input, 'click').mockImplementation(() => undefined);
     await act(async () => button.click());
     expect(click).toHaveBeenCalledTimes(1);

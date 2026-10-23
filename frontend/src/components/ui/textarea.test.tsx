@@ -49,3 +49,11 @@ describe('Textarea', () => {
     expect(html).toContain('rounded-2xl');
   });
 });
+
+describe('Textarea required', () => {
+  it('marks the field aria-required, not native required', () => {
+    const html = renderToStaticMarkup(<Textarea required />);
+    expect(html).toContain('aria-required="true"');
+    expect(html).not.toMatch(/\srequired=""/);
+  });
+});

@@ -511,6 +511,18 @@ wiki, a knowledge graph) is one shell:
   relationships"), where a kind that needs explaining adds one sentence. No
   explainer box. Actions on the right: Test retrieval (`outline field pill`)
   and the kind's one primary action (Add file, Sync).
+- **Add forms** (Upload, Website, New wiki in Add knowledge): Name first, the
+  kind's fields, then the `Advanced settings` disclosure, and one submit, "Add to
+  Knowledge", for all three. A wiki's "Initial content" is a default Textarea
+  with its hint in FormField `hint`. A website's "Keep links in page text" is a
+  Website field (`WebsiteFields keepLinks`), not a chunking setting.
+  `settings/components/RetrievalOptions` is flat groups with `GroupHeader`
+  eyebrows (h3, "· tag"): Retrieval · Relevance · Filtering · Graph retrieval ·
+  Graph extraction · Chunking, never a nested toggle. `variant="create"` (the
+  add forms and the connector wizard's sync setup) drops the re-ingest tags and
+  the Filtering group (unless inherited LLM screening doesn't add up) and ends
+  with the muted "Fine-tune filtering after the first ingest…" line; Source
+  settings, Test retrieval and admin Defaults use the default.
 - **Navigator**: `SourceNavigator`, a `w-64` column shown only when there is
   more than one thing to open (files, wiki pages). A filter `CommandInput
 variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys

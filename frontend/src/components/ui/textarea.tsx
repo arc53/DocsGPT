@@ -48,11 +48,15 @@ function Textarea(textareaProps: TextareaProps) {
     resize = 'vertical',
     variant = 'default',
     placeholder,
+    required,
     ...props
   } = useFormFieldControl(textareaProps);
   const floating = useFormFieldFloating();
   return (
     <textarea
+      // Native `required` would bring the browser's tooltip with no <form>
+      // around the field; aria-required says it instead, as in FormField.
+      aria-required={props['aria-required'] ?? (required || undefined)}
       data-slot="textarea"
       data-size={size}
       data-variant={variant}

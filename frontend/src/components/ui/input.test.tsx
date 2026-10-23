@@ -143,3 +143,28 @@ describe('Input pill and disabled state', () => {
     expect(classes).not.toContain('disabled:pointer-events-none');
   });
 });
+
+describe('Input required', () => {
+  // No <form> wraps most fields, so a native `required` only brings the
+  // browser's "Please fill in this field" tooltip. The star and
+  // aria-required say it instead, the way FormField does.
+  it('marks a labelled field aria-required with the star, not native required', () => {
+    const html = renderToStaticMarkup(<Input label="Name" required />);
+    const input = /<input[^>]*>/.exec(html)![0];
+    expect(input).toContain('aria-required="true"');
+    expect(input).not.toMatch(/\srequired=""/);
+    expect(html).toContain('<span class="text-destructive ml-0.5">*</span>');
+  });
+
+  it('marks a bare field aria-required, not native required', () => {
+    const html = renderToStaticMarkup(<Input required />);
+    expect(html).toContain('aria-required="true"');
+    expect(html).not.toMatch(/\srequired=""/);
+  });
+
+  it('leaves an optional field unmarked', () => {
+    const html = renderToStaticMarkup(<Input label="Name" />);
+    expect(html).not.toContain('aria-required');
+    expect(html).not.toContain('*</span>');
+  });
+});

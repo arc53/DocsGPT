@@ -424,7 +424,6 @@
       "searchAlt": "Search",
       "retrievalOptions": {
         "title": "Advanced settings",
-        "advanced": "Advanced",
         "retrieval": {
           "title": "Retrieval",
           "note": "These changes take effect immediately, no re-ingest needed.",
@@ -520,7 +519,12 @@
           "minRelevanceHint": "The exact relevance (0–1) a chunk needs to be kept. Loose is 0.1, Balanced 0.3, Strict 0.5.",
           "candidates": "Candidates to score",
           "candidatesHint": "How many chunks the retriever fetches for the relevance model to score, up to {{max}}. Default: {{default}}."
-        }
+        },
+        "filtering": {
+          "title": "Filtering",
+          "tag": "no re-ingest"
+        },
+        "createHint": "Fine-tune filtering after the first ingest, in Source settings or Test retrieval."
       },
       "configModal": {
         "title": "Source settings",
@@ -2123,14 +2127,13 @@
       "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
-      "dropzoneText": "Click to upload or drag and drop",
+      "dropzoneText": "Click to upload, or drag files or a folder here",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, images, audio, EPUB, JSON or ZIP, up to 25 MB each",
       "filesRejected": "Not added (over 25 MB or not a supported type): {{files}}",
-      "selectFolder": "Select a folder",
+      "selectFolder": "Or choose a whole folder",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Add to Knowledge",
-      "create": "Create",
       "link": "Link",
       "urlLink": "URL Link",
       "repoUrl": "Repository URL",
@@ -2199,7 +2202,8 @@
         }
       },
       "fields": {
-        "initialContent": "Initial content (optional)"
+        "initialContent": "Initial content",
+        "initialContentHint": "Markdown. You can add and edit pages after it's created."
       },
       "website": {
         "pageUrl": "Page address",
@@ -2238,7 +2242,8 @@
         "privateHint": "Private repository? Connect your GitHub account to sync it.",
         "connect": "Connect GitHub"
       },
-      "fromService": "From a service"
+      "fromService": "From a service",
+      "removeFile": "Remove {{name}}"
     },
     "createAPIKey": {
       "label": "Create New API Key",

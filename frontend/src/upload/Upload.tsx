@@ -1,4 +1,4 @@
-import { ArrowRight, FileText, FolderUp } from 'lucide-react';
+import { ArrowRight, FileText, X } from 'lucide-react';
 import { envVar } from '@/env';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
@@ -10,6 +10,7 @@ import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import { FormField as UiFormField } from '../components/ui/form-field';
 import { Textarea } from '../components/ui/textarea';
@@ -67,8 +68,6 @@ import RetrievalOptions, {
 } from '../settings/components/RetrievalOptions';
 import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
-import { SettingRow } from '../components/ui/setting-row';
-import { Switch } from '../components/ui/switch';
 import WebsiteFields from './WebsiteFields';
 import useWebPageLimits from './useWebPageLimits';
 import {
@@ -131,7 +130,7 @@ function Upload({
   // Names of the files the last drop turned away (over the size limit or of
   // an unaccepted type), shown under the dropzone.
   const [rejectedFiles, setRejectedFiles] = useState<string[]>([]);
-  // Hidden folder picker behind the "Select a folder" button.
+  // Hidden folder picker behind the "Or choose a whole folder" link.
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const setFolderInput = useCallback((input: HTMLInputElement | null) => {
     folderInputRef.current = input;
@@ -200,6 +199,8 @@ function Upload({
             setSyncTouched(true);
             setSyncFrequency(value);
           }}
+          keepLinks={keepLinks}
+          onKeepLinksChange={setKeepLinks}
         />
       );
     }
@@ -215,6 +216,7 @@ function Upload({
   const renderField = (field: FormField) => {
     const isRequired = field.required ?? false;
     const fieldLabel = field.labelKey ? t(field.labelKey) : field.label;
+    const fieldHint = field.hintKey ? t(field.hintKey) : undefined;
     switch (field.type) {
       case 'string':
         return (
@@ -241,6 +243,7 @@ function Upload({
             key={field.name}
             label={fieldLabel}
             required={isRequired}
+            hint={fieldHint}
           >
             <Textarea
               name={field.name}
@@ -254,10 +257,8 @@ function Upload({
                   e.target.value,
                 )
               }
-              required={isRequired}
               rows={8}
               size="lg"
-              variant="filled"
             />
           </UiFormField>
         );
@@ -281,14 +282,15 @@ function Upload({
                   : undefined
               }
             />
+            {/* Dropping a folder works on the target itself; clicking it can
+                only pick files, so the folder picker is a link under it. */}
             <Button
               type="button"
-              variant="outline"
-              size="sm"
+              variant="link"
+              size="inline"
               className="self-start"
               onClick={() => folderInputRef.current?.click()}
             >
-              <FolderUp />
               {t('modals.uploadDoc.selectFolder')}
             </Button>
             <input
@@ -304,7 +306,7 @@ function Upload({
                 <ListRows>
                   {files.map((file) => (
                     <ListRow
-                      key={`${getUploadPath(file)}-${file.size}-${file.lastModified}`}
+                      key={getUploadPath(file)}
                       leading={
                         <Avatar
                           aria-hidden="true"
@@ -321,6 +323,19 @@ function Upload({
                         </span>
                       }
                       description={formatBytes(file.size)}
+                      trailing={
+                        <IconButton
+                          variant="ghost-destructive"
+                          size="icon-sm"
+                          icon={X}
+                          label={t('modals.uploadDoc.removeFile', {
+                            name: getUploadPath(file),
+                            // React escapes the text; i18next must not too.
+                            interpolation: { escapeValue: false },
+                          })}
+                          onClick={() => removeFile(file)}
+                        />
+                      }
                     />
                   ))}
                 </ListRows>
@@ -543,13 +558,36 @@ function Upload({
     },
   });
 
+  /** The picked files, kept in the local-file ingestor's config too. */
+  const setPickedFiles = useCallback(
+    (next: File[]) => {
+      setfiles(next);
+      if (ingestor.type === 'local_file') {
+        setIngestor((prevState) => ({
+          ...prevState,
+          config: { ...prevState.config, files: next },
+        }));
+      }
+    },
+    [ingestor.type],
+  );
+
+  const removeFile = (file: File) => {
+    const path = getUploadPath(file);
+    setPickedFiles(files.filter((f) => getUploadPath(f) !== path));
+  };
+
   const onDrop = useCallback(
     // Rejections come from the dropzone or from onFolderPicked below.
     (pickedFiles: File[], rejections: { file: File }[] = []) => {
       // A folder brings its hidden files (.git, .DS_Store) along. The worker
       // skips them anyway, so leave them out without listing them as rejected.
       const acceptedFiles = pickedFiles.filter((file) => !isHiddenUpload(file));
-      setfiles(acceptedFiles);
+      // A new pick adds to the list. A path picked again replaces its file
+      // in place (Map.set keeps the first position).
+      const byPath = new Map(files.map((file) => [getUploadPath(file), file]));
+      acceptedFiles.forEach((file) => byPath.set(getUploadPath(file), file));
+      setPickedFiles(Array.from(byPath.values()));
       setRejectedFiles(
         rejections
           .filter((rejection) => !isHiddenUpload(rejection.file))
@@ -562,19 +600,8 @@ function Upload({
       if (!nameTouched && pickedName) {
         setIngestor((prev) => ({ ...prev, name: pickedName }));
       }
-
-      // If we're in local_file mode, update the ingestor config
-      if (ingestor.type === 'local_file') {
-        setIngestor((prevState) => ({
-          ...prevState,
-          config: {
-            ...prevState.config,
-            files: acceptedFiles,
-          },
-        }));
-      }
     },
-    [ingestor.type, nameTouched],
+    [files, nameTouched, setPickedFiles],
   );
 
   // The folder picker applies no filter, so check type and size here the way
@@ -1114,9 +1141,7 @@ function Upload({
             size="lg"
             shape="pill"
           >
-            {ingestor.type === 'wiki'
-              ? t('modals.uploadDoc.create')
-              : t('modals.uploadDoc.train')}
+            {t('modals.uploadDoc.train')}
           </Button>
         ) : undefined
       }
@@ -1157,24 +1182,7 @@ function Upload({
                     graphRAGAvailable={graphRAGAvailable}
                     availableModels={availableModels}
                     decision={decision}
-                    ingestRows={
-                      ingestor.type === 'website' ? (
-                        <SettingRow
-                          label={t('modals.uploadDoc.website.keepLinks')}
-                          description={t(
-                            'modals.uploadDoc.website.keepLinksHint',
-                          )}
-                          htmlFor="website-keep-links"
-                          alignStart
-                        >
-                          <Switch
-                            id="website-keep-links"
-                            checked={keepLinks}
-                            onCheckedChange={setKeepLinks}
-                          />
-                        </SettingRow>
-                      ) : undefined
-                    }
+                    variant="create"
                   />
                 )}
               </div>

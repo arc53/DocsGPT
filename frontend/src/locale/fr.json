@@ -438,7 +438,6 @@
       "searchAlt": "Rechercher",
       "retrievalOptions": {
         "title": "Paramètres avancés",
-        "advanced": "Avancé",
         "retrieval": {
           "title": "Récupération",
           "note": "Ces modifications prennent effet immédiatement, sans réindexation.",
@@ -534,7 +533,12 @@
           "minRelevanceHint": "La pertinence exacte (0–1) qu’un fragment doit atteindre pour être gardé. Souple vaut 0,1, Équilibré 0,3, Strict 0,5.",
           "candidates": "Candidats à noter",
           "candidatesHint": "Nombre de fragments que le moteur de récupération transmet au modèle de pertinence, jusqu’à {{max}}. Par défaut : {{default}}."
-        }
+        },
+        "filtering": {
+          "title": "Filtrage",
+          "tag": "sans réindexation"
+        },
+        "createHint": "Affinez le filtrage après la première indexation, dans Paramètres de la source ou Tester la récupération."
       },
       "configModal": {
         "title": "Paramètres de la source",
@@ -2194,14 +2198,13 @@
       "start": "Commencer à discuter",
       "name": "Nom",
       "choose": "Choisir des fichiers",
-      "dropzoneText": "Cliquez pour importer ou glissez-déposez",
+      "dropzoneText": "Cliquez pour importer, ou glissez ici des fichiers ou un dossier",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, images, audio, EPUB, JSON ou ZIP, jusqu’à 25 Mo chacun",
       "filesRejected": "Non ajoutés (plus de 25 Mo ou type non pris en charge) : {{files}}",
-      "selectFolder": "Sélectionner un dossier",
+      "selectFolder": "Ou choisissez un dossier entier",
       "uploadedFiles": "Fichiers importés",
       "cancel": "Annuler",
       "train": "Ajouter aux connaissances",
-      "create": "Créer",
       "link": "Lien",
       "urlLink": "Lien URL",
       "repoUrl": "URL du dépôt",
@@ -2270,7 +2273,8 @@
         }
       },
       "fields": {
-        "initialContent": "Contenu initial (facultatif)"
+        "initialContent": "Contenu initial",
+        "initialContentHint": "Markdown. Vous pourrez ajouter et modifier des pages une fois le wiki créé."
       },
       "website": {
         "pageUrl": "Adresse de la page",
@@ -2309,7 +2313,8 @@
         "privateHint": "Dépôt privé ? Connectez votre compte GitHub pour le synchroniser.",
         "connect": "Connecter GitHub"
       },
-      "fromService": "Depuis un service"
+      "fromService": "Depuis un service",
+      "removeFile": "Retirer {{name}}"
     },
     "createAPIKey": {
       "label": "Créer une clé API",

@@ -424,7 +424,6 @@
       "searchAlt": "Suchen",
       "retrievalOptions": {
         "title": "Erweiterte Einstellungen",
-        "advanced": "Erweitert",
         "retrieval": {
           "title": "Abruf",
           "note": "Diese Änderungen wirken sofort, kein erneutes Indexieren nötig.",
@@ -520,7 +519,12 @@
           "minRelevanceHint": "Die genaue Relevanz (0–1), die ein Chunk braucht, um behalten zu werden. Locker ist 0,1, Ausgewogen 0,3, Streng 0,5.",
           "candidates": "Zu bewertende Kandidaten",
           "candidatesHint": "Wie viele Chunks der Retriever für das Relevanzmodell abruft, höchstens {{max}}. Standard: {{default}}."
-        }
+        },
+        "filtering": {
+          "title": "Filterung",
+          "tag": "kein erneutes Indexieren"
+        },
+        "createHint": "Die Filterung stellst du nach dem ersten Import fein ein, in den Quelleneinstellungen oder unter Retrieval testen."
       },
       "configModal": {
         "title": "Quelleneinstellungen",
@@ -2123,14 +2127,13 @@
       "start": "Chat starten",
       "name": "Name",
       "choose": "Dateien auswählen",
-      "dropzoneText": "Zum Hochladen klicken oder per Drag & Drop ablegen",
+      "dropzoneText": "Zum Hochladen klicken oder Dateien bzw. einen Ordner hierher ziehen",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, Bilder, Audio, EPUB, JSON oder ZIP, jeweils bis zu 25 MB",
       "filesRejected": "Nicht hinzugefügt (größer als 25 MB oder kein unterstützter Dateityp): {{files}}",
-      "selectFolder": "Ordner auswählen",
+      "selectFolder": "Oder einen ganzen Ordner auswählen",
       "uploadedFiles": "Hochgeladene Dateien",
       "cancel": "Abbrechen",
       "train": "Zum Wissen hinzufügen",
-      "create": "Erstellen",
       "link": "Link",
       "urlLink": "URL-Link",
       "repoUrl": "Repository-URL",
@@ -2199,7 +2202,8 @@
         }
       },
       "fields": {
-        "initialContent": "Anfangsinhalt (optional)"
+        "initialContent": "Anfangsinhalt",
+        "initialContentHint": "Markdown. Seiten kannst du nach dem Erstellen hinzufügen und bearbeiten."
       },
       "website": {
         "pageUrl": "Seitenadresse",
@@ -2238,7 +2242,8 @@
         "privateHint": "Privates Repository? Verbinde dein GitHub-Konto, um es zu synchronisieren.",
         "connect": "GitHub verbinden"
       },
-      "fromService": "Aus einem Dienst"
+      "fromService": "Aus einem Dienst",
+      "removeFile": "{{name}} entfernen"
     },
     "createAPIKey": {
       "label": "Neuen API-Schlüssel erstellen",

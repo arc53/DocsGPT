@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
@@ -277,21 +277,29 @@ export function availableRetrievers(
 
 /**
  * Group eyebrow: an uppercase, tracked title with a normal-weight ` · tag`
- * suffix, set above the field rows of a group.
+ * suffix, set above the field rows of a group. An h3: the panel sits under a
+ * modal's or a page section's h2.
+ *
+ * @param title The group's name.
+ * @param tag When the change applies ("no re-ingest"); left off when null.
  */
-function GroupHeader({ title, tag }: { title: string; tag: string }) {
+function GroupHeader({ title, tag }: { title: string; tag: string | null }) {
   return (
     <SectionHeader
-      as="h4"
+      as="h3"
       size="sm"
       title={
-        <>
-          {title}
-          <span className="text-muted-foreground font-normal normal-case">
-            {' · '}
-            {tag}
-          </span>
-        </>
+        tag === null ? (
+          title
+        ) : (
+          <>
+            {title}
+            <span className="text-muted-foreground font-normal normal-case">
+              {' · '}
+              {tag}
+            </span>
+          </>
+        )
       }
     />
   );
@@ -479,15 +487,23 @@ type RetrievalOptionsProps = {
   // The decision-model controls the operator turned on (/api/config); the
   // Relevance section is hidden while the model is off.
   decision?: DecisionFeatures;
-  // Extra `SettingRow`s at the end of the re-ingest group, for a source
-  // type's own ingest knobs (the Website source's "Keep links in page text").
-  ingestRows?: ReactNode;
+  // `create`: the add forms (Upload, Website, the connector wizard's sync
+  // setup), before the source exists. The groups lose their "no re-ingest" /
+  // "re-ingest to apply" tags, which mean nothing yet, and the Filtering group
+  // is left out (it is tuned against real results, in Source settings or Test
+  // retrieval); a muted line says so. Filtering still shows while the LLM
+  // screening doesn't add up, so the submit it blocks can be unblocked.
+  // `default` shows every group, tagged.
+  variant?: 'default' | 'create';
 };
 
 /**
- * Shared "Retrieval options" panel reused by the create flow (Upload) and the
- * edit modal (SourceConfigModal). Groups live "Retrieval" knobs from
- * re-ingest-gated "Chunking" knobs, with a visible note on the chunking group.
+ * Shared "Retrieval options" panel reused by the create forms (Upload, the
+ * connector wizard) and by Source settings, Test retrieval and the admin's
+ * defaults. Flat groups, never nested behind a toggle: Retrieval, Relevance
+ * (with the model on), Filtering, the graph groups (GraphRAG) and Chunking,
+ * each tagged with when a change applies. `variant="create"` drops the tags
+ * and the Filtering group (see the prop).
  */
 export default function RetrievalOptions({
   value,
@@ -501,16 +517,14 @@ export default function RetrievalOptions({
   retrievalOnly = false,
   title,
   decision = NO_DECISION_FEATURES,
-  ingestRows,
+  variant = 'default',
 }: RetrievalOptionsProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const expanded = alwaysOpen || open;
   const bodyId = useId();
-  const advancedId = useId();
-  // Follows the values (open while one is set) until the user toggles it.
-  const [advancedToggled, setAdvancedToggled] = useState<boolean | null>(null);
   const ingestHidden = queryOnly || retrievalOnly;
+  const creating = variant === 'create';
 
   const strategyOptions = useMemo(
     () =>
@@ -595,6 +609,8 @@ export default function RetrievalOptions({
 
   const tr = (key: string, opts?: Record<string, unknown>) =>
     t(`settings.sources.retrievalOptions.${key}`, opts ?? {});
+  // A group's "· no re-ingest" suffix; none while the source is created.
+  const tag = (key: string) => (creating ? null : tr(key));
 
   const prescreen = value.retrieval.prescreen;
   const reranker = value.retrieval.reranker;
@@ -602,16 +618,10 @@ export default function RetrievalOptions({
   const filtering = decision.relevance && reranker.mode === 'filter';
   const strictness = strictnessOf(value);
   const showSimilarity = !scoreThresholdHidden(value.retrieval.retriever);
-  const advancedSet =
-    prescreen.enabled ||
-    (showSimilarity && value.retrieval.score_threshold !== null) ||
-    (relevanceOn && reranker.candidate_k !== null) ||
-    (filtering && strictness === 'custom');
-  const advancedOpen = advancedToggled ?? advancedSet;
 
   const relevanceGroup = decision.relevance && (
     <div className="flex flex-col gap-3">
-      <GroupHeader title={tr('relevance.title')} tag={tr('relevance.tag')} />
+      <GroupHeader title={tr('relevance.title')} tag={tag('relevance.tag')} />
       <SettingRows>
         <SettingRow
           label={tr('relevance.mode')}
@@ -690,8 +700,15 @@ export default function RetrievalOptions({
     </div>
   );
 
-  const advancedRows = (
-    <div className="flex flex-col gap-4">
+  // Filtering (live): the exact relevance, its candidates, the similarity
+  // threshold and LLM screening. A flat group, never behind a toggle. A
+  // create form leaves it out, unless the screening (from the admin's
+  // defaults) no longer adds up, which would block the submit with no way
+  // to fix it.
+  const showFiltering = !creating || !isPrescreenConfigValid(value);
+  const filteringGroup = showFiltering && (
+    <div className="flex flex-col gap-3">
+      <GroupHeader title={tr('filtering.title')} tag={tag('filtering.tag')} />
       <SettingRows>
         {filtering && (
           <SettingRow
@@ -862,7 +879,7 @@ export default function RetrievalOptions({
     <div className="flex flex-col gap-6">
       {/* Retrieval group (live) */}
       <div className="flex flex-col gap-3">
-        <GroupHeader title={tr('retrieval.title')} tag={tr('retrieval.tag')} />
+        <GroupHeader title={tr('retrieval.title')} tag={tag('retrieval.tag')} />
 
         <SettingRows>
           <SettingRow
@@ -964,29 +981,14 @@ export default function RetrievalOptions({
 
       {relevanceGroup}
 
-      {/* Advanced (live): the exact relevance, its candidates, the similarity
-          threshold and LLM screening. No gap on the wrapper: a closed
-          Collapsible is still a flex item (DESIGN.md › Disclosure). */}
-      <div className="flex flex-col">
-        <CollapsibleTrigger
-          open={advancedOpen}
-          onOpenChange={() => setAdvancedToggled(!advancedOpen)}
-          controls={advancedId}
-          chevron="sm"
-        >
-          <span>{tr('advanced')}</span>
-        </CollapsibleTrigger>
-        <Collapsible open={advancedOpen} id={advancedId}>
-          <div className="pt-3">{advancedRows}</div>
-        </Collapsible>
-      </div>
+      {filteringGroup}
 
       {/* Graph retrieval group (graphrag only; live, so shown when testing too) */}
       {isGraphRAG && (
         <div className="flex flex-col gap-3">
           <GroupHeader
             title={tr('graphRetrieval.title')}
-            tag={tr('graphRetrieval.tag')}
+            tag={tag('graphRetrieval.tag')}
           />
           <p className="text-muted-foreground text-xs">
             {tr('graphRetrieval.agentToolHint')}
@@ -1062,7 +1064,7 @@ export default function RetrievalOptions({
       {/* Graph extraction group (graphrag only; re-ingest required to apply) */}
       {isGraphRAG && !ingestHidden && (
         <div className="flex flex-col gap-3">
-          <GroupHeader title={tr('graph.title')} tag={tr('graph.tag')} />
+          <GroupHeader title={tr('graph.title')} tag={tag('graph.tag')} />
 
           <SettingRows>
             <SettingRow
@@ -1138,7 +1140,7 @@ export default function RetrievalOptions({
 
       {/* Chunking group (re-ingest required) */}
       <div className={cn('flex flex-col gap-3', ingestHidden && 'hidden')}>
-        <GroupHeader title={tr('chunking.title')} tag={tr('chunking.tag')} />
+        <GroupHeader title={tr('chunking.title')} tag={tag('chunking.tag')} />
 
         <SettingRows>
           <SettingRow
@@ -1222,9 +1224,12 @@ export default function RetrievalOptions({
               }
             />
           </SettingRow>
-          {ingestRows}
         </SettingRows>
       </div>
+
+      {creating && !showFiltering && (
+        <p className="text-muted-foreground text-xs">{tr('createHint')}</p>
+      )}
     </div>
   );
 
