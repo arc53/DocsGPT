@@ -1403,17 +1403,19 @@ class TestTheCapHolds:
         assert result == {"status": "ok", "pages": 1}
         queued_sync.delay.assert_not_called()
 
-    @pytest.mark.parametrize("structure", [
-        {},
-        {"a.md": _leaf("https://docs.x.io/a", 1), "legacy.md": {"type": "t", "size_bytes": 1, "token_count": 1}},
-        {"d": {"e": {"a.md": _leaf("https://docs.x.io/a", 1)}}, "a-2.md": _leaf("https://docs.x.io/a#x", 1)},
-        {"new.md": {
+    @pytest.mark.parametrize("structure, count, extra_keys", [
+        ({}, 3, set()),
+        # A leaf without a url counts but has no key.
+        ({"a.md": _leaf("https://docs.x.io/a", 1), "legacy.md": {"type": "t", "size_bytes": 1, "token_count": 1}}, 4, set()),
+        # Two leaves for one page (a fragment) count once.
+        ({"d": {"e": {"a.md": _leaf("https://docs.x.io/a", 1)}}, "a-2.md": _leaf("https://docs.x.io/a#x", 1)}, 3, set()),
+        # The entry for an address that redirects to a leaf counts with the leaf.
+        ({"new.md": {
             **_leaf("https://docs.x.io/new", 1), "requested_url": "https://docs.x.io/old-a",
             "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b", "https://docs.x.io/new/"],
-        }},
+        }}, 3, {"docs.x.io/new", "docs.x.io/old-a"}),
     ])
-    def test_pages_are_counted_as_the_route_counts_them(self, structure):
-        from docsgpt.api.user.sources.website import _held_pages
+    def test_pages_are_counted_once_each(self, structure, count, extra_keys):
         from docsgpt.parser.remote.website_tree import held_pages
 
         config = {"entries": [
@@ -1421,7 +1423,9 @@ class TestTheCapHolds:
             {"url": "https://docs.x.io/c", "mode": "page"},
         ]}
 
-        assert held_pages(config, structure) == _held_pages(config, structure)
+        held = held_pages(config, structure)
+        assert held["count"] == count
+        assert held["keys"] == {"docs.x.io/a", "docs.x.io/c", "docs.x.io/old-b"} | extra_keys
 
     def test_a_deep_tree_is_counted_without_recursion(self):
         from docsgpt.parser.remote.website_tree import held_pages

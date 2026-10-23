@@ -30,8 +30,8 @@ from docsgpt.parser.remote.page_content import MAX_PATH_SEGMENTS
 from docsgpt.parser.remote.website_loader import SiteScope, is_web_address, page_key, parse_website_config
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
-    count_pages,
     folder_skip_rule,
+    held_pages,
     pages_under,
     web_pages,
 )
@@ -654,7 +654,7 @@ class AddWebsitePages(Resource):
                 # WEB_MAX_PAGES caps the whole source, so it can't grow past
                 # what a sync may fetch again.
                 cap = int(settings.WEB_MAX_PAGES)
-                held = _held_pages(config, doc.get("directory_structure"))
+                held = held_pages(config, doc.get("directory_structure"))
                 new_pages = len({_key(e["url"]) for e in added if e["mode"] == "page"} - held["keys"])
                 adds_site = any(e["mode"] == "site" for e in added)
                 total = held["count"] + new_pages
@@ -875,31 +875,6 @@ def _entry_identity(entry: dict) -> tuple:
         _key(sitemap_url) if sitemap_url else None,
         entry.get("max_pages"),
     )
-
-
-def _held_pages(config: dict, structure) -> dict:
-    """The pages a source holds toward ``WEB_MAX_PAGES``.
-
-    Its page entries count from when they are listed (one still queued, or
-    one whose fetch failed, keeps its place), and so do the pages in its tree
-    (a site's crawl). A page that is both counts once, a redirected one too
-    (its entries list the addresses its leaf keeps as ``requested_urls``).
-
-    Args:
-        config: The Website config.
-        structure: ``directory_structure``.
-
-    Returns:
-        ``{"keys": page keys held, "count": how many pages}``; tree leaves
-        without a URL (older crawls) count but have no key.
-    """
-    tree = structure if isinstance(structure, dict) else {}
-    tree_pages = web_pages(tree)
-    tree_keys = {_key(url) for _path, url in tree_pages}
-    asked_keys = {_key(url) for urls in _requested_urls(tree).values() for url in urls} - tree_keys
-    entry_keys = {_key(e["url"]) for e in config["entries"] if e["mode"] == "page"}
-    held = len(tree_keys) + len(entry_keys - tree_keys - asked_keys)
-    return {"keys": tree_keys | asked_keys | entry_keys, "count": held + count_pages(tree) - len(tree_pages)}
 
 
 def _reachable(entries: list, skip: list, url: str) -> bool:
