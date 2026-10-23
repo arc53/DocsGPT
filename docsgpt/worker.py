@@ -6406,11 +6406,17 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
     with db_session() as conn:
         rebuild_wiki_directory_structure(conn, source_id, user)
 
-    for doc_id in original_doc_ids:
+    # One batched delete: FAISS rewrites (and uploads) the whole index once,
+    # not once per chunk. A store without a batch delete loops in the base class.
+    if original_doc_ids:
         try:
-            store.delete_chunk(doc_id)
+            deleted = store.delete_chunks(original_doc_ids)
+            if isinstance(deleted, int) and deleted < len(original_doc_ids):
+                logging.error(
+                    f"Deleted {deleted} of {len(original_doc_ids)} original chunks of {source_id}; the rest stay"
+                )
         except Exception as exc:
-            logging.error(f"Failed deleting original chunk {doc_id}: {exc}")
+            logging.error(f"Failed deleting the original chunks of {source_id}: {exc}", exc_info=True)
 
     for page_path, content_hash in created_pages:
         reembed_wiki_page.delay(
