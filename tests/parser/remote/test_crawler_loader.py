@@ -392,3 +392,92 @@ def test_links_are_read_in_the_header_charset(mock_fetch, mock_validate_url):
     result = CrawlerLoader(limit=5).load_data("http://example.com")
 
     assert [doc.extra_info["source"] for doc in result] == ["http://example.com", "http://example.com/zażółć"]
+
+
+NAV = "<nav><ul><li><a href='/docs/a'>Guide A</a></li><li><a href='/docs/b'>Guide B</a></li></ul></nav>"
+
+
+def _guide(name: str) -> DummyResponse:
+    return DummyResponse(f"<html><body><main><h1>Guide {name}</h1><p>Real text of guide {name}.</p></main></body></html>")
+
+
+def _crawl(responses: dict, start: str = "http://example.com/"):
+    fetched = []
+
+    def fetch(url: str, *_, **__):
+        fetched.append(url)
+        if url not in responses:
+            raise AssertionError(f"Unexpected request for URL: {url}")
+        return responses[url]
+
+    with patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url), \
+            patch("docsgpt.parser.remote.crawler_loader.fetch_page", side_effect=fetch):
+        docs = CrawlerLoader(limit=10).load_data(start)
+    return docs, fetched
+
+
+@pytest.mark.parametrize("chrome", [
+    NAV,
+    NAV.replace("nav>", "header>"),
+    NAV.replace("nav>", "footer>"),
+    NAV.replace("<nav>", "<div role='navigation'>").replace("</nav>", "</div>"),
+    NAV.replace("nav>", "aside>"),
+])
+def test_a_start_page_of_only_menus_still_leads_to_its_links(chrome):
+    # Its extract is empty, so it isn't a document; its links are still followed.
+    docs, fetched = _crawl({
+        "http://example.com/": DummyResponse(f"<html><body>{chrome}</body></html>"),
+        "http://example.com/docs/a": _guide("A"),
+        "http://example.com/docs/b": _guide("B"),
+    })
+
+    assert [doc.extra_info["source"] for doc in docs] == ["http://example.com/docs/a", "http://example.com/docs/b"]
+    assert fetched == ["http://example.com/", "http://example.com/docs/a", "http://example.com/docs/b"]
+
+
+def test_a_menu_only_hub_does_not_cut_off_the_pages_below_it():
+    docs, _ = _crawl({
+        "http://example.com/": DummyResponse(
+            "<html><body><main><h1>Welcome</h1><p>Intro text. See the <a href='/hub'>hub</a>.</p></main></body></html>"
+        ),
+        "http://example.com/hub": DummyResponse(f"<html><body>{NAV}</body></html>"),
+        "http://example.com/docs/a": _guide("A"),
+        "http://example.com/docs/b": _guide("B"),
+    })
+
+    assert [doc.extra_info["source"] for doc in docs] == [
+        "http://example.com/", "http://example.com/docs/a", "http://example.com/docs/b",
+    ]
+
+
+def test_a_page_whose_extraction_fails_still_leads_to_its_links():
+    from docsgpt.parser.remote import crawler_loader
+
+    real = crawler_loader.page_document
+
+    def page_document(body, content_type, url, **kwargs):
+        if url == "http://example.com/":
+            raise RuntimeError("extractor bug")
+        return real(body, content_type, url, **kwargs)
+
+    with patch.object(crawler_loader, "page_document", side_effect=page_document):
+        docs, _ = _crawl({
+            "http://example.com/": DummyResponse(f"<html><body><p>Text</p>{NAV}</body></html>"),
+            "http://example.com/docs/a": _guide("A"),
+            "http://example.com/docs/b": _guide("B"),
+        })
+
+    assert [doc.extra_info["source"] for doc in docs] == ["http://example.com/docs/a", "http://example.com/docs/b"]
+
+
+def test_a_non_html_page_that_fails_to_extract_is_still_skipped():
+    from docsgpt.parser.remote import crawler_loader
+
+    with patch.object(crawler_loader, "page_document", side_effect=RuntimeError("bad text")):
+        docs, fetched = _crawl(
+            {"http://example.com/notes.txt": DummyResponse("[a](/docs/a)", "text/plain")},
+            start="http://example.com/notes.txt",
+        )
+
+    assert docs == []
+    assert fetched == ["http://example.com/notes.txt"]

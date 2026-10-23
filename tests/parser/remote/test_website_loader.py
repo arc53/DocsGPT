@@ -1226,3 +1226,21 @@ class TestBoundedFetching:
                                             "limit_reached": False}
         assert short.report["sites"][0]["limit_reached"] is True
         assert sources(docs) == ["https://x.io/a"]
+
+
+class TestMenuOnlyStartPage:
+    NAV = "<nav><ul><li><a href='/docs/a'>Guide A</a></li><li><a href='/docs/b'>Guide B</a></li></ul></nav>"
+
+    @pytest.mark.parametrize("discovery", ["links", "auto"])
+    def test_a_site_whose_start_page_is_only_a_menu_finds_its_pages(self, web, discovery):
+        web({
+            "https://x.io/": (HTML, f"<html><body>{self.NAV}</body></html>"),
+            "https://x.io/docs/a": page("Guide A"),
+            "https://x.io/docs/b": page("Guide B"),
+        })
+
+        loader = WebsiteLoader()
+        docs = loader.load_data({"entries": [{"url": "https://x.io/", "mode": "site", "discovery": discovery}]})
+
+        assert sources(docs) == ["https://x.io/docs/a", "https://x.io/docs/b"]
+        assert loader.report["sites"][0]["found_with"] == "links"

@@ -139,19 +139,28 @@ class CrawlerLoader(BaseRemote):
                         charged += 1
                 body = response.content
                 content_type = response.headers.get("Content-Type")
-                document = page_document(body, content_type, page_url, keep_links=self.keep_links)
-                if document is None:
-                    # Not a page (a PDF or image the site links to): no text
-                    # to keep and no links to follow.
+                html = is_html(content_type)
+                try:
+                    document = page_document(body, content_type, page_url, keep_links=self.keep_links)
+                except Exception as e:
+                    if not html:
+                        raise
+                    # Its links are still read below: a page the extractor
+                    # can't handle mustn't cut off the pages it leads to.
+                    logging.error(f"Error extracting {current_url}; following its links only: {e}", exc_info=True)
+                    document = None
+                if document is not None:
+                    if page_url != current_url:
+                        # The worker matches the tree entry by either address.
+                        document.extra_info["requested_url"] = current_url
+                    if keep:
+                        loaded_content.append(document)
+                if not html:
+                    # Not a page (a PDF or image the site links to), or plain
+                    # text or Markdown whose "links" are text: none to follow.
                     continue
-                if page_url != current_url:
-                    # The worker matches the tree entry by either address.
-                    document.extra_info["requested_url"] = current_url
-                if keep:
-                    loaded_content.append(document)
-                if not is_html(content_type):
-                    # Plain text or Markdown: kept, but its "links" are text.
-                    continue
+                # An HTML page with no text of its own (only a menu, header or
+                # footer) is no document, but its links are the way on.
                 # The header's charset, as for the page text: a link's path
                 # read in the wrong one is a different address.
                 soup = html_soup(body, header_charset(content_type))
