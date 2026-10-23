@@ -179,7 +179,7 @@ def _website_config(doc: dict) -> Optional[dict]:
     return config_from_legacy(doc.get("type"), doc.get("remote_data"))
 
 
-def _growth_refusal(config: dict, stored: dict) -> Optional[Response]:
+def _growth_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ()) -> Optional[Response]:
     """The 400 when a change grows a config past a write limit, or ``None``.
 
     The limits apply to what a change adds, not to what the source already
@@ -192,6 +192,10 @@ def _growth_refusal(config: dict, stored: dict) -> Optional[Response]:
     Args:
         config: The new config, parsed without the write limits.
         stored: The source's config before the change.
+        built_rules: Skip rules the server built from addresses the source
+            already holds (a removed page's or folder's): exempt from the
+            length limit, or a page whose stored address is long could
+            never be removed. They still count toward the skip-rule limit.
 
     Returns:
         The refusal, with a ``code`` and the limit for the UI's wording.
@@ -217,7 +221,7 @@ def _growth_refusal(config: dict, stored: dict) -> Optional[Response]:
         return _error(
             f"An address is longer than {max_length} characters", code="url_too_long", max_length=max_length
         )
-    old_rules = set(stored["skip"])
+    old_rules = set(stored["skip"]) | set(built_rules)
     if any(len(rule.removesuffix("*")) > max_length and rule not in old_rules for rule in config["skip"]):
         return _error(
             f"A skip rule is longer than {max_length} characters", code="url_too_long", max_length=max_length
@@ -405,7 +409,9 @@ class RemoveWebsitePages(Resource):
                 # A removal only shrinks the entries, so of the write limits
                 # only the skip rules it adds are checked: a source over the
                 # page cap (lowered since it was saved) can still shrink.
-                refusal = _growth_refusal(config, stored)
+                # Their length isn't: each is built from an address the tree
+                # already holds, however long the crawl found it.
+                refusal = _growth_refusal(config, stored, built_rules=config["skip"])
                 if refusal is not None:
                     return refusal
 

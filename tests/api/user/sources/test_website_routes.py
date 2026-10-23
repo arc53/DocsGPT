@@ -240,14 +240,33 @@ class TestOldDataPastAWriteLimit:
         assert response.status_code == 200, response.json
         pages_task.delay.assert_called_once()
 
-    def test_a_removal_whose_new_rule_is_too_long_is_refused(self, app, pg_conn):
+    def test_a_crawled_page_with_a_long_address_can_be_removed(self, app, pg_conn):
+        """Its skip rule is built from the address the crawl stored, so the length limit doesn't apply."""
         src = _seed(pg_conn, directory_structure={**TREE, "long.md": _leaf(LONG_URL, 3)})
         response, pages_task, _ = _post(app, pg_conn, "RemoveWebsitePages", src, file_paths=["long.md"])
+
+        assert response.status_code == 200, response.json
+        pages_task.delay.assert_called_once()
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["skip"] == [LONG_URL]
+
+    def test_a_folder_with_a_long_address_can_be_removed(self, app, pg_conn):
+        long_dir = "a" * 2100
+        tree = {**TREE, long_dir: {"x.md": _leaf(f"https://docs.x.io/{long_dir}/x", 3)}}
+        src = _seed(pg_conn, directory_structure=tree)
+        response, pages_task, _ = _post(app, pg_conn, "RemoveWebsitePages", src, directory_path=long_dir)
+
+        assert response.status_code == 200, response.json
+        pages_task.delay.assert_called_once()
+        skip = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["skip"]
+        assert skip == [f"https://docs.x.io/{long_dir}/*"]
+
+    def test_a_settings_save_still_refuses_a_new_long_rule(self, app, pg_conn):
+        src = _seed(pg_conn)
+        response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=CONFIG["entries"], skip=[LONG_URL])
 
         assert response.status_code == 400
         assert response.json["code"] == "url_too_long"
         assert response.json["max_length"] == 2048
-        pages_task.delay.assert_not_called()
 
     def test_a_removal_that_adds_no_rule_works_past_the_skip_limit(self, app, pg_conn):
         stored = {**CONFIG, "skip": ["https://docs.x.io/old", "https://docs.x.io/extra"]}
