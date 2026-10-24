@@ -445,7 +445,8 @@ export const selectSchedulesForAgent = (
 
 /**
  * A schedule the store has loaded, from its agent's list or the cross-agent
- * one; undefined while neither has it.
+ * one; undefined while neither has it. When both have it, the newer record
+ * wins: each list reloads on its own, so either can hold a stale status.
  */
 export const selectScheduleById = (
   state: { schedules: SchedulesState },
@@ -456,7 +457,9 @@ export const selectScheduleById = (
   const own = agentId
     ? state.schedules.byAgent[agentId]?.find((s) => s.id === id)
     : undefined;
-  return own ?? state.schedules.all?.find((s) => s.id === id);
+  const all = state.schedules.all?.find((s) => s.id === id);
+  if (!own || !all) return own ?? all;
+  return Date.parse(all.updated_at) > Date.parse(own.updated_at) ? all : own;
 };
 
 /** The cross-agent list (null until loaded) and its load state. */

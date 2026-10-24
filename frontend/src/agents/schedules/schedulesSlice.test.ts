@@ -20,6 +20,7 @@ import reducer, {
   RUNS_PAGE_SIZE,
   selectRunsEnd,
   selectRunsForSchedule,
+  selectScheduleById,
   selectSchedulesForAgent,
   type SchedulesState,
 } from './schedulesSlice';
@@ -287,6 +288,45 @@ describe('selectSchedulesForAgent', () => {
     const state = { schedules: reducer(undefined, { type: '@@init' }) };
     expect(selectSchedulesForAgent(state, 'missing')).toBe(
       selectSchedulesForAgent(state, 'missing'),
+    );
+  });
+});
+
+describe('selectScheduleById', () => {
+  const withBoth = (own: Schedule, all: Schedule) => {
+    const base = reducer(undefined, { type: '@@init' });
+    return {
+      schedules: {
+        ...base,
+        byAgent: { 'agent-1': [own] },
+        all: [all],
+      },
+    };
+  };
+
+  it('returns the cross-agent record when it is newer', () => {
+    const state = withBoth(
+      sampleSchedule({ status: 'active' }),
+      sampleSchedule({
+        status: 'completed',
+        updated_at: '2026-05-20T12:00:00Z',
+      }),
+    );
+    expect(selectScheduleById(state, 'sched-1', 'agent-1')?.status).toBe(
+      'completed',
+    );
+  });
+
+  it('returns the agent-list record when it is newer', () => {
+    const state = withBoth(
+      sampleSchedule({
+        status: 'paused',
+        updated_at: '2026-05-20T12:00:00Z',
+      }),
+      sampleSchedule({ status: 'active' }),
+    );
+    expect(selectScheduleById(state, 'sched-1', 'agent-1')?.status).toBe(
+      'paused',
     );
   });
 });
