@@ -18,7 +18,6 @@ import { canAgent } from './agentAccess';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import InsightsSettingsSheet from './components/InsightsSettingsSheet';
 import { useAgent } from './hooks/useAgent';
-import { useAgentMenu } from './hooks/useAgentMenu';
 import { agentLogsPath } from './paths';
 
 /**
@@ -32,7 +31,6 @@ export default function AgentInsights() {
   const { t } = useTranslation();
   const { agentId } = useParams();
   const { agent, error, reload, setAgent } = useAgent(agentId);
-  const agentMenu = useAgentMenu({ agent });
   const [settings, setSettings] = useState<{
     open: boolean;
     startEnabled: boolean;
@@ -70,9 +68,7 @@ export default function AgentInsights() {
             )}
           </div>
         }
-        menu={agentMenu.menu}
       />
-      {agentMenu.modals}
       {error ? (
         <EmptyState
           tone="destructive"

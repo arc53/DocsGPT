@@ -88,8 +88,9 @@ Buttons:
   `default field pill` (Publish, Save, New schedule), a secondary action
   `outline field pill` (Save draft, Preview with `Play` first), Cancel `ghost
 field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
-  last in the toolbar row, through `AgentPageToolbar menu`, on every agent
-  page (and the workflow's phone page, `MobileBlocker`): Access details and
+  last in the toolbar row, through `AgentPageToolbar menu`, on Overview
+  only (and the workflow's phone Overview, `MobileBlocker`; Schedules and
+  the Monitoring pages keep to their own actions): Access details and
   Share with team (each only when the role allows
   it, see DESIGN.md › Access and roles), and Preview until the agent is
   published (before that the preview only says "Publish to preview"); each
@@ -100,9 +101,9 @@ field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
   end). The workflow builder's toolbar keeps its ⋯ at the row's end too, holding Edit details, Access
   details, Share with team and Delete (see Workflow builder). Delete is the
   agent ⋯'s last item on both, a `destructive` item after a rule
-  (`separatorBefore`) that opens the confirm. The agent pages' menu comes
-  from `agents/hooks/useAgentMenu`, which also draws the dialogs; Overview
-  adds Preview first and opens its own Access details. The row itself is
+  (`separatorBefore`) that opens the confirm. The menu comes from
+  `agents/hooks/useAgentMenu`, which also draws the dialogs; Overview adds
+  Preview first and opens its own Access details. The row itself is
   `agents/components/AgentPageToolbar` (see Page chrome). A row's common
   action is `outline sm pill` (a schedule's Run now or Resume) with its other
   actions in the row's `ActionMenu`; a delete there is a `destructive` item

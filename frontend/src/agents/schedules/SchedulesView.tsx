@@ -35,7 +35,6 @@ import type {
 import RunDetailDrawer from './RunDetailDrawer';
 import ScheduleFormModal from './ScheduleFormModal';
 import ScheduleRow from './ScheduleRow';
-import { useAgentMenu } from '../hooks/useAgentMenu';
 import useScheduleAgentContext from './useScheduleAgentContext';
 import {
   createSchedule,
@@ -63,7 +62,6 @@ export default function SchedulesView() {
 
   const { agent, loadingAgent, approvalTools } =
     useScheduleAgentContext(agentId);
-  const agentMenu = useAgentMenu({ agent });
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -246,10 +244,8 @@ export default function SchedulesView() {
           name={agent.name}
           meta={<LastUsedMeta lastUsedAt={agent.last_used_at} />}
           actions={newScheduleButton}
-          menu={agentMenu.menu}
         />
       )}
-      {agentMenu.modals}
       {loadingAgent ? (
         <LoadingState fill="block" />
       ) : (
