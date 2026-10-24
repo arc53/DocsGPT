@@ -67,6 +67,12 @@ field grid, then Advanced, Guardrails and Insights. Schedules shows a
 `StatCard` row, Recurring / One-time as `ui/tabs`, and
 each schedule as a `ScheduleRow` (see Agent pages).
 
+A detail page inside a list section (an open team) swaps the list's
+`PageToolbar` for a crumb row at the 38px field height (`min-h-9.5`):
+`DetailBreadcrumb` on the left, the object's ⋯ (`ActionMenu size="toolbar"`)
+last on the right, as a source view's `PathHeader` ends with its `menu`.
+A delete is the ⋯'s last item, `destructive` after a rule.
+
 ## Agent pages
 
 The agent section pages (Overview, Schedules, Analytics, Insights, Logs), the agent form and the workflow builder's
