@@ -812,7 +812,7 @@
           "reaction": "Replies to answers",
           "tone": "Sentiment",
           "tooltipItem": "{{name}}: {{value}}",
-          "notDrawnMovedOn": "Replies that moved on, such as a new question, aren't drawn.",
+          "notDrawnMovedOn": "Replies that moved on or added detail, such as a new question or a follow-up, aren't drawn.",
           "notDrawnNeutral": "Neutral replies aren't drawn."
         },
         "labelNamesInline": {

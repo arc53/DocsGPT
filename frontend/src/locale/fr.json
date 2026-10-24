@@ -849,7 +849,7 @@
           "reaction": "Réactions aux réponses",
           "tone": "Sentiment",
           "tooltipItem": "{{name}} : {{value}}",
-          "notDrawnMovedOn": "Les relances qui passent à autre chose, comme une nouvelle question, ne sont pas tracées.",
+          "notDrawnMovedOn": "Les relances qui passent à autre chose ou ajoutent des précisions, comme une nouvelle question ou une suite, ne sont pas tracées.",
           "notDrawnNeutral": "Les relances neutres ne sont pas tracées."
         },
         "labelNamesInline": {

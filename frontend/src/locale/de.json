@@ -812,7 +812,7 @@
           "reaction": "Reaktionen auf Antworten",
           "tone": "Stimmung",
           "tooltipItem": "{{name}}: {{value}}",
-          "notDrawnMovedOn": "Folgenachrichten, die weitergehen, etwa mit einer neuen Frage, werden nicht gezeichnet.",
+          "notDrawnMovedOn": "Folgenachrichten, die weitergehen oder etwas ergänzen, etwa eine neue Frage oder eine Nachfrage, werden nicht gezeichnet.",
           "notDrawnNeutral": "Neutrale Folgenachrichten werden nicht gezeichnet."
         },
         "labelNamesInline": {

@@ -849,7 +849,7 @@
           "reaction": "Réplicas a las respuestas",
           "tone": "Sentimiento",
           "tooltipItem": "{{name}}: {{value}}",
-          "notDrawnMovedOn": "Las réplicas que siguen adelante, como una pregunta nueva, no se dibujan.",
+          "notDrawnMovedOn": "Las réplicas que siguen adelante o añaden detalles, como una pregunta nueva o un seguimiento, no se dibujan.",
           "notDrawnNeutral": "Las réplicas neutras no se dibujan."
         },
         "labelNamesInline": {

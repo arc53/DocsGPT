@@ -809,7 +809,7 @@
           "reaction": "对回答的回复",
           "tone": "情绪",
           "tooltipItem": "{{name}}：{{value}}",
-          "notDrawnMovedOn": "转向其他的回复（例如新问题）不绘制。",
+          "notDrawnMovedOn": "转向其他或补充细节的回复（例如新问题或追问）不绘制。",
           "notDrawnNeutral": "中性回复不绘制。"
         },
         "labelNamesInline": {

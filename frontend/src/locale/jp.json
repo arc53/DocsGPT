@@ -809,7 +809,7 @@
           "reaction": "回答への返信",
           "tone": "感情",
           "tooltipItem": "{{name}}: {{value}}",
-          "notDrawnMovedOn": "新しい質問など、次の話題へ移った返信は描画されません。",
+          "notDrawnMovedOn": "新しい質問や追加の質問、補足など、次の話題へ移った返信は描画されません。",
           "notDrawnNeutral": "中立的な返信は描画されません。"
         },
         "labelNamesInline": {
