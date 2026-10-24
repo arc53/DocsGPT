@@ -443,6 +443,22 @@ export const selectSchedulesForAgent = (
   agentId: string,
 ): Schedule[] => state.schedules.byAgent[agentId] ?? NO_SCHEDULES;
 
+/**
+ * A schedule the store has loaded, from its agent's list or the cross-agent
+ * one; undefined while neither has it.
+ */
+export const selectScheduleById = (
+  state: { schedules: SchedulesState },
+  id: string | null,
+  agentId?: string | null,
+): Schedule | undefined => {
+  if (!id) return undefined;
+  const own = agentId
+    ? state.schedules.byAgent[agentId]?.find((s) => s.id === id)
+    : undefined;
+  return own ?? state.schedules.all?.find((s) => s.id === id);
+};
+
 /** The cross-agent list (null until loaded) and its load state. */
 export const selectAllSchedules = (state: {
   schedules: SchedulesState;

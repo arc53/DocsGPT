@@ -8,9 +8,13 @@ import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { Spinner } from '../../components/ui/spinner';
 import { selectToken } from '../../preferences/preferenceSlice';
-import type { AppDispatch } from '../../store';
+import type { AppDispatch, RootState } from '../../store';
 import { formatTimestamp } from '../../utils/dateTimeUtils';
-import { deleteSchedule, loadSchedulesForAgent } from './schedulesSlice';
+import {
+  deleteSchedule,
+  loadSchedulesForAgent,
+  selectScheduleById,
+} from './schedulesSlice';
 import ScheduleStatusBadge from './StatusBadge';
 
 export type SchedulerToolCallCardProps = {
@@ -75,8 +79,14 @@ export default function SchedulerToolCallCard({
   const runAtMs = runAt ? Date.parse(runAt) : NaN;
   const [due, setDue] = useState<boolean>(() => runAtMs <= Date.now());
 
-  // Once the run time passes the task has fired, so Cancel no longer applies.
-  // Flip on a timer so a card left open on screen updates too.
+  // The schedule as the store has it (its agent's list, primed below, or the
+  // cross-agent one): its status says whether Cancel still applies, even
+  // past a run time beat or the worker delayed.
+  const schedule = useSelector((state: RootState) =>
+    selectScheduleById(state, taskId, agentId),
+  );
+  // Until the store has it, the run time stands in: once it passes the task
+  // has most likely fired. A timer flips it for a card left open on screen.
   useEffect(() => {
     if (Number.isNaN(runAtMs)) return;
     const wait = runAtMs - Date.now();
@@ -89,6 +99,9 @@ export default function SchedulerToolCallCard({
     const timer = setTimeout(() => setDue(true), wait);
     return () => clearTimeout(timer);
   }, [runAtMs]);
+  const cancellable = schedule
+    ? schedule.status === 'active' || schedule.status === 'paused'
+    : !due;
 
   // Agent-bound chats prime the Schedules tab cache; agentless chats have
   // no per-agent listing, so skip the fetch.
@@ -212,7 +225,7 @@ export default function SchedulerToolCallCard({
             </span>
           )}
         </div>
-        {taskId && !cancelled && !due && (
+        {taskId && !cancelled && cancellable && (
           <Button
             type="button"
             variant="destructive-outline"
