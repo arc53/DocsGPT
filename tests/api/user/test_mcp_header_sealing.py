@@ -166,3 +166,117 @@ def test_connection_detail_lists_legacy_header_names():
     assert _mcp_header_names({"header_names": ["X-A"]}) == ["X-A"]
     assert _mcp_header_names({"headers": {"X-Legacy": "old"}}) == ["X-Legacy"]
     assert _mcp_header_names({}) == []
+
+
+# ------------------------------------------------------------- unreadable saved headers (review round 2)
+
+UNREADABLE = {"server_url": URL, "encrypted_headers": "old-blob", "header_names": ["X-Tenant", "X-Other"]}
+
+
+@pytest.fixture
+def unreadable(monkeypatch):
+    """A rotated or lost key: the stored blob decrypts to nothing."""
+    import docsgpt.api.user.tools.mcp as mcp_routes
+
+    monkeypatch.setattr(mcp_routes, "decrypt_credentials", lambda blob, uid: {})
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("config", [
+    {"headers": {"X-Tenant": "", "X-Other": ""}},
+    {"headers": {"X-Tenant": "new", "X-Other": ""}},
+    {"headers": {"X-Tenant": "new"}},
+    {},
+])
+def test_unreadable_saved_headers_refuse_the_merge(unreadable, config):
+    from docsgpt.api.user.tools.mcp import HeadersUnreadable
+
+    with pytest.raises(HeadersUnreadable):
+        _merge(config, dict(UNREADABLE))
+
+
+@pytest.mark.unit
+def test_unreadable_saved_headers_can_be_replaced_in_full(unreadable):
+    merged = _merge({"headers": {"x-tenant": "a", "X-Other": "b"}}, dict(UNREADABLE))
+    assert merged == {"x-tenant": "a", "X-Other": "b"}
+
+
+@pytest.mark.unit
+def test_decryption_error_counts_as_unreadable(monkeypatch):
+    import docsgpt.api.user.tools.mcp as mcp_routes
+
+    def fail(blob, uid):
+        raise mcp_routes.CredentialDecryptionError("no key opens this blob")
+
+    monkeypatch.setattr(mcp_routes, "decrypt_credentials", fail)
+    with pytest.raises(mcp_routes.HeadersUnreadable):
+        _merge({"headers": {"X-Tenant": ""}}, dict(UNREADABLE))
+
+
+@pytest.mark.unit
+def test_generic_update_refuses_and_keeps_the_blob(unreadable):
+    from docsgpt.api.user.tools.routes import ConfigRefused
+
+    existing = dict(UNREADABLE)
+    with pytest.raises(ConfigRefused):
+        _prepare({"server_url": URL, "headers": {"X-Tenant": "new", "X-Other": ""}}, existing)
+    assert existing == UNREADABLE
+
+
+@pytest.mark.unit
+def test_generic_update_without_headers_keeps_the_blob(unreadable):
+    final = _prepare({"server_url": URL, "timeout": 60}, dict(UNREADABLE))
+    assert final["encrypted_headers"] == "old-blob"
+    assert final["header_names"] == ["X-Tenant", "X-Other"]
+
+
+@pytest.mark.unit
+def test_mcp_save_refuses_before_writing(unreadable):
+    from unittest.mock import Mock
+
+    from flask import Flask, request
+
+    import docsgpt.api.user.tools.mcp as mcp_routes
+
+    existing_doc = {"id": "t1", "user_id": "owner", "config": dict(UNREADABLE)}
+    writes = Mock(side_effect=AssertionError("nothing may be written"))
+    app = Flask(__name__)
+    with patch.object(mcp_routes, "_mcp_policy_error", return_value=None), \
+            patch.object(mcp_routes, "_validate_mcp_server_url", return_value=None), \
+            patch.object(mcp_routes, "_existing_mcp_context", return_value=(existing_doc, "owner", True, False, {})), \
+            patch.object(mcp_routes, "db_session", writes), \
+            patch.object(mcp_routes, "MCPTool") as tool:
+        with app.test_request_context("/api/mcp_server/save", method="POST", json={
+            "id": "t1",
+            "displayName": "DeepWiki",
+            "config": {"server_url": URL, "auth_type": "none", "headers": {"X-Tenant": "", "X-Other": ""}},
+        }):
+            request.decoded_token = {"sub": "owner"}
+            response = mcp_routes.MCPServerSave().post()
+    assert response.status_code == 400
+    assert "decrypted" in response.get_json()["error"]
+    tool.assert_not_called()
+    writes.assert_not_called()
+    assert existing_doc["config"] == UNREADABLE
+
+
+# ------------------------------------------------------------- header name and value hardening
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("name", ["Host", "content-length", "Transfer-Encoding", "Connection", "Upgrade", "TE"])
+def test_framing_headers_are_refused(name):
+    with pytest.raises(ValueError):
+        _merge({"headers": {name: "x"}})
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("value", ["a\x00b", "a\x1bb", "a\x7fb", "a\rb", "a\nb"])
+def test_control_characters_in_values_are_refused(value):
+    with pytest.raises(ValueError):
+        _merge({"headers": {"X-A": value}})
+
+
+@pytest.mark.unit
+def test_tabs_in_values_are_allowed():
+    assert _merge({"headers": {"X-A": "a\tb"}}) == {"X-A": "a\tb"}

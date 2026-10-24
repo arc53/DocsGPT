@@ -22,7 +22,7 @@ from docsgpt.cache import get_redis_instance
 from docsgpt.connectors.resolve import REMOVED_CONNECTION_KEY
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.guardrails import tool_descriptions
-from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
 )
@@ -236,6 +236,22 @@ _HEADER_NAME_CHARS = frozenset(
 )
 
 
+# Set by the HTTP client from the request itself; a custom value would corrupt the request.
+_FRAMING_HEADER_NAMES = frozenset({
+    "host", "content-length", "transfer-encoding", "connection", "upgrade",
+    "te", "trailer", "keep-alive", "proxy-connection",
+})
+
+
+_UNREADABLE_MESSAGE = (
+    "The saved custom headers can't be decrypted. Enter a value for every header again to replace them."
+)
+
+
+class HeadersUnreadable(ValueError):
+    """The saved custom headers can no longer be decrypted (a lost or rotated key)."""
+
+
 def _merge_mcp_headers(config: dict, existing_doc: dict | None, owner_id: str, moved: bool) -> dict:
     """The custom headers a test or save sends, as ``{name: value}``.
 
@@ -250,8 +266,19 @@ def _merge_mcp_headers(config: dict, existing_doc: dict | None, owner_id: str, m
     """
     saved: dict = {}
     existing_config = (existing_doc or {}).get("config") or {}
+    unreadable: set = set()
     if not moved and existing_config.get("encrypted_headers"):
-        saved = decrypt_credentials(existing_config["encrypted_headers"], owner_id)
+        try:
+            saved = decrypt_credentials(existing_config["encrypted_headers"], owner_id) or {}
+        except CredentialDecryptionError:
+            saved = {}
+        if not saved:
+            # The key that sealed them is gone. Keeping a value is impossible and
+            # dropping one would lose it for good, so every saved header must
+            # come back with a value before anything is stored.
+            unreadable = {str(n).lower() for n in existing_config.get("header_names") or []}
+            if unreadable and "headers" not in config:
+                raise HeadersUnreadable(_UNREADABLE_MESSAGE)
     elif not moved and isinstance(existing_config.get("headers"), dict):
         # Saved in the clear before header values were sealed; the next save seals them.
         saved = dict(existing_config["headers"])
@@ -267,7 +294,9 @@ def _merge_mcp_headers(config: dict, existing_doc: dict | None, owner_id: str, m
         name = str(raw_name).strip()
         if not name or not set(name) <= _HEADER_NAME_CHARS:
             raise ValueError(f"Invalid header name: {raw_name!r}")
-        if not isinstance(value, str) or "\r" in value or "\n" in value:
+        if name.lower() in _FRAMING_HEADER_NAMES:
+            raise ValueError(f"{name} is set by the HTTP client and can't be a custom header")
+        if not isinstance(value, str) or any((ord(c) < 32 and c != "\t") or ord(c) == 127 for c in value):
             raise ValueError(f"Invalid value for header {name}")
         if any(k.lower() == name.lower() for k in merged):
             raise ValueError(f"Duplicate header: {name}")
@@ -275,6 +304,8 @@ def _merge_mcp_headers(config: dict, existing_doc: dict | None, owner_id: str, m
             merged[name] = value
         elif name.lower() in stored:
             merged[name] = stored[name.lower()]
+    if unreadable - {k.lower() for k in merged}:
+        raise HeadersUnreadable(_UNREADABLE_MESSAGE)
     return merged
 
 
@@ -430,6 +461,8 @@ class TestMCPServerConfig(Resource):
             return make_response(jsonify(safe_result), 200)
         except AccessDenied as e:
             return denied_response(e)
+        except HeadersUnreadable as e:
+            return make_response(jsonify({"success": False, "error": str(e)}), 400)
         except InvalidServerUrl as e:
             current_app.logger.warning(f"Invalid MCP server test request: {e}")
             return _invalid_server_url_response(e)
@@ -683,6 +716,8 @@ class MCPServerSave(Resource):
             return make_response(jsonify(response_data), 200)
         except AccessDenied as e:
             return denied_response(e)
+        except HeadersUnreadable as e:
+            return make_response(jsonify({"success": False, "error": str(e)}), 400)
         except InvalidServerUrl as e:
             current_app.logger.warning(f"Invalid MCP server save request: {e}")
             return _invalid_server_url_response(e)
