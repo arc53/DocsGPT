@@ -1370,6 +1370,186 @@ class TestManageSourceFiles:
         assert response.status_code == 500
 
 
+class TestManageSourceFilesSync:
+    """``sync`` makes the upload the source's whole file set, then reingests."""
+
+    def _seed(self, pg_conn, tmp_path, files, user="u-sync", **kw):
+        root = tmp_path / "inputs" / user / "src"
+        for rel, data in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_bytes(data)
+        kw.setdefault("file_path", f"inputs/{user}/src")
+        return _seed_source(pg_conn, user=user, **kw), root
+
+    def _sync(self, app, pg_conn, tmp_path, src, files, user="u-sync", **form):
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.storage.local import LocalStorage
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=LocalStorage(base_dir=str(tmp_path)),
+        ), patch(
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
+            return_value=MagicMock(id="reingest-sync"),
+        ) as apply_async, app.test_request_context(
+            "/api/manage_source_files", method="POST",
+            data={"source_id": str(src["id"]), "operation": "sync", "file": files, **form},
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ManageSourceFiles().post()
+        return response, apply_async
+
+    @staticmethod
+    def _stored(root):
+        return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+    def test_upload_becomes_the_whole_file_set(self, app, pg_conn, tmp_path):
+        src, root = self._seed(pg_conn, tmp_path, {
+            "keep.md": b"same", "old.md": b"stale", "docs/edit.md": b"v1",
+        })
+
+        response, apply_async = self._sync(app, pg_conn, tmp_path, src, [
+            (io.BytesIO(b"same"), "keep.md"),
+            (io.BytesIO(b"v2"), "docs/edit.md"),
+            (io.BytesIO(b"hello"), "new.md"),
+        ])
+
+        assert response.status_code == 200
+        assert response.json["reingest_task_id"] == "reingest-sync"
+        assert response.json["source_id"] == str(src["id"])
+        assert response.json["removed_files"] == ["old.md"]
+        assert self._stored(root) == {"keep.md": b"same", "docs/edit.md": b"v2", "new.md": b"hello"}
+        kwargs = apply_async.call_args.kwargs["kwargs"]
+        assert kwargs["source_id"] == str(src["id"]) and kwargs["user"] == "u-sync"
+
+    def test_an_upload_with_no_files_inside_is_refused(self, app, pg_conn, tmp_path):
+        import zipfile
+
+        src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same"})
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("empty-folder/", "")
+        archive.seek(0)
+
+        response, apply_async = self._sync(app, pg_conn, tmp_path, src, [(archive, "docs.zip")])
+
+        assert response.status_code == 400
+        assert self._stored(root) == {"keep.md": b"same"}
+        apply_async.assert_not_called()
+
+    def test_never_deletes_outside_the_source_folder(self, app, pg_conn, tmp_path):
+        from docsgpt.storage.local import LocalStorage
+
+        src, root = self._seed(pg_conn, tmp_path, {"old.md": b"stale"})
+        sibling = tmp_path / "inputs" / "u-sync" / "src-2" / "theirs.md"
+        sibling.parent.mkdir(parents=True)
+        sibling.write_bytes(b"keep me")
+
+        class PrefixListing(LocalStorage):
+            """A store that lists by bare prefix, as an object store without a trailing slash would."""
+
+            def list_files(self, directory):
+                return super().list_files(directory) + ["inputs/u-sync/src-2/theirs.md"]
+
+        with patch(
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=PrefixListing(base_dir=str(tmp_path)),
+        ):
+            from docsgpt.api.user.sources.upload import ManageSourceFiles
+
+            with _patch_db(pg_conn), patch(
+                "docsgpt.api.user.tasks.reingest_source_task.apply_async",
+                return_value=MagicMock(id="reingest-sync"),
+            ), app.test_request_context(
+                "/api/manage_source_files", method="POST",
+                data={"source_id": str(src["id"]), "operation": "sync", "file": [(io.BytesIO(b"new"), "new.md")]},
+                content_type="multipart/form-data",
+            ):
+                from flask import request
+                request.decoded_token = {"sub": "u-sync"}
+                response = ManageSourceFiles().post()
+
+        assert response.status_code == 200
+        assert response.json["removed_files"] == ["old.md"]
+        assert sibling.read_bytes() == b"keep me"
+
+    def test_a_zip_is_unpacked_keeping_its_folders(self, app, pg_conn, tmp_path):
+        import zipfile
+
+        src, root = self._seed(pg_conn, tmp_path, {"content/old.md": b"stale"})
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("content/a.md", "a")
+            zf.writestr("content/guide/b.md", "b")
+        archive.seek(0)
+
+        response, _ = self._sync(app, pg_conn, tmp_path, src, [(archive, "docs.zip")])
+
+        assert response.status_code == 200
+        assert self._stored(root) == {"content/a.md": b"a", "content/guide/b.md": b"b"}
+
+    def test_file_name_map_follows_the_new_files(self, app, pg_conn, tmp_path):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        src, _ = self._seed(
+            pg_conn, tmp_path, {"old.md": b"x"}, file_name_map={"old.md": "Old notes.md"},
+        )
+
+        self._sync(app, pg_conn, tmp_path, src, [(io.BytesIO(b"r"), "Q3 report.md")])
+
+        row = SourcesRepository(pg_conn).get(str(src["id"]), "u-sync")
+        assert row["file_name_map"] == {"Q3_report.md": "Q3 report.md"}
+
+    def test_an_unsafe_zip_changes_nothing(self, app, pg_conn, tmp_path):
+        import zipfile
+
+        src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same"})
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("a.md", "a")
+            zf.writestr("b.md", "b")
+        archive.seek(0)
+
+        with patch("docsgpt.api.user.sources.upload.settings.UPLOAD_MAX_ARCHIVE_FILES", 1):
+            response, apply_async = self._sync(app, pg_conn, tmp_path, src, [(archive, "docs.zip")])
+
+        assert response.status_code == 413
+        assert self._stored(root) == {"keep.md": b"same"}
+        apply_async.assert_not_called()
+
+    def test_no_files_returns_400(self, app, pg_conn, tmp_path):
+        src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same"})
+
+        response, apply_async = self._sync(app, pg_conn, tmp_path, src, [])
+
+        assert response.status_code == 400
+        assert self._stored(root) == {"keep.md": b"same"}
+        apply_async.assert_not_called()
+
+    def test_a_source_without_stored_files_is_refused(self, app, pg_conn, tmp_path):
+        src, _ = self._seed(pg_conn, tmp_path, {}, file_path="")
+        (tmp_path / "unrelated.md").write_bytes(b"x")
+
+        response, apply_async = self._sync(app, pg_conn, tmp_path, src, [(io.BytesIO(b"a"), "a.md")])
+
+        assert response.status_code == 400
+        assert (tmp_path / "unrelated.md").exists()
+        apply_async.assert_not_called()
+
+    def test_parent_dir_is_refused(self, app, pg_conn, tmp_path):
+        src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same"})
+
+        response, apply_async = self._sync(
+            app, pg_conn, tmp_path, src, [(io.BytesIO(b"a"), "a.md")], parent_dir="docs",
+        )
+
+        assert response.status_code == 400
+        assert self._stored(root) == {"keep.md": b"same"}
+        apply_async.assert_not_called()
+
+
 class TestTaskStatus:
     def test_returns_400_missing_task_id(self, app):
         from docsgpt.api.user.sources.upload import TaskStatus

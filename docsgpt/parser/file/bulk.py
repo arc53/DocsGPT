@@ -1,4 +1,5 @@
 """Simple reader that reads files of different formats from a directory."""
+import hashlib
 import logging
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
@@ -639,7 +640,9 @@ class SimpleDirectoryReader(BaseReader):
                     
                     file_info = {
                         "type": mime_type,
-                        "size_bytes": file_size_bytes
+                        "size_bytes": file_size_bytes,
+                        # Lets a reingest tell an edited file from an unchanged one at the same path.
+                        "sha256": _file_sha256(item),
                     }
                     
                     if hasattr(self, 'file_token_counts') and full_path in self.file_token_counts:
@@ -650,3 +653,12 @@ class SimpleDirectoryReader(BaseReader):
             return result
         
         return build_tree(Path(base_path))
+
+
+def _file_sha256(path: Path) -> str:
+    """The SHA-256 of a file's bytes, read in blocks so a large file is never held in memory."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()

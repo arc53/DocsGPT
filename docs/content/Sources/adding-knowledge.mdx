@@ -170,6 +170,17 @@ Each source on the Knowledge page has a menu. Which items appear depends on the 
 
 An open source keeps the same actions in its header: **Test retrieval**, then its main action (**Add file** for an upload, **Add pages** for a website, **Sync now** for a synced source), then the ⋯ menu with the rest. **Delete source** there returns you to the Knowledge page.
 
+### What a reingest of uploaded files re-embeds
+
+Adding, removing or replacing files in an uploaded source, or choosing **Reingest**, re-embeds only what changed. Each file's content hash is stored when it is ingested, so a file is re-embedded when it was added or its content changed, and its chunks are deleted when it was removed. Files with unchanged content keep their chunks, including chunks you edited. When nothing changed, nothing is embedded.
+
+Two cases re-embed every file once:
+
+- **A chunking change.** After you change the chunking settings, the next reingest rebuilds the chunks of every file.
+- **A source ingested before content hashes were stored.** Its first reingest re-embeds every file and stores their hashes. Later ones re-embed only what changed.
+
+To replace all of a source's files at once, for example from a script, send the new set with the `sync` operation of `POST /api/manage_source_files`. Files and ZIP archives are accepted, with the same limits as an upload, and a ZIP keeps its folders. Files that are not in the new set are removed, and the source keeps its ID, so agents that use it keep working.
+
 To build a knowledge graph over a source, see [GraphRAG](/Sources/GraphRAG).
 
 ## Use knowledge in chats and agents

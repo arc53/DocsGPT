@@ -519,6 +519,26 @@ class SourcesRepository:
         )
         return result.rowcount > 0
 
+    def remove_metadata_key(self, source_id: str, user_id: str, key: str) -> bool:
+        """Drop one top-level key of ``metadata``, keeping the others.
+
+        Args:
+            source_id: The source's UUID.
+            user_id: The owner's id; the row is scoped to it.
+            key: The metadata key.
+
+        Returns:
+            bool: Whether a row was updated.
+        """
+        result = self._conn.execute(
+            text(
+                "UPDATE sources SET metadata = COALESCE(metadata, '{}'::jsonb) - CAST(:key AS text), "
+                "updated_at = now() WHERE id = CAST(:sid AS uuid) AND user_id = :uid"
+            ),
+            {"key": key, "sid": str(source_id), "uid": user_id},
+        )
+        return result.rowcount > 0
+
     def set_wiki_outside_edits(self, source_id: str, user_id: str, allowed: bool) -> bool:
         """Record whether API-key and widget runs may edit this wiki.
 
