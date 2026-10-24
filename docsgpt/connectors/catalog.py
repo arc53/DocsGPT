@@ -155,6 +155,18 @@ class ConnectorDefinition:
         return not self.missing_settings
 
     @property
+    def picker_client_id(self) -> Optional[str]:
+        """The OAuth client id Google's own file picker opens with, when the picker is needed.
+
+        A Google Drive sign-in with per-file access (``drive.file``) sees only
+        what was picked in Google's picker, so DocsGPT's own file browser
+        would come up empty; the frontend opens Google's picker with this id.
+        """
+        if self.key == "google_drive" and settings.GOOGLE_DRIVE_ACCESS == "file":
+            return settings.GOOGLE_CLIENT_ID or None
+        return None
+
+    @property
     def mcp_base_url(self) -> Optional[str]:
         """``scheme://host`` of the preset's MCP endpoint (the MCP session key)."""
         return base_url(self.mcp_url) if self.mcp_url else None
@@ -182,6 +194,7 @@ class ConnectorDefinition:
             "oauth_scopes": list(self.oauth_scopes),
             "part_of": self.part_of,
             "sign_in_methods": self.sign_in_methods,
+            "picker_client_id": self.picker_client_id,
         }
 
 

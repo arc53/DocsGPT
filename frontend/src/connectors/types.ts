@@ -68,6 +68,11 @@ export type ConnectorDefinition = {
    * with GitHub, once an admin sets up the GitHub App) before `api_key`.
    */
   sign_in_methods?: ConnectorAuthKind[];
+  /**
+   * The OAuth client id Google's own picker opens with. Set for Google
+   * Drive with per-file access, where only Google's picker can choose files.
+   */
+  picker_client_id?: string | null;
   available: boolean;
   disabled: boolean;
   needs_setup: boolean;
