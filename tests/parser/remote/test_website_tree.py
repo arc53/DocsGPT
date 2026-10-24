@@ -1,11 +1,12 @@
 """Tests for the Website source's tree and config edits."""
 
+import copy
 from unittest.mock import patch
 
 import pytest
 
-from docsgpt.parser.remote.sitemap_loader import SitemapLoader
-from docsgpt.parser.remote.website_loader import WebsiteLoader
+from docsgpt.parser.remote.remote_creator import RemoteCreator, normalize_remote_data
+from docsgpt.parser.remote.website_loader import SiteScope
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
     count_pages,
@@ -34,8 +35,6 @@ TREE = {
 
 
 def tree():
-    import copy
-
     return copy.deepcopy(TREE)
 
 
@@ -113,8 +112,6 @@ class TestRemovalRules:
         assert folder_skip_rule("docs.x.io", pages) == "https://docs.x.io/*"
 
     def test_removing_a_www_host_folder_leaves_the_bare_host_folder(self):
-        from docsgpt.parser.remote.website_loader import SiteScope
-
         structure = {
             "www.x.io": {"guide.md": leaf("https://www.x.io/guide")},
             "x.io": {"blog": {"post.md": leaf("https://x.io/blog/post")}},
@@ -131,8 +128,6 @@ class TestRemovalRules:
     def test_a_path_folder_named_like_the_host_is_not_the_host(self):
         # A single-host tree has no host folders: ``x.io`` here is the path
         # segment of ``/x.io/a``, and removing it must not skip the whole host.
-        from docsgpt.parser.remote.website_loader import SiteScope
-
         structure = {
             "x.io": {"a.md": leaf("https://x.io/x.io/a")},
             "other.md": leaf("https://x.io/other"),
@@ -194,6 +189,15 @@ class TestLegacyConfig:
 
         assert config["entries"][0]["mode"] == "site"
 
+    @pytest.mark.parametrize("source_type", ["url", "crawler", "sitemap"])
+    def test_a_website_config_on_a_legacy_row_is_read_as_one(self, source_type):
+        stored = {"entries": [{"url": "https://x.io/", "mode": "site", "max_pages": 3}], "skip": ["https://x.io/a"]}
+
+        config = config_from_legacy(source_type, stored)
+
+        assert [(e["url"], e["mode"], e["max_pages"]) for e in config["entries"]] == [("https://x.io/", "site", 3)]
+        assert config["skip"] == ["https://x.io/a"]
+
     def test_nothing_to_convert(self):
         assert config_from_legacy("crawler", None) is None
         assert config_from_legacy("github", {"repo_url": "https://github.com/a/b"}) is None
@@ -223,8 +227,13 @@ class TestLegacyConfig:
         assert config_from_legacy("website", {"entries": [{"url": "http://[x", "mode": "page"}]}) is None
 
 
-class TestLegacySitemapLoadsWhatItLoaded:
-    """A converted sitemap source fetches the pages the old sitemap loader did."""
+class TestLegacySitemapSync:
+    """A sitemap source syncs as the Website config it converts to (the url/crawler/sitemap loader)."""
+
+    @staticmethod
+    def _sync(remote_data):
+        loader = RemoteCreator.create_loader("sitemap")
+        return loader.load_data(normalize_remote_data("sitemap", remote_data))
 
     def test_pages_a_sitemap_lists_on_a_subdomain_stay(self, web):
         web({
@@ -233,23 +242,36 @@ class TestLegacySitemapLoadsWhatItLoaded:
             "https://docs.x.io/b": page("B"),
             "https://x.io/c": page("C"),
         })
-        legacy = SitemapLoader().load_data("https://x.io/sitemap.xml")
 
-        converted = WebsiteLoader().load_data(config_from_legacy("sitemap", "https://x.io/sitemap.xml"))
+        assert sources(self._sync("https://x.io/sitemap.xml")) == [
+            "https://docs.x.io/a", "https://docs.x.io/b", "https://x.io/c",
+        ]
 
-        assert sources(converted) == sources(legacy) == ["https://docs.x.io/a", "https://docs.x.io/b", "https://x.io/c"]
+    def test_pages_on_an_unrelated_domain_are_dropped(self, web):
+        web({
+            "https://x.io/sitemap.xml": urlset("https://x.io/a", "https://other.org/p"),
+            "https://x.io/a": page("A"),
+            "https://other.org/p": page("P"),
+        })
+
+        assert sources(self._sync("https://x.io/sitemap.xml")) == ["https://x.io/a"]
 
     def test_an_address_that_is_a_page_is_loaded_as_one(self, web):
         web({"https://x.io/guide": page("Guide", links=["/other"]), "https://x.io/other": page("Other")})
-        legacy = SitemapLoader().load_data("https://x.io/guide")
 
-        converted = WebsiteLoader().load_data(config_from_legacy("sitemap", "https://x.io/guide"))
-
-        assert sources(converted) == sources(legacy) == ["https://x.io/guide"]
+        assert sources(self._sync("https://x.io/guide")) == ["https://x.io/guide"]
 
     def test_a_sitemap_without_an_xml_name_is_not_also_a_page(self, web):
         web({"https://x.io/sitemap": urlset("https://x.io/a"), "https://x.io/a": page("A")})
 
-        converted = WebsiteLoader().load_data(config_from_legacy("sitemap", "https://x.io/sitemap"))
+        assert sources(self._sync("https://x.io/sitemap")) == ["https://x.io/a"]
 
-        assert sources(converted) == ["https://x.io/a"]
+    def test_the_old_page_limit_holds(self, web):
+        listed = [f"https://x.io/p{i}" for i in range(25)]
+        web({"https://x.io/sitemap.xml": urlset(*listed), **{url: page(url) for url in listed}})
+
+        loader = RemoteCreator.create_loader("sitemap")
+        docs = loader.load_data(normalize_remote_data("sitemap", "https://x.io/sitemap.xml"))
+
+        assert sources(docs) == listed[:20]
+        assert loader.report["limit_reached"] is True

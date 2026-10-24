@@ -21,7 +21,7 @@ vi.mock('../api/services/userService', () => ({ default: {} }));
 
 vi.mock('./tree/useReingestWait', () => ({
   useReingestSseWaiter: () => ({
-    waitForTerminal: async () => 'completed',
+    waitForChange: async () => ({ terminal: 'completed', reason: null }),
     mountedRef: { current: true },
   }),
 }));

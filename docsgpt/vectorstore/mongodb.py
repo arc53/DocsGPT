@@ -317,15 +317,7 @@ class MongoDBVectorStore(BaseVectorStore):
             bool: False when this source has no such chunk or the delete
             failed (logged).
         """
-        try:
-            from bson.objectid import ObjectId
-
-            object_id = ObjectId(chunk_id)
-            result = self._collection.delete_one({"_id": object_id, "source_id": self._source_id})
-            return result.deleted_count > 0
-        except Exception as e:
-            logging.error(f"Error deleting chunk: {e}", exc_info=True)
-            return False
+        return self.delete_chunks([chunk_id]) == 1
 
     def delete_chunks(self, chunk_ids) -> int:
         """Delete several of this source's chunks in one ``delete_many``.

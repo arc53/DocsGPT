@@ -1090,53 +1090,45 @@ def resolve_request_connection(user_id: str, provider: Optional[str], data: dict
     return row
 
 
-def owner_sync_connection(
-    conn, owner_id: str, provider: str, connection_id: Optional[str] = None,
-) -> Optional[dict]:
+def owner_sync_connection(conn, owner_id: str, provider: str, connection_id: str) -> Optional[dict]:
     """The source's own connection, when the owner can sync with it, or None.
 
     Used when a sync of a connector source is queued for its owner without a
     browser naming a connection (a team editor's Sync now, a Reingest): the
-    sync runs with the owner's account the source names. A source that names
-    none (its connection was removed) has no account to sync with: another of
-    the owner's connections for the provider would read the selection with a
-    different account, and the sync would re-link the source to it. A
-    connection that is not connected (signed out, flagged for reconnect,
-    holding no credentials), cannot be decrypted, or has an expired access
-    token that can't be refreshed counts as missing.
+    sync runs with the owner's account the source names. A connection that is
+    not connected (signed out, flagged for reconnect, holding no
+    credentials), cannot be decrypted, or has an expired access token that
+    can't be refreshed counts as missing.
 
     Args:
         conn: Open database connection.
         owner_id: The source owner's ``sub``.
         provider: The source's connector provider.
-        connection_id: The source's own connection, if it names one.
+        connection_id: The source's own connection; a source that names none
+            is refused by the caller (another of the owner's accounts would
+            read its selection).
 
     Returns:
-        Optional[dict]: The connection row, or None when there is none or the owner must reconnect.
+        Optional[dict]: The connection row, or None when the owner must reconnect.
     """
     from docsgpt.parser.connectors.connector_creator import ConnectorCreator
     from docsgpt.security.encryption import CredentialDecryptionError
 
-    if not connection_id:
+    session = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
+    if not owns_connector_session(session, owner_id, provider) or normalize_status(session) != STATUS_CONNECTED:
         return None
-    row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
-    candidates = [row] if owns_connector_session(row, owner_id, provider) else []
-    for session in candidates:
-        if normalize_status(session) != STATUS_CONNECTED:
-            continue
+    try:
+        token_info = read_secrets(session).get("token_info") or {}
+    except CredentialDecryptionError:
+        return None
+    if isinstance(token_info, dict) and token_info and not token_info.get("refresh_token"):
         try:
-            token_info = read_secrets(session).get("token_info") or {}
-        except CredentialDecryptionError:
-            continue
-        if isinstance(token_info, dict) and token_info and not token_info.get("refresh_token"):
-            try:
-                if ConnectorCreator.create_auth(provider).is_token_expired(token_info):
-                    continue
-            except Exception:
-                # Providers without an expiry check leave the verdict to the sync.
-                pass
-        return session
-    return None
+            if ConnectorCreator.create_auth(provider).is_token_expired(token_info):
+                return None
+        except Exception:
+            # Providers without an expiry check leave the verdict to the sync.
+            pass
+    return session
 
 
 # ---------------------------------------------------------------------------

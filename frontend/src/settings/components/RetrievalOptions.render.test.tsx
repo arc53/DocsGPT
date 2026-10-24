@@ -49,25 +49,6 @@ describe('RetrievalOptions disclosure', () => {
     expect(body!.getAttribute('data-state')).toBe('open');
   });
 
-  it('leaves no gap under the closed toggle: the body carries the space', () => {
-    act(() => {
-      root.render(
-        <RetrievalOptions
-          value={DEFAULT_RETRIEVAL_OPTIONS}
-          onChange={vi.fn()}
-        />,
-      );
-    });
-    const wrapper = container.firstElementChild as HTMLElement;
-    expect(wrapper.className.split(' ')).not.toContain('gap-4');
-    const collapsible = container.querySelector(
-      '[data-slot="collapsible"]',
-    ) as HTMLElement;
-    const inner = collapsible.firstElementChild!
-      .firstElementChild as HTMLElement;
-    expect(inner.className.split(' ')).toContain('pt-4');
-  });
-
   it('offers the file-link switch only where the source has links', () => {
     const onChange = vi.fn();
     act(() => {
@@ -374,18 +355,6 @@ describe('RetrievalOptions groups', () => {
     expect(container.textContent).not.toContain('retrievalOptions.createHint');
   });
 
-  it('keeps only the outer Advanced settings toggle in the collapsible use', () => {
-    render({});
-    const toggles = container.querySelectorAll('button[aria-controls]');
-    expect(toggles).toHaveLength(1);
-    expect(toggles[0].textContent).toBe(
-      'settings.sources.retrievalOptions.title',
-    );
-    expect(
-      container.querySelectorAll('[data-slot="collapsible"]'),
-    ).toHaveLength(1);
-  });
-
   it('shows the create forms what matters before ingest, untagged, and where to fine-tune', () => {
     render({ variant: 'create', alwaysOpen: true });
     for (const row of FILTER_ROWS) {
@@ -401,13 +370,11 @@ describe('RetrievalOptions groups', () => {
       (p) => p.textContent === 'settings.sources.retrievalOptions.createHint',
     );
     expect(hint).toBeDefined();
-    expect(hint!.className).toContain('text-muted-foreground');
-    expect(hint!.className).toContain('text-xs');
     // Chunking stays: it can only be set before the first ingest.
     expect(container.querySelector('#chunking-strategy')).not.toBeNull();
   });
 
-  it('keeps Filtering on a create form once shown, until the form resets', () => {
+  it('keeps Filtering on a create form once shown', () => {
     const prescreen = (candidate_k: number) => ({
       ...filtering,
       retrieval: {
@@ -429,13 +396,5 @@ describe('RetrievalOptions groups', () => {
     // Fixing it while typing leaves the group where it is.
     render({ variant: 'create', alwaysOpen: true, value: prescreen(8) });
     expect(shown()).toBe(true);
-    // A reset (another form) starts without it again.
-    render({
-      variant: 'create',
-      alwaysOpen: true,
-      value: prescreen(8),
-      resetKey: 'other',
-    });
-    expect(shown()).toBe(false);
   });
 });

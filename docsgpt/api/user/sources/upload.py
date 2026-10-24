@@ -8,7 +8,7 @@ import uuid
 import zipfile
 from typing import Container, Optional
 
-from flask import current_app, jsonify, make_response, request
+from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as sql_text
 
@@ -16,12 +16,12 @@ from docsgpt.api import api
 from docsgpt.api.audit import record_event
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from docsgpt.api.user.resource_access import AccessDenied
-from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.sources.access import SYNC_FREQUENCIES, denied_response, load_source
+from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
-from docsgpt.parser.remote.page_content import page_key
 from docsgpt.parser.remote.website_loader import parse_website_config
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
@@ -59,10 +59,9 @@ sources_upload_ns = Namespace(
 
 
 _IDEMPOTENCY_KEY_MAX_LEN = 256
-_SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
 
-def _website_config_error(err: ValueError):
+def _website_config_error(err: ValueError) -> Response:
     """The 400 for a Website config ``parse_website_config`` refused, with a ``code`` the UI words.
 
     The parser's typed error carries its ``code`` and ``details`` (the limit
@@ -75,37 +74,8 @@ def _website_config_error(err: ValueError):
         Response: ``{"success": false, "error", "code", ...details}``.
     """
     details = getattr(err, "details", None) or {}
-    body = {k: v for k, v in details.items() if k not in ("success", "error", "code")}
-    body.update({"success": False, "error": str(err), "code": getattr(err, "code", None) or "invalid_config"})
-    return make_response(jsonify(body), 400)
-
-
-def _pages_once(config: dict) -> dict:
-    """A validated Website config with each page entry kept once, matched by ``page_key``.
-
-    ``/a``, ``/a/``, ``www.`` and ``#intro`` variants are one page: stored
-    twice, it would count twice toward the page limit and stay listed after
-    one copy is removed. The first copy stays; site entries are kept as given.
-
-    Args:
-        config: ``parse_website_config``'s result.
-
-    Returns:
-        The config, without the repeated page entries.
-    """
-    seen = set()
-    entries = []
-    for entry in config.get("entries") or []:
-        if entry.get("mode") == "page":
-            try:
-                key = page_key(entry["url"])
-            except ValueError:
-                key = entry["url"]
-            if key in seen:
-                continue
-            seen.add(key)
-        entries.append(entry)
-    return {**config, "entries": entries}
+    details = {k: v for k, v in details.items() if k not in ("message", "status", "code", "success", "error")}
+    return error_response(str(err), code=getattr(err, "code", None) or "invalid_config", **details)
 
 
 def _read_idempotency_key():
@@ -736,15 +706,8 @@ class UploadRemote(Resource):
         if missing_fields:
             return missing_fields
         sync_frequency = data.get("sync_frequency") or "never"
-        if sync_frequency not in _SYNC_FREQUENCIES:
-            return make_response(
-                jsonify({
-                    "success": False,
-                    "error": f"Unknown sync_frequency {sync_frequency!r}",
-                    "code": "bad_sync_frequency",
-                }),
-                400,
-            )
+        if sync_frequency not in SYNC_FREQUENCIES:
+            return error_response(f"Unknown sync_frequency {sync_frequency!r}", code="bad_sync_frequency")
         task_name_for_dedup = (
             "ingest_connector_task"
             if data.get("source") in ConnectorCreator.get_supported_connectors()
@@ -780,7 +743,7 @@ class UploadRemote(Resource):
                 # Stored as remote_data and repeated by every sync, so it is
                 # validated here rather than failing later in the worker.
                 try:
-                    source_data = _pages_once(parse_website_config(config))
+                    source_data = parse_website_config(config)
                 except ValueError as err:
                     if scoped_key:
                         _release_claim(scoped_key)

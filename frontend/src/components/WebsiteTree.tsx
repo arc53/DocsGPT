@@ -7,7 +7,7 @@ import userService from '../api/services/userService';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import { isQueueFailed, pageKey, websiteRefusal } from '../upload/website';
+import { isQueueFailed, websiteRefusal } from '../upload/website';
 import { formatCount, formatRelative } from '../utils/dateTimeUtils';
 import AddWebsitePagesModal from './AddWebsitePagesModal';
 import type { LinkedChunk } from './chunkUtils';
@@ -21,15 +21,22 @@ import type {
   TreeBrowserController,
 } from './tree/types';
 import {
+  type UseWebsiteChangesOptions,
   type WebsiteChanges,
-  type WebsiteSync,
   useWebsiteChanges,
 } from './tree/useWebsiteChanges';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import type { MenuOption } from './ui/dropdown-menu';
 
-interface WebsiteTreeProps {
+/**
+ * `sync`, `onSyncSettled`, `onPagesChanged` and `onBusyChange` are the
+ * tree's own changes' (see `UseWebsiteChangesOptions`), ignored with `changes`.
+ */
+interface WebsiteTreeProps extends Pick<
+  UseWebsiteChangesOptions,
+  'sync' | 'onSyncSettled' | 'onPagesChanged' | 'onBusyChange'
+> {
   docId: string;
   sourceName: string;
   onBackToDocuments: () => void;
@@ -50,11 +57,6 @@ interface WebsiteTreeProps {
   graph?: boolean;
   /** The hosts the source fetches from (the sources list's `website.hosts`). */
   hosts: string[];
-  /**
-   * Called once a page change (add, refresh, remove) has finished, so a host
-   * showing more of the source (the graph) can read it again.
-   */
-  onPagesChanged?: () => void;
   /** `sources.sync_frequency`; never (or empty) reads "Not synced". */
   syncFrequency?: string;
   /** When the source was last ingested or synced. */
@@ -65,28 +67,9 @@ interface WebsiteTreeProps {
    */
   settingsVersion?: number;
   /**
-   * A sync of this source the host started (the source's ⋯ → Sync now), with
-   * when its request went out and the task it queued. The tree waits for it
-   * as for its own changes: busy meanwhile, then read again. A new object
-   * starts a new wait; the same one is waited for once. Ignored with
-   * `changes`, whose owner waits for it.
-   */
-  sync?: WebsiteSync | null;
-  /**
-   * The wait for `sync` ended: the sync finished, failed, was skipped or is
-   * still running past the wait. Not called when the tree unmounts first.
-   */
-  onSyncSettled?: (sync: WebsiteSync) => void;
-  /**
-   * Whether a page change or a sync is in flight, each time that turns, so
-   * the host can hold its own Sync now meanwhile. Ignored with `changes`.
-   */
-  onBusyChange?: (busy: boolean) => void;
-  /**
    * The source's changes, held by a host that outlives the tree (the graph
    * source's Files tab is mounted only while open; see `useWebsiteChanges`).
-   * Without it the tree holds its own, with `sync`, `onSyncSettled`,
-   * `onPagesChanged` and `onBusyChange`.
+   * Without it the tree holds its own.
    */
   changes?: WebsiteChanges;
   canEdit?: boolean;
@@ -137,37 +120,6 @@ function pageOrigin(
   return null;
 }
 
-/** The page at a tree path (`Deploying/Docker.md`), or null. */
-function pageAt(structure: DirectoryStructure, path: string): FileNode | null {
-  let node: unknown = structure;
-  for (const part of path.split('/')) {
-    if (!node || typeof node !== 'object') return null;
-    node = (node as DirectoryStructure)[part];
-  }
-  return node && typeof node === 'object' && 'token_count' in node
-    ? (node as FileNode)
-    : null;
-}
-
-/**
- * The keys a page answers to: its address, and every one it was added under
- * when fetching it was redirected (`requested_urls`, or the older single
- * `requested_url`), so a page added as `/old` that landed on `/new` still
- * matches its entry.
- */
-function pageKeysOf(node: FileNode | null | undefined): string[] {
-  const aliases = Array.isArray(node?.requested_urls)
-    ? node.requested_urls
-    : [];
-  return Array.from(
-    new Set(
-      [node?.url, node?.requested_url, ...aliases]
-        .filter((url): url is string => typeof url === 'string' && !!url)
-        .map(pageKey),
-    ),
-  );
-}
-
 /** A remove the server refused; its message is what the dialog shows. */
 class RemoveRefused extends Error {}
 
@@ -176,8 +128,6 @@ type PendingRemoval = {
   name: string;
   path: string;
   isFile: boolean;
-  /** A page's keys (see {@link pageKeysOf}); none for a folder. */
-  keys: string[];
   /**
    * The page's host, or the folder's address; null for a page (or a folder
    * of pages) without an address, from before pages kept theirs.
@@ -226,13 +176,11 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   const controllerRef = useRef<TreeBrowserController | null>(null);
   const currentPathRef = useRef<string[]>([]);
   const [structure, setStructure] = useState<DirectoryStructure>({});
-  // Read by a change's wait, which outlives the render that started it.
-  const structureRef = useRef(structure);
-  structureRef.current = structure;
-  // Keys of the pages the source lists by address (from its config); null
-  // until the config has loaded, and when it couldn't be read, so no page is
-  // called crawled (or an entry) on a guess.
-  const [pageEntries, setPageEntries] = useState<Set<string> | null>(null);
+  // The tree paths of the pages the source lists by address (the server
+  // matches them to its config's page entries); null until the config has
+  // loaded, and when it couldn't be read, so no page is called crawled (or
+  // an entry) on a guess.
+  const [entryPaths, setEntryPaths] = useState<Set<string> | null>(null);
   // The origin of the config's first entry (scheme, host and port).
   const [firstEntryOrigin, setFirstEntryOrigin] = useState<string | null>(null);
   const [configKey, setConfigKey] = useState(0);
@@ -254,7 +202,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   // Another source's entries and first address never stand in for this
   // one's (a source the caller only reads never loads its own).
   useEffect(() => {
-    setPageEntries(null);
+    setEntryPaths(null);
     setFirstEntryOrigin(null);
   }, [docId]);
   useEffect(() => {
@@ -266,19 +214,23 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
       .then((data) => {
         if (cancelled) return;
         if (!data?.config) {
-          setPageEntries(null);
+          setEntryPaths(null);
           return;
         }
-        const entries = data.config.entries as { url: string; mode: string }[];
+        const entries = data.config.entries as { url: string }[];
         setFirstEntryOrigin(originOf(entries[0]?.url));
-        setPageEntries(
-          new Set(
-            entries.filter((e) => e.mode === 'page').map((e) => pageKey(e.url)),
-          ),
+        setEntryPaths(
+          Array.isArray(data.entry_paths)
+            ? new Set(
+                data.entry_paths.filter(
+                  (path: unknown): path is string => typeof path === 'string',
+                ),
+              )
+            : null,
         );
       })
       .catch(() => {
-        if (!cancelled) setPageEntries(null);
+        if (!cancelled) setEntryPaths(null);
       });
     return () => {
       cancelled = true;
@@ -290,11 +242,9 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
   useEffect(
     () =>
       attach({
-        reload: async (affects) => {
+        reload: async (paths) => {
           await controllerRef.current?.refreshDirectory();
-          if (affects === undefined) controllerRef.current?.reloadFile();
-          else if (affects !== false)
-            controllerRef.current?.reloadFile(affects);
+          controllerRef.current?.reloadFile(paths ?? undefined);
           setConfigKey((key) => key + 1);
         },
       }),
@@ -353,7 +303,6 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     await changes.awaitChange(tr('refreshing'), startedAt, 'refreshFailed', {
       name,
       taskId,
-      affects: path,
       hold,
     });
   };
@@ -385,7 +334,6 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     void changes.awaitChange(tr('removing'), startedAt, 'removeFailed', {
       name,
       taskId: typeof data.task_id === 'string' ? data.task_id : null,
-      affects: false,
     });
   };
 
@@ -396,7 +344,6 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         name,
         path,
         isFile,
-        keys: [],
         where: folderAddress(structure, path),
       });
       return;
@@ -407,7 +354,6 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         (typeof node?.display_name === 'string' && node.display_name) || name,
       path,
       isFile,
-      keys: pageKeysOf(node),
       where: hostOf(url) || null,
     });
   };
@@ -421,10 +367,8 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
     pending: PendingRemoval,
   ): 'entry' | 'crawled' | 'folder' | 'unknownFolder' | 'unknown' => {
     if (!pending.isFile) return pending.where ? 'folder' : 'unknownFolder';
-    if (!pageEntries || !pending.where) return 'unknown';
-    return pending.keys.some((key) => pageEntries.has(key))
-      ? 'entry'
-      : 'crawled';
+    if (!entryPaths || !pending.where) return 'unknown';
+    return entryPaths.has(pending.path) ? 'entry' : 'crawled';
   };
 
   const openLink = (url: string | null, label: string) =>
@@ -588,7 +532,6 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         embedded={embedded}
         actionsTarget={actionsTarget}
         onCrumbsChange={onCrumbsChange}
-        columnOrder="size-first"
         variant="pages"
         renderByline={renderByline}
         topRightAction={topRightAction}
@@ -601,11 +544,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
         }}
         onDirectoryDataLoaded={(data) => {
           const value = data?.directory_structure;
-          const next = value && typeof value === 'object' ? value : {};
-          // At once, not at the next render: a finished change's reload
-          // tests the new tree as soon as refreshDirectory resolves.
-          structureRef.current = next;
-          setStructure(next);
+          setStructure(value && typeof value === 'object' ? value : {});
         }}
         chunksNotice={
           canEdit && synced ? (
@@ -649,27 +588,14 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
           sourceName={sourceName}
           graph={graph}
           onClose={() => setAddOpen(false)}
-          onQueued={(startedAt, taskId, change) => {
-            // Appended pages replace only the pages they name (by the
-            // address they were added under, too); a rebuild may change any
-            // page.
-            const added = new Set(change.urls.map(pageKey));
+          onQueued={(startedAt, taskId) =>
             void changes.awaitChange(
               tr('addingPages'),
               startedAt,
               'addFailed',
-              {
-                taskId,
-                affects:
-                  change.mode === 'append'
-                    ? (path) =>
-                        pageKeysOf(pageAt(structureRef.current, path)).some(
-                          (key) => added.has(key),
-                        )
-                    : undefined,
-              },
-            );
-          }}
+              { taskId },
+            )
+          }
           onQueueFailed={warnQueueFailed}
         />
       )}

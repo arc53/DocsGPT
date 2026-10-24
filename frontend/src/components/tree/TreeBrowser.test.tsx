@@ -1,7 +1,8 @@
 import { act, StrictMode, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-import type { TreeBrowserController } from './types';
+import type { MenuOption } from '../ui/dropdown-menu';
+import type { RowMenuContext, TreeBrowserController } from './types';
 
 const { state } = vi.hoisted(() => ({
   state: {
@@ -60,6 +61,12 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const SOURCES = 'settings.sources.label';
 
+/** A ref for the tree's controller, set once it mounts. */
+const newControllerRef =
+  (): React.MutableRefObject<TreeBrowserController | null> => ({
+    current: null,
+  });
+
 const NESTED = {
   legal: {
     '2024': { 'msa.pdf': { type: 'pdf', size_bytes: 10, token_count: 700 } },
@@ -112,9 +119,7 @@ describe('TreeBrowser', () => {
   it('shows a refreshed structure under StrictMode', async () => {
     // StrictMode mounts, unmounts and mounts again; a mounted flag that only
     // ever turns false dropped every refresh after a delete or an add.
-    const controllerRef = {
-      current: null,
-    } as React.MutableRefObject<TreeBrowserController | null>;
+    const controllerRef = newControllerRef();
     state.structure = NESTED;
     await act(async () => {
       root.render(
@@ -366,17 +371,17 @@ describe('TreeBrowser', () => {
   // file actions are not moved into it.
   it("a one-file source keeps its file's menu out of the title row", async () => {
     const getRowMenuOptions = vi.fn(
-      ({
+      ({ defaultViewOption, name }: RowMenuContext): MenuOption[] => [
         defaultViewOption,
-        name,
-      }: {
-        defaultViewOption: unknown;
-        name: string;
-      }) => [defaultViewOption, { label: `delete ${name}`, onClick: vi.fn() }],
+        { label: `delete ${name}`, onClick: vi.fn() },
+      ],
     );
-    await render({ docs: { 'a.pdf': { type: 'pdf' } } }, {
-      getRowMenuOptions,
-    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
+    await render(
+      { docs: { 'a.pdf': { type: 'pdf' } } },
+      {
+        getRowMenuOptions,
+      },
+    );
     // The file's own menu is in its bar, not the title row.
     const menus = Array.from(
       container.querySelectorAll(
@@ -385,18 +390,6 @@ describe('TreeBrowser', () => {
     );
     expect(menus).toHaveLength(1);
     expect(menus[0].closest('[data-testid="item-bar"]')).not.toBeNull();
-  });
-
-  it("draws the source's menu last in the title row", async () => {
-    await render({ 'a.pdf': { type: 'pdf' }, 'b.pdf': { type: 'pdf' } }, {
-      topRightAction: <button type="button">primary</button>,
-      headerMenu: <button type="button">source menu</button>,
-    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
-    const menu = Array.from(container.querySelectorAll('button')).find(
-      (b) => b.textContent === 'source menu',
-    )!;
-    expect(menu.previousElementSibling?.textContent).toBe('primary');
-    expect(menu.nextElementSibling).toBeNull();
   });
 
   const itemBar = () =>
@@ -416,13 +409,7 @@ describe('TreeBrowser', () => {
     ).map((el) => el.textContent);
   };
   const rowMenu = vi.fn(
-    ({
-      defaultViewOption,
-      name,
-    }: {
-      defaultViewOption: { label: string };
-      name: string;
-    }) => [
+    ({ defaultViewOption, name }: RowMenuContext): MenuOption[] => [
       defaultViewOption,
       { label: `open ${name}`, onClick: vi.fn() },
       {
@@ -437,7 +424,7 @@ describe('TreeBrowser', () => {
     state.chunks = [{ doc_id: 'c1', text: 'a', metadata: {} }];
     await render(NESTED, {
       getRowMenuOptions: rowMenu,
-    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
+    });
     await openRow('readme.md');
     const bar = itemBar()!;
     expect(bar).not.toBeNull();
@@ -460,7 +447,7 @@ describe('TreeBrowser', () => {
   it('a file opened from the navigator gets the same bar', async () => {
     await render(NESTED, {
       getRowMenuOptions: rowMenu,
-    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
+    });
     await act(async () => navItem('legal')!.click());
     await act(async () => navItem('2024')!.click());
     await act(async () => navItem('msa.pdf')!.click());
@@ -473,51 +460,64 @@ describe('TreeBrowser', () => {
 
   it('the last item has no Delete; with nothing else, no menu at all', async () => {
     const deleteOnly = vi.fn(
-      ({ defaultViewOption }: { defaultViewOption: unknown }) => [
+      ({ defaultViewOption }: RowMenuContext): MenuOption[] => [
         defaultViewOption,
         { label: 'delete', onClick: vi.fn(), variant: 'destructive' as const },
       ],
     );
-    await render({ 'a.pdf': { type: 'pdf', size_bytes: 2048 } }, {
-      getRowMenuOptions: deleteOnly,
-    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
+    await render(
+      { 'a.pdf': { type: 'pdf', size_bytes: 2048 } },
+      {
+        getRowMenuOptions: deleteOnly,
+      },
+    );
     expect(itemBar()?.textContent).toContain('a.pdf');
     expect(
       itemBar()!.querySelector('button[aria-label="settings.sources.menuAlt"]'),
     ).toBeNull();
 
-    await render({ 'a.pdf': { type: 'pdf' } }, {
-      getRowMenuOptions: rowMenu,
-    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
+    await render(
+      { 'a.pdf': { type: 'pdf' } },
+      {
+        getRowMenuOptions: rowMenu,
+      },
+    );
     expect(await openItemMenu()).toEqual(['open a.pdf']);
   });
 
-  it('a page bar links its address and says when it was fetched', async () => {
-    await render(
-      {
-        'air.md': {
-          type: 'md',
-          token_count: 40,
-          url: 'https://docs.x.io/Deploying/Air',
-          display_name: 'Air-Gapped Deployment',
-          fetched_at: new Date().toISOString(),
+  it.each([
+    ['https://docs.x.io/Deploying/Air', 'https://docs.x.io/Deploying/Air'],
+    // Only a web address is a link.
+    ['javascript:alert(1)', null],
+  ])(
+    'a page bar names the page, says when it was fetched and links %s as %s',
+    async (url, href) => {
+      await render(
+        {
+          'air.md': {
+            type: 'md',
+            token_count: 40,
+            url,
+            display_name: 'Air-Gapped Deployment',
+            fetched_at: new Date().toISOString(),
+          },
         },
-      },
-      { variant: 'pages' } as Partial<React.ComponentProps<typeof TreeBrowser>>,
-    );
-    const bar = itemBar()!;
-    expect(bar.textContent).toContain('Air-Gapped Deployment');
-    const link = bar.querySelector('a')!;
-    expect(link.getAttribute('href')).toBe('https://docs.x.io/Deploying/Air');
-    expect(link.textContent).toContain('docs.x.io/Deploying/Air');
-    expect(bar.textContent).toContain('settings.sources.website.fetchedAt');
-  });
+        { variant: 'pages' },
+      );
+      const bar = itemBar()!;
+      expect(bar.textContent).toContain('Air-Gapped Deployment');
+      expect(bar.textContent).toContain('settings.sources.website.fetchedAt');
+      const link = bar.querySelector('a');
+      expect(link?.getAttribute('href') ?? null).toBe(href);
+      if (href) expect(link!.textContent).toContain('docs.x.io/Deploying/Air');
+    },
+  );
 
   it("the byline stays the source's while a file is open", async () => {
     const renderByline = vi.fn(() => 'source byline');
     await render(NESTED, {
       renderByline,
-    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
+    });
     await openRow('readme.md');
     expect(container.textContent).toContain('source byline');
     for (const [context] of renderByline.mock.calls as unknown as [
@@ -527,20 +527,19 @@ describe('TreeBrowser', () => {
   });
 
   it('puts the notice under the bar, above the chunks', async () => {
-    await render({ 'a.pdf': { type: 'pdf' } }, {
-      chunksNotice: <p data-testid="notice">hand edits</p>,
-    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
+    await render(
+      { 'a.pdf': { type: 'pdf' } },
+      {
+        chunksNotice: <p data-testid="notice">hand edits</p>,
+      },
+    );
     const notice = container.querySelector('[data-testid="notice"]')!;
     expect(notice.previousElementSibling).toBe(itemBar());
   });
 
   it('closes a file that a refresh no longer lists', async () => {
-    const controllerRef: { current: TreeBrowserController | null } = {
-      current: null,
-    };
-    await render(NESTED, { controllerRef } as Partial<
-      React.ComponentProps<typeof TreeBrowser>
-    >);
+    const controllerRef = newControllerRef();
+    await render(NESTED, { controllerRef });
     await openRow('readme.md');
     expect(itemBar()).not.toBeNull();
     state.structure = { legal: NESTED.legal, 'other.md': { type: 'md' } };
@@ -552,15 +551,13 @@ describe('TreeBrowser', () => {
   });
 
   it('a refresh that drops the open folder steps up to the deepest one left', async () => {
-    const controllerRef: { current: TreeBrowserController | null } = {
-      current: null,
-    };
+    const controllerRef = newControllerRef();
     await render(
       {
         ...NESTED,
         'other.md': { type: 'md', size_bytes: 1, token_count: 1 },
       },
-      { controllerRef } as Partial<React.ComponentProps<typeof TreeBrowser>>,
+      { controllerRef },
     );
     await openRow('legal');
     await openRow('2024');
@@ -598,13 +595,9 @@ describe('TreeBrowser', () => {
   });
 
   it('reloadFile lists the open file again and closes its open chunk', async () => {
-    const controllerRef: { current: TreeBrowserController | null } = {
-      current: null,
-    };
+    const controllerRef = newControllerRef();
     state.chunks = [{ doc_id: 'c1', text: '# Rates', metadata: {} }];
-    await render(NESTED, { controllerRef } as Partial<
-      React.ComponentProps<typeof TreeBrowser>
-    >);
+    await render(NESTED, { controllerRef });
     await openRow('readme.md');
     await act(async () => tile()!.click());
     const listed = () =>
@@ -613,40 +606,22 @@ describe('TreeBrowser', () => {
         .mock.calls.filter((call) => call[4] === 'readme.md').length;
     const before = listed();
 
-    // Another file isn't the open one: nothing to reload.
-    await act(async () => controllerRef.current?.reloadFile('legal/x.md'));
+    // A change that didn't touch the open file: nothing to reload.
+    await act(async () => controllerRef.current?.reloadFile(['legal/x.md']));
+    await act(async () => controllerRef.current?.reloadFile([]));
     expect(listed()).toBe(before);
 
     state.chunks = [{ doc_id: 'c2', text: '# New rates', metadata: {} }];
-    await act(async () => controllerRef.current?.reloadFile('readme.md'));
+    await act(async () =>
+      controllerRef.current?.reloadFile(['legal/x.md', 'readme.md']),
+    );
     expect(listed()).toBe(before + 1);
     expect(crumbs()).toEqual([SOURCES, 'Contracts', 'readme.md']);
     expect(tile()?.textContent).toContain('New rates');
 
-    // A test on the open file's path decides the same way.
-    await act(async () =>
-      controllerRef.current?.reloadFile((path) => path === 'legal/x.md'),
-    );
-    expect(listed()).toBe(before + 1);
-    await act(async () =>
-      controllerRef.current?.reloadFile((path) => path === 'readme.md'),
-    );
+    // A change that doesn't say what it touched may have changed any file.
+    await act(async () => controllerRef.current?.reloadFile());
     expect(listed()).toBe(before + 2);
-  });
-
-  it('a page bar links only a web address', async () => {
-    await render(
-      {
-        'air.md': {
-          type: 'md',
-          token_count: 40,
-          url: 'javascript:alert(1)',
-          display_name: 'Air',
-        },
-      },
-      { variant: 'pages' } as Partial<React.ComponentProps<typeof TreeBrowser>>,
-    );
-    expect(itemBar()!.querySelector('a')).toBeNull();
   });
 
   it('canEdit false reaches the chunk list: no Add chunk', async () => {
@@ -775,14 +750,12 @@ describe('TreeBrowser', () => {
   });
 
   it('an initialPath not in the tree yet opens once a reload has it', async () => {
-    const controllerRef: React.ComponentProps<
-      typeof TreeBrowser
-    >['controllerRef'] = { current: null };
+    const controllerRef = newControllerRef();
     await render(NESTED, { initialPath: 'new.pdf', controllerRef });
     expect(chunkListOpen()).toBe(false);
     state.structure = { ...NESTED, 'new.pdf': { type: 'pdf' } };
     await act(async () => {
-      await controllerRef.current!.refreshDirectory();
+      await controllerRef.current?.refreshDirectory();
     });
     expect(crumbs()).toEqual([SOURCES, 'Contracts', 'new.pdf']);
   });

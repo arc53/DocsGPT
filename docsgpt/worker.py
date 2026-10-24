@@ -47,6 +47,11 @@ from docsgpt.parser.remote.remote_creator import (
     RemoteCreator,
     normalize_remote_data,
 )
+from docsgpt.parser.remote.website_tree import (
+    page_aliases as _page_aliases,
+    stored_page_key as _web_page_key,
+    tree_leaves as _tree_leaves,
+)
 from docsgpt.parser.schema.base import Document
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
@@ -1038,16 +1043,12 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
         or ``failed``. v1 limitation; revisit if reingest gains a
         progress-driven UI.
 
-        It re-reads the files the source keeps in storage, so a source that
-        keeps none (a Website, crawler or connector source: ``file_path`` is
-        empty) is refused with a ``failed`` event (``reason: "no_files"``)
-        rather than raised, which would retry and then mark the source
-        failed; the API syncs those instead. The work runs holding the
-        source's index lock (``source_index_lock``), so it takes turns with a
-        sync or a Website page change; a source busy past the wait, or
-        deleted meanwhile, is skipped the same way (``busy`` / ``gone``).
-        A wiki (an upload converted to one keeps its files) is refused too
-        (``wiki``): its pages would be replaced by the files' chunks.
+        A source that keeps no files (a Website, crawler or connector
+        source) or is a wiki is refused with a ``failed`` event (``reason``
+        ``no_files`` / ``wiki``) rather than raised, which would retry. The
+        work holds the source's index lock (``source_index_lock``); a source
+        busy past the wait, or deleted meanwhile, is refused the same way
+        (``busy`` / ``gone``).
     """
     # Declared at the function scope so the outer except can include
     # ``name`` in the failed event payload when the failure happens
@@ -1649,9 +1650,8 @@ def remote_worker(
                 # A web page keeps its address and title, so the Knowledge
                 # tree names it and links it instead of showing "index.md".
                 # After a redirect it keeps the addresses it was asked for too
-                # (``requested_urls``, the first also as ``requested_url``): a
-                # page entry is listed as typed, so removing the page must find
-                # every entry that leads to it.
+                # (``requested_urls``): a page entry is listed as typed, so
+                # removing the page must find every entry that leads to it.
                 page = None
                 if loader in _WEB_PAGE_LOADERS and doc.extra_info and doc.extra_info.get("source"):
                     # The tree is stored as JSONB, which refuses a NUL (a page title, say).
@@ -1739,15 +1739,8 @@ def remote_worker(
                 )
         refused = _upload_refusal(upload_index(full_path, file_data))
         if refused:
-            # Deleted, or made a wiki, while the sync ran: nothing was stored,
-            # so it neither completes nor builds a graph or a website report.
-            logging.info(f"The API refused the sync of source {source_id_for_events}: {refused}")
-            _drop_refused_sync_vectors(refused, source_id_for_events)
-            _publish_sync_not_run(
-                self, user, source_id_for_events, name_job, loader,
-                _SYNC_SKIP_MESSAGES.get(refused, _SYNC_SKIP_MESSAGES["gone"]), refused, actor_id=actor_id,
-            )
-            return {"id": source_id_for_events, "status": "skipped", "reason": refused}
+            # No website report either: nothing was stored.
+            return _skip_refused_sync(self, user, source_id_for_events, name_job, loader, refused, actor_id)
         if connection_id:
             _link_source_to_connection(source_id_for_events, str(connection_id))
         website_fields = {}
@@ -1835,41 +1828,8 @@ def _record_website_report(source_id: str, user: str, report: dict, fetched_at: 
 
 
 def _is_wiki_config(config: Any) -> bool:
-    """Whether a stored ``sources.config`` marks the source as a wiki.
-
-    Args:
-        config: The config as stored: a dict, its JSON text, or ``None``.
-
-    Returns:
-        True for ``kind == "wiki"``.
-    """
-    if isinstance(config, str):
-        try:
-            config = json.loads(config)
-        except ValueError:
-            return False
+    """Whether a source's ``config`` (a JSONB object, so a dict) marks it as a wiki."""
     return isinstance(config, dict) and config.get("kind") == "wiki"
-
-
-def _read_source_for_sync(doc_id: Optional[str], user: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
-    """Read a source's row as a sync starts, under its index lock.
-
-    Args:
-        doc_id: The source id.
-        user: The source's owner.
-
-    Returns:
-        ``(read, row)``: ``read`` is False when the database couldn't be read
-        (the sync then doesn't run); ``row`` is ``None`` when the source is gone.
-    """
-    if not doc_id:
-        return True, None
-    try:
-        with db_readonly() as conn:
-            return True, SourcesRepository(conn).get_any(str(doc_id), user)
-    except Exception as e:  # noqa: BLE001 - the caller refuses the sync
-        logging.warning(f"Could not read source {doc_id} for its sync; not running it: {e}")
-        return False, None
 
 
 # Why a sync was skipped, as its failed event says it.
@@ -1888,10 +1848,7 @@ def _publish_sync_not_run(
     task: Any, user: str, doc_id: Optional[str], name_job: str, loader: str, error: str,
     reason: Optional[str] = None, actor_id: Optional[str] = None,
 ) -> None:
-    """Close a sync that never reached ``remote_worker`` with the ``source.ingest.failed`` event it publishes.
-
-    The UI started waiting on the sync when it was queued, and nothing else
-    ends that wait when ``remote_worker`` never runs.
+    """Close a sync that never ran, or never stored, with the ``source.ingest.failed`` event the UI waits for.
 
     Args:
         task: The bound Celery task, for its id.
@@ -1918,6 +1875,88 @@ def _publish_sync_not_run(
     )
 
 
+def _skip_refused_sync(
+    task: Any, user: str, source_id: str, name: str, loader: str, reason: str, actor_id: Optional[str],
+) -> Dict[str, Any]:
+    """End a sync whose upload the API refused: the source was deleted, or became a wiki, while it ran.
+
+    Nothing was stored, so the sync neither completes nor builds a graph; a
+    deleted source's vectors are dropped (``_drop_refused_sync_vectors``).
+
+    Args:
+        task: The bound Celery task.
+        user: The source's owner.
+        source_id: The source.
+        name: Its name.
+        loader: Its loader.
+        reason: The API's refusal (``gone`` or ``wiki``).
+        actor_id: The user who asked for the sync, if not the owner.
+
+    Returns:
+        ``{"id", "status": "skipped", "reason"}``.
+    """
+    logging.info(f"The API refused the sync of source {source_id}: {reason}")
+    _drop_refused_sync_vectors(reason, source_id)
+    _publish_sync_not_run(
+        task, user, source_id, name, loader, _SYNC_SKIP_MESSAGES.get(reason, _SYNC_SKIP_MESSAGES["gone"]), reason,
+        actor_id=actor_id,
+    )
+    return {"id": source_id, "status": "skipped", "reason": reason}
+
+
+def _run_locked_sync(
+    task: Any, user: str, doc_id: str, name: str, loader: str, run: Callable[[Dict[str, Any]], Dict[str, Any]],
+    *, lock_wait_seconds: float = WORKER_WAIT_SECONDS, notify_skip: bool = True, actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Run a sync on its source's row, read holding the source's index lock.
+
+    The lock makes a sync take turns with a Website page change, a wiki
+    conversion or another sync on the source: each rewrites the index, and a
+    FAISS index is saved whole. A source busy past the wait, deleted or made a
+    wiki meanwhile is skipped; one whose row can't be read doesn't run.
+
+    Args:
+        task: The bound Celery task.
+        user: The source's owner.
+        doc_id: The source.
+        name: Its name when queued, for a skip's event.
+        loader: Its loader when queued, for a skip's event.
+        run: The sync, given the row.
+        lock_wait_seconds: How long to wait for another job on the source.
+        notify_skip: Publish a ``source.ingest.failed`` event (with ``reason``)
+            for a skip. Off for scheduled syncs: nobody waits on them.
+        actor_id: The user who asked for the sync, if not the owner; told too.
+
+    Returns:
+        What ``run`` returned, ``{"status": "skipped", "reason": "busy" | "gone" | "wiki"}``,
+        or ``{"status": "error", "error": ...}`` when the row couldn't be read.
+    """
+
+    def _skipped(reason: str) -> Dict[str, Any]:
+        logging.info("Skipping sync of source %s: %s", doc_id, reason)
+        if notify_skip:
+            _publish_sync_not_run(task, user, doc_id, name, loader, _SYNC_SKIP_MESSAGES[reason], reason, actor_id)
+        return {"status": "skipped", "reason": reason}
+
+    try:
+        with source_index_lock(str(doc_id), wait_seconds=lock_wait_seconds):
+            try:
+                with db_readonly() as conn:
+                    row = SourcesRepository(conn).get_any(str(doc_id), user)
+            except Exception as e:  # noqa: BLE001 - the sync doesn't run on the queued snapshot
+                logging.warning(f"Could not read source {doc_id} for its sync; not running it: {e}")
+                _publish_sync_not_run(task, user, doc_id, name, loader, _SYNC_UNREADABLE, actor_id=actor_id)
+                return {"status": "error", "error": _SYNC_UNREADABLE}
+            if row is None:
+                return _skipped("gone")
+            if _is_wiki_config(row.get("config")):
+                # A sync would replace a wiki's pages with the remote content.
+                return _skipped("wiki")
+            return run(row)
+    except SourceBusy:
+        return _skipped("busy")
+
+
 def sync(
     self: Any,
     source_data: Any,
@@ -1933,16 +1972,10 @@ def sync(
     notify_skip: bool = True,
     actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Re-read a remote source and rebuild its index, holding its index lock.
+    """Re-read a remote source and rebuild its index, holding its index lock (``_run_locked_sync``).
 
-    The lock makes a sync and a Website page change (or another sync) on one
-    source take turns: each rewrites the index, and a FAISS index is saved
-    whole, so the last save would win. The row is read under the lock, so the
-    sync crawls the source as it is then: pages removed or added while it was
-    queued (and a legacy source converted to a Website) are respected, a wiki
-    conversion that finished meanwhile skips it, and a deleted source is
-    skipped rather than re-created. If the row can't be read, the sync
-    doesn't run: the queued arguments carry no config and can't tell a wiki.
+    The sync crawls the row as it is under the lock (its loader, remote data,
+    schedule and chunking settings), not the arguments it was queued with.
 
     Args:
         self: Celery task instance.
@@ -1966,69 +1999,43 @@ def sync(
         or ``{"status": "error", "error": ...}``.
     """
 
-    # Who else hears how the sync went: the team editor who asked for it.
-    actor = {"actor_id": actor_id} if actor_id else {}
-
-    def _skipped(reason: str) -> Dict[str, Any]:
-        logging.info("Skipping sync of source %s: %s", doc_id, reason)
-        if notify_skip:
-            _publish_sync_not_run(self, user, doc_id, name_job, loader, _SYNC_SKIP_MESSAGES[reason], reason, **actor)
-        return {"status": "skipped", "reason": reason}
+    def _run(row: Dict[str, Any]) -> Dict[str, Any]:
+        row_loader = row.get("type") or loader
+        row_name = row.get("name") or name_job
+        row_data = normalize_remote_data(row_loader, row.get("remote_data"))
+        if not row_data:
+            error = "This source has nothing left to sync"
+            _publish_sync_not_run(self, user, doc_id, row_name, row_loader, error, actor_id=actor_id)
+            return {"status": "error", "error": error}
+        result = remote_worker(
+            self,
+            row_data,
+            row_name,
+            user,
+            row_loader,
+            directory,
+            row.get("retriever") or retriever,
+            row.get("sync_frequency") or sync_frequency,
+            "sync",
+            doc_id,
+            # Re-chunk with the source's own settings, not the defaults.
+            config=row.get("config") or None,
+            connection_id=str(row["connection_id"]) if row.get("connection_id") else connection_id,
+            actor_id=actor_id,
+        )
+        if isinstance(result, dict) and result.get("status") == "skipped":
+            # The API refused the upload; remote_worker has said why.
+            return {"status": "skipped", "reason": result.get("reason")}
+        return {"status": "success"}
 
     try:
-        with source_index_lock(str(doc_id), wait_seconds=lock_wait_seconds):
-            read, row = _read_source_for_sync(doc_id, user)
-            if not read:
-                _publish_sync_not_run(self, user, doc_id, name_job, loader, _SYNC_UNREADABLE, **actor)
-                return {"status": "error", "error": _SYNC_UNREADABLE}
-            if row is None:
-                return _skipped("gone")
-            config = row.get("config")
-            if isinstance(config, str):
-                try:
-                    config = json.loads(config)
-                except ValueError:
-                    config = None
-            if _is_wiki_config(config):
-                # A sync wipes the index and re-reads the remote content, which
-                # would replace a wiki's pages; a converted source no longer syncs.
-                return _skipped("wiki")
-            loader = row.get("type") or loader
-            name_job = row.get("name") or name_job
-            retriever = row.get("retriever") or retriever
-            sync_frequency = row.get("sync_frequency") or sync_frequency
-            if row.get("connection_id"):
-                connection_id = str(row["connection_id"])
-            source_data = normalize_remote_data(loader, row.get("remote_data"))
-            if not source_data:
-                error = "This source has nothing left to sync"
-                _publish_sync_not_run(self, user, doc_id, name_job, loader, error, **actor)
-                return {"status": "error", "error": error}
-            result = remote_worker(
-                self,
-                source_data,
-                name_job,
-                user,
-                loader,
-                directory,
-                retriever,
-                sync_frequency,
-                "sync",
-                doc_id,
-                # Re-chunk with the source's own settings, not the defaults.
-                config=config or None,
-                connection_id=connection_id,
-                **actor,
-            )
-            if isinstance(result, dict) and result.get("status") == "skipped":
-                # The API refused the upload; remote_worker has said why.
-                return {"status": "skipped", "reason": result.get("reason")}
-    except SourceBusy:
-        return _skipped("busy")
+        return _run_locked_sync(
+            self, user, doc_id, name_job, loader, _run,
+            lock_wait_seconds=lock_wait_seconds, notify_skip=notify_skip, actor_id=actor_id,
+        )
     except Exception as e:
         logging.error(f"Error during sync: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
-    return {"status": "success"}
 
 
 # Remote loaders that can only read with a connection (no public fallback).
@@ -4389,15 +4396,11 @@ def ingest_connector(
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
 
-    A sync runs holding the source's index lock (``source_index_lock``), so it
-    takes turns with a Website page change, a wiki conversion or another sync
-    on the source. The row is read under the lock: a source deleted or
-    converted to a wiki while the sync waited is skipped, and the sync
-    downloads the row's current selection and chunks with its current
-    settings. Its upload is marked ``operation: "sync"``, so the API writes
-    only the rebuilt content (and the selection fingerprint) and keeps the
-    row's settings. A first ingest (``upload``) takes no lock: its row
-    doesn't exist yet, and the upload creates it.
+    A sync runs on the row read holding the source's index lock
+    (``_run_locked_sync``): it downloads the row's current selection and
+    chunks with its current settings, and its upload is marked
+    ``operation: "sync"``, so the API keeps the row's settings. A first
+    ingest (``upload``) takes no lock: the upload creates its row.
 
     Args:
         job_name: Name of the ingestion job
@@ -4443,52 +4446,27 @@ def ingest_connector(
             actor_id=actor_id,
         )
 
-    def _skipped(reason: str) -> Dict[str, Any]:
-        logging.info("Skipping sync of connector source %s: %s", doc_id, reason)
-        if notify_skip:
-            _publish_sync_not_run(
-                self, user, doc_id, job_name, source_type, _SYNC_SKIP_MESSAGES[reason], reason, actor_id=actor_id,
-            )
-        return {"status": "skipped", "reason": reason}
+    def _run(row: Dict[str, Any]) -> Dict[str, Any]:
+        selection = row.get("remote_data")
+        if isinstance(selection, str):
+            # A legacy row's remote_data can be JSON text.
+            try:
+                selection = json.loads(selection)
+            except ValueError:
+                selection = None
+        if not isinstance(selection, dict):
+            selection = {}
+        return _ingest_connector(
+            self, row.get("name") or job_name, user, source_type, session_token,
+            selection.get("file_ids", file_ids), selection.get("folder_ids", folder_ids),
+            selection.get("recursive", recursive), row.get("retriever") or retriever, operation_mode, doc_id,
+            row.get("sync_frequency") or sync_frequency, row.get("config") or None, idempotency_key, source_id,
+            connection_id, actor_id=actor_id,
+        )
 
-    try:
-        with source_index_lock(str(doc_id)):
-            read, row = _read_source_for_sync(doc_id, user)
-            if not read:
-                _publish_sync_not_run(self, user, doc_id, job_name, source_type, _SYNC_UNREADABLE, actor_id=actor_id)
-                return {"status": "error", "error": _SYNC_UNREADABLE}
-            if row is None:
-                return _skipped("gone")
-            config = row.get("config")
-            if isinstance(config, str):
-                try:
-                    config = json.loads(config)
-                except ValueError:
-                    config = None
-            if _is_wiki_config(config):
-                # A sync would replace a wiki's pages with the connector's files.
-                return _skipped("wiki")
-            config = config or None
-            job_name = row.get("name") or job_name
-            retriever = row.get("retriever") or retriever
-            sync_frequency = row.get("sync_frequency") or sync_frequency
-            selection = row.get("remote_data")
-            if isinstance(selection, str):
-                try:
-                    selection = json.loads(selection)
-                except ValueError:
-                    selection = None
-            if isinstance(selection, dict):
-                file_ids = selection.get("file_ids", file_ids)
-                folder_ids = selection.get("folder_ids", folder_ids)
-                recursive = selection.get("recursive", recursive)
-            return _ingest_connector(
-                self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
-                operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,
-                actor_id=actor_id,
-            )
-    except SourceBusy:
-        return _skipped("busy")
+    return _run_locked_sync(
+        self, user, doc_id, job_name, source_type, _run, notify_skip=notify_skip, actor_id=actor_id,
+    )
 
 
 def _ingest_connector(
@@ -4510,30 +4488,7 @@ def _ingest_connector(
     connection_id: Optional[str],
     actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """The body of ``ingest_connector``; a sync runs it holding the source's index lock.
-
-    Args:
-        self: Celery task instance.
-        job_name: As ``ingest_connector``.
-        user: As ``ingest_connector``.
-        source_type: As ``ingest_connector``.
-        session_token: As ``ingest_connector``.
-        file_ids: As ``ingest_connector``.
-        folder_ids: As ``ingest_connector``.
-        recursive: As ``ingest_connector``.
-        retriever: As ``ingest_connector``.
-        operation_mode: As ``ingest_connector``.
-        doc_id: As ``ingest_connector``.
-        sync_frequency: As ``ingest_connector``.
-        config: As ``ingest_connector``.
-        idempotency_key: As ``ingest_connector``.
-        source_id: As ``ingest_connector``.
-        connection_id: As ``ingest_connector``.
-        actor_id: As ``ingest_connector``.
-
-    Returns:
-        As ``ingest_connector``.
-    """
+    """The body of ``ingest_connector`` (same arguments); a sync runs it holding the source's index lock."""
     # Source id resolution mirrors ``ingest_worker`` / ``remote_worker``:
     # sync mode reuses ``doc_id``; otherwise the caller-supplied
     # ``source_id`` (minted by the HTTP route and already echoed to the
@@ -4800,15 +4755,7 @@ def _ingest_connector(
 
             refused = _upload_refusal(upload_index(vector_store_path, file_data))
             if refused:
-                # Deleted, or made a wiki, while the sync ran: nothing was
-                # stored, so it neither completes nor builds a graph.
-                logging.info(f"The API refused the sync of source {source_id_for_events}: {refused}")
-                _drop_refused_sync_vectors(refused, source_id_for_events)
-                _publish_sync_not_run(
-                    self, user, source_id_for_events, job_name, source_type,
-                    _SYNC_SKIP_MESSAGES.get(refused, _SYNC_SKIP_MESSAGES["gone"]), refused, actor_id=actor_id,
-                )
-                return {"id": source_id_for_events, "status": "skipped", "reason": refused}
+                return _skip_refused_sync(self, user, source_id_for_events, job_name, source_type, refused, actor_id)
             if connection_id:
                 _link_source_to_connection(source_id_for_events, connection_id)
 
@@ -4991,16 +4938,45 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
+
+    def _out_of_retries(_busy: SourceBusy) -> None:
+        # The page is not embedded, and says so.
+        with db_session() as conn:
+            WikiPagesRepository(conn).set_embed_status(source_id, path, "failed")
+
+    return _locked_or_retry(
+        self, source_index_lock, source_id, lambda: _reembed_wiki_page(source, path, user), _out_of_retries,
+    )
+
+
+def _locked_or_retry(
+    task: Any, lock: Callable[[str], Any], source_id: str, run: Callable[[], Dict[str, Any]],
+    on_exhausted: Callable[[SourceBusy], None],
+) -> Dict[str, Any]:
+    """Run ``run`` holding ``lock`` on the source; a source busy past the wait retries the task later.
+
+    Args:
+        task: The bound Celery task.
+        lock: ``source_index_lock`` or ``graph_extract_lock``.
+        source_id: The source.
+        run: The work.
+        on_exhausted: Called with the error once the retries have run out.
+
+    Returns:
+        What ``run`` returned.
+
+    Raises:
+        celery.exceptions.Retry: The source was busy; the task runs again later.
+        SourceBusy: Still busy after the last retry.
+    """
     try:
-        with source_index_lock(source_id):
-            return _reembed_wiki_page(source, path, user)
+        with lock(source_id):
+            return run()
     except SourceBusy as busy:
         try:
-            raise self.retry(exc=busy, countdown=BUSY_RETRY_COUNTDOWN_SECONDS)
-        except SourceBusy:
-            # Out of retries: the page is not embedded, and says so.
-            with db_session() as conn:
-                WikiPagesRepository(conn).set_embed_status(source_id, path, "failed")
+            raise task.retry(exc=busy, countdown=BUSY_RETRY_COUNTDOWN_SECONDS)
+        except SourceBusy as error:
+            on_exhausted(error)
             raise
 
 
@@ -5073,76 +5049,24 @@ def _reembed_wiki_page(source: Dict[str, Any], path: str, user: str) -> Dict[str
     return {"status": "embedded", "added": added, "deleted": deleted}
 
 
-def _web_page_key(url: str) -> str:
-    """``page_key`` for a stored page URL, falling back to the URL when it can't be parsed.
-
-    Args:
-        url: A page URL.
-
-    Returns:
-        A key that is the same for address variants of one page.
-    """
-    from docsgpt.parser.remote.page_content import page_key
-
-    try:
-        return page_key(url)
-    except ValueError:
-        return url
-
-
-def _page_aliases(url: Optional[str], info: Any) -> List[str]:
-    """The other addresses that led to a page: the ones its fetch was asked for and redirected from.
-
-    Read from a tree leaf or a fetched document's ``extra_info``: the list
-    ``requested_urls``, then the single ``requested_url`` older leaves and
-    parsers carry.
-
-    Args:
-        url: The page's own address; an alias with its ``page_key`` is dropped.
-        info: The leaf or ``extra_info``.
-
-    Returns:
-        The aliases in order, one per ``page_key``.
-    """
-    if not isinstance(info, dict):
-        return []
-    listed = info.get("requested_urls")
-    candidates = [*(listed if isinstance(listed, list) else []), info.get("requested_url")]
-    seen = {_web_page_key(url)} if url else set()
-    aliases: List[str] = []
-    for candidate in candidates:
-        if isinstance(candidate, str) and candidate:
-            key = _web_page_key(candidate)
-            if key not in seen:
-                seen.add(key)
-                aliases.append(candidate)
-    return aliases
-
-
 def _alias_fields(aliases: List[str]) -> Dict[str, Any]:
-    """A page leaf's alias fields: ``requested_urls``, and ``requested_url`` (the first) for older readers.
+    """A page leaf's ``requested_urls`` field, or ``{}`` for a page nothing redirected to."""
+    return {"requested_urls": list(aliases)} if aliases else {}
 
-    Args:
-        aliases: ``_page_aliases`` of the page.
 
-    Returns:
-        The fields, or ``{}`` for a page nothing redirected to.
-    """
-    return {"requested_urls": list(aliases), "requested_url": aliases[0]} if aliases else {}
+def _tree_of(row: Dict[str, Any]) -> Dict[str, Any]:
+    """A source row's ``directory_structure``, or ``{}`` when it holds none."""
+    structure = row.get("directory_structure")
+    return structure if isinstance(structure, dict) else {}
+
+
+def _listed_page_keys(config: Dict[str, Any]) -> set:
+    """The ``page_key`` of every page entry in a Website config."""
+    return {_web_page_key(e["url"]) for e in config.get("entries") or [] if e.get("mode") == "page"}
 
 
 def _unique_page_path(path: str, taken: set) -> str:
-    """``path``, or the first ``stem-N.md`` (N from 2) no other page has.
-
-    The same rule ``dedupe_virtual_paths`` applies within one fetch.
-
-    Args:
-        path: The page's virtual path.
-        taken: Paths other pages already have.
-
-    Returns:
-        A path not in ``taken``.
-    """
+    """``path``, or the first ``stem-N.md`` (N from 2) not in ``taken``, as ``dedupe_virtual_paths`` names them."""
     if path not in taken:
         return path
     stem = path[: -len(".md")] if path.endswith(".md") else path
@@ -5150,41 +5074,6 @@ def _unique_page_path(path: str, taken: set) -> str:
     while f"{stem}-{suffix}.md" in taken:
         suffix += 1
     return f"{stem}-{suffix}.md"
-
-
-def _tree_leaves(structure: Any, prefix: str = "") -> List[Tuple[str, Dict[str, Any]]]:
-    """Every file in a tree, web page or not: a leaf is a node with a ``token_count``.
-
-    A tree from before leaves carried their page's ``url`` has leaves without
-    one; their paths are taken all the same. The tree is walked without
-    recursion: a page's path follows its URL, which can nest deeper than
-    Python's recursion limit.
-
-    Args:
-        structure: ``directory_structure``.
-        prefix: Path of ``structure`` within the whole tree.
-
-    Returns:
-        ``(path, leaf)`` for each leaf, depth first in stored order.
-    """
-    leaves: List[Tuple[str, Dict[str, Any]]] = []
-    if not isinstance(structure, dict):
-        return leaves
-    # Each frame is a folder's remaining children; the deepest is walked first.
-    stack = [(prefix, iter(structure.items()))]
-    while stack:
-        folder, children = stack[-1]
-        entry = next(children, None)
-        if entry is None:
-            stack.pop()
-            continue
-        name, node = entry
-        path = f"{folder}/{name}" if folder else name
-        if isinstance(node, dict) and "token_count" in node:
-            leaves.append((path, node))
-        elif isinstance(node, dict):
-            stack.append((path, iter(node.items())))
-    return leaves
 
 
 def _delete_chunks_checked(store: Any, chunk_ids: List[str], relist: Callable[[], Iterable[str]]) -> None:
@@ -5223,27 +5112,21 @@ def _website_page_targets(
     """What a ``website_pages`` run fetches, and where each page goes in the tree.
 
     A page already in the tree (matched by ``page_key``, so ``/docs/`` and
-    ``/docs#a`` are one page) keeps its path and has its stored copy
-    replaced. A new page takes its virtual path, or a free ``-N`` variant of
-    it when another leaf already has that path (a page, or a leaf from before
-    leaves carried their address).
+    ``/docs#a`` are one page, or by an address that redirected to it) keeps
+    its path and has its stored copy replaced. A new page takes its virtual
+    path, or a free ``-N`` variant of it when another leaf has that path.
 
-    A refreshed page is found by its address (``page_key``) in the tree as it
-    is now: a sync that ran after the route re-derives the ``-N`` paths, so
-    the path the route saw may hold another page. Only a task queued before
-    refreshes carried the address falls back to ``file_path``.
-
-    A page stored after a redirect (its leaf's ``requested_urls``) is also
-    found by every address it was asked for, and is refreshed by fetching the
-    first of them again, as a sync fetches its entry.
+    A refreshed page is found by its address in the tree as it is now (a sync
+    may have moved it), and is fetched from the first address it was asked
+    for, as a sync fetches its entry.
 
     Args:
         operation: ``add`` or ``refresh``.
         pages: ``(path, url)`` of the pages in the tree.
         urls: For ``add``: the addresses to fetch.
-        file_path: For ``refresh``: the page's tree path when the route checked it.
+        file_path: For ``refresh``: the path the route saw, preferred when two leaves hold the page.
         taken_paths: Every leaf path in the tree, pages or not.
-        url: For ``refresh``: the page's address when the route checked it.
+        url: For ``refresh``: the page's address.
         requested: ``{path: aliases}`` of the pages stored after a redirect (``_page_aliases``).
 
     Returns:
@@ -5257,21 +5140,14 @@ def _website_page_targets(
 
     requested = requested or {}
     if operation == "refresh":
-        if url:
-            key = _web_page_key(url)
-            matches = [
-                (path, page_url) for path, page_url in pages
-                if key in {_web_page_key(u) for u in (page_url, *requested.get(path, ())) if u}
-            ]
-            if not matches:
-                raise ValueError(f"The page {url} is no longer in this source")
-            # The path the route saw first, should two leaves share the page.
-            path, stored_url = next((m for m in matches if m[0] == file_path), matches[0])
-        else:
-            path, stored_url = file_path, dict(pages).get(file_path)
-            if not stored_url:
-                raise ValueError(f"No page at {file_path!r} in this source")
-        # A redirected page is fetched from the address it was asked for, as a sync does.
+        key = _web_page_key(url or "")
+        matches = [
+            (path, page_url) for path, page_url in pages
+            if key in {_web_page_key(u) for u in (page_url, *requested.get(path, ())) if u}
+        ]
+        if not matches:
+            raise ValueError(f"The page {url} is no longer in this source")
+        path, stored_url = next((m for m in matches if m[0] == file_path), matches[0])
         fetch_url = (requested.get(path) or [stored_url])[0]
         return [fetch_url], {_web_page_key(stored_url): {"path": path, "old_url": stored_url}}, False
     if operation != "add":
@@ -5308,9 +5184,7 @@ class PageOutOfScope(ValueError):
     reason = "out_of_scope"
 
 
-def _refresh_in_scope(
-    source_type: Optional[str], config: Dict[str, Any], addresses: Iterable[Optional[str]], final_url: str,
-) -> bool:
+def _refresh_in_scope(config: Dict[str, Any], addresses: Iterable[Optional[str]], final_url: str) -> bool:
     """Whether a sync would still keep a refreshed page fetched as ``final_url``.
 
     A page entry is fetched wherever it leads, so a page any of whose
@@ -5320,16 +5194,9 @@ def _refresh_in_scope(
     of scope). A config with no entries (an old source whose address didn't
     parse) can't say, and keeps it.
 
-    A source of an old web type (``url``, ``crawler``, ``sitemap``) keeps
-    the page: a refresh leaves its type alone, and its sync runs the old
-    loader, which keeps what it fetched (a sitemap's pages on any host). The
-    Website config converted from it (``config_from_legacy``) is narrower,
-    and would remove pages its own sync keeps. A page add or removal makes
-    the row a ``website``, and from then on its scope applies.
-
     Args:
-        source_type: ``sources.type``.
-        config: The source's Website config.
+        config: The source's Website config (an old url, crawler or sitemap
+            source's converted one, which its syncs load too).
         addresses: The page's stored address, the one it was asked for, and
             the ones the fetch reported.
         final_url: The address the fetch answered from.
@@ -5339,12 +5206,10 @@ def _refresh_in_scope(
     """
     from docsgpt.parser.remote.website_loader import SiteScope
 
-    if (source_type or "").lower() != "website":
-        return True
     entries = config.get("entries") or []
     if not entries:
         return True
-    listed = {_web_page_key(e["url"]) for e in entries if e.get("mode") == "page"}
+    listed = _listed_page_keys(config)
     if any(_web_page_key(address) in listed for address in addresses if address):
         return True
     skip = config.get("skip") or []
@@ -5361,18 +5226,12 @@ def _update_page_graph(
 ) -> None:
     """Bring a graphrag source's graph up to date after a page change, chunk by chunk.
 
-    The deleted chunks' entities and relationships come out first
-    (``GraphStore.delete_chunks``, no LLM call). Then, for added or refreshed
-    pages, ``extract_graph`` is queued without the reset a full rebuild does,
-    naming the new chunks: only they are sent to the model, within the
-    source's chunk cap, so a source the full build left over its cap doesn't
-    bill its backlog on every page change. The key carries the page task's
-    id, so each change queues its own run rather than deduping against the
-    last full build.
+    The deleted chunks' entities and relationships come out first (no LLM
+    call); then ``extract_graph`` is queued, without a reset, for the new
+    chunks only, keyed by the page task so each change gets its own run.
 
     A no-op for any other source, or when GraphRAG is unavailable. Never
-    raises: a failure is logged and leaves the graph as it was (nothing is
-    extracted on top of entries that couldn't be dropped), and the page
+    raises: a failure is logged and leaves the graph as it was, and the page
     change stands.
 
     Args:
@@ -5408,19 +5267,15 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
                       fetched_at: str) -> Dict[str, Any]:
     """Store a fetched page's new chunks, in one batch; its previous copy stays until the tree is written.
 
-    The chunks go in through ``add_chunks``, all or none: if one fails (an
-    embedding error) the store takes the ones already added out again, so
-    the page is never left with partial content. The old chunks are listed
-    before anything is added, so only they are deleted once the tree lists
-    the new copy (``_save_page_changes``).
+    ``add_chunks`` stores all of them or none, so a page is never left with
+    partial content. The old chunks are listed before anything is added, so
+    only they are deleted once the tree lists the new copy (``_save_page_changes``).
 
     Args:
         store: The source's vector store.
         chunker: The source's chunker.
-        doc: The fetched page; ``extra_info["source"]`` is its URL, and
-            ``extra_info["requested_urls"]`` (or the older single
-            ``requested_url``) the addresses asked for when the fetch was
-            redirected.
+        doc: The fetched page; ``extra_info["source"]`` is its URL and
+            ``extra_info["requested_urls"]`` the addresses that redirected to it.
         path: Its tree path.
         old_url: The stored address of the copy it replaces, if any.
         fetched_at: When it was fetched (ISO 8601).
@@ -5428,9 +5283,7 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
     Returns:
         ``{"key", "path", "leaf", "old_url", "requested_urls", "old_ids",
         "new_ids"}``: the tree change for the page, the chunks it replaces and
-        the ones it added. The leaf carries ``requested_urls`` (and
-        ``requested_url``) only after a redirect; ``_apply_page_changes``
-        merges in the ones the page's current leaf keeps.
+        the ones it added.
 
     Raises:
         Exception: Whatever adding the chunks raised; none of them stay.
@@ -5481,11 +5334,7 @@ def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_ur
 
 
 def _change_keys(change: Dict[str, Any]) -> set:
-    """The ``page_key``s a page change covers.
-
-    Its fetched address and, after a redirect, the one it replaced and the
-    ones it was asked for.
-    """
+    """The ``page_key``s a page change covers: its address, the one it replaced and the ones that led to it."""
     keys = {change["key"]}
     for url in (change.get("old_url"), *change.get("requested_urls", ())):
         if url:
@@ -5493,22 +5342,25 @@ def _change_keys(change: Dict[str, Any]) -> set:
     return keys
 
 
-def _apply_page_changes(structure: Dict[str, Any], changes: List[Dict[str, Any]]) -> None:
+def _apply_page_changes(structure: Dict[str, Any], changes: List[Dict[str, Any]]) -> List[str]:
     """Put replaced and added pages into a tree, in place.
 
     Any entry for the same page (by ``page_key``, the replaced address
     included) is removed first, so an address variant or a page that now
     redirects doesn't leave a second entry behind. A removed entry for the
-    same fetched page hands its other addresses (``requested_urls``) on to
-    the new one: a page two entries redirect to, added one entry at a time,
-    keeps both.
+    same fetched page hands its ``requested_urls`` on to the new one: a page
+    two entries redirect to, added one entry at a time, keeps both.
 
     Args:
         structure: ``directory_structure``.
         changes: ``_replace_web_page`` results.
+
+    Returns:
+        The tree paths written or removed.
     """
     from docsgpt.parser.remote.website_tree import remove_pages, set_page
 
+    touched: List[str] = []
     for change in changes:
         keys = _change_keys(change)
         stale = [
@@ -5521,18 +5373,19 @@ def _apply_page_changes(structure: Dict[str, Any], changes: List[Dict[str, Any]]
             for alias in _page_aliases(leaf["url"], leaf)
         ]
         aliases = _page_aliases(url, {"requested_urls": [*kept_aliases, *change.get("requested_urls", ())]})
-        leaf = {k: v for k, v in change["leaf"].items() if k not in ("requested_urls", "requested_url")}
-        remove_pages(structure, [path for path, _leaf in stale])
+        leaf = {k: v for k, v in change["leaf"].items() if k != "requested_urls"}
+        stale_paths = [path for path, _leaf in stale]
+        remove_pages(structure, stale_paths)
         set_page(structure, change["path"], {**leaf, **_alias_fields(aliases)})
+        touched += [*stale_paths, change["path"]]
+    return list(dict.fromkeys(touched))
 
 
 def _tree_fields(row: Dict[str, Any], structure: Dict[str, Any]) -> Dict[str, Any]:
     """The fields a page change writes with a source's new tree.
 
-    ``tokens`` follows the tree, and so does the page count the Website
-    settings show (``metadata.website.pages``, written by an ingest or a
-    sync): an add or a removal must not leave it at the last sync's count.
-    A source with no report yet gets none.
+    ``tokens`` follows the tree, and so does the page count of the source's
+    Website report (``metadata.website.pages``), when it has one.
 
     Args:
         row: The source row the tree was read from.
@@ -5571,25 +5424,21 @@ def _delete_change_chunks(store: Any, change: Dict[str, Any], which: str) -> Non
         )
 
 
-def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _save_page_changes(
+    store: Any, source_id: str, user: str, changes: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Write a ``website_pages`` run's page changes onto the source's current tree, then drop the old chunks.
 
     The order is new chunks (already stored), then the tree, then the old
     chunks, so no page is ever without content and no chunk is left that no
-    tree entry lists:
+    tree entry lists. A failed tree write deletes the new chunks and raises,
+    leaving every page its old copy; a failed delete of an old copy leaves it
+    beside the new one under the same address (logged).
 
-    * the tree write fails (a database error): the new chunks are deleted
-      and the error raised; every page keeps its old copy and its entry;
-    * the tree is written: each kept page's previous chunks are deleted. If
-      that fails, the old copy lingers beside the new one under the same
-      listed address (logged), rather than a page losing its content.
-
-    The row is re-read under a row lock inside the write, so a change made
-    while the pages were fetched (a sync's new tree, a removal, a config
-    edit) is kept: only this run's pages are set. A page this run replaced
-    that has since left the tree (removed meanwhile) is not brought back:
-    its new and old chunks are deleted. A source that became a wiki or was
-    deleted meanwhile is not touched: only the new chunks are deleted.
+    The row is re-read under a row lock, so a change made while the pages
+    were fetched is kept. A replaced page that has left the tree meanwhile
+    is not brought back (both copies' chunks go); a source deleted or made a
+    wiki meanwhile is not touched (only the new chunks go).
 
     Args:
         store: The source's vector store.
@@ -5598,7 +5447,7 @@ def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict
         changes: ``_replace_web_page`` results.
 
     Returns:
-        The changes written.
+        The changes written, and the tree paths they wrote or removed.
 
     Raises:
         ValueError: The source is gone or became a wiki; the new chunks were deleted.
@@ -5607,16 +5456,17 @@ def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict
     from docsgpt.parser.remote.website_tree import web_pages
 
     kept: List[Dict[str, Any]] = []
+    paths: List[str] = []
     try:
         with db_session() as conn:
             repo = SourcesRepository(conn)
             row = repo.get_for_update(source_id, user)
             gone = row is None or _is_wiki_config(row.get("config"))
             if not gone:
-                structure = row.get("directory_structure") if isinstance(row.get("directory_structure"), dict) else {}
+                structure = _tree_of(row)
                 present = {_web_page_key(url) for _, url in web_pages(structure)}
                 kept = [change for change in changes if change["old_url"] is None or _change_keys(change) & present]
-                _apply_page_changes(structure, kept)
+                paths = _apply_page_changes(structure, kept)
                 repo.update(source_id, user, _tree_fields(row, structure))
     except Exception:
         # No entry lists the new chunks: take them out, and the old copies stay as they were.
@@ -5632,36 +5482,23 @@ def _save_page_changes(store: Any, source_id: str, user: str, changes: List[Dict
             _delete_change_chunks(store, change, "new_ids")
     if gone:
         raise ValueError("The source was deleted or became a wiki while its pages were fetched; nothing was changed")
-    return kept
+    return kept, paths
 
 
 def _pages_to_remove(
-    structure: Dict[str, Any], pages: Optional[List[Dict[str, str]]], file_paths: Optional[List[str]],
+    structure: Dict[str, Any], pages: Optional[List[Dict[str, str]]],
 ) -> List[Tuple[str, Optional[str]]]:
     """Resolve a removal's pages against the tree as it is now.
 
-    A page named with its address is the leaf whose address has the same
-    ``page_key``, wherever it is now: a sync that ran after the route
-    re-derives the paths (sorted by URL), so the path the route saw may hold
-    another page. A page named without one (a leaf from before leaves carried
-    their address) and a bare ``file_paths`` entry (a task queued before
-    ``pages`` existed) fall back to the path.
-
-    A redirected page is one page under all its addresses: the leaf's
-    ``url`` and its aliases (``requested_urls``, or an older leaf's single
-    ``requested_url``) are matched against the page's ``url`` and aliases
-    (the same fields), so a sync that fetched it again (redirected or not any
-    more) still removes it.
-
-    A leaf from before leaves carried their address is matched by its path,
-    also when the route resolved its address from its chunks (``url`` given,
-    and no leaf carries it): a sync writes every leaf's address, so a tree
-    that still has such a leaf hasn't had its paths re-derived since.
+    A page is the leaf any of whose addresses (its ``url`` and
+    ``requested_urls``) has the ``page_key`` of one of the page's, wherever a
+    sync moved it, so a path the route saw can't take another page. A leaf
+    without an address (an older crawler tree) is matched by its path, also
+    when the route resolved an address for it from its chunks.
 
     Args:
         structure: ``directory_structure``, as it is now.
-        pages: ``{"path", "url", "requested_urls"?, "requested_url"?}`` per page.
-        file_paths: Tree paths, from a task queued before ``pages``.
+        pages: ``{"path", "url", "requested_urls"?}`` per page.
 
     Returns:
         ``(path, url)`` per leaf to remove; ``url`` is ``None`` for a leaf
@@ -5674,9 +5511,8 @@ def _pages_to_remove(
             for address in (leaf["url"], *_page_aliases(leaf["url"], leaf)):
                 by_key.setdefault(_web_page_key(address), []).append((path, leaf["url"]))
     by_path = {path: leaf.get("url") or None for path, leaf in leaves}
-    requested = list(pages or []) + [{"path": path} for path in file_paths or []]
     found: List[Tuple[str, Optional[str]]] = []
-    for page in requested:
+    for page in pages or []:
         if not isinstance(page, dict):
             continue
         addresses = [u for u in (page.get("url"), *_page_aliases(page.get("url"), page)) if u]
@@ -5694,11 +5530,8 @@ def _not_listed_again(
 ) -> List[Tuple[str, Optional[str]]]:
     """The pages to remove, less those the source's config lists as page entries now.
 
-    The route drops a page's entry before it queues the removal. When the
-    page is added back before the removal gets the lock, the add (which
-    fetches only listed addresses) stores it again; the removal must not
-    then take out a page the config lists. The counterpart of the add's
-    filter in ``_run_website_pages``.
+    The route unlists a page before it queues the removal; a page added back
+    before the removal got the lock is stored again, and must stay.
 
     Args:
         source: The source row, read under the index lock.
@@ -5711,8 +5544,7 @@ def _not_listed_again(
     """
     from docsgpt.parser.remote.website_tree import config_from_legacy
 
-    config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
-    listed = {_web_page_key(e["url"]) for e in config.get("entries") or [] if e.get("mode") == "page"}
+    listed = _listed_page_keys(config_from_legacy(source.get("type"), source.get("remote_data")) or {})
     if not listed:
         return found
     leaves = dict(_tree_leaves(structure))
@@ -5734,63 +5566,43 @@ def _not_listed_again(
 
 
 def _remove_web_pages(
-    source_id: str, user: str, file_paths: Optional[List[str]], task_id: Optional[str] = None,
-    pages: Optional[List[Dict[str, str]]] = None,
-) -> List[Tuple[str, Optional[str]]]:
+    source: Dict[str, Any], user: str, task_id: Optional[str], pages: Optional[List[Dict[str, str]]],
+) -> Dict[str, Any]:
     """Delete pages from a Website source: their chunks first, then their tree entries.
 
-    Run holding the source's index lock. The pages are looked up in the tree
-    as it is now (``_pages_to_remove``): by address, so a sync that moved a
-    page to another path can't make the removal take whichever page holds the
-    old one, and a page that has left the tree (a retried task, a sync that
-    dropped it) is ignored, and so is one the config lists as a page entry
-    again (added back before this got the lock; ``_not_listed_again``). The
-    chunks go in one batched delete (FAISS saves
-    once) and are checked gone (``_delete_chunks_checked``); if any is still
-    stored, the tree is not written, so every page still listed keeps its
-    chunks and the removal can be tried again. The tree is written on the
-    row re-read under a row lock, so a change made meanwhile is kept. A
-    graphrag source's graph drops the chunks' entities and relationships
-    (``_update_page_graph``) as soon as the chunks are deleted, before the
-    tree is written, and drops the ones a part-way delete took: a retry only
-    finds the chunks still stored.
+    Run holding the source's index lock, on the row read under it. The pages
+    are looked up in the tree as it is now (``_pages_to_remove``), less any
+    the config lists as a page entry again (``_not_listed_again``). Their
+    chunks go in one batched delete and are checked gone; if any is still
+    stored the tree is not written, so every page still listed keeps its
+    chunks and the removal can be tried again. The tree is written on the row
+    re-read under a row lock. A graphrag source's graph drops the deleted
+    chunks before the tree is written: a retry would no longer find them.
 
     Args:
-        source_id: The source.
+        source: The source row.
         user: Its owner.
-        file_paths: Tree paths, from a task queued before ``pages``.
         task_id: The page task's id.
         pages: ``{"path", "url", "requested_urls"?}`` of the pages to remove;
             for a leaf without an address, ``url`` is the one the route
             resolved from its chunks, or ``""``.
 
     Returns:
-        ``(path, url)`` of the pages removed.
+        ``{"pages": n, "paths": [...]}`` of the pages removed.
 
     Raises:
-        ValueError: The store can't delete single chunks, or the source is
-            gone or a wiki.
+        ValueError: The source was deleted meanwhile.
         Exception: Whatever deleting the chunks raised, or some are still
             stored; nothing was written.
     """
     from docsgpt.parser.remote.website_tree import remove_pages
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
-    if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
-        raise ValueError(
-            f"The {settings.VECTOR_STORE} vector store can't change single pages; sync the source instead"
-        )
-    with db_readonly() as conn:
-        source = SourcesRepository(conn).get_any(source_id, user)
-    if not source:
-        raise ValueError(f"Source {source_id} not found or access denied")
-    if _is_wiki_config(source.get("config")):
-        raise ValueError("This source is a wiki now; its pages are edited in place")
-    structure = source.get("directory_structure") if isinstance(source.get("directory_structure"), dict) else {}
-    found = _pages_to_remove(structure, pages, file_paths)
-    found = _not_listed_again(source, structure, found, pages)
+    source_id = str(source["id"])
+    structure = _tree_of(source)
+    found = _not_listed_again(source, structure, _pages_to_remove(structure, pages), pages)
     if not found:
-        return []
+        return {"pages": 0, "paths": []}
 
     store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
     urls = list(dict.fromkeys(url for _path, url in found if url))
@@ -5813,10 +5625,10 @@ def _remove_web_pages(
     try:
         _delete_chunks_checked(store, chunk_ids, _listed)
     except Exception:
-        # Some chunks may be gone already; a retry lists only the rest, so
+        # Some chunks may be gone already, and a retry lists only the rest:
         # the graph drops the deleted ones now or never. The listing reads
-        # what the store holds: a FAISS delete whose save failed has put its
-        # chunks back in the loaded index, so none of them reads as gone.
+        # what the store holds (a FAISS delete whose save failed has put its
+        # chunks back in the loaded index).
         try:
             still = {str(chunk_id) for chunk_id in _listed()}
         except Exception:  # noqa: BLE001 - can't tell which went; the next full build settles the graph
@@ -5826,9 +5638,6 @@ def _remove_web_pages(
             if gone:
                 _update_page_graph(cfg, source_id, user, task_id, gone)
         raise
-    # The graph follows before the tree is written: once the chunks are gone a
-    # retry finds no ids to name, so a failed tree write would leave the
-    # page's entities in the graph for good. Dropping them is idempotent.
     _update_page_graph(cfg, source_id, user, task_id, chunk_ids)
 
     removed_keys = {_web_page_key(url) for url in urls}
@@ -5837,7 +5646,7 @@ def _remove_web_pages(
         row = repo.get_for_update(source_id, user)
         if row is None:
             raise ValueError(f"Source {source_id} was deleted while its pages were removed")
-        tree = row.get("directory_structure") if isinstance(row.get("directory_structure"), dict) else {}
+        tree = _tree_of(row)
         # Only the entries still holding a page whose chunks were deleted.
         stale = [
             path for path, leaf in _tree_leaves(tree)
@@ -5845,7 +5654,7 @@ def _remove_web_pages(
         ]
         remove_pages(tree, stale)
         repo.update(source_id, user, _tree_fields(row, tree))
-    return found
+    return {"pages": len(found), "paths": [path for path, _url in found]}
 
 
 def _sync_instead_of_overfilling(
@@ -5854,13 +5663,10 @@ def _sync_instead_of_overfilling(
 ) -> Optional[str]:
     """Queue a sync of the source when appending ``urls`` would take it past ``WEB_MAX_PAGES``.
 
-    The route checks the cap against the tree it reads, but a sync that held
-    the lock meanwhile may have filled the tree with a site's pages from a
-    config read before the pages were listed. Appending them then would leave
-    the source over its cap. A sync fetches page entries first and gives the
-    sites what is left, so it makes room for them instead. Pages are counted
-    as the route counts them (``held_pages``): the tree's pages and the listed
-    page entries, each page once.
+    A sync that held the lock meanwhile may have filled the tree past what
+    the route counted. A sync fetches page entries first and gives the sites
+    what is left, so it makes room for them instead. Pages are counted as the
+    route counts them (``held_pages``).
 
     Args:
         source: The source row, read under the index lock.
@@ -5900,6 +5706,27 @@ def _sync_instead_of_overfilling(
     return str(task.id)
 
 
+def _website_to_change(source_id: str, user: str) -> Dict[str, Any]:
+    """Read a Website source under its index lock, refusing a page change it can't take.
+
+    Raises:
+        ValueError: The store can't change single pages, or the source is gone or a wiki.
+    """
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        raise ValueError(
+            f"The {settings.VECTOR_STORE} vector store can't change single pages; sync the source instead"
+        )
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    if _is_wiki_config(source.get("config")):
+        raise ValueError("This source is a wiki now; its pages are edited in place")
+    return source
+
+
 def website_pages_worker(
     self: Any,
     source_id: str,
@@ -5907,7 +5734,6 @@ def website_pages_worker(
     operation: str,
     urls: Optional[List[str]] = None,
     file_path: Optional[str] = None,
-    file_paths: Optional[List[str]] = None,
     pages: Optional[List[Dict[str, str]]] = None,
     url: Optional[str] = None,
     actor_id: Optional[str] = None,
@@ -5916,28 +5742,19 @@ def website_pages_worker(
 
     A sync wipes the index and rebuilds it; this changes only the pages named.
     Each page is fetched first, so one that can't be fetched leaves the source
-    as it was. A fetched page is stored whole or not at all: its new chunks go
-    in before its old ones (keyed by its stored URL) are deleted, and a failure
-    part-way deletes the new ones again. Pages finished before a failure stay,
-    tree entry included; the failing page and the ones after it are left as
-    they were, and the task fails. The route sends whole-site additions and
-    pages on a new host to a sync instead: those rename the tree.
+    as it was, and a fetched page is stored whole or not at all. Pages
+    finished before a failure stay; the failing page and the ones after it
+    are left as they were, and the task fails. The route sends whole-site
+    additions and pages on a new host to a sync instead: those rename the tree.
 
     A refreshed page found by a site's crawl that now leads outside the
-    site's scope, or to an address a skip rule covers, is removed rather than
-    stored, as the next sync would drop it; the task fails with
-    ``PageOutOfScope`` (``reason: out_of_scope`` on the failed event). A page
-    entry is refreshed wherever it leads, as a sync fetches it.
+    site's scope or skip rules is removed, as the next sync would drop it, and
+    the task fails with ``PageOutOfScope`` (``reason: out_of_scope``). A
+    removal deletes the pages' chunks, then their tree entries. On a graphrag
+    source the graph follows each change without a full rebuild.
 
-    A removal (``_remove_web_pages``) deletes the pages' chunks, then their
-    tree entries; the route has already saved the skip rules. Each page is
-    found by its address in the tree as it is then, wherever a sync moved it.
-    On a graphrag source, the graph follows each change without a full
-    rebuild (``_update_page_graph``).
-
-    The run holds the source's index lock (``source_index_lock``), so it
-    waits for a sync or another page change on the same source, and writes
-    its pages onto the tree as it is when it finishes.
+    The run holds the source's index lock (``source_index_lock``), so it takes
+    turns with a sync or another page change, and reads the source under it.
 
     Args:
         self: Celery task instance.
@@ -5945,30 +5762,28 @@ def website_pages_worker(
         user: Its owner (the route resolves it).
         operation: ``add`` (fetch ``urls``), ``refresh`` (re-fetch the page
             ``url``) or ``remove`` (delete ``pages``).
-        urls: Page URLs to add, listed in the config by the route; only
-            those it still lists as pages when the run starts are fetched.
-        file_path: Tree path of the page to refresh; only a task queued
-            without ``url`` finds the page by it.
-        file_paths: Tree paths of pages to remove, from a task queued before
-            ``pages``; matched by path.
-        pages: ``{"path", "url", "requested_urls"?}`` of the pages to remove,
-            matched by address (by path for a leaf without one).
-        url: Address of the page to refresh, matched by ``page_key`` in the
-            tree as it is when the run starts.
+        urls: For ``add``: page URLs the route listed in the config; only
+            those it still lists when the run starts are fetched.
+        file_path: For ``refresh``: the page's tree path when the route
+            checked it, preferred when two leaves hold the page.
+        pages: For ``remove``: ``{"path", "url", "requested_urls"?}`` of the
+            pages, matched by address (by path for a leaf without one).
+        url: For ``refresh``: the page's address, matched in the tree as it is
+            when the run starts.
         actor_id: The user who asked for the change (a team editor), who gets
             its ``source.ingest.*`` events too; ``None`` for the owner.
 
     Returns:
-        ``{"status": "ok", "pages": n}``, plus ``failed_pages`` (the
-        addresses that gave no page) when an add fetched only some, or
-        ``"mode": "sync"`` and ``sync_task_id`` when the added pages no
-        longer fit within ``WEB_MAX_PAGES`` and a sync was queued instead
-        (``_sync_instead_of_overfilling``). The completed event carries the
-        same fields.
+        ``{"status": "ok", "pages": n, "paths": [...]}`` (``paths``: the tree
+        paths written or removed), plus ``failed_pages`` (the addresses that
+        gave no page) when an add fetched only some; or ``{"status": "ok",
+        "pages": 0, "mode": "sync", "sync_task_id": ...}`` when the added pages
+        no longer fit within ``WEB_MAX_PAGES`` and a sync was queued instead.
+        The completed event carries the same fields.
 
     Raises:
-        ValueError: The source or page is unknown, the source is a wiki, or no
-            page could be fetched.
+        ValueError: The source or page is unknown, the source is a wiki or
+            its store can't change single pages, or no page could be fetched.
     """
     source_id = str(source_id)
     event_operation = {"add": "add_pages", "remove": "remove_pages"}.get(operation, "refresh_page")
@@ -5979,88 +5794,64 @@ def website_pages_worker(
         "operation": event_operation,
         **_task_id_field(self),
     }
+    task_id = envelope.get("task_id")
     try:
         with db_readonly() as conn:
             source = SourcesRepository(conn).get_any(source_id, user)
         if not source:
             raise ValueError(f"Source {source_id} not found or access denied")
-    except Exception as e:
-        # The UI is waiting on this task's id: a source it can't read (a
-        # database error, or deleted before the task ran) still ends it.
-        logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
+        source_id = str(source["id"])
+        envelope.update({"source_id": source_id, "job_name": source.get("name", "")})
         _publish_source_event(
-            user, actor_id, "source.ingest.failed", {**envelope, "error": str(e)[:1024]},
-            scope={"kind": "source", "id": source_id},
+            user, actor_id, "source.ingest.queued", envelope, scope={"kind": "source", "id": source_id},
         )
-        raise
-    source_id = str(source["id"])
-    envelope.update({"source_id": source_id, "job_name": source.get("name", "")})
-    _publish_source_event(user, actor_id, "source.ingest.queued", envelope, scope={"kind": "source", "id": source_id})
-
-    try:
-        task_id = envelope.get("task_id")
-        failed_pages: List[str] = []
-        sync_task_id: Optional[str] = None
         with source_index_lock(source_id):
+            source = _website_to_change(source_id, user)
             if operation == "remove":
-                changes = _remove_web_pages(source_id, user, file_paths, task_id, pages=pages)
+                outcome = _remove_web_pages(source, user, task_id, pages)
             else:
-                changes, failed_pages, sync_task_id = _run_website_pages(
-                    source_id, user, operation, urls, file_path, task_id, url=url, actor_id=actor_id,
-                )
+                outcome = _run_website_pages(source, user, operation, urls, file_path, task_id, url, actor_id)
     except Exception as e:
+        # The UI waits on this task's id: every way out ends it.
         logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
         failed = {**envelope, "error": str(e)[:1024]}
-        # Another change held the source past the wait: the UI says this one
-        # didn't run, as it does for a skipped sync.
         if isinstance(e, SourceBusy):
             failed["reason"] = "busy"
         elif isinstance(e, PageOutOfScope):
             failed["reason"] = e.reason
         _publish_source_event(user, actor_id, "source.ingest.failed", failed, scope={"kind": "source", "id": source_id})
         raise
-    # Addresses asked for that gave no page: the run still succeeded with the rest.
-    failed_field = {"failed_pages": failed_pages} if failed_pages else {}
-    # Pages that no longer fit beside the tree: a sync was queued to fetch them instead.
-    sync_field = {"mode": "sync", "sync_task_id": sync_task_id} if sync_task_id else {}
     _publish_source_event(
-        user, actor_id, "source.ingest.completed",
-        {**envelope, "pages": len(changes), "limited": False, **failed_field, **sync_field},
+        user, actor_id, "source.ingest.completed", {**envelope, "limited": False, **outcome},
         scope={"kind": "source", "id": source_id},
     )
-    return {"status": "ok", "pages": len(changes), **failed_field, **sync_field}
+    return {"status": "ok", **outcome}
 
 
 def _run_website_pages(
-    source_id: str, user: str, operation: str, urls: Optional[List[str]], file_path: Optional[str],
-    task_id: Optional[str] = None, url: Optional[str] = None, actor_id: Optional[str] = None,
-) -> Tuple[List[Dict[str, Any]], List[str], Optional[str]]:
-    """The body of ``website_pages_worker``, run holding the source's index lock.
+    source: Dict[str, Any], user: str, operation: str, urls: Optional[List[str]], file_path: Optional[str],
+    task_id: Optional[str], url: Optional[str], actor_id: Optional[str],
+) -> Dict[str, Any]:
+    """Add or refresh pages, holding the source's index lock, on the row read under it.
 
-    Once the pages are saved, a graphrag source's graph drops the replaced
-    chunks and extracts the new ones (``_update_page_graph``), failure or not:
-    the pages finished before a failure are in the source.
-
-    An address that gave no page (a 404, a timeout, a refused or empty
-    page) is reported, not failed, when another gave one: it counts as
-    fetched when a page came back under it or named it among the addresses
-    it was asked for (``requested_urls``).
+    An address that gave no page (a 404, a timeout, a refused or empty page)
+    is reported in ``failed_pages`` when another gave one. Once the pages are
+    saved, a graphrag source's graph follows (``_update_page_graph``), failure
+    or not: the pages finished before a failure are in the source.
 
     Args:
-        source_id: The source.
+        source: The source row.
         user: Its owner.
         operation: ``add`` or ``refresh``.
         urls: For ``add``: the addresses to fetch.
-        file_path: For ``refresh``: the page's tree path, for a task queued without ``url``.
+        file_path: For ``refresh``: the path the route saw.
         task_id: The page task's id.
         url: For ``refresh``: the page's address.
         actor_id: The user who asked for the change, passed to a sync queued instead.
 
     Returns:
-        ``(changes, failed_pages, sync_task_id)``: the page changes written,
-        the addresses fetched that gave no page, and the id of the sync
-        queued instead of an add that would take the source past
-        ``WEB_MAX_PAGES`` (``None`` otherwise).
+        The completed event's fields: ``{"pages", "paths", "failed_pages"?}``,
+        or ``{"pages": 0, "mode": "sync", "sync_task_id"}``.
 
     Raises:
         ValueError: As ``website_pages_worker``.
@@ -6071,36 +5862,21 @@ def _run_website_pages(
     from docsgpt.parser.remote.website_tree import config_from_legacy, web_pages
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
-    if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
-        raise ValueError(
-            f"The {settings.VECTOR_STORE} vector store can't change single pages; sync the source instead"
-        )
-    # Read again under the lock: a sync that held it has rewritten the tree.
-    with db_readonly() as conn:
-        source = SourcesRepository(conn).get_any(source_id, user)
-    if not source:
-        raise ValueError(f"Source {source_id} not found or access denied")
-    if _is_wiki_config(source.get("config")):
-        raise ValueError("This source is a wiki now; its pages are edited in place")
-    structure = source.get("directory_structure") or {}
-    if not isinstance(structure, dict):
-        structure = {}
+    source_id = str(source["id"])
+    structure = _tree_of(source)
     config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
     if operation == "add":
-        # The route listed each address before queueing; a removal that got
-        # the lock first may have taken it out again since. Only addresses
-        # the config still lists as pages are fetched, so an older add can't
-        # bring back a page the config now leaves out.
-        listed = {_web_page_key(e["url"]) for e in config.get("entries") or [] if e.get("mode") == "page"}
+        # A removal that got the lock first may have unlisted an address the
+        # route listed: only addresses the config still lists are fetched.
+        listed = _listed_page_keys(config)
         urls = [page_url for page_url in urls or [] if _web_page_key(page_url) in listed]
         if not urls:
             logging.info("website_pages add on %s: every page left the config before the run", source_id)
-            return [], [], None
+            return {"pages": 0, "paths": []}
         sync_task_id = _sync_instead_of_overfilling(source, config, structure, urls, user, actor_id)
         if sync_task_id is not None:
-            return [], [], sync_task_id
-    # Every leaf's path is taken, not only the pages': a leaf from before
-    # leaves carried their address must not be overwritten by a new page.
+            return {"pages": 0, "mode": "sync", "sync_task_id": sync_task_id}
+    # Every leaf's path is taken, a leaf without an address's too.
     leaves = _tree_leaves(structure)
     leaf_paths = {path for path, _leaf in leaves}
     requested = {
@@ -6114,17 +5890,6 @@ def _run_website_pages(
     docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(fetch)
     if not docs:
         raise ValueError("None of the pages could be fetched; the source is unchanged")
-    if len(fetch) == 1:
-        # One address asked for: a page that came back under another was
-        # redirected, whether or not the loader says so.
-        for doc in docs:
-            source_url = doc.extra_info["source"]
-            aliases = _page_aliases(
-                source_url, {"requested_urls": [*_page_aliases(source_url, doc.extra_info), fetch[0]]},
-            )
-            if aliases:
-                doc.extra_info["requested_urls"] = aliases
-                doc.extra_info["requested_url"] = doc.extra_info.get("requested_url") or aliases[0]
     fetched = {
         _web_page_key(address) for doc in docs
         for address in (doc.extra_info["source"], *_page_aliases(doc.extra_info["source"], doc.extra_info))
@@ -6177,8 +5942,7 @@ def _run_website_pages(
                 (targets[k] for k in map(_web_page_key, asked) if (targets.get(k) or {}).get("old_url")), None,
             )
         if target is None and operation == "refresh":
-            # A page is stored under the address it redirects to: a refreshed
-            # page that now redirects replaces itself, in place.
+            # A refreshed page that now redirects replaces itself, in place.
             target = next(iter(targets.values()))
         elif target is None and key in in_tree:
             # An added address that redirects to a page already in the source.
@@ -6188,21 +5952,17 @@ def _run_website_pages(
             target = {"path": _unique_page_path(url_to_virtual_path(doc_url, include_host), taken), "old_url": None}
             taken.add(target["path"])
         if target["old_url"] is None:
-            # A page a leaf from before leaves carried their address already
-            # holds goes back on that leaf's path: its old chunks are replaced
-            # below, and a new path would leave the old leaf listing none.
+            # A page a leaf without an address holds goes back on that leaf's
+            # path: a new path would leave the old leaf listing no chunks.
             legacy_path = _legacy_leaf([doc_url, *asked])
             if legacy_path:
                 target = {"path": legacy_path, "old_url": None}
         if operation == "refresh" and not _refresh_in_scope(
-            source.get("type"), config, (target["old_url"], *requested.get(target["path"], ()), doc_url, *asked), doc_url,
+            config, (target["old_url"], *requested.get(target["path"], ()), doc_url, *asked), doc_url,
         ):
-            # A crawled page that now leads out of its site's scope, or to a
-            # skipped address: the next sync drops it, so the refresh does
-            # too rather than storing what no sync would fetch.
-            _remove_web_pages(
-                source_id, user, None, task_id, pages=[{"path": target["path"], "url": target["old_url"]}],
-            )
+            # The next sync drops a crawled page that now leads out of scope,
+            # so the refresh does too rather than store it.
+            _remove_web_pages(source, user, task_id, [{"path": target["path"], "url": target["old_url"]}])
             moved = f"{target['old_url']} now leads to {doc_url}, which is" if doc_url != target["old_url"] else (
                 f"{doc_url} is"
             )
@@ -6215,16 +5975,15 @@ def _run_website_pages(
             failure = err
             break
 
-    kept = _save_page_changes(store, source_id, user, changes) if changes else []
+    kept, paths = _save_page_changes(store, source_id, user, changes) if changes else ([], [])
     if changes:
-        # The tree is written: every replaced copy's chunks were deleted, kept or
-        # not (a page removed meanwhile loses both copies); only kept pages add any.
+        # Every replaced copy's chunks were deleted, kept or not; only kept pages add any.
         old_ids = [chunk_id for change in changes for chunk_id in change["old_ids"]]
         new_ids = [chunk_id for change in kept for chunk_id in change["new_ids"]]
         _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids)
     if failure is not None:
         raise failure
-    return kept, failed_pages, None
+    return {"pages": len(kept), "paths": paths, **({"failed_pages": failed_pages} if failed_pages else {})}
 
 
 def _wiki_page_path_from_rel(rel_path):
@@ -6514,17 +6273,15 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None):
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
-    try:
-        with graph_extract_lock(source_id):
-            return _extract_graph(self, source, user, chunk_ids)
-    except SourceBusy as busy:
-        try:
-            raise self.retry(exc=busy, countdown=BUSY_RETRY_COUNTDOWN_SECONDS)
-        except SourceBusy as error:
-            _publish_graph_event(
-                user, source_id, "graph.extract.failed", {"source_id": source_id, "error": str(error)[:1024]},
-            )
-            raise
+
+    def _out_of_retries(error: SourceBusy) -> None:
+        _publish_graph_event(
+            user, source_id, "graph.extract.failed", {"source_id": source_id, "error": str(error)[:1024]},
+        )
+
+    return _locked_or_retry(
+        self, graph_extract_lock, source_id, lambda: _extract_graph(self, source, user, chunk_ids), _out_of_retries,
+    )
 
 
 def _extract_graph(self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]]) -> Dict[str, Any]:

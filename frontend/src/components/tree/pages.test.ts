@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  folderAddress,
-  nodeAtPath,
-  pageAddress,
-  withPageTitles,
-} from './pages';
+import { folderAddress, pageAddress, withPageTitles } from './pages';
 import type { FileNode } from './types';
 
 const leaf = (extra: Record<string, unknown> = {}) => ({
@@ -81,16 +76,6 @@ describe('withPageTitles, site suffix', () => {
 
     expect(mixed['a.md'].display_name).toBe('Intro | DocsGPT Docs');
     expect(single['a.md'].display_name).toBe('Intro | DocsGPT Docs');
-  });
-});
-
-describe('nodeAtPath', () => {
-  it('finds a leaf by its tree path', () => {
-    const structure = { a: { 'b.md': leaf({ url: 'https://x.io/a/b' }) } };
-
-    expect(nodeAtPath(structure, 'a/b.md')?.url).toBe('https://x.io/a/b');
-    expect(nodeAtPath(structure, 'a/missing.md')).toBeNull();
-    expect(nodeAtPath(structure, 'a')).toBeNull();
   });
 });
 

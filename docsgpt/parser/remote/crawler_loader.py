@@ -1,17 +1,17 @@
+"""A crawl of one site's links, for the Website loader's ``links`` discovery."""
+
 import logging
 from collections import deque
 from typing import Callable, List, Optional, Union
-from urllib.parse import urldefrag, urljoin, urlsplit
+from urllib.parse import urldefrag, urljoin
 
-from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, url_to_virtual_path
+from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths
 from docsgpt.parser.remote.page_content import (
     FetchBudget,
-    ascii_host,
     fetch_page,
     final_url,
     has_userinfo,
     header_charset,
-    host_with_port,
     html_soup,
     is_html,
     link_base,
@@ -30,18 +30,19 @@ _MAX_QUEUE = 10_000
 
 
 class CrawlerLoader(BaseRemote):
+    """Crawls breadth first from a start page, following the links a scope accepts."""
+
     def __init__(
         self,
-        limit: Optional[int] = 10,
-        accept: Optional[Callable[[str], bool]] = None,
+        accept: Callable[[str], bool],
+        limit: Optional[int] = None,
         keep_links: bool = False,
         budget: Optional[FetchBudget] = None,
     ):
         """
         Args:
+            accept: Which links to follow and pages to keep (``SiteScope.accepts``).
             limit: Most pages to fetch (``None`` for no cap).
-            accept: Which links to follow. Default: the start page's scheme
-                and host.
             keep_links: Keep the URL of links inside sentences in page text.
             budget: Fetches the whole load may still make; ``None`` for no cap.
         """
@@ -84,7 +85,6 @@ class CrawlerLoader(BaseRemote):
         # www. and scheme variants of one page are fetched once; ``seen``
         # holds every page queued or fetched, ``done`` every page fetched
         # (a redirect's target included).
-        site_host = _site_of(url)
         seed_key = page_key(url)
         seen = {seed_key}
         done = set()
@@ -97,7 +97,7 @@ class CrawlerLoader(BaseRemote):
         # The start page is fetched for its links even when the scope leaves
         # it out (starting at / with Stay under /docs, or a skipped start
         # page); only its content is dropped.
-        keep_seed = self.accept is None or self.accept(url)
+        keep_seed = self.accept(url)
         # Fetches charged to the limit: every one but a start page that isn't
         # kept (the fetch budget is still charged for it).
         charged = 0
@@ -143,7 +143,7 @@ class CrawlerLoader(BaseRemote):
                             continue
                         done.add(final_key)
                         seen.add(final_key)
-                    keep = self._on_site(page_url, site_host)
+                    keep = self._on_site(page_url)
                     if not keep and not is_seed:
                         logging.info(f"Dropping {current_url}: it redirects out of scope to {page_url}")
                         continue
@@ -201,54 +201,12 @@ class CrawlerLoader(BaseRemote):
                     continue
                 if link_key in seen:
                     continue
-                if self._on_site(link, site_host):
+                if self._on_site(link):
                     seen.add(link_key)
                     queue.append(link)
 
         return dedupe_virtual_paths(loaded_content)
 
-    def _on_site(self, url: str, site_host: Optional[str]) -> bool:
-        """Whether the crawl may take ``url``: ``accept``, else the start page's host and port.
-
-        Args:
-            url: A link or a redirect's target.
-            site_host: The start page's ``host[:port]`` (``_site_of``), for a
-                crawl without ``accept``.
-
-        Returns:
-            True when the page is in scope; never for an address too long or
-            too deep to fetch (``within_url_limits``).
-        """
-        if not within_url_limits(url):
-            return False
-        if self.accept is not None:
-            return self.accept(url)
-        try:
-            parsed = urlsplit(url)
-            # Compare the host itself: a substring match also follows share
-            # links and lookalike hosts that contain the site URL. Another
-            # port is another server.
-            return parsed.scheme in ("http", "https") and _site_of(url) == site_host
-        except ValueError:
-            return False
-
-    def _url_to_virtual_path(self, url):
-        """Convert a URL to a virtual ``.md`` path; see ``url_to_virtual_path``."""
-        return url_to_virtual_path(url)
-
-
-def _site_of(url: str) -> Optional[str]:
-    """The ``host[:port]`` a crawl without ``accept`` stays on (a port only when it isn't the scheme's own).
-
-    Args:
-        url: An address.
-
-    Returns:
-        The host, with a port of its own; ``None`` for an address without a host.
-
-    Raises:
-        ValueError: If the address or its port cannot be parsed.
-    """
-    parts = urlsplit(url)
-    # ASCII form: a link may spell an international host either way.
-    return host_with_port(parts, ascii_host(parts.hostname)) if parts.hostname else None
+    def _on_site(self, url: str) -> bool:
+        """Whether the crawl may take ``url``: ``accept`` says so and it is within ``within_url_limits``."""
+        return within_url_limits(url) and self.accept(url)

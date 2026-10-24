@@ -7,11 +7,9 @@ export interface FileNode {
   display_name?: string;
   /** A web page's address: where its fetch landed, after any redirect. */
   url?: string;
-  /** A web page's address as it was added, when fetching it was redirected. */
-  requested_url?: string;
   /**
    * Every address the page was added under that redirected to it (one page
-   * can be the landing of several); `requested_url` is the first.
+   * can be the landing of several).
    */
   requested_urls?: string[];
   [key: string]: any;
@@ -47,8 +45,7 @@ export interface TreeBrowserController {
   resetPath: () => void;
   /**
    * Lists the open file's chunks again (its content changed: a refreshed
-   * page). With a path, only when that file is the open one; with a test,
-   * only when it holds for the open file's path.
+   * page). With paths, only when the open file is one of them.
    */
-  reloadFile: (path?: string | ((openPath: string) => boolean)) => void;
+  reloadFile: (paths?: readonly string[]) => void;
 }

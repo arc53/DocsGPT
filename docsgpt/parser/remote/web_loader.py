@@ -1,3 +1,5 @@
+"""Page entries: each address fetched as one page."""
+
 import logging
 from typing import List, Optional, Union
 
@@ -8,7 +10,6 @@ from docsgpt.parser.remote.base import (
     spans_multiple_hosts,
 )
 from docsgpt.parser.remote.page_content import (
-    PAGE_HEADERS,
     FetchBudget,
     fetch_page,
     final_url,
@@ -20,11 +21,10 @@ from docsgpt.parser.remote.page_content import (
 )
 from docsgpt.parser.schema.base import Document
 
-# Every web fetch sends these; kept importable under the old name.
-headers = PAGE_HEADERS
-
 
 class WebLoader(BaseRemote):
+    """Fetches each address it is given as one page."""
+
     def __init__(self, keep_links: bool = False, budget: Optional[FetchBudget] = None):
         """
         Args:
@@ -73,7 +73,7 @@ class WebLoader(BaseRemote):
                 logging.warning(f"Fetch budget spent; not fetching {url}")
                 break
             try:
-                response = fetch_page(url, headers=headers, timeout=30, budget=self.budget)
+                response = fetch_page(url, timeout=30, budget=self.budget)
                 response.raise_for_status()
                 page_url = final_url(response, url)
                 if not within_url_limits(page_url):

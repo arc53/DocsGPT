@@ -17,9 +17,11 @@ from docsgpt.parser.remote.page_content import (
     _strip_chrome,
     extract_page,
     fetch_page,
+    header_charset,
     html_soup,
     page_document,
 )
+from docsgpt.security.safe_url import UnsafeUserUrlError
 
 URL = "https://docs.example.com/guide/setup"
 
@@ -213,6 +215,17 @@ class TestLinks:
 
         assert "[setup page](https://docs.example.com/v2/setup)" in page.text
 
+    @pytest.mark.parametrize("href", ["http://[bad", "https://[not-an-ip]/guide"])
+    def test_a_malformed_inline_link_keeps_the_page_and_link_text(self, href):
+        body = _page(f"<main>{ARTICLE}<p>Read the <a href='{href}'>manual</a> for details.</p></main>")
+
+        document = page_document(body, "text/html", URL, keep_links=True)
+
+        assert document is not None
+        assert "# Setup guide" in document.text
+        assert "Read the manual for details." in document.text
+        assert href not in document.text
+
     def test_a_destination_with_parentheses_or_spaces_is_kept_whole(self):
         prose = (
             "<p>See <a href='https://en.wikipedia.org/wiki/Foo_(bar)'>Foo</a> and "
@@ -339,46 +352,46 @@ class TestPageDocument:
         assert doc.extra_info["title"] == "Example docs"
         assert doc.extra_info["file_path"]
 
-    @pytest.mark.parametrize("codec", ["iso-8859-2", "shift_jis"])
-    def test_html_uses_the_header_charset_when_the_page_has_no_meta(self, codec):
-        text = {"iso-8859-2": "Zażółć gęślą jaźń", "shift_jis": "設定ガイド"}[codec]
-        html = (
-            f"<html><head><title>{text}</title></head><body><main><h1>{text}</h1>"
-            f"<p>{text} is the guide to the product.</p></main></body></html>"
-        ).encode(codec)
+    @pytest.mark.parametrize(
+        "html, content_type, title",
+        [
+            # No <meta>: the header's charset decodes the page.
+            *[
+                (
+                    f"<html><head><title>{text}</title></head><body><main><h1>{text}</h1>"
+                    f"<p>{text} is the guide to the product.</p></main></body></html>".encode(codec),
+                    f"text/html; charset={codec}",
+                    text,
+                )
+                for codec, text in (("iso-8859-2", "Zażółć gęślą jaźń"), ("shift_jis", "設定ガイド"))
+            ],
+            # The header's charset wins over the <meta> tag, as in browsers.
+            (
+                "<html><head><meta charset='iso-8859-1'><title>Résumé — “quoted” €5</title></head>"
+                "<body><main><p>Résumé — “quoted” €5 and more words here.</p></main></body></html>".encode(),
+                'text/html; charset="UTF-8"',
+                "Résumé — “quoted” €5",
+            ),
+            # A byte-order mark wins over the header's charset.
+            (
+                "\ufeff<html><head><title>Café crème</title></head><body><main><p>Body.</p></main></body></html>"
+                .encode("utf-8"),
+                "text/html; charset=iso-8859-1",
+                "Café crème",
+            ),
+            # An unknown header charset leaves the page's own <meta>.
+            (
+                "<html><head><meta charset='windows-1252'><title>Caf\xe9</title></head>"
+                f"<body><main>{ARTICLE}</main></body></html>".encode("cp1252"),
+                "text/html; charset=x-bogus",
+                "Café",
+            ),
+        ],
+    )
+    def test_html_is_decoded_by_the_charset_that_wins(self, html, content_type, title):
+        doc = page_document(html, content_type, URL)
 
-        doc = page_document(html, f"text/html; charset={codec}", URL)
-
-        assert doc.extra_info["title"] == text
-        assert f"{text} is the guide" in doc.text
-
-    def test_the_header_charset_wins_over_the_meta_tag(self):
-        text = "Résumé — “quoted” €5"
-        html = (
-            f"<html><head><meta charset='iso-8859-1'><title>{text}</title></head>"
-            f"<body><main><p>{text} and more words here.</p></main></body></html>"
-        ).encode("utf-8")
-
-        doc = page_document(html, 'text/html; charset="UTF-8"', URL)
-
-        assert doc.extra_info["title"] == text
-
-    def test_a_byte_order_mark_wins_over_the_header_charset(self):
-        html = "﻿<html><head><title>Café crème</title></head><body><main><p>Body.</p></main></body></html>"
-
-        doc = page_document(html.encode("utf-8"), "text/html; charset=iso-8859-1", URL)
-
-        assert doc.extra_info["title"] == "Café crème"
-
-    def test_an_unknown_header_charset_falls_back_to_the_page(self):
-        html = (
-            "<html><head><meta charset='windows-1252'><title>Caf\xe9</title></head>"
-            f"<body><main>{ARTICLE}</main></body></html>"
-        ).encode("cp1252")
-
-        doc = page_document(html, "text/html; charset=x-bogus", URL)
-
-        assert doc.extra_info["title"] == "Café"
+        assert doc.extra_info["title"] == title
 
     @pytest.mark.parametrize("charset", ["base64", "rot13", "zlib", "hex", "bz2", "uu", "idna", "punycode"])
     def test_a_header_charset_that_is_no_text_encoding_keeps_the_page(self, charset):
@@ -394,8 +407,6 @@ class TestPageDocument:
 
     @pytest.mark.parametrize("charset", ["base64", "rot13", "zlib", "hex", "bz2"])
     def test_header_charset_names_only_text_encodings(self, charset):
-        from docsgpt.parser.remote.page_content import header_charset
-
         assert header_charset(f"text/html; charset={charset}") is None
         assert header_charset("text/html; charset=Shift_JIS") == "Shift_JIS"
 
@@ -710,8 +721,6 @@ class TestFetchPageRedirects:
             self._fetch({"https://x.io/docs": (status, headers, b"<h1>Moved</h1>")})
 
     def test_every_hop_passes_the_ssrf_guard(self, monkeypatch):
-        from docsgpt.security.safe_url import UnsafeUserUrlError
-
         def send(self, prepared, **kwargs):
             response = requests.Response()
             response.status_code = 302

@@ -79,22 +79,6 @@ export function withPageTitles(
   return namePages(structure, sharedTitleSuffix(pageTitles(structure)));
 }
 
-/**
- * The leaf at a tree path (`Deploying/Docker.md`), or null for a folder or
- * a missing path.
- */
-export function nodeAtPath(
-  structure: DirectoryStructure,
-  path: string,
-): FileNode | null {
-  let node: unknown = structure;
-  for (const part of path.split('/').filter(Boolean)) {
-    if (!node || typeof node !== 'object' || isLeaf(node)) return null;
-    node = (node as DirectoryStructure)[part];
-  }
-  return isLeaf(node) ? node : null;
-}
-
 function firstUrl(node: unknown): string | null {
   if (isLeaf(node)) return typeof node.url === 'string' ? node.url : null;
   if (!node || typeof node !== 'object') return null;

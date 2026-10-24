@@ -8,6 +8,8 @@ import sys
 
 import pytest
 
+from docsgpt.worker import _tree_leaves, add_file_to_structure, count_structure_files
+
 DEPTH = sys.getrecursionlimit() + 500
 
 
@@ -18,8 +20,6 @@ def _deep_path(depth: int = DEPTH) -> str:
 @pytest.mark.unit
 class TestDeepPaths:
     def test_a_deep_file_is_added_and_counted(self):
-        from docsgpt.worker import add_file_to_structure, count_structure_files
-
         structure: dict = {}
         add_file_to_structure(structure, _deep_path(), "text/markdown", size_bytes=3, token_count=1)
         add_file_to_structure(structure, "top.md", "text/markdown", size_bytes=3, token_count=1)
@@ -27,8 +27,6 @@ class TestDeepPaths:
         assert count_structure_files(structure) == 2
 
     def test_a_deep_file_is_listed_among_the_leaves(self):
-        from docsgpt.worker import _tree_leaves, add_file_to_structure
-
         structure: dict = {}
         add_file_to_structure(structure, "a.md", "text/markdown", size_bytes=1, token_count=1)
         add_file_to_structure(structure, _deep_path(), "text/markdown", size_bytes=1, token_count=1)
@@ -39,8 +37,6 @@ class TestDeepPaths:
         assert paths == ["a.md", _deep_path(), "z.md"]
 
     def test_leaves_keep_their_stored_order_depth_first(self):
-        from docsgpt.worker import _tree_leaves
-
         leaf = {"token_count": 1}
         structure = {"a": {"x.md": leaf, "b": {"y.md": leaf}, "z.md": leaf}, "top.md": leaf}
 

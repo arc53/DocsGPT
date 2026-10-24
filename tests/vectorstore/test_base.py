@@ -999,13 +999,20 @@ class TestBaseChunksBySourcePath:
         assert store.delete_chunks(["1", "3"]) == 1
         assert [c.args[0] for c in store.delete_chunk.call_args_list] == ["1", "3"]
 
-    def test_delete_by_source_paths_deletes_every_page_in_one_pass(self):
+    def test_delete_by_source_path_deletes_the_pages_chunks_in_one_call(self):
         store = self._store()
-        store.delete_chunks = Mock(return_value=3)
-        assert store.delete_chunks_by_source_paths(["https://x.io/a", "https://x.io/b"]) == 3
-        store.delete_chunks.assert_called_once_with(["1", "2", "3"])
+        store.delete_chunks = Mock(return_value=2)
+        assert store.delete_chunks_by_source_path("https://x.io/a") == 2
+        store.delete_chunks.assert_called_once_with(["1", "3"])
+        assert store.delete_chunks_by_source_path("https://x.io/gone") == 0
+        store.delete_chunks.assert_called_once()
 
-    def test_a_failed_listing_is_an_error_not_a_silent_no_op(self):
+    @pytest.mark.parametrize("call", [
+        lambda store: store.delete_chunks_by_source_path("https://x.io/a"),
+        lambda store: store.chunk_ids_by_source_paths(["https://x.io/a"]),
+        lambda store: store.chunk_ids_by_file_paths(["a.md"]),
+    ], ids=["delete_by_source_path", "ids_by_source_paths", "ids_by_file_paths"])
+    def test_a_failed_listing_is_an_error_not_a_silent_no_op(self, call):
         # qdrant, milvus and mongodb read a store error in ``get_chunks`` as
         # "no chunks"; a delete that trusted it would quietly do nothing.
         class _Down(ConcreteVectorStore):
@@ -1016,9 +1023,7 @@ class TestBaseChunksBySourcePath:
                 raise RuntimeError("down")
 
         with pytest.raises(RuntimeError):
-            _Down().delete_chunks_by_source_path("https://x.io/a")
-        with pytest.raises(RuntimeError):
-            _Down().chunk_ids_by_source_paths(["https://x.io/a"])
+            call(_Down())
 
     def test_a_store_without_chunk_listing_cannot_delete_by_path(self):
         with pytest.raises(NotImplementedError):
@@ -1063,14 +1068,6 @@ class TestBaseChunksBySourcePath:
         with pytest.raises(RuntimeError, match="embedding down"):
             store.add_chunks(["a", "b"], [{}, {}])
         assert "roll back" in caplog.text
-
-    def test_listing_by_tree_path_raises_on_a_failed_scan(self):
-        class _Down(ConcreteVectorStore):
-            def _scan_chunks(self):
-                raise RuntimeError("down")
-
-        with pytest.raises(RuntimeError):
-            _Down().chunk_ids_by_file_paths(["a.md"])
 
 
 @pytest.mark.unit

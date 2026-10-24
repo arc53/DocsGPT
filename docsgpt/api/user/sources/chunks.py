@@ -10,7 +10,8 @@ from flask_restx import fields, Namespace, Resource
 from docsgpt.api import api
 from docsgpt.api.user.base import get_vector_store
 from docsgpt.api.user.resource_access import AccessDenied
-from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.sources.access import SOURCE_BUSY, denied_response, edit_lock, load_source
+from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
 from docsgpt.guardrails import injection_scoring
 from docsgpt.guardrails.checks.model_injection import FLAG_THRESHOLD, THRESHOLD
@@ -19,7 +20,7 @@ from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.utils import check_required_fields, num_tokens_from_string
 from docsgpt.vectorstore.base import InvalidChunkMetadataError
-from docsgpt.vectorstore.index_lock import SourceBusy, source_index_lock
+from docsgpt.vectorstore.index_lock import SourceBusy
 
 sources_chunks_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
@@ -29,37 +30,7 @@ sources_chunks_ns = Namespace(
 INJECTION_REVIEW_MAX = 1000
 _CONTENT_HASH = re.compile(r"[0-9a-f]{64}")
 
-#: How long a chunk edit waits for a sync or page change on the source to finish before a 409.
-CHUNK_EDIT_LOCK_WAIT_SECONDS = 3.0
 _BUSY_NOTE = " 409 (code source_busy) while a sync or page change on the source runs."
-
-
-def _index_lock(source_id: str):
-    """The source's index lock, as a chunk edit takes it: a few seconds' wait, then ``SourceBusy``.
-
-    A sync or a Website page change loads a FAISS index once and saves the
-    whole of it, so a chunk edit made meanwhile would be lost (or lose the
-    job's chunks). The index is loaded under the lock, after the job's save.
-
-    Args:
-        source_id: The source.
-
-    Returns:
-        The lock's context manager.
-    """
-    return source_index_lock(source_id, wait_seconds=CHUNK_EDIT_LOCK_WAIT_SECONDS, poll_seconds=0.25)
-
-
-def _busy_response():
-    """The 409 for a chunk edit while another change to the source runs."""
-    return make_response(
-        jsonify({
-            "success": False,
-            "error": "Another change to this source is still running; try again when it finishes",
-            "code": "source_busy",
-        }),
-        409,
-    )
 
 
 def _resolve_source(doc_id: str, user: str, action: str = "use") -> dict:
@@ -479,7 +450,7 @@ class AddChunk(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
-            with _index_lock(str(doc["id"])):
+            with edit_lock(str(doc["id"])):
                 store = get_vector_store(str(doc["id"]))
                 chunk_id = store.add_chunk(text, metadata)
             return make_response(
@@ -487,7 +458,7 @@ class AddChunk(Resource):
                 201,
             )
         except SourceBusy:
-            return _busy_response()
+            return error_response(SOURCE_BUSY, 409, code="source_busy")
         except Exception as e:
             current_app.logger.error(f"Error adding chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
@@ -515,7 +486,7 @@ class DeleteChunk(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
-            with _index_lock(str(doc["id"])):
+            with edit_lock(str(doc["id"])):
                 store = get_vector_store(str(doc["id"]))
                 # Only a chunk this source lists is deleted, as an update
                 # checks: a store whose delete isn't scoped to the source
@@ -532,7 +503,7 @@ class DeleteChunk(Resource):
                     404,
                 )
         except SourceBusy:
-            return _busy_response()
+            return error_response(SOURCE_BUSY, 409, code="source_busy")
         except Exception as e:
             current_app.logger.error(f"Error deleting chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
@@ -589,10 +560,10 @@ class UpdateChunk(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
-            with _index_lock(str(doc["id"])):
+            with edit_lock(str(doc["id"])):
                 return _update_chunk(doc, chunk_id, text, metadata)
         except SourceBusy:
-            return _busy_response()
+            return error_response(SOURCE_BUSY, 409, code="source_busy")
         except Exception as e:
             current_app.logger.error(f"Error updating chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)

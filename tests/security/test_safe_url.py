@@ -973,21 +973,6 @@ def _trickle(handler, pause: float = 0.3, pieces: int = 40) -> None:
 
 
 @pytest.mark.unit
-def test_pinned_fetch_bytes_stops_a_trickling_body_at_the_total_timeout(local_server):
-    import time
-
-    base, routes = local_server
-    routes["/slow"] = _trickle
-
-    started = time.monotonic()
-    with pytest.raises(requests.Timeout):
-        pinned_fetch_bytes(base + "/slow", max_bytes=1_000_000, timeout=1.0, total_timeout=1.0)
-
-    # Each piece arrives within the 1 s read timeout; only the total stops it.
-    assert time.monotonic() - started < 3
-
-
-@pytest.mark.unit
 def test_pinned_fetch_bytes_total_timeout_defaults_to_twice_the_timeout(local_server, monkeypatch):
     import time
 
@@ -1034,30 +1019,18 @@ def test_pinned_fetch_bytes_reads_chunked_gzip_bodies_from_a_real_socket(local_s
     assert small == body[:1000]
 
 
-@pytest.mark.unit
-def test_pinned_fetch_bytes_total_timeout_covers_trickled_headers(local_server):
+def _trickled_headers(handler) -> None:
+    """Header lines, each well inside the read timeout; the body never comes."""
     import time
 
-    base, routes = local_server
-
-    def trickled_headers(handler):
-        # Header lines, each well inside the read timeout; the body never comes.
-        try:
-            handler.wfile.write(b"HTTP/1.1 200 OK\r\n")
-            for i in range(40):
-                handler.wfile.write(b"X-Pad-%d: a\r\n" % i)
-                handler.wfile.flush()
-                time.sleep(0.2)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-
-    routes["/headers"] = trickled_headers
-
-    started = time.monotonic()
-    with pytest.raises(requests.Timeout):
-        pinned_fetch_bytes(base + "/headers", max_bytes=1000, timeout=1.0, total_timeout=1.0)
-
-    assert time.monotonic() - started < 3
+    try:
+        handler.wfile.write(b"HTTP/1.1 200 OK\r\n")
+        for i in range(40):
+            handler.wfile.write(b"X-Pad-%d: a\r\n" % i)
+            handler.wfile.flush()
+            time.sleep(0.2)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
 
 
 def _gzip_of_empty_blocks(handler, pause: float = 0.2, blocks: int = 40) -> None:
@@ -1079,16 +1052,22 @@ def _gzip_of_empty_blocks(handler, pause: float = 0.2, blocks: int = 40) -> None
 
 
 @pytest.mark.unit
-def test_pinned_fetch_bytes_total_timeout_covers_a_compressed_body_that_decodes_to_nothing(local_server):
+@pytest.mark.parametrize(
+    "serve",
+    [_trickle, _trickled_headers, _gzip_of_empty_blocks],
+    ids=["a trickling body", "trickled headers", "a compressed body that decodes to nothing"],
+)
+def test_pinned_fetch_bytes_total_timeout_stops(local_server, serve):
     import time
 
     base, routes = local_server
-    routes["/empty-gzip"] = _gzip_of_empty_blocks
+    routes["/slow"] = serve
 
     started = time.monotonic()
     with pytest.raises(requests.Timeout):
-        pinned_fetch_bytes(base + "/empty-gzip", max_bytes=1000, timeout=1.0, total_timeout=1.0)
+        pinned_fetch_bytes(base + "/slow", max_bytes=1000, timeout=1.0, total_timeout=1.0)
 
+    # Each piece arrives within the 1 s read timeout; only the total stops it.
     assert time.monotonic() - started < 3
 
 

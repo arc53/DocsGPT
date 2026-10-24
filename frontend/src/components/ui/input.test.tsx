@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FormField } from './form-field';
 import { Input, inputVariants } from './input';
+import { Textarea } from './textarea';
 
 describe('Input variants', () => {
   it('keeps the 38px form-row rectangular field by default', () => {
@@ -145,38 +146,47 @@ describe('Input pill and disabled state', () => {
   });
 });
 
-describe('Input required', () => {
+describe('Input and Textarea required', () => {
   // No <form> wraps most fields, so a native `required` only brings the
   // browser's "Please fill in this field" tooltip. The star and
-  // aria-required say it instead, the way FormField does.
-  it('marks a labelled field aria-required with the star, not native required', () => {
-    const html = renderToStaticMarkup(<Input label="Name" required />);
-    const input = /<input[^>]*>/.exec(html)![0];
-    expect(input).toContain('aria-required="true"');
-    expect(input).not.toMatch(/\srequired=""/);
-    expect(html).toContain('<span class="text-destructive ml-0.5">*</span>');
+  // aria-required say it instead, the way FormField does. A FormField hands
+  // every control an aria-required key, even when it is undefined; the
+  // control's own `required` must still win.
+  it.each([
+    ['a labelled input', () => <Input label="Name" required />, 'input'],
+    ['a bare input', () => <Input required />, 'input'],
+    [
+      'an input inside a FormField that is not required',
+      () => (
+        <FormField label="Name">
+          <Input required />
+        </FormField>
+      ),
+      'input',
+    ],
+    ['a textarea', () => <Textarea required />, 'textarea'],
+    [
+      'a textarea inside a FormField that is not required',
+      () => (
+        <FormField label="Notes">
+          <Textarea required />
+        </FormField>
+      ),
+      'textarea',
+    ],
+  ])('marks %s aria-required, not native required', (_, field, tag) => {
+    const html = renderToStaticMarkup(field());
+    const control = new RegExp(`<${tag}[^>]*>`).exec(html)![0];
+    expect(control).toContain('aria-required="true"');
+    expect(control).not.toMatch(/\srequired=""/);
   });
 
-  it('marks a bare field aria-required, not native required', () => {
-    const html = renderToStaticMarkup(<Input required />);
-    expect(html).toContain('aria-required="true"');
-    expect(html).not.toMatch(/\srequired=""/);
-  });
-
-  it('stays aria-required inside a FormField that is not required', () => {
-    // The field's context hands every control an aria-required key, even
-    // when it is undefined; the control's own `required` must still win.
-    const html = renderToStaticMarkup(
-      <FormField label="Name">
-        <Input required />
-      </FormField>,
+  it('stars a required labelled field and leaves an optional one unmarked', () => {
+    expect(renderToStaticMarkup(<Input label="Name" required />)).toContain(
+      '>*<',
     );
-    expect(/<input[^>]*>/.exec(html)![0]).toContain('aria-required="true"');
-  });
-
-  it('leaves an optional field unmarked', () => {
-    const html = renderToStaticMarkup(<Input label="Name" />);
-    expect(html).not.toContain('aria-required');
-    expect(html).not.toContain('*</span>');
+    const optional = renderToStaticMarkup(<Input label="Name" />);
+    expect(optional).not.toContain('aria-required');
+    expect(optional).not.toContain('>*<');
   });
 });

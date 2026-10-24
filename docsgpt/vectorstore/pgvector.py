@@ -835,100 +835,58 @@ class PGVectorStore(BaseVectorStore):
             cursor.close()
 
     def delete_chunks_by_source_path(self, path: str) -> int:
-        """Delete this source's chunks whose ``metadata.source`` equals ``path``.
+        """Delete this source's chunks whose ``metadata.source`` equals ``path``, in one statement.
 
-        One targeted statement instead of the base loop+scan. The path is bound
-        as a query parameter (never interpolated); only the internal table name
-        is f-string interpolated. Returns the number of rows deleted.
-        """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        try:
-            delete_query = (
-                f"DELETE FROM {self._table_name} "
-                f"WHERE source_id = %s AND {self._metadata_column}->>'source' = %s;"
-            )
-            cursor.execute(delete_query, (self._source_id, path))
-            deleted_count = cursor.rowcount
-            conn.commit()
-
-            return deleted_count
-
-        except Exception as e:
-            conn.rollback()
-            logging.error(f"Error deleting chunks by source path: {e}")
-            raise
-        finally:
-            cursor.close()
-
-    def chunk_ids_by_source_paths(self, paths: Iterable[str]) -> List[str]:
-        """Ids of this source's chunks whose ``metadata.source`` is one of ``paths``.
-
-        One targeted ``SELECT``; unlike :meth:`get_chunks`, an error is raised
-        rather than read as "no chunks".
-
-        Args:
-            paths: ``metadata.source`` values.
-
-        Returns:
-            The ids, lowest first.
-        """
-        wanted = list(dict.fromkeys(paths))
-        if not wanted:
-            return []
-        rows = self._run_statement(
-            f"SELECT id FROM {self._table_name} "
-            f"WHERE source_id = %s AND {self._metadata_column}->>'source' = ANY(%s) ORDER BY id;",
-            (self._source_id, wanted),
-            fetch=True,
-        )
-        return [str(row[0]) for row in rows]
-
-    def chunk_ids_by_file_paths(self, paths: Iterable[str]) -> List[str]:
-        """Ids of this source's chunks whose ``metadata.file_path`` is one of ``paths``.
-
-        One targeted ``SELECT`` that raises on error: a page removal reads
-        "no chunks" as safe to drop the page's tree entry. A chunk with no
-        ``file_path`` is matched by its ``key``, else its ``title``, as
-        :func:`~docsgpt.vectorstore.base.legacy_path_key` reads it.
-
-        Args:
-            paths: ``metadata.file_path`` values (tree paths).
-
-        Returns:
-            The ids, lowest first.
-        """
-        wanted = list(dict.fromkeys(paths))
-        if not wanted:
-            return []
-        meta = self._metadata_column
-        path_key = (
-            f"COALESCE(NULLIF({meta}->>'file_path', ''), NULLIF({meta}->>'key', ''), NULLIF({meta}->>'title', ''))"
-        )
-        rows = self._run_statement(
-            f"SELECT id FROM {self._table_name} WHERE source_id = %s AND {path_key} = ANY(%s) ORDER BY id;",
-            (self._source_id, wanted),
-            fetch=True,
-        )
-        return [str(row[0]) for row in rows]
-
-    def delete_chunks_by_source_paths(self, paths: Iterable[str]) -> int:
-        """Delete this source's chunks whose ``metadata.source`` is one of ``paths``, in one statement.
-
-        Args:
-            paths: ``metadata.source`` values.
+        The path is a bound parameter; only internal names are interpolated.
 
         Returns:
             The number of rows deleted.
+
+        Raises:
+            Exception: Whatever the statement raised, after a rollback.
+        """
+        return self._run_statement(
+            f"DELETE FROM {self._table_name} WHERE source_id = %s AND {self._metadata_column}->>'source' = %s;",
+            (self._source_id, path),
+        )
+
+    def _ids_where(self, sql_expr: str, paths: Iterable[str]) -> List[str]:
+        """Ids of this source's chunks whose ``sql_expr`` is one of ``paths``, lowest first.
+
+        One targeted ``SELECT``; unlike :meth:`get_chunks`, an error is raised
+        rather than read as "no chunks" (a page removal reads "no chunks" as
+        safe to drop the page's tree entry).
+
+        Args:
+            sql_expr: The SQL expression over the metadata column to match.
+            paths: The values to match; none runs no query.
+
+        Returns:
+            The ids.
         """
         wanted = list(dict.fromkeys(paths))
         if not wanted:
-            return 0
-        return self._run_statement(
-            f"DELETE FROM {self._table_name} "
-            f"WHERE source_id = %s AND {self._metadata_column}->>'source' = ANY(%s);",
+            return []
+        rows = self._run_statement(
+            f"SELECT id FROM {self._table_name} WHERE source_id = %s AND {sql_expr} = ANY(%s) ORDER BY id;",
             (self._source_id, wanted),
+            fetch=True,
+        )
+        return [str(row[0]) for row in rows]
+
+    def chunk_ids_by_source_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of this source's chunks whose ``metadata.source`` is one of ``paths``."""
+        return self._ids_where(f"{self._metadata_column}->>'source'", paths)
+
+    def chunk_ids_by_file_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of this source's chunks whose ``metadata.file_path`` (else ``key``, else ``title``) is in ``paths``.
+
+        The fallback is :func:`~docsgpt.vectorstore.base.legacy_path_key`'s, for chunks with no ``file_path``.
+        """
+        meta = self._metadata_column
+        return self._ids_where(
+            f"COALESCE(NULLIF({meta}->>'file_path', ''), NULLIF({meta}->>'key', ''), NULLIF({meta}->>'title', ''))",
+            paths,
         )
 
     def delete_chunks(self, chunk_ids: Iterable[str]) -> int:

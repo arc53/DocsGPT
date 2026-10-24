@@ -157,9 +157,15 @@ describe('SourceNavigator', () => {
 
   // cmdk keeps the last hovered row highlighted after the pointer leaves, so
   // two rows looked selected; leaving the list returns it to the open item.
-  it('returns the highlight to the open item when the pointer leaves', async () => {
-    await render(TREE, 'rate-cards/q1.pdf');
-    expect(selected()).toEqual(['rate-cards/q1.pdf']);
+  it.each([
+    [
+      'returns the highlight to the open item',
+      'rate-cards/q1.pdf',
+      ['rate-cards/q1.pdf'],
+    ],
+    ['with nothing open, highlights no row', null, []],
+  ])('when the pointer leaves the list, %s', async (_, open, highlighted) => {
+    await render(TREE, open);
     await act(async () => {
       row('europe')!.dispatchEvent(
         new PointerEvent('pointermove', { bubbles: true }),
@@ -177,29 +183,7 @@ describe('SourceNavigator', () => {
         }),
       );
     });
-    expect(selected()).toEqual(['rate-cards/q1.pdf']);
-  });
-
-  it('with nothing open, leaving the list highlights no row', async () => {
-    await render(TREE, null);
-    await act(async () => {
-      row('europe')!.dispatchEvent(
-        new PointerEvent('pointermove', { bubbles: true }),
-      );
-    });
-    expect(selected()).toEqual(['europe']);
-    const list = container.querySelector<HTMLElement>(
-      '[data-slot="command-list"]',
-    )!;
-    await act(async () => {
-      list.dispatchEvent(
-        new PointerEvent('pointerout', {
-          bubbles: true,
-          relatedTarget: document.body,
-        }),
-      );
-    });
-    expect(selected()).toEqual([]);
+    expect(selected()).toEqual(highlighted);
   });
 
   it('keeps the arrow keys walking the list', async () => {

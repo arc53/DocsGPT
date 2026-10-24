@@ -318,32 +318,6 @@ class TestMongoDBVectorStoreAddChunk:
 
 
 @pytest.mark.unit
-class TestMongoDBVectorStoreDeleteChunk:
-    def test_delete_chunk_success(self):
-        store, mock_collection, _ = _make_mongodb_store()
-        mock_collection.delete_one.return_value = Mock(deleted_count=1)
-
-        with patch("docsgpt.vectorstore.mongodb.ObjectId", create=True):
-            # We need to mock bson.objectid.ObjectId
-            with patch.dict("sys.modules", {"bson": MagicMock(), "bson.objectid": MagicMock()}):
-                from unittest.mock import MagicMock as MM
-                mock_oid = MM()
-                with patch(
-                    "bson.objectid.ObjectId", return_value=mock_oid
-                ):
-                    result = store.delete_chunk("507f1f77bcf86cd799439011")
-
-        assert result is True
-
-    def test_delete_chunk_returns_false_on_error(self):
-        store, mock_collection, _ = _make_mongodb_store()
-        mock_collection.delete_one.side_effect = Exception("fail")
-
-        result = store.delete_chunk("bad_id")
-        assert result is False
-
-
-@pytest.mark.unit
 class TestMongoDBSearchWithScores:
     def test_reports_vector_search_score(self):
         store, mock_collection, _ = _make_mongodb_store()
@@ -391,14 +365,22 @@ def _fake_bson():
 class TestMongoDBChunkDeletesStayInTheirSource:
     """Every source shares one collection; a store deletes only its own chunks."""
 
-    def test_delete_chunk_filters_on_the_source(self):
+    @pytest.mark.parametrize("deleted_count, result", [(1, True), (0, False)])
+    def test_delete_chunk_filters_on_the_source(self, deleted_count, result):
         store, mock_collection, _ = _make_mongodb_store(source_id="src1")
-        mock_collection.delete_one.return_value = Mock(deleted_count=0)
+        mock_collection.delete_many.return_value = Mock(deleted_count=deleted_count)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            assert store.delete_chunk("abc") is result
+
+        mock_collection.delete_many.assert_called_once_with({"_id": {"$in": [("oid", "abc")]}, "source_id": "src1"})
+
+    def test_delete_chunk_returns_false_on_error(self):
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.delete_many.side_effect = Exception("fail")
 
         with patch.dict("sys.modules", _fake_bson()):
             assert store.delete_chunk("abc") is False
-
-        mock_collection.delete_one.assert_called_once_with({"_id": ("oid", "abc"), "source_id": "src1"})
 
     def test_delete_chunks_is_one_scoped_delete(self):
         store, mock_collection, _ = _make_mongodb_store(source_id="src1")
@@ -452,7 +434,7 @@ class TestMongoDBVectorStoreUpdateChunk:
             }
         }
         mock_collection.insert_one.assert_not_called()
-        mock_collection.delete_one.assert_not_called()
+        mock_collection.delete_many.assert_not_called()
 
     def test_unsets_keys_missing_from_the_new_metadata(self):
         store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")

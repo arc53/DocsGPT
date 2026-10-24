@@ -261,8 +261,24 @@ describe('SourceConfigModal first section, by kind', () => {
     await act(async () => option.click());
   };
 
-  it('an upload has no schedule and no Sync now', async () => {
-    await render(doc({}));
+  it.each<[string, Partial<Doc>]>([
+    ['an upload', {}],
+    [
+      'a viewer',
+      {
+        type: 's3',
+        connectionId: 'conn-1',
+        syncFrequency: 'daily',
+        access: 'viewer',
+        allowed_actions: ['use', 'view_config'],
+      },
+    ],
+    [
+      'a wiki, even with a leftover schedule',
+      { type: 'url', syncFrequency: 'weekly', config: { kind: 'wiki' } },
+    ],
+  ])('%s: no schedule and no Sync now', async (_, fields) => {
+    await render(doc(fields));
     expect(scheduleTrigger()).toBeNull();
     expect(button('settings.sources.syncNow')).toBeUndefined();
   });
@@ -287,36 +303,28 @@ describe('SourceConfigModal first section, by kind', () => {
   });
 
   it.each([
-    ['wiki', 'settings.sources.website.wikiSource'],
-    ['bad_sync_frequency', 'settings.sources.website.badSyncFrequency'],
-  ])('says why a schedule change was refused (%s)', async (code, key) => {
-    service.manageSync.mockResolvedValue({
-      ok: false,
-      status: 400,
-      json: async () => ({ success: false, code, error: 'English' }),
-    });
-    await render(doc({ type: 'github', syncFrequency: 'daily' }));
-    await pickSchedule('monthly');
-    await act(async () => button('settings.sources.configModal.save')!.click());
-    expect(document.body.textContent).toContain(key);
-    expect(document.body.textContent).not.toContain('English');
-  });
-
-  it('keeps a failed schedule change in the dialog', async () => {
-    service.manageSync.mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({ success: false }),
-    });
-    await render(doc({ type: 'github', syncFrequency: 'daily' }));
-    await pickSchedule('monthly');
-    await act(async () => button('settings.sources.configModal.save')!.click());
-    expect(document.body.textContent).toContain(
-      'settings.sources.errors.syncFrequency',
-    );
-    expect(onSaved).not.toHaveBeenCalled();
-    expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
-  });
+    [400, 'wiki', 'settings.sources.website.wikiSource'],
+    [400, 'bad_sync_frequency', 'settings.sources.website.badSyncFrequency'],
+    [500, undefined, 'settings.sources.errors.syncFrequency'],
+  ])(
+    'keeps a refused schedule change in the dialog, saying why (%s %s)',
+    async (status, code, key) => {
+      service.manageSync.mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => ({ success: false, code, error: 'English' }),
+      });
+      await render(doc({ type: 'github', syncFrequency: 'daily' }));
+      await pickSchedule('monthly');
+      await act(async () =>
+        button('settings.sources.configModal.save')!.click(),
+      );
+      expect(document.body.textContent).toContain(key);
+      expect(document.body.textContent).not.toContain('English');
+      expect(onSaved).not.toHaveBeenCalled();
+      expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
+    },
+  );
 
   it('runs Sync now from the footer of a synced source', async () => {
     await render(doc({ type: 'connector:file', syncFrequency: 'never' }));
@@ -361,20 +369,6 @@ describe('SourceConfigModal first section, by kind', () => {
     expect(document.body.textContent).toContain(
       'settings.sources.configModal.syncAfterSave',
     );
-  });
-
-  it('a viewer sees no schedule and no Sync now', async () => {
-    await render(
-      doc({
-        type: 's3',
-        connectionId: 'conn-1',
-        syncFrequency: 'daily',
-        access: 'viewer',
-        allowed_actions: ['use', 'view_config'],
-      }),
-    );
-    expect(scheduleTrigger()).toBeNull();
-    expect(button('settings.sources.syncNow')).toBeUndefined();
   });
 
   it('a website lists what it fetches and what it skips', async () => {
@@ -491,10 +485,17 @@ describe('SourceConfigModal first section, by kind', () => {
     await act(async () => button('settings.sources.configModal.save')!.click());
   };
 
+  const SAVE_FAILED = 'settings.sources.website.saveFailed';
+
   it.each([
-    [{ code: 'wiki', error: 'A wiki…' }, 'settings.sources.website.wikiSource'],
+    [
+      400,
+      { code: 'wiki', error: 'A wiki…' },
+      'settings.sources.website.wikiSource',
+    ],
     // A new address with credentials or a host the server won't fetch.
     [
+      400,
       {
         code: 'invalid_address',
         url: 'https://user:pw@docs.x.io/',
@@ -503,40 +504,25 @@ describe('SourceConfigModal first section, by kind', () => {
       'settings.sources.website.invalidAddress',
     ],
     [
+      400,
       { success: false, error: 'A source fetches from up to 20 sites' },
       'A source fetches from up to 20 sites',
     ],
-  ])('a refused website save says why (%o)', async (body, message) => {
-    service.saveWebsite.mockResolvedValue({
-      ok: false,
-      status: 400,
-      json: async () => body,
-    });
-    await saveEdited();
-    expect(document.body.textContent).toContain(message);
-    expect(document.body.textContent).not.toContain(
-      'settings.sources.website.saveFailed',
-    );
-    expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
-  });
-
-  it('a website save that breaks says it failed', async () => {
-    service.saveWebsite.mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({ success: false }),
-    });
-    await saveEdited();
-    expect(document.body.textContent).toContain(
-      'settings.sources.website.saveFailed',
-    );
-  });
-
-  it('a wiki has no schedule even with a leftover one', async () => {
-    await render(
-      doc({ type: 'url', syncFrequency: 'weekly', config: { kind: 'wiki' } }),
-    );
-    expect(scheduleTrigger()).toBeNull();
-    expect(button('settings.sources.syncNow')).toBeUndefined();
-  });
+    // A save that breaks says only that it failed.
+    [500, { success: false }, SAVE_FAILED],
+  ])(
+    'a refused website save says why (%s %o)',
+    async (status, body, message) => {
+      service.saveWebsite.mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => body,
+      });
+      await saveEdited();
+      const text = document.body.textContent;
+      expect(text).toContain(message);
+      if (message !== SAVE_FAILED) expect(text).not.toContain(SAVE_FAILED);
+      expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
+    },
+  );
 });

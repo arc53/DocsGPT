@@ -3,7 +3,8 @@ from unittest.mock import patch, MagicMock
 from urllib.parse import urlparse
 
 from docsgpt.core.url_validation import SSRFError
-from docsgpt.parser.remote.web_loader import WebLoader, headers
+from docsgpt.parser.remote.page_content import PAGE_HEADERS as headers
+from docsgpt.parser.remote.web_loader import WebLoader
 from docsgpt.parser.schema.base import Document
 from docsgpt.vectorstore.document_class import Document as LCDocument
 
@@ -98,7 +99,7 @@ class TestWebLoaderLoadData:
             "requested_urls": [],
         }
         mock_fetch.assert_called_once_with(
-            "https://example.com", headers=headers, timeout=30, budget=None
+            "https://example.com", timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
@@ -122,10 +123,10 @@ class TestWebLoaderLoadData:
 
         assert mock_fetch.call_count == 2
         mock_fetch.assert_any_call(
-            "https://site1.com", headers=headers, timeout=30, budget=None
+            "https://site1.com", timeout=30, budget=None
         )
         mock_fetch.assert_any_call(
-            "https://site2.com", headers=headers, timeout=30, budget=None
+            "https://site2.com", timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
@@ -139,7 +140,7 @@ class TestWebLoaderLoadData:
 
         assert len(result) == 1
         mock_fetch.assert_called_once_with(
-            "http://example.com", headers=headers, timeout=30, budget=None
+            "http://example.com", timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
@@ -153,7 +154,7 @@ class TestWebLoaderLoadData:
 
         assert len(result) == 1
         mock_fetch.assert_called_once_with(
-            "https://example.com", headers=headers, timeout=30, budget=None
+            "https://example.com", timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
@@ -276,7 +277,7 @@ class TestWebLoaderSSRF:
         assert len(result) == 1
         assert result[0].text == "Public page"
         mock_fetch.assert_called_once_with(
-            "https://example.com", headers=headers, timeout=30, budget=None
+            "https://example.com", timeout=30, budget=None
         )
 
 
@@ -384,9 +385,9 @@ class TestWebLoaderRequestedUrl:
         result = web_loader.load_data(["https://x.io/old", "https://x.io/same"])
 
         assert [d.extra_info["source"] for d in result] == ["https://x.io/new", "https://x.io/same"]
-        assert result[0].extra_info["requested_url"] == "https://x.io/old"
         assert result[0].extra_info["requested_urls"] == ["https://x.io/old"]
-        assert "requested_url" not in result[1].extra_info
+        # Only the list: the singular ``requested_url`` is never written.
+        assert "requested_url" not in result[0].extra_info
         assert result[1].extra_info["requested_urls"] == []
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
@@ -403,4 +404,3 @@ class TestWebLoaderRequestedUrl:
 
         assert [d.extra_info["source"] for d in result] == ["https://x.io/new"]
         assert result[0].extra_info["requested_urls"] == ["https://x.io/old-b", "https://x.io/old-a"]
-        assert result[0].extra_info["requested_url"] == "https://x.io/old-b"

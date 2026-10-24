@@ -18,12 +18,16 @@ export type ReingestTerminal = 'completed' | 'failed' | 'timeout' | 'unmounted';
  * queued change that didn't run fails with `busy` (another change held the
  * source too long), `wiki` (the source became a wiki) or `gone` (deleted).
  * A finished Website page add lists the pages it couldn't fetch in
- * `failedPages` (their addresses; empty when every page came in).
+ * `failedPages` (their addresses; empty when every page came in). A
+ * finished Website page change (add, refresh, remove) lists the tree paths
+ * it wrote or removed in `paths`; null when the event doesn't say (a sync, a
+ * rebuild, an upload), so any file may have changed.
  */
 export interface ReingestOutcome {
   terminal: ReingestTerminal;
   reason: string | null;
   failedPages: string[];
+  paths: string[] | null;
 }
 
 /** An outcome that carries no event: an unmount or a timeout. */
@@ -31,16 +35,17 @@ const bare = (terminal: ReingestTerminal): ReingestOutcome => ({
   terminal,
   reason: null,
   failedPages: [],
+  paths: null,
 });
 
-/** The addresses in an event's `failed_pages`, when it lists any. */
-function failedPagesOf(value: unknown): string[] {
+/** The non-empty strings in a list, or null when it isn't one. */
+function stringsOf(value: unknown): string[] | null {
   return Array.isArray(value)
-    ? value.filter((url): url is string => typeof url === 'string' && !!url)
-    : [];
+    ? value.filter((item): item is string => typeof item === 'string' && !!item)
+    : null;
 }
 
-export interface WaitForTerminalOptions {
+export interface WaitForChangeOptions {
   /** The task the mutation queued; matched when the event carries one. */
   taskId?: string | null;
 }
@@ -66,9 +71,9 @@ type SeenEvents = {
  * Each wait keeps its own timer; waits that overlap settle independently.
  * Unmounting settles every pending wait with 'unmounted'.
  *
- * @returns `waitForTerminal(sourceId, opStartedAt, options?)`, called after
- *   kicking off the backend mutation; `waitForChange`, the same wait
- *   resolving to a {@link ReingestOutcome}; and `mountedRef`.
+ * @returns `waitForChange(sourceId, opStartedAt, options?)`, called after
+ *   kicking off the backend mutation and resolving to a
+ *   {@link ReingestOutcome}; and `mountedRef`.
  */
 export function useReingestSseWaiter() {
   const store = useStore<RootState>();
@@ -133,7 +138,7 @@ export function useReingestSseWaiter() {
     (
       sourceId: string | undefined,
       opStartedAt: number,
-      options: WaitForTerminalOptions = {},
+      options: WaitForChangeOptions = {},
     ) =>
       new Promise<ReingestOutcome>((resolve) => {
         if (!mountedRef.current) {
@@ -174,7 +179,8 @@ export function useReingestSseWaiter() {
                   ? 'completed'
                   : 'failed',
               reason: typeof reason === 'string' ? reason : null,
-              failedPages: failedPagesOf(event.payload?.failed_pages),
+              failedPages: stringsOf(event.payload?.failed_pages) ?? [],
+              paths: stringsOf(event.payload?.paths),
             };
           }
           return null;
@@ -208,17 +214,5 @@ export function useReingestSseWaiter() {
     [ringOf, recordSeen],
   );
 
-  const waitForTerminal = useCallback(
-    (
-      sourceId: string | undefined,
-      opStartedAt: number,
-      options: WaitForTerminalOptions = {},
-    ): Promise<ReingestTerminal> =>
-      waitForChange(sourceId, opStartedAt, options).then(
-        (outcome) => outcome.terminal,
-      ),
-    [waitForChange],
-  );
-
-  return { waitForTerminal, waitForChange, mountedRef };
+  return { waitForChange, mountedRef };
 }

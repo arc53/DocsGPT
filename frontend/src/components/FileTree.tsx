@@ -87,7 +87,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   const [, setQueueLength] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const { waitForTerminal, mountedRef } = useReingestSseWaiter();
+  const { waitForChange, mountedRef } = useReingestSseWaiter();
 
   const manageSource = async (
     operation: 'add' | 'remove' | 'remove_directory',
@@ -139,7 +139,7 @@ const FileTree: React.FC<FileTreeProps> = ({
         const reingestSourceId: string | undefined = result.source_id;
         const opStartedAt = Date.now();
 
-        const terminal = await waitForTerminal(reingestSourceId, opStartedAt);
+        const { terminal } = await waitForChange(reingestSourceId, opStartedAt);
         if (!mountedRef.current) return false;
 
         if (terminal === 'completed') {

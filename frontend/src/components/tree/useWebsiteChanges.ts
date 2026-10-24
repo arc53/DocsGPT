@@ -9,22 +9,15 @@ import { type ReingestTerminal, useReingestSseWaiter } from './useReingestWait';
 /** A sync the host started: when its request went out and the task it queued. */
 export type WebsiteSync = { startedAt: number; taskId: string | null };
 
-/**
- * Which of the open page's chunks a finished change could have touched: the
- * changed page's path or a test on the open page's path, `false` for a
- * change that leaves every remaining page as it was (a removal; a removed
- * open page closes by itself), and `undefined` for a rebuild (any page).
- */
-export type ChangeAffects =
-  string | ((path: string) => boolean) | false | undefined;
-
 /** What the page list does once a change it shows has landed. */
 export interface WebsiteTreeHandle {
   /**
-   * Reads the tree, the open page's chunks (when `affects` says they could
-   * have changed) and the source's list of addresses again.
+   * Reads the tree and the source's list of addresses again, and the open
+   * page's chunks when it is one of `paths` (the pages the change wrote or
+   * removed; a removed open page closes by itself) or `paths` is null (a
+   * sync or rebuild, which may change any page).
    */
-  reload: (affects: ChangeAffects) => Promise<void>;
+  reload: (paths: string[] | null) => Promise<void>;
 }
 
 export interface AwaitChangeOptions {
@@ -32,8 +25,6 @@ export interface AwaitChangeOptions {
   name?: string;
   /** The task the change queued; matched when its event carries one. */
   taskId?: string | null;
-  /** See {@link ChangeAffects}; omitted for a rebuild. */
-  affects?: ChangeAffects;
   /**
    * A hold from {@link WebsiteChanges.begin} taken before the request went
    * out; the wait releases it instead of taking its own.
@@ -66,7 +57,7 @@ export interface WebsiteChanges {
   attach: (tree: WebsiteTreeHandle) => () => void;
 }
 
-interface UseWebsiteChangesOptions {
+export interface UseWebsiteChangesOptions {
   docId: string;
   /**
    * A sync of the source the host started (the source's ⋯ → Sync now). It
@@ -149,10 +140,10 @@ export function useWebsiteChanges({
       label: string,
       startedAt: number,
       failure: string,
-      { name, taskId, affects, hold }: AwaitChangeOptions = {},
+      { name, taskId, hold }: AwaitChangeOptions = {},
     ): Promise<ReingestTerminal> => {
       const id = hold ?? begin(label);
-      const { terminal, reason, failedPages } = await waitForChange(
+      const { terminal, reason, failedPages, paths } = await waitForChange(
         docIdRef.current,
         startedAt,
         { taskId },
@@ -160,13 +151,14 @@ export function useWebsiteChanges({
       // An unmount (StrictMode's too) ends the wait and its hold.
       end(id);
       if (!mountedRef.current || terminal === 'unmounted') return 'unmounted';
-      const reload = (what: ChangeAffects) => treeRef.current?.reload(what);
+      const reload = (changed: string[] | null) =>
+        treeRef.current?.reload(changed);
       const toast = (
         variant: 'info' | 'warning' | 'destructive',
         message: string,
       ) => dispatch(showActionToast({ variant, message }));
       if (terminal === 'completed') {
-        await reload(affects);
+        await reload(paths);
         onPagesChangedRef.current?.();
         // Added pages the worker couldn't fetch stay listed, and the next
         // sync tries them again.
@@ -186,12 +178,12 @@ export function useWebsiteChanges({
       } else if (terminal === 'timeout') {
         // Still queued or running: the buttons come back, and the tree
         // shows whatever has landed so far.
-        await reload(false);
+        await reload([]);
         toast('info', tr('stillRunning'));
       } else if (reason === 'out_of_scope') {
         // A refreshed page that now leads outside the source: the worker
         // removed it, as a sync would.
-        await reload(false);
+        await reload([]);
         onPagesChangedRef.current?.();
         toast(
           'warning',

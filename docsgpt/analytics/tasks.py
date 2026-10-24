@@ -97,12 +97,6 @@ LONE_FAILURES = 3
 PARKED_HOURS = 24
 #: Seconds between two checks that the sweep still holds its lock, each extending it.
 LOCK_REFRESH_SECONDS = 5
-#: Extends the lock only while it holds this sweep's token, so a sweep whose lock ran out never extends another's.
-_REFRESH_LUA = (
-    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
-)
-#: Deletes the lock only while it holds this sweep's token, so a sweep whose lock ran out never frees another's.
-_RELEASE_LUA = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
 #: Why a state-less item failed: its state could not be built.
 BUILD_FAILED = "build_failed"
 #: Reasons a state was not answered that count an attempt on its message (or conversation); the others leave it to
@@ -249,8 +243,10 @@ class _Lock:
         if now - self._checked < LOCK_REFRESH_SECONDS:
             return True
         self._checked = now
+        from docsgpt.cache import LOCK_RENEW_LUA
+
         try:
-            return bool(self.redis.eval(_REFRESH_LUA, 1, LOCK_KEY, self.token, self.ttl))
+            return bool(self.redis.eval(LOCK_RENEW_LUA, 1, LOCK_KEY, self.token, self.ttl))
         except Exception:  # noqa: BLE001
             logger.debug("Analytics sweep: lock refresh failed", exc_info=True)
             return True
@@ -258,8 +254,10 @@ class _Lock:
     def release(self) -> None:
         if self.redis is None:
             return
+        from docsgpt.cache import LOCK_RELEASE_LUA
+
         try:
-            self.redis.eval(_RELEASE_LUA, 1, LOCK_KEY, self.token)
+            self.redis.eval(LOCK_RELEASE_LUA, 1, LOCK_KEY, self.token)
         except Exception:  # noqa: BLE001
             logger.debug("Analytics sweep: lock release failed", exc_info=True)
 

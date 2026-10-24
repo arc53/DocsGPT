@@ -7,7 +7,6 @@ import {
   isWebsiteDraftValid,
   nameFromUrl,
   normalizeUrl,
-  pageKey,
   pathPrefixFromUrl,
   tooManyPages,
   websiteConfig,
@@ -15,111 +14,78 @@ import {
 } from './website';
 
 describe('normalizeUrl', () => {
-  it('adds https:// to a bare host and trims', () => {
-    expect(normalizeUrl('  docs.docsgpt.cloud/Deploying ')).toBe(
-      'https://docs.docsgpt.cloud/Deploying',
-    );
-  });
-
-  it('keeps an http(s) address as written', () => {
-    expect(normalizeUrl('http://x.io/a')).toBe('http://x.io/a');
-  });
-
-  it('rejects what is not a web address', () => {
-    expect(normalizeUrl('')).toBeNull();
-    expect(normalizeUrl('ftp://x.io/a')).toBeNull();
-    expect(normalizeUrl('not a url')).toBeNull();
-    expect(normalizeUrl('javascript:alert(1)')).toBeNull();
-  });
-
-  // The backend's validate_url refuses these, so the ingest would fail later.
-  it('rejects the addresses the server never fetches', () => {
-    expect(normalizeUrl('localhost:8080/docs')).toBeNull();
-    expect(normalizeUrl('http://localhost/docs')).toBeNull();
-    expect(normalizeUrl('http://localhost.localdomain/')).toBeNull();
-    expect(normalizeUrl('http://metadata.google.internal/')).toBeNull();
-    expect(normalizeUrl('http://127.0.0.1:3000/')).toBeNull();
-    expect(normalizeUrl('http://10.0.0.5/')).toBeNull();
-    expect(normalizeUrl('http://172.20.1.1/')).toBeNull();
-    expect(normalizeUrl('http://192.168.1.10/')).toBeNull();
-    expect(normalizeUrl('http://169.254.169.254/latest')).toBeNull();
-    expect(normalizeUrl('http://100.64.0.1/')).toBeNull();
-    expect(normalizeUrl('http://0.0.0.0/')).toBeNull();
-    // Public addresses, numeric or not, stay.
-    expect(normalizeUrl('http://8.8.8.8/')).toBe('http://8.8.8.8/');
-    expect(normalizeUrl('http://172.32.0.1/')).toBe('http://172.32.0.1/');
-    expect(normalizeUrl('https://localhost.dev/')).toBe(
-      'https://localhost.dev/',
-    );
-  });
-
-  // The server accepts these; which ones it may reach is its call.
-  it('keeps a bracketed IPv6 address', () => {
-    expect(normalizeUrl('http://[2001:4860:4860::8888]/docs')).toBe(
+  it.each([
+    // A bare host gets https://, and the address is trimmed.
+    ['  docs.docsgpt.cloud/Deploying ', 'https://docs.docsgpt.cloud/Deploying'],
+    ['http://x.io/a', 'http://x.io/a'],
+    ['//x.io/a', 'https://x.io/a'],
+    // Public addresses, numeric or not.
+    ['http://8.8.8.8/', 'http://8.8.8.8/'],
+    ['http://172.32.0.1/', 'http://172.32.0.1/'],
+    ['https://localhost.dev/', 'https://localhost.dev/'],
+    // A bracketed IPv6 address: which ones the server may reach is its call.
+    [
       'http://[2001:4860:4860::8888]/docs',
-    );
-    expect(normalizeUrl('[2606:4700::1111]:8080/a')).toBe(
-      'https://[2606:4700::1111]:8080/a',
-    );
-    expect(normalizeUrl('http://2001:db8::1/')).toBeNull();
-  });
-
-  // website_loader's _HOST_PORT: a dotted host (or localhost) and `:digits`
-  // is a host and its port, not a scheme.
-  it('reads a bare host:port as a host, not a scheme', () => {
-    expect(normalizeUrl('docs.x.io:8080/guide')).toBe(
-      'https://docs.x.io:8080/guide',
-    );
-    expect(normalizeUrl('docs.x.io:8080')).toBe('https://docs.x.io:8080');
-    expect(normalizeUrl('example.com:443/a')).toBe('https://example.com:443/a');
-    expect(normalizeUrl('Docs.X.io:8080?a=1')).toBe(
-      'https://Docs.X.io:8080?a=1',
-    );
-    // Still refused for what the host is.
-    expect(normalizeUrl('localhost:3000/docs')).toBeNull();
-    expect(normalizeUrl('192.168.1.10:8080/wiki')).toBeNull();
-    // A scheme stays a scheme.
-    expect(normalizeUrl('mailto:me@x.io')).toBeNull();
-    expect(normalizeUrl('https://docs.x.io:8080/a')).toBe(
-      'https://docs.x.io:8080/a',
-    );
-  });
-
-  // The server refuses these too (is_web_address).
-  it('refuses credentials, control characters and malformed hosts', () => {
-    expect(normalizeUrl('https://user:pass@docs.x.io/a')).toBeNull();
-    expect(normalizeUrl('user@docs.x.io/a')).toBeNull();
-    expect(normalizeUrl('https://@docs.x.io/a')).toBeNull();
-    expect(normalizeUrl('https://docs.x.io/a\u0000b')).toBeNull();
-    expect(normalizeUrl('https://docs.x.io/a\tb')).toBeNull();
-    expect(normalizeUrl('https://docs.x.io/a\u007fb')).toBeNull();
-    expect(normalizeUrl('https://docs x.io/a')).toBeNull();
-    expect(normalizeUrl('https://a..b.com/')).toBeNull();
-    expect(normalizeUrl('https://.docs.x.io/')).toBeNull();
-    expect(normalizeUrl(`https://${'a'.repeat(64)}.com/`)).toBeNull();
+      'http://[2001:4860:4860::8888]/docs',
+    ],
+    ['[2606:4700::1111]:8080/a', 'https://[2606:4700::1111]:8080/a'],
+    // A bare host:port is a host and its port, not a scheme (_HOST_PORT).
+    ['docs.x.io:8080/guide', 'https://docs.x.io:8080/guide'],
+    ['docs.x.io:8080', 'https://docs.x.io:8080'],
+    ['example.com:443/a', 'https://example.com:443/a'],
+    ['Docs.X.io:8080?a=1', 'https://Docs.X.io:8080?a=1'],
+    ['https://docs.x.io:8080/a', 'https://docs.x.io:8080/a'],
     // A label of 63 is fine, and so is the root's trailing dot.
-    expect(normalizeUrl(`https://${'a'.repeat(63)}.com/`)).toBe(
-      `https://${'a'.repeat(63)}.com/`,
-    );
-    expect(normalizeUrl('https://docs.x.io./a')).toBe('https://docs.x.io./a');
+    [`https://${'a'.repeat(63)}.com/`, `https://${'a'.repeat(63)}.com/`],
+    ['https://docs.x.io./a', 'https://docs.x.io./a'],
     // An @ in the path or query is not a credential.
-    expect(normalizeUrl('https://docs.x.io/@team?by=a@b')).toBe(
-      'https://docs.x.io/@team?by=a@b',
-    );
+    ['https://docs.x.io/@team?by=a@b', 'https://docs.x.io/@team?by=a@b'],
+  ])('takes %j as %j', (value, url) => {
+    expect(normalizeUrl(value)).toBe(url);
   });
 
-  // URL finds a host in each; the server's urlsplit doesn't.
-  it('refuses anything but scheme:// before the host, and a backslash in it', () => {
-    expect(normalizeUrl('https:/x.io/a')).toBeNull();
-    expect(normalizeUrl('https:x.io/a')).toBeNull();
-    expect(normalizeUrl('https:///x.io')).toBeNull();
-    expect(normalizeUrl('https:\\\\x.io/a')).toBeNull();
-    expect(normalizeUrl('https://x.io\\a')).toBeNull();
-    expect(normalizeUrl('///x.io/a')).toBeNull();
-  });
-
-  it('takes a scheme-relative address as https', () => {
-    expect(normalizeUrl('//x.io/a')).toBe('https://x.io/a');
+  it.each([
+    // Not a web address.
+    '',
+    'ftp://x.io/a',
+    'not a url',
+    'javascript:alert(1)',
+    'mailto:me@x.io',
+    // Hosts the backend's validate_url never fetches.
+    'localhost:8080/docs',
+    'localhost:3000/docs',
+    'http://localhost/docs',
+    'http://localhost.localdomain/',
+    'http://metadata.google.internal/',
+    'http://127.0.0.1:3000/',
+    'http://10.0.0.5/',
+    'http://172.20.1.1/',
+    'http://192.168.1.10/',
+    '192.168.1.10:8080/wiki',
+    'http://169.254.169.254/latest',
+    'http://100.64.0.1/',
+    'http://0.0.0.0/',
+    'http://2001:db8::1/',
+    // Credentials, control characters and malformed hosts (is_web_address).
+    'https://user:pass@docs.x.io/a',
+    'user@docs.x.io/a',
+    'https://@docs.x.io/a',
+    'https://docs.x.io/a\u0000b',
+    'https://docs.x.io/a\tb',
+    'https://docs.x.io/a\u007fb',
+    'https://docs x.io/a',
+    'https://a..b.com/',
+    'https://.docs.x.io/',
+    `https://${'a'.repeat(64)}.com/`,
+    // URL finds a host in these; the server's urlsplit doesn't.
+    'https:/x.io/a',
+    'https:x.io/a',
+    'https:///x.io',
+    'https:\\\\x.io/a',
+    'https://x.io\\a',
+    '///x.io/a',
+  ])('refuses %j', (value) => {
+    expect(normalizeUrl(value)).toBeNull();
   });
 });
 
@@ -190,21 +156,46 @@ describe('websiteConfig', () => {
     });
   });
 
-  it('sends each "This page" address once, keeping the first spelling', () => {
-    const draft = {
-      ...defaultWebsiteDraft(100),
-      urls: [
-        'https://docs.x.io/a',
-        'http://www.docs.x.io/a/',
-        'https://docs.x.io/b',
-        'docs.x.io/docs/../a',
-      ],
-    };
+  const pageUrls = (urls: string[]) =>
+    websiteConfig({ ...defaultWebsiteDraft(100), urls }, false).entries.map(
+      (entry) => entry.url,
+    );
 
-    expect(websiteConfig(draft, false).entries).toEqual([
-      { url: 'https://docs.x.io/a', mode: 'page' },
-      { url: 'https://docs.x.io/b', mode: 'page' },
+  // Folds the server's page_key surely makes too.
+  it.each([
+    ['http://www.docs.x.io/a/', 'https://docs.x.io/a'],
+    ['https://DOCS.X.io/a#install', 'https://docs.x.io/a'],
+    ['https://docs.x.io./a//', 'https://docs.x.io/a'],
+    ['https://docs.x.io:443/a', 'https://docs.x.io/a'],
+    ['http://docs.x.io:80/a', 'https://docs.x.io/a'],
+    ['https://docs.x.io:0443/a', 'https://docs.x.io/a'],
+    ['https://docs.x.io/a/?v=2', 'https://docs.x.io/a?v=2'],
+    ['https://[2001:DB8::1]:443/a', 'https://[2001:db8::1]/a'],
+  ])('sends %j once with %j, keeping the first', (later, first) => {
+    expect(pageUrls([first, later, 'https://docs.x.io/b'])).toEqual([
+      first,
+      'https://docs.x.io/b',
     ]);
+  });
+
+  // Folds it might not make: the server dedupes those, so the form never
+  // counts fewer pages than the server.
+  it.each([
+    ['https://docs.x.io/A', 'https://docs.x.io/a'],
+    ['https://docs.x.io:8443/a', 'https://docs.x.io/a'],
+    ['http://docs.x.io:443/a', 'https://docs.x.io/a'],
+    ['https://docs.x.io/a?v=2', 'https://docs.x.io/a'],
+    ['https://docs.x.io/p?b=2&a=1', 'https://docs.x.io/p?a=1&b=2'],
+    ['https://docs.x.io/docs/../a', 'https://docs.x.io/a'],
+    ['https://docs.x.io/caf%C3%A9', 'https://docs.x.io/café'],
+    ['https://docs.x.io/?q=%EF%BB%BFabc', 'https://docs.x.io/?q=abc'],
+    ['https://ＤＯＣＳ.x.io/a', 'https://docs.x.io/a'],
+    ['https://[2001:db8::1]:8443/a', 'https://[2001:db8::1]/a'],
+    // A zero-padded port is its number: the default of one scheme, not the other.
+    ['https://docs.x.io:0443/a', 'http://docs.x.io:0443/a'],
+    ['https://docs.x.io:080/a', 'http://docs.x.io:080/a'],
+  ])('keeps %j apart from %j', (later, first) => {
+    expect(pageUrls([first, later])).toEqual([first, later]);
   });
 
   it('sends a sitemap URL only when pages are found through the sitemap', () => {
@@ -218,96 +209,6 @@ describe('websiteConfig', () => {
     expect(websiteConfig(draft, false).entries[0]).not.toHaveProperty(
       'sitemap_url',
     );
-  });
-});
-
-describe('pageKey', () => {
-  it('treats scheme, www., a trailing slash and the fragment as the same page', () => {
-    const key = pageKey('https://docs.x.io/guide');
-    expect(pageKey('http://www.docs.x.io/guide/')).toBe(key);
-    expect(pageKey('https://DOCS.x.io/guide#install')).toBe(key);
-    expect(pageKey('https://docs.x.io/guides')).not.toBe(key);
-    expect(pageKey('https://docs.x.io/guide?v=2')).not.toBe(key);
-  });
-
-  // The backend's own keys for these (website_loader.page_key, run on each).
-  it.each([
-    ['https://docs.x.io/guide', 'docs.x.io/guide'],
-    ['http://www.docs.x.io/guide/', 'docs.x.io/guide'],
-    ['https://DOCS.x.io/guide#install', 'docs.x.io/guide'],
-    ['https://docs.x.io./guide', 'docs.x.io/guide'],
-    ['https://www.docs.x.io../guide//', 'docs.x.io/guide'],
-    ['https://docs.x.io/p?b=2&a=1', 'docs.x.io/p?a=1&b=2'],
-    ['https://docs.x.io/p?a=1&b=2#top', 'docs.x.io/p?a=1&b=2'],
-    ['https://docs.x.io/p?flag', 'docs.x.io/p?flag='],
-    ['https://docs.x.io/p?a=1&&b=', 'docs.x.io/p?a=1&b='],
-    ['https://docs.x.io/p?q=a+b&r=%7E~*', 'docs.x.io/p?q=a+b&r=~~%2A'],
-    ['https://docs.x.io/p?z=1&a=2&a=1', 'docs.x.io/p?a=1&a=2&z=1'],
-    ['https://docs.x.io/p?', 'docs.x.io/p'],
-    ['https://user:pw@Docs.X.io:8080/Guide/', 'docs.x.io:8080/Guide'],
-    // A port counts unless it is the scheme's default.
-    ['https://x.io:8443/a', 'x.io:8443/a'],
-    ['https://x.io:443/a', 'x.io/a'],
-    ['http://x.io:80/a', 'x.io/a'],
-    ['http://x.io:443/a', 'x.io:443/a'],
-    ['https://x.io:80/a', 'x.io:80/a'],
-    // An IPv6 host keeps its brackets, port or not.
-    ['https://[2001:DB8::1]:8443/a', '[2001:db8::1]:8443/a'],
-    ['https://[2001:db8::1]/a', '[2001:db8::1]/a'],
-    // Dot segments resolve, a percent-encoded dot too; only whole segments.
-    ['https://x.io/docs/../a', 'x.io/a'],
-    ['https://x.io/docs/./a', 'x.io/docs/a'],
-    ['https://x.io/docs/%2e%2E/a', 'x.io/a'],
-    ['https://x.io/docs/%2E/a', 'x.io/docs/a'],
-    ['https://x.io/../../a', 'x.io/a'],
-    ['https://x.io/a/b/..', 'x.io/a'],
-    ['https://x.io/a..b/c', 'x.io/a..b/c'],
-    ['https://x.io/docs/../a?b=2&a=1', 'x.io/a?a=1&b=2'],
-    ['https://docs.x.io', 'docs.x.io'],
-    ['https://docs.x.io/A%20B/', 'docs.x.io/A%20B'],
-    ['  https://docs.x.io/trim  ', 'docs.x.io/trim'],
-    [
-      'https://docs.x.io/p?name=caf%C3%A9&x=(1)',
-      'docs.x.io/p?name=caf%C3%A9&x=%281%29',
-    ],
-    // The path's percent-encoding: non-ASCII, spaces and control characters
-    // encoded, an unreserved character decoded, any other hex in capitals;
-    // an encoded slash stays encoded.
-    ['https://x.io/café', 'x.io/caf%C3%A9'],
-    ['https://x.io/caf%C3%A9', 'x.io/caf%C3%A9'],
-    ['https://x.io/caf%c3%a9', 'x.io/caf%C3%A9'],
-    ['https://x.io/a~b', 'x.io/a~b'],
-    ['https://x.io/a%7Eb', 'x.io/a~b'],
-    ['https://x.io/a%7eb', 'x.io/a~b'],
-    ['https://x.io/a b', 'x.io/a%20b'],
-    ['https://x.io/a%20b', 'x.io/a%20b'],
-    ['https://x.io/%70rivate/', 'x.io/private'],
-    ['https://x.io/docs/..%2Fadmin', 'x.io/docs/..%2Fadmin'],
-    ['https://x.io/docs/..%2fadmin', 'x.io/docs/..%2Fadmin'],
-    ['https://x.io/a%2Eb', 'x.io/a.b'],
-    ['https://x.io/a%zz', 'x.io/a%zz'],
-    // The host in its ASCII (IDNA) form.
-    ['https://bücher.de/a', 'xn--bcher-kva.de/a'],
-    ['https://xn--bcher-kva.de/a', 'xn--bcher-kva.de/a'],
-    ['https://www.Bücher.de:8080/a', 'xn--bcher-kva.de:8080/a'],
-    // ASCII first, then www. and trailing dots, as the backend's bare_host.
-    ['https://ｗｗｗ.x.io/a', 'x.io/a'],
-    ['https://x.io\u3002/a', 'x.io/a'],
-    ['https://ＷＷＷ.Ｘ.ＩＯ/a', 'x.io/a'],
-    // A label IDNA2008 refuses keeps the host as given (lower-cased).
-    ['https://😀.ws/', '😀.ws'],
-    ['https://www.😀.ws/a', '😀.ws/a'],
-    ['https://☃.net/', '☃.net'],
-    ['https://ü-.de/', 'ü-.de'],
-    ['https://a\u05d0.com/', 'a\u05d0.com'],
-    ['https://\u0661\u0662.com/', '\u0661\u0662.com'],
-    // ...and one it takes is encoded, a middle dot between two ls too.
-    ['https://l\u00b7l.com/', 'xn--ll-0ea.com'],
-    ['https://пример.рф/', 'xn--e1afmkfd.xn--p1ai'],
-    // A label typed in punycode stays as written.
-    ['https://xn--e28h.bücher.de/a', 'xn--e28h.xn--bcher-kva.de/a'],
-  ])('keys %s as the backend does', (url, key) => {
-    expect(pageKey(url)).toBe(key);
   });
 });
 

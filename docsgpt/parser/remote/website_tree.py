@@ -3,8 +3,9 @@
 A web page is a leaf of ``directory_structure`` that carries its ``url``
 (see ``worker.add_file_to_structure``). Removing pages edits the tree; it also
 edits the config, so the next sync doesn't bring them back. Sources created by
-the older url/crawler/sitemap loaders are converted to a Website config the
-first time they are edited.
+the older url/crawler/sitemap loaders sync as the Website config they convert
+to (``config_from_legacy``), and are stored as one the first time they are
+edited.
 """
 
 import json
@@ -12,6 +13,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from docsgpt.parser.remote.base import folder_segment, folder_url_segment, url_to_virtual_path
+from docsgpt.parser.remote.page_content import page_key
 from docsgpt.parser.remote.website_loader import is_sitemap_url, is_web_address, parse_website_config
 
 # The old loaders' fixed page limits, kept when their sources are converted.
@@ -24,6 +26,69 @@ Page = Tuple[str, str]  # (tree path, page URL)
 def _is_leaf(node: Any) -> bool:
     """Whether a tree node is a file (it carries a ``token_count``), not a folder."""
     return isinstance(node, dict) and "token_count" in node
+
+
+def tree_leaves(structure: Any, prefix: str = "") -> List[Tuple[str, Dict[str, Any]]]:
+    """List file paths and leaves depth first, including leaves without a page URL.
+
+    Args:
+        structure: The source's directory structure.
+        prefix: Path of this subtree within the whole tree.
+
+    Returns:
+        ``(path, leaf)`` pairs in stored order. An explicit stack supports
+        legacy trees deeper than Python's recursion limit.
+    """
+    leaves: List[Tuple[str, Dict[str, Any]]] = []
+    if not isinstance(structure, dict):
+        return leaves
+    stack = [(prefix, iter(structure.items()))]
+    while stack:
+        folder, children = stack[-1]
+        entry = next(children, None)
+        if entry is None:
+            stack.pop()
+            continue
+        name, node = entry
+        path = f"{folder}/{name}" if folder else name
+        if _is_leaf(node):
+            leaves.append((path, node))
+        elif isinstance(node, dict):
+            stack.append((path, iter(node.items())))
+    return leaves
+
+
+def stored_page_key(url: str) -> str:
+    """Return a page's comparison key, retaining an unparseable legacy URL as given."""
+    try:
+        return page_key(url)
+    except ValueError:
+        return url
+
+
+def page_aliases(url: Optional[str], info: Any) -> List[str]:
+    """Read distinct redirect addresses from a tree leaf or fetched document.
+
+    Args:
+        url: The page's own address, excluded from its aliases by page key.
+        info: A tree leaf or a document's extra_info, holding ``requested_urls``.
+
+    Returns:
+        Aliases in stored order, one per page key.
+    """
+    if not isinstance(info, dict):
+        return []
+    listed = info.get("requested_urls")
+    candidates = listed if isinstance(listed, list) else []
+    seen = {stored_page_key(url)} if url else set()
+    aliases: List[str] = []
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate:
+            key = stored_page_key(candidate)
+            if key not in seen:
+                seen.add(key)
+                aliases.append(candidate)
+    return aliases
 
 
 def web_pages(structure: Dict[str, Any], prefix: str = "", include_unaddressed: bool = False) -> List[Page]:
@@ -41,25 +106,10 @@ def web_pages(structure: Dict[str, Any], prefix: str = "", include_unaddressed: 
         not recursion: a tree stored from a deep address is thousands of
         folders deep.
     """
-    pages: List[Page] = []
-    # (folder path, the folder's entries still to visit), innermost last.
-    stack = [(prefix, iter((structure or {}).items()))]
-    while stack:
-        base, entries = stack[-1]
-        for name, node in entries:
-            path = f"{base}/{name}" if base else name
-            if _is_leaf(node):
-                if node.get("url"):
-                    pages.append((path, node["url"]))
-                elif include_unaddressed:
-                    pages.append((path, ""))
-            elif isinstance(node, dict):
-                # Its pages come before the rest of this folder's.
-                stack.append((path, iter(node.items())))
-                break
-        else:
-            stack.pop()
-    return pages
+    return [
+        (path, node.get("url") or "") for path, node in tree_leaves(structure, prefix)
+        if node.get("url") or include_unaddressed
+    ]
 
 
 def _leaves(structure: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
@@ -71,7 +121,7 @@ def _leaves(structure: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
     Yields:
         Each leaf node.
     """
-    folders = [structure or {}]
+    folders = [structure] if isinstance(structure, dict) else []
     while folders:
         for node in folders.pop().values():
             if _is_leaf(node):
@@ -239,6 +289,16 @@ def _urls(remote_data: Any) -> List[str]:
     return []
 
 
+def _is_config(remote_data: Any) -> bool:
+    """Whether stored ``remote_data`` is already a Website config (an object with ``entries``), or its JSON."""
+    if isinstance(remote_data, str) and remote_data.strip()[:1] == "{":
+        try:
+            remote_data = json.loads(remote_data)
+        except json.JSONDecodeError:
+            return False
+    return isinstance(remote_data, dict) and "entries" in remote_data
+
+
 def config_from_legacy(source_type: str, remote_data: Any) -> Optional[Dict[str, Any]]:
     """A Website config for a source, converting the old web loaders.
 
@@ -263,7 +323,7 @@ def config_from_legacy(source_type: str, remote_data: Any) -> Optional[Dict[str,
         apply and an old loader's unparseable URLs are dropped.
     """
     loader = (source_type or "").lower()
-    if loader == "website":
+    if loader == "website" or (loader in ("url", "crawler", "sitemap") and _is_config(remote_data)):
         try:
             return parse_website_config(remote_data, enforce_page_cap=False)
         except ValueError:
@@ -302,8 +362,7 @@ def held_pages(config: Dict[str, Any], structure: Any) -> Dict[str, Any]:
     Its page entries count from when they are listed (one still queued, or
     one whose fetch failed, keeps its place), and so do the pages in its tree
     (a site's crawl). A page that is both counts once, a redirected one too
-    (its entries list the addresses its leaf keeps as ``requested_urls``, or
-    an older leaf's ``requested_url``). Leaves without a ``url`` (older
+    (its entries list the addresses its leaf keeps as ``requested_urls``). Leaves without a ``url`` (older
     crawls) count but have no key. The tree is walked without recursion, so
     a deep path can't exhaust the stack.
 
@@ -314,34 +373,16 @@ def held_pages(config: Dict[str, Any], structure: Any) -> Dict[str, Any]:
     Returns:
         ``{"keys": page keys held, "count": how many pages}``.
     """
-    from docsgpt.parser.remote.website_loader import page_key
-
-    def key(url: str) -> str:
-        try:
-            return page_key(url)
-        except ValueError:
-            return url
-
     tree_keys: set = set()
     aliases: set = set()
     unaddressed = 0
-    stack = [structure] if isinstance(structure, dict) else []
-    while stack:
-        node = stack.pop()
-        for child in node.values():
-            if _is_leaf(child):
-                if not child.get("url"):
-                    unaddressed += 1
-                    continue
-                tree_keys.add(key(child["url"]))
-                listed = child.get("requested_urls")
-                asked = [u for u in listed if isinstance(u, str) and u] if isinstance(listed, list) else []
-                if isinstance(child.get("requested_url"), str) and child["requested_url"]:
-                    asked.append(child["requested_url"])
-                aliases.update(key(address) for address in asked)
-            elif isinstance(child, dict):
-                stack.append(child)
+    for child in _leaves(structure):
+        if not child.get("url"):
+            unaddressed += 1
+            continue
+        tree_keys.add(stored_page_key(child["url"]))
+        aliases.update(stored_page_key(address) for address in page_aliases(child["url"], child))
     asked_keys = aliases - tree_keys
-    entry_keys = {key(e["url"]) for e in (config or {}).get("entries") or [] if e.get("mode") == "page"}
+    entry_keys = {stored_page_key(e["url"]) for e in (config or {}).get("entries") or [] if e.get("mode") == "page"}
     count = len(tree_keys) + len(entry_keys - tree_keys - asked_keys) + unaddressed
     return {"keys": tree_keys | asked_keys | entry_keys, "count": count}

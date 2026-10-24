@@ -49,14 +49,6 @@ GRAPH_NODE_LIST_MAX_PAGE = 1_000_000
 
 MAX_NODE_RELATIONSHIPS = 300
 
-# ``graph_ingest_progress.status`` values. ``deleted`` is a tombstone: the
-# chunk was deleted from the vector store (a page removed or refreshed), and
-# chunk ids are never reused (pgvector's serial ids, FAISS/Qdrant uuids, Mongo
-# ObjectIds), so a build still holding it in its snapshot skips it. A full
-# reset (``delete_by_source``) keeps the tombstones: a build may outlive it.
-_DONE = "done"
-_DELETED = "deleted"
-
 PGVECTOR_SOURCE_COLUMN = "source_id"
 
 def graph_type_key(type_value: Optional[str]) -> str:
@@ -741,7 +733,7 @@ class GraphStore:
                 # ``deleted`` is the tombstone ``delete_chunks`` leaves: a build
                 # that listed the chunk before a page change deleted it must not
                 # bring its entities and relationships back.
-                if applied is not None and applied[0] in (_DONE, _DELETED):
+                if applied is not None and applied[0] in ("done", "deleted"):
                     conn.rollback()
                     return 0, 0
 
@@ -1925,24 +1917,17 @@ class GraphStore:
         """Take deleted chunks' contributions out of a source's graph, with no LLM call.
 
         For a page removed or replaced on its own, so the rest of the graph
-        stays and only new chunks need extracting. In one transaction:
+        stays and only new chunks need extracting. In one transaction the
+        chunks' node links go (lowering ``doc_freq``), the chunk ids leave
+        every edge (an edge left with none goes), a touched node with no link
+        and no edge left goes, and degrees are recounted. A merged node's
+        description keeps the deleted chunks' text; only a rebuild clears it.
 
-        * the chunks' node links go, and each linked node's ``doc_freq``
-          drops by one per link (an edge-only endpoint's count isn't tracked
-          per chunk, so it stays);
-        * the chunk ids leave every edge's ``source_chunk_ids``, and an edge
-          left with none is deleted (an edge that never recorded a chunk is
-          kept);
-        * a node those changes touched that has no chunk link and no edge
-          left is deleted; a relationship endpoint with no chunk link of its
-          own keeps its place while an edge holds it;
-        * each chunk's extraction checkpoint becomes a ``deleted`` tombstone,
-          so a build that listed the chunk before it was deleted can't write
-          it back (``apply_chunk``), and the degrees of the nodes that lost an
-          edge are recounted, as ``set_node_degrees`` counts them.
-
-        A merged node's description keeps text from the deleted chunks:
-        merged text can't be split, so only a full rebuild clears it.
+        Each chunk's ``graph_ingest_progress`` row becomes a ``deleted``
+        tombstone, so a build that listed the chunk before it was deleted
+        skips it (``apply_chunk``). Chunk ids are never reused (pgvector's
+        serial ids, FAISS/Qdrant uuids, Mongo ObjectIds), and a full reset
+        (``delete_by_source``) keeps the tombstones, since a build may outlive it.
 
         Args:
             source_id: The source.

@@ -14,57 +14,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from docsgpt import worker
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-
-
-@pytest.fixture
-def _mock_connector_pipeline(monkeypatch):
-    """Stub the connector + pipeline so only PG writes are real."""
-    from docsgpt import worker
-
-    fake_connector = MagicMock(name="connector")
-    fake_connector.connection_id = None
-    fake_connector.download_to_directory.return_value = {
-        "files_downloaded": 1,
-        "empty_result": False,
-    }
-    monkeypatch.setattr(
-        worker.ConnectorCreator, "is_supported", staticmethod(lambda s: True)
-    )
-    monkeypatch.setattr(
-        worker.ConnectorCreator,
-        "create_connector",
-        staticmethod(lambda source_type, session_token=None, connection_id=None: fake_connector),
-    )
-
-    fake_reader = MagicMock(name="reader")
-    fake_reader.load_data.return_value = [
-        Document(
-            text="connector body",
-            extra_info={"source": "connector/file.md", "file_path": "file.md"},
-        )
-    ]
-    fake_reader.directory_structure = {
-        "file.md": {
-            "type": "text/markdown",
-            "size_bytes": 12,
-            "token_count": 3,
-        }
-    }
-    monkeypatch.setattr(
-        worker, "SimpleDirectoryReader", lambda *a, **kw: fake_reader
-    )
-
-    monkeypatch.setattr(
-        worker,
-        "embed_and_store_documents",
-        lambda docs, full_path, source_id, task, **kw: None,
-    )
-    monkeypatch.setattr(
-        worker, "upload_index", lambda full_path, file_data: None
-    )
-    return fake_connector
 
 
 @pytest.mark.unit
@@ -194,7 +146,7 @@ def _gdrive_source(pg_conn, remote_data):
     )
 
 
-def _sync(worker, task_self, source_id, config=None):
+def _sync(worker, task_self, source_id, config=None, **kwargs):
     return worker.ingest_connector(
         task_self,
         "gdrive-folder",
@@ -206,6 +158,7 @@ def _sync(worker, task_self, source_id, config=None):
         doc_id=source_id,
         sync_frequency="daily",
         config=config,
+        **kwargs,
     )
 
 
@@ -356,76 +309,38 @@ class TestConnectorSyncTakesTheIndexLock:
     """A connector sync takes turns with the source's other index jobs, and keeps the row's settings."""
 
     def test_a_sync_uploads_holding_the_lock(
-        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, held_lock, _mock_connector_pipeline,
     ):
-        from contextlib import contextmanager
-
-        from docsgpt import worker
-
         src = _gdrive_source(pg_conn, {})
-        held = []
-
-        @contextmanager
-        def fake_lock(source_id, **kwargs):
-            held.append(source_id)
-            yield
-            held.append("released")
-
-        monkeypatch.setattr(worker, "source_index_lock", fake_lock)
-        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: held.append("upload"))
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: held_lock.append("upload"))
 
         _sync(worker, task_self, str(src["id"]))
 
-        assert held == [str(src["id"]), "upload", "released"]
+        assert held_lock == [str(src["id"]), "upload", "released"]
 
     def test_a_wiki_conversion_finished_while_waiting_is_respected(
-        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+        self, pg_conn, patch_worker_db, task_self, held_lock, published, _mock_connector_pipeline,
     ):
-        from contextlib import contextmanager
-
-        from docsgpt import worker
-
         src = _gdrive_source(pg_conn, {})
-
-        @contextmanager
-        def converted_while_waiting(source_id, **kwargs):
-            SourcesRepository(pg_conn).update(str(src["id"]), "dave", {"config": {"kind": "wiki"}})
-            yield
-
-        monkeypatch.setattr(worker, "source_index_lock", converted_while_waiting)
-        events = []
-        monkeypatch.setattr(
-            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+        held_lock.while_waiting.append(
+            lambda: SourcesRepository(pg_conn).update(str(src["id"]), "dave", {"config": {"kind": "wiki"}})
         )
 
         result = _sync(worker, task_self, str(src["id"]))
 
         assert result == {"status": "skipped", "reason": "wiki"}
         _mock_connector_pipeline.download_to_directory.assert_not_called()
-        assert [(kind, payload["reason"]) for kind, payload in events] == [("source.ingest.failed", "wiki")]
+        assert [(kind, payload["reason"]) for kind, payload in published] == [("source.ingest.failed", "wiki")]
 
     def test_a_deleted_source_is_skipped(self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline):
-        from docsgpt import worker
-
         result = _sync(worker, task_self, str(uuid.uuid4()))
 
         assert result == {"status": "skipped", "reason": "gone"}
         _mock_connector_pipeline.download_to_directory.assert_not_called()
 
-    def test_a_busy_source_is_skipped(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
-        from contextlib import contextmanager
-
-        from docsgpt import worker
-        from docsgpt.vectorstore.index_lock import SourceBusy
-
+    def test_a_busy_source_is_skipped(self, pg_conn, patch_worker_db, task_self, busy_lock, _mock_connector_pipeline):
         src = _gdrive_source(pg_conn, {})
-
-        @contextmanager
-        def busy(source_id, **kwargs):
-            raise SourceBusy("busy")
-            yield
-
-        monkeypatch.setattr(worker, "source_index_lock", busy)
+        busy_lock()
 
         assert _sync(worker, task_self, str(src["id"])) == {"status": "skipped", "reason": "busy"}
         _mock_connector_pipeline.download_to_directory.assert_not_called()
@@ -433,8 +348,6 @@ class TestConnectorSyncTakesTheIndexLock:
     def test_a_sync_sends_content_and_its_fingerprint_only(
         self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
     ):
-        from docsgpt import worker
-
         connector = _mock_connector_pipeline
         connector.download_to_directory.return_value = {
             "files_downloaded": 1, "empty_result": False, "sync_fingerprint": "fp-2",
@@ -456,8 +369,6 @@ class TestConnectorSyncTakesTheIndexLock:
     def test_a_sync_reads_the_rows_selection(
         self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline,
     ):
-        from docsgpt import worker
-
         src = _gdrive_source(pg_conn, {"folder_ids": ["picked-meanwhile"], "file_ids": ["f9"]})
 
         _sync(worker, task_self, str(src["id"]))
@@ -466,8 +377,6 @@ class TestConnectorSyncTakesTheIndexLock:
         assert selection["folder_ids"] == ["picked-meanwhile"] and selection["file_ids"] == ["f9"]
 
     def test_the_first_ingest_still_sends_everything(self, task_self, monkeypatch, _mock_connector_pipeline):
-        from docsgpt import worker
-
         uploads = []
         monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
 
@@ -484,8 +393,6 @@ class TestConnectorSyncTakesTheIndexLock:
         self, task_self, monkeypatch, _mock_connector_pipeline, given, stored,
     ):
         # /api/remote validates sync_frequency and passes it on; a new connector source keeps it.
-        from docsgpt import worker
-
         uploads = []
         monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
 
@@ -496,80 +403,73 @@ class TestConnectorSyncTakesTheIndexLock:
 
         assert uploads[0]["sync_frequency"] == stored
 
-    def test_the_task_passes_the_schedule_on(self, monkeypatch):
-        from docsgpt import worker
-        from docsgpt.api.user import tasks
 
-        seen = []
-        monkeypatch.setattr(worker, "ingest_connector", lambda *a, **k: seen.append(k) or {})
+EDITOR = "editor-1"
 
-        tasks.ingest_connector_task.run("job", "dave", "google_drive", sync_frequency="weekly")
 
-        assert seen[0]["sync_frequency"] == "weekly"
+def _no_download(connector):
+    connector.download_to_directory.return_value = {"files_downloaded": 0, "empty_result": True}
+
+
+def _unchanged(connector):
+    connector.sync_fingerprint.return_value = "fp-1"
+
+
+def _drive_down(connector):
+    connector.download_to_directory.side_effect = RuntimeError("drive down")
 
 
 @pytest.mark.unit
-class TestConnectorSyncEventsCarryItsTaskId:
-    """The UI waits on a Sync now by the task id the route returned; a scheduled sync's events mustn't end it."""
+class TestConnectorSyncEvents:
+    """A Sync now's events carry its task id (the UI waits on it) and reach the team editor who asked."""
 
-    def _capture(self, worker, monkeypatch):
-        events = []
-        monkeypatch.setattr(
-            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
-        )
-        return events
+    @pytest.mark.parametrize("setup, last_kind", [
+        (None, "source.ingest.completed"),
+        (_unchanged, "source.ingest.completed"),
+        (_no_download, "source.ingest.completed"),
+        (_drive_down, "source.ingest.failed"),
+    ], ids=["ran", "unchanged", "empty-download", "failed"])
+    def test_every_way_out(
+        self, pg_conn, patch_worker_db, task_self, published, _mock_connector_pipeline, setup, last_kind,
+    ):
+        task_self.request.id = "task-manual"
+        fingerprint = {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)}
+        src = _gdrive_source(pg_conn, fingerprint if setup is _unchanged else {})
+        if setup:
+            setup(_mock_connector_pipeline)
 
-    def test_a_sync_that_ran(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
-        from docsgpt import worker
+        if setup is _drive_down:
+            with pytest.raises(RuntimeError):
+                _sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
+        else:
+            _sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
 
-        task_self.request.id = "task-manual-1"
+        assert published[-1][0] == last_kind
+        assert all(payload.get("task_id") == "task-manual" for _, payload in published)
+        assert published.recipients(last_kind) == sorted(["dave", EDITOR])
+        if setup is _unchanged:
+            assert published[-1][1]["no_changes"] is True
+
+    def test_the_embedding_knows_the_editor(
+        self, pg_conn, patch_worker_db, task_self, published, monkeypatch, _mock_connector_pipeline,
+    ):
+        embedded = []
+        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: embedded.append(k))
         src = _gdrive_source(pg_conn, {})
-        events = self._capture(worker, monkeypatch)
 
-        _sync(worker, task_self, str(src["id"]))
+        _sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
 
-        assert [kind for kind, _ in events] == ["source.ingest.queued", "source.ingest.completed"]
-        assert all(payload.get("task_id") == "task-manual-1" for _, payload in events)
+        assert published.recipients("source.ingest.queued") == sorted(["dave", EDITOR])
+        assert embedded[0]["actor_id"] == EDITOR
 
-    def test_an_unchanged_sync(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
-        from docsgpt import worker
-
-        task_self.request.id = "task-manual-2"
-        _mock_connector_pipeline.sync_fingerprint.return_value = "fp-1"
-        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
-        events = self._capture(worker, monkeypatch)
-
-        _sync(worker, task_self, str(src["id"]))
-
-        assert events[-1][0] == "source.ingest.completed" and events[-1][1]["no_changes"] is True
-        assert all(payload.get("task_id") == "task-manual-2" for _, payload in events)
-
-    def test_an_empty_download(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
-        from docsgpt import worker
-
-        task_self.request.id = "task-manual-3"
-        _mock_connector_pipeline.download_to_directory.return_value = {"files_downloaded": 0, "empty_result": True}
+    def test_a_skipped_sync_reaches_the_editor(
+        self, pg_conn, patch_worker_db, task_self, published, busy_lock, _mock_connector_pipeline,
+    ):
         src = _gdrive_source(pg_conn, {})
-        events = self._capture(worker, monkeypatch)
+        busy_lock()
 
-        _sync(worker, task_self, str(src["id"]))
-
-        assert events[-1][0] == "source.ingest.completed"
-        assert all(payload.get("task_id") == "task-manual-3" for _, payload in events)
-
-    def test_a_failed_sync(self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline):
-        from docsgpt import worker
-
-        task_self.request.id = "task-manual-4"
-        _mock_connector_pipeline.download_to_directory.side_effect = RuntimeError("drive down")
-        src = _gdrive_source(pg_conn, {})
-        events = self._capture(worker, monkeypatch)
-
-        with pytest.raises(RuntimeError):
-            _sync(worker, task_self, str(src["id"]))
-
-        assert events[-1][0] == "source.ingest.failed"
-        assert all(payload.get("task_id") == "task-manual-4" for _, payload in events)
+        assert _sync(worker, task_self, str(src["id"]), actor_id=EDITOR)["reason"] == "busy"
+        assert published.recipients("source.ingest.failed") == sorted(["dave", EDITOR])
 
 
 @pytest.mark.unit
@@ -577,27 +477,21 @@ class TestARefusedConnectorSyncUpload:
     """The API answers 200 ``skipped`` when the source was deleted, or became a wiki, while the sync ran."""
 
     @pytest.fixture
-    def refused(self, monkeypatch, _mock_connector_pipeline):
-        from docsgpt import worker
+    def refused(self, monkeypatch, published, _mock_connector_pipeline):
         from docsgpt.core.settings import settings
         from docsgpt.vectorstore import vector_creator
 
         monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
         store = MagicMock(name="vector_store")
         monkeypatch.setattr(vector_creator.VectorCreator, "create_vectorstore", lambda *a, **k: store)
-        after = {"events": [], "graph": [], "store": store, "answer": {"status": "skipped", "reason": "gone"}}
+        after = {"events": published, "graph": [], "store": store, "answer": {"status": "skipped", "reason": "gone"}}
         monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: after["answer"])
-        monkeypatch.setattr(
-            worker, "publish_user_event", lambda user, kind, payload, **kw: after["events"].append((kind, payload))
-        )
         monkeypatch.setattr(worker, "_maybe_enqueue_graph_extraction", lambda *a, **k: after["graph"].append(a))
         return after
 
     def test_a_deleted_source_fails_with_gone_and_drops_its_vectors(
         self, pg_conn, patch_worker_db, task_self, refused,
     ):
-        from docsgpt import worker
-
         task_self.request.id = "task-refused"
         src = _gdrive_source(pg_conn, {})
 
@@ -607,13 +501,11 @@ class TestARefusedConnectorSyncUpload:
         kind, payload = refused["events"][-1]
         assert kind == "source.ingest.failed"
         assert payload["reason"] == "gone" and payload["task_id"] == "task-refused" and payload["error"]
-        assert "source.ingest.completed" not in [k for k, _ in refused["events"]]
+        assert "source.ingest.completed" not in refused["events"].kinds()
         refused["store"].delete_index.assert_called_once()
         assert refused["graph"] == []
 
     def test_a_wiki_keeps_its_vectors(self, pg_conn, patch_worker_db, task_self, refused):
-        from docsgpt import worker
-
         refused["answer"] = {"status": "skipped", "reason": "wiki"}
         src = _gdrive_source(pg_conn, {})
 
@@ -622,7 +514,6 @@ class TestARefusedConnectorSyncUpload:
         assert result["status"] == "skipped" and result["reason"] == "wiki"
         assert refused["events"][-1][1]["reason"] == "wiki"
         refused["store"].delete_index.assert_not_called()
-
 
 
 @pytest.mark.unit

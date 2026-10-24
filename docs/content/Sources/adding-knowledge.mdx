@@ -144,7 +144,7 @@ Through the API, these actions are the `/api/website` routes in the [API referen
 A sync replaces a website source's chunks. On a source that is kept up to date, chunks you add or edit by hand are replaced at the next sync.
 </Callout>
 
-Sources added with the earlier **Link**, **Crawler** and sitemap options open as website sources. Their pages show titles and addresses after their next sync. When you first change one, a sitemap source becomes a site that includes its subdomains, and an address that isn't a sitemap file, such as one without `.xml`, is also kept as a page.
+Sources added with the earlier **Link**, **Crawler** and sitemap options open and sync as website sources. Their pages show titles and addresses after their next sync. A link is a page, a crawler source is a site, and a sitemap source is a site that includes its subdomains, so a page its sitemap lists on another domain is left out; an address that isn't a sitemap file, such as one without `.xml`, is also kept as a page. The page limit applies to them as to any website source.
 
 ## Add a GitHub repository
 

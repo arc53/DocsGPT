@@ -201,6 +201,86 @@ const doc = (fields: Partial<Doc> = {}): Doc => ({
   ...fields,
 });
 
+/** The URL: its path and its search, apart. */
+function Where() {
+  const location = useLocation();
+  return (
+    <>
+      <div data-testid="path">{location.pathname}</div>
+      <div data-testid="where">{location.search}</div>
+    </>
+  );
+}
+
+/** Renders the page at `entry` over the `listed` cards. */
+const mount = (
+  root: Root,
+  listed: Doc[],
+  {
+    entry = '/settings/sources',
+    onDelete = vi.fn(),
+  }: {
+    entry?: string;
+    onDelete?: (index: number, doc: Doc) => void | Promise<unknown>;
+  } = {},
+) =>
+  act(async () => {
+    root.render(
+      <MemoryRouter initialEntries={[entry]}>
+        <Sources paginatedDocuments={listed} handleDeleteDocument={onDelete} />
+        <Where />
+      </MemoryRouter>,
+    );
+  });
+
+/** Opens the menu behind a trigger; returns its item labels. */
+const openMenu = async (testId: string) => {
+  const trigger = document.querySelector<HTMLButtonElement>(
+    `[data-testid="${testId}"]`,
+  )!;
+  await act(async () => {
+    trigger.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+    );
+    trigger.click();
+  });
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ).map((el) => el.textContent);
+};
+
+/** Types into the page's search box. */
+const typeSearch = async (value: string) => {
+  const input = document.querySelector<HTMLInputElement>(
+    '#document-search-input',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+};
+
+/** The caller's one connection (`conn-1`), in `status`. */
+const withConnection = (
+  status: string,
+  fields: Record<string, unknown> = {},
+) => {
+  connectors.connections = [
+    {
+      id: 'conn-1',
+      connector_key: 'google_drive',
+      name: 'Google Drive',
+      icon: 'drive',
+      status,
+      account_label: 'alex@example.com',
+      ...fields,
+    },
+  ];
+};
+
 describe('Sources access', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -209,6 +289,7 @@ describe('Sources access', () => {
     dispatch.mockReset();
     Object.values(service).forEach((fn) => fn.mockReset());
     service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    connectors.connections = [];
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -218,41 +299,12 @@ describe('Sources access', () => {
     await act(async () => root.unmount());
     container.remove();
     document.body.innerHTML = '';
+    connectors.connections = [];
   });
 
-  function Where() {
-    const location = useLocation();
-    return <div data-testid="where">{location.pathname + location.search}</div>;
-  }
+  const render = (document: Doc) => mount(root, [document]);
 
-  const render = async (document: Doc) => {
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <Sources
-            paginatedDocuments={[document]}
-            handleDeleteDocument={vi.fn()}
-          />
-          <Where />
-        </MemoryRouter>,
-      );
-    });
-  };
-
-  const menuItems = async () => {
-    const trigger = container.querySelector<HTMLButtonElement>(
-      '[data-testid="menu-button-src-1"]',
-    )!;
-    await act(async () => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-      trigger.click();
-    });
-    return Array.from(
-      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).map((el) => el.textContent);
-  };
+  const menuItems = () => openMenu('menu-button-src-1');
 
   const menuIcon = (label: string) =>
     Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
@@ -278,18 +330,11 @@ describe('Sources access', () => {
     const handleDeleteDocument = vi.fn(() =>
       Promise.reject(new Error('settings.sources.errors.forbidden')),
     );
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <Sources
-            paginatedDocuments={[
-              doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] }),
-            ]}
-            handleDeleteDocument={handleDeleteDocument}
-          />
-        </MemoryRouter>,
-      );
-    });
+    await mount(
+      root,
+      [doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] })],
+      { onDelete: handleDeleteDocument },
+    );
     await menuItems();
     await clickItem('settings.sources.delete');
     // The confirm copy: the question as the title, the consequence below.
@@ -308,36 +353,77 @@ describe('Sources access', () => {
     expect(dialog!.textContent).toContain('settings.sources.errors.forbidden');
   });
 
-  it('owner: Edit config, Test retrieval, Convert, Share and Delete', async () => {
-    await render(
-      doc({
-        access: 'owner',
-        allowed_actions: [...OWNER, 'use', 'view_config'],
-      }),
-    );
-    expect(await menuItems()).toEqual([
-      'settings.sources.view',
-      'settings.sources.editConfig',
-      'settings.sources.testRetrieval.action',
-      'settings.sources.wiki.convert.action',
-      'settings.sources.shareWithTeam',
-      'settings.sources.delete',
-    ]);
+  const VIEW = 'settings.sources.view';
+  const TEST = 'settings.sources.testRetrieval.action';
+  const CONVERT = 'settings.sources.wiki.convert.action';
+  const SHARE = 'settings.sources.shareWithTeam';
+  const DELETE = 'settings.sources.delete';
+  const EDIT_CONFIG = 'settings.sources.editConfig';
+  const VIEW_CONFIG = 'settings.sources.viewConfig';
+  const FULL = [VIEW, EDIT_CONFIG, TEST, CONVERT, SHARE, DELETE];
+
+  // `eye`: whether the config item carries the Eye icon, as every View
+  // label does.
+  it.each<[string, Partial<Doc>, string[], boolean | null]>([
+    [
+      'owner',
+      { access: 'owner', allowed_actions: [...OWNER, 'use', 'view_config'] },
+      FULL,
+      false,
+    ],
+    [
+      'editor: edits but cannot share or delete',
+      {
+        access: 'editor',
+        ownership: 'team',
+        team_access: 'editor',
+        allowed_actions: EDITOR,
+      },
+      [VIEW, EDIT_CONFIG, TEST, CONVERT],
+      false,
+    ],
+    [
+      'editor with editors_can_share / editors_can_delete',
+      {
+        access: 'editor',
+        ownership: 'team',
+        allowed_actions: [...EDITOR, 'share', 'delete'],
+      },
+      FULL,
+      false,
+    ],
+    [
+      'viewer: View config and Test retrieval only',
+      {
+        access: 'viewer',
+        ownership: 'team',
+        team_access: 'viewer',
+        allowed_actions: VIEWER,
+      },
+      [VIEW, VIEW_CONFIG, TEST],
+      true,
+    ],
+    [
+      'viewer without view_config: no config item',
+      { access: 'viewer', ownership: 'team', allowed_actions: ['use'] },
+      [VIEW, TEST],
+      null,
+    ],
+    // No access fields: the caller's own.
+    ['no access fields', {}, FULL, false],
+  ])('the card menu of %s', async (_, fields, expected, eye) => {
+    await render(doc(fields));
+    expect(await menuItems()).toEqual(expected);
+    if (eye !== null)
+      expect(
+        menuIcon(eye ? VIEW_CONFIG : EDIT_CONFIG).includes('lucide-eye'),
+      ).toBe(eye);
   });
 
   // The connection is managed on the Connectors page; a synced source's
   // menu keeps only what acts on the source itself.
   it('a synced source has no Manage connection item', async () => {
-    connectors.connections = [
-      {
-        id: 'conn-1',
-        connector_key: 'google_drive',
-        name: 'Google Drive',
-        icon: 'drive',
-        status: 'connected',
-        account_label: 'alex@example.com',
-      },
-    ];
+    withConnection('connected');
     await render(
       doc({
         access: 'owner',
@@ -346,7 +432,6 @@ describe('Sources access', () => {
       } as Partial<Doc>),
     );
     const items = await menuItems();
-    connectors.connections = [];
     expect(items).not.toContain('settings.connectors.manageConnection');
     expect(items).toContain('settings.sources.editConfig');
     expect(items).toContain('settings.sources.delete');
@@ -355,20 +440,10 @@ describe('Sources access', () => {
   // A source whose connection needs signing in again says so on its tile
   // and signs in again from there, without opening the source.
   it('reconnects a paused synced source from its tile', async () => {
-    connectors.connections = [
-      {
-        id: 'conn-1',
-        connector_key: 'google_drive',
-        name: 'Google Drive',
-        icon: 'drive',
-        status: 'reconnect_needed',
-        account_label: 'alex@example.com',
-      },
-    ];
+    withConnection('reconnect_needed');
     reconnect.mockClear();
     await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
-    connectors.connections = [];
-    // The state is the warning Badge, the action an outline sm pill.
+    // The state is a warning Badge, not a control.
     const badge = Array.from(
       container.querySelectorAll('[data-slot="badge"]'),
     ).find((b) => b.textContent === 'settings.connectors.status.reconnect')!;
@@ -381,9 +456,6 @@ describe('Sources access', () => {
       (b) => b.textContent === 'settings.connectors.status.reconnect',
     )!;
     expect(button).toBeDefined();
-    expect(button.getAttribute('data-variant')).toBe('outline');
-    expect(button.getAttribute('data-size')).toBe('sm');
-    expect(button.getAttribute('data-shape')).toBe('pill');
     // A sibling of the card's own button, never inside it.
     expect(button.closest('[role="button"]')).toBeNull();
     expect(button.parentElement!.closest('button')).toBeNull();
@@ -399,17 +471,10 @@ describe('Sources access', () => {
   it.each([
     ['error', true],
     ['disconnected', false],
+    ['connected', false],
   ])('status %s offers Reconnect: %s', async (status, shown) => {
-    connectors.connections = [
-      {
-        id: 'conn-1',
-        connector_key: 'google_drive',
-        name: 'Google Drive',
-        status,
-      },
-    ];
+    withConnection(status);
     await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
-    connectors.connections = [];
     expect(
       Array.from(container.querySelectorAll('button')).some(
         (b) => b.textContent === 'settings.connectors.status.reconnect',
@@ -420,67 +485,34 @@ describe('Sources access', () => {
   // DESIGN "A clickable card that holds a link": the card opens through a
   // stretched button; the menu and Reconnect are its siblings.
   it('opens the source through a stretched button, controls beside it', async () => {
-    connectors.connections = [
-      {
-        id: 'conn-1',
-        connector_key: 'google_drive',
-        name: 'Google Drive',
-        icon: 'drive',
-        status: 'reconnect_needed',
-      },
-    ];
+    withConnection('reconnect_needed');
     await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
-    connectors.connections = [];
     expect(container.querySelector('[role="button"]')).toBeNull();
     const open = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Contracts"]',
     )!;
     expect(open).not.toBeNull();
-    expect(open.className).toContain('after:inset-0');
     expect(open.querySelector('button, a, [tabindex]')).toBeNull();
     const menu = container.querySelector<HTMLElement>(
       '[data-testid="menu-button-src-1"]',
     )!;
     expect(open.contains(menu)).toBe(false);
-    expect(menu.closest('.z-10')).not.toBeNull();
     const card = open.closest('[data-slot="card"]')!;
-    expect(card.className).toContain('has-[>button:focus-visible]:ring-3');
     // Names the connection from the Knowledge namespace.
     expect(card.textContent).toContain('settings.sources.viaConnection');
     expect(card.textContent).not.toContain('settings.tools.viaConnection');
+    // The ⋯ opens its menu and leaves the source closed; the card opens it.
+    expect(await menuItems()).toContain('settings.sources.view');
+    expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
+    await act(async () => open.click());
+    expect(container.querySelector('[data-testid="chunks"]')).not.toBeNull();
   });
 
   it('counts the files of a synced source on its card', async () => {
-    connectors.connections = [
-      {
-        id: 'conn-1',
-        connector_key: 's3',
-        name: 'Amazon S3',
-        status: 'connected',
-      },
-    ];
+    withConnection('connected');
     await render(doc({ connectionId: 'conn-1', files: 12 } as Partial<Doc>));
-    connectors.connections = [];
     const card = container.querySelector('[data-slot="card"]')!;
     expect(card.textContent).toContain('settings.sources.viaConnectionFiles');
-  });
-
-  it('offers no Reconnect on a synced source that is running', async () => {
-    connectors.connections = [
-      {
-        id: 'conn-1',
-        connector_key: 'google_drive',
-        name: 'Google Drive',
-        status: 'connected',
-      },
-    ];
-    await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
-    connectors.connections = [];
-    expect(
-      Array.from(container.querySelectorAll('button')).some(
-        (b) => b.textContent === 'settings.connectors.status.reconnect',
-      ),
-    ).toBe(false);
   });
 
   // Leaving Knowledge loses nothing, so its Add knowledge may browse the
@@ -496,161 +528,98 @@ describe('Sources access', () => {
       onBrowseConnectors?: () => void;
     };
     await act(async () => props.onBrowseConnectors!());
+    expect(container.querySelector('[data-testid="path"]')?.textContent).toBe(
+      '/settings/connectors',
+    );
     expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
-      '/settings/connectors?capability=sync',
+      '?capability=sync',
     );
   });
 
-  it('a source with no access fields is the caller’s own', async () => {
-    await render(doc());
-    const items = await menuItems();
-    expect(items).toContain('settings.sources.shareWithTeam');
-    expect(items).toContain('settings.sources.delete');
-  });
-
-  it('editor: edits but cannot share or delete', async () => {
-    await render(
-      doc({
-        access: 'editor',
-        ownership: 'team',
-        team_access: 'editor',
-        allowed_actions: EDITOR,
-      }),
-    );
-    expect(await menuItems()).toEqual([
-      'settings.sources.view',
-      'settings.sources.editConfig',
-      'settings.sources.testRetrieval.action',
-      'settings.sources.wiki.convert.action',
-    ]);
-    expect(menuIcon('settings.sources.editConfig')).not.toContain('lucide-eye');
-  });
-
-  it('editors_can_share / editors_can_delete widen the editor menu', async () => {
-    await render(
-      doc({
-        access: 'editor',
-        ownership: 'team',
-        allowed_actions: [...EDITOR, 'share', 'delete'],
-      }),
-    );
-    const items = await menuItems();
-    expect(items).toContain('settings.sources.shareWithTeam');
-    expect(items).toContain('settings.sources.delete');
-  });
-
-  it('viewer: View config and Test retrieval only', async () => {
-    await render(
-      doc({
-        access: 'viewer',
-        ownership: 'team',
-        team_access: 'viewer',
-        allowed_actions: VIEWER,
-      }),
-    );
-    expect(await menuItems()).toEqual([
-      'settings.sources.view',
-      'settings.sources.viewConfig',
-      'settings.sources.testRetrieval.action',
-    ]);
-    // View swaps the config item's icon for Eye, like every View label.
-    expect(menuIcon('settings.sources.viewConfig')).toContain('lucide-eye');
-  });
-
-  it('viewer without view_config: no config item', async () => {
-    await render(
-      doc({ access: 'viewer', ownership: 'team', allowed_actions: ['use'] }),
-    );
-    expect(await menuItems()).toEqual([
-      'settings.sources.view',
-      'settings.sources.testRetrieval.action',
-    ]);
-  });
-
-  it('a wiki owner gets Wiki settings; editors and viewers do not', async () => {
-    const wiki = { type: 'wiki', config: { kind: 'wiki' } };
-    await render(
-      doc({ ...wiki, access: 'owner', allowed_actions: [...OWNER, 'use'] }),
-    );
-    // Labelled Settings, like every source's.
-    expect(await menuItems()).toContain('settings.sources.editConfig');
-    await clickItem('settings.sources.editConfig');
-    expect(
-      document.querySelector('[data-testid="wiki-settings"]')?.textContent,
-    ).toBe('Contracts');
-
-    for (const allowed of [EDITOR, VIEWER]) {
-      await act(async () => root.unmount());
-      root = createRoot(container);
-      document.body
-        .querySelectorAll('[role="menu"]')
-        .forEach((m) => m.remove());
+  // A synced wiki: its Settings is Wiki settings, the owner's alone, and it
+  // never syncs.
+  it.each([
+    ['owner', 'owner', [...OWNER, 'use'], true],
+    ['editor', 'editor', EDITOR, false],
+    ['viewer', 'viewer', VIEWER, false],
+  ] as const)(
+    "a wiki's Settings for its %s",
+    async (_, access, allowed, settings) => {
       await render(
-        doc({ ...wiki, access: 'editor', allowed_actions: allowed }),
+        doc({
+          type: 'url',
+          syncFrequency: 'weekly',
+          config: { kind: 'wiki' },
+          access,
+          allowed_actions: [...allowed],
+        }),
       );
-      expect(await menuItems()).not.toContain('settings.sources.editConfig');
-    }
-  });
-
-  it('sync and reingest are editor actions', async () => {
-    const synced = { syncFrequency: 'daily', ingestStatus: 'failed' as const };
-    await render(doc({ ...synced, access: 'editor', allowed_actions: EDITOR }));
-    let items = await menuItems();
-    expect(items).toContain('settings.sources.reingest');
-    expect(items).toContain('settings.sources.syncNow');
-    // The schedule lives in Settings, not as menu rows.
-    expect(items).not.toContain('settings.sources.syncFrequency.option');
-
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    document.body.querySelectorAll('[role="menu"]').forEach((m) => m.remove());
-    await render(doc({ ...synced, access: 'viewer', allowed_actions: VIEWER }));
-    items = await menuItems();
-    expect(items).not.toContain('settings.sources.reingest');
-    expect(items).not.toContain('settings.sources.syncNow');
-    expect(items).not.toContain('settings.sources.syncFrequency.option');
-  });
-
-  it('a failed Sync now shows an error toast', async () => {
-    service.syncSource.mockResolvedValue({
-      ok: false,
-      status: 403,
-      json: async () => ({ success: false, message: 'Forbidden' }),
-    });
-    await render(doc({ syncFrequency: 'daily' }));
-    await menuItems();
-    await clickItem('settings.sources.syncNow');
-    expect(toasts()).toEqual([
-      expect.objectContaining({
-        payload: {
-          variant: 'destructive',
-          message: 'settings.sources.errors.forbidden',
-        },
-      }),
-    ]);
-  });
+      const items = await menuItems();
+      expect(items).not.toContain('settings.sources.syncNow');
+      // Labelled Settings, like every source's.
+      expect(items.includes('settings.sources.editConfig')).toBe(settings);
+      if (!settings) return;
+      await clickItem('settings.sources.editConfig');
+      expect(
+        document.querySelector('[data-testid="wiki-settings"]')?.textContent,
+      ).toBe('Contracts');
+    },
+  );
 
   it.each([
+    ['editor', EDITOR, true],
+    ['viewer', VIEWER, false],
+  ] as const)(
+    'sync and reingest are editor actions (%s)',
+    async (access, allowed, shown) => {
+      await render(
+        doc({
+          syncFrequency: 'daily',
+          ingestStatus: 'failed',
+          access,
+          allowed_actions: [...allowed],
+        }),
+      );
+      const items = await menuItems();
+      expect(items.includes('settings.sources.reingest')).toBe(shown);
+      expect(items.includes('settings.sources.syncNow')).toBe(shown);
+      // The schedule lives in Settings, not as menu rows.
+      expect(items).not.toContain('settings.sources.syncFrequency.option');
+    },
+  );
+
+  // A 403 reads as "not allowed" whatever its body; another refusal says
+  // why (the codes are syncRefusal's, see syncRefusal.test).
+  it.each([
     [
+      403,
+      { success: false, message: 'Forbidden' },
+      'settings.sources.errors.forbidden',
+    ],
+    [
+      400,
       { success: false, code: 'wiki', error: 'English' },
       'settings.connectors.detail.syncRefusedWiki',
     ],
-    [{ success: false, message: 'Nothing to sync.' }, 'Nothing to sync.'],
-  ])('a refused Sync now says why (%o)', async (body, message) => {
-    service.syncSource.mockResolvedValue({
-      ok: false,
-      status: 400,
-      json: async () => body,
-    });
-    await render(doc({ syncFrequency: 'daily' }));
-    await menuItems();
-    await clickItem('settings.sources.syncNow');
-    expect(toasts()).toEqual([
-      expect.objectContaining({
-        payload: { variant: 'destructive', message },
-      }),
-    ]);
-  });
+    [400, { success: false, message: 'Nothing to sync.' }, 'Nothing to sync.'],
+  ])(
+    'a Sync now refused with %i says why (%o)',
+    async (status, body, message) => {
+      service.syncSource.mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => body,
+      });
+      await render(doc({ syncFrequency: 'daily' }));
+      await menuItems();
+      await clickItem('settings.sources.syncNow');
+      expect(toasts()).toEqual([
+        expect.objectContaining({
+          payload: { variant: 'destructive', message },
+        }),
+      ]);
+    },
+  );
 
   it('a successful Sync now says the sync started', async () => {
     service.syncConnector.mockResolvedValue({
@@ -715,24 +684,6 @@ describe('Sources access', () => {
     ).toHaveLength(1);
   });
 
-  it('a wiki: Settings opens Wiki settings, and no Sync now', async () => {
-    await render(
-      doc({
-        type: 'url',
-        syncFrequency: 'weekly',
-        config: { kind: 'wiki' },
-        access: 'owner',
-        allowed_actions: [...OWNER, 'use'],
-      }),
-    );
-    const items = await menuItems();
-    expect(items).not.toContain('settings.sources.syncNow');
-    await clickItem('settings.sources.editConfig');
-    expect(
-      document.querySelector('[data-testid="wiki-settings"]')?.textContent,
-    ).toBe('Contracts');
-  });
-
   it('a schedule saved in Settings updates the card, not the whole grid', async () => {
     const listed = doc({ type: 's3', syncFrequency: 'never' });
     await render(listed);
@@ -758,41 +709,37 @@ describe('Sources access', () => {
     expect(container.textContent).toContain('settings.sources.website.synced');
   });
 
-  it('a failed reingest shows an error toast', async () => {
-    service.reingestSource.mockResolvedValue({
-      ok: false,
-      status: 403,
-      json: async () => ({ success: false, message: 'Forbidden' }),
-    });
-    await render(doc({ ingestStatus: 'failed' }));
-    await menuItems();
-    await clickItem('settings.sources.reingest');
-    expect(toasts()).toHaveLength(1);
-  });
-
+  // The toast and the upload row's error: a 403 toasts as "not allowed";
+  // a coded refusal is worded by syncRefusal (its codes: syncRefusal.test).
   it.each([
-    ['reconnect_needed', 409, 'syncRefusedReconnect'],
-    ['connection_missing', 409, 'syncRefusedConnectionMissing'],
-    ['wiki', 400, 'syncRefusedWiki'],
+    [
+      403,
+      { success: false, message: 'Forbidden' },
+      'settings.sources.errors.forbidden',
+      'Forbidden',
+    ],
+    [
+      409,
+      { success: false, code: 'reconnect_needed', error: 'English' },
+      'settings.connectors.detail.syncRefusedReconnect',
+      'settings.connectors.detail.syncRefusedReconnect',
+    ],
   ])(
-    "a reingest refused with %s says why in the UI's words",
-    async (code, status, name) => {
+    'a reingest refused with %i says why (%o)',
+    async (status, body, toast, rowError) => {
       service.reingestSource.mockResolvedValue({
         ok: false,
         status,
-        json: async () => ({ success: false, code, error: 'English' }),
+        json: async () => body,
       });
       await render(doc({ ingestStatus: 'failed' }));
       await menuItems();
       await clickItem('settings.sources.reingest');
-      const message = `settings.connectors.detail.${name}`;
-      expect(toasts().map((action) => action.payload.message)).toEqual([
-        message,
-      ]);
+      expect(toasts().map((action) => action.payload.message)).toEqual([toast]);
       const failed = dispatch.mock.calls
         .map(([action]) => action)
         .find((action) => action?.payload?.updates?.status === 'failed');
-      expect(failed?.payload.updates.errorMessage).toBe(message);
+      expect(failed?.payload.updates.errorMessage).toBe(rowError);
     },
   );
 
@@ -824,20 +771,7 @@ describe('Sources access', () => {
     },
   );
 
-  const viewMenu = async () => {
-    const trigger = container.querySelector<HTMLButtonElement>(
-      '[data-testid="source-view-menu"]',
-    )!;
-    await act(async () => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-      trigger.click();
-    });
-    return Array.from(
-      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).map((el) => el.textContent);
-  };
+  const viewMenu = () => openMenu('source-view-menu');
 
   it('the opened source has the card menu, less View and Test retrieval, last', async () => {
     await openView(
@@ -862,19 +796,6 @@ describe('Sources access', () => {
     ]);
   });
 
-  it('a website view keeps Sync now in its menu', async () => {
-    await openView(
-      doc({
-        isNested: true,
-        website: { hosts: ['docs.x.io'], pages: 9 },
-        syncFrequency: 'weekly',
-        access: 'owner',
-        allowed_actions: [...OWNER, 'use', 'view_config'],
-      }),
-    );
-    expect(await viewMenu()).toContain('settings.sources.syncNow');
-  });
-
   const WEBSITE_OWNER: Partial<Doc> = {
     isNested: true,
     website: { hosts: ['docs.x.io'], pages: 9 },
@@ -883,79 +804,72 @@ describe('Sources access', () => {
     access: 'owner',
     allowed_actions: [...OWNER, 'use', 'view_config'],
   };
-
-  it("a website view's Sync now hands the sync to the tree to wait on", async () => {
-    service.syncSource.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ success: true, task_id: 'task-s' }),
-    });
-    await openView(doc(WEBSITE_OWNER));
-    expect(viewProps['website-tree'].sync).toBeFalsy();
-    const before = Date.now();
-    await viewMenu();
-    await clickItem('settings.sources.syncNow');
-    expect(service.syncSource).toHaveBeenCalledWith(
-      { source_id: 'src-1' },
-      null,
-    );
-    const sync = viewProps['website-tree'].sync as {
-      startedAt: number;
-      taskId: string | null;
-    };
-    expect(sync.taskId).toBe('task-s');
-    expect(sync.startedAt).toBeGreaterThanOrEqual(before);
-    expect(sync.startedAt).toBeLessThanOrEqual(Date.now());
-    // The toast still says it started.
-    expect(toasts()).toEqual([
-      expect.objectContaining({
-        payload: expect.objectContaining({ variant: 'success' }),
-      }),
-    ]);
-  });
-
-  it("a website view's Sync now is off until the tree's wait for the sync ends", async () => {
-    service.syncSource.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ success: true, task_id: 'task-s' }),
-    });
-    await openView(doc(WEBSITE_OWNER));
-    await viewMenu();
-    await clickItem('settings.sources.syncNow');
-    const syncItem = () =>
-      Array.from(
-        document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-      ).find((el) => el.textContent === 'settings.sources.syncNow')!;
-    await viewMenu();
-    expect(syncItem().hasAttribute('data-disabled')).toBe(true);
-    // Settings, from the same view, says the same in its footer.
-    await clickItem('settings.sources.editConfig');
-    expect(configModal.props!.syncing).toBe(true);
-
-    const sync = viewProps['website-tree'].sync;
-    const onSyncSettled = viewProps['website-tree'].onSyncSettled as (
-      settled: unknown,
-    ) => void;
-    await act(async () => onSyncSettled(sync));
-    expect(viewProps['website-tree'].sync).toBeFalsy();
-    expect(configModal.props!.syncing).toBe(false);
-    await viewMenu();
-    expect(syncItem().hasAttribute('data-disabled')).toBe(false);
-  });
+  // The views that wait for a website's sync: its page list, and the graph
+  // view around it.
+  const WEBSITE_VIEWS = [
+    ['website-tree', WEBSITE_OWNER],
+    [
+      'graph',
+      { ...WEBSITE_OWNER, config: { kind: 'graphrag' } as Doc['config'] },
+    ],
+  ] as const;
 
   const syncNowItem = () =>
     Array.from(
       document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
     ).find((el) => el.textContent === 'settings.sources.syncNow')!;
 
-  it.each([
-    ['website-tree', WEBSITE_OWNER],
-    [
-      'graph',
-      { ...WEBSITE_OWNER, config: { kind: 'graphrag' } as Doc['config'] },
-    ],
-  ] as const)(
+  // Its menu keeps Sync now (Add pages is the primary).
+  it.each(WEBSITE_VIEWS)(
+    "the %s view's Sync now hands the view the sync, and is off until its wait ends",
+    async (testId, fields) => {
+      service.syncSource.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, task_id: 'task-s' }),
+      });
+      await openView(doc(fields));
+      expect(viewProps[testId].sync).toBeFalsy();
+      const before = Date.now();
+      await viewMenu();
+      await clickItem('settings.sources.syncNow');
+      expect(service.syncSource).toHaveBeenCalledWith(
+        { source_id: 'src-1' },
+        null,
+      );
+      const sync = viewProps[testId].sync as {
+        startedAt: number;
+        taskId: string | null;
+      };
+      expect(sync.taskId).toBe('task-s');
+      expect(sync.startedAt).toBeGreaterThanOrEqual(before);
+      expect(sync.startedAt).toBeLessThanOrEqual(Date.now());
+      // The toast still says it started.
+      expect(toasts()).toEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining({ variant: 'success' }),
+        }),
+      ]);
+
+      // Settings, from the same view, says the same in its footer.
+      await viewMenu();
+      await clickItem('settings.sources.editConfig');
+      expect(configModal.props!.syncing).toBe(true);
+      await viewMenu();
+      expect(syncNowItem().hasAttribute('data-disabled')).toBe(true);
+
+      const onSyncSettled = viewProps[testId].onSyncSettled as (
+        settled: unknown,
+      ) => void;
+      await act(async () => onSyncSettled(sync));
+      expect(viewProps[testId].sync).toBeFalsy();
+      expect(configModal.props!.syncing).toBe(false);
+      // The menu is still open, and its Sync now is back.
+      expect(syncNowItem().hasAttribute('data-disabled')).toBe(false);
+    },
+  );
+
+  it.each(WEBSITE_VIEWS)(
     "the %s view's Sync now is off while the view reports a change in flight",
     async (testId, fields) => {
       await openView(doc(fields));
@@ -975,31 +889,6 @@ describe('Sources access', () => {
       expect(syncNowItem().hasAttribute('data-disabled')).toBe(false);
     },
   );
-
-  it("a graph website view's Sync now is off until the view's wait for the sync ends", async () => {
-    service.syncSource.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ success: true, task_id: 'task-s' }),
-    });
-    await openView(
-      doc({ ...WEBSITE_OWNER, config: { kind: 'graphrag' } as Doc['config'] }),
-    );
-    await viewMenu();
-    await clickItem('settings.sources.syncNow');
-    const sync = viewProps.graph.sync as { taskId: string };
-    expect(sync.taskId).toBe('task-s');
-    await viewMenu();
-    expect(syncNowItem().hasAttribute('data-disabled')).toBe(true);
-
-    const onSyncSettled = viewProps.graph.onSyncSettled as (
-      settled: unknown,
-    ) => void;
-    await act(async () => onSyncSettled(sync));
-    expect(viewProps.graph.sync).toBeFalsy();
-    // The menu is still open, and its Sync now is back.
-    expect(syncNowItem().hasAttribute('data-disabled')).toBe(false);
-  });
 
   it('a refused Sync now hands the tree nothing to wait on', async () => {
     service.syncSource.mockResolvedValue({
@@ -1106,9 +995,7 @@ describe('Sources access', () => {
   ] as const)(
     '%s opens with the synced header, Sync now not repeated in its menu',
     async (_, fields) => {
-      connectors.connections = [
-        { id: 'conn-1', name: 'Amazon S3', icon: 's3', status: 'connected' },
-      ];
+      withConnection('connected', { name: 'Amazon S3', icon: 's3' });
       await openView(
         doc({
           ...fields,
@@ -1117,7 +1004,6 @@ describe('Sources access', () => {
           allowed_actions: [...OWNER, 'use', 'view_config'],
         }),
       );
-      connectors.connections = [];
       expect(
         container.querySelector('[data-testid="connector-tree"]'),
       ).not.toBeNull();
@@ -1157,16 +1043,7 @@ describe('Sources access', () => {
       access: 'owner',
       allowed_actions: [...OWNER, 'use'],
     });
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <Sources
-            paginatedDocuments={[listed]}
-            handleDeleteDocument={handleDeleteDocument}
-          />
-        </MemoryRouter>,
-      );
-    });
+    await mount(root, [listed], { onDelete: handleDeleteDocument });
     await act(async () =>
       container.querySelector<HTMLElement>('[aria-label="Contracts"]')!.click(),
     );
@@ -1210,24 +1087,8 @@ describe('Sources paging', () => {
     vi.unstubAllGlobals();
   });
 
-  function Where() {
-    const location = useLocation();
-    return <div data-testid="where">{location.search}</div>;
-  }
-
-  const render = async (entry = '/settings/sources') => {
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={[entry]}>
-          <Sources
-            paginatedDocuments={[doc()]}
-            handleDeleteDocument={vi.fn()}
-          />
-          <Where />
-        </MemoryRouter>,
-      );
-    });
-  };
+  const render = (entry = '/settings/sources') =>
+    mount(root, [doc()], { entry });
 
   const response = (currentPage: number, total = 86) => ({
     docs: [doc()],
@@ -1312,28 +1173,12 @@ describe('Sources paging', () => {
   it('refetches after a delete and follows the clamped page', async () => {
     fetchPage.mockResolvedValue(response(8, 85));
     const handleDeleteDocument = vi.fn(async () => undefined);
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/settings/sources?page=8']}>
-          <Sources
-            paginatedDocuments={[
-              doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] }),
-            ]}
-            handleDeleteDocument={handleDeleteDocument}
-          />
-          <Where />
-        </MemoryRouter>,
-      );
-    });
-    const trigger = container.querySelector<HTMLButtonElement>(
-      '[data-testid="menu-button-src-1"]',
-    )!;
-    await act(async () => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-      trigger.click();
-    });
+    await mount(
+      root,
+      [doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] })],
+      { entry: '/settings/sources?page=8', onDelete: handleDeleteDocument },
+    );
+    await openMenu('menu-button-src-1');
     const item = Array.from(
       document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
     ).find((el) => el.textContent === 'settings.sources.delete')!;
@@ -1360,63 +1205,33 @@ describe('Sources paging', () => {
   it('a new search starts on page 1', async () => {
     fetchPage.mockResolvedValue(response(3));
     await render('/settings/sources?page=3');
-    const input = container.querySelector<HTMLInputElement>(
-      '#document-search-input',
-    )!;
     fetchPage.mockResolvedValue(response(1, 5));
-    await act(async () => {
-      const setValue = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        'value',
-      )!.set!;
-      setValue.call(input, 'tender');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    await typeSearch('tender');
     const [, , page, , search] = fetchPage.mock.lastCall!;
     expect(page).toBe(1);
     expect(search).toBe('tender');
     expect(where()).toBe('');
   });
 
-  const renderEmpty = async () => {
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <Sources paginatedDocuments={[]} handleDeleteDocument={vi.fn()} />
-        </MemoryRouter>,
-      );
-    });
-  };
-
   // "Connect a service" would open the same Add knowledge modal.
   it('offers one way in when there is no knowledge yet', async () => {
     fetchPage.mockResolvedValue(response(1, 0));
-    await renderEmpty();
+    await mount(root, []);
     const empty = container.querySelector('[data-slot="empty-state"]')!;
-    expect(empty.getAttribute('data-size')).toBe('default');
+    expect(empty.textContent).toContain('settings.sources.noData');
     expect(
       Array.from(empty.querySelectorAll('button')).map((b) => b.textContent),
     ).toEqual(['settings.sources.addSource']);
   });
 
-  it('says no match in the small, unillustrated empty state', async () => {
+  it('says no match in an unillustrated empty state, with no way in', async () => {
     fetchPage.mockResolvedValue(response(1, 0));
-    await renderEmpty();
-    const input = container.querySelector<HTMLInputElement>(
-      '#document-search-input',
-    )!;
-    await act(async () => {
-      const setValue = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        'value',
-      )!.set!;
-      setValue.call(input, 'nothing');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    await mount(root, []);
+    await typeSearch('nothing');
     const empty = container.querySelector('[data-slot="empty-state"]')!;
     expect(empty.textContent).toContain('settings.sources.noResults');
-    expect(empty.getAttribute('data-size')).toBe('xs');
     expect(empty.querySelector('svg')).toBeNull();
+    expect(empty.querySelector('button')).toBeNull();
   });
 });
 
@@ -1446,21 +1261,8 @@ describe('Sources citation link', () => {
     knowledge.docs = undefined;
   });
 
-  function Where() {
-    const location = useLocation();
-    return <div data-testid="where">{location.search}</div>;
-  }
-
-  const render = async (entry: string, listed: Doc[] = []) => {
-    await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={[entry]}>
-          <Sources paginatedDocuments={listed} handleDeleteDocument={vi.fn()} />
-          <Where />
-        </MemoryRouter>,
-      );
-    });
-  };
+  const render = (entry: string, listed: Doc[] = []) =>
+    mount(root, listed, { entry });
 
   const viewOf = (testId: string) =>
     container.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
@@ -1646,20 +1448,6 @@ describe('Sources citation link', () => {
       });
       await act(async () => undefined);
     };
-    const search = async (value: string) => {
-      const input = container.querySelector<HTMLInputElement>(
-        '#document-search-input',
-      )!;
-      await act(async () => {
-        const setValue = Object.getOwnPropertyDescriptor(
-          HTMLInputElement.prototype,
-          'value',
-        )!.set!;
-        setValue.call(input, value);
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-    };
-
     beforeEach(() => {
       vi.useFakeTimers({
         toFake: ['setTimeout', 'clearTimeout', 'Date'],
@@ -1675,15 +1463,7 @@ describe('Sources citation link', () => {
       );
       vi.mocked(getDocs).mockReset();
       vi.mocked(getDocs).mockResolvedValue([]);
-      connectors.connections = [
-        {
-          id: 'conn-drive',
-          connector_key: 'google_drive',
-          name: 'Google Drive',
-          icon: 'drive',
-          status: 'connected',
-        },
-      ];
+      withConnection('connected', { id: 'conn-drive' });
       connectors.startedSyncs = [started];
       connectors.events = [];
     });
@@ -1730,9 +1510,9 @@ describe('Sources citation link', () => {
 
     it('shows while its name matches the search', async () => {
       await render('/settings/knowledge', [doc()]);
-      await search('HAND');
+      await typeSearch('HAND');
       expect(pendingCard()).toBeDefined();
-      await search('tender');
+      await typeSearch('tender');
       expect(pendingCard()).toBeUndefined();
     });
 

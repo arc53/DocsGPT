@@ -182,7 +182,7 @@ vi.mock('../WebsiteTree', async () => {
           label: string,
           startedAt: number,
           failure: string,
-          options?: { taskId?: string | null; affects?: unknown },
+          options?: { taskId?: string | null },
         ) => Promise<unknown>;
       };
     }) => {
@@ -200,7 +200,7 @@ vi.mock('../WebsiteTree', async () => {
                 'REMOVING',
                 Date.now(),
                 'removeFailed',
-                { taskId: 'task-r', affects: false },
+                { taskId: 'task-r' },
               )
             }
           >
@@ -661,13 +661,15 @@ describe('GraphSourceView', () => {
     ).not.toBeNull();
   });
 
-  it("passes on whether the source can sync, so a removed connection's source has no Sync now", async () => {
+  // A synced source typed by its loader (S3) gets the connector tree too,
+  // told whether it can sync: a removed connection's source has no Sync now.
+  it('uses the connector tree for a loader-typed synced source, passing canSync', async () => {
     await act(async () => {
       root.render(
         <GraphSourceView
           docId="doc"
           sourceName="Key Accounts"
-          sourceType="connector:file"
+          sourceType="s3"
           synced
           canSync={false}
           onBackToDocuments={vi.fn()}
@@ -869,25 +871,6 @@ describe('GraphSourceView', () => {
     await render();
     expect(badge()).toBe('settings.sources.graphrag.view.title');
     redux.builds = {};
-  });
-
-  it('uses the connector tree for a synced source typed by its loader', async () => {
-    await act(async () => {
-      root.render(
-        <GraphSourceView
-          docId="doc"
-          sourceName="Key Accounts"
-          sourceType="s3"
-          synced
-          onBackToDocuments={vi.fn()}
-        />,
-      );
-    });
-    await flush();
-    await openTab('settings.sources.graphrag.view.tabs.files');
-    expect(
-      container.querySelector('[data-testid="connector-tree"]'),
-    ).not.toBeNull();
   });
 
   it("opens a chunk's file on the Files tab from the chunk drawer", async () => {

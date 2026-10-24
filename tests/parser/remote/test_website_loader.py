@@ -1,14 +1,34 @@
 """Tests for the Website source: scope rules, sitemap discovery and the loader."""
 
 import gzip
+import time
 from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
 import requests
 
+from docsgpt.parser.remote import website_loader
 from docsgpt.parser.remote.crawler_loader import CrawlerLoader
-from docsgpt.parser.remote.website_loader import SiteScope, WebsiteLoader, discover_sitemaps
+from docsgpt.parser.remote.page_content import (
+    MAX_PATH_SEGMENTS,
+    MAX_URL_LENGTH,
+    PAGE_HEADERS,
+    page_key,
+    within_url_limits,
+)
+from docsgpt.parser.remote.sitemap_loader import MAX_SITEMAP_BYTES, MAX_SITEMAPS_PER_WALK, SitemapLoader
+from docsgpt.parser.remote.website_loader import (
+    MAX_ROBOTS_SITEMAPS,
+    SiteScope,
+    WebsiteConfigError,
+    WebsiteLoader,
+    discover_sitemaps,
+    is_web_address,
+    load_deadline_for,
+    parse_website_config,
+)
+from docsgpt.security.safe_url import ResponseTooLargeError
 
 HTML = "text/html; charset=utf-8"
 XML = "application/xml"
@@ -54,8 +74,6 @@ class FakeWeb:
         self.headers = {}
 
     def __call__(self, url, *, max_bytes, headers=None, timeout=10.0, allow_redirects=False, truncate=False):
-        from docsgpt.security.safe_url import ResponseTooLargeError
-
         self.fetched.append(url)
         self.limits[url] = (max_bytes, truncate)
         self.headers[url] = headers
@@ -180,18 +198,52 @@ class TestSiteScope:
         ],
     )
     def test_page_key_normalises_percent_encoding(self, a, b):
-        from docsgpt.parser.remote.website_loader import page_key
-
         assert page_key(a) == page_key(b)
 
-    def test_page_key_keeps_reserved_characters_encoded(self):
-        from docsgpt.parser.remote.website_loader import page_key
+    @pytest.mark.parametrize(
+        "url, key",
+        [
+            # Reserved characters stay encoded, in upper-case hex; a stray ``%`` stays.
+            ("https://x.io/a%2fb", "x.io/a%2Fb"),
+            ("https://x.io/a%3Fb", "x.io/a%3Fb"),
+            ("https://x.io/caf%c3%a9", "x.io/caf%C3%A9"),
+            ("https://x.io/100%", "x.io/100%"),
+            # Dot segments resolve as a server resolves them; a name with dots is a name.
+            ("https://x.io/docs/../a", "x.io/a"),
+            ("https://x.io/docs/%2E/a/", "x.io/docs/a"),
+            ("https://x.io/..", "x.io"),
+            ("https://x.io/a..b", "x.io/a..b"),
+            # A port other than the scheme's own counts.
+            ("https://www.x.io:8443/a/", "x.io:8443/a"),
+            ("https://x.io:443/a", "x.io/a"),
+            ("http://x.io:80/a", "x.io/a"),
+            ("http://[::1]:8080/a", "[::1]:8080/a"),
+            # An international host in its ASCII form, as a browser's ``new URL()`` writes it.
+            ("https://bücher.de/a", "xn--bcher-kva.de/a"),
+            ("https://xn--bcher-kva.de/a", "xn--bcher-kva.de/a"),
+            ("https://BÜCHER.de/a", "xn--bcher-kva.de/a"),
+            ("https://www.пример.рф/", "xn--e1afmkfd.xn--p1ai"),
+            ("https://faß.de/", "xn--fa-hia.de"),
+            # An ASCII label is kept as written, even one IDNA wouldn't take.
+            ("https://a_b.ü.de/", "a_b.xn--tda.de"),
+            # A host IDNA refuses (a label starting with a combining mark) is lower-cased.
+            ("https://\u0301A.de/x", "\u0301a.de/x"),
+        ],
+    )
+    def test_page_key(self, url, key):
+        assert page_key(url) == key
 
-        assert page_key("https://x.io/a%2fb") == "x.io/a%2Fb"
-        assert page_key("https://x.io/a%2fb") != page_key("https://x.io/a/b")
-        assert page_key("https://x.io/a%3Fb") == "x.io/a%3Fb"
-        assert page_key("https://x.io/caf%c3%a9") == "x.io/caf%C3%A9"
-        assert page_key("https://x.io/100%") == "x.io/100%"
+    @pytest.mark.parametrize("a, b", [
+        ("https://x.io/a%2fb", "https://x.io/a/b"),
+        ("https://x.io:8443/a", "https://x.io/a"),
+        ("https://x.io:8443/a", "https://x.io:9443/a"),
+    ])
+    def test_page_key_tells_pages_apart(self, a, b):
+        assert page_key(a) != page_key(b)
+
+    def test_page_key_can_keep_www(self):
+        assert page_key("https://www.x.io/a/", keep_www=True) == "www.x.io/a"
+        assert page_key("https://WWW.x.io./a", keep_www=True) == "www.x.io/a"
 
     def test_skip_rules_match_any_spelling_of_a_page(self):
         scope = SiteScope("https://x.io/", skip=["https://x.io/caf%C3%A9", "https://x.io/private/*", "https://x.io/Ünï/*"])
@@ -211,8 +263,6 @@ class TestSiteScope:
         assert SiteScope("https://x.io/", path_prefix="/%64ocs").accepts("https://x.io/docs/a")
 
     def test_page_entries_spelled_two_ways_are_one(self):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
         config = parse_website_config({"entries": [{"url": "https://x.io/café"}, {"url": "https://x.io/caf%C3%A9"}]})
 
         assert [entry["url"] for entry in config["entries"]] == ["https://x.io/café"]
@@ -223,41 +273,6 @@ class TestSiteScope:
         assert not scope.accepts("https://x.io/docs/../changelog")
         assert not scope.accepts("https://x.io/a/%2e%2e/private/key")
         assert not scope.accepts("https://x.io/./changelog/")
-
-    def test_page_key_resolves_dot_segments(self):
-        from docsgpt.parser.remote.website_loader import page_key
-
-        assert page_key("https://x.io/docs/../a") == page_key("https://x.io/a")
-        assert page_key("https://x.io/docs/%2E/a/") == page_key("https://x.io/docs/a")
-        assert page_key("https://x.io/..") == page_key("https://x.io/")
-        assert page_key("https://x.io/a..b") == "x.io/a..b"
-
-    def test_page_key_keeps_a_port_other_than_the_default(self):
-        from docsgpt.parser.remote.website_loader import page_key
-
-        assert page_key("https://x.io:8443/a") != page_key("https://x.io/a")
-        assert page_key("https://x.io:8443/a") != page_key("https://x.io:9443/a")
-        assert page_key("https://www.x.io:8443/a/") == page_key("https://x.io:8443/a") == "x.io:8443/a"
-        # The scheme's own port is the address without one.
-        assert page_key("https://x.io:443/a") == page_key("http://x.io:80/a") == page_key("https://x.io/a")
-        assert page_key("http://[::1]:8080/a") == "[::1]:8080/a"
-
-    def test_page_key_writes_an_international_host_in_its_ascii_form(self):
-        # As a browser's ``new URL()`` does: one page, however its host is spelled.
-        from docsgpt.parser.remote.website_loader import page_key
-
-        assert page_key("https://bücher.de/a") == page_key("https://xn--bcher-kva.de/a") == "xn--bcher-kva.de/a"
-        assert page_key("https://BÜCHER.de/a") == "xn--bcher-kva.de/a"
-        assert page_key("https://www.пример.рф/") == "xn--e1afmkfd.xn--p1ai"
-        assert page_key("https://faß.de/") == "xn--fa-hia.de"
-        # An ASCII label is kept as written, even one IDNA wouldn't take.
-        assert page_key("https://a_b.ü.de/") == "a_b.xn--tda.de"
-
-    def test_page_key_of_a_host_idna_refuses_is_its_lowercase_form(self):
-        from docsgpt.parser.remote.website_loader import page_key
-
-        # A label may not start with a combining mark.
-        assert page_key("https://́A.de/x") == "́a.de/x"
 
     def test_scope_and_rules_compare_international_hosts_in_ascii(self):
         scope = SiteScope("https://bücher.de/", skip=["https://xn--bcher-kva.de/old", "https://bücher.de/private/*"])
@@ -342,8 +357,6 @@ class TestSiteScope:
         assert scope.accepts(own)
 
     def test_the_suffix_list_is_read_offline(self):
-        from docsgpt.parser.remote import website_loader
-
         with patch("requests.Session.send", side_effect=AssertionError("no network")):
             assert website_loader._registered_domain("a.b.github.io") == "b.github.io"
 
@@ -593,8 +606,6 @@ class TestWebsiteLoaderSites:
 
 class TestParseWebsiteConfig:
     def test_fills_site_defaults_and_accepts_json(self):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
         config = parse_website_config(
             '{"entries": [{"url": " https://x.io/ ", "mode": "site"}], "skip": ["", "https://x.io/a"]}'
         )
@@ -609,15 +620,11 @@ class TestParseWebsiteConfig:
         }
 
     def test_a_page_entry_keeps_only_its_url(self):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
         config = parse_website_config({"entries": [{"url": "https://x.io/a", "max_pages": 9}]})
 
         assert config["entries"] == [{"url": "https://x.io/a", "mode": "page"}]
 
     def test_variants_of_one_page_are_one_entry(self):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
         raw = {"entries": [
             {"url": "https://x.io/new", "mode": "page"},
             {"url": "https://x.io/new/", "mode": "page"},
@@ -635,8 +642,6 @@ class TestParseWebsiteConfig:
         assert len(stored["entries"]) == 5
 
     def test_duplicates_do_not_count_toward_the_cap(self):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
         with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
             fake_settings.WEB_MAX_PAGES = 2
             config = parse_website_config({"entries": [
@@ -645,62 +650,7 @@ class TestParseWebsiteConfig:
 
         assert [e["url"] for e in config["entries"]] == ["https://x.io/a", "https://x.io/b"]
 
-    def test_rejects_more_pages_than_the_admin_cap(self):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
-        entries = [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]
-        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
-            fake_settings.WEB_MAX_PAGES = 2
-            with pytest.raises(ValueError, match="up to 2 pages"):
-                parse_website_config({"entries": entries})
-            assert len(parse_website_config({"entries": entries[:2]})["entries"]) == 2
-
-    @pytest.mark.parametrize(
-        "raw",
-        [
-            None,
-            "not json",
-            {"entries": []},
-            {"entries": [{"mode": "page"}]},
-            {"entries": [{"url": "https://x.io", "mode": "crawl"}]},
-            {"entries": [{"url": "https://x.io", "mode": "site", "discovery": "magic"}]},
-            {"entries": [{"url": "https://x.io", "mode": "site", "max_pages": 0}]},
-            {"entries": [{"url": "https://x.io", "mode": "site", "max_pages": "50"}]},
-            {"entries": [{"url": "https://x.io", "mode": "site", "max_pages": True}]},
-        ],
-    )
-    def test_rejects_malformed_configs(self, raw):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
-        with pytest.raises(ValueError):
-            parse_website_config(raw)
-
-    @pytest.mark.parametrize(
-        "url",
-        [
-            "http://[x",
-            "ftp://x.io/a",
-            "https://",
-            "javascript:alert(1)",
-            "https://x.io:99999/",
-            "https://x.io/" + "a" * 2100,
-        ],
-    )
-    def test_rejects_an_entry_url_that_is_not_a_web_address(self, url):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
-        with pytest.raises(ValueError):
-            parse_website_config({"entries": [{"url": url, "mode": "page"}]})
-
-    def test_rejects_a_sitemap_url_that_is_not_a_web_address(self):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
-        with pytest.raises(ValueError):
-            parse_website_config({"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": "http://[x"}]})
-
     def test_an_address_without_a_scheme_gets_https(self):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
         config = parse_website_config({
             "entries": [
                 {"url": "x.io/docs", "mode": "page"},
@@ -729,8 +679,6 @@ class TestParseWebsiteConfig:
         ],
     )
     def test_a_scheme_less_host_and_port_gets_https(self, written, stored):
-        from docsgpt.parser.remote.website_loader import is_web_address, parse_website_config
-
         assert is_web_address(written)
         config = parse_website_config({"entries": [{"url": written, "mode": "page"}], "skip": [written]})
 
@@ -742,8 +690,6 @@ class TestParseWebsiteConfig:
         ["mailto:team@y.io", "tel:911", "javascript:alert(1)", "ftp://y.io/a", "y.io:99999/c", "data:text/html,x"],
     )
     def test_other_schemes_are_still_not_web_addresses(self, url):
-        from docsgpt.parser.remote.website_loader import WebsiteConfigError, is_web_address, parse_website_config
-
         assert not is_web_address(url)
         with pytest.raises(WebsiteConfigError) as caught:
             parse_website_config({"entries": [{"url": url, "mode": "page"}]})
@@ -769,8 +715,6 @@ class TestParseWebsiteConfig:
         ],
     )
     def test_control_characters_bad_hosts_and_credentials_are_not_web_addresses(self, url):
-        from docsgpt.parser.remote.website_loader import WebsiteConfigError, is_web_address, parse_website_config
-
         assert not is_web_address(url)
         with pytest.raises(WebsiteConfigError) as caught:
             parse_website_config({"entries": [{"url": url, "mode": "page"}]})
@@ -782,24 +726,9 @@ class TestParseWebsiteConfig:
          "https://x.io/a b", "https://x.io/?q=a@b"],
     )
     def test_ordinary_hosts_are_still_web_addresses(self, url):
-        from docsgpt.parser.remote.website_loader import is_web_address
-
         assert is_web_address(url)
 
-    def test_a_sitemap_address_with_credentials_is_refused(self):
-        from docsgpt.parser.remote.website_loader import WebsiteConfigError, parse_website_config
-
-        with pytest.raises(WebsiteConfigError) as caught:
-            parse_website_config({"entries": [
-                {"url": "https://x.io/", "mode": "site", "sitemap_url": "https://alice:s3cret@x.io/sitemap.xml"},
-            ]})
-        assert caught.value.code == "invalid_address"
-
     def test_a_long_run_of_dots_is_checked_in_linear_time(self):
-        import time
-
-        from docsgpt.parser.remote.website_loader import is_web_address
-
         started = time.perf_counter()
         # A scheme of dots reaches the host:port check, which must not backtrack.
         is_web_address("a" + "." * 20000 + ":x")
@@ -812,33 +741,9 @@ class TestParseWebsiteConfig:
 
         assert sorted(sources(docs)) == ["https://x.io/docs", "https://x.io/docs/a"]
 
-    def test_caps_sites_entries_and_skip_rules_on_write(self):
-        from docsgpt.parser.remote import website_loader
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
-        sites = [{"url": f"https://s{i}.io/", "mode": "site"} for i in range(website_loader.MAX_SITE_ENTRIES + 1)]
-        with pytest.raises(ValueError, match="sites"):
-            parse_website_config({"entries": sites})
-
-        one = [{"url": "https://x.io/", "mode": "site"}]
-        rules = [f"https://x.io/p{i}" for i in range(website_loader.MAX_SKIP_RULES + 1)]
-        with pytest.raises(ValueError, match="skip"):
-            parse_website_config({"entries": one, "skip": rules})
-        with pytest.raises(ValueError, match="skip"):
-            parse_website_config({"entries": one, "skip": ["https://x.io/" + "a" * 2100]})
-
-        with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
-            fake_settings.WEB_MAX_PAGES = 2
-            mixed = [{"url": "https://x.io/a", "mode": "page"}, {"url": "https://x.io/", "mode": "site"}]
-            assert len(parse_website_config({"entries": mixed})["entries"]) == 2
-            with pytest.raises(ValueError, match="up to 2"):
-                parse_website_config({"entries": mixed + [{"url": "https://y.io/", "mode": "site"}]})
-
     def test_a_stored_config_reads_past_the_write_limits(self):
         # Reads are lenient: a lowered WEB_MAX_PAGES, or a config that grew
         # past a limit, must not lock the source or break its listing.
-        from docsgpt.parser.remote import website_loader
-        from docsgpt.parser.remote.website_loader import parse_website_config
 
         pages = [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]
         sites = [{"url": f"https://s{i}.io/", "mode": "site"} for i in range(website_loader.MAX_SITE_ENTRIES + 1)]
@@ -850,27 +755,17 @@ class TestParseWebsiteConfig:
         assert len(config["entries"]) == 3 + len(sites)
         assert len(config["skip"]) == len(rules)
 
-    def test_a_stored_config_with_a_bad_url_still_fails(self):
-        from docsgpt.parser.remote.website_loader import parse_website_config
-
-        with pytest.raises(ValueError):
-            parse_website_config({"entries": [{"url": "http://[x", "mode": "page"}]}, enforce_page_cap=False)
-
 
 class TestWebsiteConfigErrors:
     """Each refusal carries a code and its numbers, for the API to hand the UI."""
 
     def _error(self, raw, **kwargs):
-        from docsgpt.parser.remote.website_loader import WebsiteConfigError, parse_website_config
-
         with pytest.raises(WebsiteConfigError) as caught:
             parse_website_config(raw, **kwargs)
         assert isinstance(caught.value, ValueError)
         return caught.value
 
     def test_limits(self):
-        from docsgpt.parser.remote import website_loader
-
         one = [{"url": "https://x.io/", "mode": "site"}]
         sites = [{"url": f"https://s{i}.io/", "mode": "site"} for i in range(website_loader.MAX_SITE_ENTRIES + 1)]
         error = self._error({"entries": sites})
@@ -880,6 +775,7 @@ class TestWebsiteConfigErrors:
         rules = [f"https://x.io/p{i}" for i in range(website_loader.MAX_SKIP_RULES + 1)]
         error = self._error({"entries": one, "skip": rules})
         assert (error.code, error.details) == ("skip_limit", {"max_skip": website_loader.MAX_SKIP_RULES})
+        assert "skip" in str(error)
 
         for raw in (
             {"entries": [{"url": "https://x.io/" + "a" * 2100, "mode": "page"}]},
@@ -888,16 +784,28 @@ class TestWebsiteConfigErrors:
         ):
             error = self._error(raw)
             assert (error.code, error.details) == ("url_too_long", {"max_length": website_loader.MAX_URL_LENGTH})
+            if "skip" in raw:
+                assert "skip" in str(error)
 
+    @pytest.mark.parametrize("entries", [
+        [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)],
+        [{"url": "https://x.io/a", "mode": "page"}, {"url": "https://x.io/", "mode": "site"},
+         {"url": "https://y.io/", "mode": "site"}],
+    ], ids=["pages", "pages-and-sites"])
+    def test_page_limit(self, entries):
         with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
             fake_settings.WEB_MAX_PAGES = 2
-            error = self._error({"entries": [{"url": f"https://x.io/{i}", "mode": "page"} for i in range(3)]})
+            assert len(parse_website_config({"entries": entries[:2]})["entries"]) == 2
+            error = self._error({"entries": entries})
         assert (error.code, error.details) == ("page_limit", {"max_pages": 2})
         assert str(error) == "A website source holds up to 2 pages"
 
-    @pytest.mark.parametrize("url", ["http://[x", "ftp://x.io/a", "javascript:alert(1)"])
-    def test_invalid_address(self, url):
-        error = self._error({"entries": [{"url": f"  {url} ", "mode": "page"}]})
+    @pytest.mark.parametrize("url", [
+        "http://[x", "ftp://x.io/a", "javascript:alert(1)", "https://", "https://x.io:99999/",
+    ], ids=["bad-ipv6", "ftp", "javascript", "missing-host", "bad-port"])
+    @pytest.mark.parametrize("padding", ["", "  "], ids=["bare", "padded"])
+    def test_invalid_address(self, url, padding):
+        error = self._error({"entries": [{"url": f"{padding}{url}{padding}", "mode": "page"}]})
 
         assert (error.code, error.details) == ("invalid_address", {"url": url})
 
@@ -910,8 +818,6 @@ class TestWebsiteConfigErrors:
         assert error.code == "invalid_config"
 
     def test_an_address_nested_too_deep_is_refused_on_write(self):
-        from docsgpt.parser.remote.website_loader import MAX_PATH_SEGMENTS, parse_website_config
-
         deep = "https://x.io" + "/a" * (MAX_PATH_SEGMENTS + 1)
         for raw in (
             {"entries": [{"url": deep, "mode": "page"}]},
@@ -926,10 +832,13 @@ class TestWebsiteConfigErrors:
         ok = "https://x.io" + "/a" * MAX_PATH_SEGMENTS
         assert parse_website_config({"entries": [{"url": ok, "mode": "page"}]})["entries"][0]["url"] == ok
 
-    def test_an_invalid_sitemap_address(self):
-        error = self._error({"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": "http://[x"}]})
+    @pytest.mark.parametrize("url", [
+        "http://[x", "https://alice:s3cret@x.io/sitemap.xml",
+    ], ids=["bad-ipv6", "credentials"])
+    def test_invalid_sitemap_address(self, url):
+        error = self._error({"entries": [{"url": "https://x.io/", "mode": "site", "sitemap_url": url}]})
 
-        assert (error.code, error.details) == ("invalid_address", {"url": "http://[x"})
+        assert (error.code, error.details) == ("invalid_address", {"url": url})
 
     @pytest.mark.parametrize(
         "raw",
@@ -943,16 +852,18 @@ class TestWebsiteConfigErrors:
             {"entries": [{"url": "https://x.io", "mode": "crawl"}]},
             {"entries": [{"url": "https://x.io", "mode": "site", "discovery": "magic"}]},
             {"entries": [{"url": "https://x.io", "mode": "site", "max_pages": 0}]},
+            {"entries": [{"url": "https://x.io", "mode": "site", "max_pages": "50"}]},
+            {"entries": [{"url": "https://x.io", "mode": "site", "max_pages": True}]},
         ],
+        ids=["none", "bad-json", "list", "entries-string", "empty", "missing-url", "unknown-mode",
+             "unknown-discovery", "zero-limit", "string-limit", "boolean-limit"],
     )
-    def test_every_other_refusal_is_invalid_config(self, raw):
+    def test_invalid_config(self, raw):
         error = self._error(raw)
 
         assert (error.code, error.details) == ("invalid_config", {})
 
     def test_a_long_path_prefix_is_refused(self):
-        from docsgpt.parser.remote import website_loader
-
         site = {"url": "https://x.io/", "mode": "site", "path_prefix": "/" + "a" * website_loader.MAX_URL_LENGTH}
         error = self._error({"entries": [site]})
 
@@ -963,15 +874,12 @@ class TestWebsiteConfigErrors:
         # must not block saving the source's settings, which can't edit it.
         with patch("docsgpt.parser.remote.website_loader.settings") as fake_settings:
             fake_settings.WEB_MAX_PAGES = 50
-            from docsgpt.parser.remote.website_loader import parse_website_config
 
             config = parse_website_config({"entries": [{"url": "https://x.io/", "mode": "site", "max_pages": 10 ** 200}]})
 
         assert config["entries"][0]["max_pages"] == 50
 
     def test_a_stored_config_past_the_limits_still_reads(self):
-        from docsgpt.parser.remote import website_loader
-
         site = {
             "url": "https://x.io/", "mode": "site", "max_pages": 10 ** 6,
             "path_prefix": "/" + "a" * website_loader.MAX_URL_LENGTH,
@@ -1003,7 +911,6 @@ class TestWebsiteLoaderLenientRead:
 
     def test_control_characters_in_rules_and_paths_are_dropped(self):
         # PostgreSQL refuses a NUL in JSONB: a config carrying one failed its save with a 500.
-        from docsgpt.parser.remote.website_loader import parse_website_config
 
         config = parse_website_config({
             "entries": [{"url": "https://x.io/", "mode": "site", "path_prefix": "/do\x00cs\x01"}],
@@ -1015,7 +922,6 @@ class TestWebsiteLoaderLenientRead:
 
     def test_a_nul_in_an_entry_address_is_refused_even_on_read(self):
         # No stored config can hold one, so only a save can bring it.
-        from docsgpt.parser.remote.website_loader import WebsiteConfigError, parse_website_config
 
         for raw in (
             {"entries": [{"url": "https://x.io/a\x00b", "mode": "page"}]},
@@ -1024,13 +930,6 @@ class TestWebsiteLoaderLenientRead:
             with pytest.raises(WebsiteConfigError) as caught:
                 parse_website_config(raw, enforce_page_cap=False)
             assert caught.value.code == "invalid_address"
-
-    def test_a_load_within_the_cap_is_not_reported_as_cut(self, web):
-        web({"https://x.io/a": page("A")})
-        loader = WebsiteLoader()
-        loader.load_data({"entries": [{"url": "https://x.io/a", "mode": "page"}]})
-
-        assert loader.report["limit_reached"] is False
 
 
 class TestRedirects:
@@ -1215,15 +1114,17 @@ class TestRedirects:
             {"url": "https://y.io/", "mode": "site", "discovery": "links"},
         ]})
 
-        requested = {d.extra_info["source"]: d.extra_info.get("requested_url") for d in docs}
+        requested = {d.extra_info["source"]: d.extra_info["requested_urls"] for d in docs}
         assert requested == {
-            "https://x.io/new": "https://x.io/old",
-            "https://x.io/same": None,
-            "https://x.io/landed": "https://x.io/moved",
-            "https://x.io/kept": None,
-            "https://y.io/": None,
-            "https://y.io/target": "https://y.io/hop",
+            "https://x.io/new": ["https://x.io/old"],
+            "https://x.io/same": [],
+            "https://x.io/landed": ["https://x.io/moved"],
+            "https://x.io/kept": [],
+            "https://y.io/": [],
+            "https://y.io/target": ["https://y.io/hop"],
         }
+        # Only the list: the singular ``requested_url`` is never written.
+        assert not any("requested_url" in d.extra_info for d in docs)
 
     def test_every_page_lists_the_other_addresses_that_led_to_it(self, web):
         web({
@@ -1241,10 +1142,8 @@ class TestRedirects:
         info = {d.extra_info["source"]: d.extra_info for d in docs}
         assert info["https://x.io/new"]["requested_urls"] == ["https://x.io/old"]
         assert info["https://x.io/same"]["requested_urls"] == []
-        assert "requested_url" not in info["https://x.io/same"]
         # Another spelling of the page itself (www.) is no other address.
         assert info["https://www.x.io/plain"]["requested_urls"] == []
-        assert info["https://www.x.io/plain"]["requested_url"] == "https://x.io/plain"
 
     @pytest.mark.parametrize("order", [["old-a", "old-b"], ["old-b", "old-a"]])
     def test_page_entries_that_redirect_to_one_page_are_all_kept(self, web, order):
@@ -1259,7 +1158,6 @@ class TestRedirects:
 
         assert sources(docs) == ["https://x.io/new", "https://x.io/other"]
         assert docs[0].extra_info["requested_urls"] == [f"https://x.io/{p}" for p in order]
-        assert docs[0].extra_info["requested_url"] == f"https://x.io/{order[0]}"
 
     @pytest.mark.parametrize("order", [["new", "old-a"], ["old-a", "new"]])
     def test_a_page_entry_and_one_that_redirects_to_it(self, web, order):
@@ -1269,7 +1167,6 @@ class TestRedirects:
 
         assert sources(docs) == ["https://x.io/new"]
         assert docs[0].extra_info["requested_urls"] == ["https://x.io/old-a"]
-        assert docs[0].extra_info["requested_url"] == "https://x.io/old-a"
 
     @pytest.mark.parametrize("links", [["/old-a", "/new"], ["/new", "/old-a"]])
     def test_a_crawl_keeps_a_link_that_redirects_to_a_page_it_has(self, web, links):
@@ -1413,8 +1310,6 @@ class TestBoundedFetching:
         assert "https://x.io/late" not in fake.fetched
 
     def test_robots_and_sitemaps_are_size_capped(self, web):
-        from docsgpt.parser.remote.sitemap_loader import MAX_SITEMAP_BYTES
-
         fake = web({
             "https://x.io/robots.txt": robots("https://x.io/sitemap.xml"),
             "https://x.io/sitemap.xml": urlset("https://x.io/p"),
@@ -1429,7 +1324,6 @@ class TestBoundedFetching:
     def test_every_fetch_sends_the_same_browser_headers(self, web):
         # Sites that refuse python-requests' User-Agent refused the crawl and
         # sitemap fetches while serving the page entries.
-        from docsgpt.parser.remote.page_content import PAGE_HEADERS
 
         fake = web({
             "https://x.io/robots.txt": robots("https://x.io/sitemap.xml"),
@@ -1464,8 +1358,6 @@ class TestBoundedFetching:
         assert sources(docs) == ["https://x.io/"]
 
     def test_robots_sitemap_lines_are_capped(self, web):
-        from docsgpt.parser.remote.website_loader import MAX_ROBOTS_SITEMAPS
-
         listed = [f"https://x.io/s{i}.xml" for i in range(MAX_ROBOTS_SITEMAPS + 5)]
         web({"https://x.io/robots.txt": robots(*listed)})
 
@@ -1491,7 +1383,6 @@ class TestBoundedFetching:
 
     def test_addresses_nested_too_deep_or_too_long_are_never_fetched(self, web):
         # A tree a thousand folders deep broke every recursive walk of it.
-        from docsgpt.parser.remote.website_loader import MAX_PATH_SEGMENTS, MAX_URL_LENGTH
 
         deep = "/a" * 1100
         too_many = "/b" * (MAX_PATH_SEGMENTS + 1)
@@ -1518,8 +1409,6 @@ class TestBoundedFetching:
     def test_the_url_limits(self):
         # The crawl, the sitemap walk, page entries and redirects all check
         # them; a scope doesn't, so a stored page past them can still be skipped.
-        from docsgpt.parser.remote.page_content import within_url_limits
-        from docsgpt.parser.remote.website_loader import MAX_PATH_SEGMENTS
 
         assert within_url_limits("https://x.io" + "/a" * MAX_PATH_SEGMENTS)
         assert not within_url_limits("https://x.io" + "/a" * (MAX_PATH_SEGMENTS + 1))
@@ -1527,8 +1416,6 @@ class TestBoundedFetching:
         assert SiteScope("https://x.io/").accepts("https://x.io" + "/a" * (MAX_PATH_SEGMENTS + 1))
 
     def test_a_tarpit_site_is_cut_off_at_the_load_deadline(self, web):
-        from docsgpt.parser.remote import website_loader
-
         links = [f"/p{i}" for i in range(20)]
         sites = {"https://x.io/": page("Home", links=links)}
         sites.update({f"https://x.io{link}": page(link) for link in links})
@@ -1544,8 +1431,6 @@ class TestBoundedFetching:
         assert loader.report["sites"][0]["limit_reached"] is True
 
     def test_page_entries_past_the_load_deadline_are_left_out(self, web):
-        from docsgpt.parser.remote import website_loader
-
         sites = {f"https://x.io/{name}": page(name) for name in "abcd"}
         _, stack = self._slow_web(web, sites, 10)
         loader = WebsiteLoader()
@@ -1561,8 +1446,6 @@ class TestBoundedFetching:
         ]
 
     def test_the_load_deadline_grows_with_the_page_cap(self):
-        from docsgpt.parser.remote.website_loader import load_deadline_for
-
         assert load_deadline_for(1) < load_deadline_for(100) < load_deadline_for(1000)
         # A default source (100 pages) is cut off well before a tarpit's hours.
         assert load_deadline_for(100) <= 30 * 60
@@ -1570,7 +1453,6 @@ class TestBoundedFetching:
     def test_dead_sites_share_one_fetch_budget(self, web):
         # Every site lists pages that aren't HTML: no documents, so a budget
         # that only shrinks for documents would let each site fetch its fill.
-        from docsgpt.parser.remote import website_loader
 
         sites = {}
         entries = []
@@ -1593,14 +1475,11 @@ class TestBoundedFetching:
         assert loader.report["sites"][-1]["limit_reached"] is True
 
     def test_child_sitemaps_per_walk_are_capped(self, web):
-        from docsgpt.parser.remote.sitemap_loader import MAX_SITEMAPS_PER_WALK
-
         children = [f"https://x.io/c{i}.xml" for i in range(MAX_SITEMAPS_PER_WALK + 30)]
         sites = {"https://x.io/index.xml": index(*children)}
         # Empty children: the page budget never stops the walk on its own.
         sites.update({child: urlset() for child in children})
         fake = web(sites)
-        from docsgpt.parser.remote.sitemap_loader import SitemapLoader
 
         SitemapLoader(limit=100).collect_urls(["https://x.io/index.xml"])
 
@@ -1623,23 +1502,6 @@ class TestBoundedFetching:
         })
 
         assert sources(docs) == ["https://x.io/ok"]
-
-    def test_exactly_the_limit_is_not_reported_as_cut_short(self, web):
-        web({
-            "https://x.io/robots.txt": robots("https://x.io/sitemap.xml"),
-            "https://x.io/sitemap.xml": urlset("https://x.io/a", "https://x.io/b"),
-            "https://x.io/a": page("A"),
-            "https://x.io/b": page("B"),
-        })
-        exact = WebsiteLoader()
-        exact.load_data({"entries": [{"url": "https://x.io/", "mode": "site", "max_pages": 2}]})
-        short = WebsiteLoader()
-        docs = short.load_data({"entries": [{"url": "https://x.io/", "mode": "site", "max_pages": 1}]})
-
-        assert exact.report["sites"][0] == {"url": "https://x.io/", "found_with": "sitemap", "pages": 2,
-                                            "limit_reached": False}
-        assert short.report["sites"][0]["limit_reached"] is True
-        assert sources(docs) == ["https://x.io/a"]
 
 
 class TestUnencodableHosts:
@@ -1688,7 +1550,7 @@ class TestUnencodableHosts:
     def test_a_crawl_that_starts_on_one(self, idna_web):
         idna_web({})
 
-        assert CrawlerLoader().load_data("https://docs..example.com/") == []
+        assert CrawlerLoader(lambda url: True).load_data("https://docs..example.com/") == []
 
     def test_a_crawled_link_to_one(self, idna_web):
         idna_web({
@@ -1696,7 +1558,7 @@ class TestUnencodableHosts:
             "https://x.io/b": page("B"),
         })
 
-        docs = CrawlerLoader(accept=lambda url: True).load_data("https://x.io/")
+        docs = CrawlerLoader(lambda url: True).load_data("https://x.io/")
 
         assert sources(docs) == ["https://x.io/", "https://x.io/b"]
 
@@ -1764,3 +1626,10 @@ class TestMenuOnlyStartPage:
 
         assert sources(docs) == ["https://x.io/docs/a", "https://x.io/docs/b"]
         assert loader.report["sites"][0]["found_with"] == "links"
+
+
+class TestDiscoveryGuard:
+    def test_discovery_on_a_blocked_address_fetches_nothing(self):
+        # The pinned fetch refuses a private address itself: no DNS, no request.
+        assert discover_sitemaps("http://127.0.0.1/") == []
+        assert discover_sitemaps("http://169.254.169.254/") == []

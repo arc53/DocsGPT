@@ -1,10 +1,8 @@
-"""Web page → Markdown of its main content, shared by the web loaders.
+"""Web page → Markdown of its main content, and the fetch and URL helpers the web loaders share.
 
-The page loaders (``url``, ``crawler``, ``sitemap``) used to store
-``get_text()`` of the whole page, so every page's first chunk repeated the
-site's header, menu and footer, and headings were lost. This keeps the page's
-main content and converts it with the same Markdown conventions as uploaded
-HTML (``html_parser.soup_to_markdown``).
+The page's main content is kept, without the site's header, menu and footer,
+and converted with the same Markdown conventions as uploaded HTML
+(``html_parser.soup_to_markdown``).
 
 Links keep their text. Their URLs are dropped by default: measured on ten
 real pages, URLs in the chunk text added up to 40% tokens and ranked answers
@@ -17,7 +15,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from urllib.parse import SplitResult, quote, urldefrag, urljoin, urlparse, urlsplit, urlunsplit
 
 import idna
@@ -46,19 +44,16 @@ _PAGE_CEILING_BYTES = 50 * 1024 * 1024
 def page_fetch_bytes() -> int:
     """How much of a page body a fetch reads.
 
-    One byte over ``MARKUP_MAX_BYTES``, so ``cap_markup_bytes`` still sees
-    the page as too large, cuts it on a line and logs it.
-
     Returns:
-        The byte ceiling to pass to ``fetch_page``.
+        One byte over ``MARKUP_MAX_BYTES``, so ``cap_markup_bytes`` still
+        sees the page as too large, cuts it on a line and logs it.
     """
     cap = int(settings.MARKUP_MAX_BYTES)
     return cap + 1 if cap > 0 else _PAGE_CEILING_BYTES
 
 
 # The request headers of every web fetch (pages, links, robots.txt,
-# sitemaps): sites that refuse python-requests' User-Agent served a page
-# entry and refused the same site's crawl.
+# sitemaps): some sites refuse python-requests' User-Agent.
 PAGE_HEADERS: Dict[str, str] = {
     "User-Agent": "Mozilla/5.0",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -79,12 +74,7 @@ class RedirectError(requests.RequestException):
 
 
 class CredentialsInUrlError(requests.exceptions.InvalidURL):
-    """An address with ``user:password@`` in it, which a fetch won't dial.
-
-    The fetcher would send them as Basic auth, and the page's address (its
-    ``source``, shown in citations) would keep the password. Pages behind a
-    sign-in aren't read.
-    """
+    """An address with ``user:password@`` in it: a fetch would send it as Basic auth and the citation keep it."""
 
 
 def has_userinfo(url: str) -> bool:
@@ -107,8 +97,7 @@ def has_userinfo(url: str) -> bool:
 # browsers refuse longer ones anyway.
 MAX_URL_LENGTH = 2048
 # The most ``/`` a fetched address's path may hold. Each is a folder of the
-# source's file tree, and a link trap (``/a/a/a/…``) a thousand deep broke
-# every walk of it; real sites stay within a dozen or so.
+# source's file tree, and a link trap (``/a/a/a/…``) nests without end.
 MAX_PATH_SEGMENTS = 64
 
 
@@ -148,18 +137,7 @@ def without_userinfo(url: str) -> str:
 
 
 def _header_text(value: str) -> str:
-    """A header value as its sender wrote it: raw UTF-8 bytes read back as UTF-8.
-
-    ``http.client`` reads header bytes as latin-1, so a ``Location`` sent as
-    raw UTF-8 (``/café``) arrives as ``/cafÃ©``. Browsers and ``requests``
-    read it as UTF-8; a value that isn't UTF-8 stays as it was read.
-
-    Args:
-        value: The header value as ``http.client`` decoded it.
-
-    Returns:
-        The value re-read as UTF-8, or unchanged when its bytes aren't UTF-8.
-    """
+    """A header value ``http.client`` read as latin-1, re-read as the UTF-8 its sender wrote (else unchanged)."""
     try:
         return value.encode("latin-1").decode("utf-8")
     except UnicodeError:
@@ -270,10 +248,7 @@ def _is_refresh(value: Optional[str]) -> bool:
 
 
 def refresh_target(response: requests.Response, url: str) -> Optional[str]:
-    """Where a page's ``<meta http-equiv=refresh>`` sends the browser straight away, if anywhere.
-
-    Static site generators answer a moved page with a stub ("Redirecting…")
-    that refreshes to the new address after no wait.
+    """Where a page's ``<meta http-equiv=refresh>`` sends the browser at once (a "Redirecting…" stub), if anywhere.
 
     Args:
         response: A response, its ``content`` the body.
@@ -501,7 +476,7 @@ def is_ambiguous_path(path: str) -> bool:
     return any(segment in (".", "..") for segment in normalized.split("/"))
 
 
-def page_key(url: str) -> str:
+def page_key(url: str, keep_www: bool = False) -> str:
     """One key per page: scheme, ``www.``, fragment, query order, a trailing slash and dot segments don't count.
 
     A port does, unless it is the scheme's own: ``x.io:8443/a`` is another
@@ -512,6 +487,8 @@ def page_key(url: str) -> str:
 
     Args:
         url: A page URL.
+        keep_www: Keep the host's ``www.``, as a section skip rule matches its
+            host exactly (``https://www.x.io/*`` is the ``www.x.io`` folder).
 
     Returns:
         ``host[:port]/path`` (plus ``?query``), for comparing pages and skip
@@ -521,7 +498,8 @@ def page_key(url: str) -> str:
         ValueError: If the URL cannot be parsed.
     """
     parts = urlsplit(normalize_page_url(url.strip()))
-    key = f"{host_with_port(parts, bare_host(parts.hostname))}{normalized_path(parts.path).rstrip('/')}"
+    host = ascii_host(parts.hostname).rstrip(".") if keep_www else bare_host(parts.hostname)
+    key = f"{host_with_port(parts, host)}{normalized_path(parts.path).rstrip('/')}"
     return f"{key}?{normalize_percent_encoding(parts.query)}" if parts.query else key
 
 
@@ -531,8 +509,6 @@ def note_requested_url(document: Document, requested: str) -> None:
     ``extra_info["requested_urls"]`` lists, in the order they were met, the
     distinct addresses (by ``page_key``) that led to the page, other than the
     page's own (its ``source``, or another spelling of it, such as ``www.``).
-    ``requested_url``, kept for older readers, is its first; with none, it
-    is still set to an address the page answered from under another spelling.
 
     Args:
         document: A web page's document; ``extra_info["source"]`` its address.
@@ -545,17 +521,12 @@ def note_requested_url(document: Document, requested: str) -> None:
         return
     try:
         requested_key = page_key(requested)
-        if requested_key == page_key(source):
-            if not urls:
-                info.setdefault("requested_url", requested)
-            return
-        if any(page_key(url) == requested_key for url in urls):
+        if requested_key == page_key(source) or any(page_key(url) == requested_key for url in urls):
             return
     except ValueError:
         if requested in urls:
             return
     urls.append(requested)
-    info["requested_url"] = urls[0]
 
 
 def merge_requested_urls(kept: Document, duplicate: Document) -> None:
@@ -578,9 +549,7 @@ class FetchBudget:
         Args:
             limit: How many fetches the load may make in all.
             deadline: The ``time.monotonic()`` past which it may start none;
-                ``None`` for no time limit. A slow site (a tarpit answering
-                each fetch just inside its timeout) can't hold a worker for
-                hours on a budget of fetches alone.
+                ``None`` for no time limit.
         """
         self.remaining = max(0, int(limit))
         self.deadline = deadline
@@ -606,6 +575,7 @@ class FetchBudget:
             return False
         self.remaining -= 1
         return True
+
 
 # Site chrome: never the page's content. Headers and footers go only at page
 # level (see ``_strip_chrome``).
@@ -661,11 +631,8 @@ class _LinkConverter(MarkdownConverter):
         super().__init__(**MARKDOWNIFY_OPTIONS, escape_underscores=False, escape_asterisks=False, escape_misc=False)
         self.base_url = base_url
         self.keep_links = keep_links
-        # Each text block's text, read once: a paragraph of a thousand links
-        # re-read its whole text per link.
+        # Each text block's text, and each element's block, found once per conversion.
         self._block_text: Dict[int, str] = {}
-        # Each element's text block, found once: links nested deep in one
-        # block each walked up to it.
         self._block_of: Dict[int, Optional[Tag]] = {}
 
     def convert_a(self, el, text, *args, **kwargs):
@@ -677,81 +644,46 @@ class _LinkConverter(MarkdownConverter):
         href = (el.get("href") or "").strip()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
             return text
-        url = urljoin(self.base_url, href)
-        if urlparse(url).scheme not in ("http", "https"):
+        try:
+            url = urljoin(self.base_url, href)
+            scheme = urlparse(url).scheme
+        except ValueError:
+            return text
+        if scheme not in ("http", "https"):
             return text
         return f"[{text}]({_link_destination(url)})"
 
 
 def _link_destination(url: str) -> str:
-    """A URL written as a Markdown link destination that nothing in it can end early.
-
-    Whitespace and ``<``/``>`` are percent-encoded; a URL with ``(`` or ``)``
-    is wrapped in angle brackets (``[text](<url>)``), since an unbalanced
-    parenthesis would close a bare destination.
-
-    Args:
-        url: An absolute http(s) URL.
-
-    Returns:
-        The destination to put between the link's parentheses.
-    """
+    """``url`` as a Markdown link destination nothing in it can end early (``<url>`` when it holds parentheses)."""
     url = re.sub(r"[\s<>]", lambda m: quote(m.group(0), safe=""), url)
     return f"<{url}>" if "(" in url or ")" in url else url
 
 
-def _text_block(link: Tag, memo: Dict[int, Optional[Tag]]) -> Optional[Tag]:
-    """The nearest text block (``_TEXT_BLOCKS``) above a link, each ancestor looked at once per tree.
-
-    Args:
-        link: The ``<a>`` element.
-        memo: By element ``id``, the block at or above it; shared across
-            calls on one tree, so links nested deep in a block don't each
-            walk up to it.
-
-    Returns:
-        The block, or ``None`` when the link sits in none.
-    """
+def _nearest_ancestor(tag: Tag, names: Sequence[str], memo: Dict[int, Optional[Tag]]) -> Optional[Tag]:
+    """The nearest element above ``tag`` named in ``names``; ``memo`` (one per tree and ``names``) saves re-walks."""
     path = []
-    node = link.parent
-    block = None
+    node = tag.parent
+    found = None
     while node is not None:
         if id(node) in memo:
-            block = memo[id(node)]
+            found = memo[id(node)]
             break
-        if node.name in _TEXT_BLOCKS:
-            block = node
+        if node.name in names:
+            found = node
             break
         path.append(node)
         node = node.parent
-    if block is not None:
-        memo[id(block)] = block
-    # Every element walked through has the block the walk ended at.
     for walked in path:
-        memo[id(walked)] = block
-    return block
+        memo[id(walked)] = found
+    return found
 
 
-def _is_bare_link(
-    link: Tag, block_text: Optional[Dict[int, str]] = None, block_of: Optional[Dict[int, Optional[Tag]]] = None,
-) -> bool:
-    """Whether a link is the whole text of its block (a menu item, a card, a TOC entry).
-
-    Args:
-        link: The ``<a>`` element.
-        block_text: Block texts by ``id``, cached for one conversion (the tree
-            doesn't change while it is converted); ``None`` reads each anew.
-        block_of: Each element's text block by ``id`` (``_text_block``),
-            cached for one conversion; ``None`` looks each one up anew.
-
-    Returns:
-        True when the link's text is all of its block's text, or it has no block.
-    """
-    block = link.find_parent(_TEXT_BLOCKS) if block_of is None else _text_block(link, block_of)
+def _is_bare_link(link: Tag, block_text: Dict[int, str], block_of: Dict[int, Optional[Tag]]) -> bool:
+    """Whether a link is the whole text of its text block (a menu item, a card), or sits in none."""
+    block = _nearest_ancestor(link, _TEXT_BLOCKS, block_of)
     if block is None:
         return True
-    if block_text is None:
-        return block.get_text(" ", strip=True) == link.get_text(" ", strip=True)
     text = block_text.get(id(block))
     if text is None:
         text = block_text[id(block)] = block.get_text(" ", strip=True)
@@ -790,11 +722,7 @@ _TEXT_STRINGS = (NavigableString, CData)
 
 
 def _measure_text(root: Tag) -> Dict[int, Tuple[int, int]]:
-    """Every element's ``_text_length`` and the share of it inside links, in one pass.
-
-    Asking each element for its own text re-reads the elements nested in it,
-    so a page of nested asides or spans cost time quadratic in its depth.
-    This walks the tree once, children before parents.
+    """Every element's ``_text_length`` and the share of it inside links, in one pass, children before parents.
 
     Args:
         root: The element whose descendants (and itself) are measured.
@@ -841,36 +769,6 @@ def _pick_root(soup: BeautifulSoup) -> Tag:
     return body
 
 
-def _has_ancestor(tag: Tag, names: Tuple[str, ...], memo: Dict[int, bool]) -> bool:
-    """Whether an element sits inside one named ``names``, each ancestor looked at once per tree.
-
-    Args:
-        tag: The element.
-        names: Tag names to look for above it.
-        memo: Answers by element ``id``, shared across calls on one tree, so
-            elements nested thousands deep don't each walk up to the root.
-
-    Returns:
-        True when an ancestor's name is in ``names``.
-    """
-    path = []
-    node = tag.parent
-    found = False
-    while node is not None:
-        if id(node) in memo:
-            found = memo[id(node)]
-            break
-        if node.name in names:
-            found = True
-            break
-        path.append(node)
-        node = node.parent
-    # Every element walked through has the answer of the one the walk ended at.
-    for walked in path:
-        memo[id(walked)] = found
-    return found
-
-
 def _is_link_list(total: int, linked: int) -> bool:
     """Whether an aside measured ``total`` characters of text, ``linked`` of them in links, is a menu."""
     return total == 0 or linked / total >= _ASIDE_LINK_SHARE
@@ -879,10 +777,8 @@ def _is_link_list(total: int, linked: int) -> bool:
 def _strip_chrome(root: Tag) -> None:
     """Remove site chrome in place: scripts, menus, page headers and footers, link-list asides, permalinks.
 
-    A footer inside an article, ``<main>`` or a quote (its byline or
-    attribution) stays, as an article's header does.
-
-    Controls (``_CONTROL_TAGS``) are left for ``_strip_controls``.
+    A footer inside an article, ``<main>`` or a quote stays, as an article's
+    header does. Controls are left for ``_strip_controls``.
     """
     for tag in root.find_all(_CHROME_TAGS):
         tag.decompose()
@@ -890,26 +786,27 @@ def _strip_chrome(root: Tag) -> None:
         for tag in root.select(f"[role={role}]"):
             tag.decompose()
     # A page-level header is site chrome; an article's own header holds its title.
-    in_article: Dict[int, bool] = {}
-    page_headers = [tag for tag in root.find_all("header") if not _has_ancestor(tag, ("article", "main"), in_article)]
+    in_article: Dict[int, Optional[Tag]] = {}
+    page_headers = [
+        tag for tag in root.find_all("header") if _nearest_ancestor(tag, ("article", "main"), in_article) is None
+    ]
     # Innermost first, so no header is removed after the one around it.
     for tag in reversed(page_headers):
         tag.decompose()
-    in_content: Dict[int, bool] = {}
-    page_footers = [tag for tag in root.find_all("footer") if not _has_ancestor(tag, _FOOTER_KEEPERS, in_content)]
+    in_content: Dict[int, Optional[Tag]] = {}
+    page_footers = [
+        tag for tag in root.find_all("footer") if _nearest_ancestor(tag, _FOOTER_KEEPERS, in_content) is None
+    ]
     for tag in reversed(page_footers):
         tag.decompose()
     complementary = {id(tag) for tag in root.select("[role=complementary]")}
     asides = [tag for tag in root.find_all(True) if tag.name == "aside" or id(tag) in complementary]
     if asides:
         # Each aside is judged on the tree as it is before any aside goes, so
-        # one measure of the whole tree serves them all. Asking each aside
-        # for its text re-read every aside inside it.
+        # one measure of the whole tree serves them all.
         measures = _measure_text(root)
         menus = [tag for tag in asides if _is_link_list(*measures[id(tag)])]
-        # Innermost first, so no aside is removed after the one around it
-        # (and none needs a ``decomposed`` check, which bs4 answers by
-        # searching the subtree for a tag of that name).
+        # Innermost first, so no aside is removed after the one around it.
         for tag in reversed(menus):
             tag.decompose()
     for tag in root.select(_ANCHOR_SELECTORS):
@@ -929,18 +826,8 @@ def _images_to_alt_text(root: Tag) -> None:
         img.replace_with(NavigableString(alt))
 
 
-def _holds_running_text(parent: Tag, measures: Optional[Dict[int, Tuple[int, int]]] = None) -> bool:
-    """Whether an element's own children include text: a sentence, not a stack of blocks.
-
-    Args:
-        parent: The element whose children are checked.
-        measures: ``_measure_text`` of a tree holding ``parent``, so a child's
-            text isn't read anew at every level; ``None`` reads it.
-
-    Returns:
-        True when a direct child is non-blank text, or an inline element
-        (``<code>``, ``<strong>``...) other than a link that holds text.
-    """
+def _holds_running_text(parent: Tag, measures: Dict[int, Tuple[int, int]]) -> bool:
+    """Whether a direct child is text, or an inline element other than a link holding text (``_measure_text``)."""
     for child in parent.children:
         if isinstance(child, Comment):
             continue
@@ -948,7 +835,7 @@ def _holds_running_text(parent: Tag, measures: Optional[Dict[int, Tuple[int, int
             if child.strip():
                 return True
         elif isinstance(child, Tag) and child.name != "a" and child.name not in _BLOCK_TAGS:
-            if measures is not None and id(child) in measures:
+            if id(child) in measures:
                 has_text = measures[id(child)][0] > 0
             else:
                 has_text = bool(child.get_text(strip=True))
@@ -968,8 +855,8 @@ def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
     """
     # Measured once up front: moving links into a list changes no element's text.
     measures = _measure_text(root)
-    in_code: Dict[int, bool] = {}
-    in_line: Dict[int, bool] = {}
+    in_code: Dict[int, Optional[Tag]] = {}
+    in_line: Dict[int, Optional[Tag]] = {}
     for parent in [root, *root.find_all(True)]:
         run = []
         runs = []
@@ -986,9 +873,9 @@ def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
             runs.append(run)
         if not runs:
             continue
-        if parent.name in _CODE_TAGS or _has_ancestor(parent, _CODE_TAGS, in_code):
+        if parent.name in _CODE_TAGS or _nearest_ancestor(parent, _CODE_TAGS, in_code) is not None:
             continue
-        one_line = parent.name in _ONE_LINE_TAGS or _has_ancestor(parent, _ONE_LINE_TAGS, in_line)
+        one_line = parent.name in _ONE_LINE_TAGS or _nearest_ancestor(parent, _ONE_LINE_TAGS, in_line) is not None
         if one_line or _holds_running_text(parent, measures):
             for links in runs:
                 for link in links[1:]:
@@ -1005,17 +892,10 @@ def _listify_link_runs(soup: BeautifulSoup, root: Tag) -> None:
 
 
 def _page_title(soup: BeautifulSoup) -> str:
-    """The page's ``<title>``: the first one outside inline SVG or MathML, whose titles name an icon.
-
-    Args:
-        soup: The parsed page.
-
-    Returns:
-        Its text, or ``""`` when the page has none.
-    """
-    in_graphic: Dict[int, bool] = {}
+    """The text of the page's first ``<title>`` outside inline SVG or MathML (whose titles name an icon), or ``""``."""
+    in_graphic: Dict[int, Optional[Tag]] = {}
     for tag in soup.find_all("title"):
-        if not _has_ancestor(tag, ("svg", "math"), in_graphic):
+        if _nearest_ancestor(tag, ("svg", "math"), in_graphic) is None:
             return tag.get_text(strip=True)
     return ""
 
@@ -1034,8 +914,7 @@ def extract_page(
 
     Args:
         html: The page. Pass bytes when you have them: BeautifulSoup then reads
-            the charset from the page itself (a header-less page was decoded
-            wrongly as text).
+            the charset from the page itself.
         url: The page's address, for resolving relative links.
         keep_links: Keep the URL of links that sit inside a sentence.
         encoding: The charset the HTTP ``Content-Type`` declares
@@ -1066,21 +945,10 @@ def extract_page(
 
 
 def _extract(soup: BeautifulSoup, url: str, keep_links: bool, plain_when_too_deep: bool) -> PageContent:
-    """``extract_page`` of a parsed page.
-
-    Args:
-        soup: The parsed page; changed in place.
-        url: The page's address, for resolving relative links (unless its
-            ``<base href>`` names another; see ``link_base``).
-        keep_links: Keep the URL of links that sit inside a sentence.
-        plain_when_too_deep: Keep the plain text of a page nested too deep to
-            convert; ``False`` raises ``MarkupTooDeepError``.
-
-    Returns:
-        The page's content, as ``extract_page`` describes.
+    """``extract_page`` of a parsed page, changed in place.
 
     Raises:
-        MarkupTooDeepError: The page is too deep and ``plain_when_too_deep`` is off.
+        MarkupTooDeepError: The page is too deep to convert and ``plain_when_too_deep`` is off.
     """
     title = _page_title(soup)
     language = (soup.html.get("lang") if soup.html else None) or None
@@ -1117,14 +985,7 @@ _TITLE_SCAN_CHARS = 4096
 
 
 def _markdown_title(text: str) -> Optional[str]:
-    """The first ``# Heading`` near the start of plain text or Markdown.
-
-    Args:
-        text: The page text.
-
-    Returns:
-        The heading without its optional closing ``#`` run, or ``None``.
-    """
+    """The first ``# Heading`` near the start of plain text or Markdown, without its closing ``#`` run, or ``None``."""
     match = _ATX_TITLE.search(text, 0, _TITLE_SCAN_CHARS)
     if not match:
         return None
@@ -1217,16 +1078,7 @@ def html_soup(html: Union[str, bytes], encoding: Optional[str] = None, parser: s
 
 
 def _decode_text(body: Union[str, bytes], content_type: Optional[str], url: str) -> str:
-    """Size-cap and decode a plain-text body by its declared charset (UTF-8 otherwise).
-
-    Args:
-        body: The response body.
-        content_type: The ``Content-Type``, for its ``charset``.
-        url: The address, for the size warning.
-
-    Returns:
-        The text, cut at ``MARKUP_MAX_BYTES`` on a line boundary.
-    """
+    """A plain-text body cut at ``MARKUP_MAX_BYTES`` on a line, decoded by its declared charset (else UTF-8)."""
     if isinstance(body, str):
         body = body.encode("utf-8")
     body = cap_markup_bytes(body, int(settings.MARKUP_MAX_BYTES), url)

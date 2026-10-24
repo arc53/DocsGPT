@@ -28,7 +28,13 @@ from docsgpt.api.user.resource_access import (
     payload_for,
     settings_many,
 )
-from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.sources.access import (
+    SOURCE_BUSY,
+    SYNC_FREQUENCIES,
+    denied_response,
+    edit_lock,
+    load_source,
+)
 from docsgpt.api.user.sources.upload import (
     _claim_task_or_get_cached,
     _read_idempotency_key,
@@ -36,6 +42,7 @@ from docsgpt.api.user.sources.upload import (
     reingest_idempotency_key,
 )
 from docsgpt.api.user.team_sharing import visible_with_access
+from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.parser.remote.remote_creator import normalize_remote_data
@@ -55,14 +62,11 @@ from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig, validation_message
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.utils import check_required_fields
-from docsgpt.vectorstore.index_lock import SourceBusy, source_index_lock
+from docsgpt.vectorstore.index_lock import SourceBusy
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
 
 WIKI_INDEX_PATH = "/index.md"
-
-#: How long a source delete waits for a sync or page change on the source to finish before a 409.
-DELETE_LOCK_WAIT_SECONDS = 3.0
 
 # Longest graph-node search term forwarded to the store; longer input is truncated.
 _GRAPH_SEARCH_MAX_LEN = 200
@@ -73,19 +77,9 @@ sources_ns = Namespace(
 )
 
 
-def _get_provider_from_remote_data(remote_data):
-    if not remote_data:
-        return None
-    if isinstance(remote_data, dict):
-        return remote_data.get("provider")
-    if isinstance(remote_data, str):
-        try:
-            remote_data_obj = json.loads(remote_data)
-        except Exception:
-            return None
-        if isinstance(remote_data_obj, dict):
-            return remote_data_obj.get("provider")
-    return None
+def _get_provider_from_remote_data(remote_data) -> Optional[str]:
+    """The connector provider a source's ``remote_data`` names, or None."""
+    return connector_selection({"remote_data": remote_data}).get("provider")
 
 
 def _connection_id(row: dict) -> str | None:
@@ -102,23 +96,9 @@ def _is_wiki(doc: dict) -> bool:
 _WIKI_NO_SYNC = "A wiki is edited in place and doesn't sync."
 
 
-def _sync_refusal(text: str, code: str, status: int = 400):
-    """A refused sync request, with its text under both ``error`` and ``message``.
-
-    The connection drawer reads ``error``, older callers ``message``; ``code``
-    names the refusal so the UI can word it in the reader's language.
-
-    Args:
-        text: The refusal, in English.
-        code: Its code.
-        status: The HTTP status.
-
-    Returns:
-        Response: ``{"success": false, "error", "message", "code"}``.
-    """
-    return make_response(
-        jsonify({"success": False, "error": text, "message": text, "code": code}), status
-    )
+def _sync_refusal(text: str, code: str, status: int = 400) -> Response:
+    """A refused sync request: ``error_response`` with the text under ``message`` too, which older callers read."""
+    return error_response(text, status, message=text, code=code)
 
 
 def _wiki_store_refusal():
@@ -411,7 +391,7 @@ def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None, raise_b
         SourceBusy: With ``raise_busy``, when another job holds the source; nothing was deleted.
     """
     try:
-        with source_index_lock(str(doc["id"]), wait_seconds=DELETE_LOCK_WAIT_SECONDS, poll_seconds=0.25):
+        with edit_lock(str(doc["id"])):
             return _delete_source_unlocked(owner, doc, actor=actor)
     except SourceBusy:
         if raise_busy:
@@ -520,9 +500,7 @@ class DeleteOldIndexes(Resource):
         try:
             deleted = delete_source(ra.owner_id, doc, actor=user, raise_busy=True)
         except SourceBusy:
-            return _sync_refusal(
-                "Another change to this source is still running; try again when it finishes", "source_busy", 409
-            )
+            return _sync_refusal(SOURCE_BUSY, "source_busy", 409)
         if not deleted:
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
@@ -565,7 +543,7 @@ class ManageSync(Resource):
         source_id = data["source_id"]
         sync_frequency = data["sync_frequency"]
 
-        if sync_frequency not in ["never", "daily", "weekly", "monthly"]:
+        if sync_frequency not in SYNC_FREQUENCIES:
             return _sync_refusal("Invalid frequency", "bad_sync_frequency")
         try:
             with db_session() as conn:
@@ -657,6 +635,84 @@ _CONNECTION_REMOVED_EDITOR = (
 )
 
 
+def connector_selection(doc: dict) -> dict:
+    """A connector source's stored selection (``remote_data``: provider, file and folder ids) as a dict.
+
+    Args:
+        doc: The source row.
+
+    Returns:
+        The selection; ``{}`` when it isn't a JSON object.
+    """
+    remote_data = doc.get("remote_data")
+    if isinstance(remote_data, str):
+        try:
+            remote_data = json.loads(remote_data)
+        except ValueError:
+            return {}
+    return remote_data if isinstance(remote_data, dict) else {}
+
+
+def connector_sync_kwargs(doc: dict, owner: str, actor: str, selection: dict, connection_id: str) -> dict:
+    """The ``ingest_connector_task`` kwargs that sync a connector source with ``connection_id``.
+
+    Args:
+        doc: The source row.
+        owner: Its owner; the sync runs as them.
+        actor: The caller, who also receives the sync's events (a team editor isn't the owner).
+        selection: ``connector_selection(doc)``, naming its provider.
+        connection_id: The connection the sync reads with.
+
+    Returns:
+        The task's kwargs.
+    """
+    return {
+        "job_name": doc.get("name"),
+        "user": owner,
+        "source_type": selection["provider"],
+        "connection_id": connection_id,
+        "file_ids": selection.get("file_ids", []),
+        "folder_ids": selection.get("folder_ids", []),
+        "recursive": selection.get("recursive", True),
+        "retriever": doc.get("retriever") or "classic",
+        "operation_mode": "sync",
+        "doc_id": str(doc["id"]),
+        "sync_frequency": doc.get("sync_frequency") or "never",
+        "actor_id": actor,
+    }
+
+
+def owner_connector_sync(conn, doc: dict, owner: str, actor: str) -> dict | Response:
+    """A sync of a connector source with its own connection, queued without a browser naming one.
+
+    A team editor's Sync now and a Reingest run as the owner, with the
+    account the source names. A source that names none (its connection was
+    removed) is refused: another of the owner's accounts would read the
+    selection, and the sync would re-link the source to it.
+
+    Args:
+        conn: Open database connection.
+        doc: The source row, whose selection names its provider.
+        owner: Its owner.
+        actor: The caller; the refusal's wording depends on whether it is the owner.
+
+    Returns:
+        ``connector_sync_kwargs``, or a 409: ``connection_missing``, or
+        ``reconnect_needed`` when the owner must sign the connection in again.
+    """
+    from docsgpt.connectors import service as connector_service
+
+    connection_id = _connection_id(doc)
+    if not connection_id:
+        text = _CONNECTION_REMOVED if actor == owner else _CONNECTION_REMOVED_EDITOR
+        return _sync_refusal(text, "connection_missing", 409)
+    selection = connector_selection(doc)
+    session = connector_service.owner_sync_connection(conn, owner, selection["provider"], connection_id)
+    if session is None:
+        return _sync_refusal(_RECONNECT_TO_SYNC, "reconnect_needed", 409)
+    return connector_sync_kwargs(doc, owner, actor, selection, str(session["id"]))
+
+
 class _Rebuild(NamedTuple):
     """How a source with no stored files is rebuilt: the task it queues, and a call that queues it.
 
@@ -693,44 +749,12 @@ def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[_Rebuild] | R
     source_id = str(doc["id"])
     source_type = doc.get("type") or ""
     if source_type.startswith("connector"):
-        provider = _get_provider_from_remote_data(doc.get("remote_data"))
-        if not provider:
+        if not connector_selection(doc).get("provider"):
             return None
-        connection_id = _connection_id(doc)
-        if not connection_id:
-            # Refused as /api/connectors/sync refuses it: another of the
-            # owner's accounts would read the selection, and the sync would
-            # re-link the source to it.
-            text = _CONNECTION_REMOVED if actor == owner else _CONNECTION_REMOVED_EDITOR
-            return _sync_refusal(text, "connection_missing", 409)
-        from docsgpt.connectors import service as connector_service
-
         with db_readonly() as conn:
-            session = connector_service.owner_sync_connection(conn, owner, provider, connection_id)
-        if session is None:
-            return _sync_refusal(_RECONNECT_TO_SYNC, "reconnect_needed", 409)
-        remote_data = doc.get("remote_data")
-        if isinstance(remote_data, str):
-            try:
-                remote_data = json.loads(remote_data)
-            except ValueError:
-                remote_data = {}
-        selection = remote_data if isinstance(remote_data, dict) else {}
-        connector_kwargs = {
-            "job_name": doc.get("name"),
-            "user": owner,
-            "source_type": provider,
-            "connection_id": str(session["id"]),
-            "file_ids": selection.get("file_ids", []),
-            "folder_ids": selection.get("folder_ids", []),
-            "recursive": selection.get("recursive", True),
-            "retriever": doc.get("retriever") or "classic",
-            "operation_mode": "sync",
-            "doc_id": source_id,
-            "sync_frequency": doc.get("sync_frequency") or "never",
-            # The sync runs as the owner; its events also reach the caller.
-            "actor_id": actor,
-        }
+            connector_kwargs = owner_connector_sync(conn, doc, owner, actor)
+        if isinstance(connector_kwargs, Response):
+            return connector_kwargs
         return _Rebuild(
             "ingest_connector_task",
             lambda task_id, key: ingest_connector_task.apply_async(

@@ -2,16 +2,16 @@
 
 A Website source stores what it fetches (pages and sites) and what a site's
 crawl must skip; see ``parser/remote/website_loader.py``. These routes edit
-that list, so every change survives a sync. A page found by a site's crawl is
-added to ``skip`` when it is removed, so the next sync leaves it out. The
-chunks and tree entries change in ``website_pages_worker``: removed pages are
-deleted there, and added pages are fetched and appended. Sources made by the older url/crawler/sitemap
+that list, so every change survives a sync: a page a site's crawl found is
+added to ``skip`` when it is removed. The chunks and tree entries change in
+``website_pages_worker``. Sources made by the older url/crawler/sitemap
 loaders read as Website sources and are converted on their first save; their
 tree leaves carry no address, so a removal reads each one's from its chunks.
 """
 
 import re
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from functools import wraps
+from typing import Any, Callable, Dict, Iterable, List, NoReturn, Optional, Tuple
 from urllib.parse import urlparse
 
 from flask import Response, current_app, jsonify, make_response, request
@@ -19,42 +19,31 @@ from flask_restx import fields, Resource
 
 from docsgpt.api import api
 from docsgpt.api.user.base import get_vector_store
-from docsgpt.api.user.resource_access import AccessDenied
-from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.resource_access import AccessDenied, ResourceAccess
+from docsgpt.api.user.sources.access import SYNC_FREQUENCIES, denied_response, load_source
 from docsgpt.api.user.sources.routes import _WIKI_NO_SYNC, _is_wiki, _with_scheme, sources_ns
-from docsgpt.api.user.sources.upload import _pages_once
+from docsgpt.api.user.sources.upload import _website_config_error
 from docsgpt.api.user.tasks import sync_source, website_pages
+from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
 from docsgpt.parser.remote import website_loader
-from docsgpt.parser.remote.page_content import MAX_PATH_SEGMENTS
-from docsgpt.parser.remote.website_loader import SiteScope, is_web_address, page_key, parse_website_config
+from docsgpt.parser.remote.website_loader import SiteScope, is_web_address, parse_website_config
 from docsgpt.parser.remote.website_tree import (
     config_from_legacy,
     folder_skip_rule,
     held_pages,
+    page_aliases,
     pages_under,
+    stored_page_key as _key,
+    tree_leaves,
     web_pages,
 )
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
-_SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
-
 #: How many tree paths one removal may name; a folder is one path however many pages it holds.
 MAX_REMOVE_PATHS = 1000
-
-# C0 controls and DEL: no address, path or skip rule carries them, and a NUL can't be stored.
-_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
-
-
-def _error(message: str, status: int = 400, code: Optional[str] = None, **details: Any) -> Response:
-    """A failed response; ``code`` names an error the UI words itself, with ``details`` for its message."""
-    body = {"success": False, "error": message, **details}
-    if code:
-        body["code"] = code
-    return make_response(jsonify(body), status)
-
 
 #: The ``already_listed`` wording for an add that names only what the source already lists.
 ALREADY_LISTED = "These pages and sites are already in this source."
@@ -62,6 +51,49 @@ ALREADY_LISTED = "These pages and sites are already in this source."
 QUEUE_FAILED_SAVED = "The change was saved, but its task couldn't be queued; the next sync picks it up."
 #: The ``queue_failed`` wording for a refresh, which saves nothing first.
 QUEUE_FAILED_REFRESH = "The refresh couldn't be queued; try again, or sync the source."
+
+# C0 controls and DEL: the parse without the write limits drops a skip rule holding one.
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
+# Stands in for an entry's address when only its path or sitemap address is new.
+_PROBE_URL = "https://example.com/"
+
+
+class _Refused(Exception):
+    """A refusal raised by a website route's checks; ``_website_route`` answers with its response."""
+
+    def __init__(self, response: Response):
+        super().__init__()
+        self.response = response
+
+
+def _refuse(message: str, code: str, status: int = 400, **details: Any) -> NoReturn:
+    """Raise the refusal ``{"success": false, "error", "code", ...details}``; ``code`` is what the UI words."""
+    raise _Refused(error_response(message, status, code=code, **details))
+
+
+def _website_route(handler: Callable[..., Response]) -> Callable[..., Response]:
+    """Wrap a website route: a 401 without a token, and the response of any refusal its checks raise.
+
+    Args:
+        handler: The route method, called with the caller's ``sub``.
+
+    Returns:
+        The route method.
+    """
+
+    @wraps(handler)
+    def route(self) -> Response:
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        try:
+            return handler(self, decoded_token.get("sub"))
+        except _Refused as refused:
+            return refused.response
+        except AccessDenied as err:
+            return denied_response(err)
+
+    return route
 
 
 def _queue_failed(message: str, err: Exception) -> Response:
@@ -72,19 +104,15 @@ def _queue_failed(message: str, err: Exception) -> Response:
         err: What queueing raised.
     """
     current_app.logger.error(f"Could not queue a website task: {err}", exc_info=True)
-    return _error(message, 500, code="queue_failed")
+    return error_response(message, 500, code="queue_failed")
 
 
-def _config_error(err: ValueError) -> Response:
-    """The 400 for a config ``parse_website_config`` refused.
-
-    The parser's typed error carries a ``code`` (``site_limit``,
-    ``invalid_address``, ...) and ``details`` for its wording; any other
-    ``ValueError`` is ``invalid_config``.
-    """
-    details = getattr(err, "details", None) or {}
-    details = {k: v for k, v in details.items() if k not in ("message", "status", "code", "success", "error")}
-    return _error(str(err), code=getattr(err, "code", None) or "invalid_config", **details)
+def _parsed(raw: dict, enforce_page_cap: bool = True) -> dict:
+    """``parse_website_config``, its refusal raised with the parser's ``code`` and details."""
+    try:
+        return parse_website_config(raw, enforce_page_cap=enforce_page_cap)
+    except ValueError as err:
+        raise _Refused(_website_config_error(err)) from err
 
 
 def _is_str_list(value: Any) -> bool:
@@ -106,90 +134,77 @@ _FIELD_TYPES: Dict[str, Tuple[Callable[[Any], bool], str]] = {
 }
 
 
-def _read_body(required: List[str]) -> Tuple[dict, Optional[Response]]:
+def _read_body(required: List[str]) -> dict:
     """The request's JSON object, with its required fields present and every known field of the right type.
 
-    A missing or unreadable body reads as ``{}`` (so it is refused for its
-    missing fields); a body that isn't an object, a missing field and a field
-    of the wrong type are each a 400 with a ``code``. A field sent as
-    ``null`` counts as left out.
+    A missing or unreadable body reads as ``{}``; a field sent as ``null``
+    counts as left out.
 
     Args:
         required: The fields the route needs.
 
     Returns:
-        ``(body, None)``, or ``({}, the 400)``.
+        The body.
+
+    Raises:
+        _Refused: ``invalid_body``, ``missing_fields`` or ``invalid_field``.
     """
     data = request.get_json(silent=True)
     if data is None:
         data = {}
     if not isinstance(data, dict):
-        return {}, _error("The request body must be a JSON object", code="invalid_body")
+        _refuse("The request body must be a JSON object", "invalid_body")
     missing = [name for name in required if data.get(name) is None]
     if missing:
-        return {}, _error(
-            f"Missing required fields: {', '.join(missing)}", code="missing_fields", fields=missing
-        )
+        _refuse(f"Missing required fields: {', '.join(missing)}", "missing_fields", fields=missing)
     for name, (check, wording) in _FIELD_TYPES.items():
         if data.get(name) is not None and not check(data[name]):
-            return {}, _error(f"{name} must be {wording}", code="invalid_field", field=name)
-    if "\x00" in data.get("source_id", ""):
-        # No source has one, and the database can't even be asked for it.
-        return {}, denied_response(AccessDenied(404, "Source not found"))
-    return data, None
+            _refuse(f"{name} must be {wording}", "invalid_field", field=name)
+    return data
 
 
-def _load_locked(conn, source_id: str, user: str, action: str) -> tuple:
-    """``load_source``, then the row re-read under a row lock for this transaction.
-
-    A route that reads ``remote_data`` or the tree and writes it back builds on
-    the locked row, so a change committed meanwhile is kept, and the next
-    writer waits for this one.
+def _load_website(
+    conn, source_id: Optional[str], user: str, action: str, *, lock: bool = False, edits_chunks: bool = False,
+) -> Tuple[dict, ResourceAccess, dict]:
+    """The Website source a route acts on, checked, with its config (an older web source's converted).
 
     Args:
-        conn: The write transaction's connection.
+        conn: The connection; a write's transaction when ``lock``.
         source_id: Source id from the request.
         user: The caller's ``sub``.
-        action: The ``source`` action to check.
+        action: The ``source`` action to check; any but ``view_config`` is a change.
+        lock: Re-read the row under a row lock, so a route that writes its
+            ``remote_data`` back builds on a change committed meanwhile and
+            the next writer waits for this one.
+        edits_chunks: The change edits single pages' chunks.
 
     Returns:
-        ``(locked row, ResourceAccess)``.
+        ``(row, ResourceAccess, Website config)``.
 
     Raises:
-        AccessDenied: As ``load_source``.
+        AccessDenied: As ``load_source``; a 404 too for an id holding a NUL,
+            which no source has and the database can't be asked for.
+        _Refused: ``not_website``; for a change, ``wiki`` (a converted
+            source's pages are the wiki's now) and, when it edits chunks on a
+            store that can't change single chunks (Elasticsearch, where it
+            would report success and leave them), ``chunks_unsupported``.
     """
+    if source_id and "\x00" in source_id:
+        raise AccessDenied(404, "Source not found")
     doc, ra = load_source(conn, source_id, user, action)
-    locked = SourcesRepository(conn).get_for_update(str(doc["id"]))
-    return (locked if locked is not None else doc), ra
-
-
-def _wiki_refusal(doc: dict) -> Optional[Response]:
-    """The 400 for a source converted to a wiki, or ``None``.
-
-    A converted source keeps its website ``type`` and ``remote_data``, but its
-    pages are the wiki's now: adding, refreshing or removing web pages would
-    write raw chunks into it, and a schedule would sync over it.
-    """
-    return _error(_WIKI_NO_SYNC, code="wiki") if _is_wiki(doc) else None
-
-
-def _chunk_edits_refusal() -> Optional[Response]:
-    """The 400 when the vector store can't change single chunks (Elasticsearch), or ``None``.
-
-    Refreshing or removing a page edits that page's chunks; on such a store
-    the change would report success and leave the chunks as they were.
-    """
-    if VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
-        return None
-    return _error(
-        f"The {settings.VECTOR_STORE} vector store can't change single pages; sync the source instead",
-        code="chunks_unsupported",
-    )
-
-
-def _website_config(doc: dict) -> Optional[dict]:
-    """The source's Website config, converting an older web source; ``None`` for any other."""
-    return config_from_legacy(doc.get("type"), doc.get("remote_data"))
+    if lock:
+        doc = SourcesRepository(conn).get_for_update(str(doc["id"])) or doc
+    config = config_from_legacy(doc.get("type"), doc.get("remote_data"))
+    if config is None:
+        _refuse("Not a website source", "not_website")
+    if action != "view_config" and _is_wiki(doc):
+        _refuse(_WIKI_NO_SYNC, "wiki")
+    if edits_chunks and not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        _refuse(
+            f"The {settings.VECTOR_STORE} vector store can't change single pages; sync the source instead",
+            "chunks_unsupported",
+        )
+    return doc, ra, config
 
 
 def _cleaned(config: dict) -> dict:
@@ -198,157 +213,115 @@ def _cleaned(config: dict) -> dict:
     Each page is listed once (by ``page_key``, the first spelling kept), and
     a site's ``max_pages`` is cut to ``WEB_MAX_PAGES``: neither refuses a
     save, so a source stored before either rule still saves.
-
-    Args:
-        config: ``parse_website_config(..., enforce_page_cap=False)``'s result.
-
-    Returns:
-        A new config.
     """
     cap = int(settings.WEB_MAX_PAGES)
-    config = _pages_once(config)
-    entries = [
-        {**entry, "max_pages": min(entry["max_pages"], cap)}
-        if entry["mode"] == "site" and entry.get("max_pages") is not None else entry
-        for entry in config["entries"]
-    ]
+    seen = set()
+    entries = []
+    for entry in config["entries"]:
+        if entry["mode"] == "page":
+            if _key(entry["url"]) in seen:
+                continue
+            seen.add(_key(entry["url"]))
+        elif entry.get("max_pages") is not None:
+            entry = {**entry, "max_pages": min(entry["max_pages"], cap)}
+        entries.append(entry)
     return {**config, "entries": entries}
 
 
-def _within_depth(url: str) -> bool:
-    """Whether an address is at most ``MAX_PATH_SEGMENTS`` folders deep, as a load fetches one.
+def _addresses(entries: Iterable[dict]) -> set:
+    """Every entry address and sitemap address of a config's entries."""
+    return {url for entry in entries for url in (entry["url"], entry.get("sitemap_url")) if url}
+
+
+def _check_new_values(raw: dict, parsed: dict, stored: dict) -> None:
+    """Refuse an address, path or skip rule a settings save adds that a write may not store.
+
+    The save is parsed without the write limits, so what the source already
+    holds saves as it is; each value it doesn't hold yet is put through the
+    strict parse on its own, for its value checks only. A path and a skip
+    rule with a control character are read as sent: the lenient parse
+    strips one and drops the other.
 
     Args:
-        url: An address that parsed.
-
-    Returns:
-        False for a deeper one.
-    """
-    return urlparse(url).path.count("/") <= MAX_PATH_SEGMENTS
-
-
-def _added_value_refusal(config: dict, stored: dict) -> Optional[Response]:
-    """The 400 for an address, path or skip rule a change adds that a write may not store, or ``None``.
-
-    A config parsed without the write limits only needs addresses that
-    parse, so what the change adds is checked as a strict parse checks it:
-    each new address (an entry's or its ``sitemap_url``) must be an
-    ``is_web_address`` (no ``user:password@`` credentials, no malformed
-    host, no control character) at most ``MAX_PATH_SEGMENTS`` folders deep;
-    a long one is ``url_too_long``, below. What the source already holds is left
-    alone. A control character in a path or skip rule is checked on the
-    request body (``_control_character_refusal``): the parse drops it.
-
-    Args:
-        config: The new config, parsed without the write limits.
+        raw: The settings body: ``entries`` and ``skip``.
+        parsed: ``raw`` parsed without the write limits.
         stored: The source's config before the change.
 
-    Returns:
-        The refusal, ``invalid_address`` with the ``url``.
+    Raises:
+        _Refused: The strict parse's refusal (``invalid_address``, ``url_too_long``, ``invalid_config``).
     """
-    old_entries = stored["entries"]
-    old_urls = {url for entry in old_entries for url in (entry["url"], entry.get("sitemap_url")) if url}
-    for entry in config["entries"]:
-        for label, url in (("Address", entry["url"]), ("Sitemap address", entry.get("sitemap_url"))):
-            if url and url not in old_urls and not (is_web_address(url) and _within_depth(url)):
-                # The value is echoed back to the client: kept to a URL's length.
-                return _error(
-                    f"{label} {url[:200]!r} is not a web address",
-                    code="invalid_address",
-                    url=url[: website_loader.MAX_URL_LENGTH],
-                )
-    return None
+    old_urls = _addresses(stored["entries"])
+    old_prefixes = {entry.get("path_prefix") or "" for entry in stored["entries"] if entry["mode"] == "site"}
+    probes = []
+    for item, entry in zip(raw["entries"], parsed["entries"]):
+        url = entry["url"] if entry["url"] not in old_urls else None
+        sitemap_url = entry.get("sitemap_url") if entry.get("sitemap_url") not in old_urls else None
+        path_prefix = str(item.get("path_prefix") or "") if entry["mode"] == "site" else ""
+        if entry.get("path_prefix") in old_prefixes and not _CONTROL_CHARACTER.search(path_prefix):
+            path_prefix = ""
+        if url or sitemap_url or path_prefix:
+            probes.append({
+                "url": url or _PROBE_URL, "mode": entry["mode"], "sitemap_url": sitemap_url,
+                "path_prefix": path_prefix,
+            })
+    # Refused as sent: the parse would strip one off the rule's ends and accept it.
+    for rule in raw["skip"]:
+        if _CONTROL_CHARACTER.search(rule):
+            _refuse(f"Skip rule {rule!r} is not a web address", "invalid_address", url=rule)
+    old_rules = set(stored["skip"])
+    rules = [rule for rule in parsed["skip"] if rule not in old_rules]
+    # One value per parse, so none of its count limits can apply: counts are _check_growth's.
+    for probe in probes:
+        _parsed({"entries": [probe]})
+    for rule in rules:
+        _parsed({"entries": [{"url": _PROBE_URL}], "skip": [rule]})
 
 
-def _control_character_refusal(raw: dict) -> Optional[Response]:
-    """The 400 when a settings body's path or skip rule holds a control character, or ``None``.
+def _check_growth(config: dict, stored: dict) -> None:
+    """Refuse a change that grows the page, site or skip-rule count past its write limit.
 
-    A parse without the write limits strips such characters from a path and
-    drops such a rule, so a stored row that has one still reads; a save is
-    refused instead of quietly changing what was sent. A stored config
-    never holds one (its read drops it), so any found here is new.
+    A source past a limit (the admin lowered ``WEB_MAX_PAGES``, or it was
+    saved before the limit existed) can still shrink and be saved as it is,
+    so only a count past its limit and larger than the stored one is refused.
 
     Args:
-        raw: The settings body as sent: ``entries`` and ``skip``.
+        config: The config after the change.
+        stored: The source's config before it.
 
-    Returns:
-        The refusal, ``invalid_config``.
+    Raises:
+        _Refused: ``page_limit``, ``site_limit`` or ``skip_limit``, with the limit.
     """
-    entries = raw.get("entries") if isinstance(raw.get("entries"), list) else []
-    if any(
-        isinstance(entry, dict)
-        and isinstance(entry.get("path_prefix"), str)
-        and _CONTROL_CHARACTER.search(entry["path_prefix"])
-        for entry in entries
-    ):
-        return _error("A path can't contain control characters", code="invalid_config")
-    rules = raw.get("skip") if isinstance(raw.get("skip"), list) else []
-    if any(isinstance(rule, str) and _CONTROL_CHARACTER.search(rule) for rule in rules):
-        return _error("A skip rule can't contain control characters", code="invalid_config")
-    return None
+    def sites(of: dict) -> int:
+        return sum(1 for entry in of["entries"] if entry["mode"] == "site")
 
-
-def _growth_refusal(config: dict, stored: dict, built_rules: Iterable[str] = ()) -> Optional[Response]:
-    """The 400 when a change grows a config past a write limit or adds a value it may not store, or ``None``.
-
-    The limits apply to what a change adds, not to what the source already
-    holds: a source over a limit (the admin lowered ``WEB_MAX_PAGES``, or it
-    was saved before a limit existed) can still shrink, and be saved as it
-    is. So the page cap, the site limit and the skip-rule limit refuse only a
-    count that is past the limit and larger than the stored one, and the
-    length limit only an address, path or rule the source didn't hold. The
-    address check (``_added_value_refusal``) runs first, by the same rule.
-
-    Args:
-        config: The new config, parsed without the write limits.
-        stored: The source's config before the change.
-        built_rules: Skip rules the server built from addresses the source
-            already holds (a removed page's or folder's): exempt from the
-            length limit, or a page whose stored address is long could
-            never be removed. They still count toward the skip-rule limit.
-
-    Returns:
-        The refusal, with a ``code`` and the limit (or the address) for the UI's wording.
-    """
-    refusal = _added_value_refusal(config, stored)
-    if refusal is not None:
-        return refusal
-    entries, old_entries = config["entries"], stored["entries"]
     cap = int(settings.WEB_MAX_PAGES)
     # A site brings at least one page, so it counts toward the cap too.
-    if len(entries) > cap and len(entries) > len(old_entries):
-        return _error(f"A website source holds up to {cap} pages", code="page_limit", max_pages=cap)
+    if len(config["entries"]) > max(cap, len(stored["entries"])):
+        _refuse(f"A website source holds up to {cap} pages", "page_limit", max_pages=cap)
     max_sites = website_loader.MAX_SITE_ENTRIES
-    sites = sum(1 for entry in entries if entry["mode"] == "site")
-    if sites > max_sites and sites > sum(1 for entry in old_entries if entry["mode"] == "site"):
-        return _error(f"A website source holds up to {max_sites} sites", code="site_limit", max_sites=max_sites)
+    if sites(config) > max(max_sites, sites(stored)):
+        _refuse(f"A website source holds up to {max_sites} sites", "site_limit", max_sites=max_sites)
     max_skip = website_loader.MAX_SKIP_RULES
-    if len(config["skip"]) > max_skip and len(config["skip"]) > len(stored["skip"]):
-        return _error(
-            f"A website source holds up to {max_skip} skip rules", code="skip_limit", max_skip=max_skip
-        )
-    max_length = website_loader.MAX_URL_LENGTH
-    old_urls = {url for entry in old_entries for url in (entry["url"], entry.get("sitemap_url")) if url}
-    new_urls = [url for entry in entries for url in (entry["url"], entry.get("sitemap_url")) if url]
-    if any(len(url) > max_length and url not in old_urls for url in new_urls):
-        return _error(
-            f"An address is longer than {max_length} characters", code="url_too_long", max_length=max_length
-        )
-    old_prefixes = {entry.get("path_prefix") or "" for entry in old_entries if entry["mode"] == "site"}
-    if any(
-        len(entry.get("path_prefix") or "") > max_length and (entry.get("path_prefix") or "") not in old_prefixes
-        for entry in entries
-        if entry["mode"] == "site"
-    ):
-        return _error(
-            f"Path is longer than {max_length} characters", code="url_too_long", max_length=max_length
-        )
-    old_rules = set(stored["skip"]) | set(built_rules)
-    if any(len(rule.removesuffix("*")) > max_length and rule not in old_rules for rule in config["skip"]):
-        return _error(
-            f"A skip rule is longer than {max_length} characters", code="url_too_long", max_length=max_length
-        )
-    return None
+    if len(config["skip"]) > max(max_skip, len(stored["skip"])):
+        _refuse(f"A website source holds up to {max_skip} skip rules", "skip_limit", max_skip=max_skip)
+
+
+def _entry_paths(config: dict, structure: Any) -> List[str]:
+    """Tree paths of the pages a ``mode: "page"`` entry lists, by their address or one that redirected to them.
+
+    Args:
+        config: The Website config.
+        structure: ``directory_structure``.
+
+    Returns:
+        The paths, in stored order.
+    """
+    keys = {_key(entry["url"]) for entry in config["entries"] if entry["mode"] == "page"}
+    return [
+        path for path, node in tree_leaves(structure)
+        if isinstance(node.get("url"), str) and node["url"]
+        and any(_key(url) in keys for url in (node["url"], *page_aliases(node["url"], node)))
+    ]
 
 
 @sources_ns.route("/website")
@@ -380,26 +353,17 @@ class WebsiteSettings(Resource):
     )
 
     @api.doc(
-        description="A Website source's config, sync schedule and last ingest report.",
+        description=(
+            "A Website source's config, sync schedule and last ingest report. entry_paths lists the tree paths "
+            "of the pages a mode: page entry lists (by its address, or one that redirected to the page); the "
+            "other pages were found by a site's crawl."
+        ),
         params={"id": "Source ID"},
     )
-    def get(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        source_id = request.args.get("id")
-        try:
-            if source_id and "\x00" in source_id:
-                raise AccessDenied(404, "Source not found")
-            with db_readonly() as conn:
-                doc, _ra = load_source(conn, source_id, user, "view_config")
-        except AccessDenied as err:
-            return denied_response(err)
-        config = _website_config(doc)
-        if config is None:
-            return _error("Not a website source", code="not_website")
-        report = (doc.get("metadata") or {}).get("website")
+    @_website_route
+    def get(self, user: str) -> Response:
+        with db_readonly() as conn:
+            doc, _ra, config = _load_website(conn, request.args.get("id"), user, "view_config")
         return make_response(
             jsonify({
                 "success": True,
@@ -407,7 +371,8 @@ class WebsiteSettings(Resource):
                 "legacy": doc.get("type") != "website",
                 "config": config,
                 "sync_frequency": doc.get("sync_frequency") or "never",
-                "report": report,
+                "report": (doc.get("metadata") or {}).get("website"),
+                "entry_paths": _entry_paths(config, doc.get("directory_structure")),
             }),
             200,
         )
@@ -418,54 +383,32 @@ class WebsiteSettings(Resource):
             "Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync. "
             "An address the save adds is checked as in /api/website/pages: one that isn't a web address "
             "(user:password@ credentials, a malformed host, a control character) is a 400 with code "
-            "invalid_address, and a new path or skip rule with a control character one with code invalid_config. "
-            "What the source already stores is saved as it is."
+            "invalid_address, as is a new skip rule with a control character; a new path with one is a 400 with "
+            "code invalid_config. What the source already stores is saved as it is."
         )
     )
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data, refusal = _read_body(["source_id", "entries"])
-        if refusal is not None:
-            return refusal
+    @_website_route
+    def post(self, user: str) -> Response:
+        data = _read_body(["source_id", "entries"])
         sync_frequency = data.get("sync_frequency")
-        if sync_frequency is not None and sync_frequency not in _SYNC_FREQUENCIES:
-            return _error(f"Unknown sync_frequency {sync_frequency!r}", code="bad_sync_frequency")
-        try:
-            with db_session() as conn:
-                doc, ra = _load_locked(conn, data["source_id"], user, "edit")
-                stored = _website_config(doc)
-                if stored is None:
-                    return _error("Not a website source", code="not_website")
-                refusal = _wiki_refusal(doc)
-                if refusal is not None:
-                    return refusal
-                # A key left out keeps its stored value, as in PATCH /sources/<id>/config.
-                raw = {
-                    "entries": data["entries"],
-                    "skip": data["skip"] if data.get("skip") is not None else stored["skip"],
-                    "keep_links": (
-                        data["keep_links"] if data.get("keep_links") is not None else stored["keep_links"]
-                    ),
-                }
-                refusal = _control_character_refusal(raw)
-                if refusal is not None:
-                    return refusal
-                try:
-                    config = _cleaned(parse_website_config(raw, enforce_page_cap=False))
-                except ValueError as err:
-                    return _config_error(err)
-                refusal = _growth_refusal(config, stored)
-                if refusal is not None:
-                    return refusal
-                fields_ = {"remote_data": config, "type": "website"}
-                if sync_frequency is not None:
-                    fields_["sync_frequency"] = sync_frequency
-                SourcesRepository(conn).update(str(doc["id"]), ra.owner_id, fields_)
-        except AccessDenied as err:
-            return denied_response(err)
+        if sync_frequency is not None and sync_frequency not in SYNC_FREQUENCIES:
+            _refuse(f"Unknown sync_frequency {sync_frequency!r}", "bad_sync_frequency")
+        with db_session() as conn:
+            doc, ra, stored = _load_website(conn, data["source_id"], user, "edit", lock=True)
+            # A key left out keeps its stored value, as in PATCH /sources/<id>/config.
+            raw = {
+                "entries": data["entries"],
+                "skip": data["skip"] if data.get("skip") is not None else stored["skip"],
+                "keep_links": data["keep_links"] if data.get("keep_links") is not None else stored["keep_links"],
+            }
+            parsed = _parsed(raw, enforce_page_cap=False)
+            _check_new_values(raw, parsed, stored)
+            config = _cleaned(parsed)
+            _check_growth(config, stored)
+            fields_ = {"remote_data": config, "type": "website"}
+            if sync_frequency is not None:
+                fields_["sync_frequency"] = sync_frequency
+            SourcesRepository(conn).update(str(doc["id"]), ra.owner_id, fields_)
         return make_response(jsonify({"success": True, "config": config}), 200)
 
 
@@ -493,31 +436,18 @@ class RemoveWebsitePages(Resource):
             "found it is still removed, by its path, and the config is left as it is."
         ),
     )
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data, refusal = _read_body(["source_id"])
-        if refusal is not None:
-            return refusal
+    @_website_route
+    def post(self, user: str) -> Response:
+        data = _read_body(["source_id"])
         file_paths = list(dict.fromkeys(data.get("file_paths") or []))
         if len(file_paths) > MAX_REMOVE_PATHS:
-            return _error(
-                f"One removal names up to {MAX_REMOVE_PATHS} pages",
-                code="too_many_paths",
-                max_paths=MAX_REMOVE_PATHS,
+            _refuse(
+                f"One removal names up to {MAX_REMOVE_PATHS} pages", "too_many_paths", max_paths=MAX_REMOVE_PATHS
             )
         directory_path = (data.get("directory_path") or "").strip("/")
         try:
             with db_session() as conn:
-                doc, ra = _load_locked(conn, data["source_id"], user, "edit")
-                refusal = _wiki_refusal(doc) or _chunk_edits_refusal()
-                if refusal is not None:
-                    return refusal
-                stored = _website_config(doc)
-                if stored is None:
-                    return _error("Not a website source", code="not_website")
+                doc, ra, stored = _load_website(conn, data["source_id"], user, "edit", lock=True, edits_chunks=True)
                 structure = doc.get("directory_structure") or {}
                 if not isinstance(structure, dict):
                     structure = {}
@@ -533,7 +463,7 @@ class RemoveWebsitePages(Resource):
                     named = {path for path, _url in pages}
                     pages.extend(p for p in folder_pages if p[0] not in named)
                 if not pages:
-                    return _error("No such pages in this source", code="not_found")
+                    _refuse("No such pages in this source", "not_found")
                 # Their addresses come from their chunks; one that can't be
                 # found edits nothing, and the worker removes it by its path.
                 unaddressed = [path for path, url in pages if not url]
@@ -547,18 +477,12 @@ class RemoveWebsitePages(Resource):
 
                 config = _without_pages(stored, addressed, section_rule, requested, folder_paths)
                 if not config["entries"]:
-                    return _error(
-                        "That would leave the source with nothing to fetch; delete the source instead",
-                        code="last_entry",
+                    _refuse(
+                        "That would leave the source with nothing to fetch; delete the source instead", "last_entry"
                     )
-                # A removal only shrinks the entries, so of the write limits
-                # only the skip rules it adds are checked: a source over the
-                # page cap (lowered since it was saved) can still shrink.
-                # Their length isn't: each is built from an address the tree
-                # already holds, however long the crawl found it.
-                refusal = _growth_refusal(config, stored, built_rules=config["skip"])
-                if refusal is not None:
-                    return refusal
+                # Only the skip rules can grow, and each is built from an
+                # address the tree already holds, so only their count is checked.
+                _check_growth(config, stored)
 
                 # Saved now, so a sync that starts before the worker runs
                 # already leaves the pages out. With no address to go by,
@@ -567,21 +491,15 @@ class RemoveWebsitePages(Resource):
                     SourcesRepository(conn).update(
                         str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"}
                     )
-            # The chunks and tree entries go in the worker, under the source's
-            # index lock: a running sync is waited for rather than refused, and
-            # no request is held open while a large folder's chunks are deleted.
-        except AccessDenied as err:
-            return denied_response(err)
+        except (_Refused, AccessDenied):
+            raise
         except Exception as err:
             current_app.logger.error(f"Error removing website pages: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
-        # Each page goes with its URL and every address that redirected to
-        # it: the worker finds it by those in the tree as it is then, so a
-        # sync that moved it meanwhile still removes the right page. A leaf
-        # stored without an address goes with the one read from its chunks
-        # (a sync that ran first gave its path to another page, and a url
-        # loader's chunks carry no path); only one whose address couldn't be
-        # found goes with "", and is found by its path.
+        # The worker deletes the chunks and tree entries under the source's
+        # index lock, finding each page by its URL and every address that
+        # redirected to it, so a sync that ran meanwhile still removes the
+        # right page; one whose address couldn't be found goes by its path.
         try:
             task = website_pages.delay(
                 str(doc["id"]), ra.owner_id, "remove", pages=[
@@ -620,63 +538,34 @@ class AddWebsitePages(Resource):
             "when the entries were saved but the task couldn't be queued (the next sync fetches them)."
         ),
     )
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data, refusal = _read_body(["source_id", "entries"])
-        if refusal is not None:
-            return refusal
-        try:
-            parsed = parse_website_config({"entries": data["entries"]})["entries"]
-        except ValueError as err:
-            return _config_error(err)
+    @_website_route
+    def post(self, user: str) -> Response:
+        data = _read_body(["source_id", "entries"])
         # One page named several ways (``/new``, ``/new/``, ``www.…/new#a``)
         # is one entry: the first spelling is kept, so the cap counts it once.
         firsts: Dict[tuple, dict] = {}
-        for entry in parsed:
+        for entry in _parsed({"entries": data["entries"]})["entries"]:
             firsts.setdefault(_entry_identity(entry), entry)
-        new_entries = list(firsts.values())
-        try:
-            with db_session() as conn:
-                doc, ra = _load_locked(conn, data["source_id"], user, "edit")
-                config = _website_config(doc)
-                if config is None:
-                    return _error("Not a website source", code="not_website")
-                refusal = _wiki_refusal(doc)
-                if refusal is not None:
-                    return refusal
-                listed = {_entry_identity(e) for e in config["entries"]}
-                added = [e for e in new_entries if _entry_identity(e) not in listed]
-                if not added:
-                    return _error(ALREADY_LISTED, code="already_listed")
-                # WEB_MAX_PAGES caps the whole source, so it can't grow past
-                # what a sync may fetch again.
-                cap = int(settings.WEB_MAX_PAGES)
-                held = held_pages(config, doc.get("directory_structure"))
-                new_pages = len({_key(e["url"]) for e in added if e["mode"] == "page"} - held["keys"])
-                adds_site = any(e["mode"] == "site" for e in added)
-                total = held["count"] + new_pages
-                if total > cap or (adds_site and total >= cap):
-                    return _error(f"A website source holds up to {cap} pages", code="page_limit", max_pages=cap)
-                # The new entries were checked against the write limits above;
-                # what the source already holds is checked only for growth.
-                try:
-                    merged = parse_website_config(
-                        {**config, "entries": config["entries"] + added}, enforce_page_cap=False
-                    )
-                except ValueError as err:
-                    return _config_error(err)
-                refusal = _growth_refusal(merged, config)
-                if refusal is not None:
-                    return refusal
-                config = merged
-                SourcesRepository(conn).update(
-                    str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"}
-                )
-        except AccessDenied as err:
-            return denied_response(err)
+        with db_session() as conn:
+            doc, ra, config = _load_website(conn, data["source_id"], user, "edit", lock=True)
+            listed = {_entry_identity(e) for e in config["entries"]}
+            added = [e for e in firsts.values() if _entry_identity(e) not in listed]
+            if not added:
+                _refuse(ALREADY_LISTED, "already_listed")
+            # WEB_MAX_PAGES caps the whole source, so it can't grow past what a sync may fetch again.
+            cap = int(settings.WEB_MAX_PAGES)
+            held = held_pages(config, doc.get("directory_structure"))
+            new_pages = len({_key(e["url"]) for e in added if e["mode"] == "page"} - held["keys"])
+            adds_site = any(e["mode"] == "site" for e in added)
+            total = held["count"] + new_pages
+            if total > cap or (adds_site and total >= cap):
+                _refuse(f"A website source holds up to {cap} pages", "page_limit", max_pages=cap)
+            # The new entries passed the write limits above; what the source
+            # already holds is checked only for growth.
+            merged = _parsed({**config, "entries": config["entries"] + added}, enforce_page_cap=False)
+            _check_growth(merged, config)
+            config = merged
+            SourcesRepository(conn).update(str(doc["id"]), ra.owner_id, {"remote_data": config, "type": "website"})
 
         structure = doc.get("directory_structure") if isinstance(doc.get("directory_structure"), dict) else {}
         # Read through ``_with_scheme``: an address written without a scheme
@@ -689,7 +578,7 @@ class AddWebsitePages(Resource):
         # every page under a host folder: both rebuild rather than append.
         # A store that can't add single chunks (Elasticsearch) rebuilds too.
         needs_sync = (
-            any(e["mode"] == "site" for e in added)
+            adds_site
             or (bool(hosts) and (len(hosts) > 1) != (len(new_hosts) > 1))
             or not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE)
         )
@@ -747,28 +636,15 @@ class RefreshWebsitePage(Resource):
             "code queue_failed when the task couldn't be queued."
         )
     )
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data, refusal = _read_body(["source_id", "file_path"])
-        if refusal is not None:
-            return refusal
-        try:
-            with db_readonly() as conn:
-                doc, ra = load_source(conn, data["source_id"], user, "edit")
-        except AccessDenied as err:
-            return denied_response(err)
-        if _website_config(doc) is None:
-            return _error("Not a website source", code="not_website")
-        refusal = _wiki_refusal(doc) or _chunk_edits_refusal()
-        if refusal is not None:
-            return refusal
+    @_website_route
+    def post(self, user: str) -> Response:
+        data = _read_body(["source_id", "file_path"])
+        with db_readonly() as conn:
+            doc, ra, _config = _load_website(conn, data["source_id"], user, "edit", edits_chunks=True)
         structure = doc.get("directory_structure") if isinstance(doc.get("directory_structure"), dict) else {}
         page = _find_page(web_pages(structure), data["file_path"], data.get("url"), _requested_urls(structure))
         if page is None:
-            return _error("No such page in this source", code="not_found")
+            _refuse("No such page in this source", "not_found")
         path, url = page
         # The worker finds the page by its address under the index lock: a
         # sync that runs first can give its path to another page.
@@ -842,14 +718,6 @@ def _find_page(
     return next((m for m in matches if m[0] == file_path), matches[0] if matches else None)
 
 
-def _key(url: str) -> str:
-    """``page_key``, or the URL itself when it can't be parsed."""
-    try:
-        return page_key(url)
-    except ValueError:
-        return url
-
-
 def _entry_identity(entry: dict) -> tuple:
     """What makes an entry the same as another: a page's address, or a site's address and every setting.
 
@@ -899,10 +767,9 @@ def _requested_urls(structure: Any, prefix: str = "") -> Dict[str, List[str]]:
     """``{tree path: [requested addresses]}`` for the pages stored after a redirect.
 
     A redirected page's leaf keeps every address it was asked for
-    (``requested_urls``; a leaf from before keeps one, ``requested_url``)
-    beside the one it was stored under (``url``). Page entries are listed as
-    typed, so removing the page has to find each entry by those addresses:
-    several entries can redirect to one page.
+    (``requested_urls``) beside the one it was stored under (``url``); page
+    entries are listed as typed, so removing or refreshing the page finds
+    them by those addresses.
 
     Args:
         structure: ``directory_structure``.
@@ -912,25 +779,10 @@ def _requested_urls(structure: Any, prefix: str = "") -> Dict[str, List[str]]:
         The asked-for addresses of each page leaf that has any, one per
         ``page_key`` and none the same page as its ``url``, in stored order.
     """
-    found: Dict[str, List[str]] = {}
-    for name, node in structure.items() if isinstance(structure, dict) else ():
-        path = f"{prefix}/{name}" if prefix else name
-        if isinstance(node, dict) and "token_count" in node:
-            if not node.get("url"):
-                continue
-            listed = node.get("requested_urls")
-            asked = [u for u in listed if isinstance(u, str) and u] if isinstance(listed, list) else []
-            if isinstance(node.get("requested_url"), str) and node["requested_url"]:
-                asked.append(node["requested_url"])
-            aliases: Dict[str, str] = {}
-            for address in asked:
-                aliases.setdefault(_key(address), address)
-            aliases.pop(_key(node["url"]), None)
-            if aliases:
-                found[path] = list(aliases.values())
-        elif isinstance(node, dict):
-            found.update(_requested_urls(node, path))
-    return found
+    return {
+        path: aliases for path, node in tree_leaves(structure, prefix)
+        if node.get("url") and (aliases := page_aliases(node["url"], node))
+    }
 
 
 def _without_pages(
@@ -942,16 +794,11 @@ def _without_pages(
 ) -> dict:
     """The config after removing pages: page entries leave, and what a site could find again is skipped.
 
-    A removed page gets a skip rule whenever a remaining site entry's scope
-    reaches it, whether it was added by address or found by the crawl;
-    otherwise the next sync brings it back. A folder gets its section rule
-    when a remaining site reaches any of its pages or the section itself; a
-    page named beside the folder but outside it gets its own rule.
-
-    A redirected page is one page under several addresses: the one it was
-    stored under and each one it was asked for (its leaf's
-    ``requested_urls``). A page entry leaves when it lists any of them, and
-    each address a site reaches gets a rule.
+    A page entry leaves when it lists the page under any of its addresses
+    (its ``url`` and each ``requested_urls``). Each address a remaining site
+    reaches gets a skip rule, or the next sync brings it back; a folder gets
+    its section rule instead when a site reaches the section or any of its
+    pages.
 
     Args:
         config: The Website config.

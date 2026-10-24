@@ -1,18 +1,16 @@
+"""A site's sitemaps, walked for page URLs (the Website loader's sitemap discovery)."""
+
 import codecs
 import io
 import logging
 import re
 import zlib
-from typing import Callable, List, Optional, Set, Union
+from typing import Callable, List, Optional, Set
 
 import defusedxml.ElementTree as ET
 import requests
 
-from docsgpt.parser.remote.base import (
-    BaseRemote,
-    dedupe_virtual_paths,
-    spans_multiple_hosts,
-)
+from docsgpt.parser.remote.base import dedupe_virtual_paths, spans_multiple_hosts
 from docsgpt.parser.remote.page_content import (
     FetchBudget,
     fetch_page,
@@ -49,7 +47,30 @@ _GZIP_MAGIC = b"\x1f\x8b"
 # close would otherwise be held in memory whole.
 MAX_XML_NESTING = 8
 # How much of a response to look at for a root tag, when its type doesn't say.
-_SNIFF_BYTES = 64 * 1024
+SITEMAP_SNIFF_BYTES = 64 * 1024
+
+
+def _is_gzip(content: bytes) -> bool:
+    """Whether bytes start with the gzip magic number."""
+    return content[:2] == _GZIP_MAGIC
+
+
+def _has_sitemap_root(content: bytes) -> bool:
+    """Whether a ``<urlset>`` or ``<sitemapindex>`` sits near the start of the bytes."""
+    head = content[:SITEMAP_SNIFF_BYTES]
+    return b"<urlset" in head or b"<sitemapindex" in head
+
+
+def looks_like_sitemap(content: bytes) -> bool:
+    """Whether a response body is a sitemap by its bytes alone, not a soft-404 HTML page.
+
+    Args:
+        content: The body, or its first ``SITEMAP_SNIFF_BYTES``.
+
+    Returns:
+        True for gzip bytes or a ``<urlset>``/``<sitemapindex>`` near the start.
+    """
+    return _is_gzip(content) or _has_sitemap_root(content)
 
 
 def _local_name(tag: object) -> str:
@@ -180,10 +201,12 @@ def _read_entries(
     return True
 
 
-class SitemapLoader(BaseRemote):
+class SitemapLoader:
+    """Walks a site's sitemaps for page URLs and fetches them, for ``WebsiteLoader``."""
+
     def __init__(
         self,
-        limit: Optional[int] = 20,
+        limit: Optional[int] = None,
         accept: Optional[Callable[[str], bool]] = None,
         keep_links: bool = False,
         budget: Optional[FetchBudget] = None,
@@ -208,39 +231,11 @@ class SitemapLoader(BaseRemote):
         # duplicates and variants (``/a``, ``/a/``, ``/a#x``) count once.
         self._collected: Set[str] = set()
 
-    def load_data(self, inputs: Union[str, List[str]]) -> List[Document]:
-        """Walk a sitemap and load the pages it lists.
-
-        Args:
-            inputs: The sitemap URL (or a list whose first item is). A URL
-                that isn't a sitemap is loaded as a page.
-
-        Returns:
-            One document per page that loaded, at most ``limit``.
-        """
-        sitemap_url= inputs
-        # Check if the input is a list and if it is, use the first element
-        if isinstance(sitemap_url, list) and sitemap_url:
-            sitemap_url = sitemap_url[0]
-
-        # Validate URL to prevent SSRF attacks
-        try:
-            sitemap_url = validate_url(sitemap_url)
-        except (SSRFError, ValueError) as e:
-            logger.error(f"URL validation failed: {e}")
-            return []
-
-        urls = self._extract_urls(sitemap_url)
-        if not urls:
-            logger.warning(f"No URLs found in the sitemap: {sitemap_url}")
-            return []
-        return self.load_pages(urls)
-
     def collect_urls(self, sitemap_urls: List[str]) -> List[str]:
         """Walk several sitemaps in order against one shared page budget.
 
-        A URL that turns out not to be a sitemap is skipped rather than taken
-        as a page (a soft 404 at ``/sitemap.xml`` is an HTML shell).
+        A URL that turns out not to be a sitemap is skipped (a soft 404 at
+        ``/sitemap.xml`` is an HTML shell).
 
         Args:
             sitemap_urls: Sitemap or sitemap-index URLs.
@@ -259,9 +254,7 @@ class SitemapLoader(BaseRemote):
             remaining = None if wanted is None else wanted - len(urls)
             if remaining is not None and remaining <= 0:
                 break
-            found = self._walk(sitemap_url, visited, 0, remaining)
-            if found:
-                urls.extend(found)
+            urls.extend(self._walk(sitemap_url, visited, 0, remaining))
         self.limit_reached = self.limit is not None and len(urls) > self.limit
         return urls if self.limit is None else urls[: self.limit]
 
@@ -344,35 +337,13 @@ class SitemapLoader(BaseRemote):
 
         return dedupe_virtual_paths(documents)
 
-    def _extract_urls(
-        self,
-        sitemap_url: str,
-        visited: Optional[Set[str]] = None,
-        depth: int = 0,
-        budget: Optional[int] = None,
-    ) -> List[str]:
-        """Fetch a sitemap (or page) URL and return the page URLs it lists.
-
-        Args:
-            sitemap_url: The sitemap or page URL to fetch.
-            visited: Sitemap URLs already fetched in this walk (see ``_walk``).
-            depth: How many sitemap indexes deep this URL is.
-            budget: How many more URLs the walk may collect.
-
-        Returns:
-            At most ``budget`` page URLs, or ``[sitemap_url]`` when it is not
-            a sitemap (the legacy sitemap loader then loads it as a page).
-        """
-        found = self._walk(sitemap_url, visited, depth, budget)
-        return [sitemap_url] if found is None else found
-
     def _walk(
         self,
         sitemap_url: str,
         visited: Optional[Set[str]] = None,
         depth: int = 0,
         budget: Optional[int] = None,
-    ) -> Optional[List[str]]:
+    ) -> List[str]:
         """Fetch a sitemap and return the page URLs it and its children list.
 
         Each sitemap is fetched at most once per walk, nested sitemap indexes
@@ -389,8 +360,7 @@ class SitemapLoader(BaseRemote):
                 from ``limit`` (itself ``None`` for no cap).
 
         Returns:
-            At most ``budget`` page URLs; ``None`` when the URL answered but
-            is not a sitemap.
+            At most ``budget`` page URLs; none when the URL is not a sitemap.
         """
         budget = self.limit if budget is None else budget
         if budget is not None and budget <= 0:
@@ -425,30 +395,21 @@ class SitemapLoader(BaseRemote):
             logger.error(f"Failed to fetch sitemap: {sitemap_url}. Error: {e}")
             return []
 
+        content = response.content if isinstance(response.content, bytes) else b""
         # A .xml.gz sitemap arrives as gzip bytes (Content-Encoding gzip is
         # undone by requests; a gzip *file* is not).
-        if isinstance(response.content, bytes) and response.content[:2] == _GZIP_MAGIC:
-            content = _gunzip(response.content, sitemap_url)
-            if content is None:
-                return []
+        if _is_gzip(content):
+            content = _gunzip(content, sitemap_url)
+            return [] if content is None else self._parse_sitemap(content, visited, depth, budget)
+        if self._is_sitemap(response, content):
             return self._parse_sitemap(content, visited, depth, budget)
+        return []
 
-        # Determine if this is a sitemap or a URL
-        if self._is_sitemap(response):
-            # It's a sitemap, so parse it and extract URLs
-            return self._parse_sitemap(response.content, visited, depth, budget)
-        return None
-
-    def _is_sitemap(self, response: requests.Response) -> bool:
+    @staticmethod
+    def _is_sitemap(response: requests.Response, content: bytes) -> bool:
         """Whether a fetched response is sitemap XML (by type, extension or a root tag near the start)."""
-        content_type = response.headers.get('Content-Type', '')
-        if 'xml' in content_type or response.url.endswith('.xml'):
-            return True
-        # Sniff the head of the bytes: decoding a whole large body as text
-        # guesses its charset over every byte.
-        content = response.content
-        head = content[:_SNIFF_BYTES] if isinstance(content, bytes) else (response.text or "").encode()
-        return b"<sitemapindex" in head or b"<urlset" in head
+        content_type = response.headers.get("Content-Type", "")
+        return "xml" in content_type or response.url.endswith(".xml") or _has_sitemap_root(content)
 
     def _parse_sitemap(
         self,
@@ -520,6 +481,6 @@ class SitemapLoader(BaseRemote):
         for nested_sitemap_url in children:
             if remaining() == 0:
                 break
-            urls.extend(self._walk(nested_sitemap_url, visited, depth + 1, remaining()) or [])
+            urls.extend(self._walk(nested_sitemap_url, visited, depth + 1, remaining()))
 
         return urls

@@ -11,12 +11,13 @@ turns through ``source_index_lock``. A skipped sync tells the UI why.
 from __future__ import annotations
 
 import json
+import uuid
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import pytest
 
-from docsgpt.parser.schema.base import Document
+from docsgpt import worker
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 USER = "sam"
@@ -24,27 +25,9 @@ USER = "sam"
 SITE = {"entries": [{"url": "https://x.io/", "mode": "site"}]}
 
 
-@pytest.fixture
-def uploads(monkeypatch):
-    from docsgpt import worker
-
-    loader = MagicMock(name="remote_loader")
-    loader.load_data.return_value = [
-        Document(text="page body", extra_info={"file_path": "guide.md", "title": "Guide"}, doc_id="d1"),
-    ]
-    monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
-    monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
-    monkeypatch.setattr(worker, "assert_index_complete", lambda *a, **k: None)
-    sent = []
-    monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: sent.append(file_data))
-    return sent
-
-
 @pytest.mark.unit
 class TestSyncWrite:
-    def test_a_sync_sends_content_only(self, pg_conn, patch_worker_db, task_self, tmp_path, uploads):
-        from docsgpt import worker
-
+    def test_a_sync_sends_content_only(self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline):
         src = SourcesRepository(pg_conn).create(
             "Docs", user_id=USER, type="website", sync_frequency="weekly",
             remote_data={"entries": [{"url": "https://x.io/", "mode": "site"}]},
@@ -56,75 +39,49 @@ class TestSyncWrite:
         )
 
         assert result == {"status": "success"}
-        [sent] = uploads
+        [sent] = remote_pipeline.uploads
         assert sent["operation"] == "sync"
         # Chunked with the stored config, but never written back from the snapshot.
         assert "config" not in sent
         assert json.loads(sent["directory_structure"])["guide.md"]["token_count"] >= 1
 
     def test_a_syncs_events_carry_its_task_id(
-        self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, published,
     ):
-        from docsgpt import worker
-
         src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
-        events = []
-        monkeypatch.setattr(
-            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
-        )
         task_self.request.id = "sync-task-1"
         worker.sync(task_self, {}, "Docs", USER, "website", "never", "classic", str(src["id"]), directory=str(tmp_path))
 
-        assert [kind for kind, _ in events] == ["source.ingest.queued", "source.ingest.completed"]
-        assert all(payload["task_id"] == "sync-task-1" for _, payload in events)
+        assert published.kinds() == ["source.ingest.queued", "source.ingest.completed"]
+        assert all(payload["task_id"] == "sync-task-1" for _, payload in published)
 
     def test_a_sync_holds_the_source_index_lock(
-        self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, held_lock, monkeypatch,
     ):
-        from docsgpt import worker
-
         src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
-        held = []
-
-        @contextmanager
-        def fake_lock(source_id, **kwargs):
-            held.append(source_id)
-            yield
-            held.append("released")
-
-        monkeypatch.setattr(worker, "source_index_lock", fake_lock)
-        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: held.append("upload"))
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: held_lock.append("upload"))
         worker.sync(task_self, {}, "Docs", USER, "website", "never", "classic", str(src["id"]), directory=str(tmp_path))
 
-        assert held == [str(src["id"]), "upload", "released"]
+        assert held_lock == [str(src["id"]), "upload", "released"]
 
-    def test_a_busy_source_is_skipped_by_a_scheduled_sync(
-        self, pg_conn, patch_worker_db, task_self, monkeypatch,
+    def test_a_scheduled_sync_skips_a_busy_source_quietly(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, busy_lock, published,
     ):
-        from docsgpt import worker
-        from docsgpt.vectorstore.index_lock import SourceBusy
-
         SourcesRepository(pg_conn).create(
             "Docs", user_id=USER, type="website", sync_frequency="daily",
             remote_data={"entries": [{"url": "https://x.io/", "mode": "page"}]},
         )
-        waits = []
-
-        @contextmanager
-        def busy(source_id, wait_seconds=None, **kwargs):
-            waits.append(wait_seconds)
-            raise SourceBusy("busy")
-            yield
-
+        waits = busy_lock()
         remote = MagicMock(name="remote_worker")
-        monkeypatch.setattr(worker, "source_index_lock", busy)
         monkeypatch.setattr(worker, "remote_worker", remote)
         counts = worker.sync_worker(task_self, "daily")
 
-        # The beat run doesn't wait on a long job: the next schedule picks it up.
+        # The beat run doesn't wait on a long job, and nobody waits on it:
+        # the next schedule picks the source up, without a notice.
         assert waits == [0]
         assert counts["sync_skipped"] == 1 and counts["sync_failure"] == 0
         remote.assert_not_called()
+        assert published == []
 
 
 @contextmanager
@@ -233,30 +190,25 @@ class TestUploadIndexForASync:
 class TestSyncReadsTheRow:
     """A queued sync crawls the source as it is when the sync starts, not as it was queued."""
 
-    def test_crawls_the_rows_current_remote_data(self, pg_conn, patch_worker_db, task_self, tmp_path, uploads):
-        from docsgpt import worker
-
+    def test_crawls_the_rows_current_remote_data(self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline):
         # Since the sync was queued, a page was removed (its skip rule saved) and the source renamed.
         current = {"entries": [{"url": "https://x.io/", "mode": "site"}], "skip": ["https://x.io/secret"]}
         src = SourcesRepository(pg_conn).create("Renamed", user_id=USER, type="website", remote_data=current)
-        loader = worker.RemoteCreator.create_loader("website")
         queued = {"entries": [{"url": "https://x.io/", "mode": "site"}], "skip": []}
 
         result = worker.sync(task_self, queued, "Docs", USER, "website", "never", "classic", str(src["id"]),
                              directory=str(tmp_path))
 
         assert result == {"status": "success"}
-        crawled = loader.load_data.call_args.args[0]
+        crawled = remote_pipeline.loader.load_data.call_args.args[0]
         assert crawled["skip"] == ["https://x.io/secret"]
-        assert uploads[-1]["name"] == "Renamed"
+        assert remote_pipeline.uploads[-1]["name"] == "Renamed"
 
     def test_a_legacy_source_converted_meanwhile_syncs_as_a_website(
-        self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, monkeypatch,
     ):
-        from docsgpt import worker
-
         loaders = []
-        loader = worker.RemoteCreator.create_loader("website")
+        loader = remote_pipeline.loader
         monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: (loaders.append(name), loader)[1])
         src = SourcesRepository(pg_conn).create(
             "Docs", user_id=USER, type="website",
@@ -270,10 +222,9 @@ class TestSyncReadsTheRow:
         assert loader.load_data.call_args.args[0]["entries"][0]["url"] == "https://x.io/a"
 
     def test_does_not_run_when_the_row_cant_be_read(
-        self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, published, monkeypatch,
     ):
         """The queued snapshot has no config and can't tell a wiki: rebuilding from it could lose both."""
-        from docsgpt import worker
 
         @contextmanager
         def broken():
@@ -281,36 +232,23 @@ class TestSyncReadsTheRow:
             yield
 
         src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website")
-        loader = worker.RemoteCreator.create_loader("website")
         monkeypatch.setattr(worker, "db_readonly", broken)
-        events = []
-        monkeypatch.setattr(
-            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
-        )
         queued = {"entries": [{"url": "https://x.io/", "mode": "site"}], "skip": []}
 
         result = worker.sync(task_self, queued, "Docs", USER, "website", "never", "classic", str(src["id"]),
                              directory=str(tmp_path))
 
         assert result["status"] == "error"
-        loader.load_data.assert_not_called()
-        assert uploads == []
-        [(kind, payload)] = events
+        remote_pipeline.loader.load_data.assert_not_called()
+        assert remote_pipeline.uploads == []
+        [(kind, payload)] = published
         assert kind == "source.ingest.failed" and payload["source_id"] == str(src["id"])
 
     def test_a_deleted_source_is_skipped_and_never_embedded(
-        self, pg_conn, patch_worker_db, task_self, tmp_path, uploads, monkeypatch,
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, published, monkeypatch,
     ):
-        import uuid
-
-        from docsgpt import worker
-
         embedded = []
         monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: embedded.append(1))
-        events = []
-        monkeypatch.setattr(
-            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
-        )
         task_self.request.id = "sync-gone"
         gone = str(uuid.uuid4())
 
@@ -318,8 +256,8 @@ class TestSyncReadsTheRow:
                              "website", "daily", "classic", gone, directory=str(tmp_path))
 
         assert result == {"status": "skipped", "reason": "gone"}
-        assert embedded == [] and uploads == []
-        [(kind, payload)] = events
+        assert embedded == [] and remote_pipeline.uploads == []
+        [(kind, payload)] = published
         assert kind == "source.ingest.failed"
         assert payload["reason"] == "gone" and payload["task_id"] == "sync-gone"
         assert payload["source_id"] == gone and payload["operation"] == "sync"
@@ -327,28 +265,15 @@ class TestSyncReadsTheRow:
 
 @pytest.mark.unit
 class TestASkippedSyncTellsTheUI:
-    def test_a_busy_source_publishes_a_failed_event(self, pg_conn, patch_worker_db, task_self, monkeypatch):
-        from docsgpt import worker
-        from docsgpt.vectorstore.index_lock import SourceBusy
-
+    def test_a_busy_source_publishes_a_failed_event(self, pg_conn, patch_worker_db, task_self, busy_lock, published):
         src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website")
-
-        @contextmanager
-        def busy(source_id, **kwargs):
-            raise SourceBusy("busy")
-            yield
-
-        events = []
-        monkeypatch.setattr(worker, "source_index_lock", busy)
-        monkeypatch.setattr(
-            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
-        )
+        busy_lock()
         task_self.request.id = "sync-busy"
 
         result = worker.sync(task_self, {}, "Docs", USER, "website", "never", "classic", str(src["id"]))
 
         assert result == {"status": "skipped", "reason": "busy"}
-        [(kind, payload)] = events
+        [(kind, payload)] = published
         assert kind == "source.ingest.failed"
         assert payload == {
             "source_id": str(src["id"]), "job_name": "Docs", "loader": "website", "operation": "sync",
@@ -356,70 +281,31 @@ class TestASkippedSyncTellsTheUI:
         }
         assert payload["error"]
 
-    def test_a_wiki_publishes_a_failed_event(self, pg_conn, patch_worker_db, task_self, monkeypatch):
-        from docsgpt import worker
-
-        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", config={"kind": "wiki"})
-        events = []
-        monkeypatch.setattr(
-            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
+    def test_a_wiki_publishes_a_failed_event(self, pg_conn, patch_worker_db, task_self, published, monkeypatch):
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website", remote_data=SITE, config={"kind": "wiki"},
         )
+        remote = MagicMock(name="remote_worker")
+        monkeypatch.setattr(worker, "remote_worker", remote)
 
         result = worker.sync(task_self, {}, "Docs", USER, "website", "never", "classic", str(src["id"]))
 
         assert result == {"status": "skipped", "reason": "wiki"}
-        assert [(kind, payload["reason"]) for kind, payload in events] == [("source.ingest.failed", "wiki")]
-
-    def test_a_scheduled_sync_skips_quietly(self, pg_conn, patch_worker_db, task_self, monkeypatch):
-        # Nobody is waiting on a beat run: a busy source is left to the next schedule without a notice.
-        from docsgpt import worker
-        from docsgpt.vectorstore.index_lock import SourceBusy
-
-        SourcesRepository(pg_conn).create(
-            "Docs", user_id=USER, type="website", sync_frequency="daily",
-            remote_data={"entries": [{"url": "https://x.io/", "mode": "page"}]},
-        )
-
-        @contextmanager
-        def busy(source_id, **kwargs):
-            raise SourceBusy("busy")
-            yield
-
-        events = []
-        monkeypatch.setattr(worker, "source_index_lock", busy)
-        monkeypatch.setattr(
-            worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
-        )
-
-        worker.sync_worker(task_self, "daily")
-
-        assert events == []
+        assert [(kind, payload["reason"]) for kind, payload in published] == [("source.ingest.failed", "wiki")]
+        remote.assert_not_called()
 
 
 @pytest.fixture
-def refused_upload(monkeypatch):
+def refused_upload(monkeypatch, remote_pipeline, published):
     """A sync whose upload the API refuses, with what it does afterwards recorded."""
-    from docsgpt import worker
     from docsgpt.vectorstore import vector_creator
 
-    loader = MagicMock(name="remote_loader")
-    loader.load_data.return_value = [
-        Document(text="page body", extra_info={"file_path": "guide.md", "title": "Guide"}, doc_id="d1"),
-    ]
-    loader.report = {"pages": 1, "sites": []}
-    monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
-    monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
-    monkeypatch.setattr(worker, "assert_index_complete", lambda *a, **k: None)
     store = MagicMock(name="vector_store")
     monkeypatch.setattr(vector_creator.VectorCreator, "create_vectorstore", lambda *a, **k: store)
-    after = {"events": [], "graph": [], "reports": [], "answer": {"status": "skipped", "reason": "gone"}}
-    monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: after["answer"])
-    monkeypatch.setattr(
-        worker, "publish_user_event", lambda user, kind, payload, **kw: after["events"].append((kind, payload))
-    )
+    remote_pipeline.answer = {"status": "skipped", "reason": "gone"}
+    after = {"pipeline": remote_pipeline, "events": published, "graph": [], "reports": [], "store": store}
     monkeypatch.setattr(worker, "_maybe_enqueue_graph_extraction", lambda *a, **k: after["graph"].append(a))
     monkeypatch.setattr(worker, "_record_website_report", lambda *a, **k: after["reports"].append(a) or {})
-    after["store"] = store
     return after
 
 
@@ -427,7 +313,7 @@ def refused_upload(monkeypatch):
 class TestARefusedSyncUploadIsNotCompleted:
     """The API answers 200 ``skipped`` when the source was deleted, or became a wiki, while the sync ran."""
 
-    def _run(self, worker, task_self, src, tmp_path):
+    def _run(self, task_self, src, tmp_path):
         task_self.request.id = "sync-refused"
         return worker.sync(task_self, {}, "Docs", USER, "website", "daily", "classic", str(src["id"]),
                            directory=str(tmp_path))
@@ -435,17 +321,15 @@ class TestARefusedSyncUploadIsNotCompleted:
     def test_a_deleted_source_fails_with_gone_and_drops_its_vectors(
         self, pg_conn, patch_worker_db, task_self, tmp_path, refused_upload, monkeypatch,
     ):
-        from docsgpt import worker
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
         src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
 
-        result = self._run(worker, task_self, src, tmp_path)
+        result = self._run(task_self, src, tmp_path)
 
         assert result == {"status": "skipped", "reason": "gone"}
-        kinds = [kind for kind, _ in refused_upload["events"]]
-        assert kinds == ["source.ingest.queued", "source.ingest.failed"]
+        assert refused_upload["events"].kinds() == ["source.ingest.queued", "source.ingest.failed"]
         failed = refused_upload["events"][-1][1]
         assert failed["reason"] == "gone" and failed["task_id"] == "sync-refused"
         assert failed["operation"] == "sync" and failed["error"]
@@ -455,14 +339,13 @@ class TestARefusedSyncUploadIsNotCompleted:
 
     def test_a_wiki_keeps_its_vectors(self, pg_conn, patch_worker_db, task_self, tmp_path, refused_upload,
                                       monkeypatch):
-        from docsgpt import worker
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
-        refused_upload["answer"] = {"status": "skipped", "reason": "wiki"}
+        refused_upload["pipeline"].answer = {"status": "skipped", "reason": "wiki"}
         src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
 
-        result = self._run(worker, task_self, src, tmp_path)
+        result = self._run(task_self, src, tmp_path)
 
         assert result == {"status": "skipped", "reason": "wiki"}
         assert [(kind, payload.get("reason")) for kind, payload in refused_upload["events"]][-1] == (
@@ -473,18 +356,16 @@ class TestARefusedSyncUploadIsNotCompleted:
 
     def test_faiss_has_no_vectors_to_drop(self, pg_conn, patch_worker_db, task_self, tmp_path, refused_upload,
                                           monkeypatch):
-        from docsgpt import worker
         from docsgpt.core.settings import settings
 
         # The API refused before saving the files: the index only ever lived in the scratch directory.
         monkeypatch.setattr(settings, "VECTOR_STORE", "faiss")
         src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
 
-        assert self._run(worker, task_self, src, tmp_path) == {"status": "skipped", "reason": "gone"}
+        assert self._run(task_self, src, tmp_path) == {"status": "skipped", "reason": "gone"}
         refused_upload["store"].delete_index.assert_not_called()
 
     def test_upload_index_returns_the_apis_answer(self, monkeypatch, tmp_path):
-        from docsgpt import worker
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
@@ -495,7 +376,6 @@ class TestARefusedSyncUploadIsNotCompleted:
         assert worker.upload_index(str(tmp_path), {"id": "s"}) == {"status": "skipped", "reason": "gone"}
 
     def test_upload_index_tolerates_a_body_that_is_not_json(self, monkeypatch, tmp_path):
-        from docsgpt import worker
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")

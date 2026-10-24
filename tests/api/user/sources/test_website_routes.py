@@ -50,6 +50,8 @@ CONFIG = {
 
 
 GUIDE = {"url": "https://docs.x.io/", "mode": "site", "path_prefix": "/guide/", "max_pages": 30}
+# Two addresses that redirect to one page.
+ALIASES = ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]
 
 
 def _seed(pg_conn, **kwargs):
@@ -71,6 +73,28 @@ def _call(app, pg_conn, resource, method, *, json=None, query=""):
     with _patch_db(pg_conn), app.test_request_context(f"/api/website{query}", method=method, json=json):
         request.decoded_token = {"sub": USER}
         return getattr(resource(), method.lower())()
+
+
+def test_redirect_aliases_remain_readable_in_a_deep_legacy_tree():
+    """Refresh and removal can resolve aliases beyond Python's recursion limit."""
+    import sys
+
+    from docsgpt.api.user.sources.website import _requested_urls
+    from docsgpt.parser.remote.website_tree import set_page
+
+    path = "/".join(["folder"] * (sys.getrecursionlimit() + 100)) + "/page.md"
+    structure = {}
+    set_page(structure, path, {
+        **_leaf("https://docs.x.io/new", 3),
+        "requested_urls": [
+            "https://docs.x.io/old", "https://www.docs.x.io/old/#intro",
+            "https://docs.x.io/new/", None, "https://docs.x.io/older",
+        ],
+    })
+
+    assert _requested_urls(structure) == {
+        path: ["https://docs.x.io/old", "https://docs.x.io/older"],
+    }
 
 
 class TestGetWebsite:
@@ -96,6 +120,19 @@ class TestGetWebsite:
         assert body["report"]["pages"] == 4
         assert body["legacy"] is False
 
+    def test_lists_the_tree_paths_of_page_entries(self, app, pg_conn):
+        # The Remove dialog calls these entries, and the rest pages a site's crawl found.
+        from docsgpt.api.user.sources.website import WebsiteSettings
+
+        redirected = {**_leaf("https://docs.x.io/new", 3), "requested_urls": ["https://docs.x.io/old"]}
+        tree = {**TREE, "new.md": redirected, "legacy.md": {"type": "text/markdown", "token_count": 1}}
+        config = {**CONFIG, "entries": CONFIG["entries"] + [{"url": "https://www.docs.x.io/old/", "mode": "page"}]}
+        src = _seed(pg_conn, remote_data=config, directory_structure=tree)
+        response = _call(app, pg_conn, WebsiteSettings, "GET", query=f"?id={src['id']}")
+
+        assert response.status_code == 200
+        assert sorted(response.json["entry_paths"]) == ["extra.md", "new.md"]
+
     def test_a_legacy_crawler_source_reads_as_a_website(self, app, pg_conn):
         from docsgpt.api.user.sources.website import WebsiteSettings
 
@@ -105,14 +142,6 @@ class TestGetWebsite:
         assert response.status_code == 200
         assert response.json["legacy"] is True
         assert response.json["config"]["entries"][0]["discovery"] == "links"
-
-    def test_a_non_web_source_is_400(self, app, pg_conn):
-        from docsgpt.api.user.sources.website import WebsiteSettings
-
-        src = _seed(pg_conn, type="local", remote_data=None)
-        response = _call(app, pg_conn, WebsiteSettings, "GET", query=f"?id={src['id']}")
-
-        assert response.status_code == 400
 
     def test_someone_elses_source_is_404(self, app, pg_conn):
         from docsgpt.api.user.sources.website import WebsiteSettings
@@ -200,16 +229,17 @@ class TestSaveWebsite:
         assert response.status_code == 200
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["type"] == "website"
 
-    @pytest.mark.parametrize(
-        "body", [{"entries": []}, {"entries": [{"url": "https://x.io"}], "sync_frequency": "hourly"}]
-    )
-    def test_rejects_bad_input(self, app, pg_conn, body):
-        from docsgpt.api.user.sources.website import WebsiteSettings
-
+    @pytest.mark.parametrize("body, code", [
+        ({"entries": []}, "invalid_config"),
+        ({"entries": [{"url": "https://x.io"}], "sync_frequency": "hourly"}, "bad_sync_frequency"),
+    ])
+    def test_rejects_bad_input(self, app, pg_conn, body, code):
         src = _seed(pg_conn)
-        response = _call(app, pg_conn, WebsiteSettings, "POST", json={"source_id": str(src["id"]), **body})
+        response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, **body)
 
         assert response.status_code == 400
+        assert response.json["code"] == code
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
 
     def test_a_save_without_skip_or_keep_links_keeps_them(self, app, pg_conn):
         # As PATCH /sources/<id>/config: a key left out keeps its stored value.
@@ -287,24 +317,31 @@ class TestWritesRefuseBadValues:
         assert response.json["code"] == "invalid_address"
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
 
-    @pytest.mark.parametrize("body", [
-        {"entries": [{**SITE, "path_prefix": "/a\u0000"}]},
-        {"entries": [SITE], "skip": ["https://docs.x.io/a\u0000"]},
-        {"entries": [SITE], "skip": ["https://docs.x.io/a\u0007/*"]},
+    @pytest.mark.parametrize("body, code", [
+        ({"entries": [{**SITE, "path_prefix": "/a\u0000"}]}, "invalid_config"),
+        ({"entries": [SITE], "skip": ["https://docs.x.io/a\u0000"]}, "invalid_address"),
+        ({"entries": [SITE], "skip": ["https://docs.x.io/a\u0007/*"]}, "invalid_address"),
+        # One the parse would strip off the ends is refused all the same.
+        ({"entries": [SITE], "skip": ["https://docs.x.io/a\n"]}, "invalid_address"),
+        ({"entries": [SITE], "skip": ["\u001fhttps://docs.x.io/a"]}, "invalid_address"),
     ])
-    def test_a_save_refuses_a_control_character_in_a_path_or_rule(self, app, pg_conn, body):
+    def test_a_save_refuses_a_control_character_in_a_path_or_rule(self, app, pg_conn, body, code):
         src = _seed(pg_conn)
         response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, **body)
 
         assert response.status_code == 400, response.json
-        assert response.json["code"] == "invalid_config"
+        assert response.json["code"] == code
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
 
     def test_a_resent_body_keeps_a_stored_path_and_rules(self, app, pg_conn):
-        src = _seed(pg_conn)
-        response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=[self.SITE], skip=["https://docs.x.io/a/*"])
+        stored = {"entries": [{**self.SITE, "path_prefix": "/guide/"}], "skip": ["https://docs.x.io/guide/old/*"]}
+        src = _seed(pg_conn, remote_data=stored)
+        response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, **stored)
 
         assert response.status_code == 200, response.json
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]
+        assert saved["entries"][0]["path_prefix"] == "/guide/"
+        assert saved["skip"] == stored["skip"]
 
     def test_adding_a_site_with_a_control_character_in_its_path_is_refused(self, app, pg_conn):
         src = _seed(pg_conn)
@@ -462,6 +499,40 @@ class TestOldDataPastAWriteLimit:
         assert grown.status_code == 400
         assert grown.json["code"] == "skip_limit"
         assert grown.json["max_skip"] == 1
+
+    @pytest.mark.parametrize("limit, field, stored, sent", [
+        # 7 pages past a cap of 5, replaced by 6 new ones.
+        (
+            "docsgpt.core.settings.settings.WEB_MAX_PAGES", "entries", SEVEN,
+            [{"url": f"https://docs.x.io/new{i}", "mode": "page"} for i in range(6)],
+        ),
+        # 3 sites past a limit of 1, replaced by 2 new ones.
+        (
+            "docsgpt.parser.remote.website_loader.MAX_SITE_ENTRIES", "entries",
+            [{"url": f"https://s{i}.x.io/", "mode": "site"} for i in range(3)],
+            [{"url": f"https://t{i}.x.io/", "mode": "site"} for i in range(2)],
+        ),
+        # 3 skip rules past a limit of 1, replaced by 2 new ones.
+        (
+            "docsgpt.parser.remote.website_loader.MAX_SKIP_RULES", "skip",
+            [f"https://docs.x.io/old{i}" for i in range(3)], [f"https://docs.x.io/gone{i}" for i in range(2)],
+        ),
+    ])
+    def test_a_save_that_replaces_values_without_growing_past_a_limit_works(
+        self, app, pg_conn, limit, field, stored, sent,
+    ):
+        # Only a count larger than the stored one is refused, however many of its values are new.
+        cap = 5 if limit.endswith("WEB_MAX_PAGES") else 1
+        src = _seed(pg_conn, remote_data={**CONFIG, field: stored})
+        body = {"entries": CONFIG["entries"], field: sent}
+        with patch(limit, cap):
+            response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, **body)
+
+        assert response.status_code == 200, response.json
+        saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"][field]
+        assert [value["url"] if field == "entries" else value for value in saved] == [
+            value["url"] if field == "entries" else value for value in sent
+        ]
 
     def test_a_settings_save_keeps_sites_past_the_limit(self, app, pg_conn):
         sites = [{"url": "https://docs.x.io/", "mode": "site"}, {"url": "https://blog.x.io/", "mode": "site"}]
@@ -642,13 +713,6 @@ class TestRemovePages:
         assert response.json["code"] == "last_entry"
         self.pages_task.delay.assert_not_called()
 
-    def test_unknown_paths_are_400(self, app, pg_conn):
-        src = _seed(pg_conn)
-        response = self._remove(app, pg_conn, src, file_paths=["nope.md"])
-
-        assert response.status_code == 400
-        self.pages_task.delay.assert_not_called()
-
     def test_someone_without_edit_access_is_refused(self, app, pg_conn):
         src = SourcesRepository(pg_conn).create(
             "Theirs", user_id="other", type="website", remote_data=CONFIG, directory_structure=TREE
@@ -693,7 +757,7 @@ class TestRemovePages:
 
     def test_a_redirected_page_entry_leaves_the_list_by_its_requested_address(self, app, pg_conn):
         # Added as /old, stored under /new after the redirect: the entry is /old.
-        tree = {**TREE, "new.md": {**_leaf("https://docs.x.io/new", 3), "requested_url": "https://docs.x.io/old"}}
+        tree = {**TREE, "new.md": {**_leaf("https://docs.x.io/new", 3), "requested_urls": ["https://docs.x.io/old"]}}
         config = {"entries": CONFIG["entries"] + [{"url": "https://docs.x.io/old", "mode": "page"}], "skip": []}
         src = _seed(pg_conn, remote_data=config, directory_structure=tree)
         response = self._remove(app, pg_conn, src, file_paths=["new.md"])
@@ -728,22 +792,9 @@ class TestRemovePages:
             "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"],
         }], actor_id=USER)
 
-    def test_a_leaf_with_both_alias_fields_lists_each_address_once(self, app, pg_conn):
-        leaf = {
-            **_leaf("https://docs.x.io/new", 3),
-            "requested_url": "https://docs.x.io/old-a",
-            "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b"],
-        }
-        src = _seed(pg_conn, directory_structure={**TREE, "new.md": leaf})
-        response = self._remove(app, pg_conn, src, file_paths=["new.md"])
-
-        assert response.status_code == 200, response.json
-        pages = self.pages_task.delay.call_args.kwargs["pages"]
-        assert pages[0]["requested_urls"] == ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]
-
     def test_a_redirected_page_entry_in_a_removed_folder_leaves_the_list(self, app, pg_conn):
         tree = {"index.md": _leaf("https://docs.x.io/", 5), "guide": {
-            "new.md": {**_leaf("https://docs.x.io/guide/new", 3), "requested_url": "https://docs.x.io/guide/old"},
+            "new.md": {**_leaf("https://docs.x.io/guide/new", 3), "requested_urls": ["https://docs.x.io/guide/old"]},
         }}
         config = {"entries": [
             {"url": "https://docs.x.io/", "mode": "page"}, {"url": "https://docs.x.io/guide/old", "mode": "page"},
@@ -861,24 +912,9 @@ class TestRemoveFromAnOlderSource:
         assert [e["url"] for e in saved["entries"]] == ["https://docs.x.io/"]
         assert saved["skip"] == []
 
-    def test_a_page_keyed_by_its_title_is_found(self, app, pg_conn):
-        # The url loader's chunks carry no file_path: the leaf was named after the page's title.
-        tree = {"Home": _legacy_leaf(5), "Extra page": _legacy_leaf(7)}
-        chunks = [
-            {"doc_id": "c1", "text": "home", "metadata": {"source": "https://docs.x.io/", "title": "Home"}},
-            {"doc_id": "c2", "text": "x", "metadata": {"source": "https://docs.x.io/extra", "title": "Extra page"}},
-        ]
-        src = _seed(
-            pg_conn, type="url", remote_data={"urls": ["https://docs.x.io/", "https://docs.x.io/extra"]},
-            directory_structure=tree,
-        )
-        response, _ = self._remove(app, pg_conn, src, chunks=chunks, file_paths=["Extra page"])
-
-        assert response.status_code == 200, response.json
-        assert [e["url"] for e in self._saved(pg_conn, src)["remote_data"]["entries"]] == ["https://docs.x.io/"]
-
-    def test_a_page_keyed_by_its_title_is_queued_with_its_address(self, app, pg_conn):
-        # Its chunks carry no file_path, so the worker can only find them by the address.
+    def test_a_page_keyed_by_its_title_is_found_and_queued_with_its_address(self, app, pg_conn):
+        # The url loader's chunks carry no file_path: the leaf was named after
+        # the page's title, and the worker can only find them by the address.
         tree = {"Home": _legacy_leaf(5), "Extra page": _legacy_leaf(7)}
         chunks = [
             {"doc_id": "c1", "text": "home", "metadata": {"source": "https://docs.x.io/", "title": "Home"}},
@@ -891,6 +927,7 @@ class TestRemoveFromAnOlderSource:
         response, pages_task = self._remove(app, pg_conn, src, chunks=chunks, file_paths=["Extra page"])
 
         assert response.status_code == 200, response.json
+        assert [e["url"] for e in self._saved(pg_conn, src)["remote_data"]["entries"]] == ["https://docs.x.io/"]
         assert pages_task.delay.call_args.kwargs["pages"] == [
             {"path": "Extra page", "url": "https://docs.x.io/extra", "requested_urls": []},
         ]
@@ -944,18 +981,14 @@ class TestRemoveFromAnOlderSource:
 
 
 class TestAddPages:
-    def _add(self, app, pg_conn, src, entries):
-        from docsgpt.api.user.sources.website import AddWebsitePages
+    @pytest.fixture
+    def cap(self):
+        """``WEB_MAX_PAGES`` at 5 for the add route; a test may set another."""
+        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss", WEB_MAX_PAGES=5) as fake:
+            yield fake
 
-        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
-            "docsgpt.api.user.sources.website.sync_source"
-        ) as sync_task:
-            pages_task.delay.return_value = MagicMock(id="pages-task")
-            sync_task.delay.return_value = MagicMock(id="sync-task")
-            response = _call(
-                app, pg_conn, AddWebsitePages, "POST", json={"source_id": str(src["id"]), "entries": entries}
-            )
-        return response, pages_task, sync_task
+    def _add(self, app, pg_conn, src, entries):
+        return _post(app, pg_conn, "AddWebsitePages", src, entries=entries)
 
     def test_pages_on_the_same_host_are_appended(self, app, pg_conn):
         src = _seed(pg_conn)
@@ -1097,16 +1130,14 @@ class TestAddPages:
         assert response.json["mode"] == "sync"
         sync_task.delay.assert_called_once()
 
-    def test_pages_past_the_admin_cap_are_refused(self, app, pg_conn):
+    def test_pages_past_the_admin_cap_are_refused(self, app, pg_conn, cap):
         # The seeded source holds 4 pages; the cap covers the whole source.
         src = _seed(pg_conn)
-        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
-            fake_settings.WEB_MAX_PAGES = 5
-            response, pages_task, sync_task = self._add(app, pg_conn, src, [
-                {"url": "https://docs.x.io/one", "mode": "page"},
-                {"url": "https://docs.x.io/two", "mode": "page"},
-            ])
-            fits, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
+        response, pages_task, sync_task = self._add(app, pg_conn, src, [
+            {"url": "https://docs.x.io/one", "mode": "page"},
+            {"url": "https://docs.x.io/two", "mode": "page"},
+        ])
+        fits, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
 
         assert response.status_code == 400
         assert response.json["code"] == "page_limit"
@@ -1118,14 +1149,12 @@ class TestAddPages:
         assert [e["url"] for e in entries][-1] == "https://docs.x.io/one"
         assert "https://docs.x.io/two" not in [e["url"] for e in entries]
 
-    def test_pages_not_fetched_yet_count_toward_the_cap(self, app, pg_conn):
+    def test_pages_not_fetched_yet_count_toward_the_cap(self, app, pg_conn, cap):
         # A page entry counts from when it is listed: one still queued, or
         # one whose fetch failed, holds its place under the cap.
         src = _seed(pg_conn)
-        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
-            fake_settings.WEB_MAX_PAGES = 5
-            first, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
-            second, pages_task, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/two", "mode": "page"}])
+        first, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
+        second, pages_task, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/two", "mode": "page"}])
 
         assert first.status_code == 200
         assert second.status_code == 400
@@ -1134,41 +1163,22 @@ class TestAddPages:
         entries = SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]
         assert "https://docs.x.io/two" not in [e["url"] for e in entries]
 
-    def test_a_listed_page_already_in_the_tree_counts_once(self, app, pg_conn):
-        # ``extra`` is both a page entry and a tree page: 4 pages, not 5.
-        src = _seed(pg_conn, remote_data={**CONFIG, "entries": CONFIG["entries"] + [
-            {"url": "https://docs.x.io/Deploying/Docker/", "mode": "page"},
+    @pytest.mark.parametrize("extra_leaf, listed", [
+        # Listed and in the tree (``Docker/`` is ``Docker``): 4 pages, not 5.
+        (TREE["extra.md"], ["https://docs.x.io/extra", "https://docs.x.io/Deploying/Docker/"]),
+        # Listed as /old, stored as /new after a redirect.
+        ({**_leaf("https://docs.x.io/new", 7), "requested_urls": ["https://docs.x.io/old"]}, ["https://docs.x.io/old"]),
+        # Two listed addresses redirect to one page.
+        (
+            {**_leaf("https://docs.x.io/new", 7), "requested_urls": ALIASES},
+            ALIASES,
+        ),
+    ])
+    def test_a_page_listed_and_in_the_tree_counts_once(self, app, pg_conn, cap, extra_leaf, listed):
+        src = _seed(pg_conn, directory_structure={**TREE, "extra.md": extra_leaf}, remote_data={**CONFIG, "entries": [
+            CONFIG["entries"][0], *({"url": url, "mode": "page"} for url in listed),
         ]})
-        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
-            fake_settings.WEB_MAX_PAGES = 5
-            response, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
-
-        assert response.status_code == 200
-
-    def test_a_listed_page_that_redirected_counts_once(self, app, pg_conn):
-        # Listed as /old, stored as /new: 4 pages in the tree, /old is one of them.
-        tree = {**TREE, "extra.md": {**_leaf("https://docs.x.io/new", 7), "requested_url": "https://docs.x.io/old"}}
-        src = _seed(pg_conn, directory_structure=tree, remote_data={**CONFIG, "entries": [
-            CONFIG["entries"][0], {"url": "https://docs.x.io/old", "mode": "page"},
-        ]})
-        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
-            fake_settings.WEB_MAX_PAGES = 5
-            response, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
-
-        assert response.status_code == 200
-
-    def test_a_page_several_listed_addresses_redirect_to_counts_once(self, app, pg_conn):
-        # /old-a and /old-b are listed and both stored as extra.md: 4 pages in the tree.
-        aliases = ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]
-        leaf = {**_leaf("https://docs.x.io/new", 7), "requested_urls": aliases}
-        src = _seed(pg_conn, directory_structure={**TREE, "extra.md": leaf}, remote_data={**CONFIG, "entries": [
-            CONFIG["entries"][0],
-            {"url": "https://docs.x.io/old-a", "mode": "page"},
-            {"url": "https://docs.x.io/old-b", "mode": "page"},
-        ]})
-        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
-            fake_settings.WEB_MAX_PAGES = 5
-            response, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
+        response, _, _ = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/one", "mode": "page"}])
 
         assert response.status_code == 200, response.json
 
@@ -1185,11 +1195,10 @@ class TestAddPages:
         pages_task.delay.assert_not_called()
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"] == CONFIG
 
-    def test_a_site_on_a_full_source_is_refused(self, app, pg_conn):
+    def test_a_site_on_a_full_source_is_refused(self, app, pg_conn, cap):
+        cap.WEB_MAX_PAGES = 4
         src = _seed(pg_conn)
-        with patch("docsgpt.api.user.sources.website.settings", VECTOR_STORE="faiss") as fake_settings:
-            fake_settings.WEB_MAX_PAGES = 4
-            response, _, sync_task = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/API/", "mode": "site"}])
+        response, _, sync_task = self._add(app, pg_conn, src, [{"url": "https://docs.x.io/API/", "mode": "site"}])
 
         assert response.status_code == 400
         assert response.json["code"] == "page_limit"
@@ -1206,14 +1215,7 @@ class TestAddPages:
 
 class TestRefreshPage:
     def _refresh(self, app, pg_conn, src, file_path, **body):
-        from docsgpt.api.user.sources.website import RefreshWebsitePage
-
-        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task:
-            pages_task.delay.return_value = MagicMock(id="refresh-task")
-            response = _call(
-                app, pg_conn, RefreshWebsitePage, "POST",
-                json={"source_id": str(src["id"]), "file_path": file_path, **body},
-            )
+        response, pages_task, _ = _post(app, pg_conn, "RefreshWebsitePage", src, file_path=file_path, **body)
         return response, pages_task
 
     def test_queues_the_page(self, app, pg_conn):
@@ -1221,7 +1223,7 @@ class TestRefreshPage:
         response, pages_task = self._refresh(app, pg_conn, src, "Deploying/Docker.md")
 
         assert response.status_code == 200
-        assert response.json["task_id"] == "refresh-task"
+        assert response.json["task_id"] == "pages-task"
         # With its address: the worker finds it by that, wherever a sync moved it.
         pages_task.delay.assert_called_once_with(
             str(src["id"]), USER, "refresh", file_path="Deploying/Docker.md", url="https://docs.x.io/Deploying/Docker",
@@ -1242,7 +1244,7 @@ class TestRefreshPage:
         )
 
     def test_a_redirected_page_is_found_by_the_address_it_was_asked_for(self, app, pg_conn):
-        tree = {**TREE, "new.md": {**_leaf("https://docs.x.io/new", 3), "requested_url": "https://docs.x.io/old"}}
+        tree = {**TREE, "new.md": {**_leaf("https://docs.x.io/new", 3), "requested_urls": ["https://docs.x.io/old"]}}
         src = _seed(pg_conn, directory_structure=tree)
         response, pages_task = self._refresh(app, pg_conn, src, "old.md", url="https://docs.x.io/old")
 
@@ -1269,14 +1271,6 @@ class TestRefreshPage:
         assert response.status_code == 400
         assert response.json["code"] == "not_found"
         pages_task.delay.assert_not_called()
-
-    def test_an_unknown_page_is_400(self, app, pg_conn):
-        src = _seed(pg_conn)
-        response, pages_task = self._refresh(app, pg_conn, src, "nope.md")
-
-        assert response.status_code == 400
-        pages_task.delay.assert_not_called()
-
 
 class TestABrokerThatIsDown:
     """A task that can't be queued is a 500 with code queue_failed, not a bare error; what was saved stays."""
@@ -1369,18 +1363,11 @@ class TestRefusalCodes:
         [("RefreshWebsitePage", {"file_path": "nope.md"}), ("RemoveWebsitePages", {"file_paths": ["nope.md"]})],
     )
     def test_an_unknown_page(self, app, pg_conn, resource, body):
-        response, _, _ = _post(app, pg_conn, resource, _seed(pg_conn), **body)
+        response, pages_task, _ = _post(app, pg_conn, resource, _seed(pg_conn), **body)
 
         assert response.status_code == 400
         assert response.json["code"] == "not_found"
-
-    def test_an_unknown_sync_frequency(self, app, pg_conn):
-        response, _, _ = _post(
-            app, pg_conn, "WebsiteSettings", _seed(pg_conn), entries=CONFIG["entries"], sync_frequency="hourly"
-        )
-
-        assert response.status_code == 400
-        assert response.json["code"] == "bad_sync_frequency"
+        pages_task.delay.assert_not_called()
 
     @pytest.mark.parametrize(
         "resource, body",
@@ -1443,15 +1430,8 @@ class TestBodyTypes:
         ],
     )
     def test_a_field_of_the_wrong_type_is_400(self, app, pg_conn, resource, body, field):
-        from docsgpt.api.user.sources import website
-
         src = _seed(pg_conn)
-        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
-            "docsgpt.api.user.sources.website.sync_source"
-        ) as sync_task:
-            response = _call(
-                app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body}
-            )
+        response, pages_task, sync_task = _post(app, pg_conn, resource, src, **body)
 
         assert response.status_code == 400
         assert response.json["code"] == "invalid_field"
@@ -1503,17 +1483,12 @@ def _change_after_load(pg_conn, fields):
 
 class TestConcurrentEdits:
     def test_an_add_keeps_an_entry_added_meanwhile(self, app, pg_conn):
-        from docsgpt.api.user.sources.website import AddWebsitePages
-
         src = _seed(pg_conn)
         meanwhile = {**CONFIG, "entries": CONFIG["entries"] + [{"url": "https://docs.x.io/other", "mode": "page"}]}
-        with _change_after_load(pg_conn, {"remote_data": meanwhile}), patch(
-            "docsgpt.api.user.sources.website.website_pages"
-        ) as pages_task:
-            pages_task.delay.return_value = MagicMock(id="t")
-            response = _call(app, pg_conn, AddWebsitePages, "POST", json={
-                "source_id": str(src["id"]), "entries": [{"url": "https://docs.x.io/new", "mode": "page"}],
-            })
+        with _change_after_load(pg_conn, {"remote_data": meanwhile}):
+            response, _, _ = _post(
+                app, pg_conn, "AddWebsitePages", src, entries=[{"url": "https://docs.x.io/new", "mode": "page"}]
+            )
 
         assert response.status_code == 200
         urls = [e["url"] for e in SourcesRepository(pg_conn).get(str(src["id"]), USER)["remote_data"]["entries"]]
@@ -1522,37 +1497,25 @@ class TestConcurrentEdits:
         ]
 
     def test_a_removal_keeps_an_entry_added_meanwhile(self, app, pg_conn):
-        from docsgpt.api.user.sources.website import RemoveWebsitePages
-
         src = _seed(pg_conn)
         meanwhile = {**CONFIG, "entries": CONFIG["entries"] + [{"url": "https://docs.x.io/late", "mode": "page"}]}
-        with _change_after_load(pg_conn, {"remote_data": meanwhile}), patch(
-            "docsgpt.api.user.sources.website.website_pages"
-        ) as pages_task:
-            pages_task.delay.return_value = MagicMock(id="t")
-            response = _call(app, pg_conn, RemoveWebsitePages, "POST", json={
-                "source_id": str(src["id"]), "file_paths": ["extra.md"],
-            })
+        with _change_after_load(pg_conn, {"remote_data": meanwhile}):
+            response, _, _ = _post(app, pg_conn, "RemoveWebsitePages", src, file_paths=["extra.md"])
 
         assert response.status_code == 200
         saved = SourcesRepository(pg_conn).get(str(src["id"]), USER)
         assert [e["url"] for e in saved["remote_data"]["entries"]] == ["https://docs.x.io/", "https://docs.x.io/late"]
 
     def test_a_settings_save_keeps_a_schedule_set_meanwhile(self, app, pg_conn):
-        from docsgpt.api.user.sources.website import WebsiteSettings
-
         src = _seed(pg_conn)
         with _change_after_load(pg_conn, {"sync_frequency": "daily"}):
-            response = _call(app, pg_conn, WebsiteSettings, "POST", json={
-                "source_id": str(src["id"]), "entries": CONFIG["entries"],
-            })
+            response, _, _ = _post(app, pg_conn, "WebsiteSettings", src, entries=CONFIG["entries"])
 
         assert response.status_code == 200
         assert SourcesRepository(pg_conn).get(str(src["id"]), USER)["sync_frequency"] == "daily"
 
     def test_a_removal_while_a_sync_runs_is_queued(self, app, pg_conn):
         # The worker waits for the sync's index lock; the request doesn't take it.
-        from docsgpt.api.user.sources.website import RemoveWebsitePages
         from docsgpt.vectorstore.index_lock import SourceBusy
 
         src = _seed(pg_conn)
@@ -1560,13 +1523,8 @@ class TestConcurrentEdits:
         def busy(*args, **kwargs):
             raise SourceBusy("busy")
 
-        with patch("docsgpt.vectorstore.index_lock._acquire", busy), patch(
-            "docsgpt.api.user.sources.website.website_pages"
-        ) as pages_task:
-            pages_task.delay.return_value = MagicMock(id="t")
-            response = _call(app, pg_conn, RemoveWebsitePages, "POST", json={
-                "source_id": str(src["id"]), "file_paths": ["extra.md"],
-            })
+        with patch("docsgpt.vectorstore.index_lock._acquire", busy):
+            response, pages_task, _ = _post(app, pg_conn, "RemoveWebsitePages", src, file_paths=["extra.md"])
 
         assert response.status_code == 200
         pages_task.delay.assert_called_once()
@@ -1585,15 +1543,8 @@ class TestAWikiIsNotEditedAsAWebsite:
         ],
     )
     def test_each_change_is_refused(self, app, pg_conn, resource, body):
-        from docsgpt.api.user.sources import website
-
         src = _seed(pg_conn, config={"kind": "wiki"}, sync_frequency="never")
-        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
-            "docsgpt.api.user.sources.website.sync_source"
-        ) as sync_task:
-            response = _call(
-                app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body}
-            )
+        response, pages_task, sync_task = _post(app, pg_conn, resource, src, **body)
 
         assert response.status_code == 400
         assert response.json["code"] == "wiki"
@@ -1621,13 +1572,8 @@ class TestAStoreWithoutChunkEdits:
         ],
     )
     def test_refresh_and_remove_are_refused(self, app, pg_conn, resource, body):
-        from docsgpt.api.user.sources import website
-
         src = _seed(pg_conn)
-        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task:
-            response = _call(
-                app, pg_conn, getattr(website, resource), "POST", json={"source_id": str(src["id"]), **body}
-            )
+        response, pages_task, _ = _post(app, pg_conn, resource, src, **body)
 
         assert response.status_code == 400
         assert response.json["code"] == "chunks_unsupported"
@@ -1637,16 +1583,10 @@ class TestAStoreWithoutChunkEdits:
         assert "extra.md" in saved["directory_structure"]
 
     def test_added_pages_rebuild_the_source(self, app, pg_conn):
-        from docsgpt.api.user.sources.website import AddWebsitePages
-
         src = _seed(pg_conn)
-        with patch("docsgpt.api.user.sources.website.website_pages") as pages_task, patch(
-            "docsgpt.api.user.sources.website.sync_source"
-        ) as sync_task:
-            sync_task.delay.return_value = MagicMock(id="sync-task")
-            response = _call(app, pg_conn, AddWebsitePages, "POST", json={
-                "source_id": str(src["id"]), "entries": [{"url": "https://docs.x.io/new", "mode": "page"}],
-            })
+        response, pages_task, sync_task = _post(
+            app, pg_conn, "AddWebsitePages", src, entries=[{"url": "https://docs.x.io/new", "mode": "page"}]
+        )
 
         assert response.status_code == 200
         assert response.json["mode"] == "sync"

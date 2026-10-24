@@ -36,6 +36,17 @@ describe('syncRefusal', () => {
     );
   });
 
+  it('words a 403 as forbidden only for a caller that opts in', () => {
+    const body = { code: 'wiki', error: 'Forbidden' };
+    expect(syncRefusal(t, body, { status: 403, forbidden: true })).toBe(
+      'settings.sources.errors.forbidden',
+    );
+    expect(syncRefusal(t, body, { status: 403 })).toBe(key('syncRefusedWiki'));
+    expect(syncRefusal(t, body, { status: 400, forbidden: true })).toBe(
+      key('syncRefusedWiki'),
+    );
+  });
+
   it('falls back to the generic line', () => {
     expect(syncRefusal(t, null)).toBe(key('syncFailed'));
     expect(syncRefusal(t, { success: false }, { fallback: 'generic' })).toBe(

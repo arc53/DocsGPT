@@ -26,6 +26,7 @@ vi.mock('../api/services/userService', () => ({
       ok: true,
       json: async () => ({
         config: { entries: [{ url: 'https://docs.x.io/', mode: 'site' }] },
+        entry_paths: [],
       }),
     })),
   },

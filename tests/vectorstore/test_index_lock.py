@@ -76,11 +76,34 @@ class RacingRedis(LockRedis):
         return not self.taken or self.kv.get(key) == b"someone-else"
 
 
-@pytest.fixture
-def fake_redis(monkeypatch):
-    redis = LockRedis()
+class _Down:
+    """A Redis whose every command fails."""
+
+    def set(self, *a, **k):
+        raise ConnectionError("redis down")
+
+
+def _use(monkeypatch, redis):
     monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: redis)
     return redis
+
+
+@pytest.fixture
+def fake_redis(monkeypatch):
+    return _use(monkeypatch, LockRedis())
+
+
+@pytest.fixture
+def no_renewal(monkeypatch):
+    """The renewer never fires inside a test's block."""
+    monkeypatch.setattr("docsgpt.vectorstore.index_lock._RENEW_SECONDS", 3600)
+
+
+@pytest.fixture
+def fast_renewal(monkeypatch):
+    """A 1 s lock renewed every 0.05 s."""
+    monkeypatch.setattr("docsgpt.vectorstore.index_lock._TTL_SECONDS", 1)
+    monkeypatch.setattr("docsgpt.vectorstore.index_lock._RENEW_SECONDS", 0.05)
 
 
 @pytest.mark.unit
@@ -113,68 +136,55 @@ class TestSourceIndexLock:
                 raise RuntimeError("boom")
         assert fake_redis.get(lock_key("src-1")) is None
 
-    def test_an_expired_lock_is_not_released_by_its_old_holder(self, fake_redis):
+    def test_an_expired_lock_is_not_released_by_its_old_holder(self, fake_redis, no_renewal):
         # The holder ran past the expiry and another job took the lock; the
         # first one's release must leave the new holder's lock alone.
         from docsgpt.vectorstore.index_lock import lock_key, source_index_lock
 
-        with source_index_lock("src-1", renew=False):
+        with source_index_lock("src-1"):
             fake_redis.kv[lock_key("src-1")] = b"someone-else"
         assert fake_redis.get(lock_key("src-1")) == b"someone-else"
 
-    def test_release_never_deletes_a_lock_taken_between_check_and_delete(self, monkeypatch):
+    def test_release_never_deletes_a_lock_taken_between_check_and_delete(self, monkeypatch, no_renewal):
         from docsgpt.vectorstore.index_lock import lock_key, source_index_lock
 
-        redis = RacingRedis()
-        monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: redis)
-        with source_index_lock("src-1", renew=False):
+        redis = _use(monkeypatch, RacingRedis())
+        with source_index_lock("src-1"):
             redis.armed = True
         assert redis.others_lock_survived(lock_key("src-1"))
 
-    def test_renewal_never_overwrites_a_lock_taken_between_check_and_set(self, monkeypatch):
+    def test_renewal_never_overwrites_a_lock_taken_between_check_and_set(self, monkeypatch, fast_renewal):
         from docsgpt.vectorstore.index_lock import lock_key, source_index_lock
 
-        redis = RacingRedis()
-        monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: redis)
-        with source_index_lock("src-1", ttl_seconds=60, renew_seconds=0.05):
+        redis = _use(monkeypatch, RacingRedis())
+        with source_index_lock("src-1"):
             redis.armed = True
             time.sleep(0.2)
             assert redis.others_lock_survived(lock_key("src-1"))
 
-    def test_renewal_leaves_a_lock_another_job_holds(self, fake_redis):
+    def test_renewal_leaves_a_lock_another_job_holds(self, fake_redis, fast_renewal):
         from docsgpt.vectorstore.index_lock import lock_key, source_index_lock
 
-        with source_index_lock("src-1", ttl_seconds=60, renew_seconds=0.05):
+        with source_index_lock("src-1"):
             fake_redis.kv[lock_key("src-1")] = b"someone-else"
             time.sleep(0.2)
             assert fake_redis.get(lock_key("src-1")) == b"someone-else"
 
-    def test_the_lock_is_renewed_while_held(self, fake_redis):
+    def test_the_lock_is_renewed_while_held(self, fake_redis, fast_renewal):
         from docsgpt.vectorstore.index_lock import lock_key, source_index_lock
 
-        with source_index_lock("src-1", ttl_seconds=1, renew_seconds=0.1):
+        with source_index_lock("src-1"):
             time.sleep(1.3)
             assert fake_redis.get(lock_key("src-1")) is not None
 
-    def test_without_redis_the_block_runs_unlocked(self, monkeypatch):
-        from docsgpt.vectorstore.index_lock import source_index_lock
+    @pytest.mark.parametrize("lock_name", ["source_index_lock", "graph_extract_lock"])
+    @pytest.mark.parametrize("redis", [None, _Down()], ids=["no-redis", "redis-down"])
+    def test_without_a_working_redis_the_block_runs_unlocked(self, monkeypatch, lock_name, redis):
+        from docsgpt.vectorstore import index_lock
 
-        monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: None)
+        _use(monkeypatch, redis)
         ran = []
-        with source_index_lock("src-1"):
-            ran.append(True)
-        assert ran == [True]
-
-    def test_a_redis_error_runs_the_block_unlocked(self, monkeypatch):
-        from docsgpt.vectorstore.index_lock import source_index_lock
-
-        class _Down:
-            def set(self, *a, **k):
-                raise ConnectionError("redis down")
-
-        monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: _Down())
-        ran = []
-        with source_index_lock("src-1"):
+        with getattr(index_lock, lock_name)("src-1"):
             ran.append(True)
         assert ran == [True]
 
@@ -203,15 +213,6 @@ class TestGraphExtractLock:
             with source_index_lock("src-1", wait_seconds=0):
                 pass
 
-    def test_without_redis_the_block_runs_unlocked(self, monkeypatch):
-        from docsgpt.vectorstore.index_lock import graph_extract_lock
-
-        monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: None)
-        ran = []
-        with graph_extract_lock("src-1"):
-            ran.append(True)
-        assert ran == [True]
-
 
 @pytest.mark.unit
 class TestTheWorkerWait:
@@ -221,10 +222,4 @@ class TestTheWorkerWait:
         from docsgpt.core.settings import settings
         from docsgpt.vectorstore.index_lock import WORKER_WAIT_SECONDS
 
-        assert 0 < WORKER_WAIT_SECONDS <= settings.CELERY_VISIBILITY_TIMEOUT / 2
-
-    @pytest.mark.parametrize("visibility, wait", [(3600, 1800), (600, 300), (1, 0)])
-    def test_the_wait_follows_the_visibility_timeout(self, visibility, wait):
-        from docsgpt.vectorstore.index_lock import worker_wait_seconds
-
-        assert worker_wait_seconds(visibility) == wait
+        assert WORKER_WAIT_SECONDS == settings.CELERY_VISIBILITY_TIMEOUT // 2 > 0

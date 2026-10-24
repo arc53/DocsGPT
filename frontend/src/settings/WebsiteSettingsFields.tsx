@@ -122,15 +122,19 @@ export function useWebsiteSettings(sourceId: string, enabled: boolean) {
  * @param value The schedule.
  * @param onChange Picks another schedule.
  * @param syncedAt When the source was last ingested or synced.
+ * @param description The row's hint in place of when it last synced (the
+ *   Website form's, for a source not made yet).
  */
 export function ScheduleRow({
   value,
   onChange,
   syncedAt,
+  description,
 }: {
   value: SyncFrequency;
   onChange: (value: SyncFrequency) => void;
   syncedAt?: string;
+  description?: string;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -139,12 +143,13 @@ export function ScheduleRow({
     <SettingRow
       label={t('modals.uploadDoc.website.sync')}
       description={
-        lastSynced
+        description ??
+        (lastSynced
           ? t('settings.sources.website.lastSynced', {
               when: lastSynced,
               interpolation: { escapeValue: false },
             })
-          : undefined
+          : undefined)
       }
       htmlFor={id}
     >

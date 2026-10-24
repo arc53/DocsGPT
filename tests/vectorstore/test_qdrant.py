@@ -72,6 +72,21 @@ def populated(store):
     return store
 
 
+@pytest.fixture
+def other(populated):
+    """Source src-B on ``populated``'s in-memory backend: one collection, two sources."""
+    from docsgpt.vectorstore.qdrant import QdrantStore
+
+    with patch(
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
+        return_value=_FakeEmbeddings(),
+    ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
+        _settings(mock_settings)
+        store_b = QdrantStore(source_id="src-B", embeddings_key="k")
+    store_b._client = populated._client
+    return store_b
+
+
 @pytest.mark.unit
 class TestQdrantStore:
     def test_source_id_strips_index_prefix(self, store):
@@ -141,17 +156,7 @@ class TestQdrantStore:
         assert populated.delete_chunks_by_source_path("db.txt") == 1
         assert len(populated.get_chunks()) == 2
 
-    def test_delete_index_removes_only_this_source(self, populated):
-        from docsgpt.vectorstore.qdrant import QdrantStore
-
-        with patch(
-            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
-            return_value=_FakeEmbeddings(),
-        ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
-            _settings(mock_settings)
-            other = QdrantStore(source_id="src-B", embeddings_key="k")
-        # Share the in-memory backend so both sources live in one collection.
-        other._client = populated._client
+    def test_delete_index_removes_only_this_source(self, populated, other):
         other.add_texts(["Another source entirely."], [{"source": "other.txt"}])
 
         populated.delete_index()
@@ -164,17 +169,8 @@ class TestQdrantStore:
 
 
 @pytest.fixture
-def two_sources(populated):
+def two_sources(populated, other):
     """``populated`` (src-A) plus src-B in the same collection."""
-    from docsgpt.vectorstore.qdrant import QdrantStore
-
-    with patch(
-        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
-        return_value=_FakeEmbeddings(),
-    ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
-        _settings(mock_settings)
-        other = QdrantStore(source_id="src-B", embeddings_key="k")
-    other._client = populated._client
     [b_id] = other.add_texts(["Source B's private database notes."], [{"source": "b.txt"}])
     return populated, other, b_id
 
@@ -295,16 +291,7 @@ class TestQdrantUpdateChunk:
             populated.update_chunk(str(uuid.uuid4()), "text", {})
         assert len(populated.get_chunks()) == 3
 
-    def test_other_sources_point_is_refused(self, populated):
-        from docsgpt.vectorstore.qdrant import QdrantStore
-
-        with patch(
-            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
-            return_value=_FakeEmbeddings(),
-        ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
-            _settings(mock_settings)
-            other = QdrantStore(source_id="src-B", embeddings_key="k")
-        other._client = populated._client
+    def test_other_sources_point_is_refused(self, populated, other):
         target = populated.get_chunks()[0]["doc_id"]
 
         with pytest.raises(KeyError):

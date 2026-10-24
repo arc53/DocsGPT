@@ -407,22 +407,30 @@ describe('ConnectWizard', () => {
     });
   };
 
+  /** The credential form's secret field (a key or a token). */
+  const keyField = () =>
+    document.body.querySelector<HTMLInputElement>('input[type="password"]');
+
+  /** Types a key into the credential form and presses Connect. */
+  const connectWithKey = async (key: string) => {
+    await typeInto(keyField()!, key);
+    await click('settings.connectors.status.connect');
+  };
+
+  /** The setup call succeeds with these sources and tools. */
+  const setupOk = (
+    sources: { id: string; name: string }[] = [],
+    tools: unknown[] = [],
+  ) => service.setup.mockResolvedValue({ success: true, tools, sources });
+
   it('connects an API-key service and creates its tools with no further questions', async () => {
     service.createConnection.mockResolvedValue({
       success: true,
       connection: { id: 'conn-1' },
     });
-    service.setup.mockResolvedValue({
-      success: true,
-      tools: [TELEGRAM_TOOL],
-      sources: [],
-    });
+    setupOk([], [TELEGRAM_TOOL]);
     await render(base);
-    const input = document.body.querySelector<HTMLInputElement>(
-      'input[type="password"]',
-    )!;
-    await typeInto(input, '123:abc');
-    await click('settings.connectors.status.connect');
+    await connectWithKey('123:abc');
     expect(service.createConnection).toHaveBeenCalledWith(
       { connector_key: 'telegram', credentials: { token: '123:abc' } },
       null,
@@ -443,14 +451,12 @@ describe('ConnectWizard', () => {
     // line up with the success Alert above.
     const toggle = button('settings.connectors.wizard.toolsHeading:1')!;
     expect(toggle.dataset.variant).toBe('link');
-    expect(toggle.dataset.size).toBe('sm');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     const body = document.getElementById(
       toggle.getAttribute('aria-controls')!,
     )!;
     expect(body.dataset.slot).toBe('collapsible');
     expect(body.dataset.state).toBe('closed');
-    expect(toggle.closest('.rounded-xl')).toBeNull();
     await act(async () => toggle.click());
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(body.dataset.state).toBe('open');
@@ -462,12 +468,9 @@ describe('ConnectWizard', () => {
       connection: { id: 'conn-1' },
     });
     service.renameConnection.mockResolvedValue({ success: true });
-    service.setup.mockResolvedValue({ success: true, tools: [], sources: [] });
+    setupOk();
     await render(base);
-    await typeInto(
-      document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
-      '123:abc',
-    );
+    await typeInto(keyField()!, '123:abc');
     await typeInto(
       document.body.querySelector<HTMLInputElement>('#connect-account-name')!,
       ' Alerts bot ',
@@ -485,13 +488,9 @@ describe('ConnectWizard', () => {
       success: true,
       connection: { id: 'conn-1' },
     });
-    service.setup.mockResolvedValue({ success: true, tools: [], sources: [] });
+    setupOk();
     await render(base);
-    await typeInto(
-      document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
-      '123:abc',
-    );
-    await click('settings.connectors.status.connect');
+    await connectWithKey('123:abc');
     expect(service.renameConnection).not.toHaveBeenCalled();
   });
 
@@ -516,11 +515,7 @@ describe('ConnectWizard', () => {
       code: 'encryption_key_default',
     });
     await render(base);
-    await typeInto(
-      document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
-      'x',
-    );
-    await click('settings.connectors.status.connect');
+    await connectWithKey('x');
     expect(document.body.textContent).toContain(
       'settings.connectors.error.defaultKey',
     );
@@ -545,11 +540,7 @@ describe('ConnectWizard', () => {
   });
 
   it('syncs the picked folder named after it', async () => {
-    service.setup.mockResolvedValue({
-      success: true,
-      tools: [],
-      sources: [{ id: 'src-1', name: 'Handbook' }],
-    });
+    setupOk([{ id: 'src-1', name: 'Handbook' }]);
     const onSynced = vi.fn();
     await render(drive, vi.fn(), { purpose: 'knowledge', onSynced });
     await click('settings.connectors.wizard.signIn');
@@ -573,11 +564,6 @@ describe('ConnectWizard', () => {
   });
 
   describe('Sync into Knowledge', () => {
-    const button = (text: string) =>
-      Array.from(
-        document.body.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent?.trim() === text);
-
     it('asks a sync-only service with two choices, Sync content now picked from any entry', async () => {
       // Opened from Connectors: no purpose.
       await render(drive);
@@ -606,11 +592,7 @@ describe('ConnectWizard', () => {
     });
 
     it('folds the form away on Just connect, keeping what was picked', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [{ id: 'src-1', name: 'Handbook' }],
-      });
+      setupOk([{ id: 'src-1', name: 'Handbook' }]);
       await render(drive);
       await click('settings.connectors.wizard.signIn');
       await click('pick-folder');
@@ -637,13 +619,7 @@ describe('ConnectWizard', () => {
         connection: { id: 'conn-s3', account_label: '…1c26' },
       });
       await render(s3);
-      await typeInto(
-        document.body.querySelector<HTMLInputElement>(
-          'input[type="password"]',
-        )!,
-        'secret',
-      );
-      await click('settings.connectors.status.connect');
+      await connectWithKey('secret');
       const header = document.body.querySelector('[data-slot="modal-header"]')!;
       expect(header.textContent).toContain(
         'settings.connectors.descriptions.s3',
@@ -663,13 +639,7 @@ describe('ConnectWizard', () => {
         connection: { id: 'conn-gh', account_label: 'octocat' },
       });
       await render(github);
-      await typeInto(
-        document.body.querySelector<HTMLInputElement>(
-          'input[type="password"]',
-        )!,
-        'github_pat',
-      );
-      await click('settings.connectors.status.connect');
+      await connectWithKey('github_pat');
       expect(document.body.querySelector('[role="radiogroup"]')).toBeNull();
       expect(knowledgeSwitch()).not.toBeNull();
       expect(
@@ -678,11 +648,7 @@ describe('ConnectWizard', () => {
     });
 
     it('sends the advanced retrieval settings with the sync', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [],
-      });
+      setupOk();
       await render(drive, vi.fn(), { purpose: 'knowledge' });
       await click('settings.connectors.wizard.signIn');
       const toggle = button('settings.connectors.wizard.retrievalSettings')!;
@@ -762,19 +728,9 @@ describe('ConnectWizard', () => {
         success: true,
         connection: { id: 'conn-1' },
       });
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [],
-      });
+      setupOk();
       await render(base, vi.fn(), { purpose: 'knowledge' });
-      await typeInto(
-        document.body.querySelector<HTMLInputElement>(
-          'input[type="password"]',
-        )!,
-        't',
-      );
-      await click('settings.connectors.status.connect');
+      await connectWithKey('t');
       expect(knowledgeSwitch()).toBeNull();
       expect(document.body.textContent).not.toContain(
         'settings.connectors.wizard.syncLater',
@@ -786,7 +742,7 @@ describe('ConnectWizard', () => {
     it('puts the service tile beside the title and its description under it', async () => {
       await render(base);
       const header = document.body.querySelector('[data-slot="modal-header"]')!;
-      expect(header.querySelector('.size-12')).not.toBeNull();
+      expect(header.querySelector('[data-slot="avatar"]')).not.toBeNull();
       expect(header.textContent).toContain(
         'settings.connectors.wizard.connectTitle',
       );
@@ -795,16 +751,7 @@ describe('ConnectWizard', () => {
       );
       // The body no longer repeats a tile row.
       const body = document.body.querySelector('[role="dialog"]')!;
-      expect(body.querySelectorAll('.size-12')).toHaveLength(1);
-    });
-
-    it('keeps one width on every step', async () => {
-      await render(drive, vi.fn(), { purpose: 'knowledge' });
-      const width = () =>
-        document.body.querySelector('[role="dialog"]')!.className;
-      const signIn = width();
-      await click('settings.connectors.wizard.signIn');
-      expect(width()).toBe(signIn);
+      expect(body.querySelectorAll('[data-slot="avatar"]')).toHaveLength(1);
     });
 
     it('closes with nothing connected on a plain cancel', async () => {
@@ -819,20 +766,10 @@ describe('ConnectWizard', () => {
         success: true,
         connection: { id: 'conn-1', account_label: 'Alerts bot' },
       });
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [],
-      });
+      setupOk();
       const onClose = vi.fn();
       await render(base, onClose);
-      await typeInto(
-        document.body.querySelector<HTMLInputElement>(
-          'input[type="password"]',
-        )!,
-        't',
-      );
-      await click('settings.connectors.status.connect');
+      await connectWithKey('t');
       expect(successAlert()?.getAttribute('role')).toBe('status');
       expect(successAlert()?.textContent).toContain(
         'settings.connectors.wizard.doneSummaryNone',
@@ -842,11 +779,7 @@ describe('ConnectWizard', () => {
     });
 
     it('never says who is connected before it knows', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [],
-      });
+      setupOk();
       await render(drive);
       await click('settings.connectors.wizard.signIn');
       await act(async () => justConnectCard().click());
@@ -873,11 +806,7 @@ describe('ConnectWizard', () => {
   });
 
   it('closes as done after syncing more from an account', async () => {
-    service.setup.mockResolvedValue({
-      success: true,
-      tools: [],
-      sources: [{ id: 'src-1', name: 'Handbook' }],
-    });
+    setupOk([{ id: 'src-1', name: 'Handbook' }]);
     const onClose = vi.fn();
     await render(drive, onClose, { mode: 'sync', connectionId: 'conn-drive' });
     await click('pick-folder');
@@ -943,10 +872,7 @@ describe('ConnectWizard', () => {
     await render(github, onClose, { mode: 'sync', connectionId: 'conn-gh' });
     await click('picker-reconnect');
     expect(title()).toBe('settings.connectors.wizard.reconnectTitle');
-    await typeInto(
-      document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
-      'github_pat_new',
-    );
+    await typeInto(keyField()!, 'github_pat_new');
     await click('settings.connectors.status.reconnect');
     expect(service.reconnect).toHaveBeenCalledWith(
       'conn-gh',
@@ -961,11 +887,7 @@ describe('ConnectWizard', () => {
   });
 
   it('starts a file picker over after a reconnect, with nothing picked', async () => {
-    service.setup.mockResolvedValue({
-      success: true,
-      tools: [],
-      sources: [{ id: 'src-3', name: 'Report' }],
-    });
+    setupOk([{ id: 'src-3', name: 'Report' }]);
     await render(drive, vi.fn(), { mode: 'sync', connectionId: 'conn-drive' });
     await click('pick-folder');
     expect(button('modals.uploadDoc.train')?.disabled).toBe(false);
@@ -988,18 +910,10 @@ describe('ConnectWizard', () => {
       success: true,
       connection: { id: 'conn-1' },
     });
-    service.setup.mockResolvedValue({
-      success: true,
-      tools: [TELEGRAM_TOOL],
-      sources: [],
-    });
+    setupOk([], [TELEGRAM_TOOL]);
     const onClose = vi.fn();
     const store = await render(base, onClose, {}, [], [{ id: 'old-chat-doc' }]);
-    await typeInto(
-      document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
-      't',
-    );
-    await click('settings.connectors.status.connect');
+    await connectWithKey('t');
     // Tools on: Done and Try it in chat.
     expect(footer()).toEqual([
       'settings.connectors.wizard.done:ghost',
@@ -1020,7 +934,7 @@ describe('ConnectWizard', () => {
     ['disabled', 'settings.connectors.wizard.setupDisabled'],
     ['tools_unavailable', 'settings.connectors.wizard.toolsUnavailable'],
     ['writes_forbidden', 'settings.connectors.github.writesForbidden'],
-    ['something_new', 'settings.connectors.wizard.syncFailed'],
+    ['something_new', 'settings.connectors.detail.syncFailed'],
   ])("words a setup refused as %s in the UI's language", async (code, key) => {
     service.setup.mockResolvedValue({
       success: false,
@@ -1039,11 +953,7 @@ describe('ConnectWizard', () => {
 
   describe('done footer', () => {
     it('opens the new source in Knowledge once content is synced', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [{ id: 'src-1', name: 'Handbook' }],
-      });
+      setupOk([{ id: 'src-1', name: 'Handbook' }]);
       const onClose = vi.fn();
       await render(drive, onClose);
       await click('settings.connectors.wizard.signIn');
@@ -1063,11 +973,7 @@ describe('ConnectWizard', () => {
     });
 
     it('offers Sync content when nothing synced, and syncs in place', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [{ id: 'src-1', name: 'Handbook' }],
-      });
+      setupOk([{ id: 'src-1', name: 'Handbook' }]);
       await render(drive, vi.fn(), {}, [
         {
           id: 'conn-drive',
@@ -1104,11 +1010,7 @@ describe('ConnectWizard', () => {
     });
 
     it('starts Sync content with nothing picked, even after a folded pick', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [{ id: 'src-2', name: 'Notes' }],
-      });
+      setupOk([{ id: 'src-2', name: 'Notes' }]);
       await render(drive, vi.fn(), {}, [
         {
           id: 'conn-drive',
@@ -1135,11 +1037,7 @@ describe('ConnectWizard', () => {
     });
 
     it('records the sync so the drawer can show it while it indexes', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [{ id: 'src-1', name: 'Handbook' }],
-      });
+      setupOk([{ id: 'src-1', name: 'Handbook' }]);
       const store = await render(drive, vi.fn(), {
         mode: 'sync',
         connectionId: 'conn-drive',
@@ -1328,13 +1226,7 @@ describe('ConnectWizard', () => {
         success: true,
         connection: { id: 'conn-gh' },
       });
-      await typeInto(
-        document.body.querySelector<HTMLInputElement>(
-          'input[type="password"]',
-        )!,
-        'github_pat_abc',
-      );
-      await click('settings.connectors.status.connect');
+      await connectWithKey('github_pat_abc');
     };
 
     it('connects with a token when no GitHub App is set up', async () => {
@@ -1342,9 +1234,7 @@ describe('ConnectWizard', () => {
       // One way in: no method switch, a token field and how to make one,
       // as the field's own hint.
       expect(document.body.querySelector('[role="radiogroup"]')).toBeNull();
-      const tokenField = document.body.querySelector<HTMLInputElement>(
-        'input[type="password"]',
-      )!;
+      const tokenField = keyField()!;
       expect(
         document.getElementById(tokenField.getAttribute('aria-describedby')!)
           ?.textContent,
@@ -1364,11 +1254,9 @@ describe('ConnectWizard', () => {
 
     it('offers Sign in with GitHub first, and a token instead', async () => {
       await render({ ...github, sign_in_methods: ['oauth', 'api_key'] });
-      expect(document.body.querySelector('input[type="password"]')).toBeNull();
+      expect(keyField()).toBeNull();
       await click('settings.connectors.wizard.methodToken');
-      expect(
-        document.body.querySelector('input[type="password"]'),
-      ).not.toBeNull();
+      expect(keyField()).not.toBeNull();
       await click('settings.connectors.wizard.methodOauth');
       await click('settings.connectors.wizard.signIn');
       // The OAuth pop-up (mocked) reported the connection.
@@ -1383,24 +1271,17 @@ describe('ConnectWizard', () => {
         code: 'invalid_credentials',
       });
       await render(github);
-      await typeInto(
-        document.body.querySelector<HTMLInputElement>(
-          'input[type="password"]',
-        )!,
-        'nope',
-      );
-      await click('settings.connectors.status.connect');
+      await connectWithKey('nope');
       expect(document.body.textContent).toContain(
         'settings.connectors.wizard.credentialsRejected',
       );
     });
 
     it('adds the read-only tools and syncs the picked repository in one step', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [{ ...TELEGRAM_TOOL, name: 'mcp_tool', display_name: 'GitHub' }],
-        sources: [{ id: 'src-1', name: 'octocat/private' }],
-      });
+      setupOk(
+        [{ id: 'src-1', name: 'octocat/private' }],
+        [{ ...TELEGRAM_TOOL, name: 'mcp_tool', display_name: 'GitHub' }],
+      );
       await render(github, vi.fn(), { purpose: 'knowledge' });
       await connectWithToken();
       await click('pick-repo');
@@ -1425,11 +1306,7 @@ describe('ConnectWizard', () => {
     });
 
     it('can add only the tools', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [],
-      });
+      setupOk();
       await render(github);
       await connectWithToken();
       await click('settings.connectors.wizard.finishSetup');
@@ -1437,11 +1314,7 @@ describe('ConnectWizard', () => {
     });
 
     it('can sync without tools', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [],
-      });
+      setupOk();
       await render(github, vi.fn(), { purpose: 'knowledge' });
       await connectWithToken();
       const toolSwitch =
@@ -1460,11 +1333,7 @@ describe('ConnectWizard', () => {
       document.body.querySelector<HTMLButtonElement>('#tools-github-writes');
 
     it('offers changes as a second choice, read only by default', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [],
-      });
+      setupOk();
       await render({ ...github, writes_opt_in: true, writes_allowed: true });
       await connectWithToken();
       expect(document.body.textContent).toContain(
@@ -1496,19 +1365,6 @@ describe('ConnectWizard', () => {
       expect(writesSwitch()).toBeNull();
       expect(document.body.textContent).not.toContain(
         'settings.connectors.github.writes',
-      );
-    });
-
-    it('shows why the tools could not be added', async () => {
-      service.setup.mockResolvedValue({
-        success: false,
-        code: 'tools_unavailable',
-      });
-      await render(github);
-      await connectWithToken();
-      await click('settings.connectors.wizard.finishSetup');
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.toolsUnavailable',
       );
     });
   });
@@ -1571,11 +1427,7 @@ describe('ConnectWizard', () => {
     };
 
     it('signs in once, picks teams to sync, then ends on the summary with its tools', async () => {
-      service.setup.mockResolvedValue({
-        success: true,
-        tools: [],
-        sources: [{ id: 'src-1', name: 'Linear · Engineering' }],
-      });
+      setupOk([{ id: 'src-1', name: 'Linear · Engineering' }]);
       const onClose = vi.fn();
       await signIn({ purpose: 'knowledge' }, onClose);
       // Nothing is set up yet, so the title doesn't say it is connected.

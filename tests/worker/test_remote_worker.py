@@ -13,40 +13,16 @@ assert one seeded row is discovered and forwarded.
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from unittest.mock import MagicMock
 
 import pytest
 
+from docsgpt import worker
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-
-
-@pytest.fixture
-def _mock_remote_pipeline(monkeypatch):
-    """Stub out the non-PG boundaries used by ``remote_worker``."""
-    from docsgpt import worker
-
-    fake_loader = MagicMock(name="remote_loader")
-    fake_loader.load_data.return_value = [
-        Document(
-            text="page body",
-            extra_info={"file_path": "guides/setup.md", "title": "setup"},
-            doc_id="d1",
-        )
-    ]
-    monkeypatch.setattr(
-        worker.RemoteCreator, "create_loader", lambda loader: fake_loader
-    )
-    monkeypatch.setattr(
-        worker,
-        "embed_and_store_documents",
-        lambda docs, full_path, source_id, task, **kw: None,
-    )
-    monkeypatch.setattr(
-        worker, "upload_index", lambda full_path, file_data: None
-    )
 
 
 @pytest.mark.unit
@@ -57,7 +33,7 @@ class TestRemoteWorkerSyncUpdatesDate:
         patch_worker_db,
         task_self,
         monkeypatch,
-        _mock_remote_pipeline,
+        remote_pipeline,
     ):
         from docsgpt import worker
 
@@ -193,8 +169,8 @@ class TestSyncWorker:
         task_self,
         monkeypatch,
     ):
-        """Regression: remote_data reads back as a dict; sync_worker must
-        hand the loader the URL string, not the raw dict."""
+        """Regression: remote_data reads back as a dict; sync_worker hands
+        the loader the Website config converted from it, not the raw dict."""
         from docsgpt import worker
 
         SourcesRepository(pg_conn).create(
@@ -237,9 +213,8 @@ class TestSyncWorker:
         assert result["total_sync_count"] == 1
         assert result["sync_success"] == 1
         assert result["sync_failure"] == 0
-        assert received == ["https://example.com"], (
-            "loader must receive the URL string, not the remote_data dict"
-        )
+        [config] = received
+        assert [e["url"] for e in config["entries"]] == ["https://example.com"]
 
     def test_unsyncable_remote_data_is_skipped(
         self,
@@ -291,7 +266,7 @@ class TestRemoteWorkerPathTraversal:
         tmp_path,
         task_self,
         monkeypatch,
-        _mock_remote_pipeline,
+        remote_pipeline,
     ):
         from docsgpt import worker
 
@@ -349,7 +324,7 @@ class TestRemoteWorkerDeterministicSourceId:
         tmp_path,
         task_self,
         monkeypatch,
-        _mock_remote_pipeline,
+        remote_pipeline,
     ):
         from docsgpt import worker
 
@@ -381,7 +356,7 @@ class TestRemoteWorkerDeterministicSourceId:
         tmp_path,
         task_self,
         monkeypatch,
-        _mock_remote_pipeline,
+        remote_pipeline,
     ):
         from docsgpt import worker
 
@@ -410,167 +385,71 @@ class TestRemoteWorkerDeterministicSourceId:
 class TestRemoteWorkerWebsite:
     """A Website ingest reports its pages and names them for the Knowledge tree."""
 
-    def test_reports_pages_and_keeps_page_details_in_the_tree(
-        self, pg_conn, patch_worker_db, tmp_path, task_self, monkeypatch,
-    ):
-        import json as _json
-
-        from docsgpt import worker
-
-        loader = MagicMock(name="website_loader")
-        loader.load_data.return_value = [
-            Document(
-                text="# Docker\nRun docker compose up.",
-                extra_info={
-                    "source": "https://docs.x.io/Deploying/Docker",
-                    "title": "Docker Deployment",
-                    "file_path": "Deploying/Docker.md",
-                },
-                doc_id="d1",
-            )
-        ]
-        loader.report = {
-            "pages": 1,
-            "sites": [{"url": "https://docs.x.io/", "found_with": "sitemap", "pages": 1, "limit_reached": True}],
-        }
-        monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
-        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
-        uploaded: list[dict] = []
-        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploaded.append(file_data))
-        events: list[tuple] = []
-        monkeypatch.setattr(worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload)))
-
+    def _ingest(self, pg_conn, task_self, tmp_path, remote_pipeline, extra_info, entries=None):
+        """Ingest one page with ``extra_info``; returns its leaf and the source."""
+        remote_pipeline.loader.load_data.return_value = [Document(text="# Page\nBody.", extra_info=extra_info)]
         source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
-        config = {"entries": [{"url": "https://docs.x.io/", "mode": "site"}], "skip": [], "keep_links": False}
+        config = {"entries": entries or [{"url": "https://docs.x.io/", "mode": "site"}], "skip": []}
         worker.remote_worker(
             task_self, config, "Docs", "bob", "website",
             directory=str(tmp_path / "temp"), operation_mode="upload", source_id=str(source["id"]),
         )
+        tree = json.loads(remote_pipeline.uploads[0]["directory_structure"])
+        return tree, source
 
-        leaf = _json.loads(uploaded[0]["directory_structure"])["Deploying"]["Docker.md"]
+    def test_reports_pages_and_keeps_page_details_in_the_tree(
+        self, pg_conn, patch_worker_db, tmp_path, task_self, remote_pipeline, published,
+    ):
+        remote_pipeline.loader.report = {
+            "pages": 1,
+            "sites": [{"url": "https://docs.x.io/", "found_with": "sitemap", "pages": 1, "limit_reached": True}],
+        }
+        tree, source = self._ingest(pg_conn, task_self, tmp_path, remote_pipeline, {
+            "source": "https://docs.x.io/Deploying/Docker", "title": "Docker Deployment",
+            "file_path": "Deploying/Docker.md",
+        })
+
+        leaf = tree["Deploying"]["Docker.md"]
         assert leaf["url"] == "https://docs.x.io/Deploying/Docker"
         assert leaf["title"] == "Docker Deployment"
         assert leaf["fetched_at"]
+        # Not redirected: no requested address.
+        assert "requested_urls" not in leaf
 
-        completed = next(payload for kind, payload in events if kind == "source.ingest.completed")
+        completed = next(payload for kind, payload in published if kind == "source.ingest.completed")
         assert completed["pages"] == 1
         assert completed["page_limit_reached"] is True
 
         stored = SourcesRepository(pg_conn).get(str(source["id"]), "bob")["metadata"]["website"]
-        assert stored["sites"] == loader.report["sites"]
+        assert stored["sites"] == remote_pipeline.loader.report["sites"]
         assert stored["fetched_at"] == leaf["fetched_at"]
-        # Not redirected: no requested address.
-        assert "requested_url" not in leaf
 
     def test_a_nul_in_a_page_title_stays_out_of_the_tree(
-        self, pg_conn, patch_worker_db, tmp_path, task_self, monkeypatch,
+        self, pg_conn, patch_worker_db, tmp_path, task_self, remote_pipeline, published,
     ):
         # The tree is stored as JSONB, which refuses a NUL.
-        import json as _json
+        tree, _source = self._ingest(pg_conn, task_self, tmp_path, remote_pipeline, {
+            "source": "https://docs.x.io/p", "title": "Ti\x00tle", "file_path": "p.md",
+        })
 
-        from docsgpt import worker
-
-        loader = MagicMock(name="website_loader")
-        loader.load_data.return_value = [
-            Document(
-                text="body",
-                extra_info={"source": "https://docs.x.io/p", "title": "Ti\x00tle", "file_path": "p.md"},
-                doc_id="d1",
-            )
-        ]
-        loader.report = {"pages": 1, "sites": []}
-        monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
-        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
-        uploaded: list[dict] = []
-        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploaded.append(file_data))
-        monkeypatch.setattr(worker, "publish_user_event", lambda *a, **kw: None)
-
-        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
-        config = {"entries": [{"url": "https://docs.x.io/", "mode": "site"}], "skip": [], "keep_links": False}
-        worker.remote_worker(
-            task_self, config, "Docs", "bob", "website",
-            directory=str(tmp_path / "temp"), operation_mode="upload", source_id=str(source["id"]),
-        )
-
-        assert "\\u0000" not in uploaded[0]["directory_structure"]
-        assert _json.loads(uploaded[0]["directory_structure"])["p.md"]["title"] == "Title"
-
-    def test_a_redirected_page_keeps_the_address_it_was_asked_for(
-        self, pg_conn, patch_worker_db, tmp_path, task_self, monkeypatch,
-    ):
-        # A page entry is listed as typed (/old); removing the page must find that entry.
-        import json as _json
-
-        from docsgpt import worker
-
-        loader = MagicMock(name="website_loader")
-        loader.load_data.return_value = [
-            Document(
-                text="# New\nMoved here.",
-                extra_info={
-                    "source": "https://docs.x.io/new", "requested_url": "https://docs.x.io/old",
-                    "title": "New", "file_path": "new.md",
-                },
-                doc_id="d1",
-            )
-        ]
-        loader.report = {"pages": 1, "sites": []}
-        monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
-        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
-        uploaded: list[dict] = []
-        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploaded.append(file_data))
-        monkeypatch.setattr(worker, "publish_user_event", lambda *a, **kw: None)
-
-        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
-        config = {"entries": [{"url": "https://docs.x.io/old", "mode": "page"}], "skip": [], "keep_links": False}
-        worker.remote_worker(
-            task_self, config, "Docs", "bob", "website",
-            directory=str(tmp_path / "temp"), operation_mode="upload", source_id=str(source["id"]),
-        )
-
-        leaf = _json.loads(uploaded[0]["directory_structure"])["new.md"]
-        assert leaf["url"] == "https://docs.x.io/new"
-        assert leaf["requested_url"] == "https://docs.x.io/old"
-        assert leaf["requested_urls"] == ["https://docs.x.io/old"]
+        assert "\\u0000" not in remote_pipeline.uploads[0]["directory_structure"]
+        assert tree["p.md"]["title"] == "Title"
 
     def test_a_page_several_entries_lead_to_keeps_every_address(
-        self, pg_conn, patch_worker_db, tmp_path, task_self, monkeypatch,
+        self, pg_conn, patch_worker_db, tmp_path, task_self, remote_pipeline, published,
     ):
         # /old-a and /old-b both redirect to /new: removing the page must find both entries.
-        import json as _json
+        tree, _source = self._ingest(pg_conn, task_self, tmp_path, remote_pipeline, {
+            "source": "https://docs.x.io/new",
+            "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b", "https://docs.x.io/new#x"],
+            "title": "New", "file_path": "new.md",
+        }, entries=[{"url": f"https://docs.x.io/{p}", "mode": "page"} for p in ("old-a", "old-b")])
 
-        from docsgpt import worker
-
-        loader = MagicMock(name="website_loader")
-        loader.load_data.return_value = [
-            Document(
-                text="# New\nMoved here.",
-                extra_info={
-                    "source": "https://docs.x.io/new", "requested_url": "https://docs.x.io/old-a",
-                    "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b", "https://docs.x.io/new#x"],
-                    "title": "New", "file_path": "new.md",
-                },
-                doc_id="d1",
-            )
-        ]
-        loader.report = {"pages": 1, "sites": []}
-        monkeypatch.setattr(worker.RemoteCreator, "create_loader", lambda name: loader)
-        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: None)
-        uploaded: list[dict] = []
-        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploaded.append(file_data))
-        monkeypatch.setattr(worker, "publish_user_event", lambda *a, **kw: None)
-
-        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
-        config = {"entries": [{"url": f"https://docs.x.io/{p}", "mode": "page"} for p in ("old-a", "old-b")]}
-        worker.remote_worker(
-            task_self, config, "Docs", "bob", "website",
-            directory=str(tmp_path / "temp"), operation_mode="upload", source_id=str(source["id"]),
-        )
-
-        leaf = _json.loads(uploaded[0]["directory_structure"])["new.md"]
+        leaf = tree["new.md"]
+        assert leaf["url"] == "https://docs.x.io/new"
         # The page's own address (a fragment of it) is not an alias.
         assert leaf["requested_urls"] == ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]
-        assert leaf["requested_url"] == "https://docs.x.io/old-a"
+        assert "requested_url" not in leaf
 
     @pytest.mark.parametrize("report, reached", [
         # Page entries cut by the page cap: no site reached its own limit.
@@ -579,8 +458,6 @@ class TestRemoteWorkerWebsite:
         ({"pages": 3, "limit_reached": False, "sites": []}, False),
     ])
     def test_the_limit_notice_covers_a_cut_made_by_page_entries(self, pg_conn, patch_worker_db, report, reached):
-        from docsgpt import worker
-
         source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
         summary = worker._record_website_report(str(source["id"]), "bob", report, "2026-01-01T00:00:00+00:00")
 
@@ -595,7 +472,7 @@ class TestSyncUsesTheSourcesConfig:
         patch_worker_db,
         task_self,
         monkeypatch,
-        _mock_remote_pipeline,
+        remote_pipeline,
     ):
         """A scheduled sync or Sync now re-chunks with the source's own
         chunking settings, not the defaults."""

@@ -2,7 +2,6 @@ import hashlib
 import io
 import logging
 import os
-import tempfile
 import uuid
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -91,6 +90,32 @@ def _sidecar_mismatch(
     return None
 
 
+def _check_json_sidecar(
+    storage: Any, json_path: str, ntotal: int, index_sha256: str,
+) -> Tuple[Optional[Dict[str, Dict[str, Any]]], Optional[Dict[int, str]], Optional[str], Optional[str]]:
+    """Read a stored index.json and check whether it pairs with the stored index.
+
+    The one rule for whether the json pairs, used by the loader and by a save
+    choosing its write order (``_stored_sidecar``), so the two can't disagree.
+
+    Args:
+        storage: The storage backend.
+        json_path: The index.json's storage path.
+        ntotal: The stored index's row count.
+        index_sha256: The stored index's fingerprint.
+
+    Returns:
+        ``(documents, mapping, recorded_sha256, problem)``: ``problem`` is
+        ``None`` when the json pairs; the first three are ``None`` when it
+        can't be read.
+    """
+    try:
+        documents, mapping, recorded = load_json_sidecar_with_fingerprint(storage.get_file(json_path).read())
+    except Exception as error:  # noqa: BLE001 - the pickle may still be good
+        return None, None, None, f"unreadable: {error}"
+    return documents, mapping, recorded, _sidecar_mismatch(ntotal, mapping, recorded, index_sha256)
+
+
 # Which sidecar pairs with the stored index.faiss after each file of a save is
 # written, by the save's order. A pickle is checked on its row count alone, so
 # it must never be replaced while the loader would pick it; index.json names
@@ -128,6 +153,34 @@ def _store_in_pairing_order(
             on_written(paired_after)
 
 
+def _stored_sidecar(storage: Any, directory: str) -> str:
+    """Choose the sidecar that currently pairs with an index before replacing it.
+
+    A JSON file can survive an interrupted upload while naming an older
+    index. Preserve the pickle in that case, as the loader does
+    (``_check_json_sidecar``). An index that can't be read pairs with
+    nothing, so it never stops the save that replaces it.
+
+    Args:
+        storage: The storage backend.
+        directory: The index's storage folder.
+
+    Returns:
+        The sidecar to preserve until the new index is stored.
+    """
+    json_path = f"{directory}/{JSON_SIDECAR}"
+    index_path = f"{directory}/{FAISS_INDEX}"
+    if not storage.file_exists(json_path) or not storage.file_exists(index_path):
+        return PICKLE_SIDECAR
+    try:
+        index_bytes = storage.get_file(index_path).read()
+        index = _dependable_faiss_import().deserialize_index(np.frombuffer(index_bytes, dtype=np.uint8))
+    except Exception:  # noqa: BLE001 - an unreadable index is about to be replaced
+        return PICKLE_SIDECAR
+    problem = _check_json_sidecar(storage, json_path, index.ntotal, hashlib.sha256(index_bytes).hexdigest())[3]
+    return JSON_SIDECAR if problem is None else PICKLE_SIDECAR
+
+
 def store_uploaded_index(storage: Any, directory: str, index_bytes: bytes, pickle_bytes: bytes) -> None:
     """Store an index.faiss and index.pkl a worker built, with an index.json naming that index.faiss.
 
@@ -155,7 +208,7 @@ def store_uploaded_index(storage: Any, directory: str, index_bytes: bytes, pickl
         PICKLE_SIDECAR: pickle_bytes,
         JSON_SIDECAR: dump_json_sidecar(documents, mapping, hashlib.sha256(index_bytes).hexdigest()),
     }
-    paired = JSON_SIDECAR if storage.file_exists(f"{directory}/{JSON_SIDECAR}") else PICKLE_SIDECAR
+    paired = _stored_sidecar(storage, directory)
     _store_in_pairing_order(storage, directory, payloads, paired)
 
 
@@ -326,30 +379,21 @@ class FaissStore(BaseVectorStore):
         if not self.storage.file_exists(faiss_path):
             raise FileNotFoundError(f"Index files not found in storage at {self.path}")
         index_bytes = self.storage.get_file(faiss_path).read()
-        with tempfile.TemporaryDirectory() as temp_dir:
-            local_faiss = os.path.join(temp_dir, FAISS_INDEX)
-            with open(local_faiss, "wb") as f:
-                f.write(index_bytes)
-            index = faiss.read_index(local_faiss)
+        index = faiss.deserialize_index(np.frombuffer(index_bytes, dtype=np.uint8))
         fingerprint = hashlib.sha256(index_bytes).hexdigest()
 
         problems = []
         had_json = self.storage.file_exists(json_path)
         if had_json:
-            try:
-                documents, mapping, recorded = load_json_sidecar_with_fingerprint(
-                    self.storage.get_file(json_path).read()
-                )
-            except Exception as error:  # noqa: BLE001 - the pickle may still be good
-                problems.append(f"{JSON_SIDECAR} unreadable: {error}")
-            else:
-                problem = _sidecar_mismatch(index.ntotal, mapping, recorded, fingerprint)
-                if problem is None:
-                    self._take_loaded(index, documents, mapping, JSON_SIDECAR, problems)
-                    return True
-                if retry_allowed and recorded is not None and recorded != fingerprint:
-                    return False
-                problems.append(f"{JSON_SIDECAR} {problem}")
+            documents, mapping, recorded, problem = _check_json_sidecar(
+                self.storage, json_path, index.ntotal, fingerprint,
+            )
+            if problem is None:
+                self._take_loaded(index, documents, mapping, JSON_SIDECAR, problems)
+                return True
+            if retry_allowed and recorded is not None and recorded != fingerprint:
+                return False
+            problems.append(f"{JSON_SIDECAR} {problem}")
 
         if not self.storage.file_exists(pickle_path):
             if not had_json:
@@ -727,51 +771,32 @@ class FaissStore(BaseVectorStore):
                 )
             raise
 
-    def _write_index_files(self, directory: str) -> None:
-        """Write index.faiss plus both sidecars into ``directory``.
+    def _index_payloads(self) -> Dict[str, bytes]:
+        """The bytes of index.faiss and both sidecars, by file name.
 
-        The JSON sidecar records the SHA-256 of the ``index.faiss`` written
-        with it (see ``_load_from_storage``).
+        The JSON sidecar records the SHA-256 of the ``index.faiss`` bytes beside
+        it (see ``_load_from_storage``).
         """
-        faiss = _dependable_faiss_import()
-        os.makedirs(directory, exist_ok=True)
-        index_path = os.path.join(directory, FAISS_INDEX)
-        faiss.write_index(self.index, index_path)
-        digest = hashlib.sha256()
-        with open(index_path, "rb") as f:
-            for block in iter(lambda: f.read(1 << 20), b""):
-                digest.update(block)
-        with open(os.path.join(directory, JSON_SIDECAR), "wb") as f:
-            f.write(dump_json_sidecar(self.documents, self.index_to_docstore_id, digest.hexdigest()))
-        with open(os.path.join(directory, PICKLE_SIDECAR), "wb") as f:
-            f.write(dump_pickle_sidecar(self.documents, self.index_to_docstore_id))
+        index_bytes = _dependable_faiss_import().serialize_index(self.index).tobytes()
+        return {
+            FAISS_INDEX: index_bytes,
+            JSON_SIDECAR: dump_json_sidecar(
+                self.documents, self.index_to_docstore_id, hashlib.sha256(index_bytes).hexdigest(),
+            ),
+            PICKLE_SIDECAR: dump_pickle_sidecar(self.documents, self.index_to_docstore_id),
+        }
 
     def _save_to_storage(self) -> bool:
-        """Persist the index through the configured storage backend.
+        """Persist the index through the configured storage backend, in ``_SAVE_ORDERS``.
 
-        Each file is replaced atomically by the backend, but the three are
-        written one after another, so a save can stop between them. The order
-        depends on which sidecar pairs with the stored index (``_SAVE_ORDERS``)
-        and makes every such stop readable. When the stored index's index.json
-        names it: ``index.pkl``, then ``index.faiss``, then ``index.json``.
-        When it is read through its pickle (an index from before index.json, or
-        a save that stopped before its json): ``index.json``, then
-        ``index.faiss``, then ``index.pkl``. Which sidecar pairs is tracked
-        across the writes, so a save retried after a failure picks its order
-        from where the failure left the files.
+        Which sidecar pairs is tracked across the writes, so a save retried
+        after a failure picks its order from where the failure left the files.
         """
         storage_path = get_vectorstore(self.source_id)
         paired = self._paired_sidecar
         if paired is None:
-            # A fresh build: a stored index without index.json pairs with its pickle.
-            exists = self.storage.file_exists(f"{storage_path}/{JSON_SIDECAR}")
-            paired = JSON_SIDECAR if exists else PICKLE_SIDECAR
-        with tempfile.TemporaryDirectory() as temp_dir:
-            self._write_index_files(temp_dir)
-            payloads = {}
-            for name in (PICKLE_SIDECAR, FAISS_INDEX, JSON_SIDECAR):
-                with open(os.path.join(temp_dir, name), "rb") as f:
-                    payloads[name] = f.read()
+            paired = _stored_sidecar(self.storage, storage_path)
+        payloads = self._index_payloads()
 
         def written(now_paired: str) -> None:
             self._paired_sidecar = now_paired
@@ -779,7 +804,15 @@ class FaissStore(BaseVectorStore):
         _store_in_pairing_order(self.storage, storage_path, payloads, paired, on_written=written)
         return True
 
+    def _write_index_files(self, directory: str) -> None:
+        """Write index.faiss plus both sidecars into the local folder ``directory``."""
+        os.makedirs(directory, exist_ok=True)
+        for name, payload in self._index_payloads().items():
+            with open(os.path.join(directory, name), "wb") as f:
+                f.write(payload)
+
     def save_local(self, path: Optional[str] = None) -> bool:
+        """Store the index, and when ``path`` is given also write its files into that local folder."""
         if path:
             self._write_index_files(path)
         self._save_to_storage()

@@ -608,59 +608,31 @@ class BaseVectorStore(ABC):
 
     @classmethod
     def supports_chunk_edits(cls) -> bool:
-        """Whether this store can add, list and delete single chunks.
-
-        The base ``add_chunk``, ``get_chunks`` and ``delete_chunk`` do nothing,
-        so a store that keeps them (Elasticsearch) would report a page change
-        as done while its chunks stayed as they were.
-
-        Returns:
-            True when the store overrides all three.
-        """
+        """Whether the store overrides ``add_chunk``, ``get_chunks`` and ``delete_chunk`` (the base ones do nothing)."""
         return all(
             getattr(cls, name) is not getattr(BaseVectorStore, name)
             for name in ("add_chunk", "get_chunks", "delete_chunk")
         )
 
-    def delete_chunks_by_source_path(self, path) -> int:
-        """Delete every chunk whose ``metadata.source`` equals ``path``.
-
-        Default implementation lists the matches with :meth:`_scan_chunks`
-        (which raises when the store can't list, so a failed listing is never
-        a silent no-op) and deletes them with :meth:`delete_chunks`. Override
-        with a single targeted statement where the store supports it.
-
-        Args:
-            path: The ``metadata.source`` value.
-
-        Returns:
-            The number of chunks deleted.
-        """
-        return self.delete_chunks_by_source_paths([path])
-
-    def delete_chunks_by_source_paths(self, paths: Iterable[str]) -> int:
-        """Delete every chunk whose ``metadata.source`` is one of ``paths``, in one pass.
-
-        Args:
-            paths: ``metadata.source`` values.
-
-        Returns:
-            The number of chunks deleted.
+    def delete_chunks_by_source_path(self, path: str) -> int:
+        """Delete every chunk whose ``metadata.source`` equals ``path``; returns how many were deleted.
 
         Raises:
-            NotImplementedError: The store cannot list its chunks.
+            NotImplementedError: The store cannot list its chunks, so a failed
+                listing is never a silent no-op.
         """
-        ids = self.chunk_ids_by_source_paths(paths)
+        ids = self.chunk_ids_by_source_paths([path])
         return self.delete_chunks(ids) if ids else 0
 
-    def chunk_ids_by_source_paths(self, paths: Iterable[str]) -> List[str]:
-        """Ids of the chunks whose ``metadata.source`` is one of ``paths``.
+    def _chunk_ids_where(self, key: Callable[[dict], Any], paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``key(metadata)`` is one of ``paths``, in :meth:`_scan_chunks` order.
 
         Args:
-            paths: ``metadata.source`` values.
+            key: Reads the matched value from a chunk's metadata.
+            paths: The values to match.
 
         Returns:
-            The ids, in :meth:`_scan_chunks` order.
+            The ids; none for no ``paths``, without listing the store.
 
         Raises:
             NotImplementedError: The store cannot list its chunks.
@@ -668,11 +640,11 @@ class BaseVectorStore(ABC):
         wanted = set(paths)
         if not wanted:
             return []
-        return [
-            str(chunk.get("doc_id"))
-            for chunk in self._scan_chunks()
-            if (chunk.get("metadata") or {}).get("source") in wanted
-        ]
+        return [str(chunk.get("doc_id")) for chunk in self._scan_chunks() if key(chunk.get("metadata") or {}) in wanted]
+
+    def chunk_ids_by_source_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``metadata.source`` is one of ``paths``."""
+        return self._chunk_ids_where(lambda metadata: metadata.get("source"), paths)
 
     def add_chunks(self, texts: List[str], metadatas: Optional[List[Dict[str, Any]]] = None) -> List[str]:
         """Add several chunks, all or none; stores that save per write override this to save once.
@@ -720,40 +692,14 @@ class BaseVectorStore(ABC):
         A chunk from an ingest older still carries no ``file_path``; its tree
         entry was named by its ``key``, or without one by its ``title``, so
         those are matched for it (``legacy_path_key``).
-
-        Args:
-            paths: ``metadata.file_path`` values (tree paths).
-
-        Returns:
-            The ids, in :meth:`_scan_chunks` order.
-
-        Raises:
-            NotImplementedError: The store cannot list its chunks.
         """
-        wanted = set(paths)
-        if not wanted:
-            return []
-        return [
-            str(chunk.get("doc_id"))
-            for chunk in self._scan_chunks()
-            if legacy_path_key(chunk.get("metadata") or {}) in wanted
-        ]
+        return self._chunk_ids_where(legacy_path_key, paths)
 
     def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
-        """Delete several chunks; stores that save per write override this to save once.
+        """Delete several chunks, returning how many went (a missing or failed id isn't counted).
 
-        The count is all a caller learns: an id that wasn't deleted, because it
-        wasn't there or because the delete failed, isn't counted. MongoDB,
-        Qdrant and Milvus log a failed ``delete_chunk`` and return False, and
-        FAISS and pgvector skip ids they don't hold. A caller that must know
-        every chunk is gone compares the count and, when it is short, lists
-        the chunks again: an id still listed failed, one not listed is gone.
-
-        Args:
-            chunk_ids: Ids of the chunks to delete.
-
-        Returns:
-            How many were deleted.
+        Stores that save per write override this to save once. A caller that
+        must know every chunk is gone lists them again when the count is short.
         """
         deleted = 0
         for chunk_id in chunk_ids:

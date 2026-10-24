@@ -8,17 +8,15 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import type { MenuOption } from '../components/ui/dropdown-menu';
-import { syncRefusal } from '../connectors/syncRefusal';
+import { requestSync, syncRefusal } from '../connectors/syncRefusal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import type { Doc } from '../models/misc';
-import type { Model } from '../models/types';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
@@ -29,11 +27,7 @@ import {
   updateUploadTask,
 } from '../upload/uploadSlice';
 import { can } from '../utils/accessUtils';
-import {
-  type DecisionFeatures,
-  NO_DECISION_FEATURES,
-  decisionFeatures,
-} from './components/RetrievalOptions';
+import useRetrievalAvailability from './components/useRetrievalAvailability';
 import ConvertToWikiModal from './ConvertToWikiModal';
 import EnableGraphRAGModal from './EnableGraphRAGModal';
 import SourceConfigModal from './SourceConfigModal';
@@ -41,7 +35,7 @@ import {
   canSyncSource,
   isGraphSource,
   isWikiSource,
-  sourcePrimary,
+  syncNowIsPrimary,
 } from './sourceKinds';
 import TestRetrievalModal from './TestRetrievalModal';
 import WikiSettingsModal from './WikiSettingsModal';
@@ -50,7 +44,7 @@ import WikiSettingsModal from './WikiSettingsModal';
 export type SourceMenuPlace = 'card' | 'view';
 
 /** A sync the server accepted: when its request went out and its task. */
-export type StartedSync = { startedAt: number; taskId: string | null };
+export type AcceptedSync = { startedAt: number; taskId: string | null };
 
 interface UseSourceActionsOptions {
   /** Opens the source (the card's View). */
@@ -67,7 +61,7 @@ interface UseSourceActionsOptions {
    * A sync the server accepted (Sync now from a menu or Source settings), so
    * an open view of the source can wait for it to finish.
    */
-  onSyncStarted?: (doc: Doc, sync: StartedSync) => void;
+  onSyncStarted?: (doc: Doc, sync: AcceptedSync) => void;
   /**
    * The source whose sync an open view is still waiting for: its Sync now,
    * in the ⋯ and in Source settings, is off until the wait ends.
@@ -107,47 +101,8 @@ export function useSourceActions({
   const [wikiSettingsOf, setWikiSettingsOf] = useState<Doc | null>(null);
   const [toDelete, setToDelete] = useState<Doc | null>(null);
 
-  // What the instance offers the settings and tester dialogs.
-  const [graphRAGAvailable, setGraphRAGAvailable] = useState(false);
-  const [hybridAvailable, setHybridAvailable] = useState(false);
-  const [decision, setDecision] =
-    useState<DecisionFeatures>(NO_DECISION_FEATURES);
-  const [availableModels, setAvailableModels] = useState<Model[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    userService
-      .getConfig()
-      .then((response) => response.json())
-      .then((config) => {
-        if (cancelled) return;
-        setGraphRAGAvailable(!!config?.graphrag_available);
-        setHybridAvailable(!!config?.hybrid_available);
-        setDecision(decisionFeatures(config));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Models back the graph extraction-model picker in Source settings; only
-  // fetched when the instance supports GraphRAG.
-  useEffect(() => {
-    if (!graphRAGAvailable) return;
-    let cancelled = false;
-    modelService
-      .getModels(token)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled && data)
-          setAvailableModels(modelService.transformModels(data.models || []));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [graphRAGAvailable, token]);
+  const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
+    useRetrievalAvailability(token);
 
   /** A failed action as a destructive toast: the forbidden message on a 403. */
   const showActionError = (message: string, status?: number) =>
@@ -169,15 +124,14 @@ export function useSourceActions({
     const failed = t('settings.sources.errors.sync');
     const startedAt = Date.now();
     try {
-      // The server finds a connector source's connection itself.
-      const response = doc.type?.startsWith('connector')
-        ? await userService.syncConnector(doc.id, token)
-        : await userService.syncSource({ source_id: doc.id }, token);
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
+      const { accepted, status, data, taskId } = await requestSync(
+        doc.id,
+        doc.type,
+        token,
+      );
+      if (!accepted) {
         showActionError(
-          syncRefusal(t, data, { status: response.status, fallback: failed }),
-          response.status,
+          syncRefusal(t, data, { status, fallback: failed, forbidden: true }),
         );
         return;
       }
@@ -190,10 +144,7 @@ export function useSourceActions({
           }),
         }),
       );
-      onSyncStarted?.(doc, {
-        startedAt,
-        taskId: typeof data?.task_id === 'string' ? data.task_id : null,
-      });
+      onSyncStarted?.(doc, { startedAt, taskId });
     } catch {
       showActionError(failed);
     }
@@ -287,7 +238,7 @@ export function useSourceActions({
       canEdit &&
       doc.id &&
       canSyncSource(doc) &&
-      (card || sourcePrimary(doc) !== 'syncNow')
+      (card || !syncNowIsPrimary(doc))
     ) {
       options.push({
         icon: RefreshCw,

@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from docsgpt import worker
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 
@@ -191,10 +192,8 @@ def _local_source(pg_conn):
 
 
 @pytest.fixture
-def quiet_reingest(monkeypatch):
+def quiet_reingest(monkeypatch, published):
     """A reingest over an empty directory, with its events recorded."""
-    from docsgpt import worker
-
     storage = MagicMock(name="storage")
     storage.is_directory.return_value = True
     storage.list_files.return_value = []
@@ -204,11 +203,7 @@ def quiet_reingest(monkeypatch):
     reader.directory_structure = {}
     reader.file_token_counts = {}
     monkeypatch.setattr(worker, "SimpleDirectoryReader", lambda *a, **kw: reader)
-    events = []
-    monkeypatch.setattr(
-        worker, "publish_user_event", lambda user, kind, payload, **kw: events.append((kind, payload))
-    )
-    return {"storage": storage, "events": events}
+    return {"storage": storage, "events": published}
 
 
 @pytest.mark.unit
@@ -217,8 +212,6 @@ class TestReingestNeedsStoredFiles:
 
     @pytest.mark.parametrize("type_", ["website", "crawler", "connector:file"])
     def test_refused_without_raising(self, pg_conn, patch_worker_db, task_self, quiet_reingest, type_):
-        from docsgpt import worker
-
         src = SourcesRepository(pg_conn).create(
             "Docs", user_id="alice", type=type_,
             remote_data={"entries": [{"url": "https://docs.x.io/a", "mode": "page"}]},
@@ -242,42 +235,18 @@ class TestReingestNeedsStoredFiles:
 
 @pytest.mark.unit
 class TestReingestTakesTheIndexLock:
-    def test_reingests_holding_the_lock(self, pg_conn, patch_worker_db, task_self, quiet_reingest, monkeypatch):
-        from contextlib import contextmanager
-
-        from docsgpt import worker
-
+    def test_reingests_holding_the_lock(self, pg_conn, patch_worker_db, task_self, quiet_reingest, held_lock):
         src = _local_source(pg_conn)
-        held = []
-
-        @contextmanager
-        def fake_lock(source_id, **kwargs):
-            held.append(source_id)
-            yield
-            held.append("released")
-
-        monkeypatch.setattr(worker, "source_index_lock", fake_lock)
-        quiet_reingest["storage"].is_directory.side_effect = lambda path: held.append("read") or True
+        quiet_reingest["storage"].is_directory.side_effect = lambda path: held_lock.append("read") or True
 
         result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
 
         assert result["status"] == "no_changes"
-        assert held[0] == str(src["id"]) and held[-1] == "released" and "read" in held[1:-1]
+        assert held_lock[0] == str(src["id"]) and held_lock[-1] == "released" and "read" in held_lock[1:-1]
 
-    def test_a_busy_source_is_skipped(self, pg_conn, patch_worker_db, task_self, quiet_reingest, monkeypatch):
-        from contextlib import contextmanager
-
-        from docsgpt import worker
-        from docsgpt.vectorstore.index_lock import SourceBusy
-
+    def test_a_busy_source_is_skipped(self, pg_conn, patch_worker_db, task_self, quiet_reingest, busy_lock):
         src = _local_source(pg_conn)
-
-        @contextmanager
-        def busy(source_id, **kwargs):
-            raise SourceBusy("busy")
-            yield
-
-        monkeypatch.setattr(worker, "source_index_lock", busy)
+        busy_lock()
 
         result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
 
@@ -287,20 +256,10 @@ class TestReingestTakesTheIndexLock:
         quiet_reingest["storage"].is_directory.assert_not_called()
 
     def test_a_source_deleted_while_waiting_is_skipped(
-        self, pg_conn, patch_worker_db, task_self, quiet_reingest, monkeypatch,
+        self, pg_conn, patch_worker_db, task_self, quiet_reingest, held_lock,
     ):
-        from contextlib import contextmanager
-
-        from docsgpt import worker
-
         src = _local_source(pg_conn)
-
-        @contextmanager
-        def deleted_while_waiting(source_id, **kwargs):
-            SourcesRepository(pg_conn).delete(str(src["id"]), "alice")
-            yield
-
-        monkeypatch.setattr(worker, "source_index_lock", deleted_while_waiting)
+        held_lock.while_waiting.append(lambda: SourcesRepository(pg_conn).delete(str(src["id"]), "alice"))
 
         result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
 
@@ -325,8 +284,6 @@ class TestReingestRefusesAWiki:
         )
 
     def test_a_wiki_is_refused(self, pg_conn, patch_worker_db, task_self, quiet_reingest):
-        from docsgpt import worker
-
         src = self._wiki(pg_conn)
         task_self.request.id = "reingest-wiki"
 
@@ -342,20 +299,12 @@ class TestReingestRefusesAWiki:
         assert sorted(row["directory_structure"]) == ["notes.md", "report.md"] and row["tokens"] == "10"
 
     def test_a_conversion_that_finished_while_waiting_is_refused(
-        self, pg_conn, patch_worker_db, task_self, quiet_reingest, monkeypatch,
+        self, pg_conn, patch_worker_db, task_self, quiet_reingest, held_lock,
     ):
-        from contextlib import contextmanager
-
-        from docsgpt import worker
-
         src = _local_source(pg_conn)
-
-        @contextmanager
-        def converted_while_waiting(source_id, **kwargs):
-            SourcesRepository(pg_conn).update(str(src["id"]), "alice", {"config": {"kind": "wiki"}})
-            yield
-
-        monkeypatch.setattr(worker, "source_index_lock", converted_while_waiting)
+        held_lock.while_waiting.append(
+            lambda: SourcesRepository(pg_conn).update(str(src["id"]), "alice", {"config": {"kind": "wiki"}})
+        )
 
         result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
 

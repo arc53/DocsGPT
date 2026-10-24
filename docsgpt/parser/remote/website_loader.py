@@ -28,35 +28,23 @@ import requests
 import tldextract
 
 from docsgpt.core.settings import settings
-from docsgpt.core.url_validation import SSRFError, validate_url
-from docsgpt.parser.remote.base import (
-    BaseRemote,
-    dedupe_virtual_paths,
-    normalize_page_url,
-    spans_multiple_hosts,
-    url_to_virtual_path,
-)
+from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, spans_multiple_hosts, url_to_virtual_path
 from docsgpt.parser.remote.crawler_loader import CrawlerLoader
-# page_key lives with the fetch helpers so every web loader keys pages alike;
-# it stays importable from here.
 from docsgpt.parser.remote.page_content import (
     MAX_PATH_SEGMENTS,
     MAX_URL_LENGTH,
     FetchBudget,
-    ascii_host,
+    bare_host,
     explicit_port,
     fetch_page,
     final_url,
-    host_with_port,
     is_ambiguous_path,
     merge_requested_urls,
-    normalize_percent_encoding,
     normalized_path,
     page_key,
     within_url_limits,
 )
-from docsgpt.parser.remote.page_content import bare_host as _bare_host
-from docsgpt.parser.remote.sitemap_loader import SitemapLoader
+from docsgpt.parser.remote.sitemap_loader import SITEMAP_SNIFF_BYTES, SitemapLoader, looks_like_sitemap
 from docsgpt.parser.remote.web_loader import WebLoader
 from docsgpt.parser.schema.base import Document
 
@@ -68,29 +56,24 @@ DISCOVERY_MODES = ("auto", "sitemap", "links")
 # Write limits on a config, so one saved source can't make every listing,
 # sync and settings view walk an unbounded list. Addresses are held to
 # ``MAX_URL_LENGTH`` characters and ``MAX_PATH_SEGMENTS`` deep, as every
-# fetch is (``within_url_limits``). Twenty sites is far more than
-# a real source needs, and each site fans out into discovery fetches. Skip
-# rules grow one per removed page (a folder adds one section rule), so the cap
-# leaves room for years of pruning; a rule is a URL plus an optional ``*``.
+# fetch is (``within_url_limits``). Each site fans out into discovery
+# fetches; skip rules grow one per removed page (a folder adds one section
+# rule), so the cap leaves room for years of pruning.
 MAX_SITE_ENTRIES = 20
 MAX_SKIP_RULES = 1000
 
 # Well-known sitemap locations, tried when robots.txt names none.
 _WELL_KNOWN_SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml")
 _SITEMAP_LINE = re.compile(r"^\s*sitemap\s*:\s*(\S+)", re.IGNORECASE)
-# How much of a response to look at to decide it is a sitemap.
-_SNIFF_BYTES = 64 * 1024
 # Google reads the first 500 KiB of a robots.txt; past that is not a real one.
 _ROBOTS_MAX_BYTES = 512 * 1024
-# robots.txt ``Sitemap:`` lines taken. Sites list one to a handful; each is a
-# sitemap walk.
+# robots.txt ``Sitemap:`` lines taken; each is a sitemap walk.
 MAX_ROBOTS_SITEMAPS = 10
 
 # Every fetch a load makes (pages that fail or aren't HTML, robots.txt,
 # sitemaps) is charged to one budget per source, so dead or non-HTML hosts
 # can't multiply the work by the number of sites. It allows each page of the
-# cap two attempts, plus the discovery fetches of a few sites; a normal load
-# never reaches it.
+# cap two attempts, plus the discovery fetches of a few sites.
 _FETCHES_PER_PAGE = 2
 _DISCOVERY_FETCHES = 30
 
@@ -108,11 +91,9 @@ def fetch_budget_for(cap: int) -> int:
 
 
 # A load also stops starting fetches after a time that grows with the cap:
-# each fetch may take a minute (a 30 s read timeout, twice over), so the fetch
-# budget alone let a site that answers just inside it hold a worker for
-# hours. Ten seconds a page plus five minutes of discovery is far past a
-# real site's pace (a 100-page source: about 22 minutes, inside the hour a
-# broker waits before redelivering a task).
+# a fetch may take a minute, so a site answering just inside its timeout
+# could otherwise hold a worker for hours. A 100-page source gets about 22
+# minutes, inside the hour a broker waits before redelivering a task.
 _SECONDS_PER_PAGE = 10
 _DISCOVERY_SECONDS = 300
 
@@ -128,29 +109,11 @@ def load_deadline_for(cap: int) -> float:
     """
     return float(_SECONDS_PER_PAGE * int(cap) + _DISCOVERY_SECONDS)
 
+
 # The bundled public-suffix snapshot is enough to tell a registered domain;
 # the default extractor would fetch the live list on first use. Its private
 # part counts too: each github.io or vercel.app tenant is a domain of its own.
 _domains = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None, include_psl_private_domains=True)
-
-
-def _section_key(url: str) -> str:
-    """A ``page_key`` whose host keeps its ``www.``, for section rules (its ASCII form, as ``page_key``'s).
-
-    Args:
-        url: A page URL, or a section rule without its ``*``.
-
-    Returns:
-        ``host[:port]/path`` (plus ``?query``); the port as ``page_key`` keeps
-        it, only when it isn't the scheme's own.
-
-    Raises:
-        ValueError: If the URL cannot be parsed.
-    """
-    parts = urlsplit(normalize_page_url(url.strip()))
-    host = host_with_port(parts, ascii_host(parts.hostname).rstrip("."))
-    key = f"{host}{normalized_path(parts.path).rstrip('/')}"
-    return f"{key}?{normalize_percent_encoding(parts.query)}" if parts.query else key
 
 
 def _registered_domain(host: str) -> str:
@@ -162,24 +125,13 @@ def _registered_domain(host: str) -> str:
 
 
 def _in_section(key: str, section: str) -> bool:
-    """Whether a page key falls under a section rule's key.
+    """Whether a page key falls under a section rule's key (both ``page_key(..., keep_www=True)``).
 
-    A section is the folder of the same name in the file tree, so it holds
-    the pages below its path. A path section's own page sits beside the
-    folder (``/Deploying`` is ``Deploying.md``) and stays; a host section
-    (``https://host/*``, a removed host folder) also holds the host's root
-    page, ``host/index.md``, with or without a query.
-
-    The tree has a folder per host as written, so a section names its host
-    exactly: ``https://www.x.io/*`` covers the ``www.x.io`` folder and not
-    the ``x.io`` one. Both keys are ``_section_key``.
-
-    Args:
-        key: A candidate page's ``_section_key``.
-        section: The rule's ``_section_key``, without the ``*``.
-
-    Returns:
-        True when the rule covers the page.
+    A section is the tree folder of the same name, so it holds the pages
+    below its path; a path section's own page sits beside the folder and
+    stays. A host section (``https://host/*``) also holds the host's root
+    page, with or without a query. It names its host exactly:
+    ``https://www.x.io/*`` covers the ``www.x.io`` folder, not ``x.io``.
     """
     if key.startswith(section + "/"):
         return True
@@ -209,7 +161,7 @@ class SiteScope:
                 matches its host exactly (see ``_in_section``).
         """
         start = urlsplit(start_url)
-        self.host = _bare_host(start.hostname)
+        self.host = bare_host(start.hostname)
         # Another port is another server: a site is its host and port.
         try:
             self.port = explicit_port(start)
@@ -226,7 +178,7 @@ class SiteScope:
             rule = (rule or "").strip()
             try:
                 if rule.endswith("*"):
-                    self.skip_sections.append(_section_key(rule[:-1]))
+                    self.skip_sections.append(page_key(rule[:-1], keep_www=True))
                 elif rule:
                     self.skip_pages.add(page_key(rule))
             except ValueError:
@@ -253,7 +205,7 @@ class SiteScope:
         """
         try:
             parsed = urlsplit(url)
-            if parsed.scheme not in ("http", "https") or not self._host_ok(_bare_host(parsed.hostname)):
+            if parsed.scheme not in ("http", "https") or not self._host_ok(bare_host(parsed.hostname)):
                 return False
             if explicit_port(parsed) != self.port:
                 return False
@@ -267,53 +219,30 @@ class SiteScope:
                 return True
             if page_key(url) in self.skip_pages:
                 return False
-            section_key = _section_key(url)
+            section_key = page_key(url, keep_www=True)
         except ValueError:
             return False
         return not any(_in_section(section_key, section) for section in self.skip_sections)
 
 
 def _fetch(url: str, max_bytes: int, budget: Optional[FetchBudget] = None) -> Optional[requests.Response]:
-    """GET at most ``max_bytes`` of ``url`` for discovery.
-
-    Args:
-        url: The address.
-        max_bytes: How much of the body to read; the rest is cut off.
-        budget: The load's fetch budget, charged one fetch, plus one per
-            redirect hop.
+    """GET at most ``max_bytes`` of ``url`` for discovery, charged to ``budget``.
 
     Returns:
-        The response (``url`` the address it answered from, after redirects),
-        or ``None`` on a spent budget, a blocked address, a network error, a
-        redirect that can't be followed or an error status.
+        The response, or ``None`` on a spent budget, a blocked address (the
+        pinned fetch refuses it), a network error, a redirect that can't be
+        followed or an error status.
     """
     if budget is not None and not budget.take():
         logger.debug(f"Sitemap discovery: fetch budget spent before {url}")
         return None
     try:
-        url = validate_url(url)
         response = fetch_page(url, max_bytes, timeout=15, budget=budget)
         response.raise_for_status()
         return response
-    except (SSRFError, Exception) as e:  # noqa: BLE001 - discovery is best effort
+    except Exception as e:  # noqa: BLE001 - discovery is best effort
         logger.debug(f"Sitemap discovery: {url} unavailable ({e})")
         return None
-
-
-def _looks_like_sitemap(response: requests.Response) -> bool:
-    """Whether a response is a sitemap (XML or gzip), not a soft-404 HTML page.
-
-    Args:
-        response: A fetched well-known sitemap location.
-
-    Returns:
-        True for gzip bytes or a ``<urlset>``/``<sitemapindex>`` near the start.
-    """
-    content = response.content if isinstance(response.content, bytes) else b""
-    if content[:2] == b"\x1f\x8b":
-        return True
-    head = content[:_SNIFF_BYTES]
-    return b"<urlset" in head or b"<sitemapindex" in head
 
 
 def is_sitemap_url(url: str) -> bool:
@@ -365,9 +294,10 @@ def discover_sitemaps(start_url: str, budget: Optional[FetchBudget] = None) -> L
             return listed
     for path in _WELL_KNOWN_SITEMAPS:
         # Only the head is sniffed; the sitemap walk fetches it in full.
-        response = _fetch(origin + path, _SNIFF_BYTES, budget)
+        response = _fetch(origin + path, SITEMAP_SNIFF_BYTES, budget)
         # A soft 404 answers every path with the app's HTML shell.
-        if response is not None and _looks_like_sitemap(response):
+        content = response.content if response is not None and isinstance(response.content, bytes) else b""
+        if looks_like_sitemap(content):
             return [final_url(response, origin + path)]
     return []
 
@@ -386,13 +316,7 @@ _HOST_PORT = re.compile(r"^(?:[^:/?#@\s.]*\.[^:/?#@\s]*|localhost):\d+(?:[/?#]|$
 
 
 def _has_scheme(url: str) -> bool:
-    """Whether an address names its scheme (``https://``, ``mailto:``), not ``host:port``.
-
-    Args:
-        url: A stripped address.
-
-    Returns:
-        True when the part before the first ``:`` is a scheme.
+    """Whether a stripped address names its scheme (``https://``, ``mailto:``), not ``host:port``.
 
     Raises:
         ValueError: If the address cannot be parsed.
@@ -413,10 +337,10 @@ def is_web_address(url: str) -> bool:
     Returns:
         True when it parses, is http or https, and names a host (and a valid
         port, when it has one). False for an address with a control
-        character anywhere (a NUL can't even be stored), whitespace or a
-        backslash in its host part, a host label that is empty or longer
-        than DNS allows, or ``user:password@`` credentials: the fetch would
-        send them, and the page's stored address would keep them.
+        character anywhere, whitespace or a backslash in its host part, a
+        host label that is empty or longer than DNS allows, or
+        ``user:password@`` credentials: the fetch would send them, and the
+        page's stored address would keep them.
     """
     if _CONTROL_CHARACTER.search(url):
         return False
@@ -429,17 +353,10 @@ def is_web_address(url: str) -> bool:
 
 
 def _web_parts(url: str) -> Optional[SplitResult]:
-    """The parts of an address that parses as http(s) with a host and a valid port, else ``None``.
+    """The ``urlsplit`` of an http(s) address with a host and a valid port (``http://`` if unnamed), else ``None``.
 
     The check a stored config's addresses get: one ``is_web_address`` now
-    refuses (credentials, a bad host label) still reads, and its fetch is
-    refused on its own, so one such page can't fail the whole load.
-
-    Args:
-        url: An address; a missing scheme is taken as ``http://``.
-
-    Returns:
-        The ``urlsplit`` of the address with its scheme, or ``None``.
+    refuses still reads, and its fetch is refused on its own.
     """
     try:
         candidate = url if _has_scheme(url) else "http://" + url
@@ -458,16 +375,7 @@ _MAX_LABEL_LENGTH = 63
 
 
 def _labels_ok(host: str) -> bool:
-    """Whether a host name's labels can be dialed: none empty, none past 63 characters as ASCII.
-
-    One trailing dot (the root, ``x.io.``) is allowed. An IP literal has no labels.
-
-    Args:
-        host: The ``hostname`` of a parsed address.
-
-    Returns:
-        False for ``docs..x.io``, ``.x.io`` or a label too long for DNS.
-    """
+    """Whether a host's labels can be dialed: none empty (one trailing root dot allowed), none past 63 as ASCII."""
     if ":" in host:
         return True  # IPv6, from inside brackets
     labels = host.split(".")
@@ -485,8 +393,8 @@ def _labels_ok(host: str) -> bool:
 class WebsiteConfigError(ValueError):
     """A Website config ``parse_website_config`` refuses.
 
-    The message is English, for logs and older callers; ``code`` and
-    ``details`` let the API hand the UI something to word itself.
+    The message is English, for logs; ``code`` and ``details`` let the API
+    hand the UI something to word itself.
 
     Attributes:
         code: ``site_limit``, ``skip_limit``, ``url_too_long``,
@@ -509,14 +417,7 @@ class WebsiteConfigError(ValueError):
 
 
 def _with_scheme(url: str) -> str:
-    """``url`` with ``https://`` in front when it was written without a scheme (``example.com/docs``, ``y.io:8080``).
-
-    Args:
-        url: A stripped address.
-
-    Returns:
-        The address, so ``urlparse`` finds its host.
-    """
+    """A stripped ``url`` with ``https://`` in front when written without a scheme (``example.com/docs``)."""
     try:
         return url if _has_scheme(url) else "https://" + url
     except ValueError:
@@ -527,11 +428,9 @@ def _entry_url(value: Any, label: str, enforce_limits: bool) -> str:
     """The stripped address of an entry field, with a scheme, or ``WebsiteConfigError`` when it isn't one.
 
     A write (``enforce_limits``) takes only an ``is_web_address`` at most
-    ``MAX_URL_LENGTH`` long and ``MAX_PATH_SEGMENTS`` deep (deeper is
-    ``invalid_address``: no fetch would take it); a stored config read back
-    only needs addresses that parse (``_web_parts``), and its loads leave one
-    past the limits out. A NUL is refused either way: no stored config can
-    hold one (PostgreSQL refuses it in JSONB), so only a save brings it.
+    ``MAX_URL_LENGTH`` long and ``MAX_PATH_SEGMENTS`` deep; a stored config
+    read back only needs addresses that parse (``_web_parts``). A NUL is
+    refused either way: PostgreSQL can't store one in JSONB.
     """
     url = value.strip()
     readable = is_web_address(url) if enforce_limits else "\x00" not in url and _web_parts(url) is not None
@@ -566,8 +465,7 @@ def parse_website_config(
             and ``path_prefix``); page entries that are one page by
             ``page_key`` are cut to the first. Writes keep it on. Reading a
             stored config turns it off, so a lowered cap or a config that
-            grew past a limit (pages appended, skips added on removal) still
-            lists and syncs.
+            grew past a limit still lists and syncs.
             Every entry URL must parse either way, and hold no NUL. Control
             characters in a skip rule or ``path_prefix`` are refused on a
             write (``invalid_address`` and ``invalid_config``); a read drops
@@ -623,7 +521,6 @@ def parse_website_config(
                 sitemap_url = None
             path_prefix = str(item.get("path_prefix") or "")
             if _CONTROL_CHARACTER.search(path_prefix):
-                # A NUL can't be stored at all; the others are never in a path.
                 if enforce_page_cap:
                     raise WebsiteConfigError("Path has control characters in it")
                 path_prefix = _CONTROL_CHARACTER.sub("", path_prefix)
@@ -793,11 +690,7 @@ class WebsiteLoader(BaseRemote):
 
     @staticmethod
     def _load_site(
-        entry: Dict[str, Any],
-        skip: List[str],
-        keep_links: bool,
-        budget: Optional[int] = None,
-        fetches: Optional[FetchBudget] = None,
+        entry: Dict[str, Any], skip: List[str], keep_links: bool, budget: int, fetches: FetchBudget,
     ) -> Tuple[List[Document], Dict[str, Any]]:
         """Load one whole-site entry through its sitemap, else by following links.
 
@@ -813,9 +706,7 @@ class WebsiteLoader(BaseRemote):
             ``links`` or ``None``), the page count and ``limit_reached``.
         """
         url = entry["url"]
-        limit = _clamp_pages(entry.get("max_pages"))
-        if budget is not None:
-            limit = max(1, min(limit, budget))
+        limit = max(1, min(_clamp_pages(entry.get("max_pages")), budget))
         scope = SiteScope(url, entry.get("path_prefix", ""), entry.get("include_subdomains", False), skip)
         discovery = entry.get("discovery", "auto")
         pasted_sitemap = is_sitemap_url(url)
@@ -840,7 +731,7 @@ class WebsiteLoader(BaseRemote):
                 found_with = "sitemap"
                 limit_reached = loader.limit_reached
         if not docs and discovery != "sitemap" and not pasted_sitemap:
-            loader = CrawlerLoader(limit=limit, accept=scope.accepts, keep_links=keep_links, budget=fetches)
+            loader = CrawlerLoader(scope.accepts, limit=limit, keep_links=keep_links, budget=fetches)
             docs = loader.load_data(url)
             found_with = "links" if docs else None
             limit_reached = loader.limit_reached

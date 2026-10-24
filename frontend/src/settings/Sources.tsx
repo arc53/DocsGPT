@@ -73,23 +73,27 @@ import {
 } from '../connectors/connectorsSlice';
 import {
   firstIngestState,
+  partitionStartedSyncs,
   STARTED_SYNC_GIVE_UP_MS,
   startedSyncAge,
+  syncIdsKey,
 } from '../connectors/startedSyncs';
+import type { Connection } from '../connectors/types';
 import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
 import GraphSourceView from '../components/graph/GraphSourceView';
+import { buildPct } from '../components/graph/useGraphBuild';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import {
   canSyncSource,
   isGraphSource,
   isSyncedSource,
   isWikiSource,
-  sourcePrimary,
+  syncNowIsPrimary,
   syncSchedule,
 } from './sourceKinds';
-import { type StartedSync, useSourceActions } from './useSourceActions';
+import { type AcceptedSync, useSourceActions } from './useSourceActions';
 
 const NO_EVENTS: SSEEvent[] = [];
 const selectEvents = (state: {
@@ -113,9 +117,8 @@ function asListedDoc(doc: KnowledgeDoc): Doc {
 }
 
 // A sync with no word on its first ingest (live events off, or the stream
-// resumed past the event) is looked for on the list instead: from 2 minutes
-// after it started, every 30 s, until 15 minutes (STARTED_SYNC_GIVE_UP_MS),
-// when the page stops.
+// resumed past the event) is looked for on the lists instead: from 2 minutes
+// after it started, every 30 s, until STARTED_SYNC_GIVE_UP_MS.
 const POLL_AFTER_MS = 2 * 60_000;
 const POLL_EVERY_MS = 30_000;
 
@@ -145,6 +148,51 @@ const formatTokens = (tokens: number): string => {
   }
 };
 
+/**
+ * Where a synced source comes from: the connection's icon and "via <name>"
+ * (with its file count when known), the account on hover.
+ */
+function ConnectionLine({
+  connection,
+  files,
+}: {
+  connection: Connection;
+  files?: number | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span className="flex max-w-full min-w-0 items-center gap-2">
+      <ConnectorIcon
+        icon={connection.icon}
+        className="text-muted-foreground size-3.5 shrink-0"
+      />
+      <span className="truncate" title={connection.account_label}>
+        {files
+          ? t('settings.sources.viaConnectionFiles', {
+              name: connection.name,
+              count: files,
+              files: formatCount(files),
+              interpolation: { escapeValue: false },
+            })
+          : t('settings.sources.viaConnection', {
+              name: connection.name,
+              interpolation: { escapeValue: false },
+            })}
+      </span>
+    </span>
+  );
+}
+
+/** A source's ingest still running, or failed. */
+function IngestBadge({ status }: { status: 'processing' | 'failed' }) {
+  const { t } = useTranslation();
+  return status === 'failed' ? (
+    <Badge variant="destructive">{t('settings.sources.ingestFailed')}</Badge>
+  ) : (
+    <Badge variant="neutral">{t('settings.sources.ingestProcessing')}</Badge>
+  );
+}
+
 export default function Sources({
   paginatedDocuments,
   handleDeleteDocument,
@@ -165,7 +213,6 @@ export default function Sources({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 500);
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
-  const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useLoaderState(false);
   // The last page load failed: an error with Retry, not "no sources".
   const [loadFailed, setLoadFailed] = useState(false);
@@ -209,13 +256,13 @@ export default function Sources({
     !!knowledge?.some((d) => d.id === id);
   // Started but not listed. A finished one still missing after the reload
   // (one the caller can't list) is no longer shown as indexing.
-  const unlistedSyncs = startedSyncs
-    .map((sync) => ({ ...sync, state: firstIngestState(events, sync.id) }))
-    .filter(
-      (sync) =>
-        !isListed(sync.id) &&
-        !(sync.state === 'completed' && reloaded.includes(sync.id)),
-    );
+  const unlistedSyncs = partitionStartedSyncs(
+    startedSyncs,
+    isListed,
+    events,
+  ).unlisted.filter(
+    (sync) => !(sync.state === 'completed' && reloaded.includes(sync.id)),
+  );
   // A link that waited opens only if the user hasn't opened another source.
   const waitedFor = useRef<string | null>(null);
   const dropLink = () =>
@@ -273,7 +320,7 @@ export default function Sources({
   // view waits for it when it is its own (see WebsiteTree's `sync`). Leaving
   // the view drops it, so opening the source later doesn't wait again.
   const [startedSync, setStartedSync] = useState<
-    (StartedSync & { sourceId: string }) | null
+    (AcceptedSync & { sourceId: string }) | null
   >(null);
   // Only a website view waits for a started sync (and says when it ended):
   // its page list, or the graph view around it. Only there is its Sync now
@@ -285,7 +332,7 @@ export default function Sources({
     viewWaits && startedSync?.sourceId === documentToView?.id
       ? startedSync
       : null;
-  const settleSync = (settled: StartedSync) =>
+  const settleSync = (settled: AcceptedSync) =>
     setStartedSync((current) => (current === settled ? null : current));
   // The website view whose page change or sync is in flight (it says so
   // through onBusyChange): its Sync now is off too, so a sync doesn't queue
@@ -306,11 +353,7 @@ export default function Sources({
   const graphBuilds = useSelector(selectGraphBuilds);
 
   const refreshDocs = useCallback(
-    (
-      field: 'date' | 'tokens' | undefined,
-      pageNumber?: number,
-      rows?: number,
-    ) => {
+    (field?: 'date' | 'tokens', pageNumber?: number, rows?: number) => {
       const page = pageNumber ?? currentPage;
       const rowsPerPg = rows ?? rowsPerPage;
 
@@ -389,14 +432,12 @@ export default function Sources({
     // the open source returns to the list.
     onDeleted: (doc) => {
       if (documentToView?.id === doc.id) closeDocument();
-      refreshDocs(undefined, currentPage, rowsPerPage);
+      refreshDocs();
     },
     // An open source (one opened from a citation may be off this page)
     // follows its own reingest, wiki conversion or graph enable.
     onChanged: () =>
-      documentToView?.id
-        ? refreshOpenSource(documentToView.id)
-        : refreshDocs(undefined, currentPage, rowsPerPage),
+      documentToView?.id ? refreshOpenSource(documentToView.id) : refreshDocs(),
     onPatched: (id, patch) => {
       patchDoc(id, patch);
       // The open view reads what it keeps of the settings again.
@@ -410,25 +451,37 @@ export default function Sources({
   });
 
   /**
+   * Reads the app's knowledge list again into the store.
+   *
+   * @returns The list, or null when it couldn't be read.
+   */
+  const reloadKnowledge = () =>
+    getDocs(token)
+      .then((docs) => {
+        if (docs) dispatch(setSourceDocs(docs));
+        return docs;
+      })
+      .catch((error) => {
+        console.error(error);
+        return null;
+      });
+
+  /**
    * Reads the open source again after its pages changed (added, refreshed,
    * removed or synced in its view): this page of cards, which the open view
    * follows, and the app's knowledge list, which also carries a source opened
    * from off this page (its hosts, page count and sync date).
    */
   const refreshOpenSource = (id: string) => {
-    refreshDocs(undefined, currentPage, rowsPerPage);
-    getDocs(token)
-      .then((docs) => {
-        if (!docs) return;
-        dispatch(setSourceDocs(docs));
-        const fresh = docs.find((d) => d.id === id);
-        if (!fresh) return;
-        const listed = asListedDoc(fresh);
-        setDocumentToView((open) =>
-          open?.id === id ? { ...open, ...listed } : open,
-        );
-      })
-      .catch((error) => console.error(error));
+    refreshDocs();
+    void reloadKnowledge().then((docs) => {
+      const fresh = docs?.find((d) => d.id === id);
+      if (!fresh) return;
+      const listed = asListedDoc(fresh);
+      setDocumentToView((open) =>
+        open?.id === id ? { ...open, ...listed } : open,
+      );
+    });
   };
 
   // The first load opens on the URL's page; a new search starts on page 1.
@@ -450,46 +503,33 @@ export default function Sources({
     );
     if (terminal.length === 0) return;
     terminal.forEach(([sourceId]) => dispatch(clearGraphBuild(sourceId)));
-    refreshDocs(undefined, currentPage, rowsPerPage);
+    refreshDocs();
   }, [graphBuilds, dispatch, refreshDocs, currentPage, rowsPerPage]);
 
   // A started sync's first ingest finished: read this page and the app's
   // knowledge list again, once, so its real card replaces the pending one.
-  const finishedKey = unlistedSyncs
-    .filter((sync) => sync.state === 'completed')
-    .map((sync) => sync.id)
-    .join(',');
+  const finishedKey = syncIdsKey(unlistedSyncs, 'completed');
   useEffect(() => {
     const ids = finishedKey
       .split(',')
       .filter((id) => id && !reloading.current.has(id));
     if (ids.length === 0) return;
     ids.forEach((id) => reloading.current.add(id));
-    refreshDocs(undefined, currentPage, rowsPerPage);
-    getDocs(token)
-      .then((docs) => {
-        if (docs) dispatch(setSourceDocs(docs));
-      })
-      .catch((error) => console.error(error))
-      .finally(() => setReloaded((done) => [...done, ...ids]));
+    refreshDocs();
+    void reloadKnowledge().then(() => setReloaded((done) => [...done, ...ids]));
   }, [finishedKey]);
 
   // The fallback when no event comes (see POLL_AFTER_MS): read the app's
   // knowledge list, and this page too once a waited-for source is on it.
-  // Past STARTED_SYNC_GIVE_UP_MS the link is dropped, so nothing opens by
-  // surprise later; the card stays as indexing until a list holds the source.
+  // At the give-up the link is dropped, so nothing opens by surprise later;
+  // the card stays as indexing until a list holds the source.
   const pollLists = useRef<(ids: string[]) => void>(() => undefined);
   const giveUp = useRef<(ids: string[]) => void>(() => undefined);
   useEffect(() => {
     pollLists.current = (ids) => {
-      getDocs(token)
-        .then((docs) => {
-          if (!docs) return;
-          dispatch(setSourceDocs(docs));
-          if (docs.some((d) => d.id && ids.includes(d.id)))
-            refreshDocs(undefined, currentPage, rowsPerPage);
-        })
-        .catch((error) => console.error(error));
+      void reloadKnowledge().then((docs) => {
+        if (docs?.some((d) => d.id && ids.includes(d.id))) refreshDocs();
+      });
     };
     giveUp.current = (ids) => {
       if (!linkedId || !ids.includes(linkedId)) return;
@@ -497,10 +537,7 @@ export default function Sources({
       dropLink();
     };
   });
-  const waitingKey = unlistedSyncs
-    .filter((sync) => sync.state === null)
-    .map((sync) => sync.id)
-    .join(',');
+  const waitingKey = syncIdsKey(unlistedSyncs, null);
   useEffect(() => {
     const waiting = startedSyncs.filter((sync) =>
       waitingKey.split(',').includes(sync.id),
@@ -580,6 +617,30 @@ export default function Sources({
           )
       : [];
 
+  // What every source view takes, and what a tree view adds.
+  const viewProps = {
+    docId: documentToView?.id || '',
+    canEdit: viewCanEdit,
+    sourceName: documentToView?.name ?? '',
+    onBackToDocuments: closeDocument,
+    headerAction: testRetrievalAction,
+    headerMenu: viewMenu,
+    linkedChunk: link?.chunk,
+  };
+  const treeProps = { ...viewProps, initialPath: link?.chunk?.path };
+  // A website's page list, in its own view or the graph view's Files tab:
+  // its byline, a sync started elsewhere, and its page changes.
+  const websiteProps = {
+    syncFrequency: documentToView?.syncFrequency,
+    syncedAt: documentToView?.date,
+    settingsVersion,
+    sync: viewSync,
+    onSyncSettled: settleSync,
+    onBusyChange: reportBusy(documentToView?.id || ''),
+    onPagesChanged: () =>
+      documentToView?.id && refreshOpenSource(documentToView.id),
+  };
+
   return documentToView ? (
     <div className="flex flex-col">
       {isWikiSource(documentToView) ? (
@@ -597,81 +658,36 @@ export default function Sources({
           // One view per source: another source's waits and state never
           // carry over.
           key={documentToView.id}
-          docId={documentToView.id || ''}
-          sourceName={documentToView.name}
+          {...viewProps}
+          {...websiteProps}
           sourceType={documentToView.type}
           synced={viewSynced}
           canSync={canSyncSource(documentToView)}
           isNested={!!documentToView.isNested}
-          canEdit={viewCanEdit}
-          onBackToDocuments={closeDocument}
-          headerAction={testRetrievalAction}
-          headerMenu={viewMenu}
-          linkedChunk={link?.chunk}
           website={documentToView.website}
-          syncFrequency={documentToView.syncFrequency}
-          syncedAt={documentToView.date}
-          settingsVersion={settingsVersion}
-          sync={viewSync}
-          onSyncSettled={settleSync}
-          onBusyChange={reportBusy(documentToView.id || '')}
-          onPagesChanged={() =>
-            documentToView.id && refreshOpenSource(documentToView.id)
-          }
         />
       ) : documentToView.isNested ? (
         documentToView.website ? (
           <WebsiteTree
             key={documentToView.id}
-            docId={documentToView.id || ''}
-            canEdit={viewCanEdit}
-            sourceName={documentToView.name}
-            onBackToDocuments={closeDocument}
-            headerAction={testRetrievalAction}
-            headerMenu={viewMenu}
+            {...treeProps}
+            {...websiteProps}
             hosts={documentToView.website.hosts}
-            syncFrequency={documentToView.syncFrequency}
-            syncedAt={documentToView.date}
-            settingsVersion={settingsVersion}
-            sync={viewSync}
-            onSyncSettled={settleSync}
-            onBusyChange={reportBusy(documentToView.id || '')}
-            onPagesChanged={() =>
-              documentToView.id && refreshOpenSource(documentToView.id)
-            }
-            initialPath={link?.chunk?.path}
-            linkedChunk={link?.chunk}
           />
         ) : viewSynced ? (
           // Synced from a connection or on a schedule, whatever its stored
           // type (an S3 or GitHub source is typed by its loader): Sync now,
           // no Add file, since a sync replaces the files.
           <ConnectorTree
-            docId={documentToView.id || ''}
-            canEdit={viewCanEdit}
-            sourceName={documentToView.name}
+            {...treeProps}
             sourceType={documentToView.type}
             connection={viewConnection}
             canSync={canSyncSource(documentToView)}
             syncFrequency={documentToView.syncFrequency}
             syncedAt={documentToView.date}
-            onBackToDocuments={closeDocument}
-            headerAction={testRetrievalAction}
-            headerMenu={viewMenu}
-            initialPath={link?.chunk?.path}
-            linkedChunk={link?.chunk}
           />
         ) : (
-          <FileTree
-            docId={documentToView.id || ''}
-            canEdit={viewCanEdit}
-            sourceName={documentToView.name}
-            onBackToDocuments={closeDocument}
-            headerAction={testRetrievalAction}
-            headerMenu={viewMenu}
-            initialPath={link?.chunk?.path}
-            linkedChunk={link?.chunk}
-          />
+          <FileTree {...treeProps} />
         )
       ) : (
         <Chunks
@@ -685,7 +701,7 @@ export default function Sources({
               {/* A flat synced source has no tree to sync from: the
                   button starts the sync and toasts. */}
               {viewCanEdit &&
-              sourcePrimary(documentToView) === 'syncNow' &&
+              syncNowIsPrimary(documentToView) &&
               canSyncSource(documentToView) ? (
                 <Button
                   type="button"
@@ -724,10 +740,7 @@ export default function Sources({
               type="button"
               size="field"
               shape="pill"
-              onClick={() => {
-                setIsOnboarding(false);
-                setModalState('ACTIVE');
-              }}
+              onClick={() => setModalState('ACTIVE')}
             >
               {t('settings.sources.addSource')}
             </Button>
@@ -744,7 +757,7 @@ export default function Sources({
               tone="destructive"
               illustration="none"
               title={t('settings.sources.loadError')}
-              onRetry={() => refreshDocs(undefined, currentPage, rowsPerPage)}
+              onRetry={() => refreshDocs()}
             />
           ) : !currentDocuments?.length && pendingSyncs.length === 0 ? (
             searchTerm ? (
@@ -763,10 +776,7 @@ export default function Sources({
                   <Button
                     type="button"
                     shape="pill"
-                    onClick={() => {
-                      setIsOnboarding(false);
-                      setModalState('ACTIVE');
-                    }}
+                    onClick={() => setModalState('ACTIVE')}
                   >
                     {t('settings.sources.addSource')}
                   </Button>
@@ -821,32 +831,10 @@ export default function Sources({
                       </CardTitle>
                     </div>
                     <div className="flex flex-col items-start justify-start gap-1">
-                      {failed ? (
-                        <Badge variant="destructive">
-                          {t('settings.sources.ingestFailed')}
-                        </Badge>
-                      ) : (
-                        <Badge variant="neutral">
-                          {t('settings.sources.ingestProcessing')}
-                        </Badge>
-                      )}
+                      <IngestBadge status={failed ? 'failed' : 'processing'} />
                       <CardFooter className="w-full flex-col items-start gap-1">
                         {connection && (
-                          <span className="flex max-w-full min-w-0 items-center gap-2">
-                            <ConnectorIcon
-                              icon={connection.icon}
-                              className="text-muted-foreground size-3.5 shrink-0"
-                            />
-                            <span
-                              className="truncate"
-                              title={connection.account_label}
-                            >
-                              {t('settings.sources.viaConnection', {
-                                name: connection.name,
-                                interpolation: { escapeValue: false },
-                              })}
-                            </span>
-                          </span>
+                          <ConnectionLine connection={connection} />
                         )}
                         <span className="flex items-center gap-2">
                           <RefreshCw className="size-3.5 shrink-0" />
@@ -937,15 +925,9 @@ export default function Sources({
                           </Tooltip>
                         </div>
                       )}
-                      {document.ingestStatus === 'failed' && (
-                        <Badge variant="destructive">
-                          {t('settings.sources.ingestFailed')}
-                        </Badge>
-                      )}
-                      {document.ingestStatus === 'processing' && (
-                        <Badge variant="neutral">
-                          {t('settings.sources.ingestProcessing')}
-                        </Badge>
+                      {(document.ingestStatus === 'failed' ||
+                        document.ingestStatus === 'processing') && (
+                        <IngestBadge status={document.ingestStatus} />
                       )}
                       {document.config?.kind === 'graphrag' &&
                         (() => {
@@ -953,15 +935,7 @@ export default function Sources({
                             ? graphBuilds[document.id]
                             : undefined;
                           const isBuilding = build?.status === 'building';
-                          const pct =
-                            isBuilding && build.total > 0
-                              ? Math.min(
-                                  100,
-                                  Math.round(
-                                    (build.current / build.total) * 100,
-                                  ),
-                                )
-                              : null;
+                          const pct = buildPct(build);
                           return (
                             <Badge variant="neutral">
                               <Network aria-hidden="true" />
@@ -979,28 +953,10 @@ export default function Sources({
                           footer sizes to a long host line and never truncates. */}
                       <CardFooter className="w-full flex-col items-start gap-1">
                         {connection && (
-                          <span className="flex max-w-full min-w-0 items-center gap-2">
-                            <ConnectorIcon
-                              icon={connection.icon}
-                              className="text-muted-foreground size-3.5 shrink-0"
-                            />
-                            <span
-                              className="truncate"
-                              title={connection.account_label}
-                            >
-                              {document.files
-                                ? t('settings.sources.viaConnectionFiles', {
-                                    name: connection.name,
-                                    count: document.files,
-                                    files: formatCount(document.files),
-                                    interpolation: { escapeValue: false },
-                                  })
-                                : t('settings.sources.viaConnection', {
-                                    name: connection.name,
-                                    interpolation: { escapeValue: false },
-                                  })}
-                            </span>
-                          </span>
+                          <ConnectionLine
+                            connection={connection}
+                            files={document.files}
+                          />
                         )}
                         {document.website ? (
                           <>
@@ -1089,12 +1045,10 @@ export default function Sources({
         <Upload
           receivedFile={[]}
           setModalState={setModalState}
-          isOnboarding={isOnboarding}
+          isOnboarding={false}
           renderTab={null}
           close={() => setModalState('INACTIVE')}
-          onSuccessfulUpload={() =>
-            refreshDocs(undefined, currentPage, rowsPerPage)
-          }
+          onSuccessfulUpload={() => refreshDocs()}
           onBrowseConnectors={() =>
             navigate('/settings/connectors?capability=sync')
           }

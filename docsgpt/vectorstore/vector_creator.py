@@ -18,16 +18,7 @@ class VectorCreator:
 
     @classmethod
     def supports_chunk_edits(cls, type: str) -> bool:
-        """Whether the store named ``type`` can add, list and delete single chunks.
-
-        Answered from the class, so no store (or FAISS index) is loaded.
-
-        Args:
-            type: A ``VECTOR_STORE`` value.
-
-        Returns:
-            False for an unknown store or one without chunk methods.
-        """
+        """Whether the ``VECTOR_STORE`` named ``type`` can edit single chunks; False when unknown. Loads no store."""
         vectorstore_class = cls.vectorstores.get((type or "").lower())
         return bool(vectorstore_class and vectorstore_class.supports_chunk_edits())
 

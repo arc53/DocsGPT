@@ -194,351 +194,46 @@ export function pathPrefixFromUrl(value: string): string {
   return url.pathname;
 }
 
-/** Python's `unquote_plus`: `+` is a space, runs of `%XX` are UTF-8 bytes. */
-function unquotePlus(value: string): string {
-  return value.replace(/\+/g, ' ').replace(/(?:%[0-9a-f]{2})+/gi, (run) => {
-    const bytes = new Uint8Array(run.length / 3);
-    for (let i = 0; i < bytes.length; i += 1)
-      bytes[i] = parseInt(run.slice(i * 3 + 1, i * 3 + 3), 16);
-    return new TextDecoder().decode(bytes);
-  });
-}
+/** The port each scheme uses when an address names none. */
+const DEFAULT_PORTS: Record<string, string> = { http: '80', https: '443' };
 
-/** Python's `quote_plus`: only letters, digits and `_.-~` stay as they are. */
-function quotePlus(value: string): string {
-  // A lone surrogate can't be encoded; Python replaces it too.
-  const encoded = encodeURIComponent(
-    value.replace(
-      /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g,
-      '�',
-    ),
+/**
+ * A key for telling the form's addresses apart: a normalized address
+ * (see {@link normalizeUrl}) without its scheme, fragment, `www.`, the
+ * scheme's own port or a trailing slash, its host in lower case. Only folds
+ * the server's page key surely makes as well, so the form never counts
+ * fewer pages than the server does; the server decides the rest (a query's
+ * order, percent-encoding, dot segments, an IDN host).
+ */
+function formKey(normalized: string): string {
+  const match = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)([^#]*)/i.exec(
+    normalized,
   );
-  return encoded
-    .replace(
-      /[!'()*]/g,
-      (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
-    )
-    .replace(/%20/g, '+');
+  if (!match) return normalized;
+  const [, scheme, authority, path, query] = match;
+  // A bracketed IPv6 host keeps its colons; a port follows the last `]`.
+  const at = authority.lastIndexOf(':');
+  const hasPort = at > authority.lastIndexOf(']');
+  // As a number, as the server reads it: `:0443` is https's own port.
+  const port =
+    hasPort && authority.slice(at + 1)
+      ? String(Number(authority.slice(at + 1)))
+      : '';
+  const host = (hasPort ? authority.slice(0, at) : authority)
+    // ASCII only: the server maps a non-ASCII host its own way.
+    .replace(/[A-Z]+/g, (letters) => letters.toLowerCase())
+    .replace(/\.+$/, '')
+    .replace(/^www\./, '');
+  const ownPort = !port || port === DEFAULT_PORTS[scheme.toLowerCase()];
+  return `${host}${ownPort ? '' : `:${port}`}${path.replace(/\/+$/, '')}${query}`;
 }
 
-/**
- * A query with its parameters sorted, as the backend's `normalize_page_url`
- * writes it (`urlencode(sorted(parse_qsl(query, keep_blank_values=True)))`).
- */
-function sortedQuery(query: string): string {
-  const pairs: [string, string][] = [];
-  for (const part of query.split('&')) {
-    if (!part) continue;
-    const at = part.indexOf('=');
-    const name = at === -1 ? part : part.slice(0, at);
-    const value = at === -1 ? '' : part.slice(at + 1);
-    pairs.push([unquotePlus(name), unquotePlus(value)]);
-  }
-  const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  pairs.sort((a, b) => compare(a[0], b[0]) || compare(a[1], b[1]));
-  return pairs
-    .map(([name, value]) => `${quotePlus(name)}=${quotePlus(value)}`)
-    .join('&');
-}
-
-/** Whether a path segment is `dots` (`.` or `..`), each dot plain or `%2e`. */
-function isDotSegment(segment: string, dots: string): boolean {
-  return segment.toLowerCase().replace(/%2e/g, '.') === dots;
-}
-
-/**
- * A path with its `.` and `..` segments resolved, as the backend's
- * `remove_dot_segments` does (RFC 3986, 5.2.4): a percent-encoded dot counts,
- * only whole segments are dots, `..` never climbs above the root, and a dot
- * segment at the end leaves a trailing slash.
- */
-function removeDotSegments(path: string): string {
-  if (!path.includes('.') && !path.includes('%2')) return path;
-  const segments = path.split('/');
-  // "" for an absolute path: the root is never popped.
-  const resolved = segments.slice(0, 1);
-  for (let i = 1; i < segments.length; i += 1) {
-    const segment = segments[i];
-    if (isDotSegment(segment, '..')) {
-      if (resolved.length > 1) resolved.pop();
-    } else if (!isDotSegment(segment, '.')) {
-      resolved.push(segment);
-      continue;
-    }
-    if (i === segments.length - 1) resolved.push('');
-  }
-  return resolved.join('/') || '/';
-}
-
-/** A lone UTF-16 surrogate, which can't be encoded; Python replaces it too. */
-const LONE_SURROGATE =
-  /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
-
-/** RFC 3986's unreserved characters: the same page written plain or encoded. */
-const UNRESERVED = /^[A-Za-z0-9\-._~]$/;
-
-/**
- * A path's percent-encoding as the backend's key writes it: non-ASCII,
- * spaces and control characters encoded (UTF-8), then every `%XX` decoded
- * when it is an unreserved character and in capitals otherwise, so `%7e`
- * is `~` and `%c3%a9` is `%C3%A9`. A `%2F` stays encoded (it isn't a
- * segment break), and a `%` without two hex digits stays as written.
- */
-function normalizePercent(path: string): string {
-  return (
-    path
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\u0000- \u007f-￿]+/g, (run) =>
-        encodeURIComponent(run.replace(LONE_SURROGATE, '�')),
-      )
-      .replace(/%([0-9a-f]{2})/gi, (triplet, hex: string) => {
-        const char = String.fromCharCode(parseInt(hex, 16));
-        return UNRESERVED.test(char) ? char : triplet.toUpperCase();
-      })
-  );
-}
-
-const PUNYCODE_BASE = 36;
-const PUNYCODE_T_MIN = 1;
-const PUNYCODE_T_MAX = 26;
-
-/** RFC 3492's bias adaptation. */
-function punycodeAdapt(delta: number, points: number, first: boolean): number {
-  let d = first ? Math.floor(delta / 700) : Math.floor(delta / 2);
-  d += Math.floor(d / points);
-  let k = 0;
-  const limit = ((PUNYCODE_BASE - PUNYCODE_T_MIN) * PUNYCODE_T_MAX) >> 1;
-  while (d > limit) {
-    d = Math.floor(d / (PUNYCODE_BASE - PUNYCODE_T_MIN));
-    k += PUNYCODE_BASE;
-  }
-  return k + Math.floor(((PUNYCODE_BASE - PUNYCODE_T_MIN + 1) * d) / (d + 38));
-}
-
-/** A punycode label (without `xn--`) decoded (RFC 3492), or null. */
-function punycodeDecode(input: string): string | null {
-  const output: number[] = [];
-  const basic = Math.max(input.lastIndexOf('-'), 0);
-  for (let j = 0; j < basic; j += 1) output.push(input.charCodeAt(j));
-  let n = 128;
-  let bias = 72;
-  let i = 0;
-  for (let at = basic > 0 ? basic + 1 : 0; at < input.length;) {
-    const old = i;
-    let w = 1;
-    for (let k = PUNYCODE_BASE; ; k += PUNYCODE_BASE) {
-      if (at >= input.length) return null;
-      const code = input.charCodeAt(at++);
-      const digit =
-        code >= 48 && code <= 57
-          ? code - 22
-          : code >= 65 && code <= 90
-            ? code - 65
-            : code >= 97 && code <= 122
-              ? code - 97
-              : PUNYCODE_BASE;
-      if (digit >= PUNYCODE_BASE) return null;
-      i += digit * w;
-      const t =
-        k <= bias
-          ? PUNYCODE_T_MIN
-          : k >= bias + PUNYCODE_T_MAX
-            ? PUNYCODE_T_MAX
-            : k - bias;
-      if (digit < t) break;
-      w *= PUNYCODE_BASE - t;
-    }
-    const length = output.length + 1;
-    bias = punycodeAdapt(i - old, length, old === 0);
-    n += Math.floor(i / length);
-    i %= length;
-    if (n > 0x10ffff) return null;
-    output.splice(i, 0, n);
-    i += 1;
-  }
-  return String.fromCodePoint(...output);
-}
-
-/**
- * Letters, marks and digits: what IDNA2008 (RFC 5892) lets a label hold,
- * near enough. Symbols (an emoji), punctuation and format characters are
- * refused, but for the few allowed in context (see {@link inContext}); a
- * joiner, allowed after a virama, is refused here.
- */
-const IDNA2008_CHAR = /^[\p{Ll}\p{Lo}\p{Lm}\p{Mn}\p{Mc}\p{Nd}-]$/u;
-
-/** RFC 5892's CONTEXTO characters, each where it may stand. */
-function inContext(chars: string[], at: number): boolean {
-  const char = chars[at];
-  const before = chars[at - 1] ?? '';
-  const after = chars[at + 1] ?? '';
-  if (char === '·') return before === 'l' && after === 'l';
-  if (char === '͵') return /\p{Script=Greek}/u.test(after);
-  if (char === '׳' || char === '״') return /\p{Script=Hebrew}/u.test(before);
-  if (char === '・')
-    return chars.some((c) =>
-      /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(c),
-    );
-  return false;
-}
-
-// RFC 5893's bidi classes, as far as a label of letters, marks and digits
-// needs them.
-const RTL_LETTER =
-  /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Samaritan}\p{Script=Mandaic}\p{Script=Adlam}]/u;
-const ARABIC_DIGIT = /[٠-٩]/;
-const EUROPEAN_DIGIT = /[0-9۰-۹]/;
-const MARK = /\p{M}/u;
-const isRtl = (c: string) =>
-  RTL_LETTER.test(c) &&
-  !MARK.test(c) &&
-  !ARABIC_DIGIT.test(c) &&
-  !EUROPEAN_DIGIT.test(c);
-const isLtr = (c: string) =>
-  c !== '-' &&
-  !MARK.test(c) &&
-  !RTL_LETTER.test(c) &&
-  !ARABIC_DIGIT.test(c) &&
-  !EUROPEAN_DIGIT.test(c);
-
-/**
- * RFC 5893's rule for a label with right-to-left characters (or Arabic
- * digits): it starts with a right-to-left letter, holds no left-to-right
- * one, ends on a letter or digit, and doesn't mix the two kinds of digit.
- */
-function bidiOk(chars: string[]): boolean {
-  if (!chars.some((c) => RTL_LETTER.test(c) || ARABIC_DIGIT.test(c)))
-    return true;
-  if (!isRtl(chars[0]) || chars.some(isLtr)) return false;
-  const last = [...chars].reverse().find((c) => !MARK.test(c)) ?? '';
-  if (!isRtl(last) && !ARABIC_DIGIT.test(last) && !EUROPEAN_DIGIT.test(last))
-    return false;
-  return !(
-    chars.some((c) => EUROPEAN_DIGIT.test(c)) &&
-    chars.some((c) => ARABIC_DIGIT.test(c))
-  );
-}
-
-/**
- * Whether the backend's `idna.alabel` takes a label `URL` wrote in punycode:
- * IDNA2008 is stricter than the URL standard's UTS #46, which encodes
- * `😀.ws` as `xn--e28h.ws` where the backend keeps `😀.ws`. Close to the
- * rules, not all of them (a joiner after a virama, the rarer bidi cases).
- */
-function idna2008Label(label: string): boolean {
-  if (label.length > MAX_LABEL_LENGTH) return false;
-  const decoded = punycodeDecode(label.slice(4));
-  if (!decoded) return false;
-  if (decoded.startsWith('-') || decoded.endsWith('-')) return false;
-  if (decoded.slice(2, 4) === '--') return false;
-  const chars = Array.from(decoded);
-  if (MARK.test(chars[0] ?? '')) return false;
-  return (
-    chars.every(
-      (char, at) => IDNA2008_CHAR.test(char) || inContext(chars, at),
-    ) && bidiOk(chars)
-  );
-}
-
-/** What UTS #46 reads as a label separator: `.`, `。`, `．` and `｡`. */
-const LABEL_DOTS = /[.\u3002\uff0e\uff61]/;
-
-/**
- * A host name in its ASCII (IDNA) form, as `bücher.de` is `xn--bcher-kva.de`
- * and `ｗｗｗ.x.io` is `www.x.io`, as the backend's `ascii_host` writes it:
- * the host as given when a label it would encode is one IDNA2008 refuses.
- */
-function asciiHost(host: string): string {
-  // eslint-disable-next-line no-control-regex
-  if (!/[^\u0000-\u007f]/.test(host)) return host;
-  let mapped: string;
-  try {
-    mapped = new URL(`http://${host}/`).hostname;
-  } catch {
-    return host;
-  }
-  // Only the labels written with non-ASCII characters are encoded; an
-  // ASCII one (`xn--e28h` as typed) is kept whatever it says.
-  const given = host.split(LABEL_DOTS);
-  const labels = mapped.split('.');
-  const encoded = labels.every(
-    (label, index) =>
-      !label.startsWith('xn--') ||
-      (given.length === labels.length &&
-        // eslint-disable-next-line no-control-regex
-        !/[^\u0000-\u007f]/.test(given[index])) ||
-      idna2008Label(label),
-  );
-  return encoded ? mapped : host;
-}
-
-/** The port a scheme leaves out of the key. */
-const DEFAULT_PORTS: Record<string, number> = { http: 80, https: 443 };
-
-/** A netloc's host and port, split as `urlsplit`'s `hostname` and `port`. */
-function splitHost(netloc: string): [string, number | null] {
-  const hostinfo = netloc.slice(netloc.lastIndexOf('@') + 1);
-  let host: string;
-  let port: string;
-  const bracket = hostinfo.indexOf('[');
-  if (bracket !== -1) {
-    const [inside, after = ''] = hostinfo.slice(bracket + 1).split(']');
-    host = inside;
-    port = after.startsWith(':') ? after.slice(1) : '';
-  } else {
-    const colon = hostinfo.indexOf(':');
-    host = colon === -1 ? hostinfo : hostinfo.slice(0, colon);
-    port = colon === -1 ? '' : hostinfo.slice(colon + 1);
-  }
-  return [host, /^\d+$/.test(port) ? Number(port) : null];
-}
-
-/**
- * One key per page, exactly as the backend compares them
- * (`page_content.page_key` over `base.normalize_page_url`): the scheme,
- * `www.`, the host's case and trailing dots, the scheme's default port (443
- * for https, 80 for http), a trailing slash, the fragment and the order of
- * the query's parameters don't count. Any other port does. The host is in
- * its ASCII (IDNA) form; the path's percent-encoding is normalised (see
- * {@link normalizePercent}), and its `.` and `..` segments (a dot also
- * written `%2e`) resolve, so `/docs/../a` is `/a`; the rest of the path stays
- * as written. Split the way Python's `urlsplit` does, not with `URL`, which
- * would rewrite the path.
- */
-export function pageKey(value: string): string {
-  let rest = value.trim();
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(rest);
-  if (scheme) rest = rest.slice(scheme[0].length);
-  const hash = rest.indexOf('#');
-  if (hash !== -1) rest = rest.slice(0, hash);
-  let netloc = '';
-  if (rest.startsWith('//')) {
-    const end = rest.slice(2).search(/[/?]/);
-    netloc = end === -1 ? rest.slice(2) : rest.slice(2, end + 2);
-    rest = end === -1 ? '' : rest.slice(end + 2);
-  }
-  const mark = rest.indexOf('?');
-  const path = mark === -1 ? rest : rest.slice(0, mark);
-  const query = mark === -1 ? '' : sortedQuery(rest.slice(mark + 1));
-
-  const [hostname, port] = splitHost(netloc);
-  // ASCII first, as the backend's `bare_host`: `ｗｗｗ.x.io` is `www.x.io`.
-  let host = asciiHost(hostname).toLowerCase().replace(/\.+$/, '');
-  if (host.startsWith('www.')) host = host.slice(4);
-  // An IPv6 host keeps its brackets, as the backend's key does.
-  if (host.includes(':')) host = `[${host}]`;
-  const defaultPort = scheme ? DEFAULT_PORTS[scheme[1].toLowerCase()] : null;
-  if (port !== null && port !== defaultPort) host = `${host}:${port}`;
-
-  const key = `${host}${removeDotSegments(normalizePercent(path)).replace(/\/+$/, '')}`;
-  return query ? `${key}?${query}` : key;
-}
-
-/** Addresses naming the same page (see {@link pageKey}) once, the first kept. */
+/** Addresses naming the same page (see {@link formKey}) once, the first kept. */
 function uniquePages(urls: string[]): string[] {
   const seen = new Set<string>();
   return urls.filter((url) => {
-    const key = pageKey(normalizeUrl(url) ?? url);
+    const normalized = normalizeUrl(url);
+    const key = normalized ? formKey(normalized) : url;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

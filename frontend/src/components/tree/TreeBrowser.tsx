@@ -63,8 +63,10 @@ export interface TreeBrowserProps {
   /**
    * "size-first" = file name | size | tokens | actions (FileTree).
    * "tokens-first" = file name | tokens | size | actions (ConnectorTree).
+   * Ignored by `variant="pages"`, whose columns are its own; defaults to
+   * size-first.
    */
-  columnOrder: ColumnOrder;
+  columnOrder?: ColumnOrder;
   /** When true, directory entries are sorted alphabetically within group. */
   sortEntries?: boolean;
   /** Top-right action area (e.g. Add File button, Sync button). */
@@ -255,7 +257,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   docId,
   sourceName,
   onBackToDocuments,
-  columnOrder,
+  columnOrder = 'size-first',
   sortEntries = false,
   topRightAction,
   headerMenu,
@@ -434,13 +436,8 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   const openFileId = openFile?.id ?? null;
 
   const reloadFile = useCallback(
-    (path?: string | ((openPath: string) => boolean)) => {
-      if (!openFileId) return;
-      const affected =
-        typeof path === 'function'
-          ? path(openFileId)
-          : path === undefined || path === openFileId;
-      if (!affected) return;
+    (paths?: readonly string[]) => {
+      if (!openFileId || (paths && !paths.includes(openFileId))) return;
       chunksControllerRef.current?.reload();
     },
     [openFileId],

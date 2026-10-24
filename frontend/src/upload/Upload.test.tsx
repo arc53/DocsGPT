@@ -123,6 +123,61 @@ import Upload from './Upload';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+/**
+ * Stubs XMLHttpRequest and records each request sent: its URL and form.
+ * With `refusal`, every request is answered 400 with that body.
+ */
+function stubXhr(refusal?: string): { url: string; body: FormData }[] {
+  const sent: { url: string; body: FormData }[] = [];
+  class FakeXhr {
+    upload = { addEventListener() {} };
+    url = '';
+    status = 0;
+    statusText = '';
+    responseText = '';
+    onload: (() => void) | null = null;
+    addEventListener() {}
+    open(_method: string, url: string) {
+      this.url = url;
+    }
+    setRequestHeader() {}
+    send(body: FormData) {
+      sent.push({ url: this.url, body });
+      if (refusal === undefined) return;
+      this.status = 400;
+      this.statusText = 'BAD REQUEST';
+      this.responseText = refusal;
+      this.onload?.();
+    }
+  }
+  vi.stubGlobal('XMLHttpRequest', FakeXhr);
+  return sent;
+}
+
+/** Types into a field the way React hears it. */
+const typeInto = async (input: HTMLInputElement, value: string) => {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value',
+  )!.set!;
+  await act(async () => {
+    setter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+};
+
+const trainButton = () =>
+  Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
+    (b) => b.textContent === 'modals.uploadDoc.train',
+  )!;
+
+const nameInput = () =>
+  document.body.querySelector<HTMLInputElement>('input[type="text"]')!;
+const urlInput = () =>
+  document.body.querySelector<HTMLInputElement>('input[type="url"]')!;
+
+afterEach(() => vi.unstubAllGlobals());
+
 describe('Upload source-type tiles', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -161,6 +216,14 @@ describe('Upload source-type tiles', () => {
       ),
     );
 
+  const openType = async (type: string) => {
+    await render();
+    const tile = tiles().find((el) =>
+      el.textContent?.includes(`modals.uploadDoc.ingestors.${type}.label`),
+    )!;
+    await act(async () => tile.click());
+  };
+
   it('renders each source type as a button tile with a lucide icon', async () => {
     await render();
     const found = tiles();
@@ -169,12 +232,12 @@ describe('Upload source-type tiles', () => {
       expect(tile.tagName).toBe('BUTTON');
       expect(tile.getAttribute('type')).toBe('button');
     }
-    const crawler = found.find((tile) =>
+    const website = found.find((tile) =>
       tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
     );
-    expect(crawler).toBeDefined();
-    expect(crawler!.querySelector('img')).toBeNull();
-    expect(crawler!.querySelector('svg')?.getAttribute('class')).toContain(
+    expect(website).toBeDefined();
+    expect(website!.querySelector('img')).toBeNull();
+    expect(website!.querySelector('svg')?.getAttribute('class')).toContain(
       'lucide-globe',
     );
   });
@@ -192,11 +255,7 @@ describe('Upload source-type tiles', () => {
   });
 
   it('selects the clicked source type', async () => {
-    await render();
-    const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
-    )!;
-    await act(async () => crawler.click());
+    await openType('website');
     expect(tiles()).toHaveLength(0);
     expect(dialogTitle()?.textContent).toBe(
       'modals.uploadDoc.ingestors.website.heading',
@@ -209,11 +268,7 @@ describe('Upload source-type tiles', () => {
     ) ?? undefined;
 
   it('goes back with the header Back arrow', async () => {
-    await render();
-    const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
-    )!;
-    await act(async () => crawler.click());
+    await openType('website');
     const back = backButton()!;
     expect(back.getAttribute('data-variant')).toBe('ghost-muted');
     expect(back.querySelector('svg')?.getAttribute('class')).toContain(
@@ -600,48 +655,13 @@ describe('Upload source-type tiles', () => {
   });
 
   it('sends a page to the remote ingest as a website source', async () => {
-    const sent: { url: string; body: FormData }[] = [];
-    class FakeXhr {
-      upload = { addEventListener() {} };
-      url = '';
-      addEventListener() {}
-      open(_method: string, url: string) {
-        this.url = url;
-      }
-      setRequestHeader() {}
-      send(body: FormData) {
-        sent.push({ url: this.url, body });
-      }
-    }
-    vi.stubGlobal('XMLHttpRequest', FakeXhr);
-    await render();
-    const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
-    )!;
-    await act(async () => crawler.click());
-    const type = async (input: HTMLInputElement, value: string) => {
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        'value',
-      )!.set!;
-      await act(async () => {
-        setter.call(input, value);
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-    };
-    const nameInput = () =>
-      document.body.querySelector<HTMLInputElement>('input[type="text"]')!;
+    const sent = stubXhr();
+    await openType('website');
     // The address names the source until a name is typed.
-    await type(
-      document.body.querySelector<HTMLInputElement>('input[type="url"]')!,
-      'docs.example.com/guide',
-    );
+    await typeInto(urlInput(), 'docs.example.com/guide');
     expect(nameInput().value).toBe('docs.example.com');
-    const train = Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'modals.uploadDoc.train',
-    )!;
-    expect(train.disabled).toBe(false);
-    await act(async () => train.click());
+    expect(trainButton().disabled).toBe(false);
+    await act(async () => trainButton().click());
     expect(sent).toHaveLength(1);
     expect(sent[0].url).toContain('/api/remote');
     expect(sent[0].body.get('source')).toBe('website');
@@ -652,50 +672,23 @@ describe('Upload source-type tiles', () => {
       skip: [],
       keep_links: false,
     });
-    vi.unstubAllGlobals();
   });
 
   it('sends a whole site with its scope, synced weekly by default', async () => {
-    const sent: FormData[] = [];
-    class FakeXhr {
-      upload = { addEventListener() {} };
-      addEventListener() {}
-      open() {}
-      setRequestHeader() {}
-      send(body: FormData) {
-        sent.push(body);
-      }
-    }
-    vi.stubGlobal('XMLHttpRequest', FakeXhr);
-    await render();
-    const website = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
-    )!;
-    await act(async () => website.click());
+    const sent = stubXhr();
+    await openType('website');
     const wholeSite = Array.from(
       document.body.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
     ).find((b) => b.textContent === 'modals.uploadDoc.website.mode.site')!;
     await act(async () => wholeSite.click());
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      'value',
-    )!.set!;
-    await act(async () => {
-      const url =
-        document.body.querySelector<HTMLInputElement>('input[type="url"]')!;
-      setter.call(url, 'https://docs.example.com/Deploying/');
-      url.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    await typeInto(urlInput(), 'https://docs.example.com/Deploying/');
     // A whole site starts from one address: no "Add another page".
     expect(document.body.textContent).not.toContain(
       'modals.uploadDoc.website.addAnotherPage',
     );
-    const train = Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'modals.uploadDoc.train',
-    )!;
-    await act(async () => train.click());
-    expect(sent[0].get('sync_frequency')).toBe('weekly');
-    expect(JSON.parse(String(sent[0].get('data')))).toEqual({
+    await act(async () => trainButton().click());
+    expect(sent[0].body.get('sync_frequency')).toBe('weekly');
+    expect(JSON.parse(String(sent[0].body.get('data')))).toEqual({
       entries: [
         {
           url: 'https://docs.example.com/Deploying/',
@@ -710,21 +703,10 @@ describe('Upload source-type tiles', () => {
       skip: [],
       keep_links: false,
     });
-    vi.unstubAllGlobals();
   });
 
   it("starts a new source from the admin's defaults", async () => {
-    const sent: FormData[] = [];
-    class FakeXhr {
-      upload = { addEventListener() {} };
-      addEventListener() {}
-      open() {}
-      setRequestHeader() {}
-      send(body: FormData) {
-        sent.push(body);
-      }
-    }
-    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    const sent = stubXhr();
     sourceDefaults.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -735,65 +717,27 @@ describe('Upload source-type tiles', () => {
         },
       }),
     });
-    await render();
-    const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
-    )!;
-    await act(async () => crawler.click());
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      'value',
-    )!.set!;
-    const type = async (input: HTMLInputElement, value: string) => {
-      await act(async () => {
-        setter.call(input, value);
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-    };
-    await type(
-      document.body.querySelector<HTMLInputElement>('input[type="text"]')!,
-      'Docs site',
-    );
-    await type(
-      document.body.querySelector<HTMLInputElement>('input[type="url"]')!,
-      'https://docs.example.com',
-    );
-    const train = Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'modals.uploadDoc.train',
-    )!;
-    await act(async () => train.click());
-    const config = JSON.parse(String(sent[0].get('config')));
+    await openType('website');
+    await typeInto(nameInput(), 'Docs site');
+    await typeInto(urlInput(), 'https://docs.example.com');
+    await act(async () => trainButton().click());
+    const config = JSON.parse(String(sent[0].body.get('config')));
     expect(config.retrieval.chunks).toBe(4);
     expect(config.retrieval.reranker).toEqual({
       type: 'decision',
       min_relevance: 0.3,
       candidate_k: null,
     });
-    vi.unstubAllGlobals();
   });
 
   it('leaves the disabled Train button on the default variant', async () => {
-    await render();
-    const crawler = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.website.label'),
-    )!;
-    await act(async () => crawler.click());
-    const train = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === 'modals.uploadDoc.train');
+    await openType('website');
+    const train = trainButton();
     expect(train).toBeDefined();
-    expect(train!.disabled).toBe(true);
-    expect(train!.className).not.toContain('bg-gray-300');
-    expect(train!.className).toContain('bg-primary');
+    expect(train.disabled).toBe(true);
+    expect(train.className).not.toContain('bg-gray-300');
+    expect(train.className).toContain('bg-primary');
   });
-
-  const openType = async (type: string) => {
-    await render();
-    const tile = tiles().find((el) =>
-      el.textContent?.includes(`modals.uploadDoc.ingestors.${type}.label`),
-    )!;
-    await act(async () => tile.click());
-  };
 
   it('ends the wiki form like the others, with an outline content field and its hint', async () => {
     await openType('wiki');
@@ -831,20 +775,8 @@ describe('Upload source-type tiles', () => {
     const dispatch = vi.spyOn(fakeStore, 'dispatch');
     try {
       await openType('wiki');
-      const name =
-        document.body.querySelector<HTMLInputElement>('input[type="text"]')!;
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        'value',
-      )!.set!;
-      await act(async () => {
-        setter.call(name, 'Handbook');
-        name.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-      const train = Array.from(document.body.querySelectorAll('button')).find(
-        (b) => b.textContent === 'modals.uploadDoc.train',
-      )!;
-      await act(async () => train.click());
+      await typeInto(nameInput(), 'Handbook');
+      await act(async () => trainButton().click());
       expect(createWiki).toHaveBeenCalled();
       const failed = dispatch.mock.calls
         .map(
@@ -862,8 +794,7 @@ describe('Upload source-type tiles', () => {
 
   it('marks the name required without a native required (no browser tooltip)', async () => {
     await openType('wiki');
-    const name =
-      document.body.querySelector<HTMLInputElement>('input[type="text"]')!;
+    const name = nameInput();
     expect(name.required).toBe(false);
     expect(name.getAttribute('aria-required')).toBe('true');
     expect(name.parentElement!.querySelector('label')!.textContent).toBe(
@@ -872,17 +803,7 @@ describe('Upload source-type tiles', () => {
   });
 
   it('keeps links in page text with the website fields, not under Chunking', async () => {
-    const sent: FormData[] = [];
-    class FakeXhr {
-      upload = { addEventListener() {} };
-      addEventListener() {}
-      open() {}
-      setRequestHeader() {}
-      send(body: FormData) {
-        sent.push(body);
-      }
-    }
-    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    const sent = stubXhr();
     await openType('website');
     const keepLinks = document.body.querySelector<HTMLButtonElement>(
       'button[id$="-keep-links"]',
@@ -893,38 +814,10 @@ describe('Upload source-type tiles', () => {
     const chunking = document.body.querySelector('#chunking-strategy')!;
     expect(chunking.closest('[data-slot="collapsible"]')).not.toBeNull();
     await act(async () => keepLinks.click());
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      'value',
-    )!.set!;
-    await act(async () => {
-      const url =
-        document.body.querySelector<HTMLInputElement>('input[type="url"]')!;
-      setter.call(url, 'https://docs.example.com/guide');
-      url.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    const train = Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'modals.uploadDoc.train',
-    )!;
-    await act(async () => train.click());
-    expect(JSON.parse(String(sent[0].get('data'))).keep_links).toBe(true);
-    vi.unstubAllGlobals();
+    await typeInto(urlInput(), 'https://docs.example.com/guide');
+    await act(async () => trainButton().click());
+    expect(JSON.parse(String(sent[0].body.get('data'))).keep_links).toBe(true);
   });
-
-  const typeUrl = async (input: HTMLInputElement, value: string) => {
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      'value',
-    )!.set!;
-    await act(async () => {
-      setter.call(input, value);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-  };
-  const trainButton = () =>
-    Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'modals.uploadDoc.train',
-    )!;
 
   it("names each address's remove button by its address", async () => {
     await openType('website');
@@ -937,7 +830,7 @@ describe('Upload source-type tiles', () => {
     const inputs = Array.from(
       document.body.querySelectorAll<HTMLInputElement>('input[type="url"]'),
     );
-    await typeUrl(inputs[1], 'https://docs.example.com/b');
+    await typeInto(inputs[1], 'https://docs.example.com/b');
     const labels = Array.from(document.body.querySelectorAll('button')).map(
       (b) => b.getAttribute('aria-label'),
     );
@@ -962,14 +855,14 @@ describe('Upload source-type tiles', () => {
         document.body.querySelectorAll<HTMLInputElement>('input[type="url"]'),
       );
       expect(inputs).toHaveLength(3);
-      await typeUrl(inputs[0], 'https://docs.example.com/a');
-      await typeUrl(inputs[1], 'https://docs.example.com/b');
+      await typeInto(inputs[0], 'https://docs.example.com/a');
+      await typeInto(inputs[1], 'https://docs.example.com/b');
       expect(trainButton().disabled).toBe(false);
       expect(document.body.textContent).not.toContain(
         'settings.sources.website.pageLimit',
       );
 
-      await typeUrl(inputs[2], 'https://docs.example.com/c');
+      await typeInto(inputs[2], 'https://docs.example.com/c');
       expect(trainButton().disabled).toBe(true);
       expect(
         document.body.querySelector('[role="alert"]')?.textContent,
@@ -1003,30 +896,11 @@ describe('Upload source-type tiles', () => {
   ])(
     'a refused ingest shows %s, never the status text',
     async (_, body, shown) => {
-      class FakeXhr {
-        upload = { addEventListener() {} };
-        status = 0;
-        statusText = '';
-        responseText = '';
-        onload: (() => void) | null = null;
-        addEventListener() {}
-        open() {}
-        setRequestHeader() {}
-        send() {
-          this.status = 400;
-          this.statusText = 'BAD REQUEST';
-          this.responseText = body;
-          this.onload?.();
-        }
-      }
-      vi.stubGlobal('XMLHttpRequest', FakeXhr);
+      stubXhr(body);
       const dispatch = vi.spyOn(fakeStore, 'dispatch');
       try {
         await openType('website');
-        await typeUrl(
-          document.body.querySelector<HTMLInputElement>('input[type="url"]')!,
-          'https://docs.example.com/guide',
-        );
+        await typeInto(urlInput(), 'https://docs.example.com/guide');
         await act(async () => trainButton().click());
         const failed = dispatch.mock.calls
           .map(
@@ -1037,7 +911,6 @@ describe('Upload source-type tiles', () => {
         expect(failed?.payload?.updates?.errorMessage).toBe(shown);
       } finally {
         dispatch.mockRestore();
-        vi.unstubAllGlobals();
       }
     },
   );
@@ -1258,13 +1131,10 @@ describe('Upload local file step', () => {
       document.body.querySelectorAll<HTMLInputElement>('input[type="text"]'),
     );
     expect(textInputs.some((el) => el.value === 'rates.pdf')).toBe(true);
-    const train = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === 'modals.uploadDoc.train');
-    expect(train!.disabled).toBe(false);
+    expect(trainButton().disabled).toBe(false);
   });
 
-  it('adds a new pick to the list, once per path', async () => {
+  it('adds a new pick to the list, once per path, keeping the first name', async () => {
     await openLocalFile();
     await pick([makeFile('a.pdf', 'application/pdf')]);
     await pick([
@@ -1279,12 +1149,7 @@ describe('Upload local file step', () => {
     expect(rows[0].textContent).toContain('a.pdf');
     expect(rows[0].textContent).toContain('4 KB');
     expect(rows[1].textContent).toContain('b.pdf');
-  });
-
-  it('keeps the name from the first file when a later pick adds more', async () => {
-    await openLocalFile();
-    await pick([makeFile('a.pdf', 'application/pdf')]);
-    await pick([makeFile('b.pdf', 'application/pdf')]);
+    // The name stays the first pick's.
     const names = Array.from(
       document.body.querySelectorAll<HTMLInputElement>('input[type="text"]'),
     ).map((el) => el.value);
@@ -1326,10 +1191,7 @@ describe('Upload local file step', () => {
     // Removing the last file leaves nothing to add.
     await act(async () => removeButtons()[0].click());
     expect(document.body.querySelector('[data-slot="list-rows"]')).toBeNull();
-    const train = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === 'modals.uploadDoc.train');
-    expect(train!.disabled).toBe(true);
+    expect(trainButton().disabled).toBe(true);
   });
 
   /**
@@ -1449,8 +1311,6 @@ describe('Upload local file step', () => {
     // A link right under the field, part of it rather than a second step.
     expect(button.getAttribute('data-variant')).toBe('link');
     expect(button.querySelector('svg')).toBeNull();
-    const zone = document.body.querySelector('[data-slot="dropzone"]')!;
-    expect(zone.parentElement!.nextElementSibling).toBe(button);
     const click = vi.spyOn(input, 'click').mockImplementation(() => undefined);
     await act(async () => button.click());
     expect(click).toHaveBeenCalledTimes(1);
@@ -1493,30 +1353,18 @@ describe('Upload local file step', () => {
   });
 
   it('uploads each file under its path inside the folder', async () => {
-    const sent: FormData[] = [];
-    class FakeXhr {
-      upload = { addEventListener() {} };
-      addEventListener() {}
-      open() {}
-      setRequestHeader() {}
-      send(body: FormData) {
-        sent.push(body);
-      }
-    }
-    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    const sent = stubXhr();
     await openLocalFile();
     await pickFolder([
       inFolder('Handbook/guide/setup.md', 'text/markdown'),
       inFolder('Handbook/intro.pdf', 'application/pdf'),
     ]);
-    const train = Array.from(
-      document.body.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === 'modals.uploadDoc.train')!;
-    await act(async () => train.click());
+    await act(async () => trainButton().click());
     expect(sent).toHaveLength(1);
-    const names = sent[0].getAll('file').map((entry) => (entry as File).name);
+    const names = sent[0].body
+      .getAll('file')
+      .map((entry) => (entry as File).name);
     expect(names).toEqual(['Handbook/guide/setup.md', 'Handbook/intro.pdf']);
-    expect(sent[0].get('name')).toBe('Handbook');
-    vi.unstubAllGlobals();
+    expect(sent[0].body.get('name')).toBe('Handbook');
   });
 });

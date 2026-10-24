@@ -482,26 +482,19 @@ class TestConvertSourceToWikiWorker:
 
 @pytest.mark.unit
 class TestConvertTakesTurns:
-    def test_converts_holding_the_source_index_lock(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+    def test_converts_holding_the_source_index_lock(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, held_lock,
+    ):
         # A sync or a Website page change on the source rewrites the chunks
         # this reads and deletes; they take turns.
-        from contextlib import contextmanager
-
         from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         store = _patch_store(monkeypatch, [_chunk("body.", source="a.md", doc_id="a1")])
         _patch_reembed(monkeypatch)
-        held = []
-
-        @contextmanager
-        def fake_lock(locked_id, **kwargs):
-            held.append(locked_id)
-            yield
-            held.append("released")
-
-        store.get_chunks.side_effect = lambda: held.append("reading") or [_chunk("body.", source="a.md", doc_id="a1")]
-        monkeypatch.setattr(worker, "source_index_lock", fake_lock)
+        store.get_chunks.side_effect = (
+            lambda: held_lock.append("reading") or [_chunk("body.", source="a.md", doc_id="a1")]
+        )
 
         assert worker.convert_source_to_wiki_worker(task_self, source_id, "alice")["status"] == "converted"
-        assert held == [source_id, "reading", "released"]
+        assert held_lock == [source_id, "reading", "released"]

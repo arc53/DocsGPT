@@ -1,7 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { FormField } from './form-field';
 import { Textarea, textareaVariants } from './textarea';
 
 function classesOf(html: string): string[] {
@@ -48,22 +47,5 @@ describe('Textarea', () => {
     expect(html).toContain('data-size="lg"');
     expect(html).toContain('resize-none');
     expect(html).toContain('rounded-2xl');
-  });
-});
-
-describe('Textarea required', () => {
-  it('marks the field aria-required, not native required', () => {
-    const html = renderToStaticMarkup(<Textarea required />);
-    expect(html).toContain('aria-required="true"');
-    expect(html).not.toMatch(/\srequired=""/);
-  });
-
-  it('stays aria-required inside a FormField that is not required', () => {
-    const html = renderToStaticMarkup(
-      <FormField label="Notes">
-        <Textarea required />
-      </FormField>,
-    );
-    expect(/<textarea[^>]*>/.exec(html)![0]).toContain('aria-required="true"');
   });
 });

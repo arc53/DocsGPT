@@ -3,12 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Check, Cloud, RefreshCw } from 'lucide-react';
 
-import userService from '../api/services/userService';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import ConnectorIcon from '../connectors/ConnectorIcon';
-import { syncRefusal } from '../connectors/syncRefusal';
+import { requestSync, syncRefusal } from '../connectors/syncRefusal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -139,13 +138,11 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     dispatch(
       showActionToast({
         variant: 'destructive',
-        message:
-          status === 403
-            ? t('settings.sources.errors.forbidden')
-            : syncRefusal(t, data, {
-                status,
-                fallback: t('settings.sources.errors.sync'),
-              }),
+        message: syncRefusal(t, data, {
+          status,
+          fallback: t('settings.sources.errors.sync'),
+          forbidden: true,
+        }),
       }),
     );
 
@@ -156,12 +153,13 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     setSyncProgress(0);
 
     try {
-      const response = sourceType.startsWith('connector')
-        ? await userService.syncConnector(docId, token)
-        : await userService.syncSource({ source_id: docId }, token);
-      const data = await response.json().catch(() => ({}));
+      const { accepted, status, data, taskId } = await requestSync(
+        docId,
+        sourceType,
+        token,
+      );
 
-      if (response.ok !== false && data?.success) {
+      if (accepted) {
         dispatch(
           showActionToast({
             variant: 'success',
@@ -180,7 +178,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         // sync's events also carry its task id, which decides when present.
         const opStartedAt = Date.now();
         const { terminal, reason } = await waitForChange(docId, opStartedAt, {
-          taskId: typeof data?.task_id === 'string' ? data.task_id : null,
+          taskId,
         });
 
         if (terminal === 'timeout') {
@@ -228,7 +226,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
           else toastSyncFailed();
         }
       } else {
-        toastSyncFailed(response.status, data);
+        toastSyncFailed(status, data);
       }
     } catch (err) {
       console.error('Error syncing source:', err);

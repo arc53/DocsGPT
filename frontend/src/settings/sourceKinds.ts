@@ -1,13 +1,5 @@
 import type { Doc } from '../models/misc';
 
-/**
- * What an opened source offers next to Test retrieval: how content gets in.
- * `addFile` for an upload, `addPages` for a website, `syncNow` for a source
- * synced from a connection or on a schedule, `none` for a wiki or a graph
- * (whose Files tab keeps its own action).
- */
-export type SourcePrimary = 'addFile' | 'addPages' | 'syncNow' | 'none';
-
 /** Whether the source is a wiki (edited in place, never synced). */
 export const isWikiSource = (doc: Doc): boolean =>
   doc.config?.kind === 'wiki' || doc.type === 'wiki';
@@ -62,13 +54,10 @@ export const isSyncedSource = (doc: Doc): boolean =>
     !!syncSchedule(doc));
 
 /**
- * The opened source's primary action (see {@link SourcePrimary}). A website
- * keeps Add pages even when synced: its Sync now is in the ⋯.
+ * Whether Sync now is the opened source's primary action, next to Test
+ * retrieval, rather than in its ⋯: a source synced from a connection or on a
+ * schedule. Not a graph (its Files tab keeps its own action) nor a website,
+ * which keeps Add pages even when synced.
  */
-export function sourcePrimary(doc: Doc): SourcePrimary {
-  if (isWikiSource(doc) || isGraphSource(doc)) return 'none';
-  if (doc.website) return 'addPages';
-  if (isSyncedSource(doc)) return 'syncNow';
-  // A source without a file tree (an older, flat one) can't take a file.
-  return doc.isNested ? 'addFile' : 'none';
-}
+export const syncNowIsPrimary = (doc: Doc): boolean =>
+  !isGraphSource(doc) && !doc.website && isSyncedSource(doc);

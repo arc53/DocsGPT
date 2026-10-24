@@ -18,8 +18,8 @@ import {
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import { ScheduleRow } from '../settings/WebsiteSettingsFields';
 import {
-  SYNC_FREQUENCIES,
   type SyncFrequency,
   type WebsiteDiscovery,
   type WebsiteDraft,
@@ -284,30 +284,12 @@ export default function WebsiteFields({
               />
             </SettingRow>
           )}
-          {showSync && (
-            <SettingRow
-              label={tr('sync')}
+          {syncFrequency && onSyncFrequencyChange && (
+            <ScheduleRow
+              value={syncFrequency}
+              onChange={onSyncFrequencyChange}
               description={isSite ? tr('syncHintSite') : tr('syncHintPage')}
-              htmlFor={`${id}-sync`}
-            >
-              <Select
-                value={syncFrequency}
-                onValueChange={(value) =>
-                  onSyncFrequencyChange?.(value as SyncFrequency)
-                }
-              >
-                <SelectTrigger id={`${id}-sync`} size="field" className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SYNC_FREQUENCIES.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {t(`settings.sources.syncFrequency.${value}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </SettingRow>
+            />
           )}
         </SettingRows>
       )}

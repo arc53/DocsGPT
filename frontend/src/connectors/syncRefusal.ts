@@ -1,5 +1,46 @@
 import type { TFunction } from 'i18next';
 
+import userService from '../api/services/userService';
+
+/** The server's answer to a Sync now (see `requestSync`). */
+export type SyncAnswer = {
+  /** It took the sync: a 2xx with `success`. */
+  accepted: boolean;
+  status: number;
+  /** The response's JSON, `{}` when it didn't parse. */
+  data: Record<string, unknown>;
+  /** The sync's task, when the server named one. */
+  taskId: string | null;
+};
+
+/**
+ * Starts a source's sync through the endpoint its type takes: a `connector*`
+ * source through the connector one (the server finds its connection), one
+ * typed by its loader (S3, GitHub, Reddit) through the remote-source one.
+ * A network failure rejects.
+ */
+export async function requestSync(
+  sourceId: string,
+  sourceType: string | undefined,
+  token: string | null,
+): Promise<SyncAnswer> {
+  const response = sourceType?.startsWith('connector')
+    ? await userService.syncConnector(sourceId, token)
+    : await userService.syncSource({ source_id: sourceId }, token);
+  let data: Record<string, unknown>;
+  try {
+    data = (await response.json()) ?? {};
+  } catch {
+    data = {};
+  }
+  return {
+    accepted: response.ok !== false && !!data.success,
+    status: response.status,
+    data,
+    taskId: typeof data.task_id === 'string' ? data.task_id : null,
+  };
+}
+
 /** /api/sync_source, /api/connectors/sync and reingest refusal codes, and the key each. */
 const SYNC_REFUSAL_KEYS = new Map<unknown, string>([
   ['wiki', 'syncRefusedWiki'],
@@ -20,14 +61,21 @@ const SYNC_REFUSAL_KEYS = new Map<unknown, string>([
  * @param t The translate function.
  * @param data The response's JSON, if it parsed.
  * @param options `status`, the response's HTTP status; `fallback`, the
- *   generic line (the drawer's "Couldn't sync" by default).
+ *   generic line (the drawer's "Couldn't sync" by default); `forbidden`, a
+ *   403 reads as Knowledge's "not allowed" line whatever its body.
  * @returns The toast's message.
  */
 export function syncRefusal(
   t: TFunction,
   data: unknown,
-  { status, fallback }: { status?: number; fallback?: string } = {},
+  {
+    status,
+    fallback,
+    forbidden = false,
+  }: { status?: number; fallback?: string; forbidden?: boolean } = {},
 ): string {
+  if (forbidden && status === 403)
+    return t('settings.sources.errors.forbidden');
   const body = (data && typeof data === 'object' ? data : {}) as {
     code?: unknown;
     error?: unknown;

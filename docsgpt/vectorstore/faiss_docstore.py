@@ -195,12 +195,6 @@ def dump_pickle_sidecar(
         return pickle.dumps((docstore, dict(index_to_docstore_id)), protocol=4)
 
 
-def load_json_sidecar(data: bytes) -> Tuple[Dict[str, Dict[str, Any]], Dict[int, str]]:
-    """Read an ``index.json`` sidecar."""
-    documents, mapping, _ = load_json_sidecar_with_fingerprint(data)
-    return documents, mapping
-
-
 def load_json_sidecar_with_fingerprint(
     data: bytes,
 ) -> Tuple[Dict[str, Dict[str, Any]], Dict[int, str], Optional[str]]:
@@ -241,16 +235,13 @@ def dump_json_sidecar(
         index_to_docstore_id: FAISS row to chunk id.
         index_sha256: SHA-256 of the ``index.faiss`` bytes these rows belong
             to, so a reader can tell this sidecar from one paired with another
-            save of the index. Also records the row count when given.
+            save of the index.
 
     Returns:
         The sidecar's bytes.
     """
-    fingerprint = (
-        {"index_sha256": index_sha256, "ntotal": len(index_to_docstore_id)} if index_sha256 else {}
-    )
     payload = {
-        **fingerprint,
+        **({"index_sha256": index_sha256} if index_sha256 else {}),
         "version": 1,
         "documents": {
             doc_id: {

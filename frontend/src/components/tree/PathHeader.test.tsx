@@ -88,7 +88,10 @@ describe('PathHeader', () => {
         menu={<button type="button">menu</button>}
       />,
     );
-    expect(html).toContain('menu');
+    // The row is drawn for the menu: right-aligned, with only the menu in it.
+    expect(html).toMatch(
+      /<div class="[^"]*justify-end[^"]*"><button type="button">menu<\/button><\/div>/,
+    );
   });
 
   it('puts the kind badge after the crumbs and the byline under the row', () => {

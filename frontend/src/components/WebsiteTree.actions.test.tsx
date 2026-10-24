@@ -12,12 +12,7 @@ const { bus, captured, dispatch, service } = vi.hoisted(() => ({
   captured: {
     props: null as TreeBrowserProps | null,
     onQueued: null as
-      | ((
-          startedAt: number,
-          taskId?: string | null,
-          change?: { mode?: string; urls: string[] },
-        ) => void)
-      | null,
+      ((startedAt: number, taskId: string | null) => void) | null,
     onQueueFailed: null as ((message: string) => void) | null,
   },
   service: {
@@ -96,7 +91,33 @@ const STRUCTURE = {
   },
 };
 
+// A page from before pages kept their address (an older website source).
+const LEGACY = {
+  'legacy.md': { type: 'text/markdown', token_count: 1 },
+  Old: { 'a.md': { type: 'text/markdown', token_count: 1 } },
+};
+
+// A page added as /old whose fetch landed on /new.
+const REDIRECTED = {
+  type: 'text/markdown',
+  token_count: 1,
+  url: 'https://docs.x.io/new',
+  requested_urls: ['https://docs.x.io/old'],
+};
+
 const view: MenuOption = { label: 'view', onClick: vi.fn() };
+
+/** GET /api/website's answer: the config, and the pages it lists by address. */
+const website = (
+  entries: { url: string; mode: string }[],
+  entryPaths?: string[],
+) => ({
+  ok: true,
+  json: async () => ({
+    config: { entries },
+    ...(entryPaths ? { entry_paths: entryPaths } : {}),
+  }),
+});
 
 /** A terminal ingest event for the source, as the SSE stream adds it. */
 const emitTerminal = (
@@ -123,6 +144,12 @@ const fakeController = () => ({
   reloadFile: vi.fn(),
 });
 
+const refused = (status: number, body: unknown) => ({
+  ok: false,
+  status,
+  json: async () => body,
+});
+
 describe('WebsiteTree page management', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -133,17 +160,15 @@ describe('WebsiteTree page management', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    service.getWebsite.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        config: {
-          entries: [
-            { url: 'https://docs.x.io/', mode: 'site' },
-            { url: 'https://docs.x.io/extra/', mode: 'page' },
-          ],
-        },
-      }),
-    });
+    service.getWebsite.mockResolvedValue(
+      website(
+        [
+          { url: 'https://docs.x.io/', mode: 'site' },
+          { url: 'https://docs.x.io/extra/', mode: 'page' },
+        ],
+        ['extra.md'],
+      ),
+    );
     service.removeWebsitePages.mockResolvedValue({
       ok: true,
       json: async () => ({ success: true }),
@@ -156,24 +181,33 @@ describe('WebsiteTree page management', () => {
     vi.clearAllMocks();
   });
 
-  const render = async (canEdit = true) => {
-    await act(async () => {
+  /** Renders the tree of source src-1, without its pages. */
+  const renderTree = (
+    props: Partial<React.ComponentProps<typeof WebsiteTree>> = {},
+  ) =>
+    act(async () => {
       root.render(
         <WebsiteTree
           docId="src-1"
           sourceName="Docs"
           onBackToDocuments={() => undefined}
           hosts={['docs.x.io']}
-          syncFrequency="weekly"
-          canEdit={canEdit}
+          {...props}
         />,
       );
     });
-    await act(async () => {
+
+  const loadPages = (structure: Record<string, unknown> = STRUCTURE) =>
+    act(async () => {
       captured.props!.onDirectoryDataLoaded!({
-        directory_structure: STRUCTURE,
+        directory_structure: structure,
       });
     });
+
+  /** A weekly-synced source with its pages loaded. */
+  const render = async (canEdit = true) => {
+    await renderTree({ syncFrequency: 'weekly', canEdit });
+    await loadPages();
   };
 
   const menu = (ctx: Partial<RowMenuContext>): MenuOption[] =>
@@ -185,212 +219,41 @@ describe('WebsiteTree page management', () => {
       ...ctx,
     });
 
-  it('gives editors Open, Refresh and Remove; viewers only Open', async () => {
-    await render();
-    const page = STRUCTURE['extra.md'];
-    expect(
-      menu({ name: 'extra.md', isFile: true, node: page }).map((o) => o.label),
-    ).toEqual([
-      'view',
-      'settings.sources.website.openPage',
-      'settings.sources.website.refreshPage',
-      'settings.sources.website.removeFromSource',
-    ]);
+  const extraMenu = () =>
+    menu({ name: 'extra.md', isFile: true, node: STRUCTURE['extra.md'] });
 
-    await render(false);
-    expect(
-      menu({ name: 'extra.md', isFile: true, node: page }).map((o) => o.label),
-    ).toEqual(['view', 'settings.sources.website.openPage']);
-    expect(container.textContent).not.toContain(
-      'settings.sources.website.addPages',
+  const text = () => document.body.textContent ?? '';
+
+  const addPagesButton = () =>
+    Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('settings.sources.website.addPages'),
     );
-  });
 
-  it('removing a page added by its address takes it off the list', async () => {
-    await render();
-    const remove = menu({
-      name: 'extra.md',
-      isFile: true,
-      node: STRUCTURE['extra.md'],
-    }).at(-1)!;
-    await act(async () => remove.onClick(new Event('click')));
+  const openAddPages = () => act(async () => addPagesButton()!.click());
 
-    expect(document.body.textContent).toContain(
-      'settings.sources.website.removeEntry',
+  /** Clicks the dialog's button labelled with a website key. */
+  const confirm = (label: string) =>
+    act(async () =>
+      Array.from(document.body.querySelectorAll('button'))
+        .find((b) => b.textContent === `settings.sources.website.${label}`)!
+        .click(),
     );
-    const submit = Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'settings.sources.website.remove',
-    )!;
-    await act(async () => submit.click());
-    expect(service.removeWebsitePages).toHaveBeenCalledWith(
-      { source_id: 'src-1', file_paths: ['extra.md'] },
-      'token',
-    );
-  });
-
-  it('removing a crawled page says later syncs skip it', async () => {
-    await render();
-    captured.props!.onCurrentPathChange!(['Deploying']);
-    const remove = menu({
-      name: 'Docker.md',
-      isFile: true,
-      node: STRUCTURE.Deploying['Docker.md'],
-    }).at(-1)!;
-    await act(async () => remove.onClick(new Event('click')));
-
-    expect(document.body.textContent).toContain(
-      'settings.sources.website.removeCrawled {"host":"docs.x.io","interpolation":{"escapeValue":false}}',
-    );
-    const submit = Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'settings.sources.website.removeAndSkip',
-    )!;
-    await act(async () => submit.click());
-    expect(service.removeWebsitePages).toHaveBeenCalledWith(
-      { source_id: 'src-1', file_paths: ['Deploying/Docker.md'] },
-      'token',
-    );
-  });
-
-  it('removing a folder skips its whole address', async () => {
-    await render();
-    const remove = menu({ name: 'Deploying', isFile: false }).at(-1)!;
-    await act(async () => remove.onClick(new Event('click')));
-
-    expect(document.body.textContent).toContain(
-      'settings.sources.website.removeFolder {"address":"docs.x.io/Deploying/","interpolation":{"escapeValue":false}}',
-    );
-    const submit = Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'settings.sources.website.removeAndSkip',
-    )!;
-    await act(async () => submit.click());
-    expect(service.removeWebsitePages).toHaveBeenCalledWith(
-      { source_id: 'src-1', directory_path: 'Deploying' },
-      'token',
-    );
-  });
-
-  // A page from before pages kept their address (an older website source):
-  // where it came from is unknown, so the copy says only what holds anyway.
-  describe('a page with no address', () => {
-    const LEGACY = {
-      'legacy.md': { type: 'text/markdown', token_count: 1 },
-      Old: { 'a.md': { type: 'text/markdown', token_count: 1 } },
-    };
-
-    const renderLegacy = async () => {
-      await render();
-      await act(async () => {
-        captured.props!.onDirectoryDataLoaded!({ directory_structure: LEGACY });
-      });
-    };
-
-    it('removing it names no host', async () => {
-      await renderLegacy();
-      const remove = menu({
-        name: 'legacy.md',
-        isFile: true,
-        node: LEGACY['legacy.md'],
-      }).at(-1)!;
-      await act(async () => remove.onClick(new Event('click')));
-
-      expect(document.body.textContent).toContain(
-        'settings.sources.website.removeGeneric',
-      );
-      expect(document.body.textContent).not.toContain('removeCrawled');
-      const submit = Array.from(document.body.querySelectorAll('button')).find(
-        (b) => b.textContent === 'settings.sources.website.remove',
-      )!;
-      await act(async () => submit.click());
-      expect(service.removeWebsitePages).toHaveBeenCalledWith(
-        { source_id: 'src-1', file_paths: ['legacy.md'] },
-        'token',
-      );
-    });
-
-    it('removing a folder of them names no address', async () => {
-      await renderLegacy();
-      const remove = menu({ name: 'Old', isFile: false }).at(-1)!;
-      await act(async () => remove.onClick(new Event('click')));
-
-      expect(document.body.textContent).toContain(
-        'settings.sources.website.removeFolderGeneric',
-      );
-      expect(document.body.textContent).not.toContain('removeFolder ');
-      const submit = Array.from(document.body.querySelectorAll('button')).find(
-        (b) => b.textContent === 'settings.sources.website.remove',
-      )!;
-      await act(async () => submit.click());
-      expect(service.removeWebsitePages).toHaveBeenCalledWith(
-        { source_id: 'src-1', directory_path: 'Old' },
-        'token',
-      );
-    });
-  });
 
   /** Opens Remove on the page added by address and confirms it. */
   const removeEntry = async () => {
-    const remove = menu({
-      name: 'extra.md',
-      isFile: true,
-      node: STRUCTURE['extra.md'],
-    }).at(-1)!;
-    await act(async () => remove.onClick(new Event('click')));
-    const submit = Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'settings.sources.website.remove',
-    )!;
-    await act(async () => submit.click());
+    await act(async () => extraMenu().at(-1)!.onClick(new Event('click')));
+    await confirm('remove');
   };
 
-  const refused = (status: number, body: unknown) => ({
-    ok: false,
-    status,
-    json: async () => body,
-  });
-
-  it('a remove closes the dialog and waits for its task in the header', async () => {
-    service.removeWebsitePages.mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, task_id: 'task-r' }),
-    });
-    await render();
-    const controller = fakeController();
-    captured.props!.controllerRef!.current = controller;
-    await removeEntry();
-
-    expect(document.body.textContent).not.toContain(
-      'settings.sources.website.removeEntry',
-    );
-    expect(captured.props!.statusLabel).toBe(
-      'settings.sources.website.removing',
-    );
-    const page = STRUCTURE['extra.md'];
-    expect(
-      menu({ name: 'extra.md', isFile: true, node: page }).at(-1)!.disabled,
-    ).toBe(true);
-    expect(controller.refreshDirectory).not.toHaveBeenCalled();
-
-    service.getWebsite.mockClear();
-    await act(async () => emitTerminal('completed', 'task-other'));
-    expect(controller.refreshDirectory).not.toHaveBeenCalled();
-    await act(async () => emitTerminal('completed', 'task-r'));
-    expect(controller.refreshDirectory).toHaveBeenCalled();
-    // The source's list of page entries is read again too.
-    expect(service.getWebsite).toHaveBeenCalled();
-    expect(captured.props!.statusLabel).toBeNull();
-    expect(dispatch).not.toHaveBeenCalled();
-    // The pages left keep their chunks; a removed open page closes itself.
-    expect(controller.reloadFile).not.toHaveBeenCalled();
-  });
-
-  const startRefresh = async (taskId = 'task-1') => {
+  /** Refreshes extra.md, queued as `taskId`; returns the tree's controller. */
+  const clickRefresh = async (taskId = 'task-1') => {
     const controller = fakeController();
     captured.props!.controllerRef!.current = controller;
     service.refreshWebsitePage.mockResolvedValue({
       ok: true,
       json: async () => ({ success: true, task_id: taskId }),
     });
-    const page = STRUCTURE['extra.md'];
-    const refresh = menu({ name: 'extra.md', isFile: true, node: page }).find(
+    const refresh = extraMenu().find(
       (o) => o.label === 'settings.sources.website.refreshPage',
     )!;
     await act(async () => refresh.onClick(new Event('click')));
@@ -403,17 +266,170 @@ describe('WebsiteTree page management', () => {
       message: string;
     }[];
 
+  it('gives editors Open, Refresh and Remove; viewers only Open', async () => {
+    await render();
+    expect(extraMenu().map((o) => o.label)).toEqual([
+      'view',
+      'settings.sources.website.openPage',
+      'settings.sources.website.refreshPage',
+      'settings.sources.website.removeFromSource',
+    ]);
+
+    await render(false);
+    expect(extraMenu().map((o) => o.label)).toEqual([
+      'view',
+      'settings.sources.website.openPage',
+    ]);
+    expect(container.textContent).not.toContain(
+      'settings.sources.website.addPages',
+    );
+  });
+
+  const REMOVE_COPIES = [
+    'removeEntry',
+    'removeCrawled',
+    'removeFolder',
+    'removeGeneric',
+    'removeFolderGeneric',
+  ];
+
+  it.each([
+    [
+      'a page added by its address takes it off the list',
+      { name: 'extra.md', node: STRUCTURE['extra.md'] },
+      'removeEntry',
+      'remove',
+      { file_paths: ['extra.md'] },
+    ],
+    [
+      'a crawled page says later syncs skip it',
+      {
+        folder: ['Deploying'],
+        name: 'Docker.md',
+        node: STRUCTURE.Deploying['Docker.md'],
+      },
+      'removeCrawled {"host":"docs.x.io","interpolation":{"escapeValue":false}}',
+      'removeAndSkip',
+      { file_paths: ['Deploying/Docker.md'] },
+    ],
+    // The server matches a page to its entry by every address it was added
+    // under, a redirected one too; the tree goes by its answer.
+    [
+      'a page the server lists as an entry, whatever its own address',
+      {
+        structure: { 'new.md': REDIRECTED },
+        entryPaths: ['new.md'],
+        name: 'new.md',
+        node: REDIRECTED,
+      },
+      'removeEntry',
+      'remove',
+      { file_paths: ['new.md'] },
+    ],
+    [
+      'a folder skips its whole address',
+      { name: 'Deploying', isFile: false },
+      'removeFolder {"address":"docs.x.io/Deploying/","interpolation":{"escapeValue":false}}',
+      'removeAndSkip',
+      { directory_path: 'Deploying' },
+    ],
+    // Where an address-less page came from is unknown: the copy says only
+    // what holds anyway.
+    [
+      'a page with no address names no host',
+      { structure: LEGACY, name: 'legacy.md', node: LEGACY['legacy.md'] },
+      'removeGeneric',
+      'remove',
+      { file_paths: ['legacy.md'] },
+    ],
+    [
+      'a folder of pages with no address names no address',
+      { structure: LEGACY, name: 'Old', isFile: false },
+      'removeFolderGeneric',
+      'remove',
+      { directory_path: 'Old' },
+    ],
+  ] as const)(
+    'removing %s',
+    async (_, row: Record<string, unknown>, copy, submit, body) => {
+      const { folder, structure, entryPaths, name, node, isFile } = row as {
+        folder?: string[];
+        structure?: Record<string, unknown>;
+        entryPaths?: string[];
+        name: string;
+        node?: Record<string, unknown>;
+        isFile?: boolean;
+      };
+      if (entryPaths)
+        service.getWebsite.mockResolvedValue(
+          website([{ url: 'https://docs.x.io/', mode: 'site' }], entryPaths),
+        );
+      await render();
+      if (structure) await loadPages(structure);
+      if (folder) captured.props!.onCurrentPathChange!(folder);
+      const remove = menu({ name, isFile: isFile ?? true, node }).at(-1)!;
+      await act(async () => remove.onClick(new Event('click')));
+
+      expect(text()).toContain(`settings.sources.website.${copy}`);
+      for (const other of REMOVE_COPIES.filter(
+        (key) => !copy.startsWith(`${key} `) && copy !== key,
+      ))
+        expect(text()).not.toMatch(
+          new RegExp(`settings\\.sources\\.website\\.${other}(?![A-Za-z])`),
+        );
+      await confirm(submit);
+      expect(service.removeWebsitePages).toHaveBeenCalledWith(
+        { source_id: 'src-1', ...body },
+        'token',
+      );
+    },
+  );
+
+  it('a remove closes the dialog and waits for its task in the header', async () => {
+    service.removeWebsitePages.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, task_id: 'task-r' }),
+    });
+    await render();
+    const controller = fakeController();
+    captured.props!.controllerRef!.current = controller;
+    await removeEntry();
+
+    expect(text()).not.toContain('settings.sources.website.removeEntry');
+    expect(captured.props!.statusLabel).toBe(
+      'settings.sources.website.removing',
+    );
+    expect(extraMenu().at(-1)!.disabled).toBe(true);
+    expect(controller.refreshDirectory).not.toHaveBeenCalled();
+
+    service.getWebsite.mockClear();
+    await act(async () => emitTerminal('completed', 'task-other'));
+    expect(controller.refreshDirectory).not.toHaveBeenCalled();
+    await act(async () =>
+      emitTerminal('completed', 'task-r', { paths: ['extra.md'] }),
+    );
+    expect(controller.refreshDirectory).toHaveBeenCalled();
+    // The source's list of page entries is read again too.
+    expect(service.getWebsite).toHaveBeenCalled();
+    expect(captured.props!.statusLabel).toBeNull();
+    expect(dispatch).not.toHaveBeenCalled();
+    // Only the removed page's chunks are stale; it closes by itself.
+    expect(controller.reloadFile).toHaveBeenCalledWith(['extra.md']);
+  });
+
   it('a change still running after the wait says so and reads the tree again', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       await render();
-      const controller = await startRefresh();
+      const controller = await clickRefresh();
       service.getWebsite.mockClear();
       await act(async () => {
         vi.advanceTimersByTime(5 * 60_000 + 1);
       });
       expect(captured.props!.statusLabel).toBeNull();
       expect(controller.refreshDirectory).toHaveBeenCalled();
+      // Nothing is known to have changed in the open page yet.
+      expect(controller.reloadFile).toHaveBeenCalledWith([]);
       expect(service.getWebsite).toHaveBeenCalled();
       expect(toasted()).toEqual([
         { variant: 'info', message: 'settings.sources.website.stillRunning' },
@@ -425,7 +441,7 @@ describe('WebsiteTree page management', () => {
 
   it("a change that didn't run because another held the source says to try again", async () => {
     await render();
-    const controller = await startRefresh();
+    const controller = await clickRefresh();
     await act(async () => emitTerminal('failed', 'task-1', { reason: 'busy' }));
     expect(controller.refreshDirectory).not.toHaveBeenCalled();
     expect(toasted()).toEqual([
@@ -435,7 +451,7 @@ describe('WebsiteTree page management', () => {
 
   it('a refreshed page that now leads out of the source says it was removed and reads the tree again', async () => {
     await render();
-    const controller = await startRefresh();
+    const controller = await clickRefresh();
     service.getWebsite.mockClear();
     await act(async () =>
       emitTerminal('failed', 'task-1', { reason: 'out_of_scope' }),
@@ -460,7 +476,7 @@ describe('WebsiteTree page management', () => {
     'a change skipped because the source is %s says so',
     async (reason, key) => {
       await render();
-      await startRefresh();
+      await clickRefresh();
       await act(async () => emitTerminal('failed', 'task-1', { reason }));
       expect(toasted()).toEqual([
         { variant: 'destructive', message: expect.stringMatching(`^${key}`) },
@@ -470,22 +486,12 @@ describe('WebsiteTree page management', () => {
 
   it('tells the host once a page change has finished', async () => {
     const onPagesChanged = vi.fn();
-    await act(async () => {
-      root.render(
-        <WebsiteTree
-          docId="src-1"
-          sourceName="Docs"
-          onBackToDocuments={() => undefined}
-          hosts={['docs.x.io']}
-          onPagesChanged={onPagesChanged}
-        />,
-      );
-    });
-    await startRefresh();
+    await renderTree({ onPagesChanged });
+    await clickRefresh();
     expect(onPagesChanged).not.toHaveBeenCalled();
     await act(async () => emitTerminal('failed', 'task-1'));
     expect(onPagesChanged).not.toHaveBeenCalled();
-    await startRefresh('task-2');
+    await clickRefresh('task-2');
     await act(async () => emitTerminal('completed', 'task-2'));
     expect(onPagesChanged).toHaveBeenCalledTimes(1);
   });
@@ -516,56 +522,51 @@ describe('WebsiteTree page management', () => {
   });
 
   it.each([
-    [400, { code: 'wiki', error: 'wiki' }, 'wikiSource'],
-    [400, { code: 'chunks_unsupported', error: 'no' }, 'chunksUnsupported'],
-    [400, { code: 'last_entry', error: 'last' }, 'removeLast'],
-  ])('a refused remove (%i %o) says why', async (status, body, key) => {
-    service.removeWebsitePages.mockResolvedValue(refused(status, body));
-    await render();
-    await removeEntry();
-    expect(document.body.textContent).toContain(
-      `settings.sources.website.${key}`,
-    );
-    expect(document.body.textContent).not.toContain(
-      'settings.sources.website.removeFailed',
-    );
-  });
-
-  it("a remove refused without a code shows the server's message", async () => {
-    service.removeWebsitePages.mockResolvedValue(
-      refused(400, {
-        success: false,
-        error: 'The skip list holds up to 1000 rules',
-      }),
-    );
-    await render();
-    await removeEntry();
-    expect(document.body.textContent).toContain(
+    [
+      400,
+      { code: 'wiki', error: 'wiki' },
+      'settings.sources.website.wikiSource',
+    ],
+    [
+      400,
+      { code: 'chunks_unsupported', error: 'no' },
+      'settings.sources.website.chunksUnsupported',
+    ],
+    [
+      400,
+      { code: 'last_entry', error: 'last' },
+      'settings.sources.website.removeLast',
+    ],
+    // No code: the server's own message.
+    [
+      400,
+      { success: false, error: 'The skip list holds up to 1000 rules' },
       'The skip list holds up to 1000 rules',
-    );
-  });
-
-  it('a remove that fails otherwise says it failed', async () => {
-    service.removeWebsitePages.mockResolvedValue(
-      refused(500, { success: false }),
-    );
-    await render();
-    await removeEntry();
-    expect(document.body.textContent).toContain(
-      'settings.sources.website.removeFailed',
-    );
-  });
+    ],
+    [500, { success: false }, 'settings.sources.website.removeFailed'],
+  ])(
+    'a refused remove (%i %o) says why in the dialog',
+    async (status, body, shown) => {
+      service.removeWebsitePages.mockResolvedValue(refused(status, body));
+      await render();
+      await removeEntry();
+      expect(text()).toContain(shown);
+      expect(text().includes('settings.sources.website.removeFailed')).toBe(
+        shown === 'settings.sources.website.removeFailed',
+      );
+      // The dialog stays open on its refusal.
+      expect(text()).toContain('settings.sources.website.removeEntry');
+    },
+  );
 
   it('a refused refresh toasts why', async () => {
     service.refreshWebsitePage.mockResolvedValue(
       refused(400, { code: 'chunks_unsupported', error: 'no' }),
     );
     await render();
-    const refresh = menu({
-      name: 'extra.md',
-      isFile: true,
-      node: STRUCTURE['extra.md'],
-    }).find((o) => o.label === 'settings.sources.website.refreshPage')!;
+    const refresh = extraMenu().find(
+      (o) => o.label === 'settings.sources.website.refreshPage',
+    )!;
     await act(async () => refresh.onClick(new Event('click')));
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -577,59 +578,20 @@ describe('WebsiteTree page management', () => {
     );
   });
 
-  it('a refresh waits for its own task', async () => {
-    await render();
-    const controller = fakeController();
-    captured.props!.controllerRef!.current = controller;
-    service.refreshWebsitePage.mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, task_id: 'task-1' }),
-    });
-    const refresh = menu({
-      name: 'extra.md',
-      isFile: true,
-      node: STRUCTURE['extra.md'],
-    }).find((o) => o.label === 'settings.sources.website.refreshPage')!;
-    await act(async () => refresh.onClick(new Event('click')));
-
-    await act(async () => emitTerminal('completed', 'task-other'));
-    expect(controller.refreshDirectory).not.toHaveBeenCalled();
-    await act(async () => emitTerminal('completed', 'task-1'));
-    expect(controller.refreshDirectory).toHaveBeenCalled();
-  });
-
   it("passes the source's menu to the title row", async () => {
     const headerMenu = <button type="button">source menu</button>;
-    await act(async () => {
-      root.render(
-        <WebsiteTree
-          docId="src-1"
-          sourceName="Docs"
-          onBackToDocuments={() => undefined}
-          hosts={['docs.x.io']}
-          headerMenu={headerMenu}
-        />,
-      );
-    });
+    await renderTree({ headerMenu });
     expect(captured.props!.headerMenu).toBe(headerMenu);
   });
 
   it("embedded, it hands the host's header slot and crumbs to the tree", async () => {
     const target = document.createElement('div');
     const onCrumbsChange = vi.fn();
-    await act(async () => {
-      root.render(
-        <WebsiteTree
-          docId="src-1"
-          sourceName="Docs"
-          onBackToDocuments={() => undefined}
-          hosts={['docs.x.io']}
-          embedded
-          actionsTarget={target}
-          onCrumbsChange={onCrumbsChange}
-          headerAction={<button type="button">Test retrieval</button>}
-        />,
-      );
+    await renderTree({
+      embedded: true,
+      actionsTarget: target,
+      onCrumbsChange,
+      headerAction: <button type="button">Test retrieval</button>,
     });
     expect(captured.props!.embedded).toBe(true);
     expect(captured.props!.actionsTarget).toBe(target);
@@ -642,33 +604,17 @@ describe('WebsiteTree page management', () => {
   });
 
   it('tells Add pages when the source has a knowledge graph', async () => {
-    await act(async () => {
-      root.render(
-        <WebsiteTree
-          docId="src-1"
-          sourceName="Docs"
-          onBackToDocuments={() => undefined}
-          hosts={['docs.x.io']}
-          graph
-        />,
-      );
-    });
-    const add = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('settings.sources.website.addPages'),
-    )!;
-    await act(async () => add.click());
-    expect(document.body.textContent).toContain('add-pages-modal graph');
+    await renderTree({ graph: true });
+    await openAddPages();
+    expect(text()).toContain('add-pages-modal graph');
   });
 
   it('opens Add pages from the header', async () => {
     await render();
-    const add = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('settings.sources.website.addPages'),
-    )!;
     // A primary button is text only.
-    expect(add.querySelector('svg')).toBeNull();
-    await act(async () => add.click());
-    expect(document.body.textContent).toContain('add-pages-modal');
+    expect(addPagesButton()!.querySelector('svg')).toBeNull();
+    await openAddPages();
+    expect(text()).toContain('add-pages-modal');
   });
 
   it('warns that hand edits are replaced on a synced source', async () => {
@@ -676,19 +622,9 @@ describe('WebsiteTree page management', () => {
     expect(captured.props!.chunksNotice).toBeTruthy();
   });
 
-  it('lists a refreshed page again once its refresh finishes', async () => {
+  it('lists a refreshed page again once its own refresh finishes', async () => {
     await render();
-    const controller = fakeController();
-    captured.props!.controllerRef!.current = controller;
-    service.refreshWebsitePage.mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, task_id: 'task-1' }),
-    });
-    const page = STRUCTURE['extra.md'];
-    const refresh = menu({ name: 'extra.md', isFile: true, node: page }).find(
-      (o) => o.label === 'settings.sources.website.refreshPage',
-    )!;
-    await act(async () => refresh.onClick(new Event('click')));
+    const controller = await clickRefresh('task-1');
     // The leaf's address goes with its path, so the server refreshes the
     // page the tree shows even when two addresses share a path.
     expect(service.refreshWebsitePage).toHaveBeenCalledWith(
@@ -700,41 +636,41 @@ describe('WebsiteTree page management', () => {
       'token',
     );
 
-    await act(async () => emitTerminal());
+    await act(async () => emitTerminal('completed', 'task-other'));
+    expect(controller.refreshDirectory).not.toHaveBeenCalled();
+    await act(async () =>
+      emitTerminal('completed', 'task-1', { paths: ['extra.md'] }),
+    );
     expect(controller.refreshDirectory).toHaveBeenCalled();
-    expect(controller.reloadFile).toHaveBeenCalledWith('extra.md');
+    expect(controller.reloadFile).toHaveBeenCalledWith(['extra.md']);
   });
 
-  it('lists the open page again after added pages finish', async () => {
-    await render();
-    const controller = fakeController();
-    captured.props!.controllerRef!.current = controller;
-    const add = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('settings.sources.website.addPages'),
-    )!;
-    await act(async () => add.click());
-    await act(async () =>
-      captured.onQueued!(Date.now(), 'task-2', { mode: 'sync', urls: [] }),
-    );
-    await act(async () => emitTerminal());
-    expect(controller.refreshDirectory).toHaveBeenCalled();
-    expect(controller.reloadFile).toHaveBeenCalledWith();
-  });
+  // The event names the pages the add wrote; one that queued a rebuild
+  // instead names none, and any page may have changed.
+  it.each([
+    ['an append', { paths: ['extra.md', 'new.md'] }, ['extra.md', 'new.md']],
+    ['a rebuild', {}, undefined],
+  ])(
+    'after %s, lists the open page again when it may have changed',
+    async (_, payload, reloaded) => {
+      await render();
+      const controller = fakeController();
+      captured.props!.controllerRef!.current = controller;
+      await openAddPages();
+      await act(async () => captured.onQueued!(Date.now(), 'task-2'));
+      await act(async () => emitTerminal('completed', 'task-2', payload));
+      expect(controller.refreshDirectory).toHaveBeenCalled();
+      expect(controller.reloadFile).toHaveBeenCalledTimes(1);
+      expect(controller.reloadFile).toHaveBeenCalledWith(reloaded);
+    },
+  );
 
   describe('added pages that could not be fetched', () => {
     const addPages = async (failedPages?: unknown) => {
       await render();
       captured.props!.controllerRef!.current = fakeController();
-      const add = Array.from(container.querySelectorAll('button')).find((b) =>
-        b.textContent?.includes('settings.sources.website.addPages'),
-      )!;
-      await act(async () => add.click());
-      await act(async () =>
-        captured.onQueued!(Date.now(), 'task-a', {
-          mode: 'append',
-          urls: ['https://docs.x.io/a', 'https://docs.x.io/b'],
-        }),
-      );
+      await openAddPages();
+      await act(async () => captured.onQueued!(Date.now(), 'task-a'));
       await act(async () =>
         emitTerminal(
           'completed',
@@ -775,45 +711,12 @@ describe('WebsiteTree page management', () => {
     });
   });
 
-  it('after appended pages, lists the open page again only when it was one of them', async () => {
-    await render();
-    const controller = fakeController();
-    captured.props!.controllerRef!.current = controller;
-    const add = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('settings.sources.website.addPages'),
-    )!;
-    await act(async () => add.click());
-    await act(async () =>
-      captured.onQueued!(Date.now(), 'task-2', {
-        mode: 'append',
-        urls: ['https://docs.x.io/extra/', 'https://docs.x.io/new'],
-      }),
-    );
-    await act(async () => emitTerminal());
-    expect(controller.reloadFile).toHaveBeenCalledTimes(1);
-    const affects = controller.reloadFile.mock.calls[0][0] as (
-      path: string,
-    ) => boolean;
-    expect(affects('extra.md')).toBe(true);
-    expect(affects('Deploying/Docker.md')).toBe(false);
-  });
-
   it('turns the row changes off while a change runs', async () => {
     await render();
-    captured.props!.controllerRef!.current = fakeController();
-    service.refreshWebsitePage.mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, task_id: 'task-1' }),
-    });
-    const page = STRUCTURE['extra.md'];
-    const options = () => menu({ name: 'extra.md', isFile: true, node: page });
-    const refresh = options().find(
-      (o) => o.label === 'settings.sources.website.refreshPage',
-    )!;
-    await act(async () => refresh.onClick(new Event('click')));
+    await clickRefresh();
 
     const byLabel = Object.fromEntries(
-      options().map((o) => [o.label, !!o.disabled]),
+      extraMenu().map((o) => [o.label, !!o.disabled]),
     );
     expect(byLabel).toEqual({
       view: false,
@@ -826,7 +729,7 @@ describe('WebsiteTree page management', () => {
     );
 
     await act(async () => emitTerminal());
-    expect(options().some((o) => o.disabled)).toBe(false);
+    expect(extraMenu().some((o) => o.disabled)).toBe(false);
   });
 
   it('offers Open page only for a web address', async () => {
@@ -848,57 +751,8 @@ describe('WebsiteTree page management', () => {
         b.textContent === 'settings.sources.website.remove' ||
         b.textContent === 'settings.sources.website.removeAndSkip',
     );
-    return {
-      text: document.body.textContent ?? '',
-      submit: submit?.textContent,
-    };
+    return { text: text(), submit: submit?.textContent };
   };
-
-  it('a page added by an address that redirected is still an entry', async () => {
-    service.getWebsite.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        config: {
-          entries: [
-            { url: 'https://docs.x.io/', mode: 'site' },
-            { url: 'https://docs.x.io/old', mode: 'page' },
-          ],
-        },
-      }),
-    });
-    await render();
-    const { text, submit } = await askRemovePage('new.md', {
-      type: 'text/markdown',
-      url: 'https://docs.x.io/new',
-      requested_url: 'https://docs.x.io/old/',
-    });
-    expect(text).toContain('settings.sources.website.removeEntry');
-    expect(text).not.toContain('settings.sources.website.removeCrawled');
-    expect(submit).toBe('settings.sources.website.remove');
-  });
-
-  it('a page that several redirected addresses landed on is an entry by any of them', async () => {
-    service.getWebsite.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        config: {
-          entries: [
-            { url: 'https://docs.x.io/', mode: 'site' },
-            { url: 'https://docs.x.io/old', mode: 'page' },
-          ],
-        },
-      }),
-    });
-    await render();
-    const { text } = await askRemovePage('new.md', {
-      type: 'text/markdown',
-      url: 'https://docs.x.io/new',
-      requested_url: 'https://docs.x.io/linked',
-      requested_urls: ['https://docs.x.io/linked', 'https://docs.x.io/old'],
-    });
-    expect(text).toContain('settings.sources.website.removeEntry');
-    expect(text).not.toContain('settings.sources.website.removeCrawled');
-  });
 
   it("says only what holds for any page until the source's list has loaded", async () => {
     let answer: (value: unknown) => void = () => undefined;
@@ -908,29 +762,25 @@ describe('WebsiteTree page management', () => {
       }),
     );
     await render();
-    const { text, submit } = await askRemovePage(
+    const { text: shown, submit } = await askRemovePage(
       'extra.md',
       STRUCTURE['extra.md'],
     );
-    expect(text).toContain('settings.sources.website.removeGeneric');
-    expect(text).not.toContain('settings.sources.website.removeEntry');
-    expect(text).not.toContain('settings.sources.website.removeCrawled');
+    expect(shown).toContain('settings.sources.website.removeGeneric');
+    expect(shown).not.toContain('settings.sources.website.removeEntry');
+    expect(shown).not.toContain('settings.sources.website.removeCrawled');
     expect(submit).toBe('settings.sources.website.remove');
 
     // Once the list arrives, the open dialog says where the page came from.
     await act(async () =>
-      answer({
-        ok: true,
-        json: async () => ({
-          config: {
-            entries: [{ url: 'https://docs.x.io/extra', mode: 'page' }],
-          },
-        }),
-      }),
+      answer(
+        website(
+          [{ url: 'https://docs.x.io/extra', mode: 'page' }],
+          ['extra.md'],
+        ),
+      ),
     );
-    expect(document.body.textContent).toContain(
-      'settings.sources.website.removeEntry',
-    );
+    expect(text()).toContain('settings.sources.website.removeEntry');
   });
 
   it.each([
@@ -941,127 +791,60 @@ describe('WebsiteTree page management', () => {
         throw new Error('offline');
       },
     ],
+    // An older server: its config, but not which pages are its entries.
+    [
+      'without the entry paths',
+      () => website([{ url: 'https://docs.x.io/', mode: 'site' }]),
+    ],
   ])(
     'keeps the copy that holds for any page when the list read is %s',
     async (_, reply) => {
       service.getWebsite.mockImplementation(async () => reply());
       await render();
-      const { text, submit } = await askRemovePage(
+      const { text: shown, submit } = await askRemovePage(
         'Docker.md',
         STRUCTURE.Deploying['Docker.md'],
       );
-      expect(text).toContain('settings.sources.website.removeGeneric');
-      expect(text).not.toContain('settings.sources.website.removeCrawled');
+      expect(shown).toContain('settings.sources.website.removeGeneric');
+      expect(shown).not.toContain('settings.sources.website.removeCrawled');
       expect(submit).toBe('settings.sources.website.remove');
     },
   );
 
-  it('after appended pages, an open page added under a redirected address counts too', async () => {
-    await render();
-    await act(async () => {
-      captured.props!.onDirectoryDataLoaded!({
-        directory_structure: {
-          'new.md': {
-            type: 'text/markdown',
-            token_count: 1,
-            url: 'https://docs.x.io/new',
-            requested_url: 'https://docs.x.io/old',
-          },
-          'extra.md': STRUCTURE['extra.md'],
-        },
-      });
-    });
-    const controller = fakeController();
-    captured.props!.controllerRef!.current = controller;
-    const add = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('settings.sources.website.addPages'),
-    )!;
-    await act(async () => add.click());
-    await act(async () =>
-      captured.onQueued!(Date.now(), 'task-2', {
-        mode: 'append',
-        urls: ['https://docs.x.io/old'],
-      }),
-    );
-    await act(async () => emitTerminal('completed', 'task-2'));
-    const affects = controller.reloadFile.mock.calls[0][0] as (
-      path: string,
-    ) => boolean;
-    expect(affects('new.md')).toBe(true);
-    expect(affects('extra.md')).toBe(false);
-  });
-
-  it('after appended pages, tests the open page against the tree just read', async () => {
-    await render();
-    const before = {
-      type: 'text/markdown',
-      token_count: 1,
-      url: 'https://docs.x.io/new',
-    };
-    await act(async () => {
-      captured.props!.onDirectoryDataLoaded!({
-        directory_structure: { 'new.md': before },
-      });
-    });
-    // As TreeBrowser does: the new tree reaches onDirectoryDataLoaded
-    // before refreshDirectory resolves, and the reload tests it at once.
-    const atCall: boolean[] = [];
-    const reloadFile = vi.fn((affects?: unknown) => {
-      if (typeof affects === 'function')
-        atCall.push((affects as (path: string) => boolean)('new.md'));
-    });
-    captured.props!.controllerRef!.current = {
-      refreshDirectory: vi.fn(async () => {
-        captured.props!.onDirectoryDataLoaded!({
-          directory_structure: {
-            'new.md': {
-              ...before,
-              requested_urls: ['https://docs.x.io/old'],
-            },
-          },
-        });
-        return true;
-      }),
-      resetPath: vi.fn(),
-      reloadFile,
-    };
-    const add = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('settings.sources.website.addPages'),
-    )!;
-    await act(async () => add.click());
-    await act(async () =>
-      captured.onQueued!(Date.now(), 'task-2', {
-        mode: 'append',
-        urls: ['https://docs.x.io/old'],
-      }),
-    );
-    await act(async () => emitTerminal('completed', 'task-2'));
-    expect(atCall).toEqual([true]);
-  });
-
   it("reads the source's list again when the host says its settings were saved", async () => {
     await render();
-    service.getWebsite.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        config: { entries: [{ url: 'https://docs.x.io/', mode: 'site' }] },
-      }),
-    });
-    await act(async () => {
-      root.render(
-        <WebsiteTree
-          docId="src-1"
-          sourceName="Docs"
-          onBackToDocuments={() => undefined}
-          hosts={['docs.x.io']}
-          syncFrequency="weekly"
-          settingsVersion={1}
-        />,
-      );
-    });
+    service.getWebsite.mockResolvedValue(
+      website([{ url: 'https://docs.x.io/', mode: 'site' }], []),
+    );
+    await renderTree({ syncFrequency: 'weekly', settingsVersion: 1 });
     expect(service.getWebsite).toHaveBeenCalledTimes(2);
-    const { text } = await askRemovePage('extra.md', STRUCTURE['extra.md']);
-    expect(text).toContain('settings.sources.website.removeCrawled');
+    const { text: shown } = await askRemovePage(
+      'extra.md',
+      STRUCTURE['extra.md'],
+    );
+    expect(shown).toContain('settings.sources.website.removeCrawled');
+  });
+
+  it('reads which pages are entries again once a change finishes', async () => {
+    service.removeWebsitePages.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, task_id: 'task-r' }),
+    });
+    await render();
+    captured.props!.controllerRef!.current = fakeController();
+    await removeEntry();
+    // The entry is gone from the config: the page left is now crawled.
+    service.getWebsite.mockResolvedValue(
+      website([{ url: 'https://docs.x.io/', mode: 'site' }], []),
+    );
+    await act(async () =>
+      emitTerminal('completed', 'task-r', { paths: ['extra.md'] }),
+    );
+    const { text: shown } = await askRemovePage(
+      'extra.md',
+      STRUCTURE['extra.md'],
+    );
+    expect(shown).toContain('settings.sources.website.removeCrawled');
   });
 
   describe('a sync the host started', () => {
@@ -1069,19 +852,7 @@ describe('WebsiteTree page management', () => {
       sync: { startedAt: number; taskId: string | null } | null,
       onPagesChanged = vi.fn(),
     ) => {
-      await act(async () => {
-        root.render(
-          <WebsiteTree
-            docId="src-1"
-            sourceName="Docs"
-            onBackToDocuments={() => undefined}
-            hosts={['docs.x.io']}
-            syncFrequency="weekly"
-            sync={sync}
-            onPagesChanged={onPagesChanged}
-          />,
-        );
-      });
+      await renderTree({ syncFrequency: 'weekly', sync, onPagesChanged });
       return onPagesChanged;
     };
 
@@ -1100,7 +871,7 @@ describe('WebsiteTree page management', () => {
         'settings.sources.website.addPages',
       );
       expect(
-        menu({ name: 'extra.md', isFile: true, node: STRUCTURE['extra.md'] })
+        extraMenu()
           .filter((o) => o.label !== 'view')
           .filter((o) => o.label !== 'settings.sources.website.openPage')
           .every((o) => o.disabled),
@@ -1110,8 +881,8 @@ describe('WebsiteTree page management', () => {
       expect(controller.refreshDirectory).not.toHaveBeenCalled();
       await act(async () => emitTerminal('completed', 'task-s'));
       expect(controller.refreshDirectory).toHaveBeenCalled();
-      // A sync may change any page, the open one too.
-      expect(controller.reloadFile).toHaveBeenCalledWith();
+      // A sync names no pages: it may change any, the open one too.
+      expect(controller.reloadFile).toHaveBeenCalledWith(undefined);
       expect(onPagesChanged).toHaveBeenCalledTimes(1);
       expect(captured.props!.statusLabel).toBeNull();
       expect(container.textContent).toContain(
@@ -1122,22 +893,9 @@ describe('WebsiteTree page management', () => {
     it('tells the host when its wait for the sync ends, whatever the outcome', async () => {
       const onSyncSettled = vi.fn();
       const sync = { startedAt: Date.now(), taskId: 'task-s' };
-      const renderWith = (value: typeof sync | null) =>
-        act(async () => {
-          root.render(
-            <WebsiteTree
-              docId="src-1"
-              sourceName="Docs"
-              onBackToDocuments={() => undefined}
-              hosts={['docs.x.io']}
-              sync={value}
-              onSyncSettled={onSyncSettled}
-            />,
-          );
-        });
-      await renderWith(null);
+      await renderTree({ sync: null, onSyncSettled });
       captured.props!.controllerRef!.current = fakeController();
-      await renderWith(sync);
+      await renderTree({ sync, onSyncSettled });
       expect(onSyncSettled).not.toHaveBeenCalled();
       await act(async () =>
         emitTerminal('failed', 'task-s', { reason: 'busy' }),
@@ -1148,17 +906,9 @@ describe('WebsiteTree page management', () => {
 
     it('does not tell the host a sync ended when the tree unmounts first', async () => {
       const onSyncSettled = vi.fn();
-      await act(async () => {
-        root.render(
-          <WebsiteTree
-            docId="src-1"
-            sourceName="Docs"
-            onBackToDocuments={() => undefined}
-            hosts={['docs.x.io']}
-            sync={{ startedAt: Date.now(), taskId: 'task-s' }}
-            onSyncSettled={onSyncSettled}
-          />,
-        );
+      await renderTree({
+        sync: { startedAt: Date.now(), taskId: 'task-s' },
+        onSyncSettled,
       });
       await act(async () => root.render(<></>));
       await act(async () => emitTerminal('completed', 'task-s'));
@@ -1181,40 +931,11 @@ describe('WebsiteTree page management', () => {
     it('stays busy until every overlapping change has ended', async () => {
       const onBusyChange = vi.fn();
       const renderWith = (sync: { startedAt: number; taskId: string } | null) =>
-        act(async () => {
-          root.render(
-            <WebsiteTree
-              docId="src-1"
-              sourceName="Docs"
-              onBackToDocuments={() => undefined}
-              hosts={['docs.x.io']}
-              syncFrequency="weekly"
-              sync={sync}
-              onBusyChange={onBusyChange}
-            />,
-          );
-        });
+        renderTree({ syncFrequency: 'weekly', sync, onBusyChange });
       await renderWith(null);
-      await act(async () => {
-        captured.props!.onDirectoryDataLoaded!({
-          directory_structure: STRUCTURE,
-        });
-      });
-      captured.props!.controllerRef!.current = fakeController();
+      await loadPages();
       expect(onBusyChange).toHaveBeenLastCalledWith(false);
-      service.refreshWebsitePage.mockResolvedValue({
-        ok: true,
-        json: async () => ({ success: true, task_id: 'task-r' }),
-      });
-      const page = {
-        name: 'extra.md',
-        isFile: true,
-        node: STRUCTURE['extra.md'],
-      };
-      const refresh = menu(page).find(
-        (o) => o.label === 'settings.sources.website.refreshPage',
-      )!;
-      await act(async () => refresh.onClick(new Event('click')));
+      await clickRefresh('task-r');
       expect(onBusyChange).toHaveBeenLastCalledWith(true);
       // The source's ⋯ → Sync now while the refresh runs.
       await renderWith({ startedAt: Date.now(), taskId: 'task-s' });
@@ -1227,7 +948,7 @@ describe('WebsiteTree page management', () => {
       expect(captured.props!.statusLabel).toBe(
         'settings.sources.website.syncing',
       );
-      expect(menu(page).at(-1)!.disabled).toBe(true);
+      expect(extraMenu().at(-1)!.disabled).toBe(true);
       expect(container.textContent).not.toContain(
         'settings.sources.website.addPages',
       );
@@ -1235,7 +956,7 @@ describe('WebsiteTree page management', () => {
 
       await act(async () => emitTerminal('completed', 'task-s'));
       expect(captured.props!.statusLabel).toBeNull();
-      expect(menu(page).at(-1)!.disabled).toBe(false);
+      expect(extraMenu().at(-1)!.disabled).toBe(false);
       expect(container.textContent).toContain(
         'settings.sources.website.addPages',
       );
@@ -1273,9 +994,7 @@ describe('WebsiteTree page management', () => {
     await render();
     service.getWebsite.mockClear();
     await removeEntry();
-    expect(document.body.textContent).not.toContain(
-      'settings.sources.website.removeEntry',
-    );
+    expect(text()).not.toContain('settings.sources.website.removeEntry');
     expect(toasted()).toEqual([
       { variant: 'warning', message: 'settings.sources.website.queueFailed' },
     ]);
@@ -1294,11 +1013,9 @@ describe('WebsiteTree page management', () => {
       }),
     );
     await render();
-    const refresh = menu({
-      name: 'extra.md',
-      isFile: true,
-      node: STRUCTURE['extra.md'],
-    }).find((o) => o.label === 'settings.sources.website.refreshPage')!;
+    const refresh = extraMenu().find(
+      (o) => o.label === 'settings.sources.website.refreshPage',
+    )!;
     await act(async () => refresh.onClick(new Event('click')));
     expect(toasted()).toEqual([
       {
@@ -1313,10 +1030,7 @@ describe('WebsiteTree page management', () => {
 
   it('pages saved but not queued warn and read the list again', async () => {
     await render();
-    const add = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('settings.sources.website.addPages'),
-    )!;
-    await act(async () => add.click());
+    await openAddPages();
     service.getWebsite.mockClear();
     await act(async () =>
       captured.onQueueFailed!('settings.sources.website.queueFailed'),
@@ -1328,16 +1042,8 @@ describe('WebsiteTree page management', () => {
     expect(captured.props!.statusLabel).toBeNull();
   });
 
-  it("links the source's first address by its own origin", async () => {
-    service.getWebsite.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        config: {
-          entries: [{ url: 'http://docs.x.io:8080/guide/', mode: 'site' }],
-        },
-      }),
-    });
-    await render();
+  /** The byline's link, as the tree draws it. */
+  const bylineHref = async () => {
     const byline = document.createElement('div');
     const bylineRoot = createRoot(byline);
     await act(async () =>
@@ -1345,55 +1051,38 @@ describe('WebsiteTree page management', () => {
         <>{captured.props!.renderByline!({ files: 1, tokens: 1 })}</>,
       ),
     );
-    expect(byline.querySelector('a')?.getAttribute('href')).toBe(
-      'http://docs.x.io:8080',
-    );
+    const href = byline.querySelector('a')?.getAttribute('href');
     act(() => bylineRoot.unmount());
+    return href;
+  };
+
+  it("links the source's first address by its own origin", async () => {
+    service.getWebsite.mockResolvedValue(
+      website([{ url: 'http://docs.x.io:8080/guide/', mode: 'site' }], []),
+    );
+    await render();
+    expect(await bylineHref()).toBe('http://docs.x.io:8080');
   });
 
   it("doesn't link another source by the previous source's first address", async () => {
-    service.getWebsite.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        config: {
-          entries: [{ url: 'http://docs.x.io:8080/guide/', mode: 'site' }],
-        },
-      }),
-    });
+    service.getWebsite.mockResolvedValue(
+      website([{ url: 'http://docs.x.io:8080/guide/', mode: 'site' }], []),
+    );
     await render();
     // The same tree, now for a source the caller only reads (no config read).
-    await act(async () => {
-      root.render(
-        <WebsiteTree
-          docId="src-2"
-          sourceName="Blog"
-          onBackToDocuments={() => undefined}
-          hosts={['blog.y.io']}
-          canEdit={false}
-        />,
-      );
+    await renderTree({
+      docId: 'src-2',
+      sourceName: 'Blog',
+      hosts: ['blog.y.io'],
+      canEdit: false,
     });
-    await act(async () => {
-      captured.props!.onDirectoryDataLoaded!({
-        directory_structure: {
-          'a.md': {
-            type: 'text/markdown',
-            token_count: 1,
-            url: 'https://blog.y.io/a',
-          },
-        },
-      });
+    await loadPages({
+      'a.md': {
+        type: 'text/markdown',
+        token_count: 1,
+        url: 'https://blog.y.io/a',
+      },
     });
-    const byline = document.createElement('div');
-    const bylineRoot = createRoot(byline);
-    await act(async () =>
-      bylineRoot.render(
-        <>{captured.props!.renderByline!({ files: 1, tokens: 1 })}</>,
-      ),
-    );
-    expect(byline.querySelector('a')?.getAttribute('href')).toBe(
-      'https://blog.y.io',
-    );
-    act(() => bylineRoot.unmount());
+    expect(await bylineHref()).toBe('https://blog.y.io');
   });
 });

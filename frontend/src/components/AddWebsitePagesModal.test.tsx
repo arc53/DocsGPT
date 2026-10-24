@@ -136,35 +136,23 @@ describe('AddWebsitePagesModal', () => {
       unknown
     >[];
 
-  it("starts a site's page limit at the admin's default once config answers", async () => {
-    service.getConfig.mockResolvedValue(
-      reply(200, { web_default_pages: 20, web_max_pages: 50 }),
-    );
-    service.addWebsitePages.mockResolvedValue(
-      reply(200, { success: true, mode: 'sync', task_id: 'task-9' }),
-    );
-    await submit('fill site');
-
-    expect(sentEntries()[0].max_pages).toBe(20);
-    expect(onQueued).toHaveBeenCalledWith(expect.any(Number), 'task-9', {
-      mode: 'sync',
-      urls: [],
-    });
-  });
-
-  it("holds the default page limit to the admin's cap", async () => {
+  it.each([
+    [{ web_default_pages: 20, web_max_pages: 50 }, 20],
     // WEB_MAX_PAGES set below WEB_DEFAULT_PAGES: the form still opens valid.
-    service.getConfig.mockResolvedValue(
-      reply(200, { web_default_pages: 200, web_max_pages: 50 }),
-    );
-    service.addWebsitePages.mockResolvedValue(
-      reply(200, { success: true, mode: 'sync', task_id: 'task-9' }),
-    );
-    await submit('fill site');
+    [{ web_default_pages: 200, web_max_pages: 50 }, 50],
+  ])(
+    "starts a site's page limit at the admin's default (%o), within the cap",
+    async (config, sent) => {
+      service.getConfig.mockResolvedValue(reply(200, config));
+      service.addWebsitePages.mockResolvedValue(
+        reply(200, { success: true, mode: 'sync', task_id: 'task-9' }),
+      );
+      await submit('fill site');
 
-    expect(service.addWebsitePages).toHaveBeenCalled();
-    expect(sentEntries()[0].max_pages).toBe(50);
-  });
+      expect(sentEntries()[0].max_pages).toBe(sent);
+      expect(onQueued).toHaveBeenCalledWith(expect.any(Number), 'task-9');
+    },
+  );
 
   it('keeps a page limit the user typed before config answered', async () => {
     let answer: (value: unknown) => void = () => undefined;
@@ -187,61 +175,72 @@ describe('AddWebsitePagesModal', () => {
     expect(sentEntries()[0].max_pages).toBe(30);
   });
 
-  it('queues the pages and closes', async () => {
-    service.addWebsitePages.mockResolvedValue(
-      reply(200, { success: true, mode: 'append' }),
-    );
-    await submit();
+  // `sync`: the server rebuilds the source instead; its task ends the wait
+  // the same way.
+  it.each(['append', 'sync'])(
+    'queues the pages and closes (%s)',
+    async (mode) => {
+      service.addWebsitePages.mockResolvedValue(
+        reply(200, { success: true, mode, task_id: 'task-3' }),
+      );
+      await submit();
 
-    expect(service.addWebsitePages).toHaveBeenCalledWith(
-      {
-        source_id: 'src-1',
-        entries: [{ url: 'https://docs.x.io/new', mode: 'page' }],
-      },
-      'token',
-    );
-    // What it changes, so the caller reloads only the pages it names.
-    expect(onQueued).toHaveBeenCalledWith(expect.any(Number), null, {
-      mode: 'append',
-      urls: ['https://docs.x.io/new'],
-    });
-    expect(onClose).toHaveBeenCalled();
-  });
+      expect(service.addWebsitePages).toHaveBeenCalledWith(
+        {
+          source_id: 'src-1',
+          entries: [{ url: 'https://docs.x.io/new', mode: 'page' }],
+        },
+        'token',
+      );
+      expect(onQueued).toHaveBeenCalledWith(expect.any(Number), 'task-3');
+      expect(onClose).toHaveBeenCalled();
+    },
+  );
 
-  it('says how many pages a source can hold when it is full', async () => {
-    service.addWebsitePages.mockResolvedValue(
-      reply(400, { success: false, code: 'page_limit', max_pages: 100 }),
-    );
-    await submit();
-
-    expect(document.body.textContent).toContain(
+  it.each([
+    [
+      400,
+      { success: false, code: 'page_limit', max_pages: 100 },
       'settings.sources.website.pageLimit {"count":100}',
-    );
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it('says a wiki takes no pages', async () => {
-    service.addWebsitePages.mockResolvedValue(
-      reply(400, { success: false, code: 'wiki', error: 'A wiki…' }),
-    );
-    await submit();
-
-    expect(document.body.textContent).toContain(
+    ],
+    [
+      400,
+      { success: false, code: 'wiki', error: 'A wiki…' },
       'settings.sources.website.wikiSource',
-    );
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("shows the server's message for a refusal without a code", async () => {
-    service.addWebsitePages.mockResolvedValue(
-      reply(400, { success: false, error: 'A source holds up to 20 sites' }),
-    );
-    await submit();
-
-    expect(document.body.textContent).toContain(
+    ],
+    [
+      400,
+      {
+        success: false,
+        code: 'already_listed',
+        error: 'These pages and sites are already in this source.',
+      },
+      'settings.sources.website.alreadyListed',
+    ],
+    // A refusal without a code: the server's own message.
+    [
+      400,
+      { success: false, error: 'A source holds up to 20 sites' },
       'A source holds up to 20 sites',
-    );
-  });
+    ],
+    // A server error: never its message.
+    [
+      500,
+      { success: false, error: 'Traceback' },
+      'settings.sources.website.addFailed',
+    ],
+  ])(
+    'keeps the dialog open on a refusal (%i %o) and says why',
+    async (status, body, shown) => {
+      service.addWebsitePages.mockResolvedValue(reply(status, body));
+      await submit();
+
+      expect(document.body.textContent).toContain(shown);
+      expect(document.body.textContent).not.toContain('Traceback');
+      expect(onQueued).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    },
+  );
 
   it('pages saved but not queued close the dialog with a warning, in its own words', async () => {
     service.addWebsitePages.mockResolvedValue(
@@ -262,18 +261,6 @@ describe('AddWebsitePagesModal', () => {
     expect(document.body.textContent).not.toContain(
       'settings.sources.website.addFailed',
     );
-  });
-
-  it('says the add failed when the server breaks', async () => {
-    service.addWebsitePages.mockResolvedValue(
-      reply(500, { success: false, error: 'Traceback' }),
-    );
-    await submit();
-
-    expect(document.body.textContent).toContain(
-      'settings.sources.website.addFailed',
-    );
-    expect(document.body.textContent).not.toContain('Traceback');
   });
 
   it('keeps the dialog open while the add is in flight: Cancel and Esc wait for it', async () => {
@@ -302,34 +289,5 @@ describe('AddWebsitePagesModal', () => {
     expect(buttons().find((b) => b.textContent === 'cancel')!.disabled).toBe(
       false,
     );
-  });
-
-  it('says the pages are already in the source', async () => {
-    service.addWebsitePages.mockResolvedValue(
-      reply(400, {
-        success: false,
-        code: 'already_listed',
-        error: 'These pages and sites are already in this source.',
-      }),
-    );
-    await submit();
-
-    expect(document.body.textContent).toContain(
-      'settings.sources.website.alreadyListed',
-    );
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it('an add the server runs as a sync waits like any add', async () => {
-    service.addWebsitePages.mockResolvedValue(
-      reply(200, { success: true, mode: 'sync', task_id: 'task-3' }),
-    );
-    await submit();
-
-    expect(onQueued).toHaveBeenCalledWith(expect.any(Number), 'task-3', {
-      mode: 'sync',
-      urls: ['https://docs.x.io/new'],
-    });
-    expect(onClose).toHaveBeenCalled();
   });
 });

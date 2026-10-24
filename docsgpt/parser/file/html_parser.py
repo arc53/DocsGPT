@@ -42,23 +42,6 @@ _DROP_TAGS = ("title", "script", "style", "noscript", "template")
 _URI_ATTRIBUTES = ("src", "href", "srcset", "poster", "data")
 
 
-def html_to_markdown(html: Union[str, bytes]) -> str:
-    """Convert an HTML/XHTML document to Markdown.
-
-    Args:
-        html: The markup. Pass the raw bytes when you have them: BeautifulSoup
-            then decodes by the document's own BOM / ``<meta charset>``
-            instead of the process locale, so a windows-1250 page keeps its
-            diacritics.
-
-    Returns:
-        Markdown with runs of blank lines collapsed to one.
-    """
-    from bs4 import BeautifulSoup
-
-    return soup_to_markdown(BeautifulSoup(html, "html.parser"))
-
-
 class MarkupTooDeepError(ValueError):
     """Markup nested too deep for the recursive Markdown conversion."""
 

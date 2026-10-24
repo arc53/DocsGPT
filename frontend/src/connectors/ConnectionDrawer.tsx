@@ -68,11 +68,12 @@ import {
   connectorName,
   isKeyHint,
 } from './i18n';
-import { syncRefusal } from './syncRefusal';
+import { requestSync, syncRefusal } from './syncRefusal';
 import {
-  firstIngestState,
   isStillIndexing,
+  partitionStartedSyncs,
   STARTED_SYNC_GIVE_UP_MS,
+  syncIdsKey,
 } from './startedSyncs';
 import ToolPermissions from './ToolPermissions';
 import type {
@@ -525,44 +526,6 @@ function listedSourceIds(details: ConnectionDetail[]): Set<string> {
 }
 
 /**
- * The syncs started this session that the server doesn't list yet and whose
- * first ingest is still running: no completed or failed event for it, and
- * started under STARTED_SYNC_GIVE_UP_MS ago. A source deleted after its
- * sync, or a terminal event this tab missed, so never shows as indexing for
- * the rest of the session.
- *
- * @param started Every sync started this session.
- * @param listed The ids of the sources the server lists.
- * @param events The recent notification events.
- * @param now This browser's clock.
- */
-function indexingSyncs(
-  started: StartedSync[],
-  listed: Set<string>,
-  events: SSEEvent[],
-  now: number,
-): StartedSync[] {
-  return started.filter(
-    (sync) => !listed.has(sync.id) && isStillIndexing(sync, events, now),
-  );
-}
-
-/**
- * The syncs started this session that the server doesn't list and whose
- * first ingest failed: shown as failed until dismissed.
- */
-function failedSyncs(
-  started: StartedSync[],
-  listed: Set<string>,
-  events: SSEEvent[],
-): StartedSync[] {
-  return started.filter(
-    (sync) =>
-      !listed.has(sync.id) && firstIngestState(events, sync.id) === 'failed',
-  );
-}
-
-/**
  * One account in a service's account list: its name, account line, status
  * and ⋯. With several accounts the row picks which one's knowledge and tools
  * show below: a stretched button covers the row and the ⋯ sits above it, so
@@ -805,7 +768,10 @@ function AccountContent({
           ) : (
             <Card variant="subtle" padding="none" className="overflow-hidden">
               <ListRows>
-                {indexing.map((sync) => (
+                {[
+                  ...indexing.map((sync) => ({ sync, failed: false })),
+                  ...failedFirst.map((sync) => ({ sync, failed: true })),
+                ].map(({ sync, failed }) => (
                   <ListRow
                     key={sync.id}
                     title={sync.name}
@@ -817,42 +783,30 @@ function AccountContent({
                       },
                     )}
                     trailing={
-                      <Badge variant="neutral">
-                        {t('settings.connectors.detail.indexing')}
-                      </Badge>
-                    }
-                  />
-                ))}
-                {failedFirst.map((sync) => (
-                  <ListRow
-                    key={sync.id}
-                    title={sync.name}
-                    description={t(
-                      'settings.connectors.detail.firstSyncStarted',
-                      {
-                        time: formatRelative(sync.startedAt) ?? '',
-                        interpolation: { escapeValue: false },
-                      },
-                    )}
-                    trailing={
-                      <>
-                        <Badge variant="destructive">
-                          {t('settings.sources.ingestFailed')}
+                      failed ? (
+                        <>
+                          <Badge variant="destructive">
+                            {t('settings.sources.ingestFailed')}
+                          </Badge>
+                          <IconButton
+                            variant="ghost-on-accent"
+                            size="icon-xs"
+                            icon={X}
+                            label={t(
+                              'settings.connectors.detail.dismissFailedSync',
+                              {
+                                name: sync.name,
+                                interpolation: { escapeValue: false },
+                              },
+                            )}
+                            onClick={() => dispatch(syncForgotten([sync.id]))}
+                          />
+                        </>
+                      ) : (
+                        <Badge variant="neutral">
+                          {t('settings.connectors.detail.indexing')}
                         </Badge>
-                        <IconButton
-                          variant="ghost-on-accent"
-                          size="icon-xs"
-                          icon={X}
-                          label={t(
-                            'settings.connectors.detail.dismissFailedSync',
-                            {
-                              name: sync.name,
-                              interpolation: { escapeValue: false },
-                            },
-                          )}
-                          onClick={() => dispatch(syncForgotten([sync.id]))}
-                        />
-                      </>
+                      )
                     }
                   />
                 ))}
@@ -1270,16 +1224,20 @@ export default function ConnectionDrawer({
     shownDetails.some((detail) => detail.id === sync.connectionId),
   );
   const listed = listedSourceIds(shownDetails);
-  const indexing = indexingSyncs(ownSyncs, listed, events, now);
-  const failedFirst = failedSyncs(ownSyncs, listed, events);
-  const finishedKey = ownSyncs
-    .filter(
-      (sync) =>
-        !listed.has(sync.id) &&
-        firstIngestState(events, sync.id) === 'completed',
-    )
-    .map((sync) => sync.id)
-    .join(',');
+  const { unlisted, listedFinished } = partitionStartedSyncs(
+    ownSyncs,
+    (id) => listed.has(id),
+    events,
+  );
+  // Indexing until a terminal event or the give-up (STARTED_SYNC_GIVE_UP_MS),
+  // so a source deleted after its sync, or an event this tab missed, never
+  // shows as indexing for the rest of the session. A failed one stays until
+  // dismissed.
+  const indexing = unlisted.filter((sync) =>
+    isStillIndexing(sync, events, now),
+  );
+  const failedFirst = unlisted.filter((sync) => sync.state === 'failed');
+  const finishedKey = syncIdsKey(unlisted, 'completed');
   // Each finished sync's reload, by the `reloadKey` it starts under.
   const reloadFor = useRef(new Map<string, number>());
   useEffect(() => {
@@ -1302,19 +1260,12 @@ export default function ConnectionDrawer({
     dispatch(syncForgotten(done));
   }, [loaded, dispatch]);
   // A finished sync already listed (a source synced again): forget it.
-  const forgetKey = ownSyncs
-    .filter(
-      (sync) =>
-        listed.has(sync.id) &&
-        firstIngestState(events, sync.id) === 'completed',
-    )
-    .map((sync) => sync.id)
-    .join(',');
+  const forgetKey = listedFinished.join(',');
   useEffect(() => {
     if (forgetKey) dispatch(syncForgotten(forgetKey.split(',')));
   }, [forgetKey, dispatch]);
   // The give-up is a moment, so a sync started after the drawer mounted
-  // still gives up STARTED_SYNC_GIVE_UP_MS after it started.
+  // still gives up on time.
   const nextGiveUp = Math.min(
     ...indexing.map(
       (sync) => Date.parse(sync.startedAt) + STARTED_SYNC_GIVE_UP_MS,
@@ -1374,18 +1325,17 @@ export default function ConnectionDrawer({
 
   const syncNow = async (source: ConnectionSource) => {
     try {
-      // Drive, SharePoint and Confluence sources sync through the connector
-      // endpoint; S3 and Reddit through the remote-source one.
-      const response = source.type?.startsWith('connector')
-        ? await userService.syncConnector(source.id, token)
-        : await userService.syncSource({ source_id: source.id }, token);
-      const data = await response.json();
-      if (!data?.success) {
+      const { accepted, status, data } = await requestSync(
+        source.id,
+        source.type,
+        token,
+      );
+      if (!accepted) {
         // The server says why it refused (a wiki, a paused account).
         dispatch(
           showActionToast({
             variant: 'destructive',
-            message: syncRefusal(t, data, { status: response.status }),
+            message: syncRefusal(t, data, { status }),
           }),
         );
         return;
@@ -1393,7 +1343,7 @@ export default function ConnectionDrawer({
       dispatch(
         showActionToast({
           variant: 'success',
-          message: t('settings.connectors.detail.syncStarted', {
+          message: t('settings.sources.syncStarted', {
             name: source.name,
             interpolation: { escapeValue: false },
           }),

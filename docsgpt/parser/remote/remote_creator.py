@@ -1,13 +1,50 @@
 import json
+import logging
+from functools import partial
+from typing import Any, Dict, List, Union
 
-from docsgpt.parser.remote.sitemap_loader import SitemapLoader
-from docsgpt.parser.remote.crawler_loader import CrawlerLoader
-from docsgpt.parser.remote.web_loader import WebLoader
 from docsgpt.parser.remote.website_loader import WebsiteLoader, parse_website_config
+from docsgpt.parser.remote.website_tree import config_from_legacy
 from docsgpt.parser.remote.reddit_loader import RedditPostsLoaderRemote
 from docsgpt.parser.remote.github_loader import GitHubLoader
 from docsgpt.parser.remote.linear_loader import LinearLoader
 from docsgpt.parser.remote.s3_loader import S3Loader
+from docsgpt.parser.schema.base import Document
+
+logger = logging.getLogger(__name__)
+
+# The old web loaders' types: their sources load as the Website config they convert to.
+LEGACY_WEB_TYPES = ("url", "crawler", "sitemap")
+
+
+class LegacyWebsiteLoader(WebsiteLoader):
+    """A url, crawler or sitemap source, loaded as its Website config (``config_from_legacy``)."""
+
+    def __init__(self, source_type: str) -> None:
+        """
+        Args:
+            source_type: The source's legacy type, which says how its address converts.
+        """
+        super().__init__()
+        self.source_type = source_type
+
+    def load_data(self, inputs: Union[str, List[str], Dict[str, Any]]) -> List[Document]:
+        """Convert the input and run the Website load on it.
+
+        Args:
+            inputs: What a sync hands over (the converted config, from
+                ``normalize_remote_data``) or an upload does (the address).
+
+        Returns:
+            The pages, as ``WebsiteLoader.load_data``; none when the input
+            holds no web address.
+        """
+        config = config_from_legacy(self.source_type, inputs)
+        if config is None:
+            logger.warning(f"A {self.source_type} source has no web address to load")
+            self.report = {"pages": 0, "sites": [], "limit_reached": False}
+            return []
+        return super().load_data(config)
 
 
 class RemoteCreator:
@@ -23,9 +60,7 @@ class RemoteCreator:
 
     loaders = {
         "website": WebsiteLoader,
-        "url": WebLoader,
-        "sitemap": SitemapLoader,
-        "crawler": CrawlerLoader,
+        **{source_type: partial(LegacyWebsiteLoader, source_type) for source_type in LEGACY_WEB_TYPES},
         "reddit": RedditPostsLoaderRemote,
         "github": GitHubLoader,
         "s3": S3Loader,
@@ -40,10 +75,7 @@ class RemoteCreator:
         return loader_class(*args, **kwargs)
 
 
-# Loader types whose load_data expects a URL string, not a config dict.
-_URL_LOADER_TYPES = {"url", "crawler", "sitemap", "github"}
-
-# Keys a remote_data dict may hold the URL under (``raw`` is the legacy shape).
+# Keys a github remote_data dict may hold its URL under (``raw`` is the legacy shape).
 _URL_DATA_KEYS = ("url", "urls", "repo_url", "raw")
 
 
@@ -56,9 +88,10 @@ def normalize_remote_data(source_type, remote_data):
         remote_data: The stored ``remote_data`` (dict, list, str, or None).
 
     Returns:
-        Loader input: a URL string or list for url/crawler/sitemap/github,
-        a JSON string for reddit, a dict for s3, the validated config for
-        website; ``None`` when the row has nothing syncable.
+        Loader input: the validated Website config for website, url,
+        crawler and sitemap (the last three converted, ``config_from_legacy``),
+        a URL string for github, a JSON string for reddit, a dict for s3;
+        ``None`` when the row has nothing syncable.
     """
     if remote_data is None:
         return None
@@ -77,15 +110,16 @@ def normalize_remote_data(source_type, remote_data):
     loader = (source_type or "").lower()
 
     if loader == "website":
-        # The loader takes the validated config; one that no longer
-        # validates has nothing a sync could fetch. A stored config is read
-        # leniently: a lowered WEB_MAX_PAGES must not stop its syncs.
+        # A stored config is read leniently: a lowered WEB_MAX_PAGES must not stop its syncs.
         try:
             return parse_website_config(remote_data, enforce_page_cap=False)
         except ValueError:
             return None
 
-    if loader in _URL_LOADER_TYPES:
+    if loader in LEGACY_WEB_TYPES:
+        return config_from_legacy(loader, remote_data)
+
+    if loader == "github":
         if isinstance(remote_data, dict):
             for key in _URL_DATA_KEYS:
                 value = remote_data.get(key)

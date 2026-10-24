@@ -7,7 +7,7 @@ import notificationsReducer, {
   sseEventReceived,
   type SSEEvent,
 } from '../../notifications/notificationsSlice';
-import { type ReingestTerminal, useReingestSseWaiter } from './useReingestWait';
+import { type ReingestOutcome, useReingestSseWaiter } from './useReingestWait';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -52,16 +52,34 @@ describe('useReingestSseWaiter', () => {
     });
   };
 
-  /** Starts a wait and records its result once it settles. */
-  const start = (startedAt: number, taskId?: string) => {
-    const result: { value: ReingestTerminal | null } = { value: null };
+  /** Starts a wait and records its outcome once it settles. */
+  const startChange = (taskId?: string, startedAt = Date.now()) => {
+    const result: { value: ReingestOutcome | null } = { value: null };
     void waiter
-      .waitForTerminal('src-1', startedAt, { taskId })
+      .waitForChange('src-1', startedAt, { taskId })
       .then((value) => (result.value = value));
     return result;
   };
 
-  const flush = () => act(async () => undefined);
+  /** A terminal event for the source arrives, stamped `ts` by the server. */
+  const emit = async (
+    type: 'completed' | 'failed',
+    payload: Record<string, unknown> = {},
+    ts = Date.now(),
+  ) => {
+    act(() => {
+      store.dispatch(sseEventReceived(terminal(type, ts, payload)));
+    });
+    await act(async () => undefined);
+  };
+
+  const outcome = (extra: Partial<ReingestOutcome> = {}): ReingestOutcome => ({
+    terminal: 'completed',
+    reason: null,
+    failedPages: [],
+    paths: null,
+    ...extra,
+  });
 
   beforeEach(() => {
     container = document.createElement('div');
@@ -76,134 +94,84 @@ describe('useReingestSseWaiter', () => {
 
   it('finishes on a new terminal event even when the server clock is behind', async () => {
     mount();
-    const startedAt = Date.now();
-    const wait = start(startedAt);
+    const wait = startChange();
     // The server's clock runs a minute behind this browser's.
-    act(() => {
-      store.dispatch(
-        sseEventReceived(terminal('completed', startedAt - 60_000)),
-      );
-    });
-    await flush();
-    expect(wait.value).toBe('completed');
+    await emit('completed', {}, Date.now() - 60_000);
+    expect(wait.value?.terminal).toBe('completed');
   });
 
   it('ignores a terminal event this tab had before the operation started', async () => {
     mount([terminal('completed', Date.now() + 60_000)]);
-    const wait = start(Date.now());
-    await flush();
+    const wait = startChange();
+    await act(async () => undefined);
     expect(wait.value).toBeNull();
-    act(() => {
-      store.dispatch(sseEventReceived(terminal('failed', Date.now())));
-    });
-    await flush();
-    expect(wait.value).toBe('failed');
+    await emit('failed');
+    expect(wait.value?.terminal).toBe('failed');
   });
 
   it('keeps overlapping waits apart', async () => {
     mount();
-    const first = start(Date.now());
-    const second = start(Date.now());
-    act(() => {
-      store.dispatch(sseEventReceived(terminal('completed', Date.now())));
-    });
-    await flush();
-    expect(first.value).toBe('completed');
-    expect(second.value).toBe('completed');
+    const first = startChange();
+    const second = startChange();
+    await emit('completed');
+    expect(first.value?.terminal).toBe('completed');
+    expect(second.value?.terminal).toBe('completed');
   });
 
   it('matches on the task id when the event carries one', async () => {
     mount();
-    const first = start(Date.now(), 'task-a');
-    const second = start(Date.now(), 'task-b');
-    act(() => {
-      store.dispatch(
-        sseEventReceived(terminal('failed', Date.now(), { task_id: 'task-b' })),
-      );
-    });
-    await flush();
+    const first = startChange('task-a');
+    const second = startChange('task-b');
+    await emit('failed', { task_id: 'task-b' });
     expect(first.value).toBeNull();
-    expect(second.value).toBe('failed');
-    act(() => {
-      store.dispatch(
-        sseEventReceived(
-          terminal('completed', Date.now(), { task_id: 'task-a' }),
-        ),
-      );
-    });
-    await flush();
-    expect(first.value).toBe('completed');
+    expect(second.value?.terminal).toBe('failed');
+    await emit('completed', { task_id: 'task-a' });
+    expect(first.value?.terminal).toBe('completed');
   });
 
-  it("waitForChange carries a failure's reason", async () => {
+  it.each([
+    ['a plain finish', 'completed', {}, outcome()],
+    [
+      "a failure's reason",
+      'failed',
+      { reason: 'busy' },
+      outcome({ terminal: 'failed', reason: 'busy' }),
+    ],
+    [
+      'the pages a finished add could not fetch',
+      'completed',
+      {
+        failed_pages: ['https://docs.x.io/a', 7, '', 'https://docs.x.io/b'],
+      },
+      outcome({
+        failedPages: ['https://docs.x.io/a', 'https://docs.x.io/b'],
+      }),
+    ],
+    [
+      'the tree paths a page change wrote or removed',
+      'completed',
+      { paths: ['extra.md', 7, '', 'Deploying/Docker.md'] },
+      outcome({ paths: ['extra.md', 'Deploying/Docker.md'] }),
+    ],
+    [
+      'a page change that touched no page',
+      'completed',
+      { paths: [] },
+      outcome({ paths: [] }),
+    ],
+  ] as const)('carries %s', async (_, type, payload, expected) => {
     mount();
-    const result: { value: unknown } = { value: null };
-    void waiter
-      .waitForChange('src-1', Date.now(), { taskId: 'task-a' })
-      .then((value) => (result.value = value));
-    act(() => {
-      store.dispatch(
-        sseEventReceived(
-          terminal('failed', Date.now(), { task_id: 'task-a', reason: 'busy' }),
-        ),
-      );
-    });
-    await flush();
-    expect(result.value).toEqual({
-      terminal: 'failed',
-      reason: 'busy',
-      failedPages: [],
-    });
-
-    const plain: { value: unknown } = { value: null };
-    void waiter
-      .waitForChange('src-1', Date.now(), { taskId: 'task-b' })
-      .then((value) => (plain.value = value));
-    act(() => {
-      store.dispatch(
-        sseEventReceived(
-          terminal('completed', Date.now(), { task_id: 'task-b' }),
-        ),
-      );
-    });
-    await flush();
-    expect(plain.value).toEqual({
-      terminal: 'completed',
-      reason: null,
-      failedPages: [],
-    });
-  });
-
-  it('waitForChange carries the pages a finished add could not fetch', async () => {
-    mount();
-    const result: { value: unknown } = { value: null };
-    void waiter
-      .waitForChange('src-1', Date.now(), { taskId: 'task-a' })
-      .then((value) => (result.value = value));
-    act(() => {
-      store.dispatch(
-        sseEventReceived(
-          terminal('completed', Date.now(), {
-            task_id: 'task-a',
-            failed_pages: ['https://docs.x.io/a', 7, '', 'https://docs.x.io/b'],
-          }),
-        ),
-      );
-    });
-    await flush();
-    expect(result.value).toEqual({
-      terminal: 'completed',
-      reason: null,
-      failedPages: ['https://docs.x.io/a', 'https://docs.x.io/b'],
-    });
+    const wait = startChange('task-a');
+    await emit(type, { task_id: 'task-a', ...payload });
+    expect(wait.value).toEqual(expected);
   });
 
   it('settles pending waits when the component unmounts', async () => {
     mount();
-    const wait = start(Date.now());
+    const wait = startChange();
     act(() => root.unmount());
-    await flush();
-    expect(wait.value).toBe('unmounted');
+    await act(async () => undefined);
+    expect(wait.value?.terminal).toBe('unmounted');
     root = createRoot(container);
   });
 });

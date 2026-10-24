@@ -8,17 +8,14 @@ import { DEFAULT_WEB_PAGES, MAX_WEB_PAGES, type WebsiteDraft } from './website';
  * (WEB_DEFAULT_PAGES, WEB_MAX_PAGES from /api/config). Falls back to the
  * shipped defaults until the config arrives or when an older backend lacks
  * them; the backend clamps either way.
- *
- * @param enabled Fetch only while the form is open.
  */
-export default function useWebPageLimits(enabled = true) {
+export default function useWebPageLimits() {
   const [limits, setLimits] = useState({
     defaultPages: DEFAULT_WEB_PAGES,
     maxPages: MAX_WEB_PAGES,
   });
 
   useEffect(() => {
-    if (!enabled) return;
     let cancelled = false;
     userService
       .getConfig()
@@ -42,7 +39,7 @@ export default function useWebPageLimits(enabled = true) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, []);
 
   return limits;
 }

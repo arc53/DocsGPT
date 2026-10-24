@@ -98,7 +98,8 @@ function Input(inputProps: InputProps) {
   const inputId = id ?? (label ? generatedId : undefined);
   // Most fields have no <form> around them, so a native `required` would only
   // bring the browser's "Please fill in this field" tooltip. The star says it
-  // to sighted users and aria-required to the rest, as in FormField.
+  // to sighted users and aria-required to the rest, as in FormField. It goes
+  // after the props spread: a FormField passes aria-required even when undefined.
   const ariaRequired = props['aria-required'] ?? (required || undefined);
 
   if (!label) {
@@ -122,7 +123,6 @@ function Input(inputProps: InputProps) {
           className,
         )}
         {...props}
-        // After the spread: a FormField passes aria-required even when undefined.
         aria-required={ariaRequired}
       />
     );

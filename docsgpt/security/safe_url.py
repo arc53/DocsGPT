@@ -185,16 +185,7 @@ def _urllib3_host(url: str) -> str | None:
 
 
 def _ascii_host(host: str) -> str:
-    """``host`` as DNS and the wire carry it: an internationalized name in its IDNA (punycode) form.
-
-    The encoding is urllib3's (IDNA 2008), so the name resolved, the ``Host``
-    header and the TLS name all agree with the host the libraries dial.
-
-    Args:
-        host: A hostname as ``urlsplit`` reads it.
-
-    Returns:
-        The ASCII hostname; an ASCII ``host`` comes back as is.
+    """``host`` in urllib3's IDNA (punycode) form, so DNS, ``Host`` and TLS agree with the host dialed.
 
     Raises:
         UnsafeUserUrlError: If the name has no IDNA form.
@@ -362,17 +353,15 @@ def validate_user_base_url(url: str) -> None:
 class _Watchdog:
     """Cuts a fetch's connections once its wall-clock budget is spent.
 
-    Socket timeouts bound each read, not the fetch: a server trickling header
-    lines, or compressed bytes that decode to nothing, can keep every read
-    inside the timeout for as long as it likes. A timer started before the
-    request shuts down every socket the fetch has opened when the budget
-    runs out, so the blocked read returns at once, whichever stage it is in.
+    Socket timeouts bound each read, not the fetch: a server trickling bytes
+    can keep every read inside the timeout for as long as it likes. When the
+    timer fires it shuts down every socket the fetch opened, so the blocked
+    read returns at once.
 
     Each socket is tracked through a duplicate of its descriptor, held until
-    :meth:`cancel`: shutting the duplicate down ends the shared connection
-    even after TLS has wrapped (and detached) the original, and a held
-    descriptor can't be closed and reused by an unrelated connection
-    before the timer fires.
+    :meth:`cancel`: shutting the duplicate down ends the connection even
+    after TLS has wrapped (and detached) the original, and a held descriptor
+    can't be reused by an unrelated connection before the timer fires.
     """
 
     def __init__(self, seconds: float) -> None:
@@ -391,11 +380,7 @@ class _Watchdog:
         self._timer.start()
 
     def watch(self, sock: socket.socket) -> None:
-        """Track a newly opened connection socket; shut it at once if the time is already up.
-
-        Args:
-            sock: The connected socket, before any TLS wrapping.
-        """
+        """Track a newly opened connection socket (before TLS wrapping); shut it at once if time is up."""
         try:
             duplicate = sock.dup()
         except Exception:  # noqa: BLE001 — a socket that can't be duplicated is left to its read timeout
@@ -446,15 +431,7 @@ class _WatchedConnection:
 
 
 def _watch_pools(manager: urllib3.PoolManager, watchdog: _Watchdog) -> None:
-    """Make every connection ``manager`` opens report its socket to ``watchdog``.
-
-    Wraps the manager's own pool and connection classes (plain, proxy or
-    SOCKS alike) in subclasses, so nothing else about how it connects changes.
-
-    Args:
-        manager: A urllib3 pool manager, before it has opened any pool.
-        watchdog: The fetch's watchdog.
-    """
+    """Make every connection a fresh ``manager`` opens report its socket to ``watchdog``, by subclassing its pools."""
     watched: dict[str, type] = {}
     for scheme, pool_cls in manager.pool_classes_by_scheme.items():
         conn_cls = type(
@@ -467,10 +444,7 @@ def _watch_pools(manager: urllib3.PoolManager, watchdog: _Watchdog) -> None:
 
 
 class _WatchedAdapter(HTTPAdapter):
-    """Adapter whose connections, direct or through a proxy, are watched by a :class:`_Watchdog`.
-
-    Without a watchdog it behaves as a plain :class:`HTTPAdapter`.
-    """
+    """Adapter whose connections, direct or through a proxy, are watched by a :class:`_Watchdog` (if given)."""
 
     def __init__(self, *args: Any, watchdog: _Watchdog | None = None, **kwargs: Any) -> None:
         self._watchdog = watchdog
@@ -626,18 +600,14 @@ _DECODER_ERRORS: tuple[type[Exception], ...] = (
 
 
 def _body_chunks(response: requests.Response, chunk_size: int) -> Iterable[bytes]:
-    """The decoded body, one piece per socket read.
+    """The decoded body, one piece per socket read, so the caller's deadline is checked between reads.
 
-    ``iter_content`` blocks until a whole ``chunk_size`` arrives, so a server
-    sending a byte at a time holds one read for as long as it likes and a
-    deadline between chunks never fires. The body is read raw with ``read1``,
-    which returns after a single socket read, and decoded here: urllib3's
-    own decoding loops on the socket while the decoder yields nothing, so a
-    compressed stream of empty blocks would never come back to the deadline.
-    A read that decodes to nothing is handed back as ``b""`` for that reason.
-    Decoding is capped at ``chunk_size`` per piece, so one small raw read
-    can't inflate past the caller's ceiling before it is checked. Errors are
-    raised as ``iter_content`` raises them.
+    ``iter_content`` blocks until a whole ``chunk_size`` arrives, and
+    urllib3's own decoding loops on the socket while the decoder yields
+    nothing; so the body is read raw with ``read1`` and decoded here, a read
+    that decodes to nothing handed back as ``b""``. Decoding is capped at
+    ``chunk_size`` per piece, so a small raw read can't inflate past the
+    caller's ceiling unchecked. Errors are raised as ``iter_content`` does.
 
     Args:
         response: A streamed response.
@@ -686,17 +656,7 @@ def _body_chunks(response: requests.Response, chunk_size: int) -> Iterable[bytes
 
 
 def _decode(step: Callable[[], bytes]) -> bytes:
-    """Run one decoder step, raising a bad body as ``requests`` does.
-
-    Args:
-        step: A call to the decoder's ``decompress`` or ``flush``.
-
-    Returns:
-        The decoded bytes.
-
-    Raises:
-        requests.exceptions.ContentDecodingError: If the body can't be decoded.
-    """
+    """Run one decoder step, raising a bad body as ``requests`` does (``ContentDecodingError``)."""
     try:
         return step()
     except _DECODER_ERRORS as exc:
@@ -807,19 +767,7 @@ def _read_pinned(
     truncate: bool,
     watchdog: _Watchdog,
 ) -> tuple[bytes, requests.Response]:
-    """Send the pinned GET and read at most ``max_bytes`` of its body.
-
-    The body half of :func:`pinned_fetch_bytes`, which owns the session and
-    the watchdog; the arguments are as it describes them.
-
-    Returns:
-        Tuple of the body bytes and the (already-closed) ``Response``.
-
-    Raises:
-        ResponseTooLargeError: If the body exceeds ``max_bytes``.
-        requests.ReadTimeout: If the watchdog's time runs out between reads.
-        requests.RequestException: For network-level failures.
-    """
+    """Send the pinned GET and read at most ``max_bytes`` of its body: the body half of :func:`pinned_fetch_bytes`."""
     response = session.request(
         method="GET",
         url=pinned_url,

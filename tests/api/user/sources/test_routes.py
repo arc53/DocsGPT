@@ -585,7 +585,7 @@ class TestDeleteUnderTheIndexLock:
         from docsgpt.api.user.sources.routes import DeleteOldIndexes
 
         with _patch_db(pg_conn), patch(
-            "docsgpt.api.user.sources.routes.source_index_lock", lock,
+            "docsgpt.api.user.sources.access.source_index_lock", lock,
         ), patch("docsgpt.api.user.sources.routes.settings.VECTOR_STORE", "faiss"), patch(
             "docsgpt.api.user.sources.routes.StorageCreator.get_storage", return_value=storage,
         ), app.test_request_context(f"/api/delete_old?source_id={src['id']}"):
@@ -654,7 +654,7 @@ class TestDeleteUnderTheIndexLock:
             raise SourceBusy("busy")
             yield
 
-        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.routes.source_index_lock", busy), patch(
+        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.access.source_index_lock", busy), patch(
             "docsgpt.api.user.sources.routes.StorageCreator.get_storage", return_value=MagicMock(),
         ), app.app_context():
             assert delete_source(user, src) is False
@@ -950,7 +950,7 @@ class TestSyncSource:
         assert mock_delay.call_args.kwargs["source_data"] == "acme/private"
 
     def test_normalizes_dict_remote_data_before_dispatch(self, app, pg_conn):
-        """The route must hand the sync task the normalized URL string."""
+        """The route hands the sync task the Website config converted from the legacy row."""
         from docsgpt.api.user.sources.routes import SyncSource
 
         user = "u-normalize"
@@ -975,7 +975,10 @@ class TestSyncSource:
             response = SyncSource().post()
 
         assert response.status_code == 200
-        assert mock_delay.call_args.kwargs["source_data"] == "https://example.com"
+        assert mock_delay.call_args.kwargs["source_data"]["entries"] == [{
+            "url": "https://example.com", "mode": "site", "max_pages": 10, "path_prefix": "",
+            "include_subdomains": False, "discovery": "links", "sitemap_url": None,
+        }]
         assert mock_delay.call_args.kwargs["loader"] == "crawler"
 
     def test_sync_task_raises_returns_400(self, app, pg_conn):
@@ -1406,7 +1409,8 @@ class TestReingestARemoteSource:
         response, mocks = _reingest(app, pg_conn, user, str(src["id"]))
 
         assert response.status_code == 400 and response.json["code"] == "wiki"
-        mocks["sync"].assert_not_called() and mocks["reingest"].assert_not_called()
+        mocks["sync"].assert_not_called()
+        mocks["reingest"].assert_not_called()
 
     def test_a_wiki_with_stored_files_is_refused(self, app, pg_conn):
         """A wiki converted from an upload keeps its files; re-reading them would replace the wiki's pages."""

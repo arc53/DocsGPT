@@ -1112,7 +1112,7 @@ class TestChunkEditsTakeTheIndexLock:
             assert len(held) == 1
             return store
 
-        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.chunks.source_index_lock", fake_lock), patch(
+        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.access.source_index_lock", fake_lock), patch(
             "docsgpt.api.user.sources.chunks.get_vector_store", side_effect=load
         ):
             response = _chunk_edit(app, pg_conn, kind, str(src["id"]), user)
@@ -1136,7 +1136,7 @@ class TestChunkEditsTakeTheIndexLock:
             raise SourceBusy("busy")
             yield
 
-        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.chunks.source_index_lock", busy), patch(
+        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.access.source_index_lock", busy), patch(
             "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
         ) as get_store:
             response = _chunk_edit(app, pg_conn, kind, str(src["id"]), user)
@@ -1149,42 +1149,22 @@ class TestChunkEditsTakeTheIndexLock:
 
     def test_a_held_redis_lock_refuses_the_edit_and_a_free_one_is_released(self, app, pg_conn, monkeypatch):
         from docsgpt.vectorstore.index_lock import lock_key
+        from tests.vectorstore.test_index_lock import LockRedis
 
-        class Redis:
-            def __init__(self):
-                self.keys = {}
-
-            def set(self, key, value, nx=False, xx=False, ex=None):
-                if nx and key in self.keys:
-                    return False
-                self.keys[key] = value
-                return True
-
-            def get(self, key):
-                return self.keys.get(key)
-
-            def eval(self, script, numkeys, key, token, *args):
-                # The lock's token-checked renew (expire) and release (del).
-                if self.keys.get(key) != token:
-                    return 0
-                if "'del'" in script:
-                    self.keys.pop(key)
-                return 1
-
-        redis = Redis()
+        redis = LockRedis()
         monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: redis)
-        monkeypatch.setattr("docsgpt.api.user.sources.chunks.CHUNK_EDIT_LOCK_WAIT_SECONDS", 0.1)
+        monkeypatch.setattr("docsgpt.api.user.sources.access.EDIT_LOCK_WAIT_SECONDS", 0.1)
         user = "u-lock-redis"
         src = _seed_source(pg_conn, user=user)
         with _patch_db(pg_conn), patch(
             "docsgpt.api.user.sources.chunks.get_vector_store", return_value=self._store()
         ):
             free = _chunk_edit(app, pg_conn, "add", str(src["id"]), user)
-            released = lock_key(str(src["id"])) not in redis.keys
-            redis.keys[lock_key(str(src["id"]))] = "a-sync"
+            released = redis.get(lock_key(str(src["id"]))) is None
+            redis.set(lock_key(str(src["id"])), "a-sync")
             held = _chunk_edit(app, pg_conn, "add", str(src["id"]), user)
 
         assert free.status_code == 201 and released
         assert held.status_code == 409
         # The sync's lock is left alone.
-        assert redis.keys[lock_key(str(src["id"]))] == "a-sync"
+        assert redis.get(lock_key(str(src["id"]))) == b"a-sync"

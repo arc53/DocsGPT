@@ -58,7 +58,9 @@ def test_html_parser_metadata_unreadable_file(tmp_path):
 
 # --- HTMLMarkdownParser: the anydoc engine's HTML path ---------------------------
 
-from docsgpt.parser.file.html_parser import HTMLMarkdownParser, html_to_markdown  # noqa: E402
+from bs4 import BeautifulSoup  # noqa: E402
+
+from docsgpt.parser.file.html_parser import HTMLMarkdownParser, soup_to_markdown  # noqa: E402
 
 RICH_HTML = """<html><head><title>Doc Title</title>
 <style>.x { color: red }</style><script>var secret = 1;</script></head>
@@ -128,7 +130,7 @@ def test_markdown_parser_init():
 
 
 def test_html_to_markdown_collapses_blank_runs():
-    out = html_to_markdown("<p>a</p><br/><br/><br/><br/><p>b</p>")
+    out = soup_to_markdown(BeautifulSoup("<p>a</p><br/><br/><br/><br/><p>b</p>", "html.parser"))
     assert "\n\n\n" not in out
     assert out.startswith("a") and out.endswith("b")
 
@@ -257,7 +259,7 @@ def test_data_uris_are_stripped_from_images_and_links():
         f'<p>before</p><img src="{payload}" alt="chart"><a href="{payload}">dl</a>'
         f'<img srcset="{payload} 1x" alt="x"><p>after</p>'
     )
-    text = html_to_markdown(html)
+    text = soup_to_markdown(BeautifulSoup(html, "html.parser"))
     assert "AAAA" not in text
     assert "before" in text and "after" in text
     assert len(text) < 200
@@ -291,9 +293,7 @@ def test_utf16_head_keeps_an_even_byte_count(tmp_path, monkeypatch):
 )
 def test_a_table_without_th_keeps_its_first_row_as_the_header(html):
     """Without it the column names are read as data under a blank header."""
-    from docsgpt.parser.file.html_parser import html_to_markdown
-
-    rows = [line for line in html_to_markdown(html).splitlines() if line.startswith("|")]
+    rows = [line for line in soup_to_markdown(BeautifulSoup(html, "html.parser")).splitlines() if line.startswith("|")]
 
     assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
 
@@ -307,9 +307,7 @@ def test_a_table_without_th_keeps_its_first_row_as_the_header(html):
     ],
 )
 def test_a_table_that_marks_its_header_is_unchanged(html):
-    from docsgpt.parser.file.html_parser import html_to_markdown
-
-    rows = [line for line in html_to_markdown(html).splitlines() if line.startswith("|")]
+    rows = [line for line in soup_to_markdown(BeautifulSoup(html, "html.parser")).splitlines() if line.startswith("|")]
 
     assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
 
@@ -335,7 +333,7 @@ def test_markup_nested_too_deep_to_convert_keeps_its_text():
     # html.parser nests) used to raise RecursionError and lose the file.
     html = "<html><body><h1>Changelog</h1>" + "".join(f"<span>entry {i}\n" for i in range(3000)) + "</body></html>"
 
-    text = html_to_markdown(html)
+    text = soup_to_markdown(BeautifulSoup(html, "html.parser"))
 
     assert "Changelog" in text
     assert "entry 0" in text and "entry 2999" in text

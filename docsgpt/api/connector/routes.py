@@ -6,6 +6,7 @@ from urllib.parse import urlencode, urlsplit
 
 from flask import (
     Blueprint,
+    Response,
     current_app,
     jsonify,
     make_response,
@@ -17,12 +18,20 @@ from flask_restx import fields, Namespace, Resource
 from docsgpt.api import api
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import load_source
+from docsgpt.api.user.sources.routes import (
+    _CONNECTION_REMOVED,
+    _WIKI_NO_SYNC,
+    _is_wiki,
+    _sync_refusal,
+    connector_selection,
+    connector_sync_kwargs,
+    owner_connector_sync,
+)
 from docsgpt.api.user.tasks import (
     ingest_connector_task,
 )
 from docsgpt.connectors import oauth_flows, service
 from docsgpt.core.settings import settings
-from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
@@ -641,22 +650,11 @@ class ConnectorSync(Resource):
             is_owner = ra.access == "owner"
             # A converted wiki doesn't sync: it would replace the wiki's pages,
             # and the worker skips it, so a success here would never finish.
-            if SourceConfig.parse(source.get("config")).kind == "wiki":
-                # Shaped and coded as /api/sync_source's refusal.
-                message = "A wiki is edited in place and doesn't sync."
-                return make_response(
-                    jsonify({"success": False, "error": message, "message": message, "code": "wiki"}), 400
-                )
+            if _is_wiki(source):
+                return _sync_refusal(_WIKI_NO_SYNC, "wiki")
 
-            remote_data = source.get('remote_data') or {}
-            if isinstance(remote_data, str):
-                try:
-                    remote_data = json.loads(remote_data)
-                except json.JSONDecodeError:
-                    current_app.logger.error(f"Invalid remote_data format for source {source_id}")
-                    remote_data = {}
-
-            source_type = remote_data.get('provider')
+            selection = connector_selection(source)
+            source_type = selection.get('provider')
             if not source_type:
                 return make_response(
                     jsonify({
@@ -666,84 +664,34 @@ class ConnectorSync(Resource):
                     400
                 )
 
-            source_connection = str(source['connection_id']) if source.get('connection_id') else None
             if is_owner:
                 lookup = dict(data)
                 if not (lookup.get('connection_id') or lookup.get('session_token')):
-                    if not source_connection:
+                    if not source.get('connection_id'):
                         # Its connection was removed with "keep sources"
                         # (connection_id is NULL now): connecting the
                         # account again is the way back.
-                        message = (
-                            "This source's account connection was removed; "
-                            "connect the account again to sync it."
-                        )
-                        return make_response(
-                            jsonify({
-                                "success": False, "error": message, "message": message,
-                                "code": "connection_missing",
-                            }),
-                            409,
-                        )
-                    lookup['connection_id'] = source_connection
+                        return _sync_refusal(_CONNECTION_REMOVED, "connection_missing", 409)
+                    lookup['connection_id'] = str(source['connection_id'])
                 session = service.resolve_request_connection(user_id, source_type, lookup)
                 if session is None:
                     return make_response(
                         jsonify({"success": False, "error": "Invalid or unauthorized session"}),
                         401,
                     )
+                task_kwargs = connector_sync_kwargs(source, owner_id, user_id, selection, str(session["id"]))
             else:
                 # A grantee can't name a connection: theirs would read the
                 # source's files with another account.
-                if not source_connection:
-                    # As for the owner: with its connection removed (or never
-                    # named), another of the owner's accounts would read the
-                    # selection, and the sync would re-link the source to it.
-                    message = (
-                        "This source's account connection was removed; "
-                        "the owner needs to connect the account again to sync it."
-                    )
-                    return make_response(
-                        jsonify({
-                            "success": False, "error": message, "message": message,
-                            "code": "connection_missing",
-                        }),
-                        409,
-                    )
                 with db_readonly() as conn:
-                    session = service.owner_sync_connection(conn, owner_id, source_type, source_connection)
-                if session is None:
-                    message = (
-                        "The owner needs to reconnect this source's account "
-                        "before it can be synced."
-                    )
-                    return make_response(
-                        jsonify({"success": False, "error": message, "message": message, "code": "reconnect_needed"}),
-                        409,
-                    )
+                    task_kwargs = owner_connector_sync(conn, source, owner_id, user_id)
+                if isinstance(task_kwargs, Response):
+                    return task_kwargs
 
-            # Extract configuration from remote_data
-            file_ids = remote_data.get('file_ids', [])
-            folder_ids = remote_data.get('folder_ids', [])
-            recursive = remote_data.get('recursive', True)
-
-            # Start the sync task
-            task = ingest_connector_task.delay(
-                job_name=source.get('name'),
-                user=owner_id,
-                source_type=source_type,
-                connection_id=str(session["id"]),
-                file_ids=file_ids,
-                folder_ids=folder_ids,
-                recursive=recursive,
-                retriever=source.get('retriever', 'classic'),
-                operation_mode="sync",
-                doc_id=str(source.get('id') or source_id),
-                sync_frequency=source.get('sync_frequency', 'never'),
-                # The sync runs as the owner; its events also reach the caller
-                # (a team editor isn't the owner).
-                actor_id=user_id,
-            )
+            # The sync runs as the owner; its events also reach the caller
+            # (a team editor isn't the owner). The retriever goes as stored:
+            # the worker keeps a NULL one rather than defaulting it.
+            task = ingest_connector_task.delay(**{**task_kwargs, "retriever": source.get('retriever', 'classic')})
 
             return make_response(
                 jsonify({

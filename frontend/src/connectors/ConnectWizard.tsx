@@ -508,7 +508,7 @@ export default function ConnectWizard({
       case 'disabled':
         return t('settings.connectors.wizard.setupDisabled', named);
       default:
-        return t('settings.connectors.wizard.syncFailed');
+        return t('settings.connectors.detail.syncFailed');
     }
   };
 
@@ -565,7 +565,7 @@ export default function ConnectWizard({
       refresh();
       setStep('done');
     } catch {
-      setError(t('settings.connectors.wizard.syncFailed'));
+      setError(t('settings.connectors.detail.syncFailed'));
     } finally {
       setPending(false);
     }
@@ -597,6 +597,15 @@ export default function ConnectWizard({
     if (first) navigate(knowledgeLink({ sourceId: first.id }));
   };
 
+  /** Drops what the pickers hold and remounts them empty. */
+  const clearPicks = () => {
+    setSelectedFiles([]);
+    setSelectedFolders([]);
+    setSelectedRepo(null);
+    setLinearSelection(EMPTY_LINEAR_SELECTION);
+    setPickerKey((key) => key + 1);
+  };
+
   /** From a summary with nothing synced: the sync step, in place. */
   const syncContent = () => {
     setFixedConnectionId(activeConnectionId);
@@ -605,13 +614,9 @@ export default function ConnectWizard({
     setSources([]);
     // A new setup over pickers that remount empty: anything picked before
     // Just connect folded the form away is dropped, not synced unseen.
-    setSelectedFiles([]);
-    setSelectedFolders([]);
-    setSelectedRepo(null);
-    setLinearSelection(EMPTY_LINEAR_SELECTION);
+    clearPicks();
     setError('');
     setIdempotencyKey(nanoid());
-    setPickerKey((key) => key + 1);
     setStep('setup');
   };
 
@@ -641,11 +646,7 @@ export default function ConnectWizard({
 
   const switchAccount = (id: string) => {
     setConnectionId(id);
-    setSelectedFiles([]);
-    setSelectedFolders([]);
-    setSelectedRepo(null);
-    setLinearSelection(EMPTY_LINEAR_SELECTION);
-    setPickerKey((key) => key + 1);
+    clearPicks();
   };
 
   // The account in words: its name, the key it was made with, or its label.
@@ -1074,10 +1075,10 @@ export default function ConnectWizard({
    * synced and no tools, Sync content starts the sync step in place.
    */
   const renderDoneFooter = () => {
-    const done = (variant: 'default' | 'ghost') => (
+    const done = (
       <Button
         type="button"
-        variant={variant}
+        variant="default"
         size="lg"
         shape="pill"
         onClick={finish}
@@ -1085,23 +1086,26 @@ export default function ConnectWizard({
         {t('settings.connectors.wizard.done')}
       </Button>
     );
-    if (mode === 'reconnect') return done('default');
-    if (sources.length > 0)
+    if (mode === 'reconnect') return done;
+    const next =
+      sources.length > 0
+        ? {
+            label: t('settings.connectors.openInKnowledge'),
+            onSubmit: openInKnowledge,
+          }
+        : toolCount > 0
+          ? {
+              label: t('settings.connectors.wizard.tryInChat'),
+              onSubmit: tryInChat,
+            }
+          : null;
+    if (next)
       return (
         <ModalActions
           cancelLabel={t('settings.connectors.wizard.done')}
           onCancel={finish}
-          submitLabel={t('settings.connectors.openInKnowledge')}
-          onSubmit={openInKnowledge}
-        />
-      );
-    if (toolCount > 0)
-      return (
-        <ModalActions
-          cancelLabel={t('settings.connectors.wizard.done')}
-          onCancel={finish}
-          submitLabel={t('settings.connectors.wizard.tryInChat')}
-          onSubmit={tryInChat}
+          submitLabel={next.label}
+          onSubmit={next.onSubmit}
         />
       );
     if (canSync && activeConnectionId)
@@ -1116,10 +1120,10 @@ export default function ConnectWizard({
           >
             {t('settings.connectors.syncContent')}
           </Button>
-          {done('default')}
+          {done}
         </>
       );
-    return done('default');
+    return done;
   };
 
   // The service is in every title, and the setup title stays put while the
