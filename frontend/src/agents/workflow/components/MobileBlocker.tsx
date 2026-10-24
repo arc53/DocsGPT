@@ -18,6 +18,7 @@ import { selectAnalyticsEnabled } from '../../../preferences/preferenceSlice';
 import AgentPageToolbar, {
   LastUsedMeta,
 } from '../../components/AgentPageToolbar';
+import { useAgentMenu } from '../../hooks/useAgentMenu';
 import { AGENTS_MANAGE_ROOT } from '../../paths';
 import type { Agent } from '../../types';
 
@@ -44,6 +45,7 @@ export default function MobileBlocker({
 }) {
   const { t } = useTranslation();
   const analyticsEnabled = useSelector(selectAnalyticsEnabled);
+  const agentMenu = useAgentMenu({ agent });
   if (loading) {
     return (
       <div className="h-full lg:hidden">
@@ -121,7 +123,9 @@ export default function MobileBlocker({
               </div>
             ) : undefined
           }
+          menu={agentMenu.menu}
         />
+        {agentMenu.modals}
         {blocker('p')}
       </SectionShell>
     </div>

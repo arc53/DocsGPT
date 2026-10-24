@@ -111,6 +111,41 @@ describe('AgentLogs', () => {
     expect(toolbar.querySelector('[data-slot="separator"]')).not.toBeNull();
   });
 
+  // The agent's ⋯ is on every agent tab, not only Overview.
+  it("puts the agent's menu in the toolbar row", async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/logs/a1']}>
+          <Routes>
+            <Route
+              path="/agents/manage/logs/:agentId"
+              element={<AgentLogs />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    const menu = toolbar.querySelector<HTMLButtonElement>(
+      'button[aria-label="agents.form.buttons.moreActions"]',
+    )!;
+    expect(menu.dataset.size).toBe('icon');
+    await act(async () => {
+      menu.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+    });
+    expect(
+      Array.from(document.querySelectorAll('[role="menuitem"]')).map(
+        (item) => item.textContent,
+      ),
+    ).toEqual([
+      'agents.form.buttons.accessDetails',
+      'agents.shareWithTeam',
+      'agents.form.buttons.delete',
+    ]);
+  });
+
   // Logs filters by the agent's labels and tags, and is the `#logs` target
   // of a drill-down from its Insights.
   it("hands the agent's analytics to Logs", async () => {

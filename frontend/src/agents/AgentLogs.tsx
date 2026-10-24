@@ -23,6 +23,7 @@ import SectionShell from '../navigation/SectionShell';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import GuardrailEvents from './components/GuardrailEvents';
 import { useAgent } from './hooks/useAgent';
+import { useAgentMenu } from './hooks/useAgentMenu';
 
 /**
  * An agent's Logs: its guardrail activity, then its log list under a Logs
@@ -33,6 +34,7 @@ export default function AgentLogs() {
   const { t } = useTranslation();
   const { agentId } = useParams();
   const { agent, error, reload } = useAgent(agentId);
+  const agentMenu = useAgentMenu({ agent });
   const location = useLocation();
   const navigationType = useNavigationType();
   const [searchParams] = useSearchParams();
@@ -55,10 +57,12 @@ export default function AgentLogs() {
 
   return (
     <SectionShell>
+      {agentMenu.modals}
       {agent ? (
         <AgentPageToolbar
           name={agent.name}
           meta={<LastUsedMeta lastUsedAt={agent.last_used_at} />}
+          menu={agentMenu.menu}
         />
       ) : (
         // The record only fills the byline (and the label filter's topics):

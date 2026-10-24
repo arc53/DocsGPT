@@ -11,6 +11,7 @@ import TimeFilterSelect, {
 } from '../settings/TimeFilterSelect';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import { useAgent } from './hooks/useAgent';
+import { useAgentMenu } from './hooks/useAgentMenu';
 
 /**
  * An agent's Analytics: the counted usage (messages, tokens, scheduled
@@ -22,6 +23,7 @@ export default function AgentAnalytics() {
   const { t } = useTranslation();
   const { agentId } = useParams();
   const { agent, error, reload } = useAgent(agentId);
+  const agentMenu = useAgentMenu({ agent });
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(DEFAULT_TIME_FILTER);
 
   return (
@@ -32,7 +34,9 @@ export default function AgentAnalytics() {
         actions={
           <TimeFilterSelect value={timeFilter} onChange={setTimeFilter} />
         }
+        menu={agentMenu.menu}
       />
+      {agentMenu.modals}
       {/* The record only fills the byline: its failure says so here, and
           the usage below, which needs only the id, stays. */}
       {error && (
