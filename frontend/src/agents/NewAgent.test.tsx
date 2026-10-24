@@ -210,18 +210,8 @@ vi.mock('../navigation/SectionPills', () => ({
   default: () => <div data-testid="section-pills" />,
 }));
 vi.mock('../navigation/SectionPageHeader', () => ({
-  CurrentSectionHeader: ({
-    title,
-    titleAction,
-  }: {
-    title?: React.ReactNode;
-    titleAction?: React.ReactNode;
-  }) => (
-    <div>
-      {title ? <h1>{title}</h1> : null}
-      {titleAction}
-    </div>
-  ),
+  CurrentSectionHeader: ({ title }: { title?: React.ReactNode }) =>
+    title ? <h1>{title}</h1> : null,
 }));
 vi.mock('../components/FileUpload', () => ({ FileUpload: () => null }));
 vi.mock('../components/SourcesPopoverFooter', () => ({ default: () => null }));
@@ -886,7 +876,7 @@ describe('NewAgent form', () => {
     }
   });
 
-  it('offers Preview from the title-row menu until the agent is published', async () => {
+  it('offers Preview from the toolbar menu until the agent is published', async () => {
     await render();
     const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
     expect(
@@ -898,9 +888,9 @@ describe('NewAgent form', () => {
       'button[aria-label="agents.form.buttons.moreActions"]',
     )!;
     expect(menu.getAttribute('data-size')).toBe('icon');
-    // Beside the page title, not in the toolbar row.
-    expect(menu.closest('[data-slot="page-toolbar"]')).toBeNull();
-    expect(menu.parentElement!.querySelector('h1')).not.toBeNull();
+    // Last in the toolbar row, after the page's buttons.
+    expect(menu.closest('[data-slot="page-toolbar"]')).toBe(toolbar);
+    expect(menu.parentElement!.lastElementChild).toBe(menu);
     await act(async () => {
       menu.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
@@ -1313,7 +1303,12 @@ describe('NewAgent gating by role', () => {
       'editor',
       EDITOR.filter((a) => a !== 'manage_access_details'),
     );
-    expect(await menuLabels()).toEqual([]);
+    // With nothing to offer, the ⋯ isn't drawn.
+    expect(
+      container.querySelector(
+        'button[aria-label="agents.form.buttons.moreActions"]',
+      ),
+    ).toBeNull();
   });
 
   it('keeps a failed delete in the dialog with the server message', async () => {

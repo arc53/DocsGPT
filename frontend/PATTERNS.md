@@ -24,8 +24,7 @@ DESIGN.md.
 
 Every section page (settings, admin, agents, teams, activity) is wrapped in
 `navigation/SectionShell` (`width` `default` 6xl, `wide` 7xl for admin,
-`narrow` 5xl; `title` replaces the section title; `titleAction` puts a page-level
-control, such as a toolbar `ActionMenu`, at the title row's end;
+`narrow` 5xl; `title` replaces the section title;
 `header={false}` drops the title for the phone section index, which draws
 its own);
 it draws the title and
@@ -34,7 +33,9 @@ under the title is `components/PageToolbar`: `intro`, then the page `search`
 (left, `max-w-md`) and the page `action` (right, `Button size="field"
 shape="pill"`, text only: no `Plus`, a dropdown keeps its `ChevronDown`), then `children` (notices that belong to the action, such as
 a limit warning), then `divider` (a `Separator`). With no `search` the intro
-moves into the row's left slot (`max-w-2xl`) beside the action. A page search
+moves into the row's left slot (`max-w-2xl`) beside the action. The row
+stacks below `sm` (the action under the intro, spanning it); `stack={false}`
+keeps a small action, such as a lone ⋯, beside the intro there. A page search
 is `components/SearchInput`: the 38px pill (one size everywhere) with a
 search icon and a floating `label` on `labelSurface="background"` (its
 default); a placeholder-only search is named by its placeholder. A source
@@ -51,8 +52,9 @@ An agent's pages (Overview and Schedules, then the Monitoring group: Analytics, 
 `title` prop). Its props: `name` (the agent, first in a muted byline),
 `status` (a Badge beside the name, Overview's Published / Draft), `meta` (the
 page's context after a middle dot, "Last used" on every page of a saved agent),
-`actions` (the page's buttons on the right, at most three; on Analytics and Insights the window select, and Insights' Settings beside it; the page's ⋯ goes
-in the title row, not here), `intro` (a line that replaces
+`actions` (the page's buttons on the right, at most three; on Analytics and Insights the window select, and Insights' Settings beside it),
+`menu` (the agent's ⋯, last in the row after the actions, as a source view's
+`PathHeader menu`; with no actions it stays beside the byline on a phone), `intro` (a line that replaces
 the byline: the new-agent form) and `children` (notices between the row and
 the rule, such as the failed-save `Alert`). With a status badge the meta
 takes its own line on a phone. The row keeps the 38px field height when a
@@ -77,14 +79,15 @@ Buttons:
   `default field pill` (Publish, Save, New schedule), a secondary action
   `outline field pill` (Save draft, Preview with `Play` first), Cancel `ghost
 field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
-  at the end of the title row, through `SectionShell titleAction`: Access
+  last in the toolbar row, through `AgentPageToolbar menu`: Access
   details and Share with team on Overview (each only when the role allows
   it, see DESIGN.md › Access and roles), and Preview until the agent is
-  published (before that the preview only says "Publish to preview"). So the
-  row never holds more than three buttons and fits a phone, where the main
-  one stretches across it (`flex-1 sm:flex-none`; `PageToolbar`'s action slot
-  spans the stacked row below `sm`). The workflow builder's toolbar has no
-  title row and keeps its ⋯ at the row's end, holding Edit details, Access
+  published (before that the preview only says "Publish to preview"); each
+  item has its icon (`Link`, `Users`, `Play`), and the ⋯ isn't drawn with no
+  items. So the row never holds more than three buttons and the ⋯, and fits a
+  phone, where the main one stretches across it (`flex-1 sm:flex-none`;
+  `PageToolbar`'s action slot spans the stacked row below `sm`, the ⋯ at its
+  end). The workflow builder's toolbar keeps its ⋯ at the row's end too, holding Edit details, Access
   details, Share with team and Delete (see Workflow builder). The
   agent's Delete is in Overview's danger zone; only the workflow builder's
   toolbar has it in the ⋯ menu, as a `destructive` item. The row itself is

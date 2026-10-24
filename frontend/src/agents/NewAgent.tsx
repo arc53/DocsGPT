@@ -1,4 +1,12 @@
-import { CircleCheck, CircleX, Database, Play, SquarePen } from 'lucide-react';
+import {
+  CircleCheck,
+  CircleX,
+  Database,
+  Link,
+  Play,
+  SquarePen,
+  Users,
+} from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -1212,7 +1220,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const agentDisplayName =
     agent.name?.trim() || t('agents.pageHeader.fallbackName');
 
-  // Page-level actions live in the ⋯ beside the title. Until the agent is
+  // Page-level actions live in the ⋯ at the end of the toolbar row. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
   // menu item then and a toolbar button after.
   const canOpenAccessDetails =
@@ -1232,6 +1240,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       ? [
           {
             label: t('agents.form.buttons.accessDetails'),
+            icon: Link,
             onClick: () => setAgentDetails('ACTIVE'),
           },
         ]
@@ -1243,6 +1252,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       ? [
           {
             label: t('agents.shareWithTeam'),
+            icon: Users,
             onClick: () => setShareModalOpen(true),
           },
         ]
@@ -1308,13 +1318,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   return (
     <SectionShell
       title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
-      titleAction={
-        <ActionMenu
-          size="toolbar"
-          triggerLabel={t('agents.form.buttons.moreActions')}
-          options={menuOptions}
-        />
-      }
     >
       {signInAgain.modals}
       {agent.agent_type === 'workflow' && <WorkflowBuilder />}
@@ -1334,6 +1337,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           ) : undefined
         }
         actions={headerActions}
+        menu={
+          menuOptions.length > 0 ? (
+            <ActionMenu
+              size="toolbar"
+              triggerLabel={t('agents.form.buttons.moreActions')}
+              options={menuOptions}
+            />
+          ) : undefined
+        }
       >
         {submitError && (
           <Alert variant="destructive" className="mb-6">

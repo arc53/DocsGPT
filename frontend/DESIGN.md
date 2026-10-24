@@ -1611,8 +1611,9 @@ clear it); `icon` also takes an
 element, such as a `ConnectorIcon`) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
 trigger with `EllipsisVertical`, and stops clicks and keys on the trigger and
 the menu from reaching the host, so it can sit inside a clickable card.
-In a page header or toolbar on a plain surface (the agent Overview's title
-row, through `SectionShell titleAction`; the workflow builder's toolbar), pass
+In a page header or toolbar on a plain surface (an agent page's toolbar row,
+through `AgentPageToolbar menu`; a source view's `PathHeader menu`; the
+workflow builder's toolbar), last after the row's buttons, pass
 `size="toolbar"`: the trigger is a 36px `ghost-muted` icon button like the
 others there, hovering to `accent`, with its tooltip below. The default
 `row` trigger's darker hover is only for hosts that turn `accent` themselves.
