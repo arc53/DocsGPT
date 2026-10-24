@@ -1655,7 +1655,11 @@
           "testFailed": "Проверка подключения не удалась",
           "saveFailed": "Не удалось сохранить MCP-сервер",
           "oauthFailed": "Вход через OAuth не удался или был отменён",
-          "timeoutRange": "Тайм-аут должен быть от 1 до 300 секунд"
+          "timeoutRange": "Тайм-аут должен быть от 1 до 300 секунд",
+          "headerNameInvalid": "Введите допустимое имя заголовка, например X-Tenant-Id",
+          "headerDuplicate": "{{name}} указан дважды",
+          "headerReserved": "{{name}} задаётся аутентификацией выше, поэтому его нельзя добавить как пользовательский заголовок",
+          "headerValueRequired": "Введите значение для {{name}}"
         },
         "sharedByEditor": "Предоставил(а) {{owner}} · вы редактор",
         "aTeammate": "участник команды",
@@ -1673,7 +1677,12 @@
         "discoveredTools_one": "Найдено {{formatted}} действие",
         "discoveredTools_other": "Найдено {{formatted}} действия",
         "discoveredTools_few": "Найдено {{formatted}} действия",
-        "discoveredTools_many": "Найдено {{formatted}} действий"
+        "discoveredTools_many": "Найдено {{formatted}} действий",
+        "customHeaders": "Пользовательские заголовки",
+        "customHeadersHint": "Отправляются с каждым запросом к этому серверу. Значения сохраняются как ключ и больше не показываются.",
+        "headerValue": "Значение заголовка",
+        "addHeader": "Добавить заголовок",
+        "removeHeader": "Удалить заголовок"
       },
       "configErrors": {
         "required": "Поле «{{field}}» обязательно",

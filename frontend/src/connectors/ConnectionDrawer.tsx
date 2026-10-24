@@ -1299,6 +1299,7 @@ export default function ConnectionDrawer({
               displayName: mcpTool.display_name,
               server_url: detail.server_url,
               auth_type: detail.auth_kind === 'mcp_oauth' ? 'oauth' : 'none',
+              header_names: mcpTool.header_names ?? undefined,
             }
           : undefined,
     });

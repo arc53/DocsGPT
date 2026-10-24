@@ -160,6 +160,9 @@ export default function Tools() {
       server_url: config.server_url || '',
       auth_type: config.auth_type || 'none',
       timeout: config.timeout || 30,
+      header_names: Array.isArray(config.header_names)
+        ? config.header_names
+        : [],
       oauth_scopes: oauthScopes,
       has_encrypted_credentials: !!config.has_encrypted_credentials,
       access: roleOf(tool),

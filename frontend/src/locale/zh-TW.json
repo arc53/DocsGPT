@@ -1540,7 +1540,11 @@
           "testFailed": "連線測試失敗",
           "saveFailed": "無法儲存 MCP 伺服器",
           "oauthFailed": "OAuth 登入失敗或已取消",
-          "timeoutRange": "逾時必須介於 1 到 300 秒之間"
+          "timeoutRange": "逾時必須介於 1 到 300 秒之間",
+          "headerNameInvalid": "請輸入有效的請求標頭名稱，例如 X-Tenant-Id",
+          "headerDuplicate": "{{name}} 重複出現",
+          "headerReserved": "{{name}} 由上方的驗證設定，不能作為自訂請求標頭",
+          "headerValueRequired": "請輸入 {{name}} 的值"
         },
         "sharedByEditor": "由 {{owner}} 分享 · 你是編輯者",
         "aTeammate": "一位隊友",
@@ -1556,7 +1560,12 @@
         "advanced": "進階設定",
         "testBeforeSave": "儲存前先測試連線。",
         "discoveredTools_one": "找到 {{formatted}} 個動作",
-        "discoveredTools_other": "找到 {{formatted}} 個動作"
+        "discoveredTools_other": "找到 {{formatted}} 個動作",
+        "customHeaders": "自訂請求標頭",
+        "customHeadersHint": "隨每個傳送至此伺服器的請求一起傳送。值會像金鑰一樣儲存，且不會再次顯示。",
+        "headerValue": "請求標頭值",
+        "addHeader": "新增請求標頭",
+        "removeHeader": "移除請求標頭"
       },
       "configErrors": {
         "required": "{{field}}為必填項",

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { Trash2 } from 'lucide-react';
 
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
@@ -10,6 +11,7 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { FormField } from '../components/ui/form-field';
+import { IconButton } from '../components/ui/icon-button';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { SectionHeader } from '../components/ui/section-header';
 import {
@@ -41,6 +43,26 @@ type TestResult = {
 };
 
 const NOTICE_VARIANT = { waiting: 'info', popupBlocked: 'warning' } as const;
+
+/**
+ * A custom header row. A saved header comes back by name only: its value is
+ * a secret, so the field is empty and leaving it empty keeps the saved value.
+ */
+type HeaderRow = { key: string; name: string; value: string; saved: boolean };
+
+let headerRowSeq = 0;
+const headerRow = (name = '', saved = false): HeaderRow => {
+  headerRowSeq += 1;
+  return { key: `header-${headerRowSeq}`, name, value: '', saved };
+};
+const savedHeaderRows = (server?: { header_names?: unknown }): HeaderRow[] => {
+  const names = server?.header_names;
+  return Array.isArray(names)
+    ? names.map((name) => headerRow(String(name), true))
+    : [];
+};
+// RFC 9110 token characters.
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
 interface MCPServerModalProps {
   modalState: ActiveState;
@@ -127,9 +149,12 @@ export default function MCPServerModal({
   const [oauthCompleted, setOAuthCompleted] = useState(false);
   const [saveActive, setSaveActive] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [headers, setHeaders] = useState<HeaderRow[]>(() =>
+    savedHeaderRows(server),
+  );
   const advancedId = useId();
   // A timeout error opens the section so the message is never hidden.
-  const advancedOpen = showAdvanced || !!errors.timeout;
+  const advancedOpen = showAdvanced || !!errors.timeout || !!errors.headers;
 
   // A tool shared with the caller (an editor reconnecting the owner's
   // server): its saved secrets stay hidden and a new entry replaces them.
@@ -149,6 +174,49 @@ export default function MCPServerModal({
     hasSavedSecret &&
     originOf(formData.server_url) !== originOf(server?.server_url || '');
   const keepSavedSecret = hasSavedSecret && !serverChanged;
+  // A new origin never inherits saved header values.
+  const headersMoved =
+    !!server?.id &&
+    originOf(formData.server_url) !== originOf(server?.server_url || '');
+  // The header the chosen authentication sets; a custom one can't replace it.
+  const reservedHeader =
+    formData.auth_type === 'api_key'
+      ? (formData.header_name.trim() || 'X-API-Key').toLowerCase()
+      : ['bearer', 'oauth', 'basic'].includes(formData.auth_type)
+        ? 'authorization'
+        : null;
+
+  const clearHeaderError = () => {
+    if (errors.headers) setErrors((prev) => ({ ...prev, headers: '' }));
+    setTestResult(null);
+  };
+  const addHeader = () => {
+    setHeaders((rows) => [...rows, headerRow()]);
+    clearHeaderError();
+  };
+  const removeHeader = (key: string) => {
+    setHeaders((rows) => rows.filter((row) => row.key !== key));
+    clearHeaderError();
+  };
+  const updateHeader = (
+    key: string,
+    field: 'name' | 'value',
+    value: string,
+  ) => {
+    setHeaders((rows) =>
+      rows.map((row) =>
+        row.key !== key
+          ? row
+          : // A renamed header is a new one: its saved value doesn't follow.
+            {
+              ...row,
+              [field]: value,
+              ...(field === 'name' && { saved: false }),
+            },
+      ),
+    );
+    clearHeaderError();
+  };
 
   const cleanupOAuthListener = useCallback(() => {
     setOauthTaskId(null);
@@ -188,6 +256,10 @@ export default function MCPServerModal({
       setDiscoveredTools([]);
       setSaveActive(false);
       setOAuthCompleted(false);
+      const savedRows = savedHeaderRows(server);
+      setHeaders(savedRows);
+      // Saved headers are shown, so the section they live in opens.
+      setShowAdvanced(savedRows.length > 0);
     }
   }, [modalState, server]);
 
@@ -212,6 +284,7 @@ export default function MCPServerModal({
     setSaveActive(false);
     setTesting(false);
     setOAuthCompleted(false);
+    setHeaders([]);
   };
 
   const validateForm = () => {
@@ -263,6 +336,27 @@ export default function MCPServerModal({
     if (authFieldChecks[formData.auth_type])
       authFieldChecks[formData.auth_type]();
 
+    const seenHeaders = new Set<string>();
+    for (const row of headers) {
+      const name = row.name.trim();
+      if (!name && !row.value.trim()) continue;
+      const lower = name.toLowerCase();
+      let headerError = '';
+      if (!HEADER_NAME.test(name)) headerError = 'headerNameInvalid';
+      else if (seenHeaders.has(lower)) headerError = 'headerDuplicate';
+      else if (lower === reservedHeader) headerError = 'headerReserved';
+      else if (!row.value.trim() && (!row.saved || headersMoved))
+        headerError = 'headerValueRequired';
+      seenHeaders.add(lower);
+      if (headerError) {
+        newErrors.headers = t(`settings.tools.mcp.errors.${headerError}`, {
+          name,
+          interpolation: { escapeValue: false },
+        });
+        break;
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -298,6 +392,15 @@ export default function MCPServerModal({
       config.oauth_task_id = formData.oauth_task_id.trim();
       config.redirect_uri = `${baseURL.replace(/\/$/, '')}/api/mcp_server/callback`;
     }
+    // An empty value keeps a saved header's value; a removed row drops it.
+    // Opened without the saved names (an older caller), the form sends no
+    // headers, and the server keeps the saved ones.
+    if (!server?.id || Array.isArray(server?.header_names))
+      config.headers = Object.fromEntries(
+        headers
+          .filter((row) => row.name.trim())
+          .map((row) => [row.name.trim(), row.value.trim()]),
+      );
     return config;
   };
 
@@ -794,6 +897,75 @@ export default function MCPServerModal({
                   max={300}
                 />
               </FormField>
+              <div className="flex flex-col gap-2">
+                <SectionHeader
+                  as="h3"
+                  size="xs"
+                  title={t('settings.tools.mcp.customHeaders')}
+                />
+                <p className="text-muted-foreground text-xs">
+                  {t('settings.tools.mcp.customHeadersHint')}
+                </p>
+                {headers.map((row) => (
+                  <div key={row.key} className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      size="sm"
+                      className="min-w-0 flex-1"
+                      value={row.name}
+                      onChange={(e) =>
+                        updateHeader(row.key, 'name', e.target.value)
+                      }
+                      aria-label={t('settings.tools.mcp.headerName')}
+                      placeholder={t('settings.tools.mcp.headerName')}
+                      disabled={oauthOwnerOnly}
+                    />
+                    <Input
+                      // A saved value never comes back: empty keeps it.
+                      type={row.saved ? 'password' : 'text'}
+                      autoComplete="off"
+                      size="sm"
+                      className="min-w-0 flex-1"
+                      value={row.value}
+                      onChange={(e) =>
+                        updateHeader(row.key, 'value', e.target.value)
+                      }
+                      aria-label={t('settings.tools.mcp.headerValue')}
+                      placeholder={
+                        row.saved
+                          ? t('settings.tools.savedSecretPlaceholder')
+                          : t('settings.tools.mcp.headerValue')
+                      }
+                      disabled={oauthOwnerOnly}
+                    />
+                    <IconButton
+                      label={t('settings.tools.mcp.removeHeader')}
+                      icon={Trash2}
+                      variant="ghost-destructive"
+                      size="icon-xs"
+                      onClick={() => removeHeader(row.key)}
+                      disabled={oauthOwnerOnly}
+                    />
+                  </div>
+                ))}
+                {errors.headers && (
+                  <p role="alert" className="text-destructive text-xs">
+                    {errors.headers}
+                  </p>
+                )}
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline-primary"
+                    size="sm"
+                    shape="pill"
+                    onClick={addHeader}
+                    disabled={oauthOwnerOnly}
+                  >
+                    {t('settings.tools.mcp.addHeader')}
+                  </Button>
+                </div>
+              </div>
             </div>
           </Collapsible>
         </div>

@@ -1540,7 +1540,11 @@
           "testFailed": "接続テストに失敗しました",
           "saveFailed": "MCP サーバーを保存できませんでした",
           "oauthFailed": "OAuth サインインが失敗したか、キャンセルされました",
-          "timeoutRange": "タイムアウトは 1～300 秒の範囲で指定してください"
+          "timeoutRange": "タイムアウトは 1～300 秒の範囲で指定してください",
+          "headerNameInvalid": "有効なヘッダー名を入力してください（例: X-Tenant-Id）",
+          "headerDuplicate": "{{name}} が重複しています",
+          "headerReserved": "{{name}} は上の認証で設定されるため、カスタムヘッダーにできません",
+          "headerValueRequired": "{{name}} の値を入力してください"
         },
         "sharedByEditor": "{{owner}} が共有 · あなたは編集者です",
         "aTeammate": "チームメンバー",
@@ -1556,7 +1560,12 @@
         "advanced": "詳細設定",
         "testBeforeSave": "保存する前に接続をテストしてください。",
         "discoveredTools_one": "{{formatted}} 件のアクションが見つかりました",
-        "discoveredTools_other": "{{formatted}} 件のアクションが見つかりました"
+        "discoveredTools_other": "{{formatted}} 件のアクションが見つかりました",
+        "customHeaders": "カスタムヘッダー",
+        "customHeadersHint": "このサーバーへのすべてのリクエストで送信されます。値はキーと同様に保存され、再表示されません。",
+        "headerValue": "ヘッダーの値",
+        "addHeader": "ヘッダーを追加",
+        "removeHeader": "ヘッダーを削除"
       },
       "configErrors": {
         "required": "{{field}}は必須です",

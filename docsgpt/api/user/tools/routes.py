@@ -208,6 +208,60 @@ class CredentialsRequired(Exception):
     """A save moved a tool to a new origin without supplying new secrets."""
 
 
+class ConfigRefused(Exception):
+    """A config the server will not store, such as invalid MCP custom headers."""
+
+
+_MCP_HEADER_KEYS = ("headers", "encrypted_headers", "header_names")
+
+
+def _seal_mcp_header_config(
+    new_config: dict, existing_config: dict, owner_id: str, moved: bool
+) -> tuple[dict, Optional[dict]]:
+    """Split an MCP tool's config into its plain keys and the custom headers to store.
+
+    Header values are secrets, sealed with the owner's key like credentials;
+    only their names stay readable. ``headers`` in ``new_config`` are merged
+    with the saved values (see ``_merge_mcp_headers``). Without them the
+    sealed headers stay as stored, but plaintext ``headers`` saved before
+    header values were sealed are sealed now. The client's
+    ``encrypted_headers`` and ``header_names`` are never trusted, and a new
+    origin never inherits saved values.
+
+    Returns:
+        ``(config, sealed)``: ``config`` without any header key, and the
+        header keys to store (``{}`` drops them all), or None to keep the
+        stored ones.
+
+    Raises:
+        ConfigRefused: ``headers`` is invalid, or sealing them failed.
+    """
+    from docsgpt.api.user.tools.mcp import _merge_mcp_headers, _seal_mcp_headers
+
+    config = {k: v for k, v in new_config.items() if k not in _MCP_HEADER_KEYS}
+    if "headers" not in new_config and not isinstance(existing_config.get("headers"), dict):
+        return config, None
+    try:
+        merged = _merge_mcp_headers(new_config, {"config": existing_config}, owner_id, moved)
+        return config, _seal_mcp_headers(merged, owner_id)
+    except (ValueError, RuntimeError) as err:
+        raise ConfigRefused(str(err)) from err
+
+
+def _mask_mcp_tool_config(config: dict) -> dict:
+    """An MCP tool's config as any reader sees it: header names, never values.
+
+    Drops the sealed blob, and turns plaintext ``headers`` saved before header
+    values were sealed into names only.
+    """
+    config = config or {}
+    masked = {k: v for k, v in config.items() if k not in ("encrypted_headers", "headers")}
+    legacy = config.get("headers")
+    if isinstance(legacy, dict) and not masked.get("header_names"):
+        masked["header_names"] = list(legacy)
+    return masked
+
+
 def denied_response(err: AccessDenied):
     """JSON response for an :class:`AccessDenied` (403 or 404)."""
     return make_response(jsonify({"success": False, "message": err.message}), err.status)
@@ -527,6 +581,7 @@ def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: 
 
     Raises:
         CredentialsRequired: the MCP origin changed and no new secret arrived.
+        ConfigRefused: invalid MCP custom headers, or sealing them failed.
     """
     owner_id = tool_doc["user_id"]
     existing_config = tool_doc.get("config") or {}
@@ -536,8 +591,22 @@ def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: 
         return _seal_api_tool_secrets(new_config, existing_config, owner_id)
     moved = tool_doc.get("name") == "mcp_tool" and _mcp_origin_changed(new_config, existing_config)
     if moved:
-        existing_config = {k: v for k, v in existing_config.items() if k != "encrypted_credentials"}
+        existing_config = {
+            k: v for k, v in existing_config.items()
+            if k not in ("encrypted_credentials", "encrypted_headers", "header_names")
+        }
+    is_mcp = tool_doc.get("name") == "mcp_tool"
+    sealed = None
+    if is_mcp:
+        new_config, sealed = _seal_mcp_header_config(new_config, existing_config, owner_id, moved)
     final = _merge_secrets_on_update(new_config, existing_config, config_requirements, owner_id)
+    if is_mcp:
+        if sealed is None:
+            # Unchanged: keep what is stored (nothing, after a move).
+            sealed = {k: existing_config[k] for k in ("encrypted_headers", "header_names") if k in existing_config}
+        for key in _MCP_HEADER_KEYS:
+            final.pop(key, None)
+        final.update(sealed)
     if moved and final.get("auth_type") in _MCP_CREDENTIAL_AUTH_TYPES and not final.get(
         "encrypted_credentials"
     ):
@@ -777,6 +846,9 @@ class GetTools(Resource):
                 if tool_copy.get("name") == "api_tool":
                     # Header / query-param values are secrets for everyone.
                     tool_copy["config"] = mask_api_tool_config(tool_copy.get("config") or {})
+                if tool_copy.get("name") == "mcp_tool":
+                    # Custom header values are secrets for everyone; the names stay.
+                    tool_copy["config"] = _mask_mcp_tool_config(tool_copy.get("config") or {})
                 tool_copy["ownership"] = ownership
                 if str(row["id"]) in account_names:
                     tool_copy["customName"] = tool_copy["displayName"] = account_names[str(row["id"])]
@@ -880,6 +952,13 @@ class CreateTool(Resource):
         if isinstance(data.get("config"), dict):
             # Only removing a connection notes that it was removed.
             data["config"] = carry_removed_connection(data["config"], None)
+        if data.get("name") == "mcp_tool" and isinstance(data.get("config"), dict):
+            # Custom header values are sealed like credentials, never stored in the clear.
+            try:
+                plain, sealed = _seal_mcp_header_config(data["config"], {}, user, False)
+            except ConfigRefused as err:
+                return make_response(jsonify({"success": False, "message": str(err)}), 400)
+            data["config"] = {**plain, **(sealed or {})}
         try:
             if data["name"] == "mcp_tool":
                 server_url = (data.get("config", {}).get("server_url") or "").strip()
@@ -1219,7 +1298,7 @@ class UpdateTool(Resource):
                     )
         except AccessDenied as err:
             return denied_response(err)
-        except CredentialsRequired as err:
+        except (CredentialsRequired, ConfigRefused) as err:
             return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:
             current_app.logger.error(f"Error updating tool: {err}", exc_info=True)
@@ -1334,7 +1413,7 @@ class UpdateToolConfig(Resource):
                 repo.update(str(tool_doc["id"]), ra.owner_id, {"config": final_config})
         except AccessDenied as err:
             return denied_response(err)
-        except CredentialsRequired as err:
+        except (CredentialsRequired, ConfigRefused) as err:
             return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:
             current_app.logger.error(

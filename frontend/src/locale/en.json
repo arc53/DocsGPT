@@ -1543,7 +1543,11 @@
           "testFailed": "Connection test failed",
           "saveFailed": "Failed to save MCP server",
           "oauthFailed": "OAuth sign-in failed or was cancelled",
-          "timeoutRange": "Timeout must be between 1 and 300 seconds"
+          "timeoutRange": "Timeout must be between 1 and 300 seconds",
+          "headerNameInvalid": "Enter a valid header name, like X-Tenant-Id",
+          "headerDuplicate": "{{name}} is listed twice",
+          "headerReserved": "{{name}} is set by the authentication above, so it can’t be a custom header",
+          "headerValueRequired": "Enter a value for {{name}}"
         },
         "sharedByEditor": "Shared by {{owner}} · you're an editor",
         "aTeammate": "a teammate",
@@ -1559,7 +1563,12 @@
         "advanced": "Advanced settings",
         "testBeforeSave": "Test the connection before you save.",
         "discoveredTools_one": "{{formatted}} action found",
-        "discoveredTools_other": "{{formatted}} actions found"
+        "discoveredTools_other": "{{formatted}} actions found",
+        "customHeaders": "Custom headers",
+        "customHeadersHint": "Sent with every request to this server. Values are saved like a key and never shown again.",
+        "headerValue": "Header value",
+        "addHeader": "Add header",
+        "removeHeader": "Remove header"
       },
       "configErrors": {
         "required": "{{field}} is required",

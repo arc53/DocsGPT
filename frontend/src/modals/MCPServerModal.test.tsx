@@ -52,6 +52,7 @@ const server = {
   has_encrypted_credentials: true,
   access: 'owner',
   owner_label: null as string | null,
+  header_names: [] as string[],
 };
 
 const json = (body: unknown, ok = true, status = 200) =>
@@ -363,5 +364,124 @@ describe('MCPServerModal', () => {
     for (const icon of icons) {
       expect(icon.getAttribute('class') ?? '').not.toMatch(/\bsize-/);
     }
+  });
+  const openAdvanced = async () => {
+    const toggle = button('settings.tools.mcp.advanced');
+    if (toggle.getAttribute('aria-expanded') !== 'true')
+      await act(async () => toggle.click());
+  };
+  const headerInputs = (label: string) =>
+    Array.from(
+      document.body.querySelectorAll<HTMLInputElement>(
+        `input[aria-label="${label}"]`,
+      ),
+    );
+  const addHeaderRow = async (name: string, value: string) => {
+    await openAdvanced();
+    await act(async () => button('settings.tools.mcp.addHeader').click());
+    const last = (label: string) => headerInputs(label).at(-1)!;
+    await typeInto(last('settings.tools.mcp.headerName'), name);
+    await typeInto(last('settings.tools.mcp.headerValue'), value);
+  };
+
+  it('sends custom headers with Test Connection', async () => {
+    testMCPConnection.mockReturnValue(json({ success: true, tools: [] }));
+    await render();
+    await addHeaderRow('X-Tenant', 'acme');
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(testMCPConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ headers: { 'X-Tenant': 'acme' } }),
+      }),
+      'token',
+    );
+  });
+
+  it('reopens saved headers by name, value hidden, and keeps it when left empty', async () => {
+    testMCPConnection.mockReturnValue(json({ success: true, tools: [] }));
+    saveMCPServer.mockReturnValue(json({ success: true }));
+    await render({ header_names: ['X-Tenant'] });
+    const [name] = headerInputs('settings.tools.mcp.headerName');
+    const [value] = headerInputs('settings.tools.mcp.headerValue');
+    expect(name.value).toBe('X-Tenant');
+    expect(value.value).toBe('');
+    expect(value.type).toBe('password');
+    expect(value.placeholder).toBe('settings.tools.savedSecretPlaceholder');
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    await act(async () => button('settings.tools.mcp.save').click());
+    expect(saveMCPServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ headers: { 'X-Tenant': '' } }),
+      }),
+      'token',
+    );
+  });
+
+  it('drops a removed saved header on save', async () => {
+    testMCPConnection.mockReturnValue(json({ success: true, tools: [] }));
+    await render({ header_names: ['X-Tenant'] });
+    const remove = document.body.querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.tools.mcp.removeHeader"]',
+    )!;
+    await act(async () => remove.click());
+    expect(headerInputs('settings.tools.mcp.headerName')).toHaveLength(0);
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(testMCPConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ headers: {} }),
+      }),
+      'token',
+    );
+  });
+
+  it.each(['X-API-Key', 'x-api-key', 'X-API-KEY'])(
+    'refuses %s as a custom header: the API key sets it',
+    async (header) => {
+      await render();
+      await addHeaderRow(header, 'evil');
+      await act(async () =>
+        button('settings.tools.mcp.testConnection').click(),
+      );
+      expect(testMCPConnection).not.toHaveBeenCalled();
+      expect(text()).toContain('settings.tools.mcp.errors.headerReserved');
+    },
+  );
+
+  it.each(['Authorization', 'authorization', 'AUTHORIZATION'])(
+    'refuses %s as a custom header with a bearer token',
+    async (header) => {
+      await render({ auth_type: 'bearer' });
+      await addHeaderRow(header, 'Bearer evil');
+      await act(async () =>
+        button('settings.tools.mcp.testConnection').click(),
+      );
+      expect(testMCPConnection).not.toHaveBeenCalled();
+      expect(text()).toContain('settings.tools.mcp.errors.headerReserved');
+    },
+  );
+
+  it('refuses the same header twice in any capitalization', async () => {
+    await render();
+    await addHeaderRow('X-Tenant', 'a');
+    await addHeaderRow('x-tenant', 'b');
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(testMCPConnection).not.toHaveBeenCalled();
+    expect(text()).toContain('settings.tools.mcp.errors.headerDuplicate');
+  });
+
+  it('asks for saved header values again when the server host changes', async () => {
+    await render({ header_names: ['X-Tenant'] });
+    await typeInto(urlInput(), 'https://other.example.com/sse');
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(testMCPConnection).not.toHaveBeenCalled();
+    expect(text()).toContain('settings.tools.mcp.errors.headerValueRequired');
+  });
+  it('leaves saved headers alone when opened without their names', async () => {
+    testMCPConnection.mockReturnValue(json({ success: true, tools: [] }));
+    await render({ header_names: undefined });
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(testMCPConnection.mock.calls[0][0].config).not.toHaveProperty(
+      'headers',
+    );
   });
 });
