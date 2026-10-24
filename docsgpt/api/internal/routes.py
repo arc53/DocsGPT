@@ -6,6 +6,7 @@ import time
 from flask import Blueprint, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 import logging
+from typing import Optional
 
 from docsgpt.core.paths import home_dir
 from docsgpt.core.settings import settings
@@ -14,6 +15,7 @@ from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db import source_defaults
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_session
+from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.storage.storage_creator import StorageCreator
 
 
@@ -23,6 +25,9 @@ current_dir = str(home_dir())
 
 
 internal = Blueprint("internal", __name__)
+
+# What a sync's write changes on an existing source: the content it rebuilt.
+_SYNC_FIELDS = ("date", "model", "tokens", "directory_structure")
 
 
 @internal.before_request
@@ -54,7 +59,12 @@ def download_file():
 
 @internal.route("/api/upload_index", methods=["POST"])
 def upload_index_files():
-    """Upload two files(index.faiss, index.pkl) to the user's folder."""
+    """Store a worker's index and the source's fields.
+
+    For FAISS the form carries index.faiss and index.pkl; index.json, which
+    names the index.faiss it belongs to, is built here from the pickle and
+    stored with them. An unreadable pickle answers 400 and stores nothing.
+    """
     if "user" not in request.form:
         return {"status": "no user"}
     user = request.form["user"]
@@ -115,12 +125,9 @@ def upload_index_files():
         file_pkl = request.files["file_pkl"]
         if file_pkl.filename == "":
             return {"status": "no file name"}
-
-        # Save index files to storage
-        faiss_storage_path = f"{index_base_path}/index.faiss"
-        pkl_storage_path = f"{index_base_path}/index.pkl"
-        storage.save_file(file_faiss, faiss_storage_path)
-        storage.save_file(file_pkl, pkl_storage_path)
+        faiss_files = (file_faiss, file_pkl)
+    else:
+        faiss_files = None
 
     now = datetime.datetime.now(datetime.timezone.utc)
     update_fields = {
@@ -144,13 +151,60 @@ def upload_index_files():
     if config is not None:
         update_fields["config"] = config
 
+    is_sync = request.form.get("operation") == "sync"
+    if is_sync and faiss_files is not None:
+        # Checked before the files are saved: a sync of a source deleted or
+        # converted meanwhile must not overwrite its index. The check commits
+        # straight away, so no row lock is held while the files upload.
+        with db_session() as conn:
+            refusal = _sync_refusal(source_id, _locked_source(SourcesRepository(conn), source_id, user))
+        if refusal is not None:
+            return refusal
+    if faiss_files is not None:
+        # Outside any transaction: a large index takes a while to store, and
+        # a settings change (or the Knowledge listing's row lock) would wait
+        # on it. Two jobs on one index never save at once: the workers hold
+        # the source's index lock (source_index_lock) across their upload.
+        # The upload carries no index.json: one is built here, naming the
+        # uploaded index.faiss, and the three files go in an order that a stop
+        # part way can't leave paired wrongly (store_uploaded_index).
+        from docsgpt.vectorstore.faiss import store_uploaded_index
+
+        try:
+            store_uploaded_index(storage, index_base_path, faiss_files[0].read(), faiss_files[1].read())
+        except ValueError as error:
+            logger.error(f"Refusing the FAISS index uploaded for source {source_id}: {error}")
+            return {"status": "invalid index"}, 400
     with db_session() as conn:
         repo = SourcesRepository(conn)
-        existing = None
-        if looks_like_uuid(source_id):
-            existing = repo.get(source_id, user)
-        if existing is None:
-            existing = repo.get_by_legacy_id(source_id, user)
+        # Locked until the write: a settings change waits instead of landing
+        # between this read and the update, and a sync re-checks the row here.
+        existing = _locked_source(repo, source_id, user)
+        if is_sync:
+            refusal = _sync_refusal(source_id, existing)
+            if refusal is not None:
+                if faiss_files is not None and refusal.get("reason") == "gone":
+                    # Deleted while the files were stored: nothing will read
+                    # or delete them now, so they go too.
+                    from docsgpt.vectorstore.faiss import delete_stored_index
+
+                    delete_stored_index(storage, index_base_path)
+                return refusal
+            # The form carries what the source looked like when the sync was
+            # queued; name, type, remote_data, schedule and config may have
+            # changed since, so a sync writes only what it rebuilt.
+            update_fields = {key: update_fields[key] for key in _SYNC_FIELDS}
+            fingerprint = request.form.get("sync_fingerprint")
+            stored_remote = existing.get("remote_data")
+            if fingerprint is not None and isinstance(stored_remote, dict):
+                # A connector sync's fingerprint of what it read, so the next
+                # one can skip an unchanged selection; empty clears it (a file
+                # failed). It goes onto the row's current selection: one changed
+                # meanwhile fingerprints differently, so its next sync re-reads.
+                stored_remote = {k: v for k, v in stored_remote.items() if k != "sync_fingerprint"}
+                if fingerprint:
+                    stored_remote["sync_fingerprint"] = fingerprint
+                update_fields["remote_data"] = stored_remote
         if existing is not None:
             repo.update(str(existing["id"]), user, update_fields)
         else:
@@ -175,6 +229,42 @@ def upload_index_files():
                 legacy_mongo_id=None if looks_like_uuid(source_id) else str(source_id),
             )
     return {"status": "ok"}
+
+
+def _locked_source(repo: SourcesRepository, source_id: str, user: str) -> Optional[dict]:
+    """The source row, locked for update when its id is a uuid, else looked up by its legacy id.
+
+    Args:
+        repo: A repository on the open transaction.
+        source_id: The id the worker sent.
+        user: The owner.
+
+    Returns:
+        The row, or ``None`` when there is none.
+    """
+    existing = repo.get_for_update(source_id, user) if looks_like_uuid(source_id) else None
+    return existing if existing is not None else repo.get_by_legacy_id(source_id, user)
+
+
+def _sync_refusal(source_id: str, existing: Optional[dict]) -> Optional[dict]:
+    """Why a sync's upload must not be written, or ``None`` when it may be.
+
+    Args:
+        source_id: The source.
+        existing: Its row as read now.
+
+    Returns:
+        ``{"status": "skipped", "reason": "gone" | "wiki"}``, or ``None``.
+    """
+    if existing is None:
+        # Deleted while the sync ran: a sync rebuilds a source, never creates one.
+        logger.info(f"Not re-creating deleted source {source_id} from a sync")
+        return {"status": "skipped", "reason": "gone"}
+    if SourceConfig.parse(existing.get("config")).kind == "wiki":
+        # Converted while the sync ran: its pages are the content now.
+        logger.info(f"Not writing a sync over wiki source {source_id}")
+        return {"status": "skipped", "reason": "wiki"}
+    return None
 
 
 # The decision model for Celery workers in local mode: the ``docsgpt decide-server`` contract (``/v1/decide``,

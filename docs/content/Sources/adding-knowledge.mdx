@@ -1,7 +1,7 @@
 ---
 title: Add Knowledge
 description: Add files, web pages, GitHub repositories, wikis and synced services to Knowledge, then use them in chats and agents.
-lastUpdated: 2026-10-09
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -26,7 +26,7 @@ import { Steps } from 'nextra/components'
   <source src="/adding-knowledge.mp4" type="video/mp4" />
 </video>
 
-*The recording opens **Settings > Knowledge** and clicks **Add knowledge**. It picks **Upload File**, selects a PDF product handbook, names it "Espresso One handbook" and clicks **Add to Knowledge**. A progress panel shows the upload, and the handbook appears on the Knowledge page. It then adds a single web page with **Link**, named "DocsGPT quickstart", and both sources are listed when indexing finishes.*
+*The recording opens **Settings > Knowledge** and clicks **Add knowledge**. It picks **Upload File**, selects a PDF product handbook, names it "Espresso One handbook" and clicks **Add to Knowledge**. A progress panel shows the upload, and the handbook appears on the Knowledge page. It then adds a single web page, named "DocsGPT quickstart", with the earlier **Link** option, which is now **Website** with **This page**. Both sources are listed when indexing finishes.*
 
 ## Open the Add knowledge dialog
 
@@ -40,8 +40,7 @@ Go to **Settings > Knowledge** and click **Add knowledge**. From a chat, you can
 | Option | What it adds |
 | --- | --- |
 | **Upload File** | Files from your computer, including `.zip` archives. See [Upload files](#upload-files). |
-| **Link** | One web page, by URL. |
-| **Crawler** | A website: starts at a URL and follows links on the same host, up to 10 pages. |
+| **Website** | Web pages by their addresses, or a whole site found through its sitemap or its links. See [Add web pages or a website](#add-web-pages-or-a-website). |
 | **GitHub** | A public repository, by its URL. Private repositories go through your GitHub connection. |
 | **New wiki** | An editable Markdown wiki that agents can read and rewrite. See [Wiki sources](/Sources/Wiki-sources). |
 | **Connect your data** | Content synced from a connected service, such as Google Drive, SharePoint, Confluence or Amazon S3. See [Connectors](/Sources/Connectors). This tile shows only when the instance has a connector that syncs. |
@@ -52,14 +51,14 @@ Every source needs a **Name**. It is how the source appears on the Knowledge pag
 
 **Advanced settings** (not shown for a wiki) holds the chunking and retrieval options for this source. The defaults suit most content; see [Per-source configuration](/Sources/Per-source-configuration) for what each option does.
 
-Click **Add to Knowledge** (**Create** for a wiki). The dialog closes, and a panel in the corner shows the upload, parsing and embedding progress. The source appears on the Knowledge page when indexing finishes. If indexing fails, the source's menu offers **Reingest**.
+Click **Add to Knowledge**. The dialog closes, and a panel in the corner shows the upload, parsing and embedding progress. The source appears on the Knowledge page when indexing finishes. If indexing fails, the source's menu offers **Reingest**.
 </Steps>
 
 ## Upload files
 
 **Upload File** accepts one or more files. Files you pick together become one source.
 
-To upload a folder, click **Select a folder** or drag the folder onto the dialog. Every supported file inside it is uploaded, and the source keeps the folder's subfolders, the same way a zip archive does. The source is named after the folder unless you type another name. Hidden files and folders, such as `.git`, are left out.
+To upload a folder, drag it onto the upload area or click **Or choose a whole folder** under it. Picking or dropping again adds to the list, and **Remove** takes a file off it. Every supported file inside it is uploaded, and the source keeps the folder's subfolders, the same way a zip archive does. The source is named after the folder unless you type another name. Hidden files and folders, such as `.git`, are left out.
 
 The upload dialog accepts these types:
 
@@ -78,12 +77,74 @@ The upload dialog takes files **up to 25 MB each**. It lists larger files, and f
 
 Scanned PDFs and images need OCR, which is off by default (`OCR_ENABLED`). See [Document parsing and OCR](/Sources/ocr) for the parser engines and OCR settings. All size and parsing settings are listed in the [settings reference](/Deploying/Settings-Reference).
 
-## Add a web page or a website
+## Add web pages or a website
 
-- **Link** reads the one page at the URL.
-- **Crawler** starts at the URL and follows links on the same host until it has tried 10 pages. Pages that fail to load count toward the 10.
+**Website** adds pages from the web and keeps each page's address, so answers and the [chat widget](/Extensions/chat-widget#sources-and-citations) link back to the page a passage came from. Under **What to add**, pick one:
 
-Both fetch pages from the DocsGPT server, not from your browser. Pages behind a sign-in can't be read, and URLs that resolve to private or internal addresses are refused.
+- **This page** fetches exactly the addresses you enter. Click **Add another page** to put several pages in one source.
+- **Whole site** starts at the address and adds the pages it leads to on the same site. A site on a port, such as `example.com:8443`, stays on that port.
+
+An address typed without a scheme, such as `example.com/docs`, is fetched with `https://`. The **Name** starts as the site's host name; type over it to change it.
+
+### Whole site options
+
+| Option | What it does |
+| --- | --- |
+| **Page limit** | How many pages to fetch from the site. It starts at 100, which is also the most one source can hold unless an admin changes it. An admin sets the starting value with `WEB_DEFAULT_PAGES` and the most pages per source with `WEB_MAX_PAGES`. |
+| **Stay under** | Only fetch addresses that start with this path, such as `/docs`. If the address you enter ends in a folder, such as `https://example.com/docs/`, this starts as that folder. Leave it empty for the whole site. An address whose path has a `.` or `..` segment, or an encoded slash (`%2F`), is outside it, so `/docs/../admin` and `/docs/..%2Fadmin` are outside `/docs`. |
+| **Find pages** | **Automatic** (the default) reads the site's sitemap and, if the site has none, follows links from the start page. **Sitemap** uses only the sitemap; **Follow links** never reads it. |
+| **Sitemap URL** | Shown when **Find pages** is **Sitemap**: a sitemap to read instead of the one the site lists in `robots.txt`. You can also enter a sitemap's address, such as `https://example.com/sitemap.xml`, as the website address. |
+| **Include subdomains** | Also fetch pages on other subdomains of the same registered domain, such as `blog.example.com` for `example.com`. It doesn't cross a shared hosting domain: for `name.github.io` or `name.vercel.app` it stays on that site's own subdomains. |
+
+**Stay under** and the skipped addresses apply to the start page too. A start page they leave out is still read for its links, but it isn't added to the source and doesn't count toward the page limit.
+
+DocsGPT looks for a sitemap in the site's `robots.txt`, then at `/sitemap.xml` and `/sitemap_index.xml`. A sitemap that lists other sitemaps is followed down to the pages, and compressed (`.xml.gz`) sitemaps are read. When a sitemap holds more pages than the limit, DocsGPT drops the addresses outside **Stay under**, the other subdomains and the skipped addresses first, then takes pages in the sitemap's own order until it reaches the limit. When DocsGPT follows links, it takes the pages nearest the start page first, in link order, so a crawl that stops at the limit takes the same pages each time. When a sync stops at the limit, the source's **Settings** say **page limit reached**.
+
+A source holds at most `WEB_MAX_PAGES` pages (100 by default) across everything it fetches, so a sync never has more to fetch than that. Every address and site in the source's list counts toward it, since a site brings at least one page. Pages added by their address count first, and sites share what is left in the order they were added. **Add pages** is refused when the source would go past the limit. If a sync that was already running fills the source before added pages are fetched, they aren't added on top: the source is synced again instead, with the pages you added by their address first.
+
+If an admin lowers `WEB_MAX_PAGES` below what a source already holds, its syncs fetch up to the new limit and leave the rest out. You can still remove its pages and save its settings; only a change that adds pages past the limit is refused.
+
+A source also lists at most 20 whole sites, and up to 1,000 skipped addresses. A change that would go past either, such as removing one more page from a source whose skipped list is full, is refused with a message that says which limit it hit.
+
+### What DocsGPT keeps from a page
+
+DocsGPT keeps a page's main content as Markdown: headings, lists, tables and code. It leaves out the navigation, headers, footers, forms and sidebars of links. Images are kept as their alt text.
+
+Plain-text and Markdown responses (`text/plain` and `text/markdown`), such as an `llms.txt` file or a raw README, are kept as written, with the first `#` heading as the title. A crawl doesn't follow links out of them. JSON is kept only for a page you add by its address; a crawl or sitemap that reaches JSON skips it. Other responses, and pages with no text, are skipped. A page that is only menus and links, such as a site's index, isn't kept, but a crawl still follows its links.
+
+Link addresses inside the page text are dropped by default, because they add text that doesn't help search. If answers should be able to point to the pages a page links to, turn on **Keep links in page text** in the website form, or later in the source's **Settings**. It keeps the addresses of links that sit inside sentences, stores about a quarter more text, and can rank search results slightly lower.
+
+### Keep it up to date
+
+**Keep up to date** sets how often the source is fetched again: **Never**, **Daily**, **Weekly** or **Monthly**. It starts at **Never** for pages and **Weekly** for a whole site. A sync fetches every page again, so the source follows the site as pages are added, changed and removed.
+
+Pages are fetched from the DocsGPT server, not from your browser. Pages behind a sign-in can't be read, and addresses that resolve to private or internal addresses are refused. An address with a user name and password in it (`https://user:pass@example.com/`) is refused too, and a link like that found on a page is skipped. Addresses are compared after their spelling is normalised: `example.com/~a` and `example.com/%7Ea` are one page, and an international host name such as `bücher.de` is the same host as its `xn--` form. An address longer than 2,048 characters or more than 64 folders deep isn't fetched.
+
+A page that redirects is followed, up to five redirects, and each new address is checked like the first. A page that only sends the browser on with a `<meta http-equiv="refresh">` tag, such as a "Redirecting…" page a site generator leaves behind, counts as a redirect too. The page is kept under the address it lands on, and remembers every address in the source that led to it. In a whole site, a page that redirects outside the site, outside **Stay under** or to a skipped address is left out.
+
+### Manage the pages of a website source
+
+**View** on a website source lists its pages by title, with each page's address, size and the time it was fetched. Pages from a whole site are grouped by the folders in their addresses. A source with pages on more than one host has a folder per host, as written: `www.example.com` and `example.com` are two folders, and removing one leaves the other's pages. A folder whose name ends in `.md` is shown with a `~` added (`guide.md~`), so it never shares a name with a page. If you can edit the source:
+
+- **Add pages** fetches more page addresses, or another whole site, into the same source. Pages are fetched right away and are kept in every sync. A page that can't be fetched stays on the source's list, a warning names it, and the next sync tries it again. Adding a whole site, or the source's first page on a second host, rebuilds the source like a sync. A site the source already lists can be added again under another **Stay under** path, as a second site; adding only addresses and sites the source already lists is refused.
+- **Refresh page**, in a page's menu, fetches that page again now. If the fetch fails, the page keeps its content. A page found by crawling that now redirects outside the source's sites, or to a skipped address, is removed instead, as the next sync would leave it out. A page you added by its address is refreshed wherever it leads.
+- **Remove from source** deletes a page's chunks. A page you added by its address leaves the source's list, and if a site in the source would find it again, it's also added to the skipped addresses. A page found by crawling a site, or a whole folder, is added to the skipped addresses, so later syncs leave it out. Every address that redirected to the removed page goes too, so no other entry brings it back. Pages of a website source added before pages kept their addresses (the former **Link**, **Crawler** and **Sitemap** sources) can be removed the same way; the first removal turns the source into a Website source. The skipped addresses are saved at once; the chunks are deleted in the background, and the header shows **Removing pages…** until the page list updates. If the removal fails, the pages and their chunks stay as they were, and you can remove them again. A removal that would leave the source with nothing to fetch, such as removing its only page or its only site, is refused; delete the source instead.
+
+Pages are changed one source at a time. While a sync of the source runs, added, refreshed and removed pages wait for it to finish, then their change runs. A change still running after a few minutes says so; open the source again later to see it. A sync you start, including an **Add pages** that rebuilds the source, waits for a running change too. If another change holds the source too long (half of `CELERY_VISIBILITY_TIMEOUT`, 30 minutes by default), the waiting change or sync doesn't run and says so; start it again.
+
+On a [GraphRAG](/Sources/GraphRAG#when-pages-change) source, the knowledge graph follows these changes: added and refreshed pages are extracted into it, and removed pages leave it.
+
+On the Elasticsearch vector store, a page's chunks can't be changed on their own. **Refresh page** and **Remove from source** are refused there, and **Add pages** rebuilds the source like a sync. To drop a page you added by its address, remove it from the list in **Settings** and click **Sync now**.
+
+**Settings**, in the source's menu, shows what a website source fetches and what it skips, above its retrieval and chunking settings. There you can remove an address or a site from the list, **Restore** a skipped address, switch **Keep links in page text**, change **Keep up to date**, or click **Sync now**. Changes to the list apply at the next sync.
+
+Through the API, these actions are the `/api/website` routes in the [API reference](/API/reference). `POST /api/website` keeps the stored skipped addresses and link setting when `skip` or `keep_links` is left out. A refused request carries a `code`, such as `page_limit`, `site_limit`, `skip_limit`, `invalid_address` (an address that isn't a web address, has a user name and password in it, or is more than 64 folders deep), `invalid_config` (a path or skipped address with a control character in it) or `already_listed`, and a chunk change on a busy source answers `409` with `source_busy`. A change that was saved but couldn't be queued answers `500` with `queue_failed`; the next sync applies it.
+
+<Callout type="warning" emoji="⚠️">
+A sync replaces a website source's chunks. On a source that is kept up to date, chunks you add or edit by hand are replaced at the next sync.
+</Callout>
+
+Sources added with the earlier **Link**, **Crawler** and sitemap options open and sync as website sources. Their pages show titles and addresses after their next sync. A link is a page, a crawler source is a site, and a sitemap source is a site that includes its subdomains, so a page its sitemap lists on another domain is left out; an address that isn't a sitemap file, such as one without `.xml`, is also kept as a page. The page limit applies to them as to any website source.
 
 ## Add a GitHub repository
 
@@ -93,19 +154,21 @@ For a private repository, use **Connect GitHub** in the form, or **Pick a reposi
 
 ## Sync content from connected services
 
-**Connect your data** lists the services on this instance that can sync into Knowledge. Pick one, sign in, then choose which files or folders to sync and how often. You can also start from **Connect a service** on an empty Knowledge page, or from **Settings > Connectors**. Operators must configure each connector first; see [Connectors](/Sources/Connectors).
+**Connect your data** lists the services on this instance that can sync into Knowledge. Pick one, sign in, then choose which files or folders to sync and how often. You can also start from **Settings > Connectors**. Operators must configure each connector first; see [Connectors](/Sources/Connectors).
 
 ## Manage your knowledge
 
 Each source on the Knowledge page has a menu. Which items appear depends on the source type and on your access to it:
 
-- **View** opens the source's files and chunks. If you can edit the source, you can edit, add and delete chunks.
-- **Sync: Never / Daily / Weekly / Monthly** and **Sync now** appear for sources that can be fetched again: links, crawls, GitHub repositories and connector content. A sync replaces the content, so it can overwrite chunk edits.
-- **Source settings** changes chunking and retrieval. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested. See [Per-source configuration](/Sources/Per-source-configuration).
+- **View** opens the source's files and chunks. If you can edit the source, you can edit, add and delete chunks. While a sync or a page change runs on the source, a chunk change waits a few seconds, then is refused with "Another change to this source is running. Try again once it’s done."
+- **Sync now** appears for sources that are fetched again: websites, GitHub repositories and connector content. A sync replaces the content, so it can overwrite chunk edits.
+- **Settings** opens one dialog for the source. A website source starts with its pages and schedule (see [Manage the pages of a website source](#manage-the-pages-of-a-website-source)); a GitHub or connector source starts with **Keep up to date**, its sync schedule. Then come the retrieval and chunking settings. Retrieval changes apply on the next question. Chunking changes apply only after the source is re-ingested; for a website, GitHub or connector source, **Reingest** runs a sync, which fetches the pages or files again with the new settings. A connector source whose account was disconnected can't be reingested until the account is connected again. See [Per-source configuration](/Sources/Per-source-configuration).
 - **Test retrieval** runs a question against the source and shows which chunks come back.
-- **Convert to wiki** turns the source into editable wiki pages. This can't be undone.
+- **Convert to wiki** turns the source into editable wiki pages. This can't be undone, and it stops the source's sync schedule: a wiki doesn't sync.
 - **Share with team** shares the source with a team. See [Access control](/Deploying/Access-Control).
-- **Delete** removes the source and its index.
+- **Delete** removes the source and its index. While a sync or a page change runs on the source, it waits a few seconds, then is refused with the same message; delete it once the change is done.
+
+An open source keeps the same actions in its header: **Test retrieval**, then its main action (**Add file** for an upload, **Add pages** for a website, **Sync now** for a synced source), then the ⋯ menu with the rest. **Delete source** there returns you to the Knowledge page.
 
 To build a knowledge graph over a source, see [GraphRAG](/Sources/GraphRAG).
 

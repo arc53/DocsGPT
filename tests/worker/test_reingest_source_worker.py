@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from docsgpt import worker
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 
@@ -181,3 +182,132 @@ class TestReingestSourceWorker:
         assert calls[0]["max_tokens"] == 800
         assert calls[0]["min_tokens"] == 50
         assert calls[0]["chunk_overlap"] == 0
+
+
+def _local_source(pg_conn):
+    return SourcesRepository(pg_conn).create(
+        "doc-set", user_id="alice", type="local", retriever="classic",
+        file_path="inputs/alice/doc-set", directory_structure={},
+    )
+
+
+@pytest.fixture
+def quiet_reingest(monkeypatch, published):
+    """A reingest over an empty directory, with its events recorded."""
+    storage = MagicMock(name="storage")
+    storage.is_directory.return_value = True
+    storage.list_files.return_value = []
+    monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: storage)
+    reader = MagicMock(name="reader")
+    reader.load_data.return_value = []
+    reader.directory_structure = {}
+    reader.file_token_counts = {}
+    monkeypatch.setattr(worker, "SimpleDirectoryReader", lambda *a, **kw: reader)
+    return {"storage": storage, "events": published}
+
+
+@pytest.mark.unit
+class TestReingestNeedsStoredFiles:
+    """A remote source (Website, crawler, connector...) keeps no files; reingest can't read them back."""
+
+    @pytest.mark.parametrize("type_", ["website", "crawler", "connector:file"])
+    def test_refused_without_raising(self, pg_conn, patch_worker_db, task_self, quiet_reingest, type_):
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id="alice", type=type_,
+            remote_data={"entries": [{"url": "https://docs.x.io/a", "mode": "page"}]},
+            directory_structure={"a.md": {"type": "text/markdown", "size_bytes": 4, "token_count": 2}},
+            tokens="2",
+        )
+        task_self.request.id = "reingest-1"
+
+        # Returned, not raised: a durable task would retry it three times, then mark the source failed.
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "skipped" and result["reason"] == "no_files"
+        [(kind, payload)] = quiet_reingest["events"]
+        assert kind == "source.ingest.failed"
+        assert payload["reason"] == "no_files" and payload["operation"] == "reingest"
+        assert payload["task_id"] == "reingest-1" and payload["error"]
+        quiet_reingest["storage"].is_directory.assert_not_called()
+        row = SourcesRepository(pg_conn).get(str(src["id"]), "alice")
+        assert list(row["directory_structure"]) == ["a.md"] and row["tokens"] == "2"
+
+
+@pytest.mark.unit
+class TestReingestTakesTheIndexLock:
+    def test_reingests_holding_the_lock(self, pg_conn, patch_worker_db, task_self, quiet_reingest, held_lock):
+        src = _local_source(pg_conn)
+        quiet_reingest["storage"].is_directory.side_effect = lambda path: held_lock.append("read") or True
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "no_changes"
+        assert held_lock[0] == str(src["id"]) and held_lock[-1] == "released" and "read" in held_lock[1:-1]
+
+    def test_a_busy_source_is_skipped(self, pg_conn, patch_worker_db, task_self, quiet_reingest, busy_lock):
+        src = _local_source(pg_conn)
+        busy_lock()
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "skipped" and result["reason"] == "busy"
+        assert quiet_reingest["events"][-1][0] == "source.ingest.failed"
+        assert quiet_reingest["events"][-1][1]["reason"] == "busy"
+        quiet_reingest["storage"].is_directory.assert_not_called()
+
+    def test_a_source_deleted_while_waiting_is_skipped(
+        self, pg_conn, patch_worker_db, task_self, quiet_reingest, held_lock,
+    ):
+        src = _local_source(pg_conn)
+        held_lock.while_waiting.append(lambda: SourcesRepository(pg_conn).delete(str(src["id"]), "alice"))
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "skipped" and result["reason"] == "gone"
+        assert quiet_reingest["events"][-1][1]["reason"] == "gone"
+        quiet_reingest["storage"].is_directory.assert_not_called()
+
+
+@pytest.mark.unit
+class TestReingestRefusesAWiki:
+    """An upload converted to a wiki keeps its files; a reingest would swap the wiki's pages for them."""
+
+    def _wiki(self, pg_conn):
+        return SourcesRepository(pg_conn).create(
+            "handbook", user_id="alice", type="local", retriever="classic",
+            file_path="inputs/alice/handbook", config={"kind": "wiki"},
+            directory_structure={
+                "report.md": {"type": "text/markdown", "size_bytes": 10, "token_count": 5},
+                "notes.md": {"type": "text/markdown", "size_bytes": 10, "token_count": 5},
+            },
+            tokens="10",
+        )
+
+    def test_a_wiki_is_refused(self, pg_conn, patch_worker_db, task_self, quiet_reingest):
+        src = self._wiki(pg_conn)
+        task_self.request.id = "reingest-wiki"
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "skipped" and result["reason"] == "wiki"
+        kind, payload = quiet_reingest["events"][-1]
+        assert kind == "source.ingest.failed"
+        assert payload["reason"] == "wiki" and payload["operation"] == "reingest" and payload["error"]
+        assert payload["task_id"] == "reingest-wiki"
+        quiet_reingest["storage"].is_directory.assert_not_called()
+        row = SourcesRepository(pg_conn).get(str(src["id"]), "alice")
+        assert sorted(row["directory_structure"]) == ["notes.md", "report.md"] and row["tokens"] == "10"
+
+    def test_a_conversion_that_finished_while_waiting_is_refused(
+        self, pg_conn, patch_worker_db, task_self, quiet_reingest, held_lock,
+    ):
+        src = _local_source(pg_conn)
+        held_lock.while_waiting.append(
+            lambda: SourcesRepository(pg_conn).update(str(src["id"]), "alice", {"config": {"kind": "wiki"}})
+        )
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "skipped" and result["reason"] == "wiki"
+        assert quiet_reingest["events"][-1][1]["reason"] == "wiki"
+        quiet_reingest["storage"].is_directory.assert_not_called()

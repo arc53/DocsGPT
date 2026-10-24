@@ -182,7 +182,6 @@
       "addChunk": "添加块",
       "preLoaded": "预加载",
       "private": "私有",
-      "sync": "同步",
       "syncDone": "完成",
       "syncNow": "立即同步",
       "syncing": "同步中...",
@@ -194,8 +193,7 @@
         "never": "从不",
         "daily": "每天",
         "weekly": "每周",
-        "monthly": "每月",
-        "option": "同步：{{frequency}}"
+        "monthly": "每月"
       },
       "actions": "操作",
       "view": "查看",
@@ -207,6 +205,7 @@
         "save": "保存",
         "saveFailed": "无法保存页面，请重试。",
         "forbidden": "您没有权限编辑此页面。",
+        "unsupported": "此向量存储无法单独更改页面，因此无法承载 Wiki。",
         "conflict": "此页面在您打开后已被修改，并已重新加载。您的编辑内容在下方——请重新应用并再次保存。",
         "editPlaceholder": "使用 Markdown 编写页面…",
         "stamp": {
@@ -250,7 +249,6 @@
         "pageLoadFailed": "无法加载此页面。",
         "editTitle": "编辑页面",
         "settings": {
-          "action": "Wiki 设置",
           "title": "Wiki 设置",
           "outsideEdits": {
             "label": "允许 API 和小组件用户编辑此 Wiki",
@@ -274,8 +272,6 @@
           "costCost": "每个文本块会调用一次 LLM，因此会消耗令牌，来源较大时可能耗时较长。",
           "estimate": "每个文本块约 1 次 LLM 调用 · 共约 {{lo}}–{{hi}} 个令牌（输入输出各约一半）；输出量取决于文档中实体的密集程度。",
           "confirm": "启用 GraphRAG",
-          "inProgress": "正在构建图谱…",
-          "inProgressPct": "正在构建图谱… {{pct}}%",
           "summaryNodes_one": "{{count}} 个实体",
           "summaryNodes_other": "{{count}} 个实体",
           "summaryEdges_one": "{{count}} 个关系",
@@ -395,7 +391,7 @@
         "saveToSource": "保存到来源",
         "savedToSource": "已保存。该来源现在使用你测试过的设置。"
       },
-      "editConfig": "来源设置",
+      "editConfig": "设置",
       "shareWithTeam": "与团队共享",
       "deleteWarning": "删除“{{name}}”？",
       "chunks": "文本块",
@@ -422,7 +418,6 @@
       "searchAlt": "搜索",
       "retrievalOptions": {
         "title": "高级设置",
-        "advanced": "高级",
         "retrieval": {
           "title": "检索",
           "note": "这些更改立即生效，无需重新索引。",
@@ -520,7 +515,12 @@
           "minRelevanceHint": "文本块被保留所需的确切相关度（0–1）。宽松为 0.1，均衡为 0.3，严格为 0.5。",
           "candidates": "评分候选数",
           "candidatesHint": "检索器为相关度模型获取并评分的文本块数量，最多 {{max}} 个。默认 {{default}} 个。"
-        }
+        },
+        "filtering": {
+          "title": "过滤",
+          "tag": "无需重新索引"
+        },
+        "createHint": "首次导入后，可在来源设置或测试检索中微调过滤。"
       },
       "configModal": {
         "title": "来源设置",
@@ -529,6 +529,7 @@
         "save": "保存",
         "chunkingChangeHint": "您更改了分块设置。保存后需要重新索引此来源才能生效。",
         "prescreenInvalidHint": "请检查 LLM 筛选参数：获取的候选数量至少应等于文本块数量，且保留的文本块数不得超过获取的候选数量。",
+        "syncAfterSave": "请先保存更改。同步使用已保存的设置。",
         "reingestRequired": "您的更改已保存。修改的分块设置需重新索引后才会生效。立即重新索引？",
         "reingestLater": "稍后",
         "errors": {
@@ -540,7 +541,8 @@
         "add": "无法添加文本块",
         "save": "无法保存文本块",
         "delete": "无法删除文本块",
-        "load": "无法加载文本块"
+        "load": "无法加载文本块",
+        "busy": "此来源的另一项更改正在进行。请在其完成后重试。"
       },
       "chunkPosition": "第 {{n}} 个文本块，共 {{total}} 个 · {{tokens}} 个令牌",
       "chunkCrumb": "第 {{n}} 个文本块",
@@ -603,6 +605,91 @@
         "safeNotice": "已标为安全：使用此来源的智能体会将此文本块视为正常内容。编辑其文本会移除该标记。",
         "reviewFailed": "无法更新此文本块，请重试。",
         "noFlagged": "此来源中没有被标记的文本块。文本块会在对话首次检索到它时评分。"
+      },
+      "website": {
+        "page": "页面",
+        "pages": "页面",
+        "fetched": "获取时间",
+        "filterPages": "筛选页面",
+        "openPage": "打开页面",
+        "pagesByline_one": "{{pages}} 个页面 · {{tokens}} 个令牌",
+        "pagesByline_other": "{{pages}} 个页面 · {{tokens}} 个令牌",
+        "sites_one": "{{count}} 个网站",
+        "sites_other": "{{count}} 个网站",
+        "pageCount_one": "{{count}} 个页面",
+        "pageCount_other": "{{count}} 个页面",
+        "synced": "{{frequency}} · {{when}}已同步",
+        "notSynced": "未同步",
+        "fetchedAt": "{{when}}获取",
+        "addPages": "添加页面",
+        "addPagesHint": "立即获取，并在每次同步时保留。添加整个网站会重建此来源。",
+        "graphCost": "此来源有知识图谱。新页面会通过 LLM 添加到图谱中，每个文本块约调用一次。如果添加会重建此来源（例如来自其他网站的页面），整个图谱都会重建：整个来源的每个文本块约调用一次。",
+        "addFailed": "无法添加页面。",
+        "pageNotFetched": "有 1 个页面未能获取：{{url}}。它会保留在此来源的列表中，下次同步时会再次尝试获取。",
+        "pagesNotFetched_one": "有 {{count}} 个页面未能获取。它们会保留在此来源的列表中，下次同步时会再次尝试获取。",
+        "pagesNotFetched_other": "有 {{count}} 个页面未能获取。它们会保留在此来源的列表中，下次同步时会再次尝试获取。",
+        "pageLimit_other": "此来源最多可包含 {{count}} 个页面。",
+        "addingPages": "正在添加页面…",
+        "refreshing": "正在刷新页面…",
+        "removing": "正在移除页面…",
+        "syncing": "正在同步来源…",
+        "refreshPage": "刷新页面",
+        "refreshFailed": "无法刷新“{{name}}”，其内容保持不变。",
+        "refreshOutOfScope": "“{{name}}”现在指向此来源之外，因此已像同步时一样被移除。",
+        "removeFromSource": "从来源中移除",
+        "removeTitle": "移除“{{name}}”？",
+        "removeEntry": "其分块将被删除，该页面会从此来源的列表中移除。",
+        "removeCrawled": "它来自对 {{host}} 的抓取。其分块将被删除，之后的同步会跳过它。你可以在来源的设置中恢复它。",
+        "removeGeneric": "其分块将被删除，之后的同步不会再抓取它。",
+        "removeFolder": "其页面的分块将被删除，之后的同步会跳过 {{address}} 下的所有地址。",
+        "removeFolderGeneric": "其页面的分块将被删除，之后的同步不会再抓取这些页面。",
+        "remove": "移除",
+        "removeAndSkip": "移除并跳过",
+        "removeFailed": "无法移除。",
+        "syncFailed": "无法同步来源。",
+        "removeLast": "这是此来源获取的最后一项。请改为删除此来源。",
+        "wikiSource": "此来源现在是 Wiki：直接在此编辑，不再获取网页。",
+        "chunksUnsupported": "此向量存储无法单独更改网页。请改为同步此来源。",
+        "handEditsNote": "保持更新：{{frequency}}。你在此处添加或编辑的分块会在下次同步时被替换。",
+        "fetches": "此来源获取的内容",
+        "siteSummary": "整个网站 · {{find}} · 页面上限 {{max}}",
+        "limitReached": "已达页面上限",
+        "pageEntry": "页面",
+        "removeFromList": "从列表中移除 {{address}}",
+        "skipped": "已跳过",
+        "restore": "恢复",
+        "restoreAddress": "恢复 {{address}}",
+        "saveFailed": "无法保存设置。",
+        "loadFailed": "无法加载设置。",
+        "lastSynced": "上次同步于 {{when}}。",
+        "appliesNextSync": "更改将在下次同步时生效。",
+        "stillRunning": "更改仍在进行中。请稍后重新打开此来源查看。",
+        "changeBusy": "此来源的另一项更改仍在进行，因此本次更改未执行。请重试。",
+        "queueFailed": "更改已保存，但暂时无法开始。下次同步时会处理。",
+        "sourceGone": "此来源已不存在。",
+        "siteLimit_one": "一个来源最多可从 {{count}} 个网站获取内容。",
+        "siteLimit_other": "一个来源最多可从 {{count}} 个网站获取内容。",
+        "skipLimit_one": "一个来源最多可跳过 {{count}} 个地址。",
+        "skipLimit_other": "一个来源最多可跳过 {{count}} 个地址。",
+        "urlTooLong_one": "地址最长 {{count}} 个字符。",
+        "urlTooLong_other": "地址最长 {{count}} 个字符。",
+        "invalidAddress": "“{{url}}”不是此来源可以获取的地址。",
+        "invalidConfig": "这些设置无效。请检查地址和限制。",
+        "notFound": "此来源中已没有该页面或文件夹。请重新加载后再试。",
+        "badSyncFrequency": "该同步计划不可用。",
+        "graphCostRebuild": "此来源有知识图谱。添加整个网站会重建此来源，因此图谱也会通过 LLM 重建：整个来源的每个文本块约调用一次。",
+        "tooManyPaths_one": "一次最多可移除 {{count}} 个页面。",
+        "tooManyPaths_other": "一次最多可移除 {{count}} 个页面。",
+        "notWebsite": "此来源不是网站来源。",
+        "alreadyListed": "这些页面和网站已在此来源中。",
+        "badRequest": "无法读取该请求。请重新加载页面后再试。"
+      },
+      "deleteSource": "删除来源",
+      "syncStarted": "正在同步 {{name}}…",
+      "viaConnectionFiles_one": "通过 {{name}} · {{files}} 个文件",
+      "viaConnectionFiles_other": "通过 {{name}} · {{files}} 个文件",
+      "item": {
+        "tokens": "{{tokens}} 个令牌"
       }
     },
     "analytics": {
@@ -1823,7 +1910,7 @@
         "tools": "来自此连接的工具",
         "noAccounts": "尚未连接账号。",
         "failed": "无法加载此连接。",
-        "lastSync": "已于 {{date}} 同步 · {{frequency}}",
+        "lastSync": "{{when}}已同步",
         "paused": "同步已暂停",
         "toolOn": "开启",
         "toolOff": "关闭",
@@ -1832,12 +1919,11 @@
         "keyEnding": "密钥 {{hint}}",
         "syncMore": "同步更多内容",
         "refreshTools": "刷新工具",
-        "noSources": "尚未从此连接同步任何内容。",
+        "noSources": "尚未同步任何内容",
         "remove": "移除",
         "refreshed": "工具已刷新：新增 {{added}} 个，移除 {{removed}} 个。",
         "refreshFailed": "无法刷新工具。",
         "syncNow": "立即同步",
-        "syncStarted": "正在同步 {{name}}…",
         "syncFailed": "无法开始同步。请重试。",
         "toolSwitchFailed": "无法更改工具。请重试。",
         "expired": "登录已过期。重新连接以继续使用此连接。",
@@ -1847,7 +1933,19 @@
         "addToolsFailed": "无法添加工具。请重试。",
         "rename": "重命名",
         "toolsHint": "“先询问”会在聊天中询问你。通过 API、小组件和链接进行的更改，需在每个智能体的 Access details 中允许。",
-        "toolsUnavailable": "无法访问 {{name}} 的工具。请重试。"
+        "toolsUnavailable": "无法访问 {{name}} 的工具。请重试。",
+        "noSourcesHint": "从 {{name}} 选择内容以添加到知识库。",
+        "indexing": "正在索引",
+        "firstSyncStarted": "首次同步已开始（{{time}}）",
+        "dismissFailedSync": "忽略 {{name}}",
+        "sourceMenu": "来源操作",
+        "syncStarting": "正在开始同步…",
+        "syncRefusedWiki": "此来源现在是 Wiki：直接在此编辑，不再同步。",
+        "syncRefusedNotSyncable": "此来源无法同步。",
+        "syncRefusedConnector": "此来源通过其连接进行同步。",
+        "syncRefusedInvalid": "找不到此来源。",
+        "syncRefusedReconnect": "所有者需要重新连接此来源的账户，才能进行同步。",
+        "syncRefusedConnectionMissing": "此来源的账户已断开连接，重新连接该账户之前无法同步。"
       },
       "permission": {
         "always": "允许",
@@ -1902,7 +2000,6 @@
         "tryInChat": "在聊天中试试",
         "done": "完成",
         "connectFailed": "无法连接。请检查信息后重试。",
-        "syncFailed": "无法开始同步。请重试。",
         "connectedWithKey": "已使用以 {{hint}} 结尾的密钥连接。",
         "doneCounts": "{{sources}} 正在同步到知识库，{{tools}} 已就绪。",
         "doneSources": "{{sources}} 正在同步到知识库。",
@@ -1913,6 +2010,8 @@
         "methodOauth": "使用 {{name}} 登录",
         "methodToken": "使用访问令牌",
         "credentialsRejected": "{{name}} 未接受这些凭据。请检查后重试。",
+        "setupReconnect": "请重新登录 {{name}} 以完成设置。",
+        "setupDisabled": "管理员已关闭 {{name}}，因此无法设置。",
         "toolsUnavailable": "无法访问 {{name}} 的工具。请重试，或将其关闭以继续。",
         "addTools": "允许智能体使用 {{name}}",
         "addToolsDescription": {
@@ -1923,7 +2022,7 @@
         "accountNameHint": "向你和 AI 显示，用于区分账户，例如“告警机器人”。",
         "syncToKnowledge": "同步到知识库",
         "syncToKnowledgeDescription": "从 {{name}} 选择要在回答中搜索的内容。关闭时仅建立连接，之后可在连接器中同步。",
-        "syncLater": "尚未同步任何内容到知识库。要添加内容，请在连接器中打开 {{name}}，然后选择“同步更多内容”。",
+        "syncLater": "尚未同步任何内容到知识库。",
         "retrievalSettings": "高级检索设置",
         "chooseWhatToSetUpFor": "选择要为 {{name}} 设置的内容",
         "chooseWhatToSyncFrom": "选择要从 {{name}} 同步的内容",
@@ -1931,7 +2030,12 @@
         "finishSetup": "完成设置",
         "account": "账号",
         "sourcesCount_one": "{{formatted}} 项",
-        "toolsCount_one": "{{formatted}} 个工具"
+        "toolsCount_one": "{{formatted}} 个工具",
+        "syncChoice": "如何使用 {{name}}",
+        "syncNow": "立即同步内容",
+        "syncNowDescription": "从 {{name}} 选择内容并添加到知识库。",
+        "justConnect": "仅连接",
+        "justConnectDescription": "暂不添加任何内容。需要时可稍后在连接器中同步内容。"
       },
       "remove": {
         "title": "移除“{{name}}”？",
@@ -2050,7 +2154,9 @@
       "injection": {
         "flagged": "疑似提示词注入",
         "notice_other": "有 {{formatted}} 个操作的描述看起来像是为 AI 植入的指令，可能是提示词注入。允许之前，请在“自定义”中检查。"
-      }
+      },
+      "syncContent": "同步内容",
+      "openInKnowledge": "在知识库中打开"
     },
     "insights": {
       "label": "洞察"
@@ -2069,14 +2175,13 @@
       "start": "开始聊天",
       "name": "名称",
       "choose": "选择文件",
-      "dropzoneText": "点击上传或拖放文件",
+      "dropzoneText": "点击上传，或将文件或文件夹拖到此处",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、图片、音频、EPUB、JSON 或 ZIP，每个最大 25 MB",
       "filesRejected": "未添加（超过 25 MB 或不支持的类型）：{{files}}",
-      "selectFolder": "选择文件夹",
+      "selectFolder": "或选择整个文件夹",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
       "train": "添加到知识库",
-      "create": "创建",
       "link": "链接",
       "urlLink": "URL 链接",
       "repoUrl": "存储库 URL",
@@ -2106,13 +2211,9 @@
           "label": "上传文件",
           "heading": "上传新文档"
         },
-        "crawler": {
-          "label": "爬虫",
-          "heading": "使用网络爬虫添加内容"
-        },
-        "url": {
-          "label": "链接",
-          "heading": "从URL添加内容"
+        "website": {
+          "label": "网站",
+          "heading": "添加网站"
         },
         "github": {
           "label": "GitHub",
@@ -2149,14 +2250,50 @@
         }
       },
       "fields": {
-        "url": "URL",
-        "initialContent": "初始内容（可选）"
+        "initialContent": "初始内容",
+        "initialContentHint": "Markdown。创建后可以添加和编辑页面。"
+      },
+      "website": {
+        "pageUrl": "页面地址",
+        "siteUrl": "网站地址",
+        "addAnotherPage": "再添加一个页面",
+        "invalidAddress": "请输入公开的网址，例如 docs.example.com",
+        "removePage": "移除此地址",
+        "removeAddress": "移除 {{address}}",
+        "maxPages": "页面上限",
+        "maxPagesHint": "最多 {{max}} 个，由管理员设置。",
+        "pathPrefix": "仅限路径",
+        "pathPrefixHint": "只包含以此路径开头的地址。",
+        "pathPrefixPlaceholder": "/（整个网站）",
+        "sitemapUrl": "站点地图 URL",
+        "sitemapUrlHint": "留空则使用 robots.txt 中列出的站点地图。",
+        "includeSubdomains": "包含子域名",
+        "sync": "保持更新",
+        "syncHintPage": "重新获取页面并更新有变化的内容。",
+        "syncHintSite": "重新抓取网站并更新有变化的内容。",
+        "keepLinks": "在页面文本中保留链接",
+        "keepLinksHint": "让回答可以链接到此页面指向的页面。存储的文本约多四分之一，搜索排名可能略低。",
+        "mode": {
+          "label": "添加内容",
+          "page": "此页面",
+          "site": "整个网站",
+          "pageHint": "只添加这些页面。",
+          "siteHint": "添加此页面及其在同一网站上链接到的页面。"
+        },
+        "discovery": {
+          "label": "查找页面",
+          "hint": "“自动”会先读取站点地图，再跟随链接。",
+          "auto": "自动",
+          "sitemap": "站点地图",
+          "links": "跟随链接"
+        }
       },
       "github": {
         "privateHint": "私有仓库？连接你的 GitHub 账号即可同步。",
         "connect": "连接 GitHub"
       },
-      "fromService": "来自服务"
+      "fromService": "来自服务",
+      "removeFile": "移除 {{name}}"
     },
     "createAPIKey": {
       "label": "创建新的 API 密钥",

@@ -1,7 +1,7 @@
 ---
 title: Chat Widget
 description: Embed the DocsGPT Widget in your React, HTML, or Nextra projects to provide AI-powered chat functionality to your users.
-lastUpdated: 2026-10-21
+lastUpdated: 2026-10-23
 ---
 import { Callout, Tabs } from 'nextra/components'
 
@@ -246,7 +246,7 @@ Only strings, numbers, booleans and `null` are kept. The page that embeds the wi
 
 Each answer that used your documents shows a **Sources** row with the number of sources. It starts collapsed, so the answer comes first; selecting it opens the list.
 
-- A source that is a web page, such as a page ingested with the crawler or sitemap loader, is a link that opens the page in a new tab.
+- A source that is a web page, such as a page from a Website source, is a link that opens the page in a new tab.
 - A source that is an uploaded file shows its title and the passage that was used. It is not a link, because a visitor has no way to open a file from your library.
 
 When the agent cites its sources with `[1]`, `[2]` and so on, each number becomes a small button in the answer. Selecting it opens the Sources list, scrolls to that source and highlights it. A grouped citation such as `[1, 3]` becomes one button per number. To get numbered citations, ask for them in the agent's prompt; see [Citations](/Agents/prompts#citations) in Customizing Prompts.

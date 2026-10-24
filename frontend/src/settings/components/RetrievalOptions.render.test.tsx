@@ -49,25 +49,6 @@ describe('RetrievalOptions disclosure', () => {
     expect(body!.getAttribute('data-state')).toBe('open');
   });
 
-  it('leaves no gap under the closed toggle: the body carries the space', () => {
-    act(() => {
-      root.render(
-        <RetrievalOptions
-          value={DEFAULT_RETRIEVAL_OPTIONS}
-          onChange={vi.fn()}
-        />,
-      );
-    });
-    const wrapper = container.firstElementChild as HTMLElement;
-    expect(wrapper.className.split(' ')).not.toContain('gap-4');
-    const collapsible = container.querySelector(
-      '[data-slot="collapsible"]',
-    ) as HTMLElement;
-    const inner = collapsible.firstElementChild!
-      .firstElementChild as HTMLElement;
-    expect(inner.className.split(' ')).toContain('pt-4');
-  });
-
   it('offers the file-link switch only where the source has links', () => {
     const onChange = vi.fn();
     act(() => {
@@ -99,46 +80,21 @@ describe('RetrievalOptions disclosure', () => {
     expect(onChange.mock.calls.at(-1)![0].retrieval.show_links).toBe(false);
   });
 
-  it('keeps the file-link switch under Advanced, open while links are off', () => {
-    const render = (showLinks: boolean) =>
-      act(() => {
-        root.render(
-          <RetrievalOptions
-            value={{
-              ...DEFAULT_RETRIEVAL_OPTIONS,
-              retrieval: {
-                ...DEFAULT_RETRIEVAL_OPTIONS.retrieval,
-                show_links: showLinks,
-              },
-            }}
-            onChange={vi.fn()}
-            alwaysOpen
-            linksAvailable
-          />,
-        );
-      });
-    const advanced = () => {
-      const trigger = Array.from(
-        container.querySelectorAll('button[aria-expanded]'),
-      ).find((b) => b.textContent?.includes('advanced'))!;
-      const body = container.querySelector(
-        `[id="${trigger.getAttribute('aria-controls')}"]`,
-      )!;
-      return { trigger, body };
-    };
-
-    render(true);
-    expect(
-      advanced().body.contains(
-        container.querySelector('#retrieval-show-links'),
-      ),
-    ).toBe(true);
-    expect(advanced().trigger.getAttribute('aria-expanded')).toBe('false');
-
-    act(() => root.unmount());
-    root = createRoot(container);
-    render(false);
-    expect(advanced().trigger.getAttribute('aria-expanded')).toBe('true');
+  it('keeps the file-link switch in the Retrieval group, shown on a create form', () => {
+    act(() => {
+      root.render(
+        <RetrievalOptions
+          value={DEFAULT_RETRIEVAL_OPTIONS}
+          onChange={vi.fn()}
+          alwaysOpen
+          linksAvailable
+          variant="create"
+        />,
+      );
+    });
+    // A create form leaves the Filtering group out; the switch is still there.
+    expect(container.querySelector('#retrieval-prescreen')).toBeNull();
+    expect(container.querySelector('#retrieval-show-links')).not.toBeNull();
   });
 
   it('caps the chunk-size input and explains the limit', () => {
@@ -210,12 +166,6 @@ describe('RetrievalOptions relevance controls', () => {
   const text = () => container.textContent ?? '';
   const last = (onChange: ReturnType<typeof vi.fn>) =>
     onChange.mock.calls.at(-1)![0] as RetrievalOptionsValue;
-  const advanced = () =>
-    Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
-    ).find(
-      (b) => b.textContent === 'settings.sources.retrievalOptions.advanced',
-    )!;
   const strictnessItems = () =>
     Array.from(
       container.querySelectorAll<HTMLButtonElement>(
@@ -228,7 +178,7 @@ describe('RetrievalOptions relevance controls', () => {
     expect(container.querySelector('#retrieval-relevance-mode')).toBeNull();
     expect(text()).not.toContain('relevance.title');
     expect(container.querySelector('#retrieval-relevance-min')).toBeNull();
-    // LLM screening is still offered, under Advanced.
+    // LLM screening is still offered, under Filtering.
     expect(container.querySelector('#retrieval-prescreen')).not.toBeNull();
     expect(text()).not.toContain('prescreen.exclusiveHint');
   });
@@ -258,7 +208,7 @@ describe('RetrievalOptions relevance controls', () => {
     expect(last(onChange).retrieval.reranker.min_relevance).toBe(0.1);
   });
 
-  it('shows a value no preset matches as Custom, and the exact field under Advanced', () => {
+  it('shows a value no preset matches as Custom, and the exact field under Filtering', () => {
     render(filtering(0.25), ON);
     const items = strictnessItems();
     expect(items).toHaveLength(4);
@@ -266,8 +216,6 @@ describe('RetrievalOptions relevance controls', () => {
     expect(items[3].textContent).toBe(
       'settings.sources.retrievalOptions.relevance.presets.custom',
     );
-    // A custom value opens Advanced so the number is in view.
-    expect(advanced().getAttribute('aria-expanded')).toBe('true');
     const exact = container.querySelector(
       '#retrieval-relevance-min',
     ) as HTMLInputElement;
@@ -275,11 +223,9 @@ describe('RetrievalOptions relevance controls', () => {
     expect(exact.max).toBe('1');
   });
 
-  it('keeps Advanced closed for preset values until opened', () => {
+  it('shows the candidates to score while relevance is on, with no toggle', () => {
     render(filtering(0.3), ON);
-    expect(advanced().getAttribute('aria-expanded')).toBe('false');
-    act(() => advanced().click());
-    expect(advanced().getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('button[aria-controls]')).toBeNull();
     const candidates = container.querySelector(
       '#retrieval-relevance-candidates',
     ) as HTMLInputElement;
@@ -287,17 +233,16 @@ describe('RetrievalOptions relevance controls', () => {
     expect(candidates.max).toBe('100');
   });
 
-  it('renames the score threshold to the similarity threshold, under Advanced', () => {
+  it('renames the score threshold to the similarity threshold, under Filtering', () => {
     render(DEFAULT_RETRIEVAL_OPTIONS, ON);
     expect(text()).toContain('retrieval.similarityThreshold');
     expect(text()).not.toContain('scoreThreshold');
     const field = container.querySelector('#retrieval-score-threshold')!;
-    expect(field.closest('[data-slot="collapsible"]')).not.toBeNull();
+    expect(field.closest('[data-slot="collapsible"]')).toBeNull();
   });
 
   it('turns relevance off when LLM screening is turned on', () => {
     const onChange = render(filtering(0.3), ON);
-    act(() => advanced().click());
     act(() =>
       (
         container.querySelector('#retrieval-prescreen') as HTMLButtonElement
@@ -319,8 +264,6 @@ describe('RetrievalOptions relevance controls', () => {
       }),
       ON,
     );
-    // An enabled screening opens Advanced.
-    expect(advanced().getAttribute('aria-expanded')).toBe('true');
     expect(text()).toContain('prescreen.batchSize');
     expect(text()).not.toContain('prescreen.backend');
     expect(container.querySelector('#retrieval-relevance-min')).toBeNull();
@@ -343,5 +286,115 @@ describe('RetrievalOptions relevance controls', () => {
     // Unlike the retrieval test, both answer-time knobs stay.
     expect(container.querySelector('#retrieval-rephrase')).not.toBeNull();
     expect(container.querySelector('#retrieval-exposure')).not.toBeNull();
+  });
+});
+
+describe('RetrievalOptions groups', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  const ON: DecisionFeatures = { relevance: true };
+  const FILTER_ROWS = [
+    '#retrieval-relevance-min',
+    '#retrieval-relevance-candidates',
+    '#retrieval-score-threshold',
+    '#retrieval-prescreen',
+  ];
+  const filtering: RetrievalOptionsValue = {
+    ...DEFAULT_RETRIEVAL_OPTIONS,
+    retrieval: {
+      ...DEFAULT_RETRIEVAL_OPTIONS.retrieval,
+      reranker: { mode: 'filter', min_relevance: 0.3, candidate_k: null },
+    },
+  };
+
+  const render = (props: Partial<Parameters<typeof RetrievalOptions>[0]>) => {
+    act(() => {
+      root.render(
+        <RetrievalOptions
+          value={filtering}
+          onChange={vi.fn()}
+          decision={ON}
+          {...props}
+        />,
+      );
+    });
+  };
+
+  const headings = () =>
+    Array.from(container.querySelectorAll('h3')).map((h) => h.textContent);
+
+  it('puts the filtering rows in a flat group of their own, between Relevance and Chunking', () => {
+    render({ alwaysOpen: true });
+    // No disclosure inside the panel.
+    expect(container.querySelector('button[aria-controls]')).toBeNull();
+    expect(container.querySelector('[data-slot="collapsible"]')).toBeNull();
+    expect(headings()).toEqual([
+      'settings.sources.retrievalOptions.retrieval.title · settings.sources.retrievalOptions.retrieval.tag',
+      'settings.sources.retrievalOptions.relevance.title · settings.sources.retrievalOptions.relevance.tag',
+      'settings.sources.retrievalOptions.filtering.title · settings.sources.retrievalOptions.filtering.tag',
+      'settings.sources.retrievalOptions.chunking.title · settings.sources.retrievalOptions.chunking.tag',
+    ]);
+    const group = Array.from(container.querySelectorAll('h3'))
+      .find((h) => h.textContent?.includes('filtering.title'))!
+      .closest('div.flex-col')!.parentElement!;
+    for (const row of FILTER_ROWS) {
+      expect(group.querySelector(row)).not.toBeNull();
+    }
+    expect(container.textContent).not.toContain('retrievalOptions.createHint');
+  });
+
+  it('shows the create forms what matters before ingest, untagged, and where to fine-tune', () => {
+    render({ variant: 'create', alwaysOpen: true });
+    for (const row of FILTER_ROWS) {
+      expect(container.querySelector(row)).toBeNull();
+    }
+    expect(container.textContent).not.toContain('.tag');
+    expect(headings()).toEqual([
+      'settings.sources.retrievalOptions.retrieval.title',
+      'settings.sources.retrievalOptions.relevance.title',
+      'settings.sources.retrievalOptions.chunking.title',
+    ]);
+    const hint = Array.from(container.querySelectorAll('p')).find(
+      (p) => p.textContent === 'settings.sources.retrievalOptions.createHint',
+    );
+    expect(hint).toBeDefined();
+    // Chunking stays: it can only be set before the first ingest.
+    expect(container.querySelector('#chunking-strategy')).not.toBeNull();
+  });
+
+  it('keeps Filtering on a create form once shown', () => {
+    const prescreen = (candidate_k: number) => ({
+      ...filtering,
+      retrieval: {
+        ...filtering.retrieval,
+        chunks: 4,
+        prescreen: {
+          ...filtering.retrieval.prescreen,
+          enabled: true,
+          candidate_k,
+          max_keep: 2,
+        },
+      },
+    });
+    const shown = () =>
+      container.querySelector('#retrieval-prescreen') !== null;
+    // The screening doesn't add up (fewer candidates than chunks): shown.
+    render({ variant: 'create', alwaysOpen: true, value: prescreen(2) });
+    expect(shown()).toBe(true);
+    // Fixing it while typing leaves the group where it is.
+    render({ variant: 'create', alwaysOpen: true, value: prescreen(8) });
+    expect(shown()).toBe(true);
   });
 });

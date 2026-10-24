@@ -257,6 +257,77 @@ def _no_content_score_store(monkeypatch):
     monkeypatch.setattr("docsgpt.guardrails.injection_scoring.allowed_hashes", lambda source_ids: {})
 
 
+# Hosts a test may reach: the model files the tokenizer tests load on purpose
+# (and skip without). Their downloads redirect to the ``hf.co`` CDN.
+_NETWORK_ALLOWED = ("huggingface.co", "hf.co", "openaipublic.blob.core.windows.net")
+
+
+def _is_loopback(host) -> bool:
+    host = str(host or "")
+    return host in ("", "localhost", "::1", "0.0.0.0") or host.startswith("127.") or host.endswith(".localhost")
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    """Refuse any connection or DNS lookup that leaves the machine, and fail the test that tried.
+
+    A test that called a real provider passed for months because the code
+    under test swallowed the error, until the hosted model ran out of credit
+    and a 402 broke it. Every lookup and connection now stays local or goes
+    to ``_NETWORK_ALLOWED`` (by the addresses those names resolve to), and an
+    attempt that code under test caught still fails the test at teardown,
+    naming the host. Mock the call instead: ``mock_llm_creator`` for a model,
+    ``public_dns`` for the SSRF check on a user's base URL.
+    """
+    import socket
+
+    real_getaddrinfo = socket.getaddrinfo
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+    allowed_addresses: set = set()
+    attempts: list = []
+
+    def getaddrinfo(host, *args, **kwargs):
+        name = host.decode() if isinstance(host, bytes) else host
+        if _is_loopback(name):
+            return real_getaddrinfo(host, *args, **kwargs)
+        if isinstance(name, str):
+            # A name DNS can't carry fails here, as in the real resolver, before any lookup.
+            name.encode("idna")
+            if name.rstrip(".").endswith(_NETWORK_ALLOWED):
+                results = real_getaddrinfo(host, *args, **kwargs)
+                allowed_addresses.update(info[4][0] for info in results)
+                return results
+        attempts.append(f"DNS lookup of {name}")
+        raise socket.gaierror(socket.EAI_NONAME, f"tests may not reach {name}")
+
+    def _refused(sock, address) -> bool:
+        if sock.family not in (socket.AF_INET, socket.AF_INET6):
+            return False
+        host = address[0]
+        if _is_loopback(host) or host in allowed_addresses:
+            return False
+        attempts.append(f"connection to {host}:{address[1]}")
+        return True
+
+    def connect(sock, address, *args):
+        if _refused(sock, address):
+            raise ConnectionRefusedError(f"tests may not reach {address[0]}")
+        return real_connect(sock, address, *args)
+
+    def connect_ex(sock, address, *args):
+        if _refused(sock, address):
+            return 111  # ECONNREFUSED
+        return real_connect_ex(sock, address, *args)
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+    yield
+    if attempts:
+        pytest.fail("The test tried to reach the network: " + "; ".join(dict.fromkeys(attempts)), pytrace=False)
+
+
 @pytest.fixture(autouse=True)
 def _graphrag_off_by_default(monkeypatch):
     """Run with GraphRAG at its shipped default (off), as CI does.
@@ -350,6 +421,15 @@ def mock_llm_creator(mock_llm, monkeypatch):
         "docsgpt.llm.llm_creator.LLMCreator.create_llm", Mock(return_value=mock_llm)
     )
     return mock_llm
+
+
+@pytest.fixture
+def public_dns(monkeypatch):
+    """Resolve every host to one public address, for code that runs the SSRF check on a user's base URL."""
+    monkeypatch.setattr(
+        "docsgpt.security.safe_url.socket.getaddrinfo",
+        Mock(return_value=[(None, None, None, None, ("104.18.0.1", 0))]),
+    )
 
 
 @pytest.fixture

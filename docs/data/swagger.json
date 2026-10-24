@@ -25,6 +25,26 @@
       ],
       "type": "object"
     },
+    "AddWebsitePagesModel": {
+      "properties": {
+        "entries": {
+          "description": "Pages or sites to add (as in /api/website)",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entries",
+        "source_id"
+      ],
+      "type": "object"
+    },
     "AnswerModel": {
       "properties": {
         "active_docs": {
@@ -194,7 +214,7 @@
     "ConnectorSyncModel": {
       "properties": {
         "connection_id": {
-          "description": "Connection to sync with; defaults to the source's own (ignored for team editors, whose sync uses the owner's connection)",
+          "description": "Connection to sync with; defaults to the source's own (ignored for team editors, whose sync always uses the source's own connection)",
           "type": "string"
         },
         "session_token": {
@@ -987,6 +1007,27 @@
       ],
       "type": "object"
     },
+    "RefreshWebsitePageModel": {
+      "properties": {
+        "file_path": {
+          "description": "Tree path of the page",
+          "type": "string"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        },
+        "url": {
+          "description": "The page's address, as its tree leaf shows it; when given, the page is found by it wherever a sync moved it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path",
+        "source_id"
+      ],
+      "type": "object"
+    },
     "ReingestSourceModel": {
       "properties": {
         "source_id": {
@@ -1002,7 +1043,7 @@
     "RemoteUploadModel": {
       "properties": {
         "data": {
-          "description": "Data to process",
+          "description": "JSON loader config. For source=website: {entries: [{url, mode: page|site, max_pages, path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}], skip: [url or https://host/path/*], keep_links}",
           "type": "string"
         },
         "name": {
@@ -1017,6 +1058,10 @@
           "description": "Source of the data",
           "type": "string"
         },
+        "sync_frequency": {
+          "description": "How often to re-fetch: never (default), daily, weekly or monthly",
+          "type": "string"
+        },
         "user": {
           "description": "User ID",
           "type": "string"
@@ -1027,6 +1072,29 @@
         "name",
         "source",
         "user"
+      ],
+      "type": "object"
+    },
+    "RemoveWebsitePagesModel": {
+      "properties": {
+        "directory_path": {
+          "description": "Tree path of a folder to remove",
+          "type": "string"
+        },
+        "file_paths": {
+          "description": "Tree paths of pages to remove, up to 1000",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id"
       ],
       "type": "object"
     },
@@ -1617,6 +1685,41 @@
       ],
       "type": "object"
     },
+    "WebsiteSettingsModel": {
+      "properties": {
+        "entries": {
+          "description": "What the source fetches: {url, mode: page|site, max_pages, path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "keep_links": {
+          "description": "Keep the URL of links inside sentences in page text; left out, the stored setting is kept",
+          "type": "boolean"
+        },
+        "skip": {
+          "description": "Pages (url) or sections (https://host/path/*) to leave out; left out, the stored list is kept, and [] clears it",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        },
+        "sync_frequency": {
+          "description": "never, daily, weekly or monthly",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entries",
+        "source_id"
+      ],
+      "type": "object"
+    },
     "WikiPageEditModel": {
       "properties": {
         "content": {
@@ -1755,7 +1858,7 @@
     },
     "/api/add_chunk": {
       "post": {
-        "description": "Adds a new chunk to the document",
+        "description": "Adds a new chunk to the document. 409 (code source_busy) while a sync or page change on the source runs.",
         "operationId": "post_add_chunk",
         "parameters": [
           {
@@ -3538,7 +3641,7 @@
     },
     "/api/connectors/sync": {
       "post": {
-        "description": "Sync connector source to check for modifications",
+        "description": "Sync connector source to check for modifications. A 409 with code connection_missing when the source has no connection (it was removed) and none is named, as for a team editor, who can't name one; code reconnect_needed when a team editor's sync finds the source's connection signed out.",
         "operationId": "post_connector_sync",
         "parameters": [
           {
@@ -3734,7 +3837,7 @@
     },
     "/api/delete_chunk": {
       "delete": {
-        "description": "Deletes a specific chunk from the document.",
+        "description": "Deletes a specific chunk from the document. 409 (code source_busy) while a sync or page change on the source runs.",
         "operationId": "delete_delete_chunk",
         "parameters": [
           {
@@ -3790,7 +3893,7 @@
     },
     "/api/delete_old": {
       "get": {
-        "description": "Deletes old indexes and associated files",
+        "description": "Deletes a source: its index, stored files and row. 409 (code source_busy) while a sync or page change on the source runs; nothing is deleted.",
         "operationId": "get_delete_old_indexes",
         "parameters": [
           {
@@ -5655,7 +5758,7 @@
     },
     "/api/sources/reingest": {
       "post": {
-        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler.",
+        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler, or to apply a chunking change. A source with no stored files (Website, crawler, connector) is synced from its stored config instead; either way the answer is ``{success, task_id}`` and the task's source.ingest events carry that task_id. A connector source can be refused with a 409: code connection_missing when its connection was removed, reconnect_needed when the owner must sign it in again. Honours an Idempotency-Key header: a repeat with the same key runs nothing new, and a rebuild's repeat answers with the first request's task_id.",
         "operationId": "post_reingest_source",
         "parameters": [
           {
@@ -6698,7 +6801,7 @@
     },
     "/api/update_chunk": {
       "put": {
-        "description": "Updates an existing chunk in the document.",
+        "description": "Updates an existing chunk in the document. 409 (code source_busy) while a sync or page change on the source runs.",
         "operationId": "put_update_chunk",
         "parameters": [
           {
@@ -7208,6 +7311,137 @@
           "agents"
         ],
         "x-pat-denied": true
+      }
+    },
+    "/api/website": {
+      "get": {
+        "description": "A Website source's config, sync schedule and last ingest report. entry_paths lists the tree paths of the pages a mode: page entry lists (by its address, or one that redirected to the page); the other pages were found by a site's crawl.",
+        "operationId": "get_website_settings",
+        "parameters": [
+          {
+            "description": "Source ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "post": {
+        "description": "Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync. An address the save adds is checked as in /api/website/pages: one that isn't a web address (user:password@ credentials, a malformed host, a control character) is a 400 with code invalid_address, as is a new skip rule with a control character; a new path with one is a 400 with code invalid_config. What the source already stores is saved as it is.",
+        "operationId": "post_website_settings",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WebsiteSettingsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/website/pages": {
+      "post": {
+        "description": "Add pages or sites to a Website source; they stay in every sync. Pages are fetched and appended now (mode append). A site rebuilds the source like a sync (mode sync), and so does a page whose host makes a single-host source span several hosts (every page moves under a host folder), or any add on a vector store that can't change single chunks. Only what the source doesn't list yet is added and fetched: a page it lists under any spelling, or a site with the same address and settings; when that leaves nothing, a 400 with code already_listed and nothing is queued. Refused with code page_limit when the source would hold more than WEB_MAX_PAGES pages; a 500 with code queue_failed when the entries were saved but the task couldn't be queued (the next sync fetches them).",
+        "operationId": "post_add_website_pages",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AddWebsitePagesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/website/refresh": {
+      "post": {
+        "description": "Re-fetch one page of a Website source now; if it can't be fetched, its content is kept. A page found by a site's crawl that now leads outside the site's scope or to a skipped address is removed, as the next sync would drop it (the task's failed event carries reason out_of_scope). A 500 with code queue_failed when the task couldn't be queued.",
+        "operationId": "post_refresh_website_page",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RefreshWebsitePageModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/website/remove": {
+      "post": {
+        "description": "Remove pages or a folder from a Website source. The config changes now: a page added by address leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs. Their chunks and tree entries go in a background task (task_id), after any running sync; a 500 with code queue_failed when the config was saved but the task couldn't be queued. A page an older url, crawler or sitemap source stored without its address is matched by the address on its chunks; when none is found it is still removed, by its path, and the config is left as it is.",
+        "operationId": "post_remove_website_pages",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RemoveWebsitePagesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
       }
     },
     "/api/workflows": {

@@ -180,10 +180,9 @@
       "searchPlaceholder": "Search...",
       "addNew": "Add New",
       "addSource": "Add knowledge",
-      "addChunk": "Add Chunk",
+      "addChunk": "Add chunk",
       "preLoaded": "Pre-loaded",
       "private": "Private",
-      "sync": "Sync",
       "syncDone": "Done",
       "syncNow": "Sync now",
       "syncing": "Syncing...",
@@ -195,8 +194,7 @@
         "never": "Never",
         "daily": "Daily",
         "weekly": "Weekly",
-        "monthly": "Monthly",
-        "option": "Sync: {{frequency}}"
+        "monthly": "Monthly"
       },
       "actions": "Actions",
       "view": "View",
@@ -208,6 +206,7 @@
         "save": "Save",
         "saveFailed": "Could not save the page. Please try again.",
         "forbidden": "You do not have permission to edit this page.",
+        "unsupported": "This vector store can’t change single pages, so it can’t hold a wiki.",
         "conflict": "This page changed since you opened it and has been reloaded. Your edits are below — reapply and save again.",
         "editPlaceholder": "Write the page in Markdown…",
         "stamp": {
@@ -252,7 +251,6 @@
         "pageLoadFailed": "Could not load this page.",
         "editTitle": "Edit page",
         "settings": {
-          "action": "Wiki settings",
           "title": "Wiki settings",
           "outsideEdits": {
             "label": "Let API and widget users edit this wiki",
@@ -275,8 +273,6 @@
           "costCost": "This makes one LLM call per chunk, so it consumes tokens and may take a while on large sources.",
           "estimate": "~1 LLM call per chunk · ~{{lo}}–{{hi}} total tokens (about half input, half output); output varies with how entity-dense the document is.",
           "confirm": "Enable GraphRAG",
-          "inProgress": "Building graph…",
-          "inProgressPct": "Building graph… {{pct}}%",
           "summaryNodes_one": "{{count}} entity",
           "summaryNodes_other": "{{count}} entities",
           "summaryEdges_one": "{{count}} relationship",
@@ -397,7 +393,7 @@
         "saveToSource": "Save to source",
         "savedToSource": "Saved. The source now uses the settings you tested."
       },
-      "editConfig": "Source settings",
+      "editConfig": "Settings",
       "shareWithTeam": "Share with team",
       "deleteWarning": "Delete \"{{name}}\"?",
       "chunks": "Chunks",
@@ -424,7 +420,6 @@
       "searchAlt": "Search",
       "retrievalOptions": {
         "title": "Advanced settings",
-        "advanced": "Advanced",
         "retrieval": {
           "title": "Retrieval",
           "note": "These changes take effect immediately, no re-ingest needed.",
@@ -522,7 +517,12 @@
           "minRelevanceHint": "The exact relevance (0–1) a chunk needs to be kept. Loose is 0.1, Balanced 0.3, Strict 0.5.",
           "candidates": "Candidates to score",
           "candidatesHint": "How many chunks the retriever fetches for the relevance model to score, up to {{max}}. Default: {{default}}."
-        }
+        },
+        "filtering": {
+          "title": "Filtering",
+          "tag": "no re-ingest"
+        },
+        "createHint": "Fine-tune filtering after the first ingest, in Source settings or Test retrieval."
       },
       "configModal": {
         "title": "Source settings",
@@ -531,6 +531,7 @@
         "save": "Save",
         "chunkingChangeHint": "You changed a chunking setting. Saving will require re-ingesting this source for it to take effect.",
         "prescreenInvalidHint": "Check the LLM screening values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
+        "syncAfterSave": "Save your changes first. A sync uses the saved settings.",
         "reingestRequired": "Your changes were saved. The chunking settings you changed only take effect after a re-ingest. Re-ingest now?",
         "reingestLater": "Later",
         "errors": {
@@ -542,7 +543,8 @@
         "add": "Could not add the chunk",
         "save": "Could not save the chunk",
         "delete": "Could not delete the chunk",
-        "load": "Could not load the chunks"
+        "load": "Could not load the chunks",
+        "busy": "Another change to this source is running. Try again once it’s done."
       },
       "chunkPosition": "Chunk {{n}} of {{total}} · {{tokens}} tokens",
       "chunkCrumb": "Chunk {{n}}",
@@ -605,6 +607,92 @@
         "safeNotice": "Marked safe: agents using this source treat this chunk as clean. Editing its text removes the mark.",
         "reviewFailed": "Could not update this chunk. Please try again.",
         "noFlagged": "No chunk in this source has been flagged. A chunk is scored once a chat retrieves it."
+      },
+      "website": {
+        "page": "Page",
+        "pages": "Pages",
+        "fetched": "Fetched",
+        "filterPages": "Filter pages",
+        "openPage": "Open page",
+        "pagesByline_one": "{{pages}} page · {{tokens}} tokens",
+        "pagesByline_other": "{{pages}} pages · {{tokens}} tokens",
+        "sites_one": "{{count}} site",
+        "sites_other": "{{count}} sites",
+        "pageCount_one": "{{count}} page",
+        "pageCount_other": "{{count}} pages",
+        "synced": "{{frequency}} · synced {{when}}",
+        "notSynced": "Not synced",
+        "fetchedAt": "fetched {{when}}",
+        "addPages": "Add pages",
+        "addPagesHint": "Fetched now and kept in every sync. A whole site rebuilds the source.",
+        "graphCost": "This source has a knowledge graph. New pages are added to it with an LLM, about one call per chunk. If adding them rebuilds the source (a page on another site), the whole graph is rebuilt: about one call per chunk of the whole source.",
+        "addFailed": "Couldn’t add the pages.",
+        "pageNotFetched": "One page couldn’t be fetched: {{url}}. It stays on this source’s list, and the next sync tries it again.",
+        "pagesNotFetched_one": "{{count}} page couldn’t be fetched. It stays on this source’s list, and the next sync tries it again.",
+        "pagesNotFetched_other": "{{count}} pages couldn’t be fetched. They stay on this source’s list, and the next sync tries them again.",
+        "pageLimit_one": "This source can hold up to {{count}} page.",
+        "pageLimit_other": "This source can hold up to {{count}} pages.",
+        "addingPages": "Adding pages…",
+        "refreshing": "Refreshing the page…",
+        "removing": "Removing pages…",
+        "syncing": "Syncing the source…",
+        "refreshPage": "Refresh page",
+        "refreshFailed": "Couldn’t refresh “{{name}}”; its content is kept.",
+        "refreshOutOfScope": "“{{name}}” now leads outside this source, so it was removed, as a sync would.",
+        "removeFromSource": "Remove from source",
+        "removeTitle": "Remove “{{name}}”?",
+        "removeEntry": "Its chunks are deleted and the page is taken off this source’s list.",
+        "removeCrawled": "It came from crawling {{host}}. Its chunks are deleted and later syncs skip it. You can restore it in the source’s Settings.",
+        "removeGeneric": "Its chunks are deleted and later syncs don’t fetch it again.",
+        "removeFolder": "Its pages’ chunks are deleted and later syncs skip every address under {{address}}.",
+        "removeFolderGeneric": "Its pages’ chunks are deleted and later syncs don’t fetch them again.",
+        "remove": "Remove",
+        "removeAndSkip": "Remove and skip",
+        "removeFailed": "Couldn’t remove it.",
+        "syncFailed": "Couldn’t sync the source.",
+        "removeLast": "That’s the last thing this source fetches. Delete the source instead.",
+        "wikiSource": "This source is a wiki now: it’s edited in place and no longer fetches pages.",
+        "chunksUnsupported": "This vector store can’t change single pages. Sync the source instead.",
+        "handEditsNote": "Kept up to date: {{frequency}}. Chunks you add or edit here are replaced at the next sync.",
+        "fetches": "What this source fetches",
+        "siteSummary": "Whole site · {{find}} · page limit {{max}}",
+        "limitReached": "page limit reached",
+        "pageEntry": "Page",
+        "removeFromList": "Remove {{address}} from the list",
+        "skipped": "Skipped",
+        "restore": "Restore",
+        "restoreAddress": "Restore {{address}}",
+        "saveFailed": "Couldn’t save the settings.",
+        "loadFailed": "Couldn’t load the settings.",
+        "lastSynced": "Last synced {{when}}.",
+        "appliesNextSync": "Changes apply at the next sync.",
+        "stillRunning": "This change is still running. Open the source again in a while to see it.",
+        "changeBusy": "Another change to this source was still running, so this one didn’t run. Try again.",
+        "queueFailed": "The change was saved, but it couldn’t start yet. The next sync picks it up.",
+        "sourceGone": "This source no longer exists.",
+        "siteLimit_one": "A source can fetch from up to {{count}} site.",
+        "siteLimit_other": "A source can fetch from up to {{count}} sites.",
+        "skipLimit_one": "A source can skip up to {{count}} address.",
+        "skipLimit_other": "A source can skip up to {{count}} addresses.",
+        "urlTooLong_one": "An address can be up to {{count}} character long.",
+        "urlTooLong_other": "An address can be up to {{count}} characters long.",
+        "invalidAddress": "“{{url}}” isn’t an address this source can fetch.",
+        "invalidConfig": "These settings aren’t valid. Check the addresses and limits.",
+        "notFound": "That page or folder isn’t in this source any more. Reload it and try again.",
+        "badSyncFrequency": "That sync schedule isn’t available.",
+        "graphCostRebuild": "This source has a knowledge graph. A whole site rebuilds the source, so the graph is rebuilt with an LLM too: about one call per chunk of the whole source.",
+        "tooManyPaths_one": "You can remove up to {{count}} page at once.",
+        "tooManyPaths_other": "You can remove up to {{count}} pages at once.",
+        "notWebsite": "This source isn’t a website source.",
+        "alreadyListed": "These pages and sites are already in this source.",
+        "badRequest": "The request couldn’t be read. Reload the page and try again."
+      },
+      "deleteSource": "Delete source",
+      "syncStarted": "Syncing {{name}}…",
+      "viaConnectionFiles_one": "via {{name}} · {{files}} file",
+      "viaConnectionFiles_other": "via {{name}} · {{files}} files",
+      "item": {
+        "tokens": "{{tokens}} tokens"
       }
     },
     "analytics": {
@@ -1825,7 +1913,7 @@
         "tools": "Tools from this connection",
         "noAccounts": "No account connected yet.",
         "failed": "Could not load this connection.",
-        "lastSync": "Synced {{date}} · {{frequency}}",
+        "lastSync": "Synced {{when}}",
         "paused": "Sync paused",
         "toolOn": "On",
         "toolOff": "Off",
@@ -1834,12 +1922,11 @@
         "keyEnding": "Key {{hint}}",
         "syncMore": "Sync more content",
         "refreshTools": "Refresh tools",
-        "noSources": "Nothing synced from this connection yet.",
+        "noSources": "Nothing synced yet",
         "remove": "Remove",
         "refreshed": "Tools refreshed: {{added}} added, {{removed}} removed.",
         "refreshFailed": "Could not refresh the tools.",
         "syncNow": "Sync now",
-        "syncStarted": "Syncing {{name}}…",
         "syncFailed": "Could not start the sync. Try again.",
         "toolSwitchFailed": "Could not change the tool. Try again.",
         "expired": "The sign-in expired. Reconnect to keep using this connection.",
@@ -1849,7 +1936,19 @@
         "addToolsFailed": "Could not add the tools. Try again.",
         "rename": "Rename",
         "toolsHint": "“Ask first” asks you in chat. API, widget and link changes are allowed per agent in Access details.",
-        "toolsUnavailable": "{{name}}'s tools could not be reached. Try again."
+        "toolsUnavailable": "{{name}}'s tools could not be reached. Try again.",
+        "noSourcesHint": "Pick content from {{name}} to add it to Knowledge.",
+        "indexing": "Indexing",
+        "firstSyncStarted": "First sync started {{time}}",
+        "dismissFailedSync": "Dismiss {{name}}",
+        "sourceMenu": "Source actions",
+        "syncStarting": "Starting the sync…",
+        "syncRefusedWiki": "This source is a wiki now: it’s edited in place and no longer syncs.",
+        "syncRefusedNotSyncable": "This source can’t be synced.",
+        "syncRefusedConnector": "This source syncs through its connection.",
+        "syncRefusedInvalid": "This source couldn’t be found.",
+        "syncRefusedReconnect": "The owner needs to reconnect this source’s account before it can sync.",
+        "syncRefusedConnectionMissing": "This source’s account was disconnected, so it can’t sync until the account is connected again."
       },
       "permission": {
         "always": "Allow",
@@ -1906,7 +2005,6 @@
         "tryInChat": "Try it in chat",
         "done": "Done",
         "connectFailed": "Could not connect. Check the details and try again.",
-        "syncFailed": "Could not start the sync. Try again.",
         "connectedWithKey": "Connected with the key ending {{hint}}.",
         "doneCounts": "{{sources}} syncing into Knowledge, {{tools}} ready.",
         "doneSources": "{{sources}} syncing into Knowledge.",
@@ -1917,6 +2015,8 @@
         "methodOauth": "Sign in with {{name}}",
         "methodToken": "Use an access token",
         "credentialsRejected": "{{name}} did not accept these credentials. Check them and try again.",
+        "setupReconnect": "Sign in to {{name}} again to finish setting it up.",
+        "setupDisabled": "An admin turned off {{name}}, so it can't be set up.",
         "toolsUnavailable": "{{name}}'s tools could not be reached. Try again, or turn them off to continue.",
         "addTools": "Let agents use {{name}}",
         "addToolsDescription": {
@@ -1927,13 +2027,18 @@
         "accountNameHint": "Shown to you and the AI to tell accounts apart, e.g. Alerts bot.",
         "syncToKnowledge": "Sync into Knowledge",
         "syncToKnowledgeDescription": "Pick content from {{name}} for answers to search. Leave it off to only connect; you can sync later from Connectors.",
-        "syncLater": "Nothing syncs into Knowledge yet. To add content, open {{name}} in Connectors and choose Sync more content.",
+        "syncLater": "Nothing syncs into Knowledge yet.",
         "retrievalSettings": "Advanced retrieval settings",
         "chooseWhatToSetUpFor": "Choose what to set up for {{name}}",
         "chooseWhatToSyncFrom": "Choose what to sync from {{name}}",
         "signedInAs": "Signed in as {{account}}.",
         "finishSetup": "Finish setup",
-        "account": "Account"
+        "account": "Account",
+        "syncChoice": "How to use {{name}}",
+        "syncNow": "Sync content now",
+        "syncNowDescription": "Pick content from {{name}} and add it to Knowledge.",
+        "justConnect": "Just connect",
+        "justConnectDescription": "Nothing is added yet. Sync content later from Connectors, whenever it's needed."
       },
       "remove": {
         "title": "Remove \"{{name}}\"?",
@@ -2058,7 +2163,9 @@
         "flagged": "Possible prompt injection",
         "notice_one": "The description of {{formatted}} action reads like instructions planted for the AI, a possible prompt injection. Check it under Customize before you allow it.",
         "notice_other": "The descriptions of {{formatted}} actions read like instructions planted for the AI, a possible prompt injection. Check them under Customize before you allow them."
-      }
+      },
+      "syncContent": "Sync content",
+      "openInKnowledge": "Open in Knowledge"
     },
     "insights": {
       "label": "Insights"
@@ -2077,14 +2184,13 @@
       "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
-      "dropzoneText": "Click to upload or drag and drop",
+      "dropzoneText": "Click to upload, or drag files or a folder here",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, images, audio, EPUB, JSON or ZIP, up to 25 MB each",
       "filesRejected": "Not added (over 25 MB or not a supported type): {{files}}",
-      "selectFolder": "Select a folder",
+      "selectFolder": "Or choose a whole folder",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Add to Knowledge",
-      "create": "Create",
       "link": "Link",
       "urlLink": "URL Link",
       "repoUrl": "Repository URL",
@@ -2114,13 +2220,9 @@
           "label": "Upload File",
           "heading": "Upload new document"
         },
-        "crawler": {
-          "label": "Crawler",
-          "heading": "Add content with Web Crawler"
-        },
-        "url": {
-          "label": "Link",
-          "heading": "Add content from URL"
+        "website": {
+          "label": "Website",
+          "heading": "Add a website"
         },
         "github": {
           "label": "GitHub",
@@ -2157,14 +2259,50 @@
         }
       },
       "fields": {
-        "url": "URL",
-        "initialContent": "Initial content (optional)"
+        "initialContent": "Initial content",
+        "initialContentHint": "Markdown. You can add and edit pages after it’s created."
+      },
+      "website": {
+        "pageUrl": "Page address",
+        "siteUrl": "Website address",
+        "addAnotherPage": "Add another page",
+        "invalidAddress": "Enter a public web address, like docs.example.com",
+        "removePage": "Remove this address",
+        "removeAddress": "Remove {{address}}",
+        "maxPages": "Page limit",
+        "maxPagesHint": "Up to {{max}}, set by admin.",
+        "pathPrefix": "Stay under",
+        "pathPrefixHint": "Only addresses that start with this path.",
+        "pathPrefixPlaceholder": "/ (whole site)",
+        "sitemapUrl": "Sitemap URL",
+        "sitemapUrlHint": "Leave empty to use the one the site lists in robots.txt.",
+        "includeSubdomains": "Include subdomains",
+        "sync": "Keep up to date",
+        "syncHintPage": "Re-fetch the pages and update what changed.",
+        "syncHintSite": "Re-crawl and update what changed.",
+        "keepLinks": "Keep links in page text",
+        "keepLinksHint": "Lets answers link to the pages this page points to. Stores about a quarter more text, and search may rank slightly lower.",
+        "mode": {
+          "label": "What to add",
+          "page": "This page",
+          "site": "Whole site",
+          "pageHint": "Adds exactly these pages.",
+          "siteHint": "Adds this page and the pages it leads to on the same site."
+        },
+        "discovery": {
+          "label": "Find pages",
+          "hint": "Automatic reads the sitemap, then follows links.",
+          "auto": "Automatic",
+          "sitemap": "Sitemap",
+          "links": "Follow links"
+        }
       },
       "github": {
         "privateHint": "Private repository? Connect your GitHub account to sync it.",
         "connect": "Connect GitHub"
       },
-      "fromService": "From a service"
+      "fromService": "From a service",
+      "removeFile": "Remove {{name}}"
     },
     "createAPIKey": {
       "label": "Create New API Key",
@@ -2253,7 +2391,7 @@
       "delete": "Delete"
     },
     "chunk": {
-      "add": "Add Chunk",
+      "add": "Add chunk",
       "edit": "Edit",
       "title": "Title",
       "enterTitle": "Enter title",

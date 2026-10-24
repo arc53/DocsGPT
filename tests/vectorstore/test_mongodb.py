@@ -170,6 +170,21 @@ class TestMongoDBVectorStoreInsertTexts:
         assert inserted_docs[0]["embedding"] == [0.1, 0.2]
         assert inserted_docs[0]["source"] == "test"
 
+    def test_insert_texts_stamps_its_own_source_and_reserved_fields_last(self):
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1, 0.2]]
+        mock_collection.insert_many.return_value = Mock(inserted_ids=["id1"])
+
+        store._insert_texts(
+            ["hello"], [{"source_id": "victim", "_id": "forged", "text": "other", "embedding": [9.0]}]
+        )
+
+        inserted = mock_collection.insert_many.call_args[0][0][0]
+        assert inserted["source_id"] == "src1"
+        assert inserted["text"] == "hello"
+        assert inserted["embedding"] == [0.1, 0.2]
+        assert "_id" not in inserted
+
 
 @pytest.mark.unit
 class TestMongoDBVectorStoreDeleteIndex:
@@ -212,16 +227,29 @@ class TestMongoDBVectorStoreGetChunks:
         assert "embedding" not in chunks[0]["metadata"]
         assert "source_id" not in chunks[0]["metadata"]
 
-    def test_get_chunks_skips_empty_text(self):
+    def test_get_chunks_lists_chunks_with_no_text(self):
+        # Removing a page lists its chunks by metadata; one with no text must still be found and deleted.
         store, mock_collection, _ = _make_mongodb_store()
 
         docs = [
-            {"_id": "id1", "text": None, "embedding": [0.1], "source_id": "src"},
+            {"_id": "id1", "text": None, "embedding": [0.1], "source_id": "src", "source": "a.md"},
+            {"_id": "id2", "text": "", "embedding": [0.1], "source_id": "src", "source": "a.md"},
         ]
         mock_collection.find.return_value = iter(docs)
 
         chunks = store.get_chunks()
-        assert len(chunks) == 0
+        assert [(c["doc_id"], c["text"], c["metadata"]) for c in chunks] == [
+            ("id1", "", {"source": "a.md"}),
+            ("id2", "", {"source": "a.md"}),
+        ]
+
+    def test_chunks_with_no_text_are_found_by_source(self):
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.find.return_value = iter(
+            [{"_id": "id1", "text": "", "embedding": [0.1], "source_id": "src", "source": "a.md"}]
+        )
+
+        assert store.chunk_ids_by_source_paths(["a.md"]) == ["id1"]
 
     def test_get_chunks_returns_empty_on_error(self):
         store, mock_collection, _ = _make_mongodb_store()
@@ -263,38 +291,30 @@ class TestMongoDBVectorStoreAddChunk:
         inserted = mock_collection.insert_one.call_args[0][0]
         assert "source_id" in inserted
 
+    def test_add_chunk_metadata_cannot_override_reserved_fields(self):
+        # POST /api/add_chunk passes caller metadata through: it must not move the chunk to another source.
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1, 0.2]]
+        mock_collection.insert_one.return_value = Mock(inserted_id="new_id")
+
+        store.add_chunk(
+            "hello chunk",
+            metadata={"source_id": "victim", "_id": "forged", "text": "other", "embedding": [9.0], "key": "val"},
+        )
+
+        inserted = mock_collection.insert_one.call_args[0][0]
+        assert inserted["source_id"] == "src1"
+        assert inserted["text"] == "hello chunk"
+        assert inserted["embedding"] == [0.1, 0.2]
+        assert "_id" not in inserted
+        assert inserted["key"] == "val"
+
     def test_add_chunk_raises_on_empty_embedding(self):
         store, _, mock_emb = _make_mongodb_store()
         mock_emb.embed_documents.return_value = []
 
         with pytest.raises(ValueError, match="Could not generate embedding"):
             store.add_chunk("text")
-
-
-@pytest.mark.unit
-class TestMongoDBVectorStoreDeleteChunk:
-    def test_delete_chunk_success(self):
-        store, mock_collection, _ = _make_mongodb_store()
-        mock_collection.delete_one.return_value = Mock(deleted_count=1)
-
-        with patch("docsgpt.vectorstore.mongodb.ObjectId", create=True):
-            # We need to mock bson.objectid.ObjectId
-            with patch.dict("sys.modules", {"bson": MagicMock(), "bson.objectid": MagicMock()}):
-                from unittest.mock import MagicMock as MM
-                mock_oid = MM()
-                with patch(
-                    "bson.objectid.ObjectId", return_value=mock_oid
-                ):
-                    result = store.delete_chunk("507f1f77bcf86cd799439011")
-
-        assert result is True
-
-    def test_delete_chunk_returns_false_on_error(self):
-        store, mock_collection, _ = _make_mongodb_store()
-        mock_collection.delete_one.side_effect = Exception("fail")
-
-        result = store.delete_chunk("bad_id")
-        assert result is False
 
 
 @pytest.mark.unit
@@ -342,6 +362,46 @@ def _fake_bson():
 
 
 @pytest.mark.unit
+class TestMongoDBChunkDeletesStayInTheirSource:
+    """Every source shares one collection; a store deletes only its own chunks."""
+
+    @pytest.mark.parametrize("deleted_count, result", [(1, True), (0, False)])
+    def test_delete_chunk_filters_on_the_source(self, deleted_count, result):
+        store, mock_collection, _ = _make_mongodb_store(source_id="src1")
+        mock_collection.delete_many.return_value = Mock(deleted_count=deleted_count)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            assert store.delete_chunk("abc") is result
+
+        mock_collection.delete_many.assert_called_once_with({"_id": {"$in": [("oid", "abc")]}, "source_id": "src1"})
+
+    def test_delete_chunk_returns_false_on_error(self):
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.delete_many.side_effect = Exception("fail")
+
+        with patch.dict("sys.modules", _fake_bson()):
+            assert store.delete_chunk("abc") is False
+
+    def test_delete_chunks_is_one_scoped_delete(self):
+        store, mock_collection, _ = _make_mongodb_store(source_id="src1")
+        mock_collection.delete_many.return_value = Mock(deleted_count=1)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            assert store.delete_chunks(["abc", "def", "abc"]) == 1
+
+        mock_collection.delete_many.assert_called_once_with(
+            {"_id": {"$in": [("oid", "abc"), ("oid", "def")]}, "source_id": "src1"}
+        )
+
+    def test_delete_chunks_with_a_failing_store_counts_nothing(self):
+        store, mock_collection, _ = _make_mongodb_store(source_id="src1")
+        mock_collection.delete_many.side_effect = Exception("down")
+
+        with patch.dict("sys.modules", _fake_bson()):
+            assert store.delete_chunks(["abc"]) == 0
+
+
+@pytest.mark.unit
 class TestMongoDBVectorStoreUpdateChunk:
     def _existing(self, **extra):
         return {
@@ -374,7 +434,7 @@ class TestMongoDBVectorStoreUpdateChunk:
             }
         }
         mock_collection.insert_one.assert_not_called()
-        mock_collection.delete_one.assert_not_called()
+        mock_collection.delete_many.assert_not_called()
 
     def test_unsets_keys_missing_from_the_new_metadata(self):
         store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")

@@ -705,7 +705,9 @@ class GraphStore:
         The chunk's ``graph_ingest_progress`` row is written in this same
         transaction, so the checkpoint and the rows it describes commit
         together and a replay of an already-applied chunk returns ``(0, 0)``
-        without touching the graph. Returns ``(nodes_upserted, edges_added)``.
+        without touching the graph. So does a chunk ``delete_chunks`` has
+        deleted (its tombstone), checked under the same source lock.
+        Returns ``(nodes_upserted, edges_added)``.
         """
         self._ensure_tables_once()
 
@@ -728,7 +730,10 @@ class GraphStore:
                     (source_id, str(chunk_id)),
                 )
                 applied = cursor.fetchone()
-                if applied is not None and applied[0] == "done":
+                # ``deleted`` is the tombstone ``delete_chunks`` leaves: a build
+                # that listed the chunk before a page change deleted it must not
+                # bring its entities and relationships back.
+                if applied is not None and applied[0] in ("done", "deleted"):
                     conn.rollback()
                     return 0, 0
 
@@ -1811,7 +1816,11 @@ class GraphStore:
             cursor.close()
 
     def mark_chunk(self, source_id: str, chunk_id: str, status: str):
-        """Record a chunk's extraction status, reconnecting once if the connection died."""
+        """Record a chunk's extraction status, reconnecting once if the connection died.
+
+        A chunk's ``deleted`` tombstone is kept: a build marking a chunk that
+        was deleted meanwhile would otherwise clear it.
+        """
         self._ensure_tables_once()
 
         def _write(conn):
@@ -1821,7 +1830,8 @@ class GraphStore:
                     """
                     INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
                     VALUES (%s, %s, %s)
-                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status;
+                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status
+                    WHERE graph_ingest_progress.status IS DISTINCT FROM 'deleted';
                     """,
                     (source_id, str(chunk_id), status),
                 )
@@ -1903,8 +1913,150 @@ class GraphStore:
 
         return self._write_with_reconnect(_write)
 
+    def delete_chunks(self, source_id: str, chunk_ids: List[str]) -> Dict[str, int]:
+        """Take deleted chunks' contributions out of a source's graph, with no LLM call.
+
+        For a page removed or replaced on its own, so the rest of the graph
+        stays and only new chunks need extracting. In one transaction the
+        chunks' node links go (lowering ``doc_freq``), the chunk ids leave
+        every edge (an edge left with none goes), a touched node with no link
+        and no edge left goes, and degrees are recounted. A merged node's
+        description keeps the deleted chunks' text; only a rebuild clears it.
+
+        Each chunk's ``graph_ingest_progress`` row becomes a ``deleted``
+        tombstone, so a build that listed the chunk before it was deleted
+        skips it (``apply_chunk``). Chunk ids are never reused (pgvector's
+        serial ids, FAISS/Qdrant uuids, Mongo ObjectIds), and a full reset
+        (``delete_by_source``) keeps the tombstones, since a build may outlive it.
+
+        Args:
+            source_id: The source.
+            chunk_ids: Ids of the deleted chunks; unknown ones are ignored.
+
+        Returns:
+            ``{"nodes": n, "edges": n}``: how many nodes and edges were deleted.
+
+        Raises:
+            Exception: The underlying write failure, after a rollback.
+        """
+        ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids or []))
+        if not ids:
+            return {"nodes": 0, "edges": 0}
+        self._ensure_tables_once()
+
+        def _write(conn):
+            cursor = conn.cursor()
+            try:
+                # Not in the middle of a build's chunk, nor of another delete.
+                _lock_source(cursor, source_id)
+                cursor.execute(
+                    """
+                    UPDATE graph_nodes n
+                    SET doc_freq = GREATEST(COALESCE(n.doc_freq, 0) - links.cnt, 0)
+                    FROM (
+                        SELECT node_id, count(*) AS cnt
+                        FROM graph_node_chunks
+                        WHERE source_id = %s AND chunk_id = ANY(%s)
+                        GROUP BY node_id
+                    ) links
+                    WHERE n.source_id = %s AND n.id = links.node_id;
+                    """,
+                    (source_id, ids, source_id),
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM graph_node_chunks
+                    WHERE source_id = %s AND chunk_id = ANY(%s)
+                    RETURNING node_id;
+                    """,
+                    (source_id, ids),
+                )
+                touched = {str(row[0]) for row in cursor.fetchall()}
+                cursor.execute(
+                    """
+                    UPDATE graph_edges
+                    SET source_chunk_ids = (
+                        SELECT COALESCE(jsonb_agg(t.v ORDER BY t.ord), '[]'::jsonb)
+                        FROM jsonb_array_elements(source_chunk_ids)
+                             WITH ORDINALITY AS t(v, ord)
+                        WHERE NOT (t.v #>> '{}' = ANY(%s))
+                    )
+                    WHERE source_id = %s
+                      AND jsonb_typeof(source_chunk_ids) = 'array'
+                      AND EXISTS (
+                          SELECT 1 FROM jsonb_array_elements(source_chunk_ids) AS s(v)
+                          WHERE s.v #>> '{}' = ANY(%s)
+                      )
+                    RETURNING id;
+                    """,
+                    (ids, source_id, ids),
+                )
+                stripped = [str(row[0]) for row in cursor.fetchall()]
+                cursor.execute(
+                    """
+                    DELETE FROM graph_edges
+                    WHERE source_id = %s AND id = ANY(%s::uuid[])
+                      AND source_chunk_ids = '[]'::jsonb
+                    RETURNING src_node_id, dst_node_id;
+                    """,
+                    (source_id, stripped),
+                )
+                deleted_edges = cursor.fetchall()
+                endpoints = {str(node) for row in deleted_edges for node in row if node is not None}
+                candidates = list(touched | endpoints)
+                cursor.execute(
+                    """
+                    DELETE FROM graph_nodes n
+                    WHERE n.source_id = %s AND n.id = ANY(%s::uuid[])
+                      AND NOT EXISTS (
+                          SELECT 1 FROM graph_node_chunks c
+                          WHERE c.source_id = n.source_id AND c.node_id = n.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM graph_edges e
+                          WHERE e.source_id = n.source_id
+                            AND (e.src_node_id = n.id OR e.dst_node_id = n.id)
+                      )
+                    RETURNING n.id;
+                    """,
+                    (source_id, candidates),
+                )
+                nodes_deleted = len(cursor.fetchall())
+                cursor.execute(
+                    """
+                    UPDATE graph_nodes n
+                    SET degree = (
+                        SELECT count(*) FROM graph_edges e
+                        WHERE e.source_id = n.source_id
+                          AND (e.src_node_id = n.id OR e.dst_node_id = n.id)
+                    )
+                    WHERE n.source_id = %s AND n.id = ANY(%s::uuid[]);
+                    """,
+                    (source_id, list(endpoints)),
+                )
+                # A tombstone per chunk rather than no row: a build that listed
+                # the chunks before they were deleted skips them in apply_chunk.
+                cursor.execute(
+                    """
+                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
+                    SELECT CAST(%s AS uuid), chunk_id, 'deleted' FROM unnest(%s::text[]) AS t(chunk_id)
+                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = 'deleted';
+                    """,
+                    (source_id, ids),
+                )
+                conn.commit()
+                return {"nodes": nodes_deleted, "edges": len(deleted_edges)}
+            except Exception as e:
+                _safe_rollback(conn)
+                logging.error(f"Error deleting graph chunks: {e}")
+                raise
+            finally:
+                cursor.close()
+
+        return self._write_with_reconnect(_write)
+
     def pending_chunks(self, source_id: str, all_chunk_ids: List[str]) -> List[str]:
-        """Chunk ids from ``all_chunk_ids`` not yet marked ``done`` for the source."""
+        """Chunk ids from ``all_chunk_ids`` not yet marked ``done`` (nor deleted) for the source."""
         if not all_chunk_ids:
             return []
         conn = self._get_connection()
@@ -1913,7 +2065,7 @@ class GraphStore:
             cursor.execute(
                 """
                 SELECT chunk_id FROM graph_ingest_progress
-                WHERE source_id = %s AND status = 'done';
+                WHERE source_id = %s AND status IN ('done', 'deleted');
                 """,
                 (source_id,),
             )
@@ -1944,7 +2096,13 @@ class GraphStore:
             conn.rollback()
 
     def delete_by_source(self, source_id: str):
-        """Remove every graph row for a source (no FK cascade across clusters)."""
+        """Remove every graph row for a source (no FK cascade across clusters).
+
+        The ``deleted`` tombstones stay: an extraction that listed a chunk
+        before a page change deleted it may still be running past the reset,
+        and must not write the chunk back. Chunk ids are never reused, so a
+        tombstone never hides a chunk of the rebuilt index.
+        """
         self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -1952,16 +2110,18 @@ class GraphStore:
             # A reset while a build is still writing must not land in the
             # middle of one of its chunks.
             _lock_source(cursor, source_id)
-            for table in (
-                "graph_node_chunks",
-                "graph_edges",
-                "graph_nodes",
-                "graph_ingest_progress",
+            every_row = "DELETE FROM {} WHERE source_id = %s;"
+            for table, statement in (
+                ("graph_node_chunks", every_row),
+                ("graph_edges", every_row),
+                ("graph_nodes", every_row),
+                (
+                    "graph_ingest_progress",
+                    "DELETE FROM {} WHERE source_id = %s AND status IS DISTINCT FROM 'deleted';",
+                ),
             ):
                 cursor.execute(
-                    sql.SQL("DELETE FROM {} WHERE source_id = %s;").format(
-                        sql.Identifier(table)
-                    ),
+                    sql.SQL(statement).format(sql.Identifier(table)),
                     (source_id,),
                 )
             conn.commit()

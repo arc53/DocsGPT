@@ -183,7 +183,6 @@
       "addChunk": "Chunk hinzufügen",
       "preLoaded": "Vorgeladen",
       "private": "Privat",
-      "sync": "Synchronisieren",
       "syncDone": "Fertig",
       "syncNow": "Jetzt synchronisieren",
       "syncing": "Synchronisiere...",
@@ -195,8 +194,7 @@
         "never": "Nie",
         "daily": "Täglich",
         "weekly": "Wöchentlich",
-        "monthly": "Monatlich",
-        "option": "Synchronisierung: {{frequency}}"
+        "monthly": "Monatlich"
       },
       "actions": "Aktionen",
       "view": "Anzeigen",
@@ -208,6 +206,7 @@
         "save": "Speichern",
         "saveFailed": "Die Seite konnte nicht gespeichert werden. Bitte versuche es erneut.",
         "forbidden": "Du hast keine Berechtigung, diese Seite zu bearbeiten.",
+        "unsupported": "Dieser Vektorspeicher kann keine einzelnen Seiten ändern und daher kein Wiki aufnehmen.",
         "conflict": "Diese Seite wurde seit dem Öffnen geändert und neu geladen. Deine Änderungen stehen unten – übernimm sie erneut und speichere noch einmal.",
         "editPlaceholder": "Schreibe die Seite in Markdown…",
         "stamp": {
@@ -252,7 +251,6 @@
         "pageLoadFailed": "Diese Seite konnte nicht geladen werden.",
         "editTitle": "Seite bearbeiten",
         "settings": {
-          "action": "Wiki-Einstellungen",
           "title": "Wiki-Einstellungen",
           "outsideEdits": {
             "label": "API- und Widget-Nutzern erlauben, dieses Wiki zu bearbeiten",
@@ -275,8 +273,6 @@
           "costCost": "Dabei erfolgt ein LLM-Aufruf pro Chunk; das verbraucht Tokens und kann bei großen Quellen eine Weile dauern.",
           "estimate": "~1 LLM-Aufruf pro Chunk · ~{{lo}}–{{hi}} Tokens insgesamt (etwa halb Eingabe, halb Ausgabe); die Ausgabe variiert je nachdem, wie entitätsreich das Dokument ist.",
           "confirm": "GraphRAG aktivieren",
-          "inProgress": "Graph wird erstellt…",
-          "inProgressPct": "Graph wird erstellt… {{pct}}%",
           "summaryNodes_one": "{{count}} Entität",
           "summaryNodes_other": "{{count}} Entitäten",
           "summaryEdges_one": "{{count}} Beziehung",
@@ -397,7 +393,7 @@
         "saveToSource": "In Quelle speichern",
         "savedToSource": "Gespeichert. Die Quelle verwendet jetzt die getesteten Einstellungen."
       },
-      "editConfig": "Quelleneinstellungen",
+      "editConfig": "Einstellungen",
       "shareWithTeam": "Mit Team teilen",
       "deleteWarning": "\"{{name}}\" löschen?",
       "chunks": "Chunks",
@@ -424,7 +420,6 @@
       "searchAlt": "Suchen",
       "retrievalOptions": {
         "title": "Erweiterte Einstellungen",
-        "advanced": "Erweitert",
         "retrieval": {
           "title": "Abruf",
           "note": "Diese Änderungen wirken sofort, kein erneutes Indexieren nötig.",
@@ -522,7 +517,12 @@
           "minRelevanceHint": "Die genaue Relevanz (0–1), die ein Chunk braucht, um behalten zu werden. Locker ist 0,1, Ausgewogen 0,3, Streng 0,5.",
           "candidates": "Zu bewertende Kandidaten",
           "candidatesHint": "Wie viele Chunks der Retriever für das Relevanzmodell abruft, höchstens {{max}}. Standard: {{default}}."
-        }
+        },
+        "filtering": {
+          "title": "Filterung",
+          "tag": "kein erneutes Indexieren"
+        },
+        "createHint": "Die Filterung stellst du nach dem ersten Import fein ein, in den Quelleneinstellungen oder unter Retrieval testen."
       },
       "configModal": {
         "title": "Quelleneinstellungen",
@@ -531,6 +531,7 @@
         "save": "Speichern",
         "chunkingChangeHint": "Du hast eine Chunking-Einstellung geändert. Nach dem Speichern muss diese Quelle erneut indexiert werden, damit die Änderung wirkt.",
         "prescreenInvalidHint": "Prüfe die Werte der LLM-Vorfilterung: Die abzurufenden Kandidaten müssen mindestens der Chunk-Anzahl entsprechen, und die zu behaltenden Chunks dürfen die Kandidatenzahl nicht überschreiten.",
+        "syncAfterSave": "Speichere zuerst deine Änderungen. Die Synchronisierung verwendet die gespeicherten Einstellungen.",
         "reingestRequired": "Deine Änderungen wurden gespeichert. Die geänderten Chunking-Einstellungen wirken erst nach einem erneuten Indexieren. Jetzt erneut indexieren?",
         "reingestLater": "Später",
         "errors": {
@@ -542,7 +543,8 @@
         "add": "Der Chunk konnte nicht hinzugefügt werden",
         "save": "Der Chunk konnte nicht gespeichert werden",
         "delete": "Der Chunk konnte nicht gelöscht werden",
-        "load": "Die Chunks konnten nicht geladen werden"
+        "load": "Die Chunks konnten nicht geladen werden",
+        "busy": "Gerade läuft eine andere Änderung an dieser Quelle. Versuche es erneut, sobald sie fertig ist."
       },
       "chunkPosition": "Chunk {{n}} von {{total}} · {{tokens}} Tokens",
       "chunkCrumb": "Chunk {{n}}",
@@ -605,6 +607,92 @@
         "safeNotice": "Als sicher markiert: Agenten, die diese Quelle nutzen, behandeln diesen Chunk als unbedenklich. Wenn du den Text bearbeitest, wird die Markierung entfernt.",
         "reviewFailed": "Der Chunk konnte nicht aktualisiert werden. Bitte versuche es erneut.",
         "noFlagged": "In dieser Quelle wurde kein Chunk markiert. Ein Chunk wird bewertet, sobald ein Chat ihn abruft."
+      },
+      "website": {
+        "page": "Seite",
+        "pages": "Seiten",
+        "fetched": "Abgerufen",
+        "filterPages": "Seiten filtern",
+        "openPage": "Seite öffnen",
+        "pagesByline_one": "{{pages}} Seite · {{tokens}} Tokens",
+        "pagesByline_other": "{{pages}} Seiten · {{tokens}} Tokens",
+        "sites_one": "{{count}} Website",
+        "sites_other": "{{count}} Websites",
+        "pageCount_one": "{{count}} Seite",
+        "pageCount_other": "{{count}} Seiten",
+        "synced": "{{frequency}} · synchronisiert {{when}}",
+        "notSynced": "Nicht synchronisiert",
+        "fetchedAt": "abgerufen {{when}}",
+        "addPages": "Seiten hinzufügen",
+        "addPagesHint": "Wird jetzt abgerufen und bei jeder Synchronisierung beibehalten. Eine ganze Website baut die Quelle neu auf.",
+        "graphCost": "Diese Quelle hat einen Wissensgraphen. Neue Seiten werden ihm mit einem LLM hinzugefügt, etwa ein Aufruf pro Chunk. Baut das Hinzufügen die Quelle neu auf (eine Seite einer anderen Website), wird der ganze Graph neu erstellt: etwa ein Aufruf pro Chunk der gesamten Quelle.",
+        "addFailed": "Die Seiten konnten nicht hinzugefügt werden.",
+        "pageNotFetched": "Eine Seite konnte nicht abgerufen werden: {{url}}. Sie bleibt in der Liste dieser Quelle, und die nächste Synchronisierung versucht es erneut.",
+        "pagesNotFetched_one": "{{count}} Seite konnte nicht abgerufen werden. Sie bleibt in der Liste dieser Quelle, und die nächste Synchronisierung versucht es erneut.",
+        "pagesNotFetched_other": "{{count}} Seiten konnten nicht abgerufen werden. Sie bleiben in der Liste dieser Quelle, und die nächste Synchronisierung versucht es erneut.",
+        "pageLimit_one": "Diese Quelle kann bis zu {{count}} Seite enthalten.",
+        "pageLimit_other": "Diese Quelle kann bis zu {{count}} Seiten enthalten.",
+        "addingPages": "Seiten werden hinzugefügt …",
+        "refreshing": "Seite wird aktualisiert …",
+        "removing": "Seiten werden entfernt …",
+        "syncing": "Quelle wird synchronisiert …",
+        "refreshPage": "Seite aktualisieren",
+        "refreshFailed": "„{{name}}“ konnte nicht aktualisiert werden; der Inhalt bleibt erhalten.",
+        "refreshOutOfScope": "„{{name}}“ führt jetzt aus dieser Quelle hinaus und wurde deshalb entfernt, wie es auch eine Synchronisierung täte.",
+        "removeFromSource": "Aus der Quelle entfernen",
+        "removeTitle": "„{{name}}“ entfernen?",
+        "removeEntry": "Die Chunks werden gelöscht und die Seite wird von der Liste dieser Quelle genommen.",
+        "removeCrawled": "Sie stammt aus dem Crawlen von {{host}}. Die Chunks werden gelöscht und spätere Synchronisierungen überspringen sie. In den Einstellungen der Quelle kannst du sie wiederherstellen.",
+        "removeGeneric": "Die Chunks werden gelöscht und spätere Synchronisierungen rufen die Seite nicht mehr ab.",
+        "removeFolder": "Die Chunks der Seiten werden gelöscht und spätere Synchronisierungen überspringen alle Adressen unter {{address}}.",
+        "removeFolderGeneric": "Die Chunks der Seiten werden gelöscht und spätere Synchronisierungen rufen die Seiten nicht mehr ab.",
+        "remove": "Entfernen",
+        "removeAndSkip": "Entfernen und überspringen",
+        "removeFailed": "Konnte nicht entfernt werden.",
+        "syncFailed": "Die Quelle konnte nicht synchronisiert werden.",
+        "removeLast": "Das ist das Letzte, was diese Quelle abruft. Lösche stattdessen die Quelle.",
+        "wikiSource": "Diese Quelle ist jetzt ein Wiki: Sie wird direkt bearbeitet und ruft keine Seiten mehr ab.",
+        "chunksUnsupported": "Dieser Vektorspeicher kann keine einzelnen Seiten ändern. Synchronisiere stattdessen die Quelle.",
+        "handEditsNote": "Aktuell gehalten: {{frequency}}. Chunks, die du hier hinzufügst oder bearbeitest, werden bei der nächsten Synchronisierung ersetzt.",
+        "fetches": "Was diese Quelle abruft",
+        "siteSummary": "Ganze Website · {{find}} · Seitenlimit {{max}}",
+        "limitReached": "Seitenlimit erreicht",
+        "pageEntry": "Seite",
+        "removeFromList": "{{address}} von der Liste entfernen",
+        "skipped": "Übersprungen",
+        "restore": "Wiederherstellen",
+        "restoreAddress": "{{address}} wiederherstellen",
+        "saveFailed": "Die Einstellungen konnten nicht gespeichert werden.",
+        "loadFailed": "Die Einstellungen konnten nicht geladen werden.",
+        "lastSynced": "Zuletzt synchronisiert {{when}}.",
+        "appliesNextSync": "Änderungen gelten ab der nächsten Synchronisierung.",
+        "stillRunning": "Die Änderung läuft noch. Öffne die Quelle später erneut, um sie zu sehen.",
+        "changeBusy": "Eine andere Änderung an dieser Quelle lief noch, daher wurde diese nicht ausgeführt. Versuche es erneut.",
+        "queueFailed": "Die Änderung wurde gespeichert, konnte aber noch nicht starten. Die nächste Synchronisierung übernimmt sie.",
+        "sourceGone": "Diese Quelle gibt es nicht mehr.",
+        "siteLimit_one": "Eine Quelle kann Inhalte von bis zu {{count}} Website abrufen.",
+        "siteLimit_other": "Eine Quelle kann Inhalte von bis zu {{count}} Websites abrufen.",
+        "skipLimit_one": "Eine Quelle kann bis zu {{count}} Adresse überspringen.",
+        "skipLimit_other": "Eine Quelle kann bis zu {{count}} Adressen überspringen.",
+        "urlTooLong_one": "Eine Adresse darf höchstens {{count}} Zeichen lang sein.",
+        "urlTooLong_other": "Eine Adresse darf höchstens {{count}} Zeichen lang sein.",
+        "invalidAddress": "„{{url}}“ ist keine Adresse, die diese Quelle abrufen kann.",
+        "invalidConfig": "Diese Einstellungen sind ungültig. Prüfe die Adressen und Limits.",
+        "notFound": "Diese Seite oder dieser Ordner ist nicht mehr in der Quelle. Lade sie neu und versuche es erneut.",
+        "badSyncFrequency": "Dieser Synchronisierungsplan ist nicht verfügbar.",
+        "graphCostRebuild": "Diese Quelle hat einen Wissensgraphen. Eine ganze Website baut die Quelle neu auf, daher wird auch der Graph mit einem LLM neu erstellt: etwa ein Aufruf pro Chunk der gesamten Quelle.",
+        "tooManyPaths_one": "Du kannst bis zu {{count}} Seite auf einmal entfernen.",
+        "tooManyPaths_other": "Du kannst bis zu {{count}} Seiten auf einmal entfernen.",
+        "notWebsite": "Diese Quelle ist keine Website-Quelle.",
+        "alreadyListed": "Diese Seiten und Websites sind bereits in dieser Quelle.",
+        "badRequest": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut."
+      },
+      "deleteSource": "Quelle löschen",
+      "syncStarted": "{{name}} wird synchronisiert…",
+      "viaConnectionFiles_one": "über {{name}} · {{files}} Datei",
+      "viaConnectionFiles_other": "über {{name}} · {{files}} Dateien",
+      "item": {
+        "tokens": "{{tokens}} Tokens"
       }
     },
     "analytics": {
@@ -1825,7 +1913,7 @@
         "tools": "Werkzeuge aus dieser Verbindung",
         "noAccounts": "Noch kein Konto verbunden.",
         "failed": "Diese Verbindung konnte nicht geladen werden.",
-        "lastSync": "Synchronisiert {{date}} · {{frequency}}",
+        "lastSync": "Synchronisiert {{when}}",
         "paused": "Sync pausiert",
         "toolOn": "An",
         "toolOff": "Aus",
@@ -1834,12 +1922,11 @@
         "keyEnding": "Schlüssel {{hint}}",
         "syncMore": "Weitere Inhalte synchronisieren",
         "refreshTools": "Werkzeuge aktualisieren",
-        "noSources": "Aus dieser Verbindung wurde noch nichts synchronisiert.",
+        "noSources": "Noch nichts synchronisiert",
         "remove": "Entfernen",
         "refreshed": "Werkzeuge aktualisiert: {{added}} hinzugefügt, {{removed}} entfernt.",
         "refreshFailed": "Die Werkzeuge konnten nicht aktualisiert werden.",
         "syncNow": "Jetzt synchronisieren",
-        "syncStarted": "{{name}} wird synchronisiert…",
         "syncFailed": "Die Synchronisierung konnte nicht gestartet werden. Versuche es erneut.",
         "toolSwitchFailed": "Das Werkzeug konnte nicht geändert werden. Versuche es erneut.",
         "expired": "Die Anmeldung ist abgelaufen. Verbinde neu, um diese Verbindung weiter zu nutzen.",
@@ -1849,7 +1936,19 @@
         "addToolsFailed": "Die Werkzeuge konnten nicht hinzugefügt werden. Versuche es erneut.",
         "rename": "Umbenennen",
         "toolsHint": "Bei „Vorher fragen“ wirst du im Chat gefragt. Änderungen über API, Widget und Link erlaubst du pro Agent unter Zugriffsdetails.",
-        "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut."
+        "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut.",
+        "noSourcesHint": "Wähle Inhalte aus {{name}}, um sie dem Wissen hinzuzufügen.",
+        "indexing": "Wird indexiert",
+        "firstSyncStarted": "Erste Synchronisierung gestartet: {{time}}",
+        "dismissFailedSync": "{{name}} ausblenden",
+        "sourceMenu": "Quellenaktionen",
+        "syncStarting": "Synchronisierung wird gestartet…",
+        "syncRefusedWiki": "Diese Quelle ist jetzt ein Wiki: Sie wird direkt bearbeitet und nicht mehr synchronisiert.",
+        "syncRefusedNotSyncable": "Diese Quelle lässt sich nicht synchronisieren.",
+        "syncRefusedConnector": "Diese Quelle wird über ihre Verbindung synchronisiert.",
+        "syncRefusedInvalid": "Diese Quelle wurde nicht gefunden.",
+        "syncRefusedReconnect": "Der Eigentümer muss das Konto dieser Quelle erneut verbinden, bevor sie synchronisiert werden kann.",
+        "syncRefusedConnectionMissing": "Das Konto dieser Quelle wurde getrennt. Sie kann erst wieder synchronisieren, wenn das Konto erneut verbunden ist."
       },
       "permission": {
         "always": "Erlauben",
@@ -1906,7 +2005,6 @@
         "tryInChat": "Im Chat ausprobieren",
         "done": "Fertig",
         "connectFailed": "Verbindung fehlgeschlagen. Prüfe die Angaben und versuche es erneut.",
-        "syncFailed": "Die Synchronisierung konnte nicht gestartet werden. Versuche es erneut.",
         "connectedWithKey": "Verbunden mit dem Schlüssel, der auf {{hint}} endet.",
         "doneCounts": "{{sources}} werden ins Wissen synchronisiert, {{tools}} bereit.",
         "doneSources": "{{sources}} werden ins Wissen synchronisiert.",
@@ -1917,6 +2015,8 @@
         "methodOauth": "Mit {{name}} anmelden",
         "methodToken": "Zugriffstoken verwenden",
         "credentialsRejected": "{{name}} hat diese Zugangsdaten nicht akzeptiert. Prüfe sie und versuche es erneut.",
+        "setupReconnect": "Melde dich erneut bei {{name}} an, um die Einrichtung abzuschließen.",
+        "setupDisabled": "Ein Admin hat {{name}} deaktiviert, daher lässt es sich nicht einrichten.",
         "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut oder schalte sie aus, um fortzufahren.",
         "addTools": "Agenten {{name}} nutzen lassen",
         "addToolsDescription": {
@@ -1927,13 +2027,18 @@
         "accountNameHint": "Wird dir und der KI angezeigt, um Konten zu unterscheiden, z. B. Alarm-Bot.",
         "syncToKnowledge": "Ins Wissen synchronisieren",
         "syncToKnowledgeDescription": "Wähle Inhalte aus {{name}}, die Antworten durchsuchen. Bleibt es aus, wird nur verbunden; synchronisieren kannst du später unter Konnektoren.",
-        "syncLater": "Noch wird nichts ins Wissen synchronisiert. Um Inhalte hinzuzufügen, öffne {{name}} unter Konnektoren und wähle Weitere Inhalte synchronisieren.",
+        "syncLater": "Noch wird nichts ins Wissen synchronisiert.",
         "retrievalSettings": "Erweiterte Abrufeinstellungen",
         "chooseWhatToSetUpFor": "Auswählen, was für {{name}} eingerichtet wird",
         "chooseWhatToSyncFrom": "Auswählen, was aus {{name}} synchronisiert wird",
         "signedInAs": "Angemeldet als {{account}}.",
         "finishSetup": "Einrichtung abschließen",
-        "account": "Konto"
+        "account": "Konto",
+        "syncChoice": "Wie du {{name}} nutzen möchtest",
+        "syncNow": "Inhalte jetzt synchronisieren",
+        "syncNowDescription": "Wähle Inhalte aus {{name}} und füge sie dem Wissen hinzu.",
+        "justConnect": "Nur verbinden",
+        "justConnectDescription": "Noch wird nichts hinzugefügt. Synchronisiere Inhalte später unter Konnektoren, wann immer sie gebraucht werden."
       },
       "remove": {
         "title": "\"{{name}}\" entfernen?",
@@ -2058,7 +2163,9 @@
         "flagged": "Mögliche Prompt-Injection",
         "notice_one": "Die Beschreibung von {{formatted}} Aktion liest sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst.",
         "notice_other": "Die Beschreibungen von {{formatted}} Aktionen lesen sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst."
-      }
+      },
+      "syncContent": "Inhalte synchronisieren",
+      "openInKnowledge": "Im Wissen öffnen"
     },
     "insights": {
       "label": "Einblicke"
@@ -2077,14 +2184,13 @@
       "start": "Chat starten",
       "name": "Name",
       "choose": "Dateien auswählen",
-      "dropzoneText": "Zum Hochladen klicken oder per Drag & Drop ablegen",
+      "dropzoneText": "Zum Hochladen klicken oder Dateien bzw. einen Ordner hierher ziehen",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, Bilder, Audio, EPUB, JSON oder ZIP, jeweils bis zu 25 MB",
       "filesRejected": "Nicht hinzugefügt (größer als 25 MB oder kein unterstützter Dateityp): {{files}}",
-      "selectFolder": "Ordner auswählen",
+      "selectFolder": "Oder einen ganzen Ordner auswählen",
       "uploadedFiles": "Hochgeladene Dateien",
       "cancel": "Abbrechen",
       "train": "Zum Wissen hinzufügen",
-      "create": "Erstellen",
       "link": "Link",
       "urlLink": "URL-Link",
       "repoUrl": "Repository-URL",
@@ -2114,13 +2220,9 @@
           "label": "Datei hochladen",
           "heading": "Neues Dokument hochladen"
         },
-        "crawler": {
-          "label": "Crawler",
-          "heading": "Inhalt mit Web-Crawler hinzufügen"
-        },
-        "url": {
-          "label": "Link",
-          "heading": "Inhalt von URL hinzufügen"
+        "website": {
+          "label": "Website",
+          "heading": "Website hinzufügen"
         },
         "github": {
           "label": "GitHub",
@@ -2157,14 +2259,50 @@
         }
       },
       "fields": {
-        "url": "URL",
-        "initialContent": "Anfangsinhalt (optional)"
+        "initialContent": "Anfangsinhalt",
+        "initialContentHint": "Markdown. Seiten kannst du nach dem Erstellen hinzufügen und bearbeiten."
+      },
+      "website": {
+        "pageUrl": "Seitenadresse",
+        "siteUrl": "Website-Adresse",
+        "addAnotherPage": "Weitere Seite hinzufügen",
+        "invalidAddress": "Gib eine öffentliche Webadresse ein, etwa docs.example.com",
+        "removePage": "Diese Adresse entfernen",
+        "removeAddress": "{{address}} entfernen",
+        "maxPages": "Seitenlimit",
+        "maxPagesHint": "Bis zu {{max}}, vom Admin festgelegt.",
+        "pathPrefix": "Nur unterhalb von",
+        "pathPrefixHint": "Nur Adressen, die mit diesem Pfad beginnen.",
+        "pathPrefixPlaceholder": "/ (ganze Website)",
+        "sitemapUrl": "Sitemap-URL",
+        "sitemapUrlHint": "Leer lassen, um die in robots.txt angegebene zu verwenden.",
+        "includeSubdomains": "Subdomains einbeziehen",
+        "sync": "Aktuell halten",
+        "syncHintPage": "Ruft die Seiten erneut ab und übernimmt Änderungen.",
+        "syncHintSite": "Crawlt erneut und übernimmt Änderungen.",
+        "keepLinks": "Links im Seitentext behalten",
+        "keepLinksHint": "Antworten können dann auf die Seiten verlinken, auf die diese Seite verweist. Speichert etwa ein Viertel mehr Text, und die Suche kann etwas schlechter ranken.",
+        "mode": {
+          "label": "Was hinzugefügt wird",
+          "page": "Diese Seite",
+          "site": "Ganze Website",
+          "pageHint": "Fügt genau diese Seiten hinzu.",
+          "siteHint": "Fügt diese Seite und die Seiten hinzu, zu denen sie auf derselben Website führt."
+        },
+        "discovery": {
+          "label": "Seiten finden",
+          "hint": "Automatisch liest die Sitemap und folgt dann Links.",
+          "auto": "Automatisch",
+          "sitemap": "Sitemap",
+          "links": "Links folgen"
+        }
       },
       "github": {
         "privateHint": "Privates Repository? Verbinde dein GitHub-Konto, um es zu synchronisieren.",
         "connect": "GitHub verbinden"
       },
-      "fromService": "Aus einem Dienst"
+      "fromService": "Aus einem Dienst",
+      "removeFile": "{{name}} entfernen"
     },
     "createAPIKey": {
       "label": "Neuen API-Schlüssel erstellen",

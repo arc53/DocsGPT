@@ -364,7 +364,11 @@ class TestAgentKeyVisibility:
 @pytest.mark.unit
 class TestChatRestrictions:
     def _chat(self, client, claims, body):
-        return _denied(_call(client, "POST", "/api/answer", claims, json=body))
+        from docsgpt.api.answer.routes.answer import AnswerResource
+
+        # The rules run before the view; an allowed chat must not reach the model.
+        with patch.object(AnswerResource, "post", return_value={}):
+            return _denied(_call(client, "POST", "/api/answer", claims, json=body))
 
     def test_unrestricted_token_can_chat_any_way(self, client):
         claims = _claims(["chat:run"])

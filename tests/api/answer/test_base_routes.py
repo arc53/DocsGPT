@@ -1244,7 +1244,7 @@ class TestCompleteStreamWalAcceptance:
             assert save_state.call_args.kwargs["messages"] == [read]
 
     def test_sources_found_before_the_pause_are_saved_with_it(
-        self, pg_conn, flask_app,
+        self, pg_conn, flask_app, mock_llm_creator,
     ):
         """The resumed turn continues the paused one's ``[n]`` numbering, so
         it needs the sources in full: the stream's 100-character excerpts
@@ -1256,6 +1256,8 @@ class TestCompleteStreamWalAcceptance:
 
         doc = {"title": "a.pdf", "source": "a.pdf", "text": "x" * 1500, "chunk_key": "k"}
         expected = dict(doc)
+        # The pause creates the conversation and names it with the title model.
+        mock_llm_creator.gen.return_value = "Run my tool"
         with flask_app.app_context():
             resource = BaseAnswerResource()
             mock_agent = MagicMock()

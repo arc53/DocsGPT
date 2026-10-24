@@ -182,7 +182,6 @@
       "addChunk": "新增區塊",
       "preLoaded": "預載入",
       "private": "私人",
-      "sync": "同步",
       "syncDone": "完成",
       "syncNow": "立即同步",
       "syncing": "同步中...",
@@ -194,8 +193,7 @@
         "never": "從不",
         "daily": "每天",
         "weekly": "每週",
-        "monthly": "每月",
-        "option": "同步：{{frequency}}"
+        "monthly": "每月"
       },
       "actions": "操作",
       "view": "查看",
@@ -207,6 +205,7 @@
         "save": "儲存",
         "saveFailed": "無法儲存頁面。請再試一次。",
         "forbidden": "您沒有編輯此頁面的權限。",
+        "unsupported": "此向量儲存無法單獨變更頁面，因此無法承載 Wiki。",
         "conflict": "此頁面在您開啟後已變更，並已重新載入。您的編輯內容如下——請重新套用後再次儲存。",
         "editPlaceholder": "以 Markdown 撰寫頁面…",
         "stamp": {
@@ -250,7 +249,6 @@
         "pageLoadFailed": "無法載入此頁面。",
         "editTitle": "編輯頁面",
         "settings": {
-          "action": "Wiki 設定",
           "title": "Wiki 設定",
           "outsideEdits": {
             "label": "允許 API 和小工具使用者編輯此 Wiki",
@@ -274,8 +272,6 @@
           "costCost": "每個區塊會呼叫一次 LLM，因此會消耗 Token，來源較大時可能需要較長時間。",
           "estimate": "每個區塊約 1 次 LLM 呼叫 · 總計約 {{lo}}–{{hi}} 個 Token（輸入與輸出約各半）；輸出量依文件中實體的密集程度而異。",
           "confirm": "啟用 GraphRAG",
-          "inProgress": "正在建立圖譜…",
-          "inProgressPct": "正在建立圖譜… {{pct}}%",
           "summaryNodes_one": "{{count}} 個實體",
           "summaryNodes_other": "{{count}} 個實體",
           "summaryEdges_one": "{{count}} 個關係",
@@ -395,7 +391,7 @@
         "saveToSource": "儲存到來源",
         "savedToSource": "已儲存。此來源現在使用你測試過的設定。"
       },
-      "editConfig": "來源設定",
+      "editConfig": "設定",
       "shareWithTeam": "與團隊分享",
       "deleteWarning": "要刪除「{{name}}」嗎？",
       "chunks": "文本塊",
@@ -422,7 +418,6 @@
       "searchAlt": "搜尋",
       "retrievalOptions": {
         "title": "進階設定",
-        "advanced": "進階",
         "retrieval": {
           "title": "檢索",
           "note": "這些變更立即生效，無需重新索引。",
@@ -520,7 +515,12 @@
           "minRelevanceHint": "區塊被保留所需的確切相關度（0–1）。寬鬆為 0.1，均衡為 0.3，嚴格為 0.5。",
           "candidates": "評分候選數",
           "candidatesHint": "檢索器為相關度模型擷取並評分的區塊數量，最多 {{max}} 個。預設 {{default}} 個。"
-        }
+        },
+        "filtering": {
+          "title": "篩選",
+          "tag": "無需重新索引"
+        },
+        "createHint": "首次匯入後，可在來源設定或測試檢索中微調篩選。"
       },
       "configModal": {
         "title": "來源設定",
@@ -529,6 +529,7 @@
         "save": "儲存",
         "chunkingChangeHint": "您變更了分塊設定。儲存後需重新索引此來源才會生效。",
         "prescreenInvalidHint": "請檢查 LLM 篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
+        "syncAfterSave": "請先儲存變更。同步會使用已儲存的設定。",
         "reingestRequired": "變更已儲存。您變更的分塊設定需重新索引後才會生效。要立即重新索引嗎？",
         "reingestLater": "稍後",
         "errors": {
@@ -540,7 +541,8 @@
         "add": "無法新增文本塊",
         "save": "無法儲存文本塊",
         "delete": "無法刪除文本塊",
-        "load": "無法載入文本塊"
+        "load": "無法載入文本塊",
+        "busy": "此來源的另一項變更正在進行。請在其完成後再試一次。"
       },
       "chunkPosition": "第 {{n}} 個文本塊，共 {{total}} 個 · {{tokens}} Token",
       "chunkCrumb": "第 {{n}} 個文本塊",
@@ -603,6 +605,91 @@
         "safeNotice": "已標為安全：使用此來源的代理會將此文本塊視為正常內容。編輯其文字會移除該標記。",
         "reviewFailed": "無法更新此文本塊，請再試一次。",
         "noFlagged": "此來源中沒有被標記的文本塊。文本塊會在對話首次檢索到它時評分。"
+      },
+      "website": {
+        "page": "頁面",
+        "pages": "頁面",
+        "fetched": "擷取時間",
+        "filterPages": "篩選頁面",
+        "openPage": "開啟頁面",
+        "pagesByline_one": "{{pages}} 個頁面 · {{tokens}} Token",
+        "pagesByline_other": "{{pages}} 個頁面 · {{tokens}} Token",
+        "sites_one": "{{count}} 個網站",
+        "sites_other": "{{count}} 個網站",
+        "pageCount_one": "{{count}} 個頁面",
+        "pageCount_other": "{{count}} 個頁面",
+        "synced": "{{frequency}} · {{when}}已同步",
+        "notSynced": "未同步",
+        "fetchedAt": "{{when}}擷取",
+        "addPages": "新增頁面",
+        "addPagesHint": "立即擷取，並在每次同步時保留。新增整個網站會重建此來源。",
+        "graphCost": "此來源有知識圖譜。新頁面會透過 LLM 加入圖譜，每個區塊約呼叫一次。如果新增會重建此來源（例如來自其他網站的頁面），整個圖譜都會重建：整個來源的每個區塊約呼叫一次。",
+        "addFailed": "無法新增頁面。",
+        "pageNotFetched": "有 1 個頁面無法擷取：{{url}}。它會保留在此來源的清單中，下次同步時會再次嘗試擷取。",
+        "pagesNotFetched_one": "有 {{count}} 個頁面無法擷取。它們會保留在此來源的清單中，下次同步時會再次嘗試擷取。",
+        "pagesNotFetched_other": "有 {{count}} 個頁面無法擷取。它們會保留在此來源的清單中，下次同步時會再次嘗試擷取。",
+        "pageLimit_other": "此來源最多可包含 {{count}} 個頁面。",
+        "addingPages": "正在新增頁面…",
+        "refreshing": "正在重新整理頁面…",
+        "removing": "正在移除頁面…",
+        "syncing": "正在同步來源…",
+        "refreshPage": "重新整理頁面",
+        "refreshFailed": "無法重新整理「{{name}}」，其內容保持不變。",
+        "refreshOutOfScope": "「{{name}}」現在指向此來源之外，因此已像同步時一樣被移除。",
+        "removeFromSource": "從來源中移除",
+        "removeTitle": "要移除「{{name}}」嗎？",
+        "removeEntry": "其區塊將被刪除，該頁面會從此來源的清單中移除。",
+        "removeCrawled": "它來自對 {{host}} 的爬取。其區塊將被刪除，之後的同步會略過它。你可以在來源的設定中還原它。",
+        "removeGeneric": "其區塊將被刪除，之後的同步不會再擷取它。",
+        "removeFolder": "其頁面的區塊將被刪除，之後的同步會略過 {{address}} 下的所有網址。",
+        "removeFolderGeneric": "其頁面的區塊將被刪除，之後的同步不會再擷取這些頁面。",
+        "remove": "移除",
+        "removeAndSkip": "移除並略過",
+        "removeFailed": "無法移除。",
+        "syncFailed": "無法同步來源。",
+        "removeLast": "這是此來源擷取的最後一項。請改為刪除此來源。",
+        "wikiSource": "此來源現在是 Wiki：直接在此編輯，不再擷取網頁。",
+        "chunksUnsupported": "此向量儲存無法單獨變更網頁。請改為同步此來源。",
+        "handEditsNote": "保持最新：{{frequency}}。你在此處新增或編輯的區塊會在下次同步時被取代。",
+        "fetches": "此來源擷取的內容",
+        "siteSummary": "整個網站 · {{find}} · 頁面上限 {{max}}",
+        "limitReached": "已達頁面上限",
+        "pageEntry": "頁面",
+        "removeFromList": "從清單中移除 {{address}}",
+        "skipped": "已略過",
+        "restore": "還原",
+        "restoreAddress": "還原 {{address}}",
+        "saveFailed": "無法儲存設定。",
+        "loadFailed": "無法載入設定。",
+        "lastSynced": "上次同步於 {{when}}。",
+        "appliesNextSync": "變更將在下次同步時生效。",
+        "stillRunning": "變更仍在進行中。請稍後重新開啟此來源查看。",
+        "changeBusy": "此來源的另一項變更仍在進行，因此本次變更未執行。請再試一次。",
+        "queueFailed": "變更已儲存，但暫時無法開始。下次同步時會處理。",
+        "sourceGone": "此來源已不存在。",
+        "siteLimit_one": "一個來源最多可從 {{count}} 個網站擷取內容。",
+        "siteLimit_other": "一個來源最多可從 {{count}} 個網站擷取內容。",
+        "skipLimit_one": "一個來源最多可略過 {{count}} 個網址。",
+        "skipLimit_other": "一個來源最多可略過 {{count}} 個網址。",
+        "urlTooLong_one": "網址最長 {{count}} 個字元。",
+        "urlTooLong_other": "網址最長 {{count}} 個字元。",
+        "invalidAddress": "「{{url}}」不是此來源可以擷取的網址。",
+        "invalidConfig": "這些設定無效。請檢查網址和限制。",
+        "notFound": "此來源中已沒有該頁面或資料夾。請重新載入後再試一次。",
+        "badSyncFrequency": "該同步排程無法使用。",
+        "graphCostRebuild": "此來源有知識圖譜。新增整個網站會重建此來源，因此圖譜也會透過 LLM 重建：整個來源的每個區塊約呼叫一次。",
+        "tooManyPaths_one": "一次最多可移除 {{count}} 個頁面。",
+        "tooManyPaths_other": "一次最多可移除 {{count}} 個頁面。",
+        "notWebsite": "此來源不是網站來源。",
+        "alreadyListed": "這些頁面和網站已在此來源中。",
+        "badRequest": "無法讀取該請求。請重新載入頁面後再試一次。"
+      },
+      "deleteSource": "刪除來源",
+      "syncStarted": "正在同步 {{name}}…",
+      "viaConnectionFiles_one": "透過 {{name}} · {{files}} 個檔案",
+      "viaConnectionFiles_other": "透過 {{name}} · {{files}} 個檔案",
+      "item": {
+        "tokens": "{{tokens}} Token"
       }
     },
     "analytics": {
@@ -1823,7 +1910,7 @@
         "tools": "來自此連線的工具",
         "noAccounts": "尚未連線帳號。",
         "failed": "無法載入此連線。",
-        "lastSync": "已於 {{date}} 同步 · {{frequency}}",
+        "lastSync": "{{when}}已同步",
         "paused": "同步已暫停",
         "toolOn": "開啟",
         "toolOff": "關閉",
@@ -1832,12 +1919,11 @@
         "keyEnding": "金鑰 {{hint}}",
         "syncMore": "同步更多內容",
         "refreshTools": "重新整理工具",
-        "noSources": "尚未從此連線同步任何內容。",
+        "noSources": "尚未同步任何內容",
         "remove": "移除",
         "refreshed": "工具已重新整理：新增 {{added}} 個，移除 {{removed}} 個。",
         "refreshFailed": "無法重新整理工具。",
         "syncNow": "立即同步",
-        "syncStarted": "正在同步 {{name}}…",
         "syncFailed": "無法開始同步。請再試一次。",
         "toolSwitchFailed": "無法變更工具。請再試一次。",
         "expired": "登入已過期。重新連線以繼續使用此連線。",
@@ -1847,7 +1933,19 @@
         "addToolsFailed": "無法新增工具。請再試一次。",
         "rename": "重新命名",
         "toolsHint": "「先詢問」會在聊天中詢問你。透過 API、小工具和連結進行的變更，需在每個代理的 Access details 中允許。",
-        "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次。"
+        "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次。",
+        "noSourcesHint": "從 {{name}} 選擇內容以新增到知識庫。",
+        "indexing": "正在索引",
+        "firstSyncStarted": "首次同步已開始（{{time}}）",
+        "dismissFailedSync": "關閉 {{name}}",
+        "sourceMenu": "來源操作",
+        "syncStarting": "正在開始同步…",
+        "syncRefusedWiki": "此來源現在是 Wiki：直接在此編輯，不再同步。",
+        "syncRefusedNotSyncable": "此來源無法同步。",
+        "syncRefusedConnector": "此來源透過其連線進行同步。",
+        "syncRefusedInvalid": "找不到此來源。",
+        "syncRefusedReconnect": "擁有者需要重新連接此來源的帳戶，才能進行同步。",
+        "syncRefusedConnectionMissing": "此來源的帳戶已中斷連線，重新連接該帳戶之前無法同步。"
       },
       "permission": {
         "always": "允許",
@@ -1902,7 +2000,6 @@
         "tryInChat": "在聊天中試試",
         "done": "完成",
         "connectFailed": "無法連線。請檢查資料後再試一次。",
-        "syncFailed": "無法開始同步。請再試一次。",
         "connectedWithKey": "已使用結尾為 {{hint}} 的金鑰連線。",
         "doneCounts": "{{sources}} 正在同步到知識庫，{{tools}} 已就緒。",
         "doneSources": "{{sources}} 正在同步到知識庫。",
@@ -1913,6 +2010,8 @@
         "methodOauth": "使用 {{name}} 登入",
         "methodToken": "使用存取權杖",
         "credentialsRejected": "{{name}} 未接受這些憑證。請檢查後再試一次。",
+        "setupReconnect": "請重新登入 {{name}} 以完成設定。",
+        "setupDisabled": "管理員已關閉 {{name}}，因此無法設定。",
         "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次，或將其關閉以繼續。",
         "addTools": "允許代理使用 {{name}}",
         "addToolsDescription": {
@@ -1923,7 +2022,7 @@
         "accountNameHint": "向你和 AI 顯示，用來區分帳戶，例如「警示機器人」。",
         "syncToKnowledge": "同步到知識庫",
         "syncToKnowledgeDescription": "從 {{name}} 選擇要在回答中搜尋的內容。關閉時僅建立連線，之後可在連接器中同步。",
-        "syncLater": "尚未同步任何內容到知識庫。若要新增內容，請在連接器中開啟 {{name}}，然後選擇「同步更多內容」。",
+        "syncLater": "尚未同步任何內容到知識庫。",
         "retrievalSettings": "進階檢索設定",
         "chooseWhatToSetUpFor": "選擇要為 {{name}} 設定的內容",
         "chooseWhatToSyncFrom": "選擇要從 {{name}} 同步的內容",
@@ -1931,7 +2030,12 @@
         "finishSetup": "完成設定",
         "account": "帳號",
         "sourcesCount_one": "{{formatted}} 項",
-        "toolsCount_one": "{{formatted}} 個工具"
+        "toolsCount_one": "{{formatted}} 個工具",
+        "syncChoice": "如何使用 {{name}}",
+        "syncNow": "立即同步內容",
+        "syncNowDescription": "從 {{name}} 選擇內容並新增到知識庫。",
+        "justConnect": "僅連線",
+        "justConnectDescription": "暫不新增任何內容。需要時可稍後在連接器中同步內容。"
       },
       "remove": {
         "title": "要移除「{{name}}」嗎？",
@@ -2051,7 +2155,9 @@
         "flagged": "疑似提示詞注入",
         "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
         "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
-      }
+      },
+      "syncContent": "同步內容",
+      "openInKnowledge": "在知識庫中開啟"
     },
     "insights": {
       "label": "洞察"
@@ -2070,14 +2176,13 @@
       "start": "開始對話",
       "name": "名稱",
       "choose": "選擇檔案",
-      "dropzoneText": "點擊上傳或拖放檔案",
+      "dropzoneText": "點擊上傳，或將檔案或資料夾拖曳到此處",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、圖片、音訊、EPUB、JSON 或 ZIP，每個最大 25 MB",
       "filesRejected": "未新增（超過 25 MB 或不支援的類型）：{{files}}",
-      "selectFolder": "選擇資料夾",
+      "selectFolder": "或選擇整個資料夾",
       "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "新增到知識庫",
-      "create": "建立",
       "link": "連結",
       "urlLink": "URL 連結",
       "repoUrl": "儲存庫 URL",
@@ -2107,13 +2212,9 @@
           "label": "上傳檔案",
           "heading": "上傳新文檔"
         },
-        "crawler": {
-          "label": "爬蟲",
-          "heading": "使用網路爬蟲新增內容"
-        },
-        "url": {
-          "label": "連結",
-          "heading": "從URL新增內容"
+        "website": {
+          "label": "網站",
+          "heading": "新增網站"
         },
         "github": {
           "label": "GitHub",
@@ -2150,14 +2251,50 @@
         }
       },
       "fields": {
-        "url": "URL",
-        "initialContent": "初始內容（選填）"
+        "initialContent": "初始內容",
+        "initialContentHint": "Markdown。建立後可以新增和編輯頁面。"
+      },
+      "website": {
+        "pageUrl": "頁面網址",
+        "siteUrl": "網站網址",
+        "addAnotherPage": "再新增一個頁面",
+        "invalidAddress": "請輸入公開的網址，例如 docs.example.com",
+        "removePage": "移除此網址",
+        "removeAddress": "移除 {{address}}",
+        "maxPages": "頁面上限",
+        "maxPagesHint": "最多 {{max}} 個，由管理員設定。",
+        "pathPrefix": "僅限路徑",
+        "pathPrefixHint": "只包含以此路徑開頭的網址。",
+        "pathPrefixPlaceholder": "/（整個網站）",
+        "sitemapUrl": "網站地圖網址",
+        "sitemapUrlHint": "留空則使用 robots.txt 中列出的網站地圖。",
+        "includeSubdomains": "包含子網域",
+        "sync": "保持最新",
+        "syncHintPage": "重新擷取頁面並更新有變更的內容。",
+        "syncHintSite": "重新爬取網站並更新有變更的內容。",
+        "keepLinks": "在頁面文字中保留連結",
+        "keepLinksHint": "讓回答可以連結到此頁面指向的頁面。儲存的文字約多四分之一，搜尋排名可能略低。",
+        "mode": {
+          "label": "新增內容",
+          "page": "此頁面",
+          "site": "整個網站",
+          "pageHint": "只新增這些頁面。",
+          "siteHint": "新增此頁面及其在同一網站上連結到的頁面。"
+        },
+        "discovery": {
+          "label": "尋找頁面",
+          "hint": "「自動」會先讀取網站地圖，再追蹤連結。",
+          "auto": "自動",
+          "sitemap": "網站地圖",
+          "links": "追蹤連結"
+        }
       },
       "github": {
         "privateHint": "私人儲存庫？連結你的 GitHub 帳號即可同步。",
         "connect": "連結 GitHub"
       },
-      "fromService": "來自服務"
+      "fromService": "來自服務",
+      "removeFile": "移除 {{name}}"
     },
     "createAPIKey": {
       "label": "建立新的 API 金鑰",

@@ -8,7 +8,7 @@ import uuid
 import zipfile
 from typing import Container, Optional
 
-from flask import current_app, jsonify, make_response, request
+from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as sql_text
 
@@ -16,11 +16,13 @@ from docsgpt.api import api
 from docsgpt.api.audit import record_event
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from docsgpt.api.user.resource_access import AccessDenied
-from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.sources.access import SYNC_FREQUENCIES, denied_response, load_source
+from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from docsgpt.parser.remote.website_loader import parse_website_config
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
     safe_zip_error_message,
@@ -59,6 +61,23 @@ sources_upload_ns = Namespace(
 _IDEMPOTENCY_KEY_MAX_LEN = 256
 
 
+def _website_config_error(err: ValueError) -> Response:
+    """The 400 for a Website config ``parse_website_config`` refused, with a ``code`` the UI words.
+
+    The parser's typed error carries its ``code`` and ``details`` (the limit
+    passed, say); any other ``ValueError`` is ``invalid_config``.
+
+    Args:
+        err: The parser's error.
+
+    Returns:
+        Response: ``{"success": false, "error", "code", ...details}``.
+    """
+    details = getattr(err, "details", None) or {}
+    details = {k: v for k, v in details.items() if k not in ("message", "status", "code", "success", "error")}
+    return error_response(str(err), code=getattr(err, "code", None) or "invalid_config", **details)
+
+
 def _read_idempotency_key():
     """Return (key, error_response). Empty header → (None, None); oversized → (None, 400)."""
     key = request.headers.get("Idempotency-Key")
@@ -85,6 +104,26 @@ def _scoped_idempotency_key(idempotency_key, scope):
     if not idempotency_key or not scope:
         return None
     return f"{scope}:{idempotency_key}"
+
+
+def reingest_idempotency_key(owner: str, source_id: str, client_key: Optional[str] = None) -> str:
+    """The guard key for one reingest dispatch.
+
+    A reingest's ``source_id`` is the same every time, so a key derived from
+    it alone would make ``with_idempotency`` replay the last completed run
+    for 24h instead of reading the source's new state. A client's
+    ``Idempotency-Key`` still collapses its own repeats; without one each
+    request gets a fresh key, and the source's index lock keeps runs apart.
+
+    Args:
+        owner: The source owner the task runs as.
+        source_id: The source being reingested.
+        client_key: The request's ``Idempotency-Key`` header, if any.
+
+    Returns:
+        ``reingest-source:{owner}:{source_id}:{client key or a fresh uuid}``.
+    """
+    return f"reingest-source:{owner}:{source_id}:{client_key or uuid.uuid4().hex}"
 
 
 def _parse_source_config(raw):
@@ -625,8 +664,18 @@ class UploadRemote(Resource):
                     required=True, description="Source of the data"
                 ),
                 "name": fields.String(required=True, description="Job name"),
-                "data": fields.String(required=True, description="Data to process"),
+                "data": fields.String(
+                    required=True,
+                    description=(
+                        "JSON loader config. For source=website: {entries: [{url, mode: page|site, max_pages, "
+                        "path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}], skip: "
+                        "[url or https://host/path/*], keep_links}"
+                    ),
+                ),
                 "repo_url": fields.String(description="GitHub repository URL"),
+                "sync_frequency": fields.String(
+                    description="How often to re-fetch: never (default), daily, weekly or monthly",
+                ),
             },
         )
     )
@@ -656,6 +705,9 @@ class UploadRemote(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        sync_frequency = data.get("sync_frequency") or "never"
+        if sync_frequency not in SYNC_FREQUENCIES:
+            return error_response(f"Unknown sync_frequency {sync_frequency!r}", code="bad_sync_frequency")
         task_name_for_dedup = (
             "ingest_connector_task"
             if data.get("source") in ConnectorCreator.get_supported_connectors()
@@ -687,6 +739,15 @@ class UploadRemote(Resource):
 
             if data["source"] == "github":
                 source_data = config.get("repo_url")
+            elif data["source"] == "website":
+                # Stored as remote_data and repeated by every sync, so it is
+                # validated here rather than failing later in the worker.
+                try:
+                    source_data = parse_website_config(config)
+                except ValueError as err:
+                    if scoped_key:
+                        _release_claim(scoped_key)
+                    return _website_config_error(err)
             elif data["source"] in ["crawler", "url", "sitemap"]:
                 source_data = config.get("url")
             elif data["source"] in ("reddit", "s3"):
@@ -750,6 +811,8 @@ class UploadRemote(Resource):
                         "config": source_config,
                         "idempotency_key": scoped_key or idempotency_key,
                         "source_id": str(source_uuid),
+                        # Validated above; stored on the new source so its syncs run on schedule.
+                        "sync_frequency": sync_frequency,
                     },
                 }
                 if predetermined_task_id is not None:
@@ -784,6 +847,7 @@ class UploadRemote(Resource):
                     "config": source_config,
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
+                    "sync_frequency": sync_frequency,
                 },
             }
             if predetermined_task_id is not None:
@@ -1025,7 +1089,8 @@ class ManageSourceFiles(Resource):
                     kwargs={
                         "source_id": resolved_source_id,
                         "user": owner,
-                        "idempotency_key": scoped_key or idempotency_key,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
+                        "actor_id": user,
                     },
                     task_id=predetermined_task_id,
                 )
@@ -1137,7 +1202,8 @@ class ManageSourceFiles(Resource):
                     kwargs={
                         "source_id": resolved_source_id,
                         "user": owner,
-                        "idempotency_key": scoped_key or idempotency_key,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
+                        "actor_id": user,
                     },
                     task_id=predetermined_task_id,
                 )
@@ -1267,7 +1333,8 @@ class ManageSourceFiles(Resource):
                     kwargs={
                         "source_id": resolved_source_id,
                         "user": owner,
-                        "idempotency_key": scoped_key or idempotency_key,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
+                        "actor_id": user,
                     },
                     task_id=predetermined_task_id,
                 )

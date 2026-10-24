@@ -1,7 +1,8 @@
-import { ArrowRight, FileText, FolderUp } from 'lucide-react';
+import { ArrowRight, FileText, X } from 'lucide-react';
 import { envVar } from '@/env';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 
@@ -10,6 +11,7 @@ import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import { FormField as UiFormField } from '../components/ui/form-field';
 import { Textarea } from '../components/ui/textarea';
@@ -66,12 +68,55 @@ import RetrievalOptions, {
   optionsToConfig,
 } from '../settings/components/RetrievalOptions';
 import useNewSourceOptions from '../settings/components/useNewSourceOptions';
+import { isWikiUnsupported } from '../settings/wikiConvertUtils';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
+import WebsiteFields from './WebsiteFields';
+import useWebPageLimits, { useReseedMaxPages } from './useWebPageLimits';
+import {
+  defaultWebsiteDraft,
+  isWebsiteDraftValid,
+  nameFromUrl,
+  pathPrefixFromUrl,
+  type SyncFrequency,
+  type WebsiteDraft,
+  websiteConfig,
+  websiteRefusalForCode,
+} from './website';
 
 /** Per-file limit for local uploads (25 MB), enforced by the dropzone. */
 const MAX_UPLOAD_BYTES = 25000000;
 /** Service tiles on the first step: two rows of three. */
 const SERVICE_TILE_LIMIT = 6;
+
+/**
+ * Why the server refused an upload or ingest: a Website refusal `code` in
+ * the user's language, else its JSON `error` or `message` when it sent one,
+ * else a generic line (never the HTTP status text).
+ *
+ * @param t The translate function.
+ * @param responseText The response body.
+ * @param fallback The localized generic message.
+ * @returns The message for the upload toast.
+ */
+function refusalMessage(
+  t: TFunction,
+  responseText: string,
+  fallback: string,
+): string {
+  try {
+    const data = JSON.parse(responseText) as {
+      error?: unknown;
+      message?: unknown;
+    };
+    const worded = websiteRefusalForCode(t, data);
+    if (worded) return worded;
+    for (const value of [data?.error, data?.message])
+      if (typeof value === 'string' && value.trim()) return value;
+  } catch {
+    // Not JSON (a proxy's error page): the generic line.
+  }
+  return fallback;
+}
 
 function Upload({
   receivedFile = [],
@@ -118,7 +163,7 @@ function Upload({
   // Names of the files the last drop turned away (over the size limit or of
   // an unaccepted type), shown under the dropzone.
   const [rejectedFiles, setRejectedFiles] = useState<string[]>([]);
-  // Hidden folder picker behind the "Select a folder" button.
+  // Hidden folder picker behind the "Or choose a whole folder" link.
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const setFolderInput = useCallback((input: HTMLInputElement | null) => {
     folderInputRef.current = input;
@@ -133,9 +178,66 @@ function Upload({
   } = useNewSourceOptions(token);
   const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token);
+  // The Website form: its draft, schedule and link setting. The schedule
+  // follows the mode (never for pages, weekly for a site) until picked, and
+  // "Stay under" follows the address until typed in.
+  const webLimits = useWebPageLimits();
+  const [websiteDraft, setWebsiteDraft] = useState<WebsiteDraft>(() =>
+    defaultWebsiteDraft(webLimits.defaultPages),
+  );
+  useReseedMaxPages(webLimits.defaultPages, setWebsiteDraft);
+  const [syncFrequency, setSyncFrequency] = useState<SyncFrequency>('never');
+  const [syncTouched, setSyncTouched] = useState(false);
+  const [prefixTouched, setPrefixTouched] = useState(false);
+  const [keepLinks, setKeepLinks] = useState(false);
+
+  const resetWebsite = useCallback((defaultPages: number) => {
+    setWebsiteDraft(defaultWebsiteDraft(defaultPages));
+    setSyncFrequency('never');
+    setSyncTouched(false);
+    setPrefixTouched(false);
+    setKeepLinks(false);
+  }, []);
+
+  const handleWebsiteChange = (next: WebsiteDraft) => {
+    let draft = next;
+    const firstUrl = next.urls[0] ?? '';
+    if (next.pathPrefix !== websiteDraft.pathPrefix) {
+      setPrefixTouched(true);
+    } else if (
+      !prefixTouched &&
+      next.mode === 'site' &&
+      (firstUrl !== websiteDraft.urls[0] || next.mode !== websiteDraft.mode)
+    ) {
+      draft = { ...next, pathPrefix: pathPrefixFromUrl(firstUrl) };
+    }
+    if (next.mode !== websiteDraft.mode && !syncTouched) {
+      setSyncFrequency(next.mode === 'site' ? 'weekly' : 'never');
+    }
+    if (!nameTouched) {
+      setIngestor((prev) => ({ ...prev, name: nameFromUrl(firstUrl) }));
+    }
+    setWebsiteDraft(draft);
+  };
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
+    if (ingestor.type === 'website') {
+      return (
+        <WebsiteFields
+          draft={websiteDraft}
+          onChange={handleWebsiteChange}
+          maxPages={webLimits.maxPages}
+          syncFrequency={syncFrequency}
+          onSyncFrequencyChange={(value) => {
+            setSyncTouched(true);
+            setSyncFrequency(value);
+          }}
+          keepLinks={keepLinks}
+          onKeepLinksChange={setKeepLinks}
+        />
+      );
+    }
     const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
     if (!ingestorSchema) return null;
     return (
@@ -148,6 +250,7 @@ function Upload({
   const renderField = (field: FormField) => {
     const isRequired = field.required ?? false;
     const fieldLabel = field.labelKey ? t(field.labelKey) : field.label;
+    const fieldHint = field.hintKey ? t(field.hintKey) : undefined;
     switch (field.type) {
       case 'string':
         return (
@@ -174,6 +277,7 @@ function Upload({
             key={field.name}
             label={fieldLabel}
             required={isRequired}
+            hint={fieldHint}
           >
             <Textarea
               name={field.name}
@@ -187,10 +291,8 @@ function Upload({
                   e.target.value,
                 )
               }
-              required={isRequired}
               rows={8}
               size="lg"
-              variant="filled"
             />
           </UiFormField>
         );
@@ -214,14 +316,15 @@ function Upload({
                   : undefined
               }
             />
+            {/* Dropping a folder works on the target itself; clicking it can
+                only pick files, so the folder picker is a link under it. */}
             <Button
               type="button"
-              variant="outline"
-              size="sm"
+              variant="link"
+              size="inline"
               className="self-start"
               onClick={() => folderInputRef.current?.click()}
             >
-              <FolderUp />
               {t('modals.uploadDoc.selectFolder')}
             </Button>
             <input
@@ -237,7 +340,7 @@ function Upload({
                 <ListRows>
                   {files.map((file) => (
                     <ListRow
-                      key={`${getUploadPath(file)}-${file.size}-${file.lastModified}`}
+                      key={getUploadPath(file)}
                       leading={
                         <Avatar
                           aria-hidden="true"
@@ -254,6 +357,19 @@ function Upload({
                         </span>
                       }
                       description={formatBytes(file.size)}
+                      trailing={
+                        <IconButton
+                          variant="ghost-destructive"
+                          size="icon-sm"
+                          icon={X}
+                          label={t('modals.uploadDoc.removeFile', {
+                            name: getUploadPath(file),
+                            // React escapes the text; i18next must not too.
+                            interpolation: { escapeValue: false },
+                          })}
+                          onClick={() => removeFile(file)}
+                        />
+                      }
                     />
                   ))}
                 </ListRows>
@@ -297,7 +413,8 @@ function Upload({
     setRejectedFiles([]);
     resetRetrievalOptions();
     setNameTouched(false);
-  }, [resetRetrievalOptions]);
+    resetWebsite(webLimits.defaultPages);
+  }, [resetRetrievalOptions, resetWebsite, webLimits.defaultPages]);
 
   const handleTaskFailure = useCallback(
     (clientTaskId: string, errorMessage?: string) => {
@@ -475,38 +592,52 @@ function Upload({
     },
   });
 
+  /** The picked files, kept in the local-file ingestor's config too. */
+  const setPickedFiles = useCallback(
+    (next: File[]) => {
+      setfiles(next);
+      if (ingestor.type === 'local_file') {
+        setIngestor((prevState) => ({
+          ...prevState,
+          config: { ...prevState.config, files: next },
+        }));
+      }
+    },
+    [ingestor.type],
+  );
+
+  const removeFile = (file: File) => {
+    const path = getUploadPath(file);
+    setPickedFiles(files.filter((f) => getUploadPath(f) !== path));
+  };
+
   const onDrop = useCallback(
     // Rejections come from the dropzone or from onFolderPicked below.
     (pickedFiles: File[], rejections: { file: File }[] = []) => {
       // A folder brings its hidden files (.git, .DS_Store) along. The worker
       // skips them anyway, so leave them out without listing them as rejected.
       const acceptedFiles = pickedFiles.filter((file) => !isHiddenUpload(file));
-      setfiles(acceptedFiles);
+      // A new pick adds to the list. A path picked again replaces its file
+      // in place (Map.set keeps the first position).
+      const byPath = new Map(files.map((file) => [getUploadPath(file), file]));
+      acceptedFiles.forEach((file) => byPath.set(getUploadPath(file), file));
+      const merged = Array.from(byPath.values());
+      setPickedFiles(merged);
       setRejectedFiles(
         rejections
           .filter((rejection) => !isHiddenUpload(rejection.file))
           .map((rejection) => getUploadPath(rejection.file)),
       );
-      const firstFile = acceptedFiles[0];
+      // An untouched name follows the list's first file, not the latest pick.
+      const firstFile = merged[0];
       const pickedName = firstFile
         ? (getFolderName(firstFile) ?? firstFile.name)
         : undefined;
       if (!nameTouched && pickedName) {
         setIngestor((prev) => ({ ...prev, name: pickedName }));
       }
-
-      // If we're in local_file mode, update the ingestor config
-      if (ingestor.type === 'local_file') {
-        setIngestor((prevState) => ({
-          ...prevState,
-          config: {
-            ...prevState.config,
-            files: acceptedFiles,
-          },
-        }));
-      }
     },
-    [ingestor.type, nameTouched],
+    [files, nameTouched, setPickedFiles],
   );
 
   // The folder picker applies no filter, so check type and size here the way
@@ -598,7 +729,10 @@ function Upload({
           handleTaskFailure(clientTaskId);
         }
       } else {
-        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+        handleTaskFailure(
+          clientTaskId,
+          refusalMessage(t, xhr.responseText, t('common.actionFailed')),
+        );
       }
     };
 
@@ -627,7 +761,15 @@ function Upload({
       JSON.stringify(optionsToConfig(retrievalOptions)),
     );
 
-    formData.append('data', JSON.stringify(ingestor.config));
+    if (ingestor.type === 'website') {
+      formData.append(
+        'data',
+        JSON.stringify(websiteConfig(websiteDraft, keepLinks)),
+      );
+      formData.append('sync_frequency', syncFrequency);
+    } else {
+      formData.append('data', JSON.stringify(ingestor.config));
+    }
 
     const apiHost: string = envVar('VITE_API_HOST');
     // Local files go through uploadFile; everything else is fetched remotely.
@@ -688,7 +830,10 @@ function Upload({
           handleTaskFailure(clientTaskId);
         }
       } else {
-        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+        handleTaskFailure(
+          clientTaskId,
+          refusalMessage(t, xhr.responseText, t('common.actionFailed')),
+        );
       }
     };
 
@@ -720,7 +865,13 @@ function Upload({
       .then((response) => response.json())
       .then((data) => {
         if (!data?.success) {
-          handleTaskFailure(clientTaskId, data?.message);
+          handleTaskFailure(
+            clientTaskId,
+            // The store can't hold a wiki: worded here, not the English.
+            isWikiUnsupported(data)
+              ? t('settings.sources.wiki.unsupported')
+              : data?.message,
+          );
           return;
         }
         dispatch(
@@ -793,6 +944,8 @@ function Upload({
     if (!isPrescreenConfigValid(retrievalOptions)) return true;
 
     if (!ingestor.type) return true;
+    if (ingestor.type === 'website')
+      return !isWebsiteDraftValid(websiteDraft, webLimits.maxPages);
     const schema = getIngestorSchema(ingestor.type);
     if (!schema) return true;
     return schema.fields.some((field: FormField) => {
@@ -834,6 +987,7 @@ function Upload({
       config: defaultConfig.config,
     });
     setNameTouched(false);
+    resetWebsite(webLimits.defaultPages);
 
     // Clear files if switching away from local_file
     if (type !== 'local_file') {
@@ -1035,9 +1189,7 @@ function Upload({
             size="lg"
             shape="pill"
           >
-            {ingestor.type === 'wiki'
-              ? t('modals.uploadDoc.create')
-              : t('modals.uploadDoc.train')}
+            {t('modals.uploadDoc.train')}
           </Button>
         ) : undefined
       }
@@ -1078,6 +1230,7 @@ function Upload({
                     graphRAGAvailable={graphRAGAvailable}
                     availableModels={availableModels}
                     decision={decision}
+                    variant="create"
                   />
                 )}
               </div>

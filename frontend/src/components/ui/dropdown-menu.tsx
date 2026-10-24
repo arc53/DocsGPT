@@ -252,7 +252,10 @@ type MenuOption = {
   icon?: LucideIcon | React.ReactElement;
   variant?: 'default' | 'destructive';
   disabled?: boolean;
-  /** A rule above this row, to set a destructive action apart. */
+  /**
+   * A rule above this row, to set a destructive action apart. Left out when
+   * the row is the menu's first (a host dropped the rows above it).
+   */
   separatorBefore?: boolean;
 };
 
@@ -390,9 +393,12 @@ function ActionMenu({
         onClick={stopPropagation}
         onKeyDown={stopPropagation}
       >
-        {options.map((option) => (
+        {options.map((option, index) => (
           <React.Fragment key={option.label}>
-            {option.separatorBefore ? <DropdownMenuSeparator /> : null}
+            {/* A rule sets a row apart from the rows above; the first has none. */}
+            {option.separatorBefore && index > 0 ? (
+              <DropdownMenuSeparator />
+            ) : null}
             <DropdownMenuItem
               variant={option.variant}
               disabled={option.disabled}

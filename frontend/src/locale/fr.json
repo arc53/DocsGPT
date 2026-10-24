@@ -184,7 +184,6 @@
       "addChunk": "Ajouter un fragment",
       "preLoaded": "Préchargé",
       "private": "Privé",
-      "sync": "Synchroniser",
       "syncDone": "Terminé",
       "syncNow": "Synchroniser maintenant",
       "syncing": "Synchronisation…",
@@ -196,8 +195,7 @@
         "never": "Jamais",
         "daily": "Quotidienne",
         "weekly": "Hebdomadaire",
-        "monthly": "Mensuelle",
-        "option": "Synchronisation : {{frequency}}"
+        "monthly": "Mensuelle"
       },
       "actions": "Actions",
       "view": "Afficher",
@@ -209,6 +207,7 @@
         "save": "Enregistrer",
         "saveFailed": "Impossible d’enregistrer la page. Veuillez réessayer.",
         "forbidden": "Vous n’avez pas l’autorisation de modifier cette page.",
+        "unsupported": "Cette base vectorielle ne peut pas modifier une page seule, elle ne peut donc pas accueillir de wiki.",
         "conflict": "Cette page a changé depuis son ouverture et a été rechargée. Vos modifications figurent ci-dessous — réappliquez-les et enregistrez à nouveau.",
         "editPlaceholder": "Rédigez la page en Markdown…",
         "stamp": {
@@ -256,7 +255,6 @@
         "pageLoadFailed": "Impossible de charger cette page.",
         "editTitle": "Modifier la page",
         "settings": {
-          "action": "Paramètres du wiki",
           "title": "Paramètres du wiki",
           "outsideEdits": {
             "label": "Autoriser les utilisateurs de l’API et du widget à modifier ce wiki",
@@ -279,8 +277,6 @@
           "costCost": "Un appel LLM est effectué par fragment : cela consomme des jetons et peut prendre du temps sur les sources volumineuses.",
           "estimate": "~1 appel LLM par fragment · ~{{lo}}–{{hi}} jetons au total (environ moitié en entrée, moitié en sortie) ; la sortie varie selon la densité d’entités du document.",
           "confirm": "Activer GraphRAG",
-          "inProgress": "Construction du graphe…",
-          "inProgressPct": "Construction du graphe… {{pct}} %",
           "summaryNodes_one": "{{count}} entité",
           "summaryNodes_other": "{{count}} entités",
           "summaryNodes_many": "{{count}} entités",
@@ -411,7 +407,7 @@
         "saveToSource": "Enregistrer dans la source",
         "savedToSource": "Enregistré. La source utilise désormais les paramètres testés."
       },
-      "editConfig": "Paramètres de la source",
+      "editConfig": "Paramètres",
       "shareWithTeam": "Partager avec l’équipe",
       "deleteWarning": "Supprimer « {{name}} » ?",
       "chunks": "Fragments",
@@ -438,7 +434,6 @@
       "searchAlt": "Rechercher",
       "retrievalOptions": {
         "title": "Paramètres avancés",
-        "advanced": "Avancé",
         "retrieval": {
           "title": "Récupération",
           "note": "Ces modifications prennent effet immédiatement, sans réindexation.",
@@ -536,7 +531,12 @@
           "minRelevanceHint": "La pertinence exacte (0–1) qu’un fragment doit atteindre pour être gardé. Souple vaut 0,1, Équilibré 0,3, Strict 0,5.",
           "candidates": "Candidats à noter",
           "candidatesHint": "Nombre de fragments que le moteur de récupération transmet au modèle de pertinence, jusqu’à {{max}}. Par défaut : {{default}}."
-        }
+        },
+        "filtering": {
+          "title": "Filtrage",
+          "tag": "sans réindexation"
+        },
+        "createHint": "Affinez le filtrage après la première indexation, dans Paramètres de la source ou Tester la récupération."
       },
       "configModal": {
         "title": "Paramètres de la source",
@@ -545,6 +545,7 @@
         "save": "Enregistrer",
         "chunkingChangeHint": "Vous avez modifié un paramètre de découpage. Après l’enregistrement, il faudra réindexer cette source pour qu’il prenne effet.",
         "prescreenInvalidHint": "Vérifiez les valeurs de la présélection par LLM : le nombre de candidats à récupérer doit être au moins égal au nombre de fragments, et le nombre de fragments à conserver ne doit pas dépasser celui des candidats.",
+        "syncAfterSave": "Enregistrez d’abord vos modifications. La synchronisation utilise les réglages enregistrés.",
         "reingestRequired": "Vos modifications ont été enregistrées. Les paramètres de découpage modifiés ne prennent effet qu’après une réindexation. Réindexer maintenant ?",
         "reingestLater": "Plus tard",
         "errors": {
@@ -556,7 +557,8 @@
         "add": "Impossible d’ajouter le fragment",
         "save": "Impossible d’enregistrer le fragment",
         "delete": "Impossible de supprimer le fragment",
-        "load": "Impossible de charger les fragments"
+        "load": "Impossible de charger les fragments",
+        "busy": "Une autre modification de cette source est en cours. Réessayez une fois qu’elle est terminée."
       },
       "chunkPosition": "Fragment {{n}} sur {{total}} · {{tokens}} jetons",
       "chunkCrumb": "Fragment {{n}}",
@@ -623,6 +625,102 @@
         "safeNotice": "Marqué comme sûr : les agents qui utilisent cette source traitent ce fragment comme sain. Modifier son texte retire la marque.",
         "reviewFailed": "Impossible de mettre à jour ce fragment. Veuillez réessayer.",
         "noFlagged": "Aucun fragment de cette source n’a été signalé. Un fragment est noté dès qu’une conversation le récupère."
+      },
+      "website": {
+        "page": "Page web",
+        "pages": "Pages web",
+        "fetched": "Récupérée",
+        "filterPages": "Filtrer les pages",
+        "openPage": "Ouvrir la page",
+        "pagesByline_one": "{{pages}} page · {{tokens}} jetons",
+        "pagesByline_other": "{{pages}} pages · {{tokens}} jetons",
+        "pagesByline_many": "{{pages}} pages · {{tokens}} jetons",
+        "sites_one": "{{count}} site",
+        "sites_other": "{{count}} sites",
+        "sites_many": "{{count}} sites",
+        "pageCount_one": "{{count}} page",
+        "pageCount_other": "{{count}} pages",
+        "pageCount_many": "{{count}} pages",
+        "synced": "{{frequency}} · synchronisé {{when}}",
+        "notSynced": "Non synchronisé",
+        "fetchedAt": "récupérée {{when}}",
+        "addPages": "Ajouter des pages",
+        "addPagesHint": "Récupérées maintenant et conservées à chaque synchronisation. Un site entier reconstruit la source.",
+        "graphCost": "Cette source a un graphe de connaissances. Les nouvelles pages y sont ajoutées avec un LLM, environ un appel par fragment. Si leur ajout reconstruit la source (une page d’un autre site), tout le graphe est reconstruit : environ un appel par fragment de toute la source.",
+        "addFailed": "Impossible d’ajouter les pages.",
+        "pageNotFetched": "Une page n’a pas pu être récupérée : {{url}}. Elle reste dans la liste de cette source, et la prochaine synchronisation essaiera de nouveau de la récupérer.",
+        "pagesNotFetched_one": "{{count}} page n’a pas pu être récupérée. Elle reste dans la liste de cette source, et la prochaine synchronisation essaiera de nouveau de la récupérer.",
+        "pagesNotFetched_other": "{{count}} pages n’ont pas pu être récupérées. Elles restent dans la liste de cette source, et la prochaine synchronisation essaiera de nouveau de les récupérer.",
+        "pagesNotFetched_many": "{{count}} pages n’ont pas pu être récupérées. Elles restent dans la liste de cette source, et la prochaine synchronisation essaiera de nouveau de les récupérer.",
+        "pageLimit_one": "Cette source peut contenir jusqu’à {{count}} page.",
+        "pageLimit_many": "Cette source peut contenir jusqu’à {{count}} pages.",
+        "pageLimit_other": "Cette source peut contenir jusqu’à {{count}} pages.",
+        "addingPages": "Ajout des pages…",
+        "refreshing": "Actualisation de la page…",
+        "removing": "Retrait des pages…",
+        "syncing": "Synchronisation de la source…",
+        "refreshPage": "Actualiser la page",
+        "refreshFailed": "Impossible d’actualiser « {{name}} » ; son contenu est conservé.",
+        "refreshOutOfScope": "« {{name}} » mène désormais hors de cette source ; la page a été retirée, comme le ferait une synchronisation.",
+        "removeFromSource": "Retirer de la source",
+        "removeTitle": "Retirer « {{name}} » ?",
+        "removeEntry": "Ses fragments sont supprimés et la page est retirée de la liste de cette source.",
+        "removeCrawled": "Elle provient de l’exploration de {{host}}. Ses fragments sont supprimés et les synchronisations suivantes l’ignorent. Vous pouvez la restaurer dans les paramètres de la source.",
+        "removeGeneric": "Ses fragments sont supprimés et les synchronisations suivantes ne la récupèrent plus.",
+        "removeFolder": "Les fragments de ses pages sont supprimés et les synchronisations suivantes ignorent toutes les adresses sous {{address}}.",
+        "removeFolderGeneric": "Les fragments de ses pages sont supprimés et les synchronisations suivantes ne les récupèrent plus.",
+        "remove": "Retirer",
+        "removeAndSkip": "Retirer et ignorer",
+        "removeFailed": "Impossible de la retirer.",
+        "syncFailed": "Impossible de synchroniser la source.",
+        "removeLast": "C’est la dernière chose que récupère cette source. Supprimez plutôt la source.",
+        "wikiSource": "Cette source est désormais un wiki : elle se modifie sur place et ne récupère plus de pages.",
+        "chunksUnsupported": "Cette base vectorielle ne peut pas modifier une page seule. Synchronisez plutôt la source.",
+        "handEditsNote": "Tenu à jour : {{frequency}}. Les fragments que vous ajoutez ou modifiez ici sont remplacés à la prochaine synchronisation.",
+        "fetches": "Ce que récupère cette source",
+        "siteSummary": "Site entier · {{find}} · limite de pages {{max}}",
+        "limitReached": "limite de pages atteinte",
+        "pageEntry": "Page web",
+        "removeFromList": "Retirer {{address}} de la liste",
+        "skipped": "Ignorées",
+        "restore": "Restaurer",
+        "restoreAddress": "Restaurer {{address}}",
+        "saveFailed": "Impossible d’enregistrer les paramètres.",
+        "loadFailed": "Impossible de charger les paramètres.",
+        "lastSynced": "Dernière synchronisation {{when}}.",
+        "appliesNextSync": "Les modifications s’appliquent à la prochaine synchronisation.",
+        "stillRunning": "La modification est toujours en cours. Rouvrez la source un peu plus tard pour la voir.",
+        "changeBusy": "Une autre modification de cette source était encore en cours, celle-ci n’a donc pas été appliquée. Réessayez.",
+        "queueFailed": "La modification est enregistrée, mais n’a pas encore pu démarrer. La prochaine synchronisation l’appliquera.",
+        "sourceGone": "Cette source n’existe plus.",
+        "siteLimit_one": "Une source peut récupérer le contenu de {{count}} site au plus.",
+        "siteLimit_other": "Une source peut récupérer le contenu de {{count}} sites au plus.",
+        "siteLimit_many": "Une source peut récupérer le contenu de {{count}} sites au plus.",
+        "skipLimit_one": "Une source peut ignorer jusqu’à {{count}} adresse.",
+        "skipLimit_other": "Une source peut ignorer jusqu’à {{count}} adresses.",
+        "skipLimit_many": "Une source peut ignorer jusqu’à {{count}} adresses.",
+        "urlTooLong_one": "Une adresse peut compter jusqu’à {{count}} caractère.",
+        "urlTooLong_other": "Une adresse peut compter jusqu’à {{count}} caractères.",
+        "urlTooLong_many": "Une adresse peut compter jusqu’à {{count}} caractères.",
+        "invalidAddress": "« {{url}} » n’est pas une adresse que cette source peut récupérer.",
+        "invalidConfig": "Ces paramètres ne sont pas valides. Vérifiez les adresses et les limites.",
+        "notFound": "Cette page ou ce dossier ne fait plus partie de la source. Rechargez-la et réessayez.",
+        "badSyncFrequency": "Cette fréquence de synchronisation n’est pas disponible.",
+        "graphCostRebuild": "Cette source a un graphe de connaissances. Un site entier reconstruit la source, donc le graphe est lui aussi reconstruit avec un LLM : environ un appel par fragment de toute la source.",
+        "tooManyPaths_one": "Vous pouvez retirer jusqu’à {{count}} page à la fois.",
+        "tooManyPaths_other": "Vous pouvez retirer jusqu’à {{count}} pages à la fois.",
+        "tooManyPaths_many": "Vous pouvez retirer jusqu’à {{count}} pages à la fois.",
+        "notWebsite": "Cette source n’est pas une source de site web.",
+        "alreadyListed": "Ces pages et ces sites sont déjà dans cette source.",
+        "badRequest": "La requête n’a pas pu être lue. Rechargez la page et réessayez."
+      },
+      "deleteSource": "Supprimer la source",
+      "syncStarted": "Synchronisation de {{name}}…",
+      "viaConnectionFiles_one": "via {{name}} · {{files}} fichier",
+      "viaConnectionFiles_other": "via {{name}} · {{files}} fichiers",
+      "viaConnectionFiles_many": "via {{name}} · {{files}} fichiers",
+      "item": {
+        "tokens": "{{tokens}} jetons"
       }
     },
     "analytics": {
@@ -1882,7 +1980,7 @@
         "tools": "Outils issus de cette connexion",
         "noAccounts": "Aucun compte connecté pour l’instant.",
         "failed": "Impossible de charger cette connexion.",
-        "lastSync": "Synchronisé {{date}} · {{frequency}}",
+        "lastSync": "Synchronisé {{when}}",
         "paused": "Synchronisation en pause",
         "toolOn": "Activé",
         "toolOff": "Désactivé",
@@ -1891,12 +1989,11 @@
         "keyEnding": "Clé {{hint}}",
         "syncMore": "Synchroniser plus de contenu",
         "refreshTools": "Actualiser les outils",
-        "noSources": "Rien n’a encore été synchronisé depuis cette connexion.",
+        "noSources": "Rien n’est encore synchronisé",
         "remove": "Supprimer",
         "refreshed": "Outils actualisés : {{added}} ajouté(s), {{removed}} retiré(s).",
         "refreshFailed": "Impossible d’actualiser les outils.",
         "syncNow": "Synchroniser maintenant",
-        "syncStarted": "Synchronisation de {{name}}…",
         "syncFailed": "Impossible de lancer la synchronisation. Réessayez.",
         "toolSwitchFailed": "Impossible de modifier l’outil. Réessayez.",
         "expired": "La connexion a expiré. Reconnectez-vous pour continuer à utiliser cette connexion.",
@@ -1906,7 +2003,19 @@
         "addToolsFailed": "Impossible d’ajouter les outils. Réessayez.",
         "rename": "Renommer",
         "toolsHint": "« Demander d’abord » vous sollicite dans la conversation. Les modifications via l’API, le widget et les liens s’autorisent par agent dans les détails d’accès.",
-        "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez."
+        "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez.",
+        "noSourcesHint": "Choisissez du contenu dans {{name}} pour l’ajouter aux connaissances.",
+        "indexing": "Indexation",
+        "firstSyncStarted": "Première synchronisation lancée {{time}}",
+        "dismissFailedSync": "Ignorer {{name}}",
+        "sourceMenu": "Actions de la source",
+        "syncStarting": "Lancement de la synchronisation…",
+        "syncRefusedWiki": "Cette source est désormais un wiki : elle se modifie sur place et ne se synchronise plus.",
+        "syncRefusedNotSyncable": "Cette source ne peut pas être synchronisée.",
+        "syncRefusedConnector": "Cette source se synchronise par sa connexion.",
+        "syncRefusedInvalid": "Cette source est introuvable.",
+        "syncRefusedReconnect": "Le propriétaire doit reconnecter le compte de cette source avant qu’elle puisse être synchronisée.",
+        "syncRefusedConnectionMissing": "Le compte de cette source a été déconnecté : elle ne peut pas se synchroniser tant que le compte n’est pas reconnecté."
       },
       "permission": {
         "always": "Autoriser",
@@ -1967,7 +2076,6 @@
         "tryInChat": "Essayer dans une conversation",
         "done": "Terminé",
         "connectFailed": "Impossible de se connecter. Vérifiez les informations et réessayez.",
-        "syncFailed": "Impossible de lancer la synchronisation. Réessayez.",
         "connectedWithKey": "Connecté avec la clé se terminant par {{hint}}.",
         "doneCounts": "{{sources}} en synchronisation dans Connaissances, {{tools}} prêt(s).",
         "doneSources": "{{sources}} en synchronisation dans Connaissances.",
@@ -1978,6 +2086,8 @@
         "methodOauth": "Se connecter avec {{name}}",
         "methodToken": "Utiliser un jeton d’accès",
         "credentialsRejected": "{{name}} n’a pas accepté ces identifiants. Vérifiez-les et réessayez.",
+        "setupReconnect": "Reconnectez-vous à {{name}} pour terminer la configuration.",
+        "setupDisabled": "Un administrateur a désactivé {{name}}, il ne peut donc pas être configuré.",
         "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez, ou désactivez-les pour continuer.",
         "addTools": "Permettre aux agents d’utiliser {{name}}",
         "addToolsDescription": {
@@ -1988,13 +2098,18 @@
         "accountNameHint": "Affiché pour vous et l’IA afin de distinguer les comptes, par ex. Bot d’alertes.",
         "syncToKnowledge": "Synchroniser dans Connaissances",
         "syncToKnowledgeDescription": "Choisissez le contenu de {{name}} dans lequel les réponses pourront chercher. Laissez désactivé pour simplement connecter ; vous pourrez synchroniser plus tard depuis Connecteurs.",
-        "syncLater": "Rien n’est encore synchronisé dans Connaissances. Pour ajouter du contenu, ouvrez {{name}} dans Connecteurs et choisissez Synchroniser plus de contenu.",
+        "syncLater": "Rien n’est encore synchronisé dans Connaissances.",
         "retrievalSettings": "Paramètres de récupération avancés",
         "chooseWhatToSetUpFor": "Choisissez ce qu’il faut configurer pour {{name}}",
         "chooseWhatToSyncFrom": "Choisissez ce qu’il faut synchroniser depuis {{name}}",
         "signedInAs": "Connecté en tant que {{account}}.",
         "finishSetup": "Terminer la configuration",
-        "account": "Compte"
+        "account": "Compte",
+        "syncChoice": "Comment utiliser {{name}}",
+        "syncNow": "Synchroniser du contenu maintenant",
+        "syncNowDescription": "Choisissez du contenu dans {{name}} et ajoutez-le aux connaissances.",
+        "justConnect": "Simplement connecter",
+        "justConnectDescription": "Rien n’est ajouté pour l’instant. Synchronisez du contenu plus tard depuis Connecteurs, quand vous en avez besoin."
       },
       "remove": {
         "title": "Supprimer « {{name}} » ?",
@@ -2125,7 +2240,9 @@
         "notice_one": "La description de {{formatted}} action ressemble à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-la dans Personnaliser avant de l’autoriser.",
         "notice_many": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser.",
         "notice_other": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser."
-      }
+      },
+      "syncContent": "Synchroniser du contenu",
+      "openInKnowledge": "Ouvrir dans Connaissances"
     },
     "insights": {
       "label": "Analyses"
@@ -2144,14 +2261,13 @@
       "start": "Commencer à discuter",
       "name": "Nom",
       "choose": "Choisir des fichiers",
-      "dropzoneText": "Cliquez pour importer ou glissez-déposez",
+      "dropzoneText": "Cliquez pour importer, ou glissez ici des fichiers ou un dossier",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, images, audio, EPUB, JSON ou ZIP, jusqu’à 25 Mo chacun",
       "filesRejected": "Non ajoutés (plus de 25 Mo ou type non pris en charge) : {{files}}",
-      "selectFolder": "Sélectionner un dossier",
+      "selectFolder": "Ou choisissez un dossier entier",
       "uploadedFiles": "Fichiers importés",
       "cancel": "Annuler",
       "train": "Ajouter aux connaissances",
-      "create": "Créer",
       "link": "Lien",
       "urlLink": "Lien URL",
       "repoUrl": "URL du dépôt",
@@ -2181,13 +2297,9 @@
           "label": "Importer un fichier",
           "heading": "Importer un nouveau document"
         },
-        "crawler": {
-          "label": "Robot d’exploration",
-          "heading": "Ajouter du contenu avec le robot d’exploration web"
-        },
-        "url": {
-          "label": "Lien",
-          "heading": "Ajouter du contenu depuis une URL"
+        "website": {
+          "label": "Site web",
+          "heading": "Ajouter un site web"
         },
         "github": {
           "label": "GitHub",
@@ -2224,14 +2336,50 @@
         }
       },
       "fields": {
-        "url": "URL",
-        "initialContent": "Contenu initial (facultatif)"
+        "initialContent": "Contenu initial",
+        "initialContentHint": "Markdown. Vous pourrez ajouter et modifier des pages une fois le wiki créé."
+      },
+      "website": {
+        "pageUrl": "Adresse de la page",
+        "siteUrl": "Adresse du site web",
+        "addAnotherPage": "Ajouter une autre page",
+        "invalidAddress": "Saisissez une adresse web publique, par exemple docs.example.com",
+        "removePage": "Retirer cette adresse",
+        "removeAddress": "Retirer {{address}}",
+        "maxPages": "Limite de pages",
+        "maxPagesHint": "Jusqu’à {{max}}, fixée par l’administrateur.",
+        "pathPrefix": "Rester sous",
+        "pathPrefixHint": "Seulement les adresses qui commencent par ce chemin.",
+        "pathPrefixPlaceholder": "/ (tout le site)",
+        "sitemapUrl": "URL du plan du site",
+        "sitemapUrlHint": "Laissez vide pour utiliser celui indiqué dans robots.txt.",
+        "includeSubdomains": "Inclure les sous-domaines",
+        "sync": "Tenir à jour",
+        "syncHintPage": "Récupère à nouveau les pages et met à jour ce qui a changé.",
+        "syncHintSite": "Explore à nouveau le site et met à jour ce qui a changé.",
+        "keepLinks": "Garder les liens dans le texte",
+        "keepLinksHint": "Permet aux réponses de renvoyer vers les pages que cette page cite. Stocke environ un quart de texte en plus, et la recherche peut classer un peu moins bien.",
+        "mode": {
+          "label": "Quoi ajouter",
+          "page": "Cette page",
+          "site": "Site entier",
+          "pageHint": "Ajoute exactement ces pages.",
+          "siteHint": "Ajoute cette page et les pages vers lesquelles elle mène sur le même site."
+        },
+        "discovery": {
+          "label": "Trouver les pages",
+          "hint": "Automatique lit le plan du site, puis suit les liens.",
+          "auto": "Automatique",
+          "sitemap": "Plan du site",
+          "links": "Suivre les liens"
+        }
       },
       "github": {
         "privateHint": "Dépôt privé ? Connectez votre compte GitHub pour le synchroniser.",
         "connect": "Connecter GitHub"
       },
-      "fromService": "Depuis un service"
+      "fromService": "Depuis un service",
+      "removeFile": "Retirer {{name}}"
     },
     "createAPIKey": {
       "label": "Créer une clé API",

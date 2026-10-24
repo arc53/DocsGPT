@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from docsgpt.core.settings import settings
 from docsgpt.vectorstore.base import BaseVectorStore
@@ -255,13 +255,48 @@ class QdrantStore(BaseVectorStore):
         return chunk_id
 
     def delete_chunk(self, chunk_id: str) -> bool:
-        """Delete a single chunk by id."""
+        """Delete one of this source's chunks by id.
+
+        Returns:
+            False when this source has no such chunk (another source's id
+            included) or the delete failed (logged).
+        """
+        return self.delete_chunks([chunk_id]) == 1
+
+    def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
+        """Delete several of this source's chunks in one call.
+
+        The collection holds every source, so an id alone could name another
+        source's point: only the ids whose point carries this source's id are
+        deleted, and the delete itself is filtered on the source too.
+
+        Args:
+            chunk_ids: Ids to delete; other sources' and missing ids are skipped.
+
+        Returns:
+            How many were deleted; 0 when the client failed (logged).
+        """
+        ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids))
+        if not ids:
+            return 0
+        models = self._models
         try:
+            records = self._client.retrieve(
+                collection_name=self._collection, ids=ids, with_payload=True, with_vectors=False,
+            )
+            own = [
+                str(record.id) for record in records
+                if ((record.payload or {}).get("metadata") or {}).get("source_id") == self._source_id
+            ]
+            if not own:
+                return 0
             self._client.delete(
                 collection_name=self._collection,
-                points_selector=self._models.PointIdsList(points=[chunk_id]),
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(must=[models.HasIdCondition(has_id=own), *self._filter.must]),
+                ),
             )
-            return True
+            return len(own)
         except Exception as e:
-            logging.error("Error deleting chunk: %s", e, exc_info=True)
-            return False
+            logging.error("Error deleting chunks: %s", e, exc_info=True)
+            return 0

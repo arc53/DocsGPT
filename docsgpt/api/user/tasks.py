@@ -1,6 +1,6 @@
 import logging
 from datetime import timedelta
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.exc import DataError
 
@@ -197,11 +197,11 @@ def ingest_remote(
 @with_idempotency(
     task_name="reingest_source_task", on_poison=_emit_ingest_poison_event,
 )
-def reingest_source_task(self, source_id, user, idempotency_key=None):
+def reingest_source_task(self, source_id, user, idempotency_key=None, actor_id=None):
+    """Re-ingest a source's stored files; ``actor_id`` (a team editor who asked) hears its events too."""
     from docsgpt.worker import reingest_source_worker
 
-    resp = reingest_source_worker(self, source_id, user)
-    return resp
+    return reingest_source_worker(self, source_id, user, actor_id=actor_id)
 
 
 @celery.task(**DURABLE_TASK)
@@ -247,11 +247,11 @@ def _emit_graph_poison_event(task_name, bound):
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="extract_graph", on_poison=_emit_graph_poison_event)
-def extract_graph(self, source_id, user, idempotency_key=None):
+def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None):
+    """Build a source's graph; with ``chunk_ids`` (a page change), extract only those chunks."""
     from docsgpt.worker import extract_graph_worker
 
-    resp = extract_graph_worker(self, source_id, user)
-    return resp
+    return extract_graph_worker(self, source_id, user, chunk_ids=chunk_ids)
 
 
 # Beat-driven dispatch tasks default to ``acks_late=False``: a SIGKILL
@@ -274,6 +274,32 @@ def sync_connector_source(self, source_id):
 
 
 @celery.task(bind=True)
+def website_pages(
+    self: Any,
+    source_id: str,
+    user: str,
+    operation: str,
+    urls: Optional[List[str]] = None,
+    file_path: Optional[str] = None,
+    pages: Optional[List[Dict[str, str]]] = None,
+    url: Optional[str] = None,
+    actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Add pages to a Website source, refresh one, or remove some (``website_pages_worker``).
+
+    Not retried: a page that can't be fetched fails the same way again, and
+    the worker has already reported it. A failed removal changes nothing, so
+    it can be asked for again. ``actor_id`` is the user who asked, when not
+    the owner (a team editor): the ``source.ingest.*`` events go to them too.
+    """
+    from docsgpt.worker import website_pages_worker
+
+    return website_pages_worker(
+        self, source_id, user, operation, urls=urls, file_path=file_path, pages=pages, url=url, actor_id=actor_id,
+    )
+
+
+@celery.task(bind=True)
 def sync_source(
     self,
     source_data,
@@ -284,7 +310,9 @@ def sync_source(
     retriever,
     doc_id,
     connection_id=None,
+    actor_id=None,
 ):
+    """Sync one source; ``actor_id`` (a team editor who asked) hears its events too."""
     resp = sync(
         self,
         source_data,
@@ -295,6 +323,7 @@ def sync_source(
         retriever,
         doc_id,
         connection_id=connection_id,
+        actor_id=actor_id,
     )
     return resp
 
@@ -512,7 +541,13 @@ def ingest_connector_task(
     idempotency_key=None,
     source_id=None,
     connection_id=None,
+    actor_id=None,
 ):
+    """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never").
+
+    ``actor_id`` is the user who asked, when not the owner (a team editor's
+    re-ingest or Sync now): the ``source.ingest.*`` events go to them too.
+    """
     from docsgpt.worker import ingest_connector
 
     resp = ingest_connector(
@@ -532,6 +567,7 @@ def ingest_connector_task(
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        actor_id=actor_id,
     )
     return resp
 

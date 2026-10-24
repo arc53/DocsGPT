@@ -1088,9 +1088,18 @@ const Markdown = styled.div`
     scrollbar-color: ${(props) => props.theme.scrollbarThumb} transparent;
   }
 
+  /* Reset what a host page's own \`code\` rule may set, or every line of the
+     block gets the host's inline-code chip. */
   .dgpt-code-body code {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: inherit;
     font-family: inherit;
     font-size: inherit;
+    font-weight: inherit;
     white-space: inherit;
   }
 

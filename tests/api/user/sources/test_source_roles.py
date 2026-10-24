@@ -258,6 +258,8 @@ class TestSyncSource:
         assert resp.status_code == status
         if status == 200:
             assert delay.call_args.kwargs["user"] == OWNER
+            # The editor who asked receives the sync's events too.
+            assert delay.call_args.kwargs["actor_id"] == user
         else:
             delay.assert_not_called()
 
@@ -277,6 +279,68 @@ class TestReingest:
         assert resp.status_code == status
         if status == 200:
             assert delay.call_args.kwargs["user"] == OWNER
+            assert delay.call_args.kwargs["actor_id"] == user
+
+
+WEBSITE = "docsgpt.api.user.sources.website"
+
+
+class TestWebsiteWrites:
+    """A team editor's Website change runs as the owner; the editor receives its events."""
+
+    def _post(self, app, pg_conn, resource, body):
+        from docsgpt.api.user.sources import website
+
+        pages = MagicMock(return_value=MagicMock(id="t-pages"))
+        sync = MagicMock(return_value=MagicMock(id="t-sync"))
+        with _patch_db(pg_conn, WEBSITE), patch(f"{WEBSITE}.website_pages.delay", pages), patch(
+            f"{WEBSITE}.sync_source.delay", sync
+        ):
+            resp = _call(app, EDITOR, "/api/website", getattr(website, resource)().post, method="POST", json=body)
+        return resp, pages, sync
+
+    def _website(self, pg_conn):
+        leaf = {"type": "text/markdown", "size_bytes": 1, "token_count": 1, "url": "https://docs.x.io/a"}
+        return _shared_source(
+            pg_conn, type="website",
+            directory_structure={"a.md": leaf, "b.md": {**leaf, "url": "https://docs.x.io/b"}},
+            remote_data={"entries": [{"url": "https://docs.x.io/a"}, {"url": "https://docs.x.io/b"}], "skip": []},
+        )
+
+    @pytest.mark.parametrize("resource, body", [
+        ("AddWebsitePages", {"entries": [{"url": "https://docs.x.io/c"}]}),
+        ("RefreshWebsitePage", {"file_path": "a.md"}),
+        ("RemoveWebsitePages", {"file_paths": ["a.md"]}),
+    ])
+    def test_a_page_change_carries_the_editor(self, app, pg_conn, resource, body):
+        sid = self._website(pg_conn)
+        resp, pages, _sync = self._post(app, pg_conn, resource, {"source_id": sid, **body})
+        assert resp.status_code == 200, resp.json
+        assert pages.call_args.args[1] == OWNER
+        assert pages.call_args.kwargs["actor_id"] == EDITOR
+
+    def test_a_site_added_carries_the_editor(self, app, pg_conn):
+        sid = self._website(pg_conn)
+        resp, _pages, sync = self._post(
+            app, pg_conn, "AddWebsitePages",
+            {"source_id": sid, "entries": [{"url": "https://docs.x.io/", "mode": "site"}]},
+        )
+        assert resp.status_code == 200, resp.json
+        assert sync.call_args.kwargs["user"] == OWNER
+        assert sync.call_args.kwargs["actor_id"] == EDITOR
+
+    def test_a_reingest_that_syncs_carries_the_editor(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import ReingestSource
+
+        sid = self._website(pg_conn)
+        sync = MagicMock(return_value=MagicMock(id="t-sync"))
+        with _patch_db(pg_conn, ROUTES), patch(f"{ROUTES}.sync_source.apply_async", sync):
+            resp = _call(
+                app, EDITOR, "/api/sources/reingest", ReingestSource().post, method="POST", json={"source_id": sid}
+            )
+        assert resp.status_code == 200, resp.json
+        assert sync.call_args.kwargs["kwargs"]["user"] == OWNER
+        assert sync.call_args.kwargs["kwargs"]["actor_id"] == EDITOR
 
 
 class TestConfig:
@@ -383,6 +447,7 @@ class TestChunkWrites:
 
         sid = _shared_source(pg_conn)
         store = MagicMock()
+        store.get_chunks.return_value = [{"doc_id": "c1", "text": "a", "metadata": {}}]
         store.delete_chunk.return_value = True
         with _patch_db(pg_conn, CHUNKS), patch(f"{CHUNKS}.get_vector_store", return_value=store):
             resp = _call(
@@ -460,6 +525,16 @@ def _owner_session(pg_conn, token="st-owner", token_info=None):
     return str(row["id"])
 
 
+def _link(pg_conn, sid, connection):
+    """Point the source at ``connection``, as an ingest through a connection does."""
+    from sqlalchemy import text
+
+    pg_conn.execute(
+        text("UPDATE sources SET connection_id = CAST(:c AS uuid) WHERE id = CAST(:s AS uuid)"),
+        {"c": connection, "s": sid},
+    )
+
+
 def _connector_sync(app, pg_conn, user, body):
     from docsgpt.api.connector.routes import ConnectorSync
 
@@ -475,11 +550,14 @@ class TestConnectorSync:
     def test_editor_syncs_with_owner_session(self, app, pg_conn):
         sid = _connector_source(pg_conn)
         owner_connection = _owner_session(pg_conn)
+        _link(pg_conn, sid, owner_connection)
         resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
         assert resp.status_code == 200
         kwargs = delay.call_args.kwargs
         assert kwargs["user"] == OWNER
         assert kwargs["connection_id"] == owner_connection
+        # The sync runs as the owner; its events also reach the editor.
+        assert kwargs["actor_id"] == EDITOR
 
     def test_editor_cannot_substitute_own_session(self, app, pg_conn):
         from docsgpt.storage.db.repositories.connector_sessions import (
@@ -488,6 +566,7 @@ class TestConnectorSync:
 
         sid = _connector_source(pg_conn)
         owner_connection = _owner_session(pg_conn)
+        _link(pg_conn, sid, owner_connection)
         repo = ConnectorSessionsRepository(pg_conn)
         row = repo.upsert(EDITOR, "google_drive", status="authorized")
         repo.update(str(row["id"]), {"session_token": "st-editor", "token_info": {"access_token": "x"}})
@@ -499,10 +578,41 @@ class TestConnectorSync:
         assert delay.call_args.kwargs["connection_id"] == owner_connection
 
     def test_owner_session_missing_returns_409(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
         sid = _connector_source(pg_conn)
+        connection = _owner_session(pg_conn)
+        _link(pg_conn, sid, connection)
+        ConnectorSessionsRepository(pg_conn).update(connection, {"status": "reconnect_needed"})
         resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
         assert resp.status_code == 409
         assert "owner" in resp.json["error"].lower()
+        assert resp.json["message"] == resp.json["error"]
+        # The UI words the refusal itself.
+        assert resp.json["code"] == "reconnect_needed"
+        delay.assert_not_called()
+
+    @pytest.mark.parametrize("user, wording", [
+        (OWNER, "This source's account connection was removed; connect the account again to sync it."),
+        (
+            EDITOR,
+            "This source's account connection was removed; the owner needs to connect the account again to sync it.",
+        ),
+    ])
+    def test_a_source_without_its_connection_is_refused(self, app, pg_conn, user, wording):
+        """Removing a connection keeping its sources nulls ``connection_id`` (ON DELETE SET NULL).
+
+        The owner's other account must not read the selection: that would re-link the source to it.
+        """
+        sid = _connector_source(pg_conn)
+        _owner_session(pg_conn, token="st-other")
+
+        resp, delay = _connector_sync(app, pg_conn, user, {"source_id": sid})
+
+        assert resp.status_code == 409
+        assert resp.json["code"] == "connection_missing"
+        assert resp.json["error"] == wording
+        assert resp.json["message"] == resp.json["error"]
         delay.assert_not_called()
 
     @pytest.mark.parametrize("user, status", [(VIEWER, 403), (STRANGER, 404)])
@@ -522,6 +632,7 @@ class TestConnectorSync:
         assert resp.status_code == 200
         assert delay.call_args.kwargs["user"] == OWNER
         assert delay.call_args.kwargs["connection_id"] == owner_connection
+        assert delay.call_args.kwargs["actor_id"] == OWNER
 
     def test_editor_syncs_with_the_sources_own_connection(self, app, pg_conn):
         from sqlalchemy import text

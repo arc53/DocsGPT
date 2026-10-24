@@ -96,8 +96,31 @@ class TestReingestSourceTask:
 
         result = reingest_source_task("source123", "user1")
 
-        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        mock_worker.assert_called_once_with(ANY, "source123", "user1", actor_id=None)
         assert result == {"status": "ok"}
+
+    @pytest.mark.unit
+    def test_a_busy_skip_does_not_stick_to_the_source_key(self, pg_conn):
+        """The route keys every reingest of a source alike; a busy skip must not replay for 24h."""
+        from docsgpt.api.user.tasks import reingest_source_task
+
+        outcomes = [{"status": "skipped", "reason": "busy"}, {"status": "completed"}]
+        runs = []
+
+        def _fake_worker(self, source_id, user, actor_id=None):
+            runs.append(source_id)
+            return outcomes[len(runs) - 1]
+
+        key = "reingest-source:user1:source123"
+        with _patch_decorator_db(pg_conn), patch(
+            "docsgpt.worker.reingest_source_worker", side_effect=_fake_worker,
+        ):
+            first = reingest_source_task("source123", "user1", idempotency_key=key)
+            second = reingest_source_task("source123", "user1", idempotency_key=key)
+
+        assert first == {"status": "skipped", "reason": "busy"}
+        assert second == {"status": "completed"}
+        assert len(runs) == 2
 
 
 class TestConvertSourceToWikiTask:
@@ -124,7 +147,7 @@ class TestExtractGraphTask:
 
         result = extract_graph("source123", "user1")
 
-        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        mock_worker.assert_called_once_with(ANY, "source123", "user1", chunk_ids=None)
         assert result == {"nodes": 2, "edges": 1}
 
     @pytest.mark.unit
@@ -133,7 +156,7 @@ class TestExtractGraphTask:
 
         calls: list[str] = []
 
-        def _fake_worker(self, source_id, user):
+        def _fake_worker(self, source_id, user, chunk_ids=None):
             calls.append(source_id)
             return {"nodes": 1, "edges": 0}
 
@@ -179,7 +202,7 @@ class TestSyncSourceTask:
 
         mock_sync.assert_called_once_with(
             ANY, {"data": 1}, "job1", "user1", "web", "daily", "classic", "doc1",
-            connection_id=None,
+            connection_id=None, actor_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -191,6 +214,34 @@ class TestSyncSourceTask:
         sync_source({"data": 1}, "job1", "user1", "s3", "daily", "classic", "doc1", connection_id="c-1")
 
         assert mock_sync.call_args.kwargs["connection_id"] == "c-1"
+
+
+EDITOR = "editor-1"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("task_name, target, args, kwargs", [
+    ("website_pages", "docsgpt.worker.website_pages_worker", ("src", "u1", "add"),
+     {"urls": ["https://x.io/a"], "actor_id": EDITOR}),
+    ("website_pages", "docsgpt.worker.website_pages_worker", ("src", "u1", "refresh"),
+     {"file_path": "a.md", "url": "https://x.io/a"}),
+    ("website_pages", "docsgpt.worker.website_pages_worker", ("src", "u1", "remove"),
+     {"pages": [{"path": "a.md", "url": "https://x.io/a"}]}),
+    ("reingest_source_task", "docsgpt.worker.reingest_source_worker", ("src", "u1"), {"actor_id": EDITOR}),
+    ("sync_source", "docsgpt.api.user.tasks.sync", ({}, "Docs", "u1", "website", "never", "classic", "src"),
+     {"actor_id": EDITOR}),
+    ("ingest_connector_task", "docsgpt.worker.ingest_connector", ("job", "u1", "google_drive"),
+     {"actor_id": EDITOR}),
+    ("ingest_connector_task", "docsgpt.worker.ingest_connector", ("job", "u1", "google_drive"),
+     {"sync_frequency": "weekly"}),
+])
+def test_a_task_passes_its_keywords_to_the_worker(task_name, target, args, kwargs):
+    from docsgpt.api.user import tasks
+
+    with patch(target, return_value={"status": "ok"}) as run:
+        getattr(tasks, task_name).run(*args, **kwargs)
+
+    assert {key: run.call_args.kwargs[key] for key in kwargs} == kwargs
 
 
 class TestStoreAttachmentTask:
@@ -275,6 +326,7 @@ class TestIngestConnectorTask:
             config=None,
             idempotency_key=None,
             source_id=None,
+            actor_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -317,6 +369,7 @@ class TestIngestConnectorTask:
             config=None,
             idempotency_key=None,
             source_id=None,
+            actor_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -1185,6 +1238,8 @@ INGEST_LANE_TASKS = (
     "docsgpt.api.user.tasks.sync_connector_source",
     "docsgpt.api.user.tasks.extract_graph",
     "docsgpt.api.user.tasks.convert_source_to_wiki",
+    # Up to WEB_MAX_PAGES fetches of up to 30 seconds each.
+    "docsgpt.api.user.tasks.website_pages",
 )
 
 # Work a user or the scheduler is waiting on; it must never queue behind an ingest.

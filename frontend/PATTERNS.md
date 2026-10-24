@@ -509,8 +509,32 @@ wiki, a knowledge graph) is one shell:
   have none); `byline` is one muted `text-sm` line of counts ("33 files ·
   11,420 tokens", "12 pages · 8,111 tokens · …", "371 entities · 1,172
   relationships"), where a kind that needs explaining adds one sentence. No
-  explainer box. Actions on the right: Test retrieval (`outline field pill`)
-  and the kind's one primary action (Add file, Sync).
+  explainer box. Actions on the right, source-level only: Test retrieval
+  (`outline field pill`), the kind's one primary action (`default field
+  pill`, text only: Add file for an upload, Add pages for a website, Sync now
+  for a synced source, none for a wiki or a graph), then the source's ⋯
+  (`ActionMenu size="toolbar"`, PathHeader's `menu`, always last). The ⋯ is
+  `settings/useSourceActions`' `menuOptions(doc, 'view')`: the card's menu less
+  View and Test retrieval (and less Sync now where that is the primary); its
+  Delete is "Delete source" and returns to the list. File and page actions
+  never sit in this row.
+- **Synced sources** (`settings/sourceKinds` `isSyncedSource`: a connection, a
+  connector type or a schedule, whatever the stored type, so S3 and GitHub
+  too) open in `ConnectorTree`: the connection's badge, the schedule in the
+  byline ("12 files · 13,080 tokens · Weekly · synced 2 days ago"), Sync now,
+  and no Add file or file Delete (a sync replaces them). A website keeps
+  WebsiteTree and Add pages, with Sync now in its ⋯.
+- **Source menu** (the card's ⋯ and the view's): View, Reingest (a failed
+  ingest only), Sync now, Settings, Test retrieval, Convert to wiki, Share with
+  team, then Delete after a rule (`separatorBefore`); never more than that, and
+  no per-value rows (the schedule is a field in Settings). Settings is one
+  dialog, `SourceConfigModal`: its first section depends on the kind (a
+  website's pages, skips, Keep links and schedule; a synced source's "Keep up
+  to date"; nothing for an upload), then RetrievalOptions, with Sync now in the
+  footer; a viewer with `view_config` reads only the retrieval part. A wiki's
+  Settings is WikiSettingsModal. A card whose source has a schedule shows
+  "{frequency} · synced {when}" instead of its date, and "via {connection} ·
+  N files" for a connection.
 - **Navigator**: `SourceNavigator`, a `w-64` column shown only when there is
   more than one thing to open (files, wiki pages). A filter `CommandInput
 variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
@@ -526,6 +550,16 @@ variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
   scrolls). A source with one file opens
   straight on its chunk list, and a wiki with one page on its reader at full
   width: no navigator, no table.
+- **Item bar**: an open file or website page (TreeBrowser: uploads, websites,
+  synced sources; a wiki page has the Reader) has `tree/ItemBar` above its chunks, the
+  same wherever it was opened (table, navigator, citation, the one-file
+  shortcut): a `subtle` Card with one `ListRow`, the item's icon and name, its
+  address (`link inline` with ExternalLink) or size, muted counts ("N chunks ·
+  N tokens · fetched …") and the row's ⋯ less View. The source's last item has
+  no Remove or Delete (Delete source covers it), and an empty menu draws no ⋯.
+  Notices about the item (a synced website's hand-edits note) go under the bar.
+  The header byline stays the source's. Leaving the navigator with the pointer
+  hands cmdk's highlight back to the open item, so only one row looks picked.
 - **Reader**: `ReaderPanel`, the content you read (a wiki page, an open
   chunk): a `subtle` Card with `padding="none"`, its meta (muted 12px lines)
   left and its actions right in a `min-h-14 px-6` header row, a `Separator`,
@@ -562,9 +596,15 @@ pill`) and Save (`default lg pill`, off until the draft or a field changes, and 
   · Files (Files is the embedded file tree; a source with no folder structure
   shows its embedded chunk list there instead, as the plain view does). A tab's own action goes in the
   header's action row after Test retrieval, only while that tab is open (the
-  Files tab's Add file or Sync, portalled through `TreeBrowser`'s
+  Files tab's Add file or Sync now, portalled through `TreeBrowser`'s
   `actionsTarget`), as on the agent pages; the embedded tree draws no row of
-  its own. The Graph tab's toolbar holds the
+  its own. A website source's page changes and the syncs started from its ⋯
+  are held by the graph view (`tree/useWebsiteChanges`), not by the Files
+  tab's WebsiteTree, which mounts only while that tab is open: they finish
+  and toast whichever tab shows, the running one's muted label ("Syncing the
+  source…") sits after Test retrieval on the other tabs, and the view reports
+  them (`onBusyChange`) so the ⋯'s Sync now is off meanwhile. Overlapping
+  changes each hold the busy state until the last ends. The Graph tab's toolbar holds the
   entity search (`graph/GraphEntitySearch`: a `SearchInput` whose results
   over the server's `/graph/nodes?q=` open in a Command anchored under it,
   the field keeping focus and driving the list with the arrows and Enter),
@@ -705,6 +745,19 @@ the column widths, never `min-w-[…]` pins (see DESIGN.md › Table). Add knowl
 tiles, then "From a service" (see DESIGN.md › OptionCard) and "Browse all connectors"
 (`settings.connectors.browseAll`, 12px `ArrowRight`) under the tiles.
 
+Add knowledge's forms (Upload, Website, New wiki): Name first, the
+kind's fields, then the `Advanced settings` disclosure, and one submit, "Add to
+Knowledge", for all three. A wiki's "Initial content" is a default Textarea
+with its hint in FormField `hint`. A website's "Keep links in page text" is a
+Website field (`WebsiteFields keepLinks`), not a chunking setting.
+`settings/components/RetrievalOptions` is flat groups with `GroupHeader`
+eyebrows (h3, "· tag"): Retrieval · Relevance · Filtering · Graph retrieval ·
+Graph extraction · Chunking, never a nested toggle. `variant="create"` (the
+add forms and the connector wizard's sync setup) drops the re-ingest tags and
+the Filtering group (unless inherited LLM screening doesn't add up) and ends
+with the muted "Fine-tune filtering after the first ingest…" line; Source
+settings, Test retrieval and admin Defaults use the default.
+
 The connection drawer (`ConnectionDrawer`, a `default` SidePanel) keeps the
 capability badges in `PanelHeader` children. Its accounts are one `Card subtle
 padding="none" overflow-hidden` of ListRows (name, account line, status Badge,
@@ -717,6 +770,16 @@ after a separator (`separatorBefore`); both confirmations name the account,
 say what the account actually has and are async submits (see DESIGN.md ›
 Modal, not Dialog). Disconnect's submit is primary; only
 Remove is destructive. "In my chats" stays as in DESIGN.md › Switch.
+
+The drawer's "Knowledge from this connection": with nothing synced, an
+`EmptyState size="sm"` with an outline "Sync content"; with sources, the header
+link "Sync more content". Each source row opens the source in Knowledge
+through a stretched button, its description worded as the source's card
+("Weekly · synced 2 days ago"), and its ⋯ is Sync now (connected and not
+paused only; a row `Spinner xs` and a disabled item while it starts) and Open
+in Knowledge. Syncs this session started show first as neutral "Indexing"
+rows ("First sync started …") until the server lists the source
+(`connectorsSlice.startedSyncs`).
 
 Per-action permissions are `connectors/PermissionGroup` everywhere (the
 drawer's ToolPermissions, an agent's API write allowlist, the Tools page
@@ -734,12 +797,23 @@ inline `CollapsibleTrigger`, named "Parameters for {action}").
 The connect wizard (`ConnectWizard`) is a `size="lg"` Modal on every step,
 with the connector's icon tile in `leading` (`Avatar size="xl" shape="square"
 variant="icon"`, as in the connection drawer's header; see DESIGN.md › Avatar) and a `description` (the
-service's description, then "Signed in as …"). Every step title names the
-service ("Choose what to sync from GitHub") and doesn't change with a switch.
-The setup step's footer is one submit named by what it does ("Add to
-Knowledge" while Sync is on, else "Finish setup"; Cancel + "Add to Knowledge"
-when syncing more), never Skip. Every path ends on the done step, whose
-summary is a `success` Alert. With several accounts and none chosen, the
+service's description, then the account: "Signed in as …", or "Connected
+with the key ending …" for a pasted key). Every step title names the service
+("Choose what to sync from GitHub") and doesn't change with a choice. A
+sync-only connector (`setup.tools === 'off'`: S3, Drive, SharePoint,
+Confluence, Reddit) asks how to use it on its first connect with two `OptionCard`s in a
+`role="radiogroup"`, "Sync content now" (picked from any entry point) and
+"Just connect"; the setup form sits under them behind a `Separator` in a
+Collapsible that folds away on Just connect and keeps its values. A connector
+with tools and sync (GitHub, Linear) keeps one switch each. The setup step's
+footer is one submit named by what it does ("Add to Knowledge" while syncing,
+else "Finish setup"; Cancel + "Add to Knowledge" when syncing more), never
+Skip. Every path ends on the done step, whose summary is a `success` Alert
+that reports and never gives directions; its footer follows what happened: a
+lone Done after a reconnect; Done + "Open in Knowledge" (the first new source)
+when sources were created; Done + "Try it in chat" (a new chat with no sources
+picked) when only tools were turned on; outline "Sync content" (the sync step
+in place, on the account just connected) + Done when nothing syncs yet. With several accounts and none chosen, the
 first setup field is an account Select. The pickers (repositories, Linear,
 SharePoint / Confluence / Drive files) are one recipe: a search on
 `labelSurface="card"`, then an `outline padding="none" overflow-hidden` Card

@@ -148,6 +148,8 @@ export type ConnectionSource = {
   last_sync: string | null;
   sync_frequency: string;
   sync_state: 'active' | 'paused_reconnect';
+  /** Its behaviour: `classic`, `wiki` (converted, edited in place), `graphrag`. */
+  kind?: string;
 };
 
 /** A repository a GitHub connection can read, for the sync picker. */

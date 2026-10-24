@@ -202,6 +202,32 @@ class SourcesRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def get_for_update(self, source_id: str, user_id: Optional[str] = None) -> Optional[dict]:
+        """Read a source and lock its row until the transaction ends.
+
+        A read-modify-write of ``remote_data`` or ``directory_structure``
+        (a Website page change, a sync's final write) re-reads the row with
+        this inside its write transaction, so a concurrent change waits
+        rather than being overwritten.
+
+        Args:
+            source_id: The source's UUID.
+            user_id: The owner to scope to; ``None`` only after the caller has
+                checked access itself (a team member edits the owner's row).
+
+        Returns:
+            The row, or ``None`` when it doesn't exist (or isn't the owner's).
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        sql = "SELECT * FROM sources WHERE id = CAST(:id AS uuid)"
+        params = {"id": str(source_id)}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        row = self._conn.execute(text(sql + " FOR UPDATE"), params).fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def get_any(self, source_id: str, user_id: str) -> Optional[dict]:
         """Resolve a source by either PG UUID or legacy Mongo ObjectId string.
 
@@ -467,6 +493,31 @@ class SourcesRepository:
             .values(**values)
         )
         self._conn.execute(stmt)
+
+    def set_metadata_key(self, source_id: str, user_id: str, key: str, value: Any) -> bool:
+        """Set one top-level key of ``metadata``, keeping the others.
+
+        ``update`` replaces the whole column, which would drop keys other
+        writers own (``sync_state``, ``injection_review``).
+
+        Args:
+            source_id: The source's UUID.
+            user_id: The owner's id; the row is scoped to it.
+            key: The metadata key.
+            value: Any JSON-serialisable value.
+
+        Returns:
+            bool: Whether a row was updated.
+        """
+        result = self._conn.execute(
+            text(
+                "UPDATE sources SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), "
+                "CAST(:path AS text[]), CAST(:value AS jsonb)), updated_at = now() "
+                "WHERE id = CAST(:sid AS uuid) AND user_id = :uid"
+            ),
+            {"path": "{" + key + "}", "value": json.dumps(value), "sid": str(source_id), "uid": user_id},
+        )
+        return result.rowcount > 0
 
     def set_wiki_outside_edits(self, source_id: str, user_id: str, allowed: bool) -> bool:
         """Record whether API-key and widget runs may edit this wiki.

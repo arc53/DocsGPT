@@ -137,6 +137,28 @@ describe('ActionMenu', () => {
     expect(separators[0].nextElementSibling?.textContent).toBe('Remove');
   });
 
+  // An item bar drops View, leaving the set-apart Delete first.
+  it('opens on an item, never on a rule, when the first option asks for one', async () => {
+    await render(
+      <ActionMenu
+        options={[
+          {
+            label: 'Delete',
+            onClick: vi.fn(),
+            variant: 'destructive',
+            separatorBefore: true,
+          },
+        ]}
+        triggerLabel="Menu"
+        open
+      />,
+    );
+    expect(
+      document.querySelectorAll('[data-slot="dropdown-menu-separator"]'),
+    ).toHaveLength(0);
+    expect(items().map((item) => item.textContent)).toEqual(['Delete']);
+  });
+
   it('marks a disabled option', async () => {
     await render(
       <ActionMenu

@@ -272,7 +272,7 @@ Patterns:
   `Input` and `SelectTrigger` are 38px too (Input `default`,
   SelectTrigger's default `field`, Combobox and MultiSelect always `field`),
   so a form column has one height. Page actions beside a
-  page's search field (Add Source, Add Tool, Test retrieval, Sync) are
+  page's search field (Add knowledge, Add Tool, Test retrieval, Sync now) are
   `size="field" shape="pill"`, with no min-width or hand height. With
   `shape="pill"` its text starts 21px in, like the Input and Select pills
   beside it. The agent form's pickers are `combobox field`, each labelled by
@@ -344,7 +344,7 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   or `inline`) has no frame to hold that empty space, so `loading` keeps its
   label readable in place, faded, with the spinner after it. The one exception is a
   button whose busy state says something the user needs: a progress figure
-  (a connector's Sync shows "42%") or a mode (the composer's Voice button shows
+  (a synced source's Sync now shows "42%") or a mode (the composer's Voice button shows
   "Transcribing"). It keeps its busy label with a `Spinner size="xs"` (the
   16px icon step, with a `label` so it doesn't announce "Loading") where its
   icon was.
@@ -718,7 +718,9 @@ and moves up to the 12px border label on focus; on a `SelectTrigger`, combobox,
 red (`text-destructive`) with an `error`, and dims while `disabled`. Under
 the field come a muted `text-xs` hint and a red `text-xs` error
 (`role="alert"`), 6px apart. The required star follows the label
-(`aria-hidden`; the field gets `aria-required`, not native `required`). A
+(`aria-hidden`; the field gets `aria-required`, not native `required`). `Input`
+and `Textarea` turn a `required` prop into `aria-required` themselves, so no browser "Please fill in this
+field" tooltip shows on a field with no `<form>` around it. A
 placeholder is an example: hidden while the label rests, shown on focus.
 Stack floating fields with `gap-5` so each label clears the field above.
 
@@ -989,7 +991,12 @@ preview and validation logic) and the Import agent / Import API
 specification dialogs; don't hand-roll a `border-2 border-dashed` target
 around `useDropzone`. Picked files show under it as `ListRows` (name and
 size) in an `outline` Card, and rejected files (too large, wrong type) as the
-Dropzone's `error`, never dropped silently. The chat composer is the one other
+Dropzone's `error`, never dropped silently. A new pick adds to the list (one row
+per path), and each row ends with a remove `IconButton variant="ghost-destructive"
+size="icon-sm"` (`X`, "Remove {name}"). Upload from device takes folders by drop
+(react-dropzone reads them); clicking the target picks files, so the folder
+picker is a `link inline` Button "Or choose a whole folder" right under the
+target, never a second outline button. The chat composer is the one other
 `useDropzone` host: the whole composer is the drop area, with its own
 overlay, whose prompt is a Title (see Typography roles).
 
@@ -1020,11 +1027,13 @@ spans the screen and shows only its newest card, the others behind an
 `useToastShown` (`ui/toast-layout.ts`) on its `Toast` and runs its timer
 only while shown, so a folded card never times out unseen. A new toast
 component returns only its `Toast` cards and is added to that viewport. A result the screen can't show
-dispatches `showActionToast({ variant: 'success' | 'destructive', message })`
+dispatches `showActionToast({ variant: 'success' | 'destructive' | 'info' | 'warning', message })`
 from `notifications/actionToastSlice.ts`: a chunk saved from the graph
 reader's edit drawer, which closes as it saves ("Chunk saved"); a copy from a
 reader's ⋯ menu; an admin Force logout; a page action's failure that happens
-after its confirm closed (a source file delete). `ActionToast` shows it and
+after its confirm closed (a source file delete). Background work that is
+neither is `info` (a website page change still running when the view stops
+waiting) or `warning` (one that didn't run and can be tried again). `ActionToast` shows it and
 dismisses it after 4.5s, and a new result replaces the previous one. A result
 the row shows gets no toast: Admin › Users' grant, revoke, activate and
 deactivate show their success in the row's badge. Work that finishes after
@@ -1139,8 +1148,8 @@ Schedules and Pin on a draft), never on `ownership`,
   long text the user reads or copies (a prompt, a chunk) is `readOnly`, so it
   keeps full contrast and scrolls. Titles and menu items swap Edit and
   `Pencil` for View and `Eye`.
-- Source views follow the same rule: every write (Add file, Sync, Add chunk,
-  Edit, Delete) shows only with `can(source, 'edit')`; reading, copying and
+- Source views follow the same rule: every write (Add file, Add pages, Sync now,
+  Add chunk, Edit, Delete) shows only with `can(source, 'edit')`; reading, copying and
   paging stay.
 - A page the role can't open is refused twice: its tabs and section items
   are filtered by the same action (`AgentPageHeader`, `navigation/sections`),
@@ -1343,7 +1352,8 @@ goes from `0fr` to `1fr` rows and fades over 300ms (`motion-reduce` turns the
 transition off), its content clipped in one track and kept mounted while
 closed but `inert`, so its fields leave the tab order. The body clips only
 while closed or moving, so focus rings inside it show once it is open. There
-is no Accordion.
+is no Accordion. A disclosure never sits inside another: a group that would
+hide behind a second toggle is a flat group with its own eyebrow instead.
 
 The trigger is `CollapsibleTrigger` (same file): `open`, `onOpenChange` and
 `controls` (the Collapsible's `id`). It sets `aria-expanded` and
@@ -1351,7 +1361,7 @@ The trigger is `CollapsibleTrigger` (same file): `open`, `onOpenChange` and
 open; pass layout only. Never hand-roll the Button.
 
 - `look="inline"` (the default) is the `link sm` toggle for a group in a
-  form, modal or drawer (RetrievalOptions' Advanced, a device's audit log,
+  form, modal or drawer (Upload's Advanced settings, a device's audit log,
   the connect wizard's tools, Share's Access settings). `chevron="sm"` draws
   a 12px chevron.
 - `look="section"` is a section panel's header (NewAgent's Advanced,
@@ -1595,7 +1605,9 @@ side panel (see Side panels). Don't add another pattern.
 The three-dots menu on a card, tile or row. Pass `options: MenuOption[]`
 (`label`, `onClick`, optional lucide `icon`, `variant: 'destructive'`,
 `disabled`, `separatorBefore` for a rule above a row, which sets a
-destructive Remove apart from the reversible items; `icon` also takes an
+destructive Remove apart from the reversible items (on the first rendered
+row it draws no rule, so a host that leaves out the rows above needn't
+clear it); `icon` also takes an
 element, such as a `ConnectorIcon`) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
 trigger with `EllipsisVertical`, and stops clicks and keys on the trigger and
 the menu from reaching the host, so it can sit inside a clickable card.

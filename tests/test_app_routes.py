@@ -89,6 +89,18 @@ class TestConfigRoute:
         assert "oidc" not in data
 
     @pytest.mark.unit
+    def test_exposes_the_website_page_limits(self, client):
+        # The Website form shows the default and the admin's cap.
+        with patch("docsgpt.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            mock_settings.WEB_DEFAULT_PAGES = 120
+            mock_settings.WEB_MAX_PAGES = 800
+            response = client.get("/api/config")
+        data = json.loads(response.data)
+        assert data["web_default_pages"] == 120
+        assert data["web_max_pages"] == 800
+
+    @pytest.mark.unit
     def test_exposes_graphrag_available(self, client):
         with patch("docsgpt.app.settings") as mock_settings, patch(
             "docsgpt.graphrag.graphrag_available", return_value=True

@@ -98,11 +98,23 @@ export type Doc = {
   team_access?: 'viewer' | 'editor' | null;
   // The connection a synced source comes from (Google Drive account, S3 keys).
   connectionId?: string | null;
+  // A Website source's hosts and page count (also older link, crawler and
+  // sitemap sources); null for every other kind.
+  website?: { hosts: string[]; pages: number } | null;
+  // How many files the source's tree holds; null for a flat source.
+  files?: number | null;
   // The caller's role and what it allows (sources API); gate UI with
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;
   allowed_actions?: string[];
 };
+
+/**
+ * A source as the app-wide knowledge list (`/api/sources`, `getDocs`) gives
+ * it: the paginated listing's fields, `website` and `files` included, but
+ * the folder flag named `is_nested` (see `asListedDoc`).
+ */
+export type KnowledgeDoc = Doc & { is_nested?: boolean };
 
 export type GetDocsResponse = {
   docs: Doc[];

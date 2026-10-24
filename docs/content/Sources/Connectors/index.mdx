@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-22
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -28,19 +28,21 @@ Connections are the single place credentials live when a service requires them. 
   <source src="/connect-your-data.mp4" type="video/mp4" />
 </video>
 
-*The recording opens **Settings > Knowledge**, clicks **Add knowledge**, then **Connect your data**, and picks **GitHub**. It pastes a personal access token, which stays masked, and clicks **Connect**. Under **Choose what to set up** it turns off **Let agents use GitHub**, leaves **Sync into Knowledge** on, searches for and picks a demo repository, names it "Espresso One docs", sets **Sync** to **Daily** and clicks **Continue**. After **Done**, "Espresso One docs" appears on the Knowledge page once its first sync finishes, and its menu shows **Sync: Daily** checked.*
+*The recording opens **Settings > Knowledge**, clicks **Add knowledge**, then **Connect your data**, and picks **GitHub**. It pastes a personal access token, which stays masked, and clicks **Connect**. Under **Choose what to set up** it turns off **Let agents use GitHub**, leaves **Sync into Knowledge** on, searches for and picks a demo repository, names it "Espresso One docs", sets **Sync** to **Daily** and clicks **Continue**. After **Done**, "Espresso One docs" appears on the Knowledge page once its first sync finishes. The recording ends on an earlier version of the source's menu, with **Sync: Daily** checked; the schedule is now **Keep up to date** in the source's **Settings**.*
 
 ## Using connectors
 
 Open **Settings > Connectors**. Filters narrow the list by category, and **Connected** shows what you already use.
 
 1. Pick a connector. Services with OAuth open the provider's sign-in page in a pop-up; API-key services ask for the key.
-2. Choose what the connection sets up. Tool services create their tools right away. Services that can sync ask whether to **Sync into Knowledge**: off by default, on when you started from **Add knowledge** or from Knowledge's **Connect a service**. Left off, the account is still connected and you can sync later with **Sync more content** on its page. Turned on, pick files or folders, how often to sync (never, daily, weekly or monthly) and, under **Advanced retrieval settings**, the same chunking and retrieval options as an upload.
+2. Choose what the connection sets up. Tool services create their tools right away. Services that only sync (Google Drive, SharePoint, Confluence, Amazon S3, Reddit) ask how to use them: **Sync content now** (picked) or **Just connect**. With **Just connect**, the account is connected and nothing is added yet; you can sync later with **Sync content** on the connection's page. GitHub and Linear, which also offer tools, ask with a **Sync into Knowledge** switch instead: off by default, on when you started from **Add knowledge**. To sync, pick files or folders, how often to sync (never, daily, weekly or monthly) and, under **Advanced retrieval settings**, the same chunking and retrieval options as an upload.
+
+   The last step says what happened and offers the next one: **Open in Knowledge** for content you just synced, **Try it in chat** when you turned on tools, or **Sync content** when nothing syncs yet.
 3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
 
 **Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
 
-A connector's page is the one place to manage it: its accounts (**Reconnect**, **Rename**, **Disconnect**), the Knowledge it syncs (**Sync now**), and its tools (on or off, and what each action may do). On the Knowledge and Tools pages, anything from a connection has **Manage connection** in its menu, which opens that page. Disconnecting keeps synced content but stops its sync.
+A connector's page is the one place to manage it: its accounts (**Reconnect**, **Rename**, **Disconnect**), the Knowledge it syncs (each source opens in Knowledge, with **Sync now** in its menu), and its tools (on or off, and what each action may do). Disconnecting keeps synced content but stops its sync: **Sync now** and **Reingest** on such a source are refused until its account is connected again, and it never syncs with another of your accounts.
 
 ### Several accounts of one service
 
@@ -75,7 +77,7 @@ The same list covers people who open the agent from its public link without bein
 
 Schedules that an API or widget chat set up before this version still run as the owner's own, without this list, until they fire or expire. Schedules set from a public link follow the list from their next run.
 
-Wikis have their own switch rather than an entry in this list: API and widget users can read a wiki the agent uses but edit it only when the wiki's owner turns on **Let API and widget users edit this wiki** in its **Wiki settings**. Public-link visitors edit only wikis they can edit themselves, and approve each edit (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
+Wikis have their own switch rather than an entry in this list: API and widget users can read a wiki the agent uses but edit it only when the wiki's owner turns on **Let API and widget users edit this wiki** in its **Settings** (the wiki's menu on the Knowledge page). Public-link visitors edit only wikis they can edit themselves, and approve each edit (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
 
 A webhook is the owner's own automation (its URL is a secret), so its runs are not limited by this list. Nobody can approve during a webhook run, so it still skips every action that needs approval.
 
@@ -293,7 +295,7 @@ In **Settings > Connectors**, pick **Reddit** and fill in:
 
 ### Choose what to sync
 
-Turn on **Sync into Knowledge** and fill in:
+Keep **Sync content now** selected and fill in:
 
 - **Search queries**: subreddit names without `r/`, separated by commas, for example `python, django`.
 - **Number of posts**: how many posts to read from each subreddit's **new** and **hot** listings, so each subreddit adds up to twice this number.

@@ -804,6 +804,104 @@ class TestUploadRemote:
             response = UploadRemote().post()
         assert response.status_code == 200
 
+    def _post_website(self, app, data):
+        from docsgpt.api.user.sources.upload import UploadRemote
+
+        fake_task = MagicMock(id="website-task")
+        with patch(
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
+            return_value=fake_task,
+        ) as apply_async, app.test_request_context(
+            "/api/remote", method="POST",
+            data={"user": "u", "source": "website", "name": "Docs", **data},
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = UploadRemote().post()
+        return response, apply_async
+
+    def test_uploads_website_source_with_its_config_and_sync(self, app):
+        config = {
+            "entries": [{"url": "https://docs.example.com/", "mode": "site", "max_pages": 50}],
+            "keep_links": True,
+        }
+        response, apply_async = self._post_website(
+            app, {"data": json.dumps(config), "sync_frequency": "weekly"},
+        )
+
+        assert response.status_code == 200
+        kwargs = apply_async.call_args.kwargs["kwargs"]
+        assert kwargs["loader"] == "website"
+        assert kwargs["sync_frequency"] == "weekly"
+        # The validated config is what gets stored and synced.
+        assert kwargs["source_data"]["entries"][0]["discovery"] == "auto"
+        assert kwargs["source_data"]["keep_links"] is True
+
+    def test_a_page_given_twice_is_stored_once(self, app):
+        config = {"entries": [
+            {"url": "https://docs.example.com/a", "mode": "page"},
+            {"url": "https://docs.example.com/b", "mode": "page"},
+            # The same page as the first, written another way.
+            {"url": "docs.example.com/a/", "mode": "page"},
+            {"url": "https://www.docs.example.com/a#intro", "mode": "page"},
+            {"url": "https://docs.example.com/", "mode": "site"},
+        ]}
+        response, apply_async = self._post_website(app, {"data": json.dumps(config)})
+
+        assert response.status_code == 200
+        entries = apply_async.call_args.kwargs["kwargs"]["source_data"]["entries"]
+        assert [(entry["url"], entry["mode"]) for entry in entries] == [
+            ("https://docs.example.com/a", "page"),
+            ("https://docs.example.com/b", "page"),
+            ("https://docs.example.com/", "site"),
+        ]
+
+    def test_website_source_defaults_to_no_sync(self, app):
+        config = {"entries": [{"url": "https://docs.example.com/a", "mode": "page"}]}
+        response, apply_async = self._post_website(app, {"data": json.dumps(config)})
+
+        assert response.status_code == 200
+        assert apply_async.call_args.kwargs["kwargs"]["sync_frequency"] == "never"
+
+    def test_website_source_with_a_bad_config_is_400(self, app):
+        response, apply_async = self._post_website(app, {"data": json.dumps({"entries": []})})
+
+        assert response.status_code == 400
+        assert "at least one" in response.json["error"]
+        # A config error without a code of its own is still one the UI can word.
+        assert response.json["code"] == "invalid_config"
+        apply_async.assert_not_called()
+
+    def test_a_website_config_error_passes_on_its_code_and_details(self, app):
+        class ConfigError(ValueError):
+            code = "page_limit"
+            details = {"max_pages": 500}
+
+        config = {"entries": [{"url": "https://docs.example.com/a", "mode": "page"}]}
+        with patch(
+            "docsgpt.api.user.sources.upload.parse_website_config",
+            side_effect=ConfigError("A website source holds up to 500 pages"),
+        ):
+            response, apply_async = self._post_website(app, {"data": json.dumps(config)})
+
+        assert response.status_code == 400
+        assert response.json == {
+            "success": False, "error": "A website source holds up to 500 pages", "code": "page_limit",
+            "max_pages": 500,
+        }
+        apply_async.assert_not_called()
+
+    def test_website_source_with_an_unknown_sync_frequency_is_400(self, app):
+        config = {"entries": [{"url": "https://docs.example.com/a", "mode": "page"}]}
+        response, apply_async = self._post_website(
+            app, {"data": json.dumps(config), "sync_frequency": "hourly"},
+        )
+
+        assert response.status_code == 400
+        assert response.json["code"] == "bad_sync_frequency"
+        apply_async.assert_not_called()
+
     def test_uploads_reddit_source(self, app):
         from docsgpt.api.user.sources.upload import UploadRemote
 
@@ -1002,6 +1100,41 @@ class TestManageSourceFiles:
         assert response.json["success"] is True
         assert "new.txt" in response.json["added_files"]
 
+    def test_each_keyless_change_dispatches_its_own_reingest_key(self, app, pg_conn):
+        """Without an Idempotency-Key, two file changes must not share a key:
+        the task's guard would replay the first reingest for 24h instead of
+        embedding the second change.
+        """
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
+
+        user = "u-add-twice"
+        src = _seed_source(pg_conn, user=user, file_path="/data/src")
+        keys = []
+        for name in ("one.txt", "two.txt"):
+            with _patch_db(pg_conn), patch(
+                "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
+                return_value=MagicMock(),
+            ), patch(
+                "docsgpt.api.user.tasks.reingest_source_task.apply_async",
+                return_value=MagicMock(id="reingest-1"),
+            ) as mock_apply, app.test_request_context(
+                "/api/manage_source_files", method="POST",
+                data={
+                    "source_id": str(src["id"]),
+                    "operation": "add",
+                    "file": (io.BytesIO(b"content"), name),
+                },
+                content_type="multipart/form-data",
+            ):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                response = ManageSourceFiles().post()
+            assert response.status_code == 200
+            keys.append(mock_apply.call_args.kwargs["kwargs"]["idempotency_key"])
+
+        assert all(key and key.startswith(f"reingest-source:{user}:{src['id']}:") for key in keys)
+        assert keys[0] != keys[1]
+
     def test_remove_missing_file_paths_returns_400(self, app, pg_conn):
         from docsgpt.api.user.sources.upload import ManageSourceFiles
 
@@ -1086,7 +1219,7 @@ class TestManageSourceFiles:
         ), patch(
             "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             return_value=fake_task,
-        ), app.test_request_context(
+        ) as apply_async, app.test_request_context(
             "/api/manage_source_files", method="POST",
             data={
                 "source_id": str(src["id"]),
@@ -1100,6 +1233,8 @@ class TestManageSourceFiles:
             response = ManageSourceFiles().post()
         assert response.status_code == 200
         assert "a.txt" in response.json["removed_files"]
+        # The caller receives the reingest's events (a team editor isn't the owner).
+        assert apply_async.call_args.kwargs["kwargs"]["actor_id"] == user
 
     def test_remove_directory_missing_path(self, app, pg_conn):
         from docsgpt.api.user.sources.upload import ManageSourceFiles

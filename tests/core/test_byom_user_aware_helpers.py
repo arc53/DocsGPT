@@ -583,7 +583,7 @@ class TestSharedAgentResolvesOwnerBYOM:
         assert sp.model_id == owner_model["id"]
         assert sp.model_user_id == "owner"
 
-    def test_classic_rag_rephrase_resolves_owner_byom(self, pg_conn, monkeypatch):
+    def test_classic_rag_rephrase_resolves_owner_byom(self, pg_conn, monkeypatch, public_dns):
         """ClassicRAG must resolve a BYOM model_id through LLMCreator so
         the rephrase LLM gets the owner's api_key/base_url and dispatches
         the upstream model name (e.g. ``mistral-large-latest``) — not the
@@ -1204,7 +1204,7 @@ class TestNonAgentCallSitesUseUpstreamId:
 @pytest.mark.unit
 class TestAgentSendsUpstreamModelId:
     def test_llm_gen_passes_upstream_id_to_provider(
-        self, pg_conn, byom_model
+        self, pg_conn, byom_model, public_dns
     ):
         """End-to-end: ClassicAgent's _llm_gen must put the user's
         upstream model name (``mistral-large-latest``) in the call to
