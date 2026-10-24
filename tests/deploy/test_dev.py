@@ -329,3 +329,109 @@ class TestReloadingCommand:
             "docsgpt.cli.main",
             str(watched),
         ]
+
+
+@pytest.mark.skipif(not dev.watchfiles_available(), reason="the reload commands run under the watchfiles CLI")
+class TestReloadingCommandExecution:
+    """The reload commands executed: what the real watchfiles CLI does with them, in-process.
+
+    On Windows ``docsgpt dev`` wraps the worker in
+    ``python -m watchfiles --filter python --target-type function --args <cli args> docsgpt.cli.main``.
+    These tests run that command through the real watchfiles argument parser, its ``sys.argv``
+    injection and its own function-target executor, so the arguments are proven to reach
+    ``docsgpt.cli.main`` and to parse as the intended ``docsgpt`` command. Nothing is watched and
+    nothing is spawned: the watching loop is intercepted and the target runs in-process, the way
+    the process watchfiles spawns would run it.
+    """
+
+    @pytest.fixture
+    def windows(self, monkeypatch):
+        monkeypatch.setattr(sys, "platform", "win32")
+
+    @pytest.fixture
+    def analytics_on(self, monkeypatch):
+        monkeypatch.setattr(dev, "analytics_enabled", lambda home: True)
+
+    @pytest.fixture
+    def analytics_off(self, monkeypatch):
+        monkeypatch.setattr(dev, "analytics_enabled", lambda home: False)
+
+    def _delivered(self, monkeypatch, command):
+        """The ``docsgpt.cli.main`` argv watchfiles delivers for ``command``, without watching or spawning.
+
+        Args:
+            monkeypatch: The test's patcher.
+            command: A full ``python -m watchfiles ...`` command list; ``command[3:]`` is what follows
+                ``-m watchfiles``, exactly what ``python -m watchfiles`` would hand the CLI.
+
+        Returns:
+            One entry per target call: the ``sys.argv[1:]`` the entry point saw.
+        """
+        from watchfiles import cli as watchfiles_cli
+        from watchfiles.run import run_function
+
+        delivered = []
+
+        def fake_main(argv=None):
+            # The entry point is called with nothing and reads sys.argv, which the CLI has injected.
+            delivered.append(list(sys.argv[1:] if argv is None else argv))
+            return 0
+
+        # import_string resolves the entry point through the module's attribute, so this is the spot.
+        monkeypatch.setattr("docsgpt.cli.main", fake_main)
+
+        def fake_run_process(*paths, target, target_type, **kwargs):
+            assert target_type == "function", f"watchfiles would run the target as a {target_type}"
+            # The body of the process watchfiles spawns for a function target; its Windows tty is None.
+            run_function(target, None, (), {})
+            return 0
+
+        monkeypatch.setattr("watchfiles.cli.run_process", fake_run_process)
+        # Restored after the test, even though the CLI reassigns sys.argv itself.
+        monkeypatch.setattr(sys, "argv", ["watchfiles", *command[3:]])
+        watchfiles_cli.cli(*command[3:])
+        return delivered
+
+    def _parsed(self, argv):
+        """What the real ``docsgpt`` parser makes of the delivered argv, without dispatching it."""
+        from docsgpt.cli import _worker, build_parser
+
+        parsed = build_parser().parse_args(argv)
+        assert parsed.command == "worker"
+        assert parsed.loglevel == "INFO"
+        assert parsed.func is _worker
+        return parsed
+
+    @pytest.mark.parametrize(
+        "python_path",
+        [
+            r"D:\DocsGPT\.venv\Scripts\python.exe",
+            r"D:\My Projects\DocsGPT\.venv\Scripts\python.exe",
+        ],
+    )
+    def test_the_worker_s_args_reach_the_cli_entry_intact(
+        self, tmp_path, monkeypatch, windows, analytics_off, python_path
+    ):
+        """A launcher path full of backslashes and spaces still hands the worker exactly its own arguments."""
+        (tmp_path / "docsgpt").mkdir()  # watchfiles resolves the watched path; a checkout has the package
+        worker = dev.plan(_args(), tmp_path, watching=True, launcher=[python_path, "-m", "docsgpt"])[1]
+
+        delivered = self._delivered(monkeypatch, worker.command)
+
+        assert delivered == [["worker", "-l", "INFO"]]
+        assert self._parsed(delivered[0]).analytics is False
+        # Auxiliary only: the fragile launcher path must not reach watchfiles in any form.
+        assert not any(python_path in part for part in worker.command)
+
+    def test_the_analytics_worker_s_args_reach_the_cli_entry_intact(self, tmp_path, monkeypatch, windows, analytics_on):
+        """The analytics worker travels the same path with its own flag, whatever the launcher looks like."""
+        (tmp_path / "docsgpt").mkdir()
+        launcher = [r"D:\My Projects\DocsGPT\.venv\Scripts\python.exe", "-m", "docsgpt"]
+        children = dev.plan(_args(), tmp_path, watching=True, launcher=launcher)
+
+        assert _named(children) == ["api", "worker", "analytics"]
+
+        delivered = self._delivered(monkeypatch, children[2].command)
+
+        assert delivered == [["worker", "--analytics", "-l", "INFO"]]
+        assert self._parsed(delivered[0]).analytics is True
