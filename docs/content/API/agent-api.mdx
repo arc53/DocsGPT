@@ -445,7 +445,7 @@ To attach an image (or other file) to a query:
 3. Read `result.attachment_id` from task result.
 4. Send that ID in `/stream` as `attachments: ["..."]`.
 
-A task can be polled only by whoever started it. An upload sent with a JWT or personal access token needs the same token on the poll. An upload sent with only an `api_key` is polled without one; its `task_id` is the credential, so keep it private. Any other poll gets `404`.
+A task can be polled only by whoever started it. An upload sent with a JWT or personal access token can be polled with any token for the same user. An upload sent with only an `api_key` is polled without one; its `task_id` is the credential, so keep it private. Any other poll gets `404`.
 
 <Callout type="warning">
 Attachments are processed asynchronously. Do not call `/stream` with an attachment until its task has finished with `SUCCESS`.

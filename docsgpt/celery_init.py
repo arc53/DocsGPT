@@ -4,6 +4,7 @@ import inspect
 import logging
 import sys
 import threading
+from typing import Any, Optional
 
 from celery import Celery
 from docsgpt.core import log_context
@@ -164,7 +165,7 @@ def _reclaim_memory_after_task(task=None, **kwargs):
 
 
 @before_task_publish.connect
-def _record_task_owner(sender=None, headers=None, **kwargs):
+def _record_task_owner(sender: Optional[str] = None, headers: Optional[dict] = None, **kwargs: Any) -> None:
     """Record who may poll the task through ``/api/task_status``.
 
     Import is lazy, like the handlers above, so the worker never loads the
