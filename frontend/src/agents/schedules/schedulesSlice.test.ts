@@ -480,6 +480,50 @@ describe('schedulesSlice cross-agent list', () => {
       expect(state.all?.map((s) => s.id)).toEqual(['sched-new', 'sched-1']);
     });
 
+    const completed = sseEventReceived({
+      id: 'evt-10',
+      type: 'schedule.completed',
+      payload: { schedule_id: 'sched-1' },
+    } as SSEEvent);
+
+    it('keeps a status event that arrived meanwhile', () => {
+      let state = reducer(loading(), completed);
+      state = reducer(
+        state,
+        loadAllSchedules.fulfilled(
+          // Read before the schedule completed, after the agent list loaded.
+          [sampleSchedule({ updated_at: '2026-05-20T12:00:00Z' })],
+          'load',
+          { token: null },
+        ),
+      );
+      expect(state.all?.[0].status).toBe('completed');
+      expect(
+        selectScheduleById({ schedules: state }, 'sched-1', 'agent-1')?.status,
+      ).toBe('completed');
+    });
+
+    it('replays saves and events in the order they came', () => {
+      let state = reducer(
+        loading(),
+        sseEventReceived({
+          id: 'evt-11',
+          type: 'schedule.autopaused',
+          payload: { schedule_id: 'sched-1' },
+        } as SSEEvent),
+      );
+      state = reducer(
+        state,
+        setSchedulePaused.fulfilled(sampleSchedule(), 'r', {
+          id: 'sched-1',
+          action: 'resume',
+          token: null,
+        }),
+      );
+      state = reducer(state, answer());
+      expect(state.all?.[0].status).toBe('active');
+    });
+
     it('keeps a schedule deleted meanwhile deleted', () => {
       let state = reducer(
         loading(),
