@@ -2990,11 +2990,6 @@
         "publishDescription": "預覽會與已發佈的代理對話。草稿在發佈前會保持私密。",
         "unsavedChanges": "你有未儲存的變更。儲存之前，預覽會使用已儲存的版本。"
       },
-      "dangerZone": {
-        "heading": "危險區域",
-        "description": "刪除此代理將無法復原，並會移除其所有排程和執行歷史。",
-        "deleteButton": "刪除代理"
-      },
       "externalKb": "外部知識庫",
       "errors": {
         "publishFailed": "無法發布該助理，請重試。",

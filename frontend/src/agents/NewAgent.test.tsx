@@ -1179,30 +1179,31 @@ describe('NewAgent gating by role', () => {
   const lastGuardrailsDisabled = () =>
     mocks.guardrailsProps.mock.calls.at(-1)?.[0].disabled;
 
-  it('gives the owner Share, Access details and the danger zone', async () => {
+  it('gives the owner Access details, Share and Delete', async () => {
     await renderEdit('owner', OWNER);
-    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeDefined();
     expect(await menuLabels()).toEqual([
       'agents.form.buttons.accessDetails',
       'agents.shareWithTeam',
+      'agents.form.buttons.delete',
     ]);
   });
 
-  it('draws the danger zone as the one tinted card with a field pill', async () => {
+  // Delete is the menu's last item, set apart by a rule, as on a source's
+  // and a workflow's ⋯; the form has no danger zone.
+  it('puts Delete last in the menu, after a rule', async () => {
     await renderEdit('owner', OWNER);
-    const del = buttonByText('agents.form.dangerZone.deleteButton')!;
-    expect(del.dataset.variant).toBe('destructive-outline');
-    expect(del.dataset.size).toBe('field');
-    expect(del.dataset.shape).toBe('pill');
-    const card = del.closest<HTMLElement>('[data-slot="card"]')!;
-    expect(card.dataset.tone).toBe('destructive');
-    expect(card.dataset.padding).toBe('lg');
-    expect(card.className).toContain('items-center');
+    await menuLabels();
+    const items = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    );
+    const del = items.at(-1)!;
+    expect(del.textContent).toBe('agents.form.buttons.delete');
+    expect(del.dataset.variant).toBe('destructive');
+    expect(del.previousElementSibling?.getAttribute('role')).toBe('separator');
   });
 
   it('hides Share and Delete from an editor but keeps Access details', async () => {
     await renderEdit('editor', EDITOR);
-    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeUndefined();
     expect(await menuLabels()).toEqual(['agents.form.buttons.accessDetails']);
   });
 
@@ -1316,8 +1317,11 @@ describe('NewAgent gating by role', () => {
       jsonResponse({ message: 'Only the owner can delete' }, false),
     );
     await renderEdit('owner', OWNER);
+    await menuLabels();
     await act(async () =>
-      buttonByText('agents.form.dangerZone.deleteButton')!.click(),
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((item) => item.textContent === 'agents.form.buttons.delete')!
+        .click(),
     );
     await act(async () =>
       container

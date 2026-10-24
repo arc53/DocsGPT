@@ -63,7 +63,7 @@ page has no actions (Logs), so the rule lands in the same place on every page.
 five pages are `SectionShell` pages at the default width; the agent preview
 is a drawer (see DESIGN.md › Modal, not Dialog). Overview groups its fields into three
 `subtle lg` panels (Basics, Knowledge and behaviour, Model) with the two-up
-field grid, then Advanced, Guardrails, Insights and the danger zone. Schedules shows a
+field grid, then Advanced, Guardrails and Insights. Schedules shows a
 `StatCard` row, Recurring / One-time as `ui/tabs`, and
 each schedule as a `ScheduleRow` (see Agent pages).
 
@@ -88,9 +88,10 @@ field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
   phone, where the main one stretches across it (`flex-1 sm:flex-none`;
   `PageToolbar`'s action slot spans the stacked row below `sm`, the ⋯ at its
   end). The workflow builder's toolbar keeps its ⋯ at the row's end too, holding Edit details, Access
-  details, Share with team and Delete (see Workflow builder). The
-  agent's Delete is in Overview's danger zone; only the workflow builder's
-  toolbar has it in the ⋯ menu, as a `destructive` item. The row itself is
+  details, Share with team and Delete (see Workflow builder). Delete is the
+  agent ⋯'s last item on both, a `destructive` item after a rule
+  (`separatorBefore`) that opens the confirm; Overview's menu comes from
+  `agents/hooks/useAgentMenu`, which also draws the dialogs. The row itself is
   `agents/components/AgentPageToolbar` (see Page chrome). A row's common
   action is `outline sm pill` (a schedule's Run now or Resume) with its other
   actions in the row's `ActionMenu`; a delete there is a `destructive` item
@@ -106,8 +107,7 @@ Cards (the recipes by role in DESIGN.md › Card surfaces, applied here):
   Off while the agent collects none). The toggle
   and its Collapsible share a plain `<div>`, and the body opens with `pt-5`
   (its rows in a `flex flex-col gap-5` column, no `mt-*`), so every section
-  has 20px under its title and none under a closed toggle. The danger zone
-  follows them (see DESIGN.md › Card, Danger zone).
+  has 20px under its title and none under a closed toggle.
 - Guardrails' stage panels (one per active check and stage) are `Card
 variant="subtle" padding="sm"`, `tone="destructive"` while the control
   needs setup; their fields use `float={false}` on that fill (see DESIGN.md ›

@@ -3005,11 +3005,6 @@
         "publishDescription": "The preview chats with the published agent. Drafts stay private until you publish.",
         "unsavedChanges": "You have unsaved changes. The preview uses the saved version until you save."
       },
-      "dangerZone": {
-        "heading": "Danger zone",
-        "description": "Deleting this agent is permanent and will remove all its schedules and run history.",
-        "deleteButton": "Delete agent"
-      },
       "externalKb": "External KB",
       "errors": {
         "publishFailed": "Could not publish the agent. Please try again.",

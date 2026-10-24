@@ -3092,11 +3092,6 @@
         "publishDescription": "L’aperçu converse avec l’agent publié. Les brouillons restent privés jusqu’à leur publication.",
         "unsavedChanges": "Vous avez des modifications non enregistrées. L’aperçu utilise la version enregistrée jusqu’à ce que vous enregistriez."
       },
-      "dangerZone": {
-        "heading": "Zone de danger",
-        "description": "La suppression de cet agent est définitive et retirera toutes ses planifications et son historique d’exécutions.",
-        "deleteButton": "Supprimer l’agent"
-      },
       "externalKb": "Base de connaissances externe",
       "errors": {
         "publishFailed": "Impossible de publier l’agent. Veuillez réessayer.",

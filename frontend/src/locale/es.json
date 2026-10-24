@@ -3092,11 +3092,6 @@
         "publishDescription": "La vista previa chatea con el agente publicado. Los borradores siguen siendo privados hasta que los publiques.",
         "unsavedChanges": "Tienes cambios sin guardar. La vista previa usa la versión guardada hasta que guardes."
       },
-      "dangerZone": {
-        "heading": "Zona de peligro",
-        "description": "Eliminar este agente es permanente y eliminará todas sus programaciones e historial de ejecuciones.",
-        "deleteButton": "Eliminar agente"
-      },
       "externalKb": "KB Externa",
       "errors": {
         "publishFailed": "No se pudo publicar el agente. Inténtalo de nuevo.",

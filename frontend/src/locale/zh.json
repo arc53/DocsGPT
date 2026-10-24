@@ -2988,11 +2988,6 @@
         "publishDescription": "预览会与已发布的智能体对话。草稿在发布前保持私密。",
         "unsavedChanges": "你有未保存的更改。保存之前，预览使用已保存的版本。"
       },
-      "dangerZone": {
-        "heading": "危险区域",
-        "description": "删除此智能体将无法恢复，并会移除其所有计划和运行历史。",
-        "deleteButton": "删除智能体"
-      },
       "externalKb": "外部知识库",
       "errors": {
         "publishFailed": "无法发布该助手，请重试。",

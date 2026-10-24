@@ -255,7 +255,7 @@ Patterns:
   carries `min-w-0 shrink`, like the fields it sits among. The phone top bar's
   title is the worked example (PATTERNS.md › App chrome).
 - Roles for dangerous and dismissive actions: a delete on a page (a "Danger
-  zone" card's Delete agent or Revoke, Delete all; see Card › Danger zone) is
+  zone" card's Revoke or Delete all; see Card › Danger zone) is
   `destructive-outline`;
   the submit of a confirm dialog is `destructive` (`ModalActions destructive`,
   `ConfirmationModal variant="destructive"`); Cancel is `ghost` at the size and
@@ -423,12 +423,13 @@ Recipes by role:
   tools) is a `SectionHeader size="xs"` over `Card padding="none"
   overflow-hidden` holding `ListRows`.
 - A schedule row: see PATTERNS.md › Agent pages.
-- **Danger zone** (Delete agent, Revoke a device, Settings → General's Delete
-  all): `Card tone="destructive" padding="lg"` laid out as a wrapping row
+- **Danger zone** (Revoke a device, Settings → General's Delete all; an
+  object you can open, such as an agent or a source, is deleted from its ⋯
+  instead): `Card tone="destructive" padding="lg"` laid out as a wrapping row
   (`flex-row flex-wrap items-center justify-between`), a `SectionHeader
 tone="destructive"` (the title, and the consequence as its `description`)
   and one `destructive-outline field pill` Button whose label is the action
-  ("Delete agent", "Revoke"), which opens the confirm (see Confirm dialogs).
+  ("Revoke", "Delete all"), which opens the confirm (see Confirm dialogs).
   A failing stat is `tone="destructive"` too. Muted text fails AA on the red fill, so the tone turns
   every `text-muted-foreground` inside it to `foreground`, except a hovered
   Button, which keeps its hover colour (a `ghost-destructive` Remove still
