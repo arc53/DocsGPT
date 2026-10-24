@@ -140,10 +140,11 @@ export default function RepliesPanel({ data }: { data: ConversationInsights }) {
         <SectionHeader as="h3" size="sm" title={heading} />
         <ShareBars
           ariaLabel={heading}
-          rows={parts.map(({ key, label, share }) => ({
+          rows={parts.map(({ key, label, share, tone }) => ({
             key,
             label,
             rate: share,
+            tone,
           }))}
         />
       </div>

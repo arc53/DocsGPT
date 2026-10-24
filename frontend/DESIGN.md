@@ -949,7 +949,8 @@ its Retry follows the locale too. Never a bare `text-destructive` paragraph.
 ### Progress (`ui/progress.tsx`)
 
 `value` 0 to 100, `variant`: `default`, `success`, `warning`,
-`destructive`, `info`; `size`: `sm`, `default`. Replaces the
+`destructive`, `info`, `muted` (a share that is neither good nor bad);
+`size`: `sm`, `default`. Replaces the
 width-percent divs in quota, indexing and guardrail views, and is the track
 of Insights' share bars (`settings/insights/ShareBars`: label, Progress, whole
 percent, one `sr-only` run per row) and of its Analyzing state.

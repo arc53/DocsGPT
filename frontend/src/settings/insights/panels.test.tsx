@@ -286,6 +286,11 @@ describe('insight panels', () => {
       `${P}.panels.barLabel(${P}.options.answerStatus.declined|13%)`,
       `${P}.panels.barLabel(${P}.options.answerStatus.clarifying|13%)`,
     ]);
+    expect(
+      Array.from(list.querySelectorAll('[data-slot="progress"]')).map((bar) =>
+        bar.getAttribute('data-variant'),
+      ),
+    ).toEqual(['success', 'warning', 'muted', 'info']);
     // The headline without its strip: the bars are the mix.
     expect(headline().querySelector('li')).toBeNull();
   });
@@ -359,8 +364,18 @@ describe('insight panels', () => {
       container.querySelector(
         `[role="list"][aria-label="${P}.panels.${name}"]`,
       );
-    expect(named('reaction')!.querySelectorAll('li')).toHaveLength(4);
-    expect(named('tone')!.querySelectorAll('li')).toHaveLength(3);
+    // Each bar in its meaning's colour, as in the chart: the neutral kind grey.
+    const variants = (name: string) =>
+      Array.from(named(name)!.querySelectorAll('[data-slot="progress"]')).map(
+        (bar) => bar.getAttribute('data-variant'),
+      );
+    expect(variants('reaction')).toEqual([
+      'success',
+      'warning',
+      'destructive',
+      'muted',
+    ]);
+    expect(variants('tone')).toEqual(['success', 'muted', 'destructive']);
     expect(headline().textContent).toContain('30%');
   });
 

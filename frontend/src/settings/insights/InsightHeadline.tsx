@@ -4,10 +4,9 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 
-import { formatShare, type PeriodChange } from './format';
+import { formatShare, type MixTone, type PeriodChange } from './format';
 
-/** The token a mix part is drawn in, the same as its series in the chart. */
-export type MixTone = 'success' | 'warning' | 'destructive' | 'info' | 'muted';
+export type { MixTone };
 
 const TONE_CLASS: Record<MixTone, string> = {
   success: 'bg-success',

@@ -27,6 +27,8 @@ const indicatorVariants = cva(
         warning: 'bg-warning',
         destructive: 'bg-destructive',
         info: 'bg-info',
+        // A share that is neither good nor bad (Insights' Neutral, Moved on).
+        muted: 'bg-muted-foreground',
       },
     },
     defaultVariants: { variant: 'default' },

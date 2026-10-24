@@ -223,7 +223,9 @@ far)", a panel "Not enough data yet", a tag row `—`.
   coarsens days to weeks while they average under 10 answers), labelled by
   `bucketLabel` ("17 Oct", "13–19 Oct", "14:00"). Fewer than `MIN_BUCKETS` (3)
   buckets with `MIN_SAMPLE` items each is no trend: the panel shows the
-  period's mix as `ShareBars` under the headline, without the strip.
+  period's mix as `ShareBars` under the headline, without the strip, each bar
+  in its series' colour (the row's `tone`, a `Progress` variant; `muted` for
+  the neutral kind).
 - Answer status stacks the four outcomes; greetings are not drawn. How users
   replied reads the same replies two ways, switched by a `ToggleGroup
   size="xs"` (Replies to answers / Sentiment) in the title row: the good kind
@@ -237,7 +239,8 @@ far)", a panel "Not enough data yet", a tag row `—`.
 - Share lists (Request type, Why not fully answered, Topics) are
   `ShareBars` in a `subtle lg` Card with a `SectionHeader as="h2" size="xs"` and a
   muted `text-xs` "Share of N answers" line: per row the label (`text-xs`,
-  wrapping, `sm:w-40`), a stock `ui/Progress` and the whole percent, as one
+  wrapping, `sm:w-40`), a stock `ui/Progress` (the brand colour: these
+  options have no good or bad) and the whole percent, as one
   `sr-only` text run ("How-to: 38%") with the drawing `aria-hidden`. A panel
   left alone on the last row spans both columns and lays its rows in two.
 - Topics (agent pages only; each agent has its own list) always spans both

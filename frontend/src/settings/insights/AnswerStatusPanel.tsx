@@ -106,10 +106,11 @@ export default function AnswerStatusPanel({
       >
         <ShareBars
           ariaLabel={title}
-          rows={mix.map(({ key, label, share }) => ({
+          rows={mix.map(({ key, label, share, tone }) => ({
             key,
             label,
             rate: share,
+            tone,
           }))}
         />
       </ChartPanel>

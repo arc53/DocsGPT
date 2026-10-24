@@ -261,11 +261,16 @@ export function formatEstimate(value: number, locale = intlLocale()): string {
   return formatCount(Math.round(value), locale);
 }
 
+/** The token a share is drawn in by its meaning, in a mix strip, a chart or a bar. */
+export type MixTone = 'success' | 'warning' | 'destructive' | 'info' | 'muted';
+
 /** A row of a share-bar panel; no `rate` draws "—" and an empty track. */
 export type BarRow = {
   key: string;
   label: string;
   rate?: number;
+  /** Colours the bar by meaning; without one it is the brand colour. */
+  tone?: MixTone;
 };
 
 /**
