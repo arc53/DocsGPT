@@ -10,6 +10,52 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 from docsgpt.parser.file.base_parser import BaseParser
 from docsgpt.utils import num_tokens_from_string
 
+# Only these names count as tags, so prose like "x < 10" or "List<String>" survives.
+_HTML_TAG_NAMES = """
+    a abbr address area article aside audio b base bdi bdo blockquote body br button canvas caption
+    center cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed
+    fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i
+    iframe img input ins kbd label legend li link main map mark menu meta meter nav noscript object
+    ol optgroup option output p param picture pre progress q rp rt ruby s samp script search
+    section select slot small source span strike strong style sub summary sup svg table tbody td
+    template textarea tfoot th thead time title tr track tt u ul var video wbr
+""".split()
+_HTML_TAG_PATTERN = "|".join(_HTML_TAG_NAMES)
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_HTML_TAG_LOWERCASE = re.compile(r"</?(?:%s)(?=[\s/>])[^<>]*>" % _HTML_TAG_PATTERN)
+# Tag-shapes inside an <svg> are all markup, so strip them there rather than
+# listing names like "path" globally, where they would eat prose placeholders.
+_SVG_ELEMENT = re.compile(r"<svg(?=[\s/>])[^<>]*>.*?</svg\s*>", re.DOTALL | re.IGNORECASE)
+_ANY_TAG = re.compile(r"<[^<>]*>")
+# Case only has to match for a bare tag, where <BR> cannot be told from
+# Array<Map>. Attributes or a trailing slash mark it as markup either way.
+_HTML_TAG_ANY_CASE = re.compile(
+    r"</?(?:%s)(?:\s+[^\s<>][^<>]*|\s*/)>" % _HTML_TAG_PATTERN,
+    re.IGNORECASE,
+)
+# A bare tag is markup when the same name closes somewhere in the text, however
+# it nests. Collected first, since removing pairs one at a time would orphan the
+# opening tag of any nested pair.
+_HTML_BARE_TAG = re.compile(r"</?(%s)\s*>" % _HTML_TAG_PATTERN, re.IGNORECASE)
+_HTML_CLOSING_TAG = re.compile(r"</(%s)\s*>" % _HTML_TAG_PATTERN, re.IGNORECASE)
+
+
+def _strip_html(text: str) -> str:
+    """Remove inline SVG markup, known HTML tags and HTML comments from text.
+
+    Comments go first, so a tag commented out cannot make a generic argument of
+    the same name look like markup.
+    """
+    text = _HTML_COMMENT.sub("", text)
+    text = _SVG_ELEMENT.sub(lambda match: _ANY_TAG.sub("", match.group(0)), text)
+    text = _HTML_TAG_ANY_CASE.sub("", text)
+    closed = {match.group(1).lower() for match in _HTML_CLOSING_TAG.finditer(text)}
+    if closed:
+        text = _HTML_BARE_TAG.sub(
+            lambda match: "" if match.group(1).lower() in closed else match.group(0), text
+        )
+    return _HTML_TAG_LOWERCASE.sub("", text)
+
 
 class MarkdownParser(BaseParser):
     """Markdown parser.
@@ -76,7 +122,7 @@ class MarkdownParser(BaseParser):
         if current_header is not None:
             # pass linting, assert keys are defined
             markdown_tups = [
-                (re.sub(r"#", "", cast(str, key)).strip(), re.sub(r"<.*?>", "", value))
+                (re.sub(r"#", "", cast(str, key)).strip(), _strip_html(value))
                 for key, value in markdown_tups
             ]
         else:
