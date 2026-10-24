@@ -2332,7 +2332,9 @@
           "selectedFiles": "Éléments sélectionnés",
           "selectFiles": "Sélectionner des fichiers ou dossiers",
           "noFilesSelected": "Aucun fichier ni dossier sélectionné pour l’instant.",
-          "removeItem": "Retirer {{name}}"
+          "removeItem": "Retirer {{name}}",
+          "shareFolders": "Pour synchroniser ces dossiers, partagez chacun dans Google Drive en tant que Lecteur avec :",
+          "filesOnly": "Ce serveur synchronise des fichiers, pas des dossiers entiers. Ouvrez un dossier dans le sélecteur pour choisir les fichiers qu’il contient."
         }
       },
       "fields": {

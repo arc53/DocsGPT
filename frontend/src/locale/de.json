@@ -2255,7 +2255,9 @@
           "selectedFiles": "Ausgewählte Elemente",
           "selectFiles": "Dateien oder Ordner auswählen",
           "noFilesSelected": "Noch keine Dateien oder Ordner ausgewählt.",
-          "removeItem": "{{name}} entfernen"
+          "removeItem": "{{name}} entfernen",
+          "shareFolders": "Damit diese Ordner synchronisiert werden, gib jeden in Google Drive mit Leseberechtigung frei für:",
+          "filesOnly": "Dieser Server synchronisiert Dateien, keine ganzen Ordner. Öffne einen Ordner in der Auswahl, um die Dateien darin auszuwählen."
         }
       },
       "fields": {

@@ -2246,7 +2246,9 @@
           "selectedFiles": "已选择的项目",
           "selectFiles": "选择文件或文件夹",
           "noFilesSelected": "尚未选择文件或文件夹。",
-          "removeItem": "移除 {{name}}"
+          "removeItem": "移除 {{name}}",
+          "shareFolders": "要同步这些文件夹，请在 Google 云端硬盘中将每个文件夹以查看者身份共享给：",
+          "filesOnly": "此服务器同步文件，而不是整个文件夹。在选择器中打开文件夹即可选择其中的文件。"
         }
       },
       "fields": {

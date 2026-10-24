@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-23
+lastUpdated: 2026-10-24
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1512,6 +1512,18 @@ Google OAuth client id.
 Type `str`, default unset.
 
 Google OAuth client secret.
+
+### `GOOGLE_DRIVE_ACCESS`
+
+Type `"file" | "readonly"`, default `file`.
+
+What the Google Drive sign-in asks for. `file`: only the files and folders a user picks in Google's picker (`drive.file`, which Google does not restrict); a folder's contents are read through `GOOGLE_SERVICE_ACCOUNT_KEY`. `readonly`: the whole Drive (`drive.readonly`, a restricted scope that needs Google's verification for an External app), so folders need no service account.
+
+### `GOOGLE_SERVICE_ACCOUNT_KEY`
+
+Type `str`, default unset.
+
+JSON key of a Google service account, or the path to the key file. With `GOOGLE_DRIVE_ACCESS=file`, users share a folder with the account's email to sync the whole folder.
 
 ### `CONNECTOR_REDIRECT_BASE_URI`
 
