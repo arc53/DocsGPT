@@ -781,11 +781,9 @@
           "inAnswers_other": "回答 {{formatted}} 件中"
         },
         "panels": {
-          "answerStatus": "回答状況の推移",
-          "sentiment": "感情の推移",
+          "answerStatus": "回答状況",
           "whyNot": "完全に回答されなかった理由",
           "requestType": "依頼の種類",
-          "implicitFeedback": "回答への返信",
           "shareOfAnswers_one": "回答 {{formatted}} 件に占める割合",
           "shareOfAnswers_other": "回答 {{formatted}} 件に占める割合",
           "shareOfMessages_one": "メッセージ {{formatted}} 件に占める割合",
@@ -798,7 +796,6 @@
           "barLabelNone": "{{name}}: データがまだ足りません",
           "noneOfThese": "どのトピックにも該当しない",
           "empty": "この期間に表示する内容はありません。",
-          "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "質問 {{formatted}} 件中",
           "ofQuestions_other": "質問 {{formatted}} 件中",
           "topics": "トピック",
@@ -807,7 +804,13 @@
             "title": "トピックはまだありません",
             "description": "トピックを追加すると、ユーザーが何について尋ねているかがわかります。",
             "action": "トピックを設定"
-          }
+          },
+          "replies": "ユーザーの返信",
+          "reaction": "回答への返信",
+          "tone": "感情",
+          "tooltipItem": "{{name}}: {{value}}",
+          "notDrawnMovedOn": "新しい質問や追加の質問、補足など、次の話題へ移った返信は描画されません。",
+          "notDrawnNeutral": "中立的な返信は描画されません。"
         },
         "labelNamesInline": {
           "answer_status": "回答状況",
@@ -836,7 +839,8 @@
           "reaction": {
             "thanks": "お礼・確認",
             "reAsk": "再質問",
-            "pushbackOrComplaint": "反論・苦情"
+            "pushbackOrComplaint": "反論・苦情",
+            "movedOn": "次の話題へ"
           },
           "requestType": {
             "troubleshooting": "トラブルシューティング",
@@ -888,6 +892,10 @@
           "button": "設定",
           "title": "インサイトの設定",
           "saveFailed": "インサイトの設定を保存できませんでした。もう一度お試しください。"
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "再質問・反論",
+          "previous": "前の期間: {{value}}"
         }
       },
       "gaps": {
@@ -1446,6 +1454,7 @@
       "noToolsFound": "ツールが見つかりません",
       "selectToolSetup": "ツールを追加",
       "settingsIconAlt": "設定アイコン",
+      "toolActions": "ツールアクション",
       "configureToolAria": "{{toolName}}を設定",
       "manageTools": "ツールへ移動",
       "edit": "編集",
@@ -1610,13 +1619,11 @@
       "access": "アクセス",
       "connection": "接続",
       "hostLabel": "ホスト",
-      "dangerZone": "危険ゾーン",
       "approvalAskDescription": "実行前にすべてのコマンドを承認します。",
       "approvalFullDescription": "安全のための拒否リストを除き、すべてのコマンドを確認なしで実行します。",
       "fullAccessWarning": "フルアクセス: エージェントは確認なしでこのマシン上の任意のコマンドを実行できます。安全のための拒否リストは引き続き適用されます。",
       "deviceIdLabel": "デバイスID",
       "offlineHint": "接続されていません。マシン上で `docsgpt-cli host` を実行してオンラインにしてください。",
-      "dangerZoneDescription": "取り消すと、デバイス上のデーモンが停止し、ペアリングが解除されます。",
       "auditTitle": "最近のアクティビティ",
       "auditLoading": "読み込み中…",
       "auditEmpty": "アクティビティはまだありません。",
@@ -2989,11 +2996,6 @@
         "publishTitle": "公開してプレビュー",
         "publishDescription": "プレビューは公開済みのエージェントとチャットします。下書きは公開するまで非公開のままです。",
         "unsavedChanges": "保存されていない変更があります。保存するまで、プレビューは保存済みのバージョンを使います。"
-      },
-      "dangerZone": {
-        "heading": "危険ゾーン",
-        "description": "このエージェントを削除すると元に戻せません。すべてのスケジュールと実行履歴も削除されます。",
-        "deleteButton": "エージェントを削除"
       },
       "externalKb": "外部KB",
       "errors": {

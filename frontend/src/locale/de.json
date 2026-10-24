@@ -784,11 +784,9 @@
           "inAnswers_other": "in {{formatted}} Antworten"
         },
         "panels": {
-          "answerStatus": "Antwortstatus im Zeitverlauf",
-          "sentiment": "Stimmung im Zeitverlauf",
+          "answerStatus": "Antwortstatus",
           "whyNot": "Warum nicht vollständig beantwortet",
           "requestType": "Art der Anfrage",
-          "implicitFeedback": "Reaktionen auf Antworten",
           "shareOfAnswers_one": "Anteil an {{formatted}} Antwort",
           "shareOfAnswers_other": "Anteil an {{formatted}} Antworten",
           "shareOfMessages_one": "Anteil an {{formatted}} Nachricht",
@@ -801,7 +799,6 @@
           "barLabelNone": "{{name}}: noch nicht genug Daten",
           "noneOfThese": "Keines dieser Themen",
           "empty": "In diesem Zeitraum gibt es nichts anzuzeigen.",
-          "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "Von {{formatted}} Frage",
           "ofQuestions_other": "Von {{formatted}} Fragen",
           "topics": "Themen",
@@ -810,7 +807,13 @@
             "title": "Noch keine Themen",
             "description": "Füge Themen hinzu, um zu sehen, worüber Leute fragen.",
             "action": "Themen einrichten"
-          }
+          },
+          "replies": "Wie Nutzer antworteten",
+          "reaction": "Reaktionen auf Antworten",
+          "tone": "Stimmung",
+          "tooltipItem": "{{name}}: {{value}}",
+          "notDrawnMovedOn": "Folgenachrichten, die weitergehen oder etwas ergänzen, etwa eine neue Frage oder eine Nachfrage, werden nicht gezeichnet.",
+          "notDrawnNeutral": "Neutrale Folgenachrichten werden nicht gezeichnet."
         },
         "labelNamesInline": {
           "answer_status": "Antwortstatus",
@@ -839,7 +842,8 @@
           "reaction": {
             "thanks": "Dank oder Bestätigung",
             "reAsk": "Erneut gefragt",
-            "pushbackOrComplaint": "Widerspruch oder Beschwerde"
+            "pushbackOrComplaint": "Widerspruch oder Beschwerde",
+            "movedOn": "Weitergemacht"
           },
           "requestType": {
             "troubleshooting": "Fehlerbehebung",
@@ -891,6 +895,10 @@
           "button": "Einstellungen",
           "title": "Einstellungen für Einblicke",
           "saveFailed": "Die Einstellungen für Einblicke konnten nicht gespeichert werden. Versuche es noch einmal."
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "Erneut gefragt oder widersprochen",
+          "previous": "Voriger Zeitraum: {{value}}"
         }
       },
       "gaps": {
@@ -1449,6 +1457,7 @@
       "noToolsFound": "Keine Werkzeuge gefunden",
       "selectToolSetup": "Werkzeug hinzufügen",
       "settingsIconAlt": "Einstellungssymbol",
+      "toolActions": "Tool-Aktionen",
       "configureToolAria": "{{toolName}} konfigurieren",
       "manageTools": "Zu den Werkzeugen",
       "edit": "Bearbeiten",
@@ -1613,13 +1622,11 @@
       "access": "Zugriff",
       "connection": "Verbindung",
       "hostLabel": "Host",
-      "dangerZone": "Gefahrenzone",
       "approvalAskDescription": "Jeden Befehl vor der Ausführung genehmigen.",
       "approvalFullDescription": "Führt jeden Befehl ohne Nachfrage aus, mit Ausnahme der Sicherheits-Sperrliste.",
       "fullAccessWarning": "Vollzugriff: Agenten können auf diesem Rechner jeden Befehl ohne Nachfrage ausführen. Die Sicherheits-Sperrliste gilt weiterhin.",
       "deviceIdLabel": "Geräte-ID",
       "offlineHint": "Nicht verbunden. Führe `docsgpt-cli host` auf dem Rechner aus, um es online zu bringen.",
-      "dangerZoneDescription": "Das Widerrufen stoppt den Daemon auf dem Gerät und entfernt die Kopplung.",
       "auditTitle": "Letzte Aktivität",
       "auditLoading": "Laden…",
       "auditEmpty": "Noch keine Aktivität.",
@@ -3004,11 +3011,6 @@
         "publishTitle": "Zum Testen veröffentlichen",
         "publishDescription": "Die Vorschau chattet mit dem veröffentlichten Agenten. Entwürfe bleiben privat, bis Sie sie veröffentlichen.",
         "unsavedChanges": "Sie haben ungespeicherte Änderungen. Die Vorschau nutzt die gespeicherte Version, bis Sie speichern."
-      },
-      "dangerZone": {
-        "heading": "Gefahrenzone",
-        "description": "Das Löschen dieses Agenten ist endgültig und entfernt alle seine Zeitpläne und den Ausführungsverlauf.",
-        "deleteButton": "Agent löschen"
       },
       "externalKb": "Externe KB",
       "errors": {

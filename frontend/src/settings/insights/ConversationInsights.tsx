@@ -12,20 +12,16 @@ import { cn } from '@/lib/utils';
 import { canAgent } from '../../agents/agentAccess';
 import type { Agent } from '../../agents/types';
 import StatCard from '../../components/StatCard';
-import { useChartPalette } from '../../utils/chartUtils';
 import {
   EMPTY_VALUE,
   formatCount,
-  formatDate,
   headingLocale,
   intlLocale,
 } from '../../utils/dateTimeUtils';
-import AnalyticsChart from '../AnalyticsChart';
 import DocsGaps from '../DocsGaps';
 import { timeFilterKey } from '../TimeFilterSelect';
 import type { ConversationInsights as Insights } from '../types';
 import {
-  ANSWER_STATUS_SERIES,
   capitalize,
   formatEstimate,
   formatShare,
@@ -35,15 +31,14 @@ import {
   NONE_OF_THESE,
   optionBars,
   optionName,
-  shareOfDay,
   showsFigures,
   weakLanguages,
   type BarRow,
   type InsightsState,
 } from './format';
+import AnswerStatusPanel from './AnswerStatusPanel';
 import ChartPanel from './ChartPanel';
-import ImplicitFeedbackPanel from './ImplicitFeedbackPanel';
-import SentimentPanel from './SentimentPanel';
+import RepliesPanel from './RepliesPanel';
 import ShareBars from './ShareBars';
 
 const DOCS_URL =
@@ -64,7 +59,7 @@ const INLINE_LABELS = [
 const GAP_SKIP = ['none'];
 
 /** Chart panels ahead of the bar panels in the grid. */
-const CHARTS = 3;
+const CHARTS = 2;
 
 type ConversationInsightsProps = {
   state: InsightsState;
@@ -369,13 +364,7 @@ function InsightsSkeleton() {
     'asksHuman',
     'docsGaps',
   ] as const;
-  const panels = [
-    'answerStatus',
-    'sentiment',
-    'implicitFeedback',
-    'requestType',
-    'whyNot',
-  ] as const;
+  const panels = ['answerStatus', 'replies', 'requestType', 'whyNot'] as const;
   return (
     <>
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
@@ -539,7 +528,7 @@ function InsightTiles({ data }: { data: Insights }) {
   );
 }
 
-/** The panel grid: answer status over time, then the share-bar panels. */
+/** The panel grid: answer status and replies, then the share-bar panels. */
 function InsightPanels({
   data,
   onSetUpTopics,
@@ -577,15 +566,14 @@ function InsightPanels({
     },
   ];
 
-  // Rows of two with equal heights, paired by length: the three charts
-  // first, the third beside request type's nine rows, then why not alone,
-  // with its bars in two columns. Topics always spans the grid below them.
+  // Rows of two with equal heights: the two charts, then request type
+  // beside why not. A bar panel left alone on the last row spans both
+  // columns with its bars in two. Topics always spans the grid below them.
   const odd = (CHARTS + bars.length) % 2 === 1;
   return (
     <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
       <AnswerStatusPanel data={data} />
-      <SentimentPanel data={data} />
-      <ImplicitFeedbackPanel data={data} />
+      <RepliesPanel data={data} />
       {bars.map((panel, index) => (
         <BarsPanel
           key={panel.title}
@@ -717,80 +705,6 @@ function TopicsPanel({
       {half(onePickTitle, onePick(1, onePickTitle))}
       {half(overlapTitle, overlap(1, overlapTitle))}
     </div>,
-  );
-}
-
-/**
- * How questions were answered over time, each day as its share of that
- * day's four outcomes; greetings ("not a request") are left out.
- */
-function AnswerStatusPanel({ data }: { data: Insights }) {
-  const { t } = useTranslation();
-  const palette = useChartPalette();
-  const enough = (data.totals.answer_status?.n ?? 0) >= MIN_SAMPLE;
-  // Declining when the docs have nothing is "no answer", not a failure: the
-  // neutral grey Sentiment uses, so red stays for real negatives. The legend
-  // reads each dataset's colour, so it shows the same map.
-  const colors: Record<(typeof ANSWER_STATUS_SERIES)[number], string> = {
-    'fully answered': palette.success,
-    'partially answered': palette.warning,
-    'declined, no information': palette.mutedForeground,
-    'asked a clarifying question': palette.info,
-  };
-  const bucketTotal = (index: number) =>
-    ANSWER_STATUS_SERIES.reduce(
-      (sum, option) =>
-        sum + (data.series[index]?.labels.answer_status?.options[option] ?? 0),
-      0,
-    );
-  return (
-    <ChartPanel
-      title={t('settings.analytics.insights.panels.answerStatus')}
-      empty={
-        enough ? undefined : t('settings.analytics.insights.notEnoughShort')
-      }
-      data-testid="insight-answer-status"
-      chart={(legendId) => (
-        <AnalyticsChart
-          data={{
-            labels: data.series.map((bucket) => formatDate(bucket.bucket)),
-            datasets: ANSWER_STATUS_SERIES.map((option) => ({
-              label: optionName(t, 'answer_status', option),
-              data: data.series.map((bucket, index) =>
-                shareOfDay(
-                  bucket.labels.answer_status?.options[option] ?? 0,
-                  bucketTotal(index),
-                ),
-              ),
-              backgroundColor: colors[option],
-            })),
-          }}
-          legendID={legendId}
-          maxTicksLimitInX={8}
-          gridColor={palette.border}
-          tickColor={palette.mutedForeground}
-          isStacked
-          share
-          tooltipCallbacks={{
-            label: (item) =>
-              t('settings.analytics.insights.panels.tooltipShare', {
-                name: item.dataset.label,
-                value: formatShare(Number(item.raw)),
-                interpolation: { escapeValue: false },
-              }),
-            // The day's questions the bars share out: its four outcomes,
-            // greetings ("not a request") left out as in the bars.
-            footer: (items) => {
-              const n = Math.round(bucketTotal(items[0]?.dataIndex ?? -1));
-              return t('settings.analytics.insights.panels.ofQuestions', {
-                count: n,
-                formatted: formatCount(n),
-              });
-            },
-          }}
-        />
-      )}
-    />
   );
 }
 

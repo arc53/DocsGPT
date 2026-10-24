@@ -18,8 +18,9 @@ import { selectAnalyticsEnabled } from '../../../preferences/preferenceSlice';
 import AgentPageToolbar, {
   LastUsedMeta,
 } from '../../components/AgentPageToolbar';
+import { useAgentMenu } from '../../hooks/useAgentMenu';
 import { AGENTS_MANAGE_ROOT } from '../../paths';
-import type { Agent } from '../../types';
+import type { Agent, AgentConfig } from '../../types';
 
 /**
  * Stands in for the builder below ``lg``, where it has no layout.
@@ -34,16 +35,33 @@ import type { Agent } from '../../types';
  *   agent: The saved workflow, or null for a new one.
  *   loading: The saved workflow is still loading; a spinner, so a phone
  *     doesn't show the new-workflow screen first.
+ *   onDeleted: After a delete from the agent ⋯ (the builder's way back).
+ *   onKeyRegenerated: A key regenerated in Access details, for the builder.
+ *   onConfigChange: The config Access details saved, for the builder.
  */
 export default function MobileBlocker({
   agent,
   loading = false,
+  onDeleted,
+  onKeyRegenerated,
+  onConfigChange,
 }: {
   agent: Agent | null;
   loading?: boolean;
+  onDeleted?: () => void;
+  onKeyRegenerated?: (key: string) => void;
+  onConfigChange?: (config: AgentConfig) => void;
 }) {
   const { t } = useTranslation();
   const analyticsEnabled = useSelector(selectAnalyticsEnabled);
+  // The desktop builder's ⋯ offers Access details and Share on a draft too.
+  const agentMenu = useAgentMenu({
+    agent,
+    shareable: true,
+    onDeleted,
+    onKeyRegenerated,
+    onConfigChange,
+  });
   if (loading) {
     return (
       <div className="h-full lg:hidden">
@@ -121,7 +139,9 @@ export default function MobileBlocker({
               </div>
             ) : undefined
           }
+          menu={agentMenu.menu}
         />
+        {agentMenu.modals}
         {blocker('p')}
       </SectionShell>
     </div>

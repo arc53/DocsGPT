@@ -10,9 +10,13 @@ import {
 import { Bar } from 'react-chartjs-2';
 
 import { hoverColor, htmlLegendPlugin } from '../utils/chartUtils';
-import { formatShare } from './insights/format';
+import { formatCount } from '../utils/dateTimeUtils';
 
-import type { ChartData, TooltipOptions } from 'chart.js';
+import type {
+  ChartData,
+  ScriptableScaleContext,
+  TooltipOptions,
+} from 'chart.js';
 
 ChartJS.register(
   CategoryScale,
@@ -25,7 +29,8 @@ ChartJS.register(
 
 type AnalyticsChartProps = {
   data: ChartData<'bar'>;
-  legendID: string;
+  /** The HTML legend's container; without one the caller names the series itself. */
+  legendID?: string;
   maxTicksLimitInX: number;
   isStacked: boolean;
   /** Grid lines and axis borders (`--border`). */
@@ -35,10 +40,15 @@ type AnalyticsChartProps = {
   /** Chart.js tooltip callbacks, for a label or footer of the chart's own. */
   tooltipCallbacks?: Partial<TooltipOptions<'bar'>['callbacks']>;
   /**
-   * The data are shares (0–1) of each column: the y axis reads 0–100% in
-   * steps of 20%, whatever the column holds.
+   * One tooltip per column listing each of its series that has a value, and
+   * level x labels (short ones, such as "13–19 Oct", that never need turning).
    */
-  share?: boolean;
+  columnTooltip?: boolean;
+  /**
+   * Series drawn below zero (negative values) read as counts too: the y axis
+   * shows absolute values and the zero line is drawn in the tick colour.
+   */
+  diverging?: boolean;
 };
 
 /** The Analytics bar chart: theme colours, the HTML legend and hover tints. */
@@ -50,11 +60,21 @@ export default function AnalyticsChart({
   gridColor,
   tickColor,
   tooltipCallbacks,
-  share = false,
+  columnTooltip = false,
+  diverging = false,
 }: AnalyticsChartProps) {
+  const tooltip = {
+    ...(tooltipCallbacks ? { callbacks: tooltipCallbacks } : {}),
+    ...(columnTooltip
+      ? { filter: (item: { raw: unknown }) => Number(item.raw) !== 0 }
+      : {}),
+  };
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    ...(columnTooltip
+      ? { interaction: { mode: 'index' as const, intersect: false } }
+      : {}),
     plugins: {
       legend: {
         display: false,
@@ -64,7 +84,7 @@ export default function AnalyticsChart({
       htmlLegend: {
         containerID: legendID,
       },
-      ...(tooltipCallbacks ? { tooltip: { callbacks: tooltipCallbacks } } : {}),
+      tooltip,
     },
     scales: {
       x: {
@@ -79,13 +99,17 @@ export default function AnalyticsChart({
         ticks: {
           maxTicksLimit: maxTicksLimitInX,
           color: tickColor,
+          ...(columnTooltip ? { maxRotation: 0 } : {}),
         },
         stacked: isStacked,
       },
       y: {
         grid: {
           lineWidth: 0.2,
-          color: gridColor,
+          color: diverging
+            ? (context: ScriptableScaleContext) =>
+                context.tick?.value === 0 ? tickColor : gridColor
+            : gridColor,
         },
         border: {
           width: 0.2,
@@ -93,15 +117,15 @@ export default function AnalyticsChart({
         },
         ticks: {
           color: tickColor,
-          ...(share
+          // Insight counts are sums of probabilities: whole steps only.
+          ...(columnTooltip || diverging ? { precision: 0 } : {}),
+          ...(diverging
             ? {
-                stepSize: 0.2,
                 callback: (value: number | string) =>
-                  formatShare(Number(value)),
+                  formatCount(Math.abs(Number(value))),
               }
             : {}),
         },
-        ...(share ? { min: 0, max: 1 } : {}),
         stacked: isStacked,
       },
     },
@@ -109,7 +133,7 @@ export default function AnalyticsChart({
   return (
     <Bar
       options={options}
-      plugins={[htmlLegendPlugin]}
+      plugins={legendID ? [htmlLegendPlugin] : []}
       data={{
         ...data,
         datasets: data.datasets.map((dataset) => ({

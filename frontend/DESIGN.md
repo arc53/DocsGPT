@@ -89,8 +89,8 @@ A single series uses `chart-1`, the brand colour. When a series has a
 meaning, use the token for that meaning, not the next one in order:
 failed tool calls use `destructive`, succeeded ones `success`, pending
 ones `warning`. A series that is neither good nor bad is `muted-foreground`,
-not a status hue: Sentiment's Neutral and Answer status' "Said it didn't
-know" (declining when the docs have nothing is no failure). Series with no meaning (models, agents, sources) take
+not a status hue: Neutral sentiment, a reply that Moved on and Answer status'
+"Said it didn't know" (declining when the docs have nothing is no failure). Series with no meaning (models, agents, sources) take
 `chart-1` to `chart-5` in order. When there are more than five, the four
 largest keep `chart-1` to `chart-4` and the rest are summed into one
 "Other" series in `chart-5`, so no colour repeats (`settings/foldSeries.ts`).
@@ -255,7 +255,7 @@ Patterns:
   carries `min-w-0 shrink`, like the fields it sits among. The phone top bar's
   title is the worked example (PATTERNS.md › App chrome).
 - Roles for dangerous and dismissive actions: a delete on a page (a "Danger
-  zone" card's Delete agent or Revoke, Delete all; see Card › Danger zone) is
+  zone" card's Delete all; see Card › Danger zone) is
   `destructive-outline`;
   the submit of a confirm dialog is `destructive` (`ModalActions destructive`,
   `ConfirmationModal variant="destructive"`); Cancel is `ghost` at the size and
@@ -423,12 +423,13 @@ Recipes by role:
   tools) is a `SectionHeader size="xs"` over `Card padding="none"
   overflow-hidden` holding `ListRows`.
 - A schedule row: see PATTERNS.md › Agent pages.
-- **Danger zone** (Delete agent, Revoke a device, Settings → General's Delete
-  all): `Card tone="destructive" padding="lg"` laid out as a wrapping row
+- **Danger zone** (Settings → General's Delete all; an object you can
+  open, such as an agent, a source, a tool or a device, is deleted or revoked
+  from its ⋯ instead): `Card tone="destructive" padding="lg"` laid out as a wrapping row
   (`flex-row flex-wrap items-center justify-between`), a `SectionHeader
 tone="destructive"` (the title, and the consequence as its `description`)
   and one `destructive-outline field pill` Button whose label is the action
-  ("Delete agent", "Revoke"), which opens the confirm (see Confirm dialogs).
+  ("Delete all"), which opens the confirm (see Confirm dialogs).
   A failing stat is `tone="destructive"` too. Muted text fails AA on the red fill, so the tone turns
   every `text-muted-foreground` inside it to `foreground`, except a hovered
   Button, which keeps its hover colour (a `ghost-destructive` Remove still
@@ -948,7 +949,8 @@ its Retry follows the locale too. Never a bare `text-destructive` paragraph.
 ### Progress (`ui/progress.tsx`)
 
 `value` 0 to 100, `variant`: `default`, `success`, `warning`,
-`destructive`, `info`; `size`: `sm`, `default`. Replaces the
+`destructive`, `info`, `muted` (a share that is neither good nor bad);
+`size`: `sm`, `default`. Replaces the
 width-percent divs in quota, indexing and guardrail views, and is the track
 of Insights' share bars (`settings/insights/ShareBars`: label, Progress, whole
 percent, one `sr-only` run per row) and of its Analyzing state.
@@ -1611,10 +1613,16 @@ clear it); `icon` also takes an
 element, such as a `ConnectorIcon`) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
 trigger with `EllipsisVertical`, and stops clicks and keys on the trigger and
 the menu from reaching the host, so it can sit inside a clickable card.
-In a page header or toolbar on a plain surface (the agent Overview's title
-row, through `SectionShell titleAction`; the workflow builder's toolbar), pass
+In a page header or toolbar on a plain surface (an agent page's toolbar row,
+through `AgentPageToolbar menu`; a source view's `PathHeader menu`; the
+workflow builder's toolbar), last after the row's buttons, pass
 `size="toolbar"`: the trigger is a 36px `ghost-muted` icon button like the
-others there, hovering to `accent`, with its tooltip below. The default
+others there, hovering to `accent`, with its tooltip below. In a panel or
+reader header (the workflow node panel's `PanelHeader` actions, the chunk and
+wiki readers' action row) pass `size="panel"`: the same trigger at 32px
+(`icon-sm`), the size of the panel's Expand and X and the reader's `sm`
+pills. Three sizes, by host: `row` on a card, tile or row; `toolbar` in a
+page header; `panel` in a panel or reader header. The default
 `row` trigger's darker hover is only for hosts that turn `accent` themselves.
 `align` (default `end`) places the menu, `disabled` greys the trigger, and
 `triggerTestId` puts a `data-testid` on it. `className` takes layout only (position, margin) and lands on the trigger.

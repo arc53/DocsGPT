@@ -16,7 +16,6 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ActionMenu } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -53,8 +52,6 @@ import SignInAgainNotice, {
 import { toolServiceOf } from '../connectors/toolService';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
-import ShareToTeamModal from '../teams/ShareToTeamModal';
-import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Prompt } from '../models/misc';
 import {
   selectAgentFolders,
@@ -105,6 +102,7 @@ import {
   sponsorNotAllowedMessage,
   withAttachedToolRows,
 } from './sponsorConsent';
+import { useAgentMenu } from './hooks/useAgentMenu';
 import { useSponsorPrompt } from './useSponsorPrompt';
 import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
@@ -215,13 +213,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
   );
-  const [deleteConfirmation, setDeleteConfirmation] =
-    useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
-  const [deleteError, setDeleteError] = useState<string>();
   // Access details opened from Share to allow changes: its allowlist unfolds.
   const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
-  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
@@ -259,7 +253,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     new: {
       heading: t('agents.form.headings.new'),
       buttonText: t('agents.form.buttons.publish'),
-      showDelete: false,
       showSaveDraft: true,
       showAccessDetails: false,
       trackChanges: false,
@@ -267,7 +260,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     edit: {
       heading: t('agents.form.headings.edit'),
       buttonText: t('agents.form.buttons.save'),
-      showDelete: true,
       showSaveDraft: false,
       showAccessDetails: true,
       trackChanges: true,
@@ -275,7 +267,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     draft: {
       heading: t('agents.form.headings.draft'),
       buttonText: t('agents.form.buttons.publish'),
-      showDelete: true,
       showSaveDraft: true,
       showAccessDetails: false,
       trackChanges: false,
@@ -491,19 +482,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const handleCancel = () => {
     if (selectedAgent) dispatch(setSelectedAgent(null));
-    navigateBackToAgents();
-  };
-
-  // Returned to ConfirmationModal: it stays pending while this runs and
-  // keeps a failure in the dialog (the server's message when it gives one).
-  const handleDelete = async (agentId: string) => {
-    setDeleteError(undefined);
-    const response = await userService.deleteAgent(agentId, token);
-    if (!response.ok) {
-      const message = await extractApiError(response, t('agents.deleteFailed'));
-      setDeleteError(message);
-      throw new Error(message);
-    }
     navigateBackToAgents();
   };
 
@@ -1212,14 +1190,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const agentDisplayName =
     agent.name?.trim() || t('agents.pageHeader.fallbackName');
 
-  // Page-level actions live in the ⋯ beside the title. Until the agent is
+  // Page-level actions live in the ⋯ at the end of the toolbar row. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
   // menu item then and a toolbar button after.
-  const canOpenAccessDetails =
-    modeConfig[effectiveMode].showAccessDetails &&
-    can(agent, 'manage_access_details');
-  const menuOptions = [
-    ...(isPublished
+  const agentMenu = useAgentMenu({
+    agent,
+    lead: isPublished
       ? []
       : [
           {
@@ -1227,27 +1203,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             icon: Play,
             onClick: () => setPreviewOpen(true),
           },
-        ]),
-    ...(canOpenAccessDetails
-      ? [
-          {
-            label: t('agents.form.buttons.accessDetails'),
-            onClick: () => setAgentDetails('ACTIVE'),
-          },
-        ]
-      : []),
-    // Sharing is the owner's, unless the owner lets editors share.
-    ...(modeConfig[effectiveMode].showAccessDetails &&
-    can(agent, 'share') &&
-    agent.id
-      ? [
-          {
-            label: t('agents.shareWithTeam'),
-            onClick: () => setShareModalOpen(true),
-          },
-        ]
-      : []),
-  ];
+        ],
+    shareable: modeConfig[effectiveMode].showAccessDetails,
+    openAccessDetails: (apiWrites) => {
+      setDetailsOnApiWrites(apiWrites);
+      setAgentDetails('ACTIVE');
+    },
+    onDeleted: navigateBackToAgents,
+  });
 
   // At most three buttons, so the row fits a phone; the main one stretches
   // across it there.
@@ -1308,13 +1271,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   return (
     <SectionShell
       title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
-      titleAction={
-        <ActionMenu
-          size="toolbar"
-          triggerLabel={t('agents.form.buttons.moreActions')}
-          options={menuOptions}
-        />
-      }
     >
       {signInAgain.modals}
       {agent.agent_type === 'workflow' && <WorkflowBuilder />}
@@ -1334,6 +1290,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           ) : undefined
         }
         actions={headerActions}
+        menu={agentMenu.menu}
       >
         {submitError && (
           <Alert variant="destructive" className="mb-6">
@@ -1899,48 +1856,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             }))
           }
         />
-        {modeConfig[effectiveMode].showDelete &&
-          agent.id &&
-          can(agent, 'delete') && (
-            <Card
-              tone="destructive"
-              padding="lg"
-              className="flex-row flex-wrap items-center justify-between"
-            >
-              <SectionHeader
-                tone="destructive"
-                title={t('agents.form.dangerZone.heading')}
-                description={t('agents.form.dangerZone.description')}
-                className="min-w-0 flex-1"
-              />
-              <Button
-                type="button"
-                variant="destructive-outline"
-                size="field"
-                shape="pill"
-                onClick={() => setDeleteConfirmation('ACTIVE')}
-                className="shrink-0"
-              >
-                {t('agents.form.dangerZone.deleteButton')}
-              </Button>
-            </Card>
-          )}
       </div>
       {sponsorPrompt.modal}
-      <ConfirmationModal
-        message={t('agents.deleteConfirmation', {
-          interpolation: { escapeValue: false },
-          name: agent.name,
-        })}
-        description={t('agents.deleteConsequence')}
-        modalState={deleteConfirmation}
-        setModalState={setDeleteConfirmation}
-        submitLabel={t('agents.form.buttons.delete')}
-        handleSubmit={() => handleDelete(agent.id || '')}
-        error={deleteError ?? t('agents.deleteFailed')}
-        cancelLabel={t('agents.form.buttons.cancel')}
-        variant="destructive"
-      />
+      {agentMenu.modals}
       <AgentDetailsModal
         agent={agent}
         mode={effectiveMode}
@@ -1966,23 +1884,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }}
         getSavedConfig={() => initialAgentRef.current?.config ?? agent.config}
       />
-      {shareModalOpen && agent.id && (
-        <ShareToTeamModal
-          resourceType="agent"
-          resourceId={agent.id}
-          resourceName={agent.name}
-          onClose={() => setShareModalOpen(false)}
-          onOpenAccessDetails={
-            canOpenAccessDetails
-              ? () => {
-                  setShareModalOpen(false);
-                  setDetailsOnApiWrites(true);
-                  setAgentDetails('ACTIVE');
-                }
-              : undefined
-          }
-        />
-      )}
       {uploadModalState === 'ACTIVE' && (
         <Upload
           receivedFile={[]}

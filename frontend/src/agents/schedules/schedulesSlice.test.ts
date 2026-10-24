@@ -20,6 +20,7 @@ import reducer, {
   RUNS_PAGE_SIZE,
   selectRunsEnd,
   selectRunsForSchedule,
+  selectScheduleById,
   selectSchedulesForAgent,
   type SchedulesState,
 } from './schedulesSlice';
@@ -291,6 +292,45 @@ describe('selectSchedulesForAgent', () => {
   });
 });
 
+describe('selectScheduleById', () => {
+  const withBoth = (own: Schedule, all: Schedule) => {
+    const base = reducer(undefined, { type: '@@init' });
+    return {
+      schedules: {
+        ...base,
+        byAgent: { 'agent-1': [own] },
+        all: [all],
+      },
+    };
+  };
+
+  it('returns the cross-agent record when it is newer', () => {
+    const state = withBoth(
+      sampleSchedule({ status: 'active' }),
+      sampleSchedule({
+        status: 'completed',
+        updated_at: '2026-05-20T12:00:00Z',
+      }),
+    );
+    expect(selectScheduleById(state, 'sched-1', 'agent-1')?.status).toBe(
+      'completed',
+    );
+  });
+
+  it('returns the agent-list record when it is newer', () => {
+    const state = withBoth(
+      sampleSchedule({
+        status: 'paused',
+        updated_at: '2026-05-20T12:00:00Z',
+      }),
+      sampleSchedule({ status: 'active' }),
+    );
+    expect(selectScheduleById(state, 'sched-1', 'agent-1')?.status).toBe(
+      'paused',
+    );
+  });
+});
+
 describe('loadRunsForSchedule paging', () => {
   const wrap = (schedules: SchedulesState) => ({ schedules });
   const fulfilled = (
@@ -438,6 +478,50 @@ describe('schedulesSlice cross-agent list', () => {
       );
       state = reducer(state, answer());
       expect(state.all?.map((s) => s.id)).toEqual(['sched-new', 'sched-1']);
+    });
+
+    const completed = sseEventReceived({
+      id: 'evt-10',
+      type: 'schedule.completed',
+      payload: { schedule_id: 'sched-1' },
+    } as SSEEvent);
+
+    it('keeps a status event that arrived meanwhile', () => {
+      let state = reducer(loading(), completed);
+      state = reducer(
+        state,
+        loadAllSchedules.fulfilled(
+          // Read before the schedule completed, after the agent list loaded.
+          [sampleSchedule({ updated_at: '2026-05-20T12:00:00Z' })],
+          'load',
+          { token: null },
+        ),
+      );
+      expect(state.all?.[0].status).toBe('completed');
+      expect(
+        selectScheduleById({ schedules: state }, 'sched-1', 'agent-1')?.status,
+      ).toBe('completed');
+    });
+
+    it('replays saves and events in the order they came', () => {
+      let state = reducer(
+        loading(),
+        sseEventReceived({
+          id: 'evt-11',
+          type: 'schedule.autopaused',
+          payload: { schedule_id: 'sched-1' },
+        } as SSEEvent),
+      );
+      state = reducer(
+        state,
+        setSchedulePaused.fulfilled(sampleSchedule(), 'r', {
+          id: 'sched-1',
+          action: 'resume',
+          token: null,
+        }),
+      );
+      state = reducer(state, answer());
+      expect(state.all?.[0].status).toBe('active');
     });
 
     it('keeps a schedule deleted meanwhile deleted', () => {
