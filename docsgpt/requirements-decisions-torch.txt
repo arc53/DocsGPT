@@ -201,7 +201,7 @@ fastmcp==4.0.11
     # via docsgpt
 fastmcp-slim==4.0.11
     # via fastmcp
-filelock==4.0.12
+filelock==4.2.1
     # via
     #   huggingface-hub
     #   tldextract
