@@ -70,8 +70,12 @@ attrs==26.1.0
     #   referencing
 authlib==1.8.0
     # via fastmcp-slim
-beartype==0.22.9
+beartype==0.22.9 ; python_full_version < '3.15'
     # via py-key-value-aio
+beartype==0.23.1 ; python_full_version >= '3.15'
+    # via
+    #   fastmcp-slim
+    #   py-key-value-aio
 beautifulsoup4==4.15.0
     # via
     #   docsgpt
@@ -199,7 +203,7 @@ fastembed==0.8.1
     # via docsgpt
 fastmcp==4.1.2
     # via docsgpt
-fastmcp-slim==4.0.11
+fastmcp-slim==4.1.2
     # via fastmcp
 filelock==4.0.12
     # via
