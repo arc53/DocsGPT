@@ -30,23 +30,27 @@ _HTML_TAG_OR_COMMENT = re.compile(
 _SVG_ELEMENT = re.compile(r"<svg(?=[\s/>])[^<>]*>.*?</svg\s*>", re.DOTALL | re.IGNORECASE)
 _ANY_TAG = re.compile(r"<[^<>]*>")
 # Case only has to match for a bare tag, where <BR> cannot be told from
-# Array<Map>. One with attributes, a closing tag, a slash or a pair is markup
-# whatever its case.
+# Array<Map>. Attributes or a trailing slash mark it as markup either way.
 _HTML_TAG_ANY_CASE = re.compile(
-    r"</?(?:%s)(?:\s+[^<>]*|\s*/)>|</(?:%s)\s*>" % (_HTML_TAG_PATTERN, _HTML_TAG_PATTERN),
+    r"</?(?:%s)(?:\s+[^<>]*|\s*/)>" % _HTML_TAG_PATTERN,
     re.IGNORECASE,
 )
-_HTML_TAG_PAIR_ANY_CASE = re.compile(
-    r"<(%s)\s*>(.*?)</\1\s*>" % _HTML_TAG_PATTERN,
-    re.DOTALL | re.IGNORECASE,
-)
+# A bare tag is markup when the same name closes somewhere in the text, however
+# it nests. Collected first, since removing pairs one at a time would orphan the
+# opening tag of any nested pair.
+_HTML_BARE_TAG = re.compile(r"</?(%s)\s*>" % _HTML_TAG_PATTERN, re.IGNORECASE)
+_HTML_CLOSING_TAG = re.compile(r"</(%s)\s*>" % _HTML_TAG_PATTERN, re.IGNORECASE)
 
 
 def _strip_html(text: str) -> str:
     """Remove inline SVG markup, known HTML tags and HTML comments from text."""
     text = _SVG_ELEMENT.sub(lambda match: _ANY_TAG.sub("", match.group(0)), text)
-    text = _HTML_TAG_PAIR_ANY_CASE.sub(lambda match: match.group(2), text)
     text = _HTML_TAG_ANY_CASE.sub("", text)
+    closed = {match.group(1).lower() for match in _HTML_CLOSING_TAG.finditer(text)}
+    if closed:
+        text = _HTML_BARE_TAG.sub(
+            lambda match: "" if match.group(1).lower() in closed else match.group(0), text
+        )
     return _HTML_TAG_OR_COMMENT.sub("", text)
 
 

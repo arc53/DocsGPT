@@ -92,6 +92,12 @@ def test_markdown_html_cleanup_removes_uppercase_tags() -> None:
     assert text == "Keep bold and linebreak \n\n"
 
 
+def test_markdown_html_cleanup_removes_nested_bare_tags() -> None:
+    content = "# Nest\n<DIV><B>bold</B></DIV> and <P>a <EM>b <B>c</B></EM> d</P>\n"
+    text = MarkdownParser().markdown_to_tups(content)[0][1]
+    assert text == "bold and a b c d\n\n"
+
+
 def test_markdown_html_cleanup_keeps_generics_whatever_the_case() -> None:
     content = "# Types\nUse List<Object>, Array<Map> and Map<K, V> with x < 10 and y > 5.\n"
     text = MarkdownParser().markdown_to_tups(content)[0][1]
