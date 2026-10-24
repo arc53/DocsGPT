@@ -279,7 +279,7 @@ type ActionMenuProps = {
       disabled?: boolean;
       className?: string;
       triggerTestId?: string;
-      size?: 'row' | 'toolbar';
+      size?: 'row' | 'toolbar' | 'panel';
     }
   | {
       /**
@@ -306,11 +306,12 @@ type ActionMenuProps = {
  * portal still bubbles through the React tree. The trigger is
  * `ghost-on-accent`: most hosts turn bg-accent while the pointer is on them.
  * In a page header or toolbar (`size="toolbar"`) it is a 36px `ghost-muted`
- * icon button like the others there, with its tooltip below.
+ * icon button like the others there, with its tooltip below; in a panel or
+ * reader header (`size="panel"`) the same at 32px, beside its Expand and X.
  *
  * @param options The menu rows.
  * @param trigger A labelled trigger element instead of the three dots.
- * @param size `row` (a card, tile or row; the default) or `toolbar`.
+ * @param size `row` (a card, tile or row; the default), `toolbar` or `panel`.
  * @param triggerLabel The three-dots trigger's accessible name.
  * @param className Layout classes for the three-dots trigger.
  * @param triggerTestId A `data-testid` for the three-dots trigger.
@@ -329,7 +330,8 @@ function ActionMenu({
   size = 'row',
   menuWidth = 'default',
 }: ActionMenuProps) {
-  const toolbar = size === 'toolbar';
+  // Toolbar and panel triggers stand on a plain surface: ghost-muted, tooltip below.
+  const plain = size !== 'row';
   // Closing the menu hands focus back to the trigger, which would reopen its
   // tooltip over the next row; that one focus doesn't show it.
   const [tipOpen, setTipOpen] = React.useState(false);
@@ -361,8 +363,14 @@ function ActionMenu({
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant={toolbar ? 'ghost-muted' : 'ghost-on-accent'}
-                size={toolbar ? 'icon' : 'icon-xs'}
+                variant={plain ? 'ghost-muted' : 'ghost-on-accent'}
+                size={
+                  size === 'toolbar'
+                    ? 'icon'
+                    : size === 'panel'
+                      ? 'icon-sm'
+                      : 'icon-xs'
+                }
                 aria-label={triggerLabel}
                 disabled={disabled}
                 data-testid={triggerTestId}
@@ -374,7 +382,7 @@ function ActionMenu({
               </Button>
             </TooltipTrigger>
           </DropdownMenuTrigger>
-          <TooltipContent side={toolbar ? 'bottom' : undefined}>
+          <TooltipContent side={plain ? 'bottom' : undefined}>
             {triggerLabel}
           </TooltipContent>
         </Tooltip>

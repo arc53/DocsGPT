@@ -65,6 +65,20 @@ describe('ActionMenu', () => {
     expect(trigger().getAttribute('data-size')).toBe('icon');
   });
 
+  // A panel or reader header: the same trigger at 32px, the size of the
+  // panel's Expand and X and the reader's sm pills.
+  it('renders a 32px ghost-muted trigger with size="panel"', async () => {
+    await render(
+      <ActionMenu
+        options={options()}
+        triggerLabel="Node actions"
+        size="panel"
+      />,
+    );
+    expect(trigger().getAttribute('data-variant')).toBe('ghost-muted');
+    expect(trigger().getAttribute('data-size')).toBe('icon-sm');
+  });
+
   it('passes layout classes, disabled and a test id to the trigger', async () => {
     await render(
       <ActionMenu

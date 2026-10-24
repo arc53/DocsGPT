@@ -1616,7 +1616,12 @@ In a page header or toolbar on a plain surface (an agent page's toolbar row,
 through `AgentPageToolbar menu`; a source view's `PathHeader menu`; the
 workflow builder's toolbar), last after the row's buttons, pass
 `size="toolbar"`: the trigger is a 36px `ghost-muted` icon button like the
-others there, hovering to `accent`, with its tooltip below. The default
+others there, hovering to `accent`, with its tooltip below. In a panel or
+reader header (the workflow node panel's `PanelHeader` actions, the chunk and
+wiki readers' action row) pass `size="panel"`: the same trigger at 32px
+(`icon-sm`), the size of the panel's Expand and X and the reader's `sm`
+pills. Three sizes, by host: `row` on a card, tile or row; `toolbar` in a
+page header; `panel` in a panel or reader header. The default
 `row` trigger's darker hover is only for hosts that turn `accent` themselves.
 `align` (default `end`) places the menu, `disabled` greys the trigger, and
 `triggerTestId` puts a `data-testid` on it. `className` takes layout only (position, margin) and lands on the trigger.
