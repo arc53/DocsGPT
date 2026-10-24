@@ -60,7 +60,8 @@ def test_load_data_crawls_same_domain_links(mock_pinned_request, mock_validate_u
     assert paths == {"index.md", "about.md"}
 
     texts = {doc.text for doc in result}
-    assert texts == {"About\nExternal", "About page"}
+    # The two links sit on one rendered line; the source line break between them is whitespace.
+    assert texts == {"About External", "About page"}
 
     assert mock_pinned_request.call_count == 2
 

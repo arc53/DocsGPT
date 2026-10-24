@@ -6,6 +6,7 @@ import defusedxml.ElementTree as ET
 from bs4 import BeautifulSoup
 from defusedxml import DefusedXmlException
 
+from docsgpt.parser.html_text import html_to_text
 from docsgpt.parser.remote.base import (
     BaseRemote,
     dedupe_virtual_paths,
@@ -64,7 +65,7 @@ class SitemapLoader(BaseRemote):
                 soup = BeautifulSoup(response.text, "html.parser")
                 documents.append(
                     Document(
-                        soup.get_text(separator="\n", strip=True),
+                        html_to_text(soup),
                         # Without file_path the worker had no tree key (no
                         # title, key or doc_id), so sitemap pages never
                         # appeared in the file tree.
