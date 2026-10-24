@@ -4,6 +4,7 @@ import io
 import re
 import socket
 import time
+from functools import partial
 from unittest.mock import patch
 
 import pytest
@@ -486,7 +487,9 @@ class TestNulCharacters:
     def test_html_drops_nul_from_text_title_and_language(self):
         body = b"<html lang='e\x00n'><head><title>T\x00x</title></head><body><p>hello\x00world</p></body></html>"
 
-        doc = page_document(body, "text/html", URL)
+        # charset-normalizer, BeautifulSoup's guesser when chardet is absent, reads these NULs as UTF-16.
+        with patch("bs4.dammit._chardet_dammit", return_value="utf_16_be"):
+            doc = page_document(body, "text/html", URL)
 
         assert "\x00" not in doc.text and "helloworld" in doc.text
         assert doc.extra_info["title"] == "Tx"
@@ -496,60 +499,106 @@ class TestNulCharacters:
         assert page_document(b"\x00\x00", "text/plain", URL, explicit=True) is None
 
 
+class TestWideEncodings:
+    # Browsers read a page as UTF-16 or UTF-32 only by its byte-order mark or HTTP header, never by a guess.
+    # An even number of ASCII bytes, so UTF-16 decodes it without an error.
+    PAGE = "<html><head><title>Setup</title></head><body><p>hello, world</p></body></html>"
+
+    @pytest.mark.parametrize("guess", ["utf_16_be", "UTF-16", "utf-16le"])
+    def test_a_guessed_wide_encoding_is_not_used(self, guess):
+        with patch("bs4.dammit._chardet_dammit", return_value=guess):
+            doc = page_document(self.PAGE.encode(), "text/html", URL)
+
+        assert doc.text == "hello, world" and doc.extra_info["title"] == "Setup"
+
+    def test_a_byte_order_mark_still_reads_utf_16(self):
+        doc = page_document(self.PAGE.encode("utf-16"), "text/html", URL)
+
+        assert doc.text == "hello, world" and doc.extra_info["title"] == "Setup"
+
+    def test_a_header_charset_still_reads_utf_16(self):
+        doc = page_document(self.PAGE.encode("utf-16-le"), "text/html; charset=utf-16le", URL)
+
+        assert doc.text == "hello, world" and doc.extra_info["title"] == "Setup"
+
+
+def _fastest(fn, make_args=tuple, times=3):
+    """The seconds of the fastest of ``times`` calls of ``fn(*make_args())``, and the last call's result.
+
+    ``make_args`` isn't timed. The cost tests compare two of these from one
+    run, as an absolute limit fails on a slow runner or under coverage. Each
+    sits at a size where the quadratic code it guards against cost several
+    times its limit.
+    """
+    best = float("inf")
+    for _ in range(times):
+        args = make_args()
+        started = time.perf_counter()
+        result = fn(*args)
+        best = min(best, time.perf_counter() - started)
+    return best, result
+
+
 class TestKeepLinksCost:
+    def _keeping_links_costs_little(self, body):
+        # Two runs each: a page this size takes a second to parse under coverage.
+        plain, _ = _fastest(partial(page_document, body, "text/html", URL), times=2)
+        kept, doc = _fastest(partial(page_document, body, "text/html", URL, keep_links=True), times=2)
+
+        assert kept < 2.5 * plain
+        return doc
+
     def test_many_links_in_one_block_stay_linear(self):
         # Each link used to re-read its whole block's text: quadratic in links.
-        links = "".join(f'word <a href="/l{i}">x{i}</a> ' for i in range(4000))
+        links = "".join(f'word <a href="/l{i}">x{i}</a> ' for i in range(1000))
         body = f"<html><body><main><p>{links}</p></main></body></html>".encode()
 
-        started = time.monotonic()
-        doc = page_document(body, "text/html", URL, keep_links=True)
+        doc = self._keeping_links_costs_little(body)
 
-        assert time.monotonic() - started < 5
-        assert "[x3999](https://docs.example.com/l3999)" in doc.text
+        assert "[x999](https://docs.example.com/l999)" in doc.text
 
     def test_links_nested_deep_in_one_block_find_it_once(self):
         # Each link used to walk up every element between it and its paragraph.
-        links = "<a href='/y'>l</a> word " * 8000
+        links = "<a href='/y'>l</a> word " * 500
         body = f"<html><body><main><p>{'<b>' * 400}{links}{'</b>' * 400}</p></main></body></html>".encode()
 
-        started = time.monotonic()
-        doc = page_document(body, "text/html", URL, keep_links=True)
+        doc = self._keeping_links_costs_little(body)
 
-        assert time.monotonic() - started < 4
         assert "[l](https://docs.example.com/y)" in doc.text
+
+    def _costs_little_beside_parsing(self, markup, fn):
+        """Time ``fn`` on the parsed ``markup`` against parsing it; returns the soup ``fn`` changed."""
+        parse, _ = _fastest(html_soup, lambda: (markup,))
+        work, soup = _fastest(lambda soup: fn(soup) or soup, lambda: (html_soup(markup),))
+
+        assert work < 12 * parse
+        return soup
 
     def test_nested_asides_are_measured_once(self):
         # Each aside used to re-read the text and links of every aside inside it.
-        soup = html_soup("<html><body>" + "<aside>t " * 4000 + "</body></html>")
+        markup = "<html><body>" + "<aside>t " * 1000 + "</body></html>"
 
-        started = time.monotonic()
-        _strip_chrome(soup.body)
+        soup = self._costs_little_beside_parsing(markup, lambda soup: _strip_chrome(soup.body))
 
-        assert time.monotonic() - started < 2
-        assert len(soup.find_all("aside")) == 4000
+        assert len(soup.find_all("aside")) == 1000
 
     def test_nested_link_runs_read_their_text_once(self):
         # Each level's running-text check used to read the whole subtree below it.
-        soup = html_soup("<html><body>" + "<span><a href=/a>a</a><a href=/b>b</a>" * 4000 + "</body></html>")
+        markup = "<html><body>" + "<span><a href=/a>a</a><a href=/b>b</a>" * 1000 + "</body></html>"
 
-        started = time.monotonic()
-        _listify_link_runs(soup, soup.body)
+        soup = self._costs_little_beside_parsing(markup, lambda soup: _listify_link_runs(soup, soup.body))
 
-        assert time.monotonic() - started < 2
         # The nested span beside each run holds text: the links stay in it,
         # spaced. Only the innermost run stands alone and becomes a list.
         assert len(soup.find_all("ul")) == 1
         assert soup.body.span.get_text().startswith("a b")
 
     def test_nested_page_headers_inside_an_article_are_looked_up_once(self):
-        soup = html_soup("<html><body><article>" + "<header>t " * 4000 + "</article></body></html>")
+        markup = "<html><body><article>" + "<header>t " * 1000 + "</article></body></html>"
 
-        started = time.monotonic()
-        _strip_chrome(soup.body)
+        soup = self._costs_little_beside_parsing(markup, lambda soup: _strip_chrome(soup.body))
 
-        assert time.monotonic() - started < 2
-        assert len(soup.find_all("header")) == 4000
+        assert len(soup.find_all("header")) == 1000
 
     def test_a_link_list_aside_inside_a_kept_aside_is_still_dropped(self):
         body = _page(

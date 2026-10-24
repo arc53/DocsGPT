@@ -1027,6 +1027,15 @@ def _is_plain_text(content_type: Optional[str], explicit: bool) -> bool:
 
 _BOMS = (codecs.BOM_UTF8, codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)
 
+# UTF-16 and UTF-32 as a guesser or ``<meta>`` may spell them; BeautifulSoup
+# matches names lower-cased but otherwise as written.
+_WIDE_ENCODINGS = frozenset(
+    f"utf{dash}{bits}{order}"
+    for bits in ("16", "32")
+    for dash in ("-", "_", "")
+    for order in ("", "le", "be", "-le", "-be", "_le", "_be")
+)
+
 
 def header_charset(content_type: Optional[str]) -> Optional[str]:
     """The charset a ``Content-Type`` header declares, when Python knows it.
@@ -1063,7 +1072,9 @@ def html_soup(html: Union[str, bytes], encoding: Optional[str] = None, parser: s
         html: The page.
         encoding: The ``Content-Type`` charset (``header_charset``); ``None``
             leaves BeautifulSoup to read the page's ``<meta>`` or guess. A
-            byte-order mark wins over it, as in browsers.
+            byte-order mark wins over it, as in browsers. Without either, the
+            page is never read as UTF-16 or UTF-32, which browsers don't guess
+            either: a guesser takes a page with stray NUL bytes for UTF-16.
         parser: The BeautifulSoup tree builder.
 
     Returns:
@@ -1072,8 +1083,10 @@ def html_soup(html: Union[str, bytes], encoding: Optional[str] = None, parser: s
     Raises:
         FeatureNotFound: If ``parser`` isn't installed.
     """
-    if isinstance(html, bytes) and encoding and not html.startswith(_BOMS):
-        return BeautifulSoup(html, parser, from_encoding=encoding)
+    if isinstance(html, bytes) and not html.startswith(_BOMS):
+        if encoding:
+            return BeautifulSoup(html, parser, from_encoding=encoding)
+        return BeautifulSoup(html, parser, exclude_encodings=_WIDE_ENCODINGS)
     return BeautifulSoup(html, parser)
 
 
