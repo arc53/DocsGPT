@@ -454,6 +454,38 @@ def _apply_display_names_to_structure(structure, file_name_map, prefix=""):
     return structure
 
 
+def _structure_files(structure: Any, prefix: str = "") -> Dict[str, dict]:
+    """Every file entry of a ``directory_structure``, keyed by its path relative to the source.
+
+    Args:
+        structure: A ``directory_structure`` mapping, or a subtree of one.
+        prefix: The path of ``structure`` itself.
+
+    Returns:
+        ``{"guide/a.md": {"type": ..., "size_bytes": ..., "sha256": ...}}``.
+    """
+    files: Dict[str, dict] = {}
+    if not isinstance(structure, dict):
+        return files
+    for name, node in structure.items():
+        path = os.path.join(prefix, name) if prefix else name
+        if isinstance(node, dict) and "type" in node and "size_bytes" in node:
+            files[path] = node
+        elif isinstance(node, dict):
+            files.update(_structure_files(node, path))
+    return files
+
+
+def _file_content_changed(old: dict, new: dict) -> bool:
+    """Whether a file kept at the same path has new content, by its ``sha256``.
+
+    An old entry without a hash (ingested before hashes were stored) counts as
+    changed. A new entry without one cannot be compared and counts as unchanged.
+    """
+    new_hash = new.get("sha256")
+    return bool(new_hash) and old.get("sha256") != new_hash
+
+
 def _download_source_files_to_dir(storage, source_file_path, temp_dir):
     """Mirror a source's stored files into ``temp_dir``, preserving structure."""
     if not storage.is_directory(source_file_path):
@@ -1024,6 +1056,11 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
     Re-ingestion worker that handles incremental updates by:
     1. Adding chunks from newly added files
     2. Removing chunks from deleted files
+    3. Replacing the chunks of edited files: same path, different content
+       hash (``sha256`` in ``directory_structure``). A file stored without a
+       hash counts as edited, so a source ingested before hashes were kept is
+       re-embedded once and incremental from then on. After a chunking change
+       (``metadata.rechunk_pending``) every file counts as edited, once.
 
     Args:
         self: Task instance
@@ -1165,6 +1202,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                 f"Directory structure built with token counts: {directory_structure}"
             )
 
+            rechunk = False
             try:
                 old_directory_structure = source.get("directory_structure") or {}
                 if isinstance(old_directory_structure, str):
@@ -1173,28 +1211,17 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     except Exception:
                         old_directory_structure = {}
 
-                def _flatten_directory_structure(struct, prefix=""):
-                    files = set()
-                    if isinstance(struct, dict):
-                        for name, meta in struct.items():
-                            current_path = (
-                                os.path.join(prefix, name) if prefix else name
-                            )
-                            if isinstance(meta, dict) and (
-                                "type" in meta and "size_bytes" in meta
-                            ):
-                                files.add(current_path)
-                            elif isinstance(meta, dict):
-                                files |= _flatten_directory_structure(
-                                    meta, current_path
-                                )
-                    return files
+                old_files = _structure_files(old_directory_structure)
+                new_files = _structure_files(directory_structure)
 
-                old_files = _flatten_directory_structure(old_directory_structure)
-                new_files = _flatten_directory_structure(directory_structure)
-
-                added_files = sorted(new_files - old_files)
-                removed_files = sorted(old_files - new_files)
+                added_files = sorted(new_files.keys() - old_files.keys())
+                removed_files = sorted(old_files.keys() - new_files.keys())
+                metadata = source.get("metadata")
+                rechunk = isinstance(metadata, dict) and bool(metadata.get("rechunk_pending"))
+                modified_files = sorted(
+                    path for path in new_files.keys() & old_files.keys()
+                    if rechunk or _file_content_changed(old_files[path], new_files[path])
+                )
 
                 if added_files:
                     logging.info(f"Files added since last ingest: {added_files}")
@@ -1206,14 +1233,18 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                 else:
                     logging.info("No files removed since last ingest.")
 
+                if modified_files:
+                    logging.info(f"Files edited since last ingest: {modified_files}")
+
             except Exception as e:
                 logging.error(
                     f"Error comparing directory structures: {e}", exc_info=True
                 )
                 added_files = []
                 removed_files = []
+                modified_files = []
             try:
-                if not added_files and not removed_files:
+                if not added_files and not removed_files and not modified_files:
                     logging.info("No changes detected.")
                     _publish_source_event(
                         user, actor_id,
@@ -1235,6 +1266,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         "status": "no_changes",
                         "added_files": [],
                         "removed_files": [],
+                        "modified_files": [],
                     }
 
                 vector_store = VectorCreator.create_vectorstore(
@@ -1248,9 +1280,11 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     meta={"current": 40, "status": "Processing file changes"},
                 )
 
-                # 1) Delete chunks from removed files
+                # 1) Delete chunks of removed files, and of edited files
+                # before their new content is embedded
                 deleted = 0
-                if removed_files:
+                stale_files = set(removed_files) | set(modified_files)
+                if stale_files:
                     try:
                         for ch in vector_store.get_chunks() or []:
                             metadata = (
@@ -1262,7 +1296,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
 
                             source_file = str(raw_source) if raw_source else ""
 
-                            if source_file in removed_files:
+                            if source_file in stale_files:
                                 cid = ch.get("doc_id")
                                 if cid:
                                     try:
@@ -1273,7 +1307,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                             f"Failed deleting chunk {cid}: {de}"
                                         )
                         logging.info(
-                            f"Deleted {deleted} chunks from {len(removed_files)} removed files"
+                            f"Deleted {deleted} chunks from {len(stale_files)} removed or edited files"
                         )
                     except Exception as e:
                         logging.error(
@@ -1284,13 +1318,14 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                             f"deletion failed: {str(e)[:200]}"
                         )
 
-                # 2) Add chunks from new files
+                # 2) Add chunks from new and edited files
                 added = 0
-                if added_files:
+                files_to_embed = added_files + modified_files
+                if files_to_embed:
                     try:
-                        # Build list of local files for added files only
+                        # Build list of local files for added and edited files only
                         added_local_files = []
-                        for rel_path in added_files:
+                        for rel_path in files_to_embed:
                             local_path = os.path.join(temp_dir, rel_path)
                             if os.path.isfile(local_path):
                                 added_local_files.append(local_path)
@@ -1371,7 +1406,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                 vector_store.add_chunk(d.text, metadata=meta)
                                 added += 1
                             logging.info(
-                                f"Added {added} chunks from {len(added_files)} new files"
+                                f"Added {added} chunks from {len(files_to_embed)} new or edited files"
                             )
                     except Exception as e:
                         logging.error(
@@ -1380,6 +1415,12 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         inner_warnings.append(
                             f"add failed: {str(e)[:200]}"
                         )
+                        # Store these files without a hash, so the next
+                        # reingest counts them as edited and embeds them again
+                        # instead of seeing nothing to do.
+                        new_entries = _structure_files(directory_structure)
+                        for rel_path in files_to_embed:
+                            new_entries.get(rel_path, {}).pop("sha256", None)
 
                 # 3) Update source directory structure timestamp
                 try:
@@ -1390,7 +1431,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
 
                     now = datetime.datetime.now(datetime.timezone.utc)
                     with db_session() as conn:
-                        SourcesRepository(conn).update(
+                        repo = SourcesRepository(conn)
+                        repo.update(
                             source_id, user,
                             {
                                 "directory_structure": directory_structure,
@@ -1398,6 +1440,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                 "tokens": total_tokens,
                             },
                         )
+                        if rechunk and not inner_warnings:
+                            repo.remove_metadata_key(source_id, user, "rechunk_pending")
                 except Exception as e:
                     logging.error(
                         f"Error updating directory_structure in DB: {e}", exc_info=True
@@ -1435,6 +1479,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     "status": "completed",
                     "added_files": added_files,
                     "removed_files": removed_files,
+                    "modified_files": modified_files,
                     "chunks_added": added,
                     "chunks_deleted": deleted,
                 }

@@ -888,7 +888,7 @@
           "type": "string"
         },
         "file": {
-          "description": "Files to add (for add operation)",
+          "description": "Files to add (for add operation) or the new file set (for sync)",
           "type": "object"
         },
         "file_paths": {
@@ -899,7 +899,7 @@
           "type": "array"
         },
         "operation": {
-          "description": "Operation: 'add', 'remove', or 'remove_directory'",
+          "description": "Operation: 'add', 'remove', 'remove_directory', or 'sync' (the uploaded files and ZIPs become the source's whole file set; files not in the upload are removed)",
           "type": "string"
         },
         "parent_dir": {
@@ -4649,7 +4649,7 @@
     },
     "/api/manage_source_files": {
       "post": {
-        "description": "Add files, remove files, or remove directories from an existing source",
+        "description": "Add files, remove files, remove directories, or replace the whole file set (sync) of an existing source. The source is then re-ingested: only added, removed and edited files are re-embedded.",
         "operationId": "post_manage_source_files",
         "parameters": [
           {
