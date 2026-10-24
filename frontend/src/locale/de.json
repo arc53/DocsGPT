@@ -784,11 +784,9 @@
           "inAnswers_other": "in {{formatted}} Antworten"
         },
         "panels": {
-          "answerStatus": "Antwortstatus im Zeitverlauf",
-          "sentiment": "Stimmung im Zeitverlauf",
+          "answerStatus": "Antwortstatus",
           "whyNot": "Warum nicht vollständig beantwortet",
           "requestType": "Art der Anfrage",
-          "implicitFeedback": "Reaktionen auf Antworten",
           "shareOfAnswers_one": "Anteil an {{formatted}} Antwort",
           "shareOfAnswers_other": "Anteil an {{formatted}} Antworten",
           "shareOfMessages_one": "Anteil an {{formatted}} Nachricht",
@@ -801,7 +799,6 @@
           "barLabelNone": "{{name}}: noch nicht genug Daten",
           "noneOfThese": "Keines dieser Themen",
           "empty": "In diesem Zeitraum gibt es nichts anzuzeigen.",
-          "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "Von {{formatted}} Frage",
           "ofQuestions_other": "Von {{formatted}} Fragen",
           "topics": "Themen",
@@ -810,7 +807,13 @@
             "title": "Noch keine Themen",
             "description": "Füge Themen hinzu, um zu sehen, worüber Leute fragen.",
             "action": "Themen einrichten"
-          }
+          },
+          "replies": "Wie Nutzer antworteten",
+          "reaction": "Reaktionen auf Antworten",
+          "tone": "Stimmung",
+          "tooltipItem": "{{name}}: {{value}}",
+          "notDrawnMovedOn": "Folgenachrichten, die weitergehen, etwa mit einer neuen Frage, werden nicht gezeichnet.",
+          "notDrawnNeutral": "Neutrale Folgenachrichten werden nicht gezeichnet."
         },
         "labelNamesInline": {
           "answer_status": "Antwortstatus",
@@ -839,7 +842,8 @@
           "reaction": {
             "thanks": "Dank oder Bestätigung",
             "reAsk": "Erneut gefragt",
-            "pushbackOrComplaint": "Widerspruch oder Beschwerde"
+            "pushbackOrComplaint": "Widerspruch oder Beschwerde",
+            "movedOn": "Weitergemacht"
           },
           "requestType": {
             "troubleshooting": "Fehlerbehebung",
@@ -891,6 +895,10 @@
           "button": "Einstellungen",
           "title": "Einstellungen für Einblicke",
           "saveFailed": "Die Einstellungen für Einblicke konnten nicht gespeichert werden. Versuche es noch einmal."
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "Erneut gefragt oder widersprochen",
+          "previous": "Voriger Zeitraum: {{value}}"
         }
       },
       "gaps": {

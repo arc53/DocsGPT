@@ -170,8 +170,10 @@ and its Background tokens switch pushed right with `ml-auto`). The body is one
 of: `loading`, the `analysis` SkeletonLoader in the chart's place under the
 real title; `error` with `onRetry`, the destructive `EmptyState size="sm"`
 ("Could not load this chart." on Analytics); `empty`, an `EmptyState size="sm"
-illustration="none"` saying why there is no figure yet; else the chart and its
-legend container. Analytics pairs them in `xl:flex-row` rows; Insights lays them
+illustration="none"` saying why there is no figure yet; `children`, an in-flow
+body that sizes itself (Insights' share bars when there is no trend to draw);
+else the chart and its legend container. `summary` sits in flow between the
+title row and the body (Insights' headline), and only with figures. Analytics pairs them in `xl:flex-row` rows; Insights lays them
 in `grid-cols-1 xl:grid-cols-2` with `gap-3`, in rows of equal height.
 
 Insights (`settings/insights/ConversationInsights`, the body of an agent's
@@ -191,7 +193,7 @@ next step, and the panels say nothing about it:
   `MIN_SAMPLE` are done.
 - `olderOnly`: every answer in the window predates the labelling window ("Insights
   cover conversations from 13 Oct onwards…", the date in `headingLocale`).
-- `loading` is `InsightsSkeleton`: the five tiles and the five panels every
+- `loading` is `InsightsSkeleton`: the five tiles and the four panels every
   window has, in grid order under their real titles, so nothing moves or
   renames when the figures land; `error` is the destructive EmptyState.
 
@@ -208,13 +210,30 @@ far)", a panel "Not enough data yet", a tag row `—`.
   last `col-span-2 md:col-span-1` so it never sits alone on a phone (Analytics'
   five cards take the same rule); `sub` names the denominator ("of 81
   questions"), `hint` what the figure counts.
-- Time charts (Answer status over time, Sentiment over time, Replies to
-  answers) stack each day as its share of that day (`AnalyticsChart share`, the
-  y axis 0–100%, `shareOfDay`), with the day's count in the tooltip footer.
-  Replies to answers draws no neutral replies, so its columns stop short.
+- The two chart panels (Answer status, How users replied) open with an
+  `InsightHeadline` in `ChartPanel summary`: the period's figure (`text-2xl
+  font-bold`), what it is and its denominator ("of 67 questions"), and
+  "Previous period: 63%" with an up, down or equal arrow once the previous
+  period (`previous` in the API) has `MIN_SAMPLE`. Over time they draw counts,
+  never shares, so a quiet week is a short column: `AnalyticsChart
+  columnTooltip` (one tooltip per column with each non-empty series rounded,
+  "<1" for slivers, the bucket's count in the footer; level x labels). The
+  headline's mix strip and its legend ("Fully answered 59%") name the series,
+  so the chart draws no legend. Buckets are the API's `bucket_unit` (it
+  coarsens days to weeks while they average under 10 answers), labelled by
+  `bucketLabel` ("17 Oct", "13–19 Oct", "14:00"). Fewer than `MIN_BUCKETS` (3)
+  buckets with `MIN_SAMPLE` items each is no trend: the panel shows the
+  period's mix as `ShareBars` under the headline, without the strip.
+- Answer status stacks the four outcomes; greetings are not drawn. How users
+  replied reads the same replies two ways, switched by a `ToggleGroup
+  size="xs"` (Replies to answers / Sentiment) in the title row: the good kind
+  up from zero, the bad kinds down (`AnalyticsChart diverging`, the zero line
+  in the tick colour), the neutral kind (Moved on, Neutral) in the headline
+  only, with a muted line saying it isn't drawn. As bars it shows both under
+  `SectionHeader as="h3" size="sm"` headings, without the toggle.
   Series take colour by meaning (`success`, `warning`, `destructive`, `info`
-  for Asked for details); a series that is no failure, "Said it didn't know"
-  and Sentiment's Neutral, is `muted-foreground`.
+  for Asked for details); a series that is no failure, "Said it didn't know",
+  Neutral and Moved on, is `muted-foreground`.
 - Share lists (Request type, Why not fully answered, Topics) are
   `ShareBars` in a `subtle lg` Card with a `SectionHeader as="h2" size="xs"` and a
   muted `text-xs` "Share of N answers" line: per row the label (`text-xs`,

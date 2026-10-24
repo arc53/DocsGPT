@@ -781,11 +781,9 @@
           "inAnswers_other": "共 {{formatted}} 条回答"
         },
         "panels": {
-          "answerStatus": "回答状态随时间变化",
-          "sentiment": "情绪随时间变化",
+          "answerStatus": "回答状态",
           "whyNot": "未完全回答的原因",
           "requestType": "请求类型",
-          "implicitFeedback": "对回答的回复",
           "shareOfAnswers_one": "占 {{formatted}} 条回答的比例",
           "shareOfAnswers_other": "占 {{formatted}} 条回答的比例",
           "shareOfMessages_one": "占 {{formatted}} 条消息的比例",
@@ -798,7 +796,6 @@
           "barLabelNone": "{{name}}：数据还不够",
           "noneOfThese": "不属于这些主题",
           "empty": "此期间没有可显示的内容。",
-          "tooltipShare": "{{name}}：{{value}}",
           "ofQuestions_one": "共 {{formatted}} 个问题",
           "ofQuestions_other": "共 {{formatted}} 个问题",
           "topics": "主题",
@@ -807,7 +804,13 @@
             "title": "还没有主题",
             "description": "添加主题，看看用户在问什么。",
             "action": "设置主题"
-          }
+          },
+          "replies": "用户如何回复",
+          "reaction": "对回答的回复",
+          "tone": "情绪",
+          "tooltipItem": "{{name}}：{{value}}",
+          "notDrawnMovedOn": "转向其他的回复（例如新问题）不绘制。",
+          "notDrawnNeutral": "中性回复不绘制。"
         },
         "labelNamesInline": {
           "answer_status": "回答状态",
@@ -836,7 +839,8 @@
           "reaction": {
             "thanks": "致谢或确认",
             "reAsk": "再次提问",
-            "pushbackOrComplaint": "反驳或投诉"
+            "pushbackOrComplaint": "反驳或投诉",
+            "movedOn": "转向其他"
           },
           "requestType": {
             "troubleshooting": "故障排查",
@@ -888,6 +892,10 @@
           "button": "设置",
           "title": "洞察设置",
           "saveFailed": "无法保存洞察设置。请重试。"
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "再次提问或反驳",
+          "previous": "上一周期：{{value}}"
         }
       },
       "gaps": {

@@ -816,11 +816,9 @@
           "inAnswers_many": "en {{formatted}} respuestas"
         },
         "panels": {
-          "answerStatus": "Estado de las respuestas a lo largo del tiempo",
-          "sentiment": "Sentimiento a lo largo del tiempo",
+          "answerStatus": "Estado de las respuestas",
           "whyNot": "Por qué no se respondió del todo",
           "requestType": "Tipo de solicitud",
-          "implicitFeedback": "Réplicas a las respuestas",
           "shareOfAnswers_one": "Porcentaje de {{formatted}} respuesta",
           "shareOfAnswers_other": "Porcentaje de {{formatted}} respuestas",
           "shareOfAnswers_many": "Porcentaje de {{formatted}} respuestas",
@@ -837,7 +835,6 @@
           "barLabelNone": "{{name}}: aún no hay datos suficientes",
           "noneOfThese": "Ninguno de estos temas",
           "empty": "No hay nada que mostrar en este periodo.",
-          "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "De {{formatted}} pregunta",
           "ofQuestions_other": "De {{formatted}} preguntas",
           "ofQuestions_many": "De {{formatted}} preguntas",
@@ -847,7 +844,13 @@
             "title": "Aún no hay temas",
             "description": "Añade temas para ver sobre qué pregunta la gente.",
             "action": "Configurar temas"
-          }
+          },
+          "replies": "Cómo respondieron los usuarios",
+          "reaction": "Réplicas a las respuestas",
+          "tone": "Sentimiento",
+          "tooltipItem": "{{name}}: {{value}}",
+          "notDrawnMovedOn": "Las réplicas que siguen adelante, como una pregunta nueva, no se dibujan.",
+          "notDrawnNeutral": "Las réplicas neutras no se dibujan."
         },
         "labelNamesInline": {
           "answer_status": "el estado de las respuestas",
@@ -876,7 +879,8 @@
           "reaction": {
             "thanks": "Agradeció o confirmó",
             "reAsk": "Volvió a preguntar",
-            "pushbackOrComplaint": "Objeción o queja"
+            "pushbackOrComplaint": "Objeción o queja",
+            "movedOn": "Siguió adelante"
           },
           "requestType": {
             "troubleshooting": "Resolución de problemas",
@@ -931,6 +935,10 @@
           "button": "Configuración",
           "title": "Configuración de la información",
           "saveFailed": "No se pudo guardar la configuración de la información. Inténtalo de nuevo."
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "Volvió a preguntar u objetó",
+          "previous": "Periodo anterior: {{value}}"
         }
       },
       "gaps": {

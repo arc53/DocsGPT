@@ -89,8 +89,8 @@ A single series uses `chart-1`, the brand colour. When a series has a
 meaning, use the token for that meaning, not the next one in order:
 failed tool calls use `destructive`, succeeded ones `success`, pending
 ones `warning`. A series that is neither good nor bad is `muted-foreground`,
-not a status hue: Sentiment's Neutral and Answer status' "Said it didn't
-know" (declining when the docs have nothing is no failure). Series with no meaning (models, agents, sources) take
+not a status hue: Neutral sentiment, a reply that Moved on and Answer status'
+"Said it didn't know" (declining when the docs have nothing is no failure). Series with no meaning (models, agents, sources) take
 `chart-1` to `chart-5` in order. When there are more than five, the four
 largest keep `chart-1` to `chart-4` and the rest are summed into one
 "Other" series in `chart-5`, so no colour repeats (`settings/foldSeries.ts`).

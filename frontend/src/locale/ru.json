@@ -848,11 +848,9 @@
           "inAnswers_many": "в {{formatted}} ответах"
         },
         "panels": {
-          "answerStatus": "Статус ответов во времени",
-          "sentiment": "Настроение во времени",
+          "answerStatus": "Статус ответов",
           "whyNot": "Почему ответ неполный",
           "requestType": "Тип запроса",
-          "implicitFeedback": "Реплики на ответы",
           "shareOfAnswers_one": "Доля от {{formatted}} ответа",
           "shareOfAnswers_other": "Доля от {{formatted}} ответа",
           "shareOfAnswers_few": "Доля от {{formatted}} ответов",
@@ -873,7 +871,6 @@
           "barLabelNone": "{{name}}: пока мало данных",
           "noneOfThese": "Ни одна из этих тем",
           "empty": "За этот период показать нечего.",
-          "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "Из {{formatted}} вопроса",
           "ofQuestions_other": "Из {{formatted}} вопроса",
           "ofQuestions_many": "Из {{formatted}} вопросов",
@@ -884,7 +881,13 @@
             "title": "Тем пока нет",
             "description": "Добавьте темы, чтобы видеть, о чём спрашивают люди.",
             "action": "Настроить темы"
-          }
+          },
+          "replies": "Как отвечали пользователи",
+          "reaction": "Реплики на ответы",
+          "tone": "Настроение",
+          "tooltipItem": "{{name}}: {{value}}",
+          "notDrawnMovedOn": "Реплики, перешедшие к другому, например новый вопрос, не показаны.",
+          "notDrawnNeutral": "Нейтральные реплики не показаны."
         },
         "labelNamesInline": {
           "answer_status": "статус ответов",
@@ -913,7 +916,8 @@
           "reaction": {
             "thanks": "Благодарность или подтверждение",
             "reAsk": "Переспросил",
-            "pushbackOrComplaint": "Возражение или жалоба"
+            "pushbackOrComplaint": "Возражение или жалоба",
+            "movedOn": "Перешёл к другому"
           },
           "requestType": {
             "troubleshooting": "Устранение неполадок",
@@ -971,6 +975,10 @@
           "button": "Настройки",
           "title": "Настройки инсайтов",
           "saveFailed": "Не удалось сохранить настройки инсайтов. Попробуйте ещё раз."
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "Переспросил или возразил",
+          "previous": "Прошлый период: {{value}}"
         }
       },
       "gaps": {
