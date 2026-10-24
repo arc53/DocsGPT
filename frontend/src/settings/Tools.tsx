@@ -70,6 +70,9 @@ export default function Tools() {
   const [selectedTool, setSelectedTool] = React.useState<
     UserToolType | APIToolType | null
   >(null);
+  // ToolConfig seeds its form from the tool once; a bump remounts it on the
+  // tool as saved (after a reconnect from its ⋯).
+  const [toolConfigVersion, setToolConfigVersion] = React.useState(0);
   const [loading, setLoading] = useLoaderState(false);
   // The first load failed: an error with Retry, not the empty state.
   const [loadFailed, setLoadFailed] = React.useState(false);
@@ -280,7 +283,9 @@ export default function Tools() {
     onConnected: () => getUserTools(),
   });
 
-  const getUserTools = () => {
+  // `reopenId`: the open tool changed outside its editor (a reconnect);
+  // the editor opens again on the tool as loaded.
+  const getUserTools = (reopenId?: string) => {
     setLoading(true);
     userService
       .getUserTools(token)
@@ -299,6 +304,15 @@ export default function Tools() {
           isChatToolVisible(tool),
         );
         setUserTools(filtered);
+        const reopened = reopenId
+          ? filtered.find((tool: UserToolType) => tool.id === reopenId)
+          : undefined;
+        if (reopened) {
+          setSelectedTool((open) =>
+            open && 'id' in open && open.id === reopenId ? reopened : open,
+          );
+          setToolConfigVersion((version) => version + 1);
+        }
         setLoadFailed(false);
         setLoading(false);
       })
@@ -584,6 +598,12 @@ export default function Tools() {
     );
   };
 
+  // The open tool's ⋯ (none for a draft without an id, or with no items).
+  const detailMenuOptions =
+    selectedTool && 'id' in selectedTool && selectedTool.id
+      ? getMenuOptions(selectedTool as UserToolType, true)
+      : [];
+
   return (
     <div>
       {selectedTool ? (
@@ -594,15 +614,16 @@ export default function Tools() {
           />
         ) : (
           <ToolConfig
+            key={toolConfigVersion}
             tool={selectedTool}
             setTool={setSelectedTool}
             handleGoBack={handleGoBack}
             menu={
-              'id' in selectedTool && selectedTool.id ? (
+              detailMenuOptions.length > 0 ? (
                 <ActionMenu
                   size="toolbar"
                   triggerLabel={t('settings.tools.toolActions')}
-                  options={getMenuOptions(selectedTool as UserToolType, true)}
+                  options={detailMenuOptions}
                 />
               ) : undefined
             }
@@ -646,7 +667,7 @@ export default function Tools() {
                 tone="destructive"
                 illustration="none"
                 title={t('settings.tools.loadError')}
-                onRetry={getUserTools}
+                onRetry={() => getUserTools()}
               />
             ) : userTools.length === 0 ? (
               <EmptyState
@@ -707,7 +728,7 @@ export default function Tools() {
             message={t('settings.tools.selectToolSetup')}
             modalState={addToolModalState}
             setModalState={setAddToolModalState}
-            getUserTools={getUserTools}
+            getUserTools={() => getUserTools()}
             onToolAdded={handleToolAdded}
             onDevicePaired={handleDevicePaired}
           />
@@ -734,7 +755,7 @@ export default function Tools() {
         server={reconnectTool}
         onServerSaved={() => {
           setReconnectTool(null);
-          getUserTools();
+          getUserTools(reconnectTool?.id);
           fetchMcpStatuses();
         }}
       />

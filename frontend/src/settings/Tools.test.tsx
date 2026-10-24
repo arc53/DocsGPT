@@ -53,12 +53,20 @@ vi.mock('../components/ui/dropdown-menu', () => ({
 }));
 
 const toolConfigProps = vi.fn();
-vi.mock('./ToolConfig', () => ({
-  default: (props: unknown) => {
-    toolConfigProps(props);
-    return <div data-testid="tool-config" />;
-  },
-}));
+// ToolConfig seeds its form from `tool` once, on mount: count the mounts.
+const toolConfigMounts = vi.hoisted(() => ({ count: 0 }));
+vi.mock('./ToolConfig', async () => {
+  const { useEffect } = await import('react');
+  return {
+    default: (props: { menu?: React.ReactNode }) => {
+      toolConfigProps(props);
+      useEffect(() => {
+        toolConfigMounts.count += 1;
+      }, []);
+      return <div data-testid="tool-config">{props.menu}</div>;
+    },
+  };
+});
 vi.mock('./RemoteDeviceConfig', () => ({ default: () => null }));
 vi.mock('../modals/AddToolModal', () => ({ default: () => null }));
 const confirm = vi.hoisted(() => ({
@@ -350,6 +358,53 @@ describe('Tools', () => {
     expect(container.querySelector('[data-testid="tool-config"]')).not.toBe(
       null,
     );
+  });
+
+  const openTool = async (id: string) => {
+    await act(async () => {
+      (
+        card(id).querySelector('[data-testid="menu"] button') as HTMLElement
+      ).click();
+    });
+  };
+  const detailMenu = () =>
+    container.querySelector('[data-testid="tool-config"] [data-testid="menu"]');
+
+  // A viewer has nothing to do from the open tool's ⋯: no empty menu.
+  it("draws no ⋯ on an open tool the caller can't act on", async () => {
+    await render([viewerTool]);
+    await openTool('vw');
+    expect(container.querySelector('[data-testid="tool-config"]')).not.toBe(
+      null,
+    );
+    expect(detailMenu()).toBe(null);
+  });
+
+  // The editor seeds its form from the tool once: after a reconnect it
+  // opens again on the saved server, so a Save can't send the old one back.
+  it('opens the editor again on the reconnected tool', async () => {
+    await render([ownTool]);
+    await openTool('own');
+    const mounts = toolConfigMounts.count;
+    await act(async () => {
+      Array.from(detailMenu()!.querySelectorAll<HTMLButtonElement>('button'))
+        .find((b) => b.textContent === 'settings.tools.reconnect')!
+        .click();
+    });
+    const moved = {
+      ...ownTool,
+      config: { ...ownTool.config, server_url: 'https://new.example.com/sse' },
+    };
+    getUserTools.mockImplementation(() => jsonResponse({ tools: [moved] }));
+    const { onServerSaved } = mcpModalProps.mock.calls.at(-1)![0] as {
+      onServerSaved: () => void;
+    };
+    await act(async () => onServerSaved());
+    const last = toolConfigProps.mock.calls.at(-1)![0] as {
+      tool: { config: { server_url: string } };
+    };
+    expect(last.tool.config.server_url).toBe('https://new.example.com/sse');
+    expect(toolConfigMounts.count).toBeGreaterThan(mounts);
   });
 
   it('passes the tool owner and role to the Reconnect modal', async () => {
