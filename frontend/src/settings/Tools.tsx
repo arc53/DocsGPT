@@ -146,6 +146,13 @@ export default function Tools() {
     }
     getUserTools();
     fetchMcpStatuses();
+    // Deleted from its own page: back to the list.
+    if (
+      selectedTool &&
+      'id' in selectedTool &&
+      selectedTool.id === toolToDelete.id
+    )
+      setSelectedTool(null);
     setToolToDelete(null);
   };
 
@@ -168,7 +175,8 @@ export default function Tools() {
     setReconnectModalState('ACTIVE');
   };
 
-  const getMenuOptions = (tool: UserToolType): MenuOption[] => {
+  // `detail`: the open tool's own ⋯, which leaves out Edit / View.
+  const getMenuOptions = (tool: UserToolType, detail = false): MenuOption[] => {
     const canEdit = can(tool, 'edit') || can(tool, 'edit_credentials');
     const options: MenuOption[] = [];
     const connection = connectionOf(tool);
@@ -202,7 +210,7 @@ export default function Tools() {
     // The owner's connected tool (its connection is theirs) is managed on
     // the Connectors page, so it has no editor here; a teammate's opens the
     // tool editor like any other shared tool.
-    if (!(tool.connection_id && isOwner(tool)))
+    if (!detail && !(tool.connection_id && isOwner(tool)))
       options.push(
         canEdit
           ? {
@@ -250,6 +258,7 @@ export default function Tools() {
         label: t('settings.tools.delete'),
         onClick: () => handleDeleteTool(tool),
         variant: 'destructive',
+        separatorBefore: true,
       });
     }
     return options;
@@ -588,6 +597,15 @@ export default function Tools() {
             tool={selectedTool}
             setTool={setSelectedTool}
             handleGoBack={handleGoBack}
+            menu={
+              'id' in selectedTool && selectedTool.id ? (
+                <ActionMenu
+                  size="toolbar"
+                  triggerLabel={t('settings.tools.toolActions')}
+                  options={getMenuOptions(selectedTool as UserToolType, true)}
+                />
+              ) : undefined
+            }
           />
         )
       ) : (
@@ -693,44 +711,44 @@ export default function Tools() {
             onToolAdded={handleToolAdded}
             onDevicePaired={handleDevicePaired}
           />
-          <ConfirmationModal
-            message={t('settings.tools.deleteWarning', {
-              interpolation: { escapeValue: false },
-              toolName:
-                toolToDelete?.customName || toolToDelete?.displayName || '',
-            })}
-            description={t('settings.tools.deleteConsequence')}
-            modalState={deleteModalState}
-            setModalState={setDeleteModalState}
-            handleSubmit={confirmDeleteTool}
-            error={t('settings.tools.deleteFailed')}
-            submitLabel={t('settings.tools.delete')}
-            variant="destructive"
-          />
-          {signInModals}
-          <MCPServerModal
-            modalState={reconnectModalState}
-            setModalState={setReconnectModalState}
-            server={reconnectTool}
-            onServerSaved={() => {
-              setReconnectTool(null);
-              getUserTools();
-              fetchMcpStatuses();
-            }}
-          />
-          {toolToShare && (
-            <ShareToTeamModal
-              resourceType="tool"
-              resourceId={toolToShare.id}
-              resourceName={toolToShare.customName || toolToShare.displayName}
-              credentials={shareCredentials(toolToShare)}
-              onClose={() => {
-                setToolToShare(null);
-                getUserTools();
-              }}
-            />
-          )}
         </div>
+      )}
+      {/* The tool's dialogs serve its tile and its open page alike. */}
+      <ConfirmationModal
+        message={t('settings.tools.deleteWarning', {
+          interpolation: { escapeValue: false },
+          toolName: toolToDelete?.customName || toolToDelete?.displayName || '',
+        })}
+        description={t('settings.tools.deleteConsequence')}
+        modalState={deleteModalState}
+        setModalState={setDeleteModalState}
+        handleSubmit={confirmDeleteTool}
+        error={t('settings.tools.deleteFailed')}
+        submitLabel={t('settings.tools.delete')}
+        variant="destructive"
+      />
+      {signInModals}
+      <MCPServerModal
+        modalState={reconnectModalState}
+        setModalState={setReconnectModalState}
+        server={reconnectTool}
+        onServerSaved={() => {
+          setReconnectTool(null);
+          getUserTools();
+          fetchMcpStatuses();
+        }}
+      />
+      {toolToShare && (
+        <ShareToTeamModal
+          resourceType="tool"
+          resourceId={toolToShare.id}
+          resourceName={toolToShare.customName || toolToShare.displayName}
+          credentials={shareCredentials(toolToShare)}
+          onClose={() => {
+            setToolToShare(null);
+            getUserTools();
+          }}
+        />
       )}
     </div>
   );

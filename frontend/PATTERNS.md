@@ -67,11 +67,14 @@ field grid, then Advanced, Guardrails and Insights. Schedules shows a
 `StatCard` row, Recurring / One-time as `ui/tabs`, and
 each schedule as a `ScheduleRow` (see Agent pages).
 
-A detail page inside a list section (an open team) swaps the list's
-`PageToolbar` for a crumb row at the 38px field height (`min-h-9.5`):
-`DetailBreadcrumb` on the left, the object's ⋯ (`ActionMenu size="toolbar"`)
-last on the right, as a source view's `PathHeader` ends with its `menu`.
-A delete is the ⋯'s last item, `destructive` after a rule.
+A detail page inside a list section (an open team, tool or remote device)
+swaps the list's `PageToolbar` for a crumb row at the 38px field height
+(`min-h-9.5`): `DetailBreadcrumb` on the left; on the right the page's
+buttons (`field` pills: the tool's Save) and the object's ⋯ (`ActionMenu
+size="toolbar"`) last, as a source view's `PathHeader` ends with its `menu`.
+An open tool's ⋯ is its tile's menu less Edit / View (`getMenuOptions(tool,
+true)` in `settings/Tools`, whose dialogs serve both); a device's holds
+Revoke. A delete or revoke is the ⋯'s last item, `destructive` after a rule.
 
 ## Agent pages
 
