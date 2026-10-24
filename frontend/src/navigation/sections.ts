@@ -403,13 +403,17 @@ const TAB_ACTIONS: Record<string, string> = {
  * conversations (`feature`, applied by `getVisibleGroups`). Until the
  * record arrives every tab shows, and the route guard sends a caller who
  * may not open a page back to the list.
+ *
+ * `workflow` is what the path says; only the builder's path says it, so the
+ * record's `agent_type` decides on the agent's other pages once loaded.
  */
 export function buildAgentSection(
   agentId: string,
   agentName: string | undefined,
   workflow: boolean,
-  access?: (AccessFields & { status?: string }) | null,
+  access?: (AccessFields & { status?: string; agent_type?: string }) | null,
 ): Section {
+  const isWorkflow = workflow || access?.agent_type === 'workflow';
   const allows = (item: SectionItem) =>
     !access || canAgent(access, TAB_ACTIONS[item.key]);
   const groups: SectionGroup[] = [
@@ -418,7 +422,7 @@ export function buildAgentSection(
       items: [
         {
           key: 'overview',
-          path: agentEditPath(agentId, workflow),
+          path: agentEditPath(agentId, isWorkflow),
           labelKey: 'agents.pageHeader.tabs.overview',
           icon: SquarePen,
         },
@@ -461,11 +465,11 @@ export function buildAgentSection(
     .filter((group) => group.items.length > 0);
   return {
     key: `agent:${agentId}`,
-    rootPath: visible[0]?.items[0]?.path ?? agentEditPath(agentId, workflow),
+    rootPath: visible[0]?.items[0]?.path ?? agentEditPath(agentId, isWorkflow),
     titleKey: 'agents.pageHeader.fallbackName',
     title: agentName?.trim() || undefined,
     matches: [
-      agentEditPath(agentId, workflow),
+      agentEditPath(agentId, isWorkflow),
       agentSchedulesPath(agentId),
       agentAnalyticsPath(agentId),
       agentInsightsPath(agentId),

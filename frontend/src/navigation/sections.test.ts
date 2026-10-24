@@ -171,6 +171,19 @@ describe('buildAgentSection', () => {
       'overview',
     );
   });
+
+  it('points overview at the builder from a workflow agent’s other pages', () => {
+    // The monitoring paths don't say the agent is a workflow; its record does.
+    const section = buildAgentSection('a1', 'Flow', false, {
+      access: 'owner',
+      agent_type: 'workflow',
+    });
+
+    expect(section.rootPath).toBe('/agents/manage/workflow/edit/a1');
+    expect(getActiveItem(section, '/agents/manage/workflow/edit/a1')?.key).toBe(
+      'overview',
+    );
+  });
 });
 
 describe('buildAgentSection tabs for a draft', () => {
