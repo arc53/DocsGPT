@@ -278,7 +278,9 @@ class TestDisconnect:
         )
         source = _source(pg_conn, drive)
         repo = ConnectorSessionsRepository(pg_conn)
-        result = service.disconnect(pg_conn, repo.get(drive))
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            result = service.disconnect(pg_conn, repo.get(drive))
+        revoke.assert_called_once()
         assert result["status"] == "disconnected"
         row = repo.get(drive)
         assert row["token_info"] is None and row["session_token"] is None
