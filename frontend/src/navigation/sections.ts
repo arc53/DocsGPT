@@ -414,6 +414,9 @@ export function buildAgentSection(
   access?: (AccessFields & { status?: string; agent_type?: string }) | null,
 ): Section {
   const isWorkflow = workflow || access?.agent_type === 'workflow';
+  // The classic edit path still renders a workflow (an old link, or a
+  // fallback before the agent loads), so it stays Overview's too.
+  const overviewAliases = isWorkflow ? [agentEditPath(agentId, false)] : [];
   const allows = (item: SectionItem) =>
     !access || canAgent(access, TAB_ACTIONS[item.key]);
   const groups: SectionGroup[] = [
@@ -423,6 +426,7 @@ export function buildAgentSection(
         {
           key: 'overview',
           path: agentEditPath(agentId, isWorkflow),
+          aliases: overviewAliases,
           labelKey: 'agents.pageHeader.tabs.overview',
           icon: SquarePen,
         },
@@ -470,6 +474,7 @@ export function buildAgentSection(
     title: agentName?.trim() || undefined,
     matches: [
       agentEditPath(agentId, isWorkflow),
+      ...overviewAliases,
       agentSchedulesPath(agentId),
       agentAnalyticsPath(agentId),
       agentInsightsPath(agentId),

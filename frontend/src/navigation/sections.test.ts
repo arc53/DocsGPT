@@ -184,6 +184,20 @@ describe('buildAgentSection', () => {
       'overview',
     );
   });
+
+  // The classic edit path still renders a workflow (an old link, a fallback
+  // when the agent isn't loaded): Overview stays the active tab there.
+  it('keeps overview active on a workflow agent’s classic edit path', () => {
+    const section = buildAgentSection('a1', 'Flow', false, {
+      access: 'owner',
+      agent_type: 'workflow',
+    });
+
+    expect(getActiveItem(section, '/agents/manage/edit/a1')?.key).toBe(
+      'overview',
+    );
+    expect(section.matches).toContain('/agents/manage/edit/a1');
+  });
 });
 
 describe('buildAgentSection tabs for a draft', () => {
