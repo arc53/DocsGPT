@@ -6137,6 +6137,7 @@ def _run_website_pages(
         chunking_strategy=cfg.chunking.strategy,
         max_tokens=cfg.chunking.max_tokens,
         min_tokens=cfg.chunking.min_tokens,
+        chunk_overlap=cfg.chunking.chunk_overlap,
         duplicate_headers=cfg.chunking.duplicate_headers,
     )
     store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)

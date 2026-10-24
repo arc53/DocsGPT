@@ -184,6 +184,26 @@ class TestAddPages:
         assert kinds == ["source.ingest.queued", "source.ingest.completed"]
         assert pipeline["events"][-1][1]["operation"] == "add_pages"
 
+    def test_pages_are_chunked_with_the_sources_settings(
+        self, pg_conn, patch_worker_db, task_self, source, pipeline, monkeypatch,
+    ):
+        from docsgpt import worker
+
+        chunking = {"strategy": "recursive", "max_tokens": 700, "min_tokens": 30, "chunk_overlap": 120}
+        SourcesRepository(pg_conn).update(str(source["id"]), USER, {"config": {"chunking": chunking}})
+        made = []
+        monkeypatch.setattr(
+            worker.ChunkerCreator, "create_chunker", lambda *a, **k: made.append(k) or ParagraphChunker(),
+        )
+        pipeline["pages"]["https://docs.x.io/guide/b"] = "# B\n\nBody of page B."
+
+        worker.website_pages_worker(task_self, str(source["id"]), USER, "add", urls=["https://docs.x.io/guide/b"])
+
+        [kwargs] = made
+        assert {key: kwargs[key] for key in ("max_tokens", "min_tokens", "chunk_overlap")} == {
+            "max_tokens": 700, "min_tokens": 30, "chunk_overlap": 120,
+        }
+
     def test_pages_that_could_not_be_fetched_are_named_in_the_result(
         self, pg_conn, patch_worker_db, task_self, source, pipeline,
     ):
