@@ -76,9 +76,38 @@ def analytics_enabled(home: Path) -> bool:
         return True
 
 
-def _reloading_command(command: list[str], watched: Path) -> list[str]:
-    """``command`` under watchfiles, restarted when a Python file under ``watched`` changes."""
-    return [sys.executable, "-m", "watchfiles", "--filter", "python", shlex.join(command), str(watched)]
+def _reloading_command(
+    launcher: list[str],
+    cli_args: list[str],
+    watched: Path,
+    *,
+    platform: Optional[str] = None,
+) -> list[str]:
+    """``cli_args`` under watchfiles, restarted when a Python file under ``watched`` changes."""
+    if (platform or sys.platform) == "win32":
+        return [
+            sys.executable,
+            "-m",
+            "watchfiles",
+            "--filter",
+            "python",
+            "--target-type",
+            "function",
+            "--args",
+            shlex.join(cli_args),
+            "docsgpt.cli.main",
+            str(watched),
+        ]
+
+    return [
+        sys.executable,
+        "-m",
+        "watchfiles",
+        "--filter",
+        "python",
+        shlex.join([*launcher, *cli_args]),
+        str(watched),
+    ]
 
 
 def plan(
@@ -138,14 +167,16 @@ def plan(
     children.append(Child(name="api", command=api, cwd=checkout, env=dict(environment)))
 
     if getattr(args, "worker", True):
-        worker = [*launcher, "worker", "-l", getattr(args, "loglevel", "INFO")]
+        worker_args = ["worker", "-l", getattr(args, "loglevel", "INFO")]
+        worker = [*launcher, *worker_args]
         if getattr(args, "reload", True) and watching:
-            worker = _reloading_command(worker, package)
+            worker = _reloading_command(launcher, worker_args, package, platform=platform)
         children.append(Child(name="worker", command=worker, cwd=checkout, env=dict(environment)))
         if needs_analytics_worker(platform) and analytics_enabled(Path(environment["DOCSGPT_HOME"])):
-            analytics = [*launcher, "worker", "--analytics", "-l", getattr(args, "loglevel", "INFO")]
+            analytics_args = ["worker", "--analytics", "-l", getattr(args, "loglevel", "INFO")]
+            analytics = [*launcher, *analytics_args]
             if getattr(args, "reload", True) and watching:
-                analytics = _reloading_command(analytics, package)
+                analytics = _reloading_command(launcher, analytics_args, package, platform=platform)
             children.append(Child(name="analytics", command=analytics, cwd=checkout, env=dict(environment)))
 
     if getattr(args, "ui", False):
@@ -210,9 +241,10 @@ def _stop(running: list[tuple[Child, object]], grace: float, sleep: Callable[[fl
             sleep(0.1)
         except KeyboardInterrupt:
             break
+    force_signal = signal.SIGTERM if os.name == "nt" else signal.SIGKILL
     for _, process in running:
         if process.poll() is None:
-            _signal(process, signal.SIGKILL)
+            _signal(process, force_signal)
 
 
 def run(
