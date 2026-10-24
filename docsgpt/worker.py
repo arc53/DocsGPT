@@ -1283,6 +1283,10 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                 # 1) Delete chunks of removed files, and of edited files
                 # before their new content is embedded
                 deleted = 0
+                # Files whose chunks may not match their content after this run.
+                # They are stored without a hash, so the next reingest counts
+                # them as edited and rebuilds their chunks.
+                unsynced: set = set()
                 stale_files = set(removed_files) | set(modified_files)
                 if stale_files:
                     try:
@@ -1317,6 +1321,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         inner_warnings.append(
                             f"deletion failed: {str(e)[:200]}"
                         )
+                        # Their old chunks may remain beside the new ones.
+                        unsynced.update(modified_files)
 
                 # 2) Add chunks from new and edited files
                 added = 0
@@ -1338,6 +1344,12 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                 file_metadata=metadata_from_filename,
                             )
                             raw_docs_new = reader_new.load_data()
+                            # Skipped as unreadable: an edited file's old
+                            # chunks are already gone and it adds none.
+                            unsynced.update(
+                                os.path.relpath(str(failed_path), start=temp_dir)
+                                for failed_path, _ in reader_new.failed_files
+                            )
                             chunker_new = ChunkerCreator.create_chunker(
                                 cfg.chunking.strategy,
                                 chunking_strategy=cfg.chunking.strategy,
@@ -1415,12 +1427,11 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         inner_warnings.append(
                             f"add failed: {str(e)[:200]}"
                         )
-                        # Store these files without a hash, so the next
-                        # reingest counts them as edited and embeds them again
-                        # instead of seeing nothing to do.
-                        new_entries = _structure_files(directory_structure)
-                        for rel_path in files_to_embed:
-                            new_entries.get(rel_path, {}).pop("sha256", None)
+                        unsynced.update(files_to_embed)
+
+                new_entries = _structure_files(directory_structure)
+                for rel_path in unsynced:
+                    new_entries.get(rel_path, {}).pop("sha256", None)
 
                 # 3) Update source directory structure timestamp
                 try:

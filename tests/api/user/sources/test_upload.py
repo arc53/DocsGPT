@@ -1424,6 +1424,21 @@ class TestManageSourceFilesSync:
         kwargs = apply_async.call_args.kwargs["kwargs"]
         assert kwargs["source_id"] == str(src["id"]) and kwargs["user"] == "u-sync"
 
+    def test_an_upload_with_no_files_inside_is_refused(self, app, pg_conn, tmp_path):
+        import zipfile
+
+        src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same"})
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("empty-folder/", "")
+        archive.seek(0)
+
+        response, apply_async = self._sync(app, pg_conn, tmp_path, src, [(archive, "docs.zip")])
+
+        assert response.status_code == 400
+        assert self._stored(root) == {"keep.md": b"same"}
+        apply_async.assert_not_called()
+
     def test_never_deletes_outside_the_source_folder(self, app, pg_conn, tmp_path):
         from docsgpt.storage.local import LocalStorage
 

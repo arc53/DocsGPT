@@ -1181,6 +1181,15 @@ class ManageSourceFiles(Resource):
                 with tempfile.TemporaryDirectory() as temp_dir:
                     stager = _UploadStager(temp_dir)
                     stager.stage(files)
+                    if not stager.pending:
+                        # An empty ZIP, or one of folders only: syncing it
+                        # would remove every file of the source.
+                        if scoped_key:
+                            _release_claim(scoped_key)
+                        return make_response(
+                            jsonify({"success": False, "message": "The upload holds no files to sync"}),
+                            400,
+                        )
                     synced = {rel_path for _, rel_path in stager.pending}
                     for local_path, rel_path in stager.pending:
                         with open(local_path, "rb") as staged_file:

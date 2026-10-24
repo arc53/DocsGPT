@@ -473,3 +473,52 @@ class TestReingestDetectsEditedFiles:
         assert first["modified_files"] == ["a.md"]
         assert second["status"] == "completed" and second["modified_files"] == ["a.md"]
         assert any("edited" in c["text"] for c in chunk_store if c["metadata"]["source"] == "a.md")
+
+    def test_a_file_that_failed_to_parse_is_retried_next_time(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store, monkeypatch,
+    ):
+        from docsgpt.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.file.markdown_parser import MarkdownParser
+
+        src = _hashed_source(pg_conn, {"a.md": b"alpha", "b.md": b"beta"})
+        # b.md is edited too, so the batch still parses and only a.md fails.
+        stored_files.update({"a.md": b"alpha, broken", "b.md": b"beta, edited"})
+        chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
+        real_parse = MarkdownParser.parse_file
+
+        def parse(self, file, errors="ignore"):
+            if b"broken" in file.read_bytes():
+                raise DocumentParseError("cannot read it")
+            return real_parse(self, file, errors=errors)
+
+        monkeypatch.setattr(MarkdownParser, "parse_file", parse)
+        first = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+        stored_files["a.md"] = b"alpha, fixed"
+        monkeypatch.setattr(MarkdownParser, "parse_file", real_parse)
+        row = SourcesRepository(pg_conn).get(str(src["id"]), "alice")
+        second = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert first["modified_files"] == ["a.md", "b.md"]
+        assert "sha256" not in row["directory_structure"]["a.md"]
+        assert row["directory_structure"]["b.md"]["sha256"] == _sha(b"beta, edited")
+        assert second["modified_files"] == ["a.md"]
+        assert any("fixed" in c["text"] for c in chunk_store if c["metadata"]["source"] == "a.md")
+
+    def test_an_edited_file_is_re_embedded_again_after_a_failed_chunk_deletion(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
+        store = VectorCreator.create_vectorstore()
+        real_get = store.get_chunks.side_effect
+        store.get_chunks.side_effect = RuntimeError("vector store down")
+
+        worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+        store.get_chunks.side_effect = real_get
+        second = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert second["modified_files"] == ["a.md"]
+        assert "old-a" not in [c["doc_id"] for c in chunk_store]
