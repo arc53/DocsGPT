@@ -21,6 +21,28 @@ describe('sourceHref', () => {
     ).toBe('https://example.com/b');
   });
 
+  it('opens a synced file by its link in the service, not its local path', () => {
+    expect(
+      sourceHref({
+        title: 't',
+        text: '',
+        source: 'Reports/q1.pdf',
+        url: 'https://drive.google.com/file/d/1/view',
+      }),
+    ).toBe('https://drive.google.com/file/d/1/view');
+  });
+
+  it('ignores a link that is not a web address', () => {
+    expect(
+      sourceHref({
+        title: 't',
+        text: '',
+        source: 'docs/a.md',
+        url: 'javascript:alert(1)',
+      }),
+    ).toBe(null);
+  });
+
   it('ignores the placeholder links legacy answers saved', () => {
     expect(sourceHref({ title: 't', text: '', link: 'local' })).toBe(null);
     expect(sourceHref({ title: 't', text: '', link: 'None' })).toBe(null);

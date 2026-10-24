@@ -158,6 +158,20 @@ class TestInternalSearchToolSearch:
         assert "[1]" in result
         assert "[2]" in result
 
+    def test_search_names_the_files_link(self):
+        tool = _make_tool()
+        mock_retriever = Mock()
+        mock_retriever.search.return_value = [
+            {"text": "Q1", "title": "q1.pdf", "source": "Reports/q1.pdf", "filename": "q1.pdf",
+             "url": "https://drive.google.com/file/d/f1/view"},
+            {"text": "Other", "title": "b.md", "source": "docs/b.md", "filename": "b.md"},
+        ]
+        tool._retriever = mock_retriever
+
+        result = tool.execute_action("search", query="q")
+        assert "[1] q1.pdf (source: Reports/q1.pdf, url: https://drive.google.com/file/d/f1/view)" in result
+        assert "[2] b.md (source: docs/b.md)\n" in result
+
     def test_search_uses_title_when_no_filename(self):
         tool = _make_tool()
         mock_retriever = Mock()

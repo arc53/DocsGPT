@@ -445,6 +445,8 @@
           "similarityThresholdPlaceholder": "Ninguno",
           "similarityThresholdHint": "Descarta los fragmentos cuya puntuación de similitud del recuperador sea inferior a este valor (0–1). Filtra por la puntuación del recuperador, no por el modelo de relevancia.",
           "rephraseQuery": "Reformular la consulta antes de buscar",
+          "showLinks": "Enlazar a los archivos originales",
+          "showLinksHint": "Las citas y el agente reciben el enlace de cada archivo en el servicio desde el que se sincronizó. Para abrirlo sigue haciendo falta acceso al archivo allí.",
           "retriever": "Recuperador",
           "retrievers": {
             "classic": "Clásico",
@@ -2891,6 +2893,7 @@
       "researched_many": "{{count}} temas investigados"
     },
     "openFile": "Abrir archivo",
+    "opensInNewTab": "Se abre en una pestaña nueva",
     "stepGroup": {
       "title": "Herramientas",
       "failed": "{{count}} con error"

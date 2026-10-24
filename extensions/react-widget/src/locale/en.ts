@@ -80,6 +80,8 @@ export const en = {
   copyAnswer: 'Copy answer',
   // Icon button under a code block in an answer (screen readers).
   copyCode: 'Copy code',
+  // Hidden text read after an answer link (screen readers only).
+  opensInNewTab: 'Opens in a new tab',
   // The copy button's label for a moment after copying.
   copied: 'Copied',
   // Thumbs-up icon button under an answer (screen readers).

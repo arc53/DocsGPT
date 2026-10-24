@@ -431,6 +431,8 @@
           "similarityThresholdPlaceholder": "None",
           "similarityThresholdHint": "Drops chunks whose similarity score from the retriever is below this (0–1). It filters on the retriever's score, not the relevance model.",
           "rephraseQuery": "Rephrase query before search",
+          "showLinks": "Link to the original files",
+          "showLinksHint": "Citations and the agent get each file's link in the service it was synced from. Opening a link still needs access to the file there.",
           "retriever": "Retriever",
           "retrievers": {
             "classic": "Classic",
@@ -2806,6 +2808,7 @@
       "researched_other": "Researched {{count}} topics"
     },
     "openFile": "Open file",
+    "opensInNewTab": "Opens in a new tab",
     "stepGroup": {
       "title": "Tools",
       "failed": "{{count}} failed"

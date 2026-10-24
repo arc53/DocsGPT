@@ -17,6 +17,7 @@ export type SourceChunkingConfig = {
   strategy?: ChunkingStrategy; // default 'classic_chunk'
   max_tokens?: number; // default 1250
   min_tokens?: number; // default 150
+  chunk_overlap?: number; // default 0
   duplicate_headers?: boolean; // default false
 };
 
@@ -54,6 +55,7 @@ export type SourceRetrievalConfig = {
   chunks?: number; // top-k, default 6
   score_threshold?: number | null; // default null
   rephrase_query?: boolean; // default true
+  show_links?: boolean; // default true; synced sources link each file in its service
   prescreen?: SourcePrescreenConfig | null; // null = off
   reranker?: SourceRerankerConfig | null; // null = relevance off
   graph?: SourceGraphRetrievalConfig; // graphrag retriever only

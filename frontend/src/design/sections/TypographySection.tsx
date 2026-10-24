@@ -25,7 +25,10 @@ export default function TypographySection() {
           <p className="text-muted-foreground/70">
             Muted at 70%: placeholders and de-emphasised metadata.
           </p>
-          <p className="text-primary">Primary: links and the selected state.</p>
+          <p className="text-primary">Primary: the selected state.</p>
+          <p className="text-link">
+            Link: links (primary in light, lighter in dark).
+          </p>
           <p className="text-destructive">Destructive: errors.</p>
         </div>
       </Example>

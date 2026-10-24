@@ -192,7 +192,7 @@ What is in it:
 
 - **Python libraries:** pandas, numpy, matplotlib, openpyxl, python-docx,
   python-pptx, reportlab, lxml, Pillow, requests, beautifulsoup4, PyYAML, pypdf,
-  PyPDF2, pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio, at the
+  pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio, at the
   exact versions in the manifest.
 - **Commands:** headless LibreOffice (`soffice`), headless Chromium
   (`chromium-headless-shell`), `tesseract` (English), poppler's `pdftotext`

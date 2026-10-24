@@ -38,7 +38,14 @@ class TestParseLenient:
         assert c.strategy == "classic_chunk"
         assert c.max_tokens == 1250
         assert c.min_tokens == 150
+        assert c.chunk_overlap == 0
         assert c.duplicate_headers is False
+
+    def test_chunk_overlap_validation(self):
+        """Ensure chunk_overlap permits non-negative values and rejects negative values."""
+        assert ChunkingConfig(chunk_overlap=50).chunk_overlap == 50
+        with pytest.raises(ValidationError, match="chunk_overlap must be >= 0"):
+            ChunkingConfig(chunk_overlap=-1)
 
     def test_retrieval_defaults(self):
         r = RetrievalConfig()
@@ -47,8 +54,13 @@ class TestParseLenient:
         assert r.chunks == 6
         assert r.score_threshold is None
         assert r.rephrase_query is True
+        assert r.show_links is True
         assert r.reranker is None
         assert r.prescreen is None
+
+    def test_show_links_can_be_turned_off(self):
+        cfg = SourceConfig.model_validate({"retrieval": {"show_links": False}})
+        assert cfg.retrieval.show_links is False
 
     def test_parse_partial_merges_onto_defaults(self):
         cfg = SourceConfig.parse({"retrieval": {"chunks": 5}})

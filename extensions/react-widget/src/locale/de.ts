@@ -37,6 +37,7 @@ export const de = {
   workflowStep: '{step}…',
   copyAnswer: 'Antwort kopieren',
   copyCode: 'Code kopieren',
+  opensInNewTab: 'Öffnet sich in einem neuen Tab',
   copied: 'Kopiert',
   goodResponse: 'Gute Antwort',
   badResponse: 'Schlechte Antwort',

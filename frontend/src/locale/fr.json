@@ -445,6 +445,8 @@
           "similarityThresholdPlaceholder": "Aucun",
           "similarityThresholdHint": "Écarte les fragments dont le score de similarité du moteur de récupération est inférieur à cette valeur (0–1). Le filtre porte sur le score du moteur de récupération, pas sur le modèle de pertinence.",
           "rephraseQuery": "Reformuler la requête avant la recherche",
+          "showLinks": "Lier aux fichiers d'origine",
+          "showLinksHint": "Les citations et l'agent reçoivent le lien de chaque fichier dans le service d'où il a été synchronisé. L'ouvrir nécessite toujours un accès au fichier dans ce service.",
           "retriever": "Moteur de récupération",
           "retrievers": {
             "classic": "Classique",
@@ -2891,6 +2893,7 @@
       "researched_many": "{{count}} sujets étudiés"
     },
     "openFile": "Ouvrir le fichier",
+    "opensInNewTab": "S’ouvre dans un nouvel onglet",
     "stepGroup": {
       "title": "Outils",
       "failed": "{{count}} en échec"

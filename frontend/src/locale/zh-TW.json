@@ -429,6 +429,8 @@
           "similarityThresholdPlaceholder": "無",
           "similarityThresholdHint": "捨棄檢索器相似度分數低於此值（0–1）的區塊。依檢索器的分數篩選，而非相關度模型。",
           "rephraseQuery": "搜尋前改寫查詢",
+          "showLinks": "連結到原始檔案",
+          "showLinksHint": "引用和代理會取得每個檔案在其同步來源服務中的連結。開啟連結仍需在該服務中擁有檔案的存取權限。",
           "retriever": "檢索器",
           "retrievers": {
             "classic": "經典",
@@ -2793,6 +2795,7 @@
       "researched": "已研究 {{count}} 個主題"
     },
     "openFile": "開啟檔案",
+    "opensInNewTab": "在新分頁中開啟",
     "stepGroup": {
       "title": "工具",
       "failed": "{{count}} 個失敗"

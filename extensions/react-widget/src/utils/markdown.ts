@@ -15,6 +15,8 @@ export type AnswerEnv = {
   openSourceLabel?: string;
   /** The code frame's copy button label. */
   copyCodeLabel?: string;
+  /** Id of the hidden "opens in a new tab" text that links point at. */
+  newTabHintId?: string;
 };
 
 const CITATION = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
@@ -138,6 +140,8 @@ const createMarkdown = () => {
   md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
     tokens[idx].attrSet('target', '_blank');
     tokens[idx].attrSet('rel', 'noopener noreferrer');
+    const hintId = (env as AnswerEnv | undefined)?.newTabHintId;
+    if (hintId) tokens[idx].attrSet('aria-describedby', hintId);
     return linkOpen(tokens, idx, options, env, self);
   };
 

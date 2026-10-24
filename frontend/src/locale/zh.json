@@ -429,6 +429,8 @@
           "similarityThresholdPlaceholder": "无",
           "similarityThresholdHint": "丢弃检索器相似度得分低于此值（0–1）的文本块。按检索器的得分过滤，而不是按相关度模型。",
           "rephraseQuery": "搜索前改写查询",
+          "showLinks": "链接到原始文件",
+          "showLinksHint": "引用和智能体会获得每个文件在其同步来源服务中的链接。打开链接仍需在该服务中拥有文件的访问权限。",
           "retriever": "检索器",
           "retrievers": {
             "classic": "经典",
@@ -2791,6 +2793,7 @@
       "researched": "已研究 {{count}} 个主题"
     },
     "openFile": "打开文件",
+    "opensInNewTab": "在新标签页中打开",
     "stepGroup": {
       "title": "工具",
       "failed": "{{count}} 个失败"

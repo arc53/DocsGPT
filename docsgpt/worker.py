@@ -918,6 +918,7 @@ def ingest_worker(
                 chunking_strategy=cfg.chunking.strategy,
                 max_tokens=cfg.chunking.max_tokens,
                 min_tokens=cfg.chunking.min_tokens,
+                chunk_overlap=cfg.chunking.chunk_overlap,
                 duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
@@ -1306,6 +1307,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                 chunking_strategy=cfg.chunking.strategy,
                                 max_tokens=cfg.chunking.max_tokens,
                                 min_tokens=cfg.chunking.min_tokens,
+                                chunk_overlap=cfg.chunking.chunk_overlap,
                                 duplicate_headers=cfg.chunking.duplicate_headers,
                             )
                             chunked_new = chunker_new.chunk(documents=raw_docs_new)
@@ -1588,6 +1590,7 @@ def remote_worker(
             chunking_strategy=cfg.chunking.strategy,
             max_tokens=cfg.chunking.max_tokens,
             min_tokens=cfg.chunking.min_tokens,
+            chunk_overlap=cfg.chunking.chunk_overlap,
             duplicate_headers=cfg.chunking.duplicate_headers,
         )
         raw_docs = chunker.chunk(documents=raw_docs)
@@ -4201,11 +4204,18 @@ def _link_source_to_connection(source_id: str, connection_id: str) -> None:
         logging.warning("Could not link source %s to connection %s", source_id, connection_id, exc_info=True)
 
 
+# Raised when a connector ingest starts storing something new per file, so
+# sources ingested before it re-ingest once. 2: each file's web link.
+_CONNECTOR_INGEST_VERSION = 2
+
+
 def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: Any) -> Optional[str]:
     """Combine a connector's selection fingerprint with the source's processing settings.
 
     Changing the chunking or retrieval settings changes the result, so the
-    next sync re-ingests even when no file changed.
+    next sync re-ingests even when no file changed. So does a new
+    ``_CONNECTOR_INGEST_VERSION``. ``retrieval.show_links`` is left out: it
+    only decides what a search returns, not what is ingested.
 
     Args:
         selection_fingerprint: The loader's fingerprint of the selected files, or ``None``.
@@ -4222,7 +4232,14 @@ def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: An
         except ValueError:
             # Not JSON: hash the raw string, which still changes when the settings do.
             pass
-    payload = json.dumps({"selection": selection_fingerprint, "config": config or {}}, sort_keys=True, default=str)
+    if isinstance(config, dict) and isinstance(config.get("retrieval"), dict):
+        retrieval = {k: v for k, v in config["retrieval"].items() if k != "show_links"}
+        config = {**config, "retrieval": retrieval}
+    payload = json.dumps(
+        {"selection": selection_fingerprint, "config": config or {}, "version": _CONNECTOR_INGEST_VERSION},
+        sort_keys=True,
+        default=str,
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -4678,11 +4695,16 @@ def _ingest_connector(
                 chunking_strategy=cfg.chunking.strategy,
                 max_tokens=cfg.chunking.max_tokens,
                 min_tokens=cfg.chunking.min_tokens,
+                chunk_overlap=cfg.chunking.chunk_overlap,
                 duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
 
             # Preserve source information in document metadata
+            file_urls = {
+                os.path.normpath(path): url
+                for path, url in (download_info.get("file_urls") or {}).items()
+            }
             for doc in raw_docs:
                 if hasattr(doc, "extra_info") and doc.extra_info:
                     source = doc.extra_info.get("source")
@@ -4691,6 +4713,10 @@ def _ingest_connector(
                         doc.extra_info["source"] = os.path.relpath(
                             source, start=temp_dir
                         )
+                    # The file's link in the service it was synced from.
+                    url = file_urls.get(os.path.normpath(doc.extra_info.get("source") or "."))
+                    if url:
+                        doc.extra_info["url"] = url
 
             docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
 
@@ -5003,6 +5029,7 @@ def _reembed_wiki_page(source: Dict[str, Any], path: str, user: str) -> Dict[str
             chunking_strategy=cfg.chunking.strategy,
             max_tokens=cfg.chunking.max_tokens,
             min_tokens=cfg.chunking.min_tokens,
+            chunk_overlap=cfg.chunking.chunk_overlap,
             duplicate_headers=cfg.chunking.duplicate_headers,
         )
         chunks = chunker.chunk(
