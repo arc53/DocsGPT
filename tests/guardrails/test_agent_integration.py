@@ -327,6 +327,15 @@ class TestToolResultStage:
         out = executor._guardrail_tool_result({("a", "b"): "topsecret"}, "api", "fetch")
         assert out == TOOL_RESULT_BLOCKED_NOTE
 
+    @pytest.mark.parametrize("empty", [None, "", {}, []])
+    def test_a_banned_key_with_an_empty_value_blocks_it(self, empty):
+        executor = self._executor(
+            [{"check": "denylist", "stage": "tool_result", "action": "block",
+              "settings": {"terms": ["topsecret"]}}]
+        )
+        out = executor._guardrail_tool_result({"topsecret": empty}, "api", "fetch")
+        assert out == TOOL_RESULT_BLOCKED_NOTE
+
     def test_an_allowed_link_at_a_line_end_in_a_dict_result_passes(self):
         executor = self._executor(
             [{"check": "url", "stage": "tool_result", "action": "block",

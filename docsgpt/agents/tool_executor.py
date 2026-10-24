@@ -273,19 +273,21 @@ def _scan_lines(value: Any, path: str, lines: List[str]) -> None:
     A string leaf goes on the line after its ``path =``, verbatim: its
     newlines and quotes stay real, so a pattern anchored on a line start or
     stopped by a quote reads it as it reads plain text. ``=`` rather than
-    ``:`` keeps a key named ``system`` from reading as a fake turn.
+    ``:`` keeps a key named ``system`` from reading as a fake turn. An empty
+    leaf (``None``, ``""``, ``{}``, ``[]``) still gets its ``path =`` line,
+    since its key is persisted with the result.
     """
-    if isinstance(value, dict):
+    if value is None or (isinstance(value, (str, dict, list, tuple)) and not value):
+        if path:
+            lines.append(f"{path} =")
+    elif isinstance(value, dict):
         for key, item in value.items():
             _scan_lines(item, f"{path}.{key}" if path else str(key), lines)
     elif isinstance(value, (list, tuple)):
         for item in value:
             _scan_lines(item, path, lines)
-    elif value is None:
-        return
     elif isinstance(value, str):
-        if value:
-            lines.extend([f"{path} =", value] if path else [value])
+        lines.extend([f"{path} =", value] if path else [value])
     else:
         lines.append(f"{path} = {value}" if path else str(value))
 
