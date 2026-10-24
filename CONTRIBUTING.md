@@ -131,6 +131,10 @@ python -m pytest tests/api  # one area while you work
 
 On **macOS**, set `KMP_DUPLICATE_LIB_OK=TRUE` (for example `KMP_DUPLICATE_LIB_OK=TRUE python -m pytest`). `faiss-cpu` and `torch` each ship their own OpenMP runtime, and loading both into one process aborts the interpreter with `OMP: Error #15`; Linux and CI are not affected.
 
+### Troubleshooting
+
+For troubleshooting common setup issues, please refer to our Troubleshooting Guide (./docs/TROUBLESHOOTING.md).
+
 ### Backend and UI contribution workflows
 
 **Changing the database schema.** The schema is managed by Alembic, in `docsgpt/alembic/versions/`, with one numbered file per revision (`0043_wiki_outside_edits.py`, and so on).
