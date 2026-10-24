@@ -92,6 +92,19 @@ def test_markdown_html_cleanup_removes_uppercase_tags() -> None:
     assert text == "Keep bold and linebreak \n\n"
 
 
+def test_markdown_html_cleanup_keeps_generics_with_trailing_space() -> None:
+    content = "# Types\nUse List<Object > and Array<Map > here.\n"
+    text = MarkdownParser().markdown_to_tups(content)[0][1]
+    assert "List<Object >" in text
+    assert "Array<Map >" in text
+
+
+def test_markdown_html_cleanup_ignores_tags_inside_comments() -> None:
+    content = "# C\nkeep List<Map> <!-- </Map> --> here\n"
+    text = MarkdownParser().markdown_to_tups(content)[0][1]
+    assert text == "keep List<Map>  here\n\n"
+
+
 def test_markdown_html_cleanup_removes_nested_bare_tags() -> None:
     content = "# Nest\n<DIV><B>bold</B></DIV> and <P>a <EM>b <B>c</B></EM> d</P>\n"
     text = MarkdownParser().markdown_to_tups(content)[0][1]

@@ -21,10 +21,8 @@ _HTML_TAG_NAMES = """
     template textarea tfoot th thead time title tr track tt u ul var video wbr
 """.split()
 _HTML_TAG_PATTERN = "|".join(_HTML_TAG_NAMES)
-_HTML_TAG_OR_COMMENT = re.compile(
-    r"<!--.*?-->|</?(?:%s)(?=[\s/>])[^<>]*>" % _HTML_TAG_PATTERN,
-    re.DOTALL,
-)
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_HTML_TAG_LOWERCASE = re.compile(r"</?(?:%s)(?=[\s/>])[^<>]*>" % _HTML_TAG_PATTERN)
 # Tag-shapes inside an <svg> are all markup, so strip them there rather than
 # listing names like "path" globally, where they would eat prose placeholders.
 _SVG_ELEMENT = re.compile(r"<svg(?=[\s/>])[^<>]*>.*?</svg\s*>", re.DOTALL | re.IGNORECASE)
@@ -32,7 +30,7 @@ _ANY_TAG = re.compile(r"<[^<>]*>")
 # Case only has to match for a bare tag, where <BR> cannot be told from
 # Array<Map>. Attributes or a trailing slash mark it as markup either way.
 _HTML_TAG_ANY_CASE = re.compile(
-    r"</?(?:%s)(?:\s+[^<>]*|\s*/)>" % _HTML_TAG_PATTERN,
+    r"</?(?:%s)(?:\s+[^\s<>][^<>]*|\s*/)>" % _HTML_TAG_PATTERN,
     re.IGNORECASE,
 )
 # A bare tag is markup when the same name closes somewhere in the text, however
@@ -43,7 +41,12 @@ _HTML_CLOSING_TAG = re.compile(r"</(%s)\s*>" % _HTML_TAG_PATTERN, re.IGNORECASE)
 
 
 def _strip_html(text: str) -> str:
-    """Remove inline SVG markup, known HTML tags and HTML comments from text."""
+    """Remove inline SVG markup, known HTML tags and HTML comments from text.
+
+    Comments go first, so a tag commented out cannot make a generic argument of
+    the same name look like markup.
+    """
+    text = _HTML_COMMENT.sub("", text)
     text = _SVG_ELEMENT.sub(lambda match: _ANY_TAG.sub("", match.group(0)), text)
     text = _HTML_TAG_ANY_CASE.sub("", text)
     closed = {match.group(1).lower() for match in _HTML_CLOSING_TAG.finditer(text)}
@@ -51,7 +54,7 @@ def _strip_html(text: str) -> str:
         text = _HTML_BARE_TAG.sub(
             lambda match: "" if match.group(1).lower() in closed else match.group(0), text
         )
-    return _HTML_TAG_OR_COMMENT.sub("", text)
+    return _HTML_TAG_LOWERCASE.sub("", text)
 
 
 class MarkdownParser(BaseParser):
