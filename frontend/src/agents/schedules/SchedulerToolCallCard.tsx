@@ -72,6 +72,23 @@ export default function SchedulerToolCallCard({
       : null;
   const error =
     parsed && typeof parsed.error === 'string' ? parsed.error : null;
+  const runAtMs = runAt ? Date.parse(runAt) : NaN;
+  const [due, setDue] = useState<boolean>(() => runAtMs <= Date.now());
+
+  // Once the run time passes the task has fired, so Cancel no longer applies.
+  // Flip on a timer so a card left open on screen updates too.
+  useEffect(() => {
+    if (Number.isNaN(runAtMs)) return;
+    const wait = runAtMs - Date.now();
+    if (wait <= 0) {
+      setDue(true);
+      return;
+    }
+    // setTimeout overflows past ~24.8 days; a later run never needs it.
+    if (wait > 2 ** 31 - 1) return;
+    const timer = setTimeout(() => setDue(true), wait);
+    return () => clearTimeout(timer);
+  }, [runAtMs]);
 
   // Agent-bound chats prime the Schedules tab cache; agentless chats have
   // no per-agent listing, so skip the fetch.
@@ -195,7 +212,7 @@ export default function SchedulerToolCallCard({
             </span>
           )}
         </div>
-        {taskId && !cancelled && (
+        {taskId && !cancelled && !due && (
           <Button
             type="button"
             variant="destructive-outline"

@@ -54,7 +54,7 @@ describe('extractToolError', () => {
 describe('SchedulerToolCallCard', () => {
   const scheduled = {
     task_id: 't1',
-    resolved_run_at: '2026-09-27T09:00:00Z',
+    resolved_run_at: '2099-09-27T09:00:00Z',
     instruction: 'Send the weekly report',
   };
 
@@ -74,6 +74,15 @@ describe('SchedulerToolCallCard', () => {
     expect(html).toContain('data-variant="destructive-outline"');
     expect(html).toContain('>Cancel<');
     expect(html).not.toContain('mt-2');
+  });
+
+  it('drops the cancel pill once the run time has passed', () => {
+    const html = render({
+      actionName: 'schedule_task',
+      result: { ...scheduled, resolved_run_at: '2020-01-01T09:00:00Z' },
+    });
+    expect(html).toContain('>Scheduled task<');
+    expect(html).not.toContain('>Cancel<');
   });
 
   it('shows a spinner, not the calendar icon, while pending', () => {
