@@ -10,7 +10,7 @@ from docsgpt.agents.classic_agent import ClassicAgent
 from docsgpt.agents.tool_executor import ToolExecutor
 from docsgpt.guardrails.config import GuardrailsConfig
 from docsgpt.guardrails.engine import GuardrailEngine
-from docsgpt.guardrails.types import Stage
+from docsgpt.guardrails.types import TOOL_RESULT_BLOCKED_NOTE, Stage
 
 
 @pytest.fixture
@@ -284,12 +284,47 @@ class TestToolResultStage:
         assert "topsecret" not in out
         assert "withheld" in out
 
-    def test_non_string_tool_result_is_untouched(self):
+    def test_a_clean_structured_result_keeps_its_shape(self):
         executor = self._executor(
             [{"check": "secrets", "stage": "tool_result", "action": "redact"}]
         )
         payload = {"a": 1}
         assert executor._guardrail_tool_result(payload, "api", "fetch") is payload
+
+    def test_a_secret_in_a_dict_result_is_redacted(self):
+        executor = self._executor(
+            [{"check": "secrets", "stage": "tool_result", "action": "redact"}]
+        )
+        token = "ghp_" + "c" * 36
+        payload = {"status_code": 200, "data": {"echo": f"key={token}"}}
+        out = executor._guardrail_tool_result(payload, "api_tool", "fetch")
+        assert token not in str(out)
+        assert "[REDACTED]" in out
+        assert "status_code" in out
+
+    def test_a_banned_term_in_a_list_result_blocks_it(self):
+        executor = self._executor(
+            [{"check": "denylist", "stage": "tool_result", "action": "block",
+              "settings": {"terms": ["topsecret"]}}]
+        )
+        out = executor._guardrail_tool_result([{"title": "topsecret"}], "mcp", "search")
+        assert out == TOOL_RESULT_BLOCKED_NOTE
+
+    def test_non_ascii_in_a_dict_result_is_matched_as_written(self):
+        executor = self._executor(
+            [{"check": "denylist", "stage": "tool_result", "action": "block",
+              "settings": {"terms": ["café"]}}]
+        )
+        out = executor._guardrail_tool_result({"text": "the café"}, "api", "fetch")
+        assert out == TOOL_RESULT_BLOCKED_NOTE
+
+    def test_a_result_json_cannot_render_is_still_scanned(self):
+        executor = self._executor(
+            [{"check": "denylist", "stage": "tool_result", "action": "block",
+              "settings": {"terms": ["topsecret"]}}]
+        )
+        out = executor._guardrail_tool_result({("a", "b"): "topsecret"}, "api", "fetch")
+        assert out == TOOL_RESULT_BLOCKED_NOTE
 
 
 @pytest.mark.unit
