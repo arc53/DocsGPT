@@ -86,6 +86,19 @@ def test_markdown_html_cleanup_removes_comments() -> None:
     assert text == "before  after\n\n"
 
 
+def test_markdown_html_cleanup_removes_uppercase_tags() -> None:
+    content = '# Note\n<DIV class="note">Keep <B>bold</B> and line<BR/>break <IMG SRC="a.png"></DIV>\n'
+    text = MarkdownParser().markdown_to_tups(content)[0][1]
+    assert text == "Keep bold and linebreak \n\n"
+
+
+def test_markdown_html_cleanup_keeps_generics_whatever_the_case() -> None:
+    content = "# Types\nUse List<Object>, Array<Map> and Map<K, V> with x < 10 and y > 5.\n"
+    text = MarkdownParser().markdown_to_tups(content)[0][1]
+    for kept in ("List<Object>", "Array<Map>", "Map<K, V>", "x < 10", "y > 5"):
+        assert kept in text
+
+
 def test_markdown_html_cleanup_removes_inline_svg() -> None:
     content = (
         '# Icon\nIf x < 10 use List<int> <svg viewBox="0 0 24 24">\n'

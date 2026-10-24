@@ -21,22 +21,40 @@ _HTML_TAG_NAMES = """
     section select slot small source span strike strong style sub summary sup svg table tbody td
     template textarea tfoot th thead time title tr track tt u ul var video wbr
 """.split()
-# Lowercase only: markdown authors write HTML in lowercase, while generics such
-# as List<Object> or Array<Map> use capitalised names that collide with tags.
+# Lowercase only, for bare tags such as <b> or <div> that carry nothing to tell
+# them from a generic: markdown authors write HTML in lowercase, while generics
+# such as List<Object> or Array<Map> use capitalised names that collide with
+# tag names. Tags that are unambiguous whatever their case go below.
+_HTML_TAG_PATTERN = "|".join(_HTML_TAG_NAMES)
 _HTML_TAG_OR_COMMENT = re.compile(
-    r"<!--.*?-->|</?(?:%s)(?=[\s/>])[^<>]*>" % "|".join(_HTML_TAG_NAMES),
+    r"<!--.*?-->|</?(?:%s)(?=[\s/>])[^<>]*>" % _HTML_TAG_PATTERN,
     re.DOTALL,
 )
 # Everything tag-shaped inside an inline <svg> element is markup (path, g, circle,
 # rect, use, ...), so strip it there instead of listing names such as "path" or
 # "text" globally, where they would also eat placeholders like "<path>" in prose.
-_SVG_ELEMENT = re.compile(r"<svg(?=[\s/>])[^<>]*>.*?</svg\s*>", re.DOTALL)
+_SVG_ELEMENT = re.compile(r"<svg(?=[\s/>])[^<>]*>.*?</svg\s*>", re.DOTALL | re.IGNORECASE)
 _ANY_TAG = re.compile(r"<[^<>]*>")
+# Case is only safe to ignore where the tag cannot be a generic type argument:
+# it carries attributes, it closes, or it ends in a slash. A bare <BR> keeps its
+# case, since Something<BR> is indistinguishable from Array<Map>.
+_HTML_TAG_ANY_CASE = re.compile(
+    r"</?(?:%s)(?:\s+[^<>]*|\s*/)>|</(?:%s)\s*>" % (_HTML_TAG_PATTERN, _HTML_TAG_PATTERN),
+    re.IGNORECASE,
+)
+# An open and close pair of one name is markup too, whatever its case: a generic
+# argument never has a closing tag.
+_HTML_TAG_PAIR_ANY_CASE = re.compile(
+    r"<(%s)\s*>(.*?)</\1\s*>" % _HTML_TAG_PATTERN,
+    re.DOTALL | re.IGNORECASE,
+)
 
 
 def _strip_html(text: str) -> str:
     """Remove inline SVG markup, known HTML tags and HTML comments from text."""
     text = _SVG_ELEMENT.sub(lambda match: _ANY_TAG.sub("", match.group(0)), text)
+    text = _HTML_TAG_PAIR_ANY_CASE.sub(lambda match: match.group(2), text)
+    text = _HTML_TAG_ANY_CASE.sub("", text)
     return _HTML_TAG_OR_COMMENT.sub("", text)
 
 
