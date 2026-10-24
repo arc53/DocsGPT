@@ -267,6 +267,29 @@ def sanitize_tool_result(value: Any) -> Any:
     return value
 
 
+def _scan_lines(value: Any, path: str, lines: List[str]) -> None:
+    """Append ``value``'s leaves to ``lines`` as ``path = value`` text.
+
+    A string leaf goes on the line after its ``path =``, verbatim: its
+    newlines and quotes stay real, so a pattern anchored on a line start or
+    stopped by a quote reads it as it reads plain text. ``=`` rather than
+    ``:`` keeps a key named ``system`` from reading as a fake turn.
+    """
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _scan_lines(item, f"{path}.{key}" if path else str(key), lines)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _scan_lines(item, path, lines)
+    elif value is None:
+        return
+    elif isinstance(value, str):
+        if value:
+            lines.extend([f"{path} =", value] if path else [value])
+    else:
+        lines.append(f"{path} = {value}" if path else str(value))
+
+
 def _scan_text(result: Any) -> str:
     """The text the ``tool_result`` guardrails read for ``result``.
 
@@ -274,17 +297,16 @@ def _scan_text(result: Any) -> str:
         result: A tool result, already sanitized.
 
     Returns:
-        The string itself, a dict, list or tuple as JSON (``str()`` when JSON
-        cannot render it), or ``""`` for anything else.
+        The string itself, a dict, list or tuple as one ``path = value`` line
+        per leaf (see ``_scan_lines``), or ``""`` for anything else.
     """
     if isinstance(result, str):
         return result
     if not isinstance(result, (dict, list, tuple)) or not result:
         return ""
-    try:
-        return json.dumps(result, ensure_ascii=False, default=str)
-    except (TypeError, ValueError):
-        return str(result)
+    lines: List[str] = []
+    _scan_lines(result, "", lines)
+    return "\n".join(lines)
 
 
 def bound_result_full(text: str) -> str:
@@ -1205,8 +1227,9 @@ class ToolExecutor:
         that the calling API happened to echo back.
 
         A structured result (``api_tool``, MCP, search tools) is scanned as
-        its JSON text. A clean one keeps its shape; a redacted one becomes
-        the masked text, so no half-masked value survives inside it.
+        one ``path = value`` line per leaf (``_scan_text``). A clean one keeps
+        its shape; a redacted one becomes the masked text, so no half-masked
+        value survives inside it.
         """
         engine = getattr(self, "guardrail_engine", None)
         if engine is None or not engine.has_stage(GuardrailStage.TOOL_RESULT):
