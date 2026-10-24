@@ -13,7 +13,7 @@ import { selectToken } from '../../preferences/preferenceSlice';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
 import { can } from '../../utils/accessUtils';
 import { agentsListPath } from '../paths';
-import type { Agent } from '../types';
+import type { Agent, AgentConfig } from '../types';
 
 type UseAgentMenuOptions = {
   /** The agent the menu acts on; nothing is offered until it has an id. */
@@ -33,6 +33,13 @@ type UseAgentMenuOptions = {
   openAccessDetails?: (apiWrites: boolean) => void;
   /** After a delete; defaults to the agent list. */
   onDeleted?: () => void;
+  /** A key regenerated in the menu's own Access details. */
+  onKeyRegenerated?: (key: string) => void;
+  /**
+   * The config the menu's own Access details saved (its write allowlist).
+   * The page puts it on `agent`, which the dialog reopens from.
+   */
+  onConfigChange?: (config: AgentConfig) => void;
 };
 
 /**
@@ -52,6 +59,8 @@ export function useAgentMenu({
   shareable,
   openAccessDetails,
   onDeleted,
+  onKeyRegenerated,
+  onConfigChange,
 }: UseAgentMenuOptions): { menu: ReactNode; modals: ReactNode } {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -161,6 +170,8 @@ export function useAgentMenu({
               if (state === 'INACTIVE') setDetailsOnApiWrites(false);
             }}
             openApiWrites={detailsOnApiWrites}
+            onKeyRegenerated={onKeyRegenerated}
+            onConfigChange={onConfigChange}
           />
         )}
         {shareOpen && agent.id && (
