@@ -10,8 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 from docsgpt.parser.file.base_parser import BaseParser
 from docsgpt.utils import num_tokens_from_string
 
-# HTML element names that the cleanup in markdown_to_tups strips. Only these are
-# treated as tags, so text such as "x < 10 and y > 5" or "List<String>" survives.
+# Only these names count as tags, so prose like "x < 10" or "List<String>" survives.
 _HTML_TAG_NAMES = """
     a abbr address area article aside audio b base bdi bdo blockquote body br button canvas caption
     center cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed
@@ -21,29 +20,22 @@ _HTML_TAG_NAMES = """
     section select slot small source span strike strong style sub summary sup svg table tbody td
     template textarea tfoot th thead time title tr track tt u ul var video wbr
 """.split()
-# Lowercase only, for bare tags such as <b> or <div> that carry nothing to tell
-# them from a generic: markdown authors write HTML in lowercase, while generics
-# such as List<Object> or Array<Map> use capitalised names that collide with
-# tag names. Tags that are unambiguous whatever their case go below.
 _HTML_TAG_PATTERN = "|".join(_HTML_TAG_NAMES)
 _HTML_TAG_OR_COMMENT = re.compile(
     r"<!--.*?-->|</?(?:%s)(?=[\s/>])[^<>]*>" % _HTML_TAG_PATTERN,
     re.DOTALL,
 )
-# Everything tag-shaped inside an inline <svg> element is markup (path, g, circle,
-# rect, use, ...), so strip it there instead of listing names such as "path" or
-# "text" globally, where they would also eat placeholders like "<path>" in prose.
+# Tag-shapes inside an <svg> are all markup, so strip them there rather than
+# listing names like "path" globally, where they would eat prose placeholders.
 _SVG_ELEMENT = re.compile(r"<svg(?=[\s/>])[^<>]*>.*?</svg\s*>", re.DOTALL | re.IGNORECASE)
 _ANY_TAG = re.compile(r"<[^<>]*>")
-# Case is only safe to ignore where the tag cannot be a generic type argument:
-# it carries attributes, it closes, or it ends in a slash. A bare <BR> keeps its
-# case, since Something<BR> is indistinguishable from Array<Map>.
+# Case only has to match for a bare tag, where <BR> cannot be told from
+# Array<Map>. One with attributes, a closing tag, a slash or a pair is markup
+# whatever its case.
 _HTML_TAG_ANY_CASE = re.compile(
     r"</?(?:%s)(?:\s+[^<>]*|\s*/)>|</(?:%s)\s*>" % (_HTML_TAG_PATTERN, _HTML_TAG_PATTERN),
     re.IGNORECASE,
 )
-# An open and close pair of one name is markup too, whatever its case: a generic
-# argument never has a closing tag.
 _HTML_TAG_PAIR_ANY_CASE = re.compile(
     r"<(%s)\s*>(.*?)</\1\s*>" % _HTML_TAG_PATTERN,
     re.DOTALL | re.IGNORECASE,
