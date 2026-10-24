@@ -407,6 +407,27 @@ describe('Tools', () => {
     expect(toolConfigMounts.count).toBeGreaterThan(mounts);
   });
 
+  // Another tool opened while the reload ran keeps its editor (and edits).
+  it('leaves another open tool mounted when a reconnect reloads', async () => {
+    await render([ownTool, editorTool]);
+    await act(async () => {
+      Array.from(
+        card('ed').querySelectorAll<HTMLButtonElement>(
+          '[data-testid="menu"] button',
+        ),
+      )
+        .find((b) => b.textContent === 'settings.tools.reconnect')!
+        .click();
+    });
+    await openTool('own');
+    const mounts = toolConfigMounts.count;
+    const { onServerSaved } = mcpModalProps.mock.calls.at(-1)![0] as {
+      onServerSaved: () => void;
+    };
+    await act(async () => onServerSaved());
+    expect(toolConfigMounts.count).toBe(mounts);
+  });
+
   it('passes the tool owner and role to the Reconnect modal', async () => {
     await render([editorTool]);
     const reconnect = Array.from(

@@ -73,6 +73,11 @@ export default function Tools() {
   // ToolConfig seeds its form from the tool once; a bump remounts it on the
   // tool as saved (after a reconnect from its ⋯).
   const [toolConfigVersion, setToolConfigVersion] = React.useState(0);
+  // The open tool as a reload sees it when it lands, not as it was sent.
+  const selectedToolRef = React.useRef(selectedTool);
+  React.useEffect(() => {
+    selectedToolRef.current = selectedTool;
+  }, [selectedTool]);
   const [loading, setLoading] = useLoaderState(false);
   // The first load failed: an error with Retry, not the empty state.
   const [loadFailed, setLoadFailed] = React.useState(false);
@@ -304,13 +309,13 @@ export default function Tools() {
           isChatToolVisible(tool),
         );
         setUserTools(filtered);
-        const reopened = reopenId
-          ? filtered.find((tool: UserToolType) => tool.id === reopenId)
-          : undefined;
+        const open = selectedToolRef.current;
+        const reopened =
+          reopenId && open && 'id' in open && open.id === reopenId
+            ? filtered.find((tool: UserToolType) => tool.id === reopenId)
+            : undefined;
         if (reopened) {
-          setSelectedTool((open) =>
-            open && 'id' in open && open.id === reopenId ? reopened : open,
-          );
+          setSelectedTool(reopened);
           setToolConfigVersion((version) => version + 1);
         }
         setLoadFailed(false);
