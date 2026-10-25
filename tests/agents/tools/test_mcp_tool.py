@@ -3385,8 +3385,10 @@ class TestDeedPageOwnerToken:
         tool = _make_tool(config)
 
         with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
-             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=MagicMock()), \
+             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=MagicMock()) as mock_client, \
              patch("docsgpt.agents.tools.mcp_tool.BearerAuth") as mock_bearer_auth:
             tool._setup_client()
 
         mock_bearer_auth.assert_called_once_with(self.TOKEN)
+        mock_client.assert_called_once()
+        assert mock_client.call_args.kwargs["auth"] is mock_bearer_auth.return_value
