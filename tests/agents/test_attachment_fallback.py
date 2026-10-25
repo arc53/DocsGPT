@@ -122,6 +122,18 @@ class TestReplanForTheFallback:
         for i in range(3):
             assert f"r{i}.txt" in text
 
+    def test_a_byom_fallback_is_measured_by_its_registry_id(self):
+        """``model_id`` is the upstream name; the registry knows a BYOM model by its UUID."""
+        files = [text_att(f"r{i}.txt", 12_000, body_word=f"w{i}") for i in range(3)]
+        agent, messages = _merged_turn(files)
+        fallback = _LLM("llama3:70b")
+        fallback._canonical_model_id = "fb-small"
+
+        replanned = AttachmentDispatch(agent).for_fallback(fallback, messages)
+
+        assert replanned is not None
+        assert TokenCounter.count_message_tokens(replanned.messages) < WINDOWS["fb-small"]
+
     def test_a_bigger_fallback_keeps_the_agents_context_limit(self):
         files = [text_att(f"r{i}.txt", 12_000, body_word=f"w{i}") for i in range(3)]
         agent, messages = _merged_turn(files, context_window_limit=20_000)

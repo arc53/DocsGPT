@@ -92,6 +92,9 @@ class LLMCreator:
                 user_id = (
                     (decoded_token or {}).get("sub") if decoded_token else None
                 )
+                # The LLM keeps the scope its model was found under, so its
+                # window lookups (``get_token_limit``) find the same model.
+                model_user_id = user_id
             model = ModelRegistry.get_instance().get_model(model_id, user_id=user_id)
             if model is None:
                 # Fail closed. Without a registered model there is no

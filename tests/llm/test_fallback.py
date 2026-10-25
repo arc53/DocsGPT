@@ -1046,6 +1046,35 @@ class TestLLMCreatorPassesModelUserId:
         assert llm._is_byom is expected
         assert llm._canonical_model_id == model_id
 
+    def test_the_scope_the_model_was_found_under_reaches_the_llm(self, monkeypatch):
+        """Without ``model_user_id`` the caller's sub finds a BYOM model; its window lookups need it too."""
+        from types import SimpleNamespace
+
+        from docsgpt.llm.llm_creator import LLMCreator
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+        captured = {}
+
+        class _LLM:
+            def __init__(self, *args, **kwargs):
+                captured.update(kwargs)
+
+        monkeypatch.setattr(PROVIDERS_BY_NAME["openai"], "llm_class", _LLM)
+        model = SimpleNamespace(
+            source="user", api_key="own-key", base_url=None, upstream_model_id=None, capabilities=None
+        )
+        registry = SimpleNamespace(get_model=lambda _id, user_id=None: model if user_id == "u1" else None)
+        monkeypatch.setattr(
+            "docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry
+        )
+
+        LLMCreator.create_llm(
+            type="openai", api_key="k", user_api_key=None,
+            decoded_token={"sub": "u1"}, model_id="byom-uuid",
+        )
+
+        assert captured["model_user_id"] == "u1"
+
 
 # Tests — responding-provider tracking (cross-provider fallback handler fix)
 

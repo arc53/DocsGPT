@@ -168,7 +168,13 @@ class AttachmentDispatch:
 
         # The agent's context limit holds on the fallback as on the primary.
         window = cap_context_window(
-            int(get_token_limit(fallback.model_id, user_id=getattr(fallback, "model_user_id", None))),
+            # ``model_id`` is the upstream name; the registry knows BYOM models by UUID.
+            int(
+                get_token_limit(
+                    getattr(fallback, "_canonical_model_id", None) or fallback.model_id,
+                    user_id=getattr(fallback, "model_user_id", None),
+                )
+            ),
             getattr(agent, "context_window_limit", None),
         )
         capabilities = _capabilities_for(plan.capabilities, fallback, window)
