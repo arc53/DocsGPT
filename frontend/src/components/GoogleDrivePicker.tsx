@@ -62,6 +62,17 @@ const VIEW_MIME_TYPES = [
   'image/png',
 ].join(',');
 
+const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
+
+/**
+ * The type filter a view gets. With any filter set, Google's Select ignores a
+ * highlighted folder, even when the folder type is listed, so a view where
+ * folders can be picked is left unfiltered; the worker skips types it cannot
+ * read. Files-only views keep the filter.
+ */
+const viewMimeTypes = (foldersSelectable: boolean): string | undefined =>
+  foldersSelectable ? undefined : VIEW_MIME_TYPES;
+
 /** The part of Google's Picker API the shared-drives tab is built with. */
 interface PickerDocsView {
   setEnableDrives(enabled: boolean): PickerDocsView;
@@ -84,13 +95,12 @@ const sharedDrivesView = (
   const pickerApi = (window as { google?: { picker?: PickerApi } }).google
     ?.picker;
   if (!pickerApi) return undefined;
-  return [
-    new pickerApi.DocsView(pickerApi.ViewId.DOCS)
-      .setEnableDrives(true)
-      .setIncludeFolders(true)
-      .setSelectFolderEnabled(foldersSelectable)
-      .setMimeTypes(VIEW_MIME_TYPES),
-  ];
+  const view = new pickerApi.DocsView(pickerApi.ViewId.DOCS)
+    .setEnableDrives(true)
+    .setIncludeFolders(true)
+    .setSelectFolderEnabled(foldersSelectable);
+  const mimeTypes = viewMimeTypes(foldersSelectable);
+  return [mimeTypes ? view.setMimeTypes(mimeTypes) : view];
 };
 
 /** Why the last attempt to open the picker failed. */
@@ -232,7 +242,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         customViews: sharedDrivesView(foldersSelectable),
         multiselect: true,
         token: picker.access_token,
-        viewMimeTypes: VIEW_MIME_TYPES,
+        viewMimeTypes: viewMimeTypes(foldersSelectable),
         callbackFunction: (data: any) => {
           setIsLoading(false);
           if (data.action === 'picked') {
@@ -249,7 +259,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                 sizeBytes: doc.sizeBytes,
               };
 
-              if (doc.mimeType === 'application/vnd.google-apps.folder') {
+              if (doc.mimeType === FOLDER_MIME_TYPE) {
                 newFolders.push(item);
               } else {
                 newFiles.push(item);

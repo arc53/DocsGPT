@@ -169,6 +169,9 @@ describe('GoogleDrivePicker', () => {
         supportDrives: true,
       }),
     );
+    // With a type filter set, Google's Select ignores a highlighted folder,
+    // so folders are picked from an unfiltered view.
+    expect(drive.openPicker.mock.calls[0][0].viewMimeTypes).toBeUndefined();
     expect(onSelectionChange).toHaveBeenLastCalledWith(['f1'], ['folder-1']);
     expect(container.textContent).toContain('filePicker.folder');
   });
@@ -216,7 +219,6 @@ describe('GoogleDrivePicker', () => {
         ['setEnableDrives', true],
         ['setIncludeFolders', true],
         ['setSelectFolderEnabled', true],
-        ['setMimeTypes', true],
       ]);
     } finally {
       delete (window as { google?: unknown }).google;
@@ -252,6 +254,9 @@ describe('GoogleDrivePicker', () => {
         setIncludeFolders: true,
         setSelectFolderEnabled: false,
       }),
+    );
+    expect(drive.openPicker.mock.calls[0][0].viewMimeTypes).toContain(
+      'application/pdf',
     );
     expect(container.textContent).toContain(
       'modals.uploadDoc.connectors.googleDrive.filesOnly',
