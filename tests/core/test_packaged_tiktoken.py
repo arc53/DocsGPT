@@ -2,9 +2,10 @@
 
 ``.gitattributes`` marks ``*.tiktoken`` as binary so Git never rewrites its line
 endings. That attribute only governs *new* checkouts: a working tree cloned
-before the attribute landed keeps its CRLF copy and must be re-checked out.
-This test guards the attribute and fails loudly on a corrupted checkout instead
-of letting ingestion fail later with an unrelated-looking checksum error.
+before the attribute landed keeps its CRLF copy and must be re-checked out, with
+the attribute already in place. This test guards the attribute and fails loudly
+on a corrupted checkout instead of letting ingestion fail later with an
+unrelated-looking checksum error.
 """
 
 import hashlib
@@ -13,9 +14,11 @@ from docsgpt.utils import _CL100K_BASE_FILE, _CL100K_BASE_SHA256, num_tokens_fro
 
 _CHECKOUT_HINT = (
     "Git probably checked the file out with CRLF line endings (core.autocrlf=true on Windows). "
-    ".gitattributes marks *.tiktoken binary, which only affects NEW checkouts: re-check out this "
-    "working tree (`git rm --cached <file> && git checkout -- <file>`, or a fresh clone) and "
-    "confirm `git check-attr text <file>` reports `unspecified`."
+    ".gitattributes marks *.tiktoken binary, which only affects NEW checkouts. To repair an "
+    "existing one, first get that attribute into the working tree, then run "
+    "`git restore --source=HEAD --worktree -- <file>` (or use a fresh clone). Verify with "
+    "`git check-attr text <file>`, which must report `unset` — `auto` means the attribute has "
+    "not landed yet and the re-checkout would convert again."
 )
 
 
