@@ -1233,6 +1233,10 @@ class BaseAgent(ABC):
         which only decides when to compress. The tool loop stops running tools
         on this one, so a limit never costs a turn its tools.
 
+        Once the fallback has answered a round of the turn, the smaller of
+        its window and the primary's applies: the next round may reach it
+        again, and its own fit check would refuse a turn grown past it.
+
         Args:
             messages: The turn's messages.
 
@@ -1243,6 +1247,18 @@ class BaseAgent(ABC):
 
         try:
             window = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+            llm = getattr(self, "llm", None)
+            answered = getattr(llm, "answered_by", None)
+            fallback = getattr(llm, "_fallback_llm", None)
+            if (
+                fallback is not None
+                and isinstance(answered, list)
+                and any(isinstance(entry, dict) and entry.get("fallback") for entry in answered)
+            ):
+                window = min(
+                    window,
+                    get_token_limit(fallback.model_id, user_id=getattr(fallback, "model_user_id", None)),
+                )
             threshold = int(window * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
             return self._calculate_current_context_tokens(messages) >= threshold
         except Exception as e:

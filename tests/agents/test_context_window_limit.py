@@ -163,6 +163,42 @@ class TestAgentBudgets:
             with patch.object(agent, "_calculate_current_context_tokens", return_value=int(WINDOW * 0.9)):
                 assert agent._over_model_threshold(messages) is True
 
+    def test_a_smaller_fallback_that_answered_lowers_the_model_threshold(self, make, monkeypatch):
+        """A turn a smaller fallback answered stops its tools before outgrowing that fallback."""
+        from types import SimpleNamespace
+
+        small = 30_000
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_token_limit",
+            lambda model_id, user_id=None: small if model_id == "fb-small" else WINDOW,
+        )
+        messages = [{"role": "user", "content": "hi"}]
+        agent = make(limit=None)
+        agent.llm._fallback_llm = SimpleNamespace(model_id="fb-small", model_user_id=None)
+        tokens = int(small * 0.9)
+
+        with patch.object(agent, "_calculate_current_context_tokens", return_value=tokens):
+            agent.llm.answered_by = [{"model": "primary", "provider": "openai", "fallback": False}]
+            assert agent._over_model_threshold(messages) is False
+            agent.llm.answered_by.append({"model": "fb-small", "provider": "openai", "fallback": True})
+            assert agent._over_model_threshold(messages) is True
+            # Still the smaller window once the primary answers again.
+            agent.llm.answered_by.append({"model": "primary", "provider": "openai", "fallback": False})
+            assert agent._over_model_threshold(messages) is True
+
+    def test_a_larger_fallback_keeps_the_primary_threshold(self, make, monkeypatch):
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_token_limit",
+            lambda model_id, user_id=None: WINDOW * 2 if model_id == "fb-big" else WINDOW,
+        )
+        agent = make(limit=None)
+        agent.llm._fallback_llm = SimpleNamespace(model_id="fb-big", model_user_id=None)
+        agent.llm.answered_by = [{"model": "fb-big", "provider": "openai", "fallback": True}]
+        with patch.object(agent, "_calculate_current_context_tokens", return_value=int(WINDOW * 0.9)):
+            assert agent._over_model_threshold([{"role": "user", "content": "hi"}]) is True
+
     def test_tool_result_room_is_measured_against_the_limit(self, make):
         agent = make()
         with patch.object(agent, "_calculate_current_context_tokens", return_value=1000):
