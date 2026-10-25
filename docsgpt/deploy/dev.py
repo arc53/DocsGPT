@@ -83,7 +83,21 @@ def _reloading_command(
     *,
     platform: Optional[str] = None,
 ) -> list[str]:
-    """``cli_args`` under watchfiles, restarted when a Python file under ``watched`` changes."""
+    """Build a watchfiles command that restarts the CLI when watched Python files change.
+
+    Args:
+        launcher: Command prefix used to start the DocsGPT CLI on non-Windows platforms.
+        cli_args: Arguments for the DocsGPT CLI, passed to the Windows function target or
+            appended to ``launcher`` on other platforms.
+        watched: Path passed to watchfiles as the watch root; Python file changes trigger reloads.
+        platform: Optional platform name used to select the target mode. ``win32`` selects
+            function mode; a missing or empty value falls back to ``sys.platform``.
+
+    Returns:
+        Arguments that start watchfiles with the Python filter and watch ``watched``.
+        On Windows, the function target is ``docsgpt.cli.main`` and receives ``cli_args``;
+        on other platforms, the command target is ``launcher`` followed by ``cli_args``.
+    """
     if (platform or sys.platform) == "win32":
         return [
             sys.executable,
