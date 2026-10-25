@@ -1381,13 +1381,13 @@ class TestManageSourceFilesSync:
         kw.setdefault("file_path", f"inputs/{user}/src")
         return _seed_source(pg_conn, user=user, **kw), root
 
-    def _sync(self, app, pg_conn, tmp_path, src, files, user="u-sync", **form):
+    def _sync(self, app, pg_conn, tmp_path, src, files, user="u-sync", storage=None, **form):
         from docsgpt.api.user.sources.upload import ManageSourceFiles
         from docsgpt.storage.local import LocalStorage
 
         with _patch_db(pg_conn), patch(
             "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
-            return_value=LocalStorage(base_dir=str(tmp_path)),
+            return_value=storage or LocalStorage(base_dir=str(tmp_path)),
         ), patch(
             "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             return_value=MagicMock(id="reingest-sync"),
@@ -1438,6 +1438,29 @@ class TestManageSourceFilesSync:
         assert response.status_code == 400
         assert self._stored(root) == {"keep.md": b"same"}
         apply_async.assert_not_called()
+
+    def test_removes_files_from_a_store_that_lists_with_backslashes(self, app, pg_conn, tmp_path):
+        from docsgpt.storage.local import LocalStorage
+
+        src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same", "old.md": b"stale"})
+
+        class WindowsListing(LocalStorage):
+            """Lists as ``LocalStorage`` does on Windows, with backslash separators."""
+
+            def list_files(self, directory):
+                return [path.replace("/", "\\") for path in super().list_files(directory)]
+
+            def delete_file(self, path):
+                return super().delete_file(path.replace("\\", "/"))
+
+        response, _ = self._sync(
+            app, pg_conn, tmp_path, src, [(io.BytesIO(b"same"), "keep.md")],
+            storage=WindowsListing(base_dir=str(tmp_path)),
+        )
+
+        assert response.status_code == 200
+        assert response.json["removed_files"] == ["old.md"]
+        assert self._stored(root) == {"keep.md": b"same"}
 
     def test_never_deletes_outside_the_source_folder(self, app, pg_conn, tmp_path):
         from docsgpt.storage.local import LocalStorage

@@ -1197,7 +1197,10 @@ class ManageSourceFiles(Resource):
                             storage.save_file(staged_file, f"{source_file_path}/{rel_path}")
                 removed_files = []
                 for storage_path in storage.list_files(source_file_path):
-                    rel_path = posixpath.relpath(storage_path, source_file_path)
+                    # Local storage on Windows lists with backslashes. Stored
+                    # names never contain one (staging splits on it), so it is
+                    # always a separator here.
+                    rel_path = posixpath.relpath(storage_path.replace("\\", "/"), source_file_path)
                     # A store that lists by bare prefix can name another
                     # source's files (``src`` matching ``src-2/...``): never
                     # delete outside this source's folder.
