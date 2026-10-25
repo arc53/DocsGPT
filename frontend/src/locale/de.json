@@ -2943,7 +2943,8 @@
         "selectModels": "Modelle für diesen Agenten auswählen",
         "selectDefaultModel": "Standardmodell auswählen",
         "enterTokenLimit": "Token-Limit eingeben",
-        "enterRequestLimit": "Anfrage-Limit eingeben"
+        "enterRequestLimit": "Anfrage-Limit eingeben",
+        "contextLimitDefault": "Modellstandard"
       },
       "sourcePopup": {
         "title": "Wissen auswählen",
@@ -2990,6 +2991,9 @@
         "jsonSchemaDescription": "Definiere ein JSON-Schema, um ein strukturiertes Ausgabeformat zu erzwingen",
         "validJson": "Gültiges JSON",
         "invalidJson": "Ungültiges JSON - zur Aktivierung des Speicherns beheben",
+        "contextLimit": "Kontextlimit",
+        "contextLimitDescription": "Höchstzahl an Tokens aus Verlauf, Dokumenten und Tool-Ergebnissen, die pro Anfrage an das Modell gehen. Ältere Nachrichten werden zusammengefasst, um darunter zu bleiben. Leer lassen für das volle Kontextfenster des Modells.",
+        "contextLimitRange": "Gib {{min, number}} bis {{max, number}} Tokens ein oder lass das Feld leer.",
         "tokenLimiting": "Token-Limitierung",
         "tokenLimitingDescription": "Begrenze die täglich von diesem Agenten verwendbaren Tokens",
         "requestLimiting": "Anfrage-Limitierung",
