@@ -58,6 +58,18 @@ class TestDefinitions:
         assert "required_settings" not in payload
         assert payload["capabilities"] == ["sync"]
 
+    def test_drive_offers_its_picker_client_id_with_per_file_access(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "client-123.apps.googleusercontent.com")
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_ACCESS", "file")
+        assert catalog.get_definition("google_drive").to_dict()["picker_client_id"] == (
+            "client-123.apps.googleusercontent.com"
+        )
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_ACCESS", "readonly")
+        assert catalog.get_definition("google_drive").to_dict()["picker_client_id"] is None
+        assert catalog.get_definition("share_point").to_dict()["picker_client_id"] is None
+
 
 class TestAvailability:
     def test_missing_settings_listed(self, monkeypatch):

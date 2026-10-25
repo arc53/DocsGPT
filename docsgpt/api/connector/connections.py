@@ -559,7 +559,7 @@ class ConnectionPickerToken(Resource):
         if row is None or (row.get("auth_kind") or "oauth") != "oauth":
             return _not_found()
         try:
-            token = service.picker_token(connection_id)
+            token = service.picker_token(connection_id, row.get("provider"))
         except service.ConnectionUnavailable:
             return _error("Reconnect to continue", 409, code="reconnect")
         except service.TransientConnectionError:

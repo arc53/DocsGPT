@@ -48,6 +48,13 @@ vi.mock('../components/ConnectorAuth', () => ({
       onSuccess({ connection_id: 'conn-drive', user_email: 'a@example.com' }),
 }));
 // Like the real picker, the selection is its own: a remount starts empty.
+const googlePicker = vi.hoisted(() => ({ props: vi.fn() }));
+vi.mock('../components/GoogleDrivePicker', () => ({
+  default: (props: { clientId?: string | null }) => {
+    googlePicker.props(props);
+    return <div data-testid="google-picker" />;
+  },
+}));
 vi.mock('../components/FilePicker', () => ({
   FilePicker: ({
     onSelectionChange,
@@ -813,6 +820,20 @@ describe('ConnectWizard', () => {
     await click('modals.uploadDoc.train');
     await click('settings.connectors.wizard.done');
     expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  it("uses Google's picker with the client id the server offers", async () => {
+    await render(
+      { ...drive, picker_client_id: '999-server.apps.example' },
+      vi.fn(),
+      { mode: 'sync', connectionId: 'conn-drive' },
+    );
+    expect(
+      document.body.querySelector('[data-testid="google-picker"]'),
+    ).not.toBeNull();
+    expect(googlePicker.props).toHaveBeenLastCalledWith(
+      expect.objectContaining({ clientId: '999-server.apps.example' }),
+    );
   });
 
   describe('which account', () => {

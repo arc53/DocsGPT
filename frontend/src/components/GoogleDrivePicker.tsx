@@ -62,6 +62,17 @@ const VIEW_MIME_TYPES = [
   'image/png',
 ].join(',');
 
+const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
+
+/**
+ * The type filter a view gets. With any filter set, Google's Select ignores a
+ * highlighted folder, even when the folder type is listed, so a view where
+ * folders can be picked is left unfiltered; the worker skips types it cannot
+ * read. Files-only views keep the filter.
+ */
+const viewMimeTypes = (foldersSelectable: boolean): string | undefined =>
+  foldersSelectable ? undefined : VIEW_MIME_TYPES;
+
 /** The part of Google's Picker API the shared-drives tab is built with. */
 interface PickerDocsView {
   setEnableDrives(enabled: boolean): PickerDocsView;
@@ -78,24 +89,41 @@ interface PickerApi {
  * A "Shared drives" tab for the picker. Built from the Picker API the
  * picker hook loads, so it is left out until that script is there.
  */
-const sharedDrivesView = (): PickerDocsView[] | undefined => {
+const sharedDrivesView = (
+  foldersSelectable: boolean,
+): PickerDocsView[] | undefined => {
   const pickerApi = (window as { google?: { picker?: PickerApi } }).google
     ?.picker;
   if (!pickerApi) return undefined;
-  return [
-    new pickerApi.DocsView(pickerApi.ViewId.DOCS)
-      .setEnableDrives(true)
-      .setIncludeFolders(true)
-      .setSelectFolderEnabled(true)
-      .setMimeTypes(VIEW_MIME_TYPES),
-  ];
+  const view = new pickerApi.DocsView(pickerApi.ViewId.DOCS)
+    .setEnableDrives(true)
+    .setIncludeFolders(true)
+    .setSelectFolderEnabled(foldersSelectable);
+  const mimeTypes = viewMimeTypes(foldersSelectable);
+  return [mimeTypes ? view.setMimeTypes(mimeTypes) : view];
 };
 
 /** Why the last attempt to open the picker failed. */
 type PickerError = 'expired' | 'validateFailed' | 'pickerFailed' | null;
 
+/**
+ * How the server reads a picked folder, sent with the picker token: with
+ * the account's own sign-in, through a service account the folder must be
+ * shared with (`share_with`), or not at all (files only).
+ */
+interface FolderAccess {
+  folders?: 'account' | 'service_account' | 'off';
+  share_with?: string;
+}
+
 interface GoogleDrivePickerProps {
   token: string | null;
+  /**
+   * The OAuth client the server signs in with. Google grants what is
+   * picked to this client's project only, so it wins over
+   * VITE_GOOGLE_CLIENT_ID.
+   */
+  clientId?: string | null;
   /**
    * The Drive connection to pick from, chosen by the caller (the connect
    * wizard). Left out, the first connected one, with the picker's own
@@ -117,6 +145,7 @@ interface GoogleDrivePickerProps {
  */
 const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
   token,
+  clientId: serverClientId,
   connectionId: suppliedConnectionId,
   onConnectionChange,
   onSelectionChange,
@@ -141,6 +170,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<PickerError>(null);
   const [authError, setAuthError] = useState('');
+  const [folderAccess, setFolderAccess] = useState<FolderAccess>({});
 
   const [openPicker] = useDrivePicker();
 
@@ -150,7 +180,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
   // The Picker runs in the browser and needs an access token. It is fetched
   // per use and kept in memory only; the refresh token never leaves the server.
-  const fetchAccessToken = async (): Promise<string | null> => {
+  const fetchAccessToken = async (): Promise<
+    (FolderAccess & { access_token: string }) | null
+  > => {
     if (!activeConnectionId) return null;
     try {
       const data = await connectorsService.pickerToken(
@@ -163,7 +195,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         return null;
       }
       setError(null);
-      return data.access_token;
+      setFolderAccess({ folders: data.folders, share_with: data.share_with });
+      return data;
     } catch (err) {
       console.error('Error fetching the picker token:', err);
       setError('validateFailed');
@@ -173,13 +206,15 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
   const handleOpenPicker = async () => {
     setIsLoading(true);
-    const accessToken = await fetchAccessToken();
-    if (!accessToken) {
+    const picker = await fetchAccessToken();
+    if (!picker) {
       setIsLoading(false);
       return;
     }
+    const foldersSelectable = picker.folders !== 'off';
     try {
-      const clientId: string = envVar('VITE_GOOGLE_CLIENT_ID');
+      const clientId: string =
+        serverClientId || envVar('VITE_GOOGLE_CLIENT_ID');
       const developerKey: string = envVar('VITE_GOOGLE_PICKER_API_KEY') ?? '';
 
       // Derive appId from clientId (extract numeric part before first dash)
@@ -197,16 +232,17 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         developerKey,
         appId: appId,
         // Folders are picked like files; the worker downloads their contents.
+        // Shown either way, so a user can open them to pick files inside.
         setIncludeFolders: true,
-        setSelectFolderEnabled: true,
+        setSelectFolderEnabled: foldersSelectable,
         viewId: 'DOCS',
         showUploadView: false,
         showUploadFolders: false,
         supportDrives: true,
-        customViews: sharedDrivesView(),
+        customViews: sharedDrivesView(foldersSelectable),
         multiselect: true,
-        token: accessToken,
-        viewMimeTypes: VIEW_MIME_TYPES,
+        token: picker.access_token,
+        viewMimeTypes: viewMimeTypes(foldersSelectable),
         callbackFunction: (data: any) => {
           setIsLoading(false);
           if (data.action === 'picked') {
@@ -223,7 +259,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                 sizeBytes: doc.sizeBytes,
               };
 
-              if (doc.mimeType === 'application/vnd.google-apps.folder') {
+              if (doc.mimeType === FOLDER_MIME_TYPE) {
                 newFolders.push(item);
               } else {
                 newFiles.push(item);
@@ -383,6 +419,11 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
               {t('modals.uploadDoc.connectors.googleDrive.selectFiles')}
             </Button>
           </div>
+          {folderAccess.folders === 'off' && (
+            <p className="text-muted-foreground text-xs">
+              {t('modals.uploadDoc.connectors.googleDrive.filesOnly')}
+            </p>
+          )}
           {pickedCount === 0 ? (
             <p className="text-muted-foreground text-sm">
               {t('modals.uploadDoc.connectors.googleDrive.noFilesSelected')}
@@ -407,6 +448,18 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
               </p>
             </>
           )}
+          {folderAccess.folders === 'service_account' &&
+            folderAccess.share_with &&
+            selectedFolders.length > 0 && (
+              <Alert variant="info">
+                <AlertDescription>
+                  {t('modals.uploadDoc.connectors.googleDrive.shareFolders')}{' '}
+                  <span className="font-mono wrap-anywhere select-all">
+                    {folderAccess.share_with}
+                  </span>
+                </AlertDescription>
+              </Alert>
+            )}
         </>
       )}
     </div>

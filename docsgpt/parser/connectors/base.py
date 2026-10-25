@@ -71,6 +71,14 @@ class BaseConnectorAuth(ABC):
         """
         pass
 
+    def picker_options(self, token_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Settings a browser-side picker needs for this sign-in, sent with its access token.
+
+        Args:
+            token_info: The connection's stored token info.
+        """
+        return {}
+
     def sanitize_token_info(self, token_info: Dict[str, Any], **extra_fields) -> Dict[str, Any]:
         """Extract the fields safe to persist in the session store.
         """

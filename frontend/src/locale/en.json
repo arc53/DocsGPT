@@ -2262,7 +2262,9 @@
           "selectedFiles": "Selected items",
           "selectFiles": "Select files or folders",
           "noFilesSelected": "No files or folders selected yet.",
-          "removeItem": "Remove {{name}}"
+          "removeItem": "Remove {{name}}",
+          "shareFolders": "To sync these folders, share each one in Google Drive as a Viewer with:",
+          "filesOnly": "This server syncs files, not whole folders. Open a folder in the picker to choose the files inside it."
         }
       },
       "fields": {

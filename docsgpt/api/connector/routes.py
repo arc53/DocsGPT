@@ -545,7 +545,7 @@ class ConnectorValidateSession(Resource):
             if session is None:
                 return make_response(jsonify({"success": False, "error": "Invalid or expired session"}), 401)
             try:
-                token = service.picker_token(str(session["id"]))
+                token = service.picker_token(str(session["id"]), session.get("provider"))
             except service.ConnectionUnavailable:
                 return make_response(jsonify({
                     "success": False,

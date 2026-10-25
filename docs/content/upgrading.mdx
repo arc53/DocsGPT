@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: "Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes: back up, run database migrations, roll back, and read each release's notes."
-lastUpdated: 2026-10-21
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -183,6 +183,15 @@ Source uploads, remote and connector ingests, re-ingests, source syncs, graph bu
 ```
 
 The bundled Compose and Kubernetes manifests already include it, so pull them along with the code. Without it, new sources stay in "processing" forever, because nothing picks the task up, and no error is logged. Tasks queued before the upgrade are still on `docsgpt` and finish there. If you set `INGEST_QUEUE` to another name, use that name in every `-Q` list instead. To keep long ingests from delaying scheduled runs and cleanups, run a second worker with `-Q ingest`; see [Scaling and scheduled tasks](/Deploying/Kubernetes-Deploying#scaling-and-scheduled-tasks).
+
+#### Google Drive asks for picked files only
+
+New Google Drive sign-ins ask for `drive.file`, the files and folders a member picks in Google's file picker, instead of `drive.readonly`, the whole Drive. Google does not restrict `drive.file`, so an External app no longer needs the restricted-scope verification and security assessment. What to do:
+
+- **Enable the Google Picker API** in the project of `GOOGLE_CLIENT_ID`. Members now always pick in Google's picker, which opens with `GOOGLE_CLIENT_ID`; `VITE_GOOGLE_CLIENT_ID` is no longer needed for it.
+- **To keep syncing whole folders**, either set `GOOGLE_SERVICE_ACCOUNT_KEY` and have members share folders with its email ([Sync whole folders with a service account](/Sources/Connectors/google-drive#sync-whole-folders-with-a-service-account)), or set `GOOGLE_DRIVE_ACCESS=readonly` to keep the previous behavior, for example with an Internal Workspace app.
+
+Existing connections keep their `drive.readonly` sign-in, and their folders keep syncing with it, until the member reconnects.
 
 #### GUARDRAILS_FLOOR moves to Admin → Guardrails
 

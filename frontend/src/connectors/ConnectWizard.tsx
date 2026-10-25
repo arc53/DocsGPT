@@ -954,11 +954,12 @@ export default function ConnectWizard({
           onReconnect={onReconnect}
         />
       ) : connector.key === 'google_drive' &&
-        envVar('VITE_GOOGLE_CLIENT_ID') ? (
+        (connector.picker_client_id || envVar('VITE_GOOGLE_CLIENT_ID')) ? (
         activeConnectionId ? (
           <GoogleDrivePicker
             key={`${activeConnectionId}-${pickerKey}`}
             token={token}
+            clientId={connector.picker_client_id}
             connectionId={activeConnectionId}
             onFirstPickName={prefillName}
             onSelectionChange={(fileIds, folderIds = []) => {

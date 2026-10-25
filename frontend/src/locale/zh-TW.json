@@ -2254,7 +2254,9 @@
           "selectedFiles": "已選擇的項目",
           "selectFiles": "選擇檔案或資料夾",
           "noFilesSelected": "尚未選擇檔案或資料夾。",
-          "removeItem": "移除 {{name}}"
+          "removeItem": "移除 {{name}}",
+          "shareFolders": "若要同步這些資料夾，請在 Google 雲端硬碟中將每個資料夾以檢視者身分共用給：",
+          "filesOnly": "此伺服器同步檔案，而非整個資料夾。在選擇器中開啟資料夾即可選擇其中的檔案。"
         }
       },
       "fields": {
