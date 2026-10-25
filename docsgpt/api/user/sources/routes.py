@@ -1034,6 +1034,10 @@ class SourceConfigResource(Resource):
                 repo.update(
                     str(doc["id"]), owner, {"config": new_config.model_dump()}
                 )
+                if requires_reingest and doc.get("file_path"):
+                    # A reingest of stored files re-embeds only edited ones;
+                    # this makes the next one re-chunk them all.
+                    repo.set_metadata_key(str(doc["id"]), owner, "rechunk_pending", True)
         except AccessDenied as err:
             return denied_response(err)
         except Exception as err:

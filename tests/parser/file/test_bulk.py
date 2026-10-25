@@ -477,6 +477,27 @@ class TestBuildDirectoryStructure:
             if isinstance(val, dict) and "type" in val:
                 assert "size_bytes" in val
 
+    def test_structure_records_each_files_sha256(self, tmp_path):
+        import hashlib
+
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+
+        (tmp_path / "guide").mkdir()
+        (tmp_path / "guide" / "a.md").write_bytes(b"alpha")
+        (tmp_path / "b.md").write_bytes(b"beta")
+        mock_parser = MagicMock()
+        mock_parser.parser_config_set = True
+        mock_parser.parse_file.return_value = "content"
+        mock_parser.get_file_metadata.return_value = {}
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(tmp_path), recursive=True, file_extractor={".md": mock_parser},
+        )
+        reader.load_data()
+        struct = reader.directory_structure
+        assert struct["b.md"]["sha256"] == hashlib.sha256(b"beta").hexdigest()
+        assert struct["guide"]["a.md"]["sha256"] == hashlib.sha256(b"alpha").hexdigest()
+
     def test_structure_excludes_hidden(self, temp_dir):
         from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
