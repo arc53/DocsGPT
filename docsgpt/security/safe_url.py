@@ -542,6 +542,9 @@ def _pinned_session(
     request_headers["Host"] = host_header
 
     session = requests.Session()
+    # Off, or an env proxy would re-resolve the hostname and dial from its own
+    # vantage point: the validated IP is dropped and the TOCTOU window reopens.
+    session.trust_env = False
     if url_credentials and parts.username is not None:
         session.auth = (unquote(parts.username), unquote(parts.password or ""))
     if watchdog is not None:

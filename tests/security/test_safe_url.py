@@ -19,6 +19,7 @@ from docsgpt.security.safe_url import (
     UnsafeUserUrlError,
     _GuardedAsyncTransport,
     _PinnedHTTPSTransport,
+    _pinned_session,
     guarded_async_client,
     pinned_fetch_bytes,
     pinned_request,
@@ -1213,6 +1214,50 @@ def test_pinned_session_verifies_tls_against_the_ascii_name(monkeypatch):
 
     assert captured["adapters"]["https://"]._server_hostname == "xn--bcher-kva.example"
     assert captured["prepared"].headers["Host"] == "xn--bcher-kva.example"
+
+
+@pytest.mark.unit
+def test_pinned_session_ignores_environment_proxies(monkeypatch):
+    """A proxy would re-resolve the host and discard the validated IP."""
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("104.18.6.192")):
+        session, pinned_url, _headers = _pinned_session("https://api.openai.com/v1", None)
+    try:
+        assert session.trust_env is False
+        assert session.merge_environment_settings(pinned_url, {}, None, None, None)["proxies"] == {}
+    finally:
+        session.close()
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_dials_the_pinned_ip_not_the_environment_proxy(local_server, monkeypatch):
+    base, routes = local_server
+    port = base.rsplit(":", 1)[1]
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    _test_hosts_to_loopback(monkeypatch)
+    seen: list[str] = []
+
+    def record_host(handler):
+        seen.append(handler.headers["Host"])
+        handler.send_response(200)
+        handler.send_header("Content-Length", "2")
+        handler.end_headers()
+        handler.wfile.write(b"ok")
+
+    routes["/"] = record_host
+
+    body, response = pinned_fetch_bytes(f"http://pinned.test:{port}/", max_bytes=100, timeout=5)
+
+    assert body == b"ok"
+    assert response.status_code == 200
+    assert seen == [f"pinned.test:{port}"]
 
 
 @pytest.mark.unit
