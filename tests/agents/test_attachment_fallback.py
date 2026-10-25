@@ -80,7 +80,7 @@ def _windows():
         yield
 
 
-def _merged_turn(attachments, primary=None):
+def _merged_turn(attachments, primary=None, context_window_limit=None):
     agent = _Agent(
         endpoint="stream",
         llm_name="openai",
@@ -91,6 +91,7 @@ def _merged_turn(attachments, primary=None):
         decoded_token={"sub": "u"},
         attachments=attachments,
         attachment_planning=True,
+        context_window_limit=context_window_limit,
     )
     agent.tool_executor = Mock()
     messages = agent._build_messages("system prompt", "compare the files")
@@ -120,6 +121,17 @@ class TestReplanForTheFallback:
         assert "compare the files" in text
         for i in range(3):
             assert f"r{i}.txt" in text
+
+    def test_a_bigger_fallback_keeps_the_agents_context_limit(self):
+        files = [text_att(f"r{i}.txt", 12_000, body_word=f"w{i}") for i in range(3)]
+        agent, messages = _merged_turn(files, context_window_limit=20_000)
+        _, uncapped = _merged_turn(files)
+
+        capped = AttachmentDispatch(agent).for_fallback(_LLM("fb-big"), messages)
+
+        assert capped is not None
+        assert TokenCounter.count_message_tokens(capped.messages) < 20_000
+        assert TokenCounter.count_message_tokens(uncapped) > 20_000
 
     def test_the_primary_messages_are_left_alone(self):
         files = [text_att(f"r{i}.txt", 20_000) for i in range(3)]

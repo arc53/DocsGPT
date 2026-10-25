@@ -163,10 +163,14 @@ class AttachmentDispatch:
             return None
 
         from docsgpt.api.answer.services.compression.token_counter import TokenCounter
-        from docsgpt.core.model_utils import get_token_limit
+        from docsgpt.core.model_utils import cap_context_window, get_token_limit
         from docsgpt.core.settings import settings
 
-        window = int(get_token_limit(fallback.model_id, user_id=getattr(fallback, "model_user_id", None)))
+        # The agent's context limit holds on the fallback as on the primary.
+        window = cap_context_window(
+            int(get_token_limit(fallback.model_id, user_id=getattr(fallback, "model_user_id", None))),
+            getattr(agent, "context_window_limit", None),
+        )
         capabilities = _capabilities_for(plan.capabilities, fallback, window)
         fresh = {**carrier, "content": copy.deepcopy(agent._turn_content_before_merge)}
         rebuilt = [*messages[:index], fresh, *messages[index + 1 :]]
