@@ -15,6 +15,9 @@ import {
   Book,
   MessageSquare,
   Trash2,
+  Link,
+  Users,
+  X,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -686,7 +689,7 @@ export default function ButtonSection() {
       </Example>
       <Example
         title="Action menu"
-        code='<ActionMenu options triggerLabel /> on a tile (separatorBefore on Delete) · size="toolbar" in a page header · trigger={<Button>} menuWidth="sm"'
+        code='<ActionMenu options triggerLabel /> on a tile (separatorBefore on Delete) · size="toolbar" in a page header · size="panel" in a panel header · trigger={<Button>} menuWidth="sm"'
       >
         <div className="flex flex-wrap items-center gap-6">
           <div className="bg-muted hover:bg-accent relative h-24 w-48 rounded-2xl p-4 text-sm">
@@ -720,9 +723,39 @@ export default function ButtonSection() {
               size="toolbar"
               triggerLabel="More actions"
               options={[
-                { label: 'Access details', onClick: () => {} },
-                { label: 'Share with team', onClick: () => {} },
+                { icon: Link, label: 'Access details', onClick: () => {} },
+                { icon: Users, label: 'Share with team', onClick: () => {} },
+                {
+                  icon: Trash2,
+                  label: 'Delete',
+                  variant: 'destructive',
+                  separatorBefore: true,
+                  onClick: () => {},
+                },
               ]}
+            />
+          </div>
+          {/* A panel or reader header: 32px, beside the panel's X. */}
+          <div className="flex items-center gap-1">
+            <ActionMenu
+              size="panel"
+              triggerLabel="Node actions"
+              options={[
+                { icon: Copy, label: 'Duplicate', onClick: () => {} },
+                {
+                  icon: Trash2,
+                  label: 'Delete',
+                  variant: 'destructive',
+                  onClick: () => {},
+                },
+              ]}
+            />
+            <IconButton
+              variant="ghost-muted"
+              size="icon-sm"
+              label="Close"
+              icon={X}
+              side="bottom"
             />
           </div>
           {/* A labelled trigger instead of the three dots (a dialog footer). */}

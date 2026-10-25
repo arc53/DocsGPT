@@ -938,7 +938,7 @@ const Chunks: React.FC<ChunksProps> = ({
             </Button>
           ) : null}
           <ActionMenu
-            size="toolbar"
+            size="panel"
             triggerLabel={t('settings.sources.menuAlt')}
             options={[
               {

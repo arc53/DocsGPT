@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import '../../locale/i18n';
 
@@ -9,9 +9,19 @@ import SchedulerToolCallCard, {
   type SchedulerToolCallCardProps,
 } from './SchedulerToolCallCard';
 
+// The store the card reads: the token and the schedules it knows.
+const mockState = vi.hoisted(() => ({
+  value: {
+    preference: { token: null },
+    schedules: { byAgent: {}, all: null },
+  } as Record<string, unknown> & {
+    schedules: { byAgent: Record<string, unknown[]>; all: unknown[] | null };
+  },
+}));
 vi.mock('react-redux', () => ({
   useDispatch: () => vi.fn(),
-  useSelector: () => null,
+  useSelector: (selector: (state: unknown) => unknown) =>
+    selector(mockState.value),
 }));
 
 const render = (props: SchedulerToolCallCardProps) =>
@@ -54,7 +64,7 @@ describe('extractToolError', () => {
 describe('SchedulerToolCallCard', () => {
   const scheduled = {
     task_id: 't1',
-    resolved_run_at: '2026-09-27T09:00:00Z',
+    resolved_run_at: '2099-09-27T09:00:00Z',
     instruction: 'Send the weekly report',
   };
 
@@ -74,6 +84,59 @@ describe('SchedulerToolCallCard', () => {
     expect(html).toContain('data-variant="destructive-outline"');
     expect(html).toContain('>Cancel<');
     expect(html).not.toContain('mt-2');
+  });
+
+  it('drops the cancel pill once the run time has passed', () => {
+    const html = render({
+      actionName: 'schedule_task',
+      result: { ...scheduled, resolved_run_at: '2020-01-01T09:00:00Z' },
+    });
+    expect(html).toContain('>Scheduled task<');
+    expect(html).not.toContain('>Cancel<');
+  });
+
+  // The schedule's own status, once the store has it, decides: a run that
+  // beat or the worker delayed is still pending and still cancellable.
+  describe('with the schedule in the store', () => {
+    const withSchedule = (status: string, where: 'agent' | 'all') => {
+      const schedule = { id: 't1', agent_id: 'a1', status };
+      mockState.value.schedules =
+        where === 'agent'
+          ? { byAgent: { a1: [schedule] }, all: null }
+          : { byAgent: {}, all: [schedule] };
+    };
+    afterEach(() => {
+      mockState.value.schedules = { byAgent: {}, all: null };
+    });
+
+    it('keeps Cancel on an overdue task that has not run', () => {
+      withSchedule('active', 'agent');
+      const html = render({
+        actionName: 'schedule_task',
+        result: { ...scheduled, resolved_run_at: '2020-01-01T09:00:00Z' },
+        agentId: 'a1',
+      });
+      expect(html).toContain('>Cancel<');
+    });
+
+    it('drops Cancel once the task has run, before its time passes', () => {
+      withSchedule('completed', 'agent');
+      const html = render({
+        actionName: 'schedule_task',
+        result: scheduled,
+        agentId: 'a1',
+      });
+      expect(html).not.toContain('>Cancel<');
+    });
+
+    it("reads an agentless chat's task from the cross-agent list", () => {
+      withSchedule('active', 'all');
+      const html = render({
+        actionName: 'schedule_task',
+        result: { ...scheduled, resolved_run_at: '2020-01-01T09:00:00Z' },
+      });
+      expect(html).toContain('>Cancel<');
+    });
   });
 
   it('shows a spinner, not the calendar icon, while pending', () => {

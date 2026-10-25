@@ -858,17 +858,18 @@ export default function Teams() {
 
   return (
     <SectionShell>
-      <PageToolbar
-        intro={t('settings.teams.subtitle')}
-        action={
-          <Button size="field" shape="pill" onClick={openCreateModal}>
-            {t('settings.teams.newTeam')}
-          </Button>
-        }
-      />
-
       {!selected ? (
         <div>
+          {/* The list's own toolbar; an open team swaps it for its crumb row,
+              as an open tool or source does. */}
+          <PageToolbar
+            intro={t('settings.teams.subtitle')}
+            action={
+              <Button size="field" shape="pill" onClick={openCreateModal}>
+                {t('settings.teams.newTeam')}
+              </Button>
+            }
+          />
           {teamsLoading ? (
             <SkeletonLoader component="default" />
           ) : teamsError ? (
@@ -960,42 +961,20 @@ export default function Teams() {
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-          <DetailBreadcrumb
-            parentLabel={t('settings.teams.label')}
-            currentLabel={selected.name}
-            onParentClick={() => {
-              setSelected(null);
-              setMembers([]);
-              setGrants([]);
-            }}
-          />
-
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <span aria-hidden="true" className="contents">
-                <Avatar alt="" size="lg" shape="square" variant="muted">
-                  {initialOf(selected.name)}
-                </Avatar>
-              </span>
-              <div className="min-w-0">
-                <h3
-                  className="text-foreground truncate text-xl leading-tight font-semibold"
-                  title={selected.name}
-                >
-                  {selected.name}
-                </h3>
-                {selected.description && (
-                  <p
-                    className="text-muted-foreground mt-1 line-clamp-2 text-sm"
-                    title={selected.description}
-                  >
-                    {selected.description}
-                  </p>
-                )}
-              </div>
-            </div>
+          {/* The team's ⋯ ends the crumb row, as a source view's does. */}
+          <div className="flex min-h-9.5 items-center justify-between gap-3">
+            <DetailBreadcrumb
+              parentLabel={t('settings.teams.label')}
+              currentLabel={selected.name}
+              onParentClick={() => {
+                setSelected(null);
+                setMembers([]);
+                setGrants([]);
+              }}
+            />
             {(isAdmin || isTeamOwner) && (
               <ActionMenu
+                size="toolbar"
                 options={[
                   ...(isAdmin
                     ? [
@@ -1012,15 +991,39 @@ export default function Teams() {
                           label: t('settings.teams.deleteTeam'),
                           icon: Trash2,
                           variant: 'destructive' as const,
+                          separatorBefore: true,
                           onClick: () => requestDeleteTeam(selected),
                         },
                       ]
                     : []),
                 ]}
                 triggerLabel={t('settings.teams.teamActions')}
-                className="shrink-0"
               />
             )}
+          </div>
+
+          <div className="flex min-w-0 items-center gap-3">
+            <span aria-hidden="true" className="contents">
+              <Avatar alt="" size="lg" shape="square" variant="muted">
+                {initialOf(selected.name)}
+              </Avatar>
+            </span>
+            <div className="min-w-0">
+              <h3
+                className="text-foreground truncate text-xl leading-tight font-semibold"
+                title={selected.name}
+              >
+                {selected.name}
+              </h3>
+              {selected.description && (
+                <p
+                  className="text-muted-foreground mt-1 line-clamp-2 text-sm"
+                  title={selected.description}
+                >
+                  {selected.description}
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="border-border flex flex-col gap-3 border-t pt-6">

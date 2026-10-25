@@ -816,11 +816,9 @@
           "inAnswers_many": "dans {{formatted}} réponses"
         },
         "panels": {
-          "answerStatus": "Statut des réponses dans le temps",
-          "sentiment": "Sentiment au fil du temps",
+          "answerStatus": "Statut des réponses",
           "whyNot": "Pourquoi la réponse est incomplète",
           "requestType": "Type de demande",
-          "implicitFeedback": "Réactions aux réponses",
           "shareOfAnswers_one": "Part de {{formatted}} réponse",
           "shareOfAnswers_other": "Part de {{formatted}} réponses",
           "shareOfAnswers_many": "Part de {{formatted}} réponses",
@@ -837,7 +835,6 @@
           "barLabelNone": "{{name}} : pas encore assez de données",
           "noneOfThese": "Aucun de ces sujets",
           "empty": "Rien à afficher sur cette période.",
-          "tooltipShare": "{{name}} : {{value}}",
           "ofQuestions_one": "Sur {{formatted}} question",
           "ofQuestions_other": "Sur {{formatted}} questions",
           "ofQuestions_many": "Sur {{formatted}} questions",
@@ -847,7 +844,13 @@
             "title": "Aucun sujet pour l’instant",
             "description": "Ajoutez des sujets pour voir ce que les gens demandent.",
             "action": "Configurer les sujets"
-          }
+          },
+          "replies": "Comment les utilisateurs ont répondu",
+          "reaction": "Réactions aux réponses",
+          "tone": "Sentiment",
+          "tooltipItem": "{{name}} : {{value}}",
+          "notDrawnMovedOn": "Les relances qui passent à autre chose ou ajoutent des précisions, comme une nouvelle question ou une suite, ne sont pas tracées.",
+          "notDrawnNeutral": "Les relances neutres ne sont pas tracées."
         },
         "labelNamesInline": {
           "answer_status": "le statut des réponses",
@@ -876,7 +879,8 @@
           "reaction": {
             "thanks": "Remerciement ou confirmation",
             "reAsk": "Question reposée",
-            "pushbackOrComplaint": "Contestation ou plainte"
+            "pushbackOrComplaint": "Contestation ou plainte",
+            "movedOn": "Passé à autre chose"
           },
           "requestType": {
             "troubleshooting": "Dépannage",
@@ -931,6 +935,10 @@
           "button": "Paramètres",
           "title": "Paramètres des analyses",
           "saveFailed": "Impossible d’enregistrer les paramètres des analyses. Réessayez."
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "Question reposée ou contestation",
+          "previous": "Période précédente : {{value}}"
         }
       },
       "gaps": {
@@ -1505,6 +1513,7 @@
       "noToolsFound": "Aucun outil trouvé",
       "selectToolSetup": "Ajouter un outil",
       "settingsIconAlt": "Icône des paramètres",
+      "toolActions": "Actions de l’outil",
       "configureToolAria": "Configurer {{toolName}}",
       "manageTools": "Accéder aux outils",
       "edit": "Modifier",
@@ -1672,13 +1681,11 @@
       "access": "Accès",
       "connection": "Connexion",
       "hostLabel": "Hôte",
-      "dangerZone": "Zone de danger",
       "approvalAskDescription": "Approuvez chaque commande avant son exécution.",
       "approvalFullDescription": "Exécute toutes les commandes sans demander, sauf celles de la liste de blocage de sécurité.",
       "fullAccessWarning": "Accès complet : les agents peuvent exécuter n’importe quelle commande sur cette machine sans demander. La liste de blocage de sécurité s’applique toujours.",
       "deviceIdLabel": "ID de l’appareil",
       "offlineHint": "Non connecté. Exécutez `docsgpt-cli host` sur la machine pour la mettre en ligne.",
-      "dangerZoneDescription": "La révocation arrête le démon sur l’appareil et supprime l’association.",
       "auditTitle": "Activité récente",
       "auditLoading": "Chargement…",
       "auditEmpty": "Aucune activité pour l’instant.",
@@ -3091,11 +3098,6 @@
         "publishTitle": "Publier pour prévisualiser",
         "publishDescription": "L’aperçu converse avec l’agent publié. Les brouillons restent privés jusqu’à leur publication.",
         "unsavedChanges": "Vous avez des modifications non enregistrées. L’aperçu utilise la version enregistrée jusqu’à ce que vous enregistriez."
-      },
-      "dangerZone": {
-        "heading": "Zone de danger",
-        "description": "La suppression de cet agent est définitive et retirera toutes ses planifications et son historique d’exécutions.",
-        "deleteButton": "Supprimer l’agent"
       },
       "externalKb": "Base de connaissances externe",
       "errors": {

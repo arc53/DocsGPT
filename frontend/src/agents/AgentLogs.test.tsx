@@ -109,6 +109,13 @@ describe('AgentLogs', () => {
     expect(toolbar.textContent).toContain('Carrier FAQ');
     expect(toolbar.textContent).toContain('agents.logs.noUsageHistory');
     expect(toolbar.querySelector('[data-slot="separator"]')).not.toBeNull();
+    // The agent's ⋯ (Access details, Share, Delete) is Overview's alone; the
+    // Monitoring pages and Schedules keep to their own actions.
+    expect(
+      toolbar.querySelector(
+        'button[aria-label="agents.form.buttons.moreActions"]',
+      ),
+    ).toBeNull();
   });
 
   // Logs filters by the agent's labels and tags, and is the `#logs` target
