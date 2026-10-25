@@ -25,7 +25,12 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, List, Optional
+
+#LRU store fo query-embedding cache
+from collections import OrderedDict
+
+#Tuple for query-embedding-cache type hints
+from typing import Any, List, Optional, Tuple
 
 from docsgpt.core.settings import settings
 from docsgpt.vectorstore.model_registry import dimension_for
@@ -48,6 +53,16 @@ _FAILURE_COOLDOWN = 30.0
 #: Comfortably above a healthy round trip (~60 ms on a prefork worker) and far
 #: below ``EMBEDDINGS_DELEGATE_TIMEOUT``, which is the point.
 _PROBE_WAIT = 2.0
+
+#: How long a successful query embedding is reused without another broker
+#: round trip. Embeddings are deterministic per (model, key, text), so a short
+#: TTL only risks serving a vector computed seconds ago -- while retries,
+#: polls, and shared rephrased queries otherwise each pay a full dispatch.
+_QUERY_CACHE_TTL = 60.0
+
+#: Upper bound on cached query vectors per client instance. One entry holds a
+#: single vector (~17 KB at 4k dims), so the cap bounds memory to a few MB.
+_QUERY_CACHE_MAX = 128
 
 _NO_WORKER_HINT = (
     "Start a worker consuming it, point EMBEDDINGS_BASE_URL at an embedding "
@@ -104,6 +119,17 @@ class DelegatedEmbeddings:
         self._probing = False
         self._state_lock = threading.Lock()
         self._probe_done = threading.Event()
+        # Successful query vectors by (embeddings_name, embeddings_key, text),
+        # each with its monotonic timestamp. Guarded by ``_cache_lock``, kept
+        # separate from ``_state_lock`` so cache reads never engage the
+        # probe-gate machinery.
+        # each client gets its own self._query_cache mapping (model, key, text) → (timestamp, vector), 
+        # plus a dedicated self._cache_lock.  
+        # The separate lock matters: the existing _state_lock drives the probe/cooldown gate, 
+        # and an existing test asserts that lock is
+        # untouched on the healthy path — sharing it would have broken that contract
+        self._query_cache: "OrderedDict[Tuple[str, Optional[str], str], Tuple[float, List[float]]]" = OrderedDict()
+        self._cache_lock = threading.Lock()
 
     def _cooldown_remaining(self) -> float:
         """Seconds left of the fail-fast window after a failed dispatch."""
@@ -216,13 +242,51 @@ class DelegatedEmbeddings:
 
         return self._send(texts, queue, timeout)
 
+    def _cache_key(self, text: str) -> Tuple[str, Optional[str], str]:
+        """Cache identity for one text under this client's model and key."""
+        return (self.embeddings_name, self.embeddings_key, text)
+
+    def _cached_vector(self, text: str) -> Optional[List[float]]:
+        """Returns the stored vector for ``text`` on a hit (refreshing its LRU position) or None on a miss/expiry;""" 
+        """expired entries are deleted."""
+        entry = self._query_cache.get(self._cache_key(text))
+        if entry is None:
+            return None
+        stamped_at, vector = entry
+        if time.monotonic() - stamped_at >= _QUERY_CACHE_TTL:
+            del self._query_cache[self._cache_key(text)]
+            return None
+        self._query_cache.move_to_end(self._cache_key(text))
+        return vector
+
+    def _remember_vectors(self, texts: List[str], vectors: List[List[float]]) -> None:
+        """Cache successfully embedded texts, evicting the oldest first."""
+        for text, vector in zip(texts, vectors):
+            self._query_cache[self._cache_key(text)] = (time.monotonic(), vector)
+            self._query_cache.move_to_end(self._cache_key(text))
+            while len(self._query_cache) > _QUERY_CACHE_MAX:
+                self._query_cache.popitem(last=False)
+
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of texts, preserving order."""
         if not documents:
             return []
+        texts = list(documents)
+        with self._cache_lock:
+            misses = [t for t in dict.fromkeys(texts) if self._cached_vector(t) is None]
         if _in_worker():
-            return self._local_embeddings().embed_documents(documents)
-        vectors = self._dispatch(list(documents))
+            fresh = self._local_embeddings().embed_documents(misses) if misses else []
+        else:
+            fresh = self._dispatch(misses) if misses else []
+        with self._cache_lock:
+            self._remember_vectors(misses, fresh)
+            fresh_by_text = dict(zip(misses, fresh))
+            vectors = []
+            for t in texts:
+                vector = fresh_by_text.get(t)
+                if vector is None:
+                    vector = self._cached_vector(t)
+                vectors.append(vector)
         if self._dimension is None and vectors:
             self._dimension = len(vectors[0])
         return vectors
