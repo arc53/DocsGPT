@@ -3412,6 +3412,7 @@
         "loadFailed": "Couldn't load the runs."
       },
       "actions": "Schedule actions",
+      "loadFailed": "Couldn't load the schedules.",
       "cancelTask": "Cancel task",
       "failureStreak_one": "{{count}} failure in a row",
       "failureStreak_other": "{{count}} failures in a row",

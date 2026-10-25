@@ -76,6 +76,7 @@ export default function SchedulesView() {
   const schedules = useSelector((state: RootState) =>
     selectSchedulesForAgent(state, agentId ?? ''),
   );
+  const loadError = useSelector((state: RootState) => state.schedules.error);
   // undefined while loading, null when the stats request failed.
   const [stats, setStats] = useState<ScheduleStats | null | undefined>(
     undefined,
@@ -103,6 +104,10 @@ export default function SchedulesView() {
     if (!agentId) return;
     dispatch(loadSchedulesForAgent({ agentId, token }));
   }, [dispatch, agentId, token]);
+
+  const retryLoad = () => {
+    if (agentId) dispatch(loadSchedulesForAgent({ agentId, token }));
+  };
 
   const recurring = useMemo(
     () => schedules.filter((s) => s.trigger_type === 'recurring'),
@@ -308,24 +313,35 @@ export default function SchedulesView() {
                 }
               />
             </div>
-            <Tabs defaultValue="recurring">
-              <TabsList>
-                <TabsTrigger value="recurring">
-                  {t('agents.schedules.recurring')}
-                  <Badge variant="neutral">{recurring.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="once">
-                  {t('agents.schedules.oneTime')}
-                  <Badge variant="neutral">{oneTime.length}</Badge>
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="recurring" className="mt-4">
-                {renderList(recurring, 'agents.schedules.noRecurring')}
-              </TabsContent>
-              <TabsContent value="once" className="mt-4">
-                {renderList(oneTime, 'agents.schedules.noOneTime')}
-              </TabsContent>
-            </Tabs>
+            {loadError && (
+              <EmptyState
+                tone="destructive"
+                size="sm"
+                illustration="none"
+                title={t('agents.schedules.loadFailed')}
+                onRetry={retryLoad}
+              />
+            )}
+            {(!loadError || schedules.length > 0) && (
+              <Tabs defaultValue="recurring">
+                <TabsList>
+                  <TabsTrigger value="recurring">
+                    {t('agents.schedules.recurring')}
+                    <Badge variant="neutral">{recurring.length}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="once">
+                    {t('agents.schedules.oneTime')}
+                    <Badge variant="neutral">{oneTime.length}</Badge>
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="recurring" className="mt-4">
+                  {renderList(recurring, 'agents.schedules.noRecurring')}
+                </TabsContent>
+                <TabsContent value="once" className="mt-4">
+                  {renderList(oneTime, 'agents.schedules.noOneTime')}
+                </TabsContent>
+              </Tabs>
+            )}
             <RunDetailDrawer
               run={activeRun}
               onClose={() => setActiveRun(null)}

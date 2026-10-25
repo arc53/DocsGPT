@@ -3396,6 +3396,7 @@
         "loadFailed": "無法載入執行紀錄。"
       },
       "actions": "排程操作",
+      "loadFailed": "無法載入排程。",
       "cancelTask": "取消任務",
       "failureStreak_one": "連續失敗 {{count}} 次",
       "failureStreak_other": "連續失敗 {{count}} 次",

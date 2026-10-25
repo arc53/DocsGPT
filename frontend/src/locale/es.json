@@ -3507,6 +3507,7 @@
         "loadFailed": "No se pudieron cargar las ejecuciones."
       },
       "actions": "Acciones de la programación",
+      "loadFailed": "No se pudieron cargar las programaciones.",
       "cancelTask": "Cancelar tarea",
       "failureStreak_one": "{{count}} fallo seguido",
       "failureStreak_other": "{{count}} fallos seguidos",

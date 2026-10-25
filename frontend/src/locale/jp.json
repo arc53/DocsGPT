@@ -3396,6 +3396,7 @@
         "loadFailed": "実行履歴を読み込めませんでした。"
       },
       "actions": "スケジュールの操作",
+      "loadFailed": "スケジュールを読み込めませんでした。",
       "cancelTask": "タスクをキャンセル",
       "failureStreak_one": "{{count}}回連続で失敗",
       "failureStreak_other": "{{count}}回連続で失敗",

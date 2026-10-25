@@ -104,6 +104,25 @@ describe('schedule loads after an HTTP error', () => {
     expect(store.getState().schedules.error).toBe('access denied');
   });
 
+  it('records a fallback error when a gateway returns HTML', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    } as unknown as Response);
+    const store = makeStore();
+
+    const action = await store.dispatch(
+      loadSchedulesForAgent({ agentId: 'a1', token: 't' }),
+    );
+
+    expect(action.type).toBe(loadSchedulesForAgent.rejected.type);
+    expect(store.getState().schedules.error).toBe('failed to load schedules');
+    expect(store.getState().schedules.byAgent.a1).toBeUndefined();
+  });
+
   it('keeps run history and does not throw on a refused reload', async () => {
     vi.spyOn(apiClient, 'get')
       .mockResolvedValueOnce(response({ runs: [{ id: 'r1' }] }))

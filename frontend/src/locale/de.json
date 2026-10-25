@@ -3412,6 +3412,7 @@
         "loadFailed": "Die Ausführungen konnten nicht geladen werden."
       },
       "actions": "Aktionen für den Zeitplan",
+      "loadFailed": "Die Zeitpläne konnten nicht geladen werden.",
       "cancelTask": "Aufgabe abbrechen",
       "failureStreak_one": "{{count}} Fehlschlag in Folge",
       "failureStreak_other": "{{count}} Fehlschläge in Folge",

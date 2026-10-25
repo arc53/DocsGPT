@@ -311,7 +311,7 @@ const schedulesSlice = createSlice({
       })
       .addCase(loadSchedulesForAgent.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.error.message ?? 'failed to load schedules';
+        state.error = action.error.message || 'failed to load schedules';
       })
       .addCase(loadAllSchedules.pending, (state, action) => {
         if (action.meta.arg.token !== state.allToken) state.all = null;
