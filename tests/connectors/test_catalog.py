@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from docsgpt.connectors import catalog
 
@@ -356,3 +357,27 @@ def test_context7_preset_uses_remote_oauth_catalog_contract() -> None:
     assert context7.auth_kind == "mcp_oauth"
     assert context7.capabilities == ("read",)
     assert context7.docs_url == "https://context7.com/docs/resources/all-clients"
+
+
+def test_twelvedata_preset_uses_remote_oauth_catalog_contract():
+    twelvedata = catalog.get_definition("mcp:twelvedata")
+
+    assert twelvedata is not None
+    assert twelvedata.name == "Twelve Data"
+    assert twelvedata.icon == "twelvedata"
+    assert twelvedata.category == "business"
+    assert twelvedata.mcp_url == "https://mcp.twelvedata.com/mcp"
+    assert twelvedata.mcp_base_url == "https://mcp.twelvedata.com"
+    assert twelvedata.auth_kind == "mcp_oauth"
+    assert twelvedata.capabilities == ("read",)
+    assert twelvedata.docs_url == "https://twelvedata.com/docs/mcp"
+
+
+def test_presets_have_unique_keys_and_servers():
+    """A repeated key overwrites a preset and a repeated host makes preset_for_url pick one."""
+    entries = yaml.safe_load(catalog._PRESETS_FILE.read_text(encoding="utf-8"))
+    keys = [entry["key"] for entry in entries]
+    hosts = [catalog.base_url(entry["mcp_url"]) for entry in entries]
+
+    assert len(keys) == len(set(keys))
+    assert len(hosts) == len(set(hosts))
