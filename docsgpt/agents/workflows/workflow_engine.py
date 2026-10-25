@@ -434,6 +434,9 @@ class WorkflowEngine:
                 node_config.prompt_template
             ),
             "sources_were_searched": bool(node_config.sources),
+            # The workflow agent's context limit; a node on a smaller model
+            # still budgets against that model's own window.
+            "context_window_limit": getattr(self.agent, "context_window_limit", None),
         }
 
         # Agentic/research agents need retriever_config for on-demand search

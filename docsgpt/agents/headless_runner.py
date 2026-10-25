@@ -31,7 +31,7 @@ from docsgpt.api.answer.services.stream_processor import (
 )
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
-from docsgpt.guardrails.config import AgentConfig
+from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
@@ -297,7 +297,11 @@ def _run_agent_headless(
         else settings.LLM_PROVIDER
     )
     system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
-    doc_token_limit = calculate_doc_token_budget(model_id=model_id, user_id=owner)
+    doc_token_limit = calculate_doc_token_budget(
+        model_id=model_id,
+        user_id=owner,
+        context_window_limit=context_window_limit_of(agent_config.get("config")),
+    )
 
     # Sources are used as in a chat turn of this agent type: agentic and
     # research agents search on demand through internal_search, classic

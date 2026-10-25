@@ -36,6 +36,7 @@ from docsgpt.llm.handlers.base import (
 )
 from docsgpt.llm.tool_images import IMAGES_KEY, reads_images, replayed_result, split_content
 from docsgpt.guardrails.config import DEFAULT_BLOCK_MESSAGE as GUARDRAIL_DEFAULT_MESSAGE
+from docsgpt.guardrails.config import context_window_limit_of
 from docsgpt.guardrails.runtime import (
     build_engine as build_guardrail_engine,
     resolve_config as resolve_guardrails_config,
@@ -262,6 +263,7 @@ class BaseAgent(ABC):
         backup_models: Optional[List[str]] = None,
         model_user_id: Optional[str] = None,
         agent_config: Optional[Dict] = None,
+        context_window_limit: Optional[int] = None,
         request_id: Optional[str] = None,
         is_v1: bool = False,
         attachment_planning: bool = False,
@@ -404,6 +406,14 @@ class BaseAgent(ABC):
         # turn's capabilities and plan are copied into it once known.
         self._attachments_tool_config = None
         self.guardrails_config = resolve_guardrails_config(agent_config)
+        # The agent's cap on the context a request fills (``get_context_budget``).
+        # Callers without the agent's config (workflow nodes, a resumed turn)
+        # pass it on explicitly.
+        self.context_window_limit = (
+            context_window_limit
+            if context_window_limit is not None
+            else context_window_limit_of(agent_config)
+        )
         self._guardrail_engine = None
         self._guardrail_engine_built = False
         self._guardrail_cache: Dict = {}
@@ -635,13 +645,11 @@ class BaseAgent(ABC):
             # estimate-only providers): nothing to bound against.
             return meta["response_id"], None
         budget = settings.OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS
-        if not budget:
-            from docsgpt.core.model_utils import get_token_limit
-
-            budget = get_token_limit(
-                getattr(self, "model_id", None),
-                user_id=getattr(self, "model_user_id", None) or getattr(self, "user", None),
-            )
+        if not budget or getattr(self, "context_window_limit", None):
+            # The server replays the whole stored transcript, so an agent's
+            # context limit bounds the chain as well.
+            window = self._context_budget()
+            budget = min(int(budget), window) if budget else window
         if budget and prompt_tokens >= int(budget):
             logger.debug(
                 "Responses chain budget reached (%s >= %s prompt tokens on the previous turn)",
@@ -1067,8 +1075,6 @@ class BaseAgent(ABC):
             The turn's capabilities, read by the attachment planner and the
             manifest.
         """
-        from docsgpt.core.model_utils import get_token_limit
-
         try:
             supported = self.llm.get_supported_attachment_types()
         except Exception:
@@ -1076,9 +1082,7 @@ class BaseAgent(ABC):
         if not isinstance(supported, (list, tuple, set, frozenset)):
             supported = []
         try:
-            window = int(
-                get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
-            )
+            window = int(self._context_budget())
         except Exception:
             window = int(settings.DEFAULT_LLM_TOKEN_LIMIT)
         tool_calling = bool(self.tools) and self._llm_supports_tools()
@@ -1185,15 +1189,30 @@ class BaseAgent(ABC):
         native = plan.native_tokens if isinstance(plan, AttachmentPlan) else 0
         self._attachment_token_correction = max(native - int(native_estimate or 0), 0)
 
-    def _check_context_limit(self, messages: List[Dict]) -> bool:
-        from docsgpt.core.model_utils import get_token_limit
+    def _context_budget(self) -> int:
+        """Tokens this agent's requests may fill: the model's window, lowered to its context limit.
 
+        For budgets only (compression, history, documents, attachments).
+        What the provider will accept stays the model's own window
+        (``_enforce_context_window``, the overflow errors in
+        ``_build_messages``), so the limit never fails a turn.
+
+        Returns:
+            The budget in tokens.
+        """
+        from docsgpt.core.model_utils import get_context_budget
+
+        return get_context_budget(
+            getattr(self, "model_id", None),
+            user_id=getattr(self, "model_user_id", None) or getattr(self, "user", None),
+            context_window_limit=getattr(self, "context_window_limit", None),
+        )
+
+    def _check_context_limit(self, messages: List[Dict]) -> bool:
         try:
             current_tokens = self._calculate_current_context_tokens(messages)
             self.current_token_count = current_tokens
-            context_limit = get_token_limit(
-                self.model_id, user_id=self.model_user_id or self.user
-            )
+            context_limit = self._context_budget()
             threshold = int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
 
             if current_tokens >= threshold:
@@ -1216,10 +1235,8 @@ class BaseAgent(ABC):
         Returns:
             The room (never negative), or None when it cannot be sized.
         """
-        from docsgpt.core.model_utils import get_token_limit
-
         try:
-            context_limit = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+            context_limit = self._context_budget()
             threshold = int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
             return max(threshold - self._calculate_current_context_tokens(messages), 0)
         except Exception:
@@ -1227,13 +1244,9 @@ class BaseAgent(ABC):
             return None
 
     def _validate_context_size(self, messages: List[Dict]) -> None:
-        from docsgpt.core.model_utils import get_token_limit
-
         current_tokens = self._calculate_current_context_tokens(messages)
         self.current_token_count = current_tokens
-        context_limit = get_token_limit(
-            self.model_id, user_id=self.model_user_id or self.user
-        )
+        context_limit = self._context_budget()
         percentage = (current_tokens / context_limit) * 100
 
         if current_tokens >= context_limit:
@@ -1680,7 +1693,7 @@ class BaseAgent(ABC):
         query: str,
     ) -> List[Dict]:
         """Build messages using pre-rendered system prompt"""
-        from docsgpt.core.model_utils import get_token_limit
+        from docsgpt.core.model_utils import cap_context_window, get_token_limit
         from docsgpt.utils import num_tokens_from_string
 
         from docsgpt.api.answer.services.prompt_renderer import (
@@ -1723,15 +1736,21 @@ class BaseAgent(ABC):
                 else self.SCHEDULED_RUN_NOTE
             )
 
-        context_limit = get_token_limit(
+        # What the model accepts decides what fails; the agent's context
+        # limit only decides how much history, documents and files ride along.
+        window = get_token_limit(
             self.model_id, user_id=self.model_user_id or self.user
         )
+        context_limit = cap_context_window(window, getattr(self, "context_window_limit", None))
         system_tokens = num_tokens_from_string(system_prompt)
 
         safety_buffer = int(context_limit * SAFETY_SHARE)
         available_after_system = context_limit - system_tokens - safety_buffer
 
-        max_query_tokens = turn_message_budget(context_limit, system_tokens)
+        max_query_tokens = turn_message_budget(window, system_tokens)
+        # The user turn (question plus documents) sheds documents down to the
+        # limit's share; with no limit it is the same as ``max_query_tokens``.
+        max_turn_tokens = min(max_query_tokens, turn_message_budget(context_limit, system_tokens))
 
         # An oversized system prompt (a long memory listing, a big custom
         # prompt) used to drive this negative, which made
@@ -1741,10 +1760,10 @@ class BaseAgent(ABC):
             raise ContextOverflowError(
                 f"The system prompt ({system_tokens:,} tokens) leaves no room "
                 f"for your question within the model's context window "
-                f"({context_limit:,} tokens). Start a new conversation or "
+                f"({window:,} tokens). Start a new conversation or "
                 f"remove large attachments or sources.",
-                needed_tokens=system_tokens + safety_buffer,
-                available_tokens=context_limit,
+                needed_tokens=system_tokens + int(window * SAFETY_SHARE),
+                available_tokens=window,
                 stage="build",
             )
 
@@ -1784,7 +1803,7 @@ class BaseAgent(ABC):
         while (
             document_block
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
-            > max_query_tokens - reserved
+            > max_turn_tokens - reserved
         ):
             self.retrieved_docs = drop_least_relevant(self.retrieved_docs)
             document_block = self._build_document_block()
@@ -2020,7 +2039,6 @@ class BaseAgent(ABC):
             messages: The resent messages, up to the paused tool calls.
         """
         from docsgpt.api.answer.services.compression.token_counter import TokenCounter
-        from docsgpt.core.model_utils import get_token_limit
 
         current = [a for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
@@ -2032,7 +2050,7 @@ class BaseAgent(ABC):
             return
         self._add_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
-        context_limit = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+        context_limit = self._context_budget()
         budget = compute_attachment_budget(
             window=context_limit,
             share=float(settings.ATTACHMENT_BUDGET_SHARE),
@@ -2068,8 +2086,8 @@ class BaseAgent(ABC):
             ``attachments`` (None when the turn has no files; its ``withheld``
             lists the ids an attachment control withheld, which the resume
             keeps out of every tool), ``last_compression_at``,
-            ``backup_models`` and ``decisions`` (None when nothing was
-            recorded); all JSON-safe.
+            ``backup_models``, ``decisions`` (None when nothing was
+            recorded) and ``context_window_limit``; all JSON-safe.
         """
         current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [
@@ -2100,6 +2118,7 @@ class BaseAgent(ABC):
                 [m for m in backup_models if isinstance(m, str)] if isinstance(backup_models, list) else []
             ),
             "decisions": decision_record.snapshot(),
+            "context_window_limit": getattr(self, "context_window_limit", None),
         }
 
     def resume_paused_attachments(self, listing: Optional[List[Dict]], withheld: Optional[List[str]] = None) -> None:

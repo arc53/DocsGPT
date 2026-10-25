@@ -176,7 +176,19 @@ def get_context_budget(
     Returns:
         The budget in tokens.
     """
-    window = get_token_limit(model_id, user_id=user_id)
+    return cap_context_window(get_token_limit(model_id, user_id=user_id), context_window_limit)
+
+
+def cap_context_window(window: int, context_window_limit: Optional[int]) -> int:
+    """``window`` lowered to ``context_window_limit``; None or a higher limit leaves it.
+
+    Args:
+        window: The model's context window.
+        context_window_limit: The agent's ``config.context_window_limit``.
+
+    Returns:
+        The smaller of the two.
+    """
     if context_window_limit and context_window_limit < window:
         return int(context_window_limit)
     return window
