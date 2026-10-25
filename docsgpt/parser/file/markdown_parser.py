@@ -57,6 +57,12 @@ def _strip_html(text: str) -> str:
     return _HTML_TAG_LOWERCASE.sub("", text)
 
 
+# A fenced code block opens with three or more backticks or tildes, indented by
+# at most three spaces (CommonMark). Backtick info strings cannot hold backticks.
+_FENCE_OPEN = re.compile(r"^ {0,3}(?:(`{3,})[^`]*|(~{3,}).*)$")
+_FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t\r]*$")
+
+
 class MarkdownParser(BaseParser):
     """Markdown parser.
 
@@ -104,9 +110,14 @@ class MarkdownParser(BaseParser):
 
         current_header = None
         current_text = ""
+        # Marker of the open fenced code block, or None outside a code block.
+        open_fence: Optional[str] = None
 
         for line in lines:
-            header_match = re.match(r"^#+\s", line)
+            # A "#" line inside a fenced code block is code (a shell comment, say), not a heading.
+            in_code_block = open_fence is not None
+            open_fence = self._next_fence_state(line, open_fence)
+            header_match = None if in_code_block else re.match(r"^#+\s", line)
             if header_match:
                 if current_header is not None:
                     if current_text == "" or None:
@@ -131,6 +142,26 @@ class MarkdownParser(BaseParser):
             ]
 
         return markdown_tups
+
+    @staticmethod
+    def _next_fence_state(line: str, open_fence: Optional[str]) -> Optional[str]:
+        """Track whether the parser is inside a fenced code block.
+
+        Args:
+            line: A single line of markdown, without the trailing newline.
+            open_fence: The marker of the currently open fence, or None.
+
+        Returns:
+            The marker of the fence that is open after this line, or None.
+        """
+        if open_fence is None:
+            match = _FENCE_OPEN.match(line)
+            return (match.group(1) or match.group(2)) if match else None
+        close = _FENCE_CLOSE.match(line)
+        # A fence is closed by the same character, repeated at least as many times.
+        if close and close.group(1)[0] == open_fence[0] and len(close.group(1)) >= len(open_fence):
+            return None
+        return open_fence
 
     def remove_images(self, content: str) -> str:
         """Get a dictionary of a markdown file from its path."""
