@@ -20,6 +20,7 @@ const details = {
   name: 'Helpdesk Triage',
   description: 'Routes internal requests',
   allowPromptOverride: false,
+  contextWindowLimit: null,
 };
 
 describe('WorkflowDetailsSheet', () => {
@@ -44,6 +45,8 @@ describe('WorkflowDetailsSheet', () => {
       saving?: boolean;
       analytics?: AnalyticsConfig;
       available?: boolean;
+      contextWindowLimit?: number | null;
+      policyEditable?: boolean;
     } = {},
   ) => {
     const handlers = { onOpenChange: vi.fn(), onSave: vi.fn() };
@@ -51,7 +54,12 @@ describe('WorkflowDetailsSheet', () => {
       root.render(
         <WorkflowDetailsSheet
           open
-          details={{ ...details, analytics: props.analytics }}
+          details={{
+            ...details,
+            analytics: props.analytics,
+            contextWindowLimit: props.contextWindowLimit ?? null,
+          }}
+          policyEditable={props.policyEditable}
           insights={{
             available: props.available ?? true,
             maxTopics: 15,
@@ -126,8 +134,41 @@ describe('WorkflowDetailsSheet', () => {
       description: 'Routes internal requests',
       allowPromptOverride: false,
       analytics: DEFAULT_ANALYTICS,
+      contextWindowLimit: null,
       imageFile: null,
     });
+  });
+
+  const contextLimitInput = () =>
+    document.querySelector(
+      'input[placeholder="agents.form.placeholders.contextLimitDefault"]',
+    ) as HTMLInputElement;
+
+  it('saves a context limit, and an emptied one as null', () => {
+    const { onSave } = render({ contextWindowLimit: 64000 });
+    expect(contextLimitInput().value).toBe('64000');
+    type(contextLimitInput(), '32000');
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[0][0].contextWindowLimit).toBe(32000);
+
+    type(contextLimitInput(), '');
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[1][0].contextWindowLimit).toBeNull();
+  });
+
+  it('keeps Save disabled while the context limit is out of range', () => {
+    render();
+    type(contextLimitInput(), '500');
+    expect(button('agents.form.buttons.save').disabled).toBe(true);
+    expect(contextLimitInput().getAttribute('aria-invalid')).toBe('true');
+    expect(document.body.textContent).toContain(
+      'agents.form.advanced.contextLimitRange',
+    );
+  });
+
+  it('shows the context limit read-only without edit_policy', () => {
+    render({ policyEditable: false });
+    expect(contextLimitInput().disabled).toBe(true);
   });
 
   it('closes on Cancel without saving', () => {

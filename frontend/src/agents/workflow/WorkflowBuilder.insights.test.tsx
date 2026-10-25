@@ -221,6 +221,37 @@ describe('WorkflowBuilder insights', () => {
     expect(sentConfig()).toBeNull();
   });
 
+  it('sends the context limit over the saved config, and only when it changed', async () => {
+    await render();
+    const saveLimit = async (contextWindowLimit: number | null) => {
+      const onSave = sheet.props!.onSave as (values: object) => void;
+      await act(async () =>
+        onSave({
+          name: 'Renewal desk',
+          description: '',
+          allowPromptOverride: false,
+          imageFile: null,
+          analytics: details().analytics,
+          contextWindowLimit,
+        }),
+      );
+      await act(async () => undefined);
+    };
+    await saveLimit(32000);
+    expect(sentConfig()).toEqual({
+      ...AGENT.config,
+      context_window_limit: 32000,
+    });
+    expect(
+      (sheet.props!.details as { contextWindowLimit: number | null })
+        .contextWindowLimit,
+    ).toBe(32000);
+    await saveLimit(32000);
+    expect(sentConfig()).toBeNull();
+    await saveLimit(null);
+    expect(sentConfig()).toMatchObject({ context_window_limit: null });
+  });
+
   it('sends no config when the insights are unchanged', async () => {
     await render();
     await save();
