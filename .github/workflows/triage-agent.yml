@@ -4,7 +4,8 @@
 # (docs/content, about 70 pages) are refreshed weekly instead: re-ingesting them
 # on every docs merge loaded the Cloud workers for no real gain. Both uploads use
 # `sources upload --sync`, which updates the existing source in place and
-# re-embeds only the files that were added, edited or removed.
+# re-embeds only the files that were added, edited or removed (all of them once,
+# on the first sync of a source ingested before content hashes were stored).
 # Off until the TRIAGE_MODE repository variable is set; see .github/triage/README.md.
 name: Triage agent
 

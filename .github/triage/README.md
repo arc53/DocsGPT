@@ -34,7 +34,9 @@ DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ───�
   (`docs/content/`) are synced every Monday, or by running the workflow
   with "Re-upload the product docs" ticked. Both use `sources upload --sync`:
   the existing source is updated in place and only added, edited or removed
-  files are re-embedded, so a week without docs changes embeds nothing. An
+  files are re-embedded, so a week without docs changes embeds nothing. (A
+  source ingested before content hashes were stored is re-embedded in full on
+  its first sync, once.) An
   upload that fails or times out doesn't stop the agent from being applied;
   the source keeps what it had and the run is marked failed.
 - The **triage manual** is a wiki source on DocsGPT Cloud
