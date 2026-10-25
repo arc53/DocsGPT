@@ -3303,3 +3303,90 @@ class TestSignInClientsAreNotShared:
         self._setup(second, redis)
 
         assert second._client is first._client
+
+
+# =====================================================================
+# deed.page owner token
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestDeedPageOwnerToken:
+    """deed.page's first anonymous publish returns an owner token once.
+
+    DocsGPT does not store it. A later tool (a new conversation) passes it
+    back as the ``token`` argument of a management call, or the connection
+    holds it as an optional Bearer token.
+    """
+
+    TOKEN = "deed_tok_test123"
+
+    @staticmethod
+    def _preset_config():
+        from docsgpt.connectors import catalog
+        from docsgpt.connectors.service import preset_mcp_config
+
+        return preset_mcp_config(catalog.get_definition("mcp:deedpage"))
+
+    @staticmethod
+    def _text_result(payload):
+        from types import SimpleNamespace
+
+        text = SimpleNamespace(type="text", text=json.dumps(payload))
+        return SimpleNamespace(content=[text], structured_content=None, is_error=False)
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    def test_publish_token_is_reused_by_a_new_tool_for_a_management_call(self, mock_run):
+        config = self._preset_config()
+        assert config["auth_type"] == "none"
+
+        mock_run.return_value = self._text_result({
+            "ok": True,
+            "url": "https://my-page-x1.deed.page/",
+            "slug": "my-page-x1",
+            "version": "v1",
+            "permanent": True,
+            "token": self.TOKEN,
+        })
+        first = _make_tool(dict(config))
+        first._client = MagicMock()
+        published = first.execute_action(
+            "publish_site", slug="my-page-x1", files={"index.html": "<h1>hi</h1>"},
+        )
+
+        mock_run.assert_called_once_with(
+            "call_tool", "publish_site", slug="my-page-x1", files={"index.html": "<h1>hi</h1>"},
+        )
+        token = json.loads(published["content"][0]["text"])["token"]
+        assert token == self.TOKEN
+
+        mock_run.reset_mock()
+        mock_run.return_value = self._text_result({"slug": "my-page-x1", "versions": [{"version": "v1"}]})
+        later = _make_tool(dict(config))
+        later._client = MagicMock()
+        # Nothing from the publish was kept on the new tool.
+        assert later.auth_type == "none"
+        assert later.auth_credentials == {}
+
+        later.execute_action("list_versions", slug="my-page-x1", token=token)
+
+        mock_run.assert_called_once_with(
+            "call_tool", "list_versions", slug="my-page-x1", token=self.TOKEN,
+        )
+
+    def test_a_token_saved_on_the_connection_is_sent_as_bearer(self):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        config = {
+            **self._preset_config(),
+            "auth_type": "bearer",
+            "auth_credentials": {"bearer_token": self.TOKEN},
+        }
+        tool = _make_tool(config)
+
+        with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
+             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=MagicMock()), \
+             patch("docsgpt.agents.tools.mcp_tool.BearerAuth") as mock_bearer_auth:
+            tool._setup_client()
+
+        mock_bearer_auth.assert_called_once_with(self.TOKEN)

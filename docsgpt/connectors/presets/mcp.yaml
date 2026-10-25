@@ -219,7 +219,12 @@
   capabilities: [read]
   docs_url: https://context7.com/docs/resources/all-clients
 
-# Keyless server. Its publish tools put files on a public URL.
+# Publishes files to a public URL. ``auth_kind: mcp`` keeps the credential
+# optional: the connect dialog starts at "No authentication", so the first
+# publish works without a key and returns an owner token once. DocsGPT does
+# not save that token; the user keeps it and either passes it as the tools'
+# ``token`` argument for later updates, deletes and version listing, or
+# reconnects with a Bearer token so every call sends it.
 - key: mcp:deedpage
   name: deed.page
   description: Publish HTML pages or folders of files as public websites.
