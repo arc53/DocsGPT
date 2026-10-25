@@ -57,14 +57,8 @@ import WorkflowDetailsSheet, {
   type WorkflowDetailsSave,
 } from './components/WorkflowDetailsSheet';
 import type { SponsorAudience } from '../sponsorConsent';
-import {
-  Agent,
-  type AgentConfig,
-  AnalyticsConfig,
-  ResourceSponsor,
-  ResourceState,
-} from '../types';
-import { analyticsOf, withAnalytics } from '../analyticsConfig';
+import { Agent, AgentConfig, ResourceSponsor, ResourceState } from '../types';
+import { analyticsOf } from '../analyticsConfig';
 import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import {
@@ -283,10 +277,9 @@ function WorkflowBuilderInner() {
     createEmptyWorkflowAgent(),
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
-  // Insights settings changed in Workflow details, sent as `config` with the
-  // next save; null when they match the saved ones.
-  const [pendingAnalytics, setPendingAnalytics] =
-    useState<AnalyticsConfig | null>(null);
+  // The config keys changed in Workflow details (insights, context limit),
+  // laid over the saved config with the next save; null when none changed.
+  const [pendingConfig, setPendingConfig] = useState<AgentConfig | null>(null);
   const analyticsAvailability = useAnalyticsAvailability();
   const [savedWorkflowSignature, setSavedWorkflowSignature] = useState<
     string | null
@@ -1445,7 +1438,7 @@ function WorkflowBuilderInner() {
     canManageAgent && savedWorkflowSignature !== null
       ? workflowPayloadSignature !== savedWorkflowSignature ||
         imageFile !== null ||
-        pendingAnalytics !== null ||
+        pendingConfig !== null ||
         takeovers.length > 0
       : false;
 
@@ -1534,15 +1527,16 @@ function WorkflowBuilderInner() {
             if (imageFile) {
               agentFormData.append('image', imageFile);
             }
-            // Only the insights. The config replaces the stored one whole,
-            // so the rest comes from the server's copy as it is now, not as
-            // the builder loaded it: a guardrails or allowlist change saved
-            // meanwhile elsewhere stays. No fresh copy, no save.
-            const savedConfig = pendingAnalytics
-              ? withAnalytics(
-                  await readSavedConfig(effectiveAgentId),
-                  pendingAnalytics,
-                )
+            // Only what Workflow details changed. The config replaces the
+            // stored one whole, so the rest comes from the server's copy as
+            // it is now, not as the builder loaded it: a guardrails or
+            // allowlist change saved meanwhile elsewhere stays. No fresh
+            // copy, no save.
+            const savedConfig = pendingConfig
+              ? {
+                  ...((await readSavedConfig(effectiveAgentId)) ?? {}),
+                  ...pendingConfig,
+                }
               : null;
             if (savedConfig)
               agentFormData.append('config', JSON.stringify(savedConfig));
@@ -1569,7 +1563,7 @@ function WorkflowBuilderInner() {
                 ? { config: updatedAgent?.config ?? savedConfig }
                 : {}),
             }));
-            setPendingAnalytics(null);
+            setPendingConfig(null);
           }
           setImageFile(null);
           setSavedWorkflowSignature(JSON.stringify(workflowPayload));
@@ -1622,8 +1616,8 @@ function WorkflowBuilderInner() {
         }
         if (folderId) agentFormData.append('folder_id', folderId);
         // A new agent: there is no stored config to read again.
-        const createdConfig = pendingAnalytics
-          ? withAnalytics(currentAgent.config, pendingAnalytics)
+        const createdConfig = pendingConfig
+          ? { ...(currentAgent.config ?? {}), ...pendingConfig }
           : null;
         if (createdConfig)
           agentFormData.append('config', JSON.stringify(createdConfig));
@@ -1656,7 +1650,7 @@ function WorkflowBuilderInner() {
               ? { config: agentData.config ?? createdConfig }
               : {}),
           });
-          setPendingAnalytics(null);
+          setPendingConfig(null);
         }
 
         setImageFile(null);
@@ -1706,7 +1700,7 @@ function WorkflowBuilderInner() {
       currentAgent.allow_system_prompt_override,
       currentAgent.config,
       readSavedConfig,
-      pendingAnalytics,
+      pendingConfig,
       folderId,
       navigateBackToAgents,
       t,
@@ -1752,18 +1746,30 @@ function WorkflowBuilderInner() {
         allow_system_prompt_override: values.allowPromptOverride,
       }));
       if (values.imageFile) setImageFile(values.imageFile);
-      // Unchanged insights send no config, so a stale copy never overwrites
-      // a save made meanwhile from the Insights page.
-      setPendingAnalytics(
+      // Only changed keys go in, and unchanged ones send no config at all,
+      // so a stale copy never overwrites a save made meanwhile from the
+      // Insights page.
+      const changed: AgentConfig = {};
+      if (
         values.analytics &&
-          JSON.stringify(analyticsOf(values.analytics)) !==
-            JSON.stringify(analyticsOf(currentAgent.config?.analytics))
-          ? values.analytics
-          : null,
-      );
+        JSON.stringify(analyticsOf(values.analytics)) !==
+          JSON.stringify(analyticsOf(currentAgent.config?.analytics))
+      )
+        changed.analytics = values.analytics;
+      if (
+        values.contextWindowLimit !== undefined &&
+        values.contextWindowLimit !==
+          (currentAgent.config?.context_window_limit ?? null)
+      )
+        changed.context_window_limit = values.contextWindowLimit;
+      setPendingConfig(Object.keys(changed).length > 0 ? changed : null);
       setDetailsSaveRequested(true);
     },
-    [currentAgent.config?.analytics, detailsSaving],
+    [
+      currentAgent.config?.analytics,
+      currentAgent.config?.context_window_limit,
+      detailsSaving,
+    ],
   );
 
   useEffect(() => {
@@ -2235,8 +2241,14 @@ function WorkflowBuilderInner() {
             allowPromptOverride: Boolean(
               currentAgent.allow_system_prompt_override,
             ),
-            analytics: pendingAnalytics ?? currentAgent.config?.analytics,
+            analytics:
+              pendingConfig?.analytics ?? currentAgent.config?.analytics,
+            contextWindowLimit:
+              pendingConfig && 'context_window_limit' in pendingConfig
+                ? (pendingConfig.context_window_limit ?? null)
+                : (currentAgent.config?.context_window_limit ?? null),
           }}
+          policyEditable={can(currentAgent, 'edit_policy')}
           insights={{
             available: analyticsAvailability.enabled,
             maxTopics: analyticsAvailability.maxTopics,

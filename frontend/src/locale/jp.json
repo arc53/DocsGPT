@@ -2937,7 +2937,8 @@
         "selectModels": "このエージェントのモデルを選択",
         "selectDefaultModel": "デフォルトモデルを選択",
         "enterTokenLimit": "トークン制限を入力",
-        "enterRequestLimit": "リクエスト制限を入力"
+        "enterRequestLimit": "リクエスト制限を入力",
+        "contextLimitDefault": "モデルの既定値"
       },
       "sourcePopup": {
         "title": "ナレッジを選択",
@@ -2984,6 +2985,9 @@
         "jsonSchemaDescription": "構造化された出力形式を適用するためのJSONスキーマを定義します",
         "validJson": "有効なJSON",
         "invalidJson": "無効なJSON - 保存を有効にするには修正してください",
+        "contextLimit": "コンテキスト上限",
+        "contextLimitDescription": "1回のリクエストでモデルに送る履歴・ドキュメント・ツール結果のトークン数の上限です。上限を超えないよう、古いメッセージは要約されます。空欄にするとモデルのコンテキストウィンドウ全体を使います。",
+        "contextLimitRange": "{{min, number}}～{{max, number}} トークンの範囲で入力するか、空欄にしてください。",
         "tokenLimiting": "トークン制限",
         "tokenLimitingDescription": "このエージェントが使用できる1日の合計トークン数を制限します",
         "requestLimiting": "リクエスト制限",

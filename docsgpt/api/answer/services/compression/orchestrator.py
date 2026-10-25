@@ -56,6 +56,7 @@ class CompressionOrchestrator:
         decoded_token: Dict[str, Any],
         current_query_tokens: int = 500,
         model_user_id: Optional[str] = None,
+        context_window_limit: Optional[int] = None,
     ) -> CompressionResult:
         """
         Check if compression is needed and perform it if so.
@@ -70,6 +71,8 @@ class CompressionOrchestrator:
             current_query_tokens: Estimated tokens for current query
             model_user_id: BYOM-resolution scope (model owner); defaults
                 to ``user_id`` for built-in / caller-owned models.
+            context_window_limit: The agent's context limit, which lowers
+                the window the threshold is a share of.
 
         Returns:
             CompressionResult with summary and recent queries
@@ -94,6 +97,7 @@ class CompressionOrchestrator:
                 model_id,
                 current_query_tokens,
                 user_id=registry_user_id,
+                context_window_limit=context_window_limit,
             ):
                 compression_meta = conversation.get("compression_metadata") or {}
                 points = compression_meta.get("compression_points") or []

@@ -3039,7 +3039,8 @@
         "selectModels": "Sélectionnez les modèles de cet agent",
         "selectDefaultModel": "Sélectionner le modèle par défaut",
         "enterTokenLimit": "Saisissez la limite de jetons",
-        "enterRequestLimit": "Saisissez la limite de requêtes"
+        "enterRequestLimit": "Saisissez la limite de requêtes",
+        "contextLimitDefault": "Valeur par défaut du modèle"
       },
       "sourcePopup": {
         "title": "Sélectionner des connaissances",
@@ -3086,6 +3087,9 @@
         "jsonSchemaDescription": "Définissez un schéma JSON pour imposer un format de sortie structuré",
         "validJson": "JSON valide",
         "invalidJson": "JSON non valide : corrigez-le pour pouvoir enregistrer",
+        "contextLimit": "Limite de contexte",
+        "contextLimitDescription": "Nombre maximal de jetons d’historique, de documents et de résultats d’outils envoyés au modèle à chaque requête. Les messages plus anciens sont résumés pour rester en dessous. Laissez vide pour utiliser toute la fenêtre de contexte du modèle.",
+        "contextLimitRange": "Saisissez entre {{min, number}} et {{max, number}} jetons, ou laissez vide.",
         "tokenLimiting": "Limitation des jetons",
         "tokenLimitingDescription": "Limitez le nombre total de jetons que cet agent peut utiliser par jour",
         "requestLimiting": "Limitation des requêtes",

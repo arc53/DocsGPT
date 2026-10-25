@@ -65,7 +65,7 @@ export function analyticsOf(value?: AnalyticsConfig | null): AnalyticsConfig {
  * Whether two agents are the same as the form saves them: a missing insights
  * block reads as the defaults, as `analyticsOf` reads it, so switching
  * insights off and on again on an agent saved before them leaves nothing to
- * save.
+ * save. A missing context limit reads as `null`, so does a cleared one.
  */
 export function sameAgent<T extends { config?: AgentConfig }>(
   a: T,
@@ -76,6 +76,7 @@ export function sameAgent<T extends { config?: AgentConfig }>(
     config: {
       ...(agent.config ?? {}),
       analytics: analyticsOf(agent.config?.analytics),
+      context_window_limit: agent.config?.context_window_limit ?? null,
     },
   });
   return isEqual(read(a), read(b));

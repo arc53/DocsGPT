@@ -196,6 +196,22 @@ describe('sameAgent', () => {
     ).toBe(false);
     expect(sameAgent({ ...agent, name: 'Renamed' }, agent)).toBe(false);
   });
+
+  it('reads a cleared context limit as no limit', () => {
+    // Typing a limit and clearing it again leaves nothing to save.
+    expect(
+      sameAgent(
+        { ...agent, config: { ...agent.config, context_window_limit: null } },
+        agent,
+      ),
+    ).toBe(true);
+    expect(
+      sameAgent(
+        { ...agent, config: { ...agent.config, context_window_limit: 32000 } },
+        agent,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('withAnalytics', () => {
