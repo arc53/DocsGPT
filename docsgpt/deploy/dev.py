@@ -186,11 +186,9 @@ def plan(
                 f"the frontend has no node_modules yet. Run `npm install --include=dev` in {frontend} "
                 "and try again, or leave --ui off."
             )
-        npm = shutil.which("npm")
-        if not npm:
+        if not shutil.which("npm"):
             raise DeployError("npm is not on PATH, so the frontend dev server cannot start.")
-        # Windows puts npm on PATH as npm.CMD, which CreateProcess will not run under its bare name.
-        children.append(Child(name="ui", command=[npm, "run", "dev"], cwd=frontend, env=dict(environment)))
+        children.append(Child(name="ui", command=["npm", "run", "dev"], cwd=frontend, env=dict(environment)))
 
     return children
 

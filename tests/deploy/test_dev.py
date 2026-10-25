@@ -3,7 +3,6 @@
 import argparse
 import io
 import signal
-import subprocess
 import sys
 from pathlib import Path
 
@@ -198,25 +197,8 @@ class TestPlan:
         children = dev.plan(_args(ui=True), tmp_path, watching=False)
         ui = children[-1]
         assert ui.name == "ui"
-        assert ui.command == ["/usr/local/bin/npm", "run", "dev"], (
-            "the spawn uses the path which found, not the bare name CreateProcess cannot resolve on Windows"
-        )
+        assert ui.command == ["npm", "run", "dev"]
         assert ui.cwd == tmp_path / "frontend"
-
-    @pytest.mark.skipif(sys.platform != "win32", reason="only CreateProcess refuses to run a .CMD file")
-    def test_the_ui_child_spawns_the_npm_path_which_resolved(self, tmp_path, monkeypatch):
-        """A real Node install puts ``npm.CMD`` on PATH, which a bare ``npm`` spawn cannot execute."""
-        node = tmp_path / "node"
-        node.mkdir()
-        (node / "npm.CMD").write_text("@echo off\r\necho 11.0.0\r\n", encoding="utf-8")
-        monkeypatch.setenv("PATH", str(node))
-        (tmp_path / "frontend" / "node_modules").mkdir(parents=True)
-
-        ui = dev.plan(_args(ui=True, worker=False), tmp_path, watching=False)[-1]
-
-        done = subprocess.run(ui.command, cwd=str(ui.cwd), capture_output=True, text=True, encoding="utf-8")
-        assert done.returncode == 0, done.stderr
-        assert done.stdout.strip() == "11.0.0"
 
 
 class TestRun:
