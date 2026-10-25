@@ -153,6 +153,16 @@ class TestAgentBudgets:
             assert capped._check_context_limit(messages) is True
             assert uncapped._check_context_limit(messages) is False
 
+    def test_skipping_tools_keeps_the_model_threshold(self, make):
+        """Crossing the limit compresses; only the model's own threshold stops tools."""
+        messages = [{"role": "user", "content": "hi"}]
+        capped, uncapped = make(), make(limit=None)
+        for agent in (capped, uncapped):
+            with patch.object(agent, "_calculate_current_context_tokens", return_value=int(LIMIT * 0.9)):
+                assert agent._over_model_threshold(messages) is False
+            with patch.object(agent, "_calculate_current_context_tokens", return_value=int(WINDOW * 0.9)):
+                assert agent._over_model_threshold(messages) is True
+
     def test_tool_result_room_is_measured_against_the_limit(self, make):
         agent = make()
         with patch.object(agent, "_calculate_current_context_tokens", return_value=1000):

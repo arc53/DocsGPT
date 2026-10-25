@@ -1226,6 +1226,29 @@ class BaseAgent(ABC):
             logger.error(f"Error checking context limit: {str(e)}", exc_info=True)
             return False
 
+    def _over_model_threshold(self, messages: List[Dict]) -> bool:
+        """Whether ``messages`` cross the compression threshold of the model's own window.
+
+        ``_check_context_limit`` measures against the agent's context limit,
+        which only decides when to compress. The tool loop stops running tools
+        on this one, so a limit never costs a turn its tools.
+
+        Args:
+            messages: The turn's messages.
+
+        Returns:
+            True when over, or when it cannot be measured.
+        """
+        from docsgpt.core.model_utils import get_token_limit
+
+        try:
+            window = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+            threshold = int(window * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
+            return self._calculate_current_context_tokens(messages) >= threshold
+        except Exception as e:
+            logger.error(f"Error checking the model window: {str(e)}", exc_info=True)
+            return True
+
     def _context_room_tokens(self, messages: List[Dict]) -> Optional[int]:
         """Tokens left below the compression threshold for the next tool result.
 
