@@ -206,7 +206,7 @@ TOOL_RESULT_BLOCKED_NOTE = (
 )
 
 
-def resolve_tool_result(result: str, decision: Optional[StageDecision]) -> str:
+def resolve_tool_result(result: Any, decision: Optional[StageDecision]) -> Any:
     """Reduce a tool-result verdict to the text the caller may use.
 
     Shared by the executor path and the client-resume path so a result that

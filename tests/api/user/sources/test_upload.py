@@ -1370,80 +1370,98 @@ class TestManageSourceFiles:
         assert response.status_code == 500
 
 
+def _task_status(app, task_id, *, owner=None, user=None, celery_mock=None, owners_down=False):
+    """Call TaskStatus for ``task_id`` with a recorded owner and a caller."""
+    from docsgpt.api.user.sources.upload import TaskStatus
+    from docsgpt.api.user.task_owners import TaskOwnersUnavailable
+
+    lookup = MagicMock(return_value=owner)
+    if owners_down:
+        lookup.side_effect = TaskOwnersUnavailable()
+    url = "/api/task_status" + (f"?task_id={task_id}" if task_id else "")
+    with patch("docsgpt.api.user.sources.upload.get_task_owner", lookup), patch(
+        "docsgpt.celery_init.celery", celery_mock or MagicMock()
+    ), app.test_request_context(url):
+        from flask import request
+        request.decoded_token = {"sub": user} if user else None
+        return TaskStatus().get()
+
+
+def _celery_with(status, info=None, workers=True):
+    fake_task = MagicMock()
+    fake_task.status = status
+    fake_task.info = info
+    fake_celery = MagicMock()
+    fake_celery.AsyncResult.return_value = fake_task
+    fake_celery.control.inspect.return_value.ping.return_value = {"w": "pong"} if workers else None
+    return fake_celery
+
+
 class TestTaskStatus:
     def test_returns_400_missing_task_id(self, app):
-        from docsgpt.api.user.sources.upload import TaskStatus
-
-        with app.test_request_context("/api/task_status"):
-            response = TaskStatus().get()
+        response = _task_status(app, None, user="alice")
         assert response.status_code == 400
 
-    def test_returns_task_status(self, app):
-        from docsgpt.api.user.sources.upload import TaskStatus
-
-        fake_task = MagicMock()
-        fake_task.status = "SUCCESS"
-        fake_task.info = {"result": "ok"}
-
-        fake_celery = MagicMock()
-        fake_celery.AsyncResult.return_value = fake_task
-
-        with patch(
-            "docsgpt.celery_init.celery", fake_celery
-        ), app.test_request_context("/api/task_status?task_id=t-123"):
-            response = TaskStatus().get()
+    def test_owner_reads_status(self, app):
+        fake_celery = _celery_with("SUCCESS", {"result": "ok"})
+        response = _task_status(app, "t-123", owner="alice", user="alice", celery_mock=fake_celery)
         assert response.status_code == 200
         assert response.json["status"] == "SUCCESS"
 
+    def test_other_user_gets_404(self, app):
+        fake_celery = _celery_with("SUCCESS", {"answer": "secret"})
+        response = _task_status(app, "t-123", owner="alice", user="mallory", celery_mock=fake_celery)
+        assert response.status_code == 404
+        assert "secret" not in response.get_data(as_text=True)
+        fake_celery.AsyncResult.assert_not_called()
+
+    def test_anonymous_caller_gets_404_for_user_task(self, app):
+        fake_celery = _celery_with("SUCCESS", {"answer": "secret"})
+        response = _task_status(app, "t-123", owner="alice", user=None, celery_mock=fake_celery)
+        assert response.status_code == 404
+        fake_celery.AsyncResult.assert_not_called()
+
+    def test_unknown_task_gets_404_without_pinging_workers(self, app):
+        fake_celery = _celery_with("PENDING", workers=False)
+        response = _task_status(app, "t-unknown", owner=None, user="alice", celery_mock=fake_celery)
+        assert response.status_code == 404
+        fake_celery.control.inspect.assert_not_called()
+
+    def test_capability_task_readable_without_session(self, app):
+        """Webhook and agent api_key tasks: the task id is the credential."""
+        fake_celery = _celery_with("SUCCESS", {"status": "success"})
+        response = _task_status(app, "t-hook", owner="", user=None, celery_mock=fake_celery)
+        assert response.status_code == 200
+        assert response.json["result"] == {"status": "success"}
+
+    def test_capability_task_readable_with_any_session(self, app):
+        fake_celery = _celery_with("SUCCESS", {"status": "success"})
+        response = _task_status(app, "t-hook", owner="", user="bob", celery_mock=fake_celery)
+        assert response.status_code == 200
+
+    def test_owner_store_down_returns_503(self, app):
+        fake_celery = _celery_with("SUCCESS")
+        response = _task_status(app, "t-123", user="alice", celery_mock=fake_celery, owners_down=True)
+        assert response.status_code == 503
+        fake_celery.AsyncResult.assert_not_called()
+
     def test_pending_without_workers_returns_503(self, app):
-        from docsgpt.api.user.sources.upload import TaskStatus
-
-        fake_task = MagicMock()
-        fake_task.status = "PENDING"
-        fake_task.info = None
-
-        fake_inspect = MagicMock()
-        fake_inspect.ping.return_value = None  # no workers
-
-        fake_celery = MagicMock()
-        fake_celery.AsyncResult.return_value = fake_task
-        fake_celery.control.inspect.return_value = fake_inspect
-
-        with patch(
-            "docsgpt.celery_init.celery", fake_celery
-        ), app.test_request_context("/api/task_status?task_id=t-999"):
-            response = TaskStatus().get()
+        fake_celery = _celery_with("PENDING", workers=False)
+        response = _task_status(app, "t-999", owner="alice", user="alice", celery_mock=fake_celery)
         assert response.status_code == 503
 
     def test_exception_returns_400(self, app):
-        from docsgpt.api.user.sources.upload import TaskStatus
-
         fake_celery = MagicMock()
         fake_celery.AsyncResult.side_effect = RuntimeError("boom")
-
-        with patch(
-            "docsgpt.celery_init.celery", fake_celery
-        ), app.test_request_context("/api/task_status?task_id=t-err"):
-            response = TaskStatus().get()
+        response = _task_status(app, "t-err", owner="alice", user="alice", celery_mock=fake_celery)
         assert response.status_code == 400
 
     def test_non_serializable_info_gets_stringified(self, app):
-        from docsgpt.api.user.sources.upload import TaskStatus
-
         class WeirdObj:
             def __str__(self):
                 return "weird-str"
 
-        fake_task = MagicMock()
-        fake_task.status = "SUCCESS"
-        fake_task.info = WeirdObj()
-
-        fake_celery = MagicMock()
-        fake_celery.AsyncResult.return_value = fake_task
-
-        with patch(
-            "docsgpt.celery_init.celery", fake_celery
-        ), app.test_request_context("/api/task_status?task_id=t-weird"):
-            response = TaskStatus().get()
+        fake_celery = _celery_with("SUCCESS", WeirdObj())
+        response = _task_status(app, "t-weird", owner="alice", user="alice", celery_mock=fake_celery)
         assert response.status_code == 200
         assert response.json["result"] == "weird-str"

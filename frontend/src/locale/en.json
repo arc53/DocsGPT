@@ -784,11 +784,9 @@
           "inAnswers_other": "in {{formatted}} answers"
         },
         "panels": {
-          "answerStatus": "Answer status over time",
-          "sentiment": "Sentiment over time",
+          "answerStatus": "Answer status",
           "whyNot": "Why not fully answered",
           "requestType": "Request type",
-          "implicitFeedback": "Replies to answers",
           "shareOfAnswers_one": "Share of {{formatted}} answer",
           "shareOfAnswers_other": "Share of {{formatted}} answers",
           "shareOfMessages_one": "Share of {{formatted}} message",
@@ -801,7 +799,6 @@
           "barLabelNone": "{{name}}: not enough data yet",
           "noneOfThese": "None of these topics",
           "empty": "Nothing to show for this period.",
-          "tooltipShare": "{{name}}: {{value}}",
           "ofQuestions_one": "Of {{formatted}} question",
           "ofQuestions_other": "Of {{formatted}} questions",
           "topics": "Topics",
@@ -810,7 +807,13 @@
             "title": "No topics yet",
             "description": "Add topics to see what people ask about.",
             "action": "Set up topics"
-          }
+          },
+          "replies": "How users replied",
+          "reaction": "Replies to answers",
+          "tone": "Sentiment",
+          "tooltipItem": "{{name}}: {{value}}",
+          "notDrawnMovedOn": "Replies that moved on or added detail, such as a new question or a follow-up, aren't drawn.",
+          "notDrawnNeutral": "Neutral replies aren't drawn."
         },
         "labelNamesInline": {
           "answer_status": "answer status",
@@ -839,7 +842,8 @@
           "reaction": {
             "thanks": "Thanks or confirmed",
             "reAsk": "Asked again",
-            "pushbackOrComplaint": "Pushback or complaint"
+            "pushbackOrComplaint": "Pushback or complaint",
+            "movedOn": "Moved on"
           },
           "requestType": {
             "troubleshooting": "Troubleshooting",
@@ -891,6 +895,10 @@
           "button": "Settings",
           "title": "Insights settings",
           "saveFailed": "Couldn't save the insights settings. Try again."
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "Asked again or pushed back",
+          "previous": "Previous period: {{value}}"
         }
       },
       "gaps": {
@@ -1449,6 +1457,7 @@
       "noToolsFound": "No tools found",
       "selectToolSetup": "Add a tool",
       "settingsIconAlt": "Settings icon",
+      "toolActions": "Tool actions",
       "configureToolAria": "Configure {{toolName}}",
       "manageTools": "Go to Tools",
       "edit": "Edit",
@@ -1613,13 +1622,11 @@
       "access": "Access",
       "connection": "Connection",
       "hostLabel": "Host",
-      "dangerZone": "Danger zone",
       "approvalAskDescription": "Approve every command before it runs.",
       "approvalFullDescription": "Runs every command without asking, except the safety denylist.",
       "fullAccessWarning": "Full access: agents can run any command on this machine without asking. The safety denylist still applies.",
       "deviceIdLabel": "Device ID",
       "offlineHint": "Not connected. Run `docsgpt-cli host` on the machine to bring it online.",
-      "dangerZoneDescription": "Revoking stops the daemon on the device and removes the pairing.",
       "auditTitle": "Recent activity",
       "auditLoading": "Loading…",
       "auditEmpty": "No activity yet.",
@@ -3008,11 +3015,6 @@
         "publishTitle": "Publish to preview",
         "publishDescription": "The preview chats with the published agent. Drafts stay private until you publish.",
         "unsavedChanges": "You have unsaved changes. The preview uses the saved version until you save."
-      },
-      "dangerZone": {
-        "heading": "Danger zone",
-        "description": "Deleting this agent is permanent and will remove all its schedules and run history.",
-        "deleteButton": "Delete agent"
       },
       "externalKb": "External KB",
       "errors": {

@@ -781,11 +781,9 @@
           "inAnswers_other": "共 {{formatted}} 条回答"
         },
         "panels": {
-          "answerStatus": "回答状态随时间变化",
-          "sentiment": "情绪随时间变化",
+          "answerStatus": "回答状态",
           "whyNot": "未完全回答的原因",
           "requestType": "请求类型",
-          "implicitFeedback": "对回答的回复",
           "shareOfAnswers_one": "占 {{formatted}} 条回答的比例",
           "shareOfAnswers_other": "占 {{formatted}} 条回答的比例",
           "shareOfMessages_one": "占 {{formatted}} 条消息的比例",
@@ -798,7 +796,6 @@
           "barLabelNone": "{{name}}：数据还不够",
           "noneOfThese": "不属于这些主题",
           "empty": "此期间没有可显示的内容。",
-          "tooltipShare": "{{name}}：{{value}}",
           "ofQuestions_one": "共 {{formatted}} 个问题",
           "ofQuestions_other": "共 {{formatted}} 个问题",
           "topics": "主题",
@@ -807,7 +804,13 @@
             "title": "还没有主题",
             "description": "添加主题，看看用户在问什么。",
             "action": "设置主题"
-          }
+          },
+          "replies": "用户如何回复",
+          "reaction": "对回答的回复",
+          "tone": "情绪",
+          "tooltipItem": "{{name}}：{{value}}",
+          "notDrawnMovedOn": "转向其他或补充细节的回复（例如新问题或追问）不绘制。",
+          "notDrawnNeutral": "中性回复不绘制。"
         },
         "labelNamesInline": {
           "answer_status": "回答状态",
@@ -836,7 +839,8 @@
           "reaction": {
             "thanks": "致谢或确认",
             "reAsk": "再次提问",
-            "pushbackOrComplaint": "反驳或投诉"
+            "pushbackOrComplaint": "反驳或投诉",
+            "movedOn": "转向其他"
           },
           "requestType": {
             "troubleshooting": "故障排查",
@@ -888,6 +892,10 @@
           "button": "设置",
           "title": "洞察设置",
           "saveFailed": "无法保存洞察设置。请重试。"
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "再次提问或反驳",
+          "previous": "上一周期：{{value}}"
         }
       },
       "gaps": {
@@ -1446,6 +1454,7 @@
       "noToolsFound": "未找到工具",
       "selectToolSetup": "添加工具",
       "settingsIconAlt": "设置图标",
+      "toolActions": "工具操作",
       "configureToolAria": "配置 {{toolName}}",
       "manageTools": "前往工具",
       "edit": "编辑",
@@ -1610,13 +1619,11 @@
       "access": "访问",
       "connection": "连接",
       "hostLabel": "主机",
-      "dangerZone": "危险区域",
       "approvalAskDescription": "每条命令运行前都需要批准。",
       "approvalFullDescription": "无需询问即可运行所有命令，安全拒绝列表除外。",
       "fullAccessWarning": "完全访问：智能体无需询问即可在此机器上运行任何命令。安全拒绝列表仍然有效。",
       "deviceIdLabel": "设备 ID",
       "offlineHint": "未连接。在该机器上运行 `docsgpt-cli host` 使其上线。",
-      "dangerZoneDescription": "撤销将停止设备上的守护进程并移除配对。",
       "auditTitle": "近期活动",
       "auditLoading": "加载中…",
       "auditEmpty": "暂无活动。",
@@ -2991,11 +2998,6 @@
         "publishTitle": "发布后即可预览",
         "publishDescription": "预览会与已发布的智能体对话。草稿在发布前保持私密。",
         "unsavedChanges": "你有未保存的更改。保存之前，预览使用已保存的版本。"
-      },
-      "dangerZone": {
-        "heading": "危险区域",
-        "description": "删除此智能体将无法恢复，并会移除其所有计划和运行历史。",
-        "deleteButton": "删除智能体"
       },
       "externalKb": "外部知识库",
       "errors": {

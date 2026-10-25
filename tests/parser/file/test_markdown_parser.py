@@ -126,3 +126,41 @@ def test_markdown_html_cleanup_removes_inline_svg() -> None:
     )
     text = MarkdownParser().markdown_to_tups(content)[0][1]
     assert text == "If x < 10 use List<int> \n\n and pass <path> here.\n\n"
+
+
+def test_markdown_hash_lines_in_backtick_fence_are_not_headings():
+    content = "# Install\n```bash\n# install dependencies\npip install -r requirements.txt\n```\nDone.\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert [h for h, _ in tups] == ["Install"]
+    assert "# install dependencies\npip install -r requirements.txt\n```\nDone." in tups[0][1]
+
+
+def test_markdown_hash_lines_in_tilde_fence_are_not_headings():
+    content = "# Config\n~~~yaml\n# a comment\nkey: value\n~~~\n## Next\ntext\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert [h for h, _ in tups] == ["Config", "Next"]
+    assert "# a comment\nkey: value" in tups[0][1]
+    assert "text" in tups[1][1]
+
+
+def test_markdown_fence_closes_only_on_matching_marker():
+    # A shorter or different fence inside a longer one does not close it.
+    content = "# Doc\n````md\n```\n~~~\n# still code\n````\n# After\nbody\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert [h for h, _ in tups] == ["Doc", "After"]
+    assert "# still code" in tups[0][1]
+
+
+def test_markdown_indented_fence_and_headings_after_it():
+    content = "# A\n   ```\n# code\n   ```\n# B\nb text\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert [h for h, _ in tups] == ["A", "B"]
+    assert "# code" in tups[0][1]
+
+
+def test_markdown_fence_closes_with_crlf_line_endings():
+    content = "# Install\r\n```bash\r\n# install dependencies\r\npip install x\r\n```\r\n# Usage\r\nrun it\r\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert [h.strip() for h, _ in tups] == ["Install", "Usage"]
+    assert "# install dependencies" in tups[0][1]
+    assert "run it" in tups[1][1]

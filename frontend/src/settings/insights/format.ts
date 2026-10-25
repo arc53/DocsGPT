@@ -10,7 +10,12 @@ import {
   formatCount,
   intlLocale,
 } from '../../utils/dateTimeUtils';
-import type { ConversationInsights, InsightLabelTotals } from '../types';
+import type {
+  ConversationInsights,
+  InsightBucketUnit,
+  InsightLabelTotals,
+  InsightSeriesBucket,
+} from '../types';
 
 /**
  * Below this many labelled items a figure is not shown: its 95% range spans
@@ -155,12 +160,94 @@ export function formatShare(rate: number, locale = intlLocale()): string {
 }
 
 /**
- * A day's expected count as its share of the day's total, for a 100%
- * stacked chart: a column reads as a mix, never as "1.8 replies". A day with
- * nothing to share out is 0, so its column stays empty.
+ * Fewest buckets, each holding `MIN_SAMPLE` items, that make a trend. With
+ * fewer, a chart over time draws noise as shapes, so the panel shows the
+ * period's mix instead.
  */
-export function shareOfDay(value: number, total: number): number {
-  return total > 0 ? Math.min(1, value / total) : 0;
+export const MIN_BUCKETS = 3;
+
+/** Whether buckets of these sizes are worth drawing over time. */
+export function readsOverTime(sizes: number[]): boolean {
+  return sizes.filter((n) => n >= MIN_SAMPLE).length >= MIN_BUCKETS;
+}
+
+const BUCKET_KEY = /^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/;
+
+/** A bucket key ("2026-10-17", "2026-10-17 13:00") as its UTC moment. */
+function bucketDate(key: string): Date | null {
+  const match = BUCKET_KEY.exec(key);
+  if (!match) return null;
+  const [, year, month, day, hour = '0', minute = '0'] = match;
+  return new Date(
+    Date.UTC(+year, +month - 1, +day, Number(hour), Number(minute)),
+  );
+}
+
+/**
+ * A series bucket's axis label: a day "17 Oct", a week "13–19 Oct" (clipped
+ * to the window, so the first and last may be short), an hour or a minute
+ * "13:05". Keys are UTC, so they are read in UTC; times are 24-hour, as every
+ * time in the app reads.
+ */
+export function bucketLabel(
+  bucket: Pick<InsightSeriesBucket, 'bucket' | 'bucket_end'>,
+  unit: InsightBucketUnit,
+  locale = intlLocale(),
+): string {
+  const start = bucketDate(bucket.bucket);
+  if (!start) return bucket.bucket;
+  if (unit === 'minute' || unit === 'hour')
+    return new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'UTC',
+    }).format(start);
+  const format = new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+  const end =
+    unit === 'week' && bucket.bucket_end && bucketDate(bucket.bucket_end);
+  return end && end > start
+    ? format.formatRange(start, end)
+    : format.format(start);
+}
+
+export type PeriodChange = {
+  /** The previous period's rate. */
+  previous: number;
+  /** How the whole percent moved. */
+  direction: 'up' | 'down' | 'same';
+};
+
+/**
+ * A headline rate against the previous period of the same length, by whole
+ * percent as both read; nothing while that period is under the sample floor.
+ */
+export function periodChange(
+  rate: number,
+  previous: { n: number; rate: number } | undefined,
+): PeriodChange | null {
+  if (!previous || previous.n < MIN_SAMPLE) return null;
+  const now = Math.round(rate * 100);
+  const before = Math.round(previous.rate * 100);
+  return {
+    previous: previous.rate,
+    direction: now > before ? 'up' : now < before ? 'down' : 'same',
+  };
+}
+
+/** The summed rate of some of a label's options; 0 for a label it doesn't have. */
+export function optionsRate(
+  totals: InsightLabelTotals | undefined,
+  options: readonly string[],
+): number {
+  return options.reduce(
+    (sum, option) => sum + (totals?.options[option]?.rate ?? 0),
+    0,
+  );
 }
 
 /**
@@ -174,11 +261,16 @@ export function formatEstimate(value: number, locale = intlLocale()): string {
   return formatCount(Math.round(value), locale);
 }
 
+/** The token a share is drawn in by its meaning, in a mix strip, a chart or a bar. */
+export type MixTone = 'success' | 'warning' | 'destructive' | 'info' | 'muted';
+
 /** A row of a share-bar panel; no `rate` draws "—" and an empty track. */
 export type BarRow = {
   key: string;
   label: string;
   rate?: number;
+  /** Colours the bar by meaning; without one it is the brand colour. */
+  tone?: MixTone;
 };
 
 /**

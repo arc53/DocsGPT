@@ -733,6 +733,24 @@ function WorkflowBuilderInner() {
     navigate(agentsListPath(folderId));
   }, [navigate, folderId]);
 
+  // Access details saves these itself; the builder's copy follows, so the
+  // dialog (desktop or phone) reopens on what was saved.
+  const handleKeyRegenerated = useCallback(
+    (key: string) => setCurrentAgent((prev) => ({ ...prev, key })),
+    [],
+  );
+  const handleConfigChange = useCallback(
+    (config: AgentConfig) =>
+      setCurrentAgent((prev) => ({
+        ...prev,
+        config: {
+          ...(prev.config ?? {}),
+          api_write_allowlist: config.api_write_allowlist,
+        },
+      })),
+    [],
+  );
+
   const handleDeleteAgent = useCallback(async () => {
     const agentToDelete = currentAgentId || currentAgent.id;
     if (!agentToDelete) return;
@@ -1963,6 +1981,9 @@ function WorkflowBuilderInner() {
       <MobileBlocker
         agent={canManageAgent ? currentAgent : null}
         loading={agentLoading}
+        onDeleted={navigateBackToAgents}
+        onKeyRegenerated={handleKeyRegenerated}
+        onConfigChange={handleConfigChange}
       />
       <div className="bg-background fixed inset-0 z-50 hidden h-dvh w-full flex-col lg:flex">
         <div className="border-border bg-background flex items-center justify-between gap-4 border-b px-6 py-4">
@@ -2327,9 +2348,8 @@ function WorkflowBuilderInner() {
               if (state === 'INACTIVE') setDetailsOnApiWrites(false);
             }}
             openApiWrites={detailsOnApiWrites}
-            onKeyRegenerated={(key) =>
-              setCurrentAgent((prev) => ({ ...prev, key }))
-            }
+            onKeyRegenerated={handleKeyRegenerated}
+            onConfigChange={handleConfigChange}
           />
         )}
       </div>

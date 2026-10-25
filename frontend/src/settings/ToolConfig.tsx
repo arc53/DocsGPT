@@ -192,10 +192,13 @@ export default function ToolConfig({
   tool,
   setTool,
   handleGoBack,
+  menu,
 }: {
   tool: UserToolType | APIToolType;
   setTool: (tool: UserToolType | APIToolType) => void;
   handleGoBack: () => void;
+  /** The tool's ⋯ (its tile's menu less Edit / View), last in the crumb row. */
+  menu?: React.ReactNode;
 }) {
   const token = useSelector(selectToken);
   const configRequirements = React.useMemo(
@@ -527,25 +530,28 @@ export default function ToolConfig({
   };
   return (
     <div className="scrollbar-overlay flex flex-col gap-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex min-h-9.5 items-center justify-between gap-3">
         <DetailBreadcrumb
           parentLabel={t('settings.tools.label')}
           currentLabel={tool.customName || tool.displayName || tool.name}
           onParentClick={handleBackClick}
         />
-        {!readOnly && (
-          <Button
-            type="button"
-            size="sm"
-            shape="pill"
-            onClick={handleSaveChanges}
-            // A draft (no id yet) is saved to create it.
-            disabled={!hasUnsavedChanges && !!tool.id}
-            loading={saving}
-          >
-            {t('settings.tools.save')}
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {!readOnly && (
+            <Button
+              type="button"
+              size="field"
+              shape="pill"
+              onClick={handleSaveChanges}
+              // A draft (no id yet) is saved to create it.
+              disabled={!hasUnsavedChanges && !!tool.id}
+              loading={saving}
+            >
+              {t('settings.tools.save')}
+            </Button>
+          )}
+          {menu}
+        </div>
       </div>
       {readOnly && <ViewOnlyNotice />}
       {!readOnly && !canEditCredentials && (
