@@ -219,12 +219,13 @@
   capabilities: [read]
   docs_url: https://context7.com/docs/resources/all-clients
 
-# Publishes files to a public URL. ``auth_kind: mcp`` keeps the credential
-# optional: the connect dialog starts at "No authentication", so the first
-# publish works without a key and returns an owner token once. DocsGPT does
-# not save that token; the user keeps it and either passes it as the tools'
-# ``token`` argument for later updates, deletes and version listing, or
-# reconnects with a Bearer token so every call sends it.
+# Publishes files to a public URL. ``auth_kind: mcp`` on a preset connects
+# without authentication, so the first publish works without a key and
+# returns an owner token once. DocsGPT does not save that token; the user
+# keeps it and the agent passes it as the ``token`` argument of later tool
+# calls (publish_site, update_site, delete_site, list_versions). To send it
+# as an ``Authorization: Bearer`` header instead, add deed.page as a custom
+# MCP server with Bearer token authentication.
 - key: mcp:deedpage
   name: deed.page
   description: Publish HTML pages or folders of files as public websites.
