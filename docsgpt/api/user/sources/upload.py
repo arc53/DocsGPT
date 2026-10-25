@@ -16,6 +16,7 @@ from docsgpt.api import api
 from docsgpt.api.audit import record_event
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from docsgpt.api.user.resource_access import AccessDenied
+from docsgpt.api.user.task_owners import TaskOwnersUnavailable, get_task_owner
 from docsgpt.api.user.sources.access import SYNC_FREQUENCIES, denied_response, load_source
 from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
@@ -1539,11 +1540,24 @@ class TaskStatus(Resource):
                 jsonify({"success": False, "message": "Task ID is required"}), 400
             )
         try:
+            owner = get_task_owner(task_id)
+        except TaskOwnersUnavailable:
+            current_app.logger.error("Task owner lookup failed: Redis unavailable")
+            return make_response(
+                jsonify({"success": False, "message": "Service unavailable"}), 503
+            )
+        # An empty owner is a sessionless task (webhook, agent api_key): the id is the credential.
+        decoded_token = getattr(request, "decoded_token", None)
+        caller = decoded_token.get("sub") if isinstance(decoded_token, dict) else None
+        if owner is None or (owner and owner != caller):
+            return make_response(
+                jsonify({"success": False, "message": "Task not found"}), 404
+            )
+        try:
             from docsgpt.celery_init import celery
 
             task = celery.AsyncResult(task_id)
             task_meta = task.info
-            print(f"Task status: {task.status}")
 
             if task.status == "PENDING":
                 inspect = celery.control.inspect()

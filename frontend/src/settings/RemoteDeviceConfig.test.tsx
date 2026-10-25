@@ -138,36 +138,29 @@ describe('RemoteDeviceConfig', () => {
     expect(warning?.querySelector('svg')).not.toBeNull();
   });
 
-  it('draws Revoke as an outlined destructive pill', async () => {
+  // Revoke is the device's ⋯ at the end of the crumb row, after Save: no
+  // danger-zone card.
+  it("puts Revoke in the device's menu after Save", async () => {
     await render(device({}));
+    expect(container.querySelector('[data-slot="card"][data-tone]')).toBeNull();
+    const menu = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.tools.toolActions"]',
+    )!;
+    expect(menu.dataset.size).toBe('icon');
+    const save = menu.previousElementSibling as HTMLElement;
+    expect(save.textContent).toBe('settings.tools.save');
+    expect(save.dataset.size).toBe('field');
+    await act(async () => {
+      menu.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+    });
     const revoke = Array.from(
-      container.querySelectorAll<HTMLElement>('button'),
-    ).find((el) => el.textContent === 'settings.devices.revoke');
-    expect(revoke?.dataset.variant).toBe('destructive-outline');
-    expect(revoke?.dataset.shape).toBe('pill');
-    expect(revoke?.dataset.size).toBe('field');
-  });
-
-  it('boxes the danger zone in a destructive Card', async () => {
-    await render(device({}));
-    const revoke = Array.from(
-      container.querySelectorAll<HTMLElement>('button'),
-    ).find((el) => el.textContent === 'settings.devices.revoke');
-    const box = revoke?.closest<HTMLElement>('[data-slot="card"]');
-    expect(box?.dataset.tone).toBe('destructive');
-    expect(box?.dataset.padding).toBe('lg');
-    expect(box?.className).toContain('flex-row');
-    expect(box?.className).toContain('items-center');
-    // The header sits inside the card, at the section-title size, still an
-    // h3 in the outline; the consequence is its description.
-    const header = box?.querySelector('[data-slot="section-header"]');
-    const heading = header?.querySelector('h3');
-    expect(heading?.textContent).toBe('settings.devices.dangerZone');
-    expect(heading?.className).toContain('text-lg');
-    expect(heading?.className).toContain('text-destructive');
-    expect(header?.textContent).toContain(
-      'settings.devices.dangerZoneDescription',
-    );
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent === 'settings.devices.revoke')!;
+    expect(revoke.dataset.variant).toBe('destructive');
+    await act(async () => revoke.click());
+    expect(confirmProps.current!.modalState).toBe('ACTIVE');
   });
 
   it('opens Recent activity with a link toggle under its header, no frame', async () => {

@@ -24,8 +24,7 @@ DESIGN.md.
 
 Every section page (settings, admin, agents, teams, activity) is wrapped in
 `navigation/SectionShell` (`width` `default` 6xl, `wide` 7xl for admin,
-`narrow` 5xl; `title` replaces the section title; `titleAction` puts a page-level
-control, such as a toolbar `ActionMenu`, at the title row's end;
+`narrow` 5xl; `title` replaces the section title;
 `header={false}` drops the title for the phone section index, which draws
 its own);
 it draws the title and
@@ -34,7 +33,9 @@ under the title is `components/PageToolbar`: `intro`, then the page `search`
 (left, `max-w-md`) and the page `action` (right, `Button size="field"
 shape="pill"`, text only: no `Plus`, a dropdown keeps its `ChevronDown`), then `children` (notices that belong to the action, such as
 a limit warning), then `divider` (a `Separator`). With no `search` the intro
-moves into the row's left slot (`max-w-2xl`) beside the action. A page search
+moves into the row's left slot (`max-w-2xl`) beside the action. The row
+stacks below `sm` (the action under the intro, spanning it); `stack={false}`
+keeps a small action, such as a lone ⋯, beside the intro there. A page search
 is `components/SearchInput`: the 38px pill (one size everywhere) with a
 search icon and a floating `label` on `labelSurface="background"` (its
 default); a placeholder-only search is named by its placeholder. A source
@@ -51,8 +52,9 @@ An agent's pages (Overview and Schedules, then the Monitoring group: Analytics, 
 `title` prop). Its props: `name` (the agent, first in a muted byline),
 `status` (a Badge beside the name, Overview's Published / Draft), `meta` (the
 page's context after a middle dot, "Last used" on every page of a saved agent),
-`actions` (the page's buttons on the right, at most three; on Analytics and Insights the window select, and Insights' Settings beside it; the page's ⋯ goes
-in the title row, not here), `intro` (a line that replaces
+`actions` (the page's buttons on the right, at most three; on Analytics and Insights the window select, and Insights' Settings beside it),
+`menu` (the agent's ⋯, last in the row after the actions, as a source view's
+`PathHeader menu`; with no actions it stays beside the byline on a phone), `intro` (a line that replaces
 the byline: the new-agent form) and `children` (notices between the row and
 the rule, such as the failed-save `Alert`). With a status badge the meta
 takes its own line on a phone. The row keeps the 38px field height when a
@@ -61,9 +63,18 @@ page has no actions (Logs), so the rule lands in the same place on every page.
 five pages are `SectionShell` pages at the default width; the agent preview
 is a drawer (see DESIGN.md › Modal, not Dialog). Overview groups its fields into three
 `subtle lg` panels (Basics, Knowledge and behaviour, Model) with the two-up
-field grid, then Advanced, Guardrails, Insights and the danger zone. Schedules shows a
+field grid, then Advanced, Guardrails and Insights. Schedules shows a
 `StatCard` row, Recurring / One-time as `ui/tabs`, and
 each schedule as a `ScheduleRow` (see Agent pages).
+
+A detail page inside a list section (an open team, tool or remote device)
+swaps the list's `PageToolbar` for a crumb row at the 38px field height
+(`min-h-9.5`): `DetailBreadcrumb` on the left; on the right the page's
+buttons (`field` pills: the tool's Save) and the object's ⋯ (`ActionMenu
+size="toolbar"`) last, as a source view's `PathHeader` ends with its `menu`.
+An open tool's ⋯ is its tile's menu less Edit / View (`getMenuOptions(tool,
+true)` in `settings/Tools`, whose dialogs serve both); a device's holds
+Revoke. A delete or revoke is the ⋯'s last item, `destructive` after a rule.
 
 ## Agent pages
 
@@ -77,17 +88,22 @@ Buttons:
   `default field pill` (Publish, Save, New schedule), a secondary action
   `outline field pill` (Save draft, Preview with `Play` first), Cancel `ghost
 field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
-  at the end of the title row, through `SectionShell titleAction`: Access
-  details and Share with team on Overview (each only when the role allows
+  last in the toolbar row, through `AgentPageToolbar menu`, on Overview
+  only (and the workflow's phone Overview, `MobileBlocker`; Schedules and
+  the Monitoring pages keep to their own actions): Access details and
+  Share with team (each only when the role allows
   it, see DESIGN.md › Access and roles), and Preview until the agent is
-  published (before that the preview only says "Publish to preview"). So the
-  row never holds more than three buttons and fits a phone, where the main
-  one stretches across it (`flex-1 sm:flex-none`; `PageToolbar`'s action slot
-  spans the stacked row below `sm`). The workflow builder's toolbar has no
-  title row and keeps its ⋯ at the row's end, holding Edit details, Access
-  details, Share with team and Delete (see Workflow builder). The
-  agent's Delete is in Overview's danger zone; only the workflow builder's
-  toolbar has it in the ⋯ menu, as a `destructive` item. The row itself is
+  published (before that the preview only says "Publish to preview"); each
+  item has its icon (`Link`, `Users`, `Play`), and the ⋯ isn't drawn with no
+  items. So the row never holds more than three buttons and the ⋯, and fits a
+  phone, where the main one stretches across it (`flex-1 sm:flex-none`;
+  `PageToolbar`'s action slot spans the stacked row below `sm`, the ⋯ at its
+  end). The workflow builder's toolbar keeps its ⋯ at the row's end too, holding Edit details, Access
+  details, Share with team and Delete (see Workflow builder). Delete is the
+  agent ⋯'s last item on both, a `destructive` item after a rule
+  (`separatorBefore`) that opens the confirm. The menu comes from
+  `agents/hooks/useAgentMenu`, which also draws the dialogs; Overview adds
+  Preview first and opens its own Access details. The row itself is
   `agents/components/AgentPageToolbar` (see Page chrome). A row's common
   action is `outline sm pill` (a schedule's Run now or Resume) with its other
   actions in the row's `ActionMenu`; a delete there is a `destructive` item
@@ -103,8 +119,7 @@ Cards (the recipes by role in DESIGN.md › Card surfaces, applied here):
   Off while the agent collects none). The toggle
   and its Collapsible share a plain `<div>`, and the body opens with `pt-5`
   (its rows in a `flex flex-col gap-5` column, no `mt-*`), so every section
-  has 20px under its title and none under a closed toggle. The danger zone
-  follows them (see DESIGN.md › Card, Danger zone).
+  has 20px under its title and none under a closed toggle.
 - Guardrails' stage panels (one per active check and stage) are `Card
 variant="subtle" padding="sm"`, `tone="destructive"` while the control
   needs setup; their fields use `float={false}` on that fill (see DESIGN.md ›
@@ -155,8 +170,10 @@ and its Background tokens switch pushed right with `ml-auto`). The body is one
 of: `loading`, the `analysis` SkeletonLoader in the chart's place under the
 real title; `error` with `onRetry`, the destructive `EmptyState size="sm"`
 ("Could not load this chart." on Analytics); `empty`, an `EmptyState size="sm"
-illustration="none"` saying why there is no figure yet; else the chart and its
-legend container. Analytics pairs them in `xl:flex-row` rows; Insights lays them
+illustration="none"` saying why there is no figure yet; `children`, an in-flow
+body that sizes itself (Insights' share bars when there is no trend to draw);
+else the chart and its legend container. `summary` sits in flow between the
+title row and the body (Insights' headline), and only with figures. Analytics pairs them in `xl:flex-row` rows; Insights lays them
 in `grid-cols-1 xl:grid-cols-2` with `gap-3`, in rows of equal height.
 
 Insights (`settings/insights/ConversationInsights`, the body of an agent's
@@ -176,7 +193,7 @@ next step, and the panels say nothing about it:
   `MIN_SAMPLE` are done.
 - `olderOnly`: every answer in the window predates the labelling window ("Insights
   cover conversations from 13 Oct onwards…", the date in `headingLocale`).
-- `loading` is `InsightsSkeleton`: the five tiles and the five panels every
+- `loading` is `InsightsSkeleton`: the five tiles and the four panels every
   window has, in grid order under their real titles, so nothing moves or
   renames when the figures land; `error` is the destructive EmptyState.
 
@@ -193,17 +210,37 @@ far)", a panel "Not enough data yet", a tag row `—`.
   last `col-span-2 md:col-span-1` so it never sits alone on a phone (Analytics'
   five cards take the same rule); `sub` names the denominator ("of 81
   questions"), `hint` what the figure counts.
-- Time charts (Answer status over time, Sentiment over time, Replies to
-  answers) stack each day as its share of that day (`AnalyticsChart share`, the
-  y axis 0–100%, `shareOfDay`), with the day's count in the tooltip footer.
-  Replies to answers draws no neutral replies, so its columns stop short.
+- The two chart panels (Answer status, How users replied) open with an
+  `InsightHeadline` in `ChartPanel summary`: the period's figure (`text-2xl
+  font-bold`), what it is and its denominator ("of 67 questions"), and
+  "Previous period: 63%" with an up, down or equal arrow once the previous
+  period (`previous` in the API) has `MIN_SAMPLE`. Over time they draw counts,
+  never shares, so a quiet week is a short column: `AnalyticsChart
+  columnTooltip` (one tooltip per column with each non-empty series rounded,
+  "<1" for slivers, the bucket's count in the footer; level x labels). The
+  headline's mix strip and its legend ("Fully answered 59%") name the series,
+  so the chart draws no legend. Buckets are the API's `bucket_unit` (it
+  coarsens days to weeks while they average under 10 answers), labelled by
+  `bucketLabel` ("17 Oct", "13–19 Oct", "14:00"). Fewer than `MIN_BUCKETS` (3)
+  buckets with `MIN_SAMPLE` items each is no trend: the panel shows the
+  period's mix as `ShareBars` under the headline, without the strip, each bar
+  in its series' colour (the row's `tone`, a `Progress` variant; `muted` for
+  the neutral kind).
+- Answer status stacks the four outcomes; greetings are not drawn. How users
+  replied reads the same replies two ways, switched by a `ToggleGroup
+  size="xs"` (Replies to answers / Sentiment) in the title row: the good kind
+  up from zero, the bad kinds down (`AnalyticsChart diverging`, the zero line
+  in the tick colour), the neutral kind (Moved on, Neutral) in the headline
+  only, with a muted line saying it isn't drawn. As bars it shows both under
+  `SectionHeader as="h3" size="sm"` headings, without the toggle.
   Series take colour by meaning (`success`, `warning`, `destructive`, `info`
-  for Asked for details); a series that is no failure, "Said it didn't know"
-  and Sentiment's Neutral, is `muted-foreground`.
+  for Asked for details); a series that is no failure, "Said it didn't know",
+  Neutral and Moved on, is `muted-foreground`.
 - Share lists (Request type, Why not fully answered, Topics) are
   `ShareBars` in a `subtle lg` Card with a `SectionHeader as="h2" size="xs"` and a
   muted `text-xs` "Share of N answers" line: per row the label (`text-xs`,
-  wrapping, `sm:w-40`), a stock `ui/Progress` and the whole percent, as one
+  wrapping, `sm:w-40`), a stock `ui/Progress` (the brand colour: these
+  options have no good or bad) and the whole percent, as one
   `sr-only` text run ("How-to: 38%") with the drawing `aria-hidden`. A panel
   left alone on the last row spans both columns and lays its rows in two.
 - Topics (agent pages only; each agent has its own list) always spans both

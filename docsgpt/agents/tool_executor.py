@@ -267,6 +267,50 @@ def sanitize_tool_result(value: Any) -> Any:
     return value
 
 
+def _scan_lines(value: Any, path: str, lines: List[str]) -> None:
+    """Append ``value``'s leaves to ``lines`` as ``path = value`` text.
+
+    A string leaf goes on the line after its ``path =``, verbatim: its
+    newlines and quotes stay real, so a pattern anchored on a line start or
+    stopped by a quote reads it as it reads plain text. ``=`` rather than
+    ``:`` keeps a key named ``system`` from reading as a fake turn. An empty
+    leaf (``None``, ``""``, ``{}``, ``[]``) still gets its ``path =`` line,
+    since its key is persisted with the result.
+    """
+    if value is None or (isinstance(value, (str, dict, list, tuple)) and not value):
+        if path:
+            lines.append(f"{path} =")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _scan_lines(item, f"{path}.{key}" if path else str(key), lines)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _scan_lines(item, path, lines)
+    elif isinstance(value, str):
+        lines.extend([f"{path} =", value] if path else [value])
+    else:
+        lines.append(f"{path} = {value}" if path else str(value))
+
+
+def _scan_text(result: Any) -> str:
+    """The text the ``tool_result`` guardrails read for ``result``.
+
+    Args:
+        result: A tool result, already sanitized.
+
+    Returns:
+        The string itself, a dict, list or tuple as one ``path = value`` line
+        per leaf (see ``_scan_lines``), or ``""`` for anything else.
+    """
+    if isinstance(result, str):
+        return result
+    if not isinstance(result, (dict, list, tuple)) or not result:
+        return ""
+    lines: List[str] = []
+    _scan_lines(result, "", lines)
+    return "\n".join(lines)
+
+
 def bound_result_full(text: str) -> str:
     """Cap the persisted full-result copy at ``RESULT_FULL_MAX_CHARS``."""
     if len(text) <= RESULT_FULL_MAX_CHARS:
@@ -1183,11 +1227,17 @@ class ToolExecutor:
         A tool result is untrusted third-party text on the same footing as a
         retrieved document, and it is a common exfiltration path for secrets
         that the calling API happened to echo back.
+
+        A structured result (``api_tool``, MCP, search tools) is scanned as
+        one ``path = value`` line per leaf (``_scan_text``). A clean one keeps
+        its shape; a redacted one becomes the masked text, so no half-masked
+        value survives inside it.
         """
         engine = getattr(self, "guardrail_engine", None)
         if engine is None or not engine.has_stage(GuardrailStage.TOOL_RESULT):
             return result
-        if not isinstance(result, str) or not result:
+        text = _scan_text(result)
+        if not text:
             return result
         # A search tool's hits were screened one by one as retrieved documents
         # (``retrieval_screen``); its result, which joins them, then gets only
@@ -1201,7 +1251,7 @@ class ToolExecutor:
             engine.context.tool_name = tool_name
             engine.context.action_name = action_name
             decision = engine.evaluate(
-                result, GuardrailStage.TOOL_RESULT, item_level=False if screened else None
+                text, GuardrailStage.TOOL_RESULT, item_level=False if screened else None
             )
         except Exception:
             logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
@@ -2149,6 +2199,8 @@ class ToolExecutor:
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
         result = sanitize_tool_result(result)
+        # Read before the scan: a redacted dict comes back as text.
+        status = result_status(result)
         result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
@@ -2211,7 +2263,7 @@ class ToolExecutor:
         tool_call_data["result"] = truncate_tool_result(result_full)
         # A tool that ran but reported failure in-band persists as ``error``,
         # not ``completed`` -- the model saw an error and will likely retry.
-        tool_call_data["status"] = result_status(result)
+        tool_call_data["status"] = status
 
         # Tool side effect has run; flip the journal row so the
         # message-finalize path can later confirm it. If the proposed

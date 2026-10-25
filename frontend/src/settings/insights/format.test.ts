@@ -10,7 +10,9 @@ import {
   optionBars,
   optionName,
   pageNames,
-  shareOfDay,
+  bucketLabel,
+  periodChange,
+  readsOverTime,
   showsFigures,
   weakLanguages,
 } from './format';
@@ -220,13 +222,80 @@ describe('numbers', () => {
     expect(formatEstimate(0.3, 'en')).toBe('<1');
     expect(formatEstimate(0, 'en')).toBe('0');
   });
+});
 
-  it("reads a day's expected count as its share of the day, an empty day as 0", () => {
-    expect(shareOfDay(1.5, 6)).toBe(0.25);
-    expect(shareOfDay(0, 0)).toBe(0);
-    expect(shareOfDay(0.4, 0)).toBe(0);
-    // Rounding in the sums never draws a column past 100%.
-    expect(shareOfDay(3.0000001, 3)).toBe(1);
+describe('readsOverTime', () => {
+  it('needs three buckets that each hold the sample floor', () => {
+    expect(readsOverTime([10, 12, 30])).toBe(true);
+    expect(readsOverTime([0, 10, 0, 11, 9, 40])).toBe(true);
+    // Plenty in all, but in two buckets: a period figure, not a trend.
+    expect(readsOverTime([200, 0, 150])).toBe(false);
+    expect(readsOverTime([9, 9, 9, 9])).toBe(false);
+    expect(readsOverTime([])).toBe(false);
+  });
+});
+
+describe('bucketLabel', () => {
+  it('names a day, a week clipped to the window, and an hour, read in UTC', () => {
+    expect(bucketLabel({ bucket: '2026-10-17' }, 'day', 'en-GB')).toBe(
+      '17 Oct',
+    );
+    expect(
+      bucketLabel(
+        { bucket: '2026-10-19', bucket_end: '2026-10-24' },
+        'week',
+        'en-GB',
+      ),
+    ).toBe('19–24 Oct');
+    expect(
+      bucketLabel(
+        { bucket: '2026-09-28', bucket_end: '2026-10-04' },
+        'week',
+        'en-GB',
+      ),
+      // Intl sets the dash between thin spaces.
+    ).toMatch(/^28 Sept\s–\s4 Oct$/);
+    // A week of one day in the window reads as that day.
+    expect(
+      bucketLabel(
+        { bucket: '2026-10-24', bucket_end: '2026-10-24' },
+        'week',
+        'en-GB',
+      ),
+    ).toBe('24 Oct');
+    expect(bucketLabel({ bucket: '2026-10-24 13:00' }, 'hour', 'en-GB')).toBe(
+      '13:00',
+    );
+    expect(
+      bucketLabel({ bucket: '2026-10-24 13:05:00' }, 'minute', 'en-GB'),
+    ).toBe('13:05');
+  });
+
+  it('leaves a key it cannot read as it is', () => {
+    expect(bucketLabel({ bucket: 'soon' }, 'day', 'en-GB')).toBe('soon');
+  });
+});
+
+describe('periodChange', () => {
+  it('compares whole percents with the previous period', () => {
+    expect(periodChange(0.68, { n: 40, rate: 0.62 })).toEqual({
+      previous: 0.62,
+      direction: 'up',
+    });
+    expect(periodChange(0.5, { n: 40, rate: 0.61 })).toEqual({
+      previous: 0.61,
+      direction: 'down',
+    });
+    // 68.2% and 67.9% both read 68%.
+    expect(periodChange(0.682, { n: 40, rate: 0.679 })).toEqual({
+      previous: 0.679,
+      direction: 'same',
+    });
+  });
+
+  it('says nothing while the previous period is under the sample floor', () => {
+    expect(periodChange(0.68, { n: 9, rate: 0.2 })).toBeNull();
+    expect(periodChange(0.68, undefined)).toBeNull();
   });
 });
 

@@ -781,11 +781,9 @@
           "inAnswers_other": "共 {{formatted}} 則回答"
         },
         "panels": {
-          "answerStatus": "回答狀態隨時間變化",
-          "sentiment": "情緒隨時間變化",
+          "answerStatus": "回答狀態",
           "whyNot": "未完整回答的原因",
           "requestType": "請求類型",
-          "implicitFeedback": "對回答的回覆",
           "shareOfAnswers_one": "佔 {{formatted}} 則回答的比例",
           "shareOfAnswers_other": "佔 {{formatted}} 則回答的比例",
           "shareOfMessages_one": "佔 {{formatted}} 則訊息的比例",
@@ -798,7 +796,6 @@
           "barLabelNone": "{{name}}：資料還不夠",
           "noneOfThese": "不屬於這些主題",
           "empty": "此期間沒有可顯示的內容。",
-          "tooltipShare": "{{name}}：{{value}}",
           "ofQuestions_one": "共 {{formatted}} 個問題",
           "ofQuestions_other": "共 {{formatted}} 個問題",
           "topics": "主題",
@@ -807,7 +804,13 @@
             "title": "還沒有主題",
             "description": "新增主題，看看使用者在問什麼。",
             "action": "設定主題"
-          }
+          },
+          "replies": "使用者如何回覆",
+          "reaction": "對回答的回覆",
+          "tone": "情緒",
+          "tooltipItem": "{{name}}：{{value}}",
+          "notDrawnMovedOn": "轉向其他或補充細節的回覆（例如新問題或追問）不繪製。",
+          "notDrawnNeutral": "中性回覆不繪製。"
         },
         "labelNamesInline": {
           "answer_status": "回答狀態",
@@ -836,7 +839,8 @@
           "reaction": {
             "thanks": "致謝或確認",
             "reAsk": "再次提問",
-            "pushbackOrComplaint": "反駁或抱怨"
+            "pushbackOrComplaint": "反駁或抱怨",
+            "movedOn": "轉向其他"
           },
           "requestType": {
             "troubleshooting": "疑難排解",
@@ -888,6 +892,10 @@
           "button": "設定",
           "title": "洞察設定",
           "saveFailed": "無法儲存洞察設定。請再試一次。"
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "再次提問或反駁",
+          "previous": "上一期：{{value}}"
         }
       },
       "gaps": {
@@ -1446,6 +1454,7 @@
       "noToolsFound": "找不到工具",
       "selectToolSetup": "新增工具",
       "settingsIconAlt": "設定圖示",
+      "toolActions": "工具操作",
       "configureToolAria": "設定 {{toolName}}",
       "manageTools": "前往工具",
       "edit": "編輯",
@@ -1610,13 +1619,11 @@
       "access": "存取權",
       "connection": "連線",
       "hostLabel": "主機",
-      "dangerZone": "危險區域",
       "approvalAskDescription": "每個指令執行前都需核准。",
       "approvalFullDescription": "執行所有指令而不詢問，安全拒絕清單除外。",
       "fullAccessWarning": "完整存取：代理可在此機器上執行任何指令而不需詢問。安全拒絕清單仍然適用。",
       "deviceIdLabel": "裝置 ID",
       "offlineHint": "未連線。請在該機器上執行 `docsgpt-cli host` 使其上線。",
-      "dangerZoneDescription": "撤銷會停止裝置上的常駐程式並移除配對。",
       "auditTitle": "近期活動",
       "auditLoading": "載入中…",
       "auditEmpty": "尚無活動。",
@@ -2247,7 +2254,9 @@
           "selectedFiles": "已選擇的項目",
           "selectFiles": "選擇檔案或資料夾",
           "noFilesSelected": "尚未選擇檔案或資料夾。",
-          "removeItem": "移除 {{name}}"
+          "removeItem": "移除 {{name}}",
+          "shareFolders": "若要同步這些資料夾，請在 Google 雲端硬碟中將每個資料夾以檢視者身分共用給：",
+          "filesOnly": "此伺服器同步檔案，而非整個資料夾。在選擇器中開啟資料夾即可選擇其中的檔案。"
         }
       },
       "fields": {
@@ -2989,11 +2998,6 @@
         "publishTitle": "發佈後即可預覽",
         "publishDescription": "預覽會與已發佈的代理對話。草稿在發佈前會保持私密。",
         "unsavedChanges": "你有未儲存的變更。儲存之前，預覽會使用已儲存的版本。"
-      },
-      "dangerZone": {
-        "heading": "危險區域",
-        "description": "刪除此代理將無法復原，並會移除其所有排程和執行歷史。",
-        "deleteButton": "刪除代理"
       },
       "externalKb": "外部知識庫",
       "errors": {

@@ -1,3 +1,4 @@
+import { Trash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -13,7 +14,7 @@ import DeviceAuditList from './DeviceAuditList';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card } from '../components/ui/card';
+import { ActionMenu } from '../components/ui/dropdown-menu';
 import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import {
   DescriptionItem,
@@ -151,7 +152,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
   return (
     <div className="scrollbar-overlay flex flex-col gap-6">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex min-h-9.5 items-center justify-between gap-3">
         <DetailBreadcrumb
           parentLabel={t('settings.tools.label')}
           currentLabel={
@@ -159,16 +160,31 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           }
           onParentClick={handleGoBack}
         />
-        <Button
-          type="button"
-          size="sm"
-          shape="pill"
-          onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges || loading}
-          loading={saving}
-        >
-          {t('settings.tools.save')}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            size="field"
+            shape="pill"
+            onClick={handleSaveChanges}
+            disabled={!hasUnsavedChanges || loading}
+            loading={saving}
+          >
+            {t('settings.tools.save')}
+          </Button>
+          {/* Revoke is the device's ⋯, as Delete is an open tool's. */}
+          <ActionMenu
+            size="toolbar"
+            triggerLabel={t('settings.tools.toolActions')}
+            options={[
+              {
+                label: t('settings.devices.revoke'),
+                icon: Trash2,
+                variant: 'destructive',
+                onClick: () => setRevokeState('ACTIVE'),
+              },
+            ]}
+          />
+        </div>
       </div>
 
       {error && (
@@ -334,31 +350,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           {auditLoaded && <DeviceAuditList deviceId={deviceId} token={token} />}
         </Collapsible>
       </section>
-
-      {/* Danger zone */}
-      <Card
-        tone="destructive"
-        padding="lg"
-        className="flex-row flex-wrap items-center justify-between"
-      >
-        <SectionHeader
-          as="h3"
-          tone="destructive"
-          title={t('settings.devices.dangerZone')}
-          description={t('settings.devices.dangerZoneDescription')}
-          className="min-w-0 flex-1"
-        />
-        <Button
-          type="button"
-          variant="destructive-outline"
-          size="field"
-          shape="pill"
-          className="shrink-0"
-          onClick={() => setRevokeState('ACTIVE')}
-        >
-          {t('settings.devices.revoke')}
-        </Button>
-      </Card>
 
       <ConfirmationModal
         message={

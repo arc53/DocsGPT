@@ -136,10 +136,18 @@ describe('ToolConfig', () => {
     container.remove();
   });
 
-  const render = async (tool: UserToolType | APIToolType) => {
+  const render = async (
+    tool: UserToolType | APIToolType,
+    menu?: React.ReactNode,
+  ) => {
     await act(async () => {
       root.render(
-        <ToolConfig tool={tool} setTool={() => {}} handleGoBack={() => {}} />,
+        <ToolConfig
+          tool={tool}
+          setTool={() => {}}
+          handleGoBack={() => {}}
+          menu={menu}
+        />,
       );
     });
   };
@@ -149,12 +157,20 @@ describe('ToolConfig', () => {
       (el) => el.textContent === text,
     );
 
-  it('renders the header Save as a small pill with no class overrides', async () => {
+  // The field height every page header's buttons share.
+  it('renders the header Save as a field pill with no class overrides', async () => {
     await render(userTool);
     const save = buttonByText('settings.tools.save');
-    expect(save?.dataset.size).toBe('sm');
+    expect(save?.dataset.size).toBe('field');
     expect(save?.dataset.shape).toBe('pill');
     expect(save?.className).not.toMatch(/text-white|text-xs/);
+  });
+
+  // The tool's ⋯ ends the crumb row, after Save.
+  it('puts the menu after Save', async () => {
+    await render(userTool, <button type="button">menu</button>);
+    const save = buttonByText('settings.tools.save')!;
+    expect(save.nextElementSibling?.textContent).toBe('menu');
   });
 
   it('renders the actions search as a labelled pill SearchInput with an inset icon', async () => {

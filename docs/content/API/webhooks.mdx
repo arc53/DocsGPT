@@ -1,7 +1,7 @@
 ---
 title: Triggering Agents with Webhooks
 description: Learn how to automate and integrate DocsGPT Agents using webhooks for asynchronous task execution.
-lastUpdated: 2026-10-17
+lastUpdated: 2026-10-24
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -103,7 +103,7 @@ As with `POST`, the response is a JSON object containing the `task_id`, and the 
 
 ### Preventing duplicate triggers (Idempotency-Key)
 
-To make a trigger safe to retry, send an optional `Idempotency-Key` header. If the same key is seen again within 24 hours, DocsGPT does not enqueue a second task — it returns the **original** `task_id` instead. This prevents a retried or double-fired webhook from running the agent twice. If the response is `"task_id": "deduplicated"` instead, a request with the same key was being enqueued at the same moment and its record is already gone, most likely because that enqueue failed, so the agent may not have run at all. There is no task to poll (`/api/task_status` reports `PENDING` for it forever): send the request again.
+To make a trigger safe to retry, send an optional `Idempotency-Key` header. If the same key is seen again within 24 hours, DocsGPT does not enqueue a second task — it returns the **original** `task_id` instead. This prevents a retried or double-fired webhook from running the agent twice. If the response is `"task_id": "deduplicated"` instead, a request with the same key was being enqueued at the same moment and its record is already gone, most likely because that enqueue failed, so the agent may not have run at all. There is no task to poll (`/api/task_status` answers `404` for it): send the request again.
 
 ```bash
 curl -X POST \
@@ -156,6 +156,8 @@ A run that takes longer than `WEBHOOK_RUN_TIMEOUT` (default 600 seconds) is stop
 ```
 
 While a task is `PENDING`, `/api/task_status` returns `503` if no worker answers; a `PENDING` task and no reachable worker usually means the worker isn't running.
+
+The `task_id` is the only credential the poll needs, so keep it as private as the webhook URL. `/api/task_status` answers `404` for an id it doesn't know, or once the result has expired (7 days after the trigger).
 
 Two more cases to handle:
 

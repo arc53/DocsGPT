@@ -1,7 +1,7 @@
 ---
 title: Agent Guardrails
 description: Scan user input, attached files, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection (patterns, or a local model that withholds only the flagged document or file), groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, the rules every agent follows and the defaults for new agents (Admin), and the API reference.
-lastUpdated: 2026-10-21
+lastUpdated: 2026-10-24
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -25,7 +25,7 @@ An agent turn passes through five intervention points. A control attached to a s
 | `input` | The user's question, before anything is sent to the model | The model and the stored conversation both receive the masked question | The turn ends immediately with the block message; nothing reaches the model |
 | `attachment` | Each file attached to the conversation, on its own (only [`injection_model`](#injection_model--prompt-injection-model) runs here) | Not offered | That file is withheld: it is not sent to the model, as text or natively, and the attachments tool refuses to read it. The other files are unaffected |
 | `retrieval` | The retrieved document chunks, formatted as they will appear in the prompt; an [item-level](#item-level-checks) check scores each document on its own instead | Masked in the prompt **and** in the sources shown to the user and stored with the conversation | The model is told the sources were withheld by policy; the user sees `[Withheld by a content policy.]` in place of each source. From an item-level check, only the flagged document is withheld |
-| `tool_result` | Each tool's result string, before it fans out to the model, the UI and the journal; also a [background job](/Tools/background-jobs)'s result and the data a background event (a monitor, a webhook, an approval) carries, before it is stored | The masked result is what the model and the user see | The result is replaced with a note telling the model it could not be used and must not speculate about its contents |
+| `tool_result` | Each tool's result (a structured one, such as an API call's or an MCP tool's, is read as one `field = value` line per field, each text value as written), before it fans out to the model, the UI and the journal; also a [background job](/Tools/background-jobs)'s result and the data a background event (a monitor, a webhook, an approval) carries, before it is stored | The masked result is what the model and the user see; a structured result with anything masked reaches them as those masked lines | The result is replaced with a note telling the model it could not be used and must not speculate about its contents |
 | `output` | The answer as it streams from the model | Masked **before** the text leaves the server | The stream stops with the block message; any tokens already delivered are retracted from the client and the stored message |
 
 A few details worth knowing:

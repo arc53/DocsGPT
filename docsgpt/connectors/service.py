@@ -1041,13 +1041,23 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
     return repo.get(str(target["id"]))
 
 
-def picker_token(connection_id: str) -> dict:
-    """What a browser-side picker needs: a short-lived access token, never the refresh token."""
+def picker_token(connection_id: str, provider: Optional[str] = None) -> dict:
+    """What a browser-side picker needs: a short-lived access token, never the refresh token.
+
+    Args:
+        connection_id: The connection the picker browses.
+        provider: The connection's provider; its auth adds picker settings
+            such as how Google Drive folders are read.
+    """
+    from docsgpt.parser.connectors.connector_creator import ConnectorCreator
+
     token_info = get_valid_token_info(connection_id)
+    options = ConnectorCreator.create_auth(provider).picker_options(token_info) if provider else {}
     return {
         "access_token": token_info.get("access_token"),
         "expiry": token_info.get("expiry"),
         "allows_shared_content": bool(token_info.get("allows_shared_content")),
+        **options,
     }
 
 

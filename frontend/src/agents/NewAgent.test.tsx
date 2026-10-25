@@ -210,18 +210,8 @@ vi.mock('../navigation/SectionPills', () => ({
   default: () => <div data-testid="section-pills" />,
 }));
 vi.mock('../navigation/SectionPageHeader', () => ({
-  CurrentSectionHeader: ({
-    title,
-    titleAction,
-  }: {
-    title?: React.ReactNode;
-    titleAction?: React.ReactNode;
-  }) => (
-    <div>
-      {title ? <h1>{title}</h1> : null}
-      {titleAction}
-    </div>
-  ),
+  CurrentSectionHeader: ({ title }: { title?: React.ReactNode }) =>
+    title ? <h1>{title}</h1> : null,
 }));
 vi.mock('../components/FileUpload', () => ({ FileUpload: () => null }));
 vi.mock('../components/SourcesPopoverFooter', () => ({ default: () => null }));
@@ -886,7 +876,7 @@ describe('NewAgent form', () => {
     }
   });
 
-  it('offers Preview from the title-row menu until the agent is published', async () => {
+  it('offers Preview from the toolbar menu until the agent is published', async () => {
     await render();
     const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
     expect(
@@ -898,9 +888,9 @@ describe('NewAgent form', () => {
       'button[aria-label="agents.form.buttons.moreActions"]',
     )!;
     expect(menu.getAttribute('data-size')).toBe('icon');
-    // Beside the page title, not in the toolbar row.
-    expect(menu.closest('[data-slot="page-toolbar"]')).toBeNull();
-    expect(menu.parentElement!.querySelector('h1')).not.toBeNull();
+    // Last in the toolbar row, after the page's buttons.
+    expect(menu.closest('[data-slot="page-toolbar"]')).toBe(toolbar);
+    expect(menu.parentElement!.lastElementChild).toBe(menu);
     await act(async () => {
       menu.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
@@ -1189,30 +1179,31 @@ describe('NewAgent gating by role', () => {
   const lastGuardrailsDisabled = () =>
     mocks.guardrailsProps.mock.calls.at(-1)?.[0].disabled;
 
-  it('gives the owner Share, Access details and the danger zone', async () => {
+  it('gives the owner Access details, Share and Delete', async () => {
     await renderEdit('owner', OWNER);
-    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeDefined();
     expect(await menuLabels()).toEqual([
       'agents.form.buttons.accessDetails',
       'agents.shareWithTeam',
+      'agents.form.buttons.delete',
     ]);
   });
 
-  it('draws the danger zone as the one tinted card with a field pill', async () => {
+  // Delete is the menu's last item, set apart by a rule, as on a source's
+  // and a workflow's ⋯; the form has no danger zone.
+  it('puts Delete last in the menu, after a rule', async () => {
     await renderEdit('owner', OWNER);
-    const del = buttonByText('agents.form.dangerZone.deleteButton')!;
-    expect(del.dataset.variant).toBe('destructive-outline');
-    expect(del.dataset.size).toBe('field');
-    expect(del.dataset.shape).toBe('pill');
-    const card = del.closest<HTMLElement>('[data-slot="card"]')!;
-    expect(card.dataset.tone).toBe('destructive');
-    expect(card.dataset.padding).toBe('lg');
-    expect(card.className).toContain('items-center');
+    await menuLabels();
+    const items = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    );
+    const del = items.at(-1)!;
+    expect(del.textContent).toBe('agents.form.buttons.delete');
+    expect(del.dataset.variant).toBe('destructive');
+    expect(del.previousElementSibling?.getAttribute('role')).toBe('separator');
   });
 
   it('hides Share and Delete from an editor but keeps Access details', async () => {
     await renderEdit('editor', EDITOR);
-    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeUndefined();
     expect(await menuLabels()).toEqual(['agents.form.buttons.accessDetails']);
   });
 
@@ -1313,7 +1304,12 @@ describe('NewAgent gating by role', () => {
       'editor',
       EDITOR.filter((a) => a !== 'manage_access_details'),
     );
-    expect(await menuLabels()).toEqual([]);
+    // With nothing to offer, the ⋯ isn't drawn.
+    expect(
+      container.querySelector(
+        'button[aria-label="agents.form.buttons.moreActions"]',
+      ),
+    ).toBeNull();
   });
 
   it('keeps a failed delete in the dialog with the server message', async () => {
@@ -1321,8 +1317,11 @@ describe('NewAgent gating by role', () => {
       jsonResponse({ message: 'Only the owner can delete' }, false),
     );
     await renderEdit('owner', OWNER);
+    await menuLabels();
     await act(async () =>
-      buttonByText('agents.form.dangerZone.deleteButton')!.click(),
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((item) => item.textContent === 'agents.form.buttons.delete')!
+        .click(),
     );
     await act(async () =>
       container
