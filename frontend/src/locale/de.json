@@ -1904,6 +1904,7 @@
         "mcp_context7": "Aktuelle Dokumentation und Codebeispiele für Bibliotheken nachschlagen.",
         "mcp_alphavantage": "Aktienkurse, Fundamentaldaten, Devisen, Krypto, Wirtschaftsindikatoren und Marktnachrichten abrufen.",
         "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",
+        "mcp_deedpage": "HTML-Seiten oder Dateiordner als öffentliche Websites veröffentlichen.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",

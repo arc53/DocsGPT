@@ -218,3 +218,14 @@
   auth_kind: mcp_oauth
   capabilities: [read]
   docs_url: https://context7.com/docs/resources/all-clients
+
+# Keyless server. Its publish tools put files on a public URL.
+- key: mcp:deedpage
+  name: deed.page
+  description: Publish HTML pages or folders of files as public websites.
+  icon: deedpage
+  category: dev
+  mcp_url: https://deed.page/mcp
+  auth_kind: mcp
+  capabilities: [read, write]
+  docs_url: https://deed.page/docs

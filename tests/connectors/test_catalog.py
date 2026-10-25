@@ -138,6 +138,19 @@ class TestPresets:
         assert definition.docs_url == "https://docs.coingecko.com/docs/mcp-server"
         assert definition.configured
 
+    def test_deedpage_preset_connects_without_oauth(self):
+        definition = catalog.get_definition("mcp:deedpage")
+
+        assert definition.name == "deed.page"
+        assert definition.publisher == "preset"
+        assert definition.icon == "deedpage"
+        assert definition.category == "dev"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://deed.page/mcp"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://deed.page/docs"
+        assert definition.configured
+
     def test_trello_preset(self):
         definition = catalog.get_definition("mcp:trello")
 

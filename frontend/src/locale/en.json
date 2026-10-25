@@ -1904,6 +1904,7 @@
         "mcp_context7": "Look up up-to-date documentation and code examples for libraries.",
         "mcp_alphavantage": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
         "mcp_neon": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
+        "mcp_deedpage": "Publish HTML pages or folders of files as public websites.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",

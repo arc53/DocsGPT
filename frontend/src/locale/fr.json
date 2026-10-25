@@ -1971,6 +1971,7 @@
         "mcp_airtable": "Recherchez, lisez et modifiez des enregistrements dans les bases Airtable.",
         "mcp_alphavantage": "Consultez cours boursiers, données fondamentales, devises, cryptos, indicateurs économiques et actualités des marchés.",
         "mcp_neon": "Explorez les projets, branches et schémas Neon Postgres, et exécutez du SQL.",
+        "mcp_deedpage": "Publiez des pages HTML ou des dossiers de fichiers sous forme de sites web publics.",
         "github": "Synchronisez des dépôts dans Connaissances et laissez les agents lire le code, les tickets et les pull requests."
       },
       "empty": "Aucune connexion pour l’instant. Connectez un service pour synchroniser son contenu ou fournir de nouveaux outils aux agents.",
