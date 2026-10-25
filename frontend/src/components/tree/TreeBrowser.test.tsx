@@ -1,5 +1,8 @@
-import { act, useState } from 'react';
+import { act, StrictMode, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+
+import type { MenuOption } from '../ui/dropdown-menu';
+import type { RowMenuContext, TreeBrowserController } from './types';
 
 const { state } = vi.hoisted(() => ({
   state: {
@@ -58,6 +61,12 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const SOURCES = 'settings.sources.label';
 
+/** A ref for the tree's controller, set once it mounts. */
+const newControllerRef =
+  (): React.MutableRefObject<TreeBrowserController | null> => ({
+    current: null,
+  });
+
 const NESTED = {
   legal: {
     '2024': { 'msa.pdf': { type: 'pdf', size_bytes: 10, token_count: 700 } },
@@ -106,6 +115,40 @@ describe('TreeBrowser', () => {
     Array.from(container.querySelectorAll('tbody tr')).map((tr) =>
       tr.querySelector('td')?.textContent?.trim(),
     );
+
+  it('shows a refreshed structure under StrictMode', async () => {
+    // StrictMode mounts, unmounts and mounts again; a mounted flag that only
+    // ever turns false dropped every refresh after a delete or an add.
+    const controllerRef = newControllerRef();
+    state.structure = NESTED;
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <TreeBrowser
+            docId="doc"
+            sourceName="Contracts"
+            onBackToDocuments={onBack}
+            columnOrder="size-first"
+            topRightAction={null}
+            controllerRef={controllerRef}
+          />
+        </StrictMode>,
+      );
+    });
+    expect(rows()).toEqual(['legal', 'readme.md']);
+
+    state.structure = {
+      legal: NESTED.legal,
+      'notes.md': { type: 'md', size_bytes: 5, token_count: 10 },
+    };
+    let refreshed = false;
+    await act(async () => {
+      refreshed = (await controllerRef.current?.refreshDirectory()) ?? false;
+    });
+
+    expect(refreshed).toBe(true);
+    expect(rows()).toEqual(['legal', 'notes.md']);
+  });
 
   const openRow = async (name: string) => {
     const row = Array.from(container.querySelectorAll('tr')).find(
@@ -324,25 +367,261 @@ describe('TreeBrowser', () => {
     expect(crumbs()).toEqual([SOURCES, 'Contracts', 'a.pdf']);
   });
 
-  it("a one-file source keeps the row menu's Delete in the header", async () => {
+  // The title row holds source-level actions only: a one-file source's
+  // file actions are not moved into it.
+  it("a one-file source keeps its file's menu out of the title row", async () => {
     const getRowMenuOptions = vi.fn(
-      ({
+      ({ defaultViewOption, name }: RowMenuContext): MenuOption[] => [
         defaultViewOption,
-        name,
-      }: {
-        defaultViewOption: unknown;
-        name: string;
-      }) => [defaultViewOption, { label: `delete ${name}`, onClick: vi.fn() }],
+        { label: `delete ${name}`, onClick: vi.fn() },
+      ],
     );
-    await render({ docs: { 'a.pdf': { type: 'pdf' } } }, {
-      getRowMenuOptions,
-    } as Partial<React.ComponentProps<typeof TreeBrowser>>);
-    expect(getRowMenuOptions).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'docs/a.pdf', isFile: true }),
+    await render(
+      { docs: { 'a.pdf': { type: 'pdf' } } },
+      {
+        getRowMenuOptions,
+      },
     );
+    // The file's own menu is in its bar, not the title row.
+    const menus = Array.from(
+      container.querySelectorAll(
+        'button[aria-label="settings.sources.menuAlt"]',
+      ),
+    );
+    expect(menus).toHaveLength(1);
+    expect(menus[0].closest('[data-testid="item-bar"]')).not.toBeNull();
+  });
+
+  const itemBar = () =>
+    container.querySelector<HTMLElement>('[data-testid="item-bar"]');
+  const openItemMenu = async () => {
+    const trigger = itemBar()!.querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.sources.menuAlt"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((el) => el.textContent);
+  };
+  const rowMenu = vi.fn(
+    ({ defaultViewOption, name }: RowMenuContext): MenuOption[] => [
+      defaultViewOption,
+      { label: `open ${name}`, onClick: vi.fn() },
+      {
+        label: `delete ${name}`,
+        onClick: vi.fn(),
+        variant: 'destructive' as const,
+      },
+    ],
+  );
+
+  it('an open file gets a bar above its chunks: name, size, counts, its menu less View', async () => {
+    state.chunks = [{ doc_id: 'c1', text: 'a', metadata: {} }];
+    await render(NESTED, {
+      getRowMenuOptions: rowMenu,
+    });
+    await openRow('readme.md');
+    const bar = itemBar()!;
+    expect(bar).not.toBeNull();
+    expect(bar.textContent).toContain('readme.md');
+    expect(bar.textContent).toContain('5 Bytes');
+    expect(bar.textContent).toContain('settings.sources.chunkCount');
+    expect(bar.textContent).toContain('settings.sources.item.tokens');
+    // The bar sits above the chunk list.
+    const search = Array.from(container.querySelectorAll('input')).pop()!;
     expect(
-      container.querySelector('button[aria-label="settings.sources.menuAlt"]'),
-    ).not.toBeNull();
+      bar.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(await openItemMenu()).toEqual([
+      'open readme.md',
+      'delete readme.md',
+    ]);
+    state.chunks = [];
+  });
+
+  it('a file opened from the navigator gets the same bar', async () => {
+    await render(NESTED, {
+      getRowMenuOptions: rowMenu,
+    });
+    await act(async () => navItem('legal')!.click());
+    await act(async () => navItem('2024')!.click());
+    await act(async () => navItem('msa.pdf')!.click());
+    expect(itemBar()?.textContent).toContain('msa.pdf');
+    // The row menu gets the name inside its folder, as the table row does.
+    expect(rowMenu).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name: 'msa.pdf', isFile: true }),
+    );
+  });
+
+  it('the last item has no Delete; with nothing else, no menu at all', async () => {
+    const deleteOnly = vi.fn(
+      ({ defaultViewOption }: RowMenuContext): MenuOption[] => [
+        defaultViewOption,
+        { label: 'delete', onClick: vi.fn(), variant: 'destructive' as const },
+      ],
+    );
+    await render(
+      { 'a.pdf': { type: 'pdf', size_bytes: 2048 } },
+      {
+        getRowMenuOptions: deleteOnly,
+      },
+    );
+    expect(itemBar()?.textContent).toContain('a.pdf');
+    expect(
+      itemBar()!.querySelector('button[aria-label="settings.sources.menuAlt"]'),
+    ).toBeNull();
+
+    await render(
+      { 'a.pdf': { type: 'pdf' } },
+      {
+        getRowMenuOptions: rowMenu,
+      },
+    );
+    expect(await openItemMenu()).toEqual(['open a.pdf']);
+  });
+
+  it.each([
+    ['https://docs.x.io/Deploying/Air', 'https://docs.x.io/Deploying/Air'],
+    // Only a web address is a link.
+    ['javascript:alert(1)', null],
+  ])(
+    'a page bar names the page, says when it was fetched and links %s as %s',
+    async (url, href) => {
+      await render(
+        {
+          'air.md': {
+            type: 'md',
+            token_count: 40,
+            url,
+            display_name: 'Air-Gapped Deployment',
+            fetched_at: new Date().toISOString(),
+          },
+        },
+        { variant: 'pages' },
+      );
+      const bar = itemBar()!;
+      expect(bar.textContent).toContain('Air-Gapped Deployment');
+      expect(bar.textContent).toContain('settings.sources.website.fetchedAt');
+      const link = bar.querySelector('a');
+      expect(link?.getAttribute('href') ?? null).toBe(href);
+      if (href) expect(link!.textContent).toContain('docs.x.io/Deploying/Air');
+    },
+  );
+
+  it("the byline stays the source's while a file is open", async () => {
+    const renderByline = vi.fn(() => 'source byline');
+    await render(NESTED, {
+      renderByline,
+    });
+    await openRow('readme.md');
+    expect(container.textContent).toContain('source byline');
+    for (const [context] of renderByline.mock.calls as unknown as [
+      Record<string, unknown>,
+    ][])
+      expect(context).not.toHaveProperty('openFile');
+  });
+
+  it('puts the notice under the bar, above the chunks', async () => {
+    await render(
+      { 'a.pdf': { type: 'pdf' } },
+      {
+        chunksNotice: <p data-testid="notice">hand edits</p>,
+      },
+    );
+    const notice = container.querySelector('[data-testid="notice"]')!;
+    expect(notice.previousElementSibling).toBe(itemBar());
+  });
+
+  it('closes a file that a refresh no longer lists', async () => {
+    const controllerRef = newControllerRef();
+    await render(NESTED, { controllerRef });
+    await openRow('readme.md');
+    expect(itemBar()).not.toBeNull();
+    state.structure = { legal: NESTED.legal, 'other.md': { type: 'md' } };
+    await act(async () => {
+      await controllerRef.current?.refreshDirectory();
+    });
+    expect(itemBar()).toBeNull();
+    expect(container.querySelector('table')).not.toBeNull();
+  });
+
+  it('a refresh that drops the open folder steps up to the deepest one left', async () => {
+    const controllerRef = newControllerRef();
+    await render(
+      {
+        ...NESTED,
+        'other.md': { type: 'md', size_bytes: 1, token_count: 1 },
+      },
+      { controllerRef },
+    );
+    await openRow('legal');
+    await openRow('2024');
+    expect(crumbs()).toEqual([SOURCES, 'Contracts', 'legal', '2024']);
+
+    // The folder's last page was removed: the server lists neither folder.
+    state.structure = {
+      'readme.md': NESTED['readme.md'],
+      'other.md': { type: 'md', size_bytes: 1, token_count: 1 },
+    };
+    await act(async () => {
+      await controllerRef.current?.refreshDirectory();
+    });
+    expect(crumbs()).toEqual([SOURCES, 'Contracts']);
+    expect(rows()).toContain('readme.md');
+
+    // Only the inner folder went: its parent stays open.
+    state.structure = {
+      ...NESTED,
+      'other.md': { type: 'md', size_bytes: 1, token_count: 1 },
+    };
+    await act(async () => {
+      await controllerRef.current?.refreshDirectory();
+    });
+    await openRow('legal');
+    await openRow('2024');
+    state.structure = {
+      legal: { 'kept.md': { type: 'md', size_bytes: 1, token_count: 1 } },
+      'readme.md': NESTED['readme.md'],
+    };
+    await act(async () => {
+      await controllerRef.current?.refreshDirectory();
+    });
+    expect(crumbs()).toEqual([SOURCES, 'Contracts', 'legal']);
+  });
+
+  it('reloadFile lists the open file again and closes its open chunk', async () => {
+    const controllerRef = newControllerRef();
+    state.chunks = [{ doc_id: 'c1', text: '# Rates', metadata: {} }];
+    await render(NESTED, { controllerRef });
+    await openRow('readme.md');
+    await act(async () => tile()!.click());
+    const listed = () =>
+      vi
+        .mocked(userService.getDocumentChunks)
+        .mock.calls.filter((call) => call[4] === 'readme.md').length;
+    const before = listed();
+
+    // A change that didn't touch the open file: nothing to reload.
+    await act(async () => controllerRef.current?.reloadFile(['legal/x.md']));
+    await act(async () => controllerRef.current?.reloadFile([]));
+    expect(listed()).toBe(before);
+
+    state.chunks = [{ doc_id: 'c2', text: '# New rates', metadata: {} }];
+    await act(async () =>
+      controllerRef.current?.reloadFile(['legal/x.md', 'readme.md']),
+    );
+    expect(listed()).toBe(before + 1);
+    expect(crumbs()).toEqual([SOURCES, 'Contracts', 'readme.md']);
+    expect(tile()?.textContent).toContain('New rates');
+
+    // A change that doesn't say what it touched may have changed any file.
+    await act(async () => controllerRef.current?.reloadFile());
+    expect(listed()).toBe(before + 2);
   });
 
   it('canEdit false reaches the chunk list: no Add chunk', async () => {
@@ -471,14 +750,12 @@ describe('TreeBrowser', () => {
   });
 
   it('an initialPath not in the tree yet opens once a reload has it', async () => {
-    const controllerRef: React.ComponentProps<
-      typeof TreeBrowser
-    >['controllerRef'] = { current: null };
+    const controllerRef = newControllerRef();
     await render(NESTED, { initialPath: 'new.pdf', controllerRef });
     expect(chunkListOpen()).toBe(false);
     state.structure = { ...NESTED, 'new.pdf': { type: 'pdf' } };
     await act(async () => {
-      await controllerRef.current!.refreshDirectory();
+      await controllerRef.current?.refreshDirectory();
     });
     expect(crumbs()).toEqual([SOURCES, 'Contracts', 'new.pdf']);
   });

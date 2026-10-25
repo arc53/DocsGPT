@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict
 
-from docsgpt.core.model_utils import get_model_capabilities, get_token_limit
+from docsgpt.core.model_utils import cap_context_window, get_model_capabilities, get_token_limit
 from docsgpt.core.settings import settings
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 
@@ -40,6 +40,7 @@ class CompressionThresholdChecker:
         model_id: str,
         current_query_tokens: int = 500,
         user_id: str | None = None,
+        context_window_limit: int | None = None,
     ) -> bool:
         """
         Determine if compression is needed.
@@ -50,6 +51,8 @@ class CompressionThresholdChecker:
             current_query_tokens: Estimated tokens for current query
             user_id: Owner — needed so per-user BYOM custom-model UUIDs
                 resolve when looking up the context window.
+            context_window_limit: The agent's context limit; the threshold
+                is a share of it when it is below the model's window.
 
         Returns:
             True if tokens >= threshold% of context window
@@ -65,8 +68,10 @@ class CompressionThresholdChecker:
             )
             total_tokens += current_query_tokens
 
-            # Get context window limit for model
-            context_limit = get_token_limit(model_id, user_id=user_id)
+            # Get context window limit for model, lowered to the agent's limit
+            context_limit = cap_context_window(
+                get_token_limit(model_id, user_id=user_id), context_window_limit
+            )
 
             # Calculate threshold
             threshold = int(context_limit * self.threshold_percentage)

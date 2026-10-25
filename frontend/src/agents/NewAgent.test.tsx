@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     submitResult: undefined as void | Promise<unknown>,
     dispatch: vi.fn(),
     getAgent: vi.fn(() => jsonResponse({})),
+    getAgentDefaults: vi.fn(() => jsonResponse({ success: true })),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
     tools: null as unknown[] | null,
     connections: [] as unknown[],
@@ -70,6 +71,7 @@ vi.mock('../api/services/userService', () => ({
       }),
     getAgentFolders: () => jsonResponse({ folders: [] }),
     getAgent: mocks.getAgent,
+    getAgentDefaults: mocks.getAgentDefaults,
     createAgent: mocks.createAgent,
     updateAgent: mocks.updateAgent,
     deleteAgent: mocks.deleteAgent,
@@ -208,18 +210,8 @@ vi.mock('../navigation/SectionPills', () => ({
   default: () => <div data-testid="section-pills" />,
 }));
 vi.mock('../navigation/SectionPageHeader', () => ({
-  CurrentSectionHeader: ({
-    title,
-    titleAction,
-  }: {
-    title?: React.ReactNode;
-    titleAction?: React.ReactNode;
-  }) => (
-    <div>
-      {title ? <h1>{title}</h1> : null}
-      {titleAction}
-    </div>
-  ),
+  CurrentSectionHeader: ({ title }: { title?: React.ReactNode }) =>
+    title ? <h1>{title}</h1> : null,
 }));
 vi.mock('../components/FileUpload', () => ({ FileUpload: () => null }));
 vi.mock('../components/SourcesPopoverFooter', () => ({ default: () => null }));
@@ -278,6 +270,33 @@ describe('NewAgent form', () => {
     Array.from(container.querySelectorAll('button')).find((b) =>
       b.textContent?.includes(text),
     )!;
+
+  it('starts a new agent from the default guardrails for new agents', async () => {
+    const defaults = {
+      enabled: true,
+      mode: 'monitor_only',
+      fail_open: true,
+      timeout_ms: 2000,
+      block_message: 'No',
+      controls: [
+        {
+          check: 'injection_model',
+          stage: 'input',
+          action: 'flag',
+          enabled: true,
+          settings: { threshold: 0.9, flag_threshold: 0.5 },
+        },
+      ],
+    };
+    mocks.getAgentDefaults.mockImplementationOnce(() =>
+      jsonResponse({ success: true, guardrails: defaults }),
+    );
+    await render();
+    expect(mocks.getAgentDefaults).toHaveBeenCalled();
+    expect(mocks.guardrailsProps.mock.calls.at(-1)?.[0].value).toEqual(
+      defaults,
+    );
+  });
 
   // Decision 63 (3): every field, picker and button in the form is 42px.
   it('renders the name field as a default-size square Input', async () => {
@@ -514,7 +533,11 @@ describe('NewAgent form', () => {
     ).toBe('agents.form.sponsors.addedByOther');
     expect(container.textContent).not.toContain('agents.form.sponsors.attach');
     expect(container.textContent).not.toContain('publicLinkNote');
-    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-slot="alert"]:not([data-testid="origins-read-only"])',
+      ),
+    ).toBeNull();
   });
 
   // The prompt Select has no description slot: the mark is a hint under it.
@@ -694,6 +717,62 @@ describe('NewAgent form', () => {
     expect(mocks.getAgent).toHaveBeenCalledTimes(2);
   });
 
+  const contextLimitInput = async () => {
+    const trigger = buttonByText('agents.form.sections.advanced');
+    if (trigger.getAttribute('aria-expanded') !== 'true') {
+      await act(async () => trigger.click());
+    }
+    return container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.contextLimitDefault"]',
+    )!;
+  };
+
+  it("saves the context limit in the agent's config", async () => {
+    await renderEdit({
+      allowed_actions: ['edit', 'view', 'edit_policy'],
+      config: { api_write_allowlist: ['t:a'] },
+    });
+    const input = await contextLimitInput();
+    expect(input.disabled).toBe(false);
+    await act(async () => setNativeValue(input, '32000'));
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    // The rest of the config rides along: a config save replaces it whole.
+    expect(JSON.parse(sent.get('config') as string)).toMatchObject({
+      api_write_allowlist: ['t:a'],
+      context_window_limit: 32000,
+    });
+  });
+
+  it('blocks saving a context limit out of range, and clears it when emptied', async () => {
+    await renderEdit({
+      allowed_actions: ['edit', 'view', 'edit_policy'],
+      config: { context_window_limit: 32000 },
+    });
+    const input = await contextLimitInput();
+    expect(input.value).toBe('32000');
+    const save = buttonByText('agents.form.buttons.save');
+    await act(async () => setNativeValue(input, '100'));
+    expect(save.disabled).toBe(true);
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(container.textContent).toContain(
+      'agents.form.advanced.contextLimitRange',
+    );
+    await act(async () => setNativeValue(input, ''));
+    expect(save.disabled).toBe(false);
+    await act(async () => save.click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(
+      JSON.parse(sent.get('config') as string).context_window_limit,
+    ).toBeNull();
+  });
+
+  it('shows the context limit read-only without edit_policy', async () => {
+    await renderEdit({ config: { context_window_limit: 32000 } });
+    const input = await contextLimitInput();
+    expect(input.disabled).toBe(true);
+  });
+
   it('removes a stopped item from the agent', async () => {
     await renderEdit(withStoppedTool({ reason: 'deleted', sponsor: null }));
     expect(container.textContent).toContain(
@@ -857,7 +936,7 @@ describe('NewAgent form', () => {
     }
   });
 
-  it('offers Preview from the title-row menu until the agent is published', async () => {
+  it('offers Preview from the toolbar menu until the agent is published', async () => {
     await render();
     const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
     expect(
@@ -869,9 +948,9 @@ describe('NewAgent form', () => {
       'button[aria-label="agents.form.buttons.moreActions"]',
     )!;
     expect(menu.getAttribute('data-size')).toBe('icon');
-    // Beside the page title, not in the toolbar row.
-    expect(menu.closest('[data-slot="page-toolbar"]')).toBeNull();
-    expect(menu.parentElement!.querySelector('h1')).not.toBeNull();
+    // Last in the toolbar row, after the page's buttons.
+    expect(menu.closest('[data-slot="page-toolbar"]')).toBe(toolbar);
+    expect(menu.parentElement!.lastElementChild).toBe(menu);
     await act(async () => {
       menu.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
@@ -1160,30 +1239,31 @@ describe('NewAgent gating by role', () => {
   const lastGuardrailsDisabled = () =>
     mocks.guardrailsProps.mock.calls.at(-1)?.[0].disabled;
 
-  it('gives the owner Share, Access details and the danger zone', async () => {
+  it('gives the owner Access details, Share and Delete', async () => {
     await renderEdit('owner', OWNER);
-    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeDefined();
     expect(await menuLabels()).toEqual([
       'agents.form.buttons.accessDetails',
       'agents.shareWithTeam',
+      'agents.form.buttons.delete',
     ]);
   });
 
-  it('draws the danger zone as the one tinted card with a field pill', async () => {
+  // Delete is the menu's last item, set apart by a rule, as on a source's
+  // and a workflow's ⋯; the form has no danger zone.
+  it('puts Delete last in the menu, after a rule', async () => {
     await renderEdit('owner', OWNER);
-    const del = buttonByText('agents.form.dangerZone.deleteButton')!;
-    expect(del.dataset.variant).toBe('destructive-outline');
-    expect(del.dataset.size).toBe('field');
-    expect(del.dataset.shape).toBe('pill');
-    const card = del.closest<HTMLElement>('[data-slot="card"]')!;
-    expect(card.dataset.tone).toBe('destructive');
-    expect(card.dataset.padding).toBe('lg');
-    expect(card.className).toContain('items-center');
+    await menuLabels();
+    const items = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    );
+    const del = items.at(-1)!;
+    expect(del.textContent).toBe('agents.form.buttons.delete');
+    expect(del.dataset.variant).toBe('destructive');
+    expect(del.previousElementSibling?.getAttribute('role')).toBe('separator');
   });
 
   it('hides Share and Delete from an editor but keeps Access details', async () => {
     await renderEdit('editor', EDITOR);
-    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeUndefined();
     expect(await menuLabels()).toEqual(['agents.form.buttons.accessDetails']);
   });
 
@@ -1284,7 +1364,12 @@ describe('NewAgent gating by role', () => {
       'editor',
       EDITOR.filter((a) => a !== 'manage_access_details'),
     );
-    expect(await menuLabels()).toEqual([]);
+    // With nothing to offer, the ⋯ isn't drawn.
+    expect(
+      container.querySelector(
+        'button[aria-label="agents.form.buttons.moreActions"]',
+      ),
+    ).toBeNull();
   });
 
   it('keeps a failed delete in the dialog with the server message', async () => {
@@ -1292,8 +1377,11 @@ describe('NewAgent gating by role', () => {
       jsonResponse({ message: 'Only the owner can delete' }, false),
     );
     await renderEdit('owner', OWNER);
+    await menuLabels();
     await act(async () =>
-      buttonByText('agents.form.dangerZone.deleteButton')!.click(),
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((item) => item.textContent === 'agents.form.buttons.delete')!
+        .click(),
     );
     await act(async () =>
       container

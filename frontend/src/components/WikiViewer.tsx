@@ -41,11 +41,15 @@ interface WikiViewerProps {
   onBackToDocuments: () => void;
   /** Extra header control, right-aligned in the title row. */
   headerAction?: React.ReactNode;
+  /** The source's ⋯, last in the title row. */
+  headerMenu?: React.ReactNode;
   /** The page to open first, when it exists (a citation opened in Knowledge). */
   initialPath?: string;
 }
 
-type EditError = { kind: 'conflict' | 'forbidden' | 'failed' } | null;
+type EditError = {
+  kind: 'conflict' | 'forbidden' | 'unsupported' | 'failed';
+} | null;
 
 /** Bars in the reader body while a page loads. */
 function ReaderBars() {
@@ -65,6 +69,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
   canEdit = false,
   onBackToDocuments,
   headerAction,
+  headerMenu,
   initialPath,
 }) => {
   const { t } = useTranslation();
@@ -229,6 +234,9 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         case 'forbidden':
           setEditError({ kind: 'forbidden' });
           break;
+        case 'unsupported':
+          setEditError({ kind: 'unsupported' });
+          break;
         default:
           setEditError({ kind: 'failed' });
       }
@@ -284,7 +292,9 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         <AlertDescription>
           {editError.kind === 'forbidden'
             ? t('settings.sources.wiki.forbidden')
-            : t('settings.sources.wiki.saveFailed')}
+            : editError.kind === 'unsupported'
+              ? t('settings.sources.wiki.unsupported')
+              : t('settings.sources.wiki.saveFailed')}
         </AlertDescription>
       </Alert>
     );
@@ -307,7 +317,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
           </Button>
         ) : null}
         <ActionMenu
-          size="toolbar"
+          size="panel"
           triggerLabel={t('settings.sources.menuAlt')}
           options={[
             {
@@ -456,6 +466,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         }
         byline={byline}
         actions={headerAction}
+        menu={headerMenu}
       />
       {renderBody()}
       {canEdit && selectedPath ? (

@@ -58,6 +58,18 @@ class TestDefinitions:
         assert "required_settings" not in payload
         assert payload["capabilities"] == ["sync"]
 
+    def test_drive_offers_its_picker_client_id_with_per_file_access(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "client-123.apps.googleusercontent.com")
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_ACCESS", "file")
+        assert catalog.get_definition("google_drive").to_dict()["picker_client_id"] == (
+            "client-123.apps.googleusercontent.com"
+        )
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_ACCESS", "readonly")
+        assert catalog.get_definition("google_drive").to_dict()["picker_client_id"] is None
+        assert catalog.get_definition("share_point").to_dict()["picker_client_id"] is None
+
 
 class TestAvailability:
     def test_missing_settings_listed(self, monkeypatch):
@@ -273,6 +285,16 @@ def test_calcom_preset_uses_remote_oauth_catalog_contract():
     assert calcom.docs_url == "https://cal.com/docs/mcp-server"
 
 
+def test_airtable_preset_uses_remote_oauth_catalog_contract():
+    airtable = catalog.get_definition("mcp:airtable")
+
+    assert airtable.name == "Airtable"
+    assert airtable.icon == "airtable"
+    assert airtable.category == "database"
+    assert airtable.mcp_url == "https://mcp.airtable.com/mcp"
+    assert airtable.auth_kind == "mcp_oauth"
+    assert airtable.capabilities == ("read", "write")
+    assert airtable.docs_url == "https://airtable.com/developers/agents/mcp/getting-started"
 def test_alphavantage_preset_uses_remote_oauth_catalog_contract():
     alphavantage = catalog.get_definition("mcp:alphavantage")
 
@@ -312,3 +334,25 @@ def test_preset_default_actions_load_from_yaml(tmp_path, monkeypatch):
     monkeypatch.setattr(catalog, "_PRESETS_FILE", presets)
 
     assert catalog.get_definition("mcp:example").default_actions == ("search", "fetch")
+def test_neon_preset_uses_remote_oauth_catalog_contract():
+    neon = catalog.get_definition("mcp:neon")
+
+    assert neon.name == "Neon"
+    assert neon.icon == "neon"
+    assert neon.category == "database"
+    assert neon.mcp_url == "https://mcp.neon.tech/mcp"
+    assert neon.auth_kind == "mcp_oauth"
+    assert neon.capabilities == ("read", "write")
+    assert neon.docs_url == "https://neon.com/docs/ai/neon-mcp-server"
+
+
+def test_context7_preset_uses_remote_oauth_catalog_contract() -> None:
+    context7 = catalog.get_definition("mcp:context7")
+
+    assert context7.name == "Context7"
+    assert context7.icon == "context7"
+    assert context7.category == "dev"
+    assert context7.mcp_url == "https://mcp.context7.com/mcp/oauth"
+    assert context7.auth_kind == "mcp_oauth"
+    assert context7.capabilities == ("read",)
+    assert context7.docs_url == "https://context7.com/docs/resources/all-clients"

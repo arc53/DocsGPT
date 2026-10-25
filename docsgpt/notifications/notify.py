@@ -53,7 +53,8 @@ def notify_user(
         conversation_id: The conversation it is about, if any.
         kind: What happened: a wake source (``job``, ``lost``, ``monitor``,
             ``monitor_paused``, ``monitor_expired``, ``trigger``, ``approval``),
-            ``schedule`` for a scheduled run's answer, or any other short word;
+            ``schedule`` for a scheduled run's answer, ``docs_gaps`` for the
+            weekly docs-gap digest, or any other short word;
             the app shows a generic label for kinds it does not know.
         title: One short line.
         body: A short preview.

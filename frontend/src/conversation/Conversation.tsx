@@ -45,11 +45,21 @@ import {
   selectAttachments,
   selectSendableAttachments,
 } from '../upload/uploadSlice';
+import type { ArtifactCardItem, OpenArtifactRequest } from './artifactCards';
+import ArtifactsPanel from './ArtifactsPanel';
 import { cn } from '@/lib/utils';
 
 /** What the chat's one docked side panel shows (DESIGN.md "Side panels"). */
 type ChatCompanion =
-  | { kind: 'artifact'; id: string; toolName: string }
+  | { kind: 'artifact'; id: string; toolName: string; version?: number }
+  // An answer's artifacts; `key` names the answer, `open` is the one
+  // showing, null shows the list.
+  | {
+      kind: 'artifacts';
+      key: string;
+      items: ArtifactCardItem[];
+      open: OpenArtifactRequest | null;
+    }
   // `index` is the source whose reader shows; null shows the list.
   | { kind: 'sources'; sources: AnswerSource[]; index: number | null };
 
@@ -411,20 +421,43 @@ export default function Conversation() {
     });
   }, [queries, conversationMountKey]);
 
-  const handleOpenArtifact = useCallback(
-    (artifact: { id: string; toolName: string }) => {
-      lastAutoOpenedArtifactId.current = artifact.id;
-      setCompanion({ kind: 'artifact', ...artifact });
-    },
-    [],
-  );
+  const handleOpenArtifact = useCallback((artifact: OpenArtifactRequest) => {
+    lastAutoOpenedArtifactId.current = artifact.id;
+    setCompanion({ kind: 'artifact', ...artifact });
+  }, []);
 
+  // The artifact showing, whether opened from its card or from a list.
+  const shownArtifact =
+    companion?.kind === 'artifact'
+      ? companion
+      : companion?.kind === 'artifacts'
+        ? companion.open
+        : null;
+  const openArtifactId = shownArtifact?.id ?? null;
+  const openArtifactVersion = shownArtifact?.version;
+  const openArtifactListKey =
+    companion?.kind === 'artifacts' ? companion.key : null;
   const companionContext = useMemo(
     () => ({
       openSources: (sources: AnswerSource[], index?: number) =>
         setCompanion({ kind: 'sources', sources, index: index ?? null }),
+      openArtifact: openArtifactId
+        ? { id: openArtifactId, version: openArtifactVersion }
+        : null,
+      openArtifactList: (items: ArtifactCardItem[], key: string) =>
+        setCompanion({ kind: 'artifacts', key, items, open: null }),
+      openArtifactListKey,
+      // The open list follows its answer as the answer's files arrive.
+      syncArtifactList: (key: string, items: ArtifactCardItem[]) =>
+        setCompanion((current) =>
+          current?.kind === 'artifacts' &&
+          current.key === key &&
+          current.items !== items
+            ? { ...current, items }
+            : current,
+        ),
     }),
-    [],
+    [openArtifactId, openArtifactVersion, openArtifactListKey],
   );
 
   const isCompanionDocked = !isMobile && companion !== null;
@@ -432,8 +465,23 @@ export default function Conversation() {
   const companionPanel =
     shownCompanion?.kind === 'artifact' ? (
       <ArtifactPanel
+        // Another artifact or version is a fresh panel: its fetch and the
+        // version it opens on are per artifact.
+        key={`${shownCompanion.id}:${shownCompanion.version ?? ''}`}
         artifactId={shownCompanion.id}
         toolName={shownCompanion.toolName}
+        version={shownCompanion.version}
+        conversationId={conversationId}
+      />
+    ) : shownCompanion?.kind === 'artifacts' ? (
+      <ArtifactsPanel
+        items={shownCompanion.items}
+        open={shownCompanion.open}
+        onOpenChange={(open) =>
+          setCompanion((current) =>
+            current?.kind === 'artifacts' ? { ...current, open } : current,
+          )
+        }
         conversationId={conversationId}
       />
     ) : shownCompanion?.kind === 'sources' ? (
@@ -541,7 +589,10 @@ export default function Conversation() {
             if (!open) setCompanion(null);
           }}
           expandable={
-            shownCompanion?.kind === 'artifact' ? 'artifact' : undefined
+            shownCompanion?.kind === 'artifact' ||
+            shownCompanion?.kind === 'artifacts'
+              ? 'artifact'
+              : undefined
           }
         >
           {companionPanel}

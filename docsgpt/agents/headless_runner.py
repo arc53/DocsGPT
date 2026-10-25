@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
 from docsgpt.agents.tool_executor import ToolExecutor
-from docsgpt.api.answer.segments import separated
+from docsgpt.api.answer.segments import merge_tool_calls, separated
 from docsgpt.api.answer.services.prompt_renderer import (
     PromptRenderer,
     format_docs_for_prompt,
@@ -30,7 +30,8 @@ from docsgpt.api.answer.services.stream_processor import (
     wiki_tool_config,
 )
 from docsgpt.core.settings import settings
-from docsgpt.guardrails.config import AgentConfig
+from docsgpt.decisions import record as decision_record
+from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
@@ -117,6 +118,8 @@ def run_agent_headless(
     trace_user_id: Optional[str] = None,
     message_id: Optional[str] = None,
     background: Any = None,
+    on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
 
@@ -126,7 +129,8 @@ def run_agent_headless(
     -- and with ``query`` otherwise.
 
     The run is recorded as one execution trace under ``endpoint`` as its
-    source. ``request_id`` links that trace to the caller's own record (the
+    source, and its decision-model entries go to ``metadata["decisions"]``.
+    ``request_id`` links that trace to the caller's own record (the
     scheduler passes its run id, the webhook worker its task id); it is kept
     off the LLM's token-usage rows, whose request ids drive request counts.
     ``trace_user_id`` owns the trace when the run belongs to someone other
@@ -148,6 +152,11 @@ def run_agent_headless(
     a slow call then becomes a background job and ``check_job`` is offered,
     as in a chat turn. Approval-gated tools stay denied either way.
 
+    ``on_event`` sees each event the agent yields, as it yields it, so a
+    continuation can stream the turn to the chat. ``should_stop`` is asked
+    after each event; once it says yes the run ends, keeping what it has, and
+    the outcome's ``stopped`` is True.
+
     Raises:
         QuotaExceededError: If the agent owner's usage quota is exhausted.
     """
@@ -159,7 +168,7 @@ def run_agent_headless(
         conversation_id=conversation_id,
     )
     status = None
-    with tracing.activate(trace):
+    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()):
         try:
             outcome = _run_agent_headless(
                 agent_config,
@@ -176,6 +185,8 @@ def run_agent_headless(
                 message_id=message_id,
                 background=background,
                 request_id=request_id,
+                on_event=on_event,
+                should_stop=should_stop,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -203,6 +214,8 @@ def _run_agent_headless(
     message_id: Optional[str] = None,
     background: Any = None,
     request_id: Optional[str] = None,
+    on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -284,7 +297,11 @@ def _run_agent_headless(
         else settings.LLM_PROVIDER
     )
     system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
-    doc_token_limit = calculate_doc_token_budget(model_id=model_id, user_id=owner)
+    doc_token_limit = calculate_doc_token_budget(
+        model_id=model_id,
+        user_id=owner,
+        context_window_limit=context_window_limit_of(agent_config.get("config")),
+    )
 
     # Sources are used as in a chat turn of this agent type: agentic and
     # research agents search on demand through internal_search, classic
@@ -306,10 +323,11 @@ def _run_agent_headless(
             decoded_token=decoded_token,
         )
         # Routed per source like a chat's pre-fetch, so each source keeps its
-        # own retriever and retrieval settings.
+        # own retriever and retrieval settings (and its turns their rerank arm).
         retriever = build_dispatcher(
             lambda: RetrieverCreator.create_retriever(retriever_kind, **retriever_kwargs),
             sources=prefetch_sources,
+            conversation_id=conversation_id,
             **retriever_kwargs,
         )
         try:
@@ -422,12 +440,21 @@ def _run_agent_headless(
     # Responses continuity (response id, reasoning state, usage) the agent
     # reports for the turn; a continuation stores it like a chat turn does.
     message_metadata: Dict[str, Any] = {}
+    # The decision model's entries for the run, under ``decisions``.
+    decision_record.attach(message_metadata)
     steps_completed = 0
     # Text after a tool call starts a new paragraph, as in a chat turn's stored answer.
     tool_since_text = False
-    for event in agent.gen(query=query):
+    stopped = False
+    events = agent.gen(query=query)
+    for event in events:
         if not isinstance(event, dict):
             continue
+        if on_event is not None:
+            try:
+                on_event(event)
+            except Exception:
+                logger.exception("Headless run for agent %s: its event observer failed", agent_id)
         # ``Agent.gen`` reports a failed stream with an error event rather than
         # by raising. Dropping it here (as this loop used to) makes a broken run
         # indistinguishable from one that simply had nothing to say, and the
@@ -442,19 +469,16 @@ def _run_agent_headless(
                 # retract from, so the stored result is all there is.
                 answer_full = ""
                 thought = ""
-            continue
         # A workflow's work is its nodes: its tool calls stay in the engine's
         # execution log and its node agents own their LLMs, so neither
         # ``tool_calls`` nor the token tally below sees them. Counting
         # completed steps is the only evidence a quiet workflow ran at all.
-        if event.get("type") == "workflow_step":
+        elif event.get("type") == "workflow_step":
             if event.get("status") == "completed":
                 steps_completed += 1
-            continue
-        if event.get("type") == "tool_call":
+        elif event.get("type") == "tool_call":
             tool_since_text = True
-            continue
-        if "answer" in event:
+        elif "answer" in event:
             chunk = separated(answer_full, str(event["answer"]), after_tool=tool_since_text)
             if chunk.strip():
                 tool_since_text = False
@@ -467,6 +491,16 @@ def _run_agent_headless(
             thought += str(event["thought"])
         elif isinstance(event.get("metadata"), dict):
             message_metadata.update(event["metadata"])
+        # After every event, a tool call's included: the next one may start another LLM round.
+        if should_stop is not None and should_stop():
+            stopped = True
+            break
+    if stopped:
+        close = getattr(events, "close", None)
+        if callable(close):
+            close()
+        # The agent reports its calls when its turn ends, which a stopped run never reaches.
+        tool_calls = merge_tool_calls(tool_calls, tool_executor.get_truncated_tool_calls())
 
     denied = list(getattr(tool_executor, "headless_denials", []))
     error: Optional[str] = None
@@ -512,4 +546,5 @@ def _run_agent_headless(
         "steps_completed": steps_completed,
         "model_id": model_id,
         "metadata": message_metadata,
+        "stopped": stopped,
     }

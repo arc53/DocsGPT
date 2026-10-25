@@ -108,10 +108,25 @@ class TestListing:
         actions = {a["name"]: a for a in detail["tools"][0]["actions"]}
         assert actions["search_pages"] == {
             "name": "search_pages", "description": "Search", "access": "read", "permission": "always",
-            "parameters": [],
+            "parameters": [], "injection": None,
         }
         assert actions["create_page"]["access"] == "write"
         assert actions["create_page"]["permission"] == "ask"
+
+    def test_detail_names_each_sources_kind(self, pg_conn):
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        drive = _session(pg_conn)
+        _source(pg_conn, drive, name="Handbook")
+        wiki = _source(pg_conn, drive, name="Policies")
+        pg_conn.execute(
+            text("UPDATE sources SET config = CAST(:c AS jsonb) WHERE id = CAST(:id AS uuid)"),
+            {"c": json.dumps({"kind": "wiki"}), "id": wiki},
+        )
+        row = ConnectorSessionsRepository(pg_conn).get(drive)
+        kinds = {s["name"]: s["kind"] for s in service.connection_detail(pg_conn, row)["sources"]}
+        # A converted wiki doesn't sync, so the drawer offers no Sync now.
+        assert kinds == {"Handbook": "classic", "Policies": "wiki"}
 
 
 class TestCatalogForUser:
@@ -263,7 +278,9 @@ class TestDisconnect:
         )
         source = _source(pg_conn, drive)
         repo = ConnectorSessionsRepository(pg_conn)
-        result = service.disconnect(pg_conn, repo.get(drive))
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            result = service.disconnect(pg_conn, repo.get(drive))
+        revoke.assert_called_once()
         assert result["status"] == "disconnected"
         row = repo.get(drive)
         assert row["token_info"] is None and row["session_token"] is None

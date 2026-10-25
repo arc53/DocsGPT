@@ -95,7 +95,7 @@ export default function NodePanel({
           actions={
             node.type !== 'start' ? (
               <ActionMenu
-                size="toolbar"
+                size="panel"
                 triggerLabel={t('agents.workflow.builder.nodeActions')}
                 options={[
                   {

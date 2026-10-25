@@ -28,6 +28,7 @@ from docsgpt.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from docsgpt.core.settings import settings
+from docsgpt.decisions import record as decision_record
 from docsgpt.llm.handlers.base import (
     ToolCall,
     _bound_tool_response_for_llm,
@@ -35,6 +36,7 @@ from docsgpt.llm.handlers.base import (
 )
 from docsgpt.llm.tool_images import IMAGES_KEY, reads_images, replayed_result, split_content
 from docsgpt.guardrails.config import DEFAULT_BLOCK_MESSAGE as GUARDRAIL_DEFAULT_MESSAGE
+from docsgpt.guardrails.config import context_window_limit_of
 from docsgpt.guardrails.runtime import (
     build_engine as build_guardrail_engine,
     resolve_config as resolve_guardrails_config,
@@ -168,6 +170,46 @@ def _unique_reasoning_items(items: List[Any]) -> List[Any]:
     return unique
 
 
+def _chunk_ref(doc: Dict) -> str:
+    """``chunk:<source_id>:<chunk_key>``, the ref a retrieved document's guardrail verdicts carry."""
+    from docsgpt.retriever.labels import chunk_key
+
+    return f"chunk:{doc.get('source_id') or ''}:{doc.get('chunk_key') or chunk_key(doc.get('text'))}"
+
+
+def _retrieval_hints(docs: List[Dict]) -> Optional[List[Dict]]:
+    """Per document, whether its own source's owner marked the text safe from injection screening."""
+    if not settings.DECISION_INJECTION_ENABLED:
+        return None
+    from docsgpt.guardrails import injection_scoring
+
+    allowed = injection_scoring.allowed_hashes(d.get("source_id") for d in docs)
+    return [
+        {"allowed": injection_scoring.content_hash(d["text"]) in allowed.get(str(d.get("source_id") or ""), ())}
+        for d in docs
+    ]
+
+
+def drop_least_relevant(docs: List[Dict]) -> List[Dict]:
+    """The documents with the one the prompt budget sheds first removed, the rest in their order.
+
+    When every document carries a numeric ``relevance`` (the decision model
+    scored them all), that is the lowest-scored one, the later one on a tie.
+    Otherwise it is the last one: retriever order is best first.
+
+    Args:
+        docs: This turn's retrieved documents, in prompt order.
+
+    Returns:
+        A new list one document shorter (empty for an empty one).
+    """
+    scores = [doc.get("relevance") if isinstance(doc, dict) else None for doc in docs]
+    if docs and all(isinstance(p, (int, float)) and not isinstance(p, bool) for p in scores):
+        victim = min(range(len(docs)), key=lambda i: (scores[i], -i))
+        return docs[:victim] + docs[victim + 1:]
+    return docs[:-1]
+
+
 class BaseAgent(ABC):
     # Inert defaults: an instance built without __init__ still resolves these.
     _guardrail_engine = None
@@ -186,6 +228,7 @@ class BaseAgent(ABC):
     _attachments_tool_config: Optional[Dict] = None
     # A resumed turn's file listing, as the paused turn's plan made it.
     paused_attachment_listing: Optional[List[Dict]] = None
+    withheld_attachments: frozenset = frozenset()
 
     def __init__(
         self,
@@ -220,6 +263,7 @@ class BaseAgent(ABC):
         backup_models: Optional[List[str]] = None,
         model_user_id: Optional[str] = None,
         agent_config: Optional[Dict] = None,
+        context_window_limit: Optional[int] = None,
         request_id: Optional[str] = None,
         is_v1: bool = False,
         attachment_planning: bool = False,
@@ -362,9 +406,20 @@ class BaseAgent(ABC):
         # turn's capabilities and plan are copied into it once known.
         self._attachments_tool_config = None
         self.guardrails_config = resolve_guardrails_config(agent_config)
+        # The agent's cap on the context a request fills (``get_context_budget``).
+        # Callers without the agent's config (workflow nodes, a resumed turn)
+        # pass it on explicitly.
+        self.context_window_limit = (
+            context_window_limit
+            if context_window_limit is not None
+            else context_window_limit_of(agent_config)
+        )
         self._guardrail_engine = None
         self._guardrail_engine_built = False
         self._guardrail_cache: Dict = {}
+        # Attachment ids an attachment control withheld this turn; every plan
+        # of the turn (a fallback's re-plan included) leaves them out.
+        self.withheld_attachments = frozenset()
 
 
     # ---- Guardrails ----
@@ -590,13 +645,11 @@ class BaseAgent(ABC):
             # estimate-only providers): nothing to bound against.
             return meta["response_id"], None
         budget = settings.OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS
-        if not budget:
-            from docsgpt.core.model_utils import get_token_limit
-
-            budget = get_token_limit(
-                getattr(self, "model_id", None),
-                user_id=getattr(self, "model_user_id", None) or getattr(self, "user", None),
-            )
+        if not budget or getattr(self, "context_window_limit", None):
+            # The server replays the whole stored transcript, so an agent's
+            # context limit bounds the chain as well.
+            window = self._context_budget()
+            budget = min(int(budget), window) if budget else window
         if budget and prompt_tokens >= int(budget):
             logger.debug(
                 "Responses chain budget reached (%s >= %s prompt tokens on the previous turn)",
@@ -907,8 +960,10 @@ class BaseAgent(ABC):
 
             if any(isinstance(t, dict) and eligible(self.tool_executor, t) for t in tools_dict.values()):
                 add_check_job_tool(tools_dict)
-        # The executor gates tool calls itself, so it needs this run's engine.
+        # The executor gates tool calls itself, so it needs this run's engine,
+        # and the search tools screen their hits as retrieved documents.
         self.tool_executor.guardrail_engine = self.guardrails
+        self.tool_executor.retrieval_screen = self._screen_docs
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
         self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
         self._sync_attachments_tool()
@@ -1020,8 +1075,6 @@ class BaseAgent(ABC):
             The turn's capabilities, read by the attachment planner and the
             manifest.
         """
-        from docsgpt.core.model_utils import get_token_limit
-
         try:
             supported = self.llm.get_supported_attachment_types()
         except Exception:
@@ -1029,9 +1082,7 @@ class BaseAgent(ABC):
         if not isinstance(supported, (list, tuple, set, frozenset)):
             supported = []
         try:
-            window = int(
-                get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
-            )
+            window = int(self._context_budget())
         except Exception:
             window = int(settings.DEFAULT_LLM_TOKEN_LIMIT)
         tool_calling = bool(self.tools) and self._llm_supports_tools()
@@ -1052,7 +1103,11 @@ class BaseAgent(ABC):
         # matching the manifest's refs; only the caller's own (user-scoped)
         # attachments are passed and the bridge re-checks the owner.
         earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
-        self.tool_executor.attachments = earlier + list(self.attachments or [])
+        withheld = self.withheld_attachments
+        self.tool_executor.attachments = [
+            a for a in earlier + list(self.attachments or [])
+            if not (isinstance(a, dict) and _attachment_id(a) in withheld)
+        ]
         return self.tool_executor.execute(
             tools_dict, call, self.llm.__class__.__name__
         )
@@ -1134,15 +1189,30 @@ class BaseAgent(ABC):
         native = plan.native_tokens if isinstance(plan, AttachmentPlan) else 0
         self._attachment_token_correction = max(native - int(native_estimate or 0), 0)
 
-    def _check_context_limit(self, messages: List[Dict]) -> bool:
-        from docsgpt.core.model_utils import get_token_limit
+    def _context_budget(self) -> int:
+        """Tokens this agent's requests may fill: the model's window, lowered to its context limit.
 
+        For budgets only (compression, history, documents, attachments).
+        What the provider will accept stays the model's own window
+        (``_enforce_context_window``, the overflow errors in
+        ``_build_messages``), so the limit never fails a turn.
+
+        Returns:
+            The budget in tokens.
+        """
+        from docsgpt.core.model_utils import get_context_budget
+
+        return get_context_budget(
+            getattr(self, "model_id", None),
+            user_id=getattr(self, "model_user_id", None) or getattr(self, "user", None),
+            context_window_limit=getattr(self, "context_window_limit", None),
+        )
+
+    def _check_context_limit(self, messages: List[Dict]) -> bool:
         try:
             current_tokens = self._calculate_current_context_tokens(messages)
             self.current_token_count = current_tokens
-            context_limit = get_token_limit(
-                self.model_id, user_id=self.model_user_id or self.user
-            )
+            context_limit = self._context_budget()
             threshold = int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
 
             if current_tokens >= threshold:
@@ -1156,6 +1226,49 @@ class BaseAgent(ABC):
             logger.error(f"Error checking context limit: {str(e)}", exc_info=True)
             return False
 
+    def _over_model_threshold(self, messages: List[Dict]) -> bool:
+        """Whether ``messages`` cross the compression threshold of the model's own window.
+
+        ``_check_context_limit`` measures against the agent's context limit,
+        which only decides when to compress. The tool loop stops running tools
+        on this one, so a limit never costs a turn its tools.
+
+        Once the fallback has answered a round of the turn, the smaller of
+        its window and the primary's applies: the next round may reach it
+        again, and its own fit check would refuse a turn grown past it.
+
+        Args:
+            messages: The turn's messages.
+
+        Returns:
+            True when over, or when it cannot be measured.
+        """
+        from docsgpt.core.model_utils import get_token_limit
+
+        try:
+            window = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+            llm = getattr(self, "llm", None)
+            answered = getattr(llm, "answered_by", None)
+            fallback = getattr(llm, "_fallback_llm", None)
+            if (
+                fallback is not None
+                and isinstance(answered, list)
+                and any(isinstance(entry, dict) and entry.get("fallback") for entry in answered)
+            ):
+                window = min(
+                    window,
+                    # ``model_id`` is the upstream name; the registry knows BYOM models by UUID.
+                    get_token_limit(
+                        getattr(fallback, "_canonical_model_id", None) or fallback.model_id,
+                        user_id=getattr(fallback, "model_user_id", None),
+                    ),
+                )
+            threshold = int(window * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
+            return self._calculate_current_context_tokens(messages) >= threshold
+        except Exception as e:
+            logger.error(f"Error checking the model window: {str(e)}", exc_info=True)
+            return True
+
     def _context_room_tokens(self, messages: List[Dict]) -> Optional[int]:
         """Tokens left below the compression threshold for the next tool result.
 
@@ -1165,10 +1278,8 @@ class BaseAgent(ABC):
         Returns:
             The room (never negative), or None when it cannot be sized.
         """
-        from docsgpt.core.model_utils import get_token_limit
-
         try:
-            context_limit = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+            context_limit = self._context_budget()
             threshold = int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
             return max(threshold - self._calculate_current_context_tokens(messages), 0)
         except Exception:
@@ -1176,13 +1287,9 @@ class BaseAgent(ABC):
             return None
 
     def _validate_context_size(self, messages: List[Dict]) -> None:
-        from docsgpt.core.model_utils import get_token_limit
-
         current_tokens = self._calculate_current_context_tokens(messages)
         self.current_token_count = current_tokens
-        context_limit = get_token_limit(
-            self.model_id, user_id=self.model_user_id or self.user
-        )
+        context_limit = self._context_budget()
         percentage = (current_tokens / context_limit) * 100
 
         if current_tokens >= context_limit:
@@ -1395,11 +1502,7 @@ class BaseAgent(ABC):
         # The template placed the documents somewhere this cannot reach. Fail
         # the turn rather than send the model text a control just rejected.
         if decision.blocked:
-            raise ValueError(
-                "Retrieved sources were withheld by a content policy and this "
-                "agent's prompt embeds them directly, so the request cannot be "
-                "completed."
-            )
+            raise ValueError(self.EMBEDDED_WITHHELD_ERROR)
         logger.warning(
             "Retrieval redaction could not be applied to an embedding prompt; "
             "the sources shown to the user were scrubbed but the prompt was not"
@@ -1443,6 +1546,104 @@ class BaseAgent(ABC):
                 {**doc, "text": per_doc.text} if per_doc.redacted else doc
             )
         self.retrieved_docs = scrubbed
+
+    EMBEDDED_WITHHELD_ERROR = (
+        "Retrieved sources were withheld by a content policy and this "
+        "agent's prompt embeds them directly, so the request cannot be "
+        "completed."
+    )
+
+    def _screen_docs(self, docs: List[Dict]) -> List[Dict]:
+        """Withhold, one by one, the documents a retrieval control blocks.
+
+        Item-level checks (the injection model) score each document's text on
+        its own before anything is formatted, so ``block`` withholds that
+        document alone: its text becomes ``RETRIEVAL_WITHHELD_TEXT`` and it
+        carries ``withheld: "policy"`` for the client. It keeps its place, so
+        ``<document index>``, ``[n]`` citations and the sources list still
+        agree. Verdicts are cached per text for the run, so the token-shed loop
+        and a search tool returning the same chunk never score it twice. The
+        search tools call this on their hits (``retrieval_screen``).
+
+        Args:
+            docs: Retrieved documents.
+
+        Returns:
+            The documents, the withheld ones replaced.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.config.controls_for(Stage.RETRIEVAL, item_level=True):
+            return docs
+        cache = self._guardrail_cache
+
+        def key(doc: Dict) -> tuple:
+            # By source too: an owner's allowance makes the text clean for that source only.
+            return (Stage.RETRIEVAL, "item", str(doc.get("source_id") or ""), doc.get("text"))
+
+        first: Dict[tuple, Dict] = {}
+        for doc in docs:
+            text = doc.get("text") if isinstance(doc, dict) and not doc.get("withheld") else None
+            if isinstance(text, str) and key(doc) not in cache:
+                first.setdefault(key(doc), doc)
+        if first:
+            todo = list(first.values())
+            decisions = engine.evaluate_items(
+                [d["text"] for d in todo], Stage.RETRIEVAL, [_chunk_ref(d) for d in todo], _retrieval_hints(todo)
+            )
+            for doc, decision in zip(todo, decisions):
+                cache[key(doc)] = decision
+        screened = []
+        for doc in docs:
+            text = doc.get("text") if isinstance(doc, dict) else None
+            decision = cache.get(key(doc)) if isinstance(text, str) else None
+            if decision is not None and decision.blocked and not doc.get("withheld"):
+                doc = {**doc, "text": self.RETRIEVAL_WITHHELD_TEXT, "withheld": "policy"}
+            screened.append(doc)
+        return screened
+
+    def _screen_retrieved_docs(self) -> int:
+        """Screen this turn's documents (``_screen_docs``) in place; returns how many were newly withheld."""
+        docs = list(getattr(self, "retrieved_docs", None) or [])
+        if not docs:
+            return 0
+        screened = self._screen_docs(docs)
+        self.retrieved_docs = screened
+        return sum(1 for before, after in zip(docs, screened) if after is not before)
+
+    def _screen_attachments(self) -> None:
+        """Withhold, one by one, the attached files an attachment control blocks.
+
+        This turn's files are scored by their stored text; a file from an
+        earlier turn (loaded without its text) only by the score stored with
+        it. A score stored with the file (``metadata.injection``) is used
+        first, then the cache, the model and background scoring, as for
+        retrieved documents. Withheld ids land in ``withheld_attachments``.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.config.controls_for(Stage.ATTACHMENT, item_level=True):
+            return
+        # This turn's rows first: a file sent again carries its text there.
+        rows = [a for a in (self.attachments or []) if isinstance(a, dict)]
+        rows += [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        cache = self._guardrail_cache
+        items: Dict[str, tuple] = {}
+        for row in rows:
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            text = row.get("content") if isinstance(row.get("content"), str) else ""
+            if not text.strip() and not isinstance(metadata.get("injection"), dict):
+                continue
+            items.setdefault(_attachment_id(row), (text, {"injection": metadata.get("injection")}))
+        todo = [i for i in items if (Stage.ATTACHMENT, "item", i, items[i][0]) not in cache]
+        if todo:
+            decisions = engine.evaluate_items(
+                [items[i][0] for i in todo], Stage.ATTACHMENT, [f"attachment:{i}" for i in todo],
+                [items[i][1] for i in todo],
+            )
+            for attachment_id, decision in zip(todo, decisions):
+                cache[(Stage.ATTACHMENT, "item", attachment_id, items[attachment_id][0])] = decision
+        self.withheld_attachments = frozenset(
+            i for i, (text, _) in items.items() if cache[(Stage.ATTACHMENT, "item", i, text)].blocked
+        )
 
     def _search_tool_docs(self) -> List[Dict]:
         """Documents this run's search tools read: internal search and the graph tool.
@@ -1520,19 +1721,43 @@ class BaseAgent(ABC):
         """Combine the document block and the question into one user message."""
         return f"{document_block}\n\n{query}" if document_block else query
 
+    SCHEDULED_RUN_NOTE = (
+        "This turn is a scheduled run: a task the user set up earlier, firing now. "
+        "The user's message is that task, not a request to schedule it. You are the "
+        "reminder or the recurring check, so carry the task out now and report the "
+        "result, in the language the task is written in. Do not tell the user that "
+        "you cannot schedule, remind or repeat tasks: this run is that. If a step "
+        "needs something you do not have (a tool, an account), say which step and why."
+    )
+
     def _build_messages(
         self,
         system_prompt: str,
         query: str,
     ) -> List[Dict]:
         """Build messages using pre-rendered system prompt"""
-        from docsgpt.core.model_utils import get_token_limit
+        from docsgpt.core.model_utils import cap_context_window, get_token_limit
         from docsgpt.utils import num_tokens_from_string
 
-        # Retrieval controls run inside _build_document_block for the usual
-        # path; a prompt that embeds the documents skips that block entirely,
-        # so its scan happens here instead.
-        if getattr(self, "prompt_embeds_documents", False):
+        from docsgpt.api.answer.services.prompt_renderer import (
+            format_docs_for_prompt,
+        )
+
+        # Item-level retrieval controls screen each document first, so a
+        # withheld one is replaced before anything renders it. A prompt that
+        # embeds the documents was rendered before the agent ran: the screened
+        # documents are swapped in for the ones it holds, and a template that
+        # formats them itself cannot be patched, so the turn fails.
+        embeds = getattr(self, "prompt_embeds_documents", False)
+        before = format_docs_for_prompt(getattr(self, "retrieved_docs", None)) if embeds else None
+        if self._screen_retrieved_docs() and embeds and before:
+            if before not in system_prompt:
+                raise ValueError(self.EMBEDDED_WITHHELD_ERROR)
+            system_prompt = system_prompt.replace(before, format_docs_for_prompt(self.retrieved_docs) or "")
+        # Whole-text retrieval controls run inside _build_document_block for
+        # the usual path; a prompt that embeds the documents skips that block
+        # entirely, so its scan happens here instead.
+        if embeds:
             system_prompt = self._guard_embedded_documents(system_prompt)
 
         if self.compressed_summary:
@@ -1545,15 +1770,30 @@ class BaseAgent(ABC):
             )
             system_prompt = system_prompt + compression_context
 
-        context_limit = get_token_limit(
+        if getattr(self, "endpoint", None) == "schedule":
+            # Without it a reminder firing on time reads "Remind me: ..." as a
+            # request to set one, and answers that it cannot send reminders.
+            system_prompt = (
+                f"{system_prompt}\n\n---\n\n{self.SCHEDULED_RUN_NOTE}"
+                if system_prompt
+                else self.SCHEDULED_RUN_NOTE
+            )
+
+        # What the model accepts decides what fails; the agent's context
+        # limit only decides how much history, documents and files ride along.
+        window = get_token_limit(
             self.model_id, user_id=self.model_user_id or self.user
         )
+        context_limit = cap_context_window(window, getattr(self, "context_window_limit", None))
         system_tokens = num_tokens_from_string(system_prompt)
 
         safety_buffer = int(context_limit * SAFETY_SHARE)
         available_after_system = context_limit - system_tokens - safety_buffer
 
-        max_query_tokens = turn_message_budget(context_limit, system_tokens)
+        max_query_tokens = turn_message_budget(window, system_tokens)
+        # The user turn (question plus documents) sheds documents down to the
+        # limit's share; with no limit it is the same as ``max_query_tokens``.
+        max_turn_tokens = min(max_query_tokens, turn_message_budget(context_limit, system_tokens))
 
         # An oversized system prompt (a long memory listing, a big custom
         # prompt) used to drive this negative, which made
@@ -1563,10 +1803,10 @@ class BaseAgent(ABC):
             raise ContextOverflowError(
                 f"The system prompt ({system_tokens:,} tokens) leaves no room "
                 f"for your question within the model's context window "
-                f"({context_limit:,} tokens). Start a new conversation or "
+                f"({window:,} tokens). Start a new conversation or "
                 f"remove large attachments or sources.",
-                needed_tokens=system_tokens + safety_buffer,
-                available_tokens=context_limit,
+                needed_tokens=system_tokens + int(window * SAFETY_SHARE),
+                available_tokens=window,
                 stage="build",
             )
 
@@ -1583,9 +1823,11 @@ class BaseAgent(ABC):
                 stage="build",
             )
 
-        # Then shed whole documents, lowest-ranked first: a middle-truncated
-        # document block would corrupt its XML, and retriever order is
-        # relevance-descending so the tail is the least useful.
+        # Then shed whole documents, least relevant first: a middle-truncated
+        # document block would corrupt its XML. The survivors keep their
+        # order and are renumbered on each pass, and the citation registry is
+        # seeded from the final list, so ``<document index>``, a tool hit's
+        # ``[n]`` and the sources the client lists still agree.
         document_block = self._build_document_block()
 
         # Plan the turn's files against what is left once the system prompt
@@ -1601,13 +1843,24 @@ class BaseAgent(ABC):
         reserved = self.attachment_plan.reserved_tokens if self.attachment_plan else 0
         self._sync_attachments_tool()
 
+        # Stops once no document is left: a searched turn's "nothing matched"
+        # note stays whatever its size, so it cannot end the loop by itself.
+        shed_from = len(getattr(self, "retrieved_docs", None) or [])
         while (
             document_block
+            and getattr(self, "retrieved_docs", None)
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
-            > max_query_tokens - reserved
+            > max_turn_tokens - reserved
         ):
-            self.retrieved_docs = self.retrieved_docs[:-1]
+            self.retrieved_docs = drop_least_relevant(self.retrieved_docs)
             document_block = self._build_document_block()
+        if shed_from and not getattr(self, "retrieved_docs", None):
+            logger.info(
+                "All %d retrieved documents were shed: the question and system prompt leave no room "
+                "for them within %s tokens",
+                shed_from,
+                f"{context_limit:,}",
+            )
 
         user_content = self._compose_user_turn(document_block, query)
         user_tokens = num_tokens_from_string(user_content)
@@ -1796,6 +2049,7 @@ class BaseAgent(ABC):
             return None
         if self.turn_capabilities is None:
             self.turn_capabilities = self._compute_turn_capabilities({})
+        self._screen_attachments()
         budget = compute_attachment_budget(
             window=context_limit,
             share=float(settings.ATTACHMENT_BUDGET_SHARE),
@@ -1811,6 +2065,7 @@ class BaseAgent(ABC):
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
             reference=self.reference_attachments,
+            withheld=self.withheld_attachments,
         )
         plan.skipped = skipped
         logger.info(
@@ -1838,7 +2093,6 @@ class BaseAgent(ABC):
             messages: The resent messages, up to the paused tool calls.
         """
         from docsgpt.api.answer.services.compression.token_counter import TokenCounter
-        from docsgpt.core.model_utils import get_token_limit
 
         current = [a for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
@@ -1850,12 +2104,13 @@ class BaseAgent(ABC):
             return
         self._add_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
-        context_limit = get_token_limit(self.model_id, user_id=self.model_user_id or self.user)
+        context_limit = self._context_budget()
         budget = compute_attachment_budget(
             window=context_limit,
             share=float(settings.ATTACHMENT_BUDGET_SHARE),
             system_tokens=TokenCounter.count_message_tokens(messages),
         )
+        self._screen_attachments()
         self.attachment_plan = plan_attachments(
             current,
             self.turn_capabilities,
@@ -1863,6 +2118,7 @@ class BaseAgent(ABC):
             earlier=earlier,
             max_native_parts=int(settings.ATTACHMENT_MAX_NATIVE_PARTS),
             reference=self.reference_attachments,
+            withheld=self.withheld_attachments,
         )
         self.attachment_plan.skipped = skipped
         self._current_turn_message = carrier
@@ -1876,12 +2132,16 @@ class BaseAgent(ABC):
         The resume builds a new agent from the saved state alone; without
         these it would lose the turn's files (``run_code`` could not load an
         ``F`` ref, the response would list no refs), the compression point the
-        turn's metadata is stamped with, and the agent's backup models.
-        Files are saved by id: the resume reads them again as their owner.
+        turn's metadata is stamped with, the agent's backup models and the
+        decision model's entries so far. Files are saved by id: the resume
+        reads them again as their owner.
 
         Returns:
-            ``attachments`` (None when the turn has no files),
-            ``last_compression_at`` and ``backup_models``; all JSON-safe.
+            ``attachments`` (None when the turn has no files; its ``withheld``
+            lists the ids an attachment control withheld, which the resume
+            keeps out of every tool), ``last_compression_at``,
+            ``backup_models``, ``decisions`` (None when nothing was
+            recorded) and ``context_window_limit``; all JSON-safe.
         """
         current = [_attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)]
         earlier = [
@@ -1902,6 +2162,7 @@ class BaseAgent(ABC):
                 "mode": "reference" if self.reference_attachments else None,
                 "planning": bool(self.attachment_planning),
                 "listing": listing,
+                "withheld": sorted(self.withheld_attachments),
             }
         backup_models = getattr(self.llm, "_backup_models", None)
         return {
@@ -1910,21 +2171,28 @@ class BaseAgent(ABC):
             "backup_models": (
                 [m for m in backup_models if isinstance(m, str)] if isinstance(backup_models, list) else []
             ),
+            "decisions": decision_record.snapshot(),
+            "context_window_limit": getattr(self, "context_window_limit", None),
         }
 
-    def resume_paused_attachments(self, listing: Optional[List[Dict]]) -> None:
+    def resume_paused_attachments(self, listing: Optional[List[Dict]], withheld: Optional[List[str]] = None) -> None:
         """Take back a paused turn's files on the agent that resumes it.
 
         The saved messages already carry the files as the paused round sent
         them (inlined, natively or listed), so the handler must not merge
         them in again. The listing is what the paused turn told the client;
-        the resumed turn has no plan of its own, so it reports that one.
+        the resumed turn has no plan of its own, so it reports that one. The
+        files the paused turn withheld stay withheld: the paused tool calls
+        run before anything is screened again, and a sandbox tool must not
+        load one of them by its ``F`` ref.
 
         Args:
             listing: The paused turn's ``F`` ref listing.
+            withheld: The attachment ids the paused turn withheld.
         """
         self._attachments_merged = True
         self.paused_attachment_listing = [entry for entry in listing or [] if isinstance(entry, dict)] or None
+        self.withheld_attachments = frozenset(str(i) for i in withheld or () if i)
 
     def _truncate_history_to_fit(
         self,

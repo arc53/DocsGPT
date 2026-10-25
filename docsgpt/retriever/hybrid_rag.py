@@ -64,6 +64,7 @@ class HybridRetriever(ClassicRAG):
         src_k: int,
         score_threshold: Optional[float],
         query_vector: Optional[List[float]] = None,
+        candidate_k: Optional[int] = None,
     ) -> List[Any]:
         """Return RRF-fused vector+keyword hits for one vector store.
 
@@ -72,14 +73,23 @@ class HybridRetriever(ClassicRAG):
         RRF scores are not cosine similarities, so ``score_threshold`` is
         intentionally not applied to the fused list. ``query_vector`` is the
         retrieval's single query embedding — the keyword half never needs one.
+
+        A rerank pool larger than the usual fetch (``candidate_k``) fetches
+        more of both lists, but a longer list changes every fused score, so the
+        usual fetch's fusion comes first, unchanged, and the extra hits follow.
         """
-        candidate_k = min(max(src_k * 2, 20), 500)
-        vector_kwargs = {"k": candidate_k}
+        usual_k = min(max(src_k * 2, 20), 500)
+        fetch_k = min(max(usual_k, candidate_k or 0), 500)
+        vector_kwargs = {"k": fetch_k}
         if query_vector is not None:
             vector_kwargs["query_vector"] = query_vector
         vector_hits = docsearch.search(question, **vector_kwargs)
-        keyword_hits = docsearch.keyword_search(question, k=candidate_k)
+        keyword_hits = docsearch.keyword_search(question, k=fetch_k)
         fused = fuse_with_scores(vector_hits, keyword_hits)
+        if fetch_k > usual_k:
+            usual = fuse_with_scores(vector_hits[:usual_k], keyword_hits[:usual_k])
+            seen = {_doc_key(doc) for doc, _ in usual}
+            fused = usual + [(doc, score) for doc, score in fused if _doc_key(doc) not in seen]
         if self.include_scores:
             return fused
         return [doc for doc, _ in fused]

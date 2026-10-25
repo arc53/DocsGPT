@@ -36,6 +36,12 @@ vi.mock('../hooks/useLoadMore', () => ({
     return vi.fn();
   },
 }));
+// The drill-down filters are URL state; these tests run without them
+// (Logs.labels.test.tsx covers them under a real router).
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router-dom')>()),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+}));
 vi.mock('./traces/TraceSheet', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
 
@@ -44,7 +50,7 @@ vi.mock('../api/services/userService', () => ({
   default: { getLogs: (...args: unknown[]) => getLogs(...args) },
 }));
 
-import Logs from './Logs';
+import Logs, { typeFilterParams } from './Logs';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -653,6 +659,16 @@ describe('Logs running rows', () => {
     }
   });
 
+  // IN-17: the account's copy belongs to Settings › Logs; an agent's Logs
+  // page names its own block.
+  it("prints the account subtitle in Settings, not on an agent's page", async () => {
+    getLogs.mockResolvedValue(page([answer]));
+    await act(async () => root.render(<Logs />));
+    expect(container.textContent).toContain('settings.logs.subtitle');
+    await act(async () => root.render(<Logs agentId="agent-1" />));
+    expect(container.textContent).not.toContain('settings.logs.subtitle');
+  });
+
   it('leaves the first page alone when the snapshot changes but activity did not', async () => {
     // Opening a chat patches the snapshot; the minute poll may replace it
     // with an equal one. Neither is news for the logs.
@@ -661,5 +677,62 @@ describe('Logs running rows', () => {
     store.state.activity.now = { running: [] };
     await act(async () => root.render(<Logs />));
     expect(getLogs).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Logs chat row context', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  const chat = {
+    ...log,
+    conversation_id: 'c0ffee00-0000-4000-8000-000000000001',
+    passthrough: { user_id: 'emp-42', office: 'Berlin' },
+    feedback: { text: 'dislike' },
+  };
+
+  beforeEach(async () => {
+    getLogs.mockReset();
+    getLogs.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ logs: [chat], has_more: false }),
+    });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(<Logs agentId="agent-1" />));
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('marks a rated answer in the row header', () => {
+    expect(
+      container.querySelector('[aria-label="settings.logs.feedback.dislike"]'),
+    ).not.toBeNull();
+  });
+
+  it('shows the passthrough values and the rating, not the conversation', async () => {
+    const toggle = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-expanded]'),
+    ).find((el) => el.textContent?.includes('[stream_answer]'))!;
+    await act(async () => toggle.click());
+    expect(container.textContent).toContain('user_id=emp-42, office=Berlin');
+    expect(container.textContent).toContain('settings.logs.detail.feedback');
+    expect(container.textContent).not.toContain(chat.conversation_id);
+  });
+});
+
+describe('typeFilterParams', () => {
+  it('asks for rated chat turns for Liked and Disliked', () => {
+    expect(typeFilterParams('like')).toEqual({ feedback: 'like' });
+    expect(typeFilterParams('dislike')).toEqual({ feedback: 'dislike' });
+  });
+
+  it('passes an event type through and nothing for all', () => {
+    expect(typeFilterParams('chat')).toEqual({ event_type: 'chat' });
+    expect(typeFilterParams('all')).toEqual({});
   });
 });

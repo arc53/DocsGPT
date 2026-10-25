@@ -1,7 +1,7 @@
 ---
 title: Install with pip
-description: Run the DocsGPT backend from the PyPI package, inside your own Python environment.
-lastUpdated: 2026-09-30
+description: Install the DocsGPT backend from PyPI, configure .env, and run the API, Celery worker and scheduler in your own Python environment or as services, no Docker.
+lastUpdated: 2026-10-21
 ---
 
 import { Callout } from 'nextra/components'
@@ -37,6 +37,7 @@ Extras add the optional engines:
 ```bash
 pip install "docsgpt[docling]"   # DOC_PARSER_ENGINE=docling: OCR backend, structured output
 pip install "docsgpt[milvus]"    # VECTOR_STORE=milvus
+pip install "docsgpt[decisions-torch]"  # the decision model on a GPU: docsgpt decide-server --device mps
 ```
 
 The `docling` extra pulls in PyTorch, and on Linux the PyPI torch wheels bring the CUDA stack with them. On a CPU-only machine install the CPU build first, then the extra; pip keeps the torch it already has:
@@ -107,7 +108,7 @@ docsgpt up --native \
   --redis-url redis://localhost:6379
 ```
 
-Without a terminal only `--postgres-uri` is required, since Redis defaults to `redis://localhost:6379`; with one, it asks for both and for the model provider. It writes the same `.env` a Docker install uses (minus the image settings), generates `INTERNAL_KEY` and `JWT_SECRET_KEY` on the first run, applies the migrations, then starts `docsgpt-api` and `docsgpt-worker` and waits for the API to answer.
+Without a terminal only `--postgres-uri` is required, since Redis defaults to `redis://localhost:6379`; with one, it asks for both and for the model provider. It writes the same `.env` a Docker install uses (minus the image settings), generates `INTERNAL_KEY` and `JWT_SECRET_KEY` on the first run, applies the migrations, then starts `docsgpt-api` and `docsgpt-worker` and waits for the API to answer. On macOS it also starts `docsgpt-analytics`, which runs `docsgpt worker --analytics`: the worker there uses the solo pool, which a [conversation-analytics sweep](/Deploying/Background-Jobs#the-analytics-queue) would hold for minutes.
 
 One Redis URL covers all three uses: the Celery broker, its result backend and the cache go on databases 0, 1 and 2 of it. Name a database in the URL and the three start there instead, so `redis://localhost:6379/5` puts them on 5, 6 and 7 — that is how you share a Redis that already holds something else.
 
@@ -116,8 +117,8 @@ The same commands manage it:
 | Command | In native mode |
 | --- | --- |
 | `docsgpt status` | Which services run, the address, and whether the API answers |
-| `docsgpt logs [api\|worker]` | The service log files under `<stack>/logs` |
-| `docsgpt down` | Stops both services; settings stay |
+| `docsgpt logs [api\|worker\|analytics]` | The service log files under `<stack>/logs` |
+| `docsgpt down` | Stops the services; settings stay |
 | `docsgpt uninstall [--purge]` | Removes the services; `--purge` also deletes the stack directory |
 
 `docsgpt up --native` sets `API_URL` and `WORKER_API_URL` to `http://127.0.0.1:<port>`. Behind a reverse proxy, change `API_URL` to the public address with `docsgpt env set API_URL=https://docs.example.com`; later runs keep it, and `WORKER_API_URL` keeps the worker on loopback.

@@ -408,6 +408,18 @@ describe('resendQuery', () => {
     expect(state.queries[0].response).toBeUndefined();
     expect(state.queries[0].error).toBeUndefined();
   });
+
+  // The re-asked turn gets a new run; the old one's files are not its own.
+  it('drops the previous workflow run', () => {
+    let state = reducer(
+      undefined,
+      setConversation([
+        { prompt: 'p', response: 'r', workflow_run_id: 'run-1' },
+      ]),
+    );
+    state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
+    expect(state.queries[0].workflow_run_id).toBeUndefined();
+  });
 });
 
 describe('mapServerQueryToClient feedback', () => {
@@ -959,6 +971,8 @@ describe('stopAnswer', () => {
     // Stored first, so the server saves a stop, not a dropped connection.
     expect(events).toEqual(['stop', 'closed']);
     expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
+    // The closed stream sends no terminal event: the chat must not stay busy.
+    expect(store.getState().conversation.status).toBe('idle');
   });
 
   it('leaves another chat alone when the stop returns after a switch', async () => {
@@ -1008,6 +1022,7 @@ describe('stopAnswer', () => {
     await answer;
     expect(events).toEqual(['closed']);
     expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
+    expect(store.getState().conversation.status).toBe('idle');
   });
 
   it('stops an answer the chat picked back up, which has no stream of its own', async () => {
@@ -1025,5 +1040,38 @@ describe('stopAnswer', () => {
     await store.dispatch(stopAnswer());
     expect(activityService.stopMessage).toHaveBeenCalledWith('m1', 'tok');
     expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
+    // Its tail settles the status once the server has saved the stop.
+    expect(store.getState().conversation.status).toBe('loading');
+  });
+
+  it('leaves a later polled answer loading when an earlier stream has ended', async () => {
+    vi.mocked(handleFetchAnswer).mockResolvedValue(null as never);
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockRejectedValue(new Error('Stop failed: 409'));
+    const { store, answer } = running();
+    await answer;
+    // A continuation then streams in, followed by polling.
+    store.dispatch(setStatus('loading'));
+    await store.dispatch(stopAnswer());
+    expect(store.getState().conversation.status).toBe('loading');
+  });
+
+  it('leaves the status to a stream started while the stop was out', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    const stopping = store.dispatch(stopAnswer());
+    store.dispatch(addQuery({ prompt: 'next' }));
+    void store.dispatch(fetchAnswer({ question: 'next' }));
+    answer();
+    await stopping;
+    expect(store.getState().conversation.status).toBe('loading');
+    handleAbort();
   });
 });

@@ -43,6 +43,17 @@ def test_celeryconfig_durability_defaults():
 
 
 @pytest.mark.unit
+def test_a_bare_worker_consumes_the_analytics_queue():
+    """The sweep and the digest run on ``ANALYTICS_QUEUE``, which is declared, so a worker with no ``-Q`` takes it."""
+    from docsgpt import celeryconfig
+
+    assert "docsgpt.analytics.tasks" in celeryconfig.imports
+    assert settings.ANALYTICS_QUEUE in {queue.name for queue in celeryconfig.task_queues}
+    for task in ("analytics_sweep", "analytics_gap_digest"):
+        assert celeryconfig.task_routes[f"docsgpt.analytics.tasks.{task}"] == {"queue": settings.ANALYTICS_QUEUE}
+
+
+@pytest.mark.unit
 def test_durable_task_retry_envelope_spans_a_multi_minute_outage():
     """``retry_backoff`` is a FACTOR, not a boolean toggle.
 

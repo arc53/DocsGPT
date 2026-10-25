@@ -1,7 +1,7 @@
 ---
 title: Wiki Sources
 description: Create a knowledge source that the agent can read and write — a living wiki it keeps up to date, with human edits, provenance stamps, and version safety.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-23
 ---
 
 import { Callout } from 'nextra/components'
@@ -62,6 +62,8 @@ curl -X POST https://your-docsgpt/api/sources/wiki \
 
 No ingestion task runs for a wiki; pages are authored directly. The response returns the new `source_id`.
 
+Each page edit re-embeds only that page, so a wiki needs a vector store that can change single chunks. On Elasticsearch, creating a wiki, converting a source and editing a wiki's pages are refused, with the code `wiki_unsupported`.
+
 ## Converting an existing source into a wiki
 
 You can turn an already-ingested source into a wiki so the agent can start maintaining it:
@@ -74,6 +76,7 @@ curl -X POST https://your-docsgpt/api/sources/<source_id>/wiki/convert \
 - A **blank** source is enabled inline (no task) and immediately becomes a wiki.
 - A source **with files** runs a conversion task that reassembles its existing chunks into wiki pages; poll the returned task for a per-file summary.
 - Conversion is rejected with `409` if the source is still ingesting — wait for it to finish first.
+- Conversion stops the source's sync schedule, because a sync would replace the wiki's pages with the original content. A wiki never syncs: `/api/manage_sync` refuses a schedule for it and `/api/sync_source` and `/api/connectors/sync` refuse to sync it (`400`).
 
 <Callout type="warning" emoji="⚠️">
 Switching a source to (or from) wiki mode goes only through `POST /api/sources/<id>/wiki/convert`. It cannot be done through the [config PATCH endpoint](/Sources/Per-source-configuration#editing-the-config-via-api).
@@ -95,7 +98,7 @@ Human edits are stamped with `human` provenance and trigger the same re-embed as
 
 An agent called with its API key (the website widget, the API) runs as its owner, so it could change any wiki the owner can edit. By default it can't: API and widget users can still read the wiki through the agent, but the agent isn't offered the create, edit, delete or rename actions in those chats, and the Wiki tool refuses them if it's asked anyway.
 
-The wiki's owner can allow such edits. On **Settings → Knowledge**, open the wiki's menu, choose **Wiki settings**, and turn on **Let API and widget users edit this wiki**. The change applies from the next message, including in chats that are already open. Only the owner sees it; team editors can't change it. You and the wiki's editors can always edit it in DocsGPT, and so can agents you or they use there.
+The wiki's owner can allow such edits. On **Settings → Knowledge**, open the wiki's menu, choose **Settings**, and turn on **Let API and widget users edit this wiki**. The change applies from the next message, including in chats that are already open. Only the owner sees it; team editors can't change it. You and the wiki's editors can always edit it in DocsGPT, and so can agents you or they use there.
 
 The switch doesn't cover public links. People who open an agent from its public link run it as themselves, so they can only edit wikis they could edit anyway (their own, or ones shared with them as an editor). Because the agent's prompt and sources belong to someone else, each of their wiki edits waits for their approval in the chat before it runs. A research agent can't stop to ask, so in a public-link chat it reads the wiki but doesn't edit it.
 

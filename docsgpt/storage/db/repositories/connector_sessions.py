@@ -315,7 +315,7 @@ class ConnectorSessionsRepository:
         """Sources synced from a connection, newest first."""
         result = self._conn.execute(
             text(
-                "SELECT id, name, type, date, sync_frequency, metadata, remote_data, user_id, file_path "
+                "SELECT id, name, type, date, sync_frequency, metadata, remote_data, user_id, file_path, config "
                 "FROM sources WHERE connection_id = CAST(:id AS uuid) ORDER BY date DESC"
             ),
             {"id": str(connection_id)},

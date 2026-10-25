@@ -232,5 +232,15 @@ describe('AllowedOriginsSetting', () => {
         '[aria-label="agents.form.advanced.origins.remove:https://a.com"]',
       ),
     ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="origins-read-only"]'),
+    ).not.toBeNull();
+  });
+
+  it('leaves the read-only note out while the role can edit policy', async () => {
+    await render(restricted);
+    expect(
+      container.querySelector('[data-testid="origins-read-only"]'),
+    ).toBeNull();
   });
 });

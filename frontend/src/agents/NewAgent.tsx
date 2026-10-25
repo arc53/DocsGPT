@@ -1,4 +1,3 @@
-import isEqual from 'lodash/isEqual';
 import { CircleCheck, CircleX, Database, Play, SquarePen } from 'lucide-react';
 import React, {
   useCallback,
@@ -17,7 +16,6 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ActionMenu } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -54,8 +52,6 @@ import SignInAgainNotice, {
 import { toolServiceOf } from '../connectors/toolService';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
-import ShareToTeamModal from '../teams/ShareToTeamModal';
-import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Prompt } from '../models/misc';
 import {
   selectAgentFolders,
@@ -87,6 +83,15 @@ import { agentsListPath } from './paths';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
+import AnalyticsSection from './components/AnalyticsSection';
+import { configToSave, sameAgent } from './analyticsConfig';
+import {
+  MAX_CONTEXT_WINDOW_LIMIT,
+  MIN_CONTEXT_WINDOW_LIMIT,
+  isContextLimitInvalid,
+  parseContextLimit,
+} from './contextLimit';
+import { useAnalyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import AgentPreview from './AgentPreview';
 import AllowedOriginsSetting, {
   originsIncomplete,
@@ -106,6 +111,7 @@ import {
   sponsorNotAllowedMessage,
   withAttachedToolRows,
 } from './sponsorConsent';
+import { useAgentMenu } from './hooks/useAgentMenu';
 import { useSponsorPrompt } from './useSponsorPrompt';
 import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
@@ -146,6 +152,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const token = useSelector(selectToken);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
+  const analyticsAvailability = useAnalyticsAvailability();
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
   const prompts = useSelector(selectPrompts);
@@ -215,13 +222,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
   );
-  const [deleteConfirmation, setDeleteConfirmation] =
-    useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
-  const [deleteError, setDeleteError] = useState<string>();
   // Access details opened from Share to allow changes: its allowlist unfolds.
   const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
-  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
@@ -259,7 +262,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     new: {
       heading: t('agents.form.headings.new'),
       buttonText: t('agents.form.buttons.publish'),
-      showDelete: false,
       showSaveDraft: true,
       showAccessDetails: false,
       trackChanges: false,
@@ -267,7 +269,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     edit: {
       heading: t('agents.form.headings.edit'),
       buttonText: t('agents.form.buttons.save'),
-      showDelete: true,
       showSaveDraft: false,
       showAccessDetails: true,
       trackChanges: true,
@@ -275,7 +276,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     draft: {
       heading: t('agents.form.headings.draft'),
       buttonText: t('agents.form.buttons.publish'),
-      showDelete: true,
       showSaveDraft: true,
       showAccessDetails: false,
       trackChanges: false,
@@ -285,6 +285,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
     { label: t('agents.form.agentTypes.research'), value: 'research' },
   ];
+
+  const contextLimitInvalid = isContextLimitInvalid(
+    agent.config?.context_window_limit,
+  );
 
   const isPublishable = () => {
     const hasRequiredFields =
@@ -298,7 +302,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       hasRequiredFields &&
       isJsonSchemaValidOrEmpty &&
       guardrailsOk &&
-      !originsIncomplete(agent.config)
+      !originsIncomplete(agent.config) &&
+      !contextLimitInvalid
     );
   };
 
@@ -312,7 +317,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const isDraftBlocked = () =>
     isJsonSchemaInvalid() ||
     guardrailsIncomplete(agent.config?.guardrails) ||
-    originsIncomplete(agent.config);
+    originsIncomplete(agent.config) ||
+    contextLimitInvalid;
 
   // Resolve a selected source id to its display name. Prefer the caller's own
   // source list; fall back to the owner-resolved name embedded in the agent
@@ -501,19 +507,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     navigateBackToAgents();
   };
 
-  // Returned to ConfirmationModal: it stays pending while this runs and
-  // keeps a failure in the dialog (the server's message when it gives one).
-  const handleDelete = async (agentId: string) => {
-    setDeleteError(undefined);
-    const response = await userService.deleteAgent(agentId, token);
-    if (!response.ok) {
-      const message = await extractApiError(response, t('agents.deleteFailed'));
-      setDeleteError(message);
-      throw new Error(message);
-    }
-    navigateBackToAgents();
-  };
-
   // Fresh sponsor details and run state after a save or a reconnect,
   // without touching unsaved fields.
   const refreshSponsors = useCallback(
@@ -676,7 +669,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'draft');
-    formData.append('config', JSON.stringify(agent.config ?? {}));
+    formData.append('config', JSON.stringify(configToSave(agent.config)));
 
     if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
@@ -768,7 +761,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'published');
-    formData.append('config', JSON.stringify(agent.config ?? {}));
+    formData.append('config', JSON.stringify(configToSave(agent.config)));
 
     if (imageFile) formData.append('image', imageFile);
     if (agent.tools && agent.tools.length > 0)
@@ -868,7 +861,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const parsed = JSON.parse(text);
       setAgent({ ...agent, json_schema: parsed });
       setJsonSchemaValid(true);
-    } catch (error) {
+    } catch {
       setJsonSchemaValid(false);
     }
   };
@@ -1052,6 +1045,32 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     validateAndSetFolder();
   }, [folderIdFromUrl, agentFolders, token, dispatch]);
 
+  // A new agent starts from the guardrails an admin set for new agents
+  // (Admin › Defaults), unless the form already has some. The server copies
+  // the same defaults in at creation, so this shows what the agent gets.
+  useEffect(() => {
+    if (mode !== 'new') return;
+    let cancelled = false;
+    userService
+      .getAgentDefaults(token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.guardrails) return;
+        setAgent((prev) =>
+          prev.config?.guardrails
+            ? prev
+            : {
+                ...prev,
+                config: { ...(prev.config ?? {}), guardrails: data.guardrails },
+              },
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, token]);
+
   useEffect(() => {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
       const getAgent = async () => {
@@ -1176,7 +1195,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       : '';
 
     const isChanged =
-      !isEqual(agent, initialAgentRef.current) ||
+      !sameAgent(agent, initialAgentRef.current) ||
       imageFile !== null ||
       jsonSchemaText !== initialJsonSchemaText ||
       takeovers.length > 0;
@@ -1193,14 +1212,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const agentDisplayName =
     agent.name?.trim() || t('agents.pageHeader.fallbackName');
 
-  // Page-level actions live in the ⋯ beside the title. Until the agent is
+  // Page-level actions live in the ⋯ at the end of the toolbar row. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
   // menu item then and a toolbar button after.
-  const canOpenAccessDetails =
-    modeConfig[effectiveMode].showAccessDetails &&
-    can(agent, 'manage_access_details');
-  const menuOptions = [
-    ...(isPublished
+  const agentMenu = useAgentMenu({
+    agent,
+    lead: isPublished
       ? []
       : [
           {
@@ -1208,27 +1225,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             icon: Play,
             onClick: () => setPreviewOpen(true),
           },
-        ]),
-    ...(canOpenAccessDetails
-      ? [
-          {
-            label: t('agents.form.buttons.accessDetails'),
-            onClick: () => setAgentDetails('ACTIVE'),
-          },
-        ]
-      : []),
-    // Sharing is the owner's, unless the owner lets editors share.
-    ...(modeConfig[effectiveMode].showAccessDetails &&
-    can(agent, 'share') &&
-    agent.id
-      ? [
-          {
-            label: t('agents.shareWithTeam'),
-            onClick: () => setShareModalOpen(true),
-          },
-        ]
-      : []),
-  ];
+        ],
+    shareable: modeConfig[effectiveMode].showAccessDetails,
+    openAccessDetails: (apiWrites) => {
+      setDetailsOnApiWrites(apiWrites);
+      setAgentDetails('ACTIVE');
+    },
+    onDeleted: navigateBackToAgents,
+  });
 
   // At most three buttons, so the row fits a phone; the main one stretches
   // across it there.
@@ -1289,13 +1293,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   return (
     <SectionShell
       title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
-      titleAction={
-        <ActionMenu
-          size="toolbar"
-          triggerLabel={t('agents.form.buttons.moreActions')}
-          options={menuOptions}
-        />
-      }
     >
       {signInAgain.modals}
       {agent.agent_type === 'workflow' && <WorkflowBuilder />}
@@ -1315,6 +1312,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           ) : undefined
         }
         actions={headerActions}
+        menu={agentMenu.menu}
       >
         {submitError && (
           <Alert variant="destructive" className="mb-6">
@@ -1520,7 +1518,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         type: 'public',
                       }
                     }
-                    onSelectPrompt={(name, id, type) =>
+                    onSelectPrompt={(name, id) =>
                       setAgent({ ...agent, prompt_id: id })
                     }
                     setPrompts={(newPrompts) =>
@@ -1745,6 +1743,49 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
                 <SettingRows className="mt-6">
                   <SettingRow
+                    label={t('agents.form.advanced.contextLimit')}
+                    description={t(
+                      'agents.form.advanced.contextLimitDescription',
+                    )}
+                    alignStart
+                    after={
+                      contextLimitInvalid ? (
+                        <p className="text-destructive text-xs">
+                          {t('agents.form.advanced.contextLimitRange', {
+                            min: MIN_CONTEXT_WINDOW_LIMIT,
+                            max: MAX_CONTEXT_WINDOW_LIMIT,
+                          })}
+                        </p>
+                      ) : null
+                    }
+                  >
+                    <Input
+                      type="number"
+                      min={MIN_CONTEXT_WINDOW_LIMIT}
+                      max={MAX_CONTEXT_WINDOW_LIMIT}
+                      step={1000}
+                      className="w-32 text-right"
+                      value={agent.config?.context_window_limit ?? ''}
+                      onChange={(e) => {
+                        const limit = parseContextLimit(e.target.value);
+                        setAgent((prev) => ({
+                          ...prev,
+                          config: {
+                            ...(prev.config ?? {}),
+                            context_window_limit: limit,
+                          },
+                        }));
+                      }}
+                      // A cost control, so policy (`edit_policy`) like the
+                      // usage limits beside it.
+                      disabled={!canEditPolicy}
+                      aria-invalid={contextLimitInvalid || undefined}
+                      placeholder={t(
+                        'agents.form.placeholders.contextLimitDefault',
+                      )}
+                    />
+                  </SettingRow>
+                  <SettingRow
                     label={t('agents.form.advanced.tokenLimiting')}
                     description={t(
                       'agents.form.advanced.tokenLimitingDescription',
@@ -1874,48 +1915,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             })
           }
         />
-        {modeConfig[effectiveMode].showDelete &&
-          agent.id &&
-          can(agent, 'delete') && (
-            <Card
-              tone="destructive"
-              padding="lg"
-              className="flex-row flex-wrap items-center justify-between"
-            >
-              <SectionHeader
-                tone="destructive"
-                title={t('agents.form.dangerZone.heading')}
-                description={t('agents.form.dangerZone.description')}
-                className="min-w-0 flex-1"
-              />
-              <Button
-                type="button"
-                variant="destructive-outline"
-                size="field"
-                shape="pill"
-                onClick={() => setDeleteConfirmation('ACTIVE')}
-                className="shrink-0"
-              >
-                {t('agents.form.dangerZone.deleteButton')}
-              </Button>
-            </Card>
-          )}
+        <AnalyticsSection
+          value={agent.config?.analytics}
+          token={token}
+          agentId={agent.id || undefined}
+          available={analyticsAvailability.enabled}
+          maxTopics={analyticsAvailability.maxTopics}
+          maxOverlapping={analyticsAvailability.maxOverlapping}
+          // Not policy: anyone who can save the agent changes it.
+          disabled={!canSubmit}
+          onChange={(analytics) =>
+            setAgent((prev) => ({
+              ...prev,
+              config: { ...(prev.config ?? {}), analytics },
+            }))
+          }
+        />
       </div>
       {sponsorPrompt.modal}
-      <ConfirmationModal
-        message={t('agents.deleteConfirmation', {
-          interpolation: { escapeValue: false },
-          name: agent.name,
-        })}
-        description={t('agents.deleteConsequence')}
-        modalState={deleteConfirmation}
-        setModalState={setDeleteConfirmation}
-        submitLabel={t('agents.form.buttons.delete')}
-        handleSubmit={() => handleDelete(agent.id || '')}
-        error={deleteError ?? t('agents.deleteFailed')}
-        cancelLabel={t('agents.form.buttons.cancel')}
-        variant="destructive"
-      />
+      {agentMenu.modals}
       <AgentDetailsModal
         agent={agent}
         mode={effectiveMode}
@@ -1941,23 +1959,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }}
         getSavedConfig={() => initialAgentRef.current?.config ?? agent.config}
       />
-      {shareModalOpen && agent.id && (
-        <ShareToTeamModal
-          resourceType="agent"
-          resourceId={agent.id}
-          resourceName={agent.name}
-          onClose={() => setShareModalOpen(false)}
-          onOpenAccessDetails={
-            canOpenAccessDetails
-              ? () => {
-                  setShareModalOpen(false);
-                  setDetailsOnApiWrites(true);
-                  setAgentDetails('ACTIVE');
-                }
-              : undefined
-          }
-        />
-      )}
       {uploadModalState === 'ACTIVE' && (
         <Upload
           receivedFile={[]}
@@ -1976,7 +1977,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         prompts={prompts}
         isOpen={addPromptModal}
         onClose={() => setAddPromptModal('INACTIVE')}
-        onSelect={(name: string, id: string, type: string) => {
+        onSelect={(name: string, id: string) => {
           setAgent({ ...agent, prompt_id: id });
         }}
       />

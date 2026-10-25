@@ -4,7 +4,7 @@ import logging
 import re
 import uuid
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.exc import IntegrityError
 
@@ -265,6 +265,50 @@ def sanitize_tool_result(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(sanitize_tool_result(item) for item in value)
     return value
+
+
+def _scan_lines(value: Any, path: str, lines: List[str]) -> None:
+    """Append ``value``'s leaves to ``lines`` as ``path = value`` text.
+
+    A string leaf goes on the line after its ``path =``, verbatim: its
+    newlines and quotes stay real, so a pattern anchored on a line start or
+    stopped by a quote reads it as it reads plain text. ``=`` rather than
+    ``:`` keeps a key named ``system`` from reading as a fake turn. An empty
+    leaf (``None``, ``""``, ``{}``, ``[]``) still gets its ``path =`` line,
+    since its key is persisted with the result.
+    """
+    if value is None or (isinstance(value, (str, dict, list, tuple)) and not value):
+        if path:
+            lines.append(f"{path} =")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _scan_lines(item, f"{path}.{key}" if path else str(key), lines)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _scan_lines(item, path, lines)
+    elif isinstance(value, str):
+        lines.extend([f"{path} =", value] if path else [value])
+    else:
+        lines.append(f"{path} = {value}" if path else str(value))
+
+
+def _scan_text(result: Any) -> str:
+    """The text the ``tool_result`` guardrails read for ``result``.
+
+    Args:
+        result: A tool result, already sanitized.
+
+    Returns:
+        The string itself, a dict, list or tuple as one ``path = value`` line
+        per leaf (see ``_scan_lines``), or ``""`` for anything else.
+    """
+    if isinstance(result, str):
+        return result
+    if not isinstance(result, (dict, list, tuple)) or not result:
+        return ""
+    lines: List[str] = []
+    _scan_lines(result, "", lines)
+    return "\n".join(lines)
 
 
 def bound_result_full(text: str) -> str:
@@ -697,6 +741,10 @@ class ToolExecutor:
         # are final. Held here rather than in ``tools_dict``, which is saved
         # with a paused turn and would come back as a detached copy.
         self.citation_registry: Optional[List[Dict]] = None
+        # The agent's per-document retrieval screen (``BaseAgent._screen_docs``),
+        # handed to the search tools so each hit is screened as a retrieved
+        # document before it is formatted into their result.
+        self.retrieval_screen: Optional[Callable[[List[Dict]], List[Dict]]] = None
         # Images the last tool call returned for the model to see (references,
         # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
         # that call's tool message; ``images_shown`` counts them per turn.
@@ -1179,16 +1227,32 @@ class ToolExecutor:
         A tool result is untrusted third-party text on the same footing as a
         retrieved document, and it is a common exfiltration path for secrets
         that the calling API happened to echo back.
+
+        A structured result (``api_tool``, MCP, search tools) is scanned as
+        one ``path = value`` line per leaf (``_scan_text``). A clean one keeps
+        its shape; a redacted one becomes the masked text, so no half-masked
+        value survives inside it.
         """
         engine = getattr(self, "guardrail_engine", None)
         if engine is None or not engine.has_stage(GuardrailStage.TOOL_RESULT):
             return result
-        if not isinstance(result, str) or not result:
+        text = _scan_text(result)
+        if not text:
             return result
+        # A search tool's hits were screened one by one as retrieved documents
+        # (``retrieval_screen``); its result, which joins them, then gets only
+        # the whole-text controls, so the model check never scores them twice.
+        screened = (
+            tool_name in CITING_TOOLS
+            and self.retrieval_screen is not None
+            and bool(engine.config.controls_for(GuardrailStage.RETRIEVAL, item_level=True))
+        )
         try:
             engine.context.tool_name = tool_name
             engine.context.action_name = action_name
-            decision = engine.evaluate(result, GuardrailStage.TOOL_RESULT)
+            decision = engine.evaluate(
+                text, GuardrailStage.TOOL_RESULT, item_level=False if screened else None
+            )
         except Exception:
             logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
             return result
@@ -2135,6 +2199,8 @@ class ToolExecutor:
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
         result = sanitize_tool_result(result)
+        # Read before the scan: a redacted dict comes back as text.
+        status = result_status(result)
         result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
@@ -2175,6 +2241,8 @@ class ToolExecutor:
                         # The version this call produced, so a later edit in the
                         # same turn cannot make this call's entry describe it.
                         **({"version": a["version"]} if isinstance(a.get("version"), int) else {}),
+                        # The name the chat's artifact card shows; the filename stays the download name.
+                        **({"title": a["title"]} if isinstance(a.get("title"), str) and a["title"].strip() else {}),
                     }
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")
@@ -2195,7 +2263,7 @@ class ToolExecutor:
         tool_call_data["result"] = truncate_tool_result(result_full)
         # A tool that ran but reported failure in-band persists as ``error``,
         # not ``completed`` -- the model saw an error and will likely retry.
-        tool_call_data["status"] = result_status(result)
+        tool_call_data["status"] = status
 
         # Tool side effect has run; flip the journal row so the
         # message-finalize path can later confirm it. If the proposed
@@ -2272,6 +2340,7 @@ class ToolExecutor:
                 cached_config["attachments"] = self.attachments or []
             if isinstance(cached_config, dict) and tool_data["name"] in CITING_TOOLS:
                 cached_config["citation_registry"] = self.citation_registry
+                cached_config["retrieval_screen"] = self.retrieval_screen
             return cached
 
         tm = ToolManager(config={})
@@ -2359,6 +2428,7 @@ class ToolExecutor:
                 tool_config["run_scope_id"] = self.run_scope_id
             if tool_data["name"] in CITING_TOOLS:
                 tool_config["citation_registry"] = self.citation_registry
+                tool_config["retrieval_screen"] = self.retrieval_screen
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's

@@ -14,6 +14,8 @@ from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import ConversationService
+from docsgpt.api.answer.services.passthrough import stored_passthrough
+from docsgpt.decisions.record import DecisionRecord, activate as activate_decision_record
 from docsgpt.error import bounded_error_text
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
 from docsgpt.api.answer.services.prompt_renderer import (
@@ -32,6 +34,7 @@ from docsgpt.agents.attachment_budget import (
 from docsgpt.agents.context_overflow import ContextOverflowError, turn_message_budget
 from docsgpt.agents.turn_capabilities import build_turn_capabilities
 from docsgpt.core.model_utils import (
+    cap_context_window,
     get_api_key_for_provider,
     get_default_model_id,
     get_model_capabilities,
@@ -41,7 +44,7 @@ from docsgpt.core.model_utils import (
 )
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
-from docsgpt.guardrails.config import AgentConfig
+from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from sqlalchemy import text as sql_text
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
@@ -451,11 +454,12 @@ T = TypeVar("T")
 
 
 def _traced_setup(method: Callable[..., T]) -> Callable[..., T]:
-    """Run a request-setup method inside the request's execution trace.
+    """Run a request-setup method inside the request's execution trace and decision record.
 
     Agent setup does real work worth seeing in the trace -- pre-fetch
     retrieval, history compression -- before ``complete_stream`` runs, so
-    the trace is started here, in the request thread, and handed on.
+    the trace is started here, in the request thread, and handed on. The
+    decision record goes to the stream on the agent (``decision_record``).
     """
 
     @functools.wraps(method)
@@ -464,7 +468,7 @@ def _traced_setup(method: Callable[..., T]) -> Callable[..., T]:
         if trace is None:
             trace = tracing.start_trace(source=getattr(self, "trace_source", "stream"))
             self.trace = trace
-        with tracing.activate(trace):
+        with tracing.activate(trace), activate_decision_record(self.decision_record):
             try:
                 return method(self, *args, **kwargs)
             finally:
@@ -528,6 +532,9 @@ class StreamProcessor:
             self.decoded_token.get("sub") if self.decoded_token is not None else None
         )
         self.conversation_id = self.data.get("conversation_id")
+        # Kept on the conversation and the turn's Logs row; prompt rendering
+        # reads the raw request field.
+        self.passthrough = stored_passthrough(self.data.get("passthrough"))
         self.source = {}
         self.all_sources = []
         self.attachments = []
@@ -573,6 +580,15 @@ class StreamProcessor:
         # one made this turn); the agent stamps it on the turn's metadata.
         self.last_compression_at: Optional[Any] = None
         self._agent_data: Optional[Dict[str, Any]] = None
+
+    @functools.cached_property
+    def decision_record(self) -> DecisionRecord:
+        """The turn's decision record.
+
+        Setup records into it, the agent carries it to ``complete_stream``
+        (``agent.decision_record``), and a resume continues the paused turn's.
+        """
+        return DecisionRecord()
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -792,6 +808,7 @@ class StreamProcessor:
             # actual context window instead of the default 128k.
             self.history = limit_chat_history(
                 json.loads(self.data.get("history", "[]")),
+                max_token_limit=self._context_window_limit(),
                 model_id=self.model_id,
                 user_id=self.model_user_id,
             )
@@ -811,6 +828,7 @@ class StreamProcessor:
                 # an attach-heavy turn compresses the history rather than
                 # overflowing next to it.
                 current_query_tokens=self._turn_token_estimate(),
+                context_window_limit=self._context_window_limit(),
             )
 
             if not result.success:
@@ -984,7 +1002,7 @@ class StreamProcessor:
             return repo.list_for_planning(pg_ids, self.initial_user_id)
 
     def _window(self) -> int:
-        """The turn's model window."""
+        """The turn's model window: what decides whether the turn can fit at all."""
         try:
             return int(
                 get_token_limit(
@@ -993,6 +1011,14 @@ class StreamProcessor:
             )
         except Exception:
             return int(settings.DEFAULT_LLM_TOKEN_LIMIT)
+
+    def _context_window_limit(self) -> Optional[int]:
+        """The agent's ``config.context_window_limit``, or None."""
+        return context_window_limit_of((getattr(self, "agent_config", None) or {}).get("config"))
+
+    def _budget_window(self) -> int:
+        """The window the turn's budgets are shares of: the model's, lowered to the agent's context limit."""
+        return cap_context_window(self._window(), self._context_window_limit())
 
     def _multimodal_tokens(self) -> int:
         """Tokens of a multimodal content array that reaches the model unshortened."""
@@ -1055,7 +1081,7 @@ class StreamProcessor:
         if not current and not earlier:
             return 0
         try:
-            window = self._window()
+            window = self._budget_window()
             caps = get_model_capabilities(
                 getattr(self, "model_id", None), user_id=getattr(self, "model_user_id", None)
             ) or {}
@@ -1666,7 +1692,9 @@ class StreamProcessor:
         # falls back to settings.DEFAULT_LLM_TOKEN_LIMIT and overfills
         # the upstream context window for any small (e.g. 8k/32k) BYOM.
         doc_token_limit = calculate_doc_token_budget(
-            model_id=self.model_id, user_id=self.model_user_id
+            model_id=self.model_id,
+            user_id=self.model_user_id,
+            context_window_limit=self._context_window_limit(),
         )
 
         retriever_name = "classic"
@@ -1820,6 +1848,7 @@ class StreamProcessor:
         return build_dispatcher(
             _legacy_classic,
             sources=per_source,
+            conversation_id=getattr(self, "conversation_id", None),
             **retriever_kwargs,
         )
 
@@ -2406,6 +2435,8 @@ class StreamProcessor:
         saved_guardrails = agent_config.get("guardrails")
         if saved_guardrails:
             agent_kwargs["agent_config"] = {"guardrails": saved_guardrails}
+        # And with the context limit it paused under.
+        agent_kwargs["context_window_limit"] = agent_config.get("context_window_limit")
         agent_kwargs["request_id"] = agent_config.get("request_id")
         # The paused turn's files, so the resumed one can still hand them to
         # its tools (``run_code`` inputs by ``F`` ref) and list their refs.
@@ -2422,8 +2453,11 @@ class StreamProcessor:
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.tools = tool_schemas
+        # The paused rounds' decisions, continued in the next round.
+        self.decision_record.resume(agent_config.get("decisions"))
+        agent.decision_record = self.decision_record
         if isinstance(saved_files, dict):
-            agent.resume_paused_attachments(saved_listing)
+            agent.resume_paused_attachments(saved_listing, withheld=saved_files.get("withheld") or [])
 
         # Store config for the route layer
         self.model_id = model_id
@@ -2445,6 +2479,10 @@ class StreamProcessor:
         self.request_id = agent_config.get("request_id")
         # The turn's calls from its earlier approval rounds, kept on the message.
         self.prior_tool_calls = list(agent_config.get("prior_tool_calls") or [])
+        # The paused turn's values: a resume request does not resend them.
+        self.passthrough = stored_passthrough(agent_config.get("passthrough")) or stored_passthrough(
+            self.data.get("passthrough")
+        )
 
         reasoning_content = agent_config.get("reasoning_content", "")
         return (
@@ -2713,10 +2751,14 @@ class StreamProcessor:
             workflow_owner = self.agent_config.get("workflow_owner")
             if workflow_owner:
                 agent_kwargs["workflow_owner"] = workflow_owner
+            # The bounded values: the run's state is stored with the run.
+            if self.passthrough:
+                agent_kwargs["passthrough"] = self.passthrough
 
         agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
 
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
+        agent.decision_record = self.decision_record
 
         return agent

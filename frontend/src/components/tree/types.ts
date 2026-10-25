@@ -5,6 +5,13 @@ export interface FileNode {
   token_count?: number;
   size_bytes?: number;
   display_name?: string;
+  /** A web page's address: where its fetch landed, after any redirect. */
+  url?: string;
+  /**
+   * Every address the page was added under that redirected to it (one page
+   * can be the landing of several).
+   */
+  requested_urls?: string[];
   [key: string]: any;
 }
 
@@ -21,6 +28,8 @@ export interface RowMenuContext {
   isFile: boolean;
   itemId: string;
   displayName?: string;
+  /** The file's node (a web page's carries its `url`); absent for folders. */
+  node?: FileNode;
   /** Default "View" option already provided by TreeBrowser. */
   defaultViewOption: MenuOption;
 }
@@ -34,4 +43,9 @@ export interface TreeBrowserController {
   refreshDirectory: () => Promise<boolean>;
   /** Resets the breadcrumb path back to the root. */
   resetPath: () => void;
+  /**
+   * Lists the open file's chunks again (its content changed: a refreshed
+   * page). With paths, only when the open file is one of them.
+   */
+  reloadFile: (paths?: readonly string[]) => void;
 }

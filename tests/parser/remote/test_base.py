@@ -31,6 +31,23 @@ class TestUrlToVirtualPath:
     def test_query_less_paths_are_unchanged(self, url, path):
         assert url_to_virtual_path(url) == path
 
+    def test_a_folder_never_takes_a_leaf_name(self):
+        # ``/guide`` is the leaf ``guide.md``; ``/guide.md/details`` once put
+        # its page in a folder of that name, and one page hid the other.
+        leaf = url_to_virtual_path("https://x.io/guide")
+        nested = url_to_virtual_path("https://x.io/guide.md/details")
+
+        assert leaf == "guide.md"
+        assert nested == "guide.md~/details.md"
+        # The escape is escaped too, so no two folders meet.
+        assert url_to_virtual_path("https://x.io/guide.md~/details") == "guide.md~~/details.md"
+        assert url_to_virtual_path("https://x.io/a.md/b.md/c") == "a.md~/b.md~/c.md"
+        assert url_to_virtual_path("https://x.io/guide.mdx/details") == "guide.mdx/details.md"
+
+    def test_a_host_folder_never_takes_a_leaf_name(self):
+        assert url_to_virtual_path("https://point.md/news", include_host=True) == "point.md~/news.md"
+        assert url_to_virtual_path("https://x.io/news", include_host=True) == "x.io/news.md"
+
     def test_distinct_queries_get_distinct_paths(self):
         first = url_to_virtual_path("https://x.io/p?page=1")
         second = url_to_virtual_path("https://x.io/p?page=2")

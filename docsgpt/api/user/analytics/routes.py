@@ -1,24 +1,39 @@
 """Analytics and reporting routes."""
 
 import datetime
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from sqlalchemy import Connection, text as _sql_text
 
+from docsgpt import decisions
 from docsgpt.activity.flags import list_runs
 from docsgpt.activity.now import CHAT_FRESH_SECONDS
+from docsgpt.analytics import insights, schema as analytics_schema, topics as analytics_topics
+from docsgpt.analytics.config import TOPIC_ID, TOPIC_NAME_CHARS, AnalyticsConfig
 from docsgpt.api import api
-from docsgpt.api.user.resource_access import AccessDenied, resolve
+from docsgpt.api.user.resource_access import AccessDenied, agent_refs, allowed_actions, require, resolve
 from docsgpt.api.user.base import (
     generate_date_range,
     generate_hourly_range,
     generate_minute_range,
 )
-from docsgpt.storage.db.base_repository import like_escape
+from docsgpt.api.user.team_sharing import visible_with_access
+from docsgpt.core.settings import settings
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid
 from docsgpt.storage.db.redaction import redact_secrets
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.conversation_labels import (
+    GAP_GROUPS,
+    LOG_LABELS,
+    TAG_PREFIX,
+    TOPIC_PREFIX,
+    ConversationLabelsRepository,
+    Scope,
+    log_label_exists,
+    log_label_keys,
+)
 from docsgpt.storage.db.repositories.request_traces import (
     REF_FIELDS as TRACE_REF_FIELDS,
     RequestTracesRepository,
@@ -119,6 +134,7 @@ def _trace_branch(name: str, sources_sql: str, scope: str) -> dict:
         # at flush so this never detoasts ``spans``); graph builds are named
         # after their source.
         "summary": "COALESCE(t.summary->>'query', t.name, t.source)",
+        "ts": "t.started_at",
         "where": [f"t.source IN {sources_sql}", scope],
         "sql": f"""
         SELECT '{name}' AS event_type,
@@ -860,9 +876,610 @@ class GetScheduleAnalytics(Resource):
         return make_response(jsonify({"success": True, "runs": runs}), 200)
 
 
+def _analytics_available() -> bool:
+    """Whether the operator lets the model label conversations: the switch, with the model available."""
+    return bool(settings.DECISION_ANALYTICS_ENABLED and decisions.available())
+
+
+def _agent_analytics(agent: Optional[dict]) -> AnalyticsConfig:
+    return AnalyticsConfig.parse(((agent or {}).get("config") or {}).get("analytics"))
+
+
+def _gap_source_names(
+    conn: Connection, repo: ConversationLabelsRepository, source_ids: Iterable[Optional[str]], user: str,
+    agent: Optional[dict],
+) -> dict:
+    """Names of the docs-gap groups' sources that the reader may see.
+
+    A turn's stored ``source_id`` can come from a chunk's own metadata, so it never names a source on its own say:
+    a source is named when the reader may use it (owns it, or a team shares it), and on an agent's page also when
+    the agent's owner may use it (the page is the owner's view) or the agent references it, attached or sponsored,
+    as its edit page names them (see ``resource_access.resource_states``). Any other id stays unnamed, like a
+    deleted source's.
+
+    Args:
+        conn: Open database connection.
+        repo: The labels repository on ``conn``.
+        source_ids: The groups' source ids.
+        user: The reader.
+        agent: The agent whose page is read, already access-checked; ``None`` for the reader's own.
+
+    Returns:
+        ``{source id: name}`` of the sources the reader may see.
+    """
+    readers = {user}
+    named: set = set()
+    if agent:
+        readers.add(agent.get("user_id"))
+        named.update(rid for kind, rid in agent_refs(agent) if kind == "source")
+        named.update(
+            rid for kind, _, rid in (key.partition(":") for key in agent.get("resource_sponsors") or {})
+            if kind == "source"
+        )
+    readers.discard(None)
+    for reader in readers:
+        # ``use`` is a viewer action no switch moves, so any team grant carries it.
+        named.update(
+            rid for rid, level in visible_with_access(conn, reader, "source").items()
+            if "use" in allowed_actions("source", level, None)
+        )
+    return repo.source_names(source_ids, readers, named)
+
+
+def _label_scope(user: str, api_key: Optional[str], agent_pg_id: Optional[str]) -> Scope:
+    """An agent's labels (all its traffic, as its owner sees it), else the caller's own."""
+    if agent_pg_id:
+        return Scope(agent_id=agent_pg_id, api_key=api_key)
+    return Scope(user_id=user)
+
+
+def _previous_start(start: datetime.datetime, end: datetime.datetime) -> datetime.datetime:
+    """The start of the window of equal length just before ``[start, end]``."""
+    return start - (end - start)
+
+
+def _utc_iso(value) -> Optional[str]:
+    if not hasattr(value, "astimezone"):
+        return value
+    return value.astimezone(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+_EMPTY_COVERAGE = {
+    "turns": 0, "labelled_turns": 0, "replies": 0, "labelled_replies": 0,
+    "conversations": 0, "labelled_conversations": 0, "unlabelled_recent_turns": 0, "unlabelled_older_turns": 0,
+    "failed_turns": 0,
+}
+
+
+@analytics_ns.route("/get_conversation_insights")
+class GetConversationInsights(Resource):
+    get_conversation_insights_model = api.model(
+        "GetConversationInsightsModel",
+        {
+            "api_key_id": fields.String(required=False, description="Agent id"),
+            "filter_option": fields.String(
+                required=False,
+                description="Filter option for analytics",
+                default="last_30_days",
+                enum=list(_FILTER_BUCKETS.keys()),
+            ),
+        },
+    )
+
+    @api.expect(get_conversation_insights_model)
+    @api.doc(
+        description=(
+            "Insights from the decision model's labels: per label and option the "
+            "expected count and its rate with a 95% interval widened by the label's calibration "
+            "error, each label's tier, the same per time bucket, label coverage and the language "
+            "mix. answer_status rates are over requests (not over greetings). 'available' is the "
+            "operator switch (DECISION_ANALYTICS_ENABLED with the model available); 'enabled' is "
+            "that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' "
+            "(from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' "
+            "(still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill). "
+            "For an agent, 'one_pick' lists the options of its topic question (empty when it asks none) "
+            "and 'overlapping' its topics that can overlap; each one's totals are under 'tag:<id>'. Topics ('topic_effective') are reported for an agent only: each agent has its own list. "
+            "'series' is in 'bucket_unit': the filter's own unit while its buckets average 10 analyzed answers, "
+            "else the next coarser one (minute to hour, hour to day, day to week). A week is named by its first day "
+            "in the window and carries its last as 'bucket_end'. 'previous' holds answer_status, reaction and "
+            "sentiment totals over the period of the same length just before the window."
+        )
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json() or {}
+        api_key_id = data.get("api_key_id")
+        filter_option = data.get("filter_option", "last_30_days")
+
+        window = _range_for_filter(filter_option)
+        if window is None:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid option"}), 400
+            )
+        start_date, end_date, filter_unit, pg_fmt = window
+        available = _analytics_available()
+        backfill_days = settings.ANALYTICS_BACKFILL_DAYS
+        labelling_from = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=backfill_days)
+        result = {
+            "success": True,
+            "enabled": False,
+            "available": available,
+            "backfill_days": backfill_days,
+            "labelling_from": _utc_iso(labelling_from),
+            "coverage": dict(_EMPTY_COVERAGE),
+            "languages": {},
+            "language_warnings": [],
+            "one_pick": [],
+            "overlapping": [],
+            "totals": {},
+            "previous": {},
+            "bucket_unit": filter_unit,
+            "series": [],
+        }
+
+        try:
+            with db_readonly() as conn:
+                agent, api_key, agent_pg_id = _resolve_agent(conn, api_key_id, user)
+                if api_key_id and agent is None:
+                    return make_response(jsonify(result), 200)
+                config = _agent_analytics(agent)
+                result["enabled"] = available and (agent is None or config.enabled)
+                if agent is not None:
+                    result["overlapping"] = [{"id": topic.id, "name": topic.name} for topic in config.overlapping()]
+                if not result["enabled"]:
+                    return make_response(jsonify(result), 200)
+                if agent is not None:
+                    # Reads every source of the agent, so only once there is something to show it with.
+                    try:
+                        result["one_pick"] = list(analytics_topics.options(conn, agent, config))
+                    except Exception:  # noqa: BLE001 - a broken source structure costs the list, not the page
+                        current_app.logger.warning("No topic list for agent %s", agent_pg_id, exc_info=True)
+
+                scope = _label_scope(user, api_key, agent_pg_id)
+                repo = ConversationLabelsRepository(conn)
+                schema_hash = analytics_schema.SCHEMA_HASH
+                # Without an agent, topics would mix every agent's own list into one chart.
+                own = [label for label in insights.TOTAL_LABELS if agent is not None or label != "topic_effective"]
+                series_labels = [label for label in insights.SERIES_LABELS
+                                 if agent is not None or label != "topic_effective"]
+                labels = [*own, *(f"{TAG_PREFIX}{topic['id']}" for topic in result["overlapping"])]
+                result["coverage"] = repo.coverage(scope, schema_hash, start_date, end_date, labelling_from)
+                counts = repo.label_counts(scope, schema_hash, start_date, end_date, labels)
+                sums = repo.label_sums(scope, schema_hash, start_date, end_date, labels)
+                bucket_counts = repo.bucket_counts(
+                    scope, schema_hash, start_date, end_date, series_labels, pg_fmt
+                )
+                bucket_sums = repo.label_sums(
+                    scope, schema_hash, start_date, end_date, series_labels, bucket_format=pg_fmt
+                )
+                # The period of the same length just before the window, for the headline figures' change.
+                previous_end = start_date - datetime.timedelta(microseconds=1)
+                previous_start = previous_end - (end_date - start_date)
+                previous_labels = list(insights.PREVIOUS_LABELS)
+                previous_counts = repo.label_counts(
+                    scope, schema_hash, previous_start, previous_end, previous_labels
+                )
+                previous_sums = repo.label_sums(scope, schema_hash, previous_start, previous_end, previous_labels)
+
+            buckets = list(_intervals_for_filter(filter_option, start_date, end_date))
+            unit = insights.bucket_unit(filter_unit, buckets, int((counts.get("answer_status") or {}).get("n") or 0))
+            ends: dict = {}
+            if unit != filter_unit:
+                buckets, ends, bucket_counts, bucket_sums = insights.rebucket(buckets, bucket_counts, bucket_sums, unit)
+            result["bucket_unit"] = unit
+            result["previous"] = insights.totals(previous_labels, previous_counts, previous_sums)
+            totals = insights.totals(labels, counts, sums)
+            result["totals"] = totals
+            result["languages"] = insights.languages(counts)
+            result["language_warnings"] = insights.language_warnings(counts)
+            result["series"] = insights.series(
+                buckets,
+                series_labels,
+                bucket_counts,
+                bucket_sums,
+                {label: list(totals[label]["options"]) for label in series_labels if label in totals},
+                ends,
+            )
+        except AccessDenied as denied:
+            return _denied(denied)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error getting conversation insights: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(result), 200)
+
+
+#: Most docs-gap groups a request may ask for, and the default.
+_MAX_GAP_GROUPS = 50
+_DEFAULT_GAP_GROUPS = 25
+#: Example questions per docs-gap group.
+_GAP_EXAMPLES = 5
+#: Groups with fewer expected gaps are left out: they would show as 0.
+_MIN_GROUP_GAPS = 0.5
+
+
+@analytics_ns.route("/get_docs_gaps")
+class GetDocsGaps(Resource):
+    get_docs_gaps_model = api.model(
+        "GetDocsGapsModel",
+        {
+            "api_key_id": fields.String(required=False, description="Agent id"),
+            "filter_option": fields.String(
+                required=False,
+                description="Filter option for analytics",
+                default="last_30_days",
+                enum=list(_FILTER_BUCKETS.keys()),
+            ),
+            "group_by": fields.String(
+                required=False,
+                description=(
+                    "Group by the effective topic, or by the source or page of the "
+                    "turn's first retrieved chunk"
+                ),
+                default="page",
+                enum=list(GAP_GROUPS),
+            ),
+            "limit": fields.Integer(
+                required=False,
+                description=f"Most groups returned (1-{_MAX_GAP_GROUPS})",
+                default=_DEFAULT_GAP_GROUPS,
+            ),
+        },
+    )
+
+    @api.expect(get_docs_gaps_model)
+    @api.doc(
+        description=(
+            "Docs gaps: answers that fell short because the docs do not cover the question, as "
+            "expected counts (sums of the decision model's probabilities) per group, with the "
+            "group's rate over its answers and a 95% interval, the window just before for the "
+            "trend, and up to five example questions (gaps at even odds or better). Groups with "
+            "under half an expected gap are left out; key null means no source was retrieved. "
+            "previous_labelled counts the labelled answers in the window before, so a group with no "
+            "earlier gaps can be told from a window that was never labelled; by page, each row's "
+            "source names the source most of its answers retrieved the page from (null if unknown)."
+        )
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json() or {}
+        api_key_id = data.get("api_key_id")
+        filter_option = data.get("filter_option", "last_30_days")
+        group_by = data.get("group_by") or "page"
+        try:
+            limit = int(data.get("limit") or _DEFAULT_GAP_GROUPS)
+        except (TypeError, ValueError):
+            limit = 0
+        window = _range_for_filter(filter_option)
+        if window is None or group_by not in GAP_GROUPS or not 1 <= limit <= _MAX_GAP_GROUPS:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid option"}), 400
+            )
+        start_date, end_date, _bucket_unit, _pg_fmt = window
+        result = {"success": True, "enabled": False, "group_by": group_by, "previous_labelled": 0, "rows": []}
+
+        try:
+            with db_readonly() as conn:
+                agent, api_key, agent_pg_id = _resolve_agent(conn, api_key_id, user)
+                if api_key_id and agent is None:
+                    return make_response(jsonify(result), 200)
+                result["enabled"] = _analytics_available() and (
+                    agent is None or _agent_analytics(agent).enabled
+                )
+                if not result["enabled"]:
+                    return make_response(jsonify(result), 200)
+                scope = _label_scope(user, api_key, agent_pg_id)
+                repo = ConversationLabelsRepository(conn)
+                schema_hash = analytics_schema.SCHEMA_HASH
+                previous_start = _previous_start(start_date, end_date)
+                groups = repo.gap_groups(
+                    group_by, scope, schema_hash, start_date, end_date,
+                    previous_start, limit, _MIN_GROUP_GAPS,
+                )
+                result["previous_labelled"] = repo.gap_labelled(
+                    scope, schema_hash, previous_start, start_date
+                )
+                examples = repo.gap_examples(
+                    group_by, scope, schema_hash, start_date, end_date,
+                    [group["key"] for group in groups],
+                    settings.ANALYTICS_FILTER_MIN_PROBABILITY, _GAP_EXAMPLES,
+                ) if groups else []
+                source_ids = {"source": "key", "page": "source_id"}.get(group_by)
+                names = (
+                    _gap_source_names(conn, repo, [group[source_ids] for group in groups], user, agent)
+                    if source_ids and groups else {}
+                )
+
+            by_key: dict = {}
+            for example in examples:
+                by_key.setdefault(example["key"], []).append(
+                    {
+                        "message_id": example["message_id"],
+                        "conversation_id": example["conversation_id"],
+                        "prompt": example["prompt"] or "",
+                        "p": round(float(example["p"] or 0), 4),
+                        "timestamp": _utc_iso(example["timestamp"]),
+                    }
+                )
+            result["rows"] = [
+                insights.gap_row(
+                    group,
+                    by_key.get(group["key"], []),
+                    names.get(group["key"], group["key"]) if group_by == "source" else group["name"],
+                    names.get(group["source_id"]) if group_by == "page" else None,
+                )
+                for group in groups
+            ]
+        except AccessDenied as denied:
+            return _denied(denied)
+        except Exception as err:
+            current_app.logger.error(f"Error getting docs gaps: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(result), 200)
+
+
+@analytics_ns.route("/analytics/topic_folders")
+class GetTopicFolders(Resource):
+    @api.doc(
+        description=(
+            "The folders of an agent's sources, largest first: one per documentation section, described "
+            "by up to five page titles. They fill the agent's topic question after its own topics; the "
+            "settings list them so the owner can hide or edit them. Needs edit access to the agent."
+        ),
+        params={"agent_id": "Agent id"},
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        agent_id = request.args.get("agent_id")
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "agent_id is required"}), 400
+            )
+        try:
+            with db_readonly() as conn:
+                access = require(conn, "agent", agent_id, user, "edit")
+                agent = AgentsRepository(conn).get_by_id(access.resource_id)
+                if agent is None:
+                    raise AccessDenied(404, "Agent not found")
+                folders = analytics_topics.folders_of(conn, agent)
+        except AccessDenied as denied:
+            return _denied(denied)
+        except Exception as err:
+            current_app.logger.error(f"Error listing topic folders: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True, "folders": folders}), 200)
+
+
+@analytics_ns.route("/analytics/topics")
+class GetAgentTopics(Resource):
+    @api.doc(
+        description=(
+            "Every topic an agent's conversations are labelled with, sorted by name, each with the Logs "
+            "'label' filter that selects it: topic:<name> for a topic that doesn't overlap (its own "
+            "topics and source folders), tag:<id> for one that can. Needs the agent's logs; an agent "
+            "the caller can't see gives an empty list."
+        ),
+        params={"agent_id": "Agent id"},
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        agent_id = request.args.get("agent_id")
+        if not agent_id:
+            return make_response(
+                jsonify({"success": False, "message": "agent_id is required"}), 400
+            )
+        try:
+            with db_readonly() as conn:
+                agent, _api_key, _agent_pg_id = _resolve_agent(conn, agent_id, user)
+                if agent is None:
+                    return make_response(jsonify({"success": True, "topics": []}), 200)
+                config = _agent_analytics(agent)
+                listed = [{"label": f"{TOPIC_PREFIX}{name}", "name": name, "overlap": False}
+                          for name in analytics_topics.options(conn, agent, config)]
+                listed += [{"label": f"{TAG_PREFIX}{topic.id}", "name": topic.name, "overlap": True}
+                           for topic in config.overlapping()]
+        except AccessDenied as denied:
+            return _denied(denied)
+        except Exception as err:
+            current_app.logger.error(f"Error listing agent topics: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        listed.sort(key=lambda topic: topic["name"].lower())
+        return make_response(jsonify({"success": True, "topics": listed}), 200)
+
+
 # Scheduled runs the timeline lists: running ones and every finished state the
 # worker writes (``completed`` kept defensively).
 _SCHEDULE_LOG_STATUSES = "('pending', 'running', 'success', 'completed', 'failed', 'timeout', 'skipped')"
+
+
+_UUID_RE = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+# A chat Logs row's message, cast only when the stored id is a UUID so an odd
+# legacy value cannot fail the whole query.
+_LOG_MESSAGE_ID = (
+    "CASE WHEN l.data->>'message_id' ~* :uuid_re "
+    "THEN CAST(l.data->>'message_id' AS uuid) END"
+)
+_MAX_PASSTHROUGH_FILTERS = 8
+
+
+class _BadLogFilter(Exception):
+    """A Logs row filter with the wrong shape; ``message`` is user-facing."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def _parse_iso_moment(value, field: str) -> Optional[datetime.datetime]:
+    """An ISO 8601 moment from a filter field (UTC when it names no zone)."""
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise _BadLogFilter(f"{field} must be an ISO 8601 string")
+    try:
+        moment = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise _BadLogFilter(f"{field} must be an ISO 8601 string")
+    return moment if moment.tzinfo else moment.replace(tzinfo=datetime.timezone.utc)
+
+
+def _passthrough_filter_value(value) -> str:
+    """A filter value as Postgres' ``->>`` renders the stored JSON scalar."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _log_filters(data: dict) -> dict:
+    """The Logs request's row filters, validated.
+
+    Args:
+        data: The request body.
+
+    Returns:
+        ``conversation_id``, ``passthrough`` (``[(key, text value)]``),
+        ``feedback``, ``label``, ``date_from`` and ``date_to``; each ``None``
+        when unset.
+
+    Raises:
+        _BadLogFilter: A filter has the wrong shape.
+    """
+    conversation_id = data.get("conversation_id") or None
+    if conversation_id is not None and not looks_like_uuid(str(conversation_id)):
+        raise _BadLogFilter("conversation_id must be a UUID")
+    label = data.get("label") or None
+    if label is not None and not (
+        isinstance(label, str)
+        and (
+            label in LOG_LABELS
+            or (label.startswith(TAG_PREFIX) and TOPIC_ID.match(label[len(TAG_PREFIX):]))
+            or (label.startswith(TOPIC_PREFIX) and 0 < len(label[len(TOPIC_PREFIX):].strip()) <= TOPIC_NAME_CHARS)
+        )
+    ):
+        raise _BadLogFilter(
+            "label must be one of " + ", ".join(LOG_LABELS) + ", tag:<id> or topic:<name>"
+        )
+    feedback = data.get("feedback") or None
+    if feedback not in (None, "like", "dislike"):
+        raise _BadLogFilter("feedback must be 'like' or 'dislike'")
+    raw = data.get("passthrough")
+    passthrough = None
+    if raw not in (None, {}):
+        if not isinstance(raw, dict) or len(raw) > _MAX_PASSTHROUGH_FILTERS:
+            raise _BadLogFilter(
+                f"passthrough must be an object of at most {_MAX_PASSTHROUGH_FILTERS} keys"
+            )
+        passthrough = []
+        for key, value in raw.items():
+            if not isinstance(key, str) or not key or not isinstance(value, (str, int, float, bool)):
+                raise _BadLogFilter("passthrough filter values must be strings, numbers or booleans")
+            passthrough.append((key, _passthrough_filter_value(value)))
+    date_from = _parse_iso_moment(data.get("date_from"), "date_from")
+    date_to = _parse_iso_moment(data.get("date_to"), "date_to")
+    return {
+        "conversation_id": str(conversation_id) if conversation_id else None,
+        "passthrough": passthrough,
+        "feedback": feedback,
+        "label": label,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+
+def _attach_message_feedback(conn: Connection, items: list) -> None:
+    """Add each chat row's feedback (``{text, timestamp}``) from its message, in one lookup."""
+    ids = {
+        str(item["message_id"])
+        for item in items
+        if item["event_type"] == "chat"
+        and not item.get("running")
+        and item.get("message_id")
+        and looks_like_uuid(str(item["message_id"]))
+    }
+    if not ids:
+        return
+    rows = conn.execute(
+        _sql_text(
+            "SELECT CAST(id AS text) AS id, feedback, CAST(conversation_id AS text) AS conversation_id "
+            "FROM conversation_messages WHERE id = ANY(CAST(:ids AS uuid[]))"
+        ),
+        {"ids": sorted(ids)},
+    ).fetchall()
+    found = {row._mapping["id"]: row._mapping for row in rows}
+    for item in items:
+        message = found.get(str(item.get("message_id") or ""))
+        if message is None:
+            continue
+        if message["feedback"]:
+            item["feedback"] = message["feedback"]
+        # Rows logged before the conversation id was stored on them.
+        if not item.get("conversation_id"):
+            item["conversation_id"] = message["conversation_id"]
+
+
+def _attach_labels(
+    conn: Connection, items: list, viewer: Optional[str] = None, agent_id: Optional[str] = None
+) -> dict:
+    """Add each finished chat row's analytics ``labels`` (chip keys at even odds or better), in one lookup.
+
+    Reaction labels (frustrated, asked for a person, negative reaction) sit on
+    the user message that showed them; tags on every turn of their
+    conversation. Rows with none get an empty list.
+
+    Args:
+        conn: A read-only connection.
+        items: The Logs page's rows, changed in place.
+        viewer: For the caller's own Logs, the caller: labels of another
+            owner's (shared or public) agent are left out, since they name
+            that owner's topics.
+        agent_id: For an agent's Logs, the agent: only labels written under
+            it, as a turn logged under it can sit in a conversation of
+            another owner's agent.
+
+    Returns:
+        ``{tag id: name}`` for the tags on the page, from each row's agent.
+    """
+    chats = [
+        item for item in items
+        if item["event_type"] == "chat" and not item.get("running")
+    ]
+    for item in chats:
+        item["labels"] = []
+    ids = {
+        str(item["message_id"]) for item in chats
+        if item.get("message_id") and looks_like_uuid(str(item["message_id"]))
+    }
+    if not ids:
+        return {}
+    repo = ConversationLabelsRepository(conn)
+    rows = repo.log_rows(ids, analytics_schema.SCHEMA_HASH, viewer=viewer, agent_id=agent_id)
+    by_message: dict = {}
+    for row in rows:
+        by_message.setdefault(row["target"], []).append(row)
+    threshold = settings.ANALYTICS_FILTER_MIN_PROBABILITY
+    tags: set = set()
+    for item in chats:
+        keys = log_label_keys(by_message.get(str(item.get("message_id") or ""), []), threshold)
+        item["labels"] = keys
+        tags.update(key[len(TAG_PREFIX):] for key in keys if key.startswith(TAG_PREFIX))
+    if not tags:
+        return {}
+    agents = {row["agent_id"] for row in rows if row["agent_id"] and row["label"].startswith(TAG_PREFIX)}
+    names = repo.tag_names(agents, owner=viewer)
+    return {tag: names[tag] for tag in sorted(tags) if tag in names}
 
 
 def _running_webhook_rows(owner_id: str, agent_id: Optional[str], search: Optional[str]) -> list:
@@ -956,6 +1573,38 @@ class GetUserLogs(Resource):
             "search": fields.String(
                 required=False, description="Substring filter on the summary"
             ),
+            "conversation_id": fields.String(
+                required=False,
+                description="Only rows of this conversation (chat turns and scheduled runs)",
+            ),
+            "passthrough": fields.Raw(
+                required=False,
+                description=(
+                    "Only chat turns whose passthrough values match every "
+                    "given key, compared as text, e.g. {\"user_id\": \"42\"}"
+                ),
+            ),
+            "feedback": fields.String(
+                required=False,
+                description="Only chat turns rated this way",
+                enum=["like", "dislike"],
+            ),
+            "label": fields.String(
+                required=False,
+                description=(
+                    "Only chat turns the decision model labelled this way at "
+                    "ANALYTICS_FILTER_MIN_PROBABILITY or better: one of "
+                    + ", ".join(LOG_LABELS)
+                    + ", tag:<id> (a topic of the turn's conversation that can overlap) or topic:<name> "
+                    "(the turn's own topic)"
+                ),
+            ),
+            "date_from": fields.String(
+                required=False, description="Rows at or after this ISO 8601 moment"
+            ),
+            "date_to": fields.String(
+                required=False, description="Rows before this ISO 8601 moment"
+            ),
         },
     )
 
@@ -967,7 +1616,9 @@ class GetUserLogs(Resource):
             "runs (schedule_runs) into one timeline. Runs are ordered by "
             "their start time; ones still going (answers, scheduled, "
             "workflow and webhook runs) carry running: true until their "
-            "finished row replaces them."
+            "finished row replaces them. Finished chat rows carry 'labels', "
+            "the analytics label keys at ANALYTICS_FILTER_MIN_PROBABILITY "
+            "or better, and 'tag_names' names the tags on the page."
         )
     )
     def post(self):
@@ -984,8 +1635,9 @@ class GetUserLogs(Resource):
                 jsonify({"success": False, "message": "Invalid option"}), 400
             )
         api_key_id = data.get("api_key_id")
-        level = data.get("level")
-        event_type = data.get("event_type")
+        # An empty value (a tool that fills every field) means no filter.
+        level = data.get("level") or None
+        event_type = data.get("event_type") or None
         search = data.get("search")
         if level not in (None, "info", "error", "warning") or event_type not in (
             None,
@@ -1000,6 +1652,10 @@ class GetUserLogs(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Invalid option"}), 400
             )
+        try:
+            filters = _log_filters(data)
+        except _BadLogFilter as bad:
+            return make_response(jsonify({"success": False, "message": bad.message}), 400)
 
         try:
             with db_readonly() as conn:
@@ -1017,6 +1673,7 @@ class GetUserLogs(Resource):
                                 "page": page,
                                 "page_size": page_size,
                                 "has_more": False,
+                                "tag_names": {},
                             }
                         ),
                         200,
@@ -1133,6 +1790,23 @@ class GetUserLogs(Resource):
                         "name": "chat",
                         "level": "COALESCE(l.data->>'level', 'info')",
                         "summary": "l.data->>'question'",
+                        "ts": "l.timestamp",
+                        # Rows logged before the id was stored on them are
+                        # matched through their message.
+                        "conversation": (
+                            "(l.data->>'conversation_id' = :conversation_id"
+                            " OR (l.data->>'conversation_id' IS NULL AND EXISTS ("
+                            "SELECT 1 FROM conversation_messages fm"
+                            f" WHERE fm.id = {_LOG_MESSAGE_ID}"
+                            " AND fm.conversation_id = CAST(:conversation_id AS uuid))))"
+                        ),
+                        "passthrough": "l.data->'passthrough'",
+                        "feedback": (
+                            "EXISTS (SELECT 1 FROM conversation_messages fm"
+                            f" WHERE fm.id = {_LOG_MESSAGE_ID}"
+                            " AND fm.feedback->>'text' = :feedback)"
+                        ),
+                        "label": _LOG_MESSAGE_ID,
                         "where": chat_where,
                         "sql": """
                         SELECT 'chat' AS event_type,
@@ -1155,6 +1829,9 @@ class GetUserLogs(Resource):
                         "event_type": "chat",
                         "level": "'info'",
                         "summary": "m.prompt",
+                        "ts": "m.timestamp",
+                        "conversation": "m.conversation_id = CAST(:conversation_id AS uuid)",
+                        "passthrough": "c.passthrough",
                         "where": running_chat_where + [
                             "m.status IN ('pending', 'streaming')",
                             "COALESCE((m.message_metadata ->> 'last_heartbeat_at')::timestamptz, m.timestamp)"
@@ -1174,6 +1851,7 @@ class GetUserLogs(Resource):
                                    'message_id', m.id,
                                    'conversation_id', m.conversation_id,
                                    'agent_id', c.agent_id,
+                                   'passthrough', c.passthrough,
                                    'origin', CASE
                                        WHEN c.is_shared_usage THEN 'shared'
                                        WHEN c.visibility = 'listed' THEN 'chat'
@@ -1188,6 +1866,7 @@ class GetUserLogs(Resource):
                         "name": "system",
                         "level": "'error'",
                         "summary": "s.query",
+                        "ts": "s.timestamp",
                         "where": system_where,
                         "sql": """
                         SELECT 'system' AS event_type,
@@ -1210,6 +1889,7 @@ class GetUserLogs(Resource):
                         "name": "webhook",
                         "level": "COALESCE(s.level, 'info')",
                         "summary": "s.query",
+                        "ts": "s.timestamp",
                         "where": webhook_where,
                         "sql": """
                         SELECT 'webhook' AS event_type,
@@ -1237,6 +1917,7 @@ class GetUserLogs(Resource):
                         "summary": (
                             "COALESCE(wr.inputs->>'query', w.name, 'Workflow run')"
                         ),
+                        "ts": "wr.started_at",
                         "where": workflow_where,
                         "sql": """
                         SELECT 'workflow' AS event_type,
@@ -1270,6 +1951,8 @@ class GetUserLogs(Resource):
                         "summary": (
                             "COALESCE(sc.name, sc.instruction, 'Scheduled run')"
                         ),
+                        "ts": "COALESCE(r.started_at, r.scheduled_for)",
+                        "conversation": "r.conversation_id = CAST(:conversation_id AS uuid)",
                         "where": schedule_where,
                         "sql": """
                         SELECT 'schedule' AS event_type,
@@ -1311,10 +1994,40 @@ class GetUserLogs(Resource):
                     params["level"] = level
                 if search:
                     params["search"] = f"%{like_escape(search)}%"
+                params["uuid_re"] = _UUID_RE
+                for name in ("conversation_id", "feedback", "date_from", "date_to"):
+                    if filters[name] is not None:
+                        params[name] = filters[name]
+                for index, (key, value) in enumerate(filters["passthrough"] or []):
+                    params[f"pt_key_{index}"] = key
+                    params[f"pt_value_{index}"] = value
+                if filters["label"]:
+                    params["schema_hash"] = analytics_schema.SCHEMA_HASH
+                    params["label_min"] = settings.ANALYTICS_FILTER_MIN_PROBABILITY
+                    params["label_name"] = filters["label"]
+                    if filters["label"].startswith(TOPIC_PREFIX):
+                        params["topic_name"] = filters["label"][len(TOPIC_PREFIX):]
+                    if api_key_id:
+                        # An agent's Logs read its own labels only: a turn
+                        # logged under it can sit in another agent's
+                        # conversation, labelled under that agent's topics.
+                        params["label_agent"] = agent_pg_id
+                    else:
+                        # The caller's own Logs: another owner's agent's labels
+                        # must not answer a guessed topic name.
+                        params["label_viewer"] = user
 
                 branch_sqls = []
                 for branch in branches:
                     if event_type and branch.get("event_type", branch["name"]) != event_type:
+                        continue
+                    # A row filter a branch has no column for leaves it out.
+                    if (
+                        (filters["conversation_id"] and "conversation" not in branch)
+                        or (filters["passthrough"] and "passthrough" not in branch)
+                        or (filters["feedback"] and "feedback" not in branch)
+                        or (filters["label"] and "label" not in branch)
+                    ):
                         continue
                     where = list(branch["where"])
                     if level:
@@ -1323,6 +2036,24 @@ class GetUserLogs(Resource):
                         where.append(
                             f"{branch['summary']} ILIKE :search ESCAPE '\\'"
                         )
+                    if filters["conversation_id"]:
+                        where.append(branch["conversation"])
+                    for index in range(len(filters["passthrough"] or [])):
+                        where.append(
+                            f"{branch['passthrough']}->>CAST(:pt_key_{index} AS text) = :pt_value_{index}"
+                        )
+                    if filters["feedback"]:
+                        where.append(branch["feedback"])
+                    if filters["label"]:
+                        where.append(log_label_exists(
+                            filters["label"], branch["label"],
+                            visible_to=None if api_key_id else "label_viewer",
+                            of_agent="label_agent" if api_key_id else None,
+                        ))
+                    if filters["date_from"]:
+                        where.append(f"{branch['ts']} >= :date_from")
+                    if filters["date_to"]:
+                        where.append(f"{branch['ts']} < :date_to")
                     branch_sqls.append(
                         branch["sql"].format(
                             level=branch["level"],
@@ -1343,7 +2074,9 @@ class GetUserLogs(Resource):
                     " LIMIT :limit OFFSET :offset"
                 )
 
-                rows = conn.execute(_sql_text(sql), params).fetchall()
+                # A row filter no branch of the chosen type has (a label on
+                # scheduled runs) matches nothing.
+                rows = conn.execute(_sql_text(sql), params).fetchall() if branch_sqls else []
 
             has_more = len(rows) > page_size
             results = []
@@ -1374,6 +2107,7 @@ class GetUserLogs(Resource):
                             "message_id": payload.get("message_id"),
                             "conversation_id": payload.get("conversation_id"),
                             "agent_id": payload.get("agent_id"),
+                            "passthrough": payload.get("passthrough"),
                         }
                     )
                 elif m["event_type"] == "chat":
@@ -1386,6 +2120,8 @@ class GetUserLogs(Resource):
                             "attachments": payload.get("attachments"),
                             "request_id": payload.get("request_id"),
                             "message_id": payload.get("message_id"),
+                            "conversation_id": payload.get("conversation_id"),
+                            "passthrough": payload.get("passthrough"),
                             "error": payload.get("error"),
                         }
                     )
@@ -1445,7 +2181,16 @@ class GetUserLogs(Resource):
                     # format (JSON drops trailing zeros from the seconds).
                     item["started_at"] = item["timestamp"]
                 results.append(item)
-            if page == 1 and event_type in (None, "webhook") and level in (None, "info"):
+            row_filtered = any(
+                filters[name]
+                for name in ("conversation_id", "passthrough", "feedback", "label", "date_from", "date_to")
+            )
+            if (
+                page == 1
+                and event_type in (None, "webhook")
+                and level in (None, "info")
+                and not row_filtered
+            ):
                 # A webhook run has no row until it ends; its Redis marker
                 # stands in for it on the first page.
                 results = _merge_by_time(
@@ -1454,9 +2199,31 @@ class GetUserLogs(Resource):
                         params["user_id"], agent_pg_id if api_key_id else None, search
                     ),
                 )
+            tag_names: dict = {}
             if results:
-                # Trace chips are an extra: a failed lookup must leave the
-                # page intact, just without them.
+                # Feedback, label and trace chips are extras: a failed lookup
+                # must leave the page intact, just without them.
+                try:
+                    with db_readonly() as conn:
+                        _attach_message_feedback(conn, results)
+                except Exception:
+                    current_app.logger.warning(
+                        "Could not attach feedback to the logs page", exc_info=True
+                    )
+                # Label chips show while insights are on; the label filter
+                # above keeps working, for a link that carries a label.
+                if settings.DECISION_ANALYTICS_ENABLED:
+                    try:
+                        with db_readonly() as conn:
+                            tag_names = _attach_labels(
+                                conn, results,
+                                viewer=None if api_key_id else user,
+                                agent_id=agent_pg_id if api_key_id else None,
+                            )
+                    except Exception:
+                        current_app.logger.warning(
+                            "Could not attach labels to the logs page", exc_info=True
+                        )
                 try:
                     with db_readonly() as conn:
                         _attach_trace_summaries(
@@ -1486,6 +2253,7 @@ class GetUserLogs(Resource):
                     "page": page,
                     "page_size": page_size,
                     "has_more": has_more,
+                    "tag_names": tag_names,
                 }
             ),
             200,

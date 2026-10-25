@@ -30,6 +30,7 @@ from docsgpt.core.model_utils import (
 )
 
 from docsgpt.core.settings import settings
+from docsgpt.decisions import record as decision_record
 from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
@@ -107,7 +108,9 @@ def _traced_stream(
     trace the route started is activated here for the whole stream and written
     exactly once when the stream ends -- normally, paused, failed or
     abandoned. The request id is resolved here too so the trace and the
-    stream agree on it.
+    stream agree on it. The turn's decision record is activated with it: the
+    one the processor handed the agent (holding any decisions made during
+    setup, and a resumed turn's earlier rounds), or a new one.
     """
     signature = inspect.signature(method)
 
@@ -135,7 +138,10 @@ def _traced_stream(
                 user_id=decoded_token.get("sub") if isinstance(decoded_token, dict) else None,
                 agent_id=arguments.get("agent_id"),
             )
-        with tracing.activate(trace):
+        decisions = getattr(arguments.get("agent"), "decision_record", None)
+        if not isinstance(decisions, decision_record.DecisionRecord):
+            decisions = decision_record.DecisionRecord()
+        with tracing.activate(trace), decision_record.activate(decisions):
             try:
                 yield from method(*bound.args, **bound.kwargs)
             finally:
@@ -152,6 +158,60 @@ def _client_gone(agent: Any) -> bool:
     """Whether the route flagged the agent's client as disconnected."""
     event = getattr(agent, "client_disconnected", None)
     return isinstance(event, threading.Event) and event.is_set()
+
+def _turn_tool_calls(agent: Any, reported: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The turn's tool calls, with those the agent made but had not reported yet.
+
+    An agent reports its calls once, when its turn ends. A stream cut short by
+    a Stop or a dropped connection never reads that line, so without this the
+    message lost its calls, among them a handed-off call's job card and the
+    file the job made.
+
+    Args:
+        agent: The turn's agent.
+        reported: The calls the stream has read so far.
+
+    Returns:
+        ``reported`` merged with the agent's calls.
+    """
+    try:
+        made = agent._get_truncated_tool_calls()
+    except Exception:
+        logger.debug("reading the agent's tool calls failed", exc_info=True)
+        return reported
+    if not isinstance(made, list) or not made:
+        return reported
+    return merge_tool_calls(reported, made)
+
+
+def _stop_background_jobs(context: Any) -> None:
+    """Cancel the jobs a stopped turn handed off, so none of them resumes the chat. Never raises."""
+    if context is None or not getattr(context, "origin_message_id", None):
+        return
+    from docsgpt.background.service import stop_turn_jobs
+
+    try:
+        stop_turn_jobs(context.conversation_id, context.origin_message_id, context.user_id)
+    except Exception:
+        logger.exception("stopping the background jobs of message %s failed", context.origin_message_id)
+
+
+def _show_finished_jobs(context: Any, tool_calls: List[Dict[str, Any]]) -> None:
+    """Put the outcome of jobs that ended mid-stream on the saved entries. Never raises.
+
+    Only a turn whose saved calls carry a job looks anything up.
+    """
+    if context is None or not getattr(context, "origin_message_id", None):
+        return
+    if not any(isinstance(call, dict) and call.get("job_id") for call in tool_calls or []):
+        return
+    from docsgpt.background.service import show_finished_jobs
+
+    try:
+        show_finished_jobs(context.conversation_id, context.origin_message_id, context.user_id)
+    except Exception:
+        logger.exception("showing the finished jobs of message %s failed", context.origin_message_id)
+
 
 def _record_answered_by(agent: Any, query_metadata: Dict[str, Any]) -> None:
     """Keep the models that answered on the message, once a fallback answered.
@@ -324,6 +384,8 @@ class BaseAnswerResource:
         attachment_ids: Optional[List[str]],
         request_id: Optional[str],
         message_id: Optional[str],
+        conversation_id: Optional[str] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
@@ -344,6 +406,8 @@ class BaseAnswerResource:
             attachment_ids: Attached file ids.
             request_id: The turn's request id (links its trace).
             message_id: The reserved message id.
+            conversation_id: The conversation the turn belongs to.
+            passthrough: The request's stored passthrough values.
             error: What failed the turn, if it failed.
             extra: More fields for the row (structured-output details).
         """
@@ -362,7 +426,10 @@ class BaseAnswerResource:
             # Links the Logs row to this turn's execution trace.
             "request_id": request_id,
             "message_id": message_id,
+            "conversation_id": str(conversation_id) if conversation_id else None,
         }
+        if passthrough:
+            log_data["passthrough"] = passthrough
         if error:
             log_data["error"] = error
         if extra:
@@ -557,6 +624,7 @@ class BaseAnswerResource:
         finalize_tool_pause_as_complete: bool = False,
         request_id: Optional[str] = None,
         trace: Optional["tracing.Trace"] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -588,6 +656,8 @@ class BaseAnswerResource:
                 the pre-fetch retrieval); :func:`_traced_stream` activates it
                 and writes it when the stream ends. A new one is started when
                 omitted.
+            passthrough: The request's passthrough values bounded for
+                storage; kept on the conversation and the Logs row.
             finalize_tool_pause_as_complete: Stateless-tool-round mode for
                 the OpenAI-compatible ``/v1/chat/completions`` endpoint.
                 OpenAI clients resume a tool call by re-POSTing the full
@@ -626,6 +696,8 @@ class BaseAnswerResource:
         # The order text, thought and tool calls arrived in, saved under
         # ``query_metadata["segments"]`` so a reload renders the turn as it streamed.
         segments = AnswerSegments(query_metadata)
+        # The decision model's entries for the turn, under ``query_metadata["decisions"]``.
+        decision_record.attach(query_metadata)
         paused = False
         # Set when the agent *yields* a terminal ``error`` event instead of
         # raising. Workflow node failures take that route (the engine catches
@@ -692,6 +764,7 @@ class BaseAnswerResource:
                     model_id=model_id or self.default_model_id,
                     request_id=request_id,
                     index=index,
+                    passthrough=passthrough,
                 )
                 conversation_id = reservation["conversation_id"]
                 reserved_message_id = reservation["message_id"]
@@ -922,7 +995,7 @@ class BaseAnswerResource:
         # A slow tool call in this turn may be handed off to a background job.
         # A resumed round with no row of its own (the first /v1 pause finalized
         # it) has nothing to report back to: its jobs are poll-only.
-        bind_background_turn(
+        background_turn = bind_background_turn(
             getattr(agent, "tool_executor", None),
             conversation_id=conversation_id,
             message_id=reserved_message_id,
@@ -1274,6 +1347,7 @@ class BaseAnswerResource:
                             reserved_message_id=None,
                             request_id=request_id,
                             tool_calls=tool_calls,
+                            passthrough=passthrough,
                         )
                     # Flush the held pause event now (after the state is
                     # saved), in its original position ahead of the terminal
@@ -1370,6 +1444,7 @@ class BaseAnswerResource:
                         reserved_message_id=reserved_message_id,
                         request_id=request_id,
                         tool_calls=tool_calls,
+                        passthrough=passthrough,
                     )
 
                     # Notify the user out-of-band so they can navigate back and
@@ -1509,7 +1584,15 @@ class BaseAnswerResource:
                             ),
                         } if llm is not None else None,
                         async_title_generation=llm is not None,
+                        # It ran to the end: unread unless the user watches it.
+                        mark_unread_when_away=True,
                     )
+                    if finalize_outcome is MessageUpdateOutcome.UPDATED:
+                        # A Stop that landed after the last event still stops the turn's jobs.
+                        if stop_requested(reserved_message_id):
+                            _stop_background_jobs(background_turn)
+                        else:
+                            _show_finished_jobs(background_turn, tool_calls)
                     # The outcome used to be discarded here, which is how a
                     # finished answer could vanish silently: if the row was
                     # deleted mid-stream (retry/edit truncation) the write
@@ -1658,6 +1741,8 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
+                conversation_id=conversation_id,
+                passthrough=passthrough,
                 # A yielded error (a failed workflow node) ends the turn
                 # normally but still failed it.
                 error=stream_error,
@@ -1685,6 +1770,12 @@ class BaseAnswerResource:
                 journal_writer.flush()
                 journal_writer.close()
             response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
+            tool_calls = _turn_tool_calls(agent, tool_calls)
+            # The chat's own Stop stores the request and then closes the
+            # stream, so a close can arrive before the ticker has seen it.
+            stopped_by_user = isinstance(stream_exit, StreamStopped) or (
+                reserved_message_id is not None and stop_requested(reserved_message_id)
+            )
             # Save partial response
 
             # Whether the DB row was flipped to ``complete`` during this
@@ -1829,12 +1920,8 @@ class BaseAnswerResource:
                         # reconnecting client surfaces the same failure
                         # the UI would show on a live error. A Stop says
                         # so: its code keeps the chat out of the failed ones
-                        # the sidebar marks. The chat's own Stop stores the
-                        # request and then closes the stream, so a close can
-                        # arrive before the ticker has seen it.
-                        stopped = isinstance(stream_exit, StreamStopped) or stop_requested(
-                            reserved_message_id
-                        )
+                        # the sidebar marks.
+                        stopped = stopped_by_user
                         failure_metadata = dict(query_metadata or {})
                         if stopped:
                             failure_metadata["error"] = "Stopped by its user before any response was produced."
@@ -1886,12 +1973,16 @@ class BaseAnswerResource:
                         f"Failed to journal terminal event on abort: {journal_err}",
                         exc_info=True,
                     )
+            if stopped_by_user:
+                # After the message is saved, so a job that already ended
+                # can show its outcome on the message's entry.
+                _stop_background_jobs(background_turn)
+            else:
+                _show_finished_jobs(background_turn, tool_calls)
             # A Stop is the user's own end of the turn: it keeps its Logs
             # entry, as a turn that runs out or fails does. A dropped
             # connection writes none.
-            if not turn_logged and reserved_message_id is not None and (
-                isinstance(stream_exit, StreamStopped) or stop_requested(reserved_message_id)
-            ):
+            if not turn_logged and reserved_message_id is not None and stopped_by_user:
                 self._persist_turn_log(
                     decoded_token=decoded_token,
                     user_api_key=user_api_key,
@@ -1903,6 +1994,8 @@ class BaseAnswerResource:
                     attachment_ids=attachment_ids,
                     request_id=request_id,
                     message_id=reserved_message_id,
+                    conversation_id=conversation_id,
+                    passthrough=passthrough,
                     extra={"stopped": True},
                 )
             if isinstance(stream_exit, StreamStopped) and terminal is not None:
@@ -2029,6 +2122,8 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
+                conversation_id=conversation_id,
+                passthrough=passthrough,
                 error=bounded_error_text(e),
             )
             yield _emit(
@@ -2088,6 +2183,7 @@ class BaseAnswerResource:
         reserved_message_id: Optional[str],
         request_id: Optional[str],
         tool_calls: List[Dict[str, Any]],
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Save a paused turn's continuation state so a later request can resume it.
 
@@ -2106,6 +2202,8 @@ class BaseAnswerResource:
                 its answer).
             request_id: The turn's request id.
             tool_calls: Every call of the turn so far.
+            passthrough: The request's stored passthrough values; the resume
+                logs the turn with them.
 
         Returns:
             Whether the state was saved.
@@ -2166,6 +2264,7 @@ class BaseAnswerResource:
                     # Every round's calls so far, so the message
                     # the resumed turn finalizes keeps them all.
                     "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
+                    "passthrough": passthrough,
                     # The turn's files (so ``F`` refs still
                     # resolve), its compression point and
                     # backup models.

@@ -1,7 +1,7 @@
 ---
 title: Chat Widget
 description: Embed the DocsGPT Widget in your React, HTML, or Nextra projects to provide AI-powered chat functionality to your users.
-lastUpdated: 2026-10-05
+lastUpdated: 2026-10-23
 ---
 import { Callout, Tabs } from 'nextra/components'
 
@@ -84,10 +84,10 @@ Now, you can embed the widget within your React component's JSX:
 To use the DocsGPT Widget directly in HTML, include the widget script from a CDN in your HTML file:
 
 ```html filename="html"
-<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>
 ```
 
-The bundle defines `renderDocsGPTWidget` (and `renderSearchBar`) on `window`. `0.8.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version. `dist/modern/browser.js` is a smaller build for modern browsers only.
+The bundle defines `renderDocsGPTWidget` (and `renderSearchBar`) on `window`. `0.13.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version. `dist/modern/browser.js` is a smaller build for modern browsers only.
 
 ### Usage
 
@@ -102,7 +102,7 @@ Then, in a `<script>` block after the widget script, use the `renderDocsGPTWidge
 ```html filename="html"
 <!DOCTYPE html>
 <div id="app"></div>
-<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+<script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>
 <script>
   window.onload = function() {
     renderDocsGPTWidget('app', {
@@ -172,17 +172,28 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **`description`**  | `string`         | `"DocsGPT's AI Chatbot is here to help"`                     | Sub-title or descriptive text displayed below the title in the chatbot header.                       |
 | **`heroTitle`**    | `string`         | `"Welcome to DocsGPT !"`                                    | Welcome message displayed when the chatbot is initially opened.                                     |
 | **`heroDescription`** | `string`     | `"This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources."` | Introductory text providing context or disclaimers about the chatbot.                                 |
+| **`suggestedQuestions`** | `string[]` | _unset_                                                | Questions listed under the welcome card before the first message. Clicking one sends it. See [Suggested questions](#suggested-questions). |
+| **`suggestedQuestionsLabel`** | `string` | `"Suggested questions"`                             | Heading over `suggestedQuestions`. Pass an empty string to hide it.                                  |
 | **`theme`**        | `"dark" \| "light"` | `"dark"`                                                  | Color theme of the widget interface.                                                                 |
 | **`buttonIcon`**   | `string`         | a chat-bubble icon                                          | URL for the icon image used in the widget's launch button. Defaults to a chat-bubble icon drawn inline. |
 | **`buttonText`**   | `string`         | `"Ask a question"`                                          | Label of the widget's launch button.                                                                 |
 | **`buttonBg`**     | `string`         | the theme's brand colour                                    | Background of the widget's launch button: `#7d54d1` in the light theme, `#8855f1` in the dark one. Accepts any CSS background value. |
-| **`size`**         | `"small" \| "medium" \| "large" \| { custom: { width, height, maxWidth?, maxHeight? } }` | `"medium"` | Size of the chat panel: `small` is 320px × 400px, `medium` is 400px × 80vh, and `large` opens a centered 666px × 75vh modal. `custom` takes CSS sizes. |
+| **`size`**         | `"small" \| "medium" \| "large" \| { custom: { width, height, maxWidth?, maxHeight? } }` | `"medium"` | Size of the chat panel: `small` is 320px × 400px, `medium` is 400px × 80vh, and `large` opens a centered 666px × 75vh modal. `custom` takes CSS sizes. Ignored when `layout` is `"sidebar"`. |
+| **`layout`**       | `"floating" \| "sidebar"` | `"floating"`                                     | `floating` opens a panel above the launch button. `sidebar` docks a full-height panel to the edge of the window, over the page. See [Sidebar layout](#sidebar-layout). |
+| **`sidebarSide`**  | `"left" \| "right"` | `"right"`                                              | The window edge the sidebar docks to.                                                                |
+| **`sidebarWidth`** | `number`         | `420`                                                       | The sidebar's width in pixels until the visitor resizes it, kept between 320 and the smaller of 720 and 70% of the window. |
 | **`showSources`**  | `boolean`        | `true`                                                      | Shows the sources an answer was based on, and turns the answer's `[n]` citations into links to them. Set `false` to hide both. See [Sources and citations](#sources-and-citations). |
 | **`collectFeedback`** | `boolean`     | `true`                                                      | Shows like/dislike buttons on answers and sends the feedback to DocsGPT.                             |
 | **`defaultOpen`**  | `boolean`        | `false`                                                     | Opens the chat panel on page load instead of showing only the launch button.                         |
 | **`allowedFileExtensions`** | `string[]` | _unset_                                        | File extensions the composer accepts, e.g. `['.pdf', '.docx', '.md', '.png']`. Setting it turns on attachments: an Attach button, drag-and-drop onto the panel, and paste-to-attach. Leave it unset to keep attachments off. |
 | **`showMicButton`**       | `boolean` | `false`                                              | Adds a microphone that dictates a question into the input using the browser's Web Speech API. No backend STT provider needed; hides itself where the browser lacks the API.   |
-| **`poweredBy`**    | `boolean \| { label: string; href?: string }` | `true`                     | The credit line under the input. `true` shows "Powered by DocsGPT", `false` hides it, and an object replaces it. See [Branding](#branding). |
+| **`poweredBy`**    | `boolean \| { label: string; href?: string }` | `true`                     | The credit line under the input. `true` shows "Powered by DocsGPT" in the widget's language, `false` hides it, and an object replaces it. See [Branding](#branding). |
+| **`passthrough`**  | `Record<string, string \| number \| boolean \| null>` | _unset_                 | Values sent with every question, such as the signed-in user's id. The agent's prompt reads them as `{{ passthrough.user_id }}`, and they appear on each turn in Logs. See [Passing who is asking](#passing-who-is-asking). |
+| **`persistConversations`** | `boolean` | `true`                                             | Keeps the visitor's conversations in the browser's `localStorage`, so a reload continues the chat and earlier chats are listed under History. The sidebar width the visitor chose is kept the same way. `false` stores nothing and removes what an earlier visit stored. See [Conversation history](#conversation-history). |
+| **`locale`**       | `string`         | `"auto"`                                                    | Language of the widget's own text. `"auto"` follows the visitor's browser; or set one of `en`, `es`, `fr`, `ja`, `zh`, `zh-TW`, `ru`, `de`. See [Languages](#languages). |
+| **`translations`** | `Partial<Messages>` | _unset_                                                  | Replaces individual strings of the widget's own text, by key, e.g. `{ composerPlaceholder: 'Ask our team' }`. See [Languages](#languages). |
+| **`onEvent`**      | `(event: WidgetEvent) => void` | _unset_                                       | Called with every event the chat fires, such as a question sent or an answer finished. See [JavaScript API](#javascript-api). |
+| **`ref`**          | `Ref<WidgetController>` | _unset_                                              | React only: receives the controller that opens the chat, asks questions and subscribes to events. The script tag gets the same controller from `renderDocsGPTWidget`. See [JavaScript API](#javascript-api). |
 
 ---
 
@@ -210,11 +221,32 @@ Browser support is uneven, and the microphone hides itself where it cannot work.
 
 ---
 
+## Passing who is asking
+
+`passthrough` sends values from your page with every question. A typical use is an internal site that passes the signed-in employee:
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  passthrough={{ user_id: currentUser.id, office: currentUser.office }}
+/>
+```
+
+The values do three things:
+
+- The agent's prompt can read them, e.g. `{{ passthrough.office }}`. See [`passthrough`](/Agents/prompts#3-passthrough---request-parameters) in Customizing Prompts.
+- Each turn's row in the agent's [Logs](/Using/analytics-and-logs) shows them next to the question, the answer and the visitor's like or dislike. The Logs API can filter by them.
+- They are stored with the conversation, so `GET /api/get_single_conversation` returns them.
+
+Only strings, numbers, booleans and `null` are kept. The page that embeds the widget sets them, so anyone who can open that page can send other values: treat them as a label for who is asking, not as proof of identity, and don't let the prompt grant access based on them.
+
+---
+
 ## Sources and citations
 
 Each answer that used your documents shows a **Sources** row with the number of sources. It starts collapsed, so the answer comes first; selecting it opens the list.
 
-- A source that is a web page, such as a page ingested with the crawler or sitemap loader, is a link that opens the page in a new tab.
+- A source that is a web page, such as a page from a Website source, is a link that opens the page in a new tab.
 - A source that is an uploaded file shows its title and the passage that was used. It is not a link, because a visitor has no way to open a file from your library.
 
 When the agent cites its sources with `[1]`, `[2]` and so on, each number becomes a small button in the answer. Selecting it opens the Sources list, scrolls to that source and highlights it. A grouped citation such as `[1, 3]` becomes one button per number. To get numbered citations, ask for them in the agent's prompt; see [Citations](/Agents/prompts#citations) in Customizing Prompts.
@@ -239,6 +271,207 @@ Three properties change what the widget shows of DocsGPT:
   poweredBy={{ label: 'Powered by Acme', href: 'https://acme.example' }}
 />
 ```
+
+---
+
+## Suggested questions
+
+`suggestedQuestions` lists questions under the welcome card, so a visitor can start with one click. Clicking a question sends it, and the list goes away once the conversation starts. Anything the visitor had already typed stays in the input. Blank entries are skipped.
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  suggestedQuestions={[
+    'How do I install the SDK?',
+    'Which plans include SSO?',
+    'How do I rotate an API key?',
+  ]}
+  suggestedQuestionsLabel="Popular questions"
+/>
+```
+
+The list shows every question you pass, each on its own row, so keep it to a handful that fit the panel. While a file is still uploading, or the microphone is dictating, the questions are disabled until the send can go through.
+
+---
+
+## Sidebar layout
+
+`layout="sidebar"` docks the chat to the edge of the window at full height, like a docs assistant, instead of floating it above the launch button. It opens over the page, so your layout doesn't move. The launch button opens it as usual, `defaultOpen` opens it on load, and the [JavaScript API](#javascript-api) works the same in both layouts.
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  layout="sidebar"
+  sidebarSide="right"
+  sidebarWidth={440}
+/>
+```
+
+The script tag takes the same options:
+
+```js
+renderDocsGPTWidget('app', {
+  apiKey: 'your-agent-api-key',
+  layout: 'sidebar',
+  sidebarSide: 'left',
+});
+```
+
+- **Resizing:** visitors drag the sidebar's inner edge to make it wider or narrower, from 320px up to 720px or 70% of the window, whichever is smaller. With the keyboard, they tab to the edge and use the arrow keys (16px a step, 64px with Shift), or Home and End for the narrowest and widest.
+- **Remembered width:** the width a visitor picks is kept per agent under `docsgpt-widget:v1:<hash>:width` and used on their next visit in place of `sidebarWidth`. With `persistConversations={false}` it isn't stored. If the window gets narrower, the sidebar shrinks with it and grows back when there is room again.
+- **Size and expand:** `size` doesn't apply, and the header has no expand button.
+- **Phones:** at 768px wide and below, the sidebar opens full screen, like the floating panel.
+- **Motion:** the sidebar slides in from its edge, and simply appears when the visitor's system asks for reduced motion.
+
+On an iPhone in landscape, add `viewport-fit=cover` to your page's viewport meta tag so the sidebar can keep its content clear of the notch and home indicator.
+
+---
+
+## Conversation history
+
+The widget remembers the visitor's conversations in their browser. After a reload, or on the next page of your site, the chat opens where they left off, and a follow-up question continues the same conversation on the server. An answer that was still arriving when the page closed comes back as an error with a **Retry** button.
+
+Two buttons in the header manage this:
+
+- **New chat** empties the chat and shows the welcome card again. It appears once the chat has a message, and it stops an answer that is still arriving.
+- **Chat history** lists the saved conversations, grouped as Today, Yesterday, Previous 7 days and Older. Selecting one shows it again; each row has a delete button, and **Clear all** deletes every saved conversation after asking to confirm. It appears once something is saved.
+
+What is stored, per agent, in the browser's `localStorage`:
+
+- Each conversation's questions, answers, sources, the names of tools the agent used, likes and dislikes, and error messages.
+- The names and server ids of attached files, but not their contents.
+- The conversation's id on the server, and when it was started and last updated.
+
+The entry's key is `docsgpt-widget:v1:` followed by a short hash of `apiHost` and `apiKey`, so two agents on one site keep separate lists and the key itself is not written to storage. The widget keeps the 30 most recent conversations, in about 1 MB, and drops the oldest first. Where storage is blocked or full, as in some private windows, the chat still works and keeps its history only until the page closes. Other tabs on the same site see the updated list, but a tab never switches the conversation it is showing.
+
+To keep nothing in the browser, turn it off. This also removes what an earlier visit stored:
+
+```jsx
+<DocsGPTWidget apiKey="your-agent-api-key" persistConversations={false} />
+```
+
+On computers that several people share, such as an internal site behind a login, clear the history when someone signs out. `clearHistory()` removes every conversation stored for this agent and starts a new chat:
+
+```js
+const widget = renderDocsGPTWidget('app', { apiKey: 'your-agent-api-key' });
+
+function onLogout() {
+  widget.clearHistory();
+}
+```
+
+The chat that the search bar opens with "Ask the AI" is a one-off: it isn't saved and doesn't show History.
+
+---
+
+## Languages
+
+The widget shows its own text in the visitor's language: the input placeholder, button labels, status lines such as "Thinking…", error messages and the credit line. It ships with English (`en`), Spanish (`es`), French (`fr`), Japanese (`ja`), Simplified Chinese (`zh`), Traditional Chinese (`zh-TW`), Russian (`ru`) and German (`de`).
+
+By default, `locale` is `"auto"`: the widget takes the first of the browser's preferred languages that it supports, and falls back to English. A regional code uses its base language, so `de-AT` shows German, and `zh-HK`, `zh-MO` and `zh-Hant` show Traditional Chinese. To match your site's own language switcher, set `locale` yourself:
+
+```jsx
+<DocsGPTWidget apiKey="your-agent-api-key" locale="de" />
+```
+
+The defaults of `title`, `description`, `heroTitle`, `heroDescription`, `suggestedQuestionsLabel` and `buttonText` are translated too. Text you pass yourself, in those props or in `suggestedQuestions`, is shown exactly as you wrote it, so pass it in the language you set.
+
+`translations` changes single strings by key, whatever the language. Words in braces, such as `{count}` or `{brand}`, are filled in by the widget, so keep them in your text:
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  translations={{
+    composerPlaceholder: 'Ask our support team',
+    poweredBy: 'Built with {brand}',
+  }}
+/>
+```
+
+The keys, each with a note on where its text appears, are listed in [`src/locale/en.ts`](https://github.com/arc53/DocsGPT/blob/main/extensions/react-widget/src/locale/en.ts). In TypeScript, the `Messages` type and the `SUPPORTED_LOCALES` list are exported from the package. The search bar takes the same two props, and the chat it opens uses its language.
+
+The widget marks its own markup with the chosen language (`lang`), so screen readers pronounce it correctly, and voice input listens in that language. Answers come from your agent, so their language follows the question and the agent's prompt, not `locale`.
+
+---
+
+## JavaScript API
+
+Your page can drive the widget and hear what happens in it, for example to open the chat from your own "Contact support" button, to ask about the page the visitor is reading, or to send answers and ratings to your analytics.
+
+With the script tag, `renderDocsGPTWidget` returns the controller:
+
+```html filename="html"
+<div id="app"></div>
+<button id="ask-pricing">Ask about pricing</button>
+<script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>
+<script>
+  window.onload = function () {
+    const widget = renderDocsGPTWidget('app', { apiKey: 'your-agent-api-key' });
+
+    document.getElementById('ask-pricing').onclick = function () {
+      widget.ask('Which plans include SSO?');
+    };
+
+    widget.on('answer_completed', function (event) {
+      console.log(event.question, event.answer, event.sources);
+    });
+  };
+</script>
+```
+
+In React, pass a `ref` to `DocsGPTWidget`, and `onEvent` to receive every event:
+
+```jsx
+import { useRef } from 'react';
+import { DocsGPTWidget } from 'docsgpt';
+
+export function Help() {
+  const widget = useRef(null);
+  return (
+    <>
+      <button onClick={() => widget.current?.open()}>Chat with us</button>
+      <DocsGPTWidget
+        ref={widget}
+        apiKey="your-agent-api-key"
+        onEvent={(event) => analytics.track(`docsgpt_${event.type}`, event)}
+      />
+    </>
+  );
+}
+```
+
+You can call the controller as soon as you have it, before the chat has opened or finished loading; a question sent early waits for the panel and is not lost.
+
+| **Method** | **Description** |
+|---|---|
+| `open()`, `close()`, `toggle()` | Opens or closes the chat panel. |
+| `isOpen()` | `true` while the panel is open. |
+| `focus()` | Opens the panel and puts the cursor in the message field. |
+| `ask(question, { send })` | Opens the panel and sends `question`. With `{ send: false }` it only puts the question in the message field, for the visitor to edit and send. If the visitor couldn't send right now either, because an answer is still streaming, a file is uploading or the microphone is on, the question goes into the message field instead of being sent. |
+| `newChat()` | Empties the chat, like the **New chat** button. An answer that is still arriving is stopped first. |
+| `clearHistory()` | Removes every conversation stored for this agent in this browser, then starts a new chat. Use it on logout where computers are shared. See [Conversation history](#conversation-history). |
+| `on(type, handler)` | Calls `handler` for each event of that type. Returns a function that removes it. Adding the same handler twice for one type keeps it once. |
+| `off(type, handler)` | Removes a handler added with `on`. |
+| `destroy()` | Script tag only: removes the widget from the page and drops its handlers. Calling it again does nothing. In React, stop rendering the component instead. |
+
+Every event has a `type` and a `conversationId`: the server's id for the conversation. It is `null` until the server assigns one as the first answer starts, so the first `question_submitted` has `null`.
+
+| **Event** | **Fields** | **When** |
+|---|---|---|
+| `open`, `close` | | The panel opened or closed, by the visitor or from your code. `defaultOpen` fires `open` on load. |
+| `question_submitted` | `question`, `source` | A question was sent. `source` says how: `composer` (typed), `suggestion` (a suggested question), `api` (`ask()`), `search` ("Ask the AI" in the search bar) or `retry` (the retry button on a failed answer). |
+| `answer_completed` | `question`, `answer`, `sources` | The answer finished. `answer` is its Markdown; `sources` is a list of `{ title, url }`, with `url` only for web pages. |
+| `answer_failed` | `question`, `error` | The answer ended in an error, including a guardrail blocking it. |
+| `answer_stopped` | `question` | The visitor stopped the answer. |
+| `feedback` | `question`, `answer`, `value` | A rating was saved: `like`, `dislike`, or `null` when the visitor took theirs back. |
+| `source_clicked` | `title`, `url` | The visitor opened a web source from the Sources list. |
+| `answer_copied` | `question`, `answer` | The visitor copied an answer. |
+| `code_copied` | `question`, `code`, `language` | The visitor copied a code block from an answer. |
+| `new_chat` | | The chat was emptied: by **New chat**, `newChat()`, or deleting or clearing the conversation on screen. `conversationId` is the conversation that was left. A stopped answer fires `answer_stopped` first. |
+| `conversation_restored` | | A saved conversation is on screen again, on page load or picked from History. `conversationId` is that conversation's, or `null` if the server never assigned one. |
+| `history_cleared` | | **Clear all** or `clearHistory()` removed the stored conversations. If the chat had messages, `new_chat` follows. |
+
+Each question ends in exactly one of `answer_completed`, `answer_failed` or `answer_stopped`, unless the widget is removed mid-answer. An error thrown by your handler is logged to the console and doesn't affect the widget or other handlers. In TypeScript, `WidgetController`, `WidgetInstance` (the script tag's controller, with `destroy`), `WidgetEvent` and the related types are exported from the package.
 
 ---
 

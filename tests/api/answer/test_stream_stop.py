@@ -79,6 +79,10 @@ def _run(
     continuation: dict | None = None,
     requested=None,
     clear=None,
+    agent_calls=None,
+    background=None,
+    stop_jobs=None,
+    show_jobs=None,
 ):
     from docsgpt.api.answer.routes import base as base_mod
     from docsgpt.api.answer.routes.base import BaseAnswerResource
@@ -97,7 +101,12 @@ def _run(
         agent.gen_continuation.side_effect = gen
         if client_gone is not None:
             agent.client_disconnected = client_gone
-        with patch.object(base_mod, "STREAM_HEARTBEAT_INTERVAL", 0.05), patch.object(
+        agent._get_truncated_tool_calls.return_value = list(agent_calls or [])
+        with patch.object(base_mod, "bind_background_turn", return_value=background), patch(
+            "docsgpt.background.service.stop_turn_jobs", side_effect=stop_jobs
+        ), patch(
+            "docsgpt.background.service.show_finished_jobs", side_effect=show_jobs
+        ), patch.object(base_mod, "STREAM_HEARTBEAT_INTERVAL", 0.05), patch.object(
             base_mod, "STREAM_STOP_POLL_SECONDS", 0.02
         ), patch.object(base_mod, "stop_requested", side_effect=requested or _requested), patch.object(
             base_mod, "clear_stop", side_effect=clear
@@ -130,6 +139,19 @@ class TestStopFromActivity:
         # The abort path saved what was written.
         assert service.finalize_message.called
         cleared.assert_called_with(MESSAGE_ID)
+
+    def test_an_answer_that_finishes_asks_for_the_unread_mark(self, mock_mongo_db, flask_app):
+        # Finished while the user may be elsewhere: the chat is marked unread
+        # unless they are watching it (the service decides).
+        service, _, _, _ = _run(flask_app, _chatty(chunks=3, gap=0), stop_after=None)
+        kwargs = service.finalize_message.call_args.kwargs
+        assert kwargs.get("mark_unread_when_away") is True
+
+    def test_a_stopped_answer_does_not_ask_for_the_unread_mark(self, mock_mongo_db, flask_app):
+        service, _, _, _ = _run(flask_app, _chatty(), stop_after=0.2)
+        assert service.finalize_message.called
+        for call in service.finalize_message.call_args_list:
+            assert not call.kwargs.get("mark_unread_when_away")
 
     def test_a_stop_still_lands_past_the_heartbeat_ceiling(self, mock_mongo_db, flask_app):
         # The ticker stops stamping after STREAM_HEARTBEAT_MAX_SECONDS; it
@@ -309,6 +331,65 @@ class TestStopFromActivity:
         assert len([line for line in out if '"type": "answer"' in line]) == 20
 
 
+HANDED_OFF = {"call_id": "c1", "tool_name": "artifact_generator", "status": "pending", "job_id": "j1"}
+
+
+def _background():
+    from docsgpt.background.context import BackgroundContext
+
+    return BackgroundContext(user_id="u", conversation_id=CONVERSATION_ID, origin_message_id=MESSAGE_ID)
+
+
+@pytest.mark.unit
+class TestStopWithBackgroundJobs:
+    def test_a_stopped_turn_keeps_the_calls_it_had_not_reported(self, mock_mongo_db, flask_app):
+        # The agent reports its calls only when its turn ends; a Stop cut it
+        # short, and the message lost its job card and the job's file.
+        service, _, _, _ = _run(flask_app, _chatty(), stop_after=0.2, agent_calls=[HANDED_OFF])
+        saved = service.finalize_message.call_args.kwargs["tool_calls"]
+        assert [c["job_id"] for c in saved] == ["j1"]
+
+    def test_a_stop_before_any_text_keeps_them_too(self, mock_mongo_db, flask_app):
+        service, _, _, _ = _run(flask_app, _thinking(), stop_after=0.2, agent_calls=[HANDED_OFF])
+        failed = [c for c in service.finalize_message.call_args_list if c.kwargs.get("status") == "failed"]
+        assert [c["job_id"] for c in failed[0].kwargs["tool_calls"]] == ["j1"]
+
+    def test_a_stop_cancels_the_turns_jobs_after_saving_it(self, mock_mongo_db, flask_app, monkeypatch):
+        # After: a job that already ended shows its outcome on the saved entry.
+        service = _service()
+        monkeypatch.setitem(globals(), "_service", lambda: service)
+        captured = []
+
+        def _record(conversation_id, message_id, user_id):
+            captured.append((conversation_id, message_id, user_id, service.finalize_message.called))
+
+        _run(flask_app, _chatty(), stop_after=0.2, background=_background(), stop_jobs=_record)
+        assert captured == [(CONVERSATION_ID, MESSAGE_ID, "u", True)]
+
+    def test_a_dropped_connection_leaves_the_jobs_running(self, mock_mongo_db, flask_app):
+        # A job is meant to outlive a closed tab.
+        gone = threading.Event()
+        calls = []
+
+        def _gen(*args, **kwargs):
+            for i in range(200):
+                time.sleep(0.005)
+                if i == 5:
+                    gone.set()
+                yield {"answer": f"c{i} "}
+
+        _run(flask_app, _gen, stop_after=None, client_gone=gone, background=_background(),
+             stop_jobs=lambda *a: calls.append(a), agent_calls=[HANDED_OFF])
+        assert calls == []
+
+    def test_a_failure_to_stop_the_jobs_still_ends_the_stream(self, mock_mongo_db, flask_app):
+        def _boom(*args):
+            raise RuntimeError("db down")
+
+        _, out, _, _ = _run(flask_app, _chatty(), stop_after=0.2, background=_background(), stop_jobs=_boom)
+        assert _frame_type(out[-1]) == "end"
+
+
 @pytest.mark.unit
 class TestStartFinishEvents:
     def test_publishes_started_then_finished(self, mock_mongo_db, flask_app):
@@ -324,3 +405,89 @@ class TestStartFinishEvents:
             flask_app, _chatty(chunks=3, gap=0.0), stop_after=None, visibility="hidden"
         )
         assert [kind for _, kind, _ in published if kind.startswith("message.")] == []
+
+
+@pytest.mark.unit
+class TestFinishedJobsOnTheSavedMessage:
+    def _gen(self, calls):
+        def _g(*args, **kwargs):
+            yield {"answer": "Working on it."}
+            yield {"tool_calls": calls}
+
+        return _g
+
+    def test_a_finished_turn_with_a_job_shows_jobs_that_already_ended(self, mock_mongo_db, flask_app):
+        seen = []
+        _run(flask_app, self._gen([HANDED_OFF]), stop_after=None, background=_background(),
+             show_jobs=lambda *a: seen.append(a))
+        assert seen == [(CONVERSATION_ID, MESSAGE_ID, "u")]
+
+    def test_a_turn_without_jobs_looks_nothing_up(self, mock_mongo_db, flask_app):
+        seen = []
+        _run(flask_app, self._gen([{"call_id": "c9", "status": "completed"}]), stop_after=None,
+             background=_background(), show_jobs=lambda *a: seen.append(a))
+        assert seen == []
+
+    def test_a_dropped_connection_shows_them_too(self, mock_mongo_db, flask_app):
+        gone = threading.Event()
+        seen = []
+
+        def _gen(*args, **kwargs):
+            for i in range(200):
+                time.sleep(0.005)
+                if i == 5:
+                    gone.set()
+                yield {"answer": f"c{i} "}
+
+        _run(flask_app, _gen, stop_after=None, client_gone=gone, background=_background(),
+             agent_calls=[HANDED_OFF], show_jobs=lambda *a: seen.append(a))
+        assert seen == [(CONVERSATION_ID, MESSAGE_ID, "u")]
+
+    def test_a_stop_that_lands_after_the_last_event_still_cancels_the_jobs(self, mock_mongo_db, flask_app):
+        ended = threading.Event()
+
+        def _gen(*args, **kwargs):
+            yield {"answer": "Working on it."}
+            yield {"tool_calls": [HANDED_OFF]}
+            ended.set()
+
+        stopped, seen = [], []
+        _run(flask_app, _gen, stop_after=None, requested=lambda message_id: ended.is_set(),
+             background=_background(), stop_jobs=lambda *a: stopped.append(a), show_jobs=lambda *a: seen.append(a))
+        assert stopped == [(CONVERSATION_ID, MESSAGE_ID, "u")]
+        assert seen == []
+
+    def test_a_failure_to_show_them_never_fails_the_turn(self, mock_mongo_db, flask_app):
+        def _boom(*args):
+            raise RuntimeError("db down")
+
+        _, out, _, _ = _run(flask_app, self._gen([HANDED_OFF]), stop_after=None, background=_background(),
+                            show_jobs=_boom)
+        assert _frame_type(out[-1]) == "end"
+
+
+@pytest.mark.unit
+class TestStopHelpers:
+    def test_an_agent_that_cannot_report_its_calls_keeps_what_was_read(self):
+        from docsgpt.api.answer.routes.base import _turn_tool_calls
+
+        agent = MagicMock()
+        agent._get_truncated_tool_calls.side_effect = RuntimeError("no executor")
+        assert _turn_tool_calls(agent, [HANDED_OFF]) == [HANDED_OFF]
+
+    def test_reported_and_unreported_calls_are_merged_by_call_id(self):
+        from docsgpt.api.answer.routes.base import _turn_tool_calls
+
+        agent = MagicMock()
+        later = {**HANDED_OFF, "status": "completed"}
+        agent._get_truncated_tool_calls.return_value = [later, {"call_id": "c2"}]
+        assert _turn_tool_calls(agent, [HANDED_OFF]) == [later, {"call_id": "c2"}]
+
+    def test_a_turn_without_a_message_has_no_jobs_to_stop(self):
+        from docsgpt.api.answer.routes.base import _stop_background_jobs
+        from docsgpt.background.context import BackgroundContext
+
+        with patch("docsgpt.background.service.stop_turn_jobs") as stop:
+            _stop_background_jobs(None)
+            _stop_background_jobs(BackgroundContext(user_id="u", conversation_id=CONVERSATION_ID))
+        stop.assert_not_called()

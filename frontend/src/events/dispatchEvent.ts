@@ -53,6 +53,8 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   // consumed by backgroundJobs/ and the conversation listener.
   'job.updated',
   'conversation.continued',
+  // A listed chat got its generated title; consumed by the conversation listener.
+  'conversation.renamed',
   'notification.created',
   // A chat answer started or ended, a scheduled run started, a webhook run
   // started or ended (docsgpt/activity), a workflow run started a step

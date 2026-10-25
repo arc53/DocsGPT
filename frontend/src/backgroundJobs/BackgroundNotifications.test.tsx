@@ -85,6 +85,7 @@ describe('BackgroundNotifications', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
     delete (navigator as unknown as Record<string, unknown>).serviceWorker;
   });
 
@@ -138,6 +139,22 @@ describe('BackgroundNotifications', () => {
     await renderAt('/c/c1', store);
     expect(selectIsUnread('c1')(store.getState())).toBe(false);
     expect(selectIsUnread('c2')(store.getState())).toBe(true);
+    expect(service.markConversationRead).toHaveBeenCalledWith('c1', 'tok');
+  });
+
+  it('leaves the chat on screen unread while the window lacks focus, and reads it on focus', async () => {
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const store = makeStore();
+    store.dispatch(markConversationUnread('c1'));
+    await renderAt('/c/c1', store);
+    expect(selectIsUnread('c1')(store.getState())).toBe(true);
+    expect(service.markConversationRead).not.toHaveBeenCalled();
+
+    focused.mockReturnValue(true);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(selectIsUnread('c1')(store.getState())).toBe(false);
     expect(service.markConversationRead).toHaveBeenCalledWith('c1', 'tok');
   });
 

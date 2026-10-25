@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Collapsible } from '../components/ui/collapsible';
 import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
@@ -14,6 +15,7 @@ import ActionParameters, {
   type ParameterValue,
 } from './ActionParameters';
 import { actionTitle } from './i18n';
+import { InjectionFlagBadge, injectionFlagged } from './injectionWarning';
 import PermissionGroup, {
   PermissionRow,
   PermissionSelect,
@@ -51,14 +53,17 @@ function ActionRow({
       name={action.name}
       description={action.description}
       badge={
-        fixedCount > 0 && (
-          <Badge variant="neutral">
-            {t('settings.connectors.parameters.fixedCount', {
-              count: fixedCount,
-              formatted: formatCount(fixedCount),
-            })}
-          </Badge>
-        )
+        <>
+          {injectionFlagged(action) && <InjectionFlagBadge />}
+          {fixedCount > 0 && (
+            <Badge variant="neutral">
+              {t('settings.connectors.parameters.fixedCount', {
+                count: fixedCount,
+                formatted: formatCount(fixedCount),
+              })}
+            </Badge>
+          )}
+        </>
       }
       control={
         <PermissionSelect
@@ -193,10 +198,23 @@ export default function ToolPermissions({
       actions: actions.filter((action) => action.access === access),
     }))
     .filter((group) => group.actions.length > 0);
+  // Warn only: a flagged action keeps its permission, and the rows that say
+  // which ones show under Customize.
+  const flagged = actions.filter(injectionFlagged).length;
 
   return (
     <Card variant={variant} padding="sm" className="gap-4">
       {children}
+      {flagged > 0 && (
+        <Alert variant="warning" data-testid="tool-injection-warning">
+          <AlertDescription>
+            {t('settings.connectors.injection.notice', {
+              count: flagged,
+              formatted: formatCount(flagged),
+            })}
+          </AlertDescription>
+        </Alert>
+      )}
       {groups.map((group) => {
         const name = t(`settings.connectors.capabilityPlain.${group.access}`);
         return (

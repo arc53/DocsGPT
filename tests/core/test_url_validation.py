@@ -182,6 +182,17 @@ class TestValidateUrl:
                 validate_url("http://nonexistent.invalid")
             assert "resolve" in str(exc_info.value).lower()
 
+    @pytest.mark.parametrize("url", [
+        "https://docs..example.com/x",
+        "https://.example.com/",
+        "https://" + "a" * 64 + ".example.com/",
+    ])
+    def test_a_host_with_an_empty_or_overlong_label_is_unresolvable(self, url):
+        # The idna codec refuses it with UnicodeError, which callers that
+        # catch only SSRFError let fail a whole ingest.
+        with pytest.raises(SSRFError, match="resolve"):
+            validate_url(url)
+
     def test_raises_on_empty_hostname(self):
         with pytest.raises(SSRFError) as exc_info:
             validate_url("http://")

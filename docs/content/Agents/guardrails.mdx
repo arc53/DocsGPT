@@ -1,14 +1,14 @@
 ---
 title: Agent Guardrails
-description: Scan user input, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection, groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, instance floor and API reference.
-lastUpdated: 2026-10-06
+description: Scan user input, attached files, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection (patterns, or a local model that withholds only the flagged document or file), groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, the rules every agent follows and the defaults for new agents (Admin), and the API reference.
+lastUpdated: 2026-10-25
 ---
 
 import { Callout, Tabs } from 'nextra/components';
 
 # Agent Guardrails
 
-Guardrails are per-agent content controls that run **inside** an agent turn, at the points where text changes hands: when the user's question arrives, when retrieved documents are about to reach the model, when a tool returns, and when the answer is on its way out. Each control pairs a **check** (a detector) with a **stage** (where it runs) and an **action** (what happens on a match).
+Guardrails are per-agent content controls that run **inside** an agent turn, at the points where text changes hands: when the user's question arrives, when attached files and retrieved documents are about to reach the model, when a tool returns, and when the answer is on its way out. Each control pairs a **check** (a detector) with a **stage** (where it runs) and an **action** (what happens on a match).
 
 They apply everywhere the agent runs — the chat UI, the [Agent API](/API/agent-api), the [OpenAI-compatible API](/API/openai-compatible), [webhooks](/API/webhooks), scheduled runs and the embeddable widget — and every decision is written to an audit journal you can review from the agent's logs page.
 
@@ -18,19 +18,21 @@ Guardrails are a defence-in-depth layer, not a replacement for a well-written pr
 
 ## How a turn is scanned
 
-An agent turn passes through four intervention points. A control attached to a stage sees the text at that stage and can leave it alone, mask parts of it, or stop the turn.
+An agent turn passes through five intervention points. A control attached to a stage sees the text at that stage and can leave it alone, mask parts of it, withhold one document or file, or stop the turn.
 
 | Stage | What is scanned | `redact` does | `block` does |
 | --- | --- | --- | --- |
 | `input` | The user's question, before anything is sent to the model | The model and the stored conversation both receive the masked question | The turn ends immediately with the block message; nothing reaches the model |
-| `retrieval` | The retrieved document chunks, formatted as they will appear in the prompt | Masked in the prompt **and** in the sources shown to the user and stored with the conversation | The model is told the sources were withheld by policy; the user sees `[Withheld by a content policy.]` in place of each source |
-| `tool_result` | Each tool's result string, before it fans out to the model, the UI and the journal; also a [background job](/Tools/background-jobs)'s result and the data a background event (a monitor, a webhook, an approval) carries, before it is stored | The masked result is what the model and the user see | The result is replaced with a note telling the model it could not be used and must not speculate about its contents |
+| `attachment` | Each file attached to the conversation, on its own (only [`injection_model`](#injection_model--prompt-injection-model) runs here) | Not offered | That file is withheld: it is not sent to the model, as text or natively, and the attachments tool refuses to read it. The other files are unaffected |
+| `retrieval` | The retrieved document chunks, formatted as they will appear in the prompt; an [item-level](#item-level-checks) check scores each document on its own instead | Masked in the prompt **and** in the sources shown to the user and stored with the conversation | The model is told the sources were withheld by policy; the user sees `[Withheld by a content policy.]` in place of each source. From an item-level check, only the flagged document is withheld |
+| `tool_result` | Each tool's result (a structured one, such as an API call's or an MCP tool's, is read as one `field = value` line per field, each text value as written), before it fans out to the model, the UI and the journal; also a [background job](/Tools/background-jobs)'s result and the data a background event (a monitor, a webhook, an approval) carries, before it is stored | The masked result is what the model and the user see; a structured result with anything masked reaches them as those masked lines | The result is replaced with a note telling the model it could not be used and must not speculate about its contents |
 | `output` | The answer as it streams from the model | Masked **before** the text leaves the server | The stream stops with the block message; any tokens already delivered are retracted from the client and the stored message |
 
 A few details worth knowing:
 
 - **Input redaction is what gets stored.** If a PII control redacts an email address in the question, the conversation history holds the redacted version. The raw text never lands in the database.
 - **Retrieval scanning covers custom prompts too.** If your prompt template interpolates documents itself (see [Prompts](/Agents/prompts)), the rendered documents are still scanned and the verdict is patched back into the prompt.
+- **Search tools count as retrieval.** When the agent searches its sources through a tool, an item-level `retrieval` control screens each hit before the tool formats its result, so one flagged hit is withheld alone.
 - **Structured output is scanned whole.** When an agent has a JSON schema, redacting mid-token would produce invalid JSON, so the complete document is buffered and scanned once.
 - **Output blocks after streaming has begun are retractions.** Tokens on the wire cannot be recalled, so the server tells the client to clear the partial answer, replaces the persisted message with the block message, and clears any reasoning trace. On a reload the user sees only the block message.
 
@@ -48,9 +50,19 @@ The **groundedness** check only makes sense over a finished answer, so it is def
 | --- | --- | --- |
 | `flag` | Record the decision in the journal and the turn's activity log. Nothing about the answer changes. | Every check |
 | `redact` | Replace each matched span with a mask and continue. | Checks that report spans: `pii`, `secrets`, `denylist`, `url` |
-| `block` | Stop the turn and return the agent's block message. | Every check |
+| `block` | Stop the turn and return the agent's block message. From an [item-level](#item-level-checks) check, withhold that document or file and continue. | Every check |
 
 Within one stage the **most restrictive outcome wins**: if two controls match and one says block, the stage blocks. If several redact, all of their spans are masked, and overlapping spans are unioned so a short match can never leave part of a longer one in the clear.
+
+### Item-level checks
+
+An item-level check scores each retrieved document, search hit and attached file on its own, before anything is formatted into the prompt, so its `block` withholds that one item and the turn goes on. `injection_model` is the only one; every other check scans the joined documents as one text.
+
+- **A withheld document keeps its place.** Its text becomes `[Withheld by a content policy.]` and it carries `"withheld": "policy"` in the answer's sources, where the chat shows a **Withheld** badge. Document indexes, `[n]` citations and the sources list stay aligned.
+- **Prompts that embed documents** get the screened documents swapped in. A template that formats documents itself cannot be patched, so when a document is withheld the turn fails with *"Retrieved sources were withheld by a content policy and this agent's prompt embeds them directly, so the request cannot be completed."*
+- **A withheld file** is listed to the model as withheld by a content policy and nothing of it is sent. The attachments tool refuses to read it, including when a turn paused for a tool approval resumes.
+- **Search tools.** When an agent has an item-level `retrieval` control, its search tools' hits are screened as retrieved documents, and their tool result is then scanned by the other `tool_result` controls only, so no text is scored twice.
+- **One journal row per item.** Each row carries the item's `item_ref` (see [The audit journal](#the-audit-journal)).
 
 Redaction masks are check-specific: PII uses the entity label (`[EMAIL]`, `[CREDIT_CARD]`), secrets use `[REDACTED]`, banned terms use `***`, and disallowed links use `<url redacted>`.
 
@@ -72,6 +84,7 @@ Monitor mode is the supported rollout path. Turn on the checks you want, run rea
 | `denylist` | Banned terms | input, retrieval, tool_result, output | Yes | No | ~1 ms |
 | `url` | Link policy | input, retrieval, tool_result, output | Yes | No | ~2 ms |
 | `injection` | Prompt injection (heuristic) | input, retrieval, tool_result | No | No | ~3 ms |
+| `injection_model` | Prompt injection (model) | input, retrieval, tool_result, attachment | No | Yes | ~0.2 s per message on CPU |
 | `groundedness` | Grounding in sources | output | No | No | ~5 ms |
 | `policy` | Custom policy (LLM judge) | input, retrieval, tool_result, output | No | Yes | ~1 s |
 
@@ -122,6 +135,79 @@ Matches the phrasings that appear in real indirect-injection payloads: instructi
 This check catches unobfuscated payloads only. A motivated attacker can evade it trivially. Pair it with the `policy` judge if you need semantic coverage.
 </Callout>
 
+### `injection_model` — Prompt injection (model)
+
+Scores text with the [decision model](/Models/decision-model), a small classifier trained on direct and indirect prompt injections and jailbreaks, which answers with a probability. It runs on your own server, so no text is sent anywhere unless you point DocsGPT at a [decision server](/Models/decision-model#api-mode), and it reads meaning rather than phrasings, so it also catches payloads the `injection` patterns miss, and other languages.
+
+It is off until the operator sets `DECISION_INJECTION_ENABLED=true` (see [Turning the model check on](#turning-the-model-check-on)). Until then the agent's guardrails hide its card, unless the agent already has one of its controls, which stays so it can be removed.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `threshold` | `0.9` | 0–1. From this probability the control's action applies, with category `PROMPT_INJECTION` |
+| `flag_threshold` | `0.5` | 0 up to `threshold`. From this probability up to `threshold` the text is flagged with category `PROMPT_INJECTION_SUSPECTED`, never blocked, whatever the control's action |
+
+Both are per control, under **Advanced** on the check's card; no instance setting changes them. Set `flag_threshold` equal to `threshold` to drop the flag-only band. A new control's action is `flag`, so out of the box it records both bands and changes nothing; choosing `block` is the opt-in.
+
+| Stage | What is scored | `block` does |
+| --- | --- | --- |
+| `input` | The user's message, during the turn | Ends the turn with the block message |
+| `retrieval` | Each retrieved document and search hit, on its own | Withholds that document only |
+| `tool_result` | Each tool result, during the turn | Replaces the result with the "could not be used" note |
+| `attachment` | Each attached file, on its own | Withholds that file only |
+
+At `retrieval` and `attachment` the check is [item-level](#item-level-checks): the card says *Block withholds only the flagged source or file*.
+
+#### Where a document's score comes from
+
+The model is too slow on a CPU to score every retrieved chunk during a turn: a full-size chunk is about three 512-token windows. So at `retrieval` and `attachment` each document or file is answered from the first of these that has it:
+
+1. **The owner's allowlist.** A chunk its source's owner [marked as safe](/Sources/Per-source-configuration#reviewing-flagged-chunks) is clean (detail `owner-allowed`), for agents using that source.
+2. **A score stored with the file.** Chat attachments are scored in the background once uploaded.
+3. **The score cache**, the `content_scores` table: a score per text, keyed by the text's SHA-256 and the scorer (the model version, the question and the windowing). It is filled by earlier turns and by background scoring.
+4. **The model, during the turn**, for at most `GUARDRAILS_INJECTION_LIVE_ITEMS` uncached items within the stage deadline. Its default, `auto`, is 4 where the model is measured to score four full chunks within the deadline (a GPU, or a fast decision server), and 0 otherwise.
+5. **Later.** The rest are *not evaluated* this turn, and up to 16 of them are queued for background scoring (`GUARDRAILS_INJECTION_LAZY`, on by default), so the next turn that retrieves them reads the cache.
+
+On a CPU install, then, a document is unscored the first time it is retrieved and scored in the background right after, so the next turn that retrieves it reads its score. To score retrieved documents during the turn, run the model on a GPU-backed [decision model server](/Models/decision-model#api-mode). The cache stores scores, not verdicts, so changing a threshold never needs a rescore. A new model revision is a new scorer: every lookup misses and text is scored again as it is used. Cached scores unseen for `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS` (180) are deleted daily. They are shared across users, since a score depends on the text alone, and only hashes are stored, never the text.
+
+At `input` and `tool_result` the text is scored during the turn every time, under the stage deadline (`timeout_ms`): about 0.2 s for a short message on a 4 vCPU x86 server, less on a GPU.
+
+#### Long text
+
+A text longer than about 2,000 characters (512 model tokens) is split into windows, scored in this order until the stage deadline: the last window, where an appended payload sits, then the first, then the rest from the end backwards. On 4 vCPU each window takes about 0.7 s, so within the default 2 s the end and the start of a long message are read, and sometimes one more window. At most `GUARDRAILS_INJECTION_MAX_WINDOWS` (24, about 11,000 tokens) are read of a text during a turn, and `GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS` (64) of an attachment scored after upload. One window over `flag_threshold` settles the verdict. Otherwise a text whose windows were not all read reports *not evaluated*, and the journal's detail says how many were, such as `timeout p=0.002 windows=3/16`, or `unscored: too_long` past the cap.
+
+#### When it cannot score
+
+- **A text the model could not score is not a pass.** The control reports *not evaluated* and the agent's [failure policy](#when-a-check-cannot-run) applies to a `block` control. A `flag` control never stops a turn it could not score, even on a fail-closed agent, which is what makes a flag-only rule safe to put in the [floor](#the-instance-floor).
+- **Keep `fail_open` on with a blocking control unless the model runs on a GPU or a decision server you trust to stay up.** On a CPU install, fail-closed withholds every document not yet in the cache the first time it is retrieved, and while the model is loading, every turn with a blocking `input` control ends.
+- **The first use downloads the model** (about 0.5 GB), unless `docsgpt decisions prefetch` ran first. With `DECISION_INJECTION_ENABLED=true` the API loads it when it starts; until it is ready, controls report *not evaluated*.
+- **While `DECISION_INJECTION_ENABLED` is off**, saved controls stay in the agent's config and report *not evaluated* (`unscored: off`). On a fail-closed agent, a blocking control then ends every turn at `input` and withholds every document or file at `retrieval` and `attachment`. Remove the control, or keep the agent failing open.
+- With `DECISION_MODE=none` the check is unavailable too.
+
+#### How well it works
+
+Measured on public benchmark sets of short texts (prompts and emails), never on DocsGPT chunks. DocsGPT runs `arc-decide-0.4b-v0.2` on a CPU and `arc-decide-0.6b-v0.1` on an NVIDIA GPU:
+
+| Set (what it resembles) | 0.4b v0.2 (CPU) | 0.6b v0.1 (GPU) |
+| --- | --- | --- |
+| deepset (direct injections) | AUROC .982 | AUROC .992; at 0.5 recall ~76%, false positives 1.8%; at 0.9 recall ~65% |
+| LLMail (injections hidden in emails, i.e. indirect) | not measured | AUROC .997; at 0.5 recall ~54%, false positives 0%; at 0.9 recall ~29% |
+| safeguard | AUROC .787 | AUROC .821; at 0.5 false positives 2.3%; at 0.9 recall ~60%, false positives ~1% |
+| JailbreakHub (jailbreak prompts vs. ordinary role-play prompts) | false positives as v0.1 | AUROC .851; false positives 63% at 0.5, ~30–35% at 0.9 |
+| NotInject (benign text full of trigger words) | false positives 5.3% at 0.5 | false positives 12.1% at 0.5, ~4.4% at 0.9 |
+
+The v0.1 rates at each threshold are approximate, read from its calibration bins.
+
+- **Ranking is strong; the probability is not uniformly calibrated.** On LLMail, the set closest to retrieved and tool content, every benign email scores below about 0.05, yet most attacks score between 0.1 and 0.9. So 0.9 is precision-oriented and misses most indirect injections in that style, which is why a control flags from 0.5.
+- **Weak spots.** Role-play and persona requests, and text that discusses jailbreaks or prompt security, are where it is most often wrong: many benign role-play prompts score above 0.9. Keep `block` at `input` for public agents that need it, and expect security documentation to be flagged.
+- **Languages.** English is strongest; Spanish, Chinese and Russian are decent; other languages are unmeasured.
+- **Comparison.** Llama Prompt Guard 2 (86M) is better than v0.1 on safeguard (.974) and NotInject (5.0%), and worse on deepset (.910) and LLMail (.986).
+- **Scores move between model revisions.** Re-check your thresholds against the journal after upgrading the model.
+- **It is not a sole control.** It sits behind the prompt framing DocsGPT already gives retrieved and tool text, and next to tool approvals.
+
+#### In the journal
+
+A row's score is the probability, and its detail reads like `p=0.973 windows=1/1`, with `cached` when the score came from the cache and `trunc` when a window was cut to the model's limit; never the text. The `injection` check stays as it is, and the two can run side by side at no extra model cost.
+
 ### `groundedness` — Grounding in sources
 
 Output-only. Measures the lexical overlap between the answer and the retrieved sources using 4-word shingles and flags answers that fall below a threshold.
@@ -166,7 +252,7 @@ Open the agent in the builder and expand the **Guardrails** section.
 
 1. **Enable guardrails.** Nothing runs until this is on.
 2. **Enforcement mode.** Leave it on *Monitor only* while you calibrate; switch to *Enforce everywhere* when the journal looks right.
-3. **Checks.** Each check is a card with one chip per supported stage. Turning a chip on adds a control with the `flag` action; use the action selector on the chip to promote it to `redact` or `block`, and **Configure** to edit its settings. The card shows the approximate latency the check adds.
+3. **Checks.** Each check is a card with one chip per supported stage. Turning a chip on adds a control with the `flag` action; use the action selector on the chip to promote it to `redact` or `block`, and **Configure** to edit its settings. The card shows the approximate latency the check adds. The **Prompt injection (model)** card has chips for the user's message, retrieved sources, tool results and **Attached files**, and its two thresholds under **Advanced**; it is hidden while the operator has not turned the model on.
 4. **Blocked-response message.** Up to 500 characters, shown to the user whenever a control blocks. Defaults to *"Sorry, I can't help with that request."*
 5. **Continue if a check fails** and **Check timeout (ms)** map to `fail_open` and `timeout_ms`.
 
@@ -176,11 +262,11 @@ Checks that cannot run without settings (`denylist`, `url`, `policy`, and `pii` 
 Guardrails, like the agent's limits, are policy that the owner and the agent's team **editors** can change. Viewers don't see the configuration. To keep a control that nobody who edits the agent can remove, require it in the [instance floor](#the-instance-floor): floor controls appear locked for everyone. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use) for what else viewers and editors can do.
 </Callout>
 
-Guardrails also apply to a **draft** agent in the builder preview, which is the natural place to try a control before publishing.
+Guardrails also apply to a **draft** agent in the builder preview, which is the natural place to try a control before publishing. A new agent's form starts from the admin's [defaults for new agents](#defaults-for-new-agents).
 
 ## Configuring guardrails via the API
 
-Guardrails live under `guardrails` in the agent's `config` field. Send `config` as a JSON object in a JSON body, or as a JSON string in the multipart form the builder uses, to `POST /api/create_agent` or `PUT /api/update_agent/<agent_id>`. `config` also holds the agent's `api_write_allowlist` (see [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes)), and `update_agent` replaces the whole `config`. Read the current `config` with `GET /api/get_agent?id=<agent_id>`, change `guardrails`, and send the whole object back, or you clear the allowlist.
+Guardrails live under `guardrails` in the agent's `config` field. Send `config` as a JSON object in a JSON body, or as a JSON string in the multipart form the builder uses, to `POST /api/create_agent` or `PUT /api/update_agent/<agent_id>`. `config` also holds the agent's `api_write_allowlist` (see [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes)) and its [`context_window_limit`](/Agents/context-compression#per-agent-context-limit), and `update_agent` replaces the whole `config`. Read the current `config` with `GET /api/get_agent?id=<agent_id>`, change `guardrails`, and send the whole object back, or you clear the allowlist and the limit.
 
 ```json
 {
@@ -247,13 +333,13 @@ Each control accepts `check`, `stage`, `action` (default `flag`), `enabled` (def
 Writes are validated **strictly**. The request is rejected with HTTP 400 and the message *"Invalid config: one or more guardrail controls failed validation."* when:
 
 - a `check` is unknown, or is not allowed by the instance's `GUARDRAILS_CHECKS_ENABLED`;
-- a check is attached to a stage it does not support (for example `groundedness` at `input`);
-- `redact` is requested on a check that reports no spans (`injection`, `groundedness`, `policy`);
-- a control's settings are out of range, or a required setting is missing;
+- a check is attached to a stage it does not support (for example `groundedness` at `input`, or any check but `injection_model` at `attachment`);
+- `redact` is requested on a check that reports no spans (`injection`, `injection_model`, `groundedness`, `policy`), or at `attachment`, which takes `flag` and `block` only;
+- a control's settings are out of range, or a required setting is missing (for `injection_model`, a `flag_threshold` above its `threshold`);
 - the same `(check, stage)` pair appears twice, or there are more than 50 controls;
 - `mode`, `timeout_ms` or `block_message` is out of bounds.
 
-Reads are **lenient**: a stored control that has stopped validating (its check was disallowed by the operator, or removed in an upgrade) is dropped on its own and logged, and the remaining controls keep running. Agent export files carry `config`; on import an invalid guardrails block is dropped with a warning rather than failing the import.
+Reads are **lenient**: a stored control that has stopped validating (its check was disallowed by the operator, or removed in an upgrade) is dropped on its own and logged, and the remaining controls keep running. A save that sends the guardrails back exactly as stored, such as a change to the agent's insights settings, keeps them as they are without validating them again, so such a control neither blocks the save nor is lost: it runs again once its check is allowed. Leaving it out of a save removes it, and counts as a policy change. Agent export files carry `config`; on import an invalid guardrails block is dropped with a warning rather than failing the import.
 
 ### What a blocked turn looks like to a client
 
@@ -268,29 +354,29 @@ The DocsGPT chat UI and the React widget handle both. For webhook and scheduled 
 
 ## The audit journal
 
-Every control that **triggers**, and every control that **could not run**, writes a row to the `guardrail_events` table — in both enforcement modes, and for `flag` actions as well as `redact` and `block`. A streamed answer that re-matches the same span on every chunk produces one row, not one per chunk. Rows also flow into the turn's activity log under the `guardrail` component, so a decision is visible next to the tool calls and retrieval it belongs to.
+Every control that **triggers**, and every control that **could not run**, writes a row to the `guardrail_events` table — in both enforcement modes, and for `flag` actions as well as `redact` and `block`. A streamed answer that re-matches the same span on every chunk produces one row, not one per chunk. An [item-level](#item-level-checks) check writes one row per document or file, with its `item_ref`: `chunk:<source_id>:<chunk_key>` for a retrieved document or search hit, `attachment:<id>` for a file. Rows also flow into the turn's activity log under the `guardrail` component, so a decision is visible next to the tool calls and retrieval it belongs to.
 
 ### Guardrail activity panel
 
-Open an agent's **Logs** page. Below the usage logs, the **Guardrail activity** panel shows, for a trailing window of 7, 30 or 90 days:
+Open an agent's **Logs** page (under **Monitoring** in its sidebar). Above its log list, the **Guardrail activity** panel shows, for a trailing window of 7, 30 or 90 days:
 
 - four totals — **Blocked**, **Redacted**, **Flagged** and **Not evaluated** — because "we refused to answer", "we masked something", "we noticed something" and "a check silently stopped working" are four different problems;
 - a per-check breakdown, so you can see which control is doing the firing;
-- the most recent 100 decisions, filterable by check and outcome, each with its stage, category (`EMAIL`, `INSTRUCTION_OVERRIDE`, `UNGROUNDED`, …) and the detector's one-line detail.
+- the most recent 100 decisions, filterable by check and outcome, each with its stage, category (`EMAIL`, `INSTRUCTION_OVERRIDE`, `UNGROUNDED`, …), its score where the check gives one and the detector's one-line detail. A row about one chunk has **Open chunk**, which opens it in its source when you can still read it; a row about a file says **Attached file**.
 
 ### Journal API
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/guardrails/catalog` | Available checks (with stages, redaction support, latency hint and remote flag), stages, modes, allowed actions per stage, PII entity names, the default block message, and which `(check, stage)` pairs the instance floor claims. |
-| `GET /api/guardrails/events?agent_id=<id>&limit=100&offset=0` | Decisions for one agent, newest first. `limit` is capped at 500. |
+| `GET /api/guardrails/catalog` | Available checks (with stages, redaction support, latency hint, remote and `item_level` flags, and whether each is `available` here), stages, modes, allowed actions per stage, PII entity names, the default block message, and which `(check, stage)` pairs the instance floor claims. |
+| `GET /api/guardrails/events?agent_id=<id>&limit=100&offset=0` | Decisions for one agent, newest first, each with its `score` and `item_ref`. `limit` is capped at 500. |
 | `GET /api/guardrails/summary?days=30&agent_id=<id>` | Totals and a `breakdown` grouped by check, stage, action, outcome and category. `agent_id` is optional; `days` is capped at 365. |
 
 All three require a user token. `events`, and `summary` with an `agent_id`, need log access to the agent and read rows as the **agent owner's**: team members with log access (editors, or viewers when **Viewers can see logs** is on) see what the owner sees, not the decisions from other members' own chats. Callers without log access get `403`. `summary` without `agent_id` covers only your own activity. Responses never include the agent's API key or the matched text.
 
 ### What is stored, and for how long
 
-By default the journal records *that* something matched — check, stage, action, outcome, category, a score where the check produces one, a match count and a short detail string — but **not the text**. Pre-redaction text is exactly what a PII control exists to keep out of storage. Set `GUARDRAILS_STORE_SCANNED_TEXT=true` to persist a sample of the first matched value (up to 200 characters) alongside each row for forensic review; it is stored in the database but never returned by the API.
+By default the journal records *that* something matched — check, stage, action, outcome, category, a score where the check produces one, a match count, a short detail string and the item it is about — but **not the text**. Pre-redaction text is exactly what a PII control exists to keep out of storage. Set `GUARDRAILS_STORE_SCANNED_TEXT=true` to persist a sample of the first matched value (up to 200 characters) alongside each row for forensic review; it is stored in the database but never returned by the API.
 
 Rows older than `GUARDRAILS_EVENTS_RETENTION_DAYS` (default 30) are purged by a daily Celery beat task. The `message_id` link is set to `NULL` rather than cascading when a conversation is deleted, so the compliance trail outlives the conversation it came from.
 
@@ -302,12 +388,19 @@ Operators control guardrails deployment-wide with these settings:
 | --- | --- | --- |
 | `GUARDRAILS_ENABLED` | `true` | Master switch. `false` disables every stage on every agent; the builder shows a notice explaining that nothing configured will run. |
 | `GUARDRAILS_CHECKS_ENABLED` | `[]` | Allowlist of check keys. Empty means every registered check. A disallowed check cannot be saved through the API, and existing controls that use it are dropped on read. |
-| `GUARDRAILS_FLOOR` | `{}` | A guardrails config fragment every agent inherits and cannot weaken. See below. |
 | `GUARDRAILS_JUDGE_MODEL` | unset | Model id for `policy` controls that do not set their own `model`. Unset reuses the agent's model. |
 | `GUARDRAILS_STORE_SCANNED_TEXT` | `false` | Persist a sample of matched text with each journal row. |
 | `GUARDRAILS_EVENTS_RETENTION_DAYS` | `30` | Journal retention. Minimum 1. |
+| `DECISION_INJECTION_ENABLED` | `false` | Lets the decision model scan for prompt injection. See [below](#turning-the-model-check-on). |
+| `GUARDRAILS_INJECTION_MAX_WINDOWS` | `24` | 512-token windows `injection_model` reads of one text during a turn (1–64). |
+| `GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS` | `64` | Windows read of a chat attachment scored after upload (1–256). |
+| `GUARDRAILS_INJECTION_LIVE_ITEMS` | `auto` | Uncached documents or files scored with the model during a turn: `auto` or 0–40. See [Where a document's score comes from](#where-a-documents-score-comes-from). |
+| `GUARDRAILS_INJECTION_BATCH_STATES` | `8` | Windows per call when texts are scored in the background (1–64). |
+| `GUARDRAILS_INJECTION_LAZY` | `true` | Score in the background what a turn could not score in time. |
+| `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS` | `180` | Days a cached prompt-injection score is kept after its text was last scored or seen. |
+| `GUARDRAILS_FLOOR` | `{}` | **Deprecated.** Imported once into [Admin → Guardrails](#the-instance-floor), then ignored. |
 
-`GUARDRAILS_CHECKS_ENABLED` takes a JSON list or comma-separated names, and an empty value (or `[]`) means every check. `none` is not special here: it is read as a check called `none`, which matches nothing, so every check is disallowed and controls that use one are dropped. DocsGPT logs a warning at startup naming entries that are not registered checks. To turn guardrails off, set `GUARDRAILS_ENABLED=false` instead. `GUARDRAILS_FLOOR` must be JSON. For example:
+`GUARDRAILS_CHECKS_ENABLED` takes a JSON list or comma-separated names, and an empty value (or `[]`) means every check. `none` is not special here: it is read as a check called `none`, which matches nothing, so every check is disallowed and controls that use one are dropped. DocsGPT logs a warning at startup naming entries that are not registered checks. To turn guardrails off, set `GUARDRAILS_ENABLED=false` instead. For example:
 
 ```bash
 GUARDRAILS_CHECKS_ENABLED='["pii", "secrets", "denylist", "url", "injection", "groundedness"]'
@@ -319,41 +412,95 @@ GUARDRAILS_CHECKS_ENABLED=pii,secrets,denylist,url,injection,groundedness
 Leaving `policy` out of `GUARDRAILS_CHECKS_ENABLED` is how an air-gapped or privacy-sensitive deployment guarantees that no user text is sent to a judge model, regardless of what agent owners configure.
 </Callout>
 
+### Turning the model check on
+
+The operator decides whether the model may score text at all; which agents, stages, actions and thresholds use it is set in the UI.
+
+```env
+DECISION_INJECTION_ENABLED=true
+```
+
+While it is `true`:
+
+- agents' `injection_model` controls, the [floor's](#the-instance-floor) and the [defaults for new agents](#defaults-for-new-agents) run;
+- every chat attachment is scored in the background once uploaded;
+- MCP tool descriptions are scored when [Admin → Guardrails warns on them](#mcp-tool-descriptions);
+- the API loads the model when it starts, and `/api/config` reports `decision_injection_enabled: true` (the switch, with the model available).
+
+While it is `false` (the default), nothing loads or calls the model for guardrails. The `GUARDRAILS_INJECTION_*` settings above are tuning knobs and never appear in the UI. `GUARDRAILS_CHECKS_ENABLED` must allow `injection_model` for controls to use it; scoring attachments and MCP warnings follow `DECISION_INJECTION_ENABLED` alone. On a CPU-only install, see [what each check costs](/Models/decision-model#prompt-injection-on-a-cpu).
+
+[Webhook](/API/webhooks) and scheduled runs, which run in the Celery worker, are scored too: the worker never loads the model, and calls the API process's model or, with `DECISION_BASE_URL` set, the decision server (see [Celery workers](/Models/decision-model#celery-workers)). A worker that reaches neither reports the control *not evaluated*. A webhook's payload reaches the agent's `input` controls, the floor's included, as JSON with its non-ASCII text as written.
+
+## Admin → Guardrails
+
+The **Guardrails** page of the admin area holds the settings that apply to every agent. It is for admins only, and every save is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `guardrails_settings_set`, with each changed field as `[old, new]`. It also shows what the prompt-injection model costs on this server, once the model has loaded and been timed: *"Checking a user message adds about 0.2 s on this server (onnx-int8)."* When one check is predicted to take longer than its stage deadline, it warns that messages will be recorded as not evaluated. While `DECISION_INJECTION_ENABLED` is off, the page says how to turn the model on.
+
 ### The instance floor
 
-`GUARDRAILS_FLOOR` lets an operator impose a minimum policy on every agent. It uses the same shape as an agent's `guardrails` object and **must include `"enabled": true`** — without it the floor parses but applies to nothing, and a warning is logged.
-
-```bash
-GUARDRAILS_FLOOR='{
-  "enabled": true,
-  "mode": "scan_all",
-  "fail_open": false,
-  "controls": [
-    {"check": "secrets", "stage": "output", "action": "redact"},
-    {"check": "secrets", "stage": "tool_result", "action": "redact"},
-    {"check": "injection", "stage": "retrieval", "action": "block"}
-  ]
-}'
-```
+**Rules every agent follows** is the instance floor: a minimum policy every agent inherits, existing agents included, edited with the same control editor an agent uses. **Apply these rules to every agent** turns it on (`"enabled": true`); without it the rules are kept but apply to nothing. A save takes effect at once in the API process that handled it and within 30 seconds in every other API process and worker. If the database cannot be read, agents keep the floor last read.
 
 The floor is merged into each agent's own configuration at run time. An agent may tighten, never loosen:
 
-- Guardrails are forced on for every agent, even one whose owner never enabled them.
-- If the floor's mode is `scan_all`, the merged mode is `scan_all`. Otherwise the agent's mode stands.
+- Guardrails are forced on for every agent, even one whose owner never enabled them; the controls such an owner saved with guardrails switched off then run too.
+- If the floor's mode is `scan_all`, the merged mode is `scan_all`: every agent then enforces, its own controls included. Otherwise the agent's mode stands.
 - If the floor sets `fail_open: false`, the agent is fail-closed. The merged `timeout_ms` is the larger of the two.
 - Floor controls the agent does not define are added.
 - Where both define the same `(check, stage)`, the floor's **settings** are authoritative and the **stricter action** wins (`block` > `redact` > `flag`). The two settings dicts are deliberately not merged: adding to `denylist.terms` tightens, but adding to `url.allow_hosts` loosens, so an agent that could edit floor settings could always find a loosening edit. An agent that needs different settings attaches its own control at a stage the floor does not claim.
 
-In the builder, floor controls appear as active and locked. The catalog exposes only which `(check, stage)` pairs the floor claims and their action — the floor's settings (banned-term lists, policy prompts) stay server-side so they cannot be read and evaded by any authenticated user.
+In the builder, floor controls appear as active and locked. The catalog exposes only which `(check, stage)` pairs the floor claims and their action — the floor's settings (banned-term lists, policy prompts) stay server-side so they cannot be read and evaded by any authenticated user. The floor also applies to the individual AI Agent nodes inside a workflow, which do not otherwise carry per-agent controls (see below).
 
-The floor also applies to the individual AI Agent nodes inside a workflow, which do not otherwise carry per-agent controls (see below).
+Two common floors, as the page stores them:
+
+- **Record suspected injections on every agent's input.** A `flag` control changes no answer and never stops a turn it could not score, so it is safe on any hardware:
+
+  ```json
+  {"enabled": true, "mode": "monitor_only",
+   "controls": [{"check": "injection_model", "stage": "input", "action": "flag"}]}
+  ```
+
+- **Quarantine: withhold documents that score very high, for every agent.** A floor that blocks needs `scan_all`, which makes every agent enforce its own controls too. On a CPU install, leave the floor's `fail_open` on, since `false` would make every agent fail closed, and withhold each uncached document the first time it is retrieved (see [When it cannot score](#when-it-cannot-score)):
+
+  ```json
+  {"enabled": true, "mode": "scan_all",
+   "controls": [{"check": "injection_model", "stage": "retrieval", "action": "block",
+                 "settings": {"threshold": 0.95, "flag_threshold": 0.5}}]}
+  ```
+
+The floor replaces the `GUARDRAILS_FLOOR` setting. On the first start with `GUARDRAILS_FLOOR` set and no floor stored, its value is stored as the floor and a warning says it is deprecated; an invalid value is not imported, and an error says so. From then on the stored floor applies and `GUARDRAILS_FLOOR` is ignored, with a warning at each start while it is still set. Clearing the floor on the page stores "no floor", so the old value is never imported again. See [Upgrading](/upgrading#guardrails_floor-moves-to-admin--guardrails).
+
+### MCP tool descriptions
+
+**Warn about tool descriptions that look like prompt injection** (off by default) scores each [MCP server](/Tools/mcp-tools)'s actions, their name, description and parameter descriptions, when the server is saved or refreshed and when a connection's tool is set up. Descriptions change only then, so nothing is scored during a chat. It runs only while `DECISION_INJECTION_ENABLED` is on as well.
+
+It only warns. Legitimate descriptions are instructions to an AI ("always call this first"), and how often the model flags them is unmeasured, so no action is ever turned off. Each scored action stores `injection: {p, scorer}`; actions scoring 0.5 or more are marked in the tool's permissions as a possible prompt injection, and the save's response lists them under `injection.flagged`. A save waits at most `DECISION_HOT_TIMEOUT` (3 s) for the scores: actions not scored by then are stored without a score, listed under `injection.unscored` and scored in the background, so the next save or refresh finds them cached.
+
+### Admin API
+
+| Method | Path | Body / response |
+| --- | --- | --- |
+| `GET` | `/api/admin/guardrails` | `{"success", "floor", "mcp_description_warnings", "injection_model": {"enabled", "runtime", "predicted_input_s", "timeout_s"}}` |
+| `PUT` | `/api/admin/guardrails` | Any of `floor` (an agent `guardrails` object, or `null` for no floor) and `mcp_description_warnings` (`true` or `false`); returns the `GET` body |
+
+`floor` is `null` when none is stored. `predicted_input_s` is the predicted time of one check on a user message on this server, `null` until the model has been measured; reading it never loads or times the model. `timeout_s` is the default stage deadline (2 s) and `enabled` is `DECISION_INJECTION_ENABLED` with the model available. An invalid body gets a 400 whose `message` names the field, such as `floor.controls.0.check: unknown check 'x'` or `floor.controls.0: flag_threshold must not exceed threshold`.
+
+## Defaults for new agents
+
+Under **Admin → Defaults**, **New agents** sets the guardrails a new agent starts with, in the same control editor. They are copied into the agent's `config.guardrails` when it is created: from the builder (whose form starts from them), from a template, from an imported file and for the agent a shared conversation creates. A guardrails field the request or file sets wins over the default, key by key, and a `controls` list replaces the default list. Saving the defaults never changes an existing agent; to apply a rule to every agent, existing ones included, use the [floor](#the-instance-floor). Each save is recorded in the audit log as `agent_defaults_set`.
+
+| Method | Path | Who | Body / response |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/defaults/agents` | Admins | `{"success", "guardrails", "injection_model": {...}}`, the same `injection_model` block as `/api/admin/guardrails` |
+| `PUT` | `/api/admin/defaults/agents` | Admins | `{"guardrails": {...}}`, validated as an agent's guardrails; returns the `GET` body |
+| `GET` | `/api/agents/defaults` | Any signed-in user, or a token with `agents:read` | `{"success", "guardrails"}`, to prefill the new-agent form |
+
+With nothing saved, each returns the built-in defaults (guardrails off) and new agents start exactly as before. The same page sets the [retrieval settings new sources start with](/Sources/Per-source-configuration#defaults-for-new-sources).
 
 ## Scope and limitations
 
-- **Workflow agents** run the `input` stage with their own controls, but the AI Agent nodes inside the workflow run only the instance floor, not the parent agent's controls. Aggregate output guarding across a workflow is not yet wired.
+- **Workflow agents** run the `input` stage with their own controls, but the AI Agent nodes inside the workflow run only the [instance floor](#the-instance-floor), not the parent agent's controls. Aggregate output guarding across a workflow is not yet wired.
 - **Pattern checks match formats, not meaning.** `pii` does not find names; `injection` misses obfuscated payloads; `groundedness` measures word overlap, not truth. Use `policy` where you need a semantic judgement, and keep an eye on the *Not evaluated* count when you do.
 - **Redaction is best-effort against structured identifiers.** A value that does not match a known format passes through. Treat `redact` as a safety net, not as a data-loss-prevention guarantee.
-- **Latency.** Local checks add low single-digit milliseconds. A `policy` control adds a model round trip per scanned segment, and on the `output` stage it holds the stream until each sentence boundary has been judged.
+- **Latency.** Local checks add low single-digit milliseconds. An `injection_model` control on `input` adds about 0.2 s on CPU before the answer starts; at `retrieval` and `attachment` it mostly reads cached scores, and on a CPU it scores nothing during the turn by default, so a document's first retrieval goes unscored and it is scored in the background for the next turn. A `policy` control adds a model round trip per scanned segment, and on the `output` stage it holds the stream until each sentence boundary has been judged.
 
 ## Extending: writing your own check
 

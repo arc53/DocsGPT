@@ -20,8 +20,12 @@ from docsgpt.parser.schema.base import Document
 
 _FOLDER_MIME = 'application/vnd.google-apps.folder'
 _SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
-# Metadata read for every walked item; shortcutDetails says where a shortcut points.
-_ITEM_FIELDS = 'id,name,mimeType,modifiedTime,driveId,shortcutDetails(targetId,targetMimeType)'
+# Metadata read for every walked item; shortcutDetails says where a shortcut points,
+# inheritedPermissionsDisabled whether an item keeps its folder's sharing.
+_ITEM_FIELDS = (
+    'id,name,mimeType,modifiedTime,driveId,webViewLink,inheritedPermissionsDisabled,'
+    'shortcutDetails(targetId,targetMimeType)'
+)
 # Retries after the first attempt. Google's client retries 5xx, 429, rate-limit
 # 403s and dropped connections with exponential backoff and jitter (1s, 2s, 4s...).
 _NUM_RETRIES = 5
@@ -71,9 +75,12 @@ class GoogleDriveLoader(BaseConnectorLoader):
         self.session_token = session_token
 
         _, token_info = self._load_token_info(session_token, connection_id)
+        self._token_info = token_info
         # Google refresh tokens do not rotate, so the credentials object may
         # renew the access token in memory for the rest of this run.
         self.credentials = self.auth.create_credentials_from_token_info(token_info)
+        # The client that reads a picked folder's contents, chosen on first use.
+        self._folder_reader = None
 
         try:
             self.service = self.auth.build_drive_service(self.credentials)
@@ -447,19 +454,52 @@ class GoogleDriveLoader(BaseConnectorLoader):
             except Exception as e:
                 raise ValueError(f"Cannot access Google Drive: {e}")
 
-    def _get_item(self, item_id: str) -> Dict[str, Any]:
-        """Fetch one item's metadata, retrying rate limits and server errors."""
-        return self.service.files().get(
+    def _folder_service(self):
+        """The Drive client that lists a picked folder's contents and downloads them.
+
+        The user's own sign-in when it reads the whole Drive (``drive.readonly``).
+        A ``drive.file`` sign-in sees only the picked folder itself, so its
+        contents are read through the service account, which sees the folder
+        once the user shares it.
+
+        Raises:
+            ValueError: Per-file access and no service account is configured.
+        """
+        if self._folder_reader is None:
+            if self.auth.reads_whole_drive(self._token_info):
+                self._folder_reader = self.service
+            else:
+                reader = self.auth.build_service_account_service()
+                if reader is None:
+                    raise ValueError(
+                        "Reading a Google Drive folder needs GOOGLE_SERVICE_ACCOUNT_KEY "
+                        "(or GOOGLE_DRIVE_ACCESS=readonly)"
+                    )
+                self._folder_reader = reader
+        return self._folder_reader
+
+    def _get_item(self, item_id: str, service=None) -> Dict[str, Any]:
+        """Fetch one item's metadata, retrying rate limits and server errors.
+
+        Args:
+            item_id: The file or folder.
+            service: The client to ask; the user's own sign-in by default.
+        """
+        return (service or self.service).files().get(
             fileId=item_id,
             fields=_ITEM_FIELDS,
             supportsAllDrives=True,
         ).execute(num_retries=_NUM_RETRIES)
 
-    def _list_children(self, folder: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+    def _list_children(self, folder: Dict[str, Any], service=None) -> Iterator[Dict[str, Any]]:
         """Yield every untrashed child of ``folder``, page by page.
 
         Items in a shared drive are listed within that drive (``corpora=drive``);
         the default corpus only holds files the user owns or was shared directly.
+
+        Args:
+            folder: The folder's metadata.
+            service: The client to list with; the user's own sign-in by default.
         """
         params: Dict[str, Any] = {
             'q': f"'{folder['id']}' in parents and trashed=false",
@@ -473,7 +513,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
             params['driveId'] = folder['driveId']
         page_token = None
         while True:
-            results = self.service.files().list(
+            results = (service or self.service).files().list(
                 pageToken=page_token, **params
             ).execute(num_retries=_NUM_RETRIES)
             yield from results.get('files', [])
@@ -503,8 +543,18 @@ class GoogleDriveLoader(BaseConnectorLoader):
 
     def _walk_selection(
         self, config: Dict[str, Any], stats: '_WalkStats'
-    ) -> Iterator[Tuple[Dict[str, Any], Tuple[str, ...]]]:
-        """Yield ``(file_metadata, relative_path_parts)`` for every file in a selection.
+    ) -> Iterator[Tuple[Dict[str, Any], Tuple[str, ...], Any]]:
+        """Yield ``(file_metadata, relative_path_parts, service)`` for every file in a selection.
+
+        ``service`` is the client that downloads the file. A picked file is
+        read with the user's own sign-in; a selected folder's contents with
+        :meth:`_folder_service`. A picked folder is first read with the user's
+        sign-in, which proves the user may see it: with ``drive.file`` that
+        only succeeds for a folder the user picked. When the service account
+        reads the contents, an item that does not inherit the picked folder's
+        sharing (``inheritedPermissionsDisabled``) is left out, and shortcuts
+        are resolved with the user's sign-in, so the walk never reaches what
+        the user could not open themselves.
 
         Selected folders become top-level directories and their subfolders are
         walked when ``recursive`` is set. Shortcuts are followed; a folder or
@@ -525,7 +575,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
         seen_files: Set[str] = set()
         taken: Set[Tuple[Tuple[str, ...], str]] = set()
 
-        def visit(item: Dict[str, Any], parent: Tuple[str, ...], top_level: bool):
+        def visit(item: Dict[str, Any], parent: Tuple[str, ...], top_level: bool, reader):
             try:
                 resolved = self._resolve_shortcut(item)
             except Exception as e:
@@ -540,14 +590,24 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 if item_id in seen_folders or not (top_level or recursive):
                     return
                 seen_folders.add(item_id)
+                if top_level:
+                    reader = self._top_level_folder_reader(resolved, stats)
+                    if reader is None:
+                        return
                 folder_parts = parent + (_unique_name(taken, parent, _safe_name(resolved.get('name')), is_dir=True),)
                 try:
-                    children = list(self._list_children(resolved))
+                    children = list(self._list_children(resolved, reader))
                 except Exception as e:
                     stats.record_failure(resolved.get('name') or item_id, e)
                     return
                 for child in children:
-                    yield from visit(child, folder_parts, top_level=False)
+                    if reader is not self.service and child.get('inheritedPermissionsDisabled'):
+                        # Shared apart from the picked folder: the user's access
+                        # to that folder says nothing about this item.
+                        logging.info(f"Skipping Google Drive item {child.get('name')!r}: its sharing is restricted")
+                        stats.skipped += 1
+                        continue
+                    yield from visit(child, folder_parts, top_level=False, reader=reader)
                 return
             if item_id in seen_files:
                 return
@@ -556,7 +616,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 return
             seen_files.add(item_id)
             name = _unique_name(taken, parent, self._local_file_name(resolved), is_dir=False)
-            yield resolved, parent + (name,)
+            yield resolved, parent + (name,), reader
 
         for key in ('file_ids', 'folder_ids'):
             ids = config.get(key) or []
@@ -568,7 +628,40 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 except Exception as e:
                     stats.record_failure(item_id, e)
                     continue
-                yield from visit(item, (), top_level=True)
+                yield from visit(item, (), top_level=True, reader=self.service)
+
+    def _top_level_folder_reader(self, folder: Dict[str, Any], stats: '_WalkStats'):
+        """The client that reads a selected folder's contents, or None when nothing can.
+
+        The service account must see the folder itself before it is listed:
+        listing a folder it cannot see returns nothing rather than an error.
+        A folder that cannot be read is counted as skipped, so the rest of the
+        selection still syncs; once it is shared, its files change the
+        fingerprint and the next sync picks them up.
+        """
+        name = folder.get('name') or folder.get('id')
+        try:
+            reader = self._folder_service()
+        except Exception as e:
+            # No service account, or a key Google's client cannot load.
+            logging.warning(f"Skipping Google Drive folder {name!r}: {e}")
+            stats.skipped += 1
+            return None
+        if reader is self.service:
+            return reader
+        try:
+            self._get_item(folder['id'], reader)
+        except Exception as e:
+            if not _is_permanent_error(e):
+                stats.record_failure(name, e)
+                return None
+            logging.warning(
+                f"Skipping Google Drive folder {name!r}: it is not shared with "
+                f"{self.auth.service_account_email()}"
+            )
+            stats.skipped += 1
+            return None
+        return reader
 
     def _local_file_name(self, file_metadata: Dict[str, Any]) -> str:
         """The sanitized name a file is saved under, with an extension its parser recognizes."""
@@ -582,20 +675,26 @@ class GoogleDriveLoader(BaseConnectorLoader):
             name += self.SUPPORTED_MIME_TYPES.get(mime_type, '')
         return _fit_name(name)
 
-    def _download_file(self, file_metadata: Dict[str, Any], path: str) -> None:
+    def _download_file(self, file_metadata: Dict[str, Any], path: str, service=None) -> None:
         """Download (or export, for Google Docs, Sheets and Slides) one file to ``path``.
 
         A partly written file is removed when the download fails.
+
+        Args:
+            file_metadata: The file's metadata.
+            path: Where to write it.
+            service: The client to download with; the user's own sign-in by default.
         """
+        service = service or self.service
         file_id = file_metadata['id']
         mime_type = file_metadata['mimeType']
         if mime_type in self.EXPORT_FORMATS:
-            request = self.service.files().export_media(
+            request = service.files().export_media(
                 fileId=file_id,
                 mimeType=self.EXPORT_FORMATS[mime_type]
             )
         else:
-            request = self.service.files().get_media(fileId=file_id, supportsAllDrives=True)
+            request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
         try:
@@ -620,7 +719,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
         stats = _WalkStats()
         entries = [
             (parts, meta.get('id'), meta.get('modifiedTime'))
-            for meta, parts in self._walk_selection(source_config, stats)
+            for meta, parts, _ in self._walk_selection(source_config, stats)
         ]
         return None if stats.failed else _fingerprint(entries)
 
@@ -638,8 +737,9 @@ class GoogleDriveLoader(BaseConnectorLoader):
         Returns:
             The download summary: ``files_downloaded``, ``files_failed``,
             ``files_skipped``, ``sync_fingerprint``, ``directory_path``,
-            ``empty_result``, ``source_type`` and ``config_used``, plus
-            ``error`` when the download could not run. ``sync_fingerprint``
+            ``empty_result``, ``source_type``, ``config_used`` and
+            ``file_urls`` (each downloaded file's path under ``local_dir`` →
+            its Drive link), plus ``error`` when the download could not run. ``sync_fingerprint``
             is ``None`` when a file or folder failed, or a file was refused
             for a reason other than its content (sharing, permissions), since
             that can change without the file's ``modifiedTime`` changing.
@@ -651,6 +751,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
         stats = _WalkStats()
         files_downloaded = 0
         entries = []
+        file_urls = {}
         fingerprintable = True
 
         try:
@@ -660,11 +761,13 @@ class GoogleDriveLoader(BaseConnectorLoader):
             self._ensure_service()
             os.makedirs(local_dir, exist_ok=True)
 
-            for file_metadata, parts in self._walk_selection(config, stats):
+            for file_metadata, parts, reader in self._walk_selection(config, stats):
                 entries.append((parts, file_metadata.get('id'), file_metadata.get('modifiedTime')))
                 try:
-                    self._download_file(file_metadata, _safe_join(local_dir, parts))
+                    self._download_file(file_metadata, _safe_join(local_dir, parts), reader)
                     files_downloaded += 1
+                    if file_metadata.get('webViewLink'):
+                        file_urls[os.path.join(*parts)] = file_metadata['webViewLink']
                 except Exception as e:
                     stats.record_failure(file_metadata.get('name'), e)
                     if not _error_reasons(e) & _CONTENT_REFUSAL_REASONS:
@@ -678,7 +781,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 "directory_path": local_dir,
                 "empty_result": files_downloaded == 0,
                 "source_type": "google_drive",
-                "config_used": config
+                "config_used": config,
+                "file_urls": file_urls,
             }
 
         except Exception as e:
@@ -691,6 +795,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 "empty_result": True,
                 "source_type": "google_drive",
                 "config_used": config,
+                "file_urls": file_urls,
                 "error": str(e)
             }
 

@@ -12,8 +12,11 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from celery.exceptions import Retry
 
+from docsgpt import worker
 from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.vectorstore.index_lock import SourceBusy
 
 
 def _seed_source(pg_conn, config=None):
@@ -71,6 +74,18 @@ class TestExtractGraphWorker:
         assert extract.call_args.args[2] == chunks
         assert extract.call_args.kwargs["config"].kind == "graphrag"
         assert result == {"nodes": 3, "edges": 2, "chunks_processed": 2}
+
+    def test_a_page_change_passes_its_chunk_ids(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+        # A page change extracts only the chunks it stored, not the source's backlog.
+        source_id = _seed_source(pg_conn)
+        _patch_store(monkeypatch, [{"doc_id": "c1", "text": "alpha"}, {"doc_id": "c2", "text": "beta"}])
+        monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: True)
+        extract = MagicMock(return_value={"nodes": 1, "edges": 0, "chunks_processed": 1})
+        monkeypatch.setattr("docsgpt.graphrag.extraction.extract_graph_for_source", extract)
+
+        worker.extract_graph_worker(task_self, source_id, "alice", chunk_ids=["c2"])
+
+        assert extract.call_args.kwargs["chunk_ids"] == ["c2"]
 
     def test_unavailable_returns_status_no_extraction(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -170,6 +185,67 @@ class TestExtractGraphWorker:
             worker.extract_graph_worker(task_self, source_id, "alice")
 
         assert "graph.extract.failed" in [e[0] for e in events]
+
+
+@pytest.mark.unit
+class TestExtractionsTakeTurns:
+    """Each extraction spends what is left of the source's chunk cap: two at once would each spend all of it."""
+
+    def _setup(self, pg_conn, monkeypatch, held):
+        source_id = _seed_source(pg_conn)
+        store = _patch_store(monkeypatch, [{"doc_id": "c1", "text": "alpha"}])
+        store.get_chunks.side_effect = lambda: held.append("reading") or [{"doc_id": "c1", "text": "alpha"}]
+        monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: True)
+        monkeypatch.setattr(
+            "docsgpt.graphrag.extraction.extract_graph_for_source",
+            lambda *a, **k: held.append("extracting") or {"nodes": 1, "edges": 0, "chunks_processed": 1},
+        )
+        events = []
+        monkeypatch.setattr(worker, "publish_user_event", lambda user, etype, payload, **kw: events.append(etype))
+        return source_id, events
+
+    @pytest.mark.parametrize("chunk_ids", [None, ["c1"]])
+    def test_extracts_holding_the_graph_extraction_lock(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, held_lock, chunk_ids,
+    ):
+        source_id, _events = self._setup(pg_conn, monkeypatch, held_lock)
+        monkeypatch.setattr(worker, "graph_extract_lock", held_lock.lock)
+        index_lock = MagicMock(name="source_index_lock")
+        monkeypatch.setattr(worker, "source_index_lock", index_lock)
+
+        worker.extract_graph_worker(task_self, source_id, "alice", chunk_ids=chunk_ids)
+
+        assert held_lock == [source_id, "reading", "extracting", "released"]
+        index_lock.assert_not_called()
+
+    def test_a_busy_source_retries_the_extraction_later(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, busy_lock,
+    ):
+        held = []
+        source_id, events = self._setup(pg_conn, monkeypatch, held)
+        busy_lock("graph_extract_lock")
+        task_self.retry.side_effect = lambda **kwargs: Retry()
+
+        with pytest.raises(Retry):
+            worker.extract_graph_worker(task_self, source_id, "alice", chunk_ids=["c1"])
+
+        assert held == []
+        assert task_self.retry.call_args.kwargs["countdown"] > 0
+        assert "graph.extract.failed" not in events
+
+    def test_busy_past_the_retries_fails_the_build(self, pg_conn, patch_worker_db, task_self, monkeypatch, busy_lock):
+        source_id, events = self._setup(pg_conn, monkeypatch, [])
+        busy_lock("graph_extract_lock")
+
+        def exhausted(exc=None, **kwargs):
+            raise exc
+
+        task_self.retry.side_effect = exhausted
+
+        with pytest.raises(SourceBusy):
+            worker.extract_graph_worker(task_self, source_id, "alice")
+
+        assert events[-1] == "graph.extract.failed"
 
 
 @pytest.mark.unit

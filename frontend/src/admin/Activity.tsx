@@ -29,8 +29,10 @@ import { Pagination } from '../components/ui/pagination';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { EmptyState } from '../components/ui/empty-state';
 import { selectToken } from '../preferences/preferenceSlice';
+import { downloadBlob } from '../utils/browserUtils';
 import {
   LoadError,
+  UserIdentity,
   categoryTone,
   eventLabel,
   eventTone,
@@ -49,7 +51,9 @@ type ActivityRow = {
   event: string;
   category: string;
   actor_id: string | null;
+  actor_email?: string | null;
   target_id: string | null;
+  target_email?: string | null;
   ip: string | null;
   user_agent: string | null;
   outcome: string | null;
@@ -104,7 +108,13 @@ function RowDetail({ row }: { row: ActivityRow }) {
       <DescriptionList layout="columns" size="xs">
         <DetailRow label="Event" value={row.event} />
         <DetailRow label="Journal" value={row.feed} />
+        {row.actor_email ? (
+          <DetailRow label="Actor email" value={row.actor_email} />
+        ) : null}
         {row.actor_id ? <DetailRow label="Actor" value={row.actor_id} /> : null}
+        {row.target_email ? (
+          <DetailRow label="Affected email" value={row.target_email} />
+        ) : null}
         {row.target_id ? (
           <DetailRow label="Affected user" value={row.target_id} />
         ) : null}
@@ -224,15 +234,7 @@ export default function Activity() {
     try {
       const res = await adminService.exportActivity(filters, format, token);
       if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `docsgpt-activity.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadBlob(await res.blob(), `docsgpt-activity.${format}`);
     } finally {
       setExporting(false);
     }
@@ -407,16 +409,30 @@ export default function Activity() {
                       </TableCell>
                       <TableCell
                         className={cn(
-                          'font-mono text-xs',
+                          'text-xs',
                           repeat ? 'text-muted-foreground/50' : '',
                         )}
                       >
-                        {repeat ? '〃' : (row.actor_id ?? '—')}
+                        {repeat ? (
+                          '〃'
+                        ) : row.actor_id ? (
+                          <UserIdentity
+                            userId={row.actor_id}
+                            email={row.actor_email}
+                          />
+                        ) : (
+                          '—'
+                        )}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {row.target_id && row.target_id !== row.actor_id
-                          ? row.target_id
-                          : '—'}
+                      <TableCell className="text-xs">
+                        {row.target_id && row.target_id !== row.actor_id ? (
+                          <UserIdentity
+                            userId={row.target_id}
+                            email={row.target_email}
+                          />
+                        ) : (
+                          '—'
+                        )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         {row.ip === null ? (

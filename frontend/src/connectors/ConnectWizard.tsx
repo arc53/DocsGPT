@@ -1,4 +1,5 @@
 import { nanoid } from '@reduxjs/toolkit';
+import { Database, Plug } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -18,6 +19,7 @@ import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
+import { OptionCard } from '../components/ui/option-card';
 import {
   Select,
   SelectContent,
@@ -25,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { Separator } from '../components/ui/separator';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
@@ -38,18 +41,23 @@ import {
   setSelectedDocs,
 } from '../preferences/preferenceSlice';
 import RetrievalOptions, {
-  DEFAULT_RETRIEVAL_OPTIONS,
   isPrescreenConfigValid,
   optionsToConfig,
-  type RetrievalOptionsValue,
+  sourceHasFileLinks,
 } from '../settings/components/RetrievalOptions';
+import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
+import { knowledgeLink } from '../settings/knowledgeLink';
 import type { AppDispatch } from '../store';
 import { formatCount } from '../utils/dateTimeUtils';
 import { ACCOUNT_NAME_MAX } from './accounts';
 import ConnectorIcon from './ConnectorIcon';
 import CredentialForm, { credentialsComplete } from './CredentialForm';
-import { loadConnectors, selectConnections } from './connectorsSlice';
+import {
+  loadConnectors,
+  selectConnections,
+  syncStarted,
+} from './connectorsSlice';
 import { connectorDescription, connectorName, isKeyHint } from './i18n';
 import { isMcpOpenPreset, reconnectsInPlace } from './launchRules';
 import LinearPicker, {
@@ -90,11 +98,15 @@ type CreatedSource = { id: string; name: string };
 
 /**
  * The one connect flow every entry point opens: sign in, choose what to set
- * up, then a summary with Try it in chat. A content connector asks whether to
- * sync into Knowledge (on when opened for Knowledge) and, if so, what to sync
- * and with which retrieval settings. Tool connectors create their tools on
- * sign-in, writes needing approval, so they go from the credentials straight
- * to the summary. Every run that connects something ends on the summary.
+ * up, then a summary whose footer follows what happened (Open in Knowledge,
+ * Try it in chat, Sync content, or Done). A sync-only connector (S3, Drive,
+ * SharePoint, Confluence, Reddit) offers two ways on, "Sync content now"
+ * (picked) or "Just connect", with what to sync and its retrieval settings
+ * under them. A connector with tools
+ * and sync (GitHub, Linear) asks with a switch each (sync on when opened for
+ * Knowledge). Tool connectors create their tools on sign-in, writes needing
+ * approval, so they go from the credentials straight to the summary. Every
+ * run that connects something ends on the summary.
  *
  * Args:
  *   onClose: Called as the wizard closes, with whether this run created or
@@ -133,6 +145,12 @@ export default function ConnectWizard({
   // back to the mode it came from (`resumeMode`).
   const [mode, setMode] = useState<WizardMode>(initialMode);
   const [resumeMode, setResumeMode] = useState<WizardMode | null>(null);
+  // The account a sync step is fixed to: the opener's, or the one this run
+  // connected once its summary offers Sync content. Without one, Sync more
+  // from Add knowledge asks which account when there are several.
+  const [fixedConnectionId, setFixedConnectionId] = useState<string | null>(
+    initialConnectionId,
+  );
   const [step, setStep] = useState<'signin' | 'setup' | 'done'>(
     initialMode === 'sync'
       ? 'setup'
@@ -178,15 +196,16 @@ export default function ConnectWizard({
   const [frequency, setFrequency] = useState(
     connector.default_sync_frequency || 'weekly',
   );
-  // One key per wizard: a double click on Add source queues one ingest.
-  const [idempotencyKey] = useState(() => nanoid());
+  // One key per setup: a double click on Add source queues one ingest. A
+  // sync started from the summary (Sync content) is a new setup.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => nanoid());
 
   // Sync more from Add knowledge names no account when the service has
   // several: the first setup field picks one (the first, until changed).
   const serviceAccounts = connections.filter(
     (c) => c.connector_key === connector.key && c.status === 'connected',
   );
-  const pickingAccount = mode === 'sync' && !initialConnectionId;
+  const pickingAccount = mode === 'sync' && !fixedConnectionId;
   const activeConnectionId =
     connectionId ?? (pickingAccount ? (serviceAccounts[0]?.id ?? null) : null);
   const chooseAccount = pickingAccount && serviceAccounts.length > 1;
@@ -195,11 +214,15 @@ export default function ConnectWizard({
   // A first connect asks whether to sync into Knowledge; Sync more is only
   // about syncing, so it never asks.
   const askSync = canSync && mode === 'connect';
-  const [syncOn, setSyncOn] = useState(purpose === 'knowledge');
+  // Syncing is the only reason to connect it (S3, Drive): the setup step
+  // offers Sync content now (picked, from any entry point) or Just connect.
+  // A connector with tools too (GitHub, Linear) asks with switches.
+  const syncOnly = canSync && connector.setup.tools === 'off';
+  const [syncOn, setSyncOn] = useState(syncOnly || purpose === 'knowledge');
   const syncing = canSync && (mode === 'sync' || syncOn);
-  const [retrievalOptions, setRetrievalOptions] =
-    useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
-  const { graphRAGAvailable, hybridAvailable, availableModels } =
+  const { value: retrievalOptions, setValue: setRetrievalOptions } =
+    useNewSourceOptions(token, step === 'setup' && syncing);
+  const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token, step === 'setup' && syncing);
   // Tools the user opts into while choosing what to sync, not on sign-in.
   const offerTools =
@@ -234,6 +257,11 @@ export default function ConnectWizard({
     if (!resumeMode) return false;
     setMode(resumeMode);
     setResumeMode(null);
+    // The file pickers keep their selection to themselves and remount
+    // empty, so drop what they reported. The repository and Linear pickers
+    // are drawn from the wizard's value and show it again.
+    setSelectedFiles([]);
+    setSelectedFolders([]);
     setPickerKey((key) => key + 1);
     setError('');
     setStep('setup');
@@ -462,6 +490,28 @@ export default function ConnectWizard({
     }
   };
 
+  /**
+   * A refused setup in the user's language, by its code: the server's own
+   * words are English, so a code without a key reads as the generic failure.
+   */
+  const setupRefusal = (code: unknown): string => {
+    const named = { name, interpolation: { escapeValue: false } };
+    switch (code) {
+      case 'tools_unavailable':
+        return t('settings.connectors.wizard.toolsUnavailable', named);
+      case 'writes_forbidden':
+        return t('settings.connectors.github.writesForbidden');
+      // The account's sign-in stopped working since the wizard opened.
+      case 'reconnect':
+        return t('settings.connectors.wizard.setupReconnect', named);
+      // An admin turned the connector (an MCP preset) off meanwhile.
+      case 'disabled':
+        return t('settings.connectors.wizard.setupDisabled', named);
+      default:
+        return t('settings.connectors.detail.syncFailed');
+    }
+  };
+
   const addSource = async () => {
     if (!activeConnectionId) return;
     if (!wantsTools && !syncReady) {
@@ -490,52 +540,45 @@ export default function ConnectWizard({
         idempotencyKey,
       );
       if (!data?.success) {
-        setError(
-          data?.code === 'tools_unavailable'
-            ? t('settings.connectors.wizard.toolsUnavailable', {
-                name,
-                interpolation: { escapeValue: false },
-              })
-            : data?.code === 'writes_forbidden'
-              ? t('settings.connectors.github.writesForbidden')
-              : data?.error || t('settings.connectors.wizard.syncFailed'),
-        );
+        setError(setupRefusal(data?.code));
         return;
       }
       connectedRef.current = true;
       if (wantsTools) setTools(data.tools ?? []);
-      setSources(data.sources ?? []);
-      const syncedIds = (data.sources ?? []).map(
-        (source: CreatedSource) => source.id,
-      );
-      if (syncedIds.length) onSynced?.(syncedIds);
+      const created: CreatedSource[] = data.sources ?? [];
+      setSources(created);
+      if (created.length) {
+        // The drawer lists them as indexing until the server does.
+        const startedAt = new Date().toISOString();
+        dispatch(
+          syncStarted(
+            created.map((source) => ({
+              id: source.id,
+              name: source.name,
+              connectionId: activeConnectionId,
+              startedAt,
+            })),
+          ),
+        );
+        onSynced?.(created.map((source) => source.id));
+      }
       refresh();
       setStep('done');
     } catch {
-      setError(t('settings.connectors.wizard.syncFailed'));
+      setError(t('settings.connectors.detail.syncFailed'));
     } finally {
       setPending(false);
     }
   };
 
+  // Offered only when the run turned tools on and synced nothing (a new
+  // source opens in Knowledge instead), so the chat starts over no sources:
+  // never the ones the last chat had picked.
   const tryInChat = () => {
     dispatch(setConversation([]));
     dispatch(updateConversationId({ query: { conversationId: null } }));
     dispatch(setSelectedAgent(null));
-    if (sources.length > 0) {
-      dispatch(
-        setSelectedDocs(
-          sources.map((source) => ({
-            id: source.id,
-            name: source.name,
-            date: new Date().toISOString(),
-            model: '',
-            type: 'connector:file',
-            connectionId: activeConnectionId,
-          })),
-        ),
-      );
-    }
+    dispatch(setSelectedDocs([]));
     onFinished?.();
     close();
     navigate('/c/new');
@@ -544,6 +587,37 @@ export default function ConnectWizard({
   const finish = () => {
     onFinished?.();
     close();
+  };
+
+  /** Opens the first source this run created in Knowledge. */
+  const openInKnowledge = () => {
+    const [first] = sources;
+    onFinished?.();
+    close();
+    if (first) navigate(knowledgeLink({ sourceId: first.id }));
+  };
+
+  /** Drops what the pickers hold and remounts them empty. */
+  const clearPicks = () => {
+    setSelectedFiles([]);
+    setSelectedFolders([]);
+    setSelectedRepo(null);
+    setLinearSelection(EMPTY_LINEAR_SELECTION);
+    setPickerKey((key) => key + 1);
+  };
+
+  /** From a summary with nothing synced: the sync step, in place. */
+  const syncContent = () => {
+    setFixedConnectionId(activeConnectionId);
+    setMode('sync');
+    setSyncOn(true);
+    setSources([]);
+    // A new setup over pickers that remount empty: anything picked before
+    // Just connect folded the form away is dropped, not synced unseen.
+    clearPicks();
+    setError('');
+    setIdempotencyKey(nanoid());
+    setStep('setup');
   };
 
   /** A picker's sign-in expired: sign the same account in again. */
@@ -572,11 +646,7 @@ export default function ConnectWizard({
 
   const switchAccount = (id: string) => {
     setConnectionId(id);
-    setSelectedFiles([]);
-    setSelectedFolders([]);
-    setSelectedRepo(null);
-    setLinearSelection(EMPTY_LINEAR_SELECTION);
-    setPickerKey((key) => key + 1);
+    clearPicks();
   };
 
   // The account in words: its name, the key it was made with, or its label.
@@ -592,6 +662,22 @@ export default function ConnectWizard({
         })
       : account;
   })();
+
+  // The account as a sentence: the key a pasted-key account was made with
+  // ("Connected with the key ending …1c26."), else who signed in.
+  const accountSentence = !accountText
+    ? ''
+    : !connection?.account_name && isKeyHint(account)
+      ? t('settings.connectors.wizard.connectedWithKey', {
+          hint: account,
+          interpolation: { escapeValue: false },
+        })
+      : mode === 'sync'
+        ? accountText
+        : t('settings.connectors.wizard.signedInAs', {
+            account: accountText,
+            interpolation: { escapeValue: false },
+          });
 
   const toolCount = tools.length;
   const summary = useMemo(() => {
@@ -628,16 +714,14 @@ export default function ConnectWizard({
           : toolCount
             ? t('settings.connectors.wizard.doneTools', { tools: toolsText })
             : '';
-    // A new account that syncs nothing yet: say where syncing starts later.
+    // A new account that syncs nothing yet says so; the footer's Sync
+    // content is the way on, so the line gives no directions.
     const syncLine =
       mode === 'connect' && canSync && sources.length === 0
-        ? t('settings.connectors.wizard.syncLater', {
-            name,
-            interpolation: { escapeValue: false },
-          })
+        ? t('settings.connectors.wizard.syncLater')
         : '';
     return [accountLine, countsLine, syncLine].filter(Boolean).join(' ');
-  }, [account, sources, toolCount, mode, canSync, name, t]);
+  }, [account, sources, toolCount, mode, canSync, t]);
 
   const renderSignIn = () => (
     <div className="flex flex-col gap-5">
@@ -738,7 +822,7 @@ export default function ConnectWizard({
           </Select>
         </FormField>
       )}
-      {(offerTools || askSync) && (
+      {(offerTools || (askSync && !syncOnly)) && (
         <SettingRows>
           {offerTools && (
             <SettingRow
@@ -777,7 +861,7 @@ export default function ConnectWizard({
               />
             </SettingRow>
           )}
-          {askSync && (
+          {askSync && !syncOnly && (
             <SettingRow
               label={t('settings.connectors.wizard.syncToKnowledge')}
               description={t(
@@ -796,110 +880,159 @@ export default function ConnectWizard({
           )}
         </SettingRows>
       )}
-      {syncing && (
-        <>
-          {isRepoPicker && activeConnectionId ? (
-            <RepoPicker
-              key={`${activeConnectionId}-${pickerKey}`}
-              connectionId={activeConnectionId}
-              token={token}
-              value={selectedRepo}
-              onChange={(fullName) => {
-                setSelectedRepo(fullName);
-                if (!nameTouched) setSourceName(fullName);
-              }}
-              onReconnect={onReconnect}
+      {askSync && syncOnly ? (
+        // No gap on the wrapper: a closed Collapsible is still a flex item.
+        <div className="flex flex-col">
+          <div
+            role="radiogroup"
+            aria-label={t('settings.connectors.wizard.syncChoice', {
+              name,
+              interpolation: { escapeValue: false },
+            })}
+            className="flex flex-col gap-3"
+          >
+            <OptionCard
+              icon={<Database />}
+              title={t('settings.connectors.wizard.syncNow')}
+              description={t('settings.connectors.wizard.syncNowDescription', {
+                name,
+                interpolation: { escapeValue: false },
+              })}
+              selected={syncOn}
+              onClick={() => setSyncOn(true)}
             />
-          ) : isLinearPicker && activeConnectionId ? (
-            <LinearPicker
-              key={`${activeConnectionId}-${pickerKey}`}
-              connectionId={activeConnectionId}
-              token={token}
-              value={linearSelection}
-              onChange={(selection) => {
-                setLinearSelection(selection);
-                if (!nameTouched) setSourceName(linearSourceName(selection));
-              }}
-              onReconnect={onReconnect}
+            <OptionCard
+              icon={<Plug />}
+              title={t('settings.connectors.wizard.justConnect')}
+              description={t(
+                'settings.connectors.wizard.justConnectDescription',
+              )}
+              selected={!syncOn}
+              onClick={() => setSyncOn(false)}
             />
-          ) : connector.key === 'google_drive' &&
-            envVar('VITE_GOOGLE_CLIENT_ID') ? (
-            activeConnectionId ? (
-              <GoogleDrivePicker
-                key={`${activeConnectionId}-${pickerKey}`}
-                token={token}
-                connectionId={activeConnectionId}
-                onFirstPickName={prefillName}
-                onSelectionChange={(fileIds, folderIds = []) => {
-                  setSelectedFiles(fileIds);
-                  setSelectedFolders(folderIds);
-                }}
-                onReconnect={onReconnect}
-              />
-            ) : null
-          ) : PICKER_CONNECTORS.has(connector.key) ? (
-            activeConnectionId ? (
-              <FilePicker
-                key={`${activeConnectionId}-${pickerKey}`}
-                provider={connector.key}
-                token={token}
-                connectionId={activeConnectionId}
-                onFirstPickName={prefillName}
-                onSelectionChange={(fileIds, folderIds = []) => {
-                  setSelectedFiles(fileIds);
-                  setSelectedFolders(folderIds);
-                }}
-                onReconnect={onReconnect}
-              />
-            ) : null
-          ) : (
-            <CredentialForm
-              connectorKey={connector.key}
-              idPrefix={`sync-${connector.key}`}
-              fields={connector.setup_fields}
-              values={setupValues}
-              onChange={(values) => {
-                setSetupValues(values);
-                const first = Object.values(values).find(Boolean);
-                if (first) prefillName(first);
-              }}
-            />
-          )}
-          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
-            <Input
-              label={t('modals.uploadDoc.name')}
-              value={sourceName}
-              onChange={(e) => {
-                setNameTouched(true);
-                setSourceName(e.target.value);
-              }}
-            />
-            <FormField label={t('settings.connectors.wizard.syncFrequency')}>
-              <Select value={frequency} onValueChange={setFrequency}>
-                <SelectTrigger size="field" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {FREQUENCIES.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {t(`settings.sources.syncFrequency.${value}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormField>
           </div>
-          <RetrievalOptions
-            title={t('settings.connectors.wizard.retrievalSettings')}
-            value={retrievalOptions}
-            onChange={setRetrievalOptions}
-            hybridAvailable={hybridAvailable}
-            graphRAGAvailable={graphRAGAvailable}
-            availableModels={availableModels}
-          />
-        </>
+          {/* Folded, not dropped, on Just connect: what was typed or picked
+              is still there on the way back. */}
+          <Collapsible open={syncOn}>
+            <div className="flex flex-col gap-5 pt-5">
+              <Separator />
+              {renderSyncForm()}
+            </div>
+          </Collapsible>
+        </div>
+      ) : (
+        syncing && renderSyncForm()
       )}
     </div>
+  );
+
+  /** What to sync, its name and schedule, and its retrieval settings. */
+  const renderSyncForm = () => (
+    <>
+      {isRepoPicker && activeConnectionId ? (
+        <RepoPicker
+          key={`${activeConnectionId}-${pickerKey}`}
+          connectionId={activeConnectionId}
+          token={token}
+          value={selectedRepo}
+          onChange={(fullName) => {
+            setSelectedRepo(fullName);
+            if (!nameTouched) setSourceName(fullName);
+          }}
+          onReconnect={onReconnect}
+        />
+      ) : isLinearPicker && activeConnectionId ? (
+        <LinearPicker
+          key={`${activeConnectionId}-${pickerKey}`}
+          connectionId={activeConnectionId}
+          token={token}
+          value={linearSelection}
+          onChange={(selection) => {
+            setLinearSelection(selection);
+            if (!nameTouched) setSourceName(linearSourceName(selection));
+          }}
+          onReconnect={onReconnect}
+        />
+      ) : connector.key === 'google_drive' &&
+        (connector.picker_client_id || envVar('VITE_GOOGLE_CLIENT_ID')) ? (
+        activeConnectionId ? (
+          <GoogleDrivePicker
+            key={`${activeConnectionId}-${pickerKey}`}
+            token={token}
+            clientId={connector.picker_client_id}
+            connectionId={activeConnectionId}
+            onFirstPickName={prefillName}
+            onSelectionChange={(fileIds, folderIds = []) => {
+              setSelectedFiles(fileIds);
+              setSelectedFolders(folderIds);
+            }}
+            onReconnect={onReconnect}
+          />
+        ) : null
+      ) : PICKER_CONNECTORS.has(connector.key) ? (
+        activeConnectionId ? (
+          <FilePicker
+            key={`${activeConnectionId}-${pickerKey}`}
+            provider={connector.key}
+            token={token}
+            connectionId={activeConnectionId}
+            onFirstPickName={prefillName}
+            onSelectionChange={(fileIds, folderIds = []) => {
+              setSelectedFiles(fileIds);
+              setSelectedFolders(folderIds);
+            }}
+            onReconnect={onReconnect}
+          />
+        ) : null
+      ) : (
+        <CredentialForm
+          connectorKey={connector.key}
+          idPrefix={`sync-${connector.key}`}
+          fields={connector.setup_fields}
+          values={setupValues}
+          onChange={(values) => {
+            setSetupValues(values);
+            const first = Object.values(values).find(Boolean);
+            if (first) prefillName(first);
+          }}
+        />
+      )}
+      <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+        <Input
+          label={t('modals.uploadDoc.name')}
+          value={sourceName}
+          onChange={(e) => {
+            setNameTouched(true);
+            setSourceName(e.target.value);
+          }}
+        />
+        <FormField label={t('settings.connectors.wizard.syncFrequency')}>
+          <Select value={frequency} onValueChange={setFrequency}>
+            <SelectTrigger size="field" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FREQUENCIES.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {t(`settings.sources.syncFrequency.${value}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+      </div>
+      <RetrievalOptions
+        variant="create"
+        title={t('settings.connectors.wizard.retrievalSettings')}
+        value={retrievalOptions}
+        onChange={setRetrievalOptions}
+        hybridAvailable={hybridAvailable}
+        graphRAGAvailable={graphRAGAvailable}
+        availableModels={availableModels}
+        decision={decision}
+        linksAvailable={sourceHasFileLinks(connector.key)}
+      />
+    </>
   );
 
   const renderDone = () => (
@@ -937,8 +1070,65 @@ export default function ConnectWizard({
     </div>
   );
 
+  /**
+   * The summary's footer follows what happened: a reconnect ends on Done; a
+   * new source opens in Knowledge; tools are tried in chat; with nothing
+   * synced and no tools, Sync content starts the sync step in place.
+   */
+  const renderDoneFooter = () => {
+    const done = (
+      <Button
+        type="button"
+        variant="default"
+        size="lg"
+        shape="pill"
+        onClick={finish}
+      >
+        {t('settings.connectors.wizard.done')}
+      </Button>
+    );
+    if (mode === 'reconnect') return done;
+    const next =
+      sources.length > 0
+        ? {
+            label: t('settings.connectors.openInKnowledge'),
+            onSubmit: openInKnowledge,
+          }
+        : toolCount > 0
+          ? {
+              label: t('settings.connectors.wizard.tryInChat'),
+              onSubmit: tryInChat,
+            }
+          : null;
+    if (next)
+      return (
+        <ModalActions
+          cancelLabel={t('settings.connectors.wizard.done')}
+          onCancel={finish}
+          submitLabel={next.label}
+          onSubmit={next.onSubmit}
+        />
+      );
+    if (canSync && activeConnectionId)
+      return (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            shape="pill"
+            onClick={syncContent}
+          >
+            {t('settings.connectors.syncContent')}
+          </Button>
+          {done}
+        </>
+      );
+    return done;
+  };
+
   // The service is in every title, and the setup title stays put while the
-  // switches change.
+  // choice changes.
   const title =
     step === 'signin'
       ? t(
@@ -960,17 +1150,19 @@ export default function ConnectWizard({
           });
 
   // Sign-in says what the service does; setup names the account it sets up
-  // (unless the first field picks one).
+  // (unless the first field picks one). A sync-only service's choice also
+  // says what the service does, since that is what the choice is about.
+  const setupDescription =
+    askSync && syncOnly
+      ? [connectorDescription(t, connector), accountSentence]
+          .filter(Boolean)
+          .join(' ')
+      : accountSentence;
   const description =
     step === 'signin'
       ? connectorDescription(t, connector)
-      : step === 'setup' && !chooseAccount && accountText
-        ? mode === 'sync'
-          ? accountText
-          : t('settings.connectors.wizard.signedInAs', {
-              account: accountText,
-              interpolation: { escapeValue: false },
-            })
+      : step === 'setup' && !chooseAccount && setupDescription
+        ? setupDescription
         : undefined;
 
   // Cancelling a reconnect a picker asked for goes back to the picker.
@@ -1048,12 +1240,7 @@ export default function ConnectWizard({
           : t('settings.connectors.wizard.finishSetup')}
       </Button>
     ) : (
-      <ModalActions
-        cancelLabel={t('settings.connectors.wizard.done')}
-        onCancel={finish}
-        submitLabel={t('settings.connectors.wizard.tryInChat')}
-        onSubmit={tryInChat}
-      />
+      renderDoneFooter()
     );
 
   return (

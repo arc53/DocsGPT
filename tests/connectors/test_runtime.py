@@ -579,6 +579,27 @@ class TestScheduledSync:
         assert kwargs["folder_ids"] == ["f"] and kwargs["recursive"] is False
         assert "session_token" not in kwargs
 
+    @pytest.mark.parametrize("reason", ["busy", "gone", "wiki"])
+    def test_a_skipped_sync_is_reported_as_skipped(self, pg_conn, reason):
+        from docsgpt import worker
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth",
+                          secrets={"token_info": {"access_token": "a"}})
+        source = pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name, type, sync_frequency, connection_id, remote_data) "
+            "VALUES ('alice', 'Drive', 'connector:file', 'daily', CAST(:c AS uuid), "
+            "'{\"provider\": \"google_drive\"}') RETURNING id"
+        ), {"c": cid}).scalar()
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        skipped = {"status": "skipped", "reason": reason}
+        with patch.object(worker, "db_readonly", _yield), patch.object(worker, "ingest_connector", return_value=skipped):
+            result = worker.sync_connector_source(MagicMock(), str(source))
+        assert result["status"] == "skipped" and result["reason"] == reason
+
 
 @pytest.mark.parametrize("secret_key", ["token_info", "tokens", "client_info", "encrypted_credentials",
                                         "client_secret", "refresh_token", "access_token"])

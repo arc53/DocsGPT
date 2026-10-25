@@ -81,6 +81,7 @@ import {
   appendConversations,
   receiveConversations,
   removeConversation,
+  removeAllConversations,
   renameConversation,
   setConversations,
   setConversationsLoading,
@@ -268,7 +269,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setOlderError(false);
     getConversations(token, { date: last.date, id: last.id })
       .then((result) => {
-        if (result.data) dispatch(appendConversations(result.data));
+        if (result.data)
+          dispatch(appendConversations(result.data, result.requestedAt));
         else setOlderError(true);
       })
       .finally(() => setOlderLoading(false));
@@ -310,6 +312,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setIsDeletingConversation(true);
     return conversationService.deleteAll(token).then((response: Response) => {
       if (!response.ok) throw new Error('Failed to delete conversations');
+      dispatch(removeAllConversations());
       fetchConversations();
     });
   };

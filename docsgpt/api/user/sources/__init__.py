@@ -5,6 +5,7 @@ from .retrieval_test import sources_search_ns
 from .routes import sources_ns
 from .upload import sources_upload_ns
 from . import from_attachments  # noqa: F401  (registers its route on sources_upload_ns)
+from . import website  # noqa: F401  (registers its routes on sources_ns)
 
 __all__ = [
     "sources_ns",

@@ -29,12 +29,16 @@ DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ───�
 - **`agent.yaml`** is the agent: its prompt (the triage rules), model, tools
   and sources. `.github/workflows/triage-agent.yml` applies it with
   `docsgpt-cli agents apply` on every push to `main` that changes it, and
-  re-uploads `AGENTS.md`, `CONTRIBUTING.md` and `frontend/DESIGN.md` as the
+  syncs `AGENTS.md`, `CONTRIBUTING.md` and `frontend/DESIGN.md` into the
   agent's contributor guides when they change. The product docs
-  (`docs/content/`) are refreshed every Monday, or by running the workflow
-  with "Re-upload the product docs" ticked. An upload that fails or times out
-  doesn't stop the agent from being applied; it keeps its previous copy and the
-  run is marked failed.
+  (`docs/content/`) are synced every Monday, or by running the workflow
+  with "Re-upload the product docs" ticked. Both use `sources upload --sync`:
+  the existing source is updated in place and only added, edited or removed
+  files are re-embedded, so a week without docs changes embeds nothing. (A
+  source ingested before content hashes were stored is re-embedded in full on
+  its first sync, once.) An
+  upload that fails or times out doesn't stop the agent from being applied;
+  the source keeps what it had and the run is marked failed.
 - The **triage manual** is a wiki source on DocsGPT Cloud
   (`docsgpt-triage-manual`): maintainers, label meanings, product scope and
   `/corrections.md`. Edit it in the DocsGPT UI; no deploy needed.

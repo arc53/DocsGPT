@@ -21,6 +21,8 @@ the same plan:
   they are ``not_included``;
 * a zip is listed (``archive``) but never inlined: the worker unpacked it,
   and its members follow it in the rows as files of their own;
+* a file an attachment guardrail withheld (``withheld``) is listed with that
+  reason and nothing of it is sent, natively or as text;
 * in reference mode (``attachments_mode: "reference"`` on the request) this
   turn's files are not inlined at all: each is listed as ``reference`` for
   the attachments tool and the code sandbox to work with. Without a tool to
@@ -32,7 +34,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from docsgpt.agents.turn_capabilities import TurnCapabilities
 from docsgpt.attachment_full_text import full_text_tokens
@@ -117,6 +119,7 @@ class FileStatus(str, Enum):
     NOT_INCLUDED = "not_included"
     UNREADABLE = "unreadable"
     ARCHIVE = "archive"
+    WITHHELD = "withheld"
 
 
 @dataclass(eq=False)
@@ -382,6 +385,7 @@ def plan_attachments(
     max_native_parts: int = 40,
     sandbox_max_input_bytes: Optional[int] = None,
     reference: bool = False,
+    withheld: Optional[Set[str]] = None,
 ) -> AttachmentPlan:
     """Plan this turn's attachments against a token budget.
 
@@ -398,6 +402,8 @@ def plan_attachments(
         reference: Keep this turn's files out of the context and list them
             as ``reference`` for the tools, when the attachments tool is in
             the turn.
+        withheld: Attachment ids an attachment guardrail withheld; their
+            files are planned ``withheld``.
 
     Returns:
         The plan.
@@ -446,8 +452,13 @@ def plan_attachments(
     deferred: List[PlannedFile] = []
     overflow = FileStatus.TOOL if reachable else FileStatus.NOT_INCLUDED
 
+    blocked = set(withheld or ())
     for planned in walk:
         row = planned.attachment
+        if blocked.intersection(planned.attachment_ids):
+            planned.status = FileStatus.WITHHELD
+            planned.reason = "content_policy"
+            continue
         has_text = _has_text(row)
         native_ok = capabilities.reads_natively(planned.mime_type) and _native_readable(row)
         # Page images stop at SYNTHETIC_PDF_MAX_PAGES: a longer PDF with a
@@ -531,9 +542,16 @@ def plan_attachments(
             remaining -= planned.inline_tokens
         break
 
+    for planned in files:
+        if not planned.current and blocked.intersection(planned.attachment_ids):
+            planned.status = FileStatus.WITHHELD
+            planned.reason = "content_policy"
+
     if capabilities.sandbox:
         for planned in files:
-            planned.sandbox_eligible = _fits_sandbox(planned.attachment, sandbox_max_input_bytes)
+            planned.sandbox_eligible = planned.status is not FileStatus.WITHHELD and _fits_sandbox(
+                planned.attachment, sandbox_max_input_bytes
+            )
 
     return AttachmentPlan(files=files, capabilities=capabilities, budget=max(int(budget), 0))
 

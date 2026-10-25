@@ -1,7 +1,7 @@
 """The unread mark on a conversation (``conversations.unread_at``).
 
 Set when a message lands that the owner has not seen (a continuation turn,
-or an answer that failed, while they were elsewhere), cleared when they open the conversation. Reading
+or an answer that finished or failed, while they were elsewhere), cleared when they open the conversation. Reading
 also stamps ``read_at``, which Activity compares a failed job against: one
 that ended before it was seen. Neither write touches ``date`` or
 ``updated_at``, so marking never reorders the sidebar.

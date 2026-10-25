@@ -31,7 +31,10 @@
     "dismiss": "Dismiss",
     "toolApprovalTitle": "Tool approval needed",
     "toolApprovalReview": "Review",
-    "toolApprovalFallbackName": "Conversation"
+    "toolApprovalFallbackName": "Conversation",
+    "moreToasts_one": "{{count}} more",
+    "moreToasts_other": "{{count}} more",
+    "fewerToasts": "Show less"
   },
   "backgroundJobs": {
     "card": {
@@ -70,7 +73,8 @@
         "monitor_paused": "Monitor paused",
         "monitor_expired": "Monitor expired",
         "schedule": "Scheduled task finished",
-        "default": "New reply"
+        "default": "New reply",
+        "docs_gaps": "Weekly docs-gap summary"
       },
       "open": "Open",
       "fallbackTitle": "Your assistant has an update"
@@ -176,10 +180,9 @@
       "searchPlaceholder": "Search...",
       "addNew": "Add New",
       "addSource": "Add knowledge",
-      "addChunk": "Add Chunk",
+      "addChunk": "Add chunk",
       "preLoaded": "Pre-loaded",
       "private": "Private",
-      "sync": "Sync",
       "syncDone": "Done",
       "syncNow": "Sync now",
       "syncing": "Syncing...",
@@ -191,8 +194,7 @@
         "never": "Never",
         "daily": "Daily",
         "weekly": "Weekly",
-        "monthly": "Monthly",
-        "option": "Sync: {{frequency}}"
+        "monthly": "Monthly"
       },
       "actions": "Actions",
       "view": "View",
@@ -204,6 +206,7 @@
         "save": "Save",
         "saveFailed": "Could not save the page. Please try again.",
         "forbidden": "You do not have permission to edit this page.",
+        "unsupported": "This vector store can’t change single pages, so it can’t hold a wiki.",
         "conflict": "This page changed since you opened it and has been reloaded. Your edits are below — reapply and save again.",
         "editPlaceholder": "Write the page in Markdown…",
         "stamp": {
@@ -248,7 +251,6 @@
         "pageLoadFailed": "Could not load this page.",
         "editTitle": "Edit page",
         "settings": {
-          "action": "Wiki settings",
           "title": "Wiki settings",
           "outsideEdits": {
             "label": "Let API and widget users edit this wiki",
@@ -271,8 +273,6 @@
           "costCost": "This makes one LLM call per chunk, so it consumes tokens and may take a while on large sources.",
           "estimate": "~1 LLM call per chunk · ~{{lo}}–{{hi}} total tokens (about half input, half output); output varies with how entity-dense the document is.",
           "confirm": "Enable GraphRAG",
-          "inProgress": "Building graph…",
-          "inProgressPct": "Building graph… {{pct}}%",
           "summaryNodes_one": "{{count}} entity",
           "summaryNodes_other": "{{count}} entities",
           "summaryEdges_one": "{{count}} relationship",
@@ -350,11 +350,12 @@
         "queryPlaceholder": "Ask something this source should answer...",
         "run": "Run",
         "notSavedHint": "These settings are only used for this test — they are not saved to the source. Change them in Source settings to make them permanent.",
+        "notSavedHintEditor": "These settings are only used for this test until you save them to the source.",
         "resultSummary_one": "{{count}} chunk retrieved · {{retriever}}",
         "resultSummary_other": "{{count}} chunks retrieved · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "No chunks retrieved for this query.",
-        "emptyWithThreshold": "No chunks scored at or above the score threshold ({{threshold}}). Lower it to see near misses.",
+        "emptyWithThreshold": "No chunks scored at or above the similarity threshold ({{threshold}}). Lower it to see near misses.",
         "showMore": "Show full chunk",
         "showLess": "Show less",
         "noScore": "no score",
@@ -366,9 +367,33 @@
         },
         "errors": {
           "failed": "Retrieval test failed. Please try again."
-        }
+        },
+        "relevance": "relevance",
+        "compare": "Compare with retriever order",
+        "compareHint": "Also list every candidate in retriever order, with its relevance and whether the relevance model kept, promoted or dropped it.",
+        "relevanceRun": {
+          "applied": "ordered by relevance in {{ms}} ms",
+          "fallback": "relevance model not used ({{reason}}), retriever order kept"
+        },
+        "compareTitle": "Retriever order",
+        "compareDescription": "Every candidate the relevance stages received, in the order the retriever ranked them.",
+        "compareColumns": {
+          "before": "Rank",
+          "chunk": "Chunk",
+          "relevance": "Relevance",
+          "outcome": "Result"
+        },
+        "compareStatus": {
+          "promoted": "Promoted to #{{rank}}",
+          "kept": "Kept as #{{rank}}",
+          "dropped": "Dropped",
+          "notKept": "Not kept"
+        },
+        "strictness": "Relevance for this test",
+        "saveToSource": "Save to source",
+        "savedToSource": "Saved. The source now uses the settings you tested."
       },
-      "editConfig": "Source settings",
+      "editConfig": "Settings",
       "shareWithTeam": "Share with team",
       "deleteWarning": "Delete \"{{name}}\"?",
       "chunks": "Chunks",
@@ -400,10 +425,12 @@
           "note": "These changes take effect immediately, no re-ingest needed.",
           "tag": "no re-ingest",
           "chunks": "Chunks to retrieve (top-k)",
-          "scoreThreshold": "Score threshold",
-          "scoreThresholdPlaceholder": "None",
-          "scoreThresholdHint": "Only return chunks above this relevance score (0–1); higher is stricter.",
+          "similarityThreshold": "Similarity threshold",
+          "similarityThresholdPlaceholder": "None",
+          "similarityThresholdHint": "Drops chunks whose similarity score from the retriever is below this (0–1). It filters on the retriever's score, not the relevance model.",
           "rephraseQuery": "Rephrase query before search",
+          "showLinks": "Link to the original files",
+          "showLinksHint": "Citations and the agent get each file's link in the service it was synced from. Opening a link still needs access to the file there.",
           "retriever": "Retriever",
           "retrievers": {
             "classic": "Classic",
@@ -432,13 +459,14 @@
           "agentToolHint": "Agents can also follow these relationships themselves when this source's exposure is “On-demand search tool”, or when an agentic agent uses it."
         },
         "prescreen": {
-          "enable": "Enable LLM prescreen",
-          "warning": "Fetches a larger candidate set and uses an LLM to filter it. This adds query-time latency and cost.",
+          "enable": "LLM screening",
+          "warning": "An LLM screens a larger set of candidates and keeps the ones that answer the query. This adds latency and cost to each query.",
           "candidateK": "Candidates to fetch",
           "maxKeep": "Max chunks to keep",
           "batchSize": "Batch size",
           "model": "Model (optional)",
-          "modelPlaceholder": "Defaults to the request model"
+          "modelPlaceholder": "Defaults to the request model",
+          "exclusiveHint": "It replaces relevance: turning one on turns the other off."
         },
         "graph": {
           "title": "Graph extraction",
@@ -466,7 +494,35 @@
           "maxTokensHint": "Maximum 4,096 tokens.",
           "minTokens": "Min tokens per chunk",
           "duplicateHeaders": "Duplicate headers across chunks"
-        }
+        },
+        "relevance": {
+          "title": "Relevance",
+          "tag": "no re-ingest",
+          "mode": "Relevance model",
+          "modeHint": "Scores each retrieved chunk against the query. Reorder puts the most relevant first; Reorder and filter also drops the weak ones.",
+          "modes": {
+            "off": "Off",
+            "reorder": "Reorder",
+            "filter": "Reorder and filter"
+          },
+          "strictness": "Filter strictness",
+          "strictnessHint": "Stricter keeps fewer chunks: fewer tokens per answer, but a better chance of dropping one that mattered.",
+          "presets": {
+            "loose": "Loose",
+            "balanced": "Balanced",
+            "strict": "Strict",
+            "custom": "Custom ({{value}})"
+          },
+          "minRelevance": "Minimum relevance",
+          "minRelevanceHint": "The exact relevance (0–1) a chunk needs to be kept. Loose is 0.1, Balanced 0.3, Strict 0.5.",
+          "candidates": "Candidates to score",
+          "candidatesHint": "How many chunks the retriever fetches for the relevance model to score, up to {{max}}. Default: {{default}}."
+        },
+        "filtering": {
+          "title": "Filtering",
+          "tag": "no re-ingest"
+        },
+        "createHint": "Fine-tune filtering after the first ingest, in Source settings or Test retrieval."
       },
       "configModal": {
         "title": "Source settings",
@@ -474,7 +530,8 @@
         "subtitleGeneric": "Configure how this source is chunked and retrieved.",
         "save": "Save",
         "chunkingChangeHint": "You changed a chunking setting. Saving will require re-ingesting this source for it to take effect.",
-        "prescreenInvalidHint": "Check the prescreen values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
+        "prescreenInvalidHint": "Check the LLM screening values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
+        "syncAfterSave": "Save your changes first. A sync uses the saved settings.",
         "reingestRequired": "Your changes were saved. The chunking settings you changed only take effect after a re-ingest. Re-ingest now?",
         "reingestLater": "Later",
         "errors": {
@@ -486,7 +543,8 @@
         "add": "Could not add the chunk",
         "save": "Could not save the chunk",
         "delete": "Could not delete the chunk",
-        "load": "Could not load the chunks"
+        "load": "Could not load the chunks",
+        "busy": "Another change to this source is running. Try again once it’s done."
       },
       "chunkPosition": "Chunk {{n}} of {{total}} · {{tokens}} tokens",
       "chunkCrumb": "Chunk {{n}}",
@@ -537,7 +595,105 @@
       "deleteFileConsequence": "Its chunks are deleted too. This can't be undone.",
       "deleteDirectoryConsequence": "Everything inside it is deleted too. This can't be undone.",
       "syncConsequence": "Its content is updated from your cloud storage, which may overwrite edits you made to individual chunks.",
-      "deleteItemFailed": "Could not delete \"{{name}}\"."
+      "deleteItemFailed": "Could not delete \"{{name}}\".",
+      "injection": {
+        "flaggedOnly": "Flagged only",
+        "high": "Likely prompt injection",
+        "suspected": "Possible prompt injection",
+        "markedSafe": "Marked safe",
+        "markSafe": "Mark as safe",
+        "undo": "Undo",
+        "flaggedNotice": "This chunk reads like a prompt injection (score {{percent}}%). Agents that screen retrieved sources flag it, or leave it out of their answers.",
+        "safeNotice": "Marked safe: agents using this source treat this chunk as clean. Editing its text removes the mark.",
+        "reviewFailed": "Could not update this chunk. Please try again.",
+        "noFlagged": "No chunk in this source has been flagged. A chunk is scored once a chat retrieves it."
+      },
+      "website": {
+        "page": "Page",
+        "pages": "Pages",
+        "fetched": "Fetched",
+        "filterPages": "Filter pages",
+        "openPage": "Open page",
+        "pagesByline_one": "{{pages}} page · {{tokens}} tokens",
+        "pagesByline_other": "{{pages}} pages · {{tokens}} tokens",
+        "sites_one": "{{count}} site",
+        "sites_other": "{{count}} sites",
+        "pageCount_one": "{{count}} page",
+        "pageCount_other": "{{count}} pages",
+        "synced": "{{frequency}} · synced {{when}}",
+        "notSynced": "Not synced",
+        "fetchedAt": "fetched {{when}}",
+        "addPages": "Add pages",
+        "addPagesHint": "Fetched now and kept in every sync. A whole site rebuilds the source.",
+        "graphCost": "This source has a knowledge graph. New pages are added to it with an LLM, about one call per chunk. If adding them rebuilds the source (a page on another site), the whole graph is rebuilt: about one call per chunk of the whole source.",
+        "addFailed": "Couldn’t add the pages.",
+        "pageNotFetched": "One page couldn’t be fetched: {{url}}. It stays on this source’s list, and the next sync tries it again.",
+        "pagesNotFetched_one": "{{count}} page couldn’t be fetched. It stays on this source’s list, and the next sync tries it again.",
+        "pagesNotFetched_other": "{{count}} pages couldn’t be fetched. They stay on this source’s list, and the next sync tries them again.",
+        "pageLimit_one": "This source can hold up to {{count}} page.",
+        "pageLimit_other": "This source can hold up to {{count}} pages.",
+        "addingPages": "Adding pages…",
+        "refreshing": "Refreshing the page…",
+        "removing": "Removing pages…",
+        "syncing": "Syncing the source…",
+        "refreshPage": "Refresh page",
+        "refreshFailed": "Couldn’t refresh “{{name}}”; its content is kept.",
+        "refreshOutOfScope": "“{{name}}” now leads outside this source, so it was removed, as a sync would.",
+        "removeFromSource": "Remove from source",
+        "removeTitle": "Remove “{{name}}”?",
+        "removeEntry": "Its chunks are deleted and the page is taken off this source’s list.",
+        "removeCrawled": "It came from crawling {{host}}. Its chunks are deleted and later syncs skip it. You can restore it in the source’s Settings.",
+        "removeGeneric": "Its chunks are deleted and later syncs don’t fetch it again.",
+        "removeFolder": "Its pages’ chunks are deleted and later syncs skip every address under {{address}}.",
+        "removeFolderGeneric": "Its pages’ chunks are deleted and later syncs don’t fetch them again.",
+        "remove": "Remove",
+        "removeAndSkip": "Remove and skip",
+        "removeFailed": "Couldn’t remove it.",
+        "syncFailed": "Couldn’t sync the source.",
+        "removeLast": "That’s the last thing this source fetches. Delete the source instead.",
+        "wikiSource": "This source is a wiki now: it’s edited in place and no longer fetches pages.",
+        "chunksUnsupported": "This vector store can’t change single pages. Sync the source instead.",
+        "handEditsNote": "Kept up to date: {{frequency}}. Chunks you add or edit here are replaced at the next sync.",
+        "fetches": "What this source fetches",
+        "siteSummary": "Whole site · {{find}} · page limit {{max}}",
+        "limitReached": "page limit reached",
+        "pageEntry": "Page",
+        "removeFromList": "Remove {{address}} from the list",
+        "skipped": "Skipped",
+        "restore": "Restore",
+        "restoreAddress": "Restore {{address}}",
+        "saveFailed": "Couldn’t save the settings.",
+        "loadFailed": "Couldn’t load the settings.",
+        "lastSynced": "Last synced {{when}}.",
+        "appliesNextSync": "Changes apply at the next sync.",
+        "stillRunning": "This change is still running. Open the source again in a while to see it.",
+        "changeBusy": "Another change to this source was still running, so this one didn’t run. Try again.",
+        "queueFailed": "The change was saved, but it couldn’t start yet. The next sync picks it up.",
+        "sourceGone": "This source no longer exists.",
+        "siteLimit_one": "A source can fetch from up to {{count}} site.",
+        "siteLimit_other": "A source can fetch from up to {{count}} sites.",
+        "skipLimit_one": "A source can skip up to {{count}} address.",
+        "skipLimit_other": "A source can skip up to {{count}} addresses.",
+        "urlTooLong_one": "An address can be up to {{count}} character long.",
+        "urlTooLong_other": "An address can be up to {{count}} characters long.",
+        "invalidAddress": "“{{url}}” isn’t an address this source can fetch.",
+        "invalidConfig": "These settings aren’t valid. Check the addresses and limits.",
+        "notFound": "That page or folder isn’t in this source any more. Reload it and try again.",
+        "badSyncFrequency": "That sync schedule isn’t available.",
+        "graphCostRebuild": "This source has a knowledge graph. A whole site rebuilds the source, so the graph is rebuilt with an LLM too: about one call per chunk of the whole source.",
+        "tooManyPaths_one": "You can remove up to {{count}} page at once.",
+        "tooManyPaths_other": "You can remove up to {{count}} pages at once.",
+        "notWebsite": "This source isn’t a website source.",
+        "alreadyListed": "These pages and sites are already in this source.",
+        "badRequest": "The request couldn’t be read. Reload the page and try again."
+      },
+      "deleteSource": "Delete source",
+      "syncStarted": "Syncing {{name}}…",
+      "viaConnectionFiles_one": "via {{name}} · {{files}} file",
+      "viaConnectionFiles_other": "via {{name}} · {{files}} files",
+      "item": {
+        "tokens": "{{tokens}} tokens"
+      }
     },
     "analytics": {
       "label": "Analytics",
@@ -546,18 +702,19 @@
       "selectChatbot": "Select chatbot",
       "filterOptions": {
         "hour": "Hour",
-        "last24Hours": "24 Hours",
-        "last7Days": "7 Days",
-        "last15Days": "15 Days",
-        "last30Days": "30 Days"
+        "last24Hours": "24 hours",
+        "last7Days": "7 days",
+        "last15Days": "15 days",
+        "last30Days": "30 days",
+        "last90Days": "90 days"
       },
       "messages": "Messages",
-      "tokenUsage": "Token Usage",
-      "userFeedback": "User Feedback",
+      "tokenUsage": "Token usage",
+      "userFeedback": "User feedback",
       "filterPlaceholder": "Filter",
       "none": "None",
-      "positiveFeedback": "Positive Feedback",
-      "negativeFeedback": "Negative Feedback",
+      "positiveFeedback": "Positive feedback",
+      "negativeFeedback": "Negative feedback",
       "groupBy": "Group by",
       "groupOptions": {
         "total": "Total",
@@ -566,10 +723,10 @@
         "source": "By flow"
       },
       "includeSideChannel": "Background tokens",
-      "promptTokens": "Prompt Tokens",
-      "generatedTokens": "Generated Tokens",
-      "scheduledRuns": "Scheduled Runs",
-      "toolUsage": "Tool Usage",
+      "promptTokens": "Prompt tokens",
+      "generatedTokens": "Generated tokens",
+      "scheduledRuns": "Scheduled runs",
+      "toolUsage": "Tool usage",
       "completed": "Completed",
       "failed": "Failed",
       "skipped": "Skipped",
@@ -579,8 +736,8 @@
         "messages": "Messages",
         "tokens": "Tokens",
         "tokensHint": "All LLM-billed tokens. Agents re-send the conversation context on every tool step, so tool-heavy chats use many times more tokens than the visible messages suggest.",
-        "toolCalls": "Tool Calls",
-        "runSuccess": "Run Success",
+        "toolCalls": "Tool calls",
+        "runSuccess": "Run success",
         "feedback": "Feedback"
       },
       "quota": {
@@ -593,7 +750,203 @@
           "direct": "Chat without an agent",
           "agent": "Through agents"
         }
-      }
+      },
+      "insights": {
+        "description": "Estimated by an AI model from each conversation.",
+        "learnMore": "Learn more",
+        "coverage": "{{labelled}} of {{total}} answers analyzed",
+        "loadError": "Could not load insights.",
+        "notEnough": "Not enough data yet ({{formatted}} so far)",
+        "notEnoughShort": "Not enough data yet",
+        "notEnoughReplies": "Not enough replies yet",
+        "languageNote": "{{share}} of these messages are in {{languages}}, which the model reads less accurately. {{labels}} may be less reliable.",
+        "otherLanguages": "other languages",
+        "stats": {
+          "fullyAnswered": "Fully answered",
+          "fullyAnsweredHint": "Questions the answer fully addressed. Greetings and small talk are not counted.",
+          "goalMet": "Goal met",
+          "goalMetHint": "Conversations where the user got what they asked for, judged from the whole conversation once it has gone quiet.",
+          "frustrated": "Frustrated",
+          "frustratedHint": "Replies that show clear frustration. Only messages sent after an answer count, so a conversation's first message never does.",
+          "asksHuman": "Asked for a person",
+          "asksHumanHint": "Replies that ask for a person, a ticket or another way to reach you. A first message that asks for one is not counted.",
+          "docsGaps": "Docs gaps",
+          "docsGapsHint": "Answers that fell short because the docs don't cover the question or the search didn't find the page. Grouped below."
+        },
+        "sub": {
+          "ofQuestions_one": "of {{formatted}} question",
+          "ofQuestions_other": "of {{formatted}} questions",
+          "ofReplies_one": "of {{formatted}} reply",
+          "ofReplies_other": "of {{formatted}} replies",
+          "ofConversations_one": "of {{formatted}} conversation",
+          "ofConversations_other": "of {{formatted}} conversations",
+          "inAnswers_one": "in {{formatted}} answer",
+          "inAnswers_other": "in {{formatted}} answers"
+        },
+        "panels": {
+          "answerStatus": "Answer status",
+          "whyNot": "Why not fully answered",
+          "requestType": "Request type",
+          "shareOfAnswers_one": "Share of {{formatted}} answer",
+          "shareOfAnswers_other": "Share of {{formatted}} answers",
+          "shareOfMessages_one": "Share of {{formatted}} message",
+          "shareOfMessages_other": "Share of {{formatted}} messages",
+          "shareOfConversations_one": "Share of {{formatted}} conversation",
+          "shareOfConversations_other": "Share of {{formatted}} conversations",
+          "ofReplies_one": "Of {{formatted}} reply",
+          "ofReplies_other": "Of {{formatted}} replies",
+          "barLabel": "{{name}}: {{value}}",
+          "barLabelNone": "{{name}}: not enough data yet",
+          "noneOfThese": "None of these topics",
+          "empty": "Nothing to show for this period.",
+          "ofQuestions_one": "Of {{formatted}} question",
+          "ofQuestions_other": "Of {{formatted}} questions",
+          "topics": "Topics",
+          "overlapNote": "A conversation can count under several, so these don't add up to 100%.",
+          "noTopics": {
+            "title": "No topics yet",
+            "description": "Add topics to see what people ask about.",
+            "action": "Set up topics"
+          },
+          "replies": "How users replied",
+          "reaction": "Replies to answers",
+          "tone": "Sentiment",
+          "tooltipItem": "{{name}}: {{value}}",
+          "notDrawnMovedOn": "Replies that moved on or added detail, such as a new question or a follow-up, aren't drawn.",
+          "notDrawnNeutral": "Neutral replies aren't drawn."
+        },
+        "labelNamesInline": {
+          "answer_status": "answer status",
+          "gap_type": "why not fully answered",
+          "topic_effective": "topic",
+          "reaction": "replies to answers"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "Fully answered",
+            "partiallyAnswered": "Partially answered",
+            "declined": "Said it didn't know",
+            "clarifying": "Asked for details"
+          },
+          "gapType": {
+            "docsMissing": "Docs gap",
+            "notRetrieved": "Search missed the page",
+            "answerMissed": "Answer missed the page",
+            "outOfScope": "Out of scope",
+            "featureNotSupported": "Unsupported feature",
+            "needsAccountData": "Needs account access or staff",
+            "ambiguous": "Unclear question",
+            "confidentlyUngrounded": "Answer not backed by the docs",
+            "other": "Other"
+          },
+          "reaction": {
+            "thanks": "Thanks or confirmed",
+            "reAsk": "Asked again",
+            "pushbackOrComplaint": "Pushback or complaint",
+            "movedOn": "Moved on"
+          },
+          "requestType": {
+            "troubleshooting": "Troubleshooting",
+            "howTo": "How-to",
+            "lookup": "Fact lookup",
+            "concept": "Explanation",
+            "comparison": "Comparison",
+            "featureRequest": "Feature request",
+            "accountBilling": "Account or billing",
+            "chitChat": "Small talk",
+            "other": "Other"
+          },
+          "sentiment": {
+            "positive": "Positive",
+            "neutral": "Neutral",
+            "negative": "Negative"
+          }
+        },
+        "off": {
+          "title": "Insights are off for this agent",
+          "description": "Turn them on to estimate whether answers helped and where the docs fall short.",
+          "turnOn": "Turn on"
+        },
+        "noConversations": {
+          "hour": "No conversations in the last hour",
+          "last24Hours": "No conversations in the last 24 hours",
+          "last7Days": "No conversations in the last 7 days",
+          "last15Days": "No conversations in the last 15 days",
+          "last30Days": "No conversations in the last 30 days"
+        },
+        "noConversationsDescription": "Insights appear a few minutes after each conversation.",
+        "analyzing": {
+          "title": "Analyzing conversations",
+          "progress_one": "{{labelled}} of {{formatted}} answer analyzed · newest first",
+          "progress_other": "{{labelled}} of {{formatted}} answers analyzed · newest first"
+        },
+        "olderOnly": {
+          "title": "No recent conversations to analyze",
+          "description": "Insights cover conversations from {{date}} onwards. Older ones aren't analyzed; an admin can backfill them."
+        },
+        "failedOnly": {
+          "title": "No answers could be analyzed",
+          "description_one": "The model couldn't analyze {{formatted}} answer in this period. It tries again once the model or its questions change.",
+          "description_other": "The model couldn't analyze {{formatted}} answers in this period. It tries again once the model or its questions change."
+        },
+        "failed_one": "{{formatted}} answer couldn't be analyzed",
+        "failed_other": "{{formatted}} answers couldn't be analyzed",
+        "settings": {
+          "button": "Settings",
+          "title": "Insights settings",
+          "saveFailed": "Couldn't save the insights settings. Try again."
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "Asked again or pushed back",
+          "previous": "Previous period: {{value}}"
+        }
+      },
+      "gaps": {
+        "heading": "Docs gaps",
+        "description": {
+          "page": "Questions the docs could not answer, grouped by the page the search found closest.",
+          "source": "Questions the docs could not answer, grouped by the source of the closest page.",
+          "topic": "Questions the docs could not answer, grouped by topic."
+        },
+        "groupBy": "Group docs gaps by",
+        "groups": {
+          "page": "Page",
+          "source": "Source",
+          "topic": "Topic"
+        },
+        "columns": {
+          "gaps": "Gaps",
+          "share": "Share of questions",
+          "change": "Change",
+          "example": "Example question",
+          "open": "Examples"
+        },
+        "share_one": "{{percent}} of {{formatted}}",
+        "share_other": "{{percent}} of {{formatted}}",
+        "gapsCount_one": "{{formatted}} gap",
+        "gapsCount_other": "{{formatted}} gaps",
+        "change": {
+          "new": "New",
+          "none": "No change",
+          "upLabel": "Up {{formatted}} from the previous period",
+          "downLabel": "Down {{formatted}} from the previous period",
+          "noEarlier": "No earlier data"
+        },
+        "noPage": "No page retrieved",
+        "openRow": "Show examples for {{name}}",
+        "export": "Export CSV",
+        "empty": "No docs gaps in this period.",
+        "emptyDescription": "Questions the docs could not answer show here.",
+        "loadError": "Could not load docs gaps.",
+        "panel": {
+          "gaps": "Gaps",
+          "share": "Share of questions",
+          "previous": "Previous period",
+          "examples": "Example questions",
+          "allInLogs": "See every docs gap in Logs"
+        }
+      },
+      "loadError": "Could not load this chart."
     },
     "logs": {
       "label": "Logs",
@@ -639,7 +992,9 @@
         "activity": "Activity",
         "steps": "Steps",
         "result": "Result",
-        "source": "Source"
+        "source": "Source",
+        "feedback": "Feedback",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "View trace",
@@ -670,7 +1025,8 @@
           "chunks_other": "{{count}} chunks",
           "hits_one": "{{count}} hit",
           "hits_other": "{{count}} hits",
-          "cached": "cached"
+          "cached": "cached",
+          "answered": "{{answered}}/{{total}} answered"
         },
         "status": {
           "ok": "OK",
@@ -684,6 +1040,7 @@
         "kinds": {
           "agent": "Agent",
           "llm": "LLM call",
+          "decision": "Decision model call",
           "tool": "Tool call",
           "retrieval": "Retrieval",
           "search": "Vector search",
@@ -753,7 +1110,29 @@
         "api": "API",
         "shared": "Shared",
         "chat": "Chat"
-      }
+      },
+      "feedback": {
+        "like": "Liked",
+        "dislike": "Disliked"
+      },
+      "labels": {
+        "filterAll": "All labels",
+        "notAnswered": "Not fully answered",
+        "docsGap": "Docs gap",
+        "frustrated": "Frustrated",
+        "asksHuman": "Asked for a person",
+        "negativeReaction": "Asked again or pushed back",
+        "negativeSentiment": "Negative sentiment",
+        "hint": "Labels are estimates and can be wrong.",
+        "conversation": "Conversation",
+        "clearConversation": "Show all conversations",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "No messages match these filters.",
+        "filter": "Label",
+        "topics": "Topics"
+      },
+      "levelFilter": "Level",
+      "typeFilter": "Event type"
     },
     "teams": {
       "label": "Teams",
@@ -769,7 +1148,6 @@
       "save": "Save",
       "createTeamError": "Could not create team.",
       "noTeams": "No teams yet.",
-      "noDescription": "No description",
       "loadError": "Failed to load teams.",
       "roleAdmin": "admin",
       "roleMember": "member",
@@ -1079,6 +1457,7 @@
       "noToolsFound": "No tools found",
       "selectToolSetup": "Add a tool",
       "settingsIconAlt": "Settings icon",
+      "toolActions": "Tool actions",
       "configureToolAria": "Configure {{toolName}}",
       "manageTools": "Go to Tools",
       "edit": "Edit",
@@ -1210,6 +1589,8 @@
       "savedSecretPlaceholder": "Saved · enter a new value to replace",
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} tool",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} tools",
+      "triggerLabel_one": "Tools, {{formatted}} selected",
+      "triggerLabel_other": "Tools, {{formatted}} selected",
       "manageInConnectors": "Manage in Connectors",
       "defaultBadge": "Default",
       "noToolsYet": "No tools yet",
@@ -1241,13 +1622,11 @@
       "access": "Access",
       "connection": "Connection",
       "hostLabel": "Host",
-      "dangerZone": "Danger zone",
       "approvalAskDescription": "Approve every command before it runs.",
       "approvalFullDescription": "Runs every command without asking, except the safety denylist.",
       "fullAccessWarning": "Full access: agents can run any command on this machine without asking. The safety denylist still applies.",
       "deviceIdLabel": "Device ID",
       "offlineHint": "Not connected. Run `docsgpt-cli host` on the machine to bring it online.",
-      "dangerZoneDescription": "Revoking stops the daemon on the device and removes the pairing.",
       "auditTitle": "Recent activity",
       "auditLoading": "Loading…",
       "auditEmpty": "No activity yet.",
@@ -1294,7 +1673,7 @@
       "deleteWarning": "Delete \"{{modelName}}\"?",
       "actionsMenuAria": "Actions for {{modelName}}",
       "modelsGroup": {
-        "builtin": "DocsGPT Models",
+        "builtin": "Built-in",
         "user": "My Models"
       },
       "actions": {
@@ -1443,7 +1822,10 @@
         "tokenLabel": "Your token",
         "usageTitle": "How to use it",
         "usageHint": "Export it as an environment variable, then send it as a Bearer token in the Authorization header.",
-        "done": "Done"
+        "done": "Done",
+        "createTool": "Create tool for agents",
+        "toolCreated": "Tool created. Find it in Settings › Tools and add it to an agent.",
+        "toolFailed": "Could not create the tool."
       },
       "regenerate": {
         "action": "Regenerate",
@@ -1464,7 +1846,7 @@
       "label": "Connectors",
       "subtitle": "Connect DocsGPT to the services your team uses. A connection can sync content into Knowledge and give agents tools.",
       "search": "Search connectors...",
-      "addCustom": "Add custom tool",
+      "addCustom": "Add custom connector",
       "custom": {
         "custom_mcp": "MCP server",
         "custom_openapi": "OpenAPI / REST"
@@ -1518,7 +1900,10 @@
         "mcp_miro": "Find Miro boards, read content and comments, create diagrams, and reply to comments.",
         "mcp_resend": "Send emails and manage contacts, audiences and domains.",
         "mcp_calcom": "Read and manage your Cal.com bookings, event types, availability and schedules.",
+        "mcp_airtable": "Search, read and update records in Airtable bases.",
+        "mcp_context7": "Look up up-to-date documentation and code examples for libraries.",
         "mcp_alphavantage": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
+        "mcp_neon": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
@@ -1535,7 +1920,7 @@
         "tools": "Tools from this connection",
         "noAccounts": "No account connected yet.",
         "failed": "Could not load this connection.",
-        "lastSync": "Synced {{date}} · {{frequency}}",
+        "lastSync": "Synced {{when}}",
         "paused": "Sync paused",
         "toolOn": "On",
         "toolOff": "Off",
@@ -1544,12 +1929,11 @@
         "keyEnding": "Key {{hint}}",
         "syncMore": "Sync more content",
         "refreshTools": "Refresh tools",
-        "noSources": "Nothing synced from this connection yet.",
+        "noSources": "Nothing synced yet",
         "remove": "Remove",
         "refreshed": "Tools refreshed: {{added}} added, {{removed}} removed.",
         "refreshFailed": "Could not refresh the tools.",
         "syncNow": "Sync now",
-        "syncStarted": "Syncing {{name}}…",
         "syncFailed": "Could not start the sync. Try again.",
         "toolSwitchFailed": "Could not change the tool. Try again.",
         "expired": "The sign-in expired. Reconnect to keep using this connection.",
@@ -1559,7 +1943,19 @@
         "addToolsFailed": "Could not add the tools. Try again.",
         "rename": "Rename",
         "toolsHint": "“Ask first” asks you in chat. API, widget and link changes are allowed per agent in Access details.",
-        "toolsUnavailable": "{{name}}'s tools could not be reached. Try again."
+        "toolsUnavailable": "{{name}}'s tools could not be reached. Try again.",
+        "noSourcesHint": "Pick content from {{name}} to add it to Knowledge.",
+        "indexing": "Indexing",
+        "firstSyncStarted": "First sync started {{time}}",
+        "dismissFailedSync": "Dismiss {{name}}",
+        "sourceMenu": "Source actions",
+        "syncStarting": "Starting the sync…",
+        "syncRefusedWiki": "This source is a wiki now: it’s edited in place and no longer syncs.",
+        "syncRefusedNotSyncable": "This source can’t be synced.",
+        "syncRefusedConnector": "This source syncs through its connection.",
+        "syncRefusedInvalid": "This source couldn’t be found.",
+        "syncRefusedReconnect": "The owner needs to reconnect this source’s account before it can sync.",
+        "syncRefusedConnectionMissing": "This source’s account was disconnected, so it can’t sync until the account is connected again."
       },
       "permission": {
         "always": "Allow",
@@ -1616,7 +2012,6 @@
         "tryInChat": "Try it in chat",
         "done": "Done",
         "connectFailed": "Could not connect. Check the details and try again.",
-        "syncFailed": "Could not start the sync. Try again.",
         "connectedWithKey": "Connected with the key ending {{hint}}.",
         "doneCounts": "{{sources}} syncing into Knowledge, {{tools}} ready.",
         "doneSources": "{{sources}} syncing into Knowledge.",
@@ -1627,6 +2022,8 @@
         "methodOauth": "Sign in with {{name}}",
         "methodToken": "Use an access token",
         "credentialsRejected": "{{name}} did not accept these credentials. Check them and try again.",
+        "setupReconnect": "Sign in to {{name}} again to finish setting it up.",
+        "setupDisabled": "An admin turned off {{name}}, so it can't be set up.",
         "toolsUnavailable": "{{name}}'s tools could not be reached. Try again, or turn them off to continue.",
         "addTools": "Let agents use {{name}}",
         "addToolsDescription": {
@@ -1637,13 +2034,18 @@
         "accountNameHint": "Shown to you and the AI to tell accounts apart, e.g. Alerts bot.",
         "syncToKnowledge": "Sync into Knowledge",
         "syncToKnowledgeDescription": "Pick content from {{name}} for answers to search. Leave it off to only connect; you can sync later from Connectors.",
-        "syncLater": "Nothing syncs into Knowledge yet. To add content, open {{name}} in Connectors and choose Sync more content.",
+        "syncLater": "Nothing syncs into Knowledge yet.",
         "retrievalSettings": "Advanced retrieval settings",
         "chooseWhatToSetUpFor": "Choose what to set up for {{name}}",
         "chooseWhatToSyncFrom": "Choose what to sync from {{name}}",
         "signedInAs": "Signed in as {{account}}.",
         "finishSetup": "Finish setup",
-        "account": "Account"
+        "account": "Account",
+        "syncChoice": "How to use {{name}}",
+        "syncNow": "Sync content now",
+        "syncNowDescription": "Pick content from {{name}} and add it to Knowledge.",
+        "justConnect": "Just connect",
+        "justConnectDescription": "Nothing is added yet. Sync content later from Connectors, whenever it's needed."
       },
       "remove": {
         "title": "Remove \"{{name}}\"?",
@@ -1763,7 +2165,17 @@
       "capabilityChip": {
         "sync": "Syncs into Knowledge",
         "tools": "Gives agents tools"
-      }
+      },
+      "injection": {
+        "flagged": "Possible prompt injection",
+        "notice_one": "The description of {{formatted}} action reads like instructions planted for the AI, a possible prompt injection. Check it under Customize before you allow it.",
+        "notice_other": "The descriptions of {{formatted}} actions read like instructions planted for the AI, a possible prompt injection. Check them under Customize before you allow them."
+      },
+      "syncContent": "Sync content",
+      "openInKnowledge": "Open in Knowledge"
+    },
+    "insights": {
+      "label": "Insights"
     }
   },
   "modals": {
@@ -1779,13 +2191,13 @@
       "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
-      "dropzoneText": "Click to upload or drag and drop",
+      "dropzoneText": "Click to upload, or drag files or a folder here",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, images, audio, EPUB, JSON or ZIP, up to 25 MB each",
       "filesRejected": "Not added (over 25 MB or not a supported type): {{files}}",
+      "selectFolder": "Or choose a whole folder",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Add to Knowledge",
-      "create": "Create",
       "link": "Link",
       "urlLink": "URL Link",
       "repoUrl": "Repository URL",
@@ -1815,13 +2227,9 @@
           "label": "Upload File",
           "heading": "Upload new document"
         },
-        "crawler": {
-          "label": "Crawler",
-          "heading": "Add content with Web Crawler"
-        },
-        "url": {
-          "label": "Link",
-          "heading": "Add content from URL"
+        "website": {
+          "label": "Website",
+          "heading": "Add a website"
         },
         "github": {
           "label": "GitHub",
@@ -1854,18 +2262,56 @@
           "selectedFiles": "Selected items",
           "selectFiles": "Select files or folders",
           "noFilesSelected": "No files or folders selected yet.",
-          "removeItem": "Remove {{name}}"
+          "removeItem": "Remove {{name}}",
+          "shareFolders": "To sync these folders, share each one in Google Drive as a Viewer with:",
+          "filesOnly": "This server syncs files, not whole folders. Open a folder in the picker to choose the files inside it."
         }
       },
       "fields": {
-        "url": "URL",
-        "initialContent": "Initial content (optional)"
+        "initialContent": "Initial content",
+        "initialContentHint": "Markdown. You can add and edit pages after it’s created."
+      },
+      "website": {
+        "pageUrl": "Page address",
+        "siteUrl": "Website address",
+        "addAnotherPage": "Add another page",
+        "invalidAddress": "Enter a public web address, like docs.example.com",
+        "removePage": "Remove this address",
+        "removeAddress": "Remove {{address}}",
+        "maxPages": "Page limit",
+        "maxPagesHint": "Up to {{max}}, set by admin.",
+        "pathPrefix": "Stay under",
+        "pathPrefixHint": "Only addresses that start with this path.",
+        "pathPrefixPlaceholder": "/ (whole site)",
+        "sitemapUrl": "Sitemap URL",
+        "sitemapUrlHint": "Leave empty to use the one the site lists in robots.txt.",
+        "includeSubdomains": "Include subdomains",
+        "sync": "Keep up to date",
+        "syncHintPage": "Re-fetch the pages and update what changed.",
+        "syncHintSite": "Re-crawl and update what changed.",
+        "keepLinks": "Keep links in page text",
+        "keepLinksHint": "Lets answers link to the pages this page points to. Stores about a quarter more text, and search may rank slightly lower.",
+        "mode": {
+          "label": "What to add",
+          "page": "This page",
+          "site": "Whole site",
+          "pageHint": "Adds exactly these pages.",
+          "siteHint": "Adds this page and the pages it leads to on the same site."
+        },
+        "discovery": {
+          "label": "Find pages",
+          "hint": "Automatic reads the sitemap, then follows links.",
+          "auto": "Automatic",
+          "sitemap": "Sitemap",
+          "links": "Follow links"
+        }
       },
       "github": {
         "privateHint": "Private repository? Connect your GitHub account to sync it.",
         "connect": "Connect GitHub"
       },
-      "fromService": "From a service"
+      "fromService": "From a service",
+      "removeFile": "Remove {{name}}"
     },
     "createAPIKey": {
       "label": "Create New API Key",
@@ -1896,8 +2342,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Search conversations",
-      "noResults": "No results found",
-      "loading": "Loading..."
+      "noResults": "No results found"
     },
     "configTool": {
       "title": "Tool Config",
@@ -1955,7 +2400,7 @@
       "delete": "Delete"
     },
     "chunk": {
-      "add": "Add Chunk",
+      "add": "Add chunk",
       "edit": "Edit",
       "title": "Title",
       "enterTitle": "Enter title",
@@ -2102,6 +2547,8 @@
       "view_more_other": "{{count}} more sources",
       "noSourcesAvailable": "No knowledge yet",
       "selectedCount": "{{count}} selected",
+      "triggerLabel_one": "Knowledge, {{formatted}} selected",
+      "triggerLabel_other": "Knowledge, {{formatted}} selected",
       "groupOwn": "Yours",
       "groupTeam": "Shared with team",
       "fromConnector": "From {{name}}",
@@ -2124,8 +2571,17 @@
         "forbidden": "This source was removed, or you no longer have access to it. Showing the excerpt saved with the answer.",
         "loadFailed": "Couldn't load this passage.",
         "openLink": "Open link",
-        "openInKnowledge": "Open in Knowledge"
-      }
+        "openInKnowledge": "Open in Knowledge",
+        "withheld": "This agent's guardrails left this source out of the answer because it may contain a prompt injection. The AI did not read this passage."
+      },
+      "relevance": {
+        "strong": "Strong match",
+        "possible": "Possible match",
+        "weak": "Weak match",
+        "tooltip": "Relevance {{percent}}%"
+      },
+      "withheld": "Withheld",
+      "withheldNote": "Left out of the answer by this agent's guardrails: it may contain a prompt injection."
     },
     "attachments": {
       "attach": "Attach",
@@ -2289,7 +2745,6 @@
       "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}."
     },
     "send": "Send",
-    "viewArtifact": "View artifact",
     "stopSpeaking": "Stop speaking",
     "loadingAudio": "Loading audio",
     "voice": {
@@ -2358,9 +2813,37 @@
       "researched_other": "Researched {{count}} topics"
     },
     "openFile": "Open file",
+    "opensInNewTab": "Opens in a new tab",
     "stepGroup": {
       "title": "Tools",
       "failed": "{{count}} failed"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML page",
+        "pdf": "PDF",
+        "slides": "Slides",
+        "document": "Document",
+        "spreadsheet": "Spreadsheet",
+        "data": "Data file",
+        "image": "Image",
+        "file": "File"
+      },
+      "version": "v{{version}}",
+      "download": "Download {{title}}",
+      "more_one": "{{count}} more file",
+      "more_other": "{{count}} more files",
+      "fileCount_one": "{{count}} file",
+      "fileCount_other": "{{count}} files",
+      "showAll": "Show all {{count}}",
+      "listTitle": "Files from this answer",
+      "backToList": "Back to files",
+      "group": {
+        "documents": "Documents",
+        "images": "Images",
+        "data": "Data",
+        "other": "Other files"
+      }
     }
   },
   "agents": {
@@ -2389,7 +2872,9 @@
       "tabs": {
         "overview": "Overview",
         "logs": "Logs",
-        "schedules": "Schedules"
+        "insights": "Insights",
+        "schedules": "Schedules",
+        "analytics": "Analytics"
       },
       "fallbackName": "Untitled agent",
       "subnavAriaLabel": "Agent sub-navigation"
@@ -2454,7 +2939,8 @@
         "preview": "Preview",
         "basics": "Basics",
         "knowledge": "Knowledge and behaviour",
-        "model": "Model"
+        "model": "Model",
+        "analytics": "Insights"
       },
       "placeholders": {
         "agentName": "Agent name",
@@ -2466,7 +2952,8 @@
         "selectModels": "Select models for this agent",
         "selectDefaultModel": "Select default model",
         "enterTokenLimit": "Enter token limit",
-        "enterRequestLimit": "Enter request limit"
+        "enterRequestLimit": "Enter request limit",
+        "contextLimitDefault": "Model default"
       },
       "sourcePopup": {
         "title": "Select knowledge",
@@ -2513,6 +3000,9 @@
         "jsonSchemaDescription": "Define a JSON schema to enforce structured output format",
         "validJson": "Valid JSON",
         "invalidJson": "Invalid JSON - fix to enable saving",
+        "contextLimit": "Context limit",
+        "contextLimitDescription": "Most tokens of history, documents and tool results sent to the model per request. Older messages are summarized to stay under it. Leave empty for the model's full context window.",
+        "contextLimitRange": "Enter {{min, number}} to {{max, number}} tokens, or leave empty.",
         "tokenLimiting": "Token limiting",
         "tokenLimitingDescription": "Limit daily total tokens that can be used by this agent",
         "requestLimiting": "Request limiting",
@@ -2544,11 +3034,6 @@
         "publishTitle": "Publish to preview",
         "publishDescription": "The preview chats with the published agent. Drafts stay private until you publish.",
         "unsavedChanges": "You have unsaved changes. The preview uses the saved version until you save."
-      },
-      "dangerZone": {
-        "heading": "Danger zone",
-        "description": "Deleting this agent is permanent and will remove all its schedules and run history.",
-        "deleteButton": "Delete agent"
       },
       "externalKb": "External KB",
       "errors": {
@@ -2594,7 +3079,8 @@
           "input": "User input",
           "retrieval": "Retrieved sources",
           "toolResult": "Tool result",
-          "output": "Answer"
+          "output": "Answer",
+          "attachment": "Attached files"
         },
         "actions": {
           "flag": "Flag only",
@@ -2604,7 +3090,13 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        }
+        },
+        "itemLevelHint": "Block withholds only the flagged source or file.",
+        "advanced": "Advanced",
+        "threshold": "Action threshold",
+        "thresholdHint": "The control's action applies from this score (0 to 1, default 0.9).",
+        "flagThreshold": "Flag threshold",
+        "flagThresholdHint": "From this score the text is flagged and recorded, but nothing is blocked (default 0.5)."
       },
       "byline": {
         "new": "Set up the agent, then publish it to chat with it."
@@ -2685,13 +3177,92 @@
         "audienceTitle_other": "Who can use them through this agent",
         "stopNote_one": "It stops running if you lose edit access.",
         "stopNote_other": "They stop running if you lose edit access."
+      },
+      "analytics": {
+        "enable": "Collect insights",
+        "enableDescription": "Reads finished conversations in the background to estimate whether answers helped and where the docs fall short. Results show on the Insights tab and in Logs.",
+        "learnMore": "Learn more",
+        "serverOff": "Insights are off on this server, so these settings have no effect yet. Ask your administrator to turn them on.",
+        "topics": "Topics",
+        "countOf": "{{count}} of {{max}}",
+        "addTopic": "Add topic",
+        "itemActions": "Actions for {{name}}",
+        "edit": "Edit",
+        "remove": "Remove",
+        "modal": {
+          "addTopic": "Add topic",
+          "editTopic": "Edit topic",
+          "name": "Name",
+          "description": "Description",
+          "submitAdd": "Add",
+          "submitSave": "Save",
+          "dialogDescription": "The name and description tell the model what belongs here.",
+          "editFolder": "This topic is the \"{{name}}\" folder of this agent's sources. Saving makes it your own: it stops following the folder's pages.",
+          "namePlaceholder": "Billing",
+          "descriptionHint": "Optional. Makes sorting more accurate: name a few pages, features or words users write.",
+          "descriptionPlaceholder": "Prices, plans, seats or invoices.",
+          "overlap": "Can overlap other topics",
+          "overlapDescription": "Checked on each whole conversation, so several can apply: for a bug report or a pricing question that cuts across the docs.",
+          "onePickFull": "{{max}} topics that don't overlap is the most, so this one can overlap.",
+          "overlapFull": "{{max}} topics that can overlap is the most, so this one can't.",
+          "overlapOff": "This server no longer checks topics that can overlap, so this one can't.",
+          "reachOnePick": "Sorts new questions; earlier ones keep their topic.",
+          "reachOverlap": "Also checked on recent conversations.",
+          "kindChangeToOverlap": "Changing this starts its figures over: it sorted questions and will now be checked on conversations.",
+          "kindChangeToOnePick": "Changing this starts its figures over: it was checked on conversations and will now sort questions."
+        },
+        "errors": {
+          "nameRequired": "Enter a name.",
+          "topicNameTooLong": "Too long. Shorten it to {{max}} characters.",
+          "topicNameTaken": "Another topic already has this name.",
+          "topicNameReserved": "This name is kept for questions that fit no topic.",
+          "topicDescriptionTooLong": "Too long. Shorten it to fit {{max}} (Chinese, Japanese and Korean characters count three times)."
+        },
+        "digest": "Weekly docs-gap summary",
+        "digestDescription": "Once a week, the agent's owner gets a notification listing the top docs gaps.",
+        "off": "Off",
+        "topicsDescription": "What people ask about. Each question goes into the one topic that fits it best.",
+        "fromSources": "From sources",
+        "hide": "Hide",
+        "groups": {
+          "onePick": "One per question",
+          "overlap": "Can overlap",
+          "overlapDescription": "Checked on whole conversations; several can apply."
+        },
+        "notes": {
+          "foldersFailed": "Couldn't load the folders of this agent's sources.",
+          "unsaved": "Folders from this agent's sources show after you save it.",
+          "unlisted": "Questions are also sorted into the folders of this agent's sources.",
+          "hidden": "Hidden folders: {{names}}",
+          "show": "Show",
+          "cut": "These smaller folders don't fit, so their questions go to None of these topics: {{names}}",
+          "single": "One topic on its own sorts nothing. Add another to start.",
+          "full": "This agent has the most topics it can: {{topics}} that don't overlap and {{overlapping}} that can.",
+          "overOnePick": "This server now allows {{max}} topics that don't overlap, fewer than this agent has, so only the first {{max}} added sort questions. Remove some to add others.",
+          "overOverlapping": "This server now allows {{max}} topics that can overlap, fewer than this agent has, so only the first {{max}} added are checked. Remove some to add others.",
+          "overlapOff": "This server no longer checks topics that can overlap, so these aren't checked. Edit one to sort questions instead, or remove it."
+        },
+        "empty": {
+          "title": "No topics yet",
+          "workflow": "Add what people ask about. Each question goes into the one topic that fits it best.",
+          "unsaved": "Topics from this agent's sources show after you save it. You can add your own now.",
+          "noFolders": "This agent's sources have no folders to sort questions by. Add your own topics.",
+          "allHidden": "Every folder of this agent's sources is hidden, so questions aren't sorted.",
+          "showFolders": "Show folders"
+        },
+        "removeTopic": {
+          "title": "Remove \"{{name}}\"?",
+          "description": "It can overlap, so it has results of its own. They disappear from Insights and Logs, and adding it again starts from scratch.",
+          "submit": "Remove"
+        }
       }
     },
     "logs": {
       "title": "Agent Logs",
       "lastUsedAt": "Last used at",
       "noUsageHistory": "No usage history",
-      "tableHeader": "Agent endpoint logs"
+      "tableHeader": "Agent endpoint logs",
+      "description": "API calls, scheduled runs and errors for this agent."
     },
     "schedules": {
       "title": "Agent Schedules",
@@ -2919,7 +3490,6 @@
     "guardrailEvents": {
       "heading": "Guardrail activity",
       "description": "Every control that fired on this agent, and every one that could not run.",
-      "lastDays": "Last {{count}} days",
       "blocked": "Blocked",
       "redacted": "Redacted",
       "flagged": "Flagged",
@@ -2936,7 +3506,11 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "loadError": "Could not load guardrail activity",
+      "score": "Score",
+      "openChunk": "Open chunk",
+      "attachedFile": "Attached file",
+      "chunkUnavailable": "This chunk is no longer in its source, or you can't open that source."
     },
     "workflow": {
       "expressionRow": "Expression {{index}}",
@@ -2954,15 +3528,8 @@
       "removeAssignment": "Remove assignment {{index}}",
       "removeCondition": "Remove condition {{index}}",
       "artifacts": {
-        "previewUnsupported": "This artifact cannot be previewed",
         "loadListFailed": "Failed to load artifacts",
-        "loadFailed": "Failed to load artifact",
-        "loading": "Loading artifacts...",
-        "inProgress": "Run in progress — artifacts appear here as nodes produce them.",
-        "empty": "No artifacts produced by this run.",
-        "back": "Back to artifacts",
-        "untitled": "Artifact {{id}}",
-        "fileKind": "file"
+        "untitled": "Artifact {{id}}"
       },
       "builder": {
         "deleteFailed": "Failed to delete workflow agent",
@@ -3095,8 +3662,8 @@
         "extract": "Extract"
       },
       "mobileBlocker": {
-        "title": "Desktop Required",
-        "body": "The Workflow Builder requires a larger screen for the best experience. Please open this page on a desktop or laptop computer."
+        "title": "Open on a larger screen",
+        "body": "The workflow builder needs a wider screen. Use a computer, or turn your tablet sideways."
       },
       "nodes": {
         "start": "Start",
@@ -3128,10 +3695,10 @@
         "stepCount_other": "({{count}} steps)",
         "outputLabel": "Output:",
         "errorLabel": "Error:",
-        "artifacts": "Artifacts",
         "minimapHeading": "Workflow",
         "emptyTitle": "Test the workflow",
-        "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview."
+        "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview.",
+        "backToRun": "Back to the run"
       },
       "documents": {
         "modeAll": "All input docs",
@@ -3164,7 +3731,11 @@
     "showAll_other": "Show all {{formatted}}",
     "pageRange_one": "{{from}}–{{to}} of {{formatted}} agent",
     "pageRange_other": "{{from}}–{{to}} of {{formatted}} agents",
-    "deleteConsequence": "Its schedules and run history are deleted too. This can't be undone."
+    "deleteConsequence": "Its schedules and run history are deleted too. This can't be undone.",
+    "analytics": {
+      "subtitle": "Message volume, token usage and user feedback for this agent."
+    },
+    "loadError": "Could not load this agent."
   },
   "components": {
     "fileUpload": {
@@ -3213,9 +3784,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "Page not found",
+    "message": "The page you're looking for doesn't exist.",
+    "goHome": "Go home"
   },
   "filePicker": {
     "searchPlaceholder": "Search files and folders",
@@ -3261,9 +3832,9 @@
       "groups": {
         "personal": "Personal",
         "workspace": "Workspace",
-        "insights": "Insights",
         "administration": "Administration",
-        "automations": "Automations"
+        "automations": "Automations",
+        "monitoring": "Monitoring"
       }
     },
     "openSidebar": "Open sidebar",
@@ -3303,7 +3874,9 @@
       "usage": "Usage",
       "quotas": "Quotas",
       "audit": "Audit log",
-      "connectors": "Connectors"
+      "connectors": "Connectors",
+      "defaults": "Defaults",
+      "guardrails": "Guardrails"
     },
     "quotas": {
       "unpriced": {

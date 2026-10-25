@@ -1,7 +1,7 @@
 ---
 title: GraphRAG
 description: Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -75,6 +75,24 @@ Notes:
 - Re-running the action rebuilds the graph from scratch rather than no-opping against an existing one.
 - You cannot switch a source to `graphrag` through the [config PATCH endpoint](/Sources/Per-source-configuration#editing-the-config-via-api) — use the upload-time selector or this dedicated endpoint.
 
+## When pages change
+
+On a GraphRAG [website source](/Sources/adding-knowledge#manage-the-pages-of-a-website-source), most page changes update the graph without rebuilding it:
+
+- **Add pages** and **Refresh page** first take the replaced page's old chunks out of the graph, then extract only the new chunks. Chunks already in the graph aren't sent to the LLM again, so the cost is about one LLM call per new chunk. The graph view's header shows **Building graph…** while the extraction runs.
+- **Remove from source** takes the removed pages' chunks out of the graph, with no LLM call. A relationship that came only from those chunks is deleted, and so is an entity left with no chunk and no relationship.
+
+**Add pages** instead rebuilds the source like a sync, and the whole graph with it, at about one LLM call per chunk of the whole source, when it adds:
+
+- a whole site;
+- the first page on a second host, such as a `docs.example.com` page in a source that so far holds only `example.com` pages. A source on several hosts files its pages under a folder per host, so every page moves.
+
+When the source has a graph, **Add pages** notes these costs before you add.
+
+An entity that several pages mention merges their descriptions into one text, and that text can't be split by page. After you remove a page, such an entity keeps its description from that page until the next full build.
+
+A sync, a re-ingest or **Enable GraphRAG** still rebuilds the whole graph and extracts every chunk again.
+
 ## Configuration
 
 Instance-wide settings (see [App Configuration](/Deploying/DocsGPT-Settings)):
@@ -101,7 +119,7 @@ Per-source extraction knobs live under the source config's `graph` object and ov
 | `gleanings` | `0` | Extra extraction passes per chunk to catch entities missed on the first pass. Off by default (each pass costs additional LLM calls). |
 
 <Callout type="warning" emoji="⚠️">
-Graph extraction makes an LLM call per chunk (more if `gleanings > 0`), so it has a real token cost. The cost is attributed to token usage under a `graph_extraction` tag, and the `max_chunks` cap bounds it.
+Graph extraction makes an LLM call per chunk (more if `gleanings > 0`), so it has a real token cost. The cost is attributed to token usage under a `graph_extraction` tag, and the `max_chunks` cap bounds it. A source runs one extraction at a time, so page changes made close together, or a page change during a full build, wait for each other and share the cap.
 </Callout>
 
 ## Graph retrieval settings

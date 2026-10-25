@@ -32,10 +32,14 @@ export type SchedulesState = {
    */
   allToken: string | null;
   /**
-   * Schedules saved or deleted while that load was out. Its answer was read
-   * before them, so they are applied on top of it.
+   * Schedules saved, changed by an SSE event or deleted while that load was
+   * out. Its answer was read before them, so they are applied on top of it,
+   * saves and events in the order they came.
    */
-  allChangedSinceRequest: { saved: Schedule[]; deleted: string[] };
+  allChangedSinceRequest: {
+    changes: ({ saved: Schedule } | { id: string; patch: Partial<Schedule> })[];
+    deleted: string[];
+  };
   runsBySchedule: Record<string, ScheduleRun[]>;
   /** True once a schedule's oldest run is loaded. */
   runsEndBySchedule: Record<string, boolean>;
@@ -50,7 +54,7 @@ const initialState: SchedulesState = {
   allError: false,
   allRequestId: null,
   allToken: null,
-  allChangedSinceRequest: { saved: [], deleted: [] },
+  allChangedSinceRequest: { changes: [], deleted: [] },
   runsBySchedule: {},
   runsEndBySchedule: {},
   loading: false,
@@ -210,7 +214,8 @@ const applyToLists = (state: SchedulesState, next: Schedule): void => {
       next,
     );
   }
-  if (state.allLoading) state.allChangedSinceRequest.saved.push(next);
+  if (state.allLoading)
+    state.allChangedSinceRequest.changes.push({ saved: next });
   upsertInAll(state, next);
 };
 
@@ -226,6 +231,16 @@ const upsertInAll = (state: SchedulesState, next: Schedule): void => {
   else state.all[idx] = { ...state.all[idx], ...next };
 };
 
+/** Changes fields of a schedule in the cross-agent list, if it is listed. */
+const patchInAll = (
+  state: SchedulesState,
+  scheduleId: string,
+  patch: Partial<Schedule>,
+): void => {
+  const idx = state.all?.findIndex((s) => s.id === scheduleId) ?? -1;
+  if (state.all && idx !== -1) state.all[idx] = { ...state.all[idx], ...patch };
+};
+
 /** Changes fields of a schedule wherever it is listed (an SSE update). */
 const patchSchedule = (
   state: SchedulesState,
@@ -239,8 +254,10 @@ const patchSchedule = (
       ...patch,
     });
   }
-  const idx = state.all?.findIndex((s) => s.id === scheduleId) ?? -1;
-  if (state.all && idx !== -1) state.all[idx] = { ...state.all[idx], ...patch };
+  if (state.allLoading) {
+    state.allChangedSinceRequest.changes.push({ id: scheduleId, patch });
+  }
+  patchInAll(state, scheduleId, patch);
 };
 
 const findAgentForSchedule = (
@@ -302,17 +319,18 @@ const schedulesSlice = createSlice({
         state.allLoading = true;
         state.allError = false;
         state.allRequestId = action.meta.requestId;
-        state.allChangedSinceRequest = { saved: [], deleted: [] };
+        state.allChangedSinceRequest = { changes: [], deleted: [] };
       })
       .addCase(loadAllSchedules.fulfilled, (state, action) => {
         if (!isLatestAll(state, action.meta.requestId)) return;
-        const { saved, deleted } = state.allChangedSinceRequest;
+        const { changes, deleted } = state.allChangedSinceRequest;
         const gone = new Set(deleted);
         state.all = action.payload.filter((s) => !gone.has(s.id));
-        saved
-          .filter((s) => !gone.has(s.id))
-          .forEach((s) => upsertInAll(state, s));
-        state.allChangedSinceRequest = { saved: [], deleted: [] };
+        changes.forEach((change) => {
+          if (!('saved' in change)) patchInAll(state, change.id, change.patch);
+          else if (!gone.has(change.saved.id)) upsertInAll(state, change.saved);
+        });
+        state.allChangedSinceRequest = { changes: [], deleted: [] };
         state.allLoading = false;
       })
       .addCase(loadAllSchedules.rejected, (state, action) => {
@@ -442,6 +460,25 @@ export const selectSchedulesForAgent = (
   state: { schedules: SchedulesState },
   agentId: string,
 ): Schedule[] => state.schedules.byAgent[agentId] ?? NO_SCHEDULES;
+
+/**
+ * A schedule the store has loaded, from its agent's list or the cross-agent
+ * one; undefined while neither has it. When both have it, the newer record
+ * wins: each list reloads on its own, so either can hold a stale status.
+ */
+export const selectScheduleById = (
+  state: { schedules: SchedulesState },
+  id: string | null,
+  agentId?: string | null,
+): Schedule | undefined => {
+  if (!id) return undefined;
+  const own = agentId
+    ? state.schedules.byAgent[agentId]?.find((s) => s.id === id)
+    : undefined;
+  const all = state.schedules.all?.find((s) => s.id === id);
+  if (!own || !all) return own ?? all;
+  return Date.parse(all.updated_at) > Date.parse(own.updated_at) ? all : own;
+};
 
 /** The cross-agent list (null until loaded) and its load state. */
 export const selectAllSchedules = (state: {

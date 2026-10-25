@@ -15,12 +15,11 @@ import uuid
 
 from docsgpt.api import api
 from docsgpt.api.user.authz import ROLE_ADMIN, has_role
+from docsgpt.api.user.sources.access import SYNC_FREQUENCIES
 from docsgpt.connectors import catalog, service
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.security.encryption import CredentialDecryptionError
-
-_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
 connections_ns = Namespace("connections", description="Connectors and connections", path="/api")
 api.add_namespace(connections_ns)
@@ -335,7 +334,7 @@ def _start_sync(user_id: str, row: dict, sync: dict):
     if not isinstance(items, dict):
         return ("items must be an object", 400)
     frequency = sync.get("frequency") or definition.default_sync_frequency
-    if frequency not in _FREQUENCIES:
+    if frequency not in SYNC_FREQUENCIES:
         return ("Unknown sync frequency", 400)
     name = (sync.get("name") or "").strip()
     source_config, config_error = _parse_source_config(sync.get("config"))
@@ -560,7 +559,7 @@ class ConnectionPickerToken(Resource):
         if row is None or (row.get("auth_kind") or "oauth") != "oauth":
             return _not_found()
         try:
-            token = service.picker_token(connection_id)
+            token = service.picker_token(connection_id, row.get("provider"))
         except service.ConnectionUnavailable:
             return _error("Reconnect to continue", 409, code="reconnect")
         except service.TransientConnectionError:

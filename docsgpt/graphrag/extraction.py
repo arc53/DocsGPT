@@ -198,13 +198,20 @@ def extract_graph_for_source(
     config: SourceConfig,
     request_id: Optional[str] = None,
     progress_cb: Optional[Callable[[Dict[str, int]], None]] = None,
+    chunk_ids: Optional[List[str]] = None,
 ) -> Dict[str, int]:
     """Build the per-source graph from its chunks via per-chunk LLM extraction.
 
     Resumable and idempotent: chunks already marked ``done`` are skipped via the
     ``graph_ingest_progress`` checkpoint, so a retry never re-extracts (and never
-    re-bills). Processes at most the resolved chunk cap; excess chunks are
-    reported under ``skipped_over_cap``. A malformed response, an LLM error or a
+    re-bills). The source holds at most the resolved chunk cap: the chunks it
+    already has extracted count toward it (a redelivered build spends only
+    what is left), and excess chunks are reported under ``skipped_over_cap``.
+    With ``chunk_ids`` (a page change), only those chunks are extracted: a
+    source the full build left over its cap neither bills its backlog nor
+    grows past the cap. The caller runs one extraction per source at a time
+    (``graph_extract_lock``), so two never spend the same remaining
+    allowance. A malformed response, an LLM error or a
     failed write on a single chunk is retried once after the rest of the build;
     a chunk that fails again is marked ``failed`` and the run continues — the
     pipeline never crashes.
@@ -221,6 +228,8 @@ def extract_graph_for_source(
         request_id: Originating request id stamped on the extraction LLM.
         progress_cb: Optional callback invoked after each processed chunk with
             ``{current, total, nodes, edges}`` for progress reporting.
+        chunk_ids: For a page change, the ids of the chunks it stored; the
+            other pending chunks are left as they are. ``None`` for a build.
 
     Returns:
         A summary ``{nodes, edges, chunks_processed, skipped_over_cap,
@@ -242,7 +251,15 @@ def extract_graph_for_source(
     pending_ids = set(store.pending_chunks(source_id, all_chunk_ids))
     pending = [(c, cid) for c, cid in valid if cid in pending_ids]
 
-    cap = _resolve_max_chunks(config)
+    # The cap is the source's, so the chunks it has extracted already count:
+    # ``all_chunk_ids`` is what the store holds now, so every id in it that
+    # isn't pending is an extracted chunk (a deleted one is gone). A build
+    # redelivered part-way (a killed worker) must not spend the cap again.
+    cap = max(0, _resolve_max_chunks(config) - (len(all_chunk_ids) - len(pending_ids)))
+    if chunk_ids is not None:
+        # A page change: only its own chunks.
+        wanted = {str(cid) for cid in chunk_ids}
+        pending = [(c, cid) for c, cid in pending if str(cid) in wanted]
     skipped_over_cap = max(0, len(pending) - cap)
     to_process = pending[:cap]
 

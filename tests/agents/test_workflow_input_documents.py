@@ -83,6 +83,7 @@ def _agent(workflow_id, attachments, owner: str = OWNER) -> WorkflowAgent:
     agent._engine = None
     agent._run_persisted = False
     agent._bridge_error = None
+    agent.passthrough = None
     return agent
 
 

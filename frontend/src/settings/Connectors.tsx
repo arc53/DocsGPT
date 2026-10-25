@@ -112,7 +112,7 @@ export default function Connectors() {
     setSearchParams(searchParams, { replace: true });
   };
   // Listed for syncing (Add knowledge's Browse all connectors): a connect
-  // starts with Sync into Knowledge on.
+  // starts with Sync into Knowledge on (sync-only connectors always do).
   const withPurpose = (options: LaunchOptions = {}): LaunchOptions =>
     capability === 'sync' ? { ...options, purpose: 'knowledge' } : options;
 

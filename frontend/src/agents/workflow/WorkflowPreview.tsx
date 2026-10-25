@@ -6,7 +6,6 @@ import {
   CircleX,
   CodeXml,
   Database,
-  FileBox,
   Flag,
   GitBranch,
   type LucideIcon,
@@ -19,6 +18,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -44,12 +44,13 @@ import {
 import { cn } from '@/lib/utils';
 
 import MessageInput from '../../components/MessageInput';
+import { ChatCompanionContext } from '../../conversation/chatCompanion';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
 import { selectSendableAttachments } from '../../upload/uploadSlice';
+import { usePreviewArtifacts } from '../components/AgentPreviewSheet';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
-import WorkflowRunArtifacts from './WorkflowRunArtifacts';
 import {
   addQuery,
   fetchWorkflowPreviewAnswer,
@@ -298,37 +299,6 @@ export function ExecutionDetails({
   );
 }
 
-export function RunArtifactsSection({
-  workflowRunId,
-  isOpen,
-  onToggle,
-  runInProgress = false,
-}: {
-  workflowRunId: string;
-  isOpen: boolean;
-  onToggle: () => void;
-  runInProgress?: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <StepDisclosure
-      icon={FileBox}
-      label={t('agents.workflow.preview.artifacts')}
-      isOpen={isOpen}
-      onToggle={onToggle}
-    >
-      <div className="scrollbar-overlay max-h-[480px] overflow-y-auto pt-1">
-        {isOpen && (
-          <WorkflowRunArtifacts
-            workflowRunId={workflowRunId}
-            inProgress={runInProgress}
-          />
-        )}
-      </div>
-    </StepDisclosure>
-  );
-}
-
 export function WorkflowMiniMap({
   nodes,
   activeNodeId,
@@ -487,8 +457,19 @@ export default function WorkflowPreview({
     null,
   );
   const [openDetailsIndex, setOpenDetailsIndex] = useState<number | null>(null);
-  const [openArtifactsIndex, setOpenArtifactsIndex] = useState<number | null>(
-    null,
+  // Artifacts open inside the preview drawer (AgentPreviewSheet).
+  const previewArtifacts = usePreviewArtifacts();
+  const artifactCompanion = useMemo(
+    () =>
+      previewArtifacts
+        ? {
+            openArtifact: previewArtifacts.shown,
+            openArtifactList: previewArtifacts.openArtifactList,
+            openArtifactListKey: previewArtifacts.listKey,
+            syncArtifactList: previewArtifacts.syncArtifactList,
+          }
+        : null,
+    [previewArtifacts],
   );
 
   const fetchStream = useRef<{ abort: () => void } | null>(null);
@@ -657,121 +638,117 @@ export default function WorkflowPreview({
                 />
               </div>
             ) : (
-              <MessageScrollerProvider autoScroll>
-                <MessageScroller>
-                  <MessageScrollerViewport className="px-4 pt-4">
-                    <MessageScrollerContent className="w-full">
-                      {queries.map((query, index) => {
-                        const querySteps = query.executionSteps || [];
-                        const hasResponse = !!(query.response || query.error);
-                        const isLastQuery = index === queries.length - 1;
-                        const isStreamingLastQuery =
-                          status === 'loading' && isLastQuery;
-                        const shouldShowThought =
-                          !isStreamingLastQuery && Boolean(query.thought);
-                        const isOpen =
-                          openDetailsIndex === index ||
-                          (!hasResponse &&
-                            isLastQuery &&
-                            querySteps.length > 0);
-                        const hasAnswerBubble =
-                          !!query.response ||
-                          shouldShowThought ||
-                          !!query.tool_calls;
-                        const hasResponseItem =
-                          querySteps.length > 0 ||
-                          !!query.workflowRunId ||
-                          hasAnswerBubble ||
-                          !!query.error;
+              <ChatCompanionContext.Provider value={artifactCompanion}>
+                <MessageScrollerProvider autoScroll>
+                  <MessageScroller>
+                    <MessageScrollerViewport className="px-4 pt-4">
+                      <MessageScrollerContent className="w-full">
+                        {queries.map((query, index) => {
+                          const querySteps = query.executionSteps || [];
+                          const hasResponse = !!(query.response || query.error);
+                          const isLastQuery = index === queries.length - 1;
+                          const isStreamingLastQuery =
+                            status === 'loading' && isLastQuery;
+                          const shouldShowThought =
+                            !isStreamingLastQuery && Boolean(query.thought);
+                          const isOpen =
+                            openDetailsIndex === index ||
+                            (!hasResponse &&
+                              isLastQuery &&
+                              querySteps.length > 0);
+                          const hasAnswerBubble =
+                            !!query.response ||
+                            shouldShowThought ||
+                            !!query.tool_calls;
+                          const hasResponseItem =
+                            querySteps.length > 0 ||
+                            !!query.workflowRunId ||
+                            hasAnswerBubble ||
+                            !!query.error;
 
-                        return (
-                          <Fragment key={index}>
-                            <MessageScrollerItem
-                              messageId={`q-${index}`}
-                              scrollAnchor
-                            >
-                              <ConversationBubble
-                                className={index === 0 ? 'mt-5' : ''}
-                                message={query.prompt}
-                                type="QUESTION"
-                                handleUpdatedQuestionSubmission={
-                                  handleQuestionSubmission
-                                }
-                                questionNumber={index}
-                              />
-                            </MessageScrollerItem>
-
-                            {hasResponseItem && (
-                              <MessageScrollerItem messageId={`a-${index}`}>
-                                {/* Execution Details */}
-                                {querySteps.length > 0 && (
-                                  <ExecutionDetails
-                                    steps={querySteps}
-                                    nodes={workflowData.nodes}
-                                    isOpen={isOpen}
-                                    onToggle={() =>
-                                      setOpenDetailsIndex(
-                                        openDetailsIndex === index
-                                          ? null
-                                          : index,
-                                      )
-                                    }
-                                    stepRefs={
-                                      isLastQuery ? stepRefs : undefined
-                                    }
-                                  />
-                                )}
-                                {query.workflowRunId && (
-                                  <RunArtifactsSection
-                                    workflowRunId={query.workflowRunId}
-                                    isOpen={openArtifactsIndex === index}
-                                    onToggle={() =>
-                                      setOpenArtifactsIndex(
-                                        openArtifactsIndex === index
-                                          ? null
-                                          : index,
-                                      )
-                                    }
-                                    runInProgress={isStreamingLastQuery}
-                                  />
-                                )}
-
-                                {/* Response bubble */}
-                                {hasAnswerBubble && (
-                                  <ConversationBubble
-                                    className="mb-7"
-                                    message={query.response}
-                                    type="ANSWER"
-                                    thought={
-                                      shouldShowThought
-                                        ? query.thought
-                                        : undefined
-                                    }
-                                    sources={query.sources}
-                                    toolCalls={query.tool_calls}
-                                    feedback={query.feedback}
-                                    isStreaming={isStreamingLastQuery}
-                                  />
-                                )}
-
-                                {/* Error bubble */}
-                                {query.error && (
-                                  <ConversationBubble
-                                    className="mb-7"
-                                    message={query.error}
-                                    type="ERROR"
-                                  />
-                                )}
+                          return (
+                            <Fragment key={index}>
+                              <MessageScrollerItem
+                                messageId={`q-${index}`}
+                                scrollAnchor
+                              >
+                                <ConversationBubble
+                                  className={index === 0 ? 'mt-5' : ''}
+                                  message={query.prompt}
+                                  type="QUESTION"
+                                  handleUpdatedQuestionSubmission={
+                                    handleQuestionSubmission
+                                  }
+                                  questionNumber={index}
+                                />
                               </MessageScrollerItem>
-                            )}
-                          </Fragment>
-                        );
-                      })}
-                    </MessageScrollerContent>
-                  </MessageScrollerViewport>
-                  <MessageScrollerButton />
-                </MessageScroller>
-              </MessageScrollerProvider>
+
+                              {hasResponseItem && (
+                                <MessageScrollerItem messageId={`a-${index}`}>
+                                  {/* Execution Details */}
+                                  {querySteps.length > 0 && (
+                                    <ExecutionDetails
+                                      steps={querySteps}
+                                      nodes={workflowData.nodes}
+                                      isOpen={isOpen}
+                                      onToggle={() =>
+                                        setOpenDetailsIndex(
+                                          openDetailsIndex === index
+                                            ? null
+                                            : index,
+                                        )
+                                      }
+                                      stepRefs={
+                                        isLastQuery ? stepRefs : undefined
+                                      }
+                                    />
+                                  )}
+                                  {/* Response bubble */}
+                                  {/* A run with no answer yet shows its
+                                    files once it ends; while it streams the
+                                    execution details are its live status. */}
+                                  {(hasAnswerBubble ||
+                                    (query.workflowRunId &&
+                                      !isStreamingLastQuery)) && (
+                                    <ConversationBubble
+                                      className="mb-7"
+                                      message={query.response}
+                                      type="ANSWER"
+                                      thought={
+                                        shouldShowThought
+                                          ? query.thought
+                                          : undefined
+                                      }
+                                      sources={query.sources}
+                                      toolCalls={query.tool_calls}
+                                      workflowRunId={query.workflowRunId}
+                                      onOpenArtifact={
+                                        previewArtifacts?.openArtifact
+                                      }
+                                      feedback={query.feedback}
+                                      isStreaming={isStreamingLastQuery}
+                                    />
+                                  )}
+
+                                  {/* Error bubble */}
+                                  {query.error && (
+                                    <ConversationBubble
+                                      className="mb-7"
+                                      message={query.error}
+                                      type="ERROR"
+                                    />
+                                  )}
+                                </MessageScrollerItem>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </MessageScrollerContent>
+                    </MessageScrollerViewport>
+                    <MessageScrollerButton />
+                  </MessageScroller>
+                </MessageScrollerProvider>
+              </ChatCompanionContext.Provider>
             )}
           </div>
           <div className="flex w-full flex-col gap-2 px-4 pt-2 pb-4">

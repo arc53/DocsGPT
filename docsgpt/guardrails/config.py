@@ -10,8 +10,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, StrictInt, TypeAdapter, ValidationError, field_validator, model_validator
 
+from docsgpt.analytics.config import AnalyticsConfig
 from docsgpt.guardrails.types import ACTIONS_BY_STAGE, Action, Stage
 from docsgpt.security.origins import canonical_origin
 
@@ -31,6 +32,21 @@ def _reason(exc: Exception) -> str:
     return str(exc)
 
 MODES = ("monitor_only", "scan_all")
+
+# Bounds of ``AgentConfig.context_window_limit``. Below the floor the system
+# prompt, tool definitions and a compression summary (up to 4,000 tokens)
+# would cross the compression threshold on their own, compressing every turn.
+MIN_CONTEXT_WINDOW_LIMIT = 16000
+MAX_CONTEXT_WINDOW_LIMIT = 10_000_000
+
+
+def _item_level(check: str) -> bool:
+    from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+
+    try:
+        return bool(GuardrailCreator.get(check).item_level)
+    except ValueError:
+        return False
 
 
 class GuardrailControl(BaseModel):
@@ -137,16 +153,24 @@ class GuardrailsConfig(BaseModel):
             seen.add(key)
         return value
 
-    def controls_for(self, stage: Stage) -> List[GuardrailControl]:
+    def controls_for(self, stage: Stage, item_level: Optional[bool] = None) -> List[GuardrailControl]:
         """Enabled controls for ``stage``, honouring ``mode``.
 
         ``monitor_only`` degrades every action to a log-only flag, which is the
         supported rollout path: turn checks on, watch what they would have
         done, then promote.
+
+        Args:
+            stage: The stage.
+            item_level: ``True`` for only the checks that score items one by
+                one (``GuardrailCheck.item_level``), ``False`` for only the
+                others, ``None`` for both.
         """
         if not self.enabled:
             return []
         selected = [c for c in self.controls if c.enabled and c.stage == stage]
+        if item_level is not None:
+            selected = [c for c in selected if _item_level(c.check) is item_level]
         if self.mode != "scan_all":
             return [c.model_copy(update={"action": Action.FLAG}) for c in selected]
         return selected
@@ -219,6 +243,9 @@ class AgentConfig(BaseModel):
     # public-link user, and schedules either of them set. Any other such
     # write is refused for them. ``tool_id:action``.
     api_write_allowlist: List[str] = []
+    # Conversation analytics (``docsgpt.analytics``): the owner's labelling
+    # choices, not policy, so ``_policy_changed`` leaves them out.
+    analytics: AnalyticsConfig = AnalyticsConfig()
     # Browser origins that may call the agent with its API key. While
     # ``restrict_origins`` is on, a keyed request must come from one of these
     # or a trusted origin (``docsgpt/api/agent_origins.py``); turning it off
@@ -257,6 +284,21 @@ class AgentConfig(BaseModel):
         if not self.restrict_origins:
             return True
         return origin is not None and (origin in self.allowed_origins or origin in trusted)
+    # Most tokens of history, documents and tool results one request of this
+    # agent fills, below the model's own window (``get_context_budget``).
+    # None uses the whole window.
+    context_window_limit: Optional[StrictInt] = None
+
+    @field_validator("context_window_limit")
+    @classmethod
+    def _bounded_context_window_limit(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return None
+        if value < MIN_CONTEXT_WINDOW_LIMIT:
+            raise ValueError(f"context_window_limit must be at least {MIN_CONTEXT_WINDOW_LIMIT:,} tokens")
+        if value > MAX_CONTEXT_WINDOW_LIMIT:
+            raise ValueError(f"context_window_limit must be at most {MAX_CONTEXT_WINDOW_LIMIT:,} tokens")
+        return value
 
     @field_validator("api_write_allowlist")
     @classmethod
@@ -279,15 +321,24 @@ class AgentConfig(BaseModel):
         try:
             return cls.model_validate(raw)
         except Exception:
-            # A bad allowlist falls back to none: the safe side. For origins
-            # the safe side is the opposite, so a restriction stays on and
-            # keeps every entry that still parses.
+            # Each block is salvaged on its own, so a malformed guardrails or
+            # analytics block (or an unknown key) keeps a valid allowlist. Only
+            # a bad allowlist falls back to none: the safe side. For origins the
+            # safe side is the opposite, so a restriction stays on and keeps
+            # every entry that still parses.
+            try:
+                allowlist = cls.model_validate({"api_write_allowlist": raw.get("api_write_allowlist") or []})
+            except Exception:
+                allowlist = cls()
             return cls.model_construct(
                 guardrails=GuardrailsConfig.parse(raw.get("guardrails")),
-                api_write_allowlist=[],
+                api_write_allowlist=allowlist.api_write_allowlist,
+                analytics=AnalyticsConfig.parse(raw.get("analytics")),
                 restrict_origins="restrict_origins" in raw and _salvage_flag(raw["restrict_origins"]),
                 allowed_origins=_salvage_origins(raw.get("allowed_origins")),
+                context_window_limit=context_window_limit_of(raw),
             )
+
 
 
 def _salvage_flag(raw: Any) -> bool:
@@ -322,3 +373,25 @@ def _salvage_origins(raw: Any) -> List[str]:
         if origin and origin not in kept:
             kept.append(origin)
     return kept
+
+
+def context_window_limit_of(raw: Optional[dict]) -> Optional[int]:
+    """The context limit in a stored ``agents.config``, without validating the rest.
+
+    Lenient like ``AgentConfig.parse``: a missing or invalid value is None,
+    which leaves the model's whole window.
+
+    Args:
+        raw: The agent's stored ``config``.
+
+    Returns:
+        The limit in tokens, or None.
+    """
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return AgentConfig.model_validate(
+            {"context_window_limit": raw.get("context_window_limit")}
+        ).context_window_limit
+    except Exception:
+        return None

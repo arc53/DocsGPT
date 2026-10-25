@@ -610,6 +610,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_filename: Optional[str] = None
         self._last_ref: Optional[str] = None
         self._last_version: Optional[int] = None
+        self._last_title: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -732,6 +733,8 @@ class ArtifactGeneratorTool(Tool):
         }
         if self._last_version is not None:
             entry["version"] = self._last_version
+        if self._last_title:
+            entry["title"] = self._last_title
         return [entry]
 
     # ------------------------------------------------------------------
@@ -743,6 +746,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_filename = None
         self._last_ref = None
         self._last_version = None
+        self._last_title = None
         if not self.user_id:
             return {"status": "error", "error": "artifact_generator requires a valid user_id."}
         if self.conversation_id is None and self.workflow_run_id is None:
@@ -769,6 +773,10 @@ class ArtifactGeneratorTool(Tool):
         spec, valid = self._validate(kind, kwargs.get("spec"))
         if valid is not None:
             return valid
+        if not (isinstance(title, str) and title.strip()):
+            # Some models put the title only inside the spec; it still names the file.
+            spec_title = spec.get("title")
+            title = spec_title if isinstance(spec_title, str) and spec_title.strip() else None
 
         rendered = self._render(kind, spec)
         if rendered.get("error"):
@@ -798,6 +806,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_filename = ref.get("filename")
         self._last_ref = ref.get("ref")
         self._last_version = ref.get("version")
+        self._last_title = title if isinstance(title, str) and title.strip() else None
         return {"status": "ok", **ref}
 
     def _edit(self, **kwargs: Any) -> Dict[str, Any]:
@@ -870,6 +879,7 @@ class ArtifactGeneratorTool(Tool):
         self._last_filename = ref.get("filename")
         self._last_ref = ref.get("ref")
         self._last_version = ref.get("version")
+        self._last_title = title if isinstance(title, str) and title.strip() else None
         return {"status": "ok", **ref}
 
     # ------------------------------------------------------------------

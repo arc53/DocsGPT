@@ -548,6 +548,28 @@ describe('Calendar page', () => {
     expect(panel?.textContent).toContain('activity.calendar.openSchedule');
   });
 
+  it("links a chat-made slot's panel back to its chat as a text link", async () => {
+    activity.planned.mockReset().mockResolvedValue({
+      ...WINDOW,
+      events: [
+        slot({
+          origin_conversation_id: 'c1',
+          origin_conversation_name: 'Rotterdam market check',
+        }),
+      ],
+    });
+    await render();
+    await act(async () => slotButton('Daily support digest').click());
+    const link = document.querySelector<HTMLAnchorElement>(
+      '[data-slot="sheet-content"] a[href="/c/c1"]',
+    );
+    expect(link?.textContent).toBe('Rotterdam market check');
+    expect(link?.dataset.variant).toBe('link');
+    expect(link?.dataset.size).toBe('text');
+    expect(link?.className).toContain('text-link');
+    expect(link?.className).not.toContain('text-primary');
+  });
+
   it('opens a past slot as its run', async () => {
     await render();
     await act(async () => slotButton('Prospect news scan').click());

@@ -141,6 +141,15 @@
   capabilities: [read, write]
   docs_url: https://cal.com/docs/mcp-server
 
+- key: mcp:airtable
+  name: Airtable
+  description: Search, read and update records in Airtable bases.
+  icon: airtable
+  category: database
+  mcp_url: https://mcp.airtable.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://airtable.com/developers/agents/mcp/getting-started
 # Alpha Vantage only accepts redirect URIs on its allowlist (DocsGPT cloud) and
 # localhost, so a self-hosted instance on its own domain adds it as a custom
 # MCP connector with ``?apikey=<KEY>`` in the URL instead.
@@ -190,3 +199,22 @@
   auth_kind: mcp
   capabilities: [read]
   docs_url: https://docs.coingecko.com/docs/mcp-server
+- key: mcp:neon
+  name: Neon
+  description: Explore Neon Postgres projects, branches and schemas, and run SQL.
+  icon: neon
+  category: database
+  mcp_url: https://mcp.neon.tech/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://neon.com/docs/ai/neon-mcp-server
+
+- key: mcp:context7
+  name: Context7
+  description: Look up up-to-date documentation and code examples for libraries.
+  icon: context7
+  category: dev
+  mcp_url: https://mcp.context7.com/mcp/oauth
+  auth_kind: mcp_oauth
+  capabilities: [read]
+  docs_url: https://context7.com/docs/resources/all-clients
