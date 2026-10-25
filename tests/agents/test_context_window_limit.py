@@ -186,6 +186,23 @@ class TestAgentBudgets:
             agent.llm.answered_by.append({"model": "primary", "provider": "openai", "fallback": False})
             assert agent._over_model_threshold(messages) is True
 
+    def test_a_byom_fallback_is_measured_by_its_registry_id(self, make, monkeypatch):
+        """``model_id`` is the upstream name; the registry knows a BYOM model by its UUID."""
+        from types import SimpleNamespace
+
+        small = 30_000
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_token_limit",
+            lambda model_id, user_id=None: small if model_id == "byom-uuid" else WINDOW,
+        )
+        agent = make(limit=None)
+        agent.llm._fallback_llm = SimpleNamespace(
+            model_id="llama3:70b", _canonical_model_id="byom-uuid", model_user_id="owner"
+        )
+        agent.llm.answered_by = [{"model": "llama3:70b", "provider": "openai", "fallback": True}]
+        with patch.object(agent, "_calculate_current_context_tokens", return_value=int(small * 0.9)):
+            assert agent._over_model_threshold([{"role": "user", "content": "hi"}]) is True
+
     def test_a_larger_fallback_keeps_the_primary_threshold(self, make, monkeypatch):
         from types import SimpleNamespace
 

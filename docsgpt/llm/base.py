@@ -315,7 +315,7 @@ class BaseLLM(ABC):
                 # Native parts the token counter cannot see (file ids, images).
                 estimated += int(dispatch.usage_tokens(messages) or 0)
             limit = get_token_limit(
-                fallback.model_id,
+                getattr(fallback, "_canonical_model_id", None) or fallback.model_id,
                 user_id=getattr(fallback, "model_user_id", None),
             )
             # 10% slack: the tiktoken estimate over-counts vs provider
@@ -455,11 +455,16 @@ class BaseLLM(ABC):
         return prepared
 
     def _model_window(self, llm) -> Optional[int]:
-        """The context window of ``llm``'s model, or None when unknown."""
+        """The context window of ``llm``'s model, or None when unknown.
+
+        Looked up by the registry id: ``model_id`` is the upstream name, and
+        the registry knows a BYOM model only by its UUID.
+        """
         try:
             from docsgpt.core.model_utils import get_token_limit
 
-            return int(get_token_limit(llm.model_id, user_id=getattr(llm, "model_user_id", None)))
+            model_id = getattr(llm, "_canonical_model_id", None) or llm.model_id
+            return int(get_token_limit(model_id, user_id=getattr(llm, "model_user_id", None)))
         except Exception:
             return None
 

@@ -1152,6 +1152,20 @@ class TestFallbackPayloadSizeGate:
             list(primary.gen_stream(**self.BIG_ARGS))
         assert backup.gen_stream_called is False
 
+    def test_a_byom_fallback_is_measured_by_its_registry_id(
+        self, monkeypatch, patch_model_utils
+    ):
+        backup = FakeLLM(responses=["backup ok"])
+        backup._canonical_model_id = "byom-uuid"
+        primary = self._primary_with_backup(patch_model_utils, backup)
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_token_limit",
+            lambda mid, user_id=None: 10 if mid == "byom-uuid" else 100000,
+        )
+        with pytest.raises(RuntimeError, match="primary model unavailable"):
+            primary.gen(**self.BIG_ARGS)
+        assert backup.gen_called is False
+
     def test_fallback_proceeds_when_payload_fits(
         self, monkeypatch, patch_model_utils
     ):

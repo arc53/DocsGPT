@@ -1257,7 +1257,11 @@ class BaseAgent(ABC):
             ):
                 window = min(
                     window,
-                    get_token_limit(fallback.model_id, user_id=getattr(fallback, "model_user_id", None)),
+                    # ``model_id`` is the upstream name; the registry knows BYOM models by UUID.
+                    get_token_limit(
+                        getattr(fallback, "_canonical_model_id", None) or fallback.model_id,
+                        user_id=getattr(fallback, "model_user_id", None),
+                    ),
                 )
             threshold = int(window * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
             return self._calculate_current_context_tokens(messages) >= threshold
