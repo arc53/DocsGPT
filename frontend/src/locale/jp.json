@@ -2254,7 +2254,9 @@
           "selectedFiles": "選択された項目",
           "selectFiles": "ファイルまたはフォルダを選択",
           "noFilesSelected": "まだファイルやフォルダが選択されていません。",
-          "removeItem": "{{name}} を削除"
+          "removeItem": "{{name}} を削除",
+          "shareFolders": "これらのフォルダを同期するには、Google ドライブでそれぞれを閲覧者として次のアドレスと共有してください:",
+          "filesOnly": "このサーバーはフォルダ全体ではなくファイルを同期します。ピッカーでフォルダを開いて、中のファイルを選んでください。"
         }
       },
       "fields": {
