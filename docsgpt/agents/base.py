@@ -1800,13 +1800,24 @@ class BaseAgent(ABC):
         reserved = self.attachment_plan.reserved_tokens if self.attachment_plan else 0
         self._sync_attachments_tool()
 
+        # Stops once no document is left: a searched turn's "nothing matched"
+        # note stays whatever its size, so it cannot end the loop by itself.
+        shed_from = len(getattr(self, "retrieved_docs", None) or [])
         while (
             document_block
+            and getattr(self, "retrieved_docs", None)
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
             > max_turn_tokens - reserved
         ):
             self.retrieved_docs = drop_least_relevant(self.retrieved_docs)
             document_block = self._build_document_block()
+        if shed_from and not getattr(self, "retrieved_docs", None):
+            logger.info(
+                "All %d retrieved documents were shed: the question and system prompt leave no room "
+                "for them within %s tokens",
+                shed_from,
+                f"{context_limit:,}",
+            )
 
         user_content = self._compose_user_turn(document_block, query)
         user_tokens = num_tokens_from_string(user_content)

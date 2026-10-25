@@ -181,6 +181,30 @@ class TestAgentBudgets:
         assert 0 < len(capped.retrieved_docs) < len(docs)
         assert len(uncapped.retrieved_docs) == len(docs)
 
+    def test_shedding_stops_when_no_documents_are_left(self, make):
+        """A searched turn keeps its "nothing matched" note, which shedding cannot remove.
+
+        A question between the limit's turn budget and the model's used to
+        spin forever, dropping documents from an empty list.
+        """
+        from docsgpt.agents import base as agent_base
+
+        real_drop = agent_base.drop_least_relevant
+
+        def drop(docs):
+            assert docs, "shed from an empty document list"
+            return real_drop(docs)
+
+        docs = [{"text": _words(3000), "title": f"d{i}", "source": f"s{i}"} for i in range(3)]
+        agent = make(retrieved_docs=docs, sources_were_searched=True)
+        query = _words(int(LIMIT * 1.1))
+        with patch.object(agent_base, "drop_least_relevant", side_effect=drop):
+            messages = agent._build_messages("sys", query)
+
+        assert agent.retrieved_docs == []
+        assert agent.EMPTY_RETRIEVAL_NOTE in messages[-1]["content"]
+        assert query in messages[-1]["content"]
+
     def test_a_message_longer_than_the_limit_is_still_sent(self, make):
         """The limit is a budget, not a refusal: a message the model can take is never failed by it."""
         query = _words(LIMIT * 2)
