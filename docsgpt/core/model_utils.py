@@ -155,6 +155,33 @@ def get_token_limit(model_id: str, user_id: Optional[str] = None) -> int:
     return settings.DEFAULT_LLM_TOKEN_LIMIT
 
 
+def get_context_budget(
+    model_id: str,
+    user_id: Optional[str] = None,
+    context_window_limit: Optional[int] = None,
+) -> int:
+    """Tokens a request may fill: the model's window, lowered to the agent's context limit.
+
+    Budgets (compression threshold, history, documents, attachments) read
+    this. Checks of what the provider will accept keep ``get_token_limit``:
+    the limit is a cost target, so it never refuses a request the model can
+    take.
+
+    Args:
+        model_id: The model the request runs on.
+        user_id: BYOM-resolution scope, as for ``get_token_limit``.
+        context_window_limit: The agent's ``config.context_window_limit``;
+            None, or one at or above the window, leaves the window as it is.
+
+    Returns:
+        The budget in tokens.
+    """
+    window = get_token_limit(model_id, user_id=user_id)
+    if context_window_limit and context_window_limit < window:
+        return int(context_window_limit)
+    return window
+
+
 def get_base_url_for_model(
     model_id: str, user_id: Optional[str] = None
 ) -> Optional[str]:
