@@ -252,6 +252,33 @@ class TestExecuteJournaling:
         assert row["status"] == "failed"
         assert row["error"] == "SoftTimeLimitExceeded()"
 
+    def test_time_limit_after_the_tool_ran_journals_it_executed(
+        self, pg_conn, mock_tool_manager, monkeypatch
+    ):
+        """Post-processing cut by the time limit: the side effect happened, so the row says so."""
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        executor = ToolExecutor(user="u")
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(
+                parse_args=Mock(return_value=("t1", "test_action", {}))
+            ),
+        )
+        _patch_db(monkeypatch, pg_conn)
+        mock_tool_manager.load_tool.return_value.get_artifact_id = Mock(
+            side_effect=SoftTimeLimitExceeded()
+        )
+
+        gen = executor.execute(_TOOLS_DICT, _make_call(call_id="c4"), "MockLLM")
+        with pytest.raises(SoftTimeLimitExceeded):
+            _drain(gen)
+
+        row = _select_attempt(pg_conn, "c4")
+        assert row is not None
+        assert row["status"] == "confirmed"
+        assert row["result"] == {"result": "Tool result"}
+
 
 @pytest.mark.unit
 class TestRepository:

@@ -403,8 +403,8 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
             _settle(wakes, "failed", job_state="pending", error="the continuation's message could not be saved")
             return {"state": "superseded_by_user" if saved is MessageUpdateOutcome.NOT_FOUND else "failed"}
     _link_turn(message_id, outcome)
-    if outcome.get("error_type") == "TimeLimit" and not answer:
-        # No answer reached the user: the results stay deliverable to their next message.
+    if outcome.get("error_type") == "TimeLimit":
+        # A failed message is left out of replay, so the results stay deliverable to the user's next message.
         _settle(wakes, "failed", job_state="pending", error="Stopped: time limit.")
     else:
         _settle(wakes, "delivered", message_id=message_id)

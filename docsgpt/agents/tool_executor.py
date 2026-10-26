@@ -2222,13 +2222,42 @@ class ToolExecutor:
                 yield from self._handed_off(tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome)
             )
 
+        def journal_executed(artifact_id: Optional[str] = None) -> str:
+            # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
+            exposed = self.exposed_secrets()
+            result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
+            # Tool side effect has run; flip the journal row so the
+            # message-finalize path can later confirm it. If the proposed
+            # write failed (DB outage), upsert a fresh row in ``executed`` so
+            # the reconciler still sees the side effect.
+            _mark_executed(
+                call_id,
+                result_full,
+                message_id=self.message_id,
+                artifact_id=artifact_id,
+                proposed_ok=proposed_ok,
+                tool_name=tool_data["name"],
+                action_name=action_name,
+                arguments=call_args,
+                tool_id=tool_data.get("id"),
+                user_id=self.user,
+                agent_id=self.agent_id,
+            )
+            return result_full
+
         # Single fan-out point: from here ``result`` reaches the LLM copy,
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
         result = sanitize_tool_result(result)
         # Read before the scan: a redacted dict comes back as text.
         status = result_status(result)
-        result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
+        try:
+            result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                # The tool already ran: a time limit here must not leave it reading as never run.
+                journal_executed()
+            raise
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
 
@@ -2238,6 +2267,7 @@ class ToolExecutor:
                 artifact_id = get_artifact_id(action_name, **parameters)
             except Exception as exc:
                 if is_budget_exhausted(exc):
+                    journal_executed()
                     raise
                 logger.exception(
                     "Failed to extract artifact_id from tool %s for action %s",
@@ -2278,6 +2308,7 @@ class ToolExecutor:
                 ]
             except Exception as exc:
                 if is_budget_exhausted(exc):
+                    journal_executed(artifact_id or None)
                     raise
                 logger.exception(
                     "Failed to extract artifacts from tool %s for action %s",
@@ -2286,33 +2317,13 @@ class ToolExecutor:
                 )
             if artifacts:
                 tool_call_data["artifacts"] = artifacts
-        # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
-        exposed = self.exposed_secrets()
-        result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
+        result_full = journal_executed(artifact_id or None)
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
         tool_call_data["result"] = truncate_tool_result(result_full)
         # A tool that ran but reported failure in-band persists as ``error``,
         # not ``completed`` -- the model saw an error and will likely retry.
         tool_call_data["status"] = status
-
-        # Tool side effect has run; flip the journal row so the
-        # message-finalize path can later confirm it. If the proposed
-        # write failed (DB outage), upsert a fresh row in ``executed`` so
-        # the reconciler still sees the side effect.
-        _mark_executed(
-            call_id,
-            result_full,
-            message_id=self.message_id,
-            artifact_id=artifact_id or None,
-            proposed_ok=proposed_ok,
-            tool_name=tool_data["name"],
-            action_name=action_name,
-            arguments=call_args,
-            tool_id=tool_data.get("id"),
-            user_id=self.user,
-            agent_id=self.agent_id,
-        )
 
         stream_tool_call_data = {
             key: value for key, value in tool_call_data.items() if key not in {"result_full", "resolved_arguments"}
