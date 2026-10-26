@@ -1638,6 +1638,13 @@ def remote_worker(
                 # One download at a time per connection: sources added together
                 # would otherwise share out its account's API rate limit.
                 with connection_fetch_lock(str(connection_id)):
+                    # Read the credentials again: the connection may have been
+                    # removed or its token replaced while this waited.
+                    loader_input = _with_connection_credentials(source_data, connection_id)
+                    if loader_input is None:
+                        from docsgpt.connectors.service import ConnectionUnavailable
+
+                        raise ConnectionUnavailable("Reconnect to continue", connection_id=str(connection_id))
                     raw_docs = remote_loader.load_data(loader_input)
             else:
                 raw_docs = remote_loader.load_data(loader_input)

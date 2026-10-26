@@ -125,6 +125,7 @@ export default function RepoPicker({
             : error === 'rate_limited' && retryAt
               ? t('settings.connectors.github.rateLimited', {
                   time: formatClock(new Date(retryAt)),
+                  interpolation: { escapeValue: false },
                 })
               : t('settings.connectors.github.loadFailed')
         }

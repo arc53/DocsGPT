@@ -142,3 +142,48 @@ class TestArchiveIngest:
                    return_value=_archive_response(b"", status=401)):
             with pytest.raises(GitHubTokenRejected):
                 loader.load_data({"repo_url": "owner/repo", "access_token": "revoked"})
+
+    def test_a_short_secondary_limit_on_the_archive_is_waited_out(self, monkeypatch):
+        body = _tarball({"README.md": b"# Repo"})
+        limited = _archive_response(b"", status=429, headers={"Retry-After": "5"})
+        loader = _loader(monkeypatch)
+        with patch("docsgpt.parser.remote.github_loader.requests.get",
+                   side_effect=[limited, _archive_response(body)]) as get, \
+                patch("docsgpt.parser.remote.github_loader.time.sleep") as sleep:
+            docs = loader.load_data("owner/repo")
+        sleep.assert_called_once_with(5)
+        assert get.call_count == 2
+        assert [d.doc_id for d in docs] == ["README.md"]
+
+    def test_a_dropped_download_falls_back_to_per_file_fetches(self, monkeypatch):
+        import urllib3
+
+        class Dropped(io.BytesIO):
+            def read(self, size=-1):
+                raise urllib3.exceptions.ProtocolError("Connection broken")
+
+        response = _archive_response(b"")
+        response.raw = Dropped()
+        loader = GitHubLoader()
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+        monkeypatch.setattr(loader, "fetch_repo_tree", lambda repo, branch: ([("README.md", 5)], False))
+        monkeypatch.setattr(loader, "fetch_file_content", lambda repo, path: "from the API")
+        with patch("docsgpt.parser.remote.github_loader.requests.get", return_value=response):
+            docs = loader.load_data("owner/repo")
+        assert [d.text for d in docs] == ["from the API"]
+
+
+@pytest.mark.unit
+class TestInstanceTokenVisibilityCheck:
+    def test_a_short_secondary_limit_is_waited_out(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GITHUB_ACCESS_TOKEN", "instance-token")
+        loader = GitHubLoader()
+        public = MagicMock(status_code=200, headers={})
+        public.json.return_value = {"private": False, "visibility": "public"}
+        with patch("docsgpt.parser.remote.github_loader.requests.get",
+                   side_effect=[_archive_response(b"", status=429, headers={"Retry-After": "3"}), public]), \
+                patch("docsgpt.parser.remote.github_loader.time.sleep") as sleep:
+            loader.ensure_instance_token_allowed("owner/repo")
+        sleep.assert_called_once_with(3)

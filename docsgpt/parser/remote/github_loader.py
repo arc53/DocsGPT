@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
+import urllib3
 
 from docsgpt.core.settings import settings
 from docsgpt.parser.remote.base import BaseRemote
@@ -119,6 +120,17 @@ def rate_limit_reset(response: Any, now: Optional[datetime.datetime] = None) -> 
     return None
 
 
+def _wait_out_short_limit(reset_at: datetime.datetime) -> bool:
+    """Sleep until ``reset_at`` and return True when that is at most ``RATE_LIMIT_MAX_WAIT_SECONDS`` away."""
+    wait = math.ceil((reset_at - _utcnow()).total_seconds())
+    if wait > RATE_LIMIT_MAX_WAIT_SECONDS:
+        return False
+    wait = max(1, wait)
+    logger.warning("GitHub rate limit hit, waiting %s seconds before retry...", wait)
+    time.sleep(wait)
+    return True
+
+
 class _ArchiveTooLarge(Exception):
     """The repository tarball passed ``GITHUB_INGEST_MAX_ARCHIVE_BYTES``."""
 
@@ -202,10 +214,7 @@ class GitHubLoader(BaseRemote):
             # public repositories).
             return
         url = f"https://api.github.com/repos/{repo_name}"
-        response = requests.get(url, headers=self.headers, timeout=30)
-        reset_at = rate_limit_reset(response)
-        if reset_at is not None:
-            raise GitHubRateLimited(reset_at)
+        response = self._get_waiting_out_short_limit(url, timeout=30)
         if response.status_code == 401:
             # A stale instance token: public repositories still read anonymously.
             logger.warning("GitHub rejected GITHUB_ACCESS_TOKEN (401); reading %s anonymously", repo_name)
@@ -497,11 +506,7 @@ class GitHubLoader(BaseRemote):
                 return response
             reset_at = rate_limit_reset(response)
             if reset_at is not None:
-                wait = math.ceil((reset_at - _utcnow()).total_seconds())
-                if wait <= RATE_LIMIT_MAX_WAIT_SECONDS and attempt < max_retries - 1:
-                    wait = max(1, wait)
-                    logger.warning("GitHub rate limit hit, waiting %s seconds before retry...", wait)
-                    time.sleep(wait)
+                if attempt < max_retries - 1 and _wait_out_short_limit(reset_at):
                     continue
                 raise GitHubRateLimited(reset_at)
             if response.status_code == 403:
@@ -526,6 +531,24 @@ class GitHubLoader(BaseRemote):
                 return anon_response
             response.raise_for_status()
 
+        return response
+
+    def _get_waiting_out_short_limit(self, url: str, timeout: int, stream: bool = False) -> requests.Response:
+        """GET ``url`` once, or twice when a rate limit clears within ``RATE_LIMIT_MAX_WAIT_SECONDS``.
+
+        Raises:
+            GitHubRateLimited: The limit lasts longer, or is still in place
+                after the wait.
+        """
+        response = requests.get(url, headers=self.headers, timeout=timeout, stream=stream)
+        reset_at = rate_limit_reset(response)
+        if reset_at is not None and _wait_out_short_limit(reset_at):
+            response.close()
+            response = requests.get(url, headers=self.headers, timeout=timeout, stream=stream)
+            reset_at = rate_limit_reset(response)
+        if reset_at is not None:
+            response.close()
+            raise GitHubRateLimited(reset_at)
         return response
 
     def _forbidden_message(self, response: requests.Response) -> str:
@@ -692,15 +715,12 @@ class GitHubLoader(BaseRemote):
             return None
         url = f"https://api.github.com/repos/{repo_name}/tarball/{branch}"
         try:
-            response = requests.get(url, headers=self.headers, timeout=100, stream=True)
+            response = self._get_waiting_out_short_limit(url, timeout=100, stream=True)
         except requests.RequestException as e:
             logger.warning("Could not download the %s archive (%s); fetching files one by one", repo_name, e)
             return None
         try:
             if response.status_code != 200:
-                reset_at = rate_limit_reset(response)
-                if reset_at is not None:
-                    raise GitHubRateLimited(reset_at)
                 if response.status_code == 401 and self._user_token:
                     raise GitHubTokenRejected("GitHub rejected the connection's token. Reconnect GitHub to continue.")
                 logger.warning(
@@ -710,7 +730,9 @@ class GitHubLoader(BaseRemote):
                 return None
             try:
                 texts = self._archive_texts(response.raw, max_archive)
-            except (_ArchiveTooLarge, tarfile.TarError, OSError, EOFError) as e:
+            # ``raw.read`` raises urllib3's own errors (a reset connection, a
+            # read timeout); ``requests`` wraps those only in ``iter_content``.
+            except (_ArchiveTooLarge, tarfile.TarError, OSError, EOFError, urllib3.exceptions.HTTPError) as e:
                 logger.warning("Could not read the %s archive (%s); fetching files one by one", repo_name, e)
                 return None
         finally:

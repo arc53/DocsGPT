@@ -582,6 +582,22 @@ class TestScheduledSync:
                 worker.remote_worker(task, "acme/r", "repo", "alice", "github", connection_id="c-1")
         assert events == [("locked", "c-1"), ("fetch",), ("released", "c-1")]
 
+    def test_the_credentials_are_read_again_after_the_lock_wait(self, pg_conn):
+        """A connection removed while its ingest waited for the lock is not fetched with old credentials."""
+        from docsgpt import worker
+        from docsgpt.connectors.service import ConnectionUnavailable
+
+        loader = MagicMock()
+        task = MagicMock()
+        task.request.retries = 1
+        with patch.object(worker.RemoteCreator, "create_loader", return_value=loader), patch.object(
+            worker, "_with_connection_credentials",
+            side_effect=[{"url": "acme/r", "access_token": "t"}, None],
+        ), patch.object(worker, "publish_user_event"):
+            with pytest.raises(ConnectionUnavailable):
+                worker.remote_worker(task, "acme/r", "repo", "alice", "github", connection_id="c-1")
+        loader.load_data.assert_not_called()
+
     def test_a_rate_limit_fails_with_the_reset_time(self, pg_conn):
         import datetime
 
