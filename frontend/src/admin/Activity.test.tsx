@@ -143,6 +143,19 @@ describe('Activity toolbar', () => {
       .map((tr) => tr.querySelectorAll('td')[3] as HTMLElement);
   };
 
+  it('still names an actor repeated from the row above, muted', async () => {
+    feed.current = [row('1', 'dana'), row('2', 'dana'), row('3', 'lena')];
+    const cells = await actorCells();
+    expect(cells.map((td) => td.textContent)).toEqual([
+      'dana@example.comdana',
+      'dana@example.comdana',
+      'lena@example.comlena',
+    ]);
+    expect(cells[0].className).not.toContain('text-muted-foreground');
+    expect(cells[1].className).toContain('text-muted-foreground');
+    expect(cells[2].className).not.toContain('text-muted-foreground');
+  });
+
   it('shows a dash for each row without an actor', async () => {
     feed.current = [row('1', null), row('2', null)];
     const cells = await actorCells();
