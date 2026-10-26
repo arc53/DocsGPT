@@ -2252,7 +2252,7 @@ class ToolExecutor:
         def keep_interrupted(
             artifact_id: Optional[str] = None, stored: Optional[str] = None, call_status: Optional[str] = None
         ) -> None:
-            # The tool ran before a time limit: journal it executed and keep it in the turn's saved calls.
+            """Journal a call a time limit cut after it ran as executed, and keep it in the turn's saved calls."""
             result_full = journal_executed(artifact_id, stored)
             tool_call_data["resolved_arguments"] = resolved_arguments
             tool_call_data["result_full"] = result_full
