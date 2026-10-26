@@ -373,7 +373,9 @@ export default function Activity() {
                   // De-emphasize an actor repeated from the row above (ditto),
                   // so distinct actors stand out in a long single-user stream.
                   const repeat =
-                    idx > 0 && rows[idx - 1].actor_id === row.actor_id;
+                    idx > 0 &&
+                    row.actor_id !== null &&
+                    rows[idx - 1].actor_id === row.actor_id;
                   return [
                     <TableRow key={key}>
                       <TableCell>

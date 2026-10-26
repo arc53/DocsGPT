@@ -115,4 +115,37 @@ describe('Activity toolbar', () => {
     expect(texts).toContain('admin@example.comsub-admin');
     expect(texts).toContain('sub-user');
   });
+
+  const row = (id: string, actorId: string | null) => ({
+    feed: 'auth',
+    id,
+    event: 'role_granted',
+    category: 'access',
+    actor_id: actorId,
+    actor_email: actorId ? `${actorId}@example.com` : null,
+    target_id: null,
+    target_email: null,
+    ip: null,
+    user_agent: null,
+    outcome: null,
+    detail: {},
+    created_at: '2026-01-01T00:00:00Z',
+  });
+
+  const actorCells = async () => {
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    for (let i = 0; i < 3; i += 1) await act(async () => Promise.resolve());
+    // Data rows have the expand button; detail rows don't. Actor is column 4.
+    return Array.from(container.querySelectorAll('tbody tr'))
+      .filter((tr) => tr.querySelector('button'))
+      .map((tr) => tr.querySelectorAll('td')[3] as HTMLElement);
+  };
+
+  it('shows a dash for each row without an actor', async () => {
+    feed.current = [row('1', null), row('2', null)];
+    const cells = await actorCells();
+    expect(cells.map((td) => td.textContent)).toEqual(['—', '—']);
+  });
 });
