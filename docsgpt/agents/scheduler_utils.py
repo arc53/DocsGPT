@@ -10,7 +10,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from croniter import croniter
 
 
-_DELAY_RE = re.compile(r"^\s*(\d+)\s*(s|m|h|d)\s*$", re.IGNORECASE)
+# One or more ``<amount><unit>`` parts, largest unit first by convention but
+# not enforced: ``30m``, ``1h20m``, ``2d 4h``.
+_DELAY_RE = re.compile(r"^\s*(?:\d+\s*[smhd]\s*)+$", re.IGNORECASE)
+_DELAY_PART_RE = re.compile(r"(\d+)\s*([smhd])", re.IGNORECASE)
 _DELAY_MULTIPLIERS = {"s": 1, "m": 60, "h": 3600, "d": 86_400}
 
 
@@ -174,18 +177,20 @@ def _local_midnight(day: date, tz: ZoneInfo) -> datetime:
 
 
 def parse_delay(delay: str) -> timedelta:
-    """Parse a duration like ``30m`` / ``2h`` / ``1d`` into a timedelta."""
+    """Parse a duration like ``30m`` / ``2h`` / ``1h20m`` into a timedelta."""
     if not isinstance(delay, str):
         raise ScheduleValidationError("delay must be a string like '30m' or '2h'.")
-    match = _DELAY_RE.match(delay)
-    if not match:
+    if not _DELAY_RE.match(delay):
         raise ScheduleValidationError(
-            "delay must look like '30s', '15m', '2h', or '1d'."
+            "delay must look like '30s', '15m', '2h', '1d', or a combination such as '1h30m'."
         )
-    amount, unit = int(match.group(1)), match.group(2).lower()
-    if amount <= 0:
+    seconds = sum(
+        int(amount) * _DELAY_MULTIPLIERS[unit.lower()]
+        for amount, unit in _DELAY_PART_RE.findall(delay)
+    )
+    if seconds <= 0:
         raise ScheduleValidationError("delay must be positive.")
-    return timedelta(seconds=amount * _DELAY_MULTIPLIERS[unit])
+    return timedelta(seconds=seconds)
 
 
 def parse_run_at(run_at: str, tz_name: Optional[str] = None) -> datetime:

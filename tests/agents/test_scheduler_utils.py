@@ -180,12 +180,34 @@ class TestParseDelay:
     def test_uppercase(self):
         assert parse_delay("2H").total_seconds() == 7200
 
+    @pytest.mark.parametrize(
+        "raw,seconds",
+        [
+            ("1h20m", 4800),
+            ("2d4h", 187_200),
+            ("1h 30m", 5400),
+            ("1H30M15S", 5415),
+            ("90m", 5400),
+        ],
+    )
+    def test_compound(self, raw, seconds):
+        assert parse_delay(raw).total_seconds() == seconds
+
     def test_zero_rejected(self):
         with pytest.raises(ScheduleValidationError):
             parse_delay("0m")
 
-    def test_garbage(self):
+    def test_zero_compound_rejected(self):
         with pytest.raises(ScheduleValidationError):
+            parse_delay("0h0m")
+
+    @pytest.mark.parametrize("raw", ["two hours", "", "1h20", "h20m", "1x", "-5m", "1.5h"])
+    def test_garbage(self, raw):
+        with pytest.raises(ScheduleValidationError):
+            parse_delay(raw)
+
+    def test_error_names_compound_form(self):
+        with pytest.raises(ScheduleValidationError, match="1h30m"):
             parse_delay("two hours")
 
 

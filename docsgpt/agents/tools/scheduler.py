@@ -82,7 +82,7 @@ class SchedulerTool(Tool):
                 "name": "schedule_task",
                 "description": (
                     "Schedule a one-time task. Provide either a `delay` "
-                    "(e.g. '30m', '2h', '1d') from now, or a `run_at` ISO-8601 "
+                    "(e.g. '30m', '2h', '1d', '1h20m') from now, or a `run_at` ISO-8601 "
                     "absolute time. Optionally pass an IANA `timezone` to resolve "
                     "naive run_at values. The instruction is the task that will "
                     "execute at fire time (including delivery, e.g. 'send to my "
@@ -98,7 +98,7 @@ class SchedulerTool(Tool):
                         },
                         "delay": {
                             "type": "string",
-                            "description": "Duration like '30m', '2h', '1d'.",
+                            "description": "Duration like '30m', '2h', '1d', or combined like '1h20m'.",
                         },
                         "run_at": {
                             "type": "string",
