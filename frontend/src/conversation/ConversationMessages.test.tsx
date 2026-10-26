@@ -13,11 +13,13 @@ vi.mock('./ConversationBubble', () => ({
     errorAction,
     conversationArtifacts,
     onOpenArtifact,
+    toolCalls,
   }: {
     message?: string;
     retryBtn?: React.ReactNode;
     errorCode?: string;
     errorAction?: React.ReactNode;
+    toolCalls?: { call_id: string }[];
     conversationArtifacts?: { id: string }[];
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   }) => (
@@ -25,6 +27,9 @@ vi.mock('./ConversationBubble', () => ({
       {message}
       {retryBtn}
       {errorAction}
+      {toolCalls?.map((call) => (
+        <span key={call.call_id}>{call.call_id}</span>
+      ))}
       {conversationArtifacts?.length && onOpenArtifact ? (
         <button
           data-testid="open-artifact"
@@ -295,4 +300,33 @@ describe('ConversationMessages', () => {
     act(() => buttons[1].click());
     expect(open).toHaveBeenCalledWith({ id: 'a1', toolName: 'code_executor' });
   });
+
+  it.each([
+    '',
+    'Response was terminated prior to completion, try regenerating.',
+  ])(
+    'shows saved calls when a time-limited turn has no answer text: %s',
+    (response) => {
+      render([
+        {
+          prompt: 'q',
+          response,
+          error: 'Stopped: time limit.',
+          errorCode: 'time_limit',
+          tool_calls: [
+            {
+              call_id: 'saved-call',
+              tool_name: 'code_executor',
+              action_name: 'run_code',
+              arguments: {},
+              status: 'completed',
+            },
+          ],
+        },
+      ]);
+      expect(container.textContent).toContain('saved-call');
+      expect(container.textContent).not.toContain('Response was terminated');
+      expect(container.textContent).toContain('conversation.errors.timeLimit');
+    },
+  );
 });

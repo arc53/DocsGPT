@@ -209,14 +209,21 @@ export default function ConversationMessages({
         query.attachments?.length
           ? query.attachments
           : null;
+      const partialResponse =
+        query.response === TERMINATED_RESPONSE_PLACEHOLDER
+          ? ''
+          : query.response;
+      const hasPartialProgress =
+        partialResponse ||
+        query.thought ||
+        query.tool_calls?.length ||
+        query.workflow_run_id;
       return (
         <Fragment key={`${index}-ERROR`}>
-          {query.errorCode === 'time_limit' &&
-          query.response &&
-          query.response !== TERMINATED_RESPONSE_PLACEHOLDER ? (
+          {query.errorCode === 'time_limit' && hasPartialProgress ? (
             <ConversationBubble
               className={bubbleMargin}
-              message={query.response}
+              message={partialResponse}
               type="ANSWER"
               thought={query.thought}
               sources={query.sources}

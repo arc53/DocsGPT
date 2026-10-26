@@ -83,7 +83,6 @@ class TestLiveHeadlessRun:
         assert outcome["error_type"] == "TimeLimit"
         assert outcome["tool_calls"] == [{"call_id": "c1", "job_id": "j1"}]
 
-
     def test_scheduled_time_limit_reaches_its_existing_outer_handler(self, monkeypatch):
         from celery.exceptions import SoftTimeLimitExceeded
 
@@ -93,3 +92,18 @@ class TestLiveHeadlessRun:
 
         with pytest.raises(SoftTimeLimitExceeded):
             _run(monkeypatch, events(), endpoint="scheduled")
+
+    def test_time_limit_in_observer_keeps_current_chunk_and_closes_the_agent(self, monkeypatch):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        def observer(event):
+            if event == {"answer": "b"}:
+                raise SoftTimeLimitExceeded()
+
+        outcome, closed = _run(
+            monkeypatch, [{"answer": "a"}, {"answer": "b"}, {"answer": "unread"}],
+            endpoint="continuation", on_event=observer,
+        )
+        assert outcome["answer"] == "ab"
+        assert outcome["error_type"] == "TimeLimit"
+        assert closed == [True]

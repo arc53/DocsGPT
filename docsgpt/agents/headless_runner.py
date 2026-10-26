@@ -453,13 +453,6 @@ def _run_agent_headless(
         for event in events:
             if not isinstance(event, dict):
                 continue
-            if on_event is not None:
-                try:
-                    on_event(event)
-                except Exception as exc:
-                    if is_budget_exhausted(exc):
-                        raise
-                    logger.exception("Headless run for agent %s: its event observer failed", agent_id)
             # ``Agent.gen`` reports a failed stream with an error event rather than
             # by raising. Dropping it here (as this loop used to) makes a broken run
             # indistinguishable from one that simply had nothing to say, and the
@@ -496,6 +489,29 @@ def _run_agent_headless(
                 thought += str(event["thought"])
             elif isinstance(event.get("metadata"), dict):
                 message_metadata.update(event["metadata"])
+            # Keep the yielded event even if its journal observer times out.
+            if on_event is not None:
+                try:
+                    on_event(event)
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        # Unwind a generator paused at its yield, so its activity
+                        # and tracing handlers see the time limit as well.
+                        throw = getattr(events, "throw", None)
+                        if callable(throw):
+                            try:
+                                throw(exc)
+                            except Exception as interrupted:
+                                if not is_budget_exhausted(interrupted):
+                                    logger.debug("Agent cleanup after observer timeout failed", exc_info=True)
+                        close = getattr(events, "close", None)
+                        if callable(close):
+                            try:
+                                close()
+                            except Exception:
+                                logger.debug("Agent close after observer timeout failed", exc_info=True)
+                        raise
+                    logger.exception("Headless run for agent %s: its event observer failed", agent_id)
             # After every event, a tool call's included: the next one may start another LLM round.
             if should_stop is not None and should_stop():
                 stopped = True
