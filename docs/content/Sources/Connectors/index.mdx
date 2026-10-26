@@ -314,6 +314,8 @@ draw.io is a remote MCP preset that needs no account or credentials. Pick its ca
 
 CoinGecko is also a no-sign-in preset: pick its card and click **Connect**. Agents can then answer crypto questions with live prices, market caps, volumes, trending coins and price history. The server has two tools: its `search_docs` looks up CoinGecko SDK documentation (methods, parameters and request structure), and `execute` runs the TypeScript the agent writes against the CoinGecko SDK in a sandbox. The keyless server shares rate limits across all users, so heavy use can be throttled. See [CoinGecko's MCP server docs](https://docs.coingecko.com/docs/mcp-server).
 
+Canva's server covers designs end to end: search and read designs, pages and content, create and edit them, generate images, upload assets, organize folders, read and write comments, and export to PDF, PNG, JPG, PPTX or MP4. Brand kits, brand templates, autofill and resizing a design to new dimensions need Canva Pro or above; the rest works on a free account.
+
 ### Neon
 
 Neon's hosted MCP server at `https://mcp.neon.tech/mcp` gives agents tools for a Neon Postgres workspace: list projects and branches, describe schemas, inspect database health, and run SQL. Pick the card and sign in with your Neon account; nobody registers an OAuth app. Neon [recommends the server for development and testing](https://neon.com/docs/ai/neon-mcp-server) rather than production, so point it at development branches, keep production and personal data out, and review each call an agent proposes before it runs.
