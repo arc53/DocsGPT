@@ -21,8 +21,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from docsgpt import worker
+from docsgpt.parser import tokenization
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
+from tests.parser.counter_fakes import spy_cl100k
 
 
 @pytest.mark.unit
@@ -510,3 +512,49 @@ class TestSyncUsesTheSourcesConfig:
         assert result == {"status": "success"}
         assert captured["max_tokens"] == 400
         assert captured["min_tokens"] == 50
+
+
+@pytest.mark.unit
+class TestRemoteWorkerFileTokenCount:
+    def test_long_chunk_is_counted_in_bounded_windows(
+        self,
+        tmp_path,
+        task_self,
+        monkeypatch,
+        remote_pipeline,
+    ):
+        # Mostly whitespace, so the chunker can leave one chunk far longer than a window.
+        text = "a" + " \n\t" * 1_000 + "b"
+        remote_pipeline.loader.load_data.return_value = [
+            Document(text=text, extra_info={"file_path": "big.txt"}, doc_id="d1")
+        ]
+        identity_chunker = MagicMock(name="chunker")
+        identity_chunker.chunk.side_effect = lambda documents: documents
+        monkeypatch.setattr(
+            worker.ChunkerCreator, "create_chunker", lambda *args, **kwargs: identity_chunker
+        )
+        encoding = spy_cl100k(monkeypatch, window=256)
+        expected = tokenization.count_tokens_windowed(text)
+        encoding.encode_lengths.clear()
+
+        token_counts: list[int] = []
+        real_add = worker.add_file_to_structure
+
+        def _spy_add(*args, **kwargs):
+            token_counts.append(kwargs["token_count"])
+            return real_add(*args, **kwargs)
+
+        monkeypatch.setattr(worker, "add_file_to_structure", _spy_add)
+
+        worker.remote_worker(
+            task_self,
+            {"urls": ["http://example.com"]},
+            "feed",
+            "bob",
+            "crawler",
+            directory=str(tmp_path / "temp"),
+            operation_mode="upload",
+        )
+
+        assert token_counts == [expected]
+        assert max(encoding.encode_lengths) <= 2 * 256

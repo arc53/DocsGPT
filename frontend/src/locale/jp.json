@@ -1875,6 +1875,7 @@
       "descriptions": {
         "google_drive": "ドキュメント、スプレッドシート、PDF をナレッジに同期します。",
         "share_point": "SharePoint サイトと OneDrive のファイルをナレッジに同期します。",
+        "mcp_canva": "Canvaデザインの操作、エクスポート、ブランドテンプレートの利用を行います。",
         "confluence": "Confluence のスペースとページをナレッジに同期します。",
         "s3": "S3 バケットのドキュメントをナレッジに同期します。",
         "reddit": "検索条件に一致する Reddit の投稿をナレッジに同期します。",
@@ -1901,6 +1902,7 @@
         "mcp_context7": "ライブラリの最新ドキュメントとコード例を参照します。",
         "mcp_alphavantage": "株価、ファンダメンタルズ、為替、暗号資産、経済指標、マーケットニュースを調べます。",
         "mcp_neon": "Neon の Postgres プロジェクト、ブランチ、スキーマを調べ、SQL を実行します。",
+        "mcp_twelvedata": "株式、為替、暗号資産、ETF の相場、価格履歴、テクニカル指標、ファンダメンタルズを調べます。",
         "github": "リポジトリをナレッジに同期し、エージェントがコード、Issue、プルリクエストを読めるようにします。"
       },
       "empty": "まだ何も接続されていません。サービスを接続すると、コンテンツを同期したり、エージェントに新しいツールを提供したりできます。",
@@ -2017,6 +2019,7 @@
         "methodOauth": "{{name}} でサインイン",
         "methodToken": "アクセストークンを使用",
         "credentialsRejected": "{{name}} がこの認証情報を受け付けませんでした。確認してもう一度お試しください。",
+        "rateLimited": "{{name}} はこのアカウントからのリクエストを {{time}} まで制限しています。その後でもう一度お試しください。",
         "setupReconnect": "設定を完了するには、{{name}} にもう一度サインインしてください。",
         "setupDisabled": "管理者が {{name}} をオフにしたため、設定できません。",
         "toolsUnavailable": "{{name}} のツールに接続できませんでした。もう一度試すか、オフにして続行してください。",
@@ -2107,7 +2110,8 @@
         "searchRepositories": "リポジトリを検索",
         "repositories": "リポジトリ",
         "updated": "{{date}} に更新",
-        "loadFailed": "リポジトリを読み込めませんでした。"
+        "loadFailed": "リポジトリを読み込めませんでした。",
+        "rateLimited": "GitHub はこのアカウントからのリクエストを {{time}} まで制限しています。その後でもう一度お試しください。"
       },
       "linear": {
         "teams": "チーム",
@@ -2938,7 +2942,8 @@
         "selectDefaultModel": "デフォルトモデルを選択",
         "enterTokenLimit": "トークン制限を入力",
         "enterRequestLimit": "リクエスト制限を入力",
-        "contextLimitDefault": "モデルの既定値"
+        "contextLimitDefault": "モデルの既定値",
+        "historyLimitDefault": "コンテキスト上限の近くで要約"
       },
       "sourcePopup": {
         "title": "ナレッジを選択",
@@ -2986,8 +2991,15 @@
         "validJson": "有効なJSON",
         "invalidJson": "無効なJSON - 保存を有効にするには修正してください",
         "contextLimit": "コンテキスト上限",
-        "contextLimitDescription": "1回のリクエストでモデルに送る履歴・ドキュメント・ツール結果のトークン数の上限です。上限を超えないよう、古いメッセージは要約されます。空欄にするとモデルのコンテキストウィンドウ全体を使います。",
-        "contextLimitRange": "{{min, number}}～{{max, number}} トークンの範囲で入力するか、空欄にしてください。",
+        "contextLimitDescription": "1回のリクエストでモデルに送る履歴・ドキュメント・ツール結果のトークン数の上限です。上限を超えないよう、古いメッセージは要約されます。オフにするとモデルのコンテキストウィンドウ全体を使います。",
+        "contextLimitAboveWindow": "{{model}} のコンテキストウィンドウ（{{limit, number}} トークン）を超えているため、効果はありません。",
+        "limitRange": "{{min, number}}～{{max, number}} トークンの範囲で入力してください。",
+        "contextLimitTokens": "コンテキスト上限（トークン）",
+        "historyLimit": "履歴上限",
+        "historyLimitDescription": "1回のリクエストでそのまま送る過去メッセージのトークン数の上限です。超えると古いメッセージは要約され、最新のものは残ります。オフにするとコンテキスト上限の近くでのみ要約します。",
+        "historyLimitTokens": "履歴上限（トークン）",
+        "historyLimitBelowContext": "{{min, number}} トークン以上、コンテキスト上限（{{limit, number}}）未満で入力してください。",
+        "historyLimitAboveWindow": "{{model}} のコンテキストウィンドウ（{{limit, number}} トークン）以上のため、効果はありません。",
         "tokenLimiting": "トークン制限",
         "tokenLimitingDescription": "このエージェントが使用できる1日の合計トークン数を制限します",
         "requestLimiting": "リクエスト制限",

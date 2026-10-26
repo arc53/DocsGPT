@@ -1878,6 +1878,7 @@
       "descriptions": {
         "google_drive": "Sync Docs, Sheets and PDFs into Knowledge.",
         "share_point": "Sync files from SharePoint sites and OneDrive into Knowledge.",
+        "mcp_canva": "Work with Canva designs, export them and use brand templates.",
         "confluence": "Sync Confluence spaces and pages into Knowledge.",
         "s3": "Sync documents from an S3 bucket into Knowledge.",
         "reddit": "Sync Reddit posts that match your searches into Knowledge.",
@@ -1904,6 +1905,7 @@
         "mcp_context7": "Look up up-to-date documentation and code examples for libraries.",
         "mcp_alphavantage": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
         "mcp_neon": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
+        "mcp_twelvedata": "Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.",
         "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
@@ -2022,6 +2024,7 @@
         "methodOauth": "Sign in with {{name}}",
         "methodToken": "Use an access token",
         "credentialsRejected": "{{name}} did not accept these credentials. Check them and try again.",
+        "rateLimited": "{{name}} is limiting requests from this account until {{time}}. Try again after that.",
         "setupReconnect": "Sign in to {{name}} again to finish setting it up.",
         "setupDisabled": "An admin turned off {{name}}, so it can't be set up.",
         "toolsUnavailable": "{{name}}'s tools could not be reached. Try again, or turn them off to continue.",
@@ -2114,7 +2117,8 @@
         "searchRepositories": "Search repositories",
         "repositories": "Repositories",
         "updated": "Updated {{date}}",
-        "loadFailed": "Could not load your repositories."
+        "loadFailed": "Could not load your repositories.",
+        "rateLimited": "GitHub is limiting requests from this account until {{time}}. Try again after that."
       },
       "linear": {
         "teams": "Teams",
@@ -2953,7 +2957,8 @@
         "selectDefaultModel": "Select default model",
         "enterTokenLimit": "Enter token limit",
         "enterRequestLimit": "Enter request limit",
-        "contextLimitDefault": "Model default"
+        "contextLimitDefault": "Model default",
+        "historyLimitDefault": "Summarized near the context limit"
       },
       "sourcePopup": {
         "title": "Select knowledge",
@@ -3001,8 +3006,15 @@
         "validJson": "Valid JSON",
         "invalidJson": "Invalid JSON - fix to enable saving",
         "contextLimit": "Context limit",
-        "contextLimitDescription": "Most tokens of history, documents and tool results sent to the model per request. Older messages are summarized to stay under it. Leave empty for the model's full context window.",
-        "contextLimitRange": "Enter {{min, number}} to {{max, number}} tokens, or leave empty.",
+        "contextLimitDescription": "Most tokens of history, documents and tool results sent to the model per request. Older messages are summarized to stay under it. Off uses the model's full context window.",
+        "contextLimitAboveWindow": "Past the context window of {{model}} ({{limit, number}} tokens), so it has no effect.",
+        "limitRange": "Enter {{min, number}} to {{max, number}} tokens.",
+        "contextLimitTokens": "Context limit in tokens",
+        "historyLimit": "History limit",
+        "historyLimitDescription": "Most tokens of earlier messages sent word for word per request. Older ones past it are summarized and the latest kept. Off summarizes only near the context limit.",
+        "historyLimitTokens": "History limit in tokens",
+        "historyLimitBelowContext": "Enter at least {{min, number}} tokens, below the context limit of {{limit, number}}.",
+        "historyLimitAboveWindow": "At or past the context window of {{model}} ({{limit, number}} tokens), so it has no effect.",
         "tokenLimiting": "Token limiting",
         "tokenLimitingDescription": "Limit daily total tokens that can be used by this agent",
         "requestLimiting": "Request limiting",

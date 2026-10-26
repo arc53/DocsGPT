@@ -1945,6 +1945,7 @@
       "descriptions": {
         "google_drive": "Synchronisez Docs, Sheets et PDF dans Connaissances.",
         "share_point": "Synchronisez les fichiers des sites SharePoint et de OneDrive dans Connaissances.",
+        "mcp_canva": "Travaillez avec des designs Canva, exportez-les et utilisez des modèles de marque.",
         "confluence": "Synchronisez les espaces et pages Confluence dans Connaissances.",
         "s3": "Synchronisez les documents d’un bucket S3 dans Connaissances.",
         "reddit": "Synchronisez dans Connaissances les publications Reddit correspondant à vos recherches.",
@@ -1971,6 +1972,7 @@
         "mcp_airtable": "Recherchez, lisez et modifiez des enregistrements dans les bases Airtable.",
         "mcp_alphavantage": "Consultez cours boursiers, données fondamentales, devises, cryptos, indicateurs économiques et actualités des marchés.",
         "mcp_neon": "Explorez les projets, branches et schémas Neon Postgres, et exécutez du SQL.",
+        "mcp_twelvedata": "Consultez cotations, historique des cours, indicateurs techniques et données fondamentales des actions, devises, cryptos et ETF.",
         "github": "Synchronisez des dépôts dans Connaissances et laissez les agents lire le code, les tickets et les pull requests."
       },
       "empty": "Aucune connexion pour l’instant. Connectez un service pour synchroniser son contenu ou fournir de nouveaux outils aux agents.",
@@ -2093,6 +2095,7 @@
         "methodOauth": "Se connecter avec {{name}}",
         "methodToken": "Utiliser un jeton d’accès",
         "credentialsRejected": "{{name}} n’a pas accepté ces identifiants. Vérifiez-les et réessayez.",
+        "rateLimited": "{{name}} limite les requêtes de ce compte jusqu’à {{time}}. Réessayez ensuite.",
         "setupReconnect": "Reconnectez-vous à {{name}} pour terminer la configuration.",
         "setupDisabled": "Un administrateur a désactivé {{name}}, il ne peut donc pas être configuré.",
         "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez, ou désactivez-les pour continuer.",
@@ -2189,7 +2192,8 @@
         "searchRepositories": "Rechercher des dépôts",
         "repositories": "Dépôts",
         "updated": "Mis à jour {{date}}",
-        "loadFailed": "Impossible de charger vos dépôts."
+        "loadFailed": "Impossible de charger vos dépôts.",
+        "rateLimited": "GitHub limite les requêtes de ce compte jusqu’à {{time}}. Réessayez ensuite."
       },
       "linear": {
         "teams": "Équipes",
@@ -3040,7 +3044,8 @@
         "selectDefaultModel": "Sélectionner le modèle par défaut",
         "enterTokenLimit": "Saisissez la limite de jetons",
         "enterRequestLimit": "Saisissez la limite de requêtes",
-        "contextLimitDefault": "Valeur par défaut du modèle"
+        "contextLimitDefault": "Valeur par défaut du modèle",
+        "historyLimitDefault": "Résumé près de la limite de contexte"
       },
       "sourcePopup": {
         "title": "Sélectionner des connaissances",
@@ -3088,8 +3093,15 @@
         "validJson": "JSON valide",
         "invalidJson": "JSON non valide : corrigez-le pour pouvoir enregistrer",
         "contextLimit": "Limite de contexte",
-        "contextLimitDescription": "Nombre maximal de jetons d’historique, de documents et de résultats d’outils envoyés au modèle à chaque requête. Les messages plus anciens sont résumés pour rester en dessous. Laissez vide pour utiliser toute la fenêtre de contexte du modèle.",
-        "contextLimitRange": "Saisissez entre {{min, number}} et {{max, number}} jetons, ou laissez vide.",
+        "contextLimitDescription": "Nombre maximal de jetons d’historique, de documents et de résultats d’outils envoyés au modèle à chaque requête. Les messages plus anciens sont résumés pour rester en dessous. Désactivée, toute la fenêtre de contexte du modèle est utilisée.",
+        "contextLimitAboveWindow": "Au-delà de la fenêtre de contexte de {{model}} ({{limit, number}} jetons), cette limite est sans effet.",
+        "limitRange": "Saisissez entre {{min, number}} et {{max, number}} jetons.",
+        "contextLimitTokens": "Limite de contexte en jetons",
+        "historyLimit": "Limite d’historique",
+        "historyLimitDescription": "Nombre maximal de jetons de messages précédents envoyés mot pour mot à chaque requête. Au-delà, les plus anciens sont résumés et les plus récents conservés. Désactivée, le résumé n’a lieu que près de la limite de contexte.",
+        "historyLimitTokens": "Limite d’historique en jetons",
+        "historyLimitBelowContext": "Saisissez au moins {{min, number}} jetons, sous la limite de contexte de {{limit, number}}.",
+        "historyLimitAboveWindow": "Pas sous la fenêtre de contexte de {{model}} ({{limit, number}} jetons), cette limite est sans effet.",
         "tokenLimiting": "Limitation des jetons",
         "tokenLimitingDescription": "Limitez le nombre total de jetons que cet agent peut utiliser par jour",
         "requestLimiting": "Limitation des requêtes",

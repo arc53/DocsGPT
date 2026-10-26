@@ -59,6 +59,7 @@ import WorkflowDetailsSheet, {
 import type { SponsorAudience } from '../sponsorConsent';
 import { Agent, AgentConfig, ResourceSponsor, ResourceState } from '../types';
 import { analyticsOf } from '../analyticsConfig';
+import { largestModelWindow } from '../contextLimit';
 import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import {
@@ -1762,12 +1763,19 @@ function WorkflowBuilderInner() {
           (currentAgent.config?.context_window_limit ?? null)
       )
         changed.context_window_limit = values.contextWindowLimit;
+      if (
+        values.historyTokenLimit !== undefined &&
+        values.historyTokenLimit !==
+          (currentAgent.config?.history_token_limit ?? null)
+      )
+        changed.history_token_limit = values.historyTokenLimit;
       setPendingConfig(Object.keys(changed).length > 0 ? changed : null);
       setDetailsSaveRequested(true);
     },
     [
       currentAgent.config?.analytics,
       currentAgent.config?.context_window_limit,
+      currentAgent.config?.history_token_limit,
       detailsSaving,
     ],
   );
@@ -1925,6 +1933,18 @@ function WorkflowBuilderInner() {
 
     return validateJsonSchemaConfig(selectedNode.data.config?.json_schema);
   }, [selectedNode, agentJsonSchemaErrors]);
+
+  // The largest window among the agent nodes' models, for the note on a limit
+  // past it; a node without one runs on the default.
+  const workflowModelWindow = useMemo(() => {
+    const ids = nodes
+      .filter((node) => node.type === 'agent')
+      .map((node) => node.data.config?.model_id || defaultAgentModelId);
+    return largestModelWindow(
+      availableModels,
+      ids.length > 0 ? ids : [defaultAgentModelId],
+    );
+  }, [nodes, availableModels, defaultAgentModelId]);
 
   const selectedAgentModelSupportsStructuredOutput = useMemo(() => {
     if (!selectedNode || selectedNode.type !== 'agent') return true;
@@ -2247,7 +2267,12 @@ function WorkflowBuilderInner() {
               pendingConfig && 'context_window_limit' in pendingConfig
                 ? (pendingConfig.context_window_limit ?? null)
                 : (currentAgent.config?.context_window_limit ?? null),
+            historyTokenLimit:
+              pendingConfig && 'history_token_limit' in pendingConfig
+                ? (pendingConfig.history_token_limit ?? null)
+                : (currentAgent.config?.history_token_limit ?? null),
           }}
+          modelWindow={workflowModelWindow}
           policyEditable={can(currentAgent, 'edit_policy')}
           insights={{
             available: analyticsAvailability.enabled,

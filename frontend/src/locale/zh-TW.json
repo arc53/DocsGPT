@@ -1875,6 +1875,7 @@
       "descriptions": {
         "google_drive": "將文件、試算表和 PDF 同步到知識庫。",
         "share_point": "將 SharePoint 網站和 OneDrive 中的檔案同步到知識庫。",
+        "mcp_canva": "處理 Canva 設計，匯出並使用品牌範本。",
         "confluence": "將 Confluence 空間和頁面同步到知識庫。",
         "s3": "將 S3 儲存貯體中的文件同步到知識庫。",
         "reddit": "將符合你搜尋條件的 Reddit 貼文同步到知識庫。",
@@ -1901,6 +1902,7 @@
         "mcp_context7": "查詢函式庫的最新文件與程式碼範例。",
         "mcp_alphavantage": "查詢股票報價、基本面資料、外匯、加密貨幣、經濟指標和市場新聞。",
         "mcp_neon": "查看 Neon Postgres 專案、分支和結構描述，並執行 SQL。",
+        "mcp_twelvedata": "查詢股票、外匯、加密貨幣和 ETF 的報價、歷史價格、技術指標和基本面資料。",
         "github": "將儲存庫同步到知識庫，並讓代理讀取程式碼、Issue 和提取要求。"
       },
       "empty": "尚未連線任何服務。連線一個服務以同步其內容，或為代理提供新工具。",
@@ -2017,6 +2019,7 @@
         "methodOauth": "使用 {{name}} 登入",
         "methodToken": "使用存取權杖",
         "credentialsRejected": "{{name}} 未接受這些憑證。請檢查後再試一次。",
+        "rateLimited": "{{name}} 在 {{time}} 之前限制此帳戶的請求。請在此之後再試一次。",
         "setupReconnect": "請重新登入 {{name}} 以完成設定。",
         "setupDisabled": "管理員已關閉 {{name}}，因此無法設定。",
         "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次，或將其關閉以繼續。",
@@ -2107,7 +2110,8 @@
         "searchRepositories": "搜尋儲存庫",
         "repositories": "儲存庫",
         "updated": "更新於 {{date}}",
-        "loadFailed": "無法載入你的儲存庫。"
+        "loadFailed": "無法載入你的儲存庫。",
+        "rateLimited": "GitHub 在 {{time}} 之前限制此帳戶的請求。請在此之後再試一次。"
       },
       "linear": {
         "teams": "團隊",
@@ -2938,7 +2942,8 @@
         "selectDefaultModel": "選擇預設模型",
         "enterTokenLimit": "輸入權杖限制",
         "enterRequestLimit": "輸入請求限制",
-        "contextLimitDefault": "模型預設值"
+        "contextLimitDefault": "模型預設值",
+        "historyLimitDefault": "接近上下文上限時摘要"
       },
       "sourcePopup": {
         "title": "選擇知識",
@@ -2986,8 +2991,15 @@
         "validJson": "有效的JSON",
         "invalidJson": "無效的JSON - 修復後才能儲存",
         "contextLimit": "上下文上限",
-        "contextLimitDescription": "每次請求傳送給模型的歷史紀錄、文件和工具結果的最大 token 數。較早的訊息會被摘要，以保持在上限以內。留空則使用模型的完整上下文視窗。",
-        "contextLimitRange": "請輸入 {{min, number}} 到 {{max, number}} 之間的 token 數，或留空。",
+        "contextLimitDescription": "每次請求傳送給模型的歷史紀錄、文件和工具結果的最大 token 數。較早的訊息會被摘要，以保持在上限以內。關閉則使用模型的完整上下文視窗。",
+        "contextLimitAboveWindow": "超過 {{model}} 的上下文視窗（{{limit, number}} 個 token），因此不會生效。",
+        "limitRange": "請輸入 {{min, number}} 到 {{max, number}} 之間的 token 數。",
+        "contextLimitTokens": "上下文上限（token）",
+        "historyLimit": "歷史上限",
+        "historyLimitDescription": "每次請求逐字傳送的先前訊息的最大 token 數。超過後，較早的訊息會被摘要，保留最新的訊息。關閉則僅在接近上下文上限時摘要。",
+        "historyLimitTokens": "歷史上限（token）",
+        "historyLimitBelowContext": "請輸入至少 {{min, number}} 個 token，且低於上下文上限 {{limit, number}}。",
+        "historyLimitAboveWindow": "不低於 {{model}} 的上下文視窗（{{limit, number}} 個 token），因此不會生效。",
         "tokenLimiting": "權杖限制",
         "tokenLimitingDescription": "限制此代理每天可使用的總權杖數",
         "requestLimiting": "請求限制",

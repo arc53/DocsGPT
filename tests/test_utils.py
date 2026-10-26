@@ -10,6 +10,7 @@ from docsgpt.utils import (
     check_required_fields,
     clean_text_for_tts,
     convert_pdf_to_images,
+    count_tokens_docs,
     get_encoding,
     get_field_validation_errors,
     get_gpt_model,
@@ -26,6 +27,7 @@ from docsgpt.utils import (
     validate_function_name,
     validate_required_fields,
 )
+from tests.parser.counter_fakes import spy_cl100k
 
 
 class TestGetEncoding:
@@ -215,6 +217,14 @@ class TestNumTokens:
         assert count > 100000
         assert elapsed < 10, f"pathological encode took {elapsed:.1f}s — tiktoken downgraded?"
 
+    @pytest.mark.unit
+    def test_stays_one_shot_beyond_the_chunking_window(self, monkeypatch):
+        text = "Sentence explaining retrieval, ranking and citation.\n" * 40
+        expected = len(get_encoding().encode_ordinary(text))
+        encoding = spy_cl100k(monkeypatch, window=64)
+        assert num_tokens_from_string(text) == expected
+        assert encoding.encode_lengths == [len(text)]
+
 
 class TestNumTokensFromObjectOrList:
 
@@ -254,6 +264,26 @@ class TestCountTokensDocs:
         doc2.page_content = " foo bar"
         result = count_tokens_docs([doc1, doc2])
         assert result > 0
+
+    @pytest.mark.unit
+    def test_counts_each_doc_without_joining_them(self, monkeypatch):
+        contents = ["alpha beta gamma. " * 20, "delta epsilon zeta. " * 70, "eta theta iota. " * 35]
+        expected = sum(num_tokens_from_string(content) for content in contents)
+        encoding = spy_cl100k(monkeypatch)
+        assert count_tokens_docs([MagicMock(page_content=content) for content in contents]) == expected
+        assert max(encoding.encode_lengths) == max(len(content) for content in contents)
+
+    @pytest.mark.unit
+    def test_long_doc_is_counted_in_bounded_windows(self, monkeypatch):
+        # Mostly whitespace, so one chunk can far exceed the window.
+        doc = MagicMock(page_content="a" + " \n\t" * 1_000 + "b")
+        encoding = spy_cl100k(monkeypatch, window=256)
+        assert count_tokens_docs([doc]) > 0
+        assert max(encoding.encode_lengths) <= 2 * 256
+
+    @pytest.mark.unit
+    def test_no_docs_is_zero(self):
+        assert count_tokens_docs([]) == 0
 
 
 class TestCalculateDocTokenBudget:

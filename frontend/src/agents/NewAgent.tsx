@@ -84,12 +84,12 @@ import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
 import AnalyticsSection from './components/AnalyticsSection';
+import ContextLimitRows from './components/ContextLimitRows';
 import { configToSave, sameAgent } from './analyticsConfig';
 import {
-  MAX_CONTEXT_WINDOW_LIMIT,
-  MIN_CONTEXT_WINDOW_LIMIT,
   isContextLimitInvalid,
-  parseContextLimit,
+  isHistoryLimitInvalid,
+  largestModelWindow,
 } from './contextLimit';
 import { useAnalyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import AgentPreview from './AgentPreview';
@@ -202,6 +202,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     },
   });
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  // The instance's default model: what an agent with no models of its own
+  // answers with.
+  const [systemDefaultModelId, setSystemDefaultModelId] = useState('');
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
@@ -286,9 +289,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     { label: t('agents.form.agentTypes.research'), value: 'research' },
   ];
 
-  const contextLimitInvalid = isContextLimitInvalid(
-    agent.config?.context_window_limit,
+  // The largest window of the agent's models: a limit past it is noted.
+  const modelWindow = useMemo(
+    () =>
+      largestModelWindow(
+        availableModels,
+        selectedModelIds.size > 0 ? selectedModelIds : [systemDefaultModelId],
+      ),
+    [availableModels, selectedModelIds, systemDefaultModelId],
   );
+  const contextLimitInvalid =
+    isContextLimitInvalid(agent.config?.context_window_limit) ||
+    isHistoryLimitInvalid(
+      agent.config?.history_token_limit,
+      agent.config?.context_window_limit,
+    );
 
   const isPublishable = () => {
     const hasRequiredFields =
@@ -996,6 +1011,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const data = await response.json();
       const transformed = modelService.transformModels(data.models || []);
       setAvailableModels(transformed);
+      setSystemDefaultModelId(data.default_model_id || '');
 
       if (mode === 'new' && transformed.length > 0) {
         const preferredDefaultModelId =
@@ -1742,49 +1758,30 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 )}
 
                 <SettingRows className="mt-6">
-                  <SettingRow
-                    label={t('agents.form.advanced.contextLimit')}
-                    description={t(
-                      'agents.form.advanced.contextLimitDescription',
-                    )}
-                    alignStart
-                    after={
-                      contextLimitInvalid ? (
-                        <p className="text-destructive text-xs">
-                          {t('agents.form.advanced.contextLimitRange', {
-                            min: MIN_CONTEXT_WINDOW_LIMIT,
-                            max: MAX_CONTEXT_WINDOW_LIMIT,
-                          })}
-                        </p>
-                      ) : null
+                  <ContextLimitRows
+                    contextLimit={agent.config?.context_window_limit}
+                    historyLimit={agent.config?.history_token_limit}
+                    window={modelWindow}
+                    disabled={!canEditPolicy}
+                    onContextLimitChange={(limit) =>
+                      setAgent((prev) => ({
+                        ...prev,
+                        config: {
+                          ...(prev.config ?? {}),
+                          context_window_limit: limit,
+                        },
+                      }))
                     }
-                  >
-                    <Input
-                      type="number"
-                      min={MIN_CONTEXT_WINDOW_LIMIT}
-                      max={MAX_CONTEXT_WINDOW_LIMIT}
-                      step={1000}
-                      className="w-32 text-right"
-                      value={agent.config?.context_window_limit ?? ''}
-                      onChange={(e) => {
-                        const limit = parseContextLimit(e.target.value);
-                        setAgent((prev) => ({
-                          ...prev,
-                          config: {
-                            ...(prev.config ?? {}),
-                            context_window_limit: limit,
-                          },
-                        }));
-                      }}
-                      // A cost control, so policy (`edit_policy`) like the
-                      // usage limits beside it.
-                      disabled={!canEditPolicy}
-                      aria-invalid={contextLimitInvalid || undefined}
-                      placeholder={t(
-                        'agents.form.placeholders.contextLimitDefault',
-                      )}
-                    />
-                  </SettingRow>
+                    onHistoryLimitChange={(limit) =>
+                      setAgent((prev) => ({
+                        ...prev,
+                        config: {
+                          ...(prev.config ?? {}),
+                          history_token_limit: limit,
+                        },
+                      }))
+                    }
+                  />
                   <SettingRow
                     label={t('agents.form.advanced.tokenLimiting')}
                     description={t(

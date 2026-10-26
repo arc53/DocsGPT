@@ -370,10 +370,12 @@ export default function Activity() {
                 {rows.map((row, idx) => {
                   const key = `${row.feed}:${row.id}`;
                   const isOpen = expanded === key;
-                  // De-emphasize an actor repeated from the row above (ditto),
+                  // Mute an actor repeated from the row above (still named),
                   // so distinct actors stand out in a long single-user stream.
                   const repeat =
-                    idx > 0 && rows[idx - 1].actor_id === row.actor_id;
+                    idx > 0 &&
+                    row.actor_id !== null &&
+                    rows[idx - 1].actor_id === row.actor_id;
                   return [
                     <TableRow key={key}>
                       <TableCell>
@@ -410,12 +412,10 @@ export default function Activity() {
                       <TableCell
                         className={cn(
                           'text-xs',
-                          repeat ? 'text-muted-foreground/50' : '',
+                          repeat ? 'text-muted-foreground' : '',
                         )}
                       >
-                        {repeat ? (
-                          '〃'
-                        ) : row.actor_id ? (
+                        {row.actor_id ? (
                           <UserIdentity
                             userId={row.actor_id}
                             email={row.actor_email}

@@ -218,3 +218,23 @@
   auth_kind: mcp_oauth
   capabilities: [read]
   docs_url: https://context7.com/docs/resources/all-clients
+
+- key: mcp:twelvedata
+  name: Twelve Data
+  description: Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.
+  icon: twelvedata
+  category: business
+  mcp_url: https://mcp.twelvedata.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read]
+  docs_url: https://twelvedata.com/docs/mcp
+
+- key: mcp:canva
+  name: Canva
+  description: Work with Canva designs, export them and use brand templates.
+  icon: canva
+  category: business
+  mcp_url: https://mcp.canva.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://www.canva.dev/docs/mcp

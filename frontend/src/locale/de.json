@@ -1880,6 +1880,7 @@
         "share_point": "Dateien aus SharePoint-Sites und OneDrive ins Wissen synchronisieren.",
         "confluence": "Confluence-Bereiche und -Seiten ins Wissen synchronisieren.",
         "s3": "Dokumente aus einem S3-Bucket ins Wissen synchronisieren.",
+        "mcp_canva": "Arbeiten Sie mit Canva-Designs, exportieren Sie diese und nutzen Sie Marken-Vorlagen.",
         "reddit": "Reddit-Beiträge zu deinen Suchen ins Wissen synchronisieren.",
         "brave": "Web und Bilder mit der Brave Search API durchsuchen.",
         "telegram": "Nachrichten und Bilder an einen Telegram-Chat senden.",
@@ -1904,6 +1905,7 @@
         "mcp_context7": "Aktuelle Dokumentation und Codebeispiele für Bibliotheken nachschlagen.",
         "mcp_alphavantage": "Aktienkurse, Fundamentaldaten, Devisen, Krypto, Wirtschaftsindikatoren und Marktnachrichten abrufen.",
         "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",
+        "mcp_twelvedata": "Kurse, Kursverläufe, technische Indikatoren und Fundamentaldaten für Aktien, Devisen, Kryptowährungen und ETFs abrufen.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
@@ -2022,6 +2024,7 @@
         "methodOauth": "Mit {{name}} anmelden",
         "methodToken": "Zugriffstoken verwenden",
         "credentialsRejected": "{{name}} hat diese Zugangsdaten nicht akzeptiert. Prüfe sie und versuche es erneut.",
+        "rateLimited": "{{name}} begrenzt die Anfragen dieses Kontos bis {{time}}. Versuche es danach erneut.",
         "setupReconnect": "Melde dich erneut bei {{name}} an, um die Einrichtung abzuschließen.",
         "setupDisabled": "Ein Admin hat {{name}} deaktiviert, daher lässt es sich nicht einrichten.",
         "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut oder schalte sie aus, um fortzufahren.",
@@ -2114,7 +2117,8 @@
         "searchRepositories": "Repositorys durchsuchen",
         "repositories": "Repositorys",
         "updated": "Aktualisiert {{date}}",
-        "loadFailed": "Deine Repositorys konnten nicht geladen werden."
+        "loadFailed": "Deine Repositorys konnten nicht geladen werden.",
+        "rateLimited": "GitHub begrenzt die Anfragen dieses Kontos bis {{time}}. Versuche es danach erneut."
       },
       "linear": {
         "teams": "Teams",
@@ -2953,7 +2957,8 @@
         "selectDefaultModel": "Standardmodell auswählen",
         "enterTokenLimit": "Token-Limit eingeben",
         "enterRequestLimit": "Anfrage-Limit eingeben",
-        "contextLimitDefault": "Modellstandard"
+        "contextLimitDefault": "Modellstandard",
+        "historyLimitDefault": "Zusammenfassung nahe am Kontextlimit"
       },
       "sourcePopup": {
         "title": "Wissen auswählen",
@@ -3001,8 +3006,15 @@
         "validJson": "Gültiges JSON",
         "invalidJson": "Ungültiges JSON - zur Aktivierung des Speicherns beheben",
         "contextLimit": "Kontextlimit",
-        "contextLimitDescription": "Höchstzahl an Tokens aus Verlauf, Dokumenten und Tool-Ergebnissen, die pro Anfrage an das Modell gehen. Ältere Nachrichten werden zusammengefasst, um darunter zu bleiben. Leer lassen für das volle Kontextfenster des Modells.",
-        "contextLimitRange": "Gib {{min, number}} bis {{max, number}} Tokens ein oder lass das Feld leer.",
+        "contextLimitDescription": "Höchstzahl an Tokens aus Verlauf, Dokumenten und Tool-Ergebnissen, die pro Anfrage an das Modell gehen. Ältere Nachrichten werden zusammengefasst, um darunter zu bleiben. Aus: das volle Kontextfenster des Modells.",
+        "contextLimitAboveWindow": "Über dem Kontextfenster von {{model}} ({{limit, number}} Tokens), daher ohne Wirkung.",
+        "limitRange": "Gib {{min, number}} bis {{max, number}} Tokens ein.",
+        "contextLimitTokens": "Kontextlimit in Tokens",
+        "historyLimit": "Verlaufslimit",
+        "historyLimitDescription": "Höchstzahl an Tokens früherer Nachrichten, die pro Anfrage wörtlich gesendet werden. Ältere darüber werden zusammengefasst, die neuesten bleiben. Aus: Zusammenfassung erst nahe am Kontextlimit.",
+        "historyLimitTokens": "Verlaufslimit in Tokens",
+        "historyLimitBelowContext": "Gib mindestens {{min, number}} Tokens ein, unter dem Kontextlimit von {{limit, number}}.",
+        "historyLimitAboveWindow": "Nicht unter dem Kontextfenster von {{model}} ({{limit, number}} Tokens), daher ohne Wirkung.",
         "tokenLimiting": "Token-Limitierung",
         "tokenLimitingDescription": "Begrenze die täglich von diesem Agenten verwendbaren Tokens",
         "requestLimiting": "Anfrage-Limitierung",

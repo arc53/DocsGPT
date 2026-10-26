@@ -1276,6 +1276,12 @@ Type `int`, default `8`, must be `>= 1`.
 
 Parallel file fetches per GitHub repo ingest.
 
+### `GITHUB_INGEST_MAX_ARCHIVE_BYTES`
+
+Type `int`, default `536870912`, must be `>= 0`.
+
+Largest repository tarball a GitHub ingest downloads (one API request for the whole repo); a bigger one falls back to per-file requests. 0 = always per-file.
+
 ### `INGEST_QUEUE`
 
 Type `str`, default `ingest`.

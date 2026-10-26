@@ -49,7 +49,7 @@ import useNewSourceOptions from '../settings/components/useNewSourceOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 import { knowledgeLink } from '../settings/knowledgeLink';
 import type { AppDispatch } from '../store';
-import { formatCount } from '../utils/dateTimeUtils';
+import { formatClock, formatCount } from '../utils/dateTimeUtils';
 import { ACCOUNT_NAME_MAX } from './accounts';
 import ConnectorIcon from './ConnectorIcon';
 import CredentialForm, { credentialsComplete } from './CredentialForm';
@@ -433,7 +433,13 @@ export default function ConnectWizard({
                   name,
                   interpolation: { escapeValue: false },
                 })
-              : t('settings.connectors.wizard.connectFailed'),
+              : data?.code === 'rate_limited' && data.retry_at
+                ? t('settings.connectors.wizard.rateLimited', {
+                    name,
+                    time: formatClock(new Date(data.retry_at)),
+                    interpolation: { escapeValue: false },
+                  })
+                : t('settings.connectors.wizard.connectFailed'),
         );
         return;
       }

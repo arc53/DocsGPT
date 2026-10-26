@@ -1,7 +1,7 @@
 ---
 title: Context Compression
 description: How DocsGPT summarizes long conversations to stay within the model's context window, and the settings that control it.
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-26
 ---
 
 # Context Compression
@@ -13,7 +13,7 @@ DocsGPT implements a smart context compression system to manage long conversatio
 The compression system operates on a "summarize and truncate" principle:
 
 1.  **Threshold Check**: Before each request, the system calculates the total token count of the conversation history.
-2.  **Trigger**: If the token count exceeds a configured threshold (default: 80% of the model's context limit), compression is triggered.
+2.  **Trigger**: If the token count exceeds a configured threshold (default: 80% of the model's context limit), compression is triggered. An agent with a [history limit](#per-agent-history-limit) also compresses once the messages since the last summary pass it.
 3.  **Summarization**: An LLM (potentially a different, cheaper/faster one) processes the older part of the conversation—including previous summaries, user messages, agent responses, and tool outputs.
 4.  **Context Replacement**: The system generates a comprehensive summary of the older history. For subsequent requests, the LLM receives this **Summary + Recent Messages** instead of the full raw history.
 
@@ -38,7 +38,7 @@ You can configure the compression behavior in your `.env` file or `docsgpt/core/
 
 ## Per-agent context limit
 
-An agent can be set to use less of the context window than its model allows. Set **Context limit** in the agent's **Advanced settings** (for a workflow agent, under **Workflow details** in the builder), or `config.context_window_limit` through the [API](/API/agent-api#letting-api-callers-make-changes). Leave it empty to use the model's full window.
+An agent can be set to use less of the context window than its model allows. Turn on **Context limit** in the agent's **Advanced settings** (for a workflow agent, under **Workflow details** in the builder) and enter the number of tokens, or set `config.context_window_limit` through the [API](/API/agent-api#letting-api-callers-make-changes). Turned off (`null` in the API), the agent uses the model's full window.
 
 It is for agents whose conversations run long, such as a Telegram or Slack bot that keeps one conversation per chat. Without a limit, such a conversation grows to 80% of the model's window before it is compressed, and every message after that sends about that many tokens. With a 32,000-token limit, the same conversation is compressed at about 25,600 tokens.
 
@@ -53,7 +53,20 @@ With a limit set, the agent treats the limit as the model's window for:
 
 The limit never makes a request fail and never stops the agent calling tools. A message, system prompt or tool result larger than the limit is still sent when the model can take it, with less history and fewer documents around it; a question that fills the limit on its own is sent without documents. Only the model's own threshold makes the agent stop calling tools and answer with what it has. A limit at or above the model's window has no effect, so a smaller model keeps its own window. The limit also applies to scheduled runs, webhook runs, background continuations and resumed tool approvals, and to every node of a workflow agent (a node on a smaller model uses that model's window).
 
-Values run from 16,000 to 10,000,000 tokens. Below 16,000, the system prompt, the tool definitions and a compression summary alone would reach the threshold, and the agent would compress on every turn. Like the agent's usage limits, changing it needs permission to edit the agent's policy, which owners and editors have.
+Values start at 16,000 tokens. Below that, the system prompt, the tool definitions and a compression summary alone would reach the threshold, and the agent would compress on every turn. The highest value is 10,000,000 tokens, but a limit above the model's window has no effect. The form notes such a limit under the field without refusing it, measured against the largest context window among the agent's models (the instance's default model when none is picked; for a workflow, the models its agent nodes use). Like the agent's usage limits, changing it needs permission to edit the agent's policy, which owners and editors have.
+
+## Per-agent history limit
+
+A context limit lowers the point at which a conversation is compressed, but a long conversation still sits just below that point on most turns: it fills up to 80% of the limit, is compressed, and fills up again. A **history limit** keeps a long conversation small all the time. Turn on **History limit** in the same **Advanced settings** (or **Workflow details**), or set `config.history_token_limit` through the API.
+
+Once the messages sent word for word since the last summary pass the limit, the older ones are summarized and the newest ones are kept, up to half the limit. When the conversation reaches the context threshold at the same time, the context limit wins and every message, the latest included, is summarized. The next request then carries the summary plus the latest exchange instead of the whole thread. With an 8,000-token history limit, each request carries a summary and between about 4,000 and 8,000 tokens of recent messages, whatever the context limit.
+
+*   The summary does not count toward the limit; it is kept to about 4,000 tokens.
+*   The history limit runs before each message. The context limit and the model's window still apply as before, for example when tool results fill the context during an answer.
+*   A caller that sends its own `history` instead of a conversation id has nothing to summarize into, so that history is trimmed to the limit, oldest messages first. A trimmed history does not chain onto the provider's stored conversation (`previous_response_id` in OpenAI store mode), which still holds the trimmed messages.
+*   Each compression adds a summary entry to the conversation and costs one call to the summarizing model, so a low limit means more of both. `COMPRESSION_MODEL_OVERRIDE` can point the summaries at a cheaper model.
+
+Values start at 4,000 tokens and must stay below the context limit. A history limit at or above the model's window has no effect, because the conversation is compressed near the window first; the form notes it under the field. Turned off, the conversation is compressed only near the context limit. Changing it needs the same permission as the context limit.
 
 ## Architecture
 

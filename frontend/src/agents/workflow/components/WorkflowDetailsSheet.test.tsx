@@ -21,6 +21,7 @@ const details = {
   description: 'Routes internal requests',
   allowPromptOverride: false,
   contextWindowLimit: null,
+  historyTokenLimit: null,
 };
 
 describe('WorkflowDetailsSheet', () => {
@@ -46,6 +47,7 @@ describe('WorkflowDetailsSheet', () => {
       analytics?: AnalyticsConfig;
       available?: boolean;
       contextWindowLimit?: number | null;
+      historyTokenLimit?: number | null;
       policyEditable?: boolean;
     } = {},
   ) => {
@@ -58,7 +60,9 @@ describe('WorkflowDetailsSheet', () => {
             ...details,
             analytics: props.analytics,
             contextWindowLimit: props.contextWindowLimit ?? null,
+            historyTokenLimit: props.historyTokenLimit ?? null,
           }}
+          modelWindow={{ tokens: 128_000, name: 'Model One' }}
           policyEditable={props.policyEditable}
           insights={{
             available: props.available ?? true,
@@ -135,40 +139,95 @@ describe('WorkflowDetailsSheet', () => {
       allowPromptOverride: false,
       analytics: DEFAULT_ANALYTICS,
       contextWindowLimit: null,
+      historyTokenLimit: null,
       imageFile: null,
     });
   });
 
-  const contextLimitInput = () =>
+  const limitInput = (key: 'contextLimitTokens' | 'historyLimitTokens') =>
     document.querySelector(
-      'input[placeholder="agents.form.placeholders.contextLimitDefault"]',
+      `input[aria-label="agents.form.advanced.${key}"]`,
     ) as HTMLInputElement;
+  const limitSwitch = (key: 'contextLimit' | 'historyLimit') => {
+    const label = Array.from(document.querySelectorAll('label')).find(
+      (el) => el.textContent === `agents.form.advanced.${key}`,
+    )!;
+    return document.getElementById(label.htmlFor) as HTMLButtonElement;
+  };
 
-  it('saves a context limit, and an emptied one as null', () => {
+  it('saves a context limit, and one switched off as null', () => {
     const { onSave } = render({ contextWindowLimit: 64000 });
-    expect(contextLimitInput().value).toBe('64000');
-    type(contextLimitInput(), '32000');
+    expect(limitInput('contextLimitTokens').value).toBe('64000');
+    type(limitInput('contextLimitTokens'), '32000');
     act(() => button('agents.form.buttons.save').click());
     expect(onSave.mock.calls[0][0].contextWindowLimit).toBe(32000);
 
-    type(contextLimitInput(), '');
+    act(() => limitSwitch('contextLimit').click());
+    expect(limitInput('contextLimitTokens').disabled).toBe(true);
     act(() => button('agents.form.buttons.save').click());
     expect(onSave.mock.calls[1][0].contextWindowLimit).toBeNull();
   });
 
-  it('keeps Save disabled while the context limit is out of range', () => {
-    render();
-    type(contextLimitInput(), '500');
-    expect(button('agents.form.buttons.save').disabled).toBe(true);
-    expect(contextLimitInput().getAttribute('aria-invalid')).toBe('true');
+  it("notes, but saves, a context limit past the model's window", () => {
+    const { onSave } = render({ contextWindowLimit: 64000 });
+    type(limitInput('contextLimitTokens'), '200000');
+    expect(limitInput('contextLimitTokens').getAttribute('aria-invalid')).toBe(
+      null,
+    );
     expect(document.body.textContent).toContain(
-      'agents.form.advanced.contextLimitRange',
+      'agents.form.advanced.contextLimitAboveWindow',
+    );
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[0][0].contextWindowLimit).toBe(200000);
+  });
+
+  it('keeps Save disabled while a limit is out of range', () => {
+    render({ contextWindowLimit: 64000 });
+    type(limitInput('contextLimitTokens'), '12000');
+    expect(button('agents.form.buttons.save').disabled).toBe(true);
+    expect(limitInput('contextLimitTokens').getAttribute('aria-invalid')).toBe(
+      'true',
+    );
+    expect(document.body.textContent).toContain(
+      'agents.form.advanced.limitRange',
     );
   });
 
-  it('shows the context limit read-only without edit_policy', () => {
-    render({ policyEditable: false });
-    expect(contextLimitInput().disabled).toBe(true);
+  it('saves a history limit, noting one at the window', () => {
+    const { onSave } = render();
+    act(() => limitSwitch('historyLimit').click());
+    expect(limitInput('historyLimitTokens').value).toBe('8000');
+    type(limitInput('historyLimitTokens'), '128000');
+    expect(button('agents.form.buttons.save').disabled).toBe(false);
+    expect(document.body.textContent).toContain(
+      'agents.form.advanced.historyLimitAboveWindow',
+    );
+    type(limitInput('historyLimitTokens'), '3000');
+    expect(button('agents.form.buttons.save').disabled).toBe(true);
+    expect(document.body.textContent).toContain(
+      'agents.form.advanced.limitRange',
+    );
+    type(limitInput('historyLimitTokens'), '12000');
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[0][0].historyTokenLimit).toBe(12000);
+  });
+
+  it("saves an unrelated edit with a stored limit past the model's window", () => {
+    const { onSave } = render({
+      policyEditable: false,
+      contextWindowLimit: 200_000,
+    });
+    type(nameInput(), 'Helpdesk Router');
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0].contextWindowLimit).toBe(200_000);
+  });
+
+  it('shows the limits read-only without edit_policy', () => {
+    render({ policyEditable: false, contextWindowLimit: 64000 });
+    expect(limitInput('contextLimitTokens').disabled).toBe(true);
+    expect(limitSwitch('contextLimit').disabled).toBe(true);
+    expect(limitSwitch('historyLimit').disabled).toBe(true);
   });
 
   it('closes on Cancel without saving', () => {
