@@ -2998,7 +2998,7 @@
         "requestLimit": "請求上限",
         "origins": {
           "label": "允許的來源",
-          "description": "只有列出的網站可以使用此代理的 API 金鑰呼叫它",
+          "description": "只有列出的網站和此執行個體信任的網站可以使用此代理的 API 金鑰呼叫它",
           "inputLabel": "來源",
           "hint": "不含路徑的網站位址，例如 https://example.com。按 Enter 新增。",
           "placeholder": "https://example.com",

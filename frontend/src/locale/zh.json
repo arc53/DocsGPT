@@ -2996,7 +2996,7 @@
         "requestLimit": "请求上限",
         "origins": {
           "label": "允许的来源",
-          "description": "只有列出的网站可以使用此代理的 API 密钥调用它",
+          "description": "只有列出的网站和此实例信任的网站可以使用此代理的 API 密钥调用它",
           "inputLabel": "来源",
           "hint": "不带路径的网站地址，例如 https://example.com。按 Enter 添加。",
           "placeholder": "https://example.com",

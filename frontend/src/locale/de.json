@@ -3013,7 +3013,7 @@
         "requestLimit": "Anfragelimit",
         "origins": {
           "label": "Erlaubte Ursprünge",
-          "description": "Nur die aufgeführten Websites können diesen Agenten mit seinem API-Schlüssel aufrufen",
+          "description": "Nur die aufgeführten Websites und die Websites, denen diese Instanz vertraut, können diesen Agenten mit seinem API-Schlüssel aufrufen",
           "inputLabel": "Ursprung",
           "hint": "Eine Website-Adresse ohne Pfad, z. B. https://example.com. Mit Enter hinzufügen.",
           "placeholder": "https://example.com",

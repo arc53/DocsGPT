@@ -3100,7 +3100,7 @@
         "requestLimit": "Limite de requêtes",
         "origins": {
           "label": "Origines autorisées",
-          "description": "Seuls les sites listés peuvent appeler cet agent avec sa clé API",
+          "description": "Seuls les sites listés, et les sites auxquels cette instance fait confiance, peuvent appeler cet agent avec sa clé API",
           "inputLabel": "Origine",
           "hint": "Une adresse de site sans chemin, par exemple https://example.com. Appuyez sur Entrée pour l\u2019ajouter.",
           "placeholder": "https://example.com",

@@ -692,16 +692,42 @@ def _config_valid(raw) -> bool:
     return True
 
 
+def _valid_parts(raw: dict) -> dict:
+    """The settings of an invalid ``config`` that still validate, each on its own.
+
+    A setting that fails validation is left out, so it contributes nothing.
+    The origin policy is read leniently instead: a bad entry is dropped but a
+    restriction stays on, so a bad file can't open a key to any origin.
+    """
+    from docsgpt.api.user.agents.routes import normalize_agent_config
+    from docsgpt.guardrails.config import AgentConfig
+
+    parts: dict = {}
+    for key, value in raw.items():
+        if key in _ORIGIN_FIELDS:
+            continue
+        try:
+            parts[key] = normalize_agent_config({key: value})[key]
+        except (ValueError, KeyError):
+            continue
+    origins = {field: raw[field] for field in _ORIGIN_FIELDS if field in raw}
+    if origins:
+        policy = AgentConfig.parse(origins)
+        parts.update({field: copy.deepcopy(getattr(policy, field)) for field in origins})
+    return parts
+
+
 def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
     """Validate a spec's ``config`` through the same gate as the API.
 
     A YAML is hand-editable, so it must not be a way to install a control the
     write path would have rejected. An invalid block does not fail the whole
-    import. A config that is a mapping keeps what still validates, through the
-    lenient reader the runtime uses, which drops a bad guardrail control or
-    allowlist but keeps an origin restriction on. An origin setting an invalid
-    config does not state (or any, when it is not a mapping) is kept from the
-    agent's current config, so a bad file can't open its key to any origin.
+    import: the settings that still validate are kept (see ``_valid_parts``).
+
+    On an update, an origin setting the file does not state keeps the agent's
+    stored value, so a file exported before origins existed, or one with no
+    config, can't open the agent's key to any origin. A setting the file
+    states, ``restrict_origins: false`` included, is applied.
 
     Args:
         spec: The file's ``spec``.
@@ -709,32 +735,29 @@ def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
         warnings: Gets a note when the config is not imported as written.
     """
     from docsgpt.api.user.agents.routes import normalize_agent_config
-    from docsgpt.guardrails.config import AgentConfig
 
     raw = spec.get("config")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            pass
+    kept = {field: current[field] for field in _ORIGIN_FIELDS if field in (current or {})}
+    if (raw is None or raw == "") and kept:
+        raw = {}
+    if isinstance(raw, dict):
+        raw = {**{field: value for field, value in kept.items() if field not in raw}, **raw}
     try:
         return normalize_agent_config(raw) or {}
     except ValueError as err:
         reason = str(err)
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except ValueError:
-            raw = None
     if isinstance(raw, dict):
         current_app.logger.warning("Dropping the invalid parts of an imported agent config")
         warnings.append(f"Invalid config ({reason}); imported only the parts that are valid")
-        config = AgentConfig.parse(raw).model_dump(mode="json")
-    else:
-        current_app.logger.warning("Ignoring an imported agent config that is not a mapping")
-        warnings.append("Config is not a mapping; it was not imported")
-        raw, config = {}, {}
-    if current is not None:
-        kept = AgentConfig.parse(current)
-        for field in _ORIGIN_FIELDS:
-            if field not in raw:
-                config[field] = copy.deepcopy(getattr(kept, field))
-    return config
+        return _valid_parts(raw)
+    current_app.logger.warning("Ignoring an imported agent config that is not a mapping")
+    warnings.append("Config is not a mapping; it was not imported")
+    return _valid_parts(kept)
 
 
 def serialize_agent(conn, agent: dict, user: str) -> dict:
@@ -1744,15 +1767,12 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         # Row vanished between resolve and write — fall through to create.
 
     # A new agent starts from the admin's default guardrails, under the file's
-    # own. A file config that failed validation contributes only its origin
-    # policy, so a restriction the file meant stays on.
+    # own. Of a file config that failed validation, only the settings that
+    # validate count.
     file_config = spec.get("config")
-    if _config_valid(file_config):
-        created_config = _import_config({"config": agent_defaults.seed(conn, file_config)}, None, [])
-    else:
-        created_config = _import_config({"config": agent_defaults.seed(conn, None)}, None, [])
-        imported = authoritative["config"]
-        created_config.update({field: imported[field] for field in _ORIGIN_FIELDS if field in imported})
+    if not _config_valid(file_config):
+        file_config = authoritative["config"]
+    created_config = _import_config({"config": agent_defaults.seed(conn, file_config)}, None, [])
     row = agents_repo.create(
         user, spec.get("name"), "draft", **{**authoritative, **optional, "config": created_config}
     )

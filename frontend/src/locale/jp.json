@@ -2998,7 +2998,7 @@
         "requestLimit": "リクエスト上限",
         "origins": {
           "label": "許可するオリジン",
-          "description": "一覧にあるウェブサイトだけが、API キーでこのエージェントを呼び出せます",
+          "description": "一覧にあるウェブサイトと、このインスタンスが信頼するサイトだけが、API キーでこのエージェントを呼び出せます",
           "inputLabel": "オリジン",
           "hint": "https://example.com のような、パスを含まないウェブサイトのアドレス。Enter で追加します。",
           "placeholder": "https://example.com",
