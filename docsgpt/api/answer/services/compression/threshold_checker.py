@@ -96,6 +96,44 @@ class CompressionThresholdChecker:
             logger.error(f"Error checking compression need: {str(e)}", exc_info=True)
             return False
 
+    def history_over_limit(
+        self,
+        conversation: Dict[str, Any],
+        model_id: str,
+        history_token_limit: int | None,
+        user_id: str | None = None,
+    ) -> bool:
+        """Whether the messages replayed word for word have reached the agent's history limit.
+
+        The summary is left out: it is bounded by the compression prompt, and
+        counted in it a long summary would compress again on every turn.
+
+        Args:
+            conversation: Full conversation document.
+            model_id: Target model for this request.
+            history_token_limit: The agent's ``config.history_token_limit``;
+                None never trips.
+            user_id: Owner, so a per-user BYOM model's API flavor resolves.
+
+        Returns:
+            True if the recent messages are at or above the limit.
+        """
+        if not history_token_limit:
+            return False
+        try:
+            recent_tokens = TokenCounter.count_recent_conversation_tokens(
+                conversation, include_reasoning=_uses_responses_api(model_id, user_id)
+            )
+        except Exception as e:
+            logger.error(f"Error checking history limit: {str(e)}", exc_info=True)
+            return False
+        if recent_tokens >= history_token_limit:
+            logger.info(
+                f"HISTORY LIMIT REACHED: {recent_tokens} recent tokens / {history_token_limit} limit"
+            )
+            return True
+        return False
+
     def check_message_tokens(
         self, messages: list, model_id: str, user_id: str | None = None
     ) -> bool:

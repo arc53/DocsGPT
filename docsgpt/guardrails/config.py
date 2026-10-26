@@ -37,6 +37,9 @@ MODES = ("monitor_only", "scan_all")
 # would cross the compression threshold on their own, compressing every turn.
 MIN_CONTEXT_WINDOW_LIMIT = 16000
 MAX_CONTEXT_WINDOW_LIMIT = 10_000_000
+# Floor of ``AgentConfig.history_token_limit``. Below it a single turn with a
+# tool call or two passes the limit, summarizing on nearly every message.
+MIN_HISTORY_TOKEN_LIMIT = 4000
 
 
 def _item_level(check: str) -> bool:
@@ -249,6 +252,10 @@ class AgentConfig(BaseModel):
     # agent fills, below the model's own window (``get_context_budget``).
     # None uses the whole window.
     context_window_limit: Optional[StrictInt] = None
+    # Most tokens of earlier messages a request replays word for word. Past
+    # it, the older messages are summarized and the newest half stay
+    # (``CompressionOrchestrator``). None summarizes only near the window.
+    history_token_limit: Optional[StrictInt] = None
 
     @field_validator("context_window_limit")
     @classmethod
@@ -260,6 +267,24 @@ class AgentConfig(BaseModel):
         if value > MAX_CONTEXT_WINDOW_LIMIT:
             raise ValueError(f"context_window_limit must be at most {MAX_CONTEXT_WINDOW_LIMIT:,} tokens")
         return value
+
+    @field_validator("history_token_limit")
+    @classmethod
+    def _bounded_history_token_limit(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return None
+        if value < MIN_HISTORY_TOKEN_LIMIT:
+            raise ValueError(f"history_token_limit must be at least {MIN_HISTORY_TOKEN_LIMIT:,} tokens")
+        if value > MAX_CONTEXT_WINDOW_LIMIT:
+            raise ValueError(f"history_token_limit must be at most {MAX_CONTEXT_WINDOW_LIMIT:,} tokens")
+        return value
+
+    @model_validator(mode="after")
+    def _history_below_context(self) -> "AgentConfig":
+        history, context = self.history_token_limit, self.context_window_limit
+        if history is not None and context is not None and history >= context:
+            raise ValueError("history_token_limit must be below context_window_limit")
+        return self
 
     @field_validator("api_write_allowlist")
     @classmethod
@@ -294,6 +319,7 @@ class AgentConfig(BaseModel):
                 api_write_allowlist=allowlist.api_write_allowlist,
                 analytics=AnalyticsConfig.parse(raw.get("analytics")),
                 context_window_limit=context_window_limit_of(raw),
+                history_token_limit=history_token_limit_of(raw),
             )
 
 
@@ -315,5 +341,27 @@ def context_window_limit_of(raw: Optional[dict]) -> Optional[int]:
         return AgentConfig.model_validate(
             {"context_window_limit": raw.get("context_window_limit")}
         ).context_window_limit
+    except Exception:
+        return None
+
+
+def history_token_limit_of(raw: Optional[dict]) -> Optional[int]:
+    """The history limit in a stored ``agents.config``, without validating the rest.
+
+    Lenient like ``context_window_limit_of``: a missing or invalid value is
+    None, which summarizes only near the context window.
+
+    Args:
+        raw: The agent's stored ``config``.
+
+    Returns:
+        The limit in tokens, or None.
+    """
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return AgentConfig.model_validate(
+            {"history_token_limit": raw.get("history_token_limit")}
+        ).history_token_limit
     except Exception:
         return None

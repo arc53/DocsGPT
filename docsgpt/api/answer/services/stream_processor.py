@@ -44,7 +44,7 @@ from docsgpt.core.model_utils import (
 )
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
-from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
+from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
 from sqlalchemy import text as sql_text
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
@@ -806,9 +806,11 @@ class StreamProcessor:
             self._ensure_turn_fits()
             # model_user_id keeps history trim aligned with the BYOM's
             # actual context window instead of the default 128k.
+            # A caller's own history has no summary to fold older turns
+            # into, so the history limit drops them.
             self.history = limit_chat_history(
                 json.loads(self.data.get("history", "[]")),
-                max_token_limit=self._context_window_limit(),
+                max_token_limit=self._history_token_limit() or self._context_window_limit(),
                 model_id=self.model_id,
                 user_id=self.model_user_id,
             )
@@ -829,6 +831,7 @@ class StreamProcessor:
                 # overflowing next to it.
                 current_query_tokens=self._turn_token_estimate(),
                 context_window_limit=self._context_window_limit(),
+                history_token_limit=self._history_token_limit(),
             )
 
             if not result.success:
@@ -1015,6 +1018,10 @@ class StreamProcessor:
     def _context_window_limit(self) -> Optional[int]:
         """The agent's ``config.context_window_limit``, or None."""
         return context_window_limit_of((getattr(self, "agent_config", None) or {}).get("config"))
+
+    def _history_token_limit(self) -> Optional[int]:
+        """The agent's ``config.history_token_limit``, or None."""
+        return history_token_limit_of((getattr(self, "agent_config", None) or {}).get("config"))
 
     def _budget_window(self) -> int:
         """The window the turn's budgets are shares of: the model's, lowered to the agent's context limit."""
