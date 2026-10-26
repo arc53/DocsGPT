@@ -92,6 +92,9 @@ class TestReadLimit:
             ({"history_token_limit": "abc"}, None),
             ({"history_token_limit": True}, None),
             ({"history_token_limit": HISTORY, "guardrails": {"mode": "bogus"}}, HISTORY),
+            ({"history_token_limit": HISTORY, "context_window_limit": 32000}, HISTORY),
+            ({"history_token_limit": 32000, "context_window_limit": 32000}, None),
+            ({"history_token_limit": 40000, "context_window_limit": 32000}, None),
         ],
     )
     def test_reads_only_a_valid_limit(self, raw, expected):
