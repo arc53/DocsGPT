@@ -158,7 +158,11 @@ class SchedulerTool(Tool):
 
         try:
             if delay:
-                fire = datetime.now(timezone.utc) + parse_delay(delay)
+                try:
+                    fire = datetime.now(timezone.utc) + parse_delay(delay)
+                except OverflowError as exc:
+                    # Parses, but lands past the last date datetime holds.
+                    raise ScheduleValidationError("delay is too long.") from exc
             else:
                 fire = parse_run_at(run_at, tz)
             clamp_once_horizon(fire, settings.SCHEDULE_ONCE_MAX_HORIZON)

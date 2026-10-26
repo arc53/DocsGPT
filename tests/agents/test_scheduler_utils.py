@@ -206,6 +206,11 @@ class TestParseDelay:
         with pytest.raises(ScheduleValidationError):
             parse_delay(raw)
 
+    @pytest.mark.parametrize("raw", ["500000000d500000000d", "999999999999d"])
+    def test_too_long_rejected(self, raw):
+        with pytest.raises(ScheduleValidationError, match="too long"):
+            parse_delay(raw)
+
     def test_error_names_compound_form(self):
         with pytest.raises(ScheduleValidationError, match="1h30m"):
             parse_delay("two hours")

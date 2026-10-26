@@ -190,7 +190,10 @@ def parse_delay(delay: str) -> timedelta:
     )
     if seconds <= 0:
         raise ScheduleValidationError("delay must be positive.")
-    return timedelta(seconds=seconds)
+    try:
+        return timedelta(seconds=seconds)
+    except OverflowError as exc:
+        raise ScheduleValidationError("delay is too long.") from exc
 
 
 def parse_run_at(run_at: str, tz_name: Optional[str] = None) -> datetime:
