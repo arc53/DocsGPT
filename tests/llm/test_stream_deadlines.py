@@ -60,13 +60,14 @@ def test_stall_after_output_does_not_repeat_it_and_abandoned_stream_does_no_more
     closed = threading.Event()
     llm = StubLLM(capabilities=ModelCapabilities(stall_timeout=0.03))
     llm._fallback_llm = Mock()
+    advanced = []
 
     def body():
         try:
             yield "partial"
             release.wait(2)
             yield "late"
-            pytest.fail("abandoned stream advanced again")
+            advanced.append(True)  # the reader thread swallows a pytest.fail here
         finally:
             closed.set()
 
@@ -78,6 +79,7 @@ def test_stall_after_output_does_not_repeat_it_and_abandoned_stream_does_no_more
     finally:
         release.set()
     assert closed.wait(1)
+    assert advanced == []
     llm._fallback_llm._raw_gen_stream.assert_not_called()
 
 
