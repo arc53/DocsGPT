@@ -503,6 +503,22 @@ def flush_trace_after_request(processor: "StreamProcessor") -> None:
         return response
 
 
+def _without_response_id(turn: Dict[str, Any]) -> Dict[str, Any]:
+    """A copy of a history ``turn`` that a new turn cannot chain onto (``metadata.response_id`` removed).
+
+    Args:
+        turn: A history entry, as the caller sent it.
+
+    Returns:
+        The entry, its metadata copied without ``response_id``; the entry
+        itself when it has no metadata.
+    """
+    metadata = turn.get("metadata") if isinstance(turn, dict) else None
+    if not isinstance(metadata, dict) or "response_id" not in metadata:
+        return turn
+    return {**turn, "metadata": {k: v for k, v in metadata.items() if k != "response_id"}}
+
+
 class StreamProcessor:
     def __init__(
         self,
@@ -805,17 +821,23 @@ class StreamProcessor:
         else:
             self.earlier_attachments = self._with_request_earlier_attachments([])
             self._ensure_turn_fits()
+            sent = json.loads(self.data.get("history", "[]"))
             # model_user_id keeps history trim aligned with the BYOM's
             # actual context window instead of the default 128k.
             history = limit_chat_history(
-                json.loads(self.data.get("history", "[]")),
+                sent,
                 max_token_limit=self._context_window_limit(),
                 model_id=self.model_id,
                 user_id=self.model_user_id,
             )
             # A caller's own history has no summary to fold older turns
             # into, so the history limit drops them.
-            self.history = self._within_history_limit(history)
+            history = self._within_history_limit(history)
+            if history and len(history) < len(sent):
+                # The provider's transcript behind the last response id still
+                # holds the dropped turns: chaining onto it would undo the trim.
+                history[-1] = _without_response_id(history[-1])
+            self.history = history
 
     def _handle_compression(self, conversation: Dict[str, Any]):
         """Handle conversation compression logic using orchestrator."""

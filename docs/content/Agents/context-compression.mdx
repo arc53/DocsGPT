@@ -63,7 +63,7 @@ Once the messages sent word for word since the last summary pass the limit, the 
 
 *   The summary does not count toward the limit; it is kept to about 4,000 tokens.
 *   The history limit runs before each message. The context limit and the model's window still apply as before, for example when tool results fill the context during an answer.
-*   A caller that sends its own `history` instead of a conversation id has nothing to summarize into, so that history is trimmed to the limit, oldest messages first.
+*   A caller that sends its own `history` instead of a conversation id has nothing to summarize into, so that history is trimmed to the limit, oldest messages first. A trimmed history does not chain onto the provider's stored conversation (`previous_response_id` in OpenAI store mode), which still holds the trimmed messages.
 *   Each compression adds a summary entry to the conversation and costs one call to the summarizing model, so a low limit means more of both. `COMPRESSION_MODEL_OVERRIDE` can point the summaries at a cheaper model.
 
 Values start at 4,000 tokens and must stay below the context limit. A history limit at or above the model's window has no effect, because the conversation is compressed near the window first; the form notes it under the field. Turned off, the conversation is compressed only near the context limit. Changing it needs the same permission as the context limit.

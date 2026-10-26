@@ -339,3 +339,40 @@ class TestStreamProcessor:
         turns = [{**_turn(2500), "thought": _words(2500), "id": i} for i in range(4)]
         kept = self._client_history({}, turns)
         assert [t["id"] for t in kept] == [0, 1, 2, 3]
+
+    @staticmethod
+    def _chained(turns):
+        return [
+            {**t, "metadata": {"response_id": f"r{t['id']}", "response_chain_key": "k", "usage": {}}}
+            for t in turns
+        ]
+
+    def test_trimmed_client_history_does_not_chain_onto_the_dropped_turns(self):
+        # The provider's stored transcript behind the last response id holds
+        # the dropped turns too, so chaining onto it would undo the trim.
+        turns = self._chained([{**_turn(2500), "id": i} for i in range(4)])
+        kept = self._client_history({"history_token_limit": HISTORY}, turns)
+        assert [t["id"] for t in kept] == [1, 2, 3]
+        assert "response_id" not in kept[-1]["metadata"]
+        assert kept[-1]["metadata"]["response_chain_key"] == "k"
+
+    def test_untrimmed_client_history_still_chains(self):
+        turns = self._chained([{**_turn(1000), "id": i} for i in range(3)])
+        kept = self._client_history({"history_token_limit": HISTORY}, turns)
+        assert kept[-1]["metadata"]["response_id"] == "r2"
+
+    def test_a_context_limit_trim_resets_the_chain_too(self):
+        import json
+
+        turns = self._chained([{**_turn(10), "id": i} for i in range(3)])
+        sp = _processor({"context_window_limit": 32000})
+        sp.conversation_id = None
+        sp.data = {"history": json.dumps(turns)}
+        with patch.object(sp, "_ensure_turn_fits"), \
+                patch.object(sp, "_with_request_earlier_attachments", return_value=[]), \
+                patch("docsgpt.api.answer.services.stream_processor.limit_chat_history",
+                      return_value=turns[1:]):
+            sp._load_conversation_history()
+        assert "response_id" not in sp.history[-1]["metadata"]
+        # The caller's own turn objects are left as sent.
+        assert turns[-1]["metadata"]["response_id"] == "r2"
