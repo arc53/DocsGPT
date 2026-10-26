@@ -2222,10 +2222,13 @@ class ToolExecutor:
                 yield from self._handed_off(tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome)
             )
 
-        def journal_executed(artifact_id: Optional[str] = None) -> str:
+        def journal_executed(artifact_id: Optional[str] = None, stored: Optional[str] = None) -> str:
             # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
             exposed = self.exposed_secrets()
-            result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
+            if stored is not None:
+                result_full = stored
+            else:
+                result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
             # Tool side effect has run; flip the journal row so the
             # message-finalize path can later confirm it. If the proposed
             # write failed (DB outage), upsert a fresh row in ``executed`` so
@@ -2245,6 +2248,15 @@ class ToolExecutor:
             )
             return result_full
 
+        def keep_interrupted(artifact_id: Optional[str] = None, stored: Optional[str] = None) -> None:
+            # The tool ran before a time limit: journal it executed and keep it in the turn's saved calls.
+            result_full = journal_executed(artifact_id, stored)
+            tool_call_data["resolved_arguments"] = resolved_arguments
+            tool_call_data["result_full"] = result_full
+            tool_call_data["result"] = truncate_tool_result(result_full)
+            tool_call_data["status"] = status
+            self.tool_calls.append(tool_call_data)
+
         # Single fan-out point: from here ``result`` reaches the LLM copy,
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
@@ -2255,8 +2267,8 @@ class ToolExecutor:
             result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
         except Exception as exc:
             if is_budget_exhausted(exc):
-                # The tool already ran: a time limit here must not leave it reading as never run.
-                journal_executed()
+                # Unscreened output is never stored.
+                keep_interrupted(stored="[Output withheld: the time limit stopped its guardrail check.]")
             raise
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
@@ -2267,7 +2279,7 @@ class ToolExecutor:
                 artifact_id = get_artifact_id(action_name, **parameters)
             except Exception as exc:
                 if is_budget_exhausted(exc):
-                    journal_executed()
+                    keep_interrupted()
                     raise
                 logger.exception(
                     "Failed to extract artifact_id from tool %s for action %s",
@@ -2308,7 +2320,7 @@ class ToolExecutor:
                 ]
             except Exception as exc:
                 if is_budget_exhausted(exc):
-                    journal_executed(artifact_id or None)
+                    keep_interrupted(artifact_id or None)
                     raise
                 logger.exception(
                     "Failed to extract artifacts from tool %s for action %s",

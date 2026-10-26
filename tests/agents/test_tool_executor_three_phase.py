@@ -278,6 +278,35 @@ class TestExecuteJournaling:
         assert row is not None
         assert row["status"] == "confirmed"
         assert row["result"] == {"result": "Tool result"}
+        # The saved partial message keeps the call that ran.
+        assert [c["result"] for c in executor.get_truncated_tool_calls()] == ["Tool result"]
+
+    def test_time_limit_in_the_result_guardrail_stores_no_unscreened_output(
+        self, pg_conn, mock_tool_manager, monkeypatch
+    ):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        executor = ToolExecutor(user="u")
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(
+                parse_args=Mock(return_value=("t1", "test_action", {}))
+            ),
+        )
+        monkeypatch.setattr(
+            ToolExecutor, "_guardrail_tool_result", Mock(side_effect=SoftTimeLimitExceeded())
+        )
+        _patch_db(monkeypatch, pg_conn)
+
+        gen = executor.execute(_TOOLS_DICT, _make_call(call_id="c5"), "MockLLM")
+        with pytest.raises(SoftTimeLimitExceeded):
+            _drain(gen)
+
+        row = _select_attempt(pg_conn, "c5")
+        assert row["status"] == "confirmed"
+        withheld = "[Output withheld: the time limit stopped its guardrail check.]"
+        assert row["result"] == {"result": withheld}
+        assert [c["result"] for c in executor.get_truncated_tool_calls()] == [withheld]
 
 
 @pytest.mark.unit
