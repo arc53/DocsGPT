@@ -221,6 +221,12 @@ export type AgentConfig = {
    * below the model's window; null or absent uses the whole window.
    */
   context_window_limit?: number | null;
+  /**
+   * Most tokens of earlier messages one request replays word for word;
+   * past it, older messages are summarized. Below `context_window_limit`;
+   * null or absent summarizes only near the window.
+   */
+  history_token_limit?: number | null;
 };
 
 export type GuardrailCheckInfo = {

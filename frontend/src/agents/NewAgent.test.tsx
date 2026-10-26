@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => {
     getAgentDefaults: vi.fn(() => jsonResponse({ success: true })),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
     tools: null as unknown[] | null,
+    models: [] as unknown[],
+    defaultModelId: '',
     connections: [] as unknown[],
     catalog: [] as unknown[],
     deleteAgent: vi.fn(() => jsonResponse({})),
@@ -98,8 +100,12 @@ vi.mock('../api/services/connectorsService', () => ({
 
 vi.mock('../api/services/modelService', () => ({
   default: {
-    getModels: () => jsonResponse({ models: [] }),
-    transformModels: () => [],
+    getModels: () =>
+      mocks.jsonResponse({
+        models: mocks.models,
+        default_model_id: mocks.defaultModelId,
+      }),
+    transformModels: (models: unknown[]) => models,
   },
 }));
 
@@ -252,6 +258,8 @@ describe('NewAgent form', () => {
     mocks.updateAgent.mockReset();
     mocks.updateAgent.mockImplementation(() => jsonResponse({}));
     mocks.tools = null;
+    mocks.models = [];
+    mocks.defaultModelId = '';
     mocks.connections = [];
     mocks.catalog = [];
   });
@@ -713,60 +721,115 @@ describe('NewAgent form', () => {
     expect(mocks.getAgent).toHaveBeenCalledTimes(2);
   });
 
-  const contextLimitInput = async () => {
+  const openAdvanced = async () => {
     const trigger = buttonByText('agents.form.sections.advanced');
     if (trigger.getAttribute('aria-expanded') !== 'true') {
       await act(async () => trigger.click());
     }
-    return container.querySelector<HTMLInputElement>(
-      'input[placeholder="agents.form.placeholders.contextLimitDefault"]',
+  };
+  const limitInput = (key: 'contextLimitTokens' | 'historyLimitTokens') =>
+    container.querySelector<HTMLInputElement>(
+      `input[aria-label="agents.form.advanced.${key}"]`,
     )!;
+  // A row's Switch, found through its label's `for`.
+  const limitSwitch = (key: 'contextLimit' | 'historyLimit') => {
+    const label = Array.from(container.querySelectorAll('label')).find(
+      (el) => el.textContent === `agents.form.advanced.${key}`,
+    )!;
+    return document.getElementById(label.htmlFor) as HTMLButtonElement;
+  };
+  const sentConfig = () =>
+    JSON.parse(mocks.updateAgent.mock.calls[0][1].get('config') as string);
+  const withModel = (contextWindow: number) => {
+    mocks.models = [
+      { id: 'm1', display_name: 'Model One', context_window: contextWindow },
+    ];
+    return { models: ['m1'], default_model_id: 'm1' };
   };
 
-  it("saves the context limit in the agent's config", async () => {
+  it("switches the context limit on and saves it in the agent's config", async () => {
     await renderEdit({
       allowed_actions: ['edit', 'view', 'edit_policy'],
       config: { api_write_allowlist: ['t:a'] },
+      ...withModel(1_000_000),
     });
-    const input = await contextLimitInput();
-    expect(input.disabled).toBe(false);
-    await act(async () => setNativeValue(input, '32000'));
+    await openAdvanced();
+    expect(limitSwitch('contextLimit').getAttribute('aria-checked')).toBe(
+      'false',
+    );
+    expect(limitInput('contextLimitTokens').disabled).toBe(true);
+    await act(async () => limitSwitch('contextLimit').click());
+    // Switched on, it starts from a value the model's window allows.
+    expect(limitInput('contextLimitTokens').value).toBe('100000');
+    await act(async () =>
+      setNativeValue(limitInput('contextLimitTokens'), '32000'),
+    );
     await act(async () => buttonByText('agents.form.buttons.save').click());
-    const sent = mocks.updateAgent.mock.calls[0][1];
     // The rest of the config rides along: a config save replaces it whole.
-    expect(JSON.parse(sent.get('config') as string)).toMatchObject({
+    expect(sentConfig()).toMatchObject({
       api_write_allowlist: ['t:a'],
       context_window_limit: 32000,
     });
   });
 
-  it('blocks saving a context limit out of range, and clears it when emptied', async () => {
+  it("holds the context limit to the model's window, and saves off as null", async () => {
     await renderEdit({
       allowed_actions: ['edit', 'view', 'edit_policy'],
       config: { context_window_limit: 32000 },
+      ...withModel(128_000),
     });
-    const input = await contextLimitInput();
+    await openAdvanced();
+    const input = limitInput('contextLimitTokens');
     expect(input.value).toBe('32000');
     const save = buttonByText('agents.form.buttons.save');
-    await act(async () => setNativeValue(input, '100'));
+    await act(async () => setNativeValue(input, '200000'));
     expect(save.disabled).toBe(true);
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(container.textContent).toContain(
       'agents.form.advanced.contextLimitRange',
     );
+    // Emptied while on is not a value either.
     await act(async () => setNativeValue(input, ''));
+    expect(save.disabled).toBe(true);
+    await act(async () => limitSwitch('contextLimit').click());
     expect(save.disabled).toBe(false);
     await act(async () => save.click());
-    const sent = mocks.updateAgent.mock.calls[0][1];
-    expect(
-      JSON.parse(sent.get('config') as string).context_window_limit,
-    ).toBeNull();
+    expect(sentConfig().context_window_limit).toBeNull();
   });
 
-  it('shows the context limit read-only without edit_policy', async () => {
-    await renderEdit({ config: { context_window_limit: 32000 } });
-    const input = await contextLimitInput();
-    expect(input.disabled).toBe(true);
+  it('keeps the history limit below the context limit', async () => {
+    await renderEdit({
+      allowed_actions: ['edit', 'view', 'edit_policy'],
+      config: { context_window_limit: 32000 },
+      ...withModel(128_000),
+    });
+    await openAdvanced();
+    await act(async () => limitSwitch('historyLimit').click());
+    const input = limitInput('historyLimitTokens');
+    expect(input.value).toBe('8000');
+    const save = buttonByText('agents.form.buttons.save');
+    await act(async () => setNativeValue(input, '32000'));
+    expect(save.disabled).toBe(true);
+    expect(container.textContent).toContain(
+      'agents.form.advanced.historyLimitBelowContext',
+    );
+    await act(async () => setNativeValue(input, '16000'));
+    await act(async () => save.click());
+    expect(sentConfig()).toMatchObject({
+      context_window_limit: 32000,
+      history_token_limit: 16000,
+    });
+  });
+
+  it('shows the limits read-only without edit_policy', async () => {
+    await renderEdit({
+      config: { context_window_limit: 32000, history_token_limit: 8000 },
+    });
+    await openAdvanced();
+    expect(limitInput('contextLimitTokens').disabled).toBe(true);
+    expect(limitInput('historyLimitTokens').disabled).toBe(true);
+    expect(limitSwitch('contextLimit').disabled).toBe(true);
+    expect(limitSwitch('historyLimit').disabled).toBe(true);
   });
 
   it('removes a stopped item from the agent', async () => {

@@ -20,11 +20,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { FileUpload } from '../../../components/FileUpload';
 import { analyticsOf, isDefaultAnalytics } from '../../analyticsConfig';
 import {
-  MAX_CONTEXT_WINDOW_LIMIT,
-  MIN_CONTEXT_WINDOW_LIMIT,
+  type ModelWindow,
   isContextLimitInvalid,
-  parseContextLimit,
+  isHistoryLimitInvalid,
 } from '../../contextLimit';
+import ContextLimitRows from '../../components/ContextLimitRows';
 import InsightsSettingsBody from '../../components/InsightsSettingsBody';
 import type { AnalyticsConfig } from '../../types';
 
@@ -36,6 +36,8 @@ export interface WorkflowDetailsValues {
   analytics?: AnalyticsConfig;
   /** `config.context_window_limit`; null uses the model's whole window. */
   contextWindowLimit: number | null;
+  /** `config.history_token_limit`; null summarizes only near the window. */
+  historyTokenLimit: number | null;
 }
 
 /** What the Insights card needs from the builder. */
@@ -65,8 +67,10 @@ interface WorkflowDetailsSheetProps {
   errors: string[];
   /** The Insights card's server switch and limits; left out, no card. */
   insights?: WorkflowInsightsOptions;
-  /** The caller may change policy (`edit_policy`): the context limit. */
+  /** The caller may change policy (`edit_policy`): the context and history limits. */
   policyEditable?: boolean;
+  /** The largest window of the workflow's models, the context limit's ceiling. */
+  modelWindow?: ModelWindow | null;
   onSave: (values: WorkflowDetailsSave) => void;
 }
 
@@ -87,7 +91,8 @@ interface WorkflowDetailsSheetProps {
  *   saving: Whether a save started here is running.
  *   errors: Errors from that save.
  *   insights: The Insights card's server switch and limits.
- *   policyEditable: Whether the context limit can be changed.
+ *   policyEditable: Whether the context and history limits can be changed.
+ *   modelWindow: The largest window of the workflow's models.
  *   onSave: Receives the edited values.
  */
 export default function WorkflowDetailsSheet({
@@ -99,6 +104,7 @@ export default function WorkflowDetailsSheet({
   errors,
   insights,
   policyEditable = true,
+  modelWindow = null,
   onSave,
 }: WorkflowDetailsSheetProps) {
   const { t } = useTranslation();
@@ -124,8 +130,15 @@ export default function WorkflowDetailsSheet({
     draft.allowPromptOverride !== details.allowPromptOverride ||
     JSON.stringify(draft.analytics) !==
       JSON.stringify(analyticsOf(details.analytics)) ||
-    draft.contextWindowLimit !== details.contextWindowLimit;
-  const contextLimitInvalid = isContextLimitInvalid(draft.contextWindowLimit);
+    !Object.is(draft.contextWindowLimit, details.contextWindowLimit) ||
+    !Object.is(draft.historyTokenLimit, details.historyTokenLimit);
+  const contextLimitInvalid =
+    isContextLimitInvalid(draft.contextWindowLimit, modelWindow) ||
+    isHistoryLimitInvalid(
+      draft.historyTokenLimit,
+      draft.contextWindowLimit,
+      modelWindow,
+    );
   const showInsights =
     insights !== undefined &&
     (insights.available || !isDefaultAnalytics(details.analytics));
@@ -205,39 +218,18 @@ export default function WorkflowDetailsSheet({
             title={t('agents.form.sections.advanced')}
           />
           <SettingRows>
-            <SettingRow
-              label={t('agents.form.advanced.contextLimit')}
-              description={t('agents.form.advanced.contextLimitDescription')}
-              alignStart
-              after={
-                contextLimitInvalid ? (
-                  <p className="text-destructive text-xs">
-                    {t('agents.form.advanced.contextLimitRange', {
-                      min: MIN_CONTEXT_WINDOW_LIMIT,
-                      max: MAX_CONTEXT_WINDOW_LIMIT,
-                    })}
-                  </p>
-                ) : null
+            <ContextLimitRows
+              contextLimit={draft.contextWindowLimit}
+              historyLimit={draft.historyTokenLimit}
+              window={modelWindow ?? null}
+              disabled={!policyEditable}
+              onContextLimitChange={(limit) =>
+                setDraft((prev) => ({ ...prev, contextWindowLimit: limit }))
               }
-            >
-              <Input
-                type="number"
-                min={MIN_CONTEXT_WINDOW_LIMIT}
-                max={MAX_CONTEXT_WINDOW_LIMIT}
-                step={1000}
-                className="w-32 text-right"
-                value={draft.contextWindowLimit ?? ''}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    contextWindowLimit: parseContextLimit(e.target.value),
-                  })
-                }
-                disabled={!policyEditable}
-                aria-invalid={contextLimitInvalid || undefined}
-                placeholder={t('agents.form.placeholders.contextLimitDefault')}
-              />
-            </SettingRow>
+              onHistoryLimitChange={(limit) =>
+                setDraft((prev) => ({ ...prev, historyTokenLimit: limit }))
+              }
+            />
             <SettingRow
               label={t('agents.form.advanced.systemPromptOverride')}
               description={t(

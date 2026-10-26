@@ -2956,7 +2956,8 @@
         "selectDefaultModel": "Select default model",
         "enterTokenLimit": "Enter token limit",
         "enterRequestLimit": "Enter request limit",
-        "contextLimitDefault": "Model default"
+        "contextLimitDefault": "Model default",
+        "historyLimitDefault": "Summarized near the context limit"
       },
       "sourcePopup": {
         "title": "Select knowledge",
@@ -3004,8 +3005,15 @@
         "validJson": "Valid JSON",
         "invalidJson": "Invalid JSON - fix to enable saving",
         "contextLimit": "Context limit",
-        "contextLimitDescription": "Most tokens of history, documents and tool results sent to the model per request. Older messages are summarized to stay under it. Leave empty for the model's full context window.",
-        "contextLimitRange": "Enter {{min, number}} to {{max, number}} tokens, or leave empty.",
+        "contextLimitDescription": "Most tokens of history, documents and tool results sent to the model per request. Older messages are summarized to stay under it. Off uses the model's full context window.",
+        "contextLimitRange": "Enter {{min, number}} to {{max, number}} tokens, the context window of {{model}}.",
+        "limitMin": "Enter at least {{min, number}} tokens.",
+        "contextLimitTokens": "Context limit in tokens",
+        "historyLimit": "History limit",
+        "historyLimitDescription": "Most tokens of earlier messages sent word for word per request. Older ones past it are summarized and the latest kept. Off summarizes only near the context limit.",
+        "historyLimitTokens": "History limit in tokens",
+        "historyLimitBelowContext": "Enter at least {{min, number}} tokens, below the context limit of {{limit, number}}.",
+        "historyLimitBelowWindow": "Enter at least {{min, number}} tokens, below the context window of {{model}} ({{limit, number}} tokens).",
         "tokenLimiting": "Token limiting",
         "tokenLimitingDescription": "Limit daily total tokens that can be used by this agent",
         "requestLimiting": "Request limiting",

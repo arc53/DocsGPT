@@ -3043,7 +3043,8 @@
         "selectDefaultModel": "Seleccionar modelo predeterminado",
         "enterTokenLimit": "Ingresar límite de tokens",
         "enterRequestLimit": "Ingresar límite de solicitudes",
-        "contextLimitDefault": "Predeterminado del modelo"
+        "contextLimitDefault": "Predeterminado del modelo",
+        "historyLimitDefault": "Se resume cerca del límite de contexto"
       },
       "sourcePopup": {
         "title": "Seleccionar conocimiento",
@@ -3091,8 +3092,15 @@
         "validJson": "JSON válido",
         "invalidJson": "JSON inválido - corrige para habilitar el guardado",
         "contextLimit": "Límite de contexto",
-        "contextLimitDescription": "Máximo de tokens de historial, documentos y resultados de herramientas que se envían al modelo en cada solicitud. Los mensajes antiguos se resumen para no superarlo. Déjalo vacío para usar toda la ventana de contexto del modelo.",
-        "contextLimitRange": "Introduce entre {{min, number}} y {{max, number}} tokens, o déjalo vacío.",
+        "contextLimitDescription": "Máximo de tokens de historial, documentos y resultados de herramientas que se envían al modelo en cada solicitud. Los mensajes antiguos se resumen para no superarlo. Desactivado, se usa toda la ventana de contexto del modelo.",
+        "contextLimitRange": "Introduce entre {{min, number}} y {{max, number}} tokens, la ventana de contexto de {{model}}.",
+        "limitMin": "Introduce al menos {{min, number}} tokens.",
+        "contextLimitTokens": "Límite de contexto en tokens",
+        "historyLimit": "Límite de historial",
+        "historyLimitDescription": "Máximo de tokens de mensajes anteriores que se envían literalmente en cada solicitud. Al superarlo, los antiguos se resumen y se conservan los recientes. Desactivado, solo se resume cerca del límite de contexto.",
+        "historyLimitTokens": "Límite de historial en tokens",
+        "historyLimitBelowContext": "Introduce al menos {{min, number}} tokens, por debajo del límite de contexto de {{limit, number}}.",
+        "historyLimitBelowWindow": "Introduce al menos {{min, number}} tokens, por debajo de la ventana de contexto de {{model}} ({{limit, number}} tokens).",
         "tokenLimiting": "Límite de tokens",
         "tokenLimitingDescription": "Limita el total diario de tokens que puede usar este agente",
         "requestLimiting": "Límite de solicitudes",
