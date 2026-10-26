@@ -59,7 +59,7 @@ Values start at 16,000 tokens. Below that, the system prompt, the tool definitio
 
 A context limit lowers the point at which a conversation is compressed, but a long conversation still sits just below that point on most turns: it fills up to 80% of the limit, is compressed, and fills up again. A **history limit** keeps a long conversation small all the time. Turn on **History limit** in the same **Advanced settings** (or **Workflow details**), or set `config.history_token_limit` through the API.
 
-Once the messages sent word for word since the last summary pass the limit, the older ones are summarized and the newest ones are kept, up to half the limit. The next request then carries the summary plus the latest exchange instead of the whole thread. With an 8,000-token history limit, each request carries a summary and between about 4,000 and 8,000 tokens of recent messages, whatever the context limit.
+Once the messages sent word for word since the last summary pass the limit, the older ones are summarized and the newest ones are kept, up to half the limit. When the conversation reaches the context threshold at the same time, the context limit wins and every message, the latest included, is summarized. The next request then carries the summary plus the latest exchange instead of the whole thread. With an 8,000-token history limit, each request carries a summary and between about 4,000 and 8,000 tokens of recent messages, whatever the context limit.
 
 *   The summary does not count toward the limit; it is kept to about 4,000 tokens.
 *   The history limit runs before each message. The context limit and the model's window still apply as before, for example when tool results fill the context during an answer.
