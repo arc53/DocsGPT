@@ -34,7 +34,10 @@ class LLMSettings(SettingsGroup):
     )
     LLM_STREAM_STALL_TIMEOUT: float = Field(
         default=120, gt=0,
-        description="Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout.",
+        description=(
+            "Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout. "
+            "After a reasoning chunk the longer of this and the first-token timeout applies."
+        ),
     )
     API_KEY: Optional[str] = Field(default=None, description="LLM API key used by LLM_PROVIDER.")
 

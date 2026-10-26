@@ -2210,11 +2210,10 @@ class ToolExecutor:
             if tool_data["name"] != "api_tool" and not (outcome and outcome.handed_off):
                 result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
-            if is_budget_exhausted(exc):
-                raise
             if proposed_ok:
+                # A time limit too: the call may have had side effects, so it must not read as never run.
                 _mark_failed(
-                    call_id, str(exc), message_id=self.message_id, user_id=self.user
+                    call_id, str(exc) or type(exc).__name__, message_id=self.message_id, user_id=self.user
                 )
             raise
 

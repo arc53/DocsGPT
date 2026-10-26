@@ -259,6 +259,10 @@ their model picks broke until they hit the API.
 Models and provider defaults can set `first_token_timeout` and `stall_timeout`
 (seconds, positive numbers). They override `LLM_FIRST_TOKEN_TIMEOUT` (300 s)
 and `LLM_STREAM_STALL_TIMEOUT` (120 s). The stall timer starts after the first
-chunk; give reasoning models a longer first-token timeout. Both timers are
-capped by the run's remaining budget. A stalled provider hands off to the
-fallback; a run that has exhausted its budget stops and saves its partial answer.
+chunk; give reasoning models a longer first-token timeout. After a reasoning
+(thought) chunk the longer of the two timers applies, since a model can think
+silently between summary parts. A round's deadline only stops new work at a
+boundary, so a call in flight finishes and the round defers afterwards; in a
+continuation task both timers are capped by the time left before the task
+must save. A stalled provider hands off to the fallback; a run that reaches
+that cutoff stops and saves its partial answer.

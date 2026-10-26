@@ -23,14 +23,23 @@ class StreamCancelled(BaseException):
 
 @dataclass(frozen=True)
 class RunBudget:
-    """A monotonic deadline and the time reserved for saving the round."""
+    """A round's monotonic deadline, the time reserved for saving it, and an optional hard cutoff.
+
+    The round deadline is checked only at boundaries. Work in flight runs on
+    until ``hard``: the point a task must stop to save before its time limit.
+    """
 
     deadline: float
     margin: float
+    hard: float | None = None
 
     def remaining(self) -> float:
-        """Seconds left before the run's deadline."""
+        """Seconds left before the round's deadline."""
         return max(0.0, self.deadline - monotonic())
+
+    def hard_remaining(self) -> float | None:
+        """Seconds left before the hard cutoff, or None without one."""
+        return None if self.hard is None else max(0.0, self.hard - monotonic())
 
 
 _current: ContextVar[RunBudget | None] = ContextVar("run_budget", default=None)
@@ -42,9 +51,9 @@ def is_budget_exhausted(exc: BaseException) -> bool:
 
 
 def remaining_seconds() -> float | None:
-    """The active run's remaining budget, or None outside a bounded run."""
+    """How long in-flight work may still wait, or None without a hard cutoff."""
     budget = _current.get()
-    return budget.remaining() if budget else None
+    return budget.hard_remaining() if budget else None
 
 
 def check_round() -> None:
@@ -59,13 +68,17 @@ def check_round() -> None:
 
 
 @contextmanager
-def run_budget(seconds: float, *, margin: float = 30) -> Iterator[RunBudget]:
-    """Bind a deadline, preserving any tighter enclosing run budget."""
+def run_budget(seconds: float, *, margin: float = 30, hard: float | None = None) -> Iterator[RunBudget]:
+    """Bind a round deadline and optional hard cutoff, preserving tighter enclosing ones."""
     parent = _current.get()
-    deadline = monotonic() + seconds
+    now = monotonic()
+    deadline = now + seconds
+    cutoff = None if hard is None else now + hard
     if parent is not None:
         deadline = min(deadline, parent.deadline)
-    budget = RunBudget(deadline, min(margin, seconds / 2))
+        if parent.hard is not None:
+            cutoff = parent.hard if cutoff is None else min(cutoff, parent.hard)
+    budget = RunBudget(deadline, min(margin, seconds / 2), cutoff)
     token = _current.set(budget)
     try:
         yield budget

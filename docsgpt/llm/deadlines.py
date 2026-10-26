@@ -88,6 +88,10 @@ def stream_commit() -> Iterator[None]:
         yield
 
 
+def _is_thought(chunk: Any) -> bool:
+    return isinstance(chunk, dict) and chunk.get("type") == "thought"
+
+
 def timed_stream(factory: Callable[[], Iterator[Any]], *, first_token: float, stall: float) -> Iterator[Any]:
     """Read one chunk at a time with deadlines, including stream creation.
 
@@ -163,7 +167,8 @@ def timed_stream(factory: Callable[[], Iterator[Any]], *, first_token: float, st
                     return
                 raise value
             yield value
-            timeout = stall
+            # A reasoning model can think silently between summary parts; that is not a stall.
+            timeout = max(first_token, stall) if _is_thought(value) else stall
     finally:
         with state.lock:
             state.done.set()

@@ -403,7 +403,11 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
             _settle(wakes, "failed", job_state="pending", error="the continuation's message could not be saved")
             return {"state": "superseded_by_user" if saved is MessageUpdateOutcome.NOT_FOUND else "failed"}
     _link_turn(message_id, outcome)
-    _settle(wakes, "delivered", message_id=message_id)
+    if outcome.get("error_type") == "TimeLimit" and not answer:
+        # No answer reached the user: the results stay deliverable to their next message.
+        _settle(wakes, "failed", job_state="pending", error="Stopped: time limit.")
+    else:
+        _settle(wakes, "delivered", message_id=message_id)
     publish_conversation_continued(user_id, conversation_id, message_id, wakes[0].get("source") or "job")
     if stopped:
         # The user ended this turn: nothing it started may carry it on.
@@ -516,7 +520,9 @@ def _run_turn(
     if (agent_config.get("agent_type") or "").strip() == "workflow":
         budget = nullcontext()
     else:
-        budget = run_budget(min(570, settings.CONTINUATION_RUN_TIMEOUT - 30))
+        # A call in flight at the round deadline finishes; only the task's time limit cuts it.
+        save_by = settings.CONTINUATION_RUN_TIMEOUT - 30
+        budget = run_budget(min(570, save_by), hard=save_by)
     with budget:
         return run_agent_headless(
             agent_config,

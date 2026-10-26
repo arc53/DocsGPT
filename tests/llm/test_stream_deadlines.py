@@ -213,11 +213,45 @@ def test_budget_caps_stream_and_prevents_fallback():
         yield "late"
 
     try:
-        with run_budget(0.03), pytest.raises(RunDeadlineExceeded):
+        with run_budget(10, hard=0.03), pytest.raises(RunDeadlineExceeded):
             list(stream(llm, body))
     finally:
         release.set()
     llm._fallback_llm._raw_gen_stream.assert_not_called()
+
+
+def test_round_deadline_lets_a_call_in_flight_finish():
+    def body():
+        time.sleep(0.15)
+        yield "late"
+
+    with run_budget(0.05):
+        assert list(stream(StubLLM(), body)) == ["late"]
+
+
+def test_nested_budget_keeps_the_enclosing_hard_cutoff():
+    from docsgpt.core.run_budget import remaining_seconds
+
+    with run_budget(100, hard=5):
+        with run_budget(50):
+            assert 0 < remaining_seconds() <= 5
+
+
+def test_silent_reasoning_after_a_thought_is_not_a_stall():
+    llm = StubLLM(capabilities=ModelCapabilities(first_token_timeout=0.5, stall_timeout=0.03))
+
+    def body():
+        yield {"type": "thought", "thought": "planning"}
+        time.sleep(0.1)
+        yield "answer"
+        time.sleep(0.1)
+        yield "late"
+
+    output = stream(llm, body)
+    assert next(output) == {"type": "thought", "thought": "planning"}
+    assert next(output) == "answer"
+    with pytest.raises(StreamStalledError):
+        next(output)
 
 
 def test_first_token_timeout_without_fallback():

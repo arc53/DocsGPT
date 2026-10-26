@@ -196,7 +196,7 @@ Seconds allowed for a stream's first chunk, overridden by the model YAML first_t
 
 Type `float`, default `120`, must be `> 0`.
 
-Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout.
+Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout. After a reasoning chunk the longer of this and the first-token timeout applies.
 
 ### `API_KEY`
 
