@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.exc import IntegrityError
 
+from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.default_tools import (
     BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
@@ -476,6 +477,8 @@ def _record_proposed(
             )
         return inserted
     except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         if _note_missing_parent(message_id, exc):
             logger.warning(
                 "tool_call_attempts: parent message row %s is gone "
@@ -546,6 +549,8 @@ def _mark_executed(
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
             )
     except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         if _note_missing_parent(message_id, exc) or _is_missing_parent(message_id):
             logger.debug(
                 "tool_call_attempts executed write skipped for %s "
@@ -571,7 +576,9 @@ def _mark_failed(
             ToolCallAttemptsRepository(conn).mark_failed(
                 _journal_key(call_id, message_id), error, user_id=user_id
             )
-    except Exception:
+    except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         logger.exception("tool_call_attempts failed-write failed for %s", call_id)
 
 
@@ -873,7 +880,9 @@ class ToolExecutor:
         try:
             _row, access = resolve_holder_tool(conn, "workflow", holder, tool_id)
             reason = access.reason
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Could not tell why tool %s does not resolve", tool_id)
         log_stopped("workflow", holder, "tool", tool_id, reason)
 
@@ -1253,7 +1262,9 @@ class ToolExecutor:
             decision = engine.evaluate(
                 text, GuardrailStage.TOOL_RESULT, item_level=False if screened else None
             )
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
             return result
         return resolve_tool_result(result, decision)
@@ -1268,7 +1279,9 @@ class ToolExecutor:
 
             try:
                 self._connections[key] = resolve_connection(tool_data, self.user)
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
                 logger.exception("connection resolution failed for tool %s", key)
                 self._connections[key] = None
         return self._connections[key]
@@ -1296,7 +1309,9 @@ class ToolExecutor:
 
                 try:
                     params = connection_parameters(resolved.row)
-                except Exception:
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     logger.exception("connection parameters failed for tool %s", key)
             self._connection_params[key] = params
         return self._connection_params[key]
@@ -1346,7 +1361,9 @@ class ToolExecutor:
         try:
             with db_readonly() as conn:
                 return UsersRepository(conn).emails_for([user_id]).get(user_id)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("owner name lookup failed")
             return None
 
@@ -1679,7 +1696,9 @@ class ToolExecutor:
                 user_id=self.user,
             )
             return tool.preview_decision(action_name, arguments)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception(
                 "remote_device preview_decision failed; defaulting to a forced prompt",
             )
@@ -1706,7 +1725,9 @@ class ToolExecutor:
             )
             requires_approval, _forced = tool.preview_decision(action_name, arguments)
             return requires_approval
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception(
                 "code_executor preview_decision failed; defaulting to a prompt",
             )
@@ -1782,6 +1803,9 @@ class ToolExecutor:
         is read from the ``tool_calls`` entry each branch of :meth:`_execute`
         appends, so the span matches what the conversation stores.
         """
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(self, "message_id", None))
         span = record_tool_span_start(call)
         recorded = len(self.tool_calls)
         try:
@@ -2145,6 +2169,8 @@ class ToolExecutor:
                 try:
                     value = tool.execute_action(action_name, **call_kwargs)
                 except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     if not known_secrets:
                         raise
                     message = secret_refs.redact(str(exc) or type(exc).__name__, known_secrets)
@@ -2184,6 +2210,8 @@ class ToolExecutor:
             if tool_data["name"] != "api_tool" and not (outcome and outcome.handed_off):
                 result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             if proposed_ok:
                 _mark_failed(
                     call_id, str(exc), message_id=self.message_id, user_id=self.user
@@ -2209,7 +2237,9 @@ class ToolExecutor:
         if callable(get_artifact_id):
             try:
                 artifact_id = get_artifact_id(action_name, **parameters)
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
                 logger.exception(
                     "Failed to extract artifact_id from tool %s for action %s",
                     tool_data["name"],
@@ -2247,7 +2277,9 @@ class ToolExecutor:
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")
                 ]
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
                 logger.exception(
                     "Failed to extract artifacts from tool %s for action %s",
                     tool_data["name"],
@@ -2562,7 +2594,9 @@ class ToolExecutor:
             return result
         try:
             parts = [p for p in drain() or [] if isinstance(p, dict)]
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Failed to collect images from tool %s", type(tool).__name__)
             return result
         from docsgpt.core.settings import settings

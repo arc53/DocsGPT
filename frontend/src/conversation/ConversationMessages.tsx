@@ -205,28 +205,41 @@ export default function ConversationMessages({
           ? query.attachments
           : null;
       return (
-        <ConversationBubble
-          className={bubbleMargin}
-          key={`${index}-ERROR`}
-          message={curatedErrorText(
-            t,
-            query.error,
-            query.errorCode,
-            query.errorParams,
-            { offersKnowledge: Boolean(knowledgeFiles) },
-          )}
-          type="ERROR"
-          retryBtn={retryButton}
-          errorCode={query.errorCode}
-          errorAction={
-            knowledgeFiles ? (
-              <AddToKnowledgeAction
-                files={knowledgeFiles}
-                onAdded={() => onKnowledgeAdded?.(index)}
-              />
-            ) : undefined
-          }
-        />
+        <Fragment key={`${index}-ERROR`}>
+          {query.errorCode === 'time_limit' && query.response ? (
+            <ConversationBubble
+              className={bubbleMargin}
+              message={query.response}
+              type="ANSWER"
+              thought={query.thought}
+              sources={query.sources}
+              toolCalls={query.tool_calls}
+              segments={query.segments}
+              isStreaming={false}
+            />
+          ) : null}
+          <ConversationBubble
+            className={bubbleMargin}
+            message={curatedErrorText(
+              t,
+              query.error,
+              query.errorCode,
+              query.errorParams,
+              { offersKnowledge: Boolean(knowledgeFiles) },
+            )}
+            type="ERROR"
+            retryBtn={retryButton}
+            errorCode={query.errorCode}
+            errorAction={
+              knowledgeFiles ? (
+                <AddToKnowledgeAction
+                  files={knowledgeFiles}
+                  onAdded={() => onKnowledgeAdded?.(index)}
+                />
+              ) : undefined
+            }
+          />
+        </Fragment>
       );
     }
 

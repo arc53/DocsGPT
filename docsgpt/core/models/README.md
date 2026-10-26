@@ -253,3 +253,12 @@ their model picks broke until they hit the API.
 - `aliases:` on a model — old IDs that resolve to this model. Reserved
   for future renames; the schema accepts the field but it is not yet
   acted on.
+
+## Stream deadlines
+
+Models and provider defaults can set `first_token_timeout` and `stall_timeout`
+(seconds, positive numbers). They override `LLM_FIRST_TOKEN_TIMEOUT` (300 s)
+and `LLM_STREAM_STALL_TIMEOUT` (120 s). The stall timer starts after the first
+chunk; give reasoning models a longer first-token timeout. Both timers are
+capped by the run's remaining budget. A stalled provider hands off to the
+fallback; a run that has exhausted its budget stops and saves its partial answer.

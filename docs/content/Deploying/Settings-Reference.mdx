@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-24
+lastUpdated: 2026-10-26
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -185,6 +185,18 @@ Provider whose first model is the default when LLM_NAME names none: docsgpt, ope
 Type `str`, default unset.
 
 Default model id. For a cloud provider it must be an id from docsgpt/core/models/*.yaml or a MODELS_CONFIG_DIR YAML, e.g. gpt-5.5; any other name is ignored with a warning. With OPENAI_BASE_URL it is required and names the model(s) the server serves, comma-separated.
+
+### `LLM_FIRST_TOKEN_TIMEOUT`
+
+Type `float`, default `300`, must be `> 0`.
+
+Seconds allowed for a stream's first chunk, overridden by the model YAML first_token_timeout.
+
+### `LLM_STREAM_STALL_TIMEOUT`
+
+Type `float`, default `120`, must be `> 0`.
+
+Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout.
 
 ### `API_KEY`
 
@@ -2169,6 +2181,12 @@ Seconds between beat sweeps that mark lost jobs, fail jobs past their deadline a
 Type `int`, default `16`, must be `>= 1`.
 
 Threads per API or worker process that run tool calls a turn may hand off. A call that finds the pool full runs inline, as before.
+
+### `CONTINUATION_RUN_TIMEOUT`
+
+Type `int`, default `1200`, must be `>= 60`.
+
+Soft wall-clock backstop for a continuation task, in seconds; healthy rounds save before it.
 
 ### `AUTO_RESUME_ENABLED`
 

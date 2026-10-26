@@ -326,3 +326,51 @@ def test_repositories_ignore_ids_that_are_not_uuids(pg_conn):
 
     assert BackgroundJobsRepository(pg_conn).list_for_message("nope", "nope", "u1") == []
     assert ConversationsRepository(pg_conn).delete_in_flight_message("nope") is False
+
+
+class TestBudgetContinuation:
+    def test_time_limit_saves_failed_partial_answer(self, bg_db, conversation, quiet, monkeypatch):
+        def body(message_id, live):
+            live.event({"answer": "Saved progress"})
+            return _outcome("Saved progress", error_type="TimeLimit", error="Stopped: time limit.")
+
+        seen = _install(monkeypatch, body)
+        _queue(conversation[0])
+        result = continuation.continue_conversation_body(conversation[0])
+        row = _row(bg_db, seen["message_id"])
+        assert result["state"] == "failed"
+        assert row["status"] == "failed"
+        assert row["response"] == "Saved progress"
+        assert row["message_metadata"]["error_code"] == "time_limit"
+        assert _journal(bg_db, seen["message_id"])[-1] == (
+            "error", {"type": "error", "error": "Stopped: time limit.", "code": "time_limit"}
+        )
+
+    def test_round_saves_then_defers_once(self, bg_db, conversation, quiet, monkeypatch):
+        scheduled = []
+        monkeypatch.setattr(wake, "schedule_continuation", lambda *a, **kw: scheduled.append((a, kw)))
+        seen = _install(monkeypatch, lambda mid, live: _outcome("Progress", budget_deferred=True))
+        _queue(conversation[0])
+        scheduled.clear()
+        result = continuation.continue_conversation_body(conversation[0])
+        assert result["state"] == "deferred"
+        assert _row(bg_db, seen["message_id"])["status"] == "complete"
+        assert len(scheduled) == 1
+        with bg_db.connect() as conn:
+            pending = conn.execute(text("SELECT dedupe_key FROM conversation_wakes WHERE status = 'pending'"))
+            assert [r[0] for r in pending] == [f"round:{seen['message_id']}"]
+
+    def test_outer_time_limit_preserves_already_streamed_text(self, bg_db, conversation, quiet, monkeypatch):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        def body(message_id, live):
+            live.event({"answer": "Saved before runner returned"})
+            raise SoftTimeLimitExceeded()
+
+        seen = _install(monkeypatch, body)
+        _queue(conversation[0])
+        result = continuation.continue_conversation_body(conversation[0])
+        row = _row(bg_db, seen["message_id"])
+        assert result["state"] == "failed"
+        assert row["status"] == "failed"
+        assert row["response"] == "Saved before runner returned"

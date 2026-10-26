@@ -491,3 +491,20 @@ class TestLogActivityTraceSpan:
             list(gen(self._Agent()))
         assert trace.spans[0].status == "error"
         assert trace.spans[0].attributes["error.type"] == "RuntimeError"
+
+
+@pytest.mark.unit
+def test_time_limit_activity_is_an_error_with_time_limit_class(caplog):
+    import logging
+    import time
+    from celery.exceptions import SoftTimeLimitExceeded
+    from docsgpt.logging import LogContext, _emit_activity_finished
+
+    context = LogContext("chat", "activity", "u", None, "q")
+    with caplog.at_level(logging.INFO):
+        _emit_activity_finished(
+            context=context, parent_activity_id=None, started_at=time.monotonic(), error=SoftTimeLimitExceeded()
+        )
+    event = next(r for r in caplog.records if r.msg == "activity_finished")
+    assert event.status == "error"
+    assert event.error_class == "TimeLimit"

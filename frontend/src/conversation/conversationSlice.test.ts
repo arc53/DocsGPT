@@ -1075,3 +1075,16 @@ describe('stopAnswer', () => {
     handleAbort();
   });
 });
+
+describe('time limit partial answers', () => {
+  it('hydrates failed time-limit responses after a reload', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      response: 'Saved progress',
+      status: 'failed',
+      metadata: { error: 'Stopped: time limit.', error_code: 'time_limit' },
+    });
+    expect(query.response).toBe('Saved progress');
+    expect(query.errorCode).toBe('time_limit');
+  });
+});

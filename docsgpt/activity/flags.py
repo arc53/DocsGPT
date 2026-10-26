@@ -268,3 +268,38 @@ def mark_ingest_running(user_id: str, payload: Dict[str, Any]) -> None:
         },
         ttl_seconds=INGEST_MARKER_TTL_SECONDS,
     )
+
+
+def cancel_stream(message_id: str) -> bool:
+    """Cancel a superseded stream for one hour, across API and worker processes."""
+    client = _stop_redis()
+    if client is None:
+        return False
+    try:
+        client.setex(f"stream_cancel:{message_id}", 3600, "1")
+        return True
+    except Exception:
+        logger.exception("storing stream cancellation failed for %s", message_id)
+        return False
+
+
+def stream_cancelled(message_id: str | None) -> bool:
+    """Read a superseded stream's cancellation flag without subscribing."""
+    if not message_id:
+        return False
+    client = _stop_redis()
+    if client is None:
+        return False
+    try:
+        return bool(client.exists(f"stream_cancel:{message_id}"))
+    except Exception:
+        return False
+
+
+def check_stream(message_id: str | None) -> None:
+    """Stop superseded work at the next round or tool boundary."""
+    from docsgpt.core.run_budget import StreamCancelled, check_round
+
+    if stream_cancelled(message_id):
+        raise StreamCancelled()
+    check_round()

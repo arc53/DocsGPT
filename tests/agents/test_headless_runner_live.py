@@ -69,3 +69,16 @@ class TestLiveHeadlessRun:
         assert outcome["stopped"] is True
         assert outcome["answer"] == ""
         assert closed == [True]
+
+    def test_worker_time_limit_keeps_partial_answer(self, monkeypatch):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        def events():
+            yield {"answer": "Saved progress"}
+            raise SoftTimeLimitExceeded()
+
+        outcome, closed = _run(monkeypatch, events())
+        assert closed == [True]
+        assert outcome["answer"] == "Saved progress"
+        assert outcome["error_type"] == "TimeLimit"
+        assert outcome["tool_calls"] == [{"call_id": "c1", "job_id": "j1"}]

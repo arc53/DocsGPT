@@ -1330,16 +1330,10 @@ class ConversationsRepository:
         correctly reports ``NOT_FOUND``, not ``ALREADY_FAILED``. Do not rely on
         the stamp for anything but the ``RETURNING id`` log line.
 
-        What DOES survive is the ``superseded_messages`` tombstone written
-        below. A stream superseded less than ``STREAM_HEARTBEAT_INTERVAL``
-        before it finishes is never cancelled — the ticker in
-        ``api/answer/routes/base.py`` is the only thing that sets the cancel
-        flag, and it cannot be set from here because it is a ``threading.Event``
-        in another worker process — so the stream runs to completion and
-        finalizes into a row that is gone. Without the tombstone that logged an
-        ERROR ``answer_persist_failed``, identical to a genuinely orphaned
-        answer, every time a user hit retry on an answer shorter than the
-        heartbeat interval.
+        The ``superseded_messages`` tombstone survives the delete. A Redis
+        cancellation flag also reaches the owning process at its next round
+        or tool boundary. The tombstone distinguishes late finalization from
+        a genuinely orphaned answer while a provider call is still returning.
 
         Args:
             conversation_id: Conversation whose tail is being trimmed.
@@ -1384,7 +1378,7 @@ class ConversationsRepository:
         # Tombstone before the delete, in the same transaction: the late
         # finalize usually runs in a different worker process, so the signal
         # has to be durable. No FK, or the CASCADE below would remove it.
-        self._conn.execute(
+        retired = self._conn.execute(
             text(
                 """
                 INSERT INTO superseded_messages (message_id, conversation_id)
@@ -1393,10 +1387,17 @@ class ConversationsRepository:
                  WHERE conversation_id = CAST(:conv_id AS uuid)
                    AND position > :pos
                 ON CONFLICT (message_id) DO NOTHING
+                RETURNING message_id
                 """
             ),
             {"conv_id": conversation_id, "pos": keep_up_to},
         )
+        from docsgpt.activity.flags import cancel_stream
+
+        # Include terminal rows: the reconciler may already have failed a
+        # still-running stream. Every deleted producer must see cancellation.
+        for row in retired:
+            cancel_stream(str(row[0]))
         result = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages "

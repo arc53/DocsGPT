@@ -1115,6 +1115,11 @@ class BaseAnswerResource:
                         query_metadata["folded_background"] = folded
                 gen_iter = agent.gen(query=model_question)
 
+            if background_turn is not None and background_turn.auto_resume():
+                from docsgpt.core.run_budget import bounded_round
+
+                gen_iter = bounded_round(gen_iter)
+
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
             # fresh ``last_heartbeat_at`` so a model that takes a while to emit
@@ -1592,6 +1597,12 @@ class BaseAnswerResource:
                         if stop_requested(reserved_message_id):
                             _stop_background_jobs(background_turn)
                         else:
+                            if query_metadata.get("budget_deferred") and background_turn is not None:
+                                from docsgpt.background.continuation import defer_round
+
+                                defer_round(
+                                    {"id": conversation_id, "user_id": background_turn.user_id}, reserved_message_id
+                                )
                             _show_finished_jobs(background_turn, tool_calls)
                     # The outcome used to be discarded here, which is how a
                     # finished answer could vanish silently: if the row was

@@ -1050,3 +1050,16 @@ class TestPatchToolCall:
         repo, message_id = self._message(pg_conn, [{"call_id": "c1"}])
         assert repo.patch_tool_call(message_id, "j9", {"status": "error"}) is False
         assert repo.patch_tool_call("not-a-uuid", "j9", {"status": "error"}) is False
+
+
+def test_regenerate_sets_cross_process_cancel_flag(pg_conn, monkeypatch):
+    from unittest.mock import Mock
+    from docsgpt.activity import flags
+
+    client = Mock()
+    monkeypatch.setattr(flags, "_stop_redis", lambda: client)
+    repo = ConversationsRepository(pg_conn)
+    conv = repo.create("u", "chat")
+    old = repo.append_message(str(conv["id"]), {"prompt": "q", "response": "", "status": "streaming"})
+    repo.truncate_after(str(conv["id"]), -1)
+    client.setex.assert_called_once_with(f"stream_cancel:{old['id']}", 3600, "1")

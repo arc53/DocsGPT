@@ -635,3 +635,17 @@ class TestMarkIdempotencyPendingFailed:
             {"k": "done-2"},
         ).fetchone()
         assert row[0] == "completed"
+
+
+class TestExecutedToolLiveness:
+    def test_fresh_parent_is_skipped_then_stale_parent_is_failed(self, pg_conn):
+        msg = _seed_message(pg_conn, status="streaming", age_minutes=20)
+        _seed_tool_call(pg_conn, call_id="alive", status="executed", age_minutes=20, message_id=msg["id"])
+        repo = ReconciliationRepository(pg_conn)
+        ConversationsRepository(pg_conn).heartbeat_message(msg["id"])
+        assert repo.find_and_lock_executed_tool_calls() == []
+        pg_conn.execute(text(
+            "UPDATE conversation_messages SET message_metadata = jsonb_build_object("
+            "'last_heartbeat_at', now() - interval '3 minutes') WHERE id = CAST(:id AS uuid)"
+        ), {"id": msg["id"]})
+        assert [r["call_id"] for r in repo.find_and_lock_executed_tool_calls()] == ["alive"]

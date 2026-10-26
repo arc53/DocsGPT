@@ -211,4 +211,19 @@ describe('ConversationMessages', () => {
       ).not.toBeNull();
     });
   });
+
+  it('keeps a timed-out message partial answer visible beside its error', () => {
+    render([
+      {
+        prompt: 'q',
+        response: 'Saved progress',
+        error: 'Stopped: time limit.',
+        errorCode: 'time_limit',
+      },
+    ]);
+    expect(document.body.textContent).toContain('Saved progress');
+    expect(document.body.textContent).toContain(
+      'conversation.errors.timeLimit',
+    );
+  });
 });

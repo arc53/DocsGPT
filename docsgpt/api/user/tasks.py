@@ -748,7 +748,7 @@ def continue_conversation(self, conversation_id, attempt=0):
 
 
 # A continuation is an agent turn: the same time limit as a scheduled run.
-continue_conversation.soft_time_limit = max(30, int(_background_settings.SCHEDULE_RUN_TIMEOUT))
+continue_conversation.soft_time_limit = max(30, int(_background_settings.CONTINUATION_RUN_TIMEOUT))
 continue_conversation.time_limit = continue_conversation.soft_time_limit + 60
 
 

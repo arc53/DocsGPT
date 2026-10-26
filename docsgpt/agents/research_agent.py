@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Dict, Generator, List, Optional
 
 from docsgpt import tracing
+from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.base import BaseAgent
 from docsgpt.agents.tool_executor import ToolExecutor, record_refused_call, refusal_texts
 from docsgpt.agents.tools.graph_search import add_graph_search_tool
@@ -344,6 +345,9 @@ class ResearchAgent(BaseAgent):
         ]
 
         try:
+            from docsgpt.activity.flags import check_stream
+
+            check_stream(getattr(self.tool_executor, "message_id", None))
             response = self.llm.gen(
                 model=self.upstream_model_id,
                 messages=messages,
@@ -374,6 +378,8 @@ class ResearchAgent(BaseAgent):
             return "\n".join(lines)
 
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(f"Clarification phase failed: {e}", exc_info=True)
             return None  # proceed with research on failure
 
@@ -422,6 +428,9 @@ class ResearchAgent(BaseAgent):
         ]
 
         try:
+            from docsgpt.activity.flags import check_stream
+
+            check_stream(getattr(self.tool_executor, "message_id", None))
             response = self.llm.gen(
                 model=self.upstream_model_id,
                 messages=messages,
@@ -452,6 +461,8 @@ class ResearchAgent(BaseAgent):
             return steps, complexity
 
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(f"Planning phase failed: {e}", exc_info=True)
             return (
                 [{"query": question, "rationale": "Direct investigation (planning failed)"}],
@@ -538,6 +549,9 @@ class ResearchAgent(BaseAgent):
                 break
 
             try:
+                from docsgpt.activity.flags import check_stream
+
+                check_stream(getattr(self.tool_executor, "message_id", None))
                 response = self.llm.gen(
                     model=self.upstream_model_id,
                     messages=messages,
@@ -545,6 +559,8 @@ class ResearchAgent(BaseAgent):
                 )
                 self._track_tokens(self._snapshot_llm_tokens())
             except Exception as e:
+                if is_budget_exhausted(e):
+                    raise
                 logger.error(
                     f"Research step LLM call failed (iteration {iteration}): {e}",
                     exc_info=True,
@@ -571,13 +587,18 @@ class ResearchAgent(BaseAgent):
             }
         )
         try:
+            from docsgpt.activity.flags import check_stream
+
+            check_stream(getattr(self.tool_executor, "message_id", None))
             response = self.llm.gen(
                 model=self.upstream_model_id, messages=messages, tools=None
             )
             self._track_tokens(self._snapshot_llm_tokens())
             text = self._extract_text(response)
             return text or "Research step completed."
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             return "Research step completed."
 
     def _execute_step_tools_with_refinement(
@@ -681,6 +702,8 @@ class ResearchAgent(BaseAgent):
                         event.get("data", {}).get("status", ""),
                     )
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(f"Research step tool {call.name} failed: {e}", exc_info=True)
             # As in the chat loop: images the call queued before it failed
             # must not ride on its error result.
@@ -792,6 +815,9 @@ class ResearchAgent(BaseAgent):
             {"role": "user", "content": f"Please write the research report for: {question}"},
         ]
 
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(self.tool_executor, "message_id", None))
         llm_response = self.llm.gen_stream(
             model=self.upstream_model_id, messages=messages, tools=None
         )

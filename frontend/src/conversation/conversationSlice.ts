@@ -123,7 +123,10 @@ export function mapServerQueryToClient(raw: any): Query {
   const wake = wakeFromMetadata(metadata);
   if (wake) query.wake = wake;
 
-  if (isTerminalComplete) {
+  if (
+    isTerminalComplete ||
+    (isFailed && metadata.error_code === 'time_limit')
+  ) {
     query.response = raw?.response ?? '';
     // The order the parts streamed in, saved with the message.
     query.segments = hydrateSegments(
@@ -1334,7 +1337,11 @@ export const conversationSlice = createSlice({
         );
         query.error = stored.message;
         setErrorDetail(query, stored.code, stored.params);
-        delete query.response;
+        if (stored.code === 'time_limit') {
+          query.response = tail?.response ?? query.response;
+        } else {
+          delete query.response;
+        }
         return;
       }
       // /tail returns reconstructed partials mid-stream so a second tab
