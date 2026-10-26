@@ -15,6 +15,10 @@ race, not a reason to fail the job.
 extraction at a time per source, so two runs can't each spend the source's
 remaining chunk allowance. It is apart from the index lock, so a page change
 doesn't wait for a long extraction.
+
+``connection_fetch_lock`` holds one remote fetch at a time per connection:
+sources added together from one GitHub connection download one after the
+other instead of sharing out the account's API rate limit.
 """
 
 import logging
@@ -54,7 +58,17 @@ def graph_extract_lock_key(source_id: str) -> str:
     return f"docsgpt:graph_extract_lock:{source_id}"
 
 
-def _acquire(redis: Any, key: str, token: str, wait_seconds: float, poll_seconds: float) -> Optional[bool]:
+def connection_fetch_lock_key(connection_id: str) -> str:
+    """The Redis key of a connection's fetch lock."""
+    return f"docsgpt:connection_fetch_lock:{connection_id}"
+
+
+_SOURCE_BUSY = "Another change to this source is still running; try again when it finishes"
+
+
+def _acquire(
+    redis: Any, key: str, token: str, wait_seconds: float, poll_seconds: float, busy_message: str = _SOURCE_BUSY,
+) -> Optional[bool]:
     """Take the lock, polling until ``wait_seconds`` pass.
 
     Returns:
@@ -72,7 +86,7 @@ def _acquire(redis: Any, key: str, token: str, wait_seconds: float, poll_seconds
             logger.warning(f"Lock {key} unavailable, running unlocked: {err}")
             return None
         if time.monotonic() >= deadline:
-            raise SourceBusy("Another change to this source is still running; try again when it finishes")
+            raise SourceBusy(busy_message)
         time.sleep(poll_seconds)
 
 
@@ -88,13 +102,16 @@ def _renew_until(stop: threading.Event, redis: Any, key: str, token: str) -> Non
 
 
 @contextmanager
-def _redis_lock(key: str, wait_seconds: float, poll_seconds: float) -> Iterator[None]:
+def _redis_lock(
+    key: str, wait_seconds: float, poll_seconds: float, busy_message: str = _SOURCE_BUSY,
+) -> Iterator[None]:
     """Hold the Redis lock ``key`` for the duration of the block, renewing it while held.
 
     Args:
         key: The lock's Redis key.
         wait_seconds: How long to wait for another job to finish.
         poll_seconds: How often to retry while waiting.
+        busy_message: The ``SourceBusy`` message after the wait.
 
     Yields:
         Nothing; the block runs holding the lock (or unlocked when Redis is missing or failing).
@@ -108,7 +125,7 @@ def _redis_lock(key: str, wait_seconds: float, poll_seconds: float) -> Iterator[
     if redis is None:
         logger.warning(f"No Redis for the lock {key}; the job runs unlocked")
     else:
-        held = _acquire(redis, key, token, wait_seconds, poll_seconds)
+        held = _acquire(redis, key, token, wait_seconds, poll_seconds, busy_message)
     stop = threading.Event()
     renewer = None
     if held:
@@ -139,3 +156,13 @@ def graph_extract_lock(
 ) -> AbstractContextManager[None]:
     """Hold a source's graph extraction lock for the block; raises ``SourceBusy`` after ``wait_seconds``."""
     return _redis_lock(graph_extract_lock_key(str(source_id)), wait_seconds, poll_seconds)
+
+
+def connection_fetch_lock(
+    connection_id: str, wait_seconds: float = WORKER_WAIT_SECONDS, poll_seconds: float = 1.0
+) -> AbstractContextManager[None]:
+    """Hold a connection's fetch lock for the block; raises ``SourceBusy`` after ``wait_seconds``."""
+    return _redis_lock(
+        connection_fetch_lock_key(str(connection_id)), wait_seconds, poll_seconds,
+        busy_message="Another download from this connection is still running; try again when it finishes",
+    )

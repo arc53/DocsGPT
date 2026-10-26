@@ -2022,6 +2022,7 @@
         "methodOauth": "Mit {{name}} anmelden",
         "methodToken": "Zugriffstoken verwenden",
         "credentialsRejected": "{{name}} hat diese Zugangsdaten nicht akzeptiert. Prüfe sie und versuche es erneut.",
+        "rateLimited": "{{name}} begrenzt die Anfragen dieses Kontos bis {{time}}. Versuche es danach erneut.",
         "setupReconnect": "Melde dich erneut bei {{name}} an, um die Einrichtung abzuschließen.",
         "setupDisabled": "Ein Admin hat {{name}} deaktiviert, daher lässt es sich nicht einrichten.",
         "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut oder schalte sie aus, um fortzufahren.",
@@ -2114,7 +2115,8 @@
         "searchRepositories": "Repositorys durchsuchen",
         "repositories": "Repositorys",
         "updated": "Aktualisiert {{date}}",
-        "loadFailed": "Deine Repositorys konnten nicht geladen werden."
+        "loadFailed": "Deine Repositorys konnten nicht geladen werden.",
+        "rateLimited": "GitHub begrenzt die Anfragen dieses Kontos bis {{time}}. Versuche es danach erneut."
       },
       "linear": {
         "teams": "Teams",

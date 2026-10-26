@@ -2017,6 +2017,7 @@
         "methodOauth": "使用 {{name}} 登录",
         "methodToken": "使用访问令牌",
         "credentialsRejected": "{{name}} 未接受这些凭据。请检查后重试。",
+        "rateLimited": "{{name}} 在 {{time}} 之前限制此账户的请求。请在此之后重试。",
         "setupReconnect": "请重新登录 {{name}} 以完成设置。",
         "setupDisabled": "管理员已关闭 {{name}}，因此无法设置。",
         "toolsUnavailable": "无法访问 {{name}} 的工具。请重试，或将其关闭以继续。",
@@ -2107,7 +2108,8 @@
         "searchRepositories": "搜索仓库",
         "repositories": "仓库",
         "updated": "更新于 {{date}}",
-        "loadFailed": "无法加载你的仓库。"
+        "loadFailed": "无法加载你的仓库。",
+        "rateLimited": "GitHub 在 {{time}} 之前限制此账户的请求。请在此之后重试。"
       },
       "linear": {
         "teams": "团队",

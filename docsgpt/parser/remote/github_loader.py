@@ -1,6 +1,9 @@
 import base64
+import datetime
 import logging
+import math
 import mimetypes
+import tarfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -47,13 +50,107 @@ class PrivateRepositoryError(PermissionError):
     """A repository the instance-wide token may not read for a user."""
 
 
+# A rate limit that clears within this many seconds (GitHub's secondary
+# limits) is waited out; a longer one (the hourly primary limit) fails the
+# request with its reset time.
+RATE_LIMIT_MAX_WAIT_SECONDS = 60
+
+
+def _utcnow() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+class GitHubRateLimited(RuntimeError):
+    """GitHub rate-limited the account the requests run as.
+
+    The primary limit (5,000 requests an hour) belongs to the GitHub account,
+    not to the token or to DocsGPT, so it also blocks the user's own use of
+    the API until ``reset_at``.
+    """
+
+    def __init__(self, reset_at: datetime.datetime):
+        self.reset_at = reset_at
+        super().__init__(
+            f"GitHub API rate limit exceeded for this account; it resets at {reset_at:%H:%M} UTC. "
+            "Try again after that."
+        )
+
+    @property
+    def retry_after_seconds(self) -> int:
+        """Whole seconds until the limit resets, at least 1."""
+        return max(1, math.ceil((self.reset_at - _utcnow()).total_seconds()))
+
+
+def rate_limit_reset(response: Any, now: Optional[datetime.datetime] = None) -> Optional[datetime.datetime]:
+    """When the rate limit that refused ``response`` clears, or None when it is no rate limit.
+
+    GitHub refuses a rate-limited request with 403 or 429. A secondary limit
+    sends ``Retry-After``; the primary limit sends ``X-RateLimit-Remaining: 0``
+    and the reset as epoch seconds in ``X-RateLimit-Reset``. Without either
+    header, a "rate limit" message waits a minute, as GitHub advises.
+
+    Args:
+        response: The refused ``requests`` response.
+        now: The current time (for tests).
+
+    Returns:
+        The UTC time the limit clears, or None.
+    """
+    if response.status_code not in (403, 429):
+        return None
+    now = now or _utcnow()
+    headers = getattr(response, "headers", None) or {}
+    retry_after = str(headers.get("Retry-After") or "")
+    if retry_after.isdigit():
+        return now + datetime.timedelta(seconds=int(retry_after))
+    if str(headers.get("X-RateLimit-Remaining")) == "0":
+        reset = str(headers.get("X-RateLimit-Reset") or "")
+        if reset.isdigit():
+            return max(now, datetime.datetime.fromtimestamp(int(reset), tz=datetime.timezone.utc))
+        return now + datetime.timedelta(seconds=60)
+    if response.status_code == 429:
+        return now + datetime.timedelta(seconds=60)
+    try:
+        message = str(response.json().get("message") or "")
+    except Exception:  # noqa: BLE001 - not a JSON object: no rate-limit message either
+        message = ""
+    if "rate limit" in message.lower():
+        return now + datetime.timedelta(seconds=60)
+    return None
+
+
+class _ArchiveTooLarge(Exception):
+    """The repository tarball passed ``GITHUB_INGEST_MAX_ARCHIVE_BYTES``."""
+
+
+class _CappedReader:
+    """A read-only stream that stops after ``limit`` bytes."""
+
+    def __init__(self, raw: Any, limit: int):
+        self._raw = raw
+        self._limit = limit
+        self._read = 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self._raw.read(size)
+        self._read += len(chunk)
+        if self._read > self._limit:
+            raise _ArchiveTooLarge(f"archive is over {self._limit} bytes")
+        return chunk
+
+
 class GitHubLoader(BaseRemote):
     """Load a GitHub repository's text files as ``Document`` objects.
 
-    Uses the git *tree* API to enumerate the repository in a single request
-    rather than walking ``/contents/`` directory by directory, filters out
-    binaries, vendored output and oversized blobs *before* fetching them, and
-    downloads the survivors in parallel.
+    Reads the whole repository from its tarball, one API request whatever
+    its size, and keeps the text files that pass the skip-list and the size
+    cap. When the tarball can't be used (too large, unavailable) it falls
+    back to the git *tree* API plus one ``/contents/`` request per file,
+    filtered before fetching and fetched in parallel.
+
+    Every request counts against the GitHub account's hourly rate limit, so
+    a rate limit stops the load (:class:`GitHubRateLimited`) rather than
+    skipping files.
     """
 
     def __init__(self, access_token: Optional[str] = None):
@@ -106,6 +203,9 @@ class GitHubLoader(BaseRemote):
             return
         url = f"https://api.github.com/repos/{repo_name}"
         response = requests.get(url, headers=self.headers, timeout=30)
+        reset_at = rate_limit_reset(response)
+        if reset_at is not None:
+            raise GitHubRateLimited(reset_at)
         if response.status_code == 401:
             # A stale instance token: public repositories still read anonymously.
             logger.warning("GitHub rejected GITHUB_ACCESS_TOKEN (401); reading %s anonymously", repo_name)
@@ -214,6 +314,16 @@ class GitHubLoader(BaseRemote):
         except (TypeError, ValueError):
             return 8
 
+    def _max_archive_bytes(self) -> int:
+        """Resolve the tarball size cap; ``0`` turns the tarball off."""
+        raw = settings.GITHUB_INGEST_MAX_ARCHIVE_BYTES
+        if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+            return 536_870_912
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return 536_870_912
+
     @staticmethod
     def normalize_repo(repo_url: str) -> str:
         """Reduce a user-pasted repo URL to ``owner/name``.
@@ -275,6 +385,8 @@ class GitHubLoader(BaseRemote):
             branch = response.json().get("default_branch")
             if branch:
                 return str(branch)
+        except (GitHubRateLimited, GitHubTokenRejected):
+            raise
         except Exception as e:
             logger.warning(
                 "Could not resolve default branch for %s (%s); assuming 'main'",
@@ -370,52 +482,35 @@ class GitHubLoader(BaseRemote):
             return file_content
 
     def _make_request(self, url: str, max_retries: int = 3) -> requests.Response:
-        """Make a request with retry logic for rate limiting"""
+        """GET ``url``, waiting out a short rate limit.
+
+        Raises:
+            GitHubRateLimited: A rate limit that lasts longer than
+                ``RATE_LIMIT_MAX_WAIT_SECONDS``, or one still in place after
+                the retries.
+            GitHubTokenRejected: GitHub refused the connection's token.
+        """
         for attempt in range(max_retries):
             response = requests.get(url, headers=self.headers, timeout=100)
 
             if response.status_code == 200:
                 return response
-            elif response.status_code == 403:
-                # Check if it's a rate limit issue
-                try:
-                    error_data = response.json()
-                    error_msg = error_data.get("message", "")
-
-                    # Check rate limit headers
-                    remaining = response.headers.get("X-RateLimit-Remaining", "unknown")
-                    reset_time = response.headers.get("X-RateLimit-Reset", "unknown")
-
-                    logger.warning("GitHub API 403 Error: %s", error_msg)
-                    logger.warning(
-                        "Rate limit remaining: %s, Reset time: %s", remaining, reset_time
-                    )
-
-                    if "rate limit" in error_msg.lower():
-                        if attempt < max_retries - 1:
-                            wait_time = 2 ** attempt  # Exponential backoff
-                            logger.warning(
-                                "Rate limit hit, waiting %s seconds before retry...",
-                                wait_time,
-                            )
-                            time.sleep(wait_time)
-                            continue
-
-                    # Provide helpful error message
-                    if remaining == "0":
-                        raise Exception(f"GitHub API rate limit exceeded. Please set GITHUB_ACCESS_TOKEN environment variable. Reset time: {reset_time}")
-                    else:
-                        raise Exception(f"GitHub API error: {error_msg}. This may require authentication - set GITHUB_ACCESS_TOKEN environment variable.")
-                except Exception as e:
-                    if isinstance(e, Exception) and "GitHub API" in str(e):
-                        raise
-                    # If we can't parse the response, raise the original error
-                    response.raise_for_status()
-            elif response.status_code == 401 and self._user_token:
+            reset_at = rate_limit_reset(response)
+            if reset_at is not None:
+                wait = math.ceil((reset_at - _utcnow()).total_seconds())
+                if wait <= RATE_LIMIT_MAX_WAIT_SECONDS and attempt < max_retries - 1:
+                    wait = max(1, wait)
+                    logger.warning("GitHub rate limit hit, waiting %s seconds before retry...", wait)
+                    time.sleep(wait)
+                    continue
+                raise GitHubRateLimited(reset_at)
+            if response.status_code == 403:
+                raise Exception(self._forbidden_message(response))
+            if response.status_code == 401 and self._user_token:
                 # The user's own token: a retry without it could only read
                 # public repositories, which is not what they asked for.
                 raise GitHubTokenRejected("GitHub rejected the connection's token. Reconnect GitHub to continue.")
-            elif response.status_code == 401 and self.access_token:
+            if response.status_code == 401 and self.access_token:
                 # An expired or revoked PAT makes even public repos 401, which
                 # is strictly worse than not sending one. Retry unauthenticated
                 # so a stale credential degrades instead of failing the ingest.
@@ -429,10 +524,22 @@ class GitHubLoader(BaseRemote):
                     return anon_response
                 anon_response.raise_for_status()
                 return anon_response
-            else:
-                response.raise_for_status()
+            response.raise_for_status()
 
         return response
+
+    def _forbidden_message(self, response: requests.Response) -> str:
+        """The error for a 403 that is not a rate limit."""
+        try:
+            message = str(response.json().get("message") or "")
+        except Exception:  # noqa: BLE001 - not JSON: report the status instead
+            message = ""
+        text = f"GitHub API error: {message or 'access forbidden (403)'}."
+        if not self._user_token:
+            # Only the server's token is configured here; a connection's
+            # token is the user's to fix, not an environment variable.
+            text += " This may require authentication - set GITHUB_ACCESS_TOKEN environment variable."
+        return text
 
     def fetch_repo_files(self, repo_url: str, path: str = "") -> List[str]:
         """Walk ``/contents/`` recursively (fallback for truncated trees)."""
@@ -467,6 +574,8 @@ class GitHubLoader(BaseRemote):
                 "Tree for %s is truncated; falling back to the directory walk",
                 repo_name,
             )
+        except (GitHubRateLimited, GitHubTokenRejected):
+            raise
         except Exception as e:
             logger.warning(
                 "Tree listing failed for %s (%s); falling back to the "
@@ -500,6 +609,11 @@ class GitHubLoader(BaseRemote):
             )
         self.ensure_instance_token_allowed(repo_name)
         branch = self.get_default_branch(repo_name)
+        documents = self._read_archive(repo_name, branch)
+        if documents is not None:
+            logger.info("Read %d file(s) from the %s@%s archive", len(documents), repo_name, branch)
+            return documents
+
         files = self._list_candidate_files(repo_name, branch)
         logger.info(
             "Fetching %d file(s) from %s@%s", len(files), repo_name, branch
@@ -508,10 +622,18 @@ class GitHubLoader(BaseRemote):
         # Fetch in parallel: this phase is pure network latency, and it was
         # previously one blocking round-trip per file.
         contents: Dict[str, Optional[str]] = {}
+        # A rate limit or a refused token fails every request after it, so
+        # the first one stops the load instead of skipping the rest one by one.
+        stopped: List[Exception] = []
 
         def _fetch(file_path: str) -> Tuple[str, Optional[str]]:
+            if stopped:
+                return file_path, None
             try:
                 return file_path, self.fetch_file_content(repo_name, file_path)
+            except (GitHubRateLimited, GitHubTokenRejected) as e:
+                stopped.append(e)
+                return file_path, None
             except Exception as e:
                 # One unreadable file must not sink the whole repo ingest.
                 logger.warning("Skipping %s: %s", file_path, e)
@@ -521,6 +643,8 @@ class GitHubLoader(BaseRemote):
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             for file_path, content in pool.map(_fetch, files):
                 contents[file_path] = content
+        if stopped:
+            raise stopped[0]
 
         documents = []
         for file_path in files:
@@ -528,14 +652,102 @@ class GitHubLoader(BaseRemote):
             # Skip binary files (content is None)
             if not content:
                 continue
-            documents.append(Document(
-                text=content,
-                doc_id=file_path,
-                extra_info={
-                    "title": file_path,
-                    "source": (
-                        f"https://github.com/{repo_name}/blob/{branch}/{file_path}"
-                    ),
-                }
-            ))
+            documents.append(self._document(repo_name, branch, file_path, content))
         return documents
+
+    @staticmethod
+    def _document(repo_name: str, branch: str, file_path: str, text: str) -> Document:
+        return Document(
+            text=text,
+            doc_id=file_path,
+            extra_info={
+                "title": file_path,
+                "source": f"https://github.com/{repo_name}/blob/{branch}/{file_path}",
+            },
+        )
+
+    def _read_archive(self, repo_name: str, branch: str) -> Optional[List[Document]]:
+        """Read the repository's text files from its tarball, in one API request.
+
+        The per-file path costs one request per file, and a few thousand
+        files use up the account's hourly rate limit. The tarball is
+        streamed and read in memory: nothing is written to disk, and only
+        regular files are read (no links).
+
+        Args:
+            repo_name: ``owner/name``.
+            branch: The ref to read.
+
+        Returns:
+            The documents in path order, or None when the tarball can't be
+            used (turned off, unavailable, over ``GITHUB_INGEST_MAX_ARCHIVE_BYTES``
+            or unreadable), so the caller falls back to per-file requests.
+
+        Raises:
+            GitHubRateLimited: GitHub rate-limited the account.
+            GitHubTokenRejected: GitHub refused the connection's token.
+        """
+        max_archive = self._max_archive_bytes()
+        if not max_archive:
+            return None
+        url = f"https://api.github.com/repos/{repo_name}/tarball/{branch}"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=100, stream=True)
+        except requests.RequestException as e:
+            logger.warning("Could not download the %s archive (%s); fetching files one by one", repo_name, e)
+            return None
+        try:
+            if response.status_code != 200:
+                reset_at = rate_limit_reset(response)
+                if reset_at is not None:
+                    raise GitHubRateLimited(reset_at)
+                if response.status_code == 401 and self._user_token:
+                    raise GitHubTokenRejected("GitHub rejected the connection's token. Reconnect GitHub to continue.")
+                logger.warning(
+                    "The %s archive is unavailable (%s); fetching files one by one",
+                    repo_name, response.status_code,
+                )
+                return None
+            try:
+                texts = self._archive_texts(response.raw, max_archive)
+            except (_ArchiveTooLarge, tarfile.TarError, OSError, EOFError) as e:
+                logger.warning("Could not read the %s archive (%s); fetching files one by one", repo_name, e)
+                return None
+        finally:
+            response.close()
+        return [self._document(repo_name, branch, path, texts[path]) for path in sorted(texts)]
+
+    def _archive_texts(self, raw: Any, max_archive: int) -> Dict[str, str]:
+        """``{path: text}`` of the ingestable files in a gzipped tarball stream.
+
+        GitHub puts every path under one ``owner-repo-sha/`` folder; it is
+        dropped. Files that fail the skip-list, the text check or the size
+        cap, are empty, or aren't UTF-8 are left out.
+        """
+        if hasattr(raw, "decode_content"):
+            raw.decode_content = True
+        max_file = self._max_file_bytes()
+        texts: Dict[str, str] = {}
+        skipped_big = 0
+        with tarfile.open(fileobj=_CappedReader(raw, max_archive), mode="r|gz") as tar:
+            for member in tar:
+                if not member.isfile():
+                    continue
+                _, _, path = member.name.partition("/")
+                if not path or self.should_skip_path(path) or not self.is_text_file(path):
+                    continue
+                if max_file and member.size > max_file:
+                    skipped_big += 1
+                    continue
+                handle = tar.extractfile(member)
+                if handle is None:
+                    continue
+                try:
+                    text = handle.read().decode("utf-8").strip()
+                except UnicodeDecodeError:
+                    continue
+                if text:
+                    texts[path] = text
+        if skipped_big:
+            logger.info("Skipped %d file(s) over the %d-byte cap", skipped_big, max_file)
+        return texts

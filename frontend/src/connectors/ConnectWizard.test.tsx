@@ -1298,6 +1298,22 @@ describe('ConnectWizard', () => {
       );
     });
 
+    it('says until when GitHub rate-limited the account', async () => {
+      service.createConnection.mockResolvedValue({
+        success: false,
+        code: 'rate_limited',
+        retry_at: '2026-10-26T12:55:00+00:00',
+      });
+      await render(github);
+      await connectWithKey('github_pat_abc');
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.rateLimited',
+      );
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.connectFailed',
+      );
+    });
+
     it('adds the read-only tools and syncs the picked repository in one step', async () => {
       setupOk(
         [{ id: 'src-1', name: 'octocat/private' }],

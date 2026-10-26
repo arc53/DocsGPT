@@ -360,3 +360,12 @@ class TestInWorker:
             type(celery), "current_worker_task", new_callable=PropertyMock, return_value=object()
         ):
             assert in_worker() is True
+
+
+@pytest.mark.unit
+def test_a_github_rate_limit_is_not_retried_by_celery():
+    """Retrying in 60/120/240 s cannot help before the hour-long reset; the user is told when instead."""
+    from docsgpt.api.user import tasks as user_tasks
+    from docsgpt.parser.remote.github_loader import GitHubRateLimited
+
+    assert GitHubRateLimited in user_tasks.ingest_remote.dont_autoretry_for

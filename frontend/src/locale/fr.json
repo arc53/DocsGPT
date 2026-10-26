@@ -2093,6 +2093,7 @@
         "methodOauth": "Se connecter avec {{name}}",
         "methodToken": "Utiliser un jeton d’accès",
         "credentialsRejected": "{{name}} n’a pas accepté ces identifiants. Vérifiez-les et réessayez.",
+        "rateLimited": "{{name}} limite les requêtes de ce compte jusqu’à {{time}}. Réessayez ensuite.",
         "setupReconnect": "Reconnectez-vous à {{name}} pour terminer la configuration.",
         "setupDisabled": "Un administrateur a désactivé {{name}}, il ne peut donc pas être configuré.",
         "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez, ou désactivez-les pour continuer.",
@@ -2189,7 +2190,8 @@
         "searchRepositories": "Rechercher des dépôts",
         "repositories": "Dépôts",
         "updated": "Mis à jour {{date}}",
-        "loadFailed": "Impossible de charger vos dépôts."
+        "loadFailed": "Impossible de charger vos dépôts.",
+        "rateLimited": "GitHub limite les requêtes de ce compte jusqu’à {{time}}. Réessayez ensuite."
       },
       "linear": {
         "teams": "Équipes",

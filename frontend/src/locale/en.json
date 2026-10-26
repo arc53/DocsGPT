@@ -2022,6 +2022,7 @@
         "methodOauth": "Sign in with {{name}}",
         "methodToken": "Use an access token",
         "credentialsRejected": "{{name}} did not accept these credentials. Check them and try again.",
+        "rateLimited": "{{name}} is limiting requests from this account until {{time}}. Try again after that.",
         "setupReconnect": "Sign in to {{name}} again to finish setting it up.",
         "setupDisabled": "An admin turned off {{name}}, so it can't be set up.",
         "toolsUnavailable": "{{name}}'s tools could not be reached. Try again, or turn them off to continue.",
@@ -2114,7 +2115,8 @@
         "searchRepositories": "Search repositories",
         "repositories": "Repositories",
         "updated": "Updated {{date}}",
-        "loadFailed": "Could not load your repositories."
+        "loadFailed": "Could not load your repositories.",
+        "rateLimited": "GitHub is limiting requests from this account until {{time}}. Try again after that."
       },
       "linear": {
         "teams": "Teams",

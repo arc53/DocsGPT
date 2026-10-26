@@ -7,6 +7,7 @@ from sqlalchemy.exc import DataError
 from docsgpt.api.user.idempotency import with_idempotency
 from docsgpt.celery_init import celery
 from docsgpt.parser.file.base_parser import DocumentParseError
+from docsgpt.parser.remote.github_loader import GitHubRateLimited
 from docsgpt.worker import (
     AttachmentRejectedError,
     agent_webhook_worker,
@@ -175,7 +176,9 @@ def ingest(
     return resp
 
 
-@celery.task(**DURABLE_TASK)
+# A GitHub rate limit lasts up to an hour: retrying after 60/120/240 s
+# cannot help, so the failed event tells the user when to try again instead.
+@celery.task(**durable_task(dont_autoretry_for=(DocumentParseError, GitHubRateLimited)))
 @with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,

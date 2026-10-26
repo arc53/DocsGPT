@@ -11,10 +11,10 @@ import { Card } from '../components/ui/card';
 import { EmptyState } from '../components/ui/empty-state';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
-import { formatDateTime } from '../utils/dateTimeUtils';
+import { formatClock, formatDateTime } from '../utils/dateTimeUtils';
 import type { GitHubRepository } from './types';
 
-type LoadError = 'reconnect' | 'failed' | null;
+type LoadError = 'reconnect' | 'rate_limited' | 'failed' | null;
 
 /**
  * Pick one repository a GitHub connection can read. A token lists what it
@@ -42,6 +42,8 @@ export default function RepoPicker({
   const [installUrl, setInstallUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<LoadError>(null);
+  // When GitHub lifts the account's rate limit, as the API reported it.
+  const [retryAt, setRetryAt] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   // Only the latest load may land: a reload after choosing repositories
   // must not be overwritten by a slower earlier one.
@@ -55,6 +57,11 @@ export default function RepoPicker({
       const data = await connectorsService.repositories(connectionId, token);
       if (request !== requestRef.current) return;
       if (!data?.success) {
+        if (data?.code === 'rate_limited' && data.retry_at) {
+          setRetryAt(data.retry_at);
+          setError('rate_limited');
+          return;
+        }
         setError(data?.code === 'reconnect' ? 'reconnect' : 'failed');
         return;
       }
@@ -115,11 +122,15 @@ export default function RepoPicker({
         title={
           error === 'reconnect'
             ? t('settings.connectors.detail.expired')
-            : t('settings.connectors.github.loadFailed')
+            : error === 'rate_limited' && retryAt
+              ? t('settings.connectors.github.rateLimited', {
+                  time: formatClock(new Date(retryAt)),
+                })
+              : t('settings.connectors.github.loadFailed')
         }
-        onRetry={error === 'failed' ? load : undefined}
+        onRetry={error === 'reconnect' ? undefined : load}
         action={
-          error !== 'failed' && onReconnect ? (
+          error === 'reconnect' && onReconnect ? (
             <Button
               variant="outline"
               size="sm"

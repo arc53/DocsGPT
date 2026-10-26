@@ -13,6 +13,7 @@ from typing import Optional
 import requests
 
 from docsgpt.connectors.service import TransientConnectionError
+from docsgpt.parser.remote.github_loader import GitHubRateLimited, rate_limit_reset
 
 API_URL = "https://api.github.com"
 _PAGE_SIZE = 100
@@ -22,6 +23,20 @@ MAX_REPOSITORIES = 1000
 
 class TokenRejected(ValueError):
     """GitHub answered 401: the token is wrong, expired or revoked."""
+
+
+class RateLimited(TransientConnectionError):
+    """GitHub rate-limited the token's account until ``reset_at``.
+
+    The hourly limit belongs to the GitHub account, so trying again before
+    ``reset_at`` cannot work, whichever token is pasted.
+    """
+
+    def __init__(self, reset_at):
+        limited = GitHubRateLimited(reset_at)
+        super().__init__(str(limited))
+        self.reset_at = reset_at
+        self.retry_after_seconds = limited.retry_after_seconds
 
 
 def _headers(token: str) -> dict:
@@ -37,7 +52,8 @@ def _get(url: str, token: str, params: Optional[dict] = None):
 
     Raises:
         TokenRejected: 401.
-        TransientConnectionError: Network trouble, rate limiting or a 5xx.
+        RateLimited: GitHub rate-limited the account.
+        TransientConnectionError: Network trouble or a 5xx.
         ValueError: Any other refusal.
     """
     try:
@@ -46,6 +62,9 @@ def _get(url: str, token: str, params: Optional[dict] = None):
         raise TransientConnectionError(f"GitHub did not answer: {type(exc).__name__}") from exc
     if response.status_code == 401:
         raise TokenRejected("GitHub did not accept this token.")
+    reset_at = rate_limit_reset(response)
+    if reset_at is not None:
+        raise RateLimited(reset_at)
     if response.status_code == 429 or response.status_code >= 500 or (
         response.status_code == 403 and response.headers.get("X-RateLimit-Remaining") == "0"
     ):

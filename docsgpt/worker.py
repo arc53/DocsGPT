@@ -82,7 +82,13 @@ from docsgpt.upload_limits import (
     enforce_parseable_attachment,
     UnsupportedUploadTypeError,
 )
-from docsgpt.vectorstore.index_lock import WORKER_WAIT_SECONDS, SourceBusy, graph_extract_lock, source_index_lock
+from docsgpt.vectorstore.index_lock import (
+    WORKER_WAIT_SECONDS,
+    SourceBusy,
+    connection_fetch_lock,
+    graph_extract_lock,
+    source_index_lock,
+)
 from docsgpt.utils import (
     count_tokens_docs,
     get_encoding,
@@ -1628,7 +1634,13 @@ def remote_worker(
 
                 raise ConnectionUnavailable("Reconnect to continue", connection_id=str(connection_id))
         try:
-            raw_docs = remote_loader.load_data(loader_input)
+            if connection_id:
+                # One download at a time per connection: sources added together
+                # would otherwise share out its account's API rate limit.
+                with connection_fetch_lock(str(connection_id)):
+                    raw_docs = remote_loader.load_data(loader_input)
+            else:
+                raw_docs = remote_loader.load_data(loader_input)
         except GitHubTokenRejected as exc:
             # A revoked token pauses the connection's sources until the
             # owner reconnects, instead of failing on every schedule.

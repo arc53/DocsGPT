@@ -2093,6 +2093,7 @@
         "methodOauth": "Iniciar sesión con {{name}}",
         "methodToken": "Usar un token de acceso",
         "credentialsRejected": "{{name}} no aceptó estas credenciales. Revísalas e inténtalo de nuevo.",
+        "rateLimited": "{{name}} limita las solicitudes de esta cuenta hasta las {{time}}. Vuelve a intentarlo después.",
         "setupReconnect": "Vuelve a iniciar sesión en {{name}} para terminar de configurarlo.",
         "setupDisabled": "Un administrador desactivó {{name}}, así que no se puede configurar.",
         "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo o desactívalas para continuar.",
@@ -2189,7 +2190,8 @@
         "searchRepositories": "Buscar repositorios",
         "repositories": "Repositorios",
         "updated": "Actualizado {{date}}",
-        "loadFailed": "No se pudieron cargar tus repositorios."
+        "loadFailed": "No se pudieron cargar tus repositorios.",
+        "rateLimited": "GitHub limita las solicitudes de esta cuenta hasta las {{time}}. Vuelve a intentarlo después."
       },
       "linear": {
         "teams": "Equipos",
