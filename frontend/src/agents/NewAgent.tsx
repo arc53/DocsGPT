@@ -93,6 +93,9 @@ import {
 } from './contextLimit';
 import { useAnalyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import AgentPreview from './AgentPreview';
+import AllowedOriginsSetting, {
+  originsIncomplete,
+} from './components/AllowedOriginsSetting';
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
@@ -314,6 +317,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       hasRequiredFields &&
       isJsonSchemaValidOrEmpty &&
       guardrailsOk &&
+      !originsIncomplete(agent.config) &&
       !contextLimitInvalid
     );
   };
@@ -328,6 +332,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const isDraftBlocked = () =>
     isJsonSchemaInvalid() ||
     guardrailsIncomplete(agent.config?.guardrails) ||
+    originsIncomplete(agent.config) ||
     contextLimitInvalid;
 
   // Resolve a selected source id to its display name. Prefer the caller's own
@@ -1861,6 +1866,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       }}
                     />
                   </SettingRow>
+                  <AllowedOriginsSetting
+                    config={agent.config}
+                    disabled={!canEditPolicy}
+                    onChange={(origins) =>
+                      setAgent({
+                        ...agent,
+                        config: { ...(agent.config ?? {}), ...origins },
+                      })
+                    }
+                  />
                   <SettingRow
                     label={t('agents.form.advanced.systemPromptOverride')}
                     description={t(

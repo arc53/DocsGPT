@@ -541,7 +541,11 @@ describe('NewAgent form', () => {
     ).toBe('agents.form.sponsors.addedByOther');
     expect(container.textContent).not.toContain('agents.form.sponsors.attach');
     expect(container.textContent).not.toContain('publicLinkNote');
-    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-slot="alert"]:not([data-testid="origins-read-only"])',
+      ),
+    ).toBeNull();
   });
 
   // The prompt Select has no description slot: the mark is a hint under it.

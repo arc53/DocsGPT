@@ -3109,7 +3109,24 @@
         "systemPromptOverride": "Autoriser le remplacement du prompt",
         "systemPromptOverrideDescription": "Permettre aux appelants de l’API v1 de remplacer le prompt système de cet agent",
         "tokenLimit": "Limite de jetons",
-        "requestLimit": "Limite de requêtes"
+        "requestLimit": "Limite de requêtes",
+        "origins": {
+          "label": "Origines autorisées",
+          "description": "Seuls les sites listés, et les sites auxquels cette instance fait confiance, peuvent appeler cet agent avec sa clé API",
+          "inputLabel": "Origine",
+          "hint": "Une adresse de site sans chemin, par exemple https://example.com. Appuyez sur Entrée pour l\u2019ajouter.",
+          "placeholder": "https://example.com",
+          "add": "Ajouter",
+          "listLabel": "Origines autorisées",
+          "remove": "Retirer {{origin}}",
+          "errors": {
+            "invalid": "Saisissez une adresse commençant par http:// ou https://, par exemple https://example.com",
+            "path": "N\u2019indiquez pas de chemin : une origine se limite au schéma, à l\u2019hôte et au port",
+            "duplicate": "{{origin}} est déjà dans la liste",
+            "full": "Vous pouvez ajouter au maximum {{max}} origines",
+            "required": "Ajoutez au moins une origine, ou désactivez cette option"
+          }
+        }
       },
       "preview": {
         "savedVersion": "version enregistrée",

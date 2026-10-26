@@ -216,6 +216,10 @@ export type AgentConfig = {
   /** `tool_id:action` writes on the owner's accounts API-key callers may run. */
   api_write_allowlist?: string[];
   analytics?: AnalyticsConfig;
+  /** While on, the agent's API key works only from `allowed_origins`. */
+  restrict_origins?: boolean;
+  /** Origins (`https://example.com`) that may call the agent with its key. */
+  allowed_origins?: string[];
   /**
    * Most tokens of history, documents and tool results one request fills,
    * below the model's window; null or absent uses the whole window.
