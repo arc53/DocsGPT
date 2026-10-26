@@ -410,6 +410,18 @@ def test_unreadable_config_on_a_new_agent_is_left_out(pg_conn):
     assert "Config is not a mapping; it was not imported" in result["warnings"]
 
 
+def test_invalid_config_on_a_new_agent_keeps_the_restriction_it_states(pg_conn):
+    config = {**_RESTRICTED, "api_write_allowlist": ["no-colon"]}
+    with Flask(__name__).app_context():
+        result = apply_import(pg_conn, "u_new_invalid", _doc(name="New Bot", _slug="new-bot", config=config))
+
+    created = AgentsRepository(pg_conn).get(result["agent_id"], "u_new_invalid")
+    assert created["config"]["restrict_origins"] is True
+    assert created["config"]["allowed_origins"] == ["https://docs.example.com"]
+    assert not created["config"].get("api_write_allowlist")
+    assert len([w for w in result["warnings"] if w.startswith("Invalid config (")]) == 1
+
+
 def test_update_clears_removed_json_schema(pg_conn):
     """On update the YAML is authoritative — removing json_schema clears it."""
     user = "u_clear"

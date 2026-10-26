@@ -678,6 +678,20 @@ def _serialize_workflow(conn, agent: dict, user: str):
     return block, tools, sources, model
 
 
+_ORIGIN_FIELDS = ("restrict_origins", "allowed_origins")
+
+
+def _config_valid(raw) -> bool:
+    """Whether a file's ``config`` passes the API's validation as written."""
+    from docsgpt.api.user.agents.routes import normalize_agent_config
+
+    try:
+        normalize_agent_config(raw)
+    except ValueError:
+        return False
+    return True
+
+
 def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
     """Validate a spec's ``config`` through the same gate as the API.
 
@@ -717,7 +731,7 @@ def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
         raw, config = {}, {}
     if current is not None:
         kept = AgentConfig.parse(current)
-        for field in ("restrict_origins", "allowed_origins"):
+        for field in _ORIGIN_FIELDS:
             if field not in raw:
                 config[field] = copy.deepcopy(getattr(kept, field))
     return config
@@ -1730,11 +1744,15 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         # Row vanished between resolve and write — fall through to create.
 
     # A new agent starts from the admin's default guardrails, under the file's
-    # own; a file config that failed validation contributes nothing.
-    file_config = spec.get("config") if authoritative["config"] else None
-    created_config = _import_config(
-        {"config": agent_defaults.seed(conn, file_config)}, None, warnings
-    )
+    # own. A file config that failed validation contributes only its origin
+    # policy, so a restriction the file meant stays on.
+    file_config = spec.get("config")
+    if _config_valid(file_config):
+        created_config = _import_config({"config": agent_defaults.seed(conn, file_config)}, None, [])
+    else:
+        created_config = _import_config({"config": agent_defaults.seed(conn, None)}, None, [])
+        imported = authoritative["config"]
+        created_config.update({field: imported[field] for field in _ORIGIN_FIELDS if field in imported})
     row = agents_repo.create(
         user, spec.get("name"), "draft", **{**authoritative, **optional, "config": created_config}
     )

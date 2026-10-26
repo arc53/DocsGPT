@@ -24,6 +24,7 @@ describe('parseOrigin', () => {
     ['https://example.com:443', 'https://example.com'],
     ['https://bücher.de', 'https://xn--bcher-kva.de'],
     ['http://[::1]:8080', 'http://[::1]:8080'],
+    ['https://a.com.', 'https://a.com.'],
   ])('stores %s as %s', (value, origin) => {
     expect(parseOrigin(value)).toEqual({ origin });
   });
@@ -33,6 +34,9 @@ describe('parseOrigin', () => {
     'ftp://example.com',
     'https://*.example.com',
     'https://user:pass@example.com',
+    'https://a..example.com',
+    'https://.example.com',
+    `https://${'a'.repeat(64)}.com`,
     '',
   ])('refuses %s as not an origin', (value) => {
     expect(parseOrigin(value)).toEqual({ error: 'invalid' });

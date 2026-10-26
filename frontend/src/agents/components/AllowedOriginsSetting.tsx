@@ -17,6 +17,21 @@ export const MAX_ALLOWED_ORIGINS = 100;
 type OriginsConfig = Pick<AgentConfig, 'restrict_origins' | 'allowed_origins'>;
 
 /**
+ * A host the server accepts once in ASCII: dot-separated labels of 1 to 63
+ * characters, a trailing dot allowed. The URL parser lets through hosts such
+ * as `a..example.com` that the server refuses.
+ */
+const HOST_LABEL = /^[a-z0-9_-]{1,63}$/;
+
+function validHost(hostname: string): boolean {
+  if (hostname.startsWith('[')) return true;
+  const labels = (
+    hostname.endsWith('.') ? hostname.slice(0, -1) : hostname
+  ).split('.');
+  return labels.every((label) => HOST_LABEL.test(label));
+}
+
+/**
  * The canonical origin of what a person typed, the form the server stores and
  * browsers send: lowercase scheme and host, punycode for an international
  * host, the default port dropped. A path, query, fragment, credentials or a
@@ -37,7 +52,7 @@ export function parseOrigin(
   }
   if (
     !url.hostname ||
-    url.hostname.includes('*') ||
+    !validHost(url.hostname) ||
     url.username ||
     url.password
   ) {
@@ -187,7 +202,7 @@ export default function AllowedOriginsSetting({
                   {editable ? (
                     <Badge
                       variant="neutral"
-                      className="font-mono"
+                      className="max-w-full font-mono"
                       onRemove={() =>
                         update({
                           allowed_origins: origins.filter((o) => o !== origin),
@@ -198,11 +213,15 @@ export default function AllowedOriginsSetting({
                         interpolation: { escapeValue: false },
                       })}
                     >
-                      {origin}
+                      <span className="min-w-0 wrap-anywhere whitespace-normal">
+                        {origin}
+                      </span>
                     </Badge>
                   ) : (
-                    <Badge variant="neutral" className="font-mono">
-                      {origin}
+                    <Badge variant="neutral" className="max-w-full font-mono">
+                      <span className="min-w-0 wrap-anywhere whitespace-normal">
+                        {origin}
+                      </span>
                     </Badge>
                   )}
                 </li>
