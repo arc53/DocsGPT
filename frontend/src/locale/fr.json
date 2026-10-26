@@ -66,6 +66,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "Conversation poursuivie",
         "job": "Tâche en arrière-plan terminée",
         "lost": "Tâche en arrière-plan interrompue",
         "monitor": "Moniteur déclenché",
@@ -89,6 +90,7 @@
       "failed": "Impossible d’activer les notifications"
     },
     "wake": {
+      "continuation": "Conversation poursuivie",
       "job": "Tâche en arrière-plan terminée",
       "lost": "Tâche en arrière-plan interrompue",
       "monitor": "Moniteur déclenché",

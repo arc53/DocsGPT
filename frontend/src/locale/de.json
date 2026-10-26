@@ -65,6 +65,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "Gespräch fortgesetzt",
         "job": "Hintergrund-Job fertig",
         "lost": "Hintergrund-Job unterbrochen",
         "monitor": "Monitor hat angeschlagen",
@@ -88,6 +89,7 @@
       "failed": "Benachrichtigungen konnten nicht aktiviert werden"
     },
     "wake": {
+      "continuation": "Gespräch fortgesetzt",
       "job": "Hintergrund-Job fertig",
       "lost": "Hintergrund-Job unterbrochen",
       "monitor": "Monitor hat angeschlagen",

@@ -64,6 +64,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "对话已继续",
         "job": "后台任务已完成",
         "lost": "后台任务已中断",
         "monitor": "监控条件已触发",
@@ -87,6 +88,7 @@
       "failed": "无法开启通知"
     },
     "wake": {
+      "continuation": "对话已继续",
       "job": "后台任务已完成",
       "lost": "后台任务已中断",
       "monitor": "监控条件已触发",

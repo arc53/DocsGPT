@@ -39,6 +39,8 @@ def timed_stream(factory: Callable[[], Iterator[Any]], *, first_token: float, st
                 try:
                     chunk = next(iterator)
                 except BaseException as exc:
+                    # Relay cancellation/process-control errors across this
+                    # thread boundary too; the consumer re-raises them.
                     results.put((False, exc))
                     return
                 results.put((True, chunk))

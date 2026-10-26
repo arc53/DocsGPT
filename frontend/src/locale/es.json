@@ -66,6 +66,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "Conversación continuada",
         "job": "Tarea en segundo plano terminada",
         "lost": "Tarea en segundo plano interrumpida",
         "monitor": "El monitor detectó un cambio",
@@ -89,6 +90,7 @@
       "failed": "No se pudieron activar las notificaciones"
     },
     "wake": {
+      "continuation": "Conversación continuada",
       "job": "Tarea en segundo plano terminada",
       "lost": "Tarea en segundo plano interrumpida",
       "monitor": "El monitor detectó un cambio",

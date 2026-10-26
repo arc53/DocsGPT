@@ -77,8 +77,19 @@ class TestLiveHeadlessRun:
             yield {"answer": "Saved progress"}
             raise SoftTimeLimitExceeded()
 
-        outcome, closed = _run(monkeypatch, events())
+        outcome, closed = _run(monkeypatch, events(), endpoint="continuation")
         assert closed == [True]
         assert outcome["answer"] == "Saved progress"
         assert outcome["error_type"] == "TimeLimit"
         assert outcome["tool_calls"] == [{"call_id": "c1", "job_id": "j1"}]
+
+
+    def test_scheduled_time_limit_reaches_its_existing_outer_handler(self, monkeypatch):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        def events():
+            yield {"answer": "Partial"}
+            raise SoftTimeLimitExceeded()
+
+        with pytest.raises(SoftTimeLimitExceeded):
+            _run(monkeypatch, events(), endpoint="scheduled")

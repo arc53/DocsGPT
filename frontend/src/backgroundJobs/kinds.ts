@@ -15,6 +15,7 @@ export const WAKE_SOURCES = [
   'monitor',
   'trigger',
   'approval',
+  'continuation',
   'monitor_paused',
   'monitor_expired',
 ] as const;

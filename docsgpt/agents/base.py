@@ -533,16 +533,16 @@ class BaseAgent(ABC):
     def gen(
         self, query: str, log_context: LogContext = None
     ) -> Generator[Dict, None, None]:
-        self.bind_guardrail_log_context(log_context)
-        query, decision = self.apply_input_guardrails(query)
-        if decision is not None and decision.blocked:
-            yield self._guardrail_block_event(
-                decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
-            )
-            self.flush_guardrail_audit()
-            return
         try:
             check_stream(getattr(self.tool_executor, "message_id", None))
+            self.bind_guardrail_log_context(log_context)
+            query, decision = self.apply_input_guardrails(query)
+            if decision is not None and decision.blocked:
+                yield self._guardrail_block_event(
+                    decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
+                )
+                self.flush_guardrail_audit()
+                return
             yield from self._gen_inner(query, log_context)
         except RoundDeferred:
             yield {"tool_calls": self._get_truncated_tool_calls()}

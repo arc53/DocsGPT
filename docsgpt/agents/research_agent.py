@@ -687,6 +687,9 @@ class ResearchAgent(BaseAgent):
         Returns:
             ``(tool result, call id)``.
         """
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(getattr(self, "tool_executor", None), "message_id", None))
         gen = executor.execute(tools_dict, call, self.llm.__class__.__name__)
         try:
             while True:

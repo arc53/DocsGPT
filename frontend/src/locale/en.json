@@ -65,6 +65,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "Conversation continued",
         "job": "Background job finished",
         "lost": "Background job interrupted",
         "monitor": "Monitor matched",
@@ -88,6 +89,7 @@
       "failed": "Couldn't turn on notifications"
     },
     "wake": {
+      "continuation": "Conversation continued",
       "job": "Background job finished",
       "lost": "Background job interrupted",
       "monitor": "Monitor matched",

@@ -27,7 +27,12 @@ import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
 import WakeEventRow from '../backgroundJobs/WakeEventRow';
 import type { OpenArtifactRequest } from './artifactCards';
 import ConversationBubble from './ConversationBubble';
-import { FEEDBACK, Query, Status } from './conversationModels';
+import {
+  FEEDBACK,
+  Query,
+  Status,
+  TERMINATED_RESPONSE_PLACEHOLDER,
+} from './conversationModels';
 import { curatedErrorText } from './curatedError';
 import StreamingStatusLine from './StreamingStatusLine';
 import { cn } from '@/lib/utils';
@@ -206,7 +211,9 @@ export default function ConversationMessages({
           : null;
       return (
         <Fragment key={`${index}-ERROR`}>
-          {query.errorCode === 'time_limit' && query.response ? (
+          {query.errorCode === 'time_limit' &&
+          query.response &&
+          query.response !== TERMINATED_RESPONSE_PLACEHOLDER ? (
             <ConversationBubble
               className={bubbleMargin}
               message={query.response}
@@ -215,6 +222,11 @@ export default function ConversationMessages({
               sources={query.sources}
               toolCalls={query.tool_calls}
               segments={query.segments}
+              workflowRunId={query.workflow_run_id}
+              conversationArtifacts={conversationArtifacts}
+              onOpenArtifact={onOpenArtifact}
+              onToolAction={onToolAction}
+              agentId={agentId}
               isStreaming={false}
             />
           ) : null}

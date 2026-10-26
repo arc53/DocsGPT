@@ -180,3 +180,22 @@ def test_shared_tool_loop_does_not_recover_a_soft_limit():
     with pytest.raises(SoftTimeLimitExceeded):
         list(handler.handle_tool_calls(agent, [ToolCall(id="c", name="tool", arguments={})], {}, []))
     agent._execute_tool_action.assert_called_once()
+
+
+def test_deferral_before_input_checks_is_a_successful_round(monkeypatch):
+    from types import SimpleNamespace
+    from docsgpt.agents.base import BaseAgent
+    from docsgpt.core import run_budget as budgets
+
+    clock = [0.0]
+    monkeypatch.setattr(budgets, "monotonic", lambda: clock[0])
+    agent = SimpleNamespace(
+        tool_executor=SimpleNamespace(message_id=None),
+        bind_guardrail_log_context=Mock(), apply_input_guardrails=Mock(),
+        _get_truncated_tool_calls=lambda: [], _emit_responses_metadata=lambda: iter([]),
+    )
+    with budgets.run_budget(100, margin=10):
+        clock[0] = 95
+        events = list(BaseAgent.gen.__wrapped__(agent, "q"))
+    assert events[-1] == {"metadata": {"budget_deferred": True}}
+    agent.apply_input_guardrails.assert_not_called()

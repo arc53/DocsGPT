@@ -29,7 +29,7 @@ from docsgpt.api.answer.services.stream_processor import (
     source_for_docs,
     wiki_tool_config,
 )
-from docsgpt.core.run_budget import StreamCancelled
+from docsgpt.core.run_budget import StreamCancelled, is_budget_exhausted
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
@@ -456,7 +456,9 @@ def _run_agent_headless(
             if on_event is not None:
                 try:
                     on_event(event)
-                except Exception:
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     logger.exception("Headless run for agent %s: its event observer failed", agent_id)
             # ``Agent.gen`` reports a failed stream with an error event rather than
             # by raising. Dropping it here (as this loop used to) makes a broken run
@@ -499,9 +501,8 @@ def _run_agent_headless(
                 stopped = True
                 break
     except Exception as exc:
-        from docsgpt.core.run_budget import is_budget_exhausted
-
-        if not is_budget_exhausted(exc):
+        if not is_budget_exhausted(exc) or endpoint != "continuation":
+            # Scheduled/webhook runs retain their existing outer time-limit handlers.
             raise
         budget_error = True
         stream_error = "Stopped: time limit."
