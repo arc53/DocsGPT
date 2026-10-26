@@ -1,7 +1,7 @@
 ---
 title: Per-Source Configuration
 description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, relevance, LLM screening, review of chunks flagged for prompt injection, defaults for new sources and more.
-lastUpdated: 2026-10-23
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -71,8 +71,9 @@ Chunking decides how a document is split into the pieces that get embedded and s
 
 <Callout type="warning" emoji="⚠️">
 Chunking is bake-time. After changing `strategy`, `max_tokens`, `min_tokens`, `chunk_overlap`,
-or `duplicate_headers`, re-ingest the source so existing chunks are rebuilt. Re-ingesting a website, GitHub or
-connector source runs a sync of it, which fetches its pages or files again.
+or `duplicate_headers`, re-ingest the source so existing chunks are rebuilt. The first re-ingest of an uploaded
+source after the change rebuilds the chunks of every file; later ones re-embed only changed files. Re-ingesting a
+website, GitHub or connector source runs a sync of it, which fetches its pages or files again.
 </Callout>
 
 ## Retrieval configuration

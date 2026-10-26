@@ -2938,7 +2938,8 @@
         "selectModels": "為此代理選擇模型",
         "selectDefaultModel": "選擇預設模型",
         "enterTokenLimit": "輸入權杖限制",
-        "enterRequestLimit": "輸入請求限制"
+        "enterRequestLimit": "輸入請求限制",
+        "contextLimitDefault": "模型預設值"
       },
       "sourcePopup": {
         "title": "選擇知識",
@@ -2985,6 +2986,9 @@
         "jsonSchemaDescription": "定義JSON架構以強制執行結構化輸出格式",
         "validJson": "有效的JSON",
         "invalidJson": "無效的JSON - 修復後才能儲存",
+        "contextLimit": "上下文上限",
+        "contextLimitDescription": "每次請求傳送給模型的歷史紀錄、文件和工具結果的最大 token 數。較早的訊息會被摘要，以保持在上限以內。留空則使用模型的完整上下文視窗。",
+        "contextLimitRange": "請輸入 {{min, number}} 到 {{max, number}} 之間的 token 數，或留空。",
         "tokenLimiting": "權杖限制",
         "tokenLimitingDescription": "限制此代理每天可使用的總權杖數",
         "requestLimiting": "請求限制",

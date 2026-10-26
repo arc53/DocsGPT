@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
-description: Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
-lastUpdated: 2026-10-24
+description: "Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes: back up, run database migrations, roll back, and read each release's notes."
+lastUpdated: 2026-10-25
 ---
 
 import { Callout } from 'nextra/components'
@@ -169,9 +169,9 @@ docker compose run --rm backend alembic -c docsgpt/alembic.ini downgrade <revisi
 
 Newest first. Each note says what an existing deployment has to do.
 
-### Upgrading from 1.0.0
+### Upgrading to 1.1.0
 
-These apply to the release after 1.0.0.
+These apply to 1.1.0.
 
 #### Ingests move to an `ingest` queue
 

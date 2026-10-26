@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, StrictInt, field_validator, model_validator
 
 from docsgpt.analytics.config import AnalyticsConfig
 from docsgpt.guardrails.types import ACTIONS_BY_STAGE, Action, Stage
@@ -31,6 +31,12 @@ def _reason(exc: Exception) -> str:
     return str(exc)
 
 MODES = ("monitor_only", "scan_all")
+
+# Bounds of ``AgentConfig.context_window_limit``. Below the floor the system
+# prompt, tool definitions and a compression summary (up to 4,000 tokens)
+# would cross the compression threshold on their own, compressing every turn.
+MIN_CONTEXT_WINDOW_LIMIT = 16000
+MAX_CONTEXT_WINDOW_LIMIT = 10_000_000
 
 
 def _item_level(check: str) -> bool:
@@ -239,6 +245,21 @@ class AgentConfig(BaseModel):
     # Conversation analytics (``docsgpt.analytics``): the owner's labelling
     # choices, not policy, so ``_policy_changed`` leaves them out.
     analytics: AnalyticsConfig = AnalyticsConfig()
+    # Most tokens of history, documents and tool results one request of this
+    # agent fills, below the model's own window (``get_context_budget``).
+    # None uses the whole window.
+    context_window_limit: Optional[StrictInt] = None
+
+    @field_validator("context_window_limit")
+    @classmethod
+    def _bounded_context_window_limit(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return None
+        if value < MIN_CONTEXT_WINDOW_LIMIT:
+            raise ValueError(f"context_window_limit must be at least {MIN_CONTEXT_WINDOW_LIMIT:,} tokens")
+        if value > MAX_CONTEXT_WINDOW_LIMIT:
+            raise ValueError(f"context_window_limit must be at most {MAX_CONTEXT_WINDOW_LIMIT:,} tokens")
+        return value
 
     @field_validator("api_write_allowlist")
     @classmethod
@@ -272,4 +293,27 @@ class AgentConfig(BaseModel):
                 guardrails=GuardrailsConfig.parse(raw.get("guardrails")),
                 api_write_allowlist=allowlist.api_write_allowlist,
                 analytics=AnalyticsConfig.parse(raw.get("analytics")),
+                context_window_limit=context_window_limit_of(raw),
             )
+
+
+def context_window_limit_of(raw: Optional[dict]) -> Optional[int]:
+    """The context limit in a stored ``agents.config``, without validating the rest.
+
+    Lenient like ``AgentConfig.parse``: a missing or invalid value is None,
+    which leaves the model's whole window.
+
+    Args:
+        raw: The agent's stored ``config``.
+
+    Returns:
+        The limit in tokens, or None.
+    """
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return AgentConfig.model_validate(
+            {"context_window_limit": raw.get("context_window_limit")}
+        ).context_window_limit
+    except Exception:
+        return None

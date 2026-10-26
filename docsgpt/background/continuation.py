@@ -41,6 +41,7 @@ from docsgpt.background.context import BackgroundContext, auto_resume_allowed
 from docsgpt.background.events import publish_conversation_continued
 from docsgpt.background.live_turn import LiveTurn
 from docsgpt.core.settings import settings
+from docsgpt.guardrails.config import context_window_limit_of
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakesRepository
@@ -216,8 +217,13 @@ def _agent_config(conn: Connection, conversation: Dict[str, Any], model_id: Opti
     }
 
 
-def _history(messages: List[Dict[str, Any]], model_id: Optional[str], user_id: str) -> List[Dict[str, Any]]:
-    """The conversation as a chat turn would replay it, trimmed to the model's window."""
+def _history(
+    messages: List[Dict[str, Any]],
+    model_id: Optional[str],
+    user_id: str,
+    context_window_limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """The conversation as a chat turn would replay it, trimmed to the model's window or the agent's limit."""
     from docsgpt.api.answer.services.compression.types import is_compression_summary_row
     from docsgpt.utils import limit_chat_history
 
@@ -235,11 +241,15 @@ def _history(messages: List[Dict[str, Any]], model_id: Optional[str], user_id: s
         if message.get("metadata"):
             entry["metadata"] = message["metadata"]
         history.append(entry)
-    return limit_chat_history(history, model_id=model_id, user_id=user_id)
+    return limit_chat_history(history, max_token_limit=context_window_limit, model_id=model_id, user_id=user_id)
 
 
 def _replay(
-    conversation: Dict[str, Any], messages: List[Dict[str, Any]], model_id: Optional[str], user_id: str
+    conversation: Dict[str, Any],
+    messages: List[Dict[str, Any]],
+    model_id: Optional[str],
+    user_id: str,
+    context_window_limit: Optional[int] = None,
 ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     """The compressed summary and the history a chat turn would replay.
 
@@ -253,6 +263,8 @@ def _replay(
         messages: Its messages, in order.
         model_id: The model the turn runs on.
         user_id: The conversation's owner.
+        context_window_limit: The agent's context limit, which the history
+            is trimmed to when set.
 
     Returns:
         ``(summary, history)``: ``summary`` is None when no usable point exists.
@@ -262,11 +274,11 @@ def _replay(
 
     metadata = conversation.get("compression_metadata") or {}
     if not (metadata.get("is_compressed") and latest_usable_compression_point(metadata.get("compression_points"))):
-        return None, _history(messages, model_id, user_id)
+        return None, _history(messages, model_id, user_id, context_window_limit)
     summary, recent = CompressionService(llm=None, model_id=model_id or "").get_compressed_context(
         {**conversation, "queries": messages}
     )
-    return summary or None, _history(recent, model_id, user_id)
+    return summary or None, _history(recent, model_id, user_id, context_window_limit)
 
 
 def _last_model(messages: List[Dict[str, Any]]) -> Optional[str]:
@@ -456,7 +468,9 @@ def _run_turn(
     if agent_config is None:
         raise LookupError("the conversation's agent no longer exists")
     query = wake.render_events(wakes)
-    summary, history = _replay(conversation, messages, model_id, user_id)
+    summary, history = _replay(
+        conversation, messages, model_id, user_id, context_window_limit_of(agent_config.get("config"))
+    )
     agent_id = agent_config.get("id")
     background = BackgroundContext(
         user_id=str(user_id),

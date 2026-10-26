@@ -918,7 +918,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
 
         captured: dict = {}
 
-        def _fake_budget(model_id, user_id=None):
+        def _fake_budget(model_id, user_id=None, context_window_limit=None):
             captured["model_id"] = model_id
             captured["user_id"] = user_id
             return 6000
@@ -944,7 +944,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
 
         captured: dict = {}
 
-        def _fake_limit(history, model_id="docsgpt-local", user_id=None):
+        def _fake_limit(history, max_token_limit=None, model_id="docsgpt-local", user_id=None):
             captured["model_id"] = model_id
             captured["user_id"] = user_id
             return history

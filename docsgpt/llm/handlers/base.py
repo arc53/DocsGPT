@@ -1441,8 +1441,13 @@ class LLMHandler(ABC):
                         compression_attempted = True
                         compression_successful = False
 
-                # If compression wasn't attempted or failed, skip remaining tools
-                if not compression_successful:
+                # If compression wasn't attempted or failed, skip remaining
+                # tools, unless only the agent's context limit was crossed:
+                # that limit is a budget, and the model can still take more.
+                over_model = getattr(agent, "_over_model_threshold", None)
+                if not compression_successful and (
+                    not callable(over_model) or over_model(updated_messages)
+                ):
                     if i == 0:
                         # Special case: limit reached before executing any tools
                         # This can happen when previous tool responses pushed context over limit

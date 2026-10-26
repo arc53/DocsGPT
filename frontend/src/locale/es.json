@@ -3040,7 +3040,8 @@
         "selectModels": "Seleccionar modelos para este agente",
         "selectDefaultModel": "Seleccionar modelo predeterminado",
         "enterTokenLimit": "Ingresar límite de tokens",
-        "enterRequestLimit": "Ingresar límite de solicitudes"
+        "enterRequestLimit": "Ingresar límite de solicitudes",
+        "contextLimitDefault": "Predeterminado del modelo"
       },
       "sourcePopup": {
         "title": "Seleccionar conocimiento",
@@ -3087,6 +3088,9 @@
         "jsonSchemaDescription": "Define un esquema JSON para aplicar formato de salida estructurado",
         "validJson": "JSON válido",
         "invalidJson": "JSON inválido - corrige para habilitar el guardado",
+        "contextLimit": "Límite de contexto",
+        "contextLimitDescription": "Máximo de tokens de historial, documentos y resultados de herramientas que se envían al modelo en cada solicitud. Los mensajes antiguos se resumen para no superarlo. Déjalo vacío para usar toda la ventana de contexto del modelo.",
+        "contextLimitRange": "Introduce entre {{min, number}} y {{max, number}} tokens, o déjalo vacío.",
         "tokenLimiting": "Límite de tokens",
         "tokenLimitingDescription": "Limita el total diario de tokens que puede usar este agente",
         "requestLimiting": "Límite de solicitudes",

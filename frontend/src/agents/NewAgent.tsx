@@ -85,6 +85,12 @@ import GuardrailsSection, {
 } from './components/GuardrailsSection';
 import AnalyticsSection from './components/AnalyticsSection';
 import { configToSave, sameAgent } from './analyticsConfig';
+import {
+  MAX_CONTEXT_WINDOW_LIMIT,
+  MIN_CONTEXT_WINDOW_LIMIT,
+  isContextLimitInvalid,
+  parseContextLimit,
+} from './contextLimit';
 import { useAnalyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import AgentPreview from './AgentPreview';
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
@@ -277,6 +283,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     { label: t('agents.form.agentTypes.research'), value: 'research' },
   ];
 
+  const contextLimitInvalid = isContextLimitInvalid(
+    agent.config?.context_window_limit,
+  );
+
   const isPublishable = () => {
     const hasRequiredFields =
       agent.name && agent.description && agent.prompt_id && agent.agent_type;
@@ -285,7 +295,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const guardrailsOk = !guardrailsIncomplete(agent.config?.guardrails);
     // Sources are optional: an agent without one answers from the model and
     // its tools only.
-    return hasRequiredFields && isJsonSchemaValidOrEmpty && guardrailsOk;
+    return (
+      hasRequiredFields &&
+      isJsonSchemaValidOrEmpty &&
+      guardrailsOk &&
+      !contextLimitInvalid
+    );
   };
 
   const isJsonSchemaInvalid = () => {
@@ -296,7 +311,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // validation as publish, so they need the same gate — otherwise an
   // incomplete control 400s the draft behind a message that names no field.
   const isDraftBlocked = () =>
-    isJsonSchemaInvalid() || guardrailsIncomplete(agent.config?.guardrails);
+    isJsonSchemaInvalid() ||
+    guardrailsIncomplete(agent.config?.guardrails) ||
+    contextLimitInvalid;
 
   // Resolve a selected source id to its display name. Prefer the caller's own
   // source list; fall back to the owner-resolved name embedded in the agent
@@ -1720,6 +1737,49 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 )}
 
                 <SettingRows className="mt-6">
+                  <SettingRow
+                    label={t('agents.form.advanced.contextLimit')}
+                    description={t(
+                      'agents.form.advanced.contextLimitDescription',
+                    )}
+                    alignStart
+                    after={
+                      contextLimitInvalid ? (
+                        <p className="text-destructive text-xs">
+                          {t('agents.form.advanced.contextLimitRange', {
+                            min: MIN_CONTEXT_WINDOW_LIMIT,
+                            max: MAX_CONTEXT_WINDOW_LIMIT,
+                          })}
+                        </p>
+                      ) : null
+                    }
+                  >
+                    <Input
+                      type="number"
+                      min={MIN_CONTEXT_WINDOW_LIMIT}
+                      max={MAX_CONTEXT_WINDOW_LIMIT}
+                      step={1000}
+                      className="w-32 text-right"
+                      value={agent.config?.context_window_limit ?? ''}
+                      onChange={(e) => {
+                        const limit = parseContextLimit(e.target.value);
+                        setAgent((prev) => ({
+                          ...prev,
+                          config: {
+                            ...(prev.config ?? {}),
+                            context_window_limit: limit,
+                          },
+                        }));
+                      }}
+                      // A cost control, so policy (`edit_policy`) like the
+                      // usage limits beside it.
+                      disabled={!canEditPolicy}
+                      aria-invalid={contextLimitInvalid || undefined}
+                      placeholder={t(
+                        'agents.form.placeholders.contextLimitDefault',
+                      )}
+                    />
+                  </SettingRow>
                   <SettingRow
                     label={t('agents.form.advanced.tokenLimiting')}
                     description={t(

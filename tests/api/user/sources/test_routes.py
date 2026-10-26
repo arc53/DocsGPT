@@ -1710,7 +1710,7 @@ class TestSourceConfigResource:
         from docsgpt.api.user.sources.routes import SourceConfigResource
 
         user = "u-cfg-chunk"
-        src = _seed_source(pg_conn, user, name="cfg-chunk", type="file")
+        src = _seed_source(pg_conn, user, name="cfg-chunk", type="file", file_path="inputs/u-cfg-chunk/cfg-chunk")
 
         with _patch_db(pg_conn), app.test_request_context(
             f"/api/sources/{src['id']}/config",
@@ -1723,6 +1723,31 @@ class TestSourceConfigResource:
 
         assert response.status_code == 200
         assert response.json["requires_reingest"] is True
+        # The next reingest re-chunks every file, not only edited ones.
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        row = SourcesRepository(pg_conn).get_any(str(src["id"]), user)
+        assert row["metadata"]["rechunk_pending"] is True
+
+    def test_chunking_change_on_a_source_without_files_sets_no_flag(self, app, pg_conn):
+        # Its reingest is a sync, which re-chunks everything anyway.
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-chunk-web"
+        src = _seed_source(pg_conn, user, name="cfg-web", type="website")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{src['id']}/config",
+            method="PATCH",
+            json={"chunking": {"max_tokens": 800}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(str(src["id"]))
+
+        assert response.json["requires_reingest"] is True
+        row = SourcesRepository(pg_conn).get_any(str(src["id"]), user)
+        assert "rechunk_pending" not in (row["metadata"] or {})
 
     def test_viewer_rejected(self, app, pg_conn):
         # A team VIEWER (not editor) cannot edit config → 403.

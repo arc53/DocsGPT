@@ -2936,7 +2936,8 @@
         "selectModels": "为此智能体选择模型",
         "selectDefaultModel": "选择默认模型",
         "enterTokenLimit": "输入令牌限制",
-        "enterRequestLimit": "输入请求限制"
+        "enterRequestLimit": "输入请求限制",
+        "contextLimitDefault": "模型默认值"
       },
       "sourcePopup": {
         "title": "选择知识",
@@ -2983,6 +2984,9 @@
         "jsonSchemaDescription": "定义JSON架构以强制执行结构化输出格式",
         "validJson": "有效的JSON",
         "invalidJson": "无效的JSON - 修复后才能保存",
+        "contextLimit": "上下文上限",
+        "contextLimitDescription": "每次请求发送给模型的历史记录、文档和工具结果的最大 token 数。较早的消息会被总结，以保持在上限以内。留空则使用模型的完整上下文窗口。",
+        "contextLimitRange": "请输入 {{min, number}} 到 {{max, number}} 之间的 token 数，或留空。",
         "tokenLimiting": "令牌限制",
         "tokenLimitingDescription": "限制此智能体每天可使用的总令牌数",
         "requestLimiting": "请求限制",

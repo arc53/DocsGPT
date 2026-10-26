@@ -34,6 +34,7 @@ from docsgpt.agents.attachment_budget import (
 from docsgpt.agents.context_overflow import ContextOverflowError, turn_message_budget
 from docsgpt.agents.turn_capabilities import build_turn_capabilities
 from docsgpt.core.model_utils import (
+    cap_context_window,
     get_api_key_for_provider,
     get_default_model_id,
     get_model_capabilities,
@@ -43,7 +44,7 @@ from docsgpt.core.model_utils import (
 )
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
-from docsgpt.guardrails.config import AgentConfig
+from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from sqlalchemy import text as sql_text
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
@@ -807,6 +808,7 @@ class StreamProcessor:
             # actual context window instead of the default 128k.
             self.history = limit_chat_history(
                 json.loads(self.data.get("history", "[]")),
+                max_token_limit=self._context_window_limit(),
                 model_id=self.model_id,
                 user_id=self.model_user_id,
             )
@@ -826,6 +828,7 @@ class StreamProcessor:
                 # an attach-heavy turn compresses the history rather than
                 # overflowing next to it.
                 current_query_tokens=self._turn_token_estimate(),
+                context_window_limit=self._context_window_limit(),
             )
 
             if not result.success:
@@ -999,7 +1002,7 @@ class StreamProcessor:
             return repo.list_for_planning(pg_ids, self.initial_user_id)
 
     def _window(self) -> int:
-        """The turn's model window."""
+        """The turn's model window: what decides whether the turn can fit at all."""
         try:
             return int(
                 get_token_limit(
@@ -1008,6 +1011,14 @@ class StreamProcessor:
             )
         except Exception:
             return int(settings.DEFAULT_LLM_TOKEN_LIMIT)
+
+    def _context_window_limit(self) -> Optional[int]:
+        """The agent's ``config.context_window_limit``, or None."""
+        return context_window_limit_of((getattr(self, "agent_config", None) or {}).get("config"))
+
+    def _budget_window(self) -> int:
+        """The window the turn's budgets are shares of: the model's, lowered to the agent's context limit."""
+        return cap_context_window(self._window(), self._context_window_limit())
 
     def _multimodal_tokens(self) -> int:
         """Tokens of a multimodal content array that reaches the model unshortened."""
@@ -1070,7 +1081,7 @@ class StreamProcessor:
         if not current and not earlier:
             return 0
         try:
-            window = self._window()
+            window = self._budget_window()
             caps = get_model_capabilities(
                 getattr(self, "model_id", None), user_id=getattr(self, "model_user_id", None)
             ) or {}
@@ -1681,7 +1692,9 @@ class StreamProcessor:
         # falls back to settings.DEFAULT_LLM_TOKEN_LIMIT and overfills
         # the upstream context window for any small (e.g. 8k/32k) BYOM.
         doc_token_limit = calculate_doc_token_budget(
-            model_id=self.model_id, user_id=self.model_user_id
+            model_id=self.model_id,
+            user_id=self.model_user_id,
+            context_window_limit=self._context_window_limit(),
         )
 
         retriever_name = "classic"
@@ -2422,6 +2435,8 @@ class StreamProcessor:
         saved_guardrails = agent_config.get("guardrails")
         if saved_guardrails:
             agent_kwargs["agent_config"] = {"guardrails": saved_guardrails}
+        # And with the context limit it paused under.
+        agent_kwargs["context_window_limit"] = agent_config.get("context_window_limit")
         agent_kwargs["request_id"] = agent_config.get("request_id")
         # The paused turn's files, so the resumed one can still hand them to
         # its tools (``run_code`` inputs by ``F`` ref) and list their refs.

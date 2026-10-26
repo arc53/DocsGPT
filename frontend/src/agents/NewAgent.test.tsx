@@ -713,6 +713,62 @@ describe('NewAgent form', () => {
     expect(mocks.getAgent).toHaveBeenCalledTimes(2);
   });
 
+  const contextLimitInput = async () => {
+    const trigger = buttonByText('agents.form.sections.advanced');
+    if (trigger.getAttribute('aria-expanded') !== 'true') {
+      await act(async () => trigger.click());
+    }
+    return container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.contextLimitDefault"]',
+    )!;
+  };
+
+  it("saves the context limit in the agent's config", async () => {
+    await renderEdit({
+      allowed_actions: ['edit', 'view', 'edit_policy'],
+      config: { api_write_allowlist: ['t:a'] },
+    });
+    const input = await contextLimitInput();
+    expect(input.disabled).toBe(false);
+    await act(async () => setNativeValue(input, '32000'));
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    // The rest of the config rides along: a config save replaces it whole.
+    expect(JSON.parse(sent.get('config') as string)).toMatchObject({
+      api_write_allowlist: ['t:a'],
+      context_window_limit: 32000,
+    });
+  });
+
+  it('blocks saving a context limit out of range, and clears it when emptied', async () => {
+    await renderEdit({
+      allowed_actions: ['edit', 'view', 'edit_policy'],
+      config: { context_window_limit: 32000 },
+    });
+    const input = await contextLimitInput();
+    expect(input.value).toBe('32000');
+    const save = buttonByText('agents.form.buttons.save');
+    await act(async () => setNativeValue(input, '100'));
+    expect(save.disabled).toBe(true);
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(container.textContent).toContain(
+      'agents.form.advanced.contextLimitRange',
+    );
+    await act(async () => setNativeValue(input, ''));
+    expect(save.disabled).toBe(false);
+    await act(async () => save.click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(
+      JSON.parse(sent.get('config') as string).context_window_limit,
+    ).toBeNull();
+  });
+
+  it('shows the context limit read-only without edit_policy', async () => {
+    await renderEdit({ config: { context_window_limit: 32000 } });
+    const input = await contextLimitInput();
+    expect(input.disabled).toBe(true);
+  });
+
   it('removes a stopped item from the agent', async () => {
     await renderEdit(withStoppedTool({ reason: 'deleted', sponsor: null }));
     expect(container.textContent).toContain(
