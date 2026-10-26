@@ -168,7 +168,7 @@ class TestCompressIfNeeded:
 class TestKeepRecent:
     """``_perform_compression`` with ``keep_recent_tokens`` leaves the newest turns out of the summary."""
 
-    def _compress(self, orchestrator, conversation, keep):
+    def _compress(self, orchestrator, conversation, keep, responses_api=False):
         service = MagicMock()
         service.compress_and_save.return_value = MagicMock(
             compression_ratio=2.0, original_token_count=2, compressed_token_count=1
@@ -179,7 +179,8 @@ class TestKeepRecent:
         with patch(f"{module}.CompressionService", return_value=service), \
                 patch(f"{module}.LLMCreator"), \
                 patch(f"{module}.get_provider_from_model_id", return_value="openai"), \
-                patch(f"{module}.get_api_key_for_provider", return_value="k"):
+                patch(f"{module}.get_api_key_for_provider", return_value="k"), \
+                patch(f"{module}.uses_responses_api", return_value=responses_api):
             result = orchestrator._perform_compression(
                 "c", conversation, "m", {"sub": "u"}, user_id="u", keep_recent_tokens=keep
             )
@@ -211,6 +212,17 @@ class TestKeepRecent:
         call = self._compress(orchestrator, conversation, keep=4000)
         assert call.args[2] == 2
         assert call.kwargs["start_index"] == 2
+
+    def test_responses_reasoning_counts_toward_the_budget(self, orchestrator):
+        # The trigger counts replayed reasoning, so the kept turns must too, or
+        # they measure under the budget and trip the limit again next turn.
+        conversation = {"queries": [_turn(3000), _turn(1500), _turn(1500)]}
+        with patch(
+            "docsgpt.api.answer.services.compression.token_counter.TokenCounter.replayed_reasoning_tokens",
+            return_value=2000,
+        ):
+            assert self._compress(orchestrator, conversation, keep=4000).args[2] == 0
+            assert self._compress(orchestrator, conversation, keep=4000, responses_api=True).args[2] == 1
 
     def test_summary_rows_take_no_budget(self, orchestrator):
         from docsgpt.api.answer.services.compression.types import (

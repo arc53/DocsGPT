@@ -10,7 +10,7 @@ from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 logger = logging.getLogger(__name__)
 
 
-def _uses_responses_api(model_id: str, user_id: str | None) -> bool:
+def uses_responses_api(model_id: str, user_id: str | None) -> bool:
     """Whether ``model_id`` speaks the Responses API, where history replays its reasoning."""
     try:
         capabilities = get_model_capabilities(model_id, user_id=user_id) or {}
@@ -64,7 +64,7 @@ class CompressionThresholdChecker:
             # reasoning, billed in full; left out, the check read 70% of the
             # window while the provider was sent 133%.
             total_tokens = TokenCounter.count_effective_conversation_tokens(
-                conversation, include_reasoning=_uses_responses_api(model_id, user_id)
+                conversation, include_reasoning=uses_responses_api(model_id, user_id)
             )
             total_tokens += current_query_tokens
 
@@ -122,7 +122,7 @@ class CompressionThresholdChecker:
             return False
         try:
             recent_tokens = TokenCounter.count_recent_conversation_tokens(
-                conversation, include_reasoning=_uses_responses_api(model_id, user_id)
+                conversation, include_reasoning=uses_responses_api(model_id, user_id)
             )
         except Exception as e:
             logger.error(f"Error checking history limit: {str(e)}", exc_info=True)

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 from docsgpt.api.answer.services.compression.service import CompressionService
 from docsgpt.api.answer.services.compression.threshold_checker import (
     CompressionThresholdChecker,
+    uses_responses_api,
 )
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import (
@@ -267,8 +268,13 @@ class CompressionOrchestrator:
                 )
 
             if keep_recent_tokens:
+                # Measured like the history trigger, reasoning included on
+                # the Responses API, or the kept turns trip it again next turn.
                 compress_up_to = self._last_query_to_summarize(
-                    conversation.get("queries", []), start_index, keep_recent_tokens
+                    conversation.get("queries", []),
+                    start_index,
+                    keep_recent_tokens,
+                    include_reasoning=uses_responses_api(model_id, registry_user_id),
                 )
 
             if usable_point:
@@ -323,7 +329,7 @@ class CompressionOrchestrator:
 
     @staticmethod
     def _last_query_to_summarize(
-        queries: list, start_index: int, keep_tokens: int
+        queries: list, start_index: int, keep_tokens: int, include_reasoning: bool = False
     ) -> int:
         """Index of the last query to summarize so the newest within ``keep_tokens`` stay word for word.
 
@@ -334,6 +340,8 @@ class CompressionOrchestrator:
             queries: The conversation's queries, summary rows included.
             start_index: First query after the previous compression point.
             keep_tokens: Room for the queries kept word for word.
+            include_reasoning: Also count the Responses reasoning each kept
+                query replays, as the history limit does.
 
         Returns:
             The index to pass to ``compress_and_save``.
@@ -344,7 +352,9 @@ class CompressionOrchestrator:
         for index in range(last, start_index - 1, -1):
             if is_compression_summary_row(queries[index]):
                 continue
-            kept += TokenCounter.count_query_tokens([queries[index]])
+            kept += TokenCounter.count_query_tokens(
+                [queries[index]], include_reasoning=include_reasoning
+            )
             if kept > keep_tokens:
                 break
             boundary = index - 1
