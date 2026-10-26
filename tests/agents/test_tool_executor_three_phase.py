@@ -281,6 +281,34 @@ class TestExecuteJournaling:
         # The saved partial message keeps the call that ran.
         assert [c["result"] for c in executor.get_truncated_tool_calls()] == ["Tool result"]
 
+    def test_time_limit_collecting_native_parts_keeps_the_call(
+        self, pg_conn, mock_tool_manager, monkeypatch
+    ):
+        """The tool returned; draining its images hit the limit: executed, kept, result withheld."""
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        executor = ToolExecutor(user="u")
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(
+                parse_args=Mock(return_value=("t1", "test_action", {}))
+            ),
+        )
+        _patch_db(monkeypatch, pg_conn)
+        mock_tool_manager.load_tool.return_value.drain_native_parts = Mock(
+            side_effect=SoftTimeLimitExceeded()
+        )
+
+        gen = executor.execute(_TOOLS_DICT, _make_call(call_id="c6"), "MockLLM")
+        with pytest.raises(SoftTimeLimitExceeded):
+            _drain(gen)
+
+        withheld = "[Output withheld: the time limit stopped its guardrail check.]"
+        row = _select_attempt(pg_conn, "c6")
+        assert row["status"] == "confirmed"
+        assert row["result"] == {"result": withheld}
+        assert [c["result"] for c in executor.get_truncated_tool_calls()] == [withheld]
+
     def test_time_limit_in_the_result_guardrail_stores_no_unscreened_output(
         self, pg_conn, mock_tool_manager, monkeypatch
     ):

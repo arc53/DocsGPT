@@ -42,6 +42,9 @@ from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
 
+# Stored for a call that ran but whose result a time limit stopped before the guardrail checked it.
+_RESULT_WITHHELD = "[Output withheld: the time limit stopped its guardrail check.]"
+
 #: ``user_tools.config`` key holding an api_tool's encrypted header /
 #: query-param values: ``{action: {section: {param: value}}}``, keyed by the
 #: tool owner's id. The plaintext ``value`` of those entries is kept empty.
@@ -2207,8 +2210,6 @@ class ToolExecutor:
                 result = None if outcome.handed_off else outcome.value
             else:
                 result = _invoke()
-            if tool_data["name"] != "api_tool" and not (outcome and outcome.handed_off):
-                result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
             if proposed_ok:
                 # A time limit too: the call may have had side effects, so it must not read as never run.
@@ -2248,14 +2249,29 @@ class ToolExecutor:
             )
             return result_full
 
-        def keep_interrupted(artifact_id: Optional[str] = None, stored: Optional[str] = None) -> None:
+        def keep_interrupted(
+            artifact_id: Optional[str] = None, stored: Optional[str] = None, call_status: Optional[str] = None
+        ) -> None:
             # The tool ran before a time limit: journal it executed and keep it in the turn's saved calls.
             result_full = journal_executed(artifact_id, stored)
             tool_call_data["resolved_arguments"] = resolved_arguments
             tool_call_data["result_full"] = result_full
             tool_call_data["result"] = truncate_tool_result(result_full)
-            tool_call_data["status"] = status
+            tool_call_data["status"] = call_status or status
             self.tool_calls.append(tool_call_data)
+
+        if tool_data["name"] != "api_tool":
+            try:
+                result = self._collect_native_parts(tool, result, tool_call_data)
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    # Not screened yet, so unscreened output is never stored.
+                    keep_interrupted(stored=_RESULT_WITHHELD, call_status=result_status(result))
+                elif proposed_ok:
+                    _mark_failed(
+                        call_id, str(exc) or type(exc).__name__, message_id=self.message_id, user_id=self.user
+                    )
+                raise
 
         # Single fan-out point: from here ``result`` reaches the LLM copy,
         # the conversation row, tool_call_attempts, and the stream event —
@@ -2268,7 +2284,7 @@ class ToolExecutor:
         except Exception as exc:
             if is_budget_exhausted(exc):
                 # Unscreened output is never stored.
-                keep_interrupted(stored="[Output withheld: the time limit stopped its guardrail check.]")
+                keep_interrupted(stored=_RESULT_WITHHELD)
             raise
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
