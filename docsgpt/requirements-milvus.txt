@@ -193,7 +193,7 @@ faiss-cpu==1.15.1
     #   milvus-lite
 fast-ebook==0.2.0
     # via docsgpt
-fastembed==0.8.1
+fastembed==0.9.1
     # via docsgpt
 fastmcp==4.0.11
     # via docsgpt
@@ -583,7 +583,7 @@ pendulum==3.2.0
     # via cel-python
 pgvector==0.5.0
     # via docsgpt
-pillow==12.3.0
+pillow==13.0.0
     # via
     #   docsgpt
     #   fastembed
