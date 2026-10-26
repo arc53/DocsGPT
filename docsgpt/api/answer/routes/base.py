@@ -32,6 +32,7 @@ from docsgpt.core.model_utils import (
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
 from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
+from docsgpt.llm.deadlines import interruptible
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
 from docsgpt.quotas.service import QuotaService
@@ -1122,6 +1123,11 @@ class BaseAnswerResource:
                 # Workflow nodes can't defer mid-graph, so a workflow runs unbounded.
                 if not isinstance(agent, WorkflowAgent):
                     gen_iter = bounded_round(gen_iter)
+
+            # A Stop the ticker saw ends an in-flight provider read, not just the
+            # next chunk. ``StreamStopped`` reaches the abort handler below from
+            # any depth; a supersede still waits for the next chunk or boundary.
+            gen_iter = interruptible(gen_iter, lambda: StreamStopped() if stop_asked.is_set() else None)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a

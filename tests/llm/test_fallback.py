@@ -1925,6 +1925,8 @@ class _StrictChatCompletions:
         "stop",
         "n",
         "user",
+        # A per-request SDK option, not a body field.
+        "timeout",
     }
 
     def __init__(self):

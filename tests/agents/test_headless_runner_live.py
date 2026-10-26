@@ -70,6 +70,17 @@ class TestLiveHeadlessRun:
         assert outcome["answer"] == ""
         assert closed == [True]
 
+    def test_a_stop_that_ends_the_agent_mid_read_is_reported_as_stopped(self, monkeypatch):
+        stop = []
+
+        def events():
+            yield {"answer": "a"}
+            stop.append(True)  # the Stop ends the provider read; the agent returns quietly
+
+        outcome, _ = _run(monkeypatch, events(), should_stop=lambda: bool(stop))
+        assert outcome["answer"] == "a"
+        assert outcome["stopped"] is True
+
     def test_worker_time_limit_keeps_partial_answer(self, monkeypatch):
         from celery.exceptions import SoftTimeLimitExceeded
 

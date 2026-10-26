@@ -748,14 +748,27 @@ class BaseLLM(ABC):
             self._note_answer(fallback, fallback.model_id, fallback=True, reason=fallback_reason(e))
             return result
 
+    def _stream_deadlines(self) -> Tuple[float, float]:
+        """This model's first-token and inter-chunk deadlines, in seconds."""
+        caps = self.capabilities
+        return (
+            getattr(caps, "first_token_timeout", None) or settings.LLM_FIRST_TOKEN_TIMEOUT,
+            getattr(caps, "stall_timeout", None) or settings.LLM_STREAM_STALL_TIMEOUT,
+        )
+
+    def _stream_transport_timeout(self) -> httpx2.Timeout:
+        """A socket timeout matching the stream deadlines.
+
+        Bounds a read abandoned on a silent connection, which no provider
+        event can stop, and keeps the SDK default (600 s) from cutting a
+        model whose first-token deadline is longer.
+        """
+        return httpx2.Timeout(max(self._stream_deadlines()), connect=5.0)
+
     def _timed_stream(self, factory: Callable[[], Iterator[Any]]) -> Iterator[Any]:
         """Apply this model's deadlines to each provider attempt."""
-        caps = self.capabilities
-        return timed_stream(
-            factory,
-            first_token=getattr(caps, "first_token_timeout", None) or settings.LLM_FIRST_TOKEN_TIMEOUT,
-            stall=getattr(caps, "stall_timeout", None) or settings.LLM_STREAM_STALL_TIMEOUT,
-        )
+        first_token, stall = self._stream_deadlines()
+        return timed_stream(factory, first_token=first_token, stall=stall)
 
     def _stream_with_fallback(
         self, decorated_method, method_name, decorators, *args, **kwargs

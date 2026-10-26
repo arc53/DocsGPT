@@ -32,6 +32,7 @@ from docsgpt.api.answer.services.stream_processor import (
 from docsgpt.core.run_budget import StreamCancelled, is_budget_exhausted
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
+from docsgpt.llm.deadlines import interruptible
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.dispatcher import build_dispatcher
@@ -448,6 +449,8 @@ def _run_agent_headless(
     tool_since_text = False
     stopped = False
     events = agent.gen(query=query)
+    if should_stop is not None:
+        events = interruptible(events, lambda: StreamCancelled() if should_stop() else None)
     budget_error = False
     try:
         for event in events:
@@ -516,6 +519,9 @@ def _run_agent_headless(
             if should_stop is not None and should_stop():
                 stopped = True
                 break
+        else:
+            # A Stop can also end the agent mid-read, which it reports by returning.
+            stopped = should_stop is not None and should_stop()
     except Exception as exc:
         if not is_budget_exhausted(exc) or endpoint != "continuation":
             # Scheduled/webhook runs retain their existing outer time-limit handlers.

@@ -81,6 +81,115 @@ def test_stall_after_output_does_not_repeat_it_and_abandoned_stream_does_no_more
     llm._fallback_llm._raw_gen_stream.assert_not_called()
 
 
+def test_provider_events_keep_a_busy_stream_alive():
+    from docsgpt.llm.deadlines import provider_event
+
+    llm = StubLLM(capabilities=ModelCapabilities(stall_timeout=0.05))
+    llm._fallback_llm = Mock()
+
+    def body():
+        yield "calling a tool"
+        for _ in range(6):  # tool-call argument deltas the adapter doesn't yield
+            time.sleep(0.02)
+            provider_event()
+        yield "done"
+
+    assert list(stream(llm, body)) == ["calling a tool", "done"]
+    llm._fallback_llm._raw_gen_stream.assert_not_called()
+
+
+def test_a_stop_ends_a_busy_read_and_its_reader_stops_at_the_next_event():
+    from docsgpt.llm.deadlines import interruptible, provider_event
+
+    class Stopped(BaseException):
+        pass
+
+    closed = threading.Event()
+    stop = threading.Event()
+    gave_up = threading.Event()
+    events_after = []
+    llm = StubLLM()
+
+    def body():
+        try:
+            yield "partial"
+            while True:  # the provider keeps generating without a yieldable chunk
+                time.sleep(0.01)
+                if gave_up.is_set():
+                    events_after.append(1)
+                provider_event()
+        finally:
+            closed.set()
+
+    output = interruptible(stream(llm, body), lambda: Stopped() if stop.is_set() else None)
+    assert next(output) == "partial"
+    threading.Timer(0.05, stop.set).start()
+    started = time.monotonic()
+    with pytest.raises(Stopped):
+        next(output)
+    gave_up.set()
+    assert time.monotonic() - started < 1
+    assert closed.wait(1)
+    assert len(events_after) <= 1
+
+
+def test_the_stop_check_is_bound_only_while_a_step_runs():
+    from docsgpt.llm import deadlines
+
+    seen = []
+
+    def events():
+        seen.append(deadlines._interrupt.get())
+        yield 1
+        seen.append(deadlines._interrupt.get())
+        yield 2
+
+    check = lambda: None  # noqa: E731
+    output = deadlines.interruptible(events(), check)
+    assert next(output) == 1
+    assert deadlines._interrupt.get() is None
+    assert list(output) == [2]
+    assert seen == [check, check]
+
+
+def test_an_abandoned_read_does_not_commit_provider_state():
+    from docsgpt.llm.deadlines import stream_commit
+
+    release = threading.Event()
+    closed = threading.Event()
+    committed = []
+    llm = StubLLM(capabilities=ModelCapabilities(first_token_timeout=0.03))
+
+    def body():
+        try:
+            release.wait(2)
+            with stream_commit():
+                committed.append("resp_late")
+            yield "late"
+        finally:
+            closed.set()
+
+    try:
+        with pytest.raises(StreamStalledError):
+            list(stream(llm, body))
+    finally:
+        release.set()
+    assert closed.wait(1)
+    assert committed == []
+
+
+def test_stream_requests_carry_a_transport_timeout_matching_the_deadlines():
+    from docsgpt.llm.openai import OpenAILLM
+
+    llm = OpenAILLM(api_key="sk-test", model_id="gpt-4o-mini")
+    llm.capabilities = ModelCapabilities(first_token_timeout=900, stall_timeout=30)
+    llm.client = Mock()
+    llm.client.chat.completions.create.return_value = iter([])
+    list(llm._raw_gen_stream(llm, "gpt-4o-mini", [{"role": "user", "content": "hi"}]))
+    timeout = llm.client.chat.completions.create.call_args.kwargs["timeout"]
+    assert timeout.read == 900 and timeout.connect == 5.0
+
+
 def test_slow_first_token_uses_model_override(monkeypatch):
     monkeypatch.setattr("docsgpt.llm.base.settings.LLM_FIRST_TOKEN_TIMEOUT", 0.01)
     llm = StubLLM(capabilities=ModelCapabilities(first_token_timeout=0.3, stall_timeout=0.01))

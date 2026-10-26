@@ -9,6 +9,7 @@ from docsgpt.core.settings import settings
 
 from docsgpt.llm.base import BaseLLM
 from docsgpt.llm.credential_scope import GOOGLE_BASE_URL, check_credential_scope
+from docsgpt.llm.deadlines import provider_event
 from docsgpt.llm.handlers.google import _decode_thought_signature
 from docsgpt.llm.tool_images import follow_up_note, native_tool_images, reads_images, tool_result
 from docsgpt.storage.storage_creator import StorageCreator
@@ -750,6 +751,7 @@ class GoogleLLM(BaseLLM):
 
         try:
             for chunk in response:
+                provider_event()
                 if hasattr(chunk, "candidates") and chunk.candidates:
                     for candidate in chunk.candidates:
                         if candidate.content and candidate.content.parts:

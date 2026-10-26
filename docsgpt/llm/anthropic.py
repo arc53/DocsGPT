@@ -8,6 +8,7 @@ from anthropic import Anthropic, transform_schema
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
 from docsgpt.llm.credential_scope import ANTHROPIC_DEFAULT_BASE_URL, check_credential_scope
+from docsgpt.llm.deadlines import provider_event
 from docsgpt.llm.tool_images import tool_result
 from docsgpt.storage.storage_creator import StorageCreator
 
@@ -732,12 +733,13 @@ class AnthropicLLM(BaseLLM):
             len(params["messages"]),
             len(params.get("tools") or []),
         )
-        response = self.anthropic.messages.create(**params)
+        response = self.anthropic.messages.create(**params, timeout=self._stream_transport_timeout())
 
         # Partial ``tool_use`` blocks, keyed by content-block index.
         tool_blocks: Dict[Any, Dict[str, str]] = {}
         try:
             for event in response:
+                provider_event()
                 event_type = getattr(event, "type", None)
 
                 if event_type == "message_start":
