@@ -1875,6 +1875,7 @@
       "descriptions": {
         "google_drive": "將文件、試算表和 PDF 同步到知識庫。",
         "share_point": "將 SharePoint 網站和 OneDrive 中的檔案同步到知識庫。",
+        "mcp_canva": "處理 Canva 設計，匯出並使用品牌範本。",
         "confluence": "將 Confluence 空間和頁面同步到知識庫。",
         "s3": "將 S3 儲存貯體中的文件同步到知識庫。",
         "reddit": "將符合你搜尋條件的 Reddit 貼文同步到知識庫。",

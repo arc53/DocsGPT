@@ -273,6 +273,15 @@ def test_zapier_preset_uses_remote_oauth_catalog_contract():
     assert zapier.capabilities == ("read", "write")
     assert zapier.docs_url == "https://docs.zapier.com/mcp/get-started/connect"
 
+def test_canva_preset_in_catalog():
+    canva_preset = catalog.get_definition("mcp:canva")
+    
+    assert canva_preset is not None
+    assert canva_preset.mcp_url == "https://mcp.canva.com/mcp"
+    assert canva_preset.auth_kind == "mcp_oauth"
+    assert canva_preset.icon == "canva"
+    assert "read" in canva_preset.capabilities
+    assert "write" in canva_preset.capabilities
 
 def test_calcom_preset_uses_remote_oauth_catalog_contract():
     calcom = catalog.get_definition("mcp:calcom")

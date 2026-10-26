@@ -1945,6 +1945,7 @@
       "descriptions": {
         "google_drive": "Synchronisez Docs, Sheets et PDF dans Connaissances.",
         "share_point": "Synchronisez les fichiers des sites SharePoint et de OneDrive dans Connaissances.",
+        "mcp_canva": "Travaillez avec des designs Canva, exportez-les et utilisez des modèles de marque.",
         "confluence": "Synchronisez les espaces et pages Confluence dans Connaissances.",
         "s3": "Synchronisez les documents d’un bucket S3 dans Connaissances.",
         "reddit": "Synchronisez dans Connaissances les publications Reddit correspondant à vos recherches.",

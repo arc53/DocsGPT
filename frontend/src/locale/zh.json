@@ -1876,6 +1876,7 @@
         "google_drive": "将文档、表格和 PDF 同步到知识库。",
         "share_point": "将 SharePoint 站点和 OneDrive 中的文件同步到知识库。",
         "confluence": "将 Confluence 空间和页面同步到知识库。",
+        "mcp_canva": "处理 Canva 设计，导出并使用品牌模板。",
         "s3": "将 S3 存储桶中的文档同步到知识库。",
         "reddit": "将符合你搜索条件的 Reddit 帖子同步到知识库。",
         "brave": "使用 Brave Search API 搜索网页和图片。",

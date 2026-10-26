@@ -228,3 +228,13 @@
   auth_kind: mcp_oauth
   capabilities: [read]
   docs_url: https://twelvedata.com/docs/mcp
+
+- key: mcp:canva
+  name: Canva
+  description: Work with Canva designs, export them and use brand templates.
+  icon: canva
+  category: business
+  mcp_url: https://mcp.canva.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://www.canva.dev/docs/mcp
