@@ -3043,7 +3043,8 @@
         "selectDefaultModel": "Sélectionner le modèle par défaut",
         "enterTokenLimit": "Saisissez la limite de jetons",
         "enterRequestLimit": "Saisissez la limite de requêtes",
-        "contextLimitDefault": "Valeur par défaut du modèle"
+        "contextLimitDefault": "Valeur par défaut du modèle",
+        "historyLimitDefault": "Résumé près de la limite de contexte"
       },
       "sourcePopup": {
         "title": "Sélectionner des connaissances",
@@ -3091,8 +3092,15 @@
         "validJson": "JSON valide",
         "invalidJson": "JSON non valide : corrigez-le pour pouvoir enregistrer",
         "contextLimit": "Limite de contexte",
-        "contextLimitDescription": "Nombre maximal de jetons d’historique, de documents et de résultats d’outils envoyés au modèle à chaque requête. Les messages plus anciens sont résumés pour rester en dessous. Laissez vide pour utiliser toute la fenêtre de contexte du modèle.",
-        "contextLimitRange": "Saisissez entre {{min, number}} et {{max, number}} jetons, ou laissez vide.",
+        "contextLimitDescription": "Nombre maximal de jetons d’historique, de documents et de résultats d’outils envoyés au modèle à chaque requête. Les messages plus anciens sont résumés pour rester en dessous. Désactivée, toute la fenêtre de contexte du modèle est utilisée.",
+        "contextLimitAboveWindow": "Au-delà de la fenêtre de contexte de {{model}} ({{limit, number}} jetons), cette limite est sans effet.",
+        "limitRange": "Saisissez entre {{min, number}} et {{max, number}} jetons.",
+        "contextLimitTokens": "Limite de contexte en jetons",
+        "historyLimit": "Limite d’historique",
+        "historyLimitDescription": "Nombre maximal de jetons de messages précédents envoyés mot pour mot à chaque requête. Au-delà, les plus anciens sont résumés et les plus récents conservés. Désactivée, le résumé n’a lieu que près de la limite de contexte.",
+        "historyLimitTokens": "Limite d’historique en jetons",
+        "historyLimitBelowContext": "Saisissez au moins {{min, number}} jetons, sous la limite de contexte de {{limit, number}}.",
+        "historyLimitAboveWindow": "Pas sous la fenêtre de contexte de {{model}} ({{limit, number}} jetons), cette limite est sans effet.",
         "tokenLimiting": "Limitation des jetons",
         "tokenLimitingDescription": "Limitez le nombre total de jetons que cet agent peut utiliser par jour",
         "requestLimiting": "Limitation des requêtes",

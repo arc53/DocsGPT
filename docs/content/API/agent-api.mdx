@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-26
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -372,7 +372,7 @@ The owner allows actions in the agent's **Access Details > Changes others can ma
 - Only the owner can change the list. When a team editor updates the agent, the stored list is kept whatever the request sends.
 - An allowed action runs **without an approval prompt** for these callers, even if the tool asks for approval in the owner's chats.
 
-`config` holds `api_write_allowlist` next to the agent's [guardrails](/Agents/guardrails), its insights settings and its [`context_window_limit`](/Agents/context-compression#per-agent-context-limit), and `PUT /api/update_agent/<agent_id>` replaces the whole `config`. Read it first and send it all back, or you clear the rest:
+`config` holds `api_write_allowlist` next to the agent's [guardrails](/Agents/guardrails), its insights settings, its [`context_window_limit`](/Agents/context-compression#per-agent-context-limit) and its [`history_token_limit`](/Agents/context-compression#per-agent-history-limit), and `PUT /api/update_agent/<agent_id>` replaces the whole `config`. Read it first and send it all back, or you clear the rest:
 
 ```python
 import requests

@@ -11,6 +11,7 @@ from flask import after_this_request
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
 from docsgpt.api.answer.services.compression import CompressionOrchestrator
+from docsgpt.api.answer.services.compression.threshold_checker import uses_responses_api
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import ConversationService
@@ -44,7 +45,7 @@ from docsgpt.core.model_utils import (
 )
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
-from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
+from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
 from sqlalchemy import text as sql_text
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
@@ -502,6 +503,22 @@ def flush_trace_after_request(processor: "StreamProcessor") -> None:
         return response
 
 
+def _without_response_id(turn: Dict[str, Any]) -> Dict[str, Any]:
+    """A copy of a history ``turn`` that a new turn cannot chain onto (``metadata.response_id`` removed).
+
+    Args:
+        turn: A history entry, as the caller sent it.
+
+    Returns:
+        The entry, its metadata copied without ``response_id``; the entry
+        itself when it has no metadata.
+    """
+    metadata = turn.get("metadata") if isinstance(turn, dict) else None
+    if not isinstance(metadata, dict) or "response_id" not in metadata:
+        return turn
+    return {**turn, "metadata": {k: v for k, v in metadata.items() if k != "response_id"}}
+
+
 class StreamProcessor:
     def __init__(
         self,
@@ -804,14 +821,23 @@ class StreamProcessor:
         else:
             self.earlier_attachments = self._with_request_earlier_attachments([])
             self._ensure_turn_fits()
+            sent = json.loads(self.data.get("history", "[]"))
             # model_user_id keeps history trim aligned with the BYOM's
             # actual context window instead of the default 128k.
-            self.history = limit_chat_history(
-                json.loads(self.data.get("history", "[]")),
+            history = limit_chat_history(
+                sent,
                 max_token_limit=self._context_window_limit(),
                 model_id=self.model_id,
                 user_id=self.model_user_id,
             )
+            # A caller's own history has no summary to fold older turns
+            # into, so the history limit drops them.
+            history = self._within_history_limit(history)
+            if history and len(history) < len(sent):
+                # The provider's transcript behind the last response id still
+                # holds the dropped turns: chaining onto it would undo the trim.
+                history[-1] = _without_response_id(history[-1])
+            self.history = history
 
     def _handle_compression(self, conversation: Dict[str, Any]):
         """Handle conversation compression logic using orchestrator."""
@@ -829,6 +855,7 @@ class StreamProcessor:
                 # overflowing next to it.
                 current_query_tokens=self._turn_token_estimate(),
                 context_window_limit=self._context_window_limit(),
+                history_token_limit=self._history_token_limit(),
             )
 
             if not result.success:
@@ -1015,6 +1042,36 @@ class StreamProcessor:
     def _context_window_limit(self) -> Optional[int]:
         """The agent's ``config.context_window_limit``, or None."""
         return context_window_limit_of((getattr(self, "agent_config", None) or {}).get("config"))
+
+    def _history_token_limit(self) -> Optional[int]:
+        """The agent's ``config.history_token_limit``, or None."""
+        return history_token_limit_of((getattr(self, "agent_config", None) or {}).get("config"))
+
+    def _within_history_limit(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """The newest turns of a caller's own ``history`` that stay below the agent's history limit.
+
+        Counted like the history limit on a stored conversation: thoughts, and
+        the Responses reasoning on that API, are replayed, so they take room.
+
+        Args:
+            history: The caller's history, oldest first.
+
+        Returns:
+            The kept turns, oldest first; all of them without a history limit.
+        """
+        limit = self._history_token_limit()
+        if not limit:
+            return history
+        include_reasoning = uses_responses_api(self.model_id, self.model_user_id)
+        kept: List[Dict[str, Any]] = []
+        total = 0
+        for turn in reversed(history):
+            total += TokenCounter.count_query_tokens([turn], include_reasoning=include_reasoning)
+            if total >= limit:
+                break
+            kept.append(turn)
+        kept.reverse()
+        return kept
 
     def _budget_window(self) -> int:
         """The window the turn's budgets are shares of: the model's, lowered to the agent's context limit."""
