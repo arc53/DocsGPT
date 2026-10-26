@@ -27,7 +27,12 @@ import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
 import WakeEventRow from '../backgroundJobs/WakeEventRow';
 import type { OpenArtifactRequest } from './artifactCards';
 import ConversationBubble from './ConversationBubble';
-import { FEEDBACK, Query, Status } from './conversationModels';
+import {
+  FEEDBACK,
+  Query,
+  Status,
+  TERMINATED_RESPONSE_PLACEHOLDER,
+} from './conversationModels';
 import { curatedErrorText } from './curatedError';
 import StreamingStatusLine from './StreamingStatusLine';
 import { cn } from '@/lib/utils';
@@ -204,29 +209,58 @@ export default function ConversationMessages({
         query.attachments?.length
           ? query.attachments
           : null;
+      const partialResponse =
+        query.response === TERMINATED_RESPONSE_PLACEHOLDER
+          ? ''
+          : query.response;
+      const hasPartialProgress =
+        partialResponse ||
+        query.thought ||
+        query.tool_calls?.length ||
+        query.research ||
+        query.workflow_run_id;
       return (
-        <ConversationBubble
-          className={bubbleMargin}
-          key={`${index}-ERROR`}
-          message={curatedErrorText(
-            t,
-            query.error,
-            query.errorCode,
-            query.errorParams,
-            { offersKnowledge: Boolean(knowledgeFiles) },
-          )}
-          type="ERROR"
-          retryBtn={retryButton}
-          errorCode={query.errorCode}
-          errorAction={
-            knowledgeFiles ? (
-              <AddToKnowledgeAction
-                files={knowledgeFiles}
-                onAdded={() => onKnowledgeAdded?.(index)}
-              />
-            ) : undefined
-          }
-        />
+        <Fragment key={`${index}-ERROR`}>
+          {query.errorCode === 'time_limit' && hasPartialProgress ? (
+            <ConversationBubble
+              className={bubbleMargin}
+              message={partialResponse}
+              type="ANSWER"
+              thought={query.thought}
+              sources={query.sources}
+              toolCalls={query.tool_calls}
+              segments={query.segments}
+              workflowRunId={query.workflow_run_id}
+              research={query.research}
+              conversationArtifacts={conversationArtifacts}
+              onOpenArtifact={onOpenArtifact}
+              onToolAction={onToolAction}
+              agentId={agentId}
+              isStreaming={false}
+            />
+          ) : null}
+          <ConversationBubble
+            className={bubbleMargin}
+            message={curatedErrorText(
+              t,
+              query.error,
+              query.errorCode,
+              query.errorParams,
+              { offersKnowledge: Boolean(knowledgeFiles) },
+            )}
+            type="ERROR"
+            retryBtn={retryButton}
+            errorCode={query.errorCode}
+            errorAction={
+              knowledgeFiles ? (
+                <AddToKnowledgeAction
+                  files={knowledgeFiles}
+                  onAdded={() => onKnowledgeAdded?.(index)}
+                />
+              ) : undefined
+            }
+          />
+        </Fragment>
       );
     }
 

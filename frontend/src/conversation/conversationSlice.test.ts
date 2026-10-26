@@ -1075,3 +1075,60 @@ describe('stopAnswer', () => {
     handleAbort();
   });
 });
+
+describe('time limit partial answers', () => {
+  it('hydrates failed time-limit responses after a reload', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      response: 'Saved progress',
+      status: 'failed',
+      metadata: { error: 'Stopped: time limit.', error_code: 'time_limit' },
+    });
+    expect(query.response).toBe('Saved progress');
+    expect(query.errorCode).toBe('time_limit');
+  });
+});
+
+it('hydrates supporting details and order from a failed time-limit tail', () => {
+  const tool = {
+    call_id: 'done',
+    tool_name: 'code_executor',
+    action_name: 'run_code',
+    arguments: {},
+    status: 'completed',
+  };
+  const source = { id: 'source', title: 'Result' };
+  const next = reducer(
+    seedSlice(),
+    applyMessageTail({
+      index: 0,
+      tail: {
+        status: 'failed',
+        response: 'Saved progress',
+        thought: 'Plan',
+        sources: [source],
+        tool_calls: [tool],
+        error: 'Stopped: time limit.',
+        error_code: 'time_limit',
+        segments: [
+          { kind: 'thought', length: 4 },
+          { kind: 'tool', call_id: 'done' },
+          { kind: 'text', length: 14 },
+        ],
+      },
+    }),
+  );
+  expect(next.queries[0]).toMatchObject({
+    messageStatus: 'failed',
+    response: 'Saved progress',
+    thought: 'Plan',
+    sources: [source],
+    tool_calls: [tool],
+    errorCode: 'time_limit',
+    segments: [
+      { kind: 'thought', text: 'Plan' },
+      { kind: 'tool', call_id: 'done' },
+      { kind: 'text', text: 'Saved progress' },
+    ],
+  });
+});

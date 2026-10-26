@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text as sql_text
 
+from docsgpt.activity.flags import cancel_streams
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.api.answer.services.compression.types import (
@@ -193,6 +194,7 @@ class ConversationService:
                 conv_pg_id = str(conv["id"])
                 repo.update_message_at(conv_pg_id, index, message_payload)
                 repo.truncate_after(conv_pg_id, index)
+            cancel_streams(repo.retired_message_ids)
             return conversation_id
         elif conversation_id:
             with db_session() as conn:
@@ -354,6 +356,7 @@ class ConversationService:
                 model_id=model_id,
             )
             message_id = str(row["id"])
+        cancel_streams(repo.retired_message_ids)
 
         return {
             "conversation_id": conv_pg_id,

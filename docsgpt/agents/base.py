@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
+from docsgpt.activity.flags import check_stream
+from docsgpt.core.run_budget import RoundDeferred, StreamCancelled, is_budget_exhausted
 from docsgpt.agents.attachment_budget import (
     AttachmentPlan,
     _attachment_id,
@@ -531,15 +533,25 @@ class BaseAgent(ABC):
     def gen(
         self, query: str, log_context: LogContext = None
     ) -> Generator[Dict, None, None]:
-        self.bind_guardrail_log_context(log_context)
-        query, decision = self.apply_input_guardrails(query)
-        if decision is not None and decision.blocked:
-            yield self._guardrail_block_event(
-                decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
-            )
-            self.flush_guardrail_audit()
+        try:
+            check_stream(getattr(self.tool_executor, "message_id", None))
+            self.bind_guardrail_log_context(log_context)
+            query, decision = self.apply_input_guardrails(query)
+            if decision is not None and decision.blocked:
+                yield self._guardrail_block_event(
+                    decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
+                )
+                self.flush_guardrail_audit()
+                return
+            yield from self._gen_inner(query, log_context)
+        except RoundDeferred:
+            # No Responses metadata: the last response may hold calls whose
+            # outputs were never sent, and chaining onto it is rejected.
+            yield {"tool_calls": self._get_truncated_tool_calls()}
+            yield {"metadata": {"budget_deferred": True}}
             return
-        yield from self._gen_inner(query, log_context)
+        except StreamCancelled:
+            return
         yield from self._emit_responses_metadata()
 
     def _emit_responses_metadata(self) -> Generator[Dict, None, None]:
@@ -747,9 +759,16 @@ class BaseAgent(ABC):
             tool_actions: Client-provided actions resolving the pending calls.
         """
         with agent_log_context(self), start_agent_span(self, continuation=True):
-            yield from self._gen_continuation_inner(
-                messages, tools_dict, pending_tool_calls, tool_actions, reasoning_content
-            )
+            try:
+                check_stream(getattr(self.tool_executor, "message_id", None))
+                yield from self._gen_continuation_inner(
+                    messages, tools_dict, pending_tool_calls, tool_actions, reasoning_content
+                )
+            except RoundDeferred:
+                yield {"tool_calls": self._get_truncated_tool_calls()}
+                yield {"metadata": {"budget_deferred": True}}
+            except StreamCancelled:
+                return
 
     def _gen_continuation_inner(
         self,
@@ -832,6 +851,8 @@ class BaseAgent(ABC):
                             tool_response, _ = e.value
                             break
                 except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     # As in handle_tool_calls: a failing tool becomes the
                     # model's tool result instead of ending the answer.
                     logger.error(f"Error executing tool: {exc}", exc_info=True)
@@ -1077,13 +1098,17 @@ class BaseAgent(ABC):
         """
         try:
             supported = self.llm.get_supported_attachment_types()
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             supported = []
         if not isinstance(supported, (list, tuple, set, frozenset)):
             supported = []
         try:
             window = int(self._context_budget())
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             window = int(settings.DEFAULT_LLM_TOKEN_LIMIT)
         tool_calling = bool(self.tools) and self._llm_supports_tools()
         server_tools = self._server_tool_actions(tools_dict)
@@ -1223,6 +1248,8 @@ class BaseAgent(ABC):
                 return True
             return False
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(f"Error checking context limit: {str(e)}", exc_info=True)
             return False
 
@@ -1266,6 +1293,8 @@ class BaseAgent(ABC):
             threshold = int(window * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
             return self._calculate_current_context_tokens(messages) >= threshold
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(f"Error checking the model window: {str(e)}", exc_info=True)
             return True
 
@@ -1282,7 +1311,9 @@ class BaseAgent(ABC):
             context_limit = self._context_budget()
             threshold = int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
             return max(threshold - self._calculate_current_context_tokens(messages), 0)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.debug("Could not size the context room", exc_info=True)
             return None
 
@@ -1714,7 +1745,9 @@ class BaseAgent(ABC):
         """
         try:
             self._collect_internal_sources()
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.debug("Could not refresh sources before output guarding")
 
     def _compose_user_turn(self, document_block: str, query: str) -> str:
@@ -2267,7 +2300,9 @@ class BaseAgent(ABC):
             return bool(supports)
         try:
             return bool(supports())
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.debug(
                 "Tool-support check failed for %s; sending tools anyway",
                 type(self.llm).__name__,
@@ -2301,6 +2336,7 @@ class BaseAgent(ABC):
         log_context: Optional[LogContext] = None,
         preserve_responses_state: bool = False,
     ):
+        check_stream(getattr(self.tool_executor, "message_id", None))
         self._validate_context_size(messages)
         # Hard gate: refuse/shrink instead of dispatching a payload the
         # provider is guaranteed to reject (see _enforce_context_window).

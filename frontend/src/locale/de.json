@@ -65,6 +65,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "Gespräch fortgesetzt",
         "job": "Hintergrund-Job fertig",
         "lost": "Hintergrund-Job unterbrochen",
         "monitor": "Monitor hat angeschlagen",
@@ -88,6 +89,7 @@
       "failed": "Benachrichtigungen konnten nicht aktiviert werden"
     },
     "wake": {
+      "continuation": "Gespräch fortgesetzt",
       "job": "Hintergrund-Job fertig",
       "lost": "Hintergrund-Job unterbrochen",
       "monitor": "Monitor hat angeschlagen",
@@ -2621,6 +2623,7 @@
       "contextLengthSizedKnowledge": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
       "serverError": "Bitte versuche es später erneut. Wir entschuldigen uns für die Unannehmlichkeiten.",
       "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut.",
+      "timeLimit": "Gestoppt: Zeitlimit erreicht. Der bisherige Fortschritt wurde gespeichert.",
       "stopped": "Du hast diese Antwort gestoppt, bevor etwas geschrieben wurde. Versuche es erneut, um eine zu erhalten."
     },
     "reasoning": "Begründung",

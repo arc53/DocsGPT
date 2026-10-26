@@ -218,10 +218,8 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                 error=(
                     "reconciler: executed but not confirmed within 15 min. "
                     "The tool SUCCEEDED and its side effect is committed; "
-                    "confirmation only lands when the whole turn finalizes, "
-                    "so a long-running turn reaches this state while healthy. "
-                    "Check the parent message before assuming cleanup is "
-                    "needed."
+                    "the parent stream has no fresh heartbeat and confirmation "
+                    "never arrived. Verify the result before retrying."
                 ),
             )
             summary["tool_calls_failed"] += 1

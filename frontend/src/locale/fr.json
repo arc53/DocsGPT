@@ -66,6 +66,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "Conversation poursuivie",
         "job": "Tâche en arrière-plan terminée",
         "lost": "Tâche en arrière-plan interrompue",
         "monitor": "Moniteur déclenché",
@@ -89,6 +90,7 @@
       "failed": "Impossible d’activer les notifications"
     },
     "wake": {
+      "continuation": "Conversation poursuivie",
       "job": "Tâche en arrière-plan terminée",
       "lost": "Tâche en arrière-plan interrompue",
       "monitor": "Moniteur déclenché",
@@ -2705,6 +2707,7 @@
       "contextLengthSizedKnowledge": "Ce message et ses fichiers joints nécessitent environ {{needed, number}} jetons, soit plus que ce que le modèle peut accepter ({{available, number}} jetons). Envoyez moins de fichiers ou des fichiers plus petits, ou utilisez Ajouter aux connaissances pour y effectuer des recherches au lieu de les envoyer en entier.",
       "serverError": "Veuillez réessayer plus tard. Nous vous prions de nous excuser pour la gêne occasionnée.",
       "clientDisconnect": "La réponse s’est arrêtée avant de produire quoi que ce soit. Réessayez.",
+      "timeLimit": "Arrêté : limite de temps atteinte. La progression a été enregistrée.",
       "stopped": "Vous avez arrêté cette réponse avant qu’elle ne commence. Réessayez pour en obtenir une."
     },
     "reasoning": "Raisonnement",

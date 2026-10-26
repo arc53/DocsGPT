@@ -2,6 +2,10 @@ import type { AnswerSource } from './chatCompanion';
 import { AnswerSegment } from './answerSegments';
 import { ToolCallsType } from './types';
 
+// Backend placeholder for a producer that ended before writing an answer.
+export const TERMINATED_RESPONSE_PLACEHOLDER =
+  'Response was terminated prior to completion, try regenerating.';
+
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;

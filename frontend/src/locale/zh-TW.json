@@ -64,6 +64,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "對話已繼續",
         "job": "背景工作已完成",
         "lost": "背景工作已中斷",
         "monitor": "監控條件已觸發",
@@ -87,6 +88,7 @@
       "failed": "無法啟用通知"
     },
     "wake": {
+      "continuation": "對話已繼續",
       "job": "背景工作已完成",
       "lost": "背景工作已中斷",
       "monitor": "監控條件已觸發",
@@ -2609,6 +2611,7 @@
       "contextLengthSizedKnowledge": "此訊息及其附件大約需要 {{needed, number}} 個 token，超出模型可接受的上限（{{available, number}} 個 token）。請傳送更少或更小的檔案，或使用「新增到知識庫」來搜尋它們，而不是整個傳送。",
       "serverError": "請稍後再試。造成不便，敬請見諒。",
       "clientDisconnect": "回覆在產生任何內容之前就中斷了。請重試。",
+      "timeLimit": "已停止：達到時間限制。目前進度已儲存。",
       "stopped": "你在回覆寫出任何內容之前停止了它。請重試以取得回覆。"
     },
     "reasoning": "推理",

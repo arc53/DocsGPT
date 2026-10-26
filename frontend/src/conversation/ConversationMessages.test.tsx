@@ -11,16 +11,40 @@ vi.mock('./ConversationBubble', () => ({
     retryBtn,
     errorCode,
     errorAction,
+    conversationArtifacts,
+    onOpenArtifact,
+    toolCalls,
+    research,
   }: {
     message?: string;
     retryBtn?: React.ReactNode;
     errorCode?: string;
     errorAction?: React.ReactNode;
+    toolCalls?: { call_id: string }[];
+    research?: { plan?: { query: string }[] };
+    conversationArtifacts?: { id: string }[];
+    onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   }) => (
     <div data-error-code={errorCode}>
       {message}
       {retryBtn}
       {errorAction}
+      {research?.plan?.map((step) => (
+        <span key={step.query}>{step.query}</span>
+      ))}
+      {toolCalls?.map((call) => (
+        <span key={call.call_id}>{call.call_id}</span>
+      ))}
+      {conversationArtifacts?.length && onOpenArtifact ? (
+        <button
+          data-testid="open-artifact"
+          onClick={() =>
+            onOpenArtifact({ id: 'a1', toolName: 'code_executor' })
+          }
+        >
+          Open artifact
+        </button>
+      ) : null}
     </div>
   ),
 }));
@@ -64,13 +88,18 @@ describe('ConversationMessages', () => {
   });
 
   const onKnowledgeAdded = vi.fn();
-  const render = (queries: Query[], canAddToKnowledge = false) =>
+  const render = (
+    queries: Query[],
+    canAddToKnowledge = false,
+    onOpenArtifact?: (artifact: { id: string; toolName: string }) => void,
+  ) =>
     act(() => {
       root.render(
         <ConversationMessages
           handleQuestion={() => undefined}
           handleQuestionSubmission={() => undefined}
           queries={queries}
+          onOpenArtifact={onOpenArtifact}
           status="idle"
           canAddToKnowledge={canAddToKnowledge}
           onKnowledgeAdded={onKnowledgeAdded}
@@ -210,5 +239,115 @@ describe('ConversationMessages', () => {
         container.querySelector('[aria-label="conversation.retry"]'),
       ).not.toBeNull();
     });
+  });
+
+  it('keeps a timed-out message partial answer visible beside its error', () => {
+    render([
+      {
+        prompt: 'q',
+        response: 'Saved progress',
+        error: 'Stopped: time limit.',
+        errorCode: 'time_limit',
+      },
+    ]);
+    expect(document.body.textContent).toContain('Saved progress');
+    expect(document.body.textContent).toContain(
+      'conversation.errors.timeLimit',
+    );
+  });
+
+  it('does not render the termination placeholder as a partial answer', () => {
+    render([
+      {
+        prompt: 'q',
+        response:
+          'Response was terminated prior to completion, try regenerating.',
+        error: 'Stopped: time limit.',
+        errorCode: 'time_limit',
+      },
+    ]);
+    expect(container.textContent).not.toContain('Response was terminated');
+    expect(container.textContent).toContain('conversation.errors.timeLimit');
+  });
+
+  it('keeps an earlier artifact usable from a timed-out partial answer', () => {
+    const open = vi.fn();
+    render(
+      [
+        {
+          prompt: 'create',
+          response: 'Created it.',
+          tool_calls: [
+            {
+              call_id: 'done',
+              tool_name: 'code_executor',
+              action_name: 'run_code',
+              arguments: {},
+              status: 'completed',
+              artifacts: [{ id: 'a1', ref: 'A1', filename: 'result.txt' }],
+            },
+          ],
+        },
+        {
+          prompt: 'describe',
+          response: 'See [the result](artifact:A1).',
+          error: 'Stopped: time limit.',
+          errorCode: 'time_limit',
+        },
+      ],
+      false,
+      open,
+    );
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="open-artifact"]',
+    );
+    expect(buttons).toHaveLength(2);
+    act(() => buttons[1].click());
+    expect(open).toHaveBeenCalledWith({ id: 'a1', toolName: 'code_executor' });
+  });
+
+  it.each([
+    '',
+    'Response was terminated prior to completion, try regenerating.',
+  ])(
+    'shows saved calls when a time-limited turn has no answer text: %s',
+    (response) => {
+      render([
+        {
+          prompt: 'q',
+          response,
+          error: 'Stopped: time limit.',
+          errorCode: 'time_limit',
+          tool_calls: [
+            {
+              call_id: 'saved-call',
+              tool_name: 'code_executor',
+              action_name: 'run_code',
+              arguments: {},
+              status: 'completed',
+            },
+          ],
+        },
+      ]);
+      expect(container.textContent).toContain('saved-call');
+      expect(container.textContent).not.toContain('Response was terminated');
+      expect(container.textContent).toContain('conversation.errors.timeLimit');
+    },
+  );
+
+  it('keeps research-only progress visible after a time limit', () => {
+    render([
+      {
+        prompt: 'Research the question',
+        error: 'Stopped: time limit.',
+        errorCode: 'time_limit',
+        research: {
+          status: 'researching',
+          plan: [{ query: 'Saved research step', status: 'complete' }],
+        },
+      },
+    ]);
+    expect(container.textContent).toContain('Saved research step');
+    expect(container.textContent).toContain('conversation.errors.timeLimit');
   });
 });

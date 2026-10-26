@@ -123,7 +123,10 @@ export function mapServerQueryToClient(raw: any): Query {
   const wake = wakeFromMetadata(metadata);
   if (wake) query.wake = wake;
 
-  if (isTerminalComplete) {
+  if (
+    isTerminalComplete ||
+    (isFailed && metadata.error_code === 'time_limit')
+  ) {
     query.response = raw?.response ?? '';
     // The order the parts streamed in, saved with the message.
     query.segments = hydrateSegments(
@@ -1334,8 +1337,12 @@ export const conversationSlice = createSlice({
         );
         query.error = stored.message;
         setErrorDetail(query, stored.code, stored.params);
-        delete query.response;
-        return;
+        if (stored.code !== 'time_limit') {
+          delete query.response;
+          return;
+        }
+        // A failed time-limit tail still carries the saved answer's details.
+        // Apply them below, preserving already streamed text if it is absent.
       }
       // /tail returns reconstructed partials mid-stream so a second tab
       // can render the in-flight bubble; spinner is driven by status.

@@ -29,8 +29,10 @@ from docsgpt.api.answer.services.stream_processor import (
     source_for_docs,
     wiki_tool_config,
 )
+from docsgpt.core.run_budget import StreamCancelled, is_budget_exhausted
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
+from docsgpt.llm.deadlines import interruptible
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.dispatcher import build_dispatcher
@@ -447,54 +449,88 @@ def _run_agent_headless(
     tool_since_text = False
     stopped = False
     events = agent.gen(query=query)
-    for event in events:
-        if not isinstance(event, dict):
-            continue
-        if on_event is not None:
-            try:
-                on_event(event)
-            except Exception:
-                logger.exception("Headless run for agent %s: its event observer failed", agent_id)
-        # ``Agent.gen`` reports a failed stream with an error event rather than
-        # by raising. Dropping it here (as this loop used to) makes a broken run
-        # indistinguishable from one that simply had nothing to say, and the
-        # caller records it as a success. Mirrors the sentinel in
-        # ``docsgpt/logging.py`` so an error carrying no message is still
-        # truthy instead of reading as "ok".
-        if event.get("type") == "error":
-            stream_error = str(event.get("error") or "")[:500] or "unspecified"
-            if event.get("guardrail"):
-                # Same rule as the streaming route: a blocked turn must not
-                # record what was blocked. A scheduled run has no client to
-                # retract from, so the stored result is all there is.
-                answer_full = ""
-                thought = ""
-        # A workflow's work is its nodes: its tool calls stay in the engine's
-        # execution log and its node agents own their LLMs, so neither
-        # ``tool_calls`` nor the token tally below sees them. Counting
-        # completed steps is the only evidence a quiet workflow ran at all.
-        elif event.get("type") == "workflow_step":
-            if event.get("status") == "completed":
-                steps_completed += 1
-        elif event.get("type") == "tool_call":
-            tool_since_text = True
-        elif "answer" in event:
-            chunk = separated(answer_full, str(event["answer"]), after_tool=tool_since_text)
-            if chunk.strip():
-                tool_since_text = False
-            answer_full += chunk
-        elif "sources" in event:
-            sources_log.extend(event["sources"])
-        elif "tool_calls" in event:
-            tool_calls.extend(event["tool_calls"])
-        elif "thought" in event:
-            thought += str(event["thought"])
-        elif isinstance(event.get("metadata"), dict):
-            message_metadata.update(event["metadata"])
-        # After every event, a tool call's included: the next one may start another LLM round.
-        if should_stop is not None and should_stop():
-            stopped = True
-            break
+    if should_stop is not None:
+        events = interruptible(events, lambda: StreamCancelled() if should_stop() else None)
+    budget_error = False
+    try:
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            # ``Agent.gen`` reports a failed stream with an error event rather than
+            # by raising. Dropping it here (as this loop used to) makes a broken run
+            # indistinguishable from one that simply had nothing to say, and the
+            # caller records it as a success. Mirrors the sentinel in
+            # ``docsgpt/logging.py`` so an error carrying no message is still
+            # truthy instead of reading as "ok".
+            if event.get("type") == "error":
+                stream_error = str(event.get("error") or "")[:500] or "unspecified"
+                if event.get("guardrail"):
+                    # Same rule as the streaming route: a blocked turn must not
+                    # record what was blocked. A scheduled run has no client to
+                    # retract from, so the stored result is all there is.
+                    answer_full = ""
+                    thought = ""
+            # A workflow's work is its nodes: its tool calls stay in the engine's
+            # execution log and its node agents own their LLMs, so neither
+            # ``tool_calls`` nor the token tally below sees them. Counting
+            # completed steps is the only evidence a quiet workflow ran at all.
+            elif event.get("type") == "workflow_step":
+                if event.get("status") == "completed":
+                    steps_completed += 1
+            elif event.get("type") == "tool_call":
+                tool_since_text = True
+            elif "answer" in event:
+                chunk = separated(answer_full, str(event["answer"]), after_tool=tool_since_text)
+                if chunk.strip():
+                    tool_since_text = False
+                answer_full += chunk
+            elif "sources" in event:
+                sources_log.extend(event["sources"])
+            elif "tool_calls" in event:
+                tool_calls.extend(event["tool_calls"])
+            elif "thought" in event:
+                thought += str(event["thought"])
+            elif isinstance(event.get("metadata"), dict):
+                message_metadata.update(event["metadata"])
+            # Keep the yielded event even if its journal observer times out.
+            if on_event is not None:
+                try:
+                    on_event(event)
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        # Unwind a generator paused at its yield, so its activity
+                        # and tracing handlers see the time limit as well.
+                        throw = getattr(events, "throw", None)
+                        if callable(throw):
+                            try:
+                                throw(exc)
+                            except Exception as interrupted:
+                                if not is_budget_exhausted(interrupted):
+                                    logger.debug("Agent cleanup after observer timeout failed", exc_info=True)
+                        close = getattr(events, "close", None)
+                        if callable(close):
+                            try:
+                                close()
+                            except Exception:
+                                logger.debug("Agent close after observer timeout failed", exc_info=True)
+                        raise
+                    logger.exception("Headless run for agent %s: its event observer failed", agent_id)
+            # After every event, a tool call's included: the next one may start another LLM round.
+            if should_stop is not None and should_stop():
+                stopped = True
+                break
+        else:
+            # A Stop can also end the agent mid-read, which it reports by returning.
+            stopped = should_stop is not None and should_stop()
+    except Exception as exc:
+        if not is_budget_exhausted(exc) or endpoint != "continuation":
+            # Scheduled/webhook runs retain their existing outer time-limit handlers.
+            raise
+        budget_error = True
+        stream_error = "Stopped: time limit."
+        tool_calls = merge_tool_calls(tool_calls, tool_executor.get_truncated_tool_calls())
+    except StreamCancelled:
+        stopped = True
     if stopped:
         close = getattr(events, "close", None)
         if callable(close):
@@ -504,7 +540,10 @@ def _run_agent_headless(
 
     denied = list(getattr(tool_executor, "headless_denials", []))
     error: Optional[str] = None
-    if denied and not answer_full.strip():
+    if budget_error:
+        error_type = "TimeLimit"
+        error = stream_error
+    elif denied and not answer_full.strip():
         error_type = "tool_not_allowed"
         blocked = ", ".join(
             str(d.get("tool_name") or d.get("action_name") or "?") for d in denied
@@ -547,4 +586,5 @@ def _run_agent_headless(
         "model_id": model_id,
         "metadata": message_metadata,
         "stopped": stopped,
+        "budget_deferred": bool(message_metadata.get("budget_deferred")),
     }

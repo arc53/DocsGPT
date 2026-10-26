@@ -43,6 +43,7 @@ describe('notification kinds', () => {
       'monitor',
       'trigger',
       'approval',
+      'continuation',
       'monitor_paused',
       'monitor_expired',
       'schedule',
