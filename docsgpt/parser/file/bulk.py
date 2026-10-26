@@ -17,8 +17,8 @@ from docsgpt.parser.file.pptx_parser import PPTXParser
 from docsgpt.parser.file.image_parser import ImageParser
 from docsgpt.parser.file.audio_parser import AudioParser
 from docsgpt.parser.schema.base import Document
+from docsgpt.parser.tokenization import count_tokens_windowed
 from docsgpt.stt.constants import SUPPORTED_AUDIO_EXTENSIONS
-from docsgpt.utils import num_tokens_from_string
 from docsgpt.core.settings import settings
 from docsgpt.core.optional_deps import install_hint
 
@@ -537,9 +537,9 @@ class SimpleDirectoryReader(BaseReader):
 
             # Calculate token count for this file
             if isinstance(data, List):
-                file_tokens = sum(num_tokens_from_string(str(d)) for d in data)
+                file_tokens = sum(count_tokens_windowed(str(d)) for d in data)
             else:
-                file_tokens = num_tokens_from_string(str(data))
+                file_tokens = count_tokens_windowed(str(data))
             
             full_path = str(input_file.resolve())
             self.file_token_counts[full_path] = file_tokens

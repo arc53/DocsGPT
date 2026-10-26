@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from docsgpt.parser.schema.base import Document
+from tests.parser.counter_fakes import real_cl100k, spy_cl100k
 
 
 # =====================================================================
@@ -428,6 +429,25 @@ class TestSimpleDirectoryReaderLoadData:
         reader.load_data()
         assert hasattr(reader, "file_token_counts")
         assert len(reader.file_token_counts) >= 1
+
+    _PROSE = "\n".join(f"Sentence {i} explains how chunk {i % 7} is retrieved and cited." for i in range(80))
+
+    @pytest.mark.parametrize("parsed", [_PROSE, [_PROSE, ""]], ids=["str", "list"])
+    def test_file_token_count_is_windowed(self, tmp_path, monkeypatch, parsed):
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+
+        expected = len(real_cl100k().encode_ordinary(self._PROSE))
+        encoding = spy_cl100k(monkeypatch, window=128)
+        (tmp_path / "big.md").write_text("placeholder")
+        mock_parser = MagicMock()
+        mock_parser.parser_config_set = True
+        mock_parser.parse_file.return_value = parsed
+        mock_parser.get_file_metadata.return_value = {}
+        reader = SimpleDirectoryReader(input_dir=str(tmp_path), file_extractor={".md": mock_parser})
+
+        reader.load_data()
+        assert list(reader.file_token_counts.values()) == [expected]
+        assert max(encoding.encode_lengths) <= 2 * 128
 
 
 # =====================================================================
