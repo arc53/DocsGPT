@@ -53,7 +53,7 @@ With a limit set, the agent treats the limit as the model's window for:
 
 The limit never makes a request fail and never stops the agent calling tools. A message, system prompt or tool result larger than the limit is still sent when the model can take it, with less history and fewer documents around it; a question that fills the limit on its own is sent without documents. Only the model's own threshold makes the agent stop calling tools and answer with what it has. A limit at or above the model's window has no effect, so a smaller model keeps its own window. The limit also applies to scheduled runs, webhook runs, background continuations and resumed tool approvals, and to every node of a workflow agent (a node on a smaller model uses that model's window).
 
-Values start at 16,000 tokens. Below that, the system prompt, the tool definitions and a compression summary alone would reach the threshold, and the agent would compress on every turn. The form accepts values up to the largest context window among the agent's models (the instance's default model when none is picked; for a workflow, the models its agent nodes use). The API accepts up to 10,000,000 tokens, but a limit above the model's window has no effect. Like the agent's usage limits, changing it needs permission to edit the agent's policy, which owners and editors have.
+Values start at 16,000 tokens. Below that, the system prompt, the tool definitions and a compression summary alone would reach the threshold, and the agent would compress on every turn. The highest value is 10,000,000 tokens, but a limit above the model's window has no effect. The form notes such a limit under the field without refusing it, measured against the largest context window among the agent's models (the instance's default model when none is picked; for a workflow, the models its agent nodes use). Like the agent's usage limits, changing it needs permission to edit the agent's policy, which owners and editors have.
 
 ## Per-agent history limit
 
@@ -66,7 +66,7 @@ Once the messages sent word for word since the last summary pass the limit, the 
 *   A caller that sends its own `history` instead of a conversation id has nothing to summarize into, so that history is trimmed to the limit, oldest messages first.
 *   Each compression adds a summary entry to the conversation and costs one call to the summarizing model, so a low limit means more of both. `COMPRESSION_MODEL_OVERRIDE` can point the summaries at a cheaper model.
 
-Values start at 4,000 tokens and must stay below the context limit, or below the model's window when no context limit is set. Turned off, the conversation is compressed only near the context limit. Changing it needs the same permission as the context limit.
+Values start at 4,000 tokens and must stay below the context limit. A history limit at or above the model's window has no effect, because the conversation is compressed near the window first; the form notes it under the field. Turned off, the conversation is compressed only near the context limit. Changing it needs the same permission as the context limit.
 
 ## Architecture
 

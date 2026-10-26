@@ -1,3 +1,4 @@
+import { TriangleAlert } from 'lucide-react';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,12 +7,14 @@ import { SettingRow } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 
 import {
-  DEFAULT_CONTEXT_WINDOW_LIMIT,
-  DEFAULT_HISTORY_TOKEN_LIMIT,
+  MAX_CONTEXT_WINDOW_LIMIT,
   MIN_CONTEXT_WINDOW_LIMIT,
   MIN_HISTORY_TOKEN_LIMIT,
   type ModelWindow,
-  contextLimitMax,
+  contextLimitAboveWindow,
+  defaultContextLimit,
+  defaultHistoryLimit,
+  historyLimitAboveWindow,
   historyLimitMax,
   isContextLimitInvalid,
   isHistoryLimitInvalid,
@@ -32,12 +35,13 @@ interface ContextLimitRowsProps {
   onHistoryLimitChange: (limit: number | null) => void;
 }
 
-/** The text field under a limit's switch, with its range error. */
+/** The text field under a limit's switch, with its range error or its no-effect note. */
 function LimitInput({
   value,
   on,
   invalid,
   error,
+  note,
   min,
   max,
   disabled,
@@ -49,6 +53,8 @@ function LimitInput({
   on: boolean;
   invalid: boolean;
   error: string;
+  /** Shown when the value is valid but has no effect; null for none. */
+  note: string | null;
   min: number;
   max: number;
   disabled: boolean;
@@ -57,6 +63,8 @@ function LimitInput({
   onChange: (limit: number) => void;
 }) {
   const errorId = useId();
+  const noteId = useId();
+  const shownNote = !invalid && on ? note : null;
   return (
     <>
       <Input
@@ -73,7 +81,7 @@ function LimitInput({
         disabled={!on || disabled}
         aria-label={label}
         aria-invalid={invalid || undefined}
-        aria-describedby={invalid ? errorId : undefined}
+        aria-describedby={invalid ? errorId : shownNote ? noteId : undefined}
         placeholder={placeholder}
       />
       {invalid ? (
@@ -84,6 +92,17 @@ function LimitInput({
         >
           {error}
         </p>
+      ) : shownNote ? (
+        <p
+          id={noteId}
+          className="text-muted-foreground mt-1.5 flex items-start gap-1.5 text-xs"
+        >
+          <TriangleAlert
+            className="text-warning mt-px size-3.5 shrink-0"
+            aria-hidden
+          />
+          {shownNote}
+        </p>
       ) : null}
     </>
   );
@@ -93,8 +112,9 @@ function LimitInput({
  * The Context limit and History limit rows of an agent's Advanced settings,
  * each a Switch with its token field under it, like the usage limits. Off
  * saves null: the model's whole window, and summarizing only near it. The
- * context limit is held to the window of the agent's models, and the history
- * limit below the context limit.
+ * history limit is held below the context limit; a limit past the window of
+ * the agent's models is noted, not refused, since it is valid but has no
+ * effect.
  *
  * Render inside a `SettingRows`.
  */
@@ -112,34 +132,36 @@ export default function ContextLimitRows({
 
   const contextOn = contextLimit !== null && contextLimit !== undefined;
   const historyOn = historyLimit !== null && historyLimit !== undefined;
-  const contextMax = contextLimitMax(window);
-  const historyMax = historyLimitMax(contextLimit, window);
-  const contextUsable =
-    contextOn && !isContextLimitInvalid(contextLimit, window);
+  const contextUsable = contextOn && !isContextLimitInvalid(contextLimit);
+  const historyMax = historyLimitMax(contextLimit);
 
-  const contextError = window
-    ? t('agents.form.advanced.contextLimitRange', {
-        min: MIN_CONTEXT_WINDOW_LIMIT,
-        max: contextMax,
-        model: window.name,
-      })
-    : t('agents.form.advanced.limitMin', {
-        min: MIN_CONTEXT_WINDOW_LIMIT,
-      });
+  const contextError = t('agents.form.advanced.limitRange', {
+    min: MIN_CONTEXT_WINDOW_LIMIT,
+    max: MAX_CONTEXT_WINDOW_LIMIT,
+  });
   const historyError = contextUsable
     ? t('agents.form.advanced.historyLimitBelowContext', {
         min: MIN_HISTORY_TOKEN_LIMIT,
         limit: contextLimit,
       })
-    : window
-      ? t('agents.form.advanced.historyLimitBelowWindow', {
-          min: MIN_HISTORY_TOKEN_LIMIT,
-          limit: window.tokens,
+    : t('agents.form.advanced.limitRange', {
+        min: MIN_HISTORY_TOKEN_LIMIT,
+        max: MAX_CONTEXT_WINDOW_LIMIT,
+      });
+  const contextNote =
+    window && contextLimitAboveWindow(contextLimit, window)
+      ? t('agents.form.advanced.contextLimitAboveWindow', {
           model: window.name,
+          limit: window.tokens,
         })
-      : t('agents.form.advanced.limitMin', {
-          min: MIN_HISTORY_TOKEN_LIMIT,
-        });
+      : null;
+  const historyNote =
+    window && historyLimitAboveWindow(historyLimit, window)
+      ? t('agents.form.advanced.historyLimitAboveWindow', {
+          model: window.name,
+          limit: window.tokens,
+        })
+      : null;
 
   return (
     <>
@@ -151,10 +173,11 @@ export default function ContextLimitRows({
           <LimitInput
             value={contextLimit}
             on={contextOn}
-            invalid={isContextLimitInvalid(contextLimit, window)}
+            invalid={isContextLimitInvalid(contextLimit)}
             error={contextError}
+            note={contextNote}
             min={MIN_CONTEXT_WINDOW_LIMIT}
-            max={contextMax}
+            max={MAX_CONTEXT_WINDOW_LIMIT}
             disabled={disabled}
             label={t('agents.form.advanced.contextLimitTokens')}
             placeholder={t('agents.form.placeholders.contextLimitDefault')}
@@ -168,11 +191,7 @@ export default function ContextLimitRows({
           // A cost control, so policy (`edit_policy`) like the usage limits.
           disabled={disabled}
           onCheckedChange={(checked) =>
-            onContextLimitChange(
-              checked
-                ? Math.min(DEFAULT_CONTEXT_WINDOW_LIMIT, contextMax)
-                : null,
-            )
+            onContextLimitChange(checked ? defaultContextLimit(window) : null)
           }
         />
       </SettingRow>
@@ -184,8 +203,9 @@ export default function ContextLimitRows({
           <LimitInput
             value={historyLimit}
             on={historyOn}
-            invalid={isHistoryLimitInvalid(historyLimit, contextLimit, window)}
+            invalid={isHistoryLimitInvalid(historyLimit, contextLimit)}
             error={historyError}
+            note={historyNote}
             min={MIN_HISTORY_TOKEN_LIMIT}
             max={historyMax}
             disabled={disabled}
@@ -201,9 +221,7 @@ export default function ContextLimitRows({
           disabled={disabled}
           onCheckedChange={(checked) =>
             onHistoryLimitChange(
-              checked
-                ? Math.min(DEFAULT_HISTORY_TOKEN_LIMIT, historyMax)
-                : null,
+              checked ? defaultHistoryLimit(contextLimit, window) : null,
             )
           }
         />

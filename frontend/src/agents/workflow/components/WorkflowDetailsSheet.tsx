@@ -69,7 +69,7 @@ interface WorkflowDetailsSheetProps {
   insights?: WorkflowInsightsOptions;
   /** The caller may change policy (`edit_policy`): the context and history limits. */
   policyEditable?: boolean;
-  /** The largest window of the workflow's models, the context limit's ceiling. */
+  /** The largest window of the workflow's models; a limit past it is noted. */
   modelWindow?: ModelWindow | null;
   onSave: (values: WorkflowDetailsSave) => void;
 }
@@ -133,12 +133,8 @@ export default function WorkflowDetailsSheet({
     !Object.is(draft.contextWindowLimit, details.contextWindowLimit) ||
     !Object.is(draft.historyTokenLimit, details.historyTokenLimit);
   const contextLimitInvalid =
-    isContextLimitInvalid(draft.contextWindowLimit, modelWindow) ||
-    isHistoryLimitInvalid(
-      draft.historyTokenLimit,
-      draft.contextWindowLimit,
-      modelWindow,
-    );
+    isContextLimitInvalid(draft.contextWindowLimit) ||
+    isHistoryLimitInvalid(draft.historyTokenLimit, draft.contextWindowLimit);
   const showInsights =
     insights !== undefined &&
     (insights.available || !isDefaultAnalytics(details.analytics));

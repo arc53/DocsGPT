@@ -286,7 +286,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     { label: t('agents.form.agentTypes.research'), value: 'research' },
   ];
 
-  // The context limit is held to the largest window of the agent's models.
+  // The largest window of the agent's models: a limit past it is noted.
   const modelWindow = useMemo(
     () =>
       largestModelWindow(
@@ -296,11 +296,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [availableModels, selectedModelIds, systemDefaultModelId],
   );
   const contextLimitInvalid =
-    isContextLimitInvalid(agent.config?.context_window_limit, modelWindow) ||
+    isContextLimitInvalid(agent.config?.context_window_limit) ||
     isHistoryLimitInvalid(
       agent.config?.history_token_limit,
       agent.config?.context_window_limit,
-      modelWindow,
     );
 
   const isPublishable = () => {

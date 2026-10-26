@@ -5,7 +5,10 @@ import {
   MAX_CONTEXT_WINDOW_LIMIT,
   MIN_CONTEXT_WINDOW_LIMIT,
   MIN_HISTORY_TOKEN_LIMIT,
-  contextLimitMax,
+  contextLimitAboveWindow,
+  defaultContextLimit,
+  defaultHistoryLimit,
+  historyLimitAboveWindow,
   historyLimitMax,
   isContextLimitInvalid,
   isHistoryLimitInvalid,
@@ -66,21 +69,36 @@ describe('model window', () => {
     expect(largestModelWindow(models, ['c', 'missing'])).toBeNull();
   });
 
-  it('bounds the context limit', () => {
+  it('flags a context limit past the window without making it invalid', () => {
     const window = { tokens: 128_000, name: 'A' };
-    expect(contextLimitMax(window)).toBe(128_000);
-    expect(contextLimitMax(null)).toBe(MAX_CONTEXT_WINDOW_LIMIT);
-    expect(isContextLimitInvalid(128_000, window)).toBe(false);
-    expect(isContextLimitInvalid(128_001, window)).toBe(true);
-    // A window under the floor still leaves the floor valid.
-    expect(contextLimitMax({ tokens: 8000, name: 'S' })).toBe(
+    expect(isContextLimitInvalid(200_000)).toBe(false);
+    expect(contextLimitAboveWindow(128_000, window)).toBe(false);
+    expect(contextLimitAboveWindow(128_001, window)).toBe(true);
+    expect(contextLimitAboveWindow(200_000, null)).toBe(false);
+    expect(contextLimitAboveWindow(null, window)).toBe(false);
+    // An invalid value shows its error, not the note.
+    expect(contextLimitAboveWindow(Number.NaN, window)).toBe(false);
+    // The floor itself is past a small model's window.
+    expect(
+      contextLimitAboveWindow(MIN_CONTEXT_WINDOW_LIMIT, {
+        tokens: 8000,
+        name: 'S',
+      }),
+    ).toBe(true);
+  });
+
+  it('switches on at a value the window takes', () => {
+    expect(defaultContextLimit(null)).toBe(100_000);
+    expect(defaultContextLimit({ tokens: 1_000_000, name: 'B' })).toBe(100_000);
+    expect(defaultContextLimit({ tokens: 32_000, name: 'C' })).toBe(32_000);
+    expect(defaultContextLimit({ tokens: 8000, name: 'S' })).toBe(
       MIN_CONTEXT_WINDOW_LIMIT,
     );
   });
 
   it('reads a switched-on but empty field as invalid', () => {
     expect(isContextLimitInvalid(Number.NaN)).toBe(true);
-    expect(isHistoryLimitInvalid(Number.NaN, null, null)).toBe(true);
+    expect(isHistoryLimitInvalid(Number.NaN, null)).toBe(true);
   });
 });
 
@@ -88,25 +106,41 @@ describe('history limit', () => {
   const window = { tokens: 128_000, name: 'A' };
 
   it('treats an unset limit as valid', () => {
-    expect(isHistoryLimitInvalid(null, null, window)).toBe(false);
-    expect(isHistoryLimitInvalid(undefined, 32_000, window)).toBe(false);
+    expect(isHistoryLimitInvalid(null, null)).toBe(false);
+    expect(isHistoryLimitInvalid(undefined, 32_000)).toBe(false);
   });
 
-  it('stays below the context limit, or the window without one', () => {
-    expect(historyLimitMax(32_000, window)).toBe(31_999);
-    expect(historyLimitMax(null, window)).toBe(127_999);
-    // An invalid context limit leaves the window as the bound.
-    expect(historyLimitMax(Number.NaN, window)).toBe(127_999);
-    expect(isHistoryLimitInvalid(32_000, 32_000, window)).toBe(true);
-    expect(isHistoryLimitInvalid(31_999, 32_000, window)).toBe(false);
+  it('stays below the context limit', () => {
+    expect(historyLimitMax(32_000)).toBe(31_999);
+    expect(historyLimitMax(null)).toBe(MAX_CONTEXT_WINDOW_LIMIT);
+    // An invalid context limit leaves the server's bound.
+    expect(historyLimitMax(Number.NaN)).toBe(MAX_CONTEXT_WINDOW_LIMIT);
+    expect(isHistoryLimitInvalid(32_000, 32_000)).toBe(true);
+    expect(isHistoryLimitInvalid(31_999, 32_000)).toBe(false);
+    expect(isHistoryLimitInvalid(200_000, null)).toBe(false);
+  });
+
+  it('flags a history limit at the window without making it invalid', () => {
+    expect(historyLimitAboveWindow(127_999, window)).toBe(false);
+    expect(historyLimitAboveWindow(128_000, window)).toBe(true);
+    expect(historyLimitAboveWindow(128_000, null)).toBe(false);
+    expect(historyLimitAboveWindow(Number.NaN, window)).toBe(false);
+  });
+
+  it('switches on below the context limit and the window', () => {
+    expect(defaultHistoryLimit(null, window)).toBe(8000);
+    expect(defaultHistoryLimit(null, { tokens: 8000, name: 'S' })).toBe(7999);
+    // The context limit's floor is above the default, so only the window
+    // lowers it.
+    expect(defaultHistoryLimit(MIN_CONTEXT_WINDOW_LIMIT, null)).toBe(8000);
+    // Never below the floor, even where that is past a tiny window.
+    expect(defaultHistoryLimit(null, { tokens: 2000, name: 'T' })).toBe(
+      MIN_HISTORY_TOKEN_LIMIT,
+    );
   });
 
   it('has a floor', () => {
-    expect(isHistoryLimitInvalid(MIN_HISTORY_TOKEN_LIMIT, null, window)).toBe(
-      false,
-    );
-    expect(
-      isHistoryLimitInvalid(MIN_HISTORY_TOKEN_LIMIT - 1, null, window),
-    ).toBe(true);
+    expect(isHistoryLimitInvalid(MIN_HISTORY_TOKEN_LIMIT, null)).toBe(false);
+    expect(isHistoryLimitInvalid(MIN_HISTORY_TOKEN_LIMIT - 1, null)).toBe(true);
   });
 });

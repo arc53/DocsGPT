@@ -1934,8 +1934,8 @@ function WorkflowBuilderInner() {
     return validateJsonSchemaConfig(selectedNode.data.config?.json_schema);
   }, [selectedNode, agentJsonSchemaErrors]);
 
-  // The context limit is held to the largest window among the agent nodes'
-  // models; a node without one runs on the default.
+  // The largest window among the agent nodes' models, for the note on a limit
+  // past it; a node without one runs on the default.
   const workflowModelWindow = useMemo(() => {
     const ids = nodes
       .filter((node) => node.type === 'agent')

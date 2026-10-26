@@ -772,7 +772,7 @@ describe('NewAgent form', () => {
     });
   });
 
-  it("holds the context limit to the model's window, and saves off as null", async () => {
+  it("notes a context limit past the model's window, and saves off as null", async () => {
     await renderEdit({
       allowed_actions: ['edit', 'view', 'edit_policy'],
       config: { context_window_limit: 32000 },
@@ -782,12 +782,18 @@ describe('NewAgent form', () => {
     const input = limitInput('contextLimitTokens');
     expect(input.value).toBe('32000');
     const save = buttonByText('agents.form.buttons.save');
+    // Past the window is a note, not an error: the limit just has no effect.
     await act(async () => setNativeValue(input, '200000'));
+    expect(save.disabled).toBe(false);
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+    expect(container.textContent).toContain(
+      'agents.form.advanced.contextLimitAboveWindow',
+    );
+    // Below the server's floor is an error.
+    await act(async () => setNativeValue(input, '12000'));
     expect(save.disabled).toBe(true);
     expect(input.getAttribute('aria-invalid')).toBe('true');
-    expect(container.textContent).toContain(
-      'agents.form.advanced.contextLimitRange',
-    );
+    expect(container.textContent).toContain('agents.form.advanced.limitRange');
     // Emptied while on is not a value either.
     await act(async () => setNativeValue(input, ''));
     expect(save.disabled).toBe(true);
@@ -795,6 +801,31 @@ describe('NewAgent form', () => {
     expect(save.disabled).toBe(false);
     await act(async () => save.click());
     expect(sentConfig().context_window_limit).toBeNull();
+  });
+
+  it("does not block saving a stored limit past the model's window", async () => {
+    // Without edit_policy the limit can't be changed, so it must not hold
+    // back an unrelated save.
+    await renderEdit({
+      config: { context_window_limit: 200_000, history_token_limit: 150_000 },
+      ...withModel(128_000),
+    });
+    await openAdvanced();
+    expect(container.textContent).toContain(
+      'agents.form.advanced.contextLimitAboveWindow',
+    );
+    expect(container.textContent).toContain(
+      'agents.form.advanced.historyLimitAboveWindow',
+    );
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, 'Renamed'));
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    expect(sentConfig()).toMatchObject({
+      context_window_limit: 200_000,
+      history_token_limit: 150_000,
+    });
   });
 
   it('keeps the history limit below the context limit', async () => {
