@@ -231,7 +231,7 @@
 
 - key: mcp:canva
   name: Canva
-  description: settings.connectors.descriptions.mcp_canva
+  description: Work with Canva designs, export them and use brand templates.
   icon: canva
   category: business
   mcp_url: https://mcp.canva.com/mcp
