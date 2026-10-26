@@ -217,6 +217,7 @@ export default function ConversationMessages({
         partialResponse ||
         query.thought ||
         query.tool_calls?.length ||
+        query.research ||
         query.workflow_run_id;
       return (
         <Fragment key={`${index}-ERROR`}>
@@ -230,6 +231,7 @@ export default function ConversationMessages({
               toolCalls={query.tool_calls}
               segments={query.segments}
               workflowRunId={query.workflow_run_id}
+              research={query.research}
               conversationArtifacts={conversationArtifacts}
               onOpenArtifact={onOpenArtifact}
               onToolAction={onToolAction}

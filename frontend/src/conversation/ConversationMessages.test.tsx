@@ -14,12 +14,14 @@ vi.mock('./ConversationBubble', () => ({
     conversationArtifacts,
     onOpenArtifact,
     toolCalls,
+    research,
   }: {
     message?: string;
     retryBtn?: React.ReactNode;
     errorCode?: string;
     errorAction?: React.ReactNode;
     toolCalls?: { call_id: string }[];
+    research?: { plan?: { query: string }[] };
     conversationArtifacts?: { id: string }[];
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   }) => (
@@ -27,6 +29,9 @@ vi.mock('./ConversationBubble', () => ({
       {message}
       {retryBtn}
       {errorAction}
+      {research?.plan?.map((step) => (
+        <span key={step.query}>{step.query}</span>
+      ))}
       {toolCalls?.map((call) => (
         <span key={call.call_id}>{call.call_id}</span>
       ))}
@@ -329,4 +334,20 @@ describe('ConversationMessages', () => {
       expect(container.textContent).toContain('conversation.errors.timeLimit');
     },
   );
+
+  it('keeps research-only progress visible after a time limit', () => {
+    render([
+      {
+        prompt: 'Research the question',
+        error: 'Stopped: time limit.',
+        errorCode: 'time_limit',
+        research: {
+          status: 'researching',
+          plan: [{ query: 'Saved research step', status: 'complete' }],
+        },
+      },
+    ]);
+    expect(container.textContent).toContain('Saved research step');
+    expect(container.textContent).toContain('conversation.errors.timeLimit');
+  });
 });
