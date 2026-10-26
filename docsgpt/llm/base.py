@@ -10,7 +10,7 @@ from docsgpt.cache import gen_cache, stream_cache
 
 from docsgpt.core.settings import settings
 from docsgpt.core.run_budget import check_round, is_budget_exhausted
-from docsgpt.llm.deadlines import timed_stream
+from docsgpt.llm.deadlines import StreamStalledError, timed_stream
 from docsgpt.error import bounded_error_text
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
@@ -854,6 +854,10 @@ class BaseLLM(ABC):
                         f"Error: {str(retry_e)}"
                     )
                     e = retry_e
+            if isinstance(e, StreamStalledError) and chunks_yielded:
+                # Output already reached the user; a fallback would repeat it.
+                logger.warning(f"Primary LLM stalled after delivering output; not engaging fallback. Error: {str(e)}")
+                raise e
             if not self.fallback_llm:
                 logger.error(
                     f"Primary LLM failed and no fallback configured: {str(e)}"

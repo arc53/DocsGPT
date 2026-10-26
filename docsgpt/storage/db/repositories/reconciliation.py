@@ -194,7 +194,7 @@ class ReconciliationRepository:
                   AND NOT EXISTS (
                       SELECT 1 FROM conversation_messages cm
                       WHERE cm.id = tca.message_id
-                        AND cm.status = 'streaming'
+                        AND cm.status IN ('pending', 'streaming')
                         AND (cm.message_metadata->>'last_heartbeat_at')::timestamptz
                             > now() - interval '2 minutes'
                   )

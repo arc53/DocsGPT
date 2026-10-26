@@ -545,8 +545,11 @@ class BaseAgent(ABC):
                 return
             yield from self._gen_inner(query, log_context)
         except RoundDeferred:
+            # No Responses metadata: the last response may hold calls whose
+            # outputs were never sent, and chaining onto it is rejected.
             yield {"tool_calls": self._get_truncated_tool_calls()}
             yield {"metadata": {"budget_deferred": True}}
+            return
         except StreamCancelled:
             return
         yield from self._emit_responses_metadata()

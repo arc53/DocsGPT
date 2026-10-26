@@ -1116,9 +1116,12 @@ class BaseAnswerResource:
                 gen_iter = agent.gen(query=model_question)
 
             if background_turn is not None and background_turn.auto_resume():
+                from docsgpt.agents.workflow_agent import WorkflowAgent
                 from docsgpt.core.run_budget import bounded_round
 
-                gen_iter = bounded_round(gen_iter)
+                # Workflow nodes can't defer mid-graph, so a workflow runs unbounded.
+                if not isinstance(agent, WorkflowAgent):
+                    gen_iter = bounded_round(gen_iter)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
@@ -1600,9 +1603,15 @@ class BaseAnswerResource:
                             if query_metadata.get("budget_deferred") and background_turn is not None:
                                 from docsgpt.background.continuation import defer_round
 
-                                defer_round(
-                                    {"id": conversation_id, "user_id": background_turn.user_id}, reserved_message_id
-                                )
+                                # Guarded: the answer is already saved, and a raise
+                                # would reach the generic ``except`` below.
+                                try:
+                                    defer_round(
+                                        {"id": conversation_id, "user_id": background_turn.user_id},
+                                        reserved_message_id,
+                                    )
+                                except Exception:
+                                    logger.exception("deferring the next round of %s failed", reserved_message_id)
                             _show_finished_jobs(background_turn, tool_calls)
                     # The outcome used to be discarded here, which is how a
                     # finished answer could vanish silently: if the row was

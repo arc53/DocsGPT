@@ -72,6 +72,7 @@ def _message_row_to_dict(row) -> dict:
 class ConversationsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
+        self.retired_message_ids: list[str] = []
 
     # ------------------------------------------------------------------
     # Reference translation helpers
@@ -1330,10 +1331,12 @@ class ConversationsRepository:
         correctly reports ``NOT_FOUND``, not ``ALREADY_FAILED``. Do not rely on
         the stamp for anything but the ``RETURNING id`` log line.
 
-        The ``superseded_messages`` tombstone survives the delete. A Redis
-        cancellation flag also reaches the owning process at its next round
-        or tool boundary. The tombstone distinguishes late finalization from
-        a genuinely orphaned answer while a provider call is still returning.
+        The ``superseded_messages`` tombstone survives the delete. The deleted
+        ids are left in ``retired_message_ids`` for the caller to pass to
+        ``cancel_streams`` once the transaction commits, so the owning process
+        stops at its next round or tool boundary. The tombstone distinguishes
+        late finalization from a genuinely orphaned answer while a provider
+        call is still returning.
 
         Args:
             conversation_id: Conversation whose tail is being trimmed.
@@ -1392,12 +1395,9 @@ class ConversationsRepository:
             ),
             {"conv_id": conversation_id, "pos": keep_up_to},
         )
-        from docsgpt.activity.flags import cancel_stream
-
         # Include terminal rows: the reconciler may already have failed a
         # still-running stream. Every deleted producer must see cancellation.
-        for row in retired:
-            cancel_stream(str(row[0]))
+        self.retired_message_ids = [str(row[0]) for row in retired]
         result = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages "

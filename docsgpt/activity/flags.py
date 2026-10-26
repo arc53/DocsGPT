@@ -21,7 +21,7 @@ import json
 import logging
 import time
 from threading import Lock
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import redis
 
@@ -281,6 +281,12 @@ def cancel_stream(message_id: str) -> bool:
     except Exception:
         logger.exception("storing stream cancellation failed for %s", message_id)
         return False
+
+
+def cancel_streams(message_ids: Iterable[str]) -> None:
+    """Cancel each superseded stream; call after the deleting transaction commits."""
+    for message_id in message_ids:
+        cancel_stream(message_id)
 
 
 def stream_cancelled(message_id: str | None) -> bool:

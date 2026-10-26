@@ -346,6 +346,24 @@ class TestBudgetContinuation:
             "error", {"type": "error", "error": "Stopped: time limit.", "code": "time_limit"}
         )
 
+    def test_time_limit_still_schedules_the_remaining_wakes(self, bg_db, conversation, quiet, monkeypatch):
+        rest = []
+        monkeypatch.setattr(continuation, "_schedule_rest", rest.append)
+        _install(monkeypatch, lambda mid, live: _outcome("Partial", error_type="TimeLimit", error="Stopped: time limit."))
+        _queue(conversation[0])
+        assert continuation.continue_conversation_body(conversation[0])["state"] == "failed"
+        assert rest == [conversation[0]]
+
+    def test_a_failed_deferral_keeps_the_saved_round(self, bg_db, conversation, quiet, monkeypatch):
+        def broken(*args):
+            raise RuntimeError("broker down")
+
+        monkeypatch.setattr(continuation, "defer_round", broken)
+        seen = _install(monkeypatch, lambda mid, live: _outcome("Progress", budget_deferred=True))
+        _queue(conversation[0])
+        assert continuation.continue_conversation_body(conversation[0])["state"] == "deferred"
+        assert _row(bg_db, seen["message_id"])["status"] == "complete"
+
     def test_round_saves_then_defers_once(self, bg_db, conversation, quiet, monkeypatch):
         scheduled = []
         monkeypatch.setattr(wake, "schedule_continuation", lambda *a, **kw: scheduled.append((a, kw)))

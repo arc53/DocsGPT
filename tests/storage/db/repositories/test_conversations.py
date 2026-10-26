@@ -1062,4 +1062,6 @@ def test_regenerate_sets_cross_process_cancel_flag(pg_conn, monkeypatch):
     conv = repo.create("u", "chat")
     old = repo.append_message(str(conv["id"]), {"prompt": "q", "response": "", "status": "streaming"})
     repo.truncate_after(str(conv["id"]), -1)
+    client.setex.assert_not_called()
+    flags.cancel_streams(repo.retired_message_ids)
     client.setex.assert_called_once_with(f"stream_cancel:{old['id']}", 3600, "1")

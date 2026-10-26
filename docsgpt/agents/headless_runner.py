@@ -544,7 +544,7 @@ def _run_agent_headless(
         )
         error = f"headless allowlist blocked required tool: {blocked}"[:500]
     elif stream_error:
-        error_type = "TimeLimit" if budget_error else "stream_error"
+        error_type = "stream_error"
         error = stream_error
     else:
         error_type = None

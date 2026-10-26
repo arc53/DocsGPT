@@ -40,11 +40,26 @@ def test_soft_limit_never_falls_back():
     llm._fallback_llm._raw_gen_stream.assert_not_called()
 
 
-def test_stall_falls_back_and_abandoned_stream_does_no_more_work():
+def test_stall_before_output_falls_back():
+    release = threading.Event()
+    llm = StubLLM(capabilities=ModelCapabilities(first_token_timeout=0.03))
+    llm._fallback_llm = StubLLM(model_id="backup")
+
+    def body():
+        release.wait(2)
+        yield "late"
+
+    try:
+        assert list(stream(llm, body)) == ["answer"]
+    finally:
+        release.set()
+
+
+def test_stall_after_output_does_not_repeat_it_and_abandoned_stream_does_no_more_work():
     release = threading.Event()
     closed = threading.Event()
     llm = StubLLM(capabilities=ModelCapabilities(stall_timeout=0.03))
-    llm._fallback_llm = StubLLM(model_id="backup")
+    llm._fallback_llm = Mock()
 
     def body():
         try:
@@ -55,11 +70,15 @@ def test_stall_falls_back_and_abandoned_stream_does_no_more_work():
         finally:
             closed.set()
 
+    output = stream(llm, body)
     try:
-        assert list(stream(llm, body)) == ["partial", "answer"]
+        assert next(output) == "partial"
+        with pytest.raises(StreamStalledError):
+            next(output)
     finally:
         release.set()
     assert closed.wait(1)
+    llm._fallback_llm._raw_gen_stream.assert_not_called()
 
 
 def test_slow_first_token_uses_model_override(monkeypatch):
@@ -138,12 +157,24 @@ def test_loop_at_margin_saves_without_starting_another_call(monkeypatch):
 
     agent._gen_inner = gen
     agent._get_truncated_tool_calls = lambda: [{"call_id": "done"}]
-    agent._emit_responses_metadata = lambda: iter([])
+    # The last response may hold unanswered calls; chaining onto it would 400.
+    agent._emit_responses_metadata = lambda: iter([{"metadata": {"response_id": "resp_unanswered"}}])
     with budgets.run_budget(100, margin=10):
         events = list(BaseAgent.gen.__wrapped__(agent, "q"))
     assert calls == []
     assert events[-1] == {"metadata": {"budget_deferred": True}}
     assert events[0] == {"answer": "Progress"}
+
+
+def test_round_that_overran_its_deadline_defers_at_the_next_boundary(monkeypatch):
+    from docsgpt.core import run_budget as budgets
+
+    clock = [0.0]
+    monkeypatch.setattr(budgets, "monotonic", lambda: clock[0])
+    with budgets.run_budget(100, margin=10):
+        clock[0] = 150  # a slow tool ran past the deadline
+        with pytest.raises(budgets.RoundDeferred):
+            budgets.check_round()
 
 
 def test_cancel_key_stops_before_tool_execution(monkeypatch):

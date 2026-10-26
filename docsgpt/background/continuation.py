@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from contextlib import nullcontext
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import Connection, text
@@ -381,7 +382,8 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
             live.discard()
         _settle(wakes, "failed", job_state="pending", error=str(outcome.get("error") or "")[:500])
         return {"state": "failed", "error": outcome.get("error_type")}
-    if not stopped and not outcome.get("budget_deferred") and not outcome.get("error_type") and wake.is_no_reply(answer):
+    deferred_or_failed = outcome.get("budget_deferred") or outcome.get("error_type")
+    if not stopped and not deferred_or_failed and wake.is_no_reply(answer):
         if live is not None:
             live.discard()
         _settle(wakes, "suppressed", job_state="suppressed")
@@ -413,9 +415,14 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
             logger.exception("continuation %s: stopping its background jobs failed", message_id)
         return {"state": "stopped", "message_id": message_id, "events": len(wakes)}
     if outcome.get("budget_deferred"):
-        defer_round(conversation, message_id)
+        try:
+            defer_round(conversation, message_id)
+        except Exception:
+            logger.exception("continuation %s: deferring the next round failed", message_id)
         return {"state": "deferred", "message_id": message_id, "events": len(wakes)}
     if outcome.get("error_type") == "TimeLimit":
+        # Wakes that arrived during the run are still owed a turn.
+        _schedule_rest(conversation_id)
         return {"state": "failed", "message_id": message_id, "error": "TimeLimit"}
     _notify(conversation, wakes, answer)
     _schedule_rest(conversation_id)
@@ -505,7 +512,12 @@ def _run_turn(
     )
     from docsgpt.core.run_budget import run_budget
 
-    with run_budget(min(570, settings.CONTINUATION_RUN_TIMEOUT - 30)):
+    # Workflow nodes can't defer mid-graph, so a workflow runs unbounded.
+    if (agent_config.get("agent_type") or "").strip() == "workflow":
+        budget = nullcontext()
+    else:
+        budget = run_budget(min(570, settings.CONTINUATION_RUN_TIMEOUT - 30))
+    with budget:
         return run_agent_headless(
             agent_config,
             query,

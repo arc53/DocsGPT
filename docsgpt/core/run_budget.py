@@ -48,13 +48,14 @@ def remaining_seconds() -> float | None:
 
 
 def check_round() -> None:
-    """Defer before starting work that would eat the round's saving margin."""
+    """Defer before starting work that would eat the round's saving margin.
+
+    Nothing is in flight at a boundary, so a round that overran its deadline
+    (a slow tool) still defers rather than failing.
+    """
     budget = _current.get()
-    if budget is not None:
-        if budget.remaining() <= 0:
-            raise RunDeadlineExceeded("Stopped: time limit.")
-        if budget.remaining() <= budget.margin:
-            raise RoundDeferred()
+    if budget is not None and budget.remaining() <= budget.margin:
+        raise RoundDeferred()
 
 
 @contextmanager
