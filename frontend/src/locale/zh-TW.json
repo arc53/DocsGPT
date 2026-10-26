@@ -2018,6 +2018,7 @@
         "methodOauth": "使用 {{name}} 登入",
         "methodToken": "使用存取權杖",
         "credentialsRejected": "{{name}} 未接受這些憑證。請檢查後再試一次。",
+        "rateLimited": "{{name}} 在 {{time}} 之前限制此帳戶的請求。請在此之後再試一次。",
         "setupReconnect": "請重新登入 {{name}} 以完成設定。",
         "setupDisabled": "管理員已關閉 {{name}}，因此無法設定。",
         "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次，或將其關閉以繼續。",
@@ -2108,7 +2109,8 @@
         "searchRepositories": "搜尋儲存庫",
         "repositories": "儲存庫",
         "updated": "更新於 {{date}}",
-        "loadFailed": "無法載入你的儲存庫。"
+        "loadFailed": "無法載入你的儲存庫。",
+        "rateLimited": "GitHub 在 {{time}} 之前限制此帳戶的請求。請在此之後再試一次。"
       },
       "linear": {
         "teams": "團隊",

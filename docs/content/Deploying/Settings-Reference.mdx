@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-24
+lastUpdated: 2026-10-26
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1275,6 +1275,12 @@ Skip GitHub repo blobs larger than this (0 = no cap).
 Type `int`, default `8`, must be `>= 1`.
 
 Parallel file fetches per GitHub repo ingest.
+
+### `GITHUB_INGEST_MAX_ARCHIVE_BYTES`
+
+Type `int`, default `536870912`, must be `>= 0`.
+
+Largest repository tarball a GitHub ingest downloads (one API request for the whole repo); a bigger one falls back to per-file requests. 0 = always per-file.
 
 ### `INGEST_QUEUE`
 

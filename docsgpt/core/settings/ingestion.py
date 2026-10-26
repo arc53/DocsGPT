@@ -193,6 +193,14 @@ class IngestionSettings(SettingsGroup):
         default=1048576, ge=0, description="Skip GitHub repo blobs larger than this (0 = no cap)."
     )
     GITHUB_INGEST_MAX_WORKERS: int = Field(default=8, ge=1, description="Parallel file fetches per GitHub repo ingest.")
+    GITHUB_INGEST_MAX_ARCHIVE_BYTES: int = Field(
+        default=536_870_912,
+        ge=0,
+        description=(
+            "Largest repository tarball a GitHub ingest downloads (one API request for the whole repo); "
+            "a bigger one falls back to per-file requests. 0 = always per-file."
+        ),
+    )
 
     INGEST_QUEUE: str = Field(
         default="ingest",

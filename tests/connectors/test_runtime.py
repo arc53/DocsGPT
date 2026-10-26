@@ -553,6 +553,75 @@ class TestScheduledSync:
         flag.assert_called_once()
         assert flag.call_args.args[0] == "c-1"
 
+    def test_a_connections_fetch_holds_its_lock(self, pg_conn):
+        """Two ingests from one connection fetch one after the other, not at once."""
+        from docsgpt import worker
+
+        events = []
+
+        @contextmanager
+        def fake_lock(connection_id):
+            events.append(("locked", connection_id))
+            try:
+                yield
+            finally:
+                events.append(("released", connection_id))
+
+        def fetch(_input):
+            events.append(("fetch",))
+            raise RuntimeError("stop after the fetch")
+
+        loader = MagicMock()
+        loader.load_data.side_effect = fetch
+        task = MagicMock()
+        task.request.retries = 1
+        with patch.object(worker.RemoteCreator, "create_loader", return_value=loader), patch.object(
+            worker, "_with_connection_credentials", return_value={"url": "acme/r", "access_token": "t"},
+        ), patch.object(worker, "publish_user_event"), patch.object(worker, "connection_fetch_lock", fake_lock):
+            with pytest.raises(RuntimeError, match="stop after the fetch"):
+                worker.remote_worker(task, "acme/r", "repo", "alice", "github", connection_id="c-1")
+        assert events == [("locked", "c-1"), ("fetch",), ("released", "c-1")]
+
+    def test_the_credentials_are_read_again_after_the_lock_wait(self, pg_conn):
+        """A connection removed while its ingest waited for the lock is not fetched with old credentials."""
+        from docsgpt import worker
+        from docsgpt.connectors.service import ConnectionUnavailable
+
+        loader = MagicMock()
+        task = MagicMock()
+        task.request.retries = 1
+        with patch.object(worker.RemoteCreator, "create_loader", return_value=loader), patch.object(
+            worker, "_with_connection_credentials",
+            side_effect=[{"url": "acme/r", "access_token": "t"}, None],
+        ), patch.object(worker, "publish_user_event"):
+            with pytest.raises(ConnectionUnavailable):
+                worker.remote_worker(task, "acme/r", "repo", "alice", "github", connection_id="c-1")
+        loader.load_data.assert_not_called()
+
+    def test_a_rate_limit_fails_with_the_reset_time(self, pg_conn):
+        import datetime
+
+        from docsgpt import worker
+        from docsgpt.parser.remote.github_loader import GitHubRateLimited
+
+        loader = MagicMock()
+        loader.load_data.side_effect = GitHubRateLimited(
+            datetime.datetime(2099, 1, 1, 12, 55, tzinfo=datetime.timezone.utc),
+        )
+        task = MagicMock()
+        task.request.retries = 0
+        with patch.object(worker.RemoteCreator, "create_loader", return_value=loader), patch.object(
+            worker, "_with_connection_credentials", return_value={"url": "acme/r", "access_token": "t"},
+        ), patch.object(worker, "_publish_source_event") as publish, patch(
+            "docsgpt.connectors.service.mark_reconnect_needed",
+        ) as flag:
+            with pytest.raises(GitHubRateLimited):
+                worker.remote_worker(task, "acme/r", "repo", "alice", "github", connection_id="c-1")
+        failed = [c for c in publish.call_args_list if c.args[2] == "source.ingest.failed"]
+        assert failed and "12:55 UTC" in failed[0].args[3]["error"]
+        # A rate limit is not a revoked token.
+        flag.assert_not_called()
+
     def test_sync_runs_as_the_connection_without_a_browser(self, pg_conn):
         from docsgpt import worker
 
