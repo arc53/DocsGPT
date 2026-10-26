@@ -314,12 +314,18 @@ class AgentConfig(BaseModel):
                 allowlist = cls.model_validate({"api_write_allowlist": raw.get("api_write_allowlist") or []})
             except Exception:
                 allowlist = cls()
+            # Each limit is valid alone; a history limit not below the context
+            # limit fails the pair check, so it is dropped rather than raised.
+            context = context_window_limit_of(raw)
+            history = history_token_limit_of(raw)
+            if history is not None and context is not None and history >= context:
+                history = None
             return cls(
                 guardrails=GuardrailsConfig.parse(raw.get("guardrails")),
                 api_write_allowlist=allowlist.api_write_allowlist,
                 analytics=AnalyticsConfig.parse(raw.get("analytics")),
-                context_window_limit=context_window_limit_of(raw),
-                history_token_limit=history_token_limit_of(raw),
+                context_window_limit=context,
+                history_token_limit=history,
             )
 
 

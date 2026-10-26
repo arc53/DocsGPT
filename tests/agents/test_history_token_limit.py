@@ -68,6 +68,13 @@ class TestConfigField:
         parsed = AgentConfig.parse({"history_token_limit": HISTORY, "guardrails": {"mode": "bogus"}})
         assert parsed.history_token_limit == HISTORY
 
+    @pytest.mark.parametrize("history", [32000, 40000])
+    def test_lenient_read_drops_a_limit_not_below_the_context_limit(self, history):
+        # A row the write path would reject (a manual edit) must not break a stream.
+        parsed = AgentConfig.parse({"context_window_limit": 32000, "history_token_limit": history})
+        assert parsed.history_token_limit is None
+        assert parsed.context_window_limit == 32000
+
     def test_changing_it_is_a_policy_change(self):
         assert _policy_changed({"config": {}}, {"config": {"history_token_limit": HISTORY}})
 
