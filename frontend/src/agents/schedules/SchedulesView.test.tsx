@@ -14,6 +14,7 @@ const view = vi.hoisted(() => ({
   dispatch: vi.fn(),
   list: [] as unknown[],
   error: null as string | null,
+  errorAgentId: 'a1',
   confirm: null as null | {
     modalState: string;
     handleSubmit: () => void | Promise<unknown>;
@@ -54,7 +55,9 @@ vi.mock('react-redux', () => ({
       schedules: {
         byAgent: { a1: view.list },
         runsBySchedule: {},
-        error: view.error,
+        loadsByAgent: {
+          [view.errorAgentId]: { requestId: 'load', error: view.error },
+        },
       },
     }),
   useDispatch: () => view.dispatch,
@@ -142,6 +145,7 @@ describe('SchedulesView', () => {
   beforeEach(async () => {
     view.list = schedules;
     view.error = null;
+    view.errorAgentId = 'a1';
     view.dispatch.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -257,5 +261,16 @@ describe('SchedulesView', () => {
 
     expect(container.textContent).toContain('agents.schedules.loadFailed');
     expect(container.querySelector('[data-testid="row-s1"]')).not.toBeNull();
+  });
+
+  it('does not hide this agent tabs when another agent request fails late', async () => {
+    view.list = [];
+    view.errorAgentId = 'a2';
+    view.error = 'access denied';
+    await act(async () => root.render(schedulePage()));
+
+    expect(container.textContent).not.toContain('agents.schedules.loadFailed');
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(container.textContent).toContain('agents.schedules.noRecurring');
   });
 });

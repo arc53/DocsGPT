@@ -42,6 +42,7 @@ import {
   loadSchedulesForAgent,
   runScheduleNow,
   selectSchedulesForAgent,
+  selectSchedulesLoadError,
   setSchedulePaused,
   updateSchedule,
 } from './schedulesSlice';
@@ -76,7 +77,9 @@ export default function SchedulesView() {
   const schedules = useSelector((state: RootState) =>
     selectSchedulesForAgent(state, agentId ?? ''),
   );
-  const loadError = useSelector((state: RootState) => state.schedules.error);
+  const loadError = useSelector((state: RootState) =>
+    selectSchedulesLoadError(state, agentId ?? ''),
+  );
   // undefined while loading, null when the stats request failed.
   const [stats, setStats] = useState<ScheduleStats | null | undefined>(
     undefined,

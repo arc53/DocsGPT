@@ -19,6 +19,8 @@ export const RUNS_PAGE_SIZE = 50;
 
 export type SchedulesState = {
   byAgent: Record<string, Schedule[]>;
+  /** Only the latest request for each agent may change its list or error. */
+  loadsByAgent: Record<string, { requestId: string; error: string | null }>;
   /** The caller's schedules across agents (Activity › Schedules); null until loaded. */
   all: UserSchedule[] | null;
   allLoading: boolean;
@@ -43,12 +45,11 @@ export type SchedulesState = {
   runsBySchedule: Record<string, ScheduleRun[]>;
   /** True once a schedule's oldest run is loaded. */
   runsEndBySchedule: Record<string, boolean>;
-  loading: boolean;
-  error: string | null;
 };
 
 const initialState: SchedulesState = {
   byAgent: {},
+  loadsByAgent: {},
   all: null,
   allLoading: false,
   allError: false,
@@ -57,8 +58,6 @@ const initialState: SchedulesState = {
   allChangedSinceRequest: { changes: [], deleted: [] },
   runsBySchedule: {},
   runsEndBySchedule: {},
-  loading: false,
-  error: null,
 };
 
 export const loadSchedulesForAgent = createAsyncThunk<
@@ -301,17 +300,22 @@ const schedulesSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(loadSchedulesForAgent.pending, (state) => {
-        state.loading = true;
-        state.error = null;
+      .addCase(loadSchedulesForAgent.pending, (state, action) => {
+        state.loadsByAgent[action.meta.arg.agentId] = {
+          requestId: action.meta.requestId,
+          error: null,
+        };
       })
       .addCase(loadSchedulesForAgent.fulfilled, (state, action) => {
+        const load = state.loadsByAgent[action.meta.arg.agentId];
+        if (load?.requestId !== action.meta.requestId) return;
         state.byAgent[action.payload.agentId] = action.payload.schedules;
-        state.loading = false;
+        load.error = null;
       })
       .addCase(loadSchedulesForAgent.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.error.message || 'failed to load schedules';
+        const load = state.loadsByAgent[action.meta.arg.agentId];
+        if (load?.requestId !== action.meta.requestId) return;
+        load.error = action.error.message || 'failed to load schedules';
       })
       .addCase(loadAllSchedules.pending, (state, action) => {
         if (action.meta.arg.token !== state.allToken) state.all = null;
@@ -460,6 +464,11 @@ export const selectSchedulesForAgent = (
   state: { schedules: SchedulesState },
   agentId: string,
 ): Schedule[] => state.schedules.byAgent[agentId] ?? NO_SCHEDULES;
+
+export const selectSchedulesLoadError = (
+  state: { schedules: SchedulesState },
+  agentId: string,
+): string | null => state.schedules.loadsByAgent[agentId]?.error ?? null;
 
 /**
  * A schedule the store has loaded, from its agent's list or the cross-agent

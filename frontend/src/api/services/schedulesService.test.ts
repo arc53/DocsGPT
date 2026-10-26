@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import schedulesReducer, {
   loadRunsForSchedule,
   loadSchedulesForAgent,
+  selectSchedulesLoadError,
 } from '../../agents/schedules/schedulesSlice';
 import apiClient from '../client';
 import schedulesService from './schedulesService';
@@ -101,7 +102,9 @@ describe('schedule loads after an HTTP error', () => {
 
     expect(action.type).toBe(loadSchedulesForAgent.rejected.type);
     expect(store.getState().schedules.byAgent.a1).toEqual(schedules);
-    expect(store.getState().schedules.error).toBe('access denied');
+    expect(selectSchedulesLoadError(store.getState(), 'a1')).toBe(
+      'access denied',
+    );
   });
 
   it('records a fallback error when a gateway returns HTML', async () => {
@@ -119,7 +122,9 @@ describe('schedule loads after an HTTP error', () => {
     );
 
     expect(action.type).toBe(loadSchedulesForAgent.rejected.type);
-    expect(store.getState().schedules.error).toBe('failed to load schedules');
+    expect(selectSchedulesLoadError(store.getState(), 'a1')).toBe(
+      'failed to load schedules',
+    );
     expect(store.getState().schedules.byAgent.a1).toBeUndefined();
   });
 
