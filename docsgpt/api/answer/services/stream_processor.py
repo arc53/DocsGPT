@@ -11,6 +11,7 @@ from flask import after_this_request
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
 from docsgpt.api.answer.services.compression import CompressionOrchestrator
+from docsgpt.api.answer.services.compression.threshold_checker import uses_responses_api
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import ConversationService
@@ -806,14 +807,15 @@ class StreamProcessor:
             self._ensure_turn_fits()
             # model_user_id keeps history trim aligned with the BYOM's
             # actual context window instead of the default 128k.
-            # A caller's own history has no summary to fold older turns
-            # into, so the history limit drops them.
-            self.history = limit_chat_history(
+            history = limit_chat_history(
                 json.loads(self.data.get("history", "[]")),
-                max_token_limit=self._history_token_limit() or self._context_window_limit(),
+                max_token_limit=self._context_window_limit(),
                 model_id=self.model_id,
                 user_id=self.model_user_id,
             )
+            # A caller's own history has no summary to fold older turns
+            # into, so the history limit drops them.
+            self.history = self._within_history_limit(history)
 
     def _handle_compression(self, conversation: Dict[str, Any]):
         """Handle conversation compression logic using orchestrator."""
@@ -1022,6 +1024,32 @@ class StreamProcessor:
     def _history_token_limit(self) -> Optional[int]:
         """The agent's ``config.history_token_limit``, or None."""
         return history_token_limit_of((getattr(self, "agent_config", None) or {}).get("config"))
+
+    def _within_history_limit(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """The newest turns of a caller's own ``history`` that stay below the agent's history limit.
+
+        Counted like the history limit on a stored conversation: thoughts, and
+        the Responses reasoning on that API, are replayed, so they take room.
+
+        Args:
+            history: The caller's history, oldest first.
+
+        Returns:
+            The kept turns, oldest first; all of them without a history limit.
+        """
+        limit = self._history_token_limit()
+        if not limit:
+            return history
+        include_reasoning = uses_responses_api(self.model_id, self.model_user_id)
+        kept: List[Dict[str, Any]] = []
+        total = 0
+        for turn in reversed(history):
+            total += TokenCounter.count_query_tokens([turn], include_reasoning=include_reasoning)
+            if total >= limit:
+                break
+            kept.append(turn)
+        kept.reverse()
+        return kept
 
     def _budget_window(self) -> int:
         """The window the turn's budgets are shares of: the model's, lowered to the agent's context limit."""

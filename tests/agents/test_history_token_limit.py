@@ -284,12 +284,12 @@ class TestStreamProcessor:
     @pytest.mark.parametrize(
         "config,expected",
         [
-            ({"history_token_limit": HISTORY, "context_window_limit": 32000}, HISTORY),
+            ({"history_token_limit": HISTORY, "context_window_limit": 32000}, 32000),
             ({"context_window_limit": 32000}, 32000),
             ({}, None),
         ],
     )
-    def test_client_history_is_trimmed_to_the_history_limit(self, config, expected):
+    def test_client_history_is_trimmed_to_the_context_limit(self, config, expected):
         sp = _processor(config)
         sp.conversation_id = None
         sp.data = {"history": "[]"}
@@ -299,3 +299,43 @@ class TestStreamProcessor:
                       return_value=[]) as trim:
             sp._load_conversation_history()
         assert trim.call_args.kwargs["max_token_limit"] == expected
+
+    def _client_history(self, config, turns, responses_api=False):
+        import json
+
+        sp = _processor(config)
+        sp.conversation_id = None
+        sp.data = {"history": json.dumps(turns)}
+        with patch.object(sp, "_ensure_turn_fits"), \
+                patch.object(sp, "_with_request_earlier_attachments", return_value=[]), \
+                patch("docsgpt.api.answer.services.stream_processor.uses_responses_api",
+                      return_value=responses_api):
+            sp._load_conversation_history()
+        return sp.history
+
+    def test_client_history_keeps_the_newest_turns_within_the_history_limit(self):
+        turns = [{**_turn(2500), "id": i} for i in range(4)]
+        kept = self._client_history({"history_token_limit": HISTORY}, turns)
+        assert [t["id"] for t in kept] == [1, 2, 3]
+
+    def test_client_history_counts_thoughts_toward_the_history_limit(self):
+        # Thoughts are replayed (reasoning_content), so they take room.
+        turns = [{**_turn(2500), "thought": _words(2500), "id": i} for i in range(4)]
+        kept = self._client_history({"history_token_limit": HISTORY}, turns)
+        assert [t["id"] for t in kept] == [3]
+
+    @pytest.mark.parametrize("responses_api,expected", [(True, [3]), (False, [1, 2, 3])])
+    def test_client_history_counts_responses_reasoning_on_that_api(self, responses_api, expected):
+        from docsgpt.api.answer.services.compression.token_counter import TokenCounter
+
+        turns = [{**_turn(2500), "id": i} for i in range(4)]
+        with patch.object(TokenCounter, "replayed_reasoning_tokens", return_value=3000):
+            kept = self._client_history(
+                {"history_token_limit": HISTORY}, turns, responses_api=responses_api
+            )
+        assert [t["id"] for t in kept] == expected
+
+    def test_client_history_without_a_history_limit_is_left_to_the_context_limit(self):
+        turns = [{**_turn(2500), "thought": _words(2500), "id": i} for i in range(4)]
+        kept = self._client_history({}, turns)
+        assert [t["id"] for t in kept] == [0, 1, 2, 3]
