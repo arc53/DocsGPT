@@ -328,6 +328,7 @@ export default function ConversationMessages({
               toolCalls={query.tool_calls}
               segments={query.segments}
               workflowRunId={query.workflow_run_id}
+              workflow={query.workflow}
               research={query.research}
               conversationArtifacts={conversationArtifacts}
               onOpenArtifact={onOpenArtifact}
@@ -396,6 +397,7 @@ export default function ConversationMessages({
             toolCalls={query.tool_calls}
             segments={query.segments}
             workflowRunId={query.workflow_run_id}
+            workflow={query.workflow}
             research={query.research}
             conversationArtifacts={conversationArtifacts}
             onOpenArtifact={onOpenArtifact}

@@ -59,6 +59,25 @@ export interface Answer {
   schema?: object;
 }
 
+export interface WorkflowStep {
+  nodeId: string;
+  nodeType: string;
+  title: string;
+  status: 'running' | 'completed' | 'failed';
+  /** Client clock, in ms, for the elapsed and duration labels. */
+  startedAt?: number;
+  endedAt?: number;
+  /** One line about what the step did: its output, or the values it set. */
+  detail?: string;
+  error?: string;
+}
+
+export interface WorkflowProgress {
+  steps: WorkflowStep[];
+  /** How many steps the run takes; absent when a branch decides it. */
+  total?: number;
+}
+
 export interface Query {
   prompt: string;
   response?: string;
@@ -93,6 +112,9 @@ export interface Query {
   structured?: boolean;
   schema?: object;
   research?: ResearchState;
+  // A workflow agent's steps as they run, so the chat can show which one is
+  // working; see ``workflowProgress``.
+  workflow?: WorkflowProgress;
   // WAL placeholder id; lets the client tail an in-flight stream.
   messageId?: string;
   messageStatus?: MessageStatus;

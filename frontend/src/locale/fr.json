@@ -2937,6 +2937,14 @@
         "data": "Données",
         "other": "Autres fichiers"
       }
+    },
+    "workflow": {
+      "title": "Workflow",
+      "step": "Étape {{step}}",
+      "stepOf": "Étape {{step}} sur {{total}}",
+      "stepCount_one": "{{count}} étape",
+      "stepCount_other": "{{count}} étapes",
+      "stepCount_many": "{{count}} étapes"
     }
   },
   "agents": {

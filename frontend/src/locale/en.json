@@ -2850,6 +2850,13 @@
         "data": "Data",
         "other": "Other files"
       }
+    },
+    "workflow": {
+      "title": "Workflow",
+      "step": "Step {{step}}",
+      "stepOf": "Step {{step}} of {{total}}",
+      "stepCount_one": "{{count}} step",
+      "stepCount_other": "{{count}} steps"
     }
   },
   "agents": {

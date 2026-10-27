@@ -2937,6 +2937,14 @@
         "data": "Datos",
         "other": "Otros archivos"
       }
+    },
+    "workflow": {
+      "title": "Flujo de trabajo",
+      "step": "Paso {{step}}",
+      "stepOf": "Paso {{step}} de {{total}}",
+      "stepCount_one": "{{count}} paso",
+      "stepCount_other": "{{count}} pasos",
+      "stepCount_many": "{{count}} pasos"
     }
   },
   "agents": {

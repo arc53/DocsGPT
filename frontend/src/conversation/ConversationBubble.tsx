@@ -67,8 +67,14 @@ import {
   sourceHref,
   useChatCompanion,
 } from './chatCompanion';
-import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import {
+  FEEDBACK,
+  MESSAGE_TYPE,
+  ResearchState,
+  WorkflowProgress,
+} from './conversationModels';
 import ResearchProgress from './ResearchProgress';
+import WorkflowRunProgress from './WorkflowRunProgress';
 import SourcesPanel from './SourcesPanel';
 import ToolCallCard from './ToolCallCard';
 import { shownArguments, ToolCallsType } from './types';
@@ -93,6 +99,8 @@ const ConversationBubble = forwardRef<
     /** Set when this answer came from a workflow agent run; renders the
      * run's produced artifacts as click-through chips/previews. */
     workflowRunId?: string;
+    /** A workflow agent's steps; shown above the answer while they run. */
+    workflow?: WorkflowProgress;
     research?: ResearchState;
     retryBtn?: React.ReactElement;
     /**
@@ -137,6 +145,7 @@ const ConversationBubble = forwardRef<
     toolCalls,
     segments,
     workflowRunId,
+    workflow,
     research,
     retryBtn,
     errorCode,
@@ -521,6 +530,13 @@ const ConversationBubble = forwardRef<
               </div>
             )}
         {research && <ResearchProgress research={research} />}
+        {workflow && (
+          <WorkflowRunProgress
+            workflow={workflow}
+            isStreaming={isStreaming}
+            hasAnswerText={Boolean(message)}
+          />
+        )}
         {type === 'ERROR' ? (
           message && (
             // On the answer's ml-6 text column. Without a code the backend's
@@ -566,7 +582,14 @@ const ConversationBubble = forwardRef<
             agentId={agentId}
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
-            suppressStatusLine={Boolean(research)}
+            suppressStatusLine={
+              Boolean(research) ||
+              // The step progress above says what is happening until the
+              // answer starts.
+              (Boolean(isStreaming) &&
+                !message &&
+                Boolean(workflow?.steps.length))
+            }
             artifacts={conversationArtifacts ?? completedArtifacts}
             // The chip rail below renders from this turn's artifacts alone, so
             // a bare-filename link has to resolve against the same set or the
