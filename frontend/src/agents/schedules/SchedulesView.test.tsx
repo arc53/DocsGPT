@@ -12,6 +12,9 @@ vi.mock('react-i18next', () => ({
 const view = vi.hoisted(() => ({
   unwrap: vi.fn(() => Promise.resolve()),
   dispatch: vi.fn(),
+  list: [] as unknown[],
+  error: null as string | null,
+  errorAgentId: 'a1',
   confirm: null as null | {
     modalState: string;
     handleSubmit: () => void | Promise<unknown>;
@@ -49,7 +52,13 @@ vi.mock('react-redux', () => ({
   useSelector: (selector: (s: unknown) => unknown) =>
     selector({
       preference: { token: 't' },
-      schedules: { byAgent: { a1: schedules }, runsBySchedule: {} },
+      schedules: {
+        byAgent: { a1: view.list },
+        runsBySchedule: {},
+        loadsByAgent: {
+          [view.errorAgentId]: { requestId: 'load', error: view.error },
+        },
+      },
     }),
   useDispatch: () => view.dispatch,
 }));
@@ -118,25 +127,31 @@ import SchedulesView from './SchedulesView';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+const schedulePage = () => (
+  <MemoryRouter initialEntries={['/agents/manage/schedules/a1']}>
+    <Routes>
+      <Route
+        path="/agents/manage/schedules/:agentId"
+        element={<SchedulesView />}
+      />
+    </Routes>
+  </MemoryRouter>
+);
+
 describe('SchedulesView', () => {
   let container: HTMLDivElement;
   let root: Root;
 
   beforeEach(async () => {
+    view.list = schedules;
+    view.error = null;
+    view.errorAgentId = 'a1';
+    view.dispatch.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root.render(
-        <MemoryRouter initialEntries={['/agents/manage/schedules/a1']}>
-          <Routes>
-            <Route
-              path="/agents/manage/schedules/:agentId"
-              element={<SchedulesView />}
-            />
-          </Routes>
-        </MemoryRouter>,
-      );
+      root.render(schedulePage());
     });
   });
 
@@ -222,5 +237,40 @@ describe('SchedulesView', () => {
     expect(empty.querySelector('button')?.textContent).toContain(
       'agents.schedules.newRecurring',
     );
+  });
+
+  it('shows a failed first load with Retry instead of saying there are no schedules', async () => {
+    view.list = [];
+    view.error = 'failed to load schedules';
+    await act(async () => root.render(schedulePage()));
+
+    expect(container.textContent).toContain('agents.schedules.loadFailed');
+    expect(container.textContent).not.toContain('agents.schedules.noRecurring');
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'retry',
+    );
+    expect(retry).toBeDefined();
+    const calls = view.dispatch.mock.calls.length;
+    await act(async () => retry!.click());
+    expect(view.dispatch).toHaveBeenCalledTimes(calls + 1);
+  });
+
+  it('shows a reload error without hiding cached schedules', async () => {
+    view.error = 'access denied';
+    await act(async () => root.render(schedulePage()));
+
+    expect(container.textContent).toContain('agents.schedules.loadFailed');
+    expect(container.querySelector('[data-testid="row-s1"]')).not.toBeNull();
+  });
+
+  it('does not hide this agent tabs when another agent request fails late', async () => {
+    view.list = [];
+    view.errorAgentId = 'a2';
+    view.error = 'access denied';
+    await act(async () => root.render(schedulePage()));
+
+    expect(container.textContent).not.toContain('agents.schedules.loadFailed');
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(container.textContent).toContain('agents.schedules.noRecurring');
   });
 });

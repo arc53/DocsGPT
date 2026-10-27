@@ -3430,6 +3430,7 @@
         "loadFailed": "无法加载运行记录。"
       },
       "actions": "计划操作",
+      "loadFailed": "无法加载计划。",
       "cancelTask": "取消任务",
       "failureStreak_one": "连续失败 {{count}} 次",
       "failureStreak_other": "连续失败 {{count}} 次",

@@ -3641,6 +3641,7 @@
         "loadFailed": "Не удалось загрузить запуски."
       },
       "actions": "Действия с расписанием",
+      "loadFailed": "Не удалось загрузить расписания.",
       "cancelTask": "Отменить задачу",
       "failureStreak_one": "{{count}} сбой подряд",
       "failureStreak_few": "{{count}} сбоя подряд",

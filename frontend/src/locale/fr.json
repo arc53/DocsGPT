@@ -3545,6 +3545,7 @@
         "loadFailed": "Impossible de charger les exécutions."
       },
       "actions": "Actions de la planification",
+      "loadFailed": "Impossible de charger les planifications.",
       "cancelTask": "Annuler la tâche",
       "failureStreak_one": "{{count}} échec consécutif",
       "failureStreak_other": "{{count}} échecs consécutifs",
