@@ -167,6 +167,36 @@ export default function ConversationMessages({
     };
   }, [hasMessages]);
 
+  // While an answer streams, its turn only grows. A row swapped for a shorter
+  // one (the status line handing over to a grouped tool step, a step group
+  // folding) shrank the content, and the browser clamps the scroll a frame
+  // before the scroller re-pins: the turn jumped and snapped back. Each growth
+  // raises the answer's min-height to match, so a shrink leaves blank space at
+  // its end instead; released when the stream ends.
+  const [streamingAnswer, setStreamingAnswer] = useState<HTMLElement | null>(
+    null,
+  );
+  const holdStreamingAnswer = status === 'loading';
+  useLayoutEffect(() => {
+    const el = streamingAnswer;
+    if (!el || !holdStreamingAnswer || typeof ResizeObserver === 'undefined')
+      return;
+    let tallest = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const height =
+        entry.borderBoxSize?.[0]?.blockSize ??
+        el.getBoundingClientRect().height;
+      if (height <= tallest) return;
+      tallest = height;
+      el.style.minHeight = `${height}px`;
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      el.style.minHeight = '';
+    };
+  }, [streamingAnswer, holdStreamingAnswer]);
+
   useEffect(() => {
     if (!hasMessages) return;
     const vp = document.querySelector<HTMLElement>(MS_VIEWPORT_SELECTOR);
@@ -432,7 +462,14 @@ export default function ConversationMessages({
                     )}
                   </MessageScrollerItem>
                   {responseView && (
-                    <MessageScrollerItem messageId={`a-${index}`}>
+                    <MessageScrollerItem
+                      messageId={`a-${index}`}
+                      ref={
+                        index === queries.length - 1
+                          ? setStreamingAnswer
+                          : undefined
+                      }
+                    >
                       {responseView}
                     </MessageScrollerItem>
                   )}

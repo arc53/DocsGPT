@@ -451,6 +451,21 @@ describe('ConversationBubble', () => {
     }
   });
 
+  // An empty row's margins while streaming made the end of the stream a net
+  // shrink (the status line out, the buttons in), which jolts the chat scroll.
+  it('draws the action row only once the answer has finished streaming', async () => {
+    await render(
+      <ConversationBubble type="ANSWER" message="Partial" isStreaming />,
+    );
+    expect(container.querySelector('.my-2.ml-4')).toBeNull();
+
+    await render(<ConversationBubble type="ANSWER" message="Partial" />);
+    const copy = container.querySelector(
+      `button[aria-label="${en.conversation.copy}"]`,
+    );
+    expect(copy?.closest('.my-2.ml-4')).not.toBeNull();
+  });
+
   it('renders the question edit actions as pill buttons', async () => {
     await render(<ConversationBubble type="QUESTION" message="Hello" />);
 
