@@ -3024,6 +3024,15 @@
         "data": "Данные",
         "other": "Другие файлы"
       }
+    },
+    "workflow": {
+      "title": "Рабочий процесс",
+      "step": "Шаг {{step}}",
+      "stepOf": "Шаг {{step}} из {{total}}",
+      "stepCount_one": "{{count}} шаг",
+      "stepCount_few": "{{count}} шага",
+      "stepCount_many": "{{count}} шагов",
+      "stepCount_other": "{{count}} шагов"
     }
   },
   "agents": {

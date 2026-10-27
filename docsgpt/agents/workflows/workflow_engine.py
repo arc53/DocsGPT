@@ -123,7 +123,13 @@ class WorkflowEngine:
         # Surface the run id up front so the client can list this run's
         # artifacts (GET /api/artifacts?workflow_run_id=) once it has been
         # persisted; the same id parents every artifact produced by code nodes.
-        yield {"type": "workflow_run", "workflow_run_id": self.workflow_run_id}
+        # ``step_total`` lets the chat say "step 2 of 4"; None when a branch
+        # decides the count.
+        yield {
+            "type": "workflow_run",
+            "workflow_run_id": self.workflow_run_id,
+            "step_total": self.graph.linear_step_count(count_end=False),
+        }
 
         start_node = self.graph.get_start_node()
         if not start_node:

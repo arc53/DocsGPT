@@ -15,6 +15,7 @@ vi.mock('./ConversationBubble', () => ({
     onOpenArtifact,
     toolCalls,
     research,
+    workflow,
   }: {
     message?: string;
     retryBtn?: React.ReactNode;
@@ -22,6 +23,7 @@ vi.mock('./ConversationBubble', () => ({
     errorAction?: React.ReactNode;
     toolCalls?: { call_id: string }[];
     research?: { plan?: { query: string }[] };
+    workflow?: { steps: { nodeId: string; title: string }[] };
     conversationArtifacts?: { id: string }[];
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   }) => (
@@ -31,6 +33,9 @@ vi.mock('./ConversationBubble', () => ({
       {errorAction}
       {research?.plan?.map((step) => (
         <span key={step.query}>{step.query}</span>
+      ))}
+      {workflow?.steps.map((step) => (
+        <span key={step.nodeId}>{step.title}</span>
       ))}
       {toolCalls?.map((call) => (
         <span key={call.call_id}>{call.call_id}</span>
@@ -220,8 +225,13 @@ describe('ConversationMessages', () => {
 
     // jsdom has no layout: fake a viewport at the bottom whose content then
     // grows by one 23px row, with the pin spacer at `spacerHeight`. A
-    // `gesture` is dispatched on the viewport before the growth.
-    const growByOneRow = (spacerHeight: number, gesture?: Event) => {
+    // `gesture` is dispatched on the viewport (or on `onTarget` inside it)
+    // before the growth.
+    const growByOneRow = (
+      spacerHeight: number,
+      gesture?: Event | Event[],
+      onTarget?: HTMLElement,
+    ) => {
       stream('a');
       const viewport = container.querySelector<HTMLElement>(
         '[data-slot="message-scroller-viewport"]',
@@ -239,7 +249,9 @@ describe('ConversationMessages', () => {
       viewport.scrollTop = 500;
       act(() => {
         viewport.dispatchEvent(new Event('scroll'));
-        if (gesture) viewport.dispatchEvent(gesture);
+        if (onTarget) viewport.firstElementChild!.appendChild(onTarget);
+        for (const event of [gesture ?? []].flat())
+          (onTarget ?? viewport).dispatchEvent(event);
       });
       scrollHeight = 1023;
       stream('a longer answer');
@@ -265,6 +277,31 @@ describe('ConversationMessages', () => {
       ],
     ])('follows the answer again once %s releases the pin', (_, gesture) => {
       expect(growByOneRow(3, gesture).scrollTop).toBe(1023);
+    });
+
+    // Opening a step resizes the answer; following would scroll the step
+    // away from the pointer that just clicked it.
+    it('stops following when a step is opened or closed', () => {
+      const toggle = document.createElement('button');
+      toggle.setAttribute('aria-expanded', 'false');
+      const click = new MouseEvent('click', { bubbles: true });
+      expect(growByOneRow(0, click, toggle).scrollTop).toBe(500);
+    });
+
+    // A wheel released the pin but left its spacer; that spacer holds
+    // nothing, so a toggle stops the follow as it would without one.
+    it('stops following on a toggle after a gesture released the pin', () => {
+      const toggle = document.createElement('button');
+      toggle.setAttribute('aria-expanded', 'false');
+      const wheel = new WheelEvent('wheel', { deltaY: 40, bubbles: true });
+      const click = new MouseEvent('click', { bubbles: true });
+      expect(growByOneRow(3, [wheel, click], toggle).scrollTop).toBe(500);
+    });
+
+    it('keeps following after a click that toggles nothing', () => {
+      const click = new MouseEvent('click', { bubbles: true });
+      const plain = document.createElement('span');
+      expect(growByOneRow(0, click, plain).scrollTop).toBe(1023);
     });
 
     it('ignores keys that do not scroll', () => {
@@ -502,6 +539,28 @@ describe('ConversationMessages', () => {
       expect(container.textContent).toContain('conversation.errors.timeLimit');
     },
   );
+
+  it('keeps a failed workflow’s steps above its error', () => {
+    render([
+      {
+        prompt: 'plan a trip',
+        error: 'The run stopped.',
+        workflow_run_id: 'run-1',
+        workflow: {
+          steps: [
+            {
+              nodeId: 'w',
+              nodeType: 'agent',
+              title: 'Check the weather',
+              status: 'failed',
+              error: 'model timed out',
+            },
+          ],
+        },
+      },
+    ]);
+    expect(container.textContent).toContain('Check the weather');
+  });
 
   it('keeps research-only progress visible after a time limit', () => {
     render([

@@ -38,6 +38,8 @@ import reducer, {
   stopAnswer,
   updateQuery,
   retractResponse,
+  setWorkflowRunId,
+  updateWorkflowStep,
   setConversation,
   setConversationId,
   setStatus,
@@ -419,6 +421,75 @@ describe('resendQuery', () => {
     );
     state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
     expect(state.queries[0].workflow_run_id).toBeUndefined();
+  });
+
+  it('drops the previous workflow run’s steps', () => {
+    let state = reducer(undefined, setConversation([{ prompt: 'p' }]));
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'run-1', stepTotal: 2 }),
+    );
+    state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
+    expect(state.queries[0].workflow).toBeUndefined();
+  });
+});
+
+describe('workflow step progress', () => {
+  const step = (node_id: string, status: 'running' | 'completed') => ({
+    node_id,
+    node_type: 'agent',
+    node_title: node_id.toUpperCase(),
+    status,
+  });
+
+  it('records the run’s step count and each step as it runs', () => {
+    let state = reducer(undefined, setConversation([{ prompt: 'p' }]));
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'run-1', stepTotal: 2 }),
+    );
+    state = reducer(
+      state,
+      updateWorkflowStep({ index: 0, step: step('a', 'running'), at: 1 }),
+    );
+    state = reducer(
+      state,
+      updateWorkflowStep({ index: 0, step: step('a', 'completed'), at: 5 }),
+    );
+    state = reducer(
+      state,
+      updateWorkflowStep({ index: 0, step: step('b', 'running'), at: 5 }),
+    );
+    const workflow = state.queries[0].workflow!;
+    expect(workflow.total).toBe(2);
+    expect(workflow.steps.map((s) => [s.nodeId, s.status])).toEqual([
+      ['a', 'completed'],
+      ['b', 'running'],
+    ]);
+  });
+
+  // A workflow node that runs another workflow announces the inner run too.
+  it('keeps the outer run when a nested workflow starts', () => {
+    let state = reducer(undefined, setConversation([{ prompt: 'p' }]));
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'outer', stepTotal: 4 }),
+    );
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'inner', stepTotal: 1 }),
+    );
+    expect(state.queries[0].workflow_run_id).toBe('outer');
+    expect(state.queries[0].workflow?.total).toBe(4);
+  });
+
+  it('leaves the count open when a branch decides it', () => {
+    let state = reducer(undefined, setConversation([{ prompt: 'p' }]));
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'run', stepTotal: null }),
+    );
+    expect(state.queries[0].workflow).toEqual({ steps: [] });
   });
 });
 

@@ -1,16 +1,9 @@
 import {
-  Bot,
   ChevronDown,
   Circle,
   CircleCheck,
   CircleX,
-  CodeXml,
-  Database,
-  Flag,
-  GitBranch,
   type LucideIcon,
-  Play,
-  StickyNote,
   Workflow,
 } from 'lucide-react';
 import {
@@ -51,6 +44,7 @@ import { AppDispatch } from '../../store';
 import { selectSendableAttachments } from '../../upload/uploadSlice';
 import { usePreviewArtifacts } from '../components/AgentPreviewSheet';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
+import { NODE_COLORS, NODE_ICONS } from './nodeVisuals';
 import {
   addQuery,
   fetchWorkflowPreviewAnswer,
@@ -79,28 +73,6 @@ interface WorkflowPreviewProps {
   // listing by persisting a ``workflow_runs`` row for the preview run.
   workflowId?: string | null;
 }
-
-// Components, not elements: the step list draws them at 12px, the minimap
-// rows at 14px.
-const NODE_ICONS: Record<string, LucideIcon> = {
-  start: Play,
-  agent: Bot,
-  end: Flag,
-  note: StickyNote,
-  state: Database,
-  condition: GitBranch,
-  code: CodeXml,
-};
-
-const NODE_COLORS: Record<string, string> = {
-  start: 'text-success',
-  agent: 'text-primary',
-  end: 'text-destructive',
-  note: 'text-warning',
-  state: 'text-info',
-  condition: 'text-warning',
-  code: 'text-info',
-};
 
 /**
  * A step row under an answer, like Reasoning in chat (AnswerFlow): a ghost

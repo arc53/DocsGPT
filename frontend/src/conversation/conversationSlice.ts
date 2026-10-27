@@ -56,6 +56,7 @@ import {
   Status,
 } from './conversationModels';
 import { ToolCallsType } from './types';
+import { applyWorkflowStep, WorkflowStepEvent } from './workflowProgress';
 
 // Maps a server message dict into the client ``Query`` shape. Only
 // terminal ``complete`` rows expose ``response``; non-terminal rows
@@ -666,6 +667,15 @@ async function answerQuestion(
                 conversationSlice.actions.setWorkflowRunId({
                   index: targetIndex,
                   workflowRunId: data.workflow_run_id,
+                  stepTotal: data.step_total,
+                }),
+              );
+            } else if (data.type === 'workflow_step') {
+              dispatch(
+                conversationSlice.actions.updateWorkflowStep({
+                  index: targetIndex,
+                  step: data,
+                  at: Date.now(),
                 }),
               );
             } else if (data.type === 'research_plan') {
@@ -1096,6 +1106,7 @@ export const conversationSlice = createSlice({
       delete state.queries[index].research;
       // A new run answers it; the old run's files are not this answer's.
       delete state.queries[index].workflow_run_id;
+      delete state.queries[index].workflow;
       // Drop stale WAL refs; the next stream's message_id event repopulates.
       delete state.queries[index].messageId;
       delete state.queries[index].messageStatus;
@@ -1202,12 +1213,38 @@ export const conversationSlice = createSlice({
     // produced artifacts (useRunArtifacts lists them by this id).
     setWorkflowRunId(
       state,
-      action: PayloadAction<{ index: number; workflowRunId: string }>,
+      action: PayloadAction<{
+        index: number;
+        workflowRunId: string;
+        stepTotal?: number | null;
+      }>,
     ) {
-      const { index, workflowRunId } = action.payload;
+      const { index, workflowRunId, stepTotal } = action.payload;
       const query = state.queries[index];
       if (!query || !workflowRunId) return;
+      // A workflow nested in this one announces its own run; the turn keeps
+      // the outer run's id and step count.
+      if (query.workflow_run_id && query.workflow_run_id !== workflowRunId)
+        return;
       query.workflow_run_id = workflowRunId;
+      if (!query.workflow) query.workflow = { steps: [] };
+      if (typeof stepTotal === 'number') query.workflow.total = stepTotal;
+    },
+    // A workflow step started, finished or failed; drives the step progress
+    // above the answer (WorkflowRunProgress).
+    updateWorkflowStep(
+      state,
+      action: PayloadAction<{
+        index: number;
+        step: WorkflowStepEvent;
+        at: number;
+      }>,
+    ) {
+      const { index, step, at } = action.payload;
+      const query = state.queries[index];
+      if (!query || !step?.node_id) return;
+      if (!query.workflow) query.workflow = { steps: [] };
+      applyWorkflowStep(query.workflow, step, at, query.response);
     },
     updateResearchPlan(
       state,
@@ -1488,6 +1525,7 @@ export const {
   updateStreamingSource,
   updateToolCall,
   setWorkflowRunId,
+  updateWorkflowStep,
   updateResearchPlan,
   updateResearchProgress,
   setConversation,

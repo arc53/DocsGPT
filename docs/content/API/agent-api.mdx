@@ -194,7 +194,7 @@ Each `data:` frame is JSON with `type`:
 | `tool_calls_pending` | `data.pending_tool_calls` | The turn paused on tools that need approval or client-side execution. See [Tools that need approval](#tools-that-need-approval). |
 | `structured_answer` | `answer`, `structured`, `schema` | Final structured payload (when schema mode is active). |
 | `research_plan`, `research_progress` | `data` | Progress of a research agent. |
-| `workflow_run` | `workflow_run_id` | A workflow agent started a run. |
+| `workflow_run` | `workflow_run_id`, `step_total` | A workflow agent started a run. `step_total` is how many steps the run takes, not counting the start and end nodes; `null` when a condition decides it. |
 | `workflow_step` | `node_id`, `node_type`, `node_title`, `status`, and `output`/`state_delta` or `error` | A workflow node is `running`, `completed` or `failed`. |
 | `notice` | `notice` | A non-fatal message for the user (for example, some input documents were skipped). |
 | `guardrail` | `guardrail`, `retract` | A [guardrail](/Agents/guardrails) blocked the answer mid-stream. With `retract: true`, discard the text already shown; an `error` event with the block message follows. |

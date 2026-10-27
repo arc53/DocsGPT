@@ -157,11 +157,14 @@ class WorkflowGraph(BaseModel):
     def get_outgoing_edges(self, node_id: str) -> List[WorkflowEdge]:
         return [edge for edge in self.edges if edge.source_id == node_id]
 
-    def linear_step_count(self) -> Optional[int]:
+    def linear_step_count(self, count_end: bool = True) -> Optional[int]:
         """How many steps a run takes when the graph has one path.
 
         Follows the path the engine takes from the start node (the first
         outgoing edge of each node). Start and note nodes are not steps.
+
+        Args:
+            count_end: Whether the end node counts as a step.
 
         Returns:
             The step count, or None when the path meets a condition (the
@@ -176,7 +179,7 @@ class WorkflowGraph(BaseModel):
             if node.id in seen or node.type == NodeType.CONDITION:
                 return None
             seen.add(node.id)
-            if node.type not in (NodeType.START, NodeType.NOTE):
+            if node.type not in (NodeType.START, NodeType.NOTE) and (count_end or node.type != NodeType.END):
                 count += 1
             if node.type == NodeType.END:
                 break

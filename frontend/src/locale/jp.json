@@ -2835,6 +2835,12 @@
         "data": "データ",
         "other": "その他のファイル"
       }
+    },
+    "workflow": {
+      "title": "ワークフロー",
+      "step": "ステップ {{step}}",
+      "stepOf": "ステップ {{step}}/{{total}}",
+      "stepCount_other": "{{count}} ステップ"
     }
   },
   "agents": {

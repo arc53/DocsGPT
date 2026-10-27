@@ -2833,6 +2833,12 @@
         "data": "数据",
         "other": "其他文件"
       }
+    },
+    "workflow": {
+      "title": "工作流",
+      "step": "第 {{step}} 步",
+      "stepOf": "第 {{step}} 步，共 {{total}} 步",
+      "stepCount_other": "{{count}} 步"
     }
   },
   "agents": {
