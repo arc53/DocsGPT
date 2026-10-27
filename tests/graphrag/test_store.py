@@ -1081,9 +1081,11 @@ class TestGraphStoreParameterization:
         assert "pg_advisory_xact_lock" in calls[0].args[0]
         tables = ["graph_node_chunks", "graph_edges", "graph_ingest_progress"]
         for table in tables:
-            sql, params = next(c.args for c in calls if table in c.args[0])
-            assert sid not in sql and "old-id" not in sql and "new-id" not in sql
-            assert {sid, "old-id", "new-id"} <= set(params)
+            bound = set()
+            for sql, params in (c.args for c in calls if table in c.args[0]):
+                assert sid not in sql and "old-id" not in sql and "new-id" not in sql
+                bound |= {v for p in params for v in (p if isinstance(p, list) else [p])}
+            assert {sid, "old-id", "new-id"} <= bound
         store._connection.commit.assert_called_once()
 
     def test_delete_chunks_binds_ids_under_the_source_lock(self):
@@ -1141,7 +1143,7 @@ class TestGraphStoreParameterization:
 
         sql, params = cursor.execute.call_args.args
         assert "WHERE graph_ingest_progress.status IS DISTINCT FROM 'deleted'" in sql
-        assert params == ("sid", "c1", "failed")
+        assert params == ("sid", "c1", "failed", None, None)
 
     def test_node_detail_survives_a_relationships_failure(self):
         # A failed relationships read degrades to an empty list; the node and

@@ -87,6 +87,26 @@ class TestExtractGraphWorker:
 
         assert extract.call_args.kwargs["chunk_ids"] == ["c2"]
 
+    @pytest.mark.parametrize("carried, expected", [(["c2"], ["c2"]), (None, None)])
+    def test_a_sync_extracts_what_the_carry_over_leaves(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, carried, expected
+    ):
+        # None: the graph was reset (built before content hashes, or under
+        # another extraction config), so the whole source is extracted.
+        source_id = _seed_source(pg_conn)
+        chunks = [{"doc_id": "c1", "text": "alpha"}, {"doc_id": "c2", "text": "beta"}]
+        _patch_store(monkeypatch, chunks)
+        monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: True)
+        carry = MagicMock(return_value=carried)
+        monkeypatch.setattr("docsgpt.graphrag.extraction.sync_graph_to_chunks", carry)
+        extract = MagicMock(return_value={"nodes": 1, "edges": 0, "chunks_processed": 1})
+        monkeypatch.setattr("docsgpt.graphrag.extraction.extract_graph_for_source", extract)
+
+        worker.extract_graph_worker(task_self, source_id, "alice", sync=True)
+
+        assert carry.call_args.args[:2] == (source_id, chunks)
+        assert extract.call_args.kwargs["chunk_ids"] == expected
+
     def test_unavailable_returns_status_no_extraction(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):

@@ -1246,11 +1246,11 @@ class _ProgressGraphStore:
     def pending_chunks(self, source_id, all_ids):
         return [c for c in all_ids if self.progress.get(c) not in ("done", "deleted")]
 
-    def apply_chunk(self, source_id, chunk_id, entities, relationships, name_embeddings):
+    def apply_chunk(self, source_id, chunk_id, entities, relationships, name_embeddings, **checkpoint):
         self.progress[chunk_id] = "done"
         return len(entities), 0
 
-    def mark_chunk(self, source_id, chunk_id, status):
+    def mark_chunk(self, source_id, chunk_id, status, **checkpoint):
         self.progress[chunk_id] = status
 
     def set_node_degrees(self, source_id):
