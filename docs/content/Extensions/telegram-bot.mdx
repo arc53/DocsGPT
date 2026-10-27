@@ -92,6 +92,11 @@ The fastest way to deploy the bot is using the official Docker image `arc53/tg-b
     TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
     API_KEY=your-docsgpt-agent-api-key
 
+    # Optional: Additional agent keys (referenced if using docsgpt-tg.toml in Step 4)
+    # DOCSGPT_KEY_SUPPORT=your-support-agent-key
+    # DOCSGPT_KEY_BILLING=your-billing-agent-key
+    # DOCSGPT_KEY_DOCS=your-docs-agent-key
+
     # Point to your DocsGPT instance (defaults to DocsGPT Cloud if omitted)
     API_BASE=https://gptcloud.arc53.com
 
@@ -271,3 +276,4 @@ HTTP_BIND=0.0.0.0:8080
 
 ### Resetting conversation history
 Send `/new` in the Telegram chat to start a clean session with the active agent.
+
