@@ -183,6 +183,21 @@ class TestGraphSync:
         finally:
             store.delete_by_source(source_id)
 
+    def test_an_embeddings_model_change_rebuilds(self, store, source_id, llm, stub_embedding, monkeypatch):  # noqa: F811
+        # Node and fact embeddings come from it: kept chunks would keep vectors of another model.
+        from docsgpt.core.settings import settings
+
+        try:
+            self._build(source_id, _chunks(a1=ALPHA))
+            llm.calls.clear()
+            monkeypatch.setattr(settings, "EMBEDDINGS_NAME", "another-embeddings-model")
+
+            self._sync(source_id, _chunks(a2=ALPHA))
+
+            assert llm.calls == [ALPHA]
+        finally:
+            store.delete_by_source(source_id)
+
     def test_a_graph_built_before_content_hashes_rebuilds_once(self, store, source_id, llm, stub_embedding):  # noqa: F811
         try:
             self._build(source_id, _chunks(a1=ALPHA, b1=BETA))

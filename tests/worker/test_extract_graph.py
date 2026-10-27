@@ -95,7 +95,8 @@ class TestExtractGraphWorker:
         # another extraction config), so the whole source is extracted.
         source_id = _seed_source(pg_conn)
         chunks = [{"doc_id": "c1", "text": "alpha"}, {"doc_id": "c2", "text": "beta"}]
-        _patch_store(monkeypatch, chunks)
+        store = _patch_store(monkeypatch, [])
+        store._scan_chunks.return_value = chunks
         monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: True)
         carry = MagicMock(return_value=carried)
         monkeypatch.setattr("docsgpt.graphrag.extraction.sync_graph_to_chunks", carry)
@@ -106,6 +107,26 @@ class TestExtractGraphWorker:
 
         assert carry.call_args.args[:2] == (source_id, chunks)
         assert extract.call_args.kwargs["chunk_ids"] == expected
+
+    def test_a_sync_that_cannot_read_the_index_leaves_the_graph(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        # ``get_chunks`` answers [] on a database error: read as "every chunk
+        # is gone", the sync would delete the whole graph.
+        source_id = _seed_source(pg_conn)
+        store = _patch_store(monkeypatch, [])
+        store._scan_chunks.side_effect = RuntimeError("connection lost")
+        monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: True)
+        carry = MagicMock()
+        monkeypatch.setattr("docsgpt.graphrag.extraction.sync_graph_to_chunks", carry)
+        extract = MagicMock()
+        monkeypatch.setattr("docsgpt.graphrag.extraction.extract_graph_for_source", extract)
+
+        with pytest.raises(RuntimeError, match="connection lost"):
+            worker.extract_graph_worker(task_self, source_id, "alice", sync=True)
+
+        carry.assert_not_called()
+        extract.assert_not_called()
 
     def test_unavailable_returns_status_no_extraction(
         self, pg_conn, patch_worker_db, task_self, monkeypatch

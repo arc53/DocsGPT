@@ -6409,10 +6409,15 @@ def _extract_graph(
     store = VectorCreator.create_vectorstore(
         settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
     )
-    chunks = store.get_chunks() or []
     if sync:
+        # ``get_chunks`` answers [] on a database error, which a sync would
+        # read as every chunk gone and delete the graph; this read raises.
+        scan = getattr(store, "_scan_chunks", None)
+        chunks = scan() if callable(scan) else store.get_chunks() or []
         # None: the graph was reset, so the whole source is extracted.
         chunk_ids = sync_graph_to_chunks(source_id, chunks, config=cfg)
+    else:
+        chunks = store.get_chunks() or []
 
     total = len(chunks)
     # Throttle: at most ~20 progress events regardless of chunk count.

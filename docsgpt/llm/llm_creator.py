@@ -37,7 +37,7 @@ class LLMCreator:
         backup_models=None,
         model_user_id=None,
         *args,
-        stateless=False,
+        stateless: bool = False,
         **kwargs,
     ):
         """Construct an LLM for the given provider ``type``.

@@ -98,7 +98,8 @@ A sync re-reads the whole source and stores every chunk again, but the graph fol
 A sync rebuilds the whole graph instead, once, when:
 
 - the graph was built before DocsGPT recorded content hashes;
-- the source's `graph.extraction_model` or `graph.gleanings` changed since the graph was built. A change to the instance default model (`GRAPHRAG_EXTRACTION_MODEL`, `LLM_NAME`) does not rebuild existing graphs; use **Enable GraphRAG** for that.
+- the source's `graph.extraction_model` or `graph.gleanings` changed since the graph was built. A change to the instance default model (`GRAPHRAG_EXTRACTION_MODEL`, `LLM_NAME`) does not rebuild existing graphs; use **Enable GraphRAG** for that;
+- the embeddings model (`EMBEDDINGS_NAME`) changed, since the graph's node and fact embeddings come from it.
 
 A re-ingest or **Enable GraphRAG** always rebuilds the whole graph and extracts every chunk again.
 

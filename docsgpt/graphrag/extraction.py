@@ -67,15 +67,22 @@ def _resolve_extraction_model(config: SourceConfig) -> Optional[str]:
 
 
 def extraction_fingerprint(config: SourceConfig) -> str:
-    """What a source's chunks were extracted with, as its config sets it.
+    """What a source's chunks were extracted with: its extraction settings and the embeddings model.
 
     A sync keeps a chunk's graph only when this matches. It covers the
-    source's own extraction settings, not the instance defaults it may fall
-    back to: changing ``LLM_NAME`` must not rebuild every graph at its next
-    sync (an explicit rebuild does that).
+    source's own extraction settings, not the instance's default extraction
+    model: changing ``LLM_NAME`` must not rebuild every graph at its next sync
+    (an explicit rebuild does that). The embeddings model is included because
+    node and fact embeddings come from it, and a kept chunk would keep vectors
+    retrieval no longer compares against.
     """
     return json.dumps(
-        {"model": config.graph.extraction_model, "gleanings": config.graph.gleanings}, sort_keys=True
+        {
+            "model": config.graph.extraction_model,
+            "gleanings": config.graph.gleanings,
+            "embeddings": settings.EMBEDDINGS_NAME,
+        },
+        sort_keys=True,
     )
 
 
