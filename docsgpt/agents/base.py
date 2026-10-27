@@ -10,7 +10,9 @@ from docsgpt.activity.flags import check_stream
 from docsgpt.core.run_budget import RoundDeferred, StreamCancelled, is_budget_exhausted
 from docsgpt.agents.attachment_budget import (
     AttachmentPlan,
+    FileStatus,
     _attachment_id,
+    assign_refs,
     compute_attachment_budget,
     plan_attachments,
     plan_listing,
@@ -231,6 +233,8 @@ class BaseAgent(ABC):
     # A resumed turn's file listing, as the paused turn's plan made it.
     paused_attachment_listing: Optional[List[Dict]] = None
     withheld_attachments: frozenset = frozenset()
+    # Refs the paused turn had when its resume added files; None otherwise.
+    _refs_before_resume: Optional[int] = None
 
     def __init__(
         self,
@@ -778,7 +782,9 @@ class BaseAgent(ABC):
         tool_actions: List[Dict],
         reasoning_content: str = "",
     ) -> Generator[Dict, None, None]:
+        self._add_resumed_attachments_tool(tools_dict)
         self._prepare_tools(tools_dict)
+        self._list_resumed_attachments(tools_dict)
         # The paused turn's sources were restored as ``retrieved_docs``, so a
         # hit found after the resume continues their numbering.
         self._attach_citation_registry()
@@ -1650,12 +1656,26 @@ class BaseAgent(ABC):
         first, then the cache, the model and background scoring, as for
         retrieved documents. Withheld ids land in ``withheld_attachments``.
         """
-        engine = self.guardrails
-        if engine is None or not engine.config.controls_for(Stage.ATTACHMENT, item_level=True):
-            return
         # This turn's rows first: a file sent again carries its text there.
         rows = [a for a in (self.attachments or []) if isinstance(a, dict)]
         rows += [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        withheld = self._withheld_attachment_ids(rows)
+        if withheld is not None:
+            self.withheld_attachments = withheld
+
+    def _withheld_attachment_ids(self, rows: List[Dict]) -> Optional[frozenset]:
+        """The ids of ``rows`` an attachment control blocks (see ``_screen_attachments``).
+
+        Args:
+            rows: Attachment rows; one with neither text nor a stored score
+                is not scored.
+
+        Returns:
+            The blocked ids, or None when no attachment control applies.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.config.controls_for(Stage.ATTACHMENT, item_level=True):
+            return None
         cache = self._guardrail_cache
         items: Dict[str, tuple] = {}
         for row in rows:
@@ -1672,9 +1692,7 @@ class BaseAgent(ABC):
             )
             for attachment_id, decision in zip(todo, decisions):
                 cache[(Stage.ATTACHMENT, "item", attachment_id, items[attachment_id][0])] = decision
-        self.withheld_attachments = frozenset(
-            i for i, (text, _) in items.items() if cache[(Stage.ATTACHMENT, "item", i, text)].blocked
-        )
+        return frozenset(i for i, (text, _) in items.items() if cache[(Stage.ATTACHMENT, "item", i, text)].blocked)
 
     def _search_tool_docs(self) -> List[Dict]:
         """Documents this run's search tools read: internal search and the graph tool.
@@ -2208,7 +2226,12 @@ class BaseAgent(ABC):
             "context_window_limit": getattr(self, "context_window_limit", None),
         }
 
-    def resume_paused_attachments(self, listing: Optional[List[Dict]], withheld: Optional[List[str]] = None) -> None:
+    def resume_paused_attachments(
+        self,
+        listing: Optional[List[Dict]],
+        withheld: Optional[List[str]] = None,
+        added: Optional[List[Dict]] = None,
+    ) -> None:
         """Take back a paused turn's files on the agent that resumes it.
 
         The saved messages already carry the files as the paused round sent
@@ -2219,13 +2242,109 @@ class BaseAgent(ABC):
         run before anything is screened again, and a sandbox tool must not
         load one of them by its ``F`` ref.
 
+        Files the resume request adds join the turn after its own, so every
+        saved ``F`` ref keeps its file. They are screened here, before any
+        paused tool call runs, and listed once the tools are known
+        (``_list_resumed_attachments``). They reach the tools only; the
+        saved messages are not rebuilt.
+
         Args:
             listing: The paused turn's ``F`` ref listing.
             withheld: The attachment ids the paused turn withheld.
+            added: Rows the resume request adds, read as their owner. Rows
+                the turn already has are ignored.
         """
         self._attachments_merged = True
         self.paused_attachment_listing = [entry for entry in listing or [] if isinstance(entry, dict)] or None
         self.withheld_attachments = frozenset(str(i) for i in withheld or () if i)
+        current = [a for a in (self.attachments or []) if isinstance(a, dict)]
+        earlier = [a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)]
+        known = {_attachment_id(a) for a in [*earlier, *current]}
+        new = []
+        for row in added or ():
+            if isinstance(row, dict) and _attachment_id(row) not in known:
+                known.add(_attachment_id(row))
+                new.append(row)
+        if not new:
+            return
+        self._refs_before_resume = len(assign_refs(current, earlier))
+        self.attachments = [*current, *new]
+        blocked = set(self.withheld_attachments) | set(self._withheld_attachment_ids(new) or ())
+        # A copy of a withheld file shares its ref, so it is withheld with it
+        # even when it has no text of its own to score.
+        for planned in assign_refs(self.attachments, earlier):
+            if blocked.intersection(planned.attachment_ids):
+                blocked.update(planned.attachment_ids)
+        self.withheld_attachments = frozenset(blocked)
+
+    def _add_resumed_attachments_tool(self, tools_dict: Dict) -> None:
+        """Point the paused turn's attachments tool at the files its resume added.
+
+        The saved tool keeps what the paused turn decided for its own files;
+        a turn that paused without the tool gets one.
+
+        Args:
+            tools_dict: The resumed turn's tools; mutated in place.
+        """
+        if self._refs_before_resume is None:
+            return
+        from docsgpt.agents.tools.attachments import ATTACHMENTS_TOOL_ID
+
+        entry = tools_dict.get(ATTACHMENTS_TOOL_ID) if isinstance(tools_dict, dict) else None
+        if isinstance(entry, dict) and isinstance(entry.get("config"), dict):
+            entry["config"]["current_ids"] = [
+                _attachment_id(a) for a in (self.attachments or []) if isinstance(a, dict)
+            ]
+        else:
+            self._add_attachments_tool(tools_dict)
+
+    def _list_resumed_attachments(self, tools_dict: Dict) -> None:
+        """List the files a resume added, after the paused turn's own.
+
+        They are planned with no budget, as nothing more goes into the saved
+        messages: each is listed the way a fresh turn lists a file it could
+        not inline (``tool``, ``reference``, ``withheld``, ...). Their entries
+        are appended to the paused turn's listing, which the response reports
+        and the next pause saves, and to the attachments tool's plan. A saved
+        ref a blocked copy now withholds is marked withheld in both, since
+        the tool refuses files by ref.
+
+        Args:
+            tools_dict: The resumed turn's tools, once prepared.
+        """
+        count, self._refs_before_resume = self._refs_before_resume, None
+        if count is None or self.turn_capabilities is None:
+            return
+        from docsgpt.agents.tools.attachments import ATTACHMENTS_TOOL_ID, sync_attachments_tool
+
+        plan = plan_attachments(
+            [a for a in (self.attachments or []) if isinstance(a, dict)],
+            self.turn_capabilities,
+            budget=0,
+            earlier=[a for a in (getattr(self, "earlier_attachments", None) or []) if isinstance(a, dict)],
+            reference=self.reference_attachments,
+            withheld=self.withheld_attachments,
+        )
+        added = AttachmentPlan(files=plan.files[count:], capabilities=plan.capabilities, budget=0)
+        blocked = [planned.ref for planned in plan.files if planned.status is FileStatus.WITHHELD]
+        withheld = FileStatus.WITHHELD.value
+        listing = [
+            {**entry, "status": withheld} if entry.get("ref") in blocked else entry
+            for entry in self.paused_attachment_listing or []
+        ]
+        self.paused_attachment_listing = [*listing, *plan_listing(added)] or None
+        entry = tools_dict.get(ATTACHMENTS_TOOL_ID) if isinstance(tools_dict, dict) else None
+        config = entry.get("config") if isinstance(entry, dict) else None
+        if not isinstance(config, dict):
+            return
+        update: Dict[str, Any] = {}
+        sync_attachments_tool(update, plan=added)
+        tool_plan = {**(config.get("plan") or {}), **update["plan"]}
+        for ref in blocked:
+            tool_plan[ref] = {**(tool_plan.get(ref) or {}), "status": withheld, "reason": "content_policy"}
+        config["plan"] = tool_plan
+        withheld_refs = list(config.get("withheld_refs") or [])
+        config["withheld_refs"] = withheld_refs + [ref for ref in blocked if ref not in withheld_refs]
 
     def _truncate_history_to_fit(
         self,

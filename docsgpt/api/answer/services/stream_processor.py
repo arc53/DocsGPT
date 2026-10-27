@@ -2279,6 +2279,7 @@ class StreamProcessor:
         tool_actions: list,
         conversation_id: str,
         claimed_state: Optional[Dict[str, Any]] = None,
+        extra_attachment_ids: Optional[List[str]] = None,
     ):
         """Resume a paused agent from saved continuation state.
 
@@ -2289,6 +2290,10 @@ class StreamProcessor:
         Args:
             tool_actions: Client-provided actions (approvals / results).
             conversation_id: The conversation being resumed.
+            claimed_state: The state the caller already claimed, if any.
+            extra_attachment_ids: The resume request's attachment ids. Those
+                the paused turn does not have join it after its own files,
+                so their ``F`` refs follow the saved ones.
 
         Returns:
             Tuple of (agent, messages, tools_dict, pending_tool_calls,
@@ -2499,9 +2504,23 @@ class StreamProcessor:
         # its tools (``run_code`` inputs by ``F`` ref) and list their refs.
         saved_files = agent_config.get("attachments")
         saved_listing = None
+        file_kwargs: Optional[Dict[str, Any]] = None
         if isinstance(saved_files, dict):
             file_kwargs, saved_listing = self._resumed_attachment_kwargs(saved_files)
             agent_kwargs.update(file_kwargs)
+        added_files = self._resume_added_attachments(saved_files, file_kwargs, extra_attachment_ids)
+        if added_files and file_kwargs is None:
+            # The paused turn had no files: the new ones are planned like a
+            # chat turn's, in the mode the resume request asks for.
+            agent_kwargs.update(
+                {
+                    "attachments": [],
+                    "earlier_attachments": [],
+                    "skipped_attachments": [],
+                    "attachments_mode": self.attachments_mode(),
+                    "attachment_planning": True,
+                }
+            )
         # Stamped on the turn's metadata, so the next turn may chain onto it.
         if agent_config.get("last_compression_at"):
             agent_kwargs["last_compression_at"] = agent_config["last_compression_at"]
@@ -2513,8 +2532,10 @@ class StreamProcessor:
         # The paused rounds' decisions, continued in the next round.
         self.decision_record.resume(agent_config.get("decisions"))
         agent.decision_record = self.decision_record
-        if isinstance(saved_files, dict):
-            agent.resume_paused_attachments(saved_listing, withheld=saved_files.get("withheld") or [])
+        if file_kwargs is not None or added_files:
+            withheld = (saved_files.get("withheld") if file_kwargs is not None else None) or []
+            added = {"added": added_files} if added_files else {}
+            agent.resume_paused_attachments(saved_listing, withheld=withheld, **added)
 
         # Store config for the route layer
         self.model_id = model_id
@@ -2550,6 +2571,59 @@ class StreamProcessor:
             tool_actions,
             reasoning_content,
         )
+
+    def _resume_added_attachments(
+        self,
+        saved: Any,
+        restored: Optional[Dict[str, Any]],
+        request_ids: Any,
+    ) -> List[Dict[str, Any]]:
+        """The resume request's files that the paused turn does not have yet.
+
+        Read as their owner, like the turn's own files, so an id the owner
+        does not hold (or one deleted meanwhile) is skipped with a warning
+        and never fails the resume. Ids the paused turn already has are left
+        out, so resending them adds nothing.
+
+        Args:
+            saved: The ``attachments`` entry of the paused state (None when
+                the turn had no files).
+            restored: What ``_resumed_attachment_kwargs`` restored from it,
+                or None.
+            request_ids: The resume request's attachment ids.
+
+        Returns:
+            The new rows, in the request's order. None are added when the
+            paused turn's own files could not be restored: ``F`` refs are
+            positions, so a new file would take a ref the paused turn gave
+            another one.
+        """
+        if not isinstance(request_ids, (list, tuple)):
+            return []
+        saved = saved if isinstance(saved, dict) else {}
+        saved_ids = {str(i) for key in ("current", "earlier") for i in saved.get(key) or [] if i}
+        new_ids = [i for i in dict.fromkeys(str(i) for i in request_ids if i) if i not in saved_ids]
+        if not new_ids:
+            return []
+        if saved_ids and not (restored and (restored.get("attachments") or restored.get("earlier_attachments"))):
+            logger.warning(
+                "The paused turn's files could not be restored; resuming without the %d new attachment(s)",
+                len(new_ids),
+            )
+            return []
+        fetched = [row for row in self._get_attachments_content(new_ids, self.initial_user_id) if isinstance(row, dict)]
+        # A row answers to its legacy id too, as ``get_any`` looks it up, so a
+        # saved file resent by that id is found but not added again.
+        found = {str(row[key]) for row in fetched for key in ("id", "_id", "legacy_mongo_id") if row.get(key)}
+        rows = [row for row in fetched if _attachment_id(row) not in saved_ids]
+        missing = [i for i in new_ids if i not in found]
+        if missing:
+            logger.warning(
+                "Skipped %d of the resume's %d new attachment(s): not found for their owner",
+                len(missing),
+                len(new_ids),
+            )
+        return rows
 
     def _resumed_attachment_kwargs(self, saved: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[List[Dict]]]:
         """Agent kwargs for a paused turn's files, read again as their owner.
