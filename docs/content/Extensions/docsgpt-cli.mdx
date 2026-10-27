@@ -66,6 +66,9 @@ Run `docsgpt-cli login` to store credentials interactively:
 
 ```bash
 docsgpt-cli login
+
+# For a self-hosted server, provide its URL to validate against your instance:
+docsgpt-cli login --url http://localhost:7091
 ```
 
 You can also pass credentials non-interactively or save multiple keys by name:
@@ -80,14 +83,20 @@ echo "$DOCSGPT_TOKEN" | docsgpt-cli login
 
 ### Pointing to Self-Hosted Instances
 
-By default, the CLI connects to DocsGPT Cloud (`https://gptcloud.arc53.com`). To point to your self-hosted DocsGPT server, configure `base_url` or set `DOCSGPT_API_BASE`:
+By default, the CLI connects to DocsGPT Cloud (`https://gptcloud.arc53.com`). To point to your self-hosted DocsGPT server, configure `url` or set `DOCSGPT_URL`:
 
 ```bash
-# Configure default base URL
-docsgpt-cli config set base_url http://localhost:7091
+# Configure default server URL
+docsgpt-cli config set url http://localhost:7091
 
 # Or set via environment variable
-export DOCSGPT_API_BASE="http://localhost:7091"
+export DOCSGPT_URL="http://localhost:7091"
+```
+
+To set a default agent key from your saved keys:
+
+```bash
+docsgpt-cli config set default_key support
 ```
 
 ### Inspect Credentials
@@ -225,5 +234,5 @@ You can configure the CLI using environment variables, which is convenient for c
 | --- | --- |
 | `DOCSGPT_API_KEY` | Agent API key used for chat and benchmark runs |
 | `DOCSGPT_TOKEN` | Personal access token used for managing agents and sources |
-| `DOCSGPT_API_BASE` | Base URL of the DocsGPT instance (defaults to `https://gptcloud.arc53.com`) |
-| `DOCSGPT_AGENT` | Name or ID of the default agent to use |
+| `DOCSGPT_URL` | Base URL of the DocsGPT instance (defaults to `https://gptcloud.arc53.com`) |
+
