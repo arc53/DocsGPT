@@ -115,20 +115,30 @@ export function buildRunAtUtc(
   const year = Number(dm[1]);
   const month = clamp(Number(dm[2]), 1, 12);
   const day = clamp(Number(dm[3]), 1, 31);
-  // Compute UTC offset of the chosen tz at the chosen wall-clock instant by
-  // formatting an interim UTC date and reading back the tz parts.
+  // Start with the wall-clock fields interpreted as UTC, then resolve the
+  // timezone offset at the resulting instant (which may cross a DST change).
   const guess = Date.UTC(year, month - 1, day, hour, minute, 0);
-  const parts = formatInTimeZone(guess, timezone);
-  const wallUtc = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    0,
-  );
-  const offset = wallUtc - guess;
-  return new Date(guess - offset).toISOString();
+  const wallAt = (instant: number): number => {
+    const parts = formatInTimeZone(instant, timezone);
+    return Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      0,
+    );
+  };
+  const candidate = guess - (wallAt(guess) - guess);
+  const candidateWall = wallAt(candidate);
+  if (candidateWall === guess) return new Date(candidate).toISOString();
+
+  const corrected = candidate + (guess - candidateWall);
+  if (wallAt(corrected) === guess) return new Date(corrected).toISOString();
+
+  // A skipped spring-forward time has no matching instant; roll forward to
+  // the next valid local time rather than moving it back before the gap.
+  return new Date(Math.max(candidate, corrected)).toISOString();
 }
 
 type TzParts = {
