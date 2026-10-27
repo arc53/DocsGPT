@@ -938,7 +938,7 @@ function Log({
             isOpen && 'rotate-90',
           )}
         />
-        <span className="flex min-w-0 flex-col gap-1">
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="flex flex-row flex-wrap gap-2">
             <span className="text-muted-foreground text-xs">{`${log.timestamp}`}</span>
             {log.event_type && (
@@ -1017,7 +1017,7 @@ function Log({
             )}
             <span
               className={cn(
-                'max-w-72 text-xs wrap-break-word',
+                'min-w-0 flex-1 basis-60 font-sans text-xs wrap-break-word',
                 logLevelColor[log.level],
               )}
             >

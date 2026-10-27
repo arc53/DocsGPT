@@ -124,6 +124,20 @@ describe('Logs rows', () => {
     expect(header.className).not.toContain('text-muted-foreground');
   });
 
+  // The question is what a person wrote: proportional, and it fills the rest
+  // of the header row instead of wrapping at a fixed width.
+  it('sets the question in sans across the rest of the row', () => {
+    const question = Array.from(container.querySelectorAll('span')).find(
+      (span) => span.textContent === log.question,
+    )!;
+    expect(question).toBeDefined();
+    const classes = question.className.split(' ');
+    expect(classes).toContain('font-sans');
+    expect(classes).toContain('flex-1');
+    expect(classes).toContain('min-w-0');
+    expect(question.className).not.toMatch(/\bmax-w-/);
+  });
+
   // V3: the text and JSON blocks of an open row are ui/code-block CodeBlocks
   // (subtle on the open row), one 16px line-height, no leading-relaxed.
   it('shows the open row blocks as subtle CodeBlocks', async () => {
