@@ -67,7 +67,7 @@ test.describe('tier-a · opening a step while following', () => {
     await resetDb();
   });
 
-  test('the clicked Reasoning header stays put while the answer streams below', async ({
+  test('an opened or closed Reasoning header stays put; following resumes at the end', async ({
     browser,
   }) => {
     const { context } = await newUserContext(browser);
@@ -98,8 +98,31 @@ test.describe('tier-a · opening a step while following', () => {
       expect(await answerLength(page), 'still streaming').toBeGreaterThan(
         linesBefore,
       );
-      const after = (await header.boundingBox())!.y;
-      expect(Math.abs(after - before)).toBeLessThanOrEqual(2);
+      const afterOpen = (await header.boundingBox())!.y;
+      expect(Math.abs(afterOpen - before)).toBeLessThanOrEqual(2);
+
+      // Closing it leaves it in place too, and the chat stays where the
+      // reader left it while lines keep landing below.
+      await page.mouse.click(box!.x + 20, afterOpen + box!.height / 2);
+      await expect(header).toHaveAttribute('aria-expanded', 'false');
+      await page.waitForTimeout(1_000);
+      const afterClose = (await header.boundingBox())!.y;
+      expect(Math.abs(afterClose - before)).toBeLessThanOrEqual(2);
+      expect(await isFollowing(page)).toBe(false);
+
+      // Scrolling back to the end follows the answer again.
+      const viewport = (await page.locator(VIEWPORT).boundingBox())!;
+      await page.mouse.move(
+        viewport.x + viewport.width / 2,
+        viewport.y + viewport.height / 2,
+      );
+      for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 800);
+      const linesAtEnd = await answerLength(page);
+      await page.waitForTimeout(1_000);
+      expect(await answerLength(page), 'still streaming').toBeGreaterThan(
+        linesAtEnd,
+      );
+      expect(await isFollowing(page)).toBe(true);
     } finally {
       await context.close();
     }

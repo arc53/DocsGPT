@@ -44,9 +44,14 @@ function formatDuration(ms: number, t: TFunction): string {
   return formatElapsed(Math.round(ms / 1000), t);
 }
 
-function StatusIcon({ step }: { step: WorkflowStep }) {
+/** A step left running by a stopped stream never finished: no spinner. */
+function StatusIcon({ step, active }: { step: WorkflowStep; active: boolean }) {
   if (step.status === 'running')
-    return <Spinner size="xs" className="text-primary" />;
+    return active ? (
+      <Spinner size="xs" className="text-primary" />
+    ) : (
+      <Circle aria-hidden className="text-muted-foreground size-4" />
+    );
   if (step.status === 'failed')
     return <CircleX aria-hidden className="text-destructive size-4" />;
   return <CircleCheck aria-hidden className="text-success size-4" />;
@@ -56,22 +61,25 @@ function StatusIcon({ step }: { step: WorkflowStep }) {
 function StepRow({
   step,
   now,
+  active,
   connector,
 }: {
   step: WorkflowStep;
   now: number;
+  active: boolean;
   connector?: boolean;
 }) {
   const { t } = useTranslation();
   const Icon = NODE_ICONS[step.nodeType] || Circle;
-  const duration = step.startedAt
-    ? formatDuration((step.endedAt ?? now) - step.startedAt, t)
-    : null;
+  const working = active && step.status === 'running';
+  const end = step.endedAt ?? (working ? now : undefined);
+  const duration =
+    step.startedAt && end ? formatDuration(end - step.startedAt, t) : null;
   return (
     <div className="animate-in fade-in flex items-stretch gap-3 duration-160 ease-out motion-reduce:animate-none">
       <div className="flex flex-col items-center pt-0.5">
         <span className="flex size-4 shrink-0 items-center justify-center">
-          <StatusIcon step={step} />
+          <StatusIcon step={step} active={active} />
         </span>
         {connector && <span className="bg-border mt-1 w-px flex-1" />}
       </div>
@@ -88,9 +96,7 @@ function StepRow({
             title={step.title}
             className={cn(
               'min-w-0 truncate',
-              step.status === 'running'
-                ? 'shimmer-text font-medium'
-                : 'text-foreground',
+              working ? 'shimmer-text font-medium' : 'text-foreground',
             )}
           >
             {step.title}
@@ -120,7 +126,15 @@ function StepRow({
   );
 }
 
-function StepList({ steps, now }: { steps: WorkflowStep[]; now: number }) {
+function StepList({
+  steps,
+  now,
+  active,
+}: {
+  steps: WorkflowStep[];
+  now: number;
+  active: boolean;
+}) {
   return (
     <div className="flex flex-col pt-1">
       {steps.map((step, i) => (
@@ -128,6 +142,7 @@ function StepList({ steps, now }: { steps: WorkflowStep[]; now: number }) {
           key={step.nodeId}
           step={step}
           now={now}
+          active={active}
           connector={i < steps.length - 1}
         />
       ))}
@@ -215,12 +230,16 @@ export default function WorkflowRunProgress({
       </Button>
       {showLiveSteps && (
         <div className="mt-1 mr-5 ml-6" role="status" aria-live="polite">
-          <StepList steps={workflow.steps.slice(-LIVE_STEP_LIMIT)} now={now} />
+          <StepList
+            steps={workflow.steps.slice(-LIVE_STEP_LIMIT)}
+            now={now}
+            active={isStreaming}
+          />
         </div>
       )}
       <Collapsible open={isOpen} id={bodyId} className="mr-5 ml-6">
         <div className="pt-2">
-          <StepList steps={workflow.steps} now={now} />
+          <StepList steps={workflow.steps} now={now} active={isStreaming} />
         </div>
       </Collapsible>
     </div>

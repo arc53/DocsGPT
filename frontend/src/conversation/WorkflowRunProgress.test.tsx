@@ -121,6 +121,18 @@ describe('WorkflowRunProgress', () => {
     expect(container.textContent).toContain('model timed out');
   });
 
+  // Stop ends the stream with a step still marked running.
+  it('shows a step a stop cut short as unfinished, not working', () => {
+    render(running);
+    act(() => header().click());
+    const body = document.getElementById(
+      header().getAttribute('aria-controls')!,
+    )!;
+    expect(body.querySelector('[role="status"]')).toBeNull();
+    expect(body.querySelector('.shimmer-text')).toBeNull();
+    expect(body.textContent).not.toMatch(/Step title 7\d/);
+  });
+
   it('renders nothing before the first step', () => {
     render({ steps: [] }, { isStreaming: true });
     expect(container.innerHTML).toBe('');
