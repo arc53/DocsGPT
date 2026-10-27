@@ -2268,7 +2268,13 @@ class BaseAgent(ABC):
             return
         self._refs_before_resume = len(assign_refs(current, earlier))
         self.attachments = [*current, *new]
-        self.withheld_attachments |= self._withheld_attachment_ids(new) or frozenset()
+        blocked = set(self.withheld_attachments) | set(self._withheld_attachment_ids(new) or ())
+        # A copy of a withheld file shares its ref, so it is withheld with it
+        # even when it has no text of its own to score.
+        for planned in assign_refs(self.attachments, earlier):
+            if blocked.intersection(planned.attachment_ids):
+                blocked.update(planned.attachment_ids)
+        self.withheld_attachments = frozenset(blocked)
 
     def _add_resumed_attachments_tool(self, tools_dict: Dict) -> None:
         """Point the paused turn's attachments tool at the files its resume added.
