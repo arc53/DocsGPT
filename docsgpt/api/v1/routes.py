@@ -464,6 +464,8 @@ def chat_completions():
                     internal_data["tool_actions"],
                     conversation_id,
                     claimed_state=pending_state,
+                    # Files the client adds with its tool results join the turn.
+                    extra_attachment_ids=internal_data.get("attachments") or None,
                 )
                 processor.conversation_id = conversation_id
                 claimed_conversation_id = conversation_id
