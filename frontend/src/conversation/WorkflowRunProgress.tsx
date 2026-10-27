@@ -7,8 +7,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 import { NODE_COLORS, NODE_ICONS } from '../agents/workflow/nodeVisuals';
+import { formatElapsed } from '../backgroundJobs/BackgroundJobCard';
 import { Button } from '../components/ui/button';
 import { Collapsible } from '../components/ui/collapsible';
 import { Spinner } from '../components/ui/spinner';
@@ -38,10 +40,8 @@ function useNow(active: boolean): number {
   return now;
 }
 
-function formatDuration(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+function formatDuration(ms: number, t: TFunction): string {
+  return formatElapsed(Math.round(ms / 1000), t);
 }
 
 function StatusIcon({ step }: { step: WorkflowStep }) {
@@ -62,9 +62,10 @@ function StepRow({
   now: number;
   connector?: boolean;
 }) {
+  const { t } = useTranslation();
   const Icon = NODE_ICONS[step.nodeType] || Circle;
   const duration = step.startedAt
-    ? formatDuration((step.endedAt ?? now) - step.startedAt)
+    ? formatDuration((step.endedAt ?? now) - step.startedAt, t)
     : null;
   return (
     <div className="animate-in fade-in flex items-stretch gap-3 duration-160 ease-out motion-reduce:animate-none">
@@ -158,7 +159,8 @@ export default function WorkflowRunProgress({
     : workflow.steps.length;
   const first = workflow.steps[0].startedAt;
   const last = workflow.steps.at(-1)?.endedAt;
-  const total = first && last && !isLive ? formatDuration(last - first) : null;
+  const total =
+    first && last && !isLive ? formatDuration(last - first, t) : null;
   const failed = workflow.steps.some((s) => s.status === 'failed');
   const meta = isLive
     ? workflow.total

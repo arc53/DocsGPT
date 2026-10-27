@@ -347,6 +347,31 @@ describe('ConversationBubble', () => {
     expect(container.innerHTML).toBe('');
   });
 
+  // A run that failed before it wrote anything still shows its steps.
+  it('shows a run with no answer when it has steps', async () => {
+    await render(
+      <ConversationBubble
+        type="ANSWER"
+        workflowRunId="run-1"
+        workflow={{
+          steps: [
+            {
+              nodeId: 'b',
+              nodeType: 'state',
+              title: 'Compute budget',
+              status: 'failed',
+              error: 'division by zero',
+            },
+          ],
+        }}
+        onOpenArtifact={() => {}}
+      />,
+    );
+    expect(
+      container.querySelector('button[aria-expanded]')?.textContent,
+    ).toContain(tr('conversation.workflow.title'));
+  });
+
   it('shows a run with no answer once it has files', async () => {
     runArtifactsMock.mockReturnValueOnce({
       items: [

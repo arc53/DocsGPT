@@ -163,14 +163,15 @@ export default function ConversationMessages({
     // a gesture too, so it stops the follow the way a wheel does (the
     // primitive only reads intent from wheel, touch and key events) and the
     // step opens in place. While the pin holds the question at the top the
-    // step already stays put, so the pin is left alone.
+    // step already stays put, so the pin is left alone; a released pin's
+    // leftover spacer holds nothing, as in the follow effect.
     const onToggleClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
       if (!target?.closest('[aria-expanded]')) return;
       const spacer = vp.querySelector<HTMLElement>(
         '[data-message-scroller-spacer]',
       );
-      if (spacer && spacer.offsetHeight > 0) return;
+      if (!pinReleasedRef.current && spacer && spacer.offsetHeight > 0) return;
       const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
       if (dist >= STICK_THRESHOLD_PX) return;
       stickToBottomRef.current = false;
@@ -316,9 +317,14 @@ export default function ConversationMessages({
         query.tool_calls?.length ||
         query.research ||
         query.workflow_run_id;
+      // A workflow that failed keeps its steps in view: which one failed,
+      // and why.
+      const showPartial =
+        (query.errorCode === 'time_limit' && hasPartialProgress) ||
+        Boolean(query.workflow?.steps.length);
       return (
         <Fragment key={`${index}-ERROR`}>
-          {query.errorCode === 'time_limit' && hasPartialProgress ? (
+          {showPartial ? (
             <ConversationBubble
               className={bubbleMargin}
               message={partialResponse}

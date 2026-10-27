@@ -15,6 +15,7 @@ vi.mock('./ConversationBubble', () => ({
     onOpenArtifact,
     toolCalls,
     research,
+    workflow,
   }: {
     message?: string;
     retryBtn?: React.ReactNode;
@@ -22,6 +23,7 @@ vi.mock('./ConversationBubble', () => ({
     errorAction?: React.ReactNode;
     toolCalls?: { call_id: string }[];
     research?: { plan?: { query: string }[] };
+    workflow?: { steps: { nodeId: string; title: string }[] };
     conversationArtifacts?: { id: string }[];
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   }) => (
@@ -31,6 +33,9 @@ vi.mock('./ConversationBubble', () => ({
       {errorAction}
       {research?.plan?.map((step) => (
         <span key={step.query}>{step.query}</span>
+      ))}
+      {workflow?.steps.map((step) => (
+        <span key={step.nodeId}>{step.title}</span>
       ))}
       {toolCalls?.map((call) => (
         <span key={call.call_id}>{call.call_id}</span>
@@ -224,7 +229,7 @@ describe('ConversationMessages', () => {
     // before the growth.
     const growByOneRow = (
       spacerHeight: number,
-      gesture?: Event,
+      gesture?: Event | Event[],
       onTarget?: HTMLElement,
     ) => {
       stream('a');
@@ -245,7 +250,8 @@ describe('ConversationMessages', () => {
       act(() => {
         viewport.dispatchEvent(new Event('scroll'));
         if (onTarget) viewport.firstElementChild!.appendChild(onTarget);
-        if (gesture) (onTarget ?? viewport).dispatchEvent(gesture);
+        for (const event of [gesture ?? []].flat())
+          (onTarget ?? viewport).dispatchEvent(event);
       });
       scrollHeight = 1023;
       stream('a longer answer');
@@ -280,6 +286,16 @@ describe('ConversationMessages', () => {
       toggle.setAttribute('aria-expanded', 'false');
       const click = new MouseEvent('click', { bubbles: true });
       expect(growByOneRow(0, click, toggle).scrollTop).toBe(500);
+    });
+
+    // A wheel released the pin but left its spacer; that spacer holds
+    // nothing, so a toggle stops the follow as it would without one.
+    it('stops following on a toggle after a gesture released the pin', () => {
+      const toggle = document.createElement('button');
+      toggle.setAttribute('aria-expanded', 'false');
+      const wheel = new WheelEvent('wheel', { deltaY: 40, bubbles: true });
+      const click = new MouseEvent('click', { bubbles: true });
+      expect(growByOneRow(3, [wheel, click], toggle).scrollTop).toBe(500);
     });
 
     it('keeps following after a click that toggles nothing', () => {
@@ -523,6 +539,28 @@ describe('ConversationMessages', () => {
       expect(container.textContent).toContain('conversation.errors.timeLimit');
     },
   );
+
+  it('keeps a failed workflow’s steps above its error', () => {
+    render([
+      {
+        prompt: 'plan a trip',
+        error: 'The run stopped.',
+        workflow_run_id: 'run-1',
+        workflow: {
+          steps: [
+            {
+              nodeId: 'w',
+              nodeType: 'agent',
+              title: 'Check the weather',
+              status: 'failed',
+              error: 'model timed out',
+            },
+          ],
+        },
+      },
+    ]);
+    expect(container.textContent).toContain('Check the weather');
+  });
 
   it('keeps research-only progress visible after a time limit', () => {
     render([

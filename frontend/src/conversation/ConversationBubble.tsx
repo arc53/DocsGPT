@@ -238,6 +238,7 @@ const ConversationBubble = forwardRef<
     !message &&
     !thought &&
     !research &&
+    !workflow?.steps.length &&
     !toolCalls?.length &&
     !segments?.length &&
     !sources?.length &&
