@@ -86,6 +86,7 @@ class ClassicRAG(BaseRetriever):
             model_id=self.model_id,
             agent_id=self.agent_id,
             model_user_id=self.model_user_id,
+            stateless=True,
         )
         # Query-rephrase LLM is a side channel — tag it so its rows
         # land as ``source='rag_condense'`` in cost-attribution, and stamp

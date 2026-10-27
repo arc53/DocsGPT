@@ -250,11 +250,15 @@ def _emit_graph_poison_event(task_name, bound):
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="extract_graph", on_poison=_emit_graph_poison_event)
-def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None):
-    """Build a source's graph; with ``chunk_ids`` (a page change), extract only those chunks."""
+def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None, sync=False):
+    """Build a source's graph; with ``chunk_ids`` (a page change), extract only those chunks.
+
+    ``sync`` (after a sync re-embedded the source) carries the graph over by
+    chunk content and extracts only new text.
+    """
     from docsgpt.worker import extract_graph_worker
 
-    return extract_graph_worker(self, source_id, user, chunk_ids=chunk_ids)
+    return extract_graph_worker(self, source_id, user, chunk_ids=chunk_ids, sync=sync)
 
 
 # Beat-driven dispatch tasks default to ``acks_late=False``: a SIGKILL

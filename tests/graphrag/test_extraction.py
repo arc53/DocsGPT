@@ -661,6 +661,77 @@ class TestExtractionTokenUsage:
         assert len(used) > 1, "calls did not run concurrently"
         assert all(len(llm.threads) == 1 for llm in used)
 
+    def test_each_chunk_is_a_prompt_of_its_own(self, monkeypatch, stub_embedding):
+        """One instance serves every chunk on its thread. Chained through
+        ``previous_response_id``, chunk N was billed for chunks 1..N-1 and
+        their outputs, so prompts grew with the source."""
+        import types
+        from unittest.mock import MagicMock
+
+        from docsgpt.core.model_settings import ModelCapabilities
+        from docsgpt.core.settings import settings
+        from docsgpt.llm.openai import OpenAILLM
+
+        def _passthrough(func):
+            def wrapper(self_llm, model, messages, stream, tools=None, **kwargs):
+                return func(self_llm, model, messages, stream, tools, **kwargs)
+
+            return wrapper
+
+        monkeypatch.setattr("docsgpt.llm.base.gen_cache", _passthrough)
+        monkeypatch.setattr("docsgpt.llm.base.gen_token_usage", _passthrough)
+        monkeypatch.setattr("docsgpt.llm.openai.OpenAI", MagicMock())
+        monkeypatch.setattr(
+            "docsgpt.llm.openai.StorageCreator", types.SimpleNamespace(get_storage=lambda: None)
+        )
+        monkeypatch.setattr("docsgpt.llm.openai.settings.OPENAI_RESPONSES_STORE", True)
+        monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 1)
+        payload = _extraction_json(entities=[{"name": "Ada", "type": "person", "description": "d"}], relationships=[])
+        replies = iter(
+            types.SimpleNamespace(
+                id=f"resp_{i}",
+                output=[types.SimpleNamespace(type="message", content=[types.SimpleNamespace(type="output_text", text=payload)])],
+            )
+            for i in range(10)
+        )
+        create = MagicMock(side_effect=lambda **params: next(replies))
+        built = []
+
+        def _create(*args, stateless=False, **kwargs):
+            llm = OpenAILLM(api_key="k", model_id=kwargs.get("model_id"))
+            llm.capabilities = ModelCapabilities(api_flavor="responses")
+            llm.client.responses.create = create
+            llm.stateless = stateless
+            built.append(llm)
+            return llm
+
+        monkeypatch.setattr(extraction_module.LLMCreator, "create_llm", staticmethod(_create))
+        store = MagicMock(name="GraphStore")
+        store.pending_chunks.return_value = ["c1", "c2", "c3"]
+        store.apply_chunk.return_value = (1, 0)
+        store.count_nodes.return_value = 1
+        monkeypatch.setattr("docsgpt.graphrag.store.GraphStore", lambda *a, **k: store)
+        texts = ["Ada wrote notes.", "Babbage built engines.", "Lovelace met Babbage."]
+
+        summary = extract_graph_for_source(
+            str(uuid.uuid4()),
+            user="owner-1",
+            chunks=[_chunk(f"c{i + 1}", text) for i, text in enumerate(texts)],
+            config=SourceConfig(),
+            request_id="req-1",
+        )
+
+        assert summary["chunks_processed"] == 3
+        assert len(built) == 1, "the calling thread reuses one instance"
+        sent = [call.kwargs for call in create.call_args_list]
+        assert len(sent) == 3
+        for params, own in zip(sent, texts):
+            assert "previous_response_id" not in params
+            assert params["store"] is False
+            prompt = json.dumps(params["input"])
+            assert own in prompt
+            assert not any(other in prompt for other in texts if other != own)
+
 
 @pytest.mark.unit
 class TestModelResolution:
@@ -1175,11 +1246,11 @@ class _ProgressGraphStore:
     def pending_chunks(self, source_id, all_ids):
         return [c for c in all_ids if self.progress.get(c) not in ("done", "deleted")]
 
-    def apply_chunk(self, source_id, chunk_id, entities, relationships, name_embeddings):
+    def apply_chunk(self, source_id, chunk_id, entities, relationships, name_embeddings, **checkpoint):
         self.progress[chunk_id] = "done"
         return len(entities), 0
 
-    def mark_chunk(self, source_id, chunk_id, status):
+    def mark_chunk(self, source_id, chunk_id, status, **checkpoint):
         self.progress[chunk_id] = status
 
     def set_node_degrees(self, source_id):

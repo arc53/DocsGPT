@@ -1211,6 +1211,7 @@ class LLMHandler(ABC):
                 model_id=compression_model,
                 agent_id=getattr(agent, "agent_id", None),
                 model_user_id=compression_user_id,
+                stateless=True,
             )
             # Side-channel LLM tag — see ``orchestrator.py`` for rationale.
             compression_llm._token_usage_source = "compression"

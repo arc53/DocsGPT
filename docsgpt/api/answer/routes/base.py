@@ -1420,6 +1420,7 @@ class BaseAnswerResource:
                                 model_id=model_id,
                                 agent_id=agent_id,
                                 model_user_id=model_user_id,
+                                stateless=True,
                             )
                             conversation_id = (
                                 self.conversation_service.save_conversation(
@@ -1558,6 +1559,7 @@ class BaseAnswerResource:
                     model_id=title_model_id,
                     agent_id=agent_id,
                     model_user_id=model_user_id,
+                    stateless=True,
                 )
                 llm._token_usage_source = "title"
 
@@ -1842,6 +1844,7 @@ class BaseAnswerResource:
                             model_id=title_model_id,
                             agent_id=agent_id,
                             model_user_id=model_user_id,
+                            stateless=True,
                         )
                         llm._token_usage_source = "title"
                     if reserved_message_id is not None:

@@ -147,7 +147,7 @@ class TestExtractGraphTask:
 
         result = extract_graph("source123", "user1")
 
-        mock_worker.assert_called_once_with(ANY, "source123", "user1", chunk_ids=None)
+        mock_worker.assert_called_once_with(ANY, "source123", "user1", chunk_ids=None, sync=False)
         assert result == {"nodes": 2, "edges": 1}
 
     @pytest.mark.unit
@@ -156,7 +156,7 @@ class TestExtractGraphTask:
 
         calls: list[str] = []
 
-        def _fake_worker(self, source_id, user, chunk_ids=None):
+        def _fake_worker(self, source_id, user, chunk_ids=None, sync=False):
             calls.append(source_id)
             return {"nodes": 1, "edges": 0}
 

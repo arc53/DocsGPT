@@ -282,6 +282,33 @@ def _maybe_enqueue_graph_extraction(cfg, source_id, user):
             exc_info=True,
         )
 
+
+def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None):
+    """Queue the graph's catch-up after a sync re-embedded a graphrag source.
+
+    A sync stores every chunk again under a new id. Rather than reset and
+    re-extract the whole source, the run carries the graph over by chunk
+    content (``sync_graph_to_chunks``) and extracts only new text. A no-op for
+    non-graphrag sources or when GraphRAG is unavailable; never raises, so a
+    broker hiccup cannot fail a sync that succeeded.
+    """
+    if cfg.kind != "graphrag":
+        return
+    from docsgpt.graphrag import graphrag_available
+
+    if not graphrag_available():
+        return
+
+    source_id = str(source_id)
+    try:
+        from docsgpt.api.user.tasks import extract_graph
+
+        key = f"extract-graph:{source_id}:sync:{task_id or uuid.uuid4().hex}"
+        extract_graph.delay(source_id, user, idempotency_key=key, sync=True)
+    except Exception as e:
+        logging.warning(f"Failed to enqueue the graph sync for {source_id}: {e}", exc_info=True)
+
+
 # Re-exported here for backward-compatible imports
 # (``from docsgpt.worker import _derive_source_id`` /
 # ``DOCSGPT_INGEST_NAMESPACE``) from tests and any other in-tree callers.
@@ -1839,7 +1866,10 @@ def remote_worker(
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
-        _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+        if operation_mode == "sync":
+            _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+        else:
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
@@ -4854,7 +4884,10 @@ def _ingest_connector(
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
-            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+            if operation_mode == "sync":
+                _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+            else:
+                _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
 
             return {
                 "user": user,
@@ -6303,7 +6336,7 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
     }
 
 
-def extract_graph_worker(self, source_id, user, chunk_ids=None):
+def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
     """Build a graphrag source's knowledge graph from its embedded chunks.
 
     Loads the source, fetches its chunks from the vector store, and runs the
@@ -6325,6 +6358,9 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None):
         user: Owner identifier used to load the source and attribute token usage.
         chunk_ids: For a page change, the chunks it stored: only they are
             extracted (``extract_graph_for_source``). ``None`` for a build.
+        sync: After a sync re-embedded the source: the graph is carried over
+            to the new chunk ids by content first (``sync_graph_to_chunks``)
+            and only new text is extracted.
 
     Returns:
         ``{"status": "unavailable"}`` when GraphRAG is off, otherwise the
@@ -6355,13 +6391,16 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None):
         )
 
     return _locked_or_retry(
-        self, graph_extract_lock, source_id, lambda: _extract_graph(self, source, user, chunk_ids), _out_of_retries,
+        self, graph_extract_lock, source_id, lambda: _extract_graph(self, source, user, chunk_ids, sync),
+        _out_of_retries,
     )
 
 
-def _extract_graph(self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]]) -> Dict[str, Any]:
+def _extract_graph(
+    self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]], sync: bool = False
+) -> Dict[str, Any]:
     """The body of ``extract_graph_worker``, run holding the source's graph extraction lock."""
-    from docsgpt.graphrag.extraction import extract_graph_for_source
+    from docsgpt.graphrag.extraction import extract_graph_for_source, sync_graph_to_chunks
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
     source_id = str(source["id"])
@@ -6370,7 +6409,15 @@ def _extract_graph(self: Any, source: Dict[str, Any], user: str, chunk_ids: Opti
     store = VectorCreator.create_vectorstore(
         settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
     )
-    chunks = store.get_chunks() or []
+    if sync:
+        # ``get_chunks`` answers [] on a database error, which a sync would
+        # read as every chunk gone and delete the graph; this read raises.
+        scan = getattr(store, "_scan_chunks", None)
+        chunks = scan() if callable(scan) else store.get_chunks() or []
+        # None: the graph was reset, so the whole source is extracted.
+        chunk_ids = sync_graph_to_chunks(source_id, chunks, config=cfg)
+    else:
+        chunks = store.get_chunks() or []
 
     total = len(chunks)
     # Throttle: at most ~20 progress events regardless of chunk count.
