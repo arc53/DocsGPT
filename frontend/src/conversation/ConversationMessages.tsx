@@ -157,13 +157,34 @@ export default function ConversationMessages({
     const onKeyDown = (event: KeyboardEvent) => {
       if (SCROLL_KEYS.has(event.key)) releasePin();
     };
+    // Opening or closing a step while the chat follows the answer's end
+    // resized the content and the follow scrolled it straight back to the
+    // bottom: the step just clicked jumped away from the pointer. A toggle is
+    // a gesture too, so it stops the follow the way a wheel does (the
+    // primitive only reads intent from wheel, touch and key events) and the
+    // step opens in place. While the pin holds the question at the top the
+    // step already stays put, so the pin is left alone.
+    const onToggleClick = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.closest('[aria-expanded]')) return;
+      const spacer = vp.querySelector<HTMLElement>(
+        '[data-message-scroller-spacer]',
+      );
+      if (spacer && spacer.offsetHeight > 0) return;
+      const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
+      if (dist >= STICK_THRESHOLD_PX) return;
+      stickToBottomRef.current = false;
+      vp.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
+    };
     vp.addEventListener('wheel', releasePin, { passive: true });
     vp.addEventListener('touchmove', releasePin, { passive: true });
     vp.addEventListener('keydown', onKeyDown);
+    vp.addEventListener('click', onToggleClick, true);
     return () => {
       vp.removeEventListener('wheel', releasePin);
       vp.removeEventListener('touchmove', releasePin);
       vp.removeEventListener('keydown', onKeyDown);
+      vp.removeEventListener('click', onToggleClick, true);
     };
   }, [hasMessages]);
 

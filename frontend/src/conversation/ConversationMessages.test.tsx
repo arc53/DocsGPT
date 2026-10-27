@@ -220,8 +220,13 @@ describe('ConversationMessages', () => {
 
     // jsdom has no layout: fake a viewport at the bottom whose content then
     // grows by one 23px row, with the pin spacer at `spacerHeight`. A
-    // `gesture` is dispatched on the viewport before the growth.
-    const growByOneRow = (spacerHeight: number, gesture?: Event) => {
+    // `gesture` is dispatched on the viewport (or on `onTarget` inside it)
+    // before the growth.
+    const growByOneRow = (
+      spacerHeight: number,
+      gesture?: Event,
+      onTarget?: HTMLElement,
+    ) => {
       stream('a');
       const viewport = container.querySelector<HTMLElement>(
         '[data-slot="message-scroller-viewport"]',
@@ -239,7 +244,8 @@ describe('ConversationMessages', () => {
       viewport.scrollTop = 500;
       act(() => {
         viewport.dispatchEvent(new Event('scroll'));
-        if (gesture) viewport.dispatchEvent(gesture);
+        if (onTarget) viewport.firstElementChild!.appendChild(onTarget);
+        if (gesture) (onTarget ?? viewport).dispatchEvent(gesture);
       });
       scrollHeight = 1023;
       stream('a longer answer');
@@ -265,6 +271,21 @@ describe('ConversationMessages', () => {
       ],
     ])('follows the answer again once %s releases the pin', (_, gesture) => {
       expect(growByOneRow(3, gesture).scrollTop).toBe(1023);
+    });
+
+    // Opening a step resizes the answer; following would scroll the step
+    // away from the pointer that just clicked it.
+    it('stops following when a step is opened or closed', () => {
+      const toggle = document.createElement('button');
+      toggle.setAttribute('aria-expanded', 'false');
+      const click = new MouseEvent('click', { bubbles: true });
+      expect(growByOneRow(0, click, toggle).scrollTop).toBe(500);
+    });
+
+    it('keeps following after a click that toggles nothing', () => {
+      const click = new MouseEvent('click', { bubbles: true });
+      const plain = document.createElement('span');
+      expect(growByOneRow(0, click, plain).scrollTop).toBe(1023);
     });
 
     it('ignores keys that do not scroll', () => {
