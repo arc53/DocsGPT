@@ -159,6 +159,13 @@ export default function ConversationMessages({
     if (status !== 'loading' || !hasMessages) return;
     const vp = document.querySelector<HTMLElement>(MS_VIEWPORT_SELECTOR);
     if (!vp) return;
+    // While the pin spacer holds the latest question at the top, the primitive
+    // re-pins on resize a frame later; scrolling to the bottom here first made
+    // the turn jump up and back on every growth.
+    const spacer = vp.querySelector<HTMLElement>(
+      '[data-message-scroller-spacer]',
+    );
+    if (spacer && spacer.offsetHeight > 0) return;
     const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
     if (stickToBottomRef.current && dist > 0) vp.scrollTop = vp.scrollHeight;
   }, [status, lastTurnContentLength, hasMessages]);

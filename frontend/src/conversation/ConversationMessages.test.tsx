@@ -201,6 +201,56 @@ describe('ConversationMessages', () => {
     expect(spacer.className).toContain('max-h-0');
   });
 
+  describe('following a streaming answer', () => {
+    const stream = (response: string) =>
+      act(() => {
+        root.render(
+          <ConversationMessages
+            handleQuestion={() => undefined}
+            handleQuestionSubmission={() => undefined}
+            queries={[
+              { prompt: 'first', response: 'done' },
+              { prompt: 'second', response },
+            ]}
+            status="loading"
+          />,
+        );
+      });
+
+    // jsdom has no layout: fake a viewport at the bottom whose content then
+    // grows by one 23px row, with the pin spacer at `spacerHeight`.
+    const growByOneRow = (spacerHeight: number) => {
+      stream('a');
+      const viewport = container.querySelector<HTMLElement>(
+        '[data-slot="message-scroller-viewport"]',
+      )!;
+      const spacer = container.querySelector<HTMLElement>(
+        '[data-message-scroller-spacer]',
+      )!;
+      Object.defineProperty(spacer, 'offsetHeight', { value: spacerHeight });
+      Object.defineProperty(viewport, 'clientHeight', { value: 500 });
+      let scrollHeight = 1000;
+      Object.defineProperty(viewport, 'scrollHeight', {
+        get: () => scrollHeight,
+      });
+      viewport.scrollTop = 500;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+      scrollHeight = 1023;
+      stream('a longer answer');
+      return viewport;
+    };
+
+    it('leaves the scroll to the primitive while the question is pinned', () => {
+      expect(growByOneRow(300).scrollTop).toBe(500);
+    });
+
+    it('keeps the answer’s end in view once nothing is pinned', () => {
+      expect(growByOneRow(0).scrollTop).toBe(1023);
+    });
+  });
+
   it('renders Retry like the other answer actions: 32px ghost pill, lucide glyph', () => {
     render([{ prompt: 'hi', error: 'boom' }]);
     const retry = container.querySelector<HTMLButtonElement>(
