@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-26
+lastUpdated: 2026-10-27
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1655,6 +1655,12 @@ Outbound version check for security advisories: the worker sends its version, a 
 Type `str`, default unset.
 
 Public base URL for user-facing endpoint references in prompts, and the prefix of the artifact download URLs API responses carry (relative paths when unset).
+
+### `SAFE_URL_ALLOWED_HOSTS`
+
+Type `list[str]`, default `[]`.
+
+Private-network hosts that user-supplied URLs (API and MCP tools, read_webpage, monitors, custom model base URLs, the API tool a personal access token makes) may reach, as a comma list or JSON list. An entry is an exact hostname (`wiki.corp.example`, not its subdomains), which passes for any private address it resolves to, or an IP or CIDR range (`10.16.0.0/16`), which passes the addresses inside it. Loopback passes only through an IP entry (`127.0.0.1`), never a name. Link-local and cloud metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`, `metadata.google.internal`) and `0.0.0.0` are refused whatever is listed. Empty, every private address is refused.
 
 ### `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`
 

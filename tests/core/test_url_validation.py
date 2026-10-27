@@ -341,3 +341,42 @@ class TestValidateUrlMalformed:
         assert is_valid is False
         assert url == "http://[bad"
         assert error
+
+
+class TestValidateUrlOperatorAllowlist:
+    """``SAFE_URL_ALLOWED_HOSTS`` lets an operator open private hosts to the legacy validator too."""
+
+    @pytest.fixture(autouse=True)
+    def _allow(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "SAFE_URL_ALLOWED_HOSTS", ["mcp.intranet.example", "10.16.0.0/16"])
+
+    def test_allowlisted_hostname_passes(self):
+        with patch("docsgpt.core.url_validation.resolve_hostname", return_value="10.20.0.4"):
+            assert validate_url("http://mcp.intranet.example/mcp") == "http://mcp.intranet.example/mcp"
+
+    def test_cidr_entry_passes_inside_and_blocks_outside(self):
+        assert validate_url("http://10.16.1.2/") == "http://10.16.1.2/"
+        with pytest.raises(SSRFError):
+            validate_url("http://10.17.1.2/")
+
+    def test_other_private_hosts_stay_blocked(self):
+        with patch("docsgpt.core.url_validation.resolve_hostname", return_value="10.20.0.4"):
+            with pytest.raises(SSRFError):
+                validate_url("http://evil.mcp.intranet.example/")
+
+    def test_metadata_stays_blocked(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "SAFE_URL_ALLOWED_HOSTS", ["169.254.0.0/16", "meta.corp.example"])
+        with pytest.raises(SSRFError):
+            validate_url("http://169.254.169.254/")
+        with patch("docsgpt.core.url_validation.resolve_hostname", return_value="169.254.169.254"):
+            with pytest.raises(SSRFError):
+                validate_url("http://meta.corp.example/")
+
+    def test_hostname_entry_does_not_unlock_loopback(self):
+        with patch("docsgpt.core.url_validation.resolve_hostname", return_value="127.0.0.1"):
+            with pytest.raises(SSRFError):
+                validate_url("http://mcp.intranet.example/")

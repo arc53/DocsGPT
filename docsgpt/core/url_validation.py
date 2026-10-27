@@ -11,7 +11,7 @@ import socket
 from urllib.parse import urlparse
 from typing import Optional, Set
 
-from docsgpt.security.safe_url import reject_ambiguous_url
+from docsgpt.security.safe_url import allowed_by_operator, reject_ambiguous_url
 
 
 class SSRFError(Exception):
@@ -130,7 +130,8 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
     This function checks that:
     1. The URL has an allowed scheme (http or https)
     2. The hostname is not a blocked hostname
-    3. The resolved IP is not a private/internal IP
+    3. The resolved IP is not a private/internal IP, unless the operator
+       opened it with ``SAFE_URL_ALLOWED_HOSTS``
     4. The resolved IP is not a cloud metadata service
 
     Args:
@@ -180,7 +181,7 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
         if is_metadata_ip(ip_str):
             raise SSRFError("Access to cloud metadata services is not allowed.")
 
-        if is_private_ip(ip_str) and not allow_localhost:
+        if is_private_ip(ip_str) and not allow_localhost and not allowed_by_operator(None, ip):
             raise SSRFError("Access to private/internal IP addresses is not allowed.")
 
         return url
@@ -196,7 +197,11 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
     if is_metadata_ip(resolved_ip):
         raise SSRFError("Access to cloud metadata services is not allowed.")
 
-    if is_private_ip(resolved_ip) and not allow_localhost:
+    if (
+        is_private_ip(resolved_ip)
+        and not allow_localhost
+        and not allowed_by_operator(hostname_lower, ipaddress.ip_address(resolved_ip))
+    ):
         raise SSRFError("Access to private/internal networks is not allowed.")
 
     return url
