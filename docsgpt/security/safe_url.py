@@ -350,8 +350,13 @@ def _validate_and_pick_ip(
     # Check the literal-string blocklist first. urlsplit().hostname strips
     # IPv6 brackets, so we also test the bracketed form for completeness
     # (matches the public-spec note about ``[::]``).
-    bracketed = f"[{host}]"
-    blocked_name = host in _BLOCKED_HOSTNAMES or ascii_host in _BLOCKED_HOSTNAMES or bracketed in _BLOCKED_HOSTNAMES
+    # A trailing dot names the same host (``localhost.``), so it is dropped first.
+    name = host.rstrip(".")
+    blocked_name = (
+        name in _BLOCKED_HOSTNAMES
+        or ascii_host.rstrip(".") in _BLOCKED_HOSTNAMES
+        or f"[{name}]" in _BLOCKED_HOSTNAMES
+    )
     if blocked_name and not operator_ip:
         raise UnsafeUserUrlError(
             f"hostname {raw_host!r} is not allowed (matches internal-only name)"

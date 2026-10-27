@@ -170,7 +170,7 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
     hostname_lower = hostname.lower()
 
     # Check blocked hostnames
-    if hostname_lower in BLOCKED_HOSTNAMES and not allow_localhost:
+    if hostname_lower.rstrip(".") in BLOCKED_HOSTNAMES and not allow_localhost:
         raise SSRFError(f"Access to '{hostname}' is not allowed.")
 
     # Check if hostname is an IP address directly

@@ -376,6 +376,15 @@ class TestValidateUrlOperatorAllowlist:
             with pytest.raises(SSRFError):
                 validate_url("http://meta.corp.example/")
 
+    @pytest.mark.parametrize("url", ["http://localhost./", "http://metadata.google.internal./"])
+    def test_trailing_dot_blocked_names_stay_blocked(self, monkeypatch, url):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "SAFE_URL_ALLOWED_HOSTS", ["127.0.0.0/8", "10.16.0.0/16"])
+        with patch("docsgpt.core.url_validation.resolve_hostname", return_value="127.0.0.1"):
+            with pytest.raises(SSRFError, match="not allowed"):
+                validate_url(url)
+
     def test_hostname_entry_does_not_unlock_loopback(self):
         with patch("docsgpt.core.url_validation.resolve_hostname", return_value="127.0.0.1"):
             with pytest.raises(SSRFError):

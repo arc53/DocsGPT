@@ -88,7 +88,7 @@ SAFE_URL_ALLOWED_HOSTS=wiki.corp.example,docsgpt.corp.example,10.16.0.0/16
 
 - A **hostname** entry matches that exact name, case-insensitively and in its IDNA form (`wiki.corp.example` does not match `api.wiki.corp.example`), and lets it resolve to any private address.
 - An **IP or CIDR** entry (`10.16.0.5`, `10.16.0.0/16`, `fd12:3456::/48`) lets any URL reach the addresses inside it, whatever host name leads there.
-- **Loopback** passes only through an IP entry (`127.0.0.1`, `::1`). The `localhost` name, or a listed name that resolves to loopback, stays refused.
+- **Loopback** passes only when the address matches an IP entry (`127.0.0.1`, `::1`); a name that resolves to a listed loopback address passes too. A hostname entry never opens loopback, and the `localhost` name stays refused either way.
 - **Never allowed**, whatever is listed: link-local addresses (`169.254.0.0/16`, `fe80::/10`, which hold cloud metadata endpoints), the other metadata endpoints (`fd00:ec2::254`, `100.100.100.200`, `metadata.google.internal`) and unspecified addresses (`0.0.0.0`, `::`).
 
 The DNS pinning above is unchanged: the address that was checked is the one dialed. Every user of the instance can point tools at a listed host, so list only the services they should reach.

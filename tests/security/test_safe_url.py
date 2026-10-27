@@ -1630,6 +1630,18 @@ def test_loopback_passes_only_when_listed_as_an_ip(allow_hosts):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("url", "resolved"),
+    [("http://localhost./", "127.0.0.1"), ("http://metadata.google.internal./", "10.16.0.5")],
+)
+def test_trailing_dot_blocked_names_stay_blocked_by_name(allow_hosts, url, resolved):
+    allow_hosts("127.0.0.0/8", "10.16.0.0/16")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo(resolved)):
+        with pytest.raises(UnsafeUserUrlError, match="internal-only name"):
+            validate_user_base_url(url)
+
+
+@pytest.mark.unit
 def test_allowlist_reads_a_comma_list_from_the_environment(monkeypatch):
     from docsgpt.core.settings.server import ServerSettings
 
