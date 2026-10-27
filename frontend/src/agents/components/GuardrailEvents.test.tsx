@@ -297,6 +297,10 @@ describe('GuardrailEvents paging', () => {
     const scroller = container.querySelector('table')!.parentElement!;
     expect(scroller.className).toContain('max-h-[45svh]');
     expect(scroller.className).toContain('scrollbar-overlay');
+    // A log table is a place on the page: a subtle Card, like Logs.
+    const frame = scroller.parentElement!;
+    expect(frame.dataset.slot).toBe('card');
+    expect(frame.dataset.variant).toBe('subtle');
     // A short list has no status strip.
     expect(
       container.querySelector('[data-slot="load-more-status"]'),

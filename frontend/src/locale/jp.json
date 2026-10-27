@@ -953,7 +953,6 @@
       "filterByChatbot": "チャットボットでフィルター",
       "selectChatbot": "チャットボットを選択",
       "none": "なし",
-      "tableHeader": "API生成 / チャットボットの会話",
       "searchPlaceholder": "ログを検索...",
       "noLogs": "ログが見つかりません",
       "levels": {
@@ -3260,7 +3259,6 @@
       "title": "エージェントログ",
       "lastUsedAt": "最終使用日時",
       "noUsageHistory": "使用履歴がありません",
-      "tableHeader": "エージェントエンドポイントログ",
       "description": "このエージェントのAPIコール、スケジュール実行、エラー。"
     },
     "schedules": {

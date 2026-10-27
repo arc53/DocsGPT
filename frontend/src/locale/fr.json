@@ -998,7 +998,6 @@
       "filterByChatbot": "Filtrer par chatbot",
       "selectChatbot": "Sélectionner un chatbot",
       "none": "Aucun",
-      "tableHeader": "Conversations générées par API / chatbot",
       "searchPlaceholder": "Rechercher dans les journaux…",
       "noLogs": "Aucun journal trouvé",
       "levels": {
@@ -3368,7 +3367,6 @@
       "title": "Journaux de l’agent",
       "lastUsedAt": "Dernière utilisation",
       "noUsageHistory": "Aucun historique d’utilisation",
-      "tableHeader": "Journaux du point de terminaison de l’agent",
       "description": "Appels API, exécutions planifiées et erreurs de cet agent."
     },
     "schedules": {

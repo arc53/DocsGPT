@@ -1643,8 +1643,8 @@ out).
 Every table is `ui/table`, markdown tables included (`markdownTables` renders
 its parts); never a raw `<table>` (enforced) or a table utility class. The header row is dense by
 default (`px-2 py-1 lg:px-3 text-sm font-normal text-foreground`, 28px, on
-`TableHead`'s sticky `bg-muted` strip); Logs' header strip over its rows,
-which is not a table, takes the same `foreground` text. A `TableRow` hovers (`bg-accent`,
+`TableHead`'s sticky `bg-muted` strip). A framed list that is not a table
+(Logs' rows) has no header strip; the heading above names it. A `TableRow` hovers (`bg-accent`,
 pointer) only when it has an `onClick`; a read-only row does not. `selected`
 marks the row whose detail is open beside the table (the graph's Entities):
 `bg-secondary text-secondary-foreground`, the brand tint of an open navigator

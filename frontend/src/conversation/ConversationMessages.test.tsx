@@ -201,6 +201,174 @@ describe('ConversationMessages', () => {
     expect(spacer.className).toContain('max-h-0');
   });
 
+  describe('following a streaming answer', () => {
+    const stream = (response: string, next?: string) =>
+      act(() => {
+        root.render(
+          <ConversationMessages
+            handleQuestion={() => undefined}
+            handleQuestionSubmission={() => undefined}
+            queries={[
+              { prompt: 'first', response: 'done' },
+              { prompt: 'second', response },
+              ...(next ? [{ prompt: next, response: 'b' }] : []),
+            ]}
+            status="loading"
+          />,
+        );
+      });
+
+    // jsdom has no layout: fake a viewport at the bottom whose content then
+    // grows by one 23px row, with the pin spacer at `spacerHeight`. A
+    // `gesture` is dispatched on the viewport before the growth.
+    const growByOneRow = (spacerHeight: number, gesture?: Event) => {
+      stream('a');
+      const viewport = container.querySelector<HTMLElement>(
+        '[data-slot="message-scroller-viewport"]',
+      )!;
+      const spacer = container.querySelector<HTMLElement>(
+        '[data-message-scroller-spacer]',
+      )!;
+      Object.defineProperty(spacer, 'offsetHeight', { value: spacerHeight });
+      Object.defineProperty(viewport, 'clientHeight', { value: 500 });
+      let scrollHeight = 1000;
+      Object.defineProperty(viewport, 'scrollHeight', {
+        get: () => scrollHeight,
+        configurable: true,
+      });
+      viewport.scrollTop = 500;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+        if (gesture) viewport.dispatchEvent(gesture);
+      });
+      scrollHeight = 1023;
+      stream('a longer answer');
+      return viewport;
+    };
+
+    it('leaves the scroll to the primitive while the question is pinned', () => {
+      expect(growByOneRow(300).scrollTop).toBe(500);
+    });
+
+    it('keeps the answer’s end in view once nothing is pinned', () => {
+      expect(growByOneRow(0).scrollTop).toBe(1023);
+    });
+
+    // A scroll gesture releases the primitive's pin but leaves its spacer;
+    // the spacer's height alone must not stop the answer being followed.
+    it.each([
+      ['a wheel', new WheelEvent('wheel', { deltaY: 40, bubbles: true })],
+      ['a touch drag', new Event('touchmove', { bubbles: true })],
+      [
+        'a scroll key',
+        new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }),
+      ],
+    ])('follows the answer again once %s releases the pin', (_, gesture) => {
+      expect(growByOneRow(3, gesture).scrollTop).toBe(1023);
+    });
+
+    it('ignores keys that do not scroll', () => {
+      const typing = new KeyboardEvent('keydown', { key: 'a', bubbles: true });
+      expect(growByOneRow(3, typing).scrollTop).toBe(500);
+    });
+
+    it('pins the next question again after a release', () => {
+      const viewport = growByOneRow(
+        3,
+        new WheelEvent('wheel', { deltaY: 40, bubbles: true }),
+      );
+      viewport.scrollTop = 500;
+      Object.defineProperty(viewport, 'scrollHeight', {
+        get: () => 1046,
+        configurable: true,
+      });
+      stream('a longer answer', 'third');
+      expect(viewport.scrollTop).toBe(500);
+    });
+  });
+
+  describe('holding the streaming answer’s height', () => {
+    type FakeObserver = { cb: ResizeObserverCallback; el?: Element };
+    let observers: FakeObserver[];
+
+    beforeEach(() => {
+      observers = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          cb: ResizeObserverCallback;
+          el?: Element;
+          constructor(cb: ResizeObserverCallback) {
+            this.cb = cb;
+            observers.push(this);
+          }
+          observe(el: Element) {
+            this.el = el;
+          }
+          unobserve() {}
+          disconnect() {}
+        },
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const renderTurn = (status: 'loading' | 'idle') =>
+      act(() => {
+        root.render(
+          <ConversationMessages
+            handleQuestion={() => undefined}
+            handleQuestionSubmission={() => undefined}
+            queries={[
+              { prompt: 'first', response: 'done' },
+              { prompt: 'second', response: 'streaming' },
+            ]}
+            status={status}
+          />,
+        );
+      });
+
+    const answer = (index: number) =>
+      container.querySelector<HTMLElement>(`[data-message-id="a-${index}"]`)!;
+
+    // jsdom has no layout: report a size for the item as the browser would.
+    const resize = (el: HTMLElement, blockSize: number) =>
+      act(() => {
+        const observer = observers.find((o) => o.el === el)!;
+        observer.cb(
+          [
+            {
+              target: el,
+              borderBoxSize: [{ blockSize, inlineSize: 600 }],
+            } as unknown as ResizeObserverEntry,
+          ],
+          observer as unknown as ResizeObserver,
+        );
+      });
+
+    it('lets the streaming answer grow but not shrink', () => {
+      renderTurn('loading');
+      const item = answer(1);
+      resize(item, 300);
+      expect(item.style.minHeight).toBe('300px');
+      resize(item, 260);
+      expect(item.style.minHeight).toBe('300px');
+      resize(item, 340);
+      expect(item.style.minHeight).toBe('340px');
+      expect(answer(0).style.minHeight).toBe('');
+    });
+
+    it('releases the hold when the stream ends', () => {
+      renderTurn('loading');
+      const item = answer(1);
+      resize(item, 300);
+      renderTurn('idle');
+      expect(item.style.minHeight).toBe('');
+    });
+  });
+
   it('renders Retry like the other answer actions: 32px ghost pill, lucide glyph', () => {
     render([{ prompt: 'hi', error: 'boom' }]);
     const retry = container.querySelector<HTMLButtonElement>(

@@ -953,7 +953,6 @@
       "filterByChatbot": "按聊天机器人筛选",
       "selectChatbot": "选择聊天机器人",
       "none": "无",
-      "tableHeader": "API 生成 / 聊天机器人会话",
       "searchPlaceholder": "搜索日志...",
       "noLogs": "未找到日志",
       "levels": {
@@ -3258,7 +3257,6 @@
       "title": "智能体日志",
       "lastUsedAt": "最后使用时间",
       "noUsageHistory": "无使用历史",
-      "tableHeader": "智能体端点日志",
       "description": "此智能体的 API 调用、计划运行和错误。"
     },
     "schedules": {

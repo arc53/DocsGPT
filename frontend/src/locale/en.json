@@ -956,7 +956,6 @@
       "filterByChatbot": "Filter by chatbot",
       "selectChatbot": "Select chatbot",
       "none": "None",
-      "tableHeader": "API generated / chatbot conversations",
       "searchPlaceholder": "Search logs...",
       "noLogs": "No logs found",
       "levels": {
@@ -3276,7 +3275,6 @@
       "title": "Agent Logs",
       "lastUsedAt": "Last used at",
       "noUsageHistory": "No usage history",
-      "tableHeader": "Agent endpoint logs",
       "description": "API calls, scheduled runs and errors for this agent."
     },
     "schedules": {

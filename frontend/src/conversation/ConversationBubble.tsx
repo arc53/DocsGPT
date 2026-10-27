@@ -629,7 +629,9 @@ const ConversationBubble = forwardRef<
             className="mr-5 ml-6"
           />
         )}
-        {message && (
+        {/* Not drawn while streaming: an empty row's margins made the end of
+            the stream shrink the turn, which jolts the chat scroll. */}
+        {message && (type === 'ERROR' || !isStreaming) && (
           // ml-4 plus each button's own p-2 puts the first glyph on the answer's
           // ml-6 text column.
           <div className="my-2 ml-4 flex flex-wrap justify-start gap-2">

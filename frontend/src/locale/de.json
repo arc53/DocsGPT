@@ -956,7 +956,6 @@
       "filterByChatbot": "Nach Chatbot filtern",
       "selectChatbot": "Chatbot auswählen",
       "none": "Keine",
-      "tableHeader": "API-generierte / Chatbot-Konversationen",
       "searchPlaceholder": "Protokolle suchen...",
       "noLogs": "Keine Protokolle gefunden",
       "levels": {
@@ -3276,7 +3275,6 @@
       "title": "Agenten-Protokolle",
       "lastUsedAt": "Zuletzt verwendet am",
       "noUsageHistory": "Kein Nutzungsverlauf",
-      "tableHeader": "Agenten-Endpunkt-Protokolle",
       "description": "API-Aufrufe, geplante Ausführungen und Fehler dieses Agenten."
     },
     "schedules": {
