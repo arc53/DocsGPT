@@ -406,6 +406,16 @@ class TestResumeAddsTheRequestsFiles:
         processor._get_attachments_content.assert_called_once_with(["a-cur"], OWNER)
         agent.resume_paused_attachments.assert_called_once_with(self.LISTING, withheld=[])
 
+    def test_a_saved_file_resent_by_its_legacy_id_adds_nothing_and_warns_nothing(self, resume, caplog):
+        cur = {**_att("contract.txt", att_id="a-cur"), "legacy_mongo_id": "legacy-cur"}
+
+        with caplog.at_level("WARNING"):
+            kwargs, _, agent, _ = resume(self._saved(), rows={"a-cur": cur, "legacy-cur": cur}, extra_ids=["legacy-cur"])
+
+        assert kwargs["attachments"] == [cur]
+        agent.resume_paused_attachments.assert_called_once_with(self.LISTING, withheld=[])
+        assert "new attachment(s)" not in caplog.text
+
     def test_an_unknown_or_deleted_id_is_skipped_and_the_saved_files_stay(self, resume, caplog):
         cur, new = _att("contract.txt", att_id="a-cur"), _att("report.csv", att_id="a-new")
 

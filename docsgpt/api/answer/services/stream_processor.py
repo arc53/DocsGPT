@@ -2611,13 +2611,11 @@ class StreamProcessor:
                 len(new_ids),
             )
             return []
-        rows = [
-            row
-            for row in self._get_attachments_content(new_ids, self.initial_user_id)
-            if isinstance(row, dict) and _attachment_id(row) not in saved_ids
-        ]
-        # A row answers to its legacy id too, as ``get_any`` looks it up.
-        found = {str(row[key]) for row in rows for key in ("id", "_id", "legacy_mongo_id") if row.get(key)}
+        fetched = [row for row in self._get_attachments_content(new_ids, self.initial_user_id) if isinstance(row, dict)]
+        # A row answers to its legacy id too, as ``get_any`` looks it up, so a
+        # saved file resent by that id is found but not added again.
+        found = {str(row[key]) for row in fetched for key in ("id", "_id", "legacy_mongo_id") if row.get(key)}
+        rows = [row for row in fetched if _attachment_id(row) not in saved_ids]
         missing = [i for i in new_ids if i not in found]
         if missing:
             logger.warning(
