@@ -87,6 +87,11 @@ describe('WorkflowRunProgress', () => {
       'Step title 7',
     ]);
     expect(container.textContent).toContain('result 6');
+    expect(
+      container
+        .querySelector('[data-slot="spinner"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Running…');
   });
 
   it('says only the step number when a branch leaves the count open', () => {

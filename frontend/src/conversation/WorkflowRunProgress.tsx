@@ -46,9 +46,14 @@ function formatDuration(ms: number, t: TFunction): string {
 
 /** A step left running by a stopped stream never finished: no spinner. */
 function StatusIcon({ step, active }: { step: WorkflowStep; active: boolean }) {
+  const { t } = useTranslation();
   if (step.status === 'running')
     return active ? (
-      <Spinner size="xs" className="text-primary" />
+      <Spinner
+        size="xs"
+        className="text-primary"
+        label={t('conversation.inlineSteps.running')}
+      />
     ) : (
       <Circle aria-hidden className="text-muted-foreground size-4" />
     );
