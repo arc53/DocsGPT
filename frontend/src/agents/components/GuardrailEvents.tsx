@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Progress } from '@/components/ui/progress';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -285,7 +286,11 @@ export default function GuardrailEvents({ agentId }: Props) {
         </Select>
       </div>
 
-      <div className="border-border bg-card mt-3 w-full overflow-hidden rounded-xl border">
+      <Card
+        variant="subtle"
+        padding="none"
+        className="mt-3 w-full gap-0 overflow-hidden"
+      >
         <div className="scrollbar-overlay max-h-[45svh] overflow-y-auto">
           {loading ? (
             <div className="p-3">
@@ -377,7 +382,7 @@ export default function GuardrailEvents({ agentId }: Props) {
             divider
           />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }
