@@ -1600,7 +1600,7 @@ class OpenAILLM(BaseLLM):
             if kwargs.get("parallel_tool_calls") is not None:
                 params["parallel_tool_calls"] = bool(kwargs["parallel_tool_calls"])
 
-        store = bool(settings.OPENAI_RESPONSES_STORE)
+        store = bool(settings.OPENAI_RESPONSES_STORE) and not self.stateless
         params["store"] = store
         if store and previous_response_id:
             params["previous_response_id"] = previous_response_id
@@ -1724,7 +1724,7 @@ class OpenAILLM(BaseLLM):
 
     def _record_responses_metadata(self, response):
         rid = getattr(response, "id", None)
-        if rid:
+        if rid and not self.stateless:
             self._last_response_id = rid
         # The provider recorded this request, so the head it carried (or
         # kept) is now the chain's head — including "no head at all", when
@@ -1834,7 +1834,9 @@ class OpenAILLM(BaseLLM):
         previous_response_id=None,
         **kwargs,
     ):
-        wanted = self._last_response_id or previous_response_id or self._imported_response_id
+        wanted = None if self.stateless else (
+            self._last_response_id or previous_response_id or self._imported_response_id
+        )
         # Built before the per-turn state is cleared: the coverage guard reads
         # the call_ids the chained response emitted.
         input_items, previous_response_id = self._build_responses_input(messages, wanted)
@@ -1913,7 +1915,9 @@ class OpenAILLM(BaseLLM):
         previous_response_id=None,
         **kwargs,
     ):
-        wanted = self._last_response_id or previous_response_id or self._imported_response_id
+        wanted = None if self.stateless else (
+            self._last_response_id or previous_response_id or self._imported_response_id
+        )
         # Built before the per-turn state is cleared: the coverage guard reads
         # the call_ids the chained response emitted.
         input_items, previous_response_id = self._build_responses_input(messages, wanted)

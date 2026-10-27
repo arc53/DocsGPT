@@ -103,6 +103,7 @@ def _build_extraction_llm(
         user_api_key=None,
         decoded_token=decoded_token,
         model_id=model_id,
+        stateless=True,
     )
     llm._token_usage_source = "graph_extraction"
     llm._request_id = request_id

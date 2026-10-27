@@ -216,6 +216,7 @@ class CompressionOrchestrator:
                 model_id=compression_model,
                 agent_id=conversation.get("agent_id"),
                 model_user_id=registry_user_id,
+                stateless=True,
             )
             # Side-channel LLM tag — distinguishes compression rows
             # from primary stream rows for cost-attribution dashboards.

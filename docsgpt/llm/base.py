@@ -100,6 +100,11 @@ class BaseLLM(ABC):
     # structured-output kwarg.
     structured_output_kwarg: ClassVar[Optional[str]] = None
 
+    # One-shot callers (graph extraction, titles, compression) reuse an
+    # instance across unrelated calls: a stateless one never chains them on
+    # the provider nor keeps them there (``LLMCreator.create_llm(stateless=)``).
+    stateless: bool = False
+
     # (json_schema, strict) last passed to ``prepare_structured_output_format``;
     # lets a cross-provider fallback re-prepare the schema in the backup's own
     # format instead of forwarding a kwarg the backup cannot read.
@@ -191,6 +196,7 @@ class BaseLLM(ABC):
                     model_id=backup_model_id,
                     agent_id=self.agent_id,
                     model_user_id=self.model_user_id,
+                    stateless=self.stateless,
                 )
                 # Tag the fallback LLM so its rows land as
                 # ``source='fallback'`` in cost-attribution dashboards.
@@ -231,6 +237,7 @@ class BaseLLM(ABC):
                     model_id=settings.FALLBACK_LLM_NAME,
                     agent_id=self.agent_id,
                     model_user_id=self.model_user_id,
+                    stateless=self.stateless,
                 )
                 # Same rationale as the agent-backup branch.
                 self._fallback_llm._token_usage_source = "fallback"
