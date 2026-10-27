@@ -76,6 +76,16 @@ const CONTEXT_LENGTH_EXCEEDED = 'context_length_exceeded';
 
 const MS_VIEWPORT_SELECTOR = '[data-slot="message-scroller-viewport"]';
 const STICK_THRESHOLD_PX = 48;
+// The keys the message-scroller primitive treats as a user scroll.
+const SCROLL_KEYS = new Set([
+  'ArrowDown',
+  'ArrowUp',
+  'End',
+  'Home',
+  'PageDown',
+  'PageUp',
+  ' ',
+]);
 
 const DEFAULT_BUBBLE_MARGIN = 'mb-7';
 const FIRST_QUESTION_BUBBLE_MARGIN_TOP = 'mt-5';
@@ -129,6 +139,34 @@ export default function ConversationMessages({
     prevQueryCountRef.current = queries.length;
   }, [queries.length]);
 
+  // A scroll gesture (the primitive's own user-intent events) releases its pin
+  // on the latest question but leaves the spacer at its height; re-armed when
+  // the next question arrives. Before the follow effect, so it runs first.
+  const pinReleasedRef = useRef(false);
+  useLayoutEffect(() => {
+    pinReleasedRef.current = false;
+  }, [queries.length]);
+
+  useEffect(() => {
+    if (!hasMessages) return;
+    const vp = document.querySelector<HTMLElement>(MS_VIEWPORT_SELECTOR);
+    if (!vp) return;
+    const releasePin = () => {
+      pinReleasedRef.current = true;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(event.key)) releasePin();
+    };
+    vp.addEventListener('wheel', releasePin, { passive: true });
+    vp.addEventListener('touchmove', releasePin, { passive: true });
+    vp.addEventListener('keydown', onKeyDown);
+    return () => {
+      vp.removeEventListener('wheel', releasePin);
+      vp.removeEventListener('touchmove', releasePin);
+      vp.removeEventListener('keydown', onKeyDown);
+    };
+  }, [hasMessages]);
+
   useEffect(() => {
     if (!hasMessages) return;
     const vp = document.querySelector<HTMLElement>(MS_VIEWPORT_SELECTOR);
@@ -161,11 +199,12 @@ export default function ConversationMessages({
     if (!vp) return;
     // While the pin spacer holds the latest question at the top, the primitive
     // re-pins on resize a frame later; scrolling to the bottom here first made
-    // the turn jump up and back on every growth.
+    // the turn jump up and back on every growth. Once a gesture has released
+    // the pin, its leftover spacer no longer holds anything: follow.
     const spacer = vp.querySelector<HTMLElement>(
       '[data-message-scroller-spacer]',
     );
-    if (spacer && spacer.offsetHeight > 0) return;
+    if (!pinReleasedRef.current && spacer && spacer.offsetHeight > 0) return;
     const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
     if (stickToBottomRef.current && dist > 0) vp.scrollTop = vp.scrollHeight;
   }, [status, lastTurnContentLength, hasMessages]);

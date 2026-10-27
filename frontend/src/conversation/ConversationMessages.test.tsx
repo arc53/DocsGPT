@@ -202,7 +202,7 @@ describe('ConversationMessages', () => {
   });
 
   describe('following a streaming answer', () => {
-    const stream = (response: string) =>
+    const stream = (response: string, next?: string) =>
       act(() => {
         root.render(
           <ConversationMessages
@@ -211,6 +211,7 @@ describe('ConversationMessages', () => {
             queries={[
               { prompt: 'first', response: 'done' },
               { prompt: 'second', response },
+              ...(next ? [{ prompt: next, response: 'b' }] : []),
             ]}
             status="loading"
           />,
@@ -218,8 +219,9 @@ describe('ConversationMessages', () => {
       });
 
     // jsdom has no layout: fake a viewport at the bottom whose content then
-    // grows by one 23px row, with the pin spacer at `spacerHeight`.
-    const growByOneRow = (spacerHeight: number) => {
+    // grows by one 23px row, with the pin spacer at `spacerHeight`. A
+    // `gesture` is dispatched on the viewport before the growth.
+    const growByOneRow = (spacerHeight: number, gesture?: Event) => {
       stream('a');
       const viewport = container.querySelector<HTMLElement>(
         '[data-slot="message-scroller-viewport"]',
@@ -232,10 +234,12 @@ describe('ConversationMessages', () => {
       let scrollHeight = 1000;
       Object.defineProperty(viewport, 'scrollHeight', {
         get: () => scrollHeight,
+        configurable: true,
       });
       viewport.scrollTop = 500;
       act(() => {
         viewport.dispatchEvent(new Event('scroll'));
+        if (gesture) viewport.dispatchEvent(gesture);
       });
       scrollHeight = 1023;
       stream('a longer answer');
@@ -248,6 +252,38 @@ describe('ConversationMessages', () => {
 
     it('keeps the answer’s end in view once nothing is pinned', () => {
       expect(growByOneRow(0).scrollTop).toBe(1023);
+    });
+
+    // A scroll gesture releases the primitive's pin but leaves its spacer;
+    // the spacer's height alone must not stop the answer being followed.
+    it.each([
+      ['a wheel', new WheelEvent('wheel', { deltaY: 40, bubbles: true })],
+      ['a touch drag', new Event('touchmove', { bubbles: true })],
+      [
+        'a scroll key',
+        new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }),
+      ],
+    ])('follows the answer again once %s releases the pin', (_, gesture) => {
+      expect(growByOneRow(3, gesture).scrollTop).toBe(1023);
+    });
+
+    it('ignores keys that do not scroll', () => {
+      const typing = new KeyboardEvent('keydown', { key: 'a', bubbles: true });
+      expect(growByOneRow(3, typing).scrollTop).toBe(500);
+    });
+
+    it('pins the next question again after a release', () => {
+      const viewport = growByOneRow(
+        3,
+        new WheelEvent('wheel', { deltaY: 40, bubbles: true }),
+      );
+      viewport.scrollTop = 500;
+      Object.defineProperty(viewport, 'scrollHeight', {
+        get: () => 1046,
+        configurable: true,
+      });
+      stream('a longer answer', 'third');
+      expect(viewport.scrollTop).toBe(500);
     });
   });
 
