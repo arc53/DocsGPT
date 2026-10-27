@@ -85,6 +85,7 @@ _CGNAT_NETWORK_V4: ipaddress.IPv4Network = ipaddress.IPv4Network("100.64.0.0/10"
 _METADATA_IPS: frozenset[ipaddress.IPv4Address | ipaddress.IPv6Address] = frozenset(
     {
         ipaddress.ip_address("fd00:ec2::254"),  # AWS IMDS over IPv6
+        ipaddress.ip_address("fd20:ce::254"),  # Google Cloud metadata over IPv6
         ipaddress.ip_address("100.100.100.200"),  # Alibaba Cloud, inside CGNAT
     }
 )

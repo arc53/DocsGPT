@@ -1581,6 +1581,8 @@ def test_every_resolved_address_must_be_public_or_allowed(allow_hosts):
         (("0.0.0.0/0",), "http://169.254.169.254/", None),
         (("fd00:ec2::254",), "http://[fd00:ec2::254]/", None),
         (("fd00::/8",), "http://[fd00:ec2::254]/", None),
+        (("fd00::/8",), "http://[fd20:ce::254]/", None),
+        (("meta.corp.example", "fd00::/8"), "http://meta.corp.example/", "fd20:ce::254"),
         (("100.100.100.200",), "http://100.100.100.200/", None),
         (("::ffff:169.254.169.254",), "http://[::ffff:169.254.169.254]/", None),
         (("0.0.0.0",), "http://0.0.0.0/", None),

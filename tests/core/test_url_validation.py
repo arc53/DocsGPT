@@ -372,6 +372,9 @@ class TestValidateUrlOperatorAllowlist:
         monkeypatch.setattr(settings, "SAFE_URL_ALLOWED_HOSTS", ["169.254.0.0/16", "meta.corp.example"])
         with pytest.raises(SSRFError):
             validate_url("http://169.254.169.254/")
+        monkeypatch.setattr(settings, "SAFE_URL_ALLOWED_HOSTS", ["fd00::/8"])
+        with pytest.raises(SSRFError, match="metadata"):
+            validate_url("http://[fd20:ce::254]/")
         with patch("docsgpt.core.url_validation.resolve_hostname", return_value="169.254.169.254"):
             with pytest.raises(SSRFError):
                 validate_url("http://meta.corp.example/")

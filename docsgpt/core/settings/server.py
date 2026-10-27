@@ -47,7 +47,7 @@ class ServerSettings(SettingsGroup):
             "entry is an exact hostname (`wiki.corp.example`, not its subdomains), which passes for any private "
             "address it resolves to, or an IP or CIDR range (`10.16.0.0/16`), which passes the addresses inside "
             "it. Loopback passes only through an IP entry (`127.0.0.1`), never a name. Link-local and cloud "
-            "metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`, `metadata.google.internal`) and `0.0.0.0` "
+            "metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`, `fd20:ce::254`, `metadata.google.internal`) and `0.0.0.0` "
             "are refused whatever is listed. Empty, every private address is refused."
         ),
     )

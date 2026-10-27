@@ -32,6 +32,7 @@ METADATA_IPS: Set[str] = {
     "169.254.169.254",  # AWS, GCP, Azure metadata
     "169.254.170.2",    # AWS ECS task metadata
     "fd00:ec2::254",    # AWS IPv6 metadata
+    "fd20:ce::254",     # GCP IPv6 metadata
 }
 
 # Allowed schemes for external requests

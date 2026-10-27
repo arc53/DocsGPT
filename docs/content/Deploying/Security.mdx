@@ -62,7 +62,7 @@ Tokens travel in the `Authorization` header, readable over plain HTTP. `docsgpt 
 
 ## Outbound network access
 
-URLs that users supply are checked before DocsGPT fetches them, so that nobody can use the instance to reach internal services (server-side request forgery). Both checks refuse `localhost` and cloud metadata host names, and any address that is loopback, private (RFC 1918, `fc00::/7`), link-local (`169.254.0.0/16`, which includes cloud metadata endpoints), carrier-grade NAT (`100.64.0.0/10`), multicast, unspecified or reserved. They differ in how the connection is made:
+URLs that users supply are checked before DocsGPT fetches them, so that nobody can use the instance to reach internal services (server-side request forgery). By default, both checks refuse `localhost` and cloud metadata host names, and any address that is loopback, private (RFC 1918, `fc00::/7`), link-local (`169.254.0.0/16`, which includes cloud metadata endpoints), carrier-grade NAT (`100.64.0.0/10`), multicast, unspecified or reserved. They differ in how the connection is made:
 
 - **Checked and pinned.** Every address the host resolves to is checked, and the request is sent to the checked address, so a DNS change between the check and the request cannot redirect it:
   - the [API Tool](/Tools/api-tool), which also does not follow redirects, and the ntfy tool (error: `URL validation error: ...`),
@@ -89,7 +89,7 @@ SAFE_URL_ALLOWED_HOSTS=wiki.corp.example,docsgpt.corp.example,10.16.0.0/16
 - A **hostname** entry matches that exact name, case-insensitively and in its IDNA form (`wiki.corp.example` does not match `api.wiki.corp.example`), and lets it resolve to any private address.
 - An **IP or CIDR** entry (`10.16.0.5`, `10.16.0.0/16`, `fd12:3456::/48`) lets any URL reach the addresses inside it, whatever host name leads there.
 - **Loopback** passes only when the address matches an IP entry (`127.0.0.1`, `::1`); a name that resolves to a listed loopback address passes too. A hostname entry never opens loopback, and the `localhost` name stays refused either way.
-- **Never allowed**, whatever is listed: link-local addresses (`169.254.0.0/16`, `fe80::/10`, which hold cloud metadata endpoints), the other metadata endpoints (`fd00:ec2::254`, `100.100.100.200`, `metadata.google.internal`) and unspecified addresses (`0.0.0.0`, `::`).
+- **Never allowed**, whatever is listed: link-local addresses (`169.254.0.0/16`, `fe80::/10`, which hold cloud metadata endpoints), the other metadata endpoints (`fd00:ec2::254`, `fd20:ce::254`, `100.100.100.200`, `metadata.google.internal`) and unspecified addresses (`0.0.0.0`, `::`).
 
 The DNS pinning above is unchanged: the address that was checked is the one dialed. Every user of the instance can point tools at a listed host, so list only the services they should reach.
 
