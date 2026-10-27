@@ -1,0 +1,273 @@
+---
+title: Telegram Bot Extension
+description: Connect a Telegram bot to your DocsGPT agents. Deploy the extension with Docker to support streamed answers, rich markdown, file inputs, voice notes, and agent switching.
+lastUpdated: 2026-10-28
+---
+
+import { Callout, Tabs } from 'nextra/components'
+
+# Telegram Bot Extension
+
+The Telegram bot extension connects Telegram chats, groups, channels, and forum topics directly to your DocsGPT agents. Powered by [`arc53/tg-bot-docsgpt-extenstion`](https://github.com/arc53/tg-bot-docsgpt-extenstion), the bot runs as a lightweight service alongside your DocsGPT instance or DocsGPT Cloud, delivering live streaming responses, rich markdown formatting, file and voice inputs, and multi-agent routing.
+
+<Callout type="info">
+  **Bot Extension vs. Telegram Tool:**
+  This page documents the **Telegram Bot Extension**, which runs a standalone Telegram bot that users chat with to query your DocsGPT agents.
+  
+  If you are looking for DocsGPT's internal tool that lets an agent send outward notifications or reports to a Telegram chat, see the [Telegram Bot Tool](/Tools/basics#overview-of-built-in-tools).
+</Callout>
+
+## Features
+
+- **Live Streaming Responses:** Direct messages display streaming draft responses with Telegram's native **Stop** button.
+- **Rich Message Rendering:** Renders headings, lists, tables, code blocks, KaTeX math, quotes, and collapsible source citations.
+- **Multi-Turn Memory:** Preserves conversation context across messages. Send `/new` to reset context at any time.
+- **Media & Voice Support:** Photos and documents are forwarded to DocsGPT as file attachments; voice messages and audio files are automatically transcribed and processed as questions.
+- **Agent Tool Artifacts:** If an agent tool produces files, charts, or images, the bot downloads and delivers them directly into the Telegram chat.
+- **Multi-Agent Routing:** Connect multiple agents to one or more bots. Switch agents on the fly using `/agents`, `/agent <name>`, or prefixing a message with `#agent_name`.
+- **Group Chats & Forum Topics:** Supports `@mentions`, reply triggers, and isolated conversation threads per forum topic in Telegram supergroups.
+- **Feedback Reactions:** Reacting with 👍 or 👎 on an answer logs user feedback directly to DocsGPT analytics.
+
+---
+
+## Step 1: Create a Telegram Bot with BotFather
+
+You need a Telegram Bot token to connect the extension to the Telegram Bot API:
+
+1. Open Telegram and start a chat with [@BotFather](https://t.me/BotFather) (verify the blue checkmark).
+2. Send `/newbot`.
+3. Enter a display name for your bot (e.g., `DocsGPT Assistant`).
+4. Enter a username for your bot ending in `bot` (e.g., `my_docsgpt_helper_bot`).
+5. BotFather will provide an HTTP API token formatted like:
+   ```text
+   123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+   ```
+   Save this token securely; you will use it as `TELEGRAM_BOT_TOKEN`.
+
+### Optional BotFather Configuration
+
+- **Group Privacy (`/setprivacy`):** By default, Telegram bots in groups only receive messages that mention them or reply directly to them (`Enabled`). If you want the bot to observe all group messages without explicit mentions, disable privacy mode.
+- **Inline Mode (`/setinline`):** Enable inline queries so users can invoke `@yourbot question` from any chat.
+- **Bot Commands (`/setcommands`):** Register menu commands for your users:
+  ```text
+  new - Start a fresh conversation
+  agents - Choose which agent answers
+  help - Show help and available features
+  ```
+
+---
+
+## Step 2: Get your DocsGPT Agent API Key
+
+The extension communicates with DocsGPT using an Agent API Key:
+
+1. Open your DocsGPT dashboard (on DocsGPT Cloud at `https://gptcloud.arc53.com` or your self-hosted instance).
+2. Navigate to **Agents** and select the agent you want the bot to query.
+3. Make sure the agent is published.
+4. Go to **Access Details** and copy the **API Key** (formatted as a token).
+
+<Callout type="warning">
+  The bot requires an **Agent API Key**, not a Personal Access Token (PAT) or provider key (like OpenAI). See [Agent API keys](/API/agent-keys) for more details.
+</Callout>
+
+---
+
+## Step 3: Deploy with Docker
+
+The fastest way to deploy the bot is using the official Docker image `arc53/tg-bot-docsgpt-extenstion:latest`.
+
+<Tabs items={['Docker Compose', 'Docker Run']}>
+  <Tabs.Tab>
+    Clone the extension repository and prepare your environment:
+
+    ```bash
+    git clone https://github.com/arc53/tg-bot-docsgpt-extenstion.git
+    cd tg-bot-docsgpt-extenstion
+    ```
+
+    Create a `.env` file with your credentials:
+
+    ```env
+    # Required credentials
+    TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+    API_KEY=your-docsgpt-agent-api-key
+
+    # Point to your DocsGPT instance (defaults to DocsGPT Cloud if omitted)
+    API_BASE=https://gptcloud.arc53.com
+
+    # Optional behavior settings
+    GROUPS_MODE=mention
+    STREAMING=true
+    ```
+
+    Start the container in the background:
+
+    ```bash
+    docker compose up -d
+    ```
+
+    Inspect the logs to confirm the bot connected:
+
+    ```bash
+    docker compose logs -f
+    ```
+  </Tabs.Tab>
+
+  <Tabs.Tab>
+    Run the container directly using `docker run`:
+
+    ```bash
+    docker run -d \
+      --name docsgpt-telegram-bot \
+      --restart unless-stopped \
+      -v docsgpt-tg-data:/app/data \
+      -e TELEGRAM_BOT_TOKEN="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ" \
+      -e API_KEY="your-docsgpt-agent-api-key" \
+      -e API_BASE="https://gptcloud.arc53.com" \
+      arc53/tg-bot-docsgpt-extenstion:latest
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+Once running, send `/start` or any question to your bot in Telegram. It will reply using the configured agent.
+
+---
+
+## Step 4: Multi-Agent and Multi-Bot Configuration
+
+For environments requiring multiple agents (e.g., `#support`, `#sales`, `#engineering`) or hosting several bots within a single process, use a `docsgpt-tg.toml` configuration file.
+
+1. Create a `docsgpt-tg.toml` file in your deployment directory:
+
+```toml
+api_base = "https://gptcloud.arc53.com"
+
+[storage]
+backend = "sqlite"
+path = "/app/data/docsgpt-telegram.db"
+
+[[bots]]
+name = "main-bot"
+token = "${TELEGRAM_BOT_TOKEN}"
+mode = "polling"
+groups = "mention"
+streaming = true
+reactions = true
+attachments = true
+
+  [[bots.agents]]
+  name = "support"
+  api_key = "${DOCSGPT_KEY_SUPPORT}"
+  description = "Technical support and troubleshooting"
+  default = true
+
+  [[bots.agents]]
+  name = "billing"
+  api_key = "${DOCSGPT_KEY_BILLING}"
+  description = "Pricing, invoices, and subscriptions"
+
+  [[bots.agents]]
+  name = "docs"
+  api_key = "${DOCSGPT_KEY_DOCS}"
+  description = "API documentation and code guides"
+```
+
+2. Mount the configuration file in `docker-compose.yml`:
+
+```yaml
+services:
+  tg-bot:
+    image: arc53/tg-bot-docsgpt-extenstion:latest
+    container_name: tg-bot-docsgpt-extension
+    env_file:
+      - .env
+    volumes:
+      - botdata:/app/data
+      - ./docsgpt-tg.toml:/app/docsgpt-tg.toml:ro
+    restart: unless-stopped
+
+volumes:
+  botdata:
+```
+
+3. In Telegram:
+   - Users can send `/agents` to view an inline keyboard of available agents.
+   - Send `/agent billing` to switch the current chat's agent to Billing.
+   - Send `#docs How do I use the webhooks API?` to query the Docs agent for a single turn without changing the default.
+
+---
+
+## Group Chats and Permissions
+
+The Telegram extension is designed to work cleanly in shared teams and public communities without message spam:
+
+- **Mention Mode (`GROUPS_MODE=mention`):** The bot only answers when someone mentions it (`@mybot`) or directly replies to one of its messages.
+- **Forum Topics:** In Telegram Supergroups with Topics enabled, the bot isolates conversations per topic, preventing cross-talk between different discussions.
+- **Ephemeral Command Responses:** Helper commands like `/help` and `/agents` reply as ephemeral responses in groups to avoid cluttering chat history.
+- **Restricting Chat Access (`allowed_chats`):** In `docsgpt-tg.toml`, add chat IDs to restrict access to authorized users or private company groups:
+
+```toml
+[[bots]]
+name = "internal-assistant"
+token = "${INTERNAL_BOT_TOKEN}"
+allowed_chats = [123456789, -1001234567890]
+```
+
+---
+
+## Webhook Mode (Production)
+
+By default, the bot connects to Telegram using long-polling (`mode = "polling"`), which requires no open ports or inbound public IP addresses.
+
+For high-volume deployments, you can switch to webhook delivery:
+
+1. Configure webhook parameters in your `.env` or `docsgpt-tg.toml`:
+
+```env
+WEBHOOK_PUBLIC_URL=https://bots.example.com
+WEBHOOK_SECRET=your-secure-webhook-secret
+HTTP_BIND=0.0.0.0:8080
+```
+
+2. Expose port `8080` in your `docker-compose.yml` and place the service behind a reverse proxy (such as Nginx, Caddy, or Cloudflare) with valid HTTPS.
+3. The bot registers webhook endpoints at `<WEBHOOK_PUBLIC_URL>/webhook/<bot-name>` and serves health checks at `GET /healthz`.
+
+---
+
+## Environment Variables Reference
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | *Required* | Telegram Bot API token obtained from `@BotFather`. |
+| `API_KEY` | *Required* | Primary DocsGPT Agent API key. |
+| `API_BASE` | `https://gptcloud.arc53.com` | Base URL of your DocsGPT instance. |
+| `API_KEY_<NAME>` | *Optional* | Additional agent keys for multi-agent routing (e.g. `API_KEY_SUPPORT`). |
+| `GROUPS_MODE` | `mention` | Group response policy: `mention` (only mentions/replies), `all`, or `off`. |
+| `STREAMING` | `true` | Stream draft answers in private chats with a Stop button. |
+| `VOICE_REPLIES` | `false` | When `true`, voice messages are answered with synthesized voice notes. |
+| `STORAGE_TYPE` | `sqlite` | Persistence backend: `sqlite` (recommended) or `memory`. |
+| `SQLITE_PATH` | `data/docsgpt-telegram.db` | Path to the SQLite database file storing conversation states. |
+| `WELCOME_TEXT` | *Default greeting* | Custom welcome message sent upon `/start`. Supports `{name}` and `{agents}` placeholders. |
+| `MENU_BUTTON_URL` | *Optional* | HTTPS URL opened when users tap the chat menu button. |
+| `WEBHOOK_PUBLIC_URL` | *Optional* | Public HTTPS URL for Telegram webhook callbacks. When omitted, uses polling. |
+| `WEBHOOK_SECRET` | *Optional* | Secret token verified against Telegram's `X-Telegram-Bot-Api-Secret-Token`. |
+| `HTTP_BIND` | `0.0.0.0:8080` | Bind address for health checks and webhook server. |
+| `RUST_LOG` | `info` | Logging verbosity filter (`error`, `warn`, `info`, `debug`, `trace`). |
+| `LOG_FORMAT` | `compact` | Log presentation format: `compact`, `full`, or `json`. |
+
+---
+
+## Troubleshooting
+
+### Bot does not respond to messages
+1. Check the container logs with `docker compose logs -f`.
+2. Confirm the `TELEGRAM_BOT_TOKEN` matches the token provided by `@BotFather`.
+3. Verify your DocsGPT instance URL is reachable from the container and that your `API_KEY` is an **Agent API key** (not an account or LLM provider key).
+
+### Bot does not reply in group chats
+- Ensure the bot is added to the group.
+- If using `GROUPS_MODE=mention`, ensure messages explicitly mention `@yourbot` or reply to a bot message.
+- If you want the bot to see all group messages without mentions, open `@BotFather`, select your bot, navigate to **Bot Settings → Group Privacy**, and choose **Disable**.
+
+### Resetting conversation history
+Send `/new` in the Telegram chat to start a clean session with the active agent.
