@@ -194,11 +194,17 @@ class PandasCSVParser(BaseParser):
         if self._header_period != 1:
             text_list.append(header_row)
 
-        for i, row in df.iterrows():
-            if (self._header_period > 1 and i > 0 and i % self._header_period == 0):
+        # ``df.iterrows()`` yields the DataFrame's index *label*, which is a row
+        # number only under the default ``RangeIndex``. With ``index_col`` (a
+        # documented ``pandas_config`` option) the label is a data value, so
+        # ``label % header_period`` either raises on a string index or repeats
+        # the headers beside whichever rows carry a divisible value. Enumerate
+        # for the row's position and ignore the label.
+        for position, (_, row) in enumerate(df.iterrows()):
+            if (self._header_period > 1 and position > 0 and position % self._header_period == 0):
                 text_list.append(header_row)
             text_list.append(self._col_joiner.join(_row_to_texts(row)))
-            if self._header_period == 1 and i < len(df) - 1:
+            if self._header_period == 1 and position < len(df) - 1:
                 text_list.append(header_row)
 
         return self._row_joiner.join(text_list)
@@ -280,10 +286,16 @@ class ExcelParser(BaseParser):
         if self._header_period != 1:
             text_list.append(header_row)
 
-        for i, row in df.iterrows():
-            if (self._header_period > 1 and i > 0 and i % self._header_period == 0):
+        # ``df.iterrows()`` yields the DataFrame's index *label*, which is a row
+        # number only under the default ``RangeIndex``. With ``index_col`` (a
+        # documented ``pandas_config`` option) the label is a data value, so
+        # ``label % header_period`` either raises on a string index or repeats
+        # the headers beside whichever rows carry a divisible value. Enumerate
+        # for the row's position and ignore the label.
+        for position, (_, row) in enumerate(df.iterrows()):
+            if (self._header_period > 1 and position > 0 and position % self._header_period == 0):
                 text_list.append(header_row)
             text_list.append(self._col_joiner.join(_row_to_texts(row)))
-            if self._header_period == 1 and i < len(df) - 1:
+            if self._header_period == 1 and position < len(df) - 1:
                 text_list.append(header_row)
         return self._row_joiner.join(text_list)

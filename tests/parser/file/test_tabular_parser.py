@@ -299,3 +299,40 @@ def test_the_caller_can_ask_for_the_default_na_list(tmp_path):
 
     assert text.splitlines()[1] == "A1, "
 
+
+def test_pandas_csv_header_period_counts_rows_not_index_labels(tmp_path):
+    """``index_col`` makes the iterrows label a data value, not a row number."""
+    path = tmp_path / "people.csv"
+    path.write_text("id,name\n10,Ann\n11,Bob\n12,Cid\n13,Dan\n", encoding="utf-8")
+
+    text = PandasCSVParser(pandas_config={"index_col": 0}, header_period=2).parse_file(path)
+
+    assert text == "HEADERS: name\nAnn\nBob\nHEADERS: name\nCid\nDan"
+
+
+def test_pandas_csv_string_index_does_not_break_header_period(tmp_path):
+    """A text index used to raise TypeError before the first row was written."""
+    path = tmp_path / "users.csv"
+    path.write_text("user_id,name\nu1,Ann\nu2,Bob\n", encoding="utf-8")
+
+    text = PandasCSVParser(pandas_config={"index_col": 0}, header_period=1).parse_file(path)
+
+    assert text == "Ann\nHEADERS: name\nBob"
+
+
+def test_excel_header_period_counts_rows_not_index_labels():
+    """Same for the Excel parser: index labels that are not row numbers."""
+    parser = ExcelParser(header_period=1)
+    mock_df = MagicMock()
+    mock_df.columns.tolist.return_value = ["a", "b"]
+    mock_df.iterrows.return_value = [
+        ("u1", MagicMock(tolist=lambda: ["x", "y"])),
+        ("u2", MagicMock(tolist=lambda: ["m", "n"])),
+    ]
+    mock_df.__len__.return_value = 2
+
+    with patch("pandas.read_excel", return_value=mock_df):
+        result = parser.parse_file(Path("f.xlsx"))
+
+    assert result == "x, y\nHEADERS: a, b\nm, n"
+
