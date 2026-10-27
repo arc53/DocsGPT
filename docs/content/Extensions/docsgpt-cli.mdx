@@ -1,0 +1,229 @@
+---
+title: DocsGPT CLI
+description: Interact with DocsGPT agents directly from your terminal, stream answers, pipe input from files and commands, manage agents and sources, benchmark evals, and host remote devices.
+lastUpdated: 2026-10-27
+---
+
+import { Callout, Tabs } from 'nextra/components'
+
+# DocsGPT CLI
+
+The [DocsGPT CLI](https://github.com/arc53/DocsGPT-cli) is the official command-line interface for interacting with and managing DocsGPT. It lets you chat with agents from your terminal, pipe queries and diffs directly to agents, manage sources and agents declaratively in CI/CD pipelines, run automated benchmark suites, and host remote devices for tool execution.
+
+## Installation
+
+Install `docsgpt-cli` using one of the following methods:
+
+<Tabs items={['Script', 'Homebrew', 'Go', 'Binary', 'Windows']}>
+  <Tabs.Tab>
+```bash
+curl -fsSL https://docs.ac/install-cli | bash
+```
+The script automatically detects your platform, verifies the release checksums, and installs the binary to your `PATH`.
+  </Tabs.Tab>
+
+  <Tabs.Tab>
+```bash
+brew tap arc53/docsgpt-cli && brew install --cask docsgpt-cli
+```
+  </Tabs.Tab>
+
+  <Tabs.Tab>
+```bash
+go install github.com/arc53/DocsGPT-cli/cmd/docsgpt-cli@latest
+```
+  </Tabs.Tab>
+
+  <Tabs.Tab>
+Download the release archive matching your architecture from the [DocsGPT-cli Releases](https://github.com/arc53/DocsGPT-cli/releases) page, extract it, and run:
+
+```bash
+./docsgpt-cli install
+```
+  </Tabs.Tab>
+
+  <Tabs.Tab>
+Run in PowerShell:
+
+```powershell
+irm https://docs.ac/install-cli.ps1 | iex
+```
+  </Tabs.Tab>
+</Tabs>
+
+## Authentication and Setup
+
+The CLI supports two types of credentials depending on what you are doing:
+
+| Credential | Used For | Where to find it |
+| --- | --- | --- |
+| **Agent API Key** | Chatting with an agent, single queries, benchmarks | **Agent settings → Access Details** (see [Agent API keys](/API/agent-keys)) |
+| **Personal Access Token** | Managing agents, uploading sources, account-level automation | **Settings → Access tokens** (see [Personal access tokens](/API/personal-access-tokens)) |
+
+### Logging In
+
+Run `docsgpt-cli login` to store credentials interactively:
+
+```bash
+docsgpt-cli login
+```
+
+You can also pass credentials non-interactively or save multiple keys by name:
+
+```bash
+# Save a named agent key
+echo "$AGENT_KEY" | docsgpt-cli login --name support
+
+# Save a personal access token for management commands
+echo "$DOCSGPT_TOKEN" | docsgpt-cli login
+```
+
+### Pointing to Self-Hosted Instances
+
+By default, the CLI connects to DocsGPT Cloud (`https://gptcloud.arc53.com`). To point to your self-hosted DocsGPT server, configure `base_url` or set `DOCSGPT_API_BASE`:
+
+```bash
+# Configure default base URL
+docsgpt-cli config set base_url http://localhost:7091
+
+# Or set via environment variable
+export DOCSGPT_API_BASE="http://localhost:7091"
+```
+
+### Inspect Credentials
+
+Check which credentials and server address are currently active:
+
+```bash
+docsgpt-cli whoami
+```
+
+To remove saved credentials:
+
+```bash
+docsgpt-cli logout
+```
+
+## Terminal Chat and Queries
+
+### Interactive Chat
+
+Launch the interactive chat interface:
+
+```bash
+docsgpt-cli
+```
+
+The interactive chat supports streaming responses, smooth scrolling, prompt history, `$EDITOR` integration, and slash commands.
+
+- **Continue the latest conversation**:
+  ```bash
+  docsgpt-cli -c
+  ```
+- **Select and resume a previous conversation**:
+  ```bash
+  docsgpt-cli -r
+  ```
+- **Target a specific agent key**:
+  ```bash
+  docsgpt-cli chat --key support
+  ```
+
+### Single Queries
+
+Ask a one-off question directly from the terminal without entering the interactive interface:
+
+```bash
+docsgpt-cli "How do I rotate an API key in DocsGPT?"
+```
+
+### Piped Input
+
+When input or output is piped, `docsgpt-cli` outputs raw plain text instead of rendering the interactive terminal UI. This makes it easy to integrate into scripts and daily terminal workflows:
+
+```bash
+# Review code changes against project documentation
+git diff | docsgpt-cli "Review this diff for potential regressions and security risks"
+
+# Diagnose logs and write the explanation to a file
+tail -n 100 app.log | docsgpt-cli "Analyze this error stack trace" > diagnosis.md
+```
+
+### File Attachments
+
+Attach images or documents to your queries with the `@` prefix:
+
+```bash
+docsgpt-cli "Summarize this document" @architecture.pdf
+```
+
+## Managing Sources and Knowledge
+
+You can upload and synchronize documentation files directly from the command line, which is especially useful in CI/CD pipelines:
+
+```bash
+# Upload and wait for ingestion to complete, replacing older same-named sources
+docsgpt-cli sources upload docs/*.md --name "Product Docs" --wait --replace
+```
+
+For setting up automated GitHub Actions workflows that synchronize documentation on push, see [Personal access tokens](/API/personal-access-tokens).
+
+## Agents as Code
+
+The CLI allows you to export, version, and apply agent definitions as YAML files:
+
+```bash
+# Export an agent configuration
+docsgpt-cli agents export <agent-id> -o my-agent.yaml
+
+# Test changes with dry run
+docsgpt-cli agents apply -f my-agent.yaml --dry-run
+
+# Apply configuration
+docsgpt-cli agents apply -f my-agent.yaml
+```
+
+## Benchmarking Agents
+
+The CLI includes built-in benchmarking commands to run assertions, evaluate retrieval quality, and compare agent prompts and model versions:
+
+```bash
+# Scaffold a new test suite
+docsgpt-cli bench init my-suite
+
+# Run the benchmark suite
+docsgpt-cli bench ./my-suite
+
+# Generate machine-readable reports for CI test suites
+docsgpt-cli bench --junit report.xml
+```
+
+For full benchmark syntax, test case formats, and evaluation metrics, see [Benchmarking Agents](/Agents/benchmarking).
+
+## Remote Device Hosting
+
+You can pair any machine (such as a developer laptop, staging server, or Raspberry Pi) to your DocsGPT account so agents can execute shell commands through the Remote Device tool:
+
+```bash
+# Pair the device with your DocsGPT instance
+docsgpt-cli host pair --url https://your-docsgpt-instance
+
+# Run the host process
+docsgpt-cli host
+
+# Or install it as a persistent system background service
+docsgpt-cli host install-service
+```
+
+For complete instructions on configuring tool permissions, background jobs, and service control, see [Remote Device](/Tools/remote-device).
+
+## Environment Variables
+
+You can configure the CLI using environment variables, which is convenient for container environments and CI runners:
+
+| Environment Variable | Description |
+| --- | --- |
+| `DOCSGPT_API_KEY` | Agent API key used for chat and benchmark runs |
+| `DOCSGPT_TOKEN` | Personal access token used for managing agents and sources |
+| `DOCSGPT_API_BASE` | Base URL of the DocsGPT instance (defaults to `https://gptcloud.arc53.com`) |
+| `DOCSGPT_AGENT` | Name or ID of the default agent to use |

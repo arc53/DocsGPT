@@ -1,7 +1,7 @@
 ---
 title: Community Integrations
 description: Discord, Slack and Telegram bots and the docsgpt-cli terminal client - integrations that live in their own arc53 repositories and connect to DocsGPT with an agent API key.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-27
 ---
 
 import { Callout } from 'nextra/components'
@@ -15,7 +15,7 @@ These integrations are separate projects in the [arc53](https://github.com/arc53
 | [Discord bot](https://github.com/arc53/discord-docsgpt-extension) | Answers direct messages and `@mentions` in server channels, keeping the conversation for follow-up questions. | An agent API key |
 | [Slack bot](https://github.com/arc53/slack-bot-docsgpt-extenstion) | Answers mentions and direct messages in a Slack workspace over Socket Mode, keeping each thread's history. Can route to several agents. | An agent API key per agent |
 | [Telegram bot](https://github.com/arc53/tg-bot-docsgpt-extenstion) | Runs one or more Telegram bots with streamed answers, file and voice input, files the agent produces, group and inline modes. | An agent API key per agent |
-| [docsgpt-cli](https://github.com/arc53/DocsGPT-cli) | Chat with agents from a terminal, [benchmark agents](/Agents/benchmarking), and pair a machine as a [Remote Device](/Tools/remote-device) with `docsgpt-cli host`. | An agent API key; a [personal access token](/API/personal-access-tokens) for account commands; a pairing code for `host` mode |
+| [docsgpt-cli](/Extensions/docsgpt-cli) | Chat with agents from a terminal, [benchmark agents](/Agents/benchmarking), and pair a machine as a [Remote Device](/Tools/remote-device) with `docsgpt-cli host`. ([GitHub](https://github.com/arc53/DocsGPT-cli)) | An agent API key; a [personal access token](/API/personal-access-tokens) for account commands; a pairing code for `host` mode |
 
 ## Point a bot at your instance
 
@@ -33,5 +33,6 @@ These integrations ship with DocsGPT and are documented on their own pages:
 
 - [Chat widget](/Extensions/chat-widget) and [search widget](/Extensions/search-widget) for React and HTML sites.
 - [Chatwoot extension](/Extensions/Chatwoot-extension), a bridge in `extensions/chatwoot` that answers Chatwoot conversations.
+- [DocsGPT CLI](/Extensions/docsgpt-cli), terminal client for chatting with agents, piping input, CI/CD automation, and host mode.
 - [OpenAI-compatible API](/API/openai-compatible), for any client or SDK that speaks the OpenAI chat completions format.
 - [MCP server](/API/mcp-server), which lets Claude, Cursor and other MCP clients search an agent's sources.
