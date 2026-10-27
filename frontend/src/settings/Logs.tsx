@@ -17,6 +17,7 @@ import { useClock } from '../hooks/useClock';
 import { useScrollSentinel } from '../hooks/useLoadMore';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import { CodeBlock } from '../components/ui/code-block';
 import { Collapsible } from '../components/ui/collapsible';
 import {
@@ -80,7 +81,6 @@ const LABEL_KEYS: Record<(typeof LOG_LABELS)[number], string> = {
 
 type LogsProps = {
   agentId?: string;
-  tableHeader?: string;
   /**
    * An agent's analytics: whether its conversations are labelled (the label
    * filter shows only then) and its topics, offered as filters; those that
@@ -89,7 +89,7 @@ type LogsProps = {
   analytics?: { enabled: boolean; topics: AgentTopic[] };
 };
 
-export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
+export default function Logs({ agentId, analytics }: LogsProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
   // The drill-down filters live in the URL, so a docs-gap example or a
@@ -579,7 +579,6 @@ export default function Logs({ agentId, tableHeader, analytics }: LogsProps) {
           hasMore={hasMore}
           failed={loadFailed}
           onRetry={fetchLogs}
-          tableHeader={tableHeader}
           onViewTrace={setOpenTrace}
           emptyTitle={
             drilledDown
@@ -620,7 +619,6 @@ type LogsTableProps = {
   /** The last page failed to load; `onRetry` asks for it again. */
   failed: boolean;
   onRetry: () => void;
-  tableHeader?: string;
   onViewTrace: (ref: TraceRef) => void;
   /** The empty list's message: none at all, or none for the drill-down. */
   emptyTitle: string;
@@ -635,7 +633,6 @@ function LogsTable({
   hasMore,
   failed,
   onRetry,
-  tableHeader,
   onViewTrace,
   emptyTitle,
   targetMessageId,
@@ -695,15 +692,10 @@ function LogsTable({
   );
 
   return (
-    <div className="border-border bg-card h-[55svh] w-full overflow-hidden rounded-xl border font-mono">
-      <div className="bg-muted flex h-8 flex-col items-start justify-center">
-        <p className="text-foreground px-3 text-xs">
-          {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
-        </p>
-      </div>
+    <Card variant="subtle" padding="none" className="w-full overflow-hidden">
       <div
         ref={listRef}
-        className="relative flex h-[51svh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4"
+        className="relative flex h-[55svh] flex-col items-start gap-2 overflow-y-auto overscroll-contain p-4 font-mono"
       >
         {!loading && failed && logs.length === 0 && (
           <EmptyState
@@ -745,7 +737,7 @@ function LogsTable({
           />
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 

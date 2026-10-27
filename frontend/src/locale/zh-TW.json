@@ -953,7 +953,6 @@
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "none": "無",
-      "tableHeader": "API 生成 / 聊天機器人會話",
       "searchPlaceholder": "搜尋日誌...",
       "noLogs": "找不到日誌",
       "levels": {
@@ -3260,7 +3259,6 @@
       "title": "代理日誌",
       "lastUsedAt": "最後使用時間",
       "noUsageHistory": "無使用歷史",
-      "tableHeader": "代理端點日誌",
       "description": "此代理的 API 呼叫、排程執行和錯誤。"
     },
     "schedules": {

@@ -87,7 +87,6 @@ export default function AgentLogs() {
             />
             <Logs
               agentId={agentId}
-              tableHeader={t('agents.logs.tableHeader')}
               analytics={
                 agent
                   ? {

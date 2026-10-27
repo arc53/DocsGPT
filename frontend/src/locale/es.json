@@ -998,7 +998,6 @@
       "filterByChatbot": "Filtrar por chatbot",
       "selectChatbot": "Seleccionar chatbot",
       "none": "Ninguno",
-      "tableHeader": "Conversaciones generadas por API / chatbot",
       "searchPlaceholder": "Buscar registros...",
       "noLogs": "No se encontraron registros",
       "levels": {
@@ -3368,7 +3367,6 @@
       "title": "Registros del Agente",
       "lastUsedAt": "Último uso",
       "noUsageHistory": "Sin historial de uso",
-      "tableHeader": "Registros del endpoint del agente",
       "description": "Llamadas a la API, ejecuciones programadas y errores de este agente."
     },
     "schedules": {
