@@ -10,6 +10,7 @@ from docsgpt.activity.flags import check_stream
 from docsgpt.core.run_budget import RoundDeferred, StreamCancelled, is_budget_exhausted
 from docsgpt.agents.attachment_budget import (
     AttachmentPlan,
+    FileStatus,
     _attachment_id,
     assign_refs,
     compute_attachment_budget,
@@ -2304,7 +2305,9 @@ class BaseAgent(ABC):
         messages: each is listed the way a fresh turn lists a file it could
         not inline (``tool``, ``reference``, ``withheld``, ...). Their entries
         are appended to the paused turn's listing, which the response reports
-        and the next pause saves, and to the attachments tool's plan.
+        and the next pause saves, and to the attachments tool's plan. A saved
+        ref a blocked copy now withholds is marked withheld in both, since
+        the tool refuses files by ref.
 
         Args:
             tools_dict: The resumed turn's tools, once prepared.
@@ -2323,18 +2326,25 @@ class BaseAgent(ABC):
             withheld=self.withheld_attachments,
         )
         added = AttachmentPlan(files=plan.files[count:], capabilities=plan.capabilities, budget=0)
-        if not added.files:
-            return
-        self.paused_attachment_listing = [*(self.paused_attachment_listing or []), *plan_listing(added)]
+        blocked = [planned.ref for planned in plan.files if planned.status is FileStatus.WITHHELD]
+        withheld = FileStatus.WITHHELD.value
+        listing = [
+            {**entry, "status": withheld} if entry.get("ref") in blocked else entry
+            for entry in self.paused_attachment_listing or []
+        ]
+        self.paused_attachment_listing = [*listing, *plan_listing(added)] or None
         entry = tools_dict.get(ATTACHMENTS_TOOL_ID) if isinstance(tools_dict, dict) else None
         config = entry.get("config") if isinstance(entry, dict) else None
         if not isinstance(config, dict):
             return
         update: Dict[str, Any] = {}
         sync_attachments_tool(update, plan=added)
-        config["plan"] = {**(config.get("plan") or {}), **update["plan"]}
+        tool_plan = {**(config.get("plan") or {}), **update["plan"]}
+        for ref in blocked:
+            tool_plan[ref] = {**(tool_plan.get(ref) or {}), "status": withheld, "reason": "content_policy"}
+        config["plan"] = tool_plan
         withheld_refs = list(config.get("withheld_refs") or [])
-        config["withheld_refs"] = withheld_refs + [ref for ref in update["withheld_refs"] if ref not in withheld_refs]
+        config["withheld_refs"] = withheld_refs + [ref for ref in blocked if ref not in withheld_refs]
 
     def _truncate_history_to_fit(
         self,
