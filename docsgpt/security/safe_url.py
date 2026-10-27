@@ -160,13 +160,12 @@ def _allowlist() -> tuple[set[str], list[ipaddress.IPv4Network | ipaddress.IPv6N
             continue
         try:
             networks.append(ipaddress.ip_network(entry, strict=False))
-            continue
         except ValueError:
-            pass
-        try:
-            names.add(_ascii_host(entry))
-        except UnsafeUserUrlError:
-            continue
+            # Not an address or range, so a hostname; one with no IDNA form never matches.
+            try:
+                names.add(_ascii_host(entry))
+            except UnsafeUserUrlError:
+                continue
     return names, networks
 
 
