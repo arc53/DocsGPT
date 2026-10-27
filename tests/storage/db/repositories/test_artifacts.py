@@ -313,7 +313,7 @@ class TestListArtifacts:
         repo.create_artifact("user-1", "file", workflow_run_id=run, filename="in.docx",
                              produced_by={"source": RUN_INPUT_SOURCE})
         made = repo.create_artifact("user-1", "file", workflow_run_id=run, filename="out.xlsx",
-                                    produced_by={"node_id": "decide", "node_type": "code"})
+                                    produced_by={"source": "node", "node_id": "decide", "node_type": "code"})
         bare = repo.create_artifact("user-1", "document", workflow_run_id=run)
         assert len(repo.list_artifacts(workflow_run_id=run)) == 3
         rows = repo.list_artifacts(workflow_run_id=run, include_run_inputs=False)
