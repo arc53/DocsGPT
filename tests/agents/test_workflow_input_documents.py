@@ -21,7 +21,7 @@ from docsgpt.agents.workflows.workflow_engine import (
     _EXTRACT_TRUNCATION_ID,
     WorkflowEngine,
 )
-from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.storage.db.repositories.artifacts import RUN_INPUT_SOURCE, ArtifactsRepository
 from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 from docsgpt.storage.local import LocalStorage
 from docsgpt.storage.storage_creator import StorageCreator
@@ -171,11 +171,15 @@ def test_attachments_bridge_to_run_scoped_artifacts(pg_engine, tmp_path, monkeyp
             assert artifact is not None
             assert artifact["kind"] == "file"
             version = repo.get_version(ref["artifact_id"], 1)
+            assert version["produced_by"] == {"source": RUN_INPUT_SOURCE}
             assert version["size"] == len(payload)
             assert version["sha256"] == hashlib.sha256(payload).hexdigest()
             by_name[version["filename"]] = version
     assert set(by_name) == {"report.txt", "data.csv"}
     assert by_name["report.txt"]["size"] == len(a1)
+    # The answer lists only what the run produced, not the documents it was given.
+    with pg_engine.connect() as conn:
+        assert ArtifactsRepository(conn).list_artifacts(workflow_run_id=run_id, include_run_inputs=False) == []
 
     # A node/template can read agent.input_documents from the engine state.
     context = engine._build_template_context()

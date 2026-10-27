@@ -437,6 +437,7 @@ class WorkflowAgent(BaseAgent):
         if not persisted:
             return [], []
         from docsgpt.sandbox.artifacts_capture import persist_new_artifact
+        from docsgpt.storage.db.repositories.artifacts import RUN_INPUT_SOURCE
         from docsgpt.storage.storage_creator import StorageCreator
 
         storage = StorageCreator.get_storage()
@@ -484,6 +485,7 @@ class WorkflowAgent(BaseAgent):
                 mime_type=mime_type,
                 title=filename,
                 workflow_run_id=self._engine.workflow_run_id,
+                produced_by={"source": RUN_INPUT_SOURCE},
             )
             if ref is None:
                 dropped.append(f'Document "{filename}" could not be stored and was skipped.')
