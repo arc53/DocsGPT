@@ -119,7 +119,7 @@ It also rewrites the secrets saved on tools and the API keys of custom models; t
 
 ### Outbound network access
 
-Custom MCP servers and the API Tool reach only hosts on the public internet: `localhost`, private, link-local and other reserved addresses are refused, and there is no allowlist. See [Outbound network access](/Deploying/Security#outbound-network-access).
+Custom MCP servers and the API Tool reach only hosts on the public internet: `localhost`, private, link-local and other reserved addresses are refused unless the operator lists the host in `SAFE_URL_ALLOWED_HOSTS` ([Allowing private hosts](/Deploying/Security#allowing-private-hosts)). See [Outbound network access](/Deploying/Security#outbound-network-access).
 
 ### Redirect URIs
 
