@@ -248,3 +248,18 @@
   auth_kind: mcp_oauth
   capabilities: [read]
   docs_url: https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/
+
+# Hugging Face's own MCP server. Read tools cover the Hub (models, datasets,
+# Spaces, papers) and its documentation search; the contribute-repos scope
+# enables the "Contribute Repos" tool, which writes files to repos the user
+# owns. Scopes are space separated in the authorization request.
+- key: mcp:huggingface
+  name: Hugging Face
+  description: Search Hugging Face models, datasets, Spaces and papers, and use configured Hub tools.
+  icon: huggingface
+  category: dev
+  mcp_url: https://huggingface.co/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  oauth_scopes: [openid, profile, read-mcp, read-repos, contribute-repos]
+  docs_url: https://huggingface.co/docs/hub/hf-mcp-server

@@ -1904,6 +1904,7 @@
         "mcp_alphavantage": "株価、ファンダメンタルズ、為替、暗号資産、経済指標、マーケットニュースを調べます。",
         "mcp_neon": "Neon の Postgres プロジェクト、ブランチ、スキーマを調べ、SQL を実行します。",
         "mcp_twelvedata": "株式、為替、暗号資産、ETF の相場、価格履歴、テクニカル指標、ファンダメンタルズを調べます。",
+        "mcp_huggingface": "Hugging Face のモデル、データセット、Spaces、論文を検索し、設定された Hub ツールを使用します。",
         "mcp_cloudflare": "Cloudflare API を通じて Workers、DNS、R2 などを管理します。",
         "github": "リポジトリをナレッジに同期し、エージェントがコード、Issue、プルリクエストを読めるようにします。"
       },

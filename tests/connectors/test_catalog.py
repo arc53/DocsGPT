@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 import yaml
 
 from docsgpt.connectors import catalog
+
+LOCALE_DIR = Path(__file__).resolve().parents[2] / "frontend" / "src" / "locale"
+ICON_DIR = Path(__file__).resolve().parents[2] / "frontend" / "src" / "assets" / "connectors"
 
 
 @pytest.fixture(autouse=True)
@@ -399,3 +405,68 @@ def test_cloudflare_preset_signs_in_with_mcp_oauth():
     assert cloudflare.auth_kind == "mcp_oauth"
     assert cloudflare.capabilities == ("read",)
     assert catalog.preset_for_url("https://mcp.cloudflare.com/mcp").key == "mcp:cloudflare"
+
+
+def test_huggingface_preset_uses_remote_oauth_catalog_contract():
+    """HF's own MCP server: OAuth with dynamic client registration, no setup."""
+    huggingface = catalog.get_definition("mcp:huggingface")
+
+    assert huggingface is not None
+    assert huggingface.publisher == "preset"
+    assert huggingface.name == "Hugging Face"
+    assert huggingface.icon == "huggingface"
+    assert huggingface.category == "dev"
+    assert huggingface.mcp_url == "https://huggingface.co/mcp"
+    assert huggingface.mcp_base_url == "https://huggingface.co"
+    assert huggingface.auth_kind == "mcp_oauth"
+    assert huggingface.capabilities == ("read", "write")
+    assert huggingface.docs_url == "https://huggingface.co/docs/hub/hf-mcp-server"
+
+
+def test_huggingface_preset_requests_the_scopes_its_tools_need():
+    """HF validates scopes and rejects unknown ones, so the list is exact.
+
+    ``read-mcp`` opens the Hub tools, ``read-repos`` reads repositories and
+    ``contribute-repos`` is what enables writing files to the user's own repos.
+    """
+    huggingface = catalog.get_definition("mcp:huggingface")
+
+    assert huggingface.oauth_scopes == (
+        "openid",
+        "profile",
+        "read-mcp",
+        "read-repos",
+        "contribute-repos",
+    )
+
+
+def test_huggingface_preset_is_listed_with_the_other_remote_servers():
+    presets = [d for d in catalog.all_definitions() if d.publisher == "preset"]
+
+    assert "mcp:huggingface" in {preset.key for preset in presets}
+
+
+def test_every_preset_has_a_description_in_every_locale():
+    """The card falls back to English when a locale lacks the key.
+
+    A preset without a translated description shows its English sentence in
+    every other language, which reads as a broken translation rather than a
+    missing one.
+    """
+    entries = yaml.safe_load(catalog._PRESETS_FILE.read_text(encoding="utf-8"))
+
+    for entry in entries:
+        locale_key = entry["key"].replace(":", "_")
+        for locale in ("en", "de", "es", "fr", "jp", "ru", "zh", "zh-TW"):
+            descriptions = json.loads(
+                (LOCALE_DIR / f"{locale}.json").read_text(encoding="utf-8")
+            )["settings"]["connectors"]["descriptions"]
+            assert locale_key in descriptions, f"{locale}.json has no {locale_key}"
+
+
+def test_every_preset_icon_has_an_asset():
+    """A missing asset silently renders the plug fallback, so every icon ships."""
+    entries = yaml.safe_load(catalog._PRESETS_FILE.read_text(encoding="utf-8"))
+
+    for entry in entries:
+        assert (ICON_DIR / f"{entry['icon']}.svg").exists(), entry["key"]
