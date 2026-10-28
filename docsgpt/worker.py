@@ -1538,19 +1538,20 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
     except Exception as e:
         logging.error(f"Error in reingest_source_worker: {e}", exc_info=True)
         close_failed_ingest_progress(source_id, task=self, error=e)
-        _publish_source_event(
-            user, actor_id,
-            "source.ingest.failed",
-            {
-                "source_id": str(source_id),
-                "name": source_name,
-                "filename": source_name,
-                "operation": "reingest",
-                "error": str(e)[:1024],
-                **_task_id_field(self),
-            },
-            scope={"kind": "source", "id": str(source_id)},
-        )
+        if not _celery_will_retry(self, e):
+            _publish_source_event(
+                user, actor_id,
+                "source.ingest.failed",
+                {
+                    "source_id": str(source_id),
+                    "name": source_name,
+                    "filename": source_name,
+                    "operation": "reingest",
+                    "error": str(e)[:1024],
+                    **_task_id_field(self),
+                },
+                scope={"kind": "source", "id": str(source_id)},
+            )
         raise
     finally:
         held.close()
