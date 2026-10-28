@@ -178,6 +178,17 @@ def _synthesize_guard_key(
     For initial source ingestion (e.g. ``upload_source_task``), ``source_id``
     is stable across broker redeliveries and unique per upload, so the
     poison-loop counter survives an OOM SIGKILL. Returns ``None`` when absent.
+
+    Args:
+        task_name: The name of the Celery task being guarded.
+        kwargs: Keyword arguments supplied to the task invocation.
+        task_self: Optional Celery task instance (``self``) executing the dispatch.
+
+    Returns:
+        A deterministic guard key string (prefixed with ``auto:``), or ``None``
+        if no stable anchor exists. For keyless ``reingest_source_task``, returns
+        ``None`` when ``task_self`` has no valid task ID (or resolves to ``"unknown"``),
+        in which case the wrapper executes the task unguarded.
     """
     if task_name == "reingest_source_task":
         task_id = _safe_task_id(task_self)
