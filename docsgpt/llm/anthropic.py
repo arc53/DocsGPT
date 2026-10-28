@@ -3,11 +3,11 @@ import json
 import logging
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from anthropic import Anthropic, transform_schema
+from anthropic import Anthropic, DefaultHttpxClient, transform_schema
 
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
-from docsgpt.llm.credential_scope import ANTHROPIC_DEFAULT_BASE_URL, check_credential_scope
+from docsgpt.llm.credential_scope import ANTHROPIC_DEFAULT_BASE_URL, check_credential_scope, endpoint_origin
 from docsgpt.llm.deadlines import provider_event
 from docsgpt.llm.tool_images import tool_result
 from docsgpt.storage.storage_creator import StorageCreator
@@ -30,17 +30,6 @@ _PASSTHROUGH_PARAMS = (
     "tool_choice",
     "thinking",
     "metadata",
-)
-
-# Sampling params the Messages API still honours on the models that accept
-# them, but which anthropic 1.x removed from ``messages.create``'s signature
-# (passing one is a TypeError). They go through ``extra_body``, which the SDK
-# merges into the request JSON as-is, so the wire request is unchanged and a
-# model that rejects them 400s exactly as it does today.
-_SAMPLING_PARAMS = (
-    "temperature",
-    "top_p",
-    "top_k",
 )
 
 # ``tool_choice`` values in OpenAI's vocabulary mapped to Anthropic's. OpenAI
@@ -195,6 +184,24 @@ def _normalize_schema(schema: Any, root: bool = False) -> Any:
     return node
 
 
+def _send_x_api_key(api_key: str):
+    """An httpx ``auth`` hook that moves the key from ``Authorization: Bearer`` to ``X-Api-Key``.
+
+    anthropic 2.x sends the key as a bearer token; a gateway set as a model's
+    ``base_url`` may read only ``X-Api-Key``, the header 1.x sent. httpx drops
+    ``Authorization`` on a cross-origin redirect but keeps ``X-Api-Key``, so a
+    client with this hook must not follow redirects.
+    """
+
+    def auth(request):
+        if request.headers.get("Authorization") == f"Bearer {api_key}":
+            del request.headers["Authorization"]
+            request.headers["X-Api-Key"] = api_key
+        return request
+
+    return auth
+
+
 class AnthropicLLM(BaseLLM):
     provider_name = "anthropic"
     # Internal gen kwarg; ``_build_request`` sends it as ``output_config.format``.
@@ -216,7 +223,12 @@ class AnthropicLLM(BaseLLM):
         # host the credential check never saw.
         endpoint = base_url or ANTHROPIC_DEFAULT_BASE_URL
         check_credential_scope(self.api_key, endpoint, self.provider_name)
-        self.anthropic = Anthropic(api_key=self.api_key, base_url=endpoint)
+        client_kwargs: Dict[str, Any] = {"api_key": self.api_key, "base_url": endpoint}
+        if self.api_key and endpoint_origin(endpoint) != endpoint_origin(ANTHROPIC_DEFAULT_BASE_URL):
+            client_kwargs["http_client"] = DefaultHttpxClient(
+                auth=_send_x_api_key(self.api_key), follow_redirects=False
+            )
+        self.anthropic = Anthropic(**client_kwargs)
 
         self.storage = StorageCreator.get_storage()
         self._last_usage: Optional[Dict[str, Any]] = None
@@ -579,10 +591,11 @@ class AnthropicLLM(BaseLLM):
             messages: Internal conversation history.
             tools: OpenAI-shaped tool definitions, or ``None``.
             kwargs: Caller kwargs; the params in ``_PASSTHROUGH_PARAMS`` are
-                forwarded verbatim, those in ``_SAMPLING_PARAMS`` through
-                ``extra_body``, and the OpenAI aliases ``max_tokens`` /
+                forwarded verbatim, and the OpenAI aliases ``max_tokens`` /
                 ``max_completion_tokens``, ``stop`` and ``tool_choice`` are
-                translated. Everything else is dropped.
+                translated. Everything else is dropped, ``temperature``,
+                ``top_p`` and ``top_k`` included: API version 2026-10-21
+                rejects them.
 
         Returns:
             The keyword arguments for ``client.messages.create``.
@@ -620,12 +633,6 @@ class AnthropicLLM(BaseLLM):
         for key in _PASSTHROUGH_PARAMS:
             if kwargs.get(key) is not None:
                 params[key] = kwargs[key]
-
-        sampling = {
-            key: kwargs[key] for key in _SAMPLING_PARAMS if kwargs.get(key) is not None
-        }
-        if sampling:
-            params["extra_body"] = {**(params.get("extra_body") or {}), **sampling}
 
         # OpenAI's ``stop`` is Anthropic's ``stop_sequences``. A caller that
         # already speaks Anthropic wins.
