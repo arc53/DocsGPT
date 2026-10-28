@@ -669,7 +669,7 @@ class TestPoisonHook:
         assert result["success"] is False
         assert "poison-loop" in result["error"]
 
-def test_reingest_source_task_keyless_runs_without_lockout(self, pg_conn):
+    def test_reingest_source_task_keyless_runs_without_lockout(self, pg_conn):
         """Keyless reingest dispatches synthesize a per-operation guard key from
         the Celery task id instead of a static source_id key, preventing a 24-hour
         lockout between distinct operations while deduplicating retries of the same operation.
