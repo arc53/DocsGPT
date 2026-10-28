@@ -251,8 +251,10 @@
 
 # Hugging Face's own MCP server. Read tools cover the Hub (models, datasets,
 # Spaces, papers) and its documentation search; the contribute-repos scope
-# enables the "Contribute Repos" tool, which writes files to repos the user
-# owns. Scopes are space separated in the authorization request.
+# enables the "Contribute Repos" tool, which creates repositories and writes
+# to the ones created by this app. It does not grant write access to
+# repositories the user already owns; that needs the write-repos scope.
+# Scopes are space separated in the authorization request.
 - key: mcp:huggingface
   name: Hugging Face
   description: Search Hugging Face models, datasets, Spaces and papers, and use configured Hub tools.

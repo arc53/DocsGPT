@@ -427,7 +427,9 @@ def test_huggingface_preset_requests_the_scopes_its_tools_need():
     """HF validates scopes and rejects unknown ones, so the list is exact.
 
     ``read-mcp`` opens the Hub tools, ``read-repos`` reads repositories and
-    ``contribute-repos`` is what enables writing files to the user's own repos.
+    ``contribute-repos`` is what enables creating repositories and writing to
+    the ones created by this app. It does not grant write access to
+    repositories the user already owns; that needs the ``write-repos`` scope.
     """
     huggingface = catalog.get_definition("mcp:huggingface")
 
