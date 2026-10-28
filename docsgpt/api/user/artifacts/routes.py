@@ -42,6 +42,9 @@ def _artifact_summary(artifact: dict) -> dict:
         "title": artifact.get("title"),
         "metadata": artifact.get("metadata"),
         "current_version": artifact.get("current_version"),
+        # The current version's file, when the row was listed with it (list_artifacts).
+        "filename": artifact.get("current_filename"),
+        "mime_type": artifact.get("current_mime_type"),
         "created_at": _iso(artifact.get("created_at")),
         "updated_at": _iso(artifact.get("updated_at")),
     }
@@ -126,7 +129,8 @@ class ListArtifacts(Resource):
                     run = WorkflowRunsRepository(conn).get(workflow_run_id)
                     if run is None or run.get("user_id") != user_id:
                         return make_response(jsonify({"success": False, "message": "Forbidden"}), 403)
-                    rows = repo.list_artifacts(workflow_run_id=workflow_run_id)
+                    # The run's attached documents are the caller's own uploads; list only what it produced.
+                    rows = repo.list_artifacts(workflow_run_id=workflow_run_id, include_run_inputs=False)
                 else:
                     if not user_id:
                         return make_response(

@@ -1,6 +1,19 @@
 import copy from 'copy-to-clipboard';
-import { ChevronLeft, ChevronRight, Copy, Pencil, Trash2 } from 'lucide-react';
-import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Pencil,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react';
+import React, {
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -11,11 +24,12 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import { ChunkType } from '../settings/types';
+import { ChunkInjection, ChunkType } from '../settings/types';
 import {
   abbreviateCount,
   chunkPreviewText,
   formatChunkTokens,
+  isSourceBusy,
   type LinkedChunk,
 } from './chunkUtils';
 import SearchInput from './SearchInput';
@@ -25,6 +39,7 @@ import PathHeader from './tree/PathHeader';
 import ReaderPanel from './tree/ReaderPanel';
 import SourceEditSheet from './tree/SourceEditSheet';
 import { Alert, AlertDescription } from './ui/alert';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardFooter } from './ui/card';
 import { FormField } from './ui/form-field';
@@ -32,7 +47,9 @@ import { Input } from './ui/input';
 import { ActionMenu } from './ui/dropdown-menu';
 import { EmptyState } from './ui/empty-state';
 import { IconButton } from './ui/icon-button';
+import { Label } from './ui/label';
 import { Pagination, pageRangeParams } from './ui/pagination';
+import { Switch } from './ui/switch';
 
 /** Chunks per page: divisible by 2, 3 and 4 columns, so a page fills the grid. */
 const PAGE_SIZE_OPTIONS = [12, 24, 48];
@@ -50,6 +67,11 @@ export type OpenChunkPosition = number | 'unplaced' | null;
 /** Lets the host's crumbs close the open chunk (see TreeBrowser). */
 export interface ChunksController {
   closeChunk: () => void;
+  /**
+   * Lists the file again after its content changed elsewhere (a refreshed
+   * web page): the open chunk closes, since its id is gone.
+   */
+  reload: () => void;
 }
 
 const TILE_GRID =
@@ -85,6 +107,8 @@ interface ChunksProps {
   fileName?: string;
   /** Extra header control (Test retrieval); standalone only. */
   headerAction?: React.ReactNode;
+  /** The source's ⋯, last in the title row; standalone only. */
+  headerMenu?: React.ReactNode;
   /**
    * Rendered inside a source view that draws the header itself (TreeBrowser):
    * no PathHeader here. The host's crumbs show the open chunk
@@ -93,6 +117,11 @@ interface ChunksProps {
   embedded?: boolean;
   /** Where the open chunk is; see {@link OpenChunkPosition}. */
   onOpenChunkChange?: (position: OpenChunkPosition) => void;
+  /**
+   * The whole list's chunk count, whenever it is read (not while a search
+   * or the flagged filter narrows it): the host's item bar shows it.
+   */
+  onTotalChange?: (total: number) => void;
   controllerRef?: React.MutableRefObject<ChunksController | null>;
   /**
    * Whether the caller may change the source (`can(source, 'edit')`). False
@@ -110,6 +139,40 @@ interface ChunksProps {
 
 type SheetMode = 'edit' | 'add';
 
+/** Why a save failed: the source was busy (a page change or sync), or else. */
+type SaveError = 'busy' | 'failed' | null;
+
+/** A delete the source turned away while a page change or sync held it. */
+class SourceBusy extends Error {}
+
+/** Whether the chunk's cached prompt-injection score is flagged (suspected or high). */
+const isFlagged = (injection?: ChunkInjection | null): boolean =>
+  Boolean(injection?.level);
+
+/**
+ * A flagged chunk's badge: likely or possible prompt injection, or marked
+ * safe once its source's owner allowed it. Nothing for a clean chunk.
+ */
+function InjectionBadge({ injection }: { injection?: ChunkInjection | null }) {
+  const { t } = useTranslation();
+  if (!injection?.level) return null;
+  if (injection.allowed)
+    return (
+      <Badge variant="neutral">
+        {t('settings.sources.injection.markedSafe')}
+      </Badge>
+    );
+  return (
+    <Badge variant="warning">
+      {t(
+        injection.level === 'high'
+          ? 'settings.sources.injection.high'
+          : 'settings.sources.injection.suspected',
+      )}
+    </Badge>
+  );
+}
+
 const Chunks: React.FC<ChunksProps> = ({
   documentId,
   documentName,
@@ -117,8 +180,10 @@ const Chunks: React.FC<ChunksProps> = ({
   path,
   fileName,
   headerAction,
+  headerMenu,
   embedded = false,
   onOpenChunkChange,
+  onTotalChange,
   controllerRef,
   canEdit = true,
   linkedChunk,
@@ -161,15 +226,32 @@ const Chunks: React.FC<ChunksProps> = ({
   // discard check compares against it, not a default a later fetch moved.
   const [addBaselineTitle, setAddBaselineTitle] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
+  const [saveError, setSaveError] = useState<SaveError>(null);
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
   const [chunkToDelete, setChunkToDelete] = useState<ChunkType | null>(null);
+  // Only the chunks whose cached prompt-injection score is flagged
+  // (`injection=flagged`); a chunk is scored once a chat retrieves it.
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const flaggedOnlyId = useId();
+  const injection = flaggedOnly ? 'flagged' : undefined;
 
   const showError = (message: string) =>
     dispatch(showActionToast({ variant: 'destructive', message }));
 
   const fileLabel = path || documentName || '';
+
+  const onTotalChangeRef = useRef(onTotalChange);
+  onTotalChangeRef.current = onTotalChange;
+  /**
+   * Keeps a count the server just gave; the whole list's (no search, no
+   * flagged filter, as the request that read it) goes to the host too.
+   */
+  const recordTotal = (total: number) => {
+    setTotalChunks(total);
+    if (!debouncedSearchTerm && !injection) onTotalChangeRef.current?.(total);
+  };
 
   // Only the latest grid fetch may write: an older response (a refresh after
   // a save, a page just left) is dropped.
@@ -185,6 +267,7 @@ const Chunks: React.FC<ChunksProps> = ({
         token,
         path,
         debouncedSearchTerm,
+        injection,
       );
 
       if (!response.ok) {
@@ -196,7 +279,7 @@ const Chunks: React.FC<ChunksProps> = ({
 
       setPage(data.page);
       setPerPage(data.per_page);
-      setTotalChunks(data.total);
+      recordTotal(data.total);
       setPaginatedChunks(data.chunks);
       setLoadFailed(false);
       if (!linkedOpenedRef.current) {
@@ -249,12 +332,13 @@ const Chunks: React.FC<ChunksProps> = ({
         token,
         path,
         debouncedSearchTerm,
+        injection,
       );
       if (!response.ok) throw new Error('Failed to fetch chunk');
       const data = await response.json();
       if (request !== stepRef.current) return;
       const chunk: ChunkType | undefined = data.chunks?.[0];
-      if (typeof data.total === 'number') setTotalChunks(data.total);
+      if (typeof data.total === 'number') recordTotal(data.total);
       if (chunk) {
         setOpenChunk(chunk);
         setOpenPosition(position);
@@ -293,13 +377,14 @@ const Chunks: React.FC<ChunksProps> = ({
         token,
         path,
         debouncedSearchTerm,
+        injection,
       );
       if (!response.ok) return null;
       const data = await response.json();
       return request === stepRef.current ? data : null;
     };
     const show = (stored: ChunkType, at: number, total: number) => {
-      setTotalChunks(total);
+      recordTotal(total);
       setOpenChunk(stored);
       setOpenPosition(at);
       setPositionLost(false);
@@ -323,7 +408,7 @@ const Chunks: React.FC<ChunksProps> = ({
           return;
         }
       }
-      setTotalChunks(total);
+      recordTotal(total);
       setPositionLost(true);
     } catch (error) {
       console.error(error);
@@ -350,8 +435,45 @@ const Chunks: React.FC<ChunksProps> = ({
     return target !== page;
   };
 
+  // By the mode alone, so a closing edit drawer keeps its title.
+  const editing = sheetMode === 'edit';
+  const savedText = editing ? openChunk?.text || '' : '';
+  const savedTitle = editing
+    ? openChunk?.metadata?.title || ''
+    : addBaselineTitle;
+  const sheetDirty = draft !== savedText || draftTitle.trim() !== savedTitle;
+
+  const reload = () => {
+    stepRef.current++;
+    setStepping(false);
+    setOpenChunk(null);
+    setPositionLost(false);
+    void fetchChunks();
+  };
+
+  // A reload that came while the edit drawer held unsaved text: it runs once
+  // the drawer closes, so the edit is never turned into a new chunk.
+  const reloadPendingRef = useRef(false);
+  useEffect(() => {
+    if (sheetOpen || !reloadPendingRef.current) return;
+    reloadPendingRef.current = false;
+    reload();
+  }, [sheetOpen]);
+
   useImperativeHandle(controllerRef, () => ({
     closeChunk: () => closeChunk(),
+    reload: () => {
+      if (sheetOpen && editing) {
+        // The open chunk's id may be gone: unsaved text waits, a clean
+        // drawer closes with it.
+        if (sheetDirty) {
+          reloadPendingRef.current = true;
+          return;
+        }
+        closeSheet();
+      }
+      reload();
+    },
   }));
 
   const openChunkPosition: OpenChunkPosition = !openChunk
@@ -392,20 +514,20 @@ const Chunks: React.FC<ChunksProps> = ({
       mode === 'edit' ? openChunk?.metadata?.title || '' : baseline,
     );
     setAddBaselineTitle(baseline);
-    setSaveFailed(false);
+    setSaveError(null);
     setSheetMode(mode);
     setSheetOpen(true);
   };
 
   const closeSheet = () => {
     setSheetOpen(false);
-    setSaveFailed(false);
+    setSaveError(null);
   };
 
   const handleAddChunk = async (text: string, title: string) => {
     if (!text.trim()) return;
     setSaving(true);
-    setSaveFailed(false);
+    setSaveError(null);
     try {
       const response = await userService.addChunk(
         {
@@ -419,12 +541,15 @@ const Chunks: React.FC<ChunksProps> = ({
         },
         token,
       );
-      if (!response.ok) throw new Error('Failed to add chunk');
+      if (!response.ok) {
+        setSaveError((await isSourceBusy(response)) ? 'busy' : 'failed');
+        return;
+      }
       closeSheet();
       fetchChunks();
     } catch (e) {
       console.error(e);
-      setSaveFailed(true);
+      setSaveError('failed');
     } finally {
       setSaving(false);
     }
@@ -439,7 +564,7 @@ const Chunks: React.FC<ChunksProps> = ({
     if (!text.trim()) return;
     if (text === (chunk.text || '') && title.trim() === savedTitle) return;
     setSaving(true);
-    setSaveFailed(false);
+    setSaveError(null);
     // The backend merges metadata: send a title only when the chunk had one
     // (clearing it sends '') or one was entered, never '' onto an untitled one.
     const sendTitle = !!savedTitle || !!title.trim();
@@ -453,7 +578,10 @@ const Chunks: React.FC<ChunksProps> = ({
         },
         token,
       );
-      if (!response.ok) throw new Error('Failed to update chunk');
+      if (!response.ok) {
+        setSaveError((await isSourceBusy(response)) ? 'busy' : 'failed');
+        return;
+      }
       const data = await response.json().catch(() => ({}));
       closeSheet();
       // Show the edit straight away (its token count is recomputed
@@ -476,7 +604,7 @@ const Chunks: React.FC<ChunksProps> = ({
       fetchChunks();
     } catch (e) {
       console.error(e);
-      setSaveFailed(true);
+      setSaveError('failed');
     } finally {
       setSaving(false);
     }
@@ -490,7 +618,10 @@ const Chunks: React.FC<ChunksProps> = ({
       chunk.doc_id,
       token,
     );
-    if (!response.ok) throw new Error('Failed to delete chunk');
+    if (!response.ok) {
+      if (await isSourceBusy(response)) throw new SourceBusy();
+      throw new Error('Failed to delete chunk');
+    }
     // A page change fetches by itself; otherwise refresh this page.
     if (!closeChunk(Math.max(0, totalChunks - 1))) fetchChunks();
   };
@@ -511,19 +642,59 @@ const Chunks: React.FC<ChunksProps> = ({
     setChunkToDelete(null);
   };
 
-  // One fetch per page, page size, file or search; a new search starts on
-  // page 1 (that page change then fetches).
+  /**
+   * Mark the chunk's text safe from prompt-injection screening for this
+   * source (`allow`), or undo it (`clear`); the reader and its tile show the
+   * new state.
+   */
+  const reviewInjection = async (
+    chunk: ChunkType,
+    decision: 'allow' | 'clear',
+  ) => {
+    const hash = chunk.injection?.content_hash;
+    if (!hash) return;
+    setReviewing(true);
+    try {
+      const response = await userService.reviewChunkInjection(
+        documentId,
+        hash,
+        decision,
+        token,
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) throw new Error('review failed');
+      const reviewed = (item: ChunkType): ChunkType =>
+        item.injection?.content_hash === hash
+          ? { ...item, injection: { ...item.injection, allowed: data.allowed } }
+          : item;
+      setOpenChunk((current) => (current ? reviewed(current) : current));
+      setPaginatedChunks((current) => current.map(reviewed));
+    } catch (error) {
+      console.error(error);
+      showError(t('settings.sources.injection.reviewFailed'));
+    } finally {
+      setReviewing(false);
+    }
+  };
+
+  // One fetch per page, page size, file, search or flagged filter; a new
+  // search or filter starts on page 1 (that page change then fetches).
   const fetchedSearchRef = useRef(debouncedSearchTerm);
+  const fetchedFlaggedRef = useRef(flaggedOnly);
   useEffect(() => {
-    if (fetchedSearchRef.current !== debouncedSearchTerm) {
+    if (
+      fetchedSearchRef.current !== debouncedSearchTerm ||
+      fetchedFlaggedRef.current !== flaggedOnly
+    ) {
       fetchedSearchRef.current = debouncedSearchTerm;
+      fetchedFlaggedRef.current = flaggedOnly;
       if (page !== 1) {
         setPage(1);
         return;
       }
     }
     fetchChunks();
-  }, [page, perPage, path, debouncedSearchTerm]);
+  }, [page, perPage, path, debouncedSearchTerm, flaggedOnly]);
 
   // Another file starts unsearched on page 1; the first render keeps the
   // linked chunk's search.
@@ -586,6 +757,7 @@ const Chunks: React.FC<ChunksProps> = ({
             })
       }
       actions={headerAction}
+      menu={headerMenu}
     />
   );
 
@@ -598,6 +770,20 @@ const Chunks: React.FC<ChunksProps> = ({
           onChange={(e) => setSearchTerm(e.target.value)}
         />
       </div>
+      {/* Offered while the chunks carry scores (the operator has the model on). */}
+      {flaggedOnly || paginatedChunks.some((chunk) => chunk.injection) ? (
+        <div className="flex items-center gap-2">
+          <Switch
+            id={flaggedOnlyId}
+            checked={flaggedOnly}
+            data-testid="chunks-flagged-only"
+            onCheckedChange={setFlaggedOnly}
+          />
+          <Label htmlFor={flaggedOnlyId} className="whitespace-nowrap">
+            {t('settings.sources.injection.flaggedOnly')}
+          </Label>
+        </div>
+      ) : null}
       {/* Standalone, the header's byline already shows the count. */}
       {embedded && !(loading && totalChunks === 0) ? (
         <p className="text-muted-foreground text-sm whitespace-nowrap">
@@ -644,7 +830,11 @@ const Chunks: React.FC<ChunksProps> = ({
         {paginatedChunks.length === 0 ? (
           <EmptyState
             size="sm"
-            title={t('settings.sources.noChunks')}
+            title={
+              flaggedOnly
+                ? t('settings.sources.injection.noFlagged')
+                : t('settings.sources.noChunks')
+            }
             className="col-span-full min-h-[50svh] w-full"
           />
         ) : (
@@ -666,11 +856,12 @@ const Chunks: React.FC<ChunksProps> = ({
                   <p className="text-foreground line-clamp-6 text-sm leading-5 font-normal">
                     {chunkPreviewText(chunk.text)}
                   </p>
-                  <CardFooter>
+                  <CardFooter className="flex-wrap">
                     {t('settings.sources.chunkTileMeta', {
                       n: position,
                       tokens: formatChunkTokens(chunk.metadata),
                     })}
+                    <InjectionBadge injection={chunk.injection} />
                   </CardFooter>
                 </button>
               </Card>
@@ -718,6 +909,22 @@ const Chunks: React.FC<ChunksProps> = ({
             disabled={!canGoNext}
             onClick={() => goToChunk(openPosition + 1)}
           />
+          {canEdit &&
+          isFlagged(chunk.injection) &&
+          !chunk.injection?.allowed ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              shape="pill"
+              loading={reviewing}
+              data-testid="chunk-mark-safe"
+              onClick={() => reviewInjection(chunk, 'allow')}
+            >
+              <ShieldCheck />
+              {t('settings.sources.injection.markSafe')}
+            </Button>
+          ) : null}
           {canEdit ? (
             <Button
               type="button"
@@ -731,7 +938,7 @@ const Chunks: React.FC<ChunksProps> = ({
             </Button>
           ) : null}
           <ActionMenu
-            size="toolbar"
+            size="panel"
             triggerLabel={t('settings.sources.menuAlt')}
             options={[
               {
@@ -762,15 +969,17 @@ const Chunks: React.FC<ChunksProps> = ({
         </>
       }
     >
+      {chunk.injection ? (
+        <InjectionNotice
+          injection={chunk.injection}
+          canUndo={canEdit}
+          busy={reviewing}
+          onUndo={() => reviewInjection(chunk, 'clear')}
+        />
+      ) : null}
       <SourceMarkdown content={chunk.text || ''} />
     </ReaderPanel>
   );
-
-  const editing = sheetMode === 'edit' && !!openChunk;
-  const savedText = editing ? openChunk?.text || '' : '';
-  const savedTitle = editing
-    ? openChunk?.metadata?.title || ''
-    : addBaselineTitle;
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -809,29 +1018,30 @@ const Chunks: React.FC<ChunksProps> = ({
             : t('settings.sources.addChunk')
         }
         description={
-          !editing
+          !editing || !openChunk
             ? fileLabel || undefined
             : positionLost
               ? t('settings.sources.editChunkDescriptionUnplaced', {
                   file: fileLabel,
-                  tokens: formatChunkTokens(openChunk?.metadata),
+                  tokens: formatChunkTokens(openChunk.metadata),
                   interpolation: { escapeValue: false },
                 })
               : t('settings.sources.editChunkDescription', {
                   file: fileLabel,
                   n: openPosition,
-                  tokens: formatChunkTokens(openChunk?.metadata),
+                  tokens: formatChunkTokens(openChunk.metadata),
                   interpolation: { escapeValue: false },
                 })
         }
         value={draft}
         onChange={setDraft}
-        dirty={draft !== savedText || draftTitle.trim() !== savedTitle}
-        onSave={() =>
-          editing && openChunk
-            ? handleUpdateChunk(draft, draftTitle, openChunk)
-            : handleAddChunk(draft, draftTitle)
-        }
+        dirty={sheetDirty}
+        onSave={() => {
+          // An edit drawer never saves as a new chunk, even with no chunk open.
+          if (!editing) void handleAddChunk(draft, draftTitle);
+          else if (openChunk)
+            void handleUpdateChunk(draft, draftTitle, openChunk);
+        }}
         fields={
           <FormField
             label={t('modals.chunk.title')}
@@ -848,12 +1058,14 @@ const Chunks: React.FC<ChunksProps> = ({
         saving={saving}
         saveLabel={editing ? t('modals.chunk.save') : t('modals.chunk.add')}
         alert={
-          saveFailed ? (
+          saveError ? (
             <Alert variant="destructive">
               <AlertDescription>
-                {editing
-                  ? t('settings.sources.chunkErrors.save')
-                  : t('settings.sources.chunkErrors.add')}
+                {saveError === 'busy'
+                  ? t('settings.sources.chunkErrors.busy')
+                  : editing
+                    ? t('settings.sources.chunkErrors.save')
+                    : t('settings.sources.chunkErrors.add')}
               </AlertDescription>
             </Alert>
           ) : undefined
@@ -867,7 +1079,11 @@ const Chunks: React.FC<ChunksProps> = ({
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={handleConfirmedDelete}
-        error={t('settings.sources.chunkErrors.delete')}
+        error={(reason) =>
+          reason instanceof SourceBusy
+            ? t('settings.sources.chunkErrors.busy')
+            : t('settings.sources.chunkErrors.delete')
+        }
         handleCancel={handleCancelDelete}
         submitLabel={t('modals.chunk.delete')}
         variant="destructive"
@@ -875,5 +1091,59 @@ const Chunks: React.FC<ChunksProps> = ({
     </div>
   );
 };
+
+/**
+ * Above a flagged chunk in the reader: what the scan found and what agents
+ * do with it, or, once it is marked safe, that agents treat it as clean, with
+ * an Undo for whoever may edit the source.
+ */
+function InjectionNotice({
+  injection,
+  canUndo,
+  busy,
+  onUndo,
+}: {
+  injection: ChunkInjection;
+  canUndo: boolean;
+  busy: boolean;
+  onUndo: () => void;
+}) {
+  const { t } = useTranslation();
+  if (!injection.level) return null;
+  if (injection.allowed)
+    return (
+      <Alert
+        variant="info"
+        role="status"
+        className="mb-4"
+        data-testid="chunk-injection-safe"
+      >
+        <AlertDescription>
+          {t('settings.sources.injection.safeNotice')}{' '}
+          {canUndo ? (
+            <Button
+              type="button"
+              variant="link"
+              size="text"
+              tone="current"
+              loading={busy}
+              onClick={onUndo}
+            >
+              {t('settings.sources.injection.undo')}
+            </Button>
+          ) : null}
+        </AlertDescription>
+      </Alert>
+    );
+  return (
+    <Alert variant="warning" className="mb-4" data-testid="chunk-injection">
+      <AlertDescription>
+        {t('settings.sources.injection.flaggedNotice', {
+          percent: Math.round((injection.p ?? 0) * 100),
+        })}
+      </AlertDescription>
+    </Alert>
+  );
+}
 
 export default Chunks;

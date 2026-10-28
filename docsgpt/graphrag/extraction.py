@@ -18,9 +18,11 @@ to every other LLM call in the app.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
+from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional
 
 from docsgpt import tracing
@@ -64,6 +66,31 @@ def _resolve_extraction_model(config: SourceConfig) -> Optional[str]:
     )
 
 
+def extraction_fingerprint(config: SourceConfig) -> str:
+    """What a source's chunks were extracted with: its extraction settings and the embeddings model.
+
+    A sync keeps a chunk's graph only when this matches. It covers the
+    source's own extraction settings, not the instance's default extraction
+    model: changing ``LLM_NAME`` must not rebuild every graph at its next sync
+    (an explicit rebuild does that). The embeddings model is included because
+    node and fact embeddings come from it, and a kept chunk would keep vectors
+    retrieval no longer compares against.
+    """
+    return json.dumps(
+        {
+            "model": config.graph.extraction_model,
+            "gleanings": config.graph.gleanings,
+            "embeddings": settings.EMBEDDINGS_NAME,
+        },
+        sort_keys=True,
+    )
+
+
+def content_hash(text: str) -> str:
+    """The sha256 of a chunk's text: what a sync matches re-embedded chunks by."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def _resolve_max_chunks(config: SourceConfig) -> int:
     """Resolve the hard chunk cap: per-source override → setting."""
     return config.graph.max_chunks or settings.GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION
@@ -103,6 +130,7 @@ def _build_extraction_llm(
         user_api_key=None,
         decoded_token=decoded_token,
         model_id=model_id,
+        stateless=True,
     )
     llm._token_usage_source = "graph_extraction"
     llm._request_id = request_id
@@ -198,19 +226,28 @@ def extract_graph_for_source(
     config: SourceConfig,
     request_id: Optional[str] = None,
     progress_cb: Optional[Callable[[Dict[str, int]], None]] = None,
+    chunk_ids: Optional[List[str]] = None,
 ) -> Dict[str, int]:
     """Build the per-source graph from its chunks via per-chunk LLM extraction.
 
     Resumable and idempotent: chunks already marked ``done`` are skipped via the
     ``graph_ingest_progress`` checkpoint, so a retry never re-extracts (and never
-    re-bills). Processes at most the resolved chunk cap; excess chunks are
-    reported under ``skipped_over_cap``. A malformed response, an LLM error or a
+    re-bills). The source holds at most the resolved chunk cap: the chunks it
+    already has extracted count toward it (a redelivered build spends only
+    what is left), and excess chunks are reported under ``skipped_over_cap``.
+    With ``chunk_ids`` (a page change), only those chunks are extracted: a
+    source the full build left over its cap neither bills its backlog nor
+    grows past the cap. The caller runs one extraction per source at a time
+    (``graph_extract_lock``), so two never spend the same remaining
+    allowance. A malformed response, an LLM error or a
     failed write on a single chunk is retried once after the rest of the build;
     a chunk that fails again is marked ``failed`` and the run continues — the
     pipeline never crashes.
 
     Each chunk is written in a single transaction with one batched embedding
-    call (entity + relationship-endpoint names together).
+    call (entity + relationship-endpoint names together). Its checkpoint row
+    records the chunk's ``content_hash`` and the ``extraction_fingerprint``,
+    which a sync carries the graph over by (``sync_graph_to_chunks``).
 
     Args:
         source_id: The source whose graph is being built.
@@ -221,6 +258,8 @@ def extract_graph_for_source(
         request_id: Originating request id stamped on the extraction LLM.
         progress_cb: Optional callback invoked after each processed chunk with
             ``{current, total, nodes, edges}`` for progress reporting.
+        chunk_ids: For a page change, the ids of the chunks it stored; the
+            other pending chunks are left as they are. ``None`` for a build.
 
     Returns:
         A summary ``{nodes, edges, chunks_processed, skipped_over_cap,
@@ -242,13 +281,22 @@ def extract_graph_for_source(
     pending_ids = set(store.pending_chunks(source_id, all_chunk_ids))
     pending = [(c, cid) for c, cid in valid if cid in pending_ids]
 
-    cap = _resolve_max_chunks(config)
+    # The cap is the source's, so the chunks it has extracted already count:
+    # ``all_chunk_ids`` is what the store holds now, so every id in it that
+    # isn't pending is an extracted chunk (a deleted one is gone). A build
+    # redelivered part-way (a killed worker) must not spend the cap again.
+    cap = max(0, _resolve_max_chunks(config) - (len(all_chunk_ids) - len(pending_ids)))
+    if chunk_ids is not None:
+        # A page change: only its own chunks.
+        wanted = {str(cid) for cid in chunk_ids}
+        pending = [(c, cid) for c, cid in pending if str(cid) in wanted]
     skipped_over_cap = max(0, len(pending) - cap)
     to_process = pending[:cap]
 
     embedding = get_embeddings()
 
     model_id = _resolve_extraction_model(config)
+    fingerprint = extraction_fingerprint(config)
     # Built here first so a misconfigured model fails the run before any
     # chunk is touched; this instance serves the calling thread.
     thread_llm = threading.local()
@@ -298,12 +346,13 @@ def extract_graph_for_source(
         """
         chunk, chunk_id = item
         text = _chunk_text(chunk)
+        digest = content_hash(text)
         if not text:
-            return chunk_id, "empty", None
+            return chunk_id, "empty", None, digest
 
         extracted = _extract_chunk(_llm(), text, chunk_id)
         if extracted is None:
-            return chunk_id, "failed", None
+            return chunk_id, "failed", None, digest
         try:
             entities = _build_entities(extracted["entities"])
             relationships = _build_relationships(extracted["relationships"])
@@ -311,14 +360,14 @@ def extract_graph_for_source(
             logger.warning(
                 "Graph extraction failed for chunk %s: %s", chunk_id, exc
             )
-            return chunk_id, "failed", None
-        return chunk_id, "ok", (entities, relationships)
+            return chunk_id, "failed", None, digest
+        return chunk_id, "ok", (entities, relationships), digest
 
-    def _write(chunk_id, status, payload) -> bool:
+    def _write(chunk_id, status, payload, digest) -> bool:
         """Apply one prepared chunk to the graph; False when it did not land."""
         nonlocal node_upserts, edges, chunks_processed
         if status == "empty":
-            store.mark_chunk(source_id, chunk_id, "done")
+            store.mark_chunk(source_id, chunk_id, "done", content_hash=digest, extraction_key=fingerprint)
             chunks_processed += 1
             return True
         if status == "failed":
@@ -329,7 +378,13 @@ def extract_graph_for_source(
             name_embeddings = _embed_names(embedding, entities, relationships)
             _embed_facts(embedding, relationships)
             chunk_nodes, chunk_edges = store.apply_chunk(
-                source_id, chunk_id, entities, relationships, name_embeddings
+                source_id,
+                chunk_id,
+                entities,
+                relationships,
+                name_embeddings,
+                content_hash=digest,
+                extraction_key=fingerprint,
             )
         except Exception as exc:
             logger.warning(
@@ -360,8 +415,8 @@ def extract_graph_for_source(
         else:
             prepared = (_prepare(item) for item in items)
         missed = []
-        for item, (chunk_id, status, payload) in zip(items, prepared):
-            if not _write(chunk_id, status, payload):
+        for item, (chunk_id, status, payload, digest) in zip(items, prepared):
+            if not _write(chunk_id, status, payload, digest):
                 missed.append(item)
             _report()
         return missed
@@ -424,6 +479,87 @@ def extract_graph_for_source(
         "skipped_over_cap": skipped_over_cap,
         "failed_chunks": failed_chunks,
     }
+
+
+def sync_graph_to_chunks(
+    source_id: str, chunks: List[Dict[str, Any]], *, config: SourceConfig
+) -> Optional[List[str]]:
+    """Carry a source's graph over to its re-embedded chunks; return the ids left to extract.
+
+    A sync re-embeds every chunk under a new id. A chunk whose text the graph
+    already holds (matched by ``content_hash``, one-to-one) has its node links,
+    edge provenance and checkpoint re-pointed to the new id, with no LLM call.
+    The contributions of chunks whose text is gone are deleted, and the new
+    text's chunk ids are returned for ``extract_graph_for_source(chunk_ids=)``.
+
+    A graph built before content hashes were recorded, or under another
+    extraction config (``extraction_fingerprint``), is reset and ``None`` is
+    returned: the caller extracts the whole source. A redelivered sync finds
+    the chunks it already carried over under their new ids and keeps them.
+
+    Run holding the source's ``graph_extract_lock``.
+
+    Args:
+        source_id: The source.
+        chunks: The source's chunks as the vector store now holds them.
+        config: The source's parsed config.
+
+    Returns:
+        The new chunk ids to extract, or ``None`` after a reset.
+    """
+    from docsgpt.graphrag.store import GraphStore
+
+    store = GraphStore()
+    fingerprint = extraction_fingerprint(config)
+    rows = store.checkpoint(source_id)
+    done = [row for row in rows if row["status"] == "done"]
+    if any(row["content_hash"] is None or row["extraction_key"] != fingerprint for row in done):
+        logger.info("Graph of source %s has no content hashes for this config; rebuilding it.", source_id)
+        store.delete_by_source(source_id)
+        return None
+
+    current: Dict[str, str] = {}
+    for chunk in chunks:
+        chunk_id = _chunk_id(chunk)
+        if chunk_id is not None:
+            current[chunk_id] = content_hash(_chunk_text(chunk))
+    held_by_hash: Dict[str, List[str]] = defaultdict(list)
+    kept = set()
+    for row in done:
+        chunk_id = row["chunk_id"]
+        if current.get(chunk_id) == row["content_hash"]:
+            kept.add(chunk_id)  # carried over already (a redelivered sync)
+        else:
+            held_by_hash[row["content_hash"]].append(chunk_id)
+
+    remap: Dict[str, str] = {}
+    to_extract: List[str] = []
+    for chunk_id, digest in current.items():
+        if chunk_id in kept:
+            continue
+        if held_by_hash.get(digest):
+            remap[held_by_hash[digest].pop()] = chunk_id
+        else:
+            to_extract.append(chunk_id)
+    gone = [chunk_id for ids in held_by_hash.values() for chunk_id in ids]
+    # A failed attempt on a chunk that is gone leaves no graph, only its row.
+    gone += [
+        row["chunk_id"] for row in rows if row["status"] not in ("done", "deleted") and row["chunk_id"] not in current
+    ]
+
+    # Re-point first, so a node an unchanged chunk shares with a removed one
+    # survives the delete.
+    store.remap_chunks(source_id, remap)
+    if gone:
+        store.delete_chunks(source_id, gone)
+    logger.info(
+        "Graph sync for source %s: %d chunk(s) carried over, %d removed, %d to extract.",
+        source_id,
+        len(remap) + len(kept),
+        len(gone),
+        len(to_extract),
+    )
+    return to_extract
 
 
 def _build_entities(raw_entities: Any) -> List[Dict[str, Any]]:

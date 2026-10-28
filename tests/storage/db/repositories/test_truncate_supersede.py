@@ -201,3 +201,23 @@ class TestSupersedeTombstone:
         assert repo.cleanup_superseded_older_than(14) == 1
         assert repo.was_superseded(stale) is False
         assert repo.was_superseded(recent) is True
+
+
+class TestTruncateAfterCancellation:
+    def test_cancellation_waits_for_the_commit(self, pg_conn, monkeypatch):
+        """Redis is not written inside the transaction; the caller cancels after it commits."""
+        from docsgpt.activity import flags
+
+        def inside_transaction(message_id):
+            raise AssertionError("cancelled before the delete committed")
+
+        monkeypatch.setattr(flags, "cancel_stream", inside_transaction)
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create("u", "cancel after commit")
+        _seed(pg_conn, conv["id"], 0, "complete")
+        live = _seed(pg_conn, conv["id"], 1, "streaming")
+        done = _seed(pg_conn, conv["id"], 2, "failed")
+
+        repo.truncate_after(conv["id"], keep_up_to=0)
+
+        assert sorted(repo.retired_message_ids) == sorted([live, done])

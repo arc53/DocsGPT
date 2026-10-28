@@ -661,6 +661,77 @@ class TestExtractionTokenUsage:
         assert len(used) > 1, "calls did not run concurrently"
         assert all(len(llm.threads) == 1 for llm in used)
 
+    def test_each_chunk_is_a_prompt_of_its_own(self, monkeypatch, stub_embedding):
+        """One instance serves every chunk on its thread. Chained through
+        ``previous_response_id``, chunk N was billed for chunks 1..N-1 and
+        their outputs, so prompts grew with the source."""
+        import types
+        from unittest.mock import MagicMock
+
+        from docsgpt.core.model_settings import ModelCapabilities
+        from docsgpt.core.settings import settings
+        from docsgpt.llm.openai import OpenAILLM
+
+        def _passthrough(func):
+            def wrapper(self_llm, model, messages, stream, tools=None, **kwargs):
+                return func(self_llm, model, messages, stream, tools, **kwargs)
+
+            return wrapper
+
+        monkeypatch.setattr("docsgpt.llm.base.gen_cache", _passthrough)
+        monkeypatch.setattr("docsgpt.llm.base.gen_token_usage", _passthrough)
+        monkeypatch.setattr("docsgpt.llm.openai.OpenAI", MagicMock())
+        monkeypatch.setattr(
+            "docsgpt.llm.openai.StorageCreator", types.SimpleNamespace(get_storage=lambda: None)
+        )
+        monkeypatch.setattr("docsgpt.llm.openai.settings.OPENAI_RESPONSES_STORE", True)
+        monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 1)
+        payload = _extraction_json(entities=[{"name": "Ada", "type": "person", "description": "d"}], relationships=[])
+        replies = iter(
+            types.SimpleNamespace(
+                id=f"resp_{i}",
+                output=[types.SimpleNamespace(type="message", content=[types.SimpleNamespace(type="output_text", text=payload)])],
+            )
+            for i in range(10)
+        )
+        create = MagicMock(side_effect=lambda **params: next(replies))
+        built = []
+
+        def _create(*args, stateless=False, **kwargs):
+            llm = OpenAILLM(api_key="k", model_id=kwargs.get("model_id"))
+            llm.capabilities = ModelCapabilities(api_flavor="responses")
+            llm.client.responses.create = create
+            llm.stateless = stateless
+            built.append(llm)
+            return llm
+
+        monkeypatch.setattr(extraction_module.LLMCreator, "create_llm", staticmethod(_create))
+        store = MagicMock(name="GraphStore")
+        store.pending_chunks.return_value = ["c1", "c2", "c3"]
+        store.apply_chunk.return_value = (1, 0)
+        store.count_nodes.return_value = 1
+        monkeypatch.setattr("docsgpt.graphrag.store.GraphStore", lambda *a, **k: store)
+        texts = ["Ada wrote notes.", "Babbage built engines.", "Lovelace met Babbage."]
+
+        summary = extract_graph_for_source(
+            str(uuid.uuid4()),
+            user="owner-1",
+            chunks=[_chunk(f"c{i + 1}", text) for i, text in enumerate(texts)],
+            config=SourceConfig(),
+            request_id="req-1",
+        )
+
+        assert summary["chunks_processed"] == 3
+        assert len(built) == 1, "the calling thread reuses one instance"
+        sent = [call.kwargs for call in create.call_args_list]
+        assert len(sent) == 3
+        for params, own in zip(sent, texts):
+            assert "previous_response_id" not in params
+            assert params["store"] is False
+            prompt = json.dumps(params["input"])
+            assert own in prompt
+            assert not any(other in prompt for other in texts if other != own)
+
 
 @pytest.mark.unit
 class TestModelResolution:
@@ -1162,3 +1233,115 @@ class TestEmbeddingsResolution:
 
         assert calls == [((), {})]
         assert summary["chunks_processed"] == 0
+
+
+class _ProgressGraphStore:
+    """A graph store holding only the ``graph_ingest_progress`` checkpoint, in memory."""
+
+    progress: dict = {}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def pending_chunks(self, source_id, all_ids):
+        return [c for c in all_ids if self.progress.get(c) not in ("done", "deleted")]
+
+    def apply_chunk(self, source_id, chunk_id, entities, relationships, name_embeddings, **checkpoint):
+        self.progress[chunk_id] = "done"
+        return len(entities), 0
+
+    def mark_chunk(self, source_id, chunk_id, status, **checkpoint):
+        self.progress[chunk_id] = status
+
+    def set_node_degrees(self, source_id):
+        pass
+
+    def count_nodes(self, source_id, strict=False):
+        return 0
+
+
+class _EchoLLM:
+    """Answers every chunk with one entity, recording which chunk texts were billed."""
+
+    model_id = "stub-model"
+    _token_usage_source = None
+    _request_id = None
+
+    def __init__(self):
+        self.calls = []
+
+    def gen(self, model=None, messages=None, **kwargs):
+        text = messages[-1]["content"].removeprefix("<chunk>\n").removesuffix("\n</chunk>")
+        self.calls.append(text)
+        return _extraction_json([{"name": "E " + text, "type": "t", "description": "d"}], [])
+
+
+@pytest.mark.unit
+class TestAPageChangeExtractsOnlyItsChunks:
+    """A page change extracts its new chunks, within the source's chunk cap, and nothing else.
+
+    The full build stops at the cap and leaves the rest pending. A page change
+    must not bill that backlog (or chunks that failed) on every add, and the
+    cap counts the chunks the source already has extracted.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, monkeypatch, stub_embedding):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 1)
+        monkeypatch.setattr("docsgpt.graphrag.store.GraphStore", _ProgressGraphStore)
+        _ProgressGraphStore.progress = {}
+
+    def _run(self, monkeypatch, chunks, cap, chunk_ids=None):
+        llm = _EchoLLM()
+        _install_stub_llm(monkeypatch, llm)
+        config = SourceConfig.model_validate({"graph": {"max_chunks": cap}})
+        summary = extract_graph_for_source("s", "u", chunks, config=config, chunk_ids=chunk_ids)
+        return llm.calls, summary
+
+    def test_only_the_new_chunks_are_extracted(self, monkeypatch):
+        chunks = [_chunk(f"c{i}", f"old {i}") for i in range(4)]
+        self._run(monkeypatch, chunks, cap=3)
+        _ProgressGraphStore.progress["c1"] = "failed"
+        chunks.append(_chunk("c4", "NEW PAGE"))
+
+        calls, summary = self._run(monkeypatch, chunks, cap=10, chunk_ids=["c4"])
+
+        # Neither the over-cap backlog (c3) nor the failed chunk (c1) is billed.
+        assert calls == ["NEW PAGE"]
+        assert summary["chunks_processed"] == 1
+
+    def test_a_source_at_its_cap_extracts_nothing_more(self, monkeypatch):
+        chunks = [_chunk(f"c{i}", f"old {i}") for i in range(4)]
+        self._run(monkeypatch, chunks, cap=2)
+        chunks.append(_chunk("c4", "NEW PAGE"))
+
+        calls, summary = self._run(monkeypatch, chunks, cap=2, chunk_ids=["c4"])
+
+        assert calls == []
+        assert summary["skipped_over_cap"] == 1
+
+    def test_a_refreshed_page_frees_the_cap_its_old_chunks_held(self, monkeypatch):
+        chunks = [_chunk(f"c{i}", f"old {i}") for i in range(3)]
+        self._run(monkeypatch, chunks, cap=2)
+        # c0 was refreshed: its chunk is gone from the store, c5 and c6 replace it.
+        chunks = [chunks[1], chunks[2], _chunk("c5", "NEW c0"), _chunk("c6", "NEW c0 two")]
+
+        calls, _summary = self._run(monkeypatch, chunks, cap=2, chunk_ids=["c5", "c6"])
+
+        # One extracted chunk (c1) is left, so one more fits under the cap of two.
+        assert calls == ["NEW c0"]
+
+    def test_a_redelivered_build_spends_only_what_is_left_of_the_cap(self, monkeypatch):
+        # A build killed part-way is redelivered: the chunks it extracted count
+        # toward the cap, so the source never holds more than the cap.
+        chunks = [_chunk(f"c{i}", f"text {i}") for i in range(6)]
+        _ProgressGraphStore.progress.update({"c0": "done", "c1": "done"})
+
+        calls, summary = self._run(monkeypatch, chunks, cap=3)
+
+        assert calls == ["text 2"]
+        assert summary["chunks_processed"] == 1
+        assert summary["skipped_over_cap"] == 3
+        assert sorted(c for c, s in _ProgressGraphStore.progress.items() if s == "done") == ["c0", "c1", "c2"]

@@ -74,6 +74,8 @@ class SharePointLoader(BaseConnectorLoader):
             raise ValueError("No access token found in session")
 
         self.next_page_token = None
+        # Downloaded file's local path → its SharePoint link, for ``download_to_directory``.
+        self._file_urls: Dict[str, str] = {}
 
     def _apply_token_info(self, token_info: Dict[str, Any]) -> None:
         self.access_token = token_info.get('access_token')
@@ -495,7 +497,7 @@ class SharePointLoader(BaseConnectorLoader):
     def _download_single_file(self, file_id: str, local_dir: str) -> bool:
         try:
             url = self._get_item_url(file_id)
-            params = {'$select': 'id,name,file'}
+            params = {'$select': 'id,name,file,webUrl'}
             response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
             response.raise_for_status()
 
@@ -518,6 +520,8 @@ class SharePointLoader(BaseConnectorLoader):
             with open(full_path, 'wb') as f:
                 f.write(download_response.content)
 
+            if metadata.get('webUrl'):
+                self._file_urls[full_path] = metadata['webUrl']
             return True
         except Exception as e:
             logging.error(f"Error in _download_single_file: {e}")
@@ -592,6 +596,7 @@ class SharePointLoader(BaseConnectorLoader):
 
         config = source_config if source_config else getattr(self, 'config', {})
         files_downloaded = 0
+        self._file_urls = {}
 
         try:
             folder_ids = config.get('folder_ids', [])
@@ -640,7 +645,8 @@ class SharePointLoader(BaseConnectorLoader):
                 "directory_path": local_dir,
                 "empty_result": files_downloaded == 0,
                 "source_type": "share_point",
-                "config_used": config
+                "config_used": config,
+                "file_urls": self._relative_file_urls(local_dir),
             }
 
         except Exception as e:
@@ -650,5 +656,10 @@ class SharePointLoader(BaseConnectorLoader):
                 "empty_result": True,
                 "source_type": "share_point",
                 "config_used": config,
+                "file_urls": self._relative_file_urls(local_dir),
                 "error": str(e)
             }
+
+    def _relative_file_urls(self, local_dir: str) -> Dict[str, str]:
+        """The downloaded files' links, keyed by their path under ``local_dir``."""
+        return {os.path.relpath(path, local_dir): url for path, url in self._file_urls.items()}

@@ -71,6 +71,14 @@ class BaseConnectorAuth(ABC):
         """
         pass
 
+    def picker_options(self, token_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Settings a browser-side picker needs for this sign-in, sent with its access token.
+
+        Args:
+            token_info: The connection's stored token info.
+        """
+        return {}
+
     def sanitize_token_info(self, token_info: Dict[str, Any], **extra_fields) -> Dict[str, Any]:
         """Extract the fields safe to persist in the session store.
         """
@@ -175,3 +183,18 @@ class BaseConnectorLoader(ABC):
                 - error: Error message if download failed (optional)
         """
         pass
+
+    def sync_fingerprint(self, source_config: Dict[str, Any]) -> Optional[str]:
+        """Fingerprint what a sync would download, without downloading it.
+
+        A sync compares this with the value stored at the last
+        ingest and skips the re-ingest when they match. Connectors that cannot
+        tell cheaply return ``None``, and every sync re-ingests.
+
+        Args:
+            source_config: The source's stored selection (``file_ids``, ``folder_ids``...).
+
+        Returns:
+            A string that changes whenever the selected content changes, or ``None``.
+        """
+        return None

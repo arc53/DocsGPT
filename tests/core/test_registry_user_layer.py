@@ -162,7 +162,7 @@ class TestPerUserLayer:
 
 @pytest.mark.unit
 class TestLLMCreatorDispatchUsesUpstreamModelId:
-    def test_llmcreator_sends_upstream_id_not_uuid(self, pg_conn):
+    def test_llmcreator_sends_upstream_id_not_uuid(self, pg_conn, public_dns):
         """End-to-end: LLMCreator with a BYOM uuid must construct the
         OpenAILLM with the user's upstream model name (e.g.
         ``mistral-large-latest``), not the registry uuid."""
@@ -208,7 +208,7 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
         assert captured["base_url"] == "https://api.mistral.ai/v1"
         assert captured["model_id"] == "mistral-large-latest"  # NOT the uuid!
 
-    def test_llmcreator_forwards_byom_capabilities(self, pg_conn):
+    def test_llmcreator_forwards_byom_capabilities(self, pg_conn, public_dns):
         """LLMCreator must thread the registry-resolved ``capabilities``
         into the LLM. Without it the OpenAILLM hard-codes ``True`` for
         tools/structured output and advertises image attachments

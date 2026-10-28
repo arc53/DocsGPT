@@ -810,6 +810,48 @@ class TestManageSourceFilesIdempotency:
         assert first.json["reingest_task_id"] != second.json["reingest_task_id"]
         assert fake_storage.save_file.call_count == 2
 
+    def test_sync_same_key_second_post_returns_cached(self, app, pg_conn):
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
+
+        user = "alice-mgr-sync"
+        src = _seed_source(pg_conn, user=user, file_path="/data")
+        fake_storage = MagicMock()
+        fake_storage.list_files.return_value = []
+        apply_mock = _apply_async_mock()
+
+        def sync_request():
+            return app.test_request_context(
+                "/api/manage_source_files", method="POST",
+                data={
+                    "source_id": str(src["id"]),
+                    "operation": "sync",
+                    "file": (io.BytesIO(b"content"), "new.txt"),
+                },
+                content_type="multipart/form-data",
+                headers={"Idempotency-Key": "mgr-sync"},
+            )
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
+            apply_mock,
+        ):
+            responses = []
+            for _ in range(2):
+                with sync_request():
+                    from flask import request
+                    request.decoded_token = {"sub": user}
+                    responses.append(ManageSourceFiles().post())
+
+        first, second = responses
+        assert first.status_code == second.status_code == 200
+        assert apply_mock.call_count == 1
+        assert second.json["reingest_task_id"] == first.json["reingest_task_id"]
+        assert second.json["source_id"] == str(src["id"])
+        assert fake_storage.save_file.call_count == 1
+
     def test_remove_same_key_second_post_returns_real_source_id(
         self, app, pg_conn
     ):

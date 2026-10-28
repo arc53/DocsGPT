@@ -4,7 +4,10 @@ import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { selectIsAdmin } from '@/preferences/preferenceSlice';
+import {
+  selectAnalyticsEnabled,
+  selectIsAdmin,
+} from '@/preferences/preferenceSlice';
 
 import ConnectionHealthDot from '../connectors/ConnectionHealthDot';
 import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
@@ -27,11 +30,12 @@ export default function SectionPills({ className }: { className?: string }) {
   const { section, item } = useSectionContext();
   const isAdmin = useSelector(selectIsAdmin);
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const analyticsEnabled = useSelector(selectAnalyticsEnabled);
 
   if (!section) return null;
   const items = getVisibleGroups(section, {
     isAdmin,
-    features: { connectors: connectorsEnabled },
+    features: { connectors: connectorsEnabled, analytics: analyticsEnabled },
   }).flatMap((group) => group.items);
   if (items.length < 2) return null;
 

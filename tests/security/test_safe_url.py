@@ -924,6 +924,332 @@ def test_pinned_fetch_bytes_truncate_still_refuses_private_addresses():
             pinned_fetch_bytes("http://intranet.example/", max_bytes=10, truncate=True)
 
 
+@pytest.fixture
+def local_server(monkeypatch):
+    """A 127.0.0.1 HTTP server (the SSRF guard let through) serving one handler per path."""
+    import http.server
+    import threading
+
+    from docsgpt.security import safe_url
+
+    monkeypatch.setattr(safe_url, "_is_blocked_ip", lambda ip: False)
+    routes: dict = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):  # noqa: N802
+            routes[self.path](self)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", routes
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _trickle(handler, pause: float = 0.3, pieces: int = 40) -> None:
+    """Send a body one small piece at a time, each well inside the read timeout."""
+    import time
+
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/html")
+    handler.send_header("Connection", "close")
+    handler.end_headers()
+    try:
+        for _ in range(pieces):
+            handler.wfile.write(b"<p>x</p>")
+            handler.wfile.flush()
+            time.sleep(pause)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_total_timeout_defaults_to_twice_the_timeout(local_server, monkeypatch):
+    import time
+
+    from docsgpt.security import safe_url
+
+    monkeypatch.setattr(safe_url, "_MIN_TOTAL_TIMEOUT", 0)
+    base, routes = local_server
+    routes["/slow"] = _trickle
+
+    started = time.monotonic()
+    with pytest.raises(requests.Timeout):
+        pinned_fetch_bytes(base + "/slow", max_bytes=1_000_000, timeout=0.5)
+
+    assert time.monotonic() - started < 3
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_reads_chunked_gzip_bodies_from_a_real_socket(local_server):
+    import gzip
+
+    base, routes = local_server
+    body = b"<html>" + b"hello " * 5000 + b"</html>"
+    packed = gzip.compress(body)
+
+    def chunked_gzip(handler):
+        handler.send_response(200)
+        handler.send_header("Content-Encoding", "gzip")
+        handler.send_header("Transfer-Encoding", "chunked")
+        handler.end_headers()
+        for i in range(0, len(packed), 1000):
+            piece = packed[i:i + 1000]
+            handler.wfile.write(f"{len(piece):x}\r\n".encode() + piece + b"\r\n")
+        handler.wfile.write(b"0\r\n\r\n")
+
+    routes["/gz"] = chunked_gzip
+
+    content, response = pinned_fetch_bytes(base + "/gz", max_bytes=1_000_000, timeout=5)
+
+    assert content == body
+    assert response.status_code == 200
+    with pytest.raises(ResponseTooLargeError):
+        pinned_fetch_bytes(base + "/gz", max_bytes=1000, timeout=5)
+    small, _ = pinned_fetch_bytes(base + "/gz", max_bytes=1000, timeout=5, truncate=True)
+    assert small == body[:1000]
+
+
+def _trickled_headers(handler) -> None:
+    """Header lines, each well inside the read timeout; the body never comes."""
+    import time
+
+    try:
+        handler.wfile.write(b"HTTP/1.1 200 OK\r\n")
+        for i in range(40):
+            handler.wfile.write(b"X-Pad-%d: a\r\n" % i)
+            handler.wfile.flush()
+            time.sleep(0.2)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+
+
+def _gzip_of_empty_blocks(handler, pause: float = 0.2, blocks: int = 40) -> None:
+    """A gzip body that sends empty stored blocks: bytes keep arriving, none decode."""
+    import time
+
+    handler.send_response(200)
+    handler.send_header("Content-Encoding", "gzip")
+    handler.send_header("Connection", "close")
+    handler.end_headers()
+    try:
+        handler.wfile.write(b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff")
+        for _ in range(blocks):
+            handler.wfile.write(b"\x00\x00\x00\xff\xff")
+            handler.wfile.flush()
+            time.sleep(pause)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "serve",
+    [_trickle, _trickled_headers, _gzip_of_empty_blocks],
+    ids=["a trickling body", "trickled headers", "a compressed body that decodes to nothing"],
+)
+def test_pinned_fetch_bytes_total_timeout_stops(local_server, serve):
+    import time
+
+    base, routes = local_server
+    routes["/slow"] = serve
+
+    started = time.monotonic()
+    with pytest.raises(requests.Timeout):
+        pinned_fetch_bytes(base + "/slow", max_bytes=1000, timeout=1.0, total_timeout=1.0)
+
+    # Each piece arrives within the 1 s read timeout; only the total stops it.
+    assert time.monotonic() - started < 3
+
+
+class _PieceReader:
+    """A raw stream handing out one queued piece per read, as a socket does."""
+
+    def __init__(self, pieces: list[bytes]) -> None:
+        self._pieces = list(pieces)
+
+    def read1(self, amt: int = -1) -> bytes:
+        return self._pieces.pop(0) if self._pieces else b""
+
+    def read(self, amt: int = -1) -> bytes:
+        return self.read1(amt)
+
+    def close(self) -> None:
+        pass
+
+
+def _raw_response(pieces: list[bytes], encoding: str):
+    """A ``requests.Response`` whose ``raw`` is a urllib3 stream over ``pieces``."""
+    import urllib3
+
+    raw = urllib3.response.HTTPResponse(
+        body=_PieceReader(pieces),
+        headers={"Content-Encoding": encoding},
+        preload_content=False,
+        decode_content=True,
+    )
+    response = requests.Response()
+    response.raw = raw
+    response.status_code = 200
+    return response
+
+
+@pytest.mark.unit
+def test_body_chunks_hands_back_every_raw_read_even_when_it_decodes_to_nothing():
+    import gzip
+
+    from docsgpt.security.safe_url import _body_chunks
+
+    tail = gzip.compress(b"done")[10:]
+    pieces = [b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff"] + [b"\x00\x00\x00\xff\xff"] * 5 + [tail]
+
+    chunks = list(_body_chunks(_raw_response(pieces, "gzip"), 65536))
+
+    # One piece per raw read, so the caller's deadline check runs on each.
+    assert len(chunks) >= len(pieces)
+    assert b"".join(chunks) == b"done"
+
+
+@pytest.mark.unit
+def test_body_chunks_inflates_one_raw_read_in_bounded_pieces():
+    import gzip
+
+    from docsgpt.security.safe_url import _body_chunks
+
+    bomb = gzip.compress(b"\0" * 5_000_000)
+
+    pieces = iter(_body_chunks(_raw_response([bomb], "gzip"), 4096))
+    first = [next(pieces) for _ in range(3)]
+
+    assert all(len(piece) <= 4096 for piece in first)
+    assert sum(len(piece) for piece in pieces) + sum(map(len, first)) == 5_000_000
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("encoding", ["deflate", "deflate, gzip", "gzip, gzip"])
+def test_body_chunks_decodes_deflate_and_stacked_encodings(encoding):
+    import gzip
+    import zlib
+
+    from docsgpt.security.safe_url import _body_chunks
+
+    body = b"<p>hello</p>" * 2000
+    packed = body
+    for coding in [c.strip() for c in encoding.split(",")]:
+        packed = gzip.compress(packed) if coding == "gzip" else zlib.compress(packed)
+    pieces = [packed[i:i + 500] for i in range(0, len(packed), 500)]
+
+    assert b"".join(_body_chunks(_raw_response(pieces, encoding), 4096)) == body
+
+
+@pytest.mark.unit
+def test_body_chunks_raises_a_decoding_error_for_a_corrupt_body():
+    from docsgpt.security.safe_url import _body_chunks
+
+    with pytest.raises(requests.exceptions.ContentDecodingError):
+        list(_body_chunks(_raw_response([b"this is not gzip at all"], "gzip"), 4096))
+
+
+def _test_hosts_to_loopback(monkeypatch) -> list[str]:
+    """Send every ``*.test`` lookup to 127.0.0.1 and record the names looked up."""
+    real = socket.getaddrinfo
+    asked: list[str] = []
+
+    def fake(host, *args, **kwargs):
+        if isinstance(host, str) and host.endswith(".test"):
+            asked.append(host)
+            host = "127.0.0.1"
+        return real(host, *args, **kwargs)
+
+    monkeypatch.setattr("socket.getaddrinfo", fake)
+    return asked
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("host", "ascii_host"), [
+    ("bücher.test", "xn--bcher-kva.test"),
+    ("пример.test", "xn--e1afmkfd.test"),
+    ("straße.test", "xn--strae-oqa.test"),
+])
+def test_pinned_fetch_bytes_sends_an_internationalized_host_as_its_ascii_name(
+    host, ascii_host, local_server, monkeypatch,
+):
+    base, routes = local_server
+    port = base.rsplit(":", 1)[1]
+    asked = _test_hosts_to_loopback(monkeypatch)
+    seen: list[str] = []
+
+    def record_host(handler):
+        seen.append(handler.headers["Host"])
+        handler.send_response(200)
+        handler.send_header("Content-Length", "2")
+        handler.end_headers()
+        handler.wfile.write(b"ok")
+
+    routes["/"] = record_host
+
+    body, _ = pinned_fetch_bytes(f"http://{host}:{port}/", max_bytes=100, timeout=5)
+
+    assert body == b"ok"
+    assert seen == [f"{ascii_host}:{port}"]
+    # The name resolved is the one sent, not an IDNA 2003 reading of it.
+    assert asked == [ascii_host]
+
+
+@pytest.mark.unit
+def test_pinned_session_verifies_tls_against_the_ascii_name(monkeypatch):
+    captured = _capture_send(monkeypatch)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("104.18.6.192")):
+        pinned_post("https://bücher.example/v1", json={}, timeout=5)
+
+    assert captured["adapters"]["https://"]._server_hostname == "xn--bcher-kva.example"
+    assert captured["prepared"].headers["Host"] == "xn--bcher-kva.example"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("url", [
+    "http://" + "a" * 64 + ".com/",
+    "http://x..y.com/",
+])
+def test_a_host_dns_cannot_encode_is_a_validation_error(url):
+    with pytest.raises(UnsafeUserUrlError):
+        validate_user_base_url(url)
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_never_sends_url_credentials(local_server):
+    base, routes = local_server
+    port = base.rsplit(":", 1)[1]
+    seen: list[tuple[str, str | None]] = []
+
+    def record(handler, status: int = 200, location: str | None = None):
+        seen.append((handler.path, handler.headers.get("Authorization")))
+        handler.send_response(status)
+        if location:
+            handler.send_header("Location", location)
+        handler.send_header("Content-Length", "2")
+        handler.end_headers()
+        handler.wfile.write(b"ok")
+
+    routes["/a"] = lambda handler: record(handler, 302, f"http://bob:pw@127.0.0.1:{port}/b")
+    routes["/b"] = record
+
+    body, _ = pinned_fetch_bytes(f"http://alice:s3cret@127.0.0.1:{port}/b", max_bytes=100, timeout=5)
+    pinned_fetch_bytes(f"http://alice:s3cret@127.0.0.1:{port}/a", max_bytes=100, timeout=5, allow_redirects=True)
+
+    assert body == b"ok"
+    assert seen == [("/b", None), ("/a", None), ("/b", None)]
+
+
 # guarded_async_client: per-request SSRF guard for async SDKs (MCP)
 
 
@@ -1162,3 +1488,176 @@ def test_reject_ambiguous_url_refuses(url):
 ])
 def test_reject_ambiguous_url_accepts(url):
     assert reject_ambiguous_url(url) is None
+
+
+# Operator allowlist (SAFE_URL_ALLOWED_HOSTS)
+
+
+@pytest.fixture
+def allow_hosts(monkeypatch):
+    """Set ``SAFE_URL_ALLOWED_HOSTS`` for one test."""
+    from docsgpt.core.settings import settings
+
+    def _set(*entries: str) -> None:
+        monkeypatch.setattr(settings, "SAFE_URL_ALLOWED_HOSTS", list(entries))
+
+    return _set
+
+
+@pytest.mark.unit
+def test_private_host_stays_blocked_with_an_empty_allowlist(allow_hosts):
+    allow_hosts()
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+            validate_user_base_url("https://docs.intranet.example/")
+
+
+@pytest.mark.unit
+def test_allowlisted_hostname_passes_for_a_private_address(allow_hosts):
+    allow_hosts("Docs.Intranet.Example")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        assert validate_user_base_url("https://docs.intranet.example/v1") is None
+
+
+@pytest.mark.unit
+def test_pinned_request_dials_the_validated_ip_of_an_allowlisted_host(allow_hosts, monkeypatch):
+    allow_hosts("docs.intranet.example")
+    captured = _capture_send(monkeypatch)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        pinned_request("GET", "http://docs.intranet.example:8080/api", timeout=5)
+
+    assert captured["prepared"].url == "http://10.16.0.5:8080/api"
+    assert captured["prepared"].headers["Host"] == "docs.intranet.example:8080"
+
+
+@pytest.mark.unit
+def test_allowlisted_hostname_is_matched_in_idna_form(allow_hosts):
+    allow_hosts("xn--bcher-kva.intranet")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        assert validate_user_base_url("https://bücher.intranet/") is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("host", ["evil.example.com", "example.com.evil.net", "xexample.com"])
+def test_allowlisted_hostname_match_is_exact(allow_hosts, host):
+    allow_hosts("example.com")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5")):
+        with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+            validate_user_base_url(f"https://{host}/")
+
+
+@pytest.mark.unit
+def test_cidr_entry_allows_addresses_inside_it(allow_hosts):
+    allow_hosts("10.16.0.0/16")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.200.7")):
+        assert validate_user_base_url("https://wiki.corp.example/") is None
+    assert validate_user_base_url("http://10.16.3.4:9000/") is None
+
+
+@pytest.mark.unit
+def test_cidr_entry_blocks_addresses_outside_it(allow_hosts):
+    allow_hosts("10.16.0.0/16")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.17.0.1")):
+        with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+            validate_user_base_url("https://wiki.corp.example/")
+    with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+        validate_user_base_url("http://192.168.1.1/")
+
+
+@pytest.mark.unit
+def test_every_resolved_address_must_be_public_or_allowed(allow_hosts):
+    allow_hosts("10.16.0.0/16")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("10.16.0.5", "192.168.1.1")):
+        with pytest.raises(UnsafeUserUrlError, match="192.168.1.1"):
+            validate_user_base_url("https://wiki.corp.example/")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("entries", "url", "resolved"),
+    [
+        (("169.254.169.254",), "http://169.254.169.254/latest/meta-data/", None),
+        (("169.254.0.0/16",), "http://169.254.170.2/v2/credentials", None),
+        (("0.0.0.0/0",), "http://169.254.169.254/", None),
+        (("fd00:ec2::254",), "http://[fd00:ec2::254]/", None),
+        (("fd00::/8",), "http://[fd00:ec2::254]/", None),
+        (("fd00::/8",), "http://[fd20:ce::254]/", None),
+        (("meta.corp.example", "fd00::/8"), "http://meta.corp.example/", "fd20:ce::254"),
+        (("100.100.100.200",), "http://100.100.100.200/", None),
+        (("::ffff:169.254.169.254",), "http://[::ffff:169.254.169.254]/", None),
+        (("0.0.0.0",), "http://0.0.0.0/", None),
+        (("::/0",), "http://[::]/", None),
+        (("metadata.google.internal",), "http://metadata.google.internal/", None),
+        (("meta.corp.example",), "http://meta.corp.example/", "169.254.169.254"),
+        (("meta.corp.example",), "http://meta.corp.example/", "fe80::1"),
+    ],
+)
+def test_metadata_and_unspecified_addresses_are_never_allowlistable(allow_hosts, entries, url, resolved):
+    allow_hosts(*entries)
+    if resolved is None:
+        with pytest.raises(UnsafeUserUrlError):
+            validate_user_base_url(url)
+        return
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo(resolved)):
+        with pytest.raises(UnsafeUserUrlError):
+            validate_user_base_url(url)
+
+
+@pytest.mark.unit
+def test_localhost_hostname_entry_does_not_unlock_loopback(allow_hosts):
+    allow_hosts("localhost")
+    with pytest.raises(UnsafeUserUrlError):
+        validate_user_base_url("http://localhost:7091/")
+
+
+@pytest.mark.unit
+def test_hostname_entry_does_not_unlock_a_loopback_address(allow_hosts):
+    allow_hosts("docs.intranet.example")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("127.0.0.1")):
+        with pytest.raises(UnsafeUserUrlError, match="blocked address"):
+            validate_user_base_url("http://docs.intranet.example/")
+
+
+@pytest.mark.unit
+def test_loopback_passes_only_when_listed_as_an_ip(allow_hosts):
+    allow_hosts("127.0.0.1", "::1")
+    assert validate_user_base_url("http://127.0.0.1:7091/") is None
+    assert validate_user_base_url("http://[::1]:7091/") is None
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("127.0.0.1")):
+        assert validate_user_base_url("http://docs.intranet.example/") is None
+    with pytest.raises(UnsafeUserUrlError):
+        validate_user_base_url("http://127.0.0.2/")
+    with pytest.raises(UnsafeUserUrlError):
+        validate_user_base_url("http://localhost/")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("url", "resolved"),
+    [("http://localhost./", "127.0.0.1"), ("http://metadata.google.internal./", "10.16.0.5")],
+)
+def test_trailing_dot_blocked_names_stay_blocked_by_name(allow_hosts, url, resolved):
+    allow_hosts("127.0.0.0/8", "10.16.0.0/16")
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo(resolved)):
+        with pytest.raises(UnsafeUserUrlError, match="internal-only name"):
+            validate_user_base_url(url)
+
+
+@pytest.mark.unit
+def test_allowlist_reads_a_comma_list_from_the_environment(monkeypatch):
+    from docsgpt.core.settings.server import ServerSettings
+
+    monkeypatch.setenv("SAFE_URL_ALLOWED_HOSTS", "docs.intranet.example, 10.16.0.0/16")
+    assert ServerSettings().SAFE_URL_ALLOWED_HOSTS == ["docs.intranet.example", "10.16.0.0/16"]
+
+
+@pytest.mark.unit
+def test_guarded_async_client_honours_the_allowlist(allow_hosts, monkeypatch):
+    allow_hosts("mcp.intranet.example")
+    captured = _capture_async_handle_request(monkeypatch)
+    _fake_dns(monkeypatch, {"mcp.intranet.example": [["10.16.0.9"]]})
+
+    _get(guarded_async_client(), "http://mcp.intranet.example/mcp")
+
+    assert captured[0]["url"].host == "10.16.0.9"
+    assert captured[0]["host_header"] == "mcp.intranet.example"

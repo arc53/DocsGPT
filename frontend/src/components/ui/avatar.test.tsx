@@ -9,6 +9,14 @@ describe('Avatar variants', () => {
     expect(html).toContain('class="shrink-0"');
   });
 
+  it('loads the image without CORS, so a redirect to a bucket without CORS headers still shows it', () => {
+    const html = renderToStaticMarkup(
+      <Avatar src="https://api.example.com/api/images/a/b" />,
+    );
+    expect(html).not.toContain('crossorigin');
+    expect(html).not.toContain('crossOrigin');
+  });
+
   it('sizes and shapes the initials box', () => {
     const classes = avatarVariants({
       size: 'default',

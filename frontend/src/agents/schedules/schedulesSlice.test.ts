@@ -9,13 +9,21 @@ import {
 } from '../../notifications/notificationsSlice';
 import type { Schedule, ScheduleRun } from '../types/schedule';
 import reducer, {
+  resetSchedules,
+  createSchedule,
   applyEvent,
   deleteSchedule,
+  loadAllSchedules,
+  loadSchedulesForAgent,
+  selectAllSchedules,
+  setSchedulePaused,
   loadRunsForSchedule,
   RUNS_PAGE_SIZE,
   selectRunsEnd,
   selectRunsForSchedule,
+  selectScheduleById,
   selectSchedulesForAgent,
+  selectSchedulesLoadError,
   type SchedulesState,
 } from './schedulesSlice';
 
@@ -64,6 +72,129 @@ const seedWithSchedule = (): SchedulesState => {
     byAgent: { 'agent-1': [sampleSchedule()] } as Record<string, Schedule[]>,
   };
 };
+
+describe('agent schedule load isolation', () => {
+  const a = { agentId: 'agent-1', token: null };
+  const b = { agentId: 'agent-2', token: null };
+
+  it('keeps a late failure on A from showing an error on B', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('a', a));
+    state = reducer(state, loadSchedulesForAgent.pending('b', b));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: b.agentId, schedules: [] },
+        'b',
+        b,
+      ),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('access denied'), 'a', a),
+    );
+
+    expect(
+      selectSchedulesLoadError({ schedules: state }, b.agentId),
+    ).toBeNull();
+    expect(selectSchedulesLoadError({ schedules: state }, a.agentId)).toBe(
+      'access denied',
+    );
+    expect(selectSchedulesForAgent({ schedules: state }, b.agentId)).toEqual(
+      [],
+    );
+  });
+
+  it('ignores an older failure after the same agent retries successfully', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('old', a));
+    state = reducer(state, loadSchedulesForAgent.pending('new', a));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: a.agentId, schedules: [sampleSchedule()] },
+        'new',
+        a,
+      ),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('old failure'), 'old', a),
+    );
+
+    expect(
+      selectSchedulesLoadError({ schedules: state }, a.agentId),
+    ).toBeNull();
+    expect(
+      selectSchedulesForAgent({ schedules: state }, a.agentId),
+    ).toHaveLength(1);
+  });
+
+  it('ignores an older success after the latest request fails', () => {
+    let state = reducer(
+      seedWithSchedule(),
+      loadSchedulesForAgent.pending('old', a),
+    );
+    state = reducer(state, loadSchedulesForAgent.pending('new', a));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('new failure'), 'new', a),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: a.agentId, schedules: [] },
+        'old',
+        a,
+      ),
+    );
+
+    expect(selectSchedulesLoadError({ schedules: state }, a.agentId)).toBe(
+      'new failure',
+    );
+    expect(
+      selectSchedulesForAgent({ schedules: state }, a.agentId),
+    ).toHaveLength(1);
+  });
+
+  it('does not clear another agent error when a different agent starts loading', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('a', a));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('access denied'), 'a', a),
+    );
+    state = reducer(state, loadSchedulesForAgent.pending('b', b));
+
+    expect(selectSchedulesLoadError({ schedules: state }, a.agentId)).toBe(
+      'access denied',
+    );
+    expect(
+      selectSchedulesLoadError({ schedules: state }, b.agentId),
+    ).toBeNull();
+  });
+
+  it('ignores responses from before a reset', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('a', a));
+    state = reducer(state, resetSchedules());
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('old account'), 'a', a),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: a.agentId, schedules: [sampleSchedule()] },
+        'a',
+        a,
+      ),
+    );
+
+    expect(
+      selectSchedulesLoadError({ schedules: state }, a.agentId),
+    ).toBeNull();
+    expect(selectSchedulesForAgent({ schedules: state }, a.agentId)).toEqual(
+      [],
+    );
+  });
+});
 
 describe('schedulesSlice SSE event handling', () => {
   it('schedule.run.completed upserts run + bumps last_run_at', () => {
@@ -286,6 +417,45 @@ describe('selectSchedulesForAgent', () => {
   });
 });
 
+describe('selectScheduleById', () => {
+  const withBoth = (own: Schedule, all: Schedule) => {
+    const base = reducer(undefined, { type: '@@init' });
+    return {
+      schedules: {
+        ...base,
+        byAgent: { 'agent-1': [own] },
+        all: [all],
+      },
+    };
+  };
+
+  it('returns the cross-agent record when it is newer', () => {
+    const state = withBoth(
+      sampleSchedule({ status: 'active' }),
+      sampleSchedule({
+        status: 'completed',
+        updated_at: '2026-05-20T12:00:00Z',
+      }),
+    );
+    expect(selectScheduleById(state, 'sched-1', 'agent-1')?.status).toBe(
+      'completed',
+    );
+  });
+
+  it('returns the agent-list record when it is newer', () => {
+    const state = withBoth(
+      sampleSchedule({
+        status: 'paused',
+        updated_at: '2026-05-20T12:00:00Z',
+      }),
+      sampleSchedule({ status: 'active' }),
+    );
+    expect(selectScheduleById(state, 'sched-1', 'agent-1')?.status).toBe(
+      'paused',
+    );
+  });
+});
+
 describe('loadRunsForSchedule paging', () => {
   const wrap = (schedules: SchedulesState) => ({ schedules });
   const fulfilled = (
@@ -341,5 +511,209 @@ describe('deleteSchedule', () => {
   it('rejects when the server refuses the delete', async () => {
     const action = await run({ success: false, error: 'Not allowed' });
     expect(action.type).toBe(deleteSchedule.rejected.type);
+  });
+});
+
+describe('schedulesSlice cross-agent list', () => {
+  const seedAll = (): SchedulesState => {
+    const state = seedWithSchedule();
+    return reducer(
+      state,
+      loadAllSchedules.fulfilled(
+        [
+          { ...sampleSchedule(), agent_name: 'Deal Desk' },
+          {
+            ...sampleSchedule({ id: 'sched-2', agent_id: null }),
+            origin_conversation_name: 'QBR prep',
+          },
+        ],
+        'req',
+        { token: null },
+      ),
+    );
+  };
+
+  it('stores the loaded list', () => {
+    const state = seedAll();
+    expect(selectAllSchedules({ schedules: state })?.map((s) => s.id)).toEqual([
+      'sched-1',
+      'sched-2',
+    ]);
+  });
+
+  it('keeps the names when a mutation answers with a bare schedule', () => {
+    const state = reducer(
+      seedAll(),
+      setSchedulePaused.fulfilled(sampleSchedule({ status: 'paused' }), 'req', {
+        id: 'sched-1',
+        action: 'pause',
+        token: null,
+      }),
+    );
+    const row = state.all?.find((s) => s.id === 'sched-1');
+    expect(row?.status).toBe('paused');
+    expect(row?.agent_name).toBe('Deal Desk');
+    expect(state.byAgent['agent-1'][0].status).toBe('paused');
+  });
+
+  it('updates an agentless schedule, which has no per-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      setSchedulePaused.fulfilled(
+        sampleSchedule({ id: 'sched-2', agent_id: null, status: 'paused' }),
+        'req',
+        { id: 'sched-2', action: 'pause', token: null },
+      ),
+    );
+    expect(state.all?.find((s) => s.id === 'sched-2')?.status).toBe('paused');
+  });
+
+  it('applies SSE status changes to the cross-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      sseEventReceived({
+        id: 'evt-9',
+        type: 'schedule.autopaused',
+        payload: { schedule_id: 'sched-2' },
+      } as SSEEvent),
+    );
+    expect(state.all?.find((s) => s.id === 'sched-2')?.status).toBe('paused');
+  });
+
+  describe('while the list is loading', () => {
+    const loading = () =>
+      reducer(
+        seedWithSchedule(),
+        loadAllSchedules.pending('load', { token: null }),
+      );
+    const answer = (requestId = 'load') =>
+      loadAllSchedules.fulfilled(
+        [{ ...sampleSchedule(), agent_name: 'Deal Desk' }],
+        requestId,
+        { token: null },
+      );
+
+    it('keeps a schedule created meanwhile, which its answer predates', () => {
+      let state = reducer(
+        loading(),
+        createSchedule.fulfilled(sampleSchedule({ id: 'sched-new' }), 'c', {
+          agentId: 'agent-1',
+          token: null,
+        } as never),
+      );
+      state = reducer(state, answer());
+      expect(state.all?.map((s) => s.id)).toEqual(['sched-new', 'sched-1']);
+    });
+
+    const completed = sseEventReceived({
+      id: 'evt-10',
+      type: 'schedule.completed',
+      payload: { schedule_id: 'sched-1' },
+    } as SSEEvent);
+
+    it('keeps a status event that arrived meanwhile', () => {
+      let state = reducer(loading(), completed);
+      state = reducer(
+        state,
+        loadAllSchedules.fulfilled(
+          // Read before the schedule completed, after the agent list loaded.
+          [sampleSchedule({ updated_at: '2026-05-20T12:00:00Z' })],
+          'load',
+          { token: null },
+        ),
+      );
+      expect(state.all?.[0].status).toBe('completed');
+      expect(
+        selectScheduleById({ schedules: state }, 'sched-1', 'agent-1')?.status,
+      ).toBe('completed');
+    });
+
+    it('replays saves and events in the order they came', () => {
+      let state = reducer(
+        loading(),
+        sseEventReceived({
+          id: 'evt-11',
+          type: 'schedule.autopaused',
+          payload: { schedule_id: 'sched-1' },
+        } as SSEEvent),
+      );
+      state = reducer(
+        state,
+        setSchedulePaused.fulfilled(sampleSchedule(), 'r', {
+          id: 'sched-1',
+          action: 'resume',
+          token: null,
+        }),
+      );
+      state = reducer(state, answer());
+      expect(state.all?.[0].status).toBe('active');
+    });
+
+    it('keeps a schedule deleted meanwhile deleted', () => {
+      let state = reducer(
+        loading(),
+        deleteSchedule.fulfilled('sched-1', 'd', {
+          id: 'sched-1',
+          token: null,
+        }),
+      );
+      state = reducer(state, answer());
+      expect(state.all).toEqual([]);
+    });
+
+    it("hides the last account's list while another token loads", () => {
+      let state = reducer(loading(), answer());
+      expect(state.all).toHaveLength(1);
+      // The same token reloading keeps the list on screen meanwhile.
+      state = reducer(
+        state,
+        loadAllSchedules.pending('again', { token: null }),
+      );
+      expect(state.all).toHaveLength(1);
+      state = reducer(
+        state,
+        loadAllSchedules.pending('other', { token: 'other-account' }),
+      );
+      expect(state.all).toBeNull();
+      // A failed load leaves nothing of the last account to show.
+      state = reducer(
+        state,
+        loadAllSchedules.rejected(new Error('down'), 'other', {
+          token: 'other-account',
+        }),
+      );
+      expect(state.all).toBeNull();
+      expect(state.allError).toBe(true);
+    });
+
+    it('drops a load sent before a reset', () => {
+      let state = reducer(loading(), resetSchedules());
+      state = reducer(state, answer());
+      expect(state.all).toBeNull();
+    });
+
+    it('applies only the latest load', () => {
+      let state = reducer(
+        loading(),
+        loadAllSchedules.pending('newer', { token: null }),
+      );
+      state = reducer(
+        state,
+        loadAllSchedules.fulfilled([], 'newer', { token: null }),
+      );
+      state = reducer(state, answer('load'));
+      expect(state.all).toEqual([]);
+    });
+  });
+
+  it('drops a deleted schedule from the cross-agent list', () => {
+    const state = reducer(
+      seedAll(),
+      deleteSchedule.fulfilled('sched-2', 'req', {
+        id: 'sched-2',
+        token: null,
+      }),
+    );
+    expect(state.all?.map((s) => s.id)).toEqual(['sched-1']);
   });
 });

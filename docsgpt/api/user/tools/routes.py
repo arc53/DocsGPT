@@ -585,17 +585,30 @@ def _load_owned_row(conn: Connection, ra: ResourceAccess) -> Optional[dict]:
     return UserToolsRepository(conn).get_any(ra.resource_id, ra.owner_id)
 
 
-def transform_actions(actions_metadata):
-    """Set default flags on action metadata for storage.
+def transform_actions(actions_metadata: list[dict]) -> list[dict]:
+    """Normalize action properties and set default flags for storage.
 
-    Marks each action as active, sets ``filled_by_llm`` and ``value`` on every
-    parameter property. Used by both the generic create_tool and MCP save routes.
+    Used by both the generic create_tool and MCP save routes. Invalid property
+    maps become empty maps, and invalid definitions are removed before storage.
+
+    Args:
+        actions_metadata: Tool action metadata to normalize in place.
+
+    Returns:
+        Active actions with valid parameter definitions and default flags.
     """
     transformed = []
     for action in actions_metadata:
         action["active"] = True
         if "parameters" in action:
             props = action["parameters"].get("properties", {})
+            if not isinstance(props, dict):
+                props = {}
+            props = {
+                name: details for name, details in props.items()
+                if isinstance(details, dict)
+            }
+            action["parameters"]["properties"] = props
             for param_details in props.values():
                 param_details["filled_by_llm"] = True
                 param_details["value"] = ""

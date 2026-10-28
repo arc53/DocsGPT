@@ -300,6 +300,22 @@ class TestRelationshipsBeyondIds:
         ):
             assert _denied(_call(client, method, path, claims, json={})) == "resource_not_allowed", path
 
+    def test_analytics_topics_honour_the_agent_allowlist(self, client):
+        claims = _claims(["analytics:read", "agents:read"], {"agents": [AGENT_A]})
+        for path in ("/api/analytics/topics", "/api/analytics/topic_folders"):
+            assert _denied(_call(client, "GET", f"{path}?agent_id={AGENT_A}", claims)) is None, path
+            assert (
+                _denied(_call(client, "GET", f"{path}?agent_id={AGENT_B}", claims)) == "resource_not_allowed"
+            ), path
+
+    @pytest.mark.parametrize("family", ["sources", "prompts", "tools", "workflows"])
+    def test_analytics_topics_are_closed_to_tokens_restricted_on_anything_but_agents(self, client, family):
+        claims = _claims(["analytics:read", "agents:read"], {family: [SOURCE_A]})
+        for path in ("/api/analytics/topics", "/api/analytics/topic_folders"):
+            assert (
+                _denied(_call(client, "GET", f"{path}?agent_id={AGENT_A}", claims)) == "resource_not_allowed"
+            ), path
+
     @pytest.mark.parametrize("family", ["agents", "sources", "prompts", "tools", "workflows"])
     def test_conversations_and_analytics_are_closed_to_every_restricted_token(self, client, family):
         claims = _claims(["conversations:write", "analytics:read"], {family: [SOURCE_A]})
@@ -348,7 +364,11 @@ class TestAgentKeyVisibility:
 @pytest.mark.unit
 class TestChatRestrictions:
     def _chat(self, client, claims, body):
-        return _denied(_call(client, "POST", "/api/answer", claims, json=body))
+        from docsgpt.api.answer.routes.answer import AnswerResource
+
+        # The rules run before the view; an allowed chat must not reach the model.
+        with patch.object(AnswerResource, "post", return_value={}):
+            return _denied(_call(client, "POST", "/api/answer", claims, json=body))
 
     def test_unrestricted_token_can_chat_any_way(self, client):
         claims = _claims(["chat:run"])

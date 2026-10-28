@@ -301,6 +301,22 @@ class TestContinuation:
         assert _job(bg_db, job["id"])["delivery_state"] == "pending"
         assert _wakes(bg_db, conversation_id)[0]["status"] == "failed"
 
+    @pytest.mark.parametrize("answer", ["", "Partial progress"])
+    def test_a_time_limit_leaves_the_result_for_the_user(self, bg_db, conversation, scheduled, events,
+                                                         monkeypatch, answer):
+        # A failed message is left out of replay, so a partial answer does not deliver the result either.
+        conversation_id, message_id = conversation
+        job = _finished_job(conversation_id, message_id)
+        wake.on_job_finished(job)
+        monkeypatch.setattr(
+            continuation, "_run_turn",
+            lambda *a, **kw: {"answer": answer, "tool_calls": [], "error_type": "TimeLimit",
+                              "error": "Stopped: time limit."},
+        )
+        assert continuation.continue_conversation_body(conversation_id, 0)["state"] == "failed"
+        assert _job(bg_db, job["id"])["delivery_state"] == "pending"
+        assert _wakes(bg_db, conversation_id)[0]["status"] == "failed"
+
     def test_the_turn_runs_as_the_reserved_message_and_can_hand_off(self, bg_db, conversation, scheduled, events,
                                                                     monkeypatch):
         """A woken turn is a turn: its message id exists up front, and its calls may become jobs."""

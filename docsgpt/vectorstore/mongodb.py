@@ -1,6 +1,6 @@
 import logging
 from functools import cached_property
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from docsgpt.core.settings import settings
 from docsgpt.vectorstore.base import BaseVectorStore, InvalidChunkMetadataError
@@ -128,10 +128,7 @@ class MongoDBVectorStore(BaseVectorStore):
             return []
         embeddings = self._embedding.embed_documents(texts)
 
-        to_insert = [
-            {self._text_key: t, self._embedding_key: embedding, **m}
-            for t, m, embedding in zip(texts, metadatas, embeddings)
-        ]
+        to_insert = [self._chunk_document(t, embedding, m) for t, m, embedding in zip(texts, metadatas, embeddings)]
 
         insert_result = self._collection.insert_many(to_insert)
         return insert_result.inserted_ids
@@ -194,23 +191,24 @@ class MongoDBVectorStore(BaseVectorStore):
             return []
 
     def _scan_chunks(self):
-        """Every chunk of this source; a store error raises."""
+        """Every chunk of this source, one with no text included; a store error raises.
+
+        A chunk with no text is listed too (its text as ``""``): removing a
+        page finds its chunks through this list, and one left out would
+        never be deleted.
+        """
         chunks = []
         cursor = self._collection.find({"source_id": self._source_id})
         for doc in cursor:
             doc_id = str(doc.get("_id"))
-            text = doc.get(self._text_key)
+            text = doc.get(self._text_key) or ""
             metadata = {
                 k: v
                 for k, v in doc.items()
                 if k
                 not in ["_id", self._text_key, self._embedding_key, "source_id"]
             }
-
-            if text:
-                chunks.append(
-                    {"doc_id": doc_id, "text": text, "metadata": metadata}
-                )
+            chunks.append({"doc_id": doc_id, "text": text, "metadata": metadata})
 
         return chunks
 
@@ -220,14 +218,32 @@ class MongoDBVectorStore(BaseVectorStore):
         if not embeddings:
             raise ValueError("Could not generate embedding for chunk")
 
-        chunk_data = {
-            self._text_key: text,
-            self._embedding_key: embeddings[0],
-            "source_id": self._source_id,
-            **metadata,
-        }
-        result = self._collection.insert_one(chunk_data)
+        result = self._collection.insert_one(self._chunk_document(text, embeddings[0], metadata))
         return str(result.inserted_id)
+
+    def _chunk_document(self, text: str, embedding: List[float], metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """The document stored for one chunk: its metadata as top-level fields, then the reserved fields.
+
+        ``_id``, the text, the embedding and ``source_id`` are set after the
+        metadata and dropped from it, so caller metadata (``POST
+        /api/add_chunk`` passes it through) can't file the chunk under another
+        source or replace its text or vector.
+
+        Args:
+            text: The chunk's text.
+            embedding: Its vector.
+            metadata: Its metadata.
+
+        Returns:
+            The document to insert.
+        """
+        reserved = {"_id", self._text_key, self._embedding_key, "source_id"}
+        return {
+            **{k: v for k, v in (metadata or {}).items() if k not in reserved},
+            self._text_key: text,
+            self._embedding_key: embedding,
+            "source_id": self._source_id,
+        }
 
     def update_chunk(self, chunk_id: str, text: str, metadata: dict) -> str:
         """Rewrite a chunk's document in place, keeping its ``_id``.
@@ -292,12 +308,34 @@ class MongoDBVectorStore(BaseVectorStore):
         return chunk_id
 
     def delete_chunk(self, chunk_id):
+        """Delete one of this source's chunks by id.
+
+        The collection holds every source, so the delete is filtered on this
+        source's id: another source's chunk is not touched.
+
+        Returns:
+            bool: False when this source has no such chunk or the delete
+            failed (logged).
+        """
+        return self.delete_chunks([chunk_id]) == 1
+
+    def delete_chunks(self, chunk_ids) -> int:
+        """Delete several of this source's chunks in one ``delete_many``.
+
+        Args:
+            chunk_ids: Ids to delete; other sources' and missing ids are skipped.
+
+        Returns:
+            int: How many were deleted; 0 when the delete failed (logged).
+        """
         try:
             from bson.objectid import ObjectId
 
-            object_id = ObjectId(chunk_id)
-            result = self._collection.delete_one({"_id": object_id})
-            return result.deleted_count > 0
+            object_ids = [ObjectId(chunk_id) for chunk_id in dict.fromkeys(str(c) for c in chunk_ids)]
+            if not object_ids:
+                return 0
+            result = self._collection.delete_many({"_id": {"$in": object_ids}, "source_id": self._source_id})
+            return result.deleted_count
         except Exception as e:
-            logging.error(f"Error deleting chunk: {e}", exc_info=True)
-            return False
+            logging.error(f"Error deleting chunks: {e}", exc_info=True)
+            return 0

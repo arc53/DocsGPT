@@ -18,6 +18,8 @@ import {
 import {
   appendConversations,
   receiveConversations,
+  removeAllConversations,
+  removeConversation,
 } from '../preferences/preferenceSlice';
 import type { ConversationSummary } from '../preferences/types';
 import {
@@ -50,6 +52,15 @@ export type BackgroundState = {
   jobListRequestedAt: Record<string, number>;
   /** Conversations with a message the user has not seen. */
   unread: Record<string, true>;
+  /**
+   * How recent each conversation's mark is: when it was marked unread or read
+   * here, deleted, or last set from a listing (when that listing's request
+   * went out). A listing asked for before that holds older flags and does
+   * not undo it.
+   */
+  unreadChangedAt: Record<string, number>;
+  /** When every conversation was deleted: a listing asked for before then is stale. */
+  unreadClearedAt: number;
   /** Server Web Push configuration; null until fetched. */
   pushConfig: PushConfig | null;
   /** The in-context "Get notified when it's done?" prompt is showing. */
@@ -67,6 +78,8 @@ const initialState = (): BackgroundState => ({
   unavailableJobs: {},
   jobListRequestedAt: {},
   unread: {},
+  unreadChangedAt: {},
+  unreadClearedAt: 0,
   pushConfig: null,
   pushPromptOpen: false,
   dismissedNotifications: loadDismissed(
@@ -129,10 +142,27 @@ function mergeJob(
   };
 }
 
-function syncUnread(state: BackgroundState, list: ConversationSummary[]) {
+/**
+ * Take the server's unread flags from a listing. A chat whose mark is as
+ * recent as the listing's request, or more (marked here, deleted, or set by a
+ * listing asked for later), keeps it: lists can land out of order. A listing
+ * without `requestedAt` applies as it is.
+ */
+function syncUnread(
+  state: BackgroundState,
+  list: ConversationSummary[],
+  requestedAt?: number,
+) {
+  if (requestedAt !== undefined && requestedAt <= state.unreadClearedAt) return;
   for (const chat of list) {
+    if (typeof chat.unread !== 'boolean') continue;
+    if (requestedAt !== undefined) {
+      const changedAt = state.unreadChangedAt[chat.id];
+      if (changedAt !== undefined && changedAt >= requestedAt) continue;
+      state.unreadChangedAt[chat.id] = requestedAt;
+    }
     if (chat.unread) state.unread[chat.id] = true;
-    else if (chat.unread === false) delete state.unread[chat.id];
+    else delete state.unread[chat.id];
   }
 }
 
@@ -197,20 +227,33 @@ export const fetchPushConfig = createAsyncThunk<
 export const markConversationRead = createAsyncThunk<
   void,
   string,
-  { state: { preference: { token: string | null } } }
->('background/markRead', async (conversationId, { getState }) =>
-  backgroundService.markConversationRead(
-    conversationId,
-    getState().preference.token,
-  ),
+  {
+    state: { preference: { token: string | null } };
+    pendingMeta: { at: number };
+  }
+>(
+  'background/markRead',
+  async (conversationId, { getState }) =>
+    backgroundService.markConversationRead(
+      conversationId,
+      getState().preference.token,
+    ),
+  { getPendingMeta: () => ({ at: Date.now() }) },
 );
 
 export const backgroundSlice = createSlice({
   name: 'background',
   initialState,
   reducers: {
-    markConversationUnread(state, action: PayloadAction<string>) {
-      state.unread[action.payload] = true;
+    markConversationUnread: {
+      reducer(state, action: PayloadAction<string, string, { at: number }>) {
+        state.unread[action.payload] = true;
+        state.unreadChangedAt[action.payload] = action.meta.at;
+      },
+      prepare: (conversationId: string) => ({
+        payload: conversationId,
+        meta: { at: Date.now() },
+      }),
     },
     /** Show the Web Push prompt; a feature that started background work dispatches it. */
     requestPushPrompt(state) {
@@ -275,12 +318,25 @@ export const backgroundSlice = createSlice({
       })
       .addCase(markConversationRead.pending, (state, action) => {
         delete state.unread[action.meta.arg];
+        state.unreadChangedAt[action.meta.arg] = action.meta.at;
       })
       .addCase(receiveConversations, (state, action) => {
-        if (action.payload.data) syncUnread(state, action.payload.data);
+        if (action.payload.data)
+          syncUnread(state, action.payload.data, action.payload.requestedAt);
       })
       .addCase(appendConversations, (state, action) => {
-        syncUnread(state, action.payload);
+        syncUnread(state, action.payload, action.meta.requestedAt);
+      })
+      // A deleted chat no longer counts in the tab title, and a list asked
+      // for before the delete does not mark it again.
+      .addCase(removeConversation, (state, action) => {
+        delete state.unread[action.payload];
+        state.unreadChangedAt[action.payload] = Date.now();
+      })
+      .addCase(removeAllConversations, (state) => {
+        state.unread = {};
+        state.unreadChangedAt = {};
+        state.unreadClearedAt = Date.now();
       });
   },
 });

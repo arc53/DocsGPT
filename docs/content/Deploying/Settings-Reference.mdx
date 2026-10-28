@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-27
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -185,6 +185,18 @@ Provider whose first model is the default when LLM_NAME names none: docsgpt, ope
 Type `str`, default unset.
 
 Default model id. For a cloud provider it must be an id from docsgpt/core/models/*.yaml or a MODELS_CONFIG_DIR YAML, e.g. gpt-5.5; any other name is ignored with a warning. With OPENAI_BASE_URL it is required and names the model(s) the server serves, comma-separated.
+
+### `LLM_FIRST_TOKEN_TIMEOUT`
+
+Type `float`, default `300`, must be `> 0`.
+
+Seconds allowed for a stream's first chunk, overridden by the model YAML first_token_timeout.
+
+### `LLM_STREAM_STALL_TIMEOUT`
+
+Type `float`, default `120`, must be `> 0`.
+
+Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout. After a reasoning chunk the longer of this and the first-token timeout applies.
 
 ### `API_KEY`
 
@@ -460,6 +472,322 @@ Celery queue the embed task is routed to.
 Type `int`, default `60`, must be `> 0`.
 
 Seconds the API waits for the worker to return an embedding.
+
+
+## Decision model
+
+The small classifier that answers typed questions about a state; every feature that uses it ships off.
+
+### `DECISION_MODE`
+
+Type `"none" | "local" | "api"`, default unset.
+
+`none` turns the decision model off everywhere; `local` runs it inside the API process, which Celery workers call with `INTERNAL_KEY`; `api` calls the server at `DECISION_BASE_URL`. Unset means `api` when `DECISION_BASE_URL` is set and `local` otherwise; neither loads anything until a feature asks for it.
+
+### `DECISION_BASE_URL`
+
+Type `str`, default unset.
+
+A decision server to call instead of running the model here: a `docsgpt decide-server`, `arcd serve` or stock vLLM (with `DECISION_PROTOCOL=vllm`). It receives the text of every state it is asked about.
+
+### `DECISION_PROTOCOL`
+
+Type `"decide" | "vllm"`, default `decide`.
+
+How `DECISION_BASE_URL` is called: `decide` for the `/v1/decide` contract, `vllm` for stock vLLM's `/v1/completions` (served with `--logprobs-mode processed_logprobs --max-logprobs 16`).
+
+### `DECISION_KEY`
+
+Type `str`, default unset.
+
+Bearer key sent to `DECISION_BASE_URL`, and only there. Unset sends no key; `INTERNAL_KEY` is never sent to the decision server.
+
+### `DECISION_MODEL`
+
+Type `str`, default unset.
+
+Decision model repository. Unset follows the runtime: arc53/arc-decide-0.4b-v0.2 on ONNX, arc53/arc-decide-0.6b-v0.1 on vLLM; a `decide` server answers with the model it reports.
+
+### `DECISION_MODEL_REVISION`
+
+Type `str`, default unset.
+
+Hub commit to download instead of the pinned one. The pin keeps question wording and calibration from changing under stored scores.
+
+### `DECISION_MODEL_PATH`
+
+Type `str`, default unset.
+
+A local copy of the model (a snapshot folder or its onnx folder). Nothing is downloaded; for air-gapped installs.
+
+### `DECISION_CACHE_DIR`
+
+Type `str`, default `<DOCSGPT_HOME>/models/decision`.
+
+Where the decision model is downloaded, at its pinned revision, the first time it is needed or by `docsgpt decisions prefetch`.
+
+### `DECISION_DEVICE`
+
+Type `"cpu" | "mps" | "cuda"`, default `cpu`.
+
+Where `docsgpt decide-server` runs the model: `cpu` (ONNX) or, with the `decisions-torch` extra, `mps` (a Mac's GPU) or `cuda` (PyTorch). Read by `decide-server` only; the API and the worker never load PyTorch, which cannot share a macOS process with faiss.
+
+### `DECISION_THREADS`
+
+Type `int`, default unset, must be `>= 1`.
+
+Threads for the decision model. Unset uses the CPUs this process may use (affinity, cgroup quota, physical cores); onnxruntime's own default counts every host core, which is far slower in a container.
+
+### `DECISION_LOCAL_QUEUE`
+
+Type `int`, default `32`, must be `>= 1`.
+
+Calls that may wait for the model in the interactive lane before new ones fail.
+
+### `DECISION_BACKGROUND_QUEUE`
+
+Type `int`, default `8`, must be `>= 1`.
+
+Calls that may wait for the model in the background lane before new ones fail.
+
+### `DECISION_BACKGROUND_SHARE`
+
+Type `float`, default `0.25`, must be `>= 0.05` and `<= 1.0`.
+
+Largest share of wall time background decision work may keep the CPU busy; interactive calls are never throttled.
+
+### `DECISION_PRELOAD`
+
+Type `bool`, default `false`.
+
+Download, load and time the decision model when an API process starts (under gunicorn, as the image and `docsgpt api` run it), even with every feature off.
+
+### `DECISION_LOAD_RETRY_SECONDS`
+
+Type `int`, default `300`, must be `>= 1`.
+
+Seconds before a failed download or load of the decision model is retried.
+
+### `DECISION_MIN_FREE_MB`
+
+Type `int`, default unset, must be `>= 0`.
+
+Refuse to load the decision model with less free memory than this, in MB. Unset uses the model's own figure: 1200 for v0.2 (it peaks under 1 GB).
+
+### `DECISION_HOT_TIMEOUT`
+
+Type `float`, default `3.0`, must be `> 0`.
+
+Default deadline, in seconds, of a decision someone is waiting for.
+
+### `DECISION_BACKGROUND_TIMEOUT`
+
+Type `float`, default `120.0`, must be `> 0`.
+
+Default deadline, in seconds, of a background decision.
+
+### `DECISION_MAX_BATCH_STATES`
+
+Type `int`, default `128`, must be `>= 1` and `<= 1000`.
+
+Most states one decision call may carry; more is a caller bug.
+
+### `DECISION_MAX_TEXT_CHARS`
+
+Type `int`, default `4500`, must be `>= 200` and `<= 20000`.
+
+Characters a long state field is cut to before the decision model's tokenizer has loaded.
+
+### `DECISION_CACHE_SIZE`
+
+Type `int`, default `2048`, must be `>= 0`.
+
+Decision answers kept in memory per process; 0 disables the cache.
+
+### `DECISION_PROBE_SECONDS`
+
+Type `int`, default `30`, must be `>= 5`.
+
+API mode: seconds between two reads of the server's `/v1/models` (its model, status, speed and the round trip).
+
+### `DECISION_BATCH_SIZE`
+
+Type `int`, default `32`, must be `>= 1` and `<= 256`.
+
+API mode: states per `/v1/decide/batch` request.
+
+### `DECISION_API_CONCURRENCY`
+
+Type `int`, default `4`, must be `>= 1`.
+
+API mode: requests in flight at once for decisions someone is waiting for.
+
+### `DECISION_BACKGROUND_CONCURRENCY`
+
+Type `int`, default `1`, must be `>= 1`.
+
+API mode: requests in flight at once for background decisions; they never take interactive slots.
+
+### `DECISION_API_RETRIES`
+
+Type `int`, default `1`, must be `>= 0` and `<= 1`.
+
+API mode: retries of a request after a connection error or a 502, 503 or 504, made only while 30% of the call's deadline remains. Timeouts and other errors are not retried.
+
+### `DECISION_BREAKER_FAILURES`
+
+Type `int`, default `3`, must be `>= 1`.
+
+API mode: consecutive transport failures after which calls are skipped for the cooldown.
+
+### `DECISION_BREAKER_COOLDOWN`
+
+Type `float`, default `30.0`, must be `>= 0`.
+
+API mode: seconds calls are skipped after the failures above; then one is let through.
+
+### `DECISION_VLLM_PRIORITY`
+
+Type `bool`, default `false`.
+
+vLLM protocol: send request priorities (interactive before background). Only valid when vLLM runs with `--scheduling-policy priority`.
+
+### `DECISION_USAGE_RETENTION_DAYS`
+
+Type `int`, default `90`, must be `>= 1`.
+
+Days the per-day counts of decision-model calls (`decision_usage`) are kept before the cleanup task removes them.
+
+### `DECISION_INJECTION_ENABLED`
+
+Type `bool`, default `false`.
+
+Let the decision model score text for prompt injection: the `injection_model` guardrail check of agents and of the floor (Admin > Guardrails), chat attachments once uploaded, and MCP tool descriptions when Admin > Guardrails warns on them. While false nothing loads or calls the model for guardrails, those controls are not evaluated, and the UI marks the check unavailable. While true, the API process (or the decide server) loads the model at start.
+
+### `DECISION_ANALYTICS_ENABLED`
+
+Type `bool`, default `false`.
+
+Let the decision model label stored conversations in the background (answer status, docs gaps, reactions, frustration, requests for a person, goal met, topics and custom tags) for the Analytics and Logs pages. While false the sweep does nothing and the UI says how to turn it on. While true, the worker labels conversations without an agent and those of every agent whose analytics setting is on, calling the model at background priority, and the API process (or the decide server) loads the model at start.
+
+### `DECISION_RELEVANCE_ENABLED`
+
+Type `bool`, default `false`.
+
+Let the decision model score retrieved chunks for the sources whose relevance setting is on (their `reranker`). While false, no source's setting calls or loads the model, retrieval returns what it would without it, and the source settings hide the relevance controls. While true, the API process (or the decide server) loads the model at start, so the first answer does not fall back while it loads. No stage runs with PER_SOURCE_RETRIEVAL_ENABLED=false.
+
+### `DECISION_RELEVANCE_ROLLOUT_PERCENT`
+
+Type `int`, default `100`, must be `>= 0` and `<= 100`.
+
+Share of conversations, by a hash of the conversation id, in which sources with relevance on are scored; the rest are the `control` arm and keep the retriever's output. The decision record and the trace carry the arm. The retrieval test ignores it.
+
+### `DECISION_RELEVANCE_CANDIDATE_TOKENS`
+
+Type `int`, default `60000`, must be `>= 1`.
+
+Token budget of the candidate fetch for relevance, so a small model context does not cut the candidates in retriever order; the request's own document budget applies after the scoring.
+
+### `DECISION_RELEVANCE_MIN_KEEP`
+
+Type `int`, default `1`, must be `>= 0`.
+
+Chunks a relevance threshold always keeps from a non-empty retrieval, most relevant first.
+
+### `DECISION_RELEVANCE_MAX_PASSAGES`
+
+Type `int`, default `100`, must be `>= 1` and `<= 128`.
+
+Most chunks one relevance call scores; later candidates are not considered.
+
+### `DECISION_RELEVANCE_TIMEOUT`
+
+Type `float`, default `2.0`, must be `> 0`.
+
+Deadline, in seconds, of one relevance call; past it the retrieval returns what it would without the model.
+
+### `DECISION_RELEVANCE_CPU_PASSAGE_TOKENS`
+
+Type `int`, default `256`, must be `>= 128` and `<= 2048`.
+
+Where the decision model runs on a CPU, each chunk is scored on its first 64 tokens plus the window sharing the most words with the query, this many tokens in all; GPU and API-mode servers score whole chunks.
+
+
+## Conversation analytics
+
+How the analytics sweep runs; none of these are shown in the UI.
+
+### `ANALYTICS_QUEUE`
+
+Type `str`, default `analytics`.
+
+Celery queue of the analytics sweep and the docs-gap digest. A sweep waits on decision-model calls for minutes: a bare prefork worker still consumes the queue and gives up one process to it during a backlog, `docsgpt worker` on the solo pool (macOS, Windows) leaves it to `docsgpt worker --analytics`, and a dedicated `-Q analytics -c 1` worker isolates it.
+
+### `ANALYTICS_SWEEP_SECONDS`
+
+Type `int`, default `300`, must be `>= 60`.
+
+Seconds between two analytics sweeps; new labels appear within about two intervals.
+
+### `ANALYTICS_SWEEP_BUDGET_SECONDS`
+
+Type `int`, default `240`, must be `>= 10`.
+
+Seconds one sweep may spend starting decision-model calls; shorter than the interval, so sweeps do not queue up. A call started near the end may still run to its background deadline.
+
+### `ANALYTICS_BATCH_STATES`
+
+Type `int`, default `16`, must be `>= 1` and `<= 64`.
+
+States per decision-model call, about four turns: around 25 s of compute on 4 vCPU, within the background deadline at the default share. Never more than DECISION_MAX_BATCH_STATES; below a message's states (up to four), a message is split across calls.
+
+### `ANALYTICS_TURN_SETTLE_SECONDS`
+
+Type `int`, default `60`, must be `>= 0`.
+
+Seconds a message must be unchanged before it is labelled, so a retry or edit finishes first.
+
+### `ANALYTICS_CONVERSATION_IDLE_MINUTES`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Minutes after its last message before a conversation's own labels (goal met, tags) are asked.
+
+### `ANALYTICS_RESOLUTION_WINDOW_HOURS`
+
+Type `int`, default `24`, must be `>= 1`.
+
+Hours of silence after which a conversation's resolution is no longer pending.
+
+### `ANALYTICS_BACKFILL_DAYS`
+
+Type `int`, default `7`, must be `>= 1`.
+
+Days back the sweep labels, newest first; also how far rows from an older model are relabelled. A value past ANALYTICS_RETENTION_DAYS is cut to it, with a warning.
+
+### `ANALYTICS_RETENTION_DAYS`
+
+Type `int`, default `90`, must be `>= 1`.
+
+Days conversation labels are kept, by message time, before the cleanup task removes them; labels are also deleted with their conversation.
+
+### `ANALYTICS_MAX_TOPICS`
+
+Type `int`, default `15`, must be `>= 2` and `<= 15`.
+
+Most topics that don't overlap an agent's topic question offers: the decision model's 16 options less 'none of these'. The owner's own topics come first; the agent's source folders fill what is left, largest first.
+
+### `ANALYTICS_MAX_OVERLAPPING_TOPICS`
+
+Type `int`, default `20`, must be `>= 0` and `<= 50`.
+
+Most topics that can overlap per agent; each is one more question per conversation. 0 turns them off.
+
+### `ANALYTICS_FILTER_MIN_PROBABILITY`
+
+Type `float`, default `0.5`, must be `> 0.0` and `< 1.0`.
+
+Probability a label needs for the Logs label filter, its chips and the docs-gap examples. Rates never use it: they are sums of probabilities.
 
 
 ## Retrieval
@@ -888,6 +1216,18 @@ Type `int`, default `8000000`, must be `>= 0`.
 
 HTML/XHTML larger than this (bytes) are head-truncated before the markdownify parser runs (the anydoc engine's HTML path). The tree that path builds costs ~50x the input (30 MB of HTML measured at 1.6 GB RSS) and the upload cap is 100 MB, so the gate is what keeps one upload from taking the ingest worker down. 0 disables it.
 
+### `WEB_DEFAULT_PAGES`
+
+Type `int`, default `100`, must be `>= 1`.
+
+Page limit a whole-site Website source gets when it names none: the crawl or sitemap stops after this many pages.
+
+### `WEB_MAX_PAGES`
+
+Type `int`, default `100`, must be `>= 1`.
+
+Most pages one Website source may hold, across all its pages and sites: pages added by address count first, sites share what is left, and Add pages refuses to go past it. A site's own page limit is clamped to it. Each page is a fetch plus embedding, so this bounds how long one ingest or sync can run.
+
 ### `PDF_TRUST_CHECK`
 
 Type `bool`, default `true`.
@@ -947,6 +1287,18 @@ Skip GitHub repo blobs larger than this (0 = no cap).
 Type `int`, default `8`, must be `>= 1`.
 
 Parallel file fetches per GitHub repo ingest.
+
+### `GITHUB_INGEST_MAX_ARCHIVE_BYTES`
+
+Type `int`, default `536870912`, must be `>= 0`.
+
+Largest repository tarball a GitHub ingest downloads (one API request for the whole repo); a bigger one falls back to per-file requests. 0 = always per-file.
+
+### `INGEST_QUEUE`
+
+Type `str`, default `ingest`.
+
+Celery queue for whole-source jobs (upload, remote and connector ingest, re-ingest, scheduled sync, graph build, wiki conversion). A worker started without -Q consumes it; run a separate -Q ingest worker so a long ingest cannot hold the slots that beat tasks and attachments need. The shipped Compose and Kubernetes worker commands name `ingest` in -Q: if you change this, put the new name in every worker's explicit -Q list, or nothing runs ingests.
 
 ### `DOCUMENT_PARSE_QUEUE`
 
@@ -1179,6 +1531,18 @@ Type `str`, default unset.
 
 Google OAuth client secret.
 
+### `GOOGLE_DRIVE_ACCESS`
+
+Type `"file" | "readonly"`, default `file`.
+
+What the Google Drive sign-in asks for. `file`: only the files and folders a user picks in Google's picker (`drive.file`, which Google does not restrict); a folder's contents are read through `GOOGLE_SERVICE_ACCOUNT_KEY`. `readonly`: the whole Drive (`drive.readonly`, a restricted scope that needs Google's verification for an External app), so folders need no service account.
+
+### `GOOGLE_SERVICE_ACCOUNT_KEY`
+
+Type `str`, default unset.
+
+JSON key of a Google service account, or the path to the key file. With `GOOGLE_DRIVE_ACCESS=file`, users share a folder with the account's email to sync the whole folder.
+
 ### `CONNECTOR_REDIRECT_BASE_URI`
 
 Type `str`, default `http://127.0.0.1:7091/api/connectors/callback`.
@@ -1291,6 +1655,12 @@ Outbound version check for security advisories: the worker sends its version, a 
 Type `str`, default unset.
 
 Public base URL for user-facing endpoint references in prompts, and the prefix of the artifact download URLs API responses carry (relative paths when unset).
+
+### `SAFE_URL_ALLOWED_HOSTS`
+
+Type `list[str]`, default `[]`.
+
+Private-network hosts that user-supplied URLs (API and MCP tools, read_webpage, monitors, custom model base URLs, the API tool a personal access token makes) may reach, as a comma list or JSON list. An entry is an exact hostname (`wiki.corp.example`, not its subdomains), which passes for any private address it resolves to, or an IP or CIDR range (`10.16.0.0/16`), which passes the addresses inside it. Loopback passes only through an IP entry (`127.0.0.1`), never a name. Link-local and cloud metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`, `fd20:ce::254`, `metadata.google.internal`) and `0.0.0.0` are refused whatever is listed. Empty, every private address is refused.
 
 ### `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`
 
@@ -1469,6 +1839,12 @@ Type `int`, default `600`, must be `> 0`.
 
 Wall-clock cap on one agent webhook run, in seconds (at least 30). Past it the run stops and its task ends with a "timeout" result; the worker kills it 60 seconds later if it has not stopped by then.
 
+### `AGENT_TRUSTED_ORIGINS`
+
+Type `list[str]`, default `["https://app.docsgpt.cloud", "https://ent.docsgpt.cloud"]`.
+
+Browser origins every agent that restricts its origins accepts besides its own list, as a JSON list or comma-separated origins. This instance's own frontend is always accepted too: API_URL, OIDC_FRONTEND_URL, and localhost:5173 when API_URL is on loopback. none (or []) trusts no extra origin; an empty value keeps the default.
+
 ### `ENABLE_TOOL_PREFETCH`
 
 Type `bool`, default `true`.
@@ -1574,7 +1950,7 @@ Cap on a user's total stored artifact bytes (0 disables).
 
 ## Guardrails
 
-Input/output checks every agent runs, and the floor no agent may weaken.
+Input/output checks every agent runs; the floor no agent may weaken is edited in Admin > Guardrails.
 
 ### `GUARDRAILS_ENABLED`
 
@@ -1592,7 +1968,7 @@ Allowlist of GuardrailCreator.checks keys, as a JSON list or comma-separated nam
 
 Type `dict[str, Any]`, default `{}`.
 
-A GuardrailsConfig fragment every agent inherits and cannot weaken; agents may add controls or make an action stricter, never looser. "enabled" is required; without it the floor parses but applies to nothing. Example: \{"enabled": true, "mode": "scan_all", "controls": [\{"check": "secrets", "stage": "output", "action": "redact"\}]\}
+Deprecated: the rules every agent follows are edited in Admin > Guardrails and stored in the database. On the first start with this set and no stored floor, its value is imported once, with a warning; after that it is ignored. It is the same GuardrailsConfig fragment the page edits, e.g. \{"enabled": true, "mode": "scan_all", "controls": [\{"check": "secrets", "stage": "output", "action": "redact"\}]\}
 
 ### `GUARDRAILS_JUDGE_MODEL`
 
@@ -1611,6 +1987,42 @@ Persist scanned text alongside guardrail_events. Off by default: pre-redaction t
 Type `int`, default `30`, must be `>= 1`.
 
 Days guardrail events are kept before the cleanup task removes them.
+
+### `GUARDRAILS_INJECTION_MAX_WINDOWS`
+
+Type `int`, default `24`, must be `>= 1` and `<= 64`.
+
+Windows (512 model tokens each) the `injection_model` check reads of one text at chat time: the user's message, a tool result, a retrieved document or an attached file. Past it the first window and the last ones are read, and a text that scored clean is not evaluated.
+
+### `GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS`
+
+Type `int`, default `64`, must be `>= 1` and `<= 256`.
+
+Windows (512 model tokens each) read of a chat attachment's text when it is scored for prompt injection in the background after upload, about 30,000 tokens at the default. Past it the first window and the last ones are read.
+
+### `GUARDRAILS_INJECTION_LIVE_ITEMS`
+
+Type `int | "auto"`, default `auto`.
+
+Retrieved documents or attached files the `injection_model` check scores with the model during a turn when no score is cached; the rest are scored in the background for the next turn that uses them. `auto` is 4 where the decision model is measured to score four full chunks within the stage deadline (a GPU), else 0; or a number from 0 to 40.
+
+### `GUARDRAILS_INJECTION_BATCH_STATES`
+
+Type `int`, default `8`, must be `>= 1` and `<= 64`.
+
+Windows sent to the decision model per call when texts are scored in the background.
+
+### `GUARDRAILS_INJECTION_LAZY`
+
+Type `bool`, default `true`.
+
+Score in the background the retrieved documents and attached files a turn could not score in time, so the next turn finds their scores cached.
+
+### `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS`
+
+Type `int`, default `180`, must be `>= 1`.
+
+Days a cached prompt-injection score is kept after its text was last scored or seen.
 
 
 ## Execution traces
@@ -1787,6 +2199,12 @@ Seconds between beat sweeps that mark lost jobs, fail jobs past their deadline a
 Type `int`, default `16`, must be `>= 1`.
 
 Threads per API or worker process that run tool calls a turn may hand off. A call that finds the pool full runs inline, as before.
+
+### `CONTINUATION_RUN_TIMEOUT`
+
+Type `int`, default `1200`, must be `>= 60`.
+
+Soft wall-clock backstop for a continuation task, in seconds; healthy rounds save before it.
 
 ### `AUTO_RESUME_ENABLED`
 

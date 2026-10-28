@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Union
 
+from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.tool_executor import trace_unexecuted_tool_call
 from docsgpt.error import bounded_error_text
 from docsgpt.logging import build_stack_data
@@ -300,6 +301,8 @@ class LLMHandler(ABC):
                         f"Converted PDF to {len(converted_images)} images"
                     )
                 except Exception as e:
+                    if is_budget_exhausted(e):
+                        raise
                     logger.error(
                         f"Failed to convert PDF to images, falling back to text: {e}"
                     )
@@ -417,6 +420,8 @@ class LLMHandler(ABC):
                 try:
                     pages = self._convert_pdf_to_images(attachment)
                 except Exception as e:
+                    if is_budget_exhausted(e):
+                        raise
                     logger.error(
                         "Failed to convert PDF %s to images, sending its text: %s",
                         planned.ref,
@@ -1136,6 +1141,8 @@ class LLMHandler(ABC):
             return True, rebuilt_messages
 
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(
                 f"Error performing mid-execution compression: {str(e)}", exc_info=True
             )
@@ -1204,6 +1211,7 @@ class LLMHandler(ABC):
                 model_id=compression_model,
                 agent_id=getattr(agent, "agent_id", None),
                 model_user_id=compression_user_id,
+                stateless=True,
             )
             # Side-channel LLM tag — see ``orchestrator.py`` for rationale.
             compression_llm._token_usage_source = "compression"
@@ -1286,6 +1294,8 @@ class LLMHandler(ABC):
             return True, rebuilt_messages
 
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(
                 f"Error performing in-memory compression: {str(e)}", exc_info=True
             )
@@ -1300,7 +1310,9 @@ class LLMHandler(ABC):
             return
         try:
             executor.context_room_tokens = room_of(messages)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.debug("Could not size the context room for tools", exc_info=True)
 
     @staticmethod
@@ -1311,7 +1323,9 @@ class LLMHandler(ABC):
             return
         try:
             executor.context_epoch = int(getattr(executor, "context_epoch", 0) or 0) + 1
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.debug("Could not advance the context epoch", exc_info=True)
 
     def handle_tool_calls(
@@ -1389,7 +1403,9 @@ class LLMHandler(ABC):
                 try:
                     from docsgpt.core.settings import settings
                     compression_enabled = settings.ENABLE_CONVERSATION_COMPRESSION
-                except Exception:
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     compression_enabled = False
                 # A compression that could not reduce this turn will not do
                 # better a round later; each try is another LLM call.
@@ -1437,12 +1453,19 @@ class LLMHandler(ABC):
                         else:
                             logger.warning("Mid-execution compression attempted but failed. Skipping remaining tools.")
                     except Exception as e:
+                        if is_budget_exhausted(e):
+                            raise
                         logger.error(f"Error during mid-execution compression: {str(e)}", exc_info=True)
                         compression_attempted = True
                         compression_successful = False
 
-                # If compression wasn't attempted or failed, skip remaining tools
-                if not compression_successful:
+                # If compression wasn't attempted or failed, skip remaining
+                # tools, unless only the agent's context limit was crossed:
+                # that limit is a budget, and the model can still take more.
+                over_model = getattr(agent, "_over_model_threshold", None)
+                if not compression_successful and (
+                    not callable(over_model) or over_model(updated_messages)
+                ):
                     if i == 0:
                         # Special case: limit reached before executing any tools
                         # This can happen when previous tool responses pushed context over limit
@@ -1651,6 +1674,8 @@ class LLMHandler(ABC):
                     take_tool_images(agent.tool_executor, self.create_tool_message(resolved_call, tool_response))
                 )
             except Exception as e:
+                if is_budget_exhausted(e):
+                    raise
                 logger.error(f"Error executing tool: {str(e)}", exc_info=True)
                 # The error tool message's tool_call_id must match the
                 # tool_call id declared on the batch assistant message. When
@@ -1780,6 +1805,9 @@ class LLMHandler(ABC):
                 messages.append(
                     {"role": "user", "content": _FINALIZE_INSTRUCTION},
                 )
+                from docsgpt.activity.flags import check_stream
+
+                check_stream(getattr(getattr(agent, "tool_executor", None), "message_id", None))
                 response = agent.llm.gen(
                     model=getattr(agent.llm, "model_id", None) or agent.model_id,
                     messages=messages,
@@ -1794,6 +1822,9 @@ class LLMHandler(ABC):
             # already resolved to the upstream model name. Built-ins:
             # the two are equal; BYOM: the upstream name like
             # "mistral-large-latest" instead of the UUID.
+            from docsgpt.activity.flags import check_stream
+
+            check_stream(getattr(getattr(agent, "tool_executor", None), "message_id", None))
             response = agent.llm.gen(
                 model=getattr(agent.llm, "model_id", None) or agent.model_id,
                 messages=messages,
@@ -1853,7 +1884,9 @@ class LLMHandler(ABC):
                 chunk = next(stream_iter)
             except StopIteration:
                 break
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
                 # A failure in the trailing frames (usage chunk, [DONE])
                 # after the round already finished must not fail — or
                 # fallback-restream — an answer the user has fully
@@ -2024,6 +2057,9 @@ class LLMHandler(ABC):
                 llm_params = getattr(agent, "llm_params", None)
                 if llm_params:
                     recovery_kwargs.update(llm_params)
+                from docsgpt.activity.flags import check_stream
+
+                check_stream(getattr(getattr(agent, "tool_executor", None), "message_id", None))
                 recovery_response = agent.llm.gen_stream(**recovery_kwargs)
                 self.llm_calls.append(build_stack_data(agent.llm))
                 yield from self.handle_streaming(
@@ -2107,6 +2143,9 @@ class LLMHandler(ABC):
             messages = enforce(messages)
 
         # See note above on agent.model_id vs llm.model_id.
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(getattr(agent, "tool_executor", None), "message_id", None))
         response = agent.llm.gen_stream(
             model=getattr(agent.llm, "model_id", None) or agent.model_id,
             messages=messages,

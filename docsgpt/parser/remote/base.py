@@ -63,7 +63,9 @@ def url_to_virtual_path(url: str, include_host: bool = False) -> str:
     string is kept, encoded into the file name (see ``_query_segment``), so
     ``/p?page=1`` and ``/p?page=2`` stay two files. A URL without a query maps
     exactly as before. Paths that still collide, such as ``/a`` and
-    ``/a.html``, are told apart by ``dedupe_virtual_paths``.
+    ``/a.html``, are told apart by ``dedupe_virtual_paths``. A folder never
+    takes a leaf's name (see ``folder_segment``): ``/guide.md/details`` is
+    ``guide.md~/details.md``, beside ``/guide``'s ``guide.md``.
 
     Args:
         url: Page URL, e.g. ``"https://docs.docsgpt.cloud/guides/setup"``.
@@ -91,9 +93,45 @@ def url_to_virtual_path(url: str, include_host: bool = False) -> str:
     if query:
         path = f"{path[:-len('.md')]}{_QUERY_SEPARATOR}{query}.md"
 
+    *folders, leaf = path.split("/")
     if include_host and parsed.netloc:
-        return f"{parsed.netloc}/{path}"
-    return path
+        folders.insert(0, parsed.netloc)
+    return "/".join([*(folder_segment(folder) for folder in folders), leaf])
+
+
+# A folder name a leaf could also have: ``.md``, or an escaped one (``.md~``).
+_LEAF_LIKE_FOLDER = re.compile(r"\.md~*$")
+_ESCAPED_FOLDER = re.compile(r"\.md~+$")
+
+
+def folder_segment(segment: str) -> str:
+    """A folder's name in the virtual tree, never one a page's leaf takes.
+
+    Every leaf ends in ``.md``, so ``/guide`` (``guide.md``) and
+    ``/guide.md/details`` (a folder ``guide.md``) would meet in one tree
+    entry and one page would vanish from the tree. A folder ending in
+    ``.md`` gets a ``~``, and one already ending in ``.md~`` another, so no
+    two segments meet either.
+
+    Args:
+        segment: A URL path segment above the leaf, or the host.
+
+    Returns:
+        The segment, with ``~`` added when it ends in ``.md`` and any ``~``.
+    """
+    return f"{segment}~" if _LEAF_LIKE_FOLDER.search(segment) else segment
+
+
+def folder_url_segment(name: str) -> str:
+    """The URL path segment (or host) a tree folder stands for: ``folder_segment`` undone.
+
+    Args:
+        name: A folder's name in the virtual tree.
+
+    Returns:
+        ``guide.md`` for ``guide.md~``; any other name as it is.
+    """
+    return name[:-1] if _ESCAPED_FOLDER.search(name) else name
 
 
 def spans_multiple_hosts(urls: List[str]) -> bool:

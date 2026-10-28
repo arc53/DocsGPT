@@ -84,6 +84,10 @@ class BackgroundSettings(SettingsGroup):
             "pool full runs inline, as before."
         ),
     )
+    CONTINUATION_RUN_TIMEOUT: int = Field(
+        default=1200, ge=60,
+        description="Soft wall-clock backstop for a continuation task, in seconds; healthy rounds save before it.",
+    )
     AUTO_RESUME_ENABLED: bool = Field(
         default=True,
         description=(

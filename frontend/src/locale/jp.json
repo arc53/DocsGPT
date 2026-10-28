@@ -31,10 +31,11 @@
     "dismiss": "閉じる",
     "toolApprovalTitle": "ツールの承認が必要です",
     "toolApprovalReview": "確認",
-    "toolApprovalFallbackName": "会話"
+    "toolApprovalFallbackName": "会話",
+    "moreToasts_other": "他{{count}}件",
+    "fewerToasts": "折りたたむ"
   },
   "backgroundJobs": {
-    "unread": "未読",
     "card": {
       "status": {
         "working": "バックグラウンドで実行中",
@@ -63,6 +64,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "会話を再開しました",
         "job": "バックグラウンドジョブが完了しました",
         "lost": "バックグラウンドジョブが中断されました",
         "monitor": "モニターが条件に一致しました",
@@ -71,7 +73,8 @@
         "monitor_paused": "モニターが一時停止されました",
         "monitor_expired": "モニターの期限が切れました",
         "schedule": "予定したタスクが完了しました",
-        "default": "新しい返信"
+        "default": "新しい返信",
+        "docs_gaps": "ドキュメントの不足の週次サマリー"
       },
       "open": "開く",
       "fallbackTitle": "アシスタントからのお知らせ"
@@ -85,6 +88,7 @@
       "failed": "通知を有効にできませんでした"
     },
     "wake": {
+      "continuation": "会話を再開しました",
       "job": "バックグラウンドジョブが完了しました",
       "lost": "バックグラウンドジョブが中断されました",
       "monitor": "モニターが条件に一致しました",
@@ -180,7 +184,6 @@
       "addChunk": "チャンクを追加",
       "preLoaded": "プリロード済み",
       "private": "プライベート",
-      "sync": "同期",
       "syncDone": "完了",
       "syncNow": "今すぐ同期",
       "syncing": "同期中...",
@@ -192,8 +195,7 @@
         "never": "なし",
         "daily": "毎日",
         "weekly": "毎週",
-        "monthly": "毎月",
-        "option": "同期: {{frequency}}"
+        "monthly": "毎月"
       },
       "actions": "アクション",
       "view": "表示",
@@ -205,6 +207,7 @@
         "save": "保存",
         "saveFailed": "ページを保存できませんでした。もう一度お試しください。",
         "forbidden": "このページを編集する権限がありません。",
+        "unsupported": "このベクトルストアではページ単位の変更ができないため、Wiki を保持できません。",
         "conflict": "このページは開いた後に変更されたため、再読み込みされました。あなたの編集内容は下にあります。再適用して、もう一度保存してください。",
         "editPlaceholder": "Markdownでページを記述…",
         "stamp": {
@@ -248,7 +251,6 @@
         "pageLoadFailed": "このページを読み込めませんでした。",
         "editTitle": "ページを編集",
         "settings": {
-          "action": "Wiki設定",
           "title": "Wiki設定",
           "outsideEdits": {
             "label": "APIとウィジェットの利用者にこのWikiの編集を許可",
@@ -272,8 +274,6 @@
           "costCost": "チャンクごとに1回のLLM呼び出しを行うため、トークンを消費し、大きなソースでは時間がかかる場合があります。",
           "estimate": "チャンクあたり約1回のLLM呼び出し · 合計約{{lo}}–{{hi}}トークン（入力と出力がおよそ半分ずつ）。出力はドキュメントのエンティティ密度によって変わります。",
           "confirm": "GraphRAGを有効にする",
-          "inProgress": "グラフを構築中…",
-          "inProgressPct": "グラフを構築中… {{pct}}%",
           "summaryNodes_one": "{{count}}件のエンティティ",
           "summaryNodes_other": "{{count}}件のエンティティ",
           "summaryEdges_one": "{{count}}件の関係",
@@ -351,10 +351,11 @@
         "queryPlaceholder": "このソースが回答できそうな質問を入力...",
         "run": "実行",
         "notSavedHint": "これらの設定はこのテストにのみ使用され、ソースには保存されません。恒久的に変更するにはソース設定で変更してください。",
+        "notSavedHintEditor": "これらの設定は、ソースに保存するまでこのテストにのみ使用されます。",
         "resultSummary": "{{count}}件のチャンクを取得 · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "このクエリで取得されたチャンクはありません。",
-        "emptyWithThreshold": "スコアしきい値（{{threshold}}）以上のチャンクがありません。しきい値を下げると、惜しい候補を確認できます。",
+        "emptyWithThreshold": "類似度しきい値（{{threshold}}）以上のチャンクがありません。しきい値を下げると、惜しい候補を確認できます。",
         "showMore": "チャンク全体を表示",
         "showLess": "折りたたむ",
         "noScore": "スコアなし",
@@ -366,9 +367,33 @@
         },
         "errors": {
           "failed": "検索テストに失敗しました。もう一度お試しください。"
-        }
+        },
+        "relevance": "関連度",
+        "compare": "リトリーバーの順序と比較",
+        "compareHint": "すべての候補をリトリーバーの順序で一覧表示し、関連度と、関連度モデルが残した・繰り上げた・除外したかを示します。",
+        "relevanceRun": {
+          "applied": "{{ms}} ms で関連度順に並べ替え",
+          "fallback": "関連度モデルは未使用（{{reason}}）、リトリーバーの順序のまま"
+        },
+        "compareTitle": "リトリーバーの順序",
+        "compareDescription": "関連度ステージが受け取ったすべての候補を、リトリーバーが順位付けした順に示します。",
+        "compareColumns": {
+          "before": "順位",
+          "chunk": "チャンク",
+          "relevance": "関連度",
+          "outcome": "結果"
+        },
+        "compareStatus": {
+          "promoted": "#{{rank}} に繰り上げ",
+          "kept": "#{{rank}} として残す",
+          "dropped": "除外",
+          "notKept": "残さない"
+        },
+        "strictness": "このテストの関連度",
+        "saveToSource": "ソースに保存",
+        "savedToSource": "保存しました。ソースはテストした設定を使用します。"
       },
-      "editConfig": "ソース設定",
+      "editConfig": "設定",
       "shareWithTeam": "チームと共有",
       "deleteWarning": "「{{name}}」を削除しますか？",
       "chunks": "チャンク",
@@ -400,10 +425,12 @@
           "note": "これらの変更は即時に反映されます。再インデックスは不要です。",
           "tag": "再インデックス不要",
           "chunks": "取得するチャンク数（top-k）",
-          "scoreThreshold": "スコアしきい値",
-          "scoreThresholdPlaceholder": "なし",
-          "scoreThresholdHint": "この関連度スコア（0–1）を超えるチャンクのみを返します。高いほど厳格になります。",
+          "similarityThreshold": "類似度しきい値",
+          "similarityThresholdPlaceholder": "なし",
+          "similarityThresholdHint": "リトリーバーの類似度スコアがこの値（0〜1）未満のチャンクを除外します。関連度モデルではなく、リトリーバーのスコアで絞り込みます。",
           "rephraseQuery": "検索前にクエリを言い換える",
+          "showLinks": "元のファイルにリンクする",
+          "showLinksHint": "引用とエージェントに、同期元サービスでの各ファイルのリンクが渡されます。リンクを開くには、そのサービスでファイルへのアクセス権が必要です。",
           "retriever": "リトリーバー",
           "retrievers": {
             "classic": "クラシック",
@@ -432,13 +459,14 @@
           "agentToolHint": "このソースの公開方法が「オンデマンド検索ツール」の場合、またはエージェント型エージェントが使用する場合、エージェントはこれらのリレーションを自ら辿ることもできます。"
         },
         "prescreen": {
-          "enable": "LLMプリスクリーニングを有効にする",
-          "warning": "より多くの候補を取得し、LLMでフィルタリングします。クエリ時のレイテンシとコストが増加します。",
+          "enable": "LLM による選別",
+          "warning": "LLM がより多くの候補を確認し、クエリに答えるものだけを残します。クエリごとのレイテンシとコストが増加します。",
           "candidateK": "取得する候補数",
           "maxKeep": "保持する最大チャンク数",
           "batchSize": "バッチサイズ",
           "model": "モデル（任意）",
-          "modelPlaceholder": "デフォルトではリクエストのモデルを使用"
+          "modelPlaceholder": "デフォルトではリクエストのモデルを使用",
+          "exclusiveHint": "関連度の代わりに使う機能です。一方をオンにすると、もう一方はオフになります。"
         },
         "graph": {
           "title": "グラフ抽出",
@@ -463,9 +491,38 @@
             "semantic": "セマンティック"
           },
           "maxTokens": "チャンクあたりの最大トークン数",
+          "maxTokensHint": "最大4,096トークンです。",
           "minTokens": "チャンクあたりの最小トークン数",
           "duplicateHeaders": "チャンク間でヘッダーを複製"
-        }
+        },
+        "relevance": {
+          "title": "関連度",
+          "tag": "再インデックス不要",
+          "mode": "関連度モデル",
+          "modeHint": "取得した各チャンクをクエリに照らして採点します。「並べ替え」は関連度の高いものを先頭にし、「並べ替えと絞り込み」は関連度の低いものも除外します。",
+          "modes": {
+            "off": "オフ",
+            "reorder": "並べ替え",
+            "filter": "並べ替えと絞り込み"
+          },
+          "strictness": "絞り込みの厳しさ",
+          "strictnessHint": "厳しくするほど残るチャンクが減ります。回答あたりのトークンは減りますが、重要なチャンクを落とす可能性が高まります。",
+          "presets": {
+            "loose": "緩め",
+            "balanced": "標準",
+            "strict": "厳しめ",
+            "custom": "カスタム（{{value}}）"
+          },
+          "minRelevance": "最小関連度",
+          "minRelevanceHint": "チャンクを残すのに必要な正確な関連度（0〜1）です。緩めは 0.1、標準は 0.3、厳しめは 0.5 です。",
+          "candidates": "採点する候補数",
+          "candidatesHint": "関連度モデルが採点するためにリトリーバーが取得するチャンク数です（最大 {{max}}）。既定値は {{default}} です。"
+        },
+        "filtering": {
+          "title": "フィルタリング",
+          "tag": "再インデックス不要"
+        },
+        "createHint": "フィルタリングは最初の取り込み後に、ソース設定または検索テストで調整できます。"
       },
       "configModal": {
         "title": "ソース設定",
@@ -473,7 +530,8 @@
         "subtitleGeneric": "このソースのチャンク分割と検索の方法を設定します。",
         "save": "保存",
         "chunkingChangeHint": "チャンク分割の設定を変更しました。保存後、反映にはこのソースの再インデックスが必要です。",
-        "prescreenInvalidHint": "プリスクリーニングの値を確認してください。取得する候補数はチャンク数以上、保持するチャンク数は取得する候補数以下である必要があります。",
+        "prescreenInvalidHint": "LLM による選別の値を確認してください。取得する候補数はチャンク数以上、保持するチャンク数は取得する候補数以下である必要があります。",
+        "syncAfterSave": "先に変更を保存してください。同期では保存済みの設定が使われます。",
         "reingestRequired": "変更を保存しました。変更したチャンク分割の設定は再インデックス後にのみ反映されます。今すぐ再インデックスしますか？",
         "reingestLater": "後で",
         "errors": {
@@ -485,7 +543,8 @@
         "add": "チャンクを追加できませんでした",
         "save": "チャンクを保存できませんでした",
         "delete": "チャンクを削除できませんでした",
-        "load": "チャンクを読み込めませんでした"
+        "load": "チャンクを読み込めませんでした",
+        "busy": "このソースでは別の変更が実行中です。完了してからもう一度お試しください。"
       },
       "chunkPosition": "チャンク {{n}} / {{total}} · {{tokens}} トークン",
       "chunkCrumb": "チャンク {{n}}",
@@ -536,7 +595,104 @@
       "deleteFileConsequence": "チャンクも削除されます。この操作は元に戻せません。",
       "deleteDirectoryConsequence": "中のものもすべて削除されます。この操作は元に戻せません。",
       "syncConsequence": "クラウドストレージから内容が更新されるため、個々のチャンクに加えた編集が上書きされる場合があります。",
-      "deleteItemFailed": "「{{name}}」を削除できませんでした。"
+      "deleteItemFailed": "「{{name}}」を削除できませんでした。",
+      "injection": {
+        "flaggedOnly": "フラグ付きのみ",
+        "high": "プロンプトインジェクションの可能性大",
+        "suspected": "プロンプトインジェクションの疑い",
+        "markedSafe": "安全とマーク済み",
+        "markSafe": "安全としてマーク",
+        "undo": "元に戻す",
+        "flaggedNotice": "このチャンクはプロンプトインジェクションのように見えます（スコア {{percent}}%）。取得したソースを検査するエージェントは、これにフラグを立てるか、回答から除外します。",
+        "safeNotice": "安全とマーク済み：このソースを使うエージェントは、このチャンクを問題なしとして扱います。テキストを編集するとマークは外れます。",
+        "reviewFailed": "このチャンクを更新できませんでした。もう一度お試しください。",
+        "noFlagged": "このソースにはフラグが立ったチャンクはありません。チャンクはチャットで取得されたときに採点されます。"
+      },
+      "website": {
+        "page": "ページ",
+        "pages": "ページ",
+        "fetched": "取得日時",
+        "filterPages": "ページを絞り込む",
+        "openPage": "ページを開く",
+        "pagesByline_one": "{{pages}} ページ · {{tokens}} トークン",
+        "pagesByline_other": "{{pages}} ページ · {{tokens}} トークン",
+        "sites_one": "{{count}} サイト",
+        "sites_other": "{{count}} サイト",
+        "pageCount_one": "{{count}} ページ",
+        "pageCount_other": "{{count}} ページ",
+        "synced": "{{frequency}} · {{when}}に同期",
+        "notSynced": "同期なし",
+        "fetchedAt": "{{when}}に取得",
+        "addPages": "ページを追加",
+        "addPagesHint": "今すぐ取得し、同期のたびに保持します。サイト全体を追加するとソースを作り直します。",
+        "graphCost": "このソースにはナレッジグラフがあります。新しいページはLLMでグラフに追加され、チャンクごとに約1回の呼び出しが行われます。追加によってソースが作り直される場合（別サイトのページなど）も、すでにグラフにあるページはそのまま残り、新しいテキストや変更されたテキストだけがLLMに送られます。",
+        "addFailed": "ページを追加できませんでした。",
+        "pageNotFetched": "1 件のページを取得できませんでした（{{url}}）。このソースのリストには残り、次回の同期で再度取得を試みます。",
+        "pagesNotFetched_one": "{{count}} 件のページを取得できませんでした。このソースのリストには残り、次回の同期で再度取得を試みます。",
+        "pagesNotFetched_other": "{{count}} 件のページを取得できませんでした。このソースのリストには残り、次回の同期で再度取得を試みます。",
+        "pageLimit_other": "このソースに入れられるページは最大 {{count}} 件です。",
+        "addingPages": "ページを追加しています…",
+        "refreshing": "ページを更新しています…",
+        "removing": "ページを削除しています…",
+        "syncing": "ソースを同期しています…",
+        "refreshPage": "ページを更新",
+        "refreshFailed": "「{{name}}」を更新できませんでした。内容はそのまま残ります。",
+        "refreshOutOfScope": "「{{name}}」は現在このソースの範囲外を指しているため、同期と同じく削除されました。",
+        "removeFromSource": "ソースから削除",
+        "removeTitle": "「{{name}}」を削除しますか？",
+        "removeEntry": "チャンクが削除され、このページはソースのリストから外れます。",
+        "removeCrawled": "{{host}} のクロールで見つかったページです。チャンクが削除され、以降の同期では除外されます。ソースの設定で元に戻せます。",
+        "removeGeneric": "チャンクが削除され、以降の同期では再取得されません。",
+        "removeFolder": "ページのチャンクが削除され、以降の同期では {{address}} 以下のアドレスがすべて除外されます。",
+        "removeFolderGeneric": "ページのチャンクが削除され、以降の同期では再取得されません。",
+        "remove": "削除",
+        "removeAndSkip": "削除して除外",
+        "removeFailed": "削除できませんでした。",
+        "syncFailed": "ソースを同期できませんでした。",
+        "removeLast": "このソースが取得する最後の項目です。代わりにソースを削除してください。",
+        "wikiSource": "このソースは Wiki になりました。直接編集するもので、ページは取得しません。",
+        "chunksUnsupported": "このベクトルストアではページ単位の変更ができません。代わりにソースを同期してください。",
+        "handEditsNote": "最新の状態に保つ：{{frequency}}。ここで追加・編集したチャンクは次の同期で置き換えられます。",
+        "fetches": "このソースが取得する内容",
+        "siteSummary": "サイト全体 · {{find}} · ページ上限 {{max}}",
+        "limitReached": "ページ上限に到達",
+        "pageEntry": "ページ",
+        "removeFromList": "{{address}} をリストから削除",
+        "skipped": "除外済み",
+        "restore": "元に戻す",
+        "restoreAddress": "{{address}} を元に戻す",
+        "saveFailed": "設定を保存できませんでした。",
+        "loadFailed": "設定を読み込めませんでした。",
+        "lastSynced": "最終同期 {{when}}。",
+        "appliesNextSync": "変更は次の同期から適用されます。",
+        "stillRunning": "変更はまだ実行中です。しばらくしてからソースを開き直して確認してください。",
+        "changeBusy": "このソースでは別の変更がまだ実行中だったため、この変更は実行されませんでした。もう一度お試しください。",
+        "queueFailed": "変更は保存されましたが、まだ開始できませんでした。次回の同期で反映されます。",
+        "sourceGone": "このソースはもう存在しません。",
+        "siteLimit_one": "1 つのソースで取得できるサイトは最大 {{count}} 件です。",
+        "siteLimit_other": "1 つのソースで取得できるサイトは最大 {{count}} 件です。",
+        "skipLimit_one": "1 つのソースで除外できるアドレスは最大 {{count}} 件です。",
+        "skipLimit_other": "1 つのソースで除外できるアドレスは最大 {{count}} 件です。",
+        "urlTooLong_one": "アドレスは最大 {{count}} 文字までです。",
+        "urlTooLong_other": "アドレスは最大 {{count}} 文字までです。",
+        "invalidAddress": "「{{url}}」はこのソースで取得できるアドレスではありません。",
+        "invalidConfig": "この設定は無効です。アドレスと上限を確認してください。",
+        "notFound": "そのページまたはフォルダーはこのソースにもうありません。再読み込みしてもう一度お試しください。",
+        "badSyncFrequency": "その同期スケジュールは使用できません。",
+        "graphCostRebuild": "このソースにはナレッジグラフがあります。サイト全体を追加するとソースが作り直されます。すでにグラフにあるページはそのまま残り、新しいテキストや変更されたテキストはLLMで追加され、チャンクごとに約1回の呼び出しが行われます。",
+        "tooManyPaths_one": "一度に削除できるページは最大 {{count}} 件です。",
+        "tooManyPaths_other": "一度に削除できるページは最大 {{count}} 件です。",
+        "notWebsite": "このソースはウェブサイトのソースではありません。",
+        "alreadyListed": "これらのページとサイトはすでにこのソースにあります。",
+        "badRequest": "リクエストを読み取れませんでした。ページを再読み込みしてもう一度お試しください。"
+      },
+      "deleteSource": "ソースを削除",
+      "syncStarted": "{{name}} を同期しています…",
+      "viaConnectionFiles_one": "{{name}} 経由 · {{files}} ファイル",
+      "viaConnectionFiles_other": "{{name}} 経由 · {{files}} ファイル",
+      "item": {
+        "tokens": "{{tokens}} トークン"
+      }
     },
     "analytics": {
       "label": "分析",
@@ -548,7 +704,8 @@
         "last24Hours": "過去24時間",
         "last7Days": "過去7日間",
         "last15Days": "過去15日間",
-        "last30Days": "過去30日間"
+        "last30Days": "過去30日間",
+        "last90Days": "過去90日間"
       },
       "messages": "メッセージ",
       "tokenUsage": "トークン使用量",
@@ -592,7 +749,203 @@
           "direct": "エージェントなしのチャット",
           "agent": "エージェント経由"
         }
-      }
+      },
+      "insights": {
+        "description": "AI モデルが各会話から推定した値です。",
+        "learnMore": "詳細",
+        "coverage": "{{total}} 件中 {{labelled}} 件の回答を分析済み",
+        "loadError": "インサイトを読み込めませんでした。",
+        "notEnough": "データがまだ足りません（現在 {{formatted}} 件）",
+        "notEnoughShort": "データがまだ足りません",
+        "notEnoughReplies": "返信がまだ足りません",
+        "languageNote": "これらのメッセージの {{share}} は{{languages}}で書かれており、モデルの読み取り精度が下がります。{{labels}}は信頼性が低い可能性があります。",
+        "otherLanguages": "その他の言語",
+        "stats": {
+          "fullyAnswered": "完全に回答",
+          "fullyAnsweredHint": "回答が完全に答えた質問です。あいさつや雑談は数えません。",
+          "goalMet": "目的を達成",
+          "goalMetHint": "ユーザーが求めたものを得られた会話です。会話が落ち着いた後、会話全体から判定します。",
+          "frustrated": "不満",
+          "frustratedHint": "はっきりとした不満を示す返信です。回答の後に送られたメッセージだけを数えるため、会話の最初のメッセージは数えません。",
+          "asksHuman": "担当者を希望",
+          "asksHumanHint": "担当者、チケット、または別の連絡方法を求める返信です。最初のメッセージでの依頼は数えません。",
+          "docsGaps": "ドキュメントの不足",
+          "docsGapsHint": "ドキュメントが質問に対応していない、または検索でページが見つからなかったために不十分だった回答です。下でグループ化しています。"
+        },
+        "sub": {
+          "ofQuestions_one": "質問 {{formatted}} 件中",
+          "ofQuestions_other": "質問 {{formatted}} 件中",
+          "ofReplies_one": "返信 {{formatted}} 件中",
+          "ofReplies_other": "返信 {{formatted}} 件中",
+          "ofConversations_one": "会話 {{formatted}} 件中",
+          "ofConversations_other": "会話 {{formatted}} 件中",
+          "inAnswers_one": "回答 {{formatted}} 件中",
+          "inAnswers_other": "回答 {{formatted}} 件中"
+        },
+        "panels": {
+          "answerStatus": "回答状況",
+          "whyNot": "完全に回答されなかった理由",
+          "requestType": "依頼の種類",
+          "shareOfAnswers_one": "回答 {{formatted}} 件に占める割合",
+          "shareOfAnswers_other": "回答 {{formatted}} 件に占める割合",
+          "shareOfMessages_one": "メッセージ {{formatted}} 件に占める割合",
+          "shareOfMessages_other": "メッセージ {{formatted}} 件に占める割合",
+          "shareOfConversations_one": "会話 {{formatted}} 件に占める割合",
+          "shareOfConversations_other": "会話 {{formatted}} 件に占める割合",
+          "ofReplies_one": "返信 {{formatted}} 件中",
+          "ofReplies_other": "返信 {{formatted}} 件中",
+          "barLabel": "{{name}}: {{value}}",
+          "barLabelNone": "{{name}}: データがまだ足りません",
+          "noneOfThese": "どのトピックにも該当しない",
+          "empty": "この期間に表示する内容はありません。",
+          "ofQuestions_one": "質問 {{formatted}} 件中",
+          "ofQuestions_other": "質問 {{formatted}} 件中",
+          "topics": "トピック",
+          "overlapNote": "1つの会話が複数に数えられることがあるため、合計は100%になりません。",
+          "noTopics": {
+            "title": "トピックはまだありません",
+            "description": "トピックを追加すると、ユーザーが何について尋ねているかがわかります。",
+            "action": "トピックを設定"
+          },
+          "replies": "ユーザーの返信",
+          "reaction": "回答への返信",
+          "tone": "感情",
+          "tooltipItem": "{{name}}: {{value}}",
+          "notDrawnMovedOn": "新しい質問や追加の質問、補足など、次の話題へ移った返信は描画されません。",
+          "notDrawnNeutral": "中立的な返信は描画されません。"
+        },
+        "labelNamesInline": {
+          "answer_status": "回答状況",
+          "gap_type": "完全に回答されなかった理由",
+          "topic_effective": "トピック",
+          "reaction": "回答への返信"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "完全に回答",
+            "partiallyAnswered": "一部回答",
+            "declined": "分からないと回答",
+            "clarifying": "詳細を確認"
+          },
+          "gapType": {
+            "docsMissing": "ドキュメントの不足",
+            "notRetrieved": "検索がページを見逃した",
+            "answerMissed": "回答がページを活かせなかった",
+            "outOfScope": "対象外",
+            "featureNotSupported": "未対応の機能",
+            "needsAccountData": "アカウント情報か担当者が必要",
+            "ambiguous": "あいまいな質問",
+            "confidentlyUngrounded": "ドキュメントの裏付けがない回答",
+            "other": "その他"
+          },
+          "reaction": {
+            "thanks": "お礼・確認",
+            "reAsk": "再質問",
+            "pushbackOrComplaint": "反論・苦情",
+            "movedOn": "次の話題へ"
+          },
+          "requestType": {
+            "troubleshooting": "トラブルシューティング",
+            "howTo": "やり方",
+            "lookup": "事実の確認",
+            "concept": "説明",
+            "comparison": "比較",
+            "featureRequest": "機能の要望",
+            "accountBilling": "アカウント・請求",
+            "chitChat": "雑談",
+            "other": "その他"
+          },
+          "sentiment": {
+            "positive": "肯定的",
+            "neutral": "中立",
+            "negative": "否定的"
+          }
+        },
+        "off": {
+          "title": "このエージェントではインサイトがオフです",
+          "description": "オンにすると、回答が役に立ったか、ドキュメントのどこが不足しているかを推定します。",
+          "turnOn": "オンにする"
+        },
+        "noConversations": {
+          "hour": "過去1時間の会話はありません",
+          "last24Hours": "過去24時間の会話はありません",
+          "last7Days": "過去7日間の会話はありません",
+          "last15Days": "過去15日間の会話はありません",
+          "last30Days": "過去30日間の会話はありません"
+        },
+        "noConversationsDescription": "インサイトは各会話の数分後に表示されます。",
+        "analyzing": {
+          "title": "会話を分析しています",
+          "progress_one": "{{formatted}} 件中 {{labelled}} 件の回答を分析済み · 新しい順",
+          "progress_other": "{{formatted}} 件中 {{labelled}} 件の回答を分析済み · 新しい順"
+        },
+        "olderOnly": {
+          "title": "分析する最近の会話はありません",
+          "description": "インサイトの対象は {{date}} 以降の会話です。それより古い会話は分析されません。管理者がさかのぼって分析できます。"
+        },
+        "failedOnly": {
+          "title": "分析できた回答はありません",
+          "description_one": "この期間の {{formatted}} 件の回答をモデルが分析できませんでした。モデルまたはその質問が変わると、もう一度分析します。",
+          "description_other": "この期間の {{formatted}} 件の回答をモデルが分析できませんでした。モデルまたはその質問が変わると、もう一度分析します。"
+        },
+        "failed_one": "{{formatted}} 件の回答を分析できませんでした",
+        "failed_other": "{{formatted}} 件の回答を分析できませんでした",
+        "settings": {
+          "button": "設定",
+          "title": "インサイトの設定",
+          "saveFailed": "インサイトの設定を保存できませんでした。もう一度お試しください。"
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "再質問・反論",
+          "previous": "前の期間: {{value}}"
+        }
+      },
+      "gaps": {
+        "heading": "ドキュメントの不足",
+        "description": {
+          "page": "ドキュメントで答えられなかった質問を、検索で最も近かったページごとにまとめています。",
+          "source": "ドキュメントで答えられなかった質問を、最も近いページのソースごとにまとめています。",
+          "topic": "ドキュメントで答えられなかった質問を、トピックごとにまとめています。"
+        },
+        "groupBy": "ドキュメントの不足のまとめ方",
+        "groups": {
+          "page": "ページ",
+          "source": "ソース",
+          "topic": "トピック"
+        },
+        "columns": {
+          "gaps": "不足",
+          "share": "質問に占める割合",
+          "change": "変化",
+          "example": "質問の例",
+          "open": "例"
+        },
+        "share_one": "{{formatted}} 件中 {{percent}}",
+        "share_other": "{{formatted}} 件中 {{percent}}",
+        "gapsCount_one": "不足 {{formatted}} 件",
+        "gapsCount_other": "不足 {{formatted}} 件",
+        "change": {
+          "new": "新規",
+          "none": "変化なし",
+          "upLabel": "前の期間から {{formatted}} 件増加",
+          "downLabel": "前の期間から {{formatted}} 件減少",
+          "noEarlier": "以前のデータなし"
+        },
+        "noPage": "ページが見つかりませんでした",
+        "openRow": "{{name}} の例を表示",
+        "export": "CSV をエクスポート",
+        "empty": "この期間にドキュメントの不足はありません。",
+        "emptyDescription": "ドキュメントで答えられなかった質問がここに表示されます。",
+        "loadError": "ドキュメントの不足を読み込めませんでした。",
+        "panel": {
+          "gaps": "不足",
+          "share": "質問に占める割合",
+          "previous": "前の期間",
+          "examples": "質問の例",
+          "allInLogs": "ドキュメントの不足をすべてログで表示"
+        }
+      },
+      "loadError": "このグラフを読み込めませんでした。"
     },
     "logs": {
       "label": "ログ",
@@ -600,7 +953,6 @@
       "filterByChatbot": "チャットボットでフィルター",
       "selectChatbot": "チャットボットを選択",
       "none": "なし",
-      "tableHeader": "API生成 / チャットボットの会話",
       "searchPlaceholder": "ログを検索...",
       "noLogs": "ログが見つかりません",
       "levels": {
@@ -638,7 +990,9 @@
         "activity": "アクティビティ",
         "steps": "ステップ",
         "result": "結果",
-        "source": "ソース"
+        "source": "ソース",
+        "feedback": "評価",
+        "passthrough": "パススルー"
       },
       "trace": {
         "view": "トレースを表示",
@@ -669,7 +1023,8 @@
           "chunks_other": "{{count}} チャンク",
           "hits_one": "{{count}} 件ヒット",
           "hits_other": "{{count}} 件ヒット",
-          "cached": "キャッシュ"
+          "cached": "キャッシュ",
+          "answered": "{{answered}}/{{total}} 件回答"
         },
         "status": {
           "ok": "OK",
@@ -683,6 +1038,7 @@
         "kinds": {
           "agent": "エージェント",
           "llm": "LLM 呼び出し",
+          "decision": "判定モデル呼び出し",
           "tool": "ツール呼び出し",
           "retrieval": "検索",
           "search": "ベクトル検索",
@@ -744,7 +1100,37 @@
           "allAttributes": "すべての属性"
         }
       },
-      "loadError": "ログを読み込めませんでした。"
+      "loadError": "ログを読み込めませんでした。",
+      "running": "実行中",
+      "failedAtStep": "ステップ {{step}} で失敗",
+      "failedAtStepOf": "ステップ {{step}}/{{total}} で失敗",
+      "origin": {
+        "api": "API",
+        "shared": "共有",
+        "chat": "チャット"
+      },
+      "feedback": {
+        "like": "高評価",
+        "dislike": "低評価"
+      },
+      "labels": {
+        "filterAll": "すべてのラベル",
+        "notAnswered": "完全には未回答",
+        "docsGap": "ドキュメントの不足",
+        "frustrated": "不満",
+        "asksHuman": "担当者を希望",
+        "negativeReaction": "再質問・反論",
+        "negativeSentiment": "否定的な感情",
+        "hint": "ラベルは推定であり、誤っていることがあります。",
+        "conversation": "会話",
+        "clearConversation": "すべての会話を表示",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "これらのフィルターに一致するメッセージはありません。",
+        "filter": "ラベル",
+        "topics": "トピック"
+      },
+      "levelFilter": "レベル",
+      "typeFilter": "イベントの種類"
     },
     "teams": {
       "label": "チーム",
@@ -760,7 +1146,6 @@
       "save": "保存",
       "createTeamError": "チームを作成できませんでした。",
       "noTeams": "チームはまだありません。",
-      "noDescription": "説明なし",
       "loadError": "チームの読み込みに失敗しました。",
       "roleAdmin": "管理者",
       "roleMember": "メンバー",
@@ -923,7 +1308,7 @@
         "tool": {
           "editors_can_change_credentials": {
             "label": "編集者が認証情報と接続を変更できる",
-            "description": "保存済みのシークレットを置き換えます。誰も読み戻せません。"
+            "description": "保存済みのシークレットを置き換えられます。保存された内容は誰も読み取れません。"
           },
           "editors_can_share": {
             "label": "編集者が共有できる",
@@ -1070,6 +1455,7 @@
       "noToolsFound": "ツールが見つかりません",
       "selectToolSetup": "ツールを追加",
       "settingsIconAlt": "設定アイコン",
+      "toolActions": "ツールアクション",
       "configureToolAria": "{{toolName}}を設定",
       "manageTools": "ツールへ移動",
       "edit": "編集",
@@ -1201,6 +1587,8 @@
       "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力",
       "pageRange_one": "ツール {{formatted}}件中 {{from}}–{{to}}件",
       "pageRange_other": "ツール {{formatted}}件中 {{from}}–{{to}}件",
+      "triggerLabel_one": "ツール、{{formatted}} 件選択中",
+      "triggerLabel_other": "ツール、{{formatted}} 件選択中",
       "manageInConnectors": "コネクタで管理",
       "defaultBadge": "デフォルト",
       "noToolsYet": "ツールはまだありません",
@@ -1232,13 +1620,11 @@
       "access": "アクセス",
       "connection": "接続",
       "hostLabel": "ホスト",
-      "dangerZone": "危険ゾーン",
       "approvalAskDescription": "実行前にすべてのコマンドを承認します。",
       "approvalFullDescription": "安全のための拒否リストを除き、すべてのコマンドを確認なしで実行します。",
       "fullAccessWarning": "フルアクセス: エージェントは確認なしでこのマシン上の任意のコマンドを実行できます。安全のための拒否リストは引き続き適用されます。",
       "deviceIdLabel": "デバイスID",
       "offlineHint": "接続されていません。マシン上で `docsgpt-cli host` を実行してオンラインにしてください。",
-      "dangerZoneDescription": "取り消すと、デバイス上のデーモンが停止し、ペアリングが解除されます。",
       "auditTitle": "最近のアクティビティ",
       "auditLoading": "読み込み中…",
       "auditEmpty": "アクティビティはまだありません。",
@@ -1285,7 +1671,7 @@
       "deleteWarning": "「{{modelName}}」を削除しますか？",
       "actionsMenuAria": "{{modelName}} のアクション",
       "modelsGroup": {
-        "builtin": "DocsGPT モデル",
+        "builtin": "組み込み",
         "user": "マイモデル"
       },
       "actions": {
@@ -1434,7 +1820,10 @@
         "tokenLabel": "あなたのトークン",
         "usageTitle": "使い方",
         "usageHint": "環境変数としてエクスポートし、AuthorizationヘッダーのBearerトークンとして送信します。",
-        "done": "完了"
+        "done": "完了",
+        "createTool": "エージェント用ツールを作成",
+        "toolCreated": "ツールを作成しました。設定 › ツールから、エージェントに追加してください。",
+        "toolFailed": "ツールを作成できませんでした。"
       },
       "regenerate": {
         "action": "再生成",
@@ -1455,7 +1844,7 @@
       "label": "コネクタ",
       "subtitle": "DocsGPT をチームで使っているサービスに接続します。接続ごとに、コンテンツをナレッジへ同期したり、エージェントにツールを提供したりできます。",
       "search": "コネクタを検索...",
-      "addCustom": "カスタムツールを追加",
+      "addCustom": "カスタムコネクタを追加",
       "custom": {
         "custom_mcp": "MCP サーバー",
         "custom_openapi": "OpenAPI / REST"
@@ -1487,6 +1876,7 @@
       "descriptions": {
         "google_drive": "ドキュメント、スプレッドシート、PDF をナレッジに同期します。",
         "share_point": "SharePoint サイトと OneDrive のファイルをナレッジに同期します。",
+        "mcp_canva": "Canvaデザインの操作、エクスポート、ブランドテンプレートの利用を行います。",
         "confluence": "Confluence のスペースとページをナレッジに同期します。",
         "s3": "S3 バケットのドキュメントをナレッジに同期します。",
         "reddit": "検索条件に一致する Reddit の投稿をナレッジに同期します。",
@@ -1502,12 +1892,19 @@
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
         "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。",
         "mcp_drawio": "draw.io で編集可能なフローチャートやその他の図を作成します。",
+        "mcp_coingecko": "暗号資産のリアルタイム価格、時価総額、取引量、トレンドのコイン、価格履歴を調べます。",
         "mcp_clickup": "ClickUp のタスク、ドキュメント、リストを検索、閲覧、更新し、コメントを追加します。",
         "mcp_zapier": "Zapier MCP アカウントで有効にしたアクションを使って、接続済みアプリの情報を読み取ったり更新したりします。",
         "mcp_trello": "Trello のボードやカードを検索し、カードを作成・更新します。",
         "mcp_miro": "Miro のボードを検索し、内容やコメントを読み、図を作成してコメントに返信します。",
         "mcp_resend": "メールを送信し、連絡先、オーディエンス、ドメインを管理します。",
         "mcp_calcom": "Cal.com の予約、イベントタイプ、空き状況、スケジュールを読み取り・管理します。",
+        "mcp_airtable": "Airtable のベース内のレコードを検索、閲覧、更新します。",
+        "mcp_context7": "ライブラリの最新ドキュメントとコード例を参照します。",
+        "mcp_alphavantage": "株価、ファンダメンタルズ、為替、暗号資産、経済指標、マーケットニュースを調べます。",
+        "mcp_neon": "Neon の Postgres プロジェクト、ブランチ、スキーマを調べ、SQL を実行します。",
+        "mcp_twelvedata": "株式、為替、暗号資産、ETF の相場、価格履歴、テクニカル指標、ファンダメンタルズを調べます。",
+        "mcp_cloudflare": "Cloudflare API を通じて Workers、DNS、R2 などを管理します。",
         "github": "リポジトリをナレッジに同期し、エージェントがコード、Issue、プルリクエストを読めるようにします。"
       },
       "empty": "まだ何も接続されていません。サービスを接続すると、コンテンツを同期したり、エージェントに新しいツールを提供したりできます。",
@@ -1524,7 +1921,7 @@
         "tools": "この接続のツール",
         "noAccounts": "まだアカウントが接続されていません。",
         "failed": "この接続を読み込めませんでした。",
-        "lastSync": "{{date}} に同期 · {{frequency}}",
+        "lastSync": "{{when}}に同期",
         "paused": "同期を一時停止中",
         "toolOn": "オン",
         "toolOff": "オフ",
@@ -1533,12 +1930,11 @@
         "keyEnding": "キー {{hint}}",
         "syncMore": "さらに同期する",
         "refreshTools": "ツールを更新",
-        "noSources": "この接続からはまだ何も同期されていません。",
+        "noSources": "まだ何も同期されていません",
         "remove": "削除",
         "refreshed": "ツールを更新しました: {{added}} 件追加、{{removed}} 件削除。",
         "refreshFailed": "ツールを更新できませんでした。",
         "syncNow": "今すぐ同期",
-        "syncStarted": "{{name}} を同期しています…",
         "syncFailed": "同期を開始できませんでした。もう一度お試しください。",
         "toolSwitchFailed": "ツールを変更できませんでした。もう一度お試しください。",
         "expired": "サインインの有効期限が切れました。この接続を使い続けるには再接続してください。",
@@ -1548,7 +1944,19 @@
         "addToolsFailed": "ツールを追加できませんでした。もう一度お試しください。",
         "rename": "名前を変更",
         "toolsHint": "「事前に確認」ではチャットで確認します。API、ウィジェット、リンクからの変更は、エージェントごとに Access details で許可します。",
-        "toolsUnavailable": "{{name}} のツールに接続できませんでした。もう一度お試しください。"
+        "toolsUnavailable": "{{name}} のツールに接続できませんでした。もう一度お試しください。",
+        "noSourcesHint": "{{name}} からコンテンツを選んでナレッジに追加します。",
+        "indexing": "インデックス作成中",
+        "firstSyncStarted": "初回同期を開始（{{time}}）",
+        "dismissFailedSync": "{{name}} を閉じる",
+        "sourceMenu": "ソースの操作",
+        "syncStarting": "同期を開始しています…",
+        "syncRefusedWiki": "このソースは Wiki になりました。直接編集するもので、同期はしません。",
+        "syncRefusedNotSyncable": "このソースは同期できません。",
+        "syncRefusedConnector": "このソースは接続を通じて同期されます。",
+        "syncRefusedInvalid": "このソースが見つかりませんでした。",
+        "syncRefusedReconnect": "同期する前に、所有者がこのソースのアカウントを再接続する必要があります。",
+        "syncRefusedConnectionMissing": "このソースのアカウントは切断されました。アカウントが再接続されるまで同期できません。"
       },
       "permission": {
         "always": "許可",
@@ -1603,7 +2011,6 @@
         "tryInChat": "チャットで試す",
         "done": "完了",
         "connectFailed": "接続できませんでした。入力内容を確認して、もう一度お試しください。",
-        "syncFailed": "同期を開始できませんでした。もう一度お試しください。",
         "connectedWithKey": "末尾が {{hint}} のキーで接続しました。",
         "doneCounts": "{{sources}} をナレッジに同期中、{{tools}} が利用可能です。",
         "doneSources": "{{sources}} をナレッジに同期中です。",
@@ -1614,6 +2021,9 @@
         "methodOauth": "{{name}} でサインイン",
         "methodToken": "アクセストークンを使用",
         "credentialsRejected": "{{name}} がこの認証情報を受け付けませんでした。確認してもう一度お試しください。",
+        "rateLimited": "{{name}} はこのアカウントからのリクエストを {{time}} まで制限しています。その後でもう一度お試しください。",
+        "setupReconnect": "設定を完了するには、{{name}} にもう一度サインインしてください。",
+        "setupDisabled": "管理者が {{name}} をオフにしたため、設定できません。",
         "toolsUnavailable": "{{name}} のツールに接続できませんでした。もう一度試すか、オフにして続行してください。",
         "addTools": "エージェントに {{name}} の使用を許可",
         "addToolsDescription": {
@@ -1624,7 +2034,7 @@
         "accountNameHint": "あなたと AI がアカウントを区別できるように表示されます。例: 通知ボット",
         "syncToKnowledge": "ナレッジに同期",
         "syncToKnowledgeDescription": "{{name}} から回答で検索するコンテンツを選びます。オフのままなら接続のみ行い、後でコネクタから同期できます。",
-        "syncLater": "まだナレッジには何も同期されていません。コンテンツを追加するには、コネクタで {{name}} を開き、「さらに同期する」を選択してください。",
+        "syncLater": "まだナレッジには何も同期されていません。",
         "retrievalSettings": "検索の詳細設定",
         "chooseWhatToSetUpFor": "{{name}} で設定する内容を選択",
         "chooseWhatToSyncFrom": "{{name}} から同期する内容を選択",
@@ -1632,7 +2042,12 @@
         "finishSetup": "設定を完了",
         "account": "アカウント",
         "sourcesCount_one": "{{formatted}} 件",
-        "toolsCount_one": "{{formatted}} 個のツール"
+        "toolsCount_one": "{{formatted}} 個のツール",
+        "syncChoice": "{{name}} の使い方",
+        "syncNow": "今すぐコンテンツを同期",
+        "syncNowDescription": "{{name}} からコンテンツを選んでナレッジに追加します。",
+        "justConnect": "接続のみ",
+        "justConnectDescription": "まだ何も追加されません。必要になったときに、コネクタからコンテンツを同期できます。"
       },
       "remove": {
         "title": "「{{name}}」を削除しますか？",
@@ -1697,7 +2112,8 @@
         "searchRepositories": "リポジトリを検索",
         "repositories": "リポジトリ",
         "updated": "{{date}} に更新",
-        "loadFailed": "リポジトリを読み込めませんでした。"
+        "loadFailed": "リポジトリを読み込めませんでした。",
+        "rateLimited": "GitHub はこのアカウントからのリクエストを {{time}} まで制限しています。その後でもう一度お試しください。"
       },
       "linear": {
         "teams": "チーム",
@@ -1747,7 +2163,17 @@
       "capabilityChip": {
         "sync": "ナレッジに同期",
         "tools": "エージェントにツールを提供"
-      }
+      },
+      "injection": {
+        "flagged": "プロンプトインジェクションの疑い",
+        "notice_one": "{{formatted}} 件のアクションの説明に、AI 向けに仕込まれた指示のような記述があります（プロンプトインジェクションの疑い）。許可する前に「カスタマイズ」で確認してください。",
+        "notice_other": "{{formatted}} 件のアクションの説明に、AI 向けに仕込まれた指示のような記述があります（プロンプトインジェクションの疑い）。許可する前に「カスタマイズ」で確認してください。"
+      },
+      "syncContent": "コンテンツを同期",
+      "openInKnowledge": "ナレッジで開く"
+    },
+    "insights": {
+      "label": "インサイト"
     }
   },
   "modals": {
@@ -1763,13 +2189,13 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "dropzoneText": "クリックしてアップロード、またはドラッグ＆ドロップ",
+      "dropzoneText": "クリックしてアップロード、またはファイルやフォルダをここにドラッグ",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、画像、音声、EPUB、JSON、ZIP（各 25 MB まで）",
       "filesRejected": "追加されませんでした（25 MB を超えているか、未対応の形式です）: {{files}}",
+      "selectFolder": "またはフォルダごと選択",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "ナレッジに追加",
-      "create": "作成",
       "link": "リンク",
       "urlLink": "URLリンク",
       "repoUrl": "リポジトリURL",
@@ -1799,13 +2225,9 @@
           "label": "ファイルをアップロード",
           "heading": "新しいドキュメントをアップロード"
         },
-        "crawler": {
-          "label": "クローラー",
-          "heading": "Webクローラーでコンテンツを追加"
-        },
-        "url": {
-          "label": "リンク",
-          "heading": "URLからコンテンツを追加"
+        "website": {
+          "label": "ウェブサイト",
+          "heading": "ウェブサイトを追加"
         },
         "github": {
           "label": "GitHub",
@@ -1835,21 +2257,59 @@
           "connect": "Google Driveに接続",
           "validateFailed": "サインインを確認できませんでした。もう一度お試しください。",
           "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
-          "selectedFiles": "選択されたファイル",
-          "selectFiles": "ファイルを選択",
+          "selectedFiles": "選択された項目",
+          "selectFiles": "ファイルまたはフォルダを選択",
           "noFilesSelected": "まだファイルやフォルダが選択されていません。",
-          "removeItem": "{{name}} を削除"
+          "removeItem": "{{name}} を削除",
+          "shareFolders": "これらのフォルダを同期するには、Google ドライブでそれぞれを閲覧者として次のアドレスと共有してください:",
+          "filesOnly": "このサーバーはフォルダ全体ではなくファイルを同期します。ピッカーでフォルダを開いて、中のファイルを選んでください。"
         }
       },
       "fields": {
-        "url": "URL",
-        "initialContent": "初期コンテンツ（任意）"
+        "initialContent": "初期コンテンツ",
+        "initialContentHint": "Markdown。作成後にページを追加・編集できます。"
+      },
+      "website": {
+        "pageUrl": "ページのアドレス",
+        "siteUrl": "ウェブサイトのアドレス",
+        "addAnotherPage": "別のページを追加",
+        "invalidAddress": "公開されているウェブアドレスを入力してください（例：docs.example.com）",
+        "removePage": "このアドレスを削除",
+        "removeAddress": "{{address}} を削除",
+        "maxPages": "ページ上限",
+        "maxPagesHint": "最大 {{max}}（管理者が設定）。",
+        "pathPrefix": "対象のパス",
+        "pathPrefixHint": "このパスで始まるアドレスだけを対象にします。",
+        "pathPrefixPlaceholder": "/（サイト全体）",
+        "sitemapUrl": "サイトマップの URL",
+        "sitemapUrlHint": "空欄にすると robots.txt に記載されたものを使います。",
+        "includeSubdomains": "サブドメインを含める",
+        "sync": "最新の状態に保つ",
+        "syncHintPage": "ページを再取得して変更を反映します。",
+        "syncHintSite": "サイトを再クロールして変更を反映します。",
+        "keepLinks": "ページ本文のリンクを保持",
+        "keepLinksHint": "回答がこのページのリンク先を示せるようになります。保存されるテキストが約 4 分の 1 増え、検索の順位がやや下がることがあります。",
+        "mode": {
+          "label": "追加する内容",
+          "page": "このページ",
+          "site": "サイト全体",
+          "pageHint": "これらのページだけを追加します。",
+          "siteHint": "このページと、同じサイト内のリンク先のページを追加します。"
+        },
+        "discovery": {
+          "label": "ページの探し方",
+          "hint": "自動はサイトマップを読み、その後リンクをたどります。",
+          "auto": "自動",
+          "sitemap": "サイトマップ",
+          "links": "リンクをたどる"
+        }
       },
       "github": {
         "privateHint": "プライベートリポジトリですか？同期するには GitHub アカウントを接続してください。",
         "connect": "GitHub を接続"
       },
-      "fromService": "サービスから"
+      "fromService": "サービスから",
+      "removeFile": "{{name}} を取り除く"
     },
     "createAPIKey": {
       "label": "新しいAPIキーを作成",
@@ -1865,7 +2325,7 @@
       "copy": "コピー",
       "copied": "コピーしました",
       "confirm": "キーを保存しました",
-      "apiKeyLabel": "API Key"
+      "apiKeyLabel": "API キー"
     },
     "deleteConv": {
       "confirm": "すべての会話を削除しますか？",
@@ -1880,8 +2340,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "会話を検索",
-      "noResults": "結果が見つかりません",
-      "loading": "読み込み中..."
+      "noResults": "結果が見つかりません"
     },
     "configTool": {
       "title": "ツール設定",
@@ -1890,7 +2349,7 @@
       "apiKeyPlaceholder": "API キーを入力",
       "addButton": "ツールを追加",
       "closeButton": "閉じる",
-      "customNamePlaceholder": "Enter custom name (optional)",
+      "customNamePlaceholder": "カスタム名を入力（任意）",
       "fieldRequired": "{{field}} は必須です",
       "positiveNumber": "正の数を入力してください",
       "maxTimeout": "タイムアウトの上限は 300 秒です"
@@ -1918,18 +2377,18 @@
       "variablesDescription": "クリックしてプロンプトに挿入",
       "systemVariables": "システム変数",
       "toolVariables": "ツール変数",
-      "systemVariablesDropdownLabel": "System Variables",
+      "systemVariablesDropdownLabel": "システム変数",
       "systemVariableOptions": {
-        "sourceContent": "Sources content",
-        "sourceSummaries": "Alias for content (backward compatible)",
-        "sourceDocuments": "Document objects list",
-        "sourceCount": "Number of retrieved documents",
+        "sourceContent": "ソースの内容",
+        "sourceSummaries": "内容の別名（後方互換）",
+        "sourceDocuments": "ドキュメントオブジェクトのリスト",
+        "sourceCount": "取得したドキュメントの数",
         "citationRules": "引用ルール（[n] 形式）",
-        "systemDate": "Current date (YYYY-MM-DD)",
-        "systemTime": "Current time (HH:MM:SS)",
-        "systemTimestamp": "ISO 8601 timestamp",
-        "systemRequestId": "Unique request identifier",
-        "systemUserId": "Current user ID",
+        "systemDate": "現在の日付（YYYY-MM-DD）",
+        "systemTime": "現在の時刻（HH:MM:SS）",
+        "systemTimestamp": "ISO 8601 タイムスタンプ",
+        "systemRequestId": "一意のリクエスト ID",
+        "systemUserId": "現在のユーザー ID",
         "artifactsLookup": "IDによるアーティファクトメタデータ"
       },
       "learnAboutPrompts": "プロンプトについて学ぶ →",
@@ -1951,20 +2410,20 @@
       "deleteConfirmation": "このチャンクを削除しますか？"
     },
     "addAction": {
-      "title": "New Action",
-      "actionNamePlaceholder": "Action Name",
-      "invalidFormat": "Invalid function name format. Use only letters, numbers, underscores, and hyphens.",
-      "formatHelp": "Use only letters, numbers, underscores, and hyphens (e.g., `get_data`, `send_report`, etc.)",
-      "addButton": "Add"
+      "title": "新しいアクション",
+      "actionNamePlaceholder": "アクション名",
+      "invalidFormat": "関数名の形式が無効です。英字、数字、アンダースコア、ハイフンのみを使用してください。",
+      "formatHelp": "英字、数字、アンダースコア、ハイフンのみを使用してください（例: `get_data`、`send_report` など）",
+      "addButton": "追加"
     },
     "agentDetails": {
       "title": "アクセス詳細",
-      "publicLink": "Public Link",
-      "apiKey": "API Key",
+      "publicLink": "公開リンク",
+      "apiKey": "API キー",
       "webhookUrl": "Webhook URL",
-      "generate": "Generate",
-      "test": "Test",
-      "learnMore": "Learn more",
+      "generate": "生成",
+      "test": "テスト",
+      "learnMore": "詳細を見る",
       "resetKey": "キーをリセット",
       "resetKeyConfirm": "「{{name}}」の API キーをリセットしますか？",
       "apiWrites": {
@@ -2000,36 +2459,36 @@
       "import": "インポート ({{count}})"
     },
     "importAgent": {
-      "title": "Import agent from YAML",
-      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
-      "dropzoneText": "Click to upload or drag and drop a .yaml file",
-      "invalidFileType": "Only .yaml or .yml files are supported",
-      "readError": "Could not read this agent file",
-      "importError": "Import failed",
-      "willCreate": "Creates a new agent.",
-      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
-      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
-      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
-      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
-      "sources": "Sources",
-      "tools": "Tools",
-      "models": "Models",
-      "sourceMatched": "{{name}}: using your existing source",
-      "sourceMissing": "{{name}}: not found",
-      "leaveUnattached": "Leave unattached",
-      "toolBuiltin": "{{type}}: built-in",
-      "toolReuse": "{{name}}: reusing your existing tool",
-      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
-      "toolCreate": "{{name}}: will be created",
-      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
-      "modelCustom": "{{name}}: custom model",
-      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
-      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
-      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
-      "cancel": "Cancel",
-      "review": "Review",
-      "import": "Import",
-      "continueToAgent": "Continue to agent"
+      "title": "YAML からエージェントをインポート",
+      "description": "エージェントの YAML ファイルをアップロードしてください。ソースとツールはあなたのアカウント内のものと照合され、見つからないものは次のステップで割り当てるか作成できます。新しいエージェントは下書きとしてインポートされます。再インポートすると一致するエージェントが更新され、現在のステータスは維持されます。",
+      "dropzoneText": "クリックしてアップロード、または .yaml ファイルをドラッグ＆ドロップ",
+      "invalidFileType": ".yaml または .yml ファイルのみ対応しています",
+      "readError": "このエージェントファイルを読み込めませんでした",
+      "importError": "インポートに失敗しました",
+      "willCreate": "新しいエージェントを作成します。",
+      "willUpdate": "既存のエージェントを更新します（{{matchedBy}} で一致）。",
+      "workflowCreate": "{{nodes}} ノードのワークフローが含まれています。ワークフローは自動的に作成されます。",
+      "workflowUpdate": "{{nodes}} ノードのワークフローが含まれています。既存のワークフローが更新されます。",
+      "workflowDelete": "ワークフローが含まれていません。このエージェントの既存のワークフロー（{{nodes}} ノード）と、その実行履歴およびアーティファクトは完全に削除されます。",
+      "sources": "ソース",
+      "tools": "ツール",
+      "models": "モデル",
+      "sourceMatched": "{{name}}: 既存のソースを使用",
+      "sourceMissing": "{{name}}: 見つかりません",
+      "leaveUnattached": "割り当てない",
+      "toolBuiltin": "{{type}}: 組み込み",
+      "toolReuse": "{{name}}: 既存のツールを再利用",
+      "toolUnavailable": "{{type}}: このインスタンスでは利用できないため、スキップされます",
+      "toolCreate": "{{name}}: 新規作成されます",
+      "secretPlaceholder": "{{field}}（空欄にするとこのツールをスキップ）",
+      "modelCustom": "{{name}}: カスタムモデル",
+      "apiKeyPlaceholder": "API キー（空欄にするとこのモデルをスキップ）",
+      "warningsTitle": "エージェントを下書きとしてインポートしました。確認が必要な項目があります:",
+      "warningsTitlePublished": "公開中のエージェントを更新しました。確認が必要な項目があります:",
+      "cancel": "キャンセル",
+      "review": "確認",
+      "import": "インポート",
+      "continueToAgent": "エージェントへ進む"
     },
     "jwt": {
       "title": "JWT トークンを追加",
@@ -2084,6 +2543,8 @@
       "view_more": "さらに{{count}}個のソース",
       "noSourcesAvailable": "ナレッジはまだありません",
       "selectedCount": "{{count}} 件選択中",
+      "triggerLabel_one": "ナレッジ、{{formatted}} 件選択中",
+      "triggerLabel_other": "ナレッジ、{{formatted}} 件選択中",
       "groupOwn": "あなたのもの",
       "groupTeam": "チームと共有",
       "fromConnector": "{{name}} から",
@@ -2105,8 +2566,17 @@
         "forbidden": "このソースは削除されたか、アクセス権がなくなりました。回答と一緒に保存された抜粋を表示しています。",
         "loadFailed": "この箇所を読み込めませんでした。",
         "openLink": "リンクを開く",
-        "openInKnowledge": "ナレッジで開く"
-      }
+        "openInKnowledge": "ナレッジで開く",
+        "withheld": "プロンプトインジェクションを含む可能性があるため、このエージェントのガードレールがこのソースを回答から除外しました。AI はこの箇所を読んでいません。"
+      },
+      "relevance": {
+        "strong": "関連性が高い",
+        "possible": "関連の可能性あり",
+        "weak": "関連性が低い",
+        "tooltip": "関連度 {{percent}}%"
+      },
+      "withheld": "除外済み",
+      "withheldNote": "このエージェントのガードレールにより回答から除外されました。プロンプトインジェクションを含む可能性があります。"
     },
     "attachments": {
       "attach": "添付",
@@ -2133,13 +2603,16 @@
     },
     "retry": "再試行",
     "failedTitle": "応答を生成できませんでした",
+    "stoppedTitle": "停止しました",
     "errors": {
       "contextLength": "このメッセージと添付ファイルは、モデルのコンテキストウィンドウに収まりません。ファイルの数を減らすか、小さいファイルを送ってください。",
       "contextLengthKnowledge": "このメッセージと添付ファイルは、モデルのコンテキストウィンドウに収まりません。ファイルの数を減らすか小さいファイルを送るか、「ナレッジに追加」を使って、ファイル全体を送る代わりに検索してください。",
       "contextLengthSized": "このメッセージと添付ファイルには約 {{needed, number}} トークンが必要で、モデルが扱える量（{{available, number}} トークン）を超えています。ファイルの数を減らすか、小さいファイルを送ってください。",
       "contextLengthSizedKnowledge": "このメッセージと添付ファイルには約 {{needed, number}} トークンが必要で、モデルが扱える量（{{available, number}} トークン）を超えています。ファイルの数を減らすか小さいファイルを送るか、「ナレッジに追加」を使って、ファイル全体を送る代わりに検索してください。",
       "serverError": "しばらくしてからもう一度お試しください。ご不便をおかけして申し訳ありません。",
-      "clientDisconnect": "応答が生成される前に中断されました。もう一度お試しください。"
+      "clientDisconnect": "応答が生成される前に中断されました。もう一度お試しください。",
+      "timeLimit": "制限時間に達したため停止しました。ここまでの進行状況は保存されています。",
+      "stopped": "何も書かれる前にこの応答を停止しました。もう一度お試しください。"
     },
     "reasoning": "推論",
     "wikiWrite": {
@@ -2267,7 +2740,6 @@
       "cost": "利用予算 {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。"
     },
     "send": "送信",
-    "viewArtifact": "アーティファクトを表示",
     "stopSpeaking": "読み上げを停止",
     "loadingAudio": "音声を読み込み中",
     "voice": {
@@ -2335,9 +2807,41 @@
       "researched": "{{count}} 件のトピックを調査しました"
     },
     "openFile": "ファイルを開く",
+    "opensInNewTab": "新しいタブで開きます",
     "stepGroup": {
       "title": "ツール",
       "failed": "{{count}} 件失敗"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTMLページ",
+        "pdf": "PDF",
+        "slides": "スライド",
+        "document": "ドキュメント",
+        "spreadsheet": "スプレッドシート",
+        "data": "データファイル",
+        "image": "画像",
+        "file": "ファイル"
+      },
+      "version": "v{{version}}",
+      "download": "{{title}} をダウンロード",
+      "more": "さらに{{count}}個のファイル",
+      "fileCount": "{{count}}個のファイル",
+      "showAll": "{{count}}件すべて表示",
+      "listTitle": "この回答のファイル",
+      "backToList": "ファイル一覧に戻る",
+      "group": {
+        "documents": "ドキュメント",
+        "images": "画像",
+        "data": "データ",
+        "other": "その他のファイル"
+      }
+    },
+    "workflow": {
+      "title": "ワークフロー",
+      "step": "ステップ {{step}}",
+      "stepOf": "ステップ {{step}}/{{total}}",
+      "stepCount_other": "{{count}} ステップ"
     }
   },
   "agents": {
@@ -2353,9 +2857,9 @@
     },
     "description": "指示、追加知識、スキルの組み合わせを含むDocsGPTのカスタムバージョンを発見して作成します",
     "newAgent": "新しいエージェント",
-    "importAgent": "Import",
-    "exportAgent": "Export as YAML",
-    "exportAgentFailed": "Failed to export agent",
+    "importAgent": "インポート",
+    "exportAgent": "YAML としてエクスポート",
+    "exportAgentFailed": "エージェントをエクスポートできませんでした",
     "close": "閉じる",
     "shareWithTeam": "チームと共有",
     "backToAll": "すべてのエージェントに戻る",
@@ -2366,7 +2870,9 @@
       "tabs": {
         "overview": "概要",
         "logs": "ログ",
-        "schedules": "スケジュール"
+        "insights": "インサイト",
+        "schedules": "スケジュール",
+        "analytics": "分析"
       },
       "fallbackName": "無題のエージェント",
       "subnavAriaLabel": "エージェントのサブナビゲーション"
@@ -2427,11 +2933,12 @@
         "agentType": "エージェントタイプ",
         "models": "モデル",
         "advanced": "詳細設定",
-        "guardrails": "Guardrails",
+        "guardrails": "ガードレール",
         "preview": "プレビュー",
         "basics": "基本情報",
         "knowledge": "ナレッジと動作",
-        "model": "モデル"
+        "model": "モデル",
+        "analytics": "インサイト"
       },
       "placeholders": {
         "agentName": "エージェント名",
@@ -2443,7 +2950,9 @@
         "selectModels": "このエージェントのモデルを選択",
         "selectDefaultModel": "デフォルトモデルを選択",
         "enterTokenLimit": "トークン制限を入力",
-        "enterRequestLimit": "リクエスト制限を入力"
+        "enterRequestLimit": "リクエスト制限を入力",
+        "contextLimitDefault": "モデルの既定値",
+        "historyLimitDefault": "コンテキスト上限の近くで要約"
       },
       "sourcePopup": {
         "title": "ナレッジを選択",
@@ -2490,6 +2999,16 @@
         "jsonSchemaDescription": "構造化された出力形式を適用するためのJSONスキーマを定義します",
         "validJson": "有効なJSON",
         "invalidJson": "無効なJSON - 保存を有効にするには修正してください",
+        "contextLimit": "コンテキスト上限",
+        "contextLimitDescription": "1回のリクエストでモデルに送る履歴・ドキュメント・ツール結果のトークン数の上限です。上限を超えないよう、古いメッセージは要約されます。オフにするとモデルのコンテキストウィンドウ全体を使います。",
+        "contextLimitAboveWindow": "{{model}} のコンテキストウィンドウ（{{limit, number}} トークン）を超えているため、効果はありません。",
+        "limitRange": "{{min, number}}～{{max, number}} トークンの範囲で入力してください。",
+        "contextLimitTokens": "コンテキスト上限（トークン）",
+        "historyLimit": "履歴上限",
+        "historyLimitDescription": "1回のリクエストでそのまま送る過去メッセージのトークン数の上限です。超えると古いメッセージは要約され、最新のものは残ります。オフにするとコンテキスト上限の近くでのみ要約します。",
+        "historyLimitTokens": "履歴上限（トークン）",
+        "historyLimitBelowContext": "{{min, number}} トークン以上、コンテキスト上限（{{limit, number}}）未満で入力してください。",
+        "historyLimitAboveWindow": "{{model}} のコンテキストウィンドウ（{{limit, number}} トークン）以上のため、効果はありません。",
         "tokenLimiting": "トークン制限",
         "tokenLimitingDescription": "このエージェントが使用できる1日の合計トークン数を制限します",
         "requestLimiting": "リクエスト制限",
@@ -2497,7 +3016,24 @@
         "systemPromptOverride": "プロンプトの上書きを許可",
         "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します",
         "tokenLimit": "トークン上限",
-        "requestLimit": "リクエスト上限"
+        "requestLimit": "リクエスト上限",
+        "origins": {
+          "label": "許可するオリジン",
+          "description": "一覧にあるウェブサイトと、このインスタンスが信頼するサイトだけが、API キーでこのエージェントを呼び出せます",
+          "inputLabel": "オリジン",
+          "hint": "https://example.com のような、パスを含まないウェブサイトのアドレス。Enter で追加します。",
+          "placeholder": "https://example.com",
+          "add": "追加",
+          "listLabel": "許可するオリジン",
+          "remove": "{{origin}} を削除",
+          "errors": {
+            "invalid": "https://example.com のように、http:// または https:// で始まるアドレスを入力してください",
+            "path": "パスは含めないでください。オリジンはスキーム、ホスト、ポートのみです",
+            "duplicate": "{{origin}} はすでに一覧にあります",
+            "full": "追加できるオリジンは最大 {{max}} 件です",
+            "required": "オリジンを 1 つ以上追加するか、この設定をオフにしてください"
+          }
+        }
       },
       "preview": {
         "savedVersion": "保存済みバージョン",
@@ -2505,65 +3041,67 @@
         "publishDescription": "プレビューは公開済みのエージェントとチャットします。下書きは公開するまで非公開のままです。",
         "unsavedChanges": "保存されていない変更があります。保存するまで、プレビューは保存済みのバージョンを使います。"
       },
-      "dangerZone": {
-        "heading": "危険ゾーン",
-        "description": "このエージェントを削除すると元に戻せません。すべてのスケジュールと実行履歴も削除されます。",
-        "deleteButton": "エージェントを削除"
-      },
       "externalKb": "外部KB",
       "errors": {
         "publishFailed": "エージェントを公開できませんでした。もう一度お試しください。",
         "saveDraftFailed": "下書きを保存できませんでした。もう一度お試しください。"
       },
       "guardrails": {
-        "enable": "Enable guardrails",
-        "enableDescription": "Run the selected checks on this agent's runs",
-        "mode": "Enforcement mode",
-        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
-        "checks": "Checks",
-        "latencyHint": "Approximate added latency when this check runs",
-        "notConfigured": "Not configured",
-        "lockedByFloor": "Required by the instance policy and cannot be removed",
-        "configure": "Configure",
-        "blockMessage": "Blocked-response message",
-        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
-        "failOpen": "Continue if a check fails",
-        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
-        "timeout": "Check timeout (ms)",
-        "loadError": "Could not load the guardrail catalog",
-        "terms": "Banned terms (one per line)",
-        "termsPlaceholder": "competitor name\ninternal codename",
-        "allowHosts": "Allowed hosts (one per line)",
-        "blockHosts": "Blocked hosts (one per line)",
-        "policyText": "Policy",
-        "minOverlap": "Minimum source overlap",
-        "minWords": "Minimum answer length (words)",
-        "confidence": "Confidence threshold",
-        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
-        "activeCount": "{{count}} active",
-        "needsSetup": "{{count}} need setup",
-        "setupRequired": "Fill in this check's settings before saving.",
-        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
-        "remove": "Remove",
-        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
-        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
-        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "enable": "ガードレールを有効にする",
+        "enableDescription": "このエージェントの実行時に、選択したチェックを実行します",
+        "mode": "適用モード",
+        "monitorHint": "監視モードでは回答を一切変更せず、適用していた場合に何が起きたかを記録します。まずこのモードで始めてログを確認し、その後で適用に切り替えてください。",
+        "checks": "チェック",
+        "latencyHint": "このチェックの実行で増えるおおよその遅延",
+        "notConfigured": "未設定",
+        "lockedByFloor": "インスタンスのポリシーで必須のため、削除できません",
+        "configure": "設定",
+        "blockMessage": "ブロック時のメッセージ",
+        "blockMessageDescription": "チェックがリクエストや回答をブロックしたときにユーザーに表示されます",
+        "failOpen": "チェックが失敗しても続行",
+        "failOpenDescription": "チェックがタイムアウトまたはエラーになった場合、そのターンをそのまま通します。オフにすると、代わりにそのターンを停止します。",
+        "timeout": "チェックのタイムアウト（ms）",
+        "loadError": "ガードレールのカタログを読み込めませんでした",
+        "terms": "禁止語（1 行に 1 つ）",
+        "termsPlaceholder": "競合他社名\n社内コードネーム",
+        "allowHosts": "許可するホスト（1 行に 1 つ）",
+        "blockHosts": "ブロックするホスト（1 行に 1 つ）",
+        "policyText": "ポリシー",
+        "minOverlap": "ソースとの最小重複度",
+        "minWords": "回答の最小長（単語数）",
+        "confidence": "信頼度のしきい値",
+        "confidenceHint": "判定モデルがコンテンツを検出し、かつ信頼度がこの値以上である必要があります（既定: 0.7）",
+        "activeCount": "{{count}} 件有効",
+        "needsSetup": "{{count}} 件が設定待ち",
+        "setupRequired": "保存する前に、このチェックの設定を入力してください。",
+        "pickAtLeastOne": "少なくとも 1 つ選択してください。何も選択されていないとチェックを実行できません。",
+        "remove": "削除",
+        "instanceDisabled": "このインスタンスではガードレールがオフになっているため、ここでの設定は実行されません。GUARDRAILS_ENABLED を設定するよう管理者に依頼してください。",
+        "floorNotice": "{{count}} 件のコントロールはこのインスタンスで必須のため、常に適用されます。",
+        "floorControl": "{{stage}}: {{action}}（インスタンスのポリシーで必須）",
+        "unknownCheck": "このエージェントは、ここでは利用できないチェック（{{check}}）を使用しています。そのチェックが再び利用可能になれば実行されます。",
         "stages": {
-          "input": "User input",
-          "retrieval": "Retrieved sources",
-          "toolResult": "Tool result",
-          "output": "Answer"
+          "input": "ユーザー入力",
+          "retrieval": "取得したソース",
+          "toolResult": "ツールの結果",
+          "output": "回答",
+          "attachment": "添付ファイル"
         },
         "actions": {
-          "flag": "Flag only",
-          "redact": "Redact",
-          "block": "Block"
+          "flag": "フラグのみ",
+          "redact": "マスク",
+          "block": "ブロック"
         },
         "modes": {
-          "monitorOnly": "Monitor only",
-          "scanAll": "Enforce everywhere"
-        }
+          "monitorOnly": "監視のみ",
+          "scanAll": "すべてに適用"
+        },
+        "itemLevelHint": "ブロックすると、フラグが立ったソースまたはファイルだけが除外されます。",
+        "advanced": "詳細設定",
+        "threshold": "アクションのしきい値",
+        "thresholdHint": "このスコア以上でコントロールのアクションが適用されます（0〜1、既定値 0.9）。",
+        "flagThreshold": "フラグのしきい値",
+        "flagThresholdHint": "このスコア以上のテキストにはフラグを立てて記録しますが、何もブロックしません（既定値 0.5）。"
       },
       "byline": {
         "new": "エージェントを設定し、公開するとチャットできます。"
@@ -2644,13 +3182,91 @@
         "audienceTitle_other": "このエージェントを通じて使用できる人",
         "stopNote_one": "編集権限を失うと、実行されなくなります。",
         "stopNote_other": "編集権限を失うと、実行されなくなります。"
+      },
+      "analytics": {
+        "enable": "インサイトを収集する",
+        "enableDescription": "終了した会話をバックグラウンドで読み取り、回答が役に立ったか、ドキュメントのどこが不足しているかを推定します。結果は「インサイト」タブとログに表示されます。",
+        "learnMore": "詳細",
+        "serverOff": "このサーバーではインサイトがオフのため、これらの設定はまだ効果がありません。オンにするよう管理者に依頼してください。",
+        "topics": "トピック",
+        "countOf": "{{count}} / {{max}}",
+        "addTopic": "トピックを追加",
+        "itemActions": "{{name}} の操作",
+        "edit": "編集",
+        "remove": "削除",
+        "modal": {
+          "addTopic": "トピックを追加",
+          "editTopic": "トピックを編集",
+          "name": "名前",
+          "description": "説明",
+          "submitAdd": "追加",
+          "submitSave": "保存",
+          "dialogDescription": "名前と説明から、ここに何が入るかをモデルが判断します。",
+          "editFolder": "このトピックは、このエージェントのソースのフォルダー「{{name}}」です。保存すると独自のトピックになり、フォルダーのページには追従しなくなります。",
+          "namePlaceholder": "請求",
+          "descriptionHint": "任意。振り分けの精度が上がります。ページ、機能、ユーザーがよく使う言葉をいくつか挙げてください。",
+          "descriptionPlaceholder": "料金、プラン、席数、請求書。",
+          "overlap": "他のトピックと重複可",
+          "overlapDescription": "会話全体ごとに判定するため、複数が当てはまることもあります。ドキュメント全体にまたがる不具合報告や料金の質問などに。",
+          "onePickFull": "重複しないトピックは {{max}} 個までのため、このトピックは重複可になります。",
+          "overlapFull": "重複可のトピックは {{max}} 個までのため、このトピックは重複できません。",
+          "overlapOff": "このサーバーは重複可のトピックを判定しなくなったため、このトピックは重複できません。",
+          "reachOnePick": "新しい質問を振り分けます。以前の質問のトピックは変わりません。",
+          "reachOverlap": "最近の会話でも判定します。",
+          "kindChangeToOverlap": "変更すると集計は最初からになります。これまで質問を振り分けていましたが、今後は会話で判定します。",
+          "kindChangeToOnePick": "変更すると集計は最初からになります。これまで会話で判定していましたが、今後は質問を振り分けます。"
+        },
+        "errors": {
+          "nameRequired": "名前を入力してください。",
+          "topicNameTooLong": "長すぎます。{{max}} 文字以内に短くしてください。",
+          "topicNameTaken": "この名前はすでに別のトピックで使われています。",
+          "topicNameReserved": "この名前は、どのトピックにも当てはまらない質問のために予約されています。",
+          "topicDescriptionTooLong": "長すぎます。{{max}} 以内に短くしてください（中国語・日本語・韓国語の文字は 3 文字分として数えます）。"
+        },
+        "digest": "ドキュメントの不足の週次サマリー",
+        "digestDescription": "週に 1 回、エージェントの所有者に、主なドキュメントの不足を一覧にした通知が届きます。",
+        "off": "オフ",
+        "topicsDescription": "ユーザーが何について尋ねているか。各質問は、最もよく当てはまる1つのトピックに入ります。",
+        "fromSources": "ソースから",
+        "hide": "非表示",
+        "groups": {
+          "onePick": "質問ごとに1つ",
+          "overlap": "重複可",
+          "overlapDescription": "会話全体で判定します。複数が当てはまることもあります。"
+        },
+        "notes": {
+          "foldersFailed": "このエージェントのソースのフォルダーを読み込めませんでした。",
+          "unsaved": "このエージェントのソースのフォルダーは、保存すると表示されます。",
+          "unlisted": "質問は、このエージェントのソースのフォルダーにも振り分けられます。",
+          "hidden": "非表示のフォルダー：{{names}}",
+          "show": "表示",
+          "cut": "次の小さいフォルダーは入りきらないため、その質問は「どのトピックにも該当しない」になります：{{names}}",
+          "single": "トピックが1つだけでは振り分けられません。もう1つ追加してください。",
+          "full": "このエージェントのトピックは上限に達しています：重複しないもの {{topics}} 個、重複可のもの {{overlapping}} 個。",
+          "overOnePick": "このサーバーで使える重複しないトピックは {{max}} 個になり、このエージェントの数より少なくなりました。質問を振り分けるのは先に追加した {{max}} 個だけです。別のトピックを追加するには、いくつか削除してください。",
+          "overOverlapping": "このサーバーで使える重複可のトピックは {{max}} 個になり、このエージェントの数より少なくなりました。判定するのは先に追加した {{max}} 個だけです。別のトピックを追加するには、いくつか削除してください。",
+          "overlapOff": "このサーバーは重複可のトピックを判定しなくなったため、これらは判定されません。編集して質問を振り分けるトピックにするか、削除してください。"
+        },
+        "empty": {
+          "title": "トピックはまだありません",
+          "workflow": "ユーザーが尋ねる内容を追加してください。各質問は、最もよく当てはまる1つのトピックに入ります。",
+          "unsaved": "このエージェントのソースのトピックは、保存すると表示されます。独自のトピックは今すぐ追加できます。",
+          "noFolders": "このエージェントのソースには、質問を振り分けるフォルダーがありません。独自のトピックを追加してください。",
+          "allHidden": "このエージェントのソースのフォルダーはすべて非表示のため、質問は振り分けられません。",
+          "showFolders": "フォルダーを表示"
+        },
+        "removeTopic": {
+          "title": "「{{name}}」を削除しますか？",
+          "description": "重複可のトピックなので、独自の結果があります。結果はインサイトとログに表示されなくなり、再び追加すると最初からやり直しになります。",
+          "submit": "削除"
+        }
       }
     },
     "logs": {
       "title": "エージェントログ",
       "lastUsedAt": "最終使用日時",
       "noUsageHistory": "使用履歴がありません",
-      "tableHeader": "エージェントエンドポイントログ"
+      "description": "このエージェントのAPIコール、スケジュール実行、エラー。"
     },
     "schedules": {
       "title": "エージェントスケジュール",
@@ -2725,6 +3341,7 @@
           "dec": "12月"
         },
         "frequencyLabel": "頻度",
+        "customTiming": "このスケジュールはカスタムのタイミングで実行されます: {{pattern}}。下のタイミングを変更すると置き換わります。",
         "dayOfWeek": "曜日"
       },
       "status": {
@@ -2755,7 +3372,8 @@
         "error": "エラー",
         "errorWithType": "エラー（{{type}}）",
         "output": "出力",
-        "truncated": "（切り詰め）"
+        "truncated": "（切り詰め）",
+        "openConversation": "会話を開く"
       },
       "toolCard": {
         "cancelFailed": "キャンセルに失敗しました",
@@ -2794,7 +3412,18 @@
           "oct": "10月",
           "nov": "11月",
           "dec": "12月"
-        }
+        },
+        "weekdays": "平日の毎日 {{time}}",
+        "weekends": "週末の毎日 {{time}}",
+        "days": "毎週 {{days}} {{time}}",
+        "hourly": "1時間ごと",
+        "hourlyAt": "毎時 {{minute}} 分",
+        "hourlyRange": "{{from}}から{{to}}まで1時間ごと",
+        "hourlyRangeWeekdays": "平日の{{from}}から{{to}}まで1時間ごと",
+        "everyMinutes_one": "{{formatted}} 分ごと",
+        "everyMinutes_other": "{{formatted}} 分ごと",
+        "everyHours_one": "{{formatted}} 時間ごと",
+        "everyHours_other": "{{formatted}} 時間ごと"
       },
       "runLog": {
         "when": "日時",
@@ -2804,6 +3433,7 @@
         "loadFailed": "実行履歴を読み込めませんでした。"
       },
       "actions": "スケジュールの操作",
+      "loadFailed": "スケジュールを読み込めませんでした。",
       "cancelTask": "タスクをキャンセル",
       "failureStreak_one": "{{count}}回連続で失敗",
       "failureStreak_other": "{{count}}回連続で失敗",
@@ -2824,7 +3454,8 @@
         "overdue": "期限超過"
       },
       "deleteFailed": "このスケジュールを削除できませんでした。",
-      "deleteConsequence": "実行履歴も削除されます。この操作は元に戻せません。"
+      "deleteConsequence": "実行履歴も削除されます。この操作は元に戻せません。",
+      "allSchedules": "すべてのスケジュール"
     },
     "shared": {
       "notFound": "エージェントが見つかりません。エージェントが共有されていることを確認してください。",
@@ -2862,26 +3493,29 @@
       "deleteConsequence": "中のエージェントはフォルダーの外に移動され、削除されません。"
     },
     "guardrailEvents": {
-      "heading": "Guardrail activity",
-      "description": "Every control that fired on this agent, and every one that could not run.",
-      "lastDays": "Last {{count}} days",
-      "blocked": "Blocked",
-      "redacted": "Redacted",
-      "flagged": "Flagged",
-      "notEvaluated": "Not evaluated",
-      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
-      "byCheck": "By check",
-      "allChecks": "All checks",
-      "allOutcomes": "All outcomes",
-      "tableHeader": "Guardrail decisions",
-      "when": "When",
-      "check": "Check",
-      "stage": "Stage",
-      "outcome": "Outcome",
-      "detail": "Detail",
-      "empty": "No guardrail has fired on this agent yet.",
-      "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "heading": "ガードレールのアクティビティ",
+      "description": "このエージェントで発動したすべてのコントロールと、実行できなかったすべてのコントロール。",
+      "blocked": "ブロック",
+      "redacted": "マスク済み",
+      "flagged": "フラグ付き",
+      "notEvaluated": "未評価",
+      "notEvaluatedHint": "チェックがタイムアウトまたはエラーになったため、このコンテンツは実際には検査されていません。問題がなかったという意味ではありません。",
+      "byCheck": "チェック別",
+      "allChecks": "すべてのチェック",
+      "allOutcomes": "すべての結果",
+      "tableHeader": "ガードレールの判定",
+      "when": "日時",
+      "check": "チェック",
+      "stage": "ステージ",
+      "outcome": "結果",
+      "detail": "詳細",
+      "empty": "このエージェントでは、まだガードレールが発動していません。",
+      "emptyForFilter": "このフィルターに一致する判定はありません。",
+      "loadError": "ガードレールのアクティビティを読み込めませんでした",
+      "score": "スコア",
+      "openChunk": "チャンクを開く",
+      "attachedFile": "添付ファイル",
+      "chunkUnavailable": "このチャンクはソースにもう存在しないか、そのソースを開く権限がありません。"
     },
     "workflow": {
       "expressionRow": "式 {{index}}",
@@ -2894,15 +3528,8 @@
       "redo": "やり直す",
       "redoHint": "やり直す (Ctrl+Shift+Z)",
       "artifacts": {
-        "previewUnsupported": "このアーティファクトはプレビューできません",
         "loadListFailed": "アーティファクトを読み込めませんでした",
-        "loadFailed": "アーティファクトを読み込めませんでした",
-        "loading": "アーティファクトを読み込み中...",
-        "inProgress": "実行中です。ノードが生成したアーティファクトがここに表示されます。",
-        "empty": "この実行ではアーティファクトは生成されませんでした。",
-        "back": "アーティファクト一覧に戻る",
-        "untitled": "アーティファクト {{id}}",
-        "fileKind": "ファイル"
+        "untitled": "アーティファクト {{id}}"
       },
       "builder": {
         "deleteFailed": "ワークフローエージェントを削除できませんでした",
@@ -3035,8 +3662,8 @@
         "extract": "抽出"
       },
       "mobileBlocker": {
-        "title": "デスクトップが必要です",
-        "body": "ワークフロービルダーを快適に使うには、より大きな画面が必要です。このページはデスクトップまたはノートパソコンで開いてください。"
+        "title": "より大きな画面で開いてください",
+        "body": "ワークフロービルダーには、より幅の広い画面が必要です。パソコンを使うか、タブレットを横向きにしてください。"
       },
       "nodes": {
         "start": "開始",
@@ -3067,11 +3694,11 @@
         "stepCount_other": "（{{count}} ステップ）",
         "outputLabel": "出力:",
         "errorLabel": "エラー:",
-        "artifacts": "アーティファクト",
         "minimapHeading": "ワークフロー",
         "emptyTitle": "ワークフローをテスト",
         "unsavedDraftAttachments": "プレビューでドキュメントを添付する前にワークフローを保存してください。",
-        "stepCount_one": "（{{count}} ステップ）"
+        "stepCount_one": "（{{count}} ステップ）",
+        "backToRun": "実行に戻る"
       },
       "documents": {
         "modeAll": "すべての入力ドキュメント",
@@ -3109,15 +3736,19 @@
     "showAll_other": "すべて表示（{{formatted}}）",
     "pageRange_one": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
     "pageRange_other": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
-    "deleteConsequence": "スケジュールと実行履歴も削除されます。この操作は元に戻せません。"
+    "deleteConsequence": "スケジュールと実行履歴も削除されます。この操作は元に戻せません。",
+    "analytics": {
+      "subtitle": "このエージェントのメッセージ量、トークン使用量、ユーザーフィードバック。"
+    },
+    "loadError": "このエージェントを読み込めませんでした。"
   },
   "components": {
     "fileUpload": {
-      "clickToUpload": "Click to upload or drag and drop",
-      "dropFiles": "Drop the files here",
-      "fileTypes": "PNG, JPG, JPEG up to",
+      "clickToUpload": "クリックしてアップロード、またはドラッグ＆ドロップ",
+      "dropFiles": "ここにファイルをドロップ",
+      "fileTypes": "PNG、JPG、JPEG、最大",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit",
+      "fileSizeError": "ファイルが {{size}}MB の上限を超えています",
       "preview": "画像のプレビュー",
       "remove": "ファイルを削除"
     },
@@ -3158,9 +3789,9 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
-    "message": "The page you are looking for does not exist.",
-    "goHome": "Go Back Home"
+    "title": "ページが見つかりません",
+    "message": "お探しのページは存在しません。",
+    "goHome": "ホームに戻る"
   },
   "filePicker": {
     "searchPlaceholder": "ファイルとフォルダを検索",
@@ -3206,8 +3837,9 @@
       "groups": {
         "personal": "個人",
         "workspace": "ワークスペース",
-        "insights": "インサイト",
-        "administration": "管理"
+        "administration": "管理",
+        "automations": "オートメーション",
+        "monitoring": "モニタリング"
       }
     },
     "openSidebar": "サイドバーを開く",
@@ -3287,7 +3919,6 @@
     "loadError": "モニターを読み込めませんでした",
     "actionError": "うまくいきませんでした。もう一度お試しください。",
     "untitled": "モニター",
-    "watching": "変化を見守り中",
     "every": "{{interval}} ごと",
     "onEvent": "発生時",
     "openConversation": "会話を開く",
@@ -3364,5 +3995,282 @@
       "conversationGone": "終了: 会話を再開できなくなりました"
     },
     "endedBecause": "終了: {{reason}}"
+  },
+  "activity": {
+    "label": "アクティビティ",
+    "schedules": {
+      "label": "スケジュール",
+      "subtitle": "すべてのエージェントの定期実行と1回限りのタスク、そしてアシスタントがチャットで設定したものです。",
+      "search": "スケジュールを検索",
+      "createdInChat": "チャットで作成",
+      "createdInChatHint": "エージェントなし。それぞれ作成元のチャットに属します。",
+      "agentSchedules": "エージェントのスケジュール",
+      "openChat": "チャットを開く",
+      "noMatches": "検索に一致するスケジュールはありません。",
+      "loadError": "スケジュールを読み込めませんでした",
+      "empty": "スケジュールはまだありません",
+      "emptyHint": "ここで作成するか、チャットでアシスタントに定期的な作業を頼んでください。",
+      "agentLabel": "エージェント",
+      "agentPlaceholder": "エージェントを選択",
+      "agentSearch": "エージェントを検索",
+      "agentEmpty": "スケジュールできるエージェントはありません",
+      "teamAgent": "チームを通じて管理しているメンバーのエージェント"
+    },
+    "marks": {
+      "failed": "失敗があります",
+      "needsYou": "承認待ち",
+      "working": "実行中",
+      "unread": "未読",
+      "watching": "変更を監視中"
+    },
+    "kind": {
+      "chat": "チャット",
+      "job": "バックグラウンドジョブ",
+      "code": "コード実行",
+      "schedule": "スケジュール実行",
+      "workflow": "ワークフロー",
+      "webhook": "Webhook 実行",
+      "ingest": "ナレッジ",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} 件実行中",
+      "running_other": "{{formatted}} 件実行中",
+      "needsYou_one": "{{formatted}} 件の対応待ち",
+      "needsYou_other": "{{formatted}} 件の対応待ち"
+    },
+    "now": {
+      "label": "現在",
+      "subtitle": "実行中のもの、あなたの対応を待っているもの、次に実行されるもの。リアルタイムで更新されます。",
+      "loadError": "アクティビティを読み込めませんでした",
+      "stopFailed": "回答を停止できませんでした。もう一度試すか、チャットを開いて停止してください。",
+      "thinking": "考え中",
+      "writing": "回答を作成中",
+      "ranByHand": "手動実行",
+      "due": "予定 {{time}}",
+      "chunks": "{{total}} チャンク中 {{done}} 件を埋め込み済み",
+      "background": "バックグラウンド",
+      "running": "実行中",
+      "stop": "停止",
+      "cancel": "キャンセル",
+      "open": "開く",
+      "approve": "{{tools}} を承認",
+      "approveAction": "ツールの操作を承認",
+      "expires": "{{time}}に期限切れ",
+      "approval": "承認",
+      "review": "確認",
+      "pausedAfter_one": "{{name}} は {{formatted}} 回失敗したため一時停止中",
+      "pausedAfter_other": "{{name}} は {{formatted}} 回失敗したため一時停止中",
+      "errorType": {
+        "auth_expired": "サインインの期限切れ",
+        "tool_not_allowed": "許可されていないツール",
+        "budget_exceeded": "トークン予算を超過",
+        "timeout": "タイムアウト",
+        "agent_error": "エージェントが失敗",
+        "internal": "内部エラー",
+        "missed": "実行時刻を逃した",
+        "overlap": "前回の実行が継続中",
+        "stream_error": "回答のストリームが途切れた",
+        "empty_output": "出力がなかった"
+      },
+      "viewRuns": "実行を表示",
+      "fromChat": "{{name}} から",
+      "timesToday_one": "今後24時間で {{formatted}} 回",
+      "timesToday_other": "今後24時間で {{formatted}} 回",
+      "oneTime": "1回限り",
+      "stats": {
+        "running": "実行中",
+        "background_one": "バックグラウンドで {{formatted}} 件",
+        "background_other": "バックグラウンドで {{formatted}} 件",
+        "needsYou": "対応待ち",
+        "approvalExpires": "承認の期限: {{time}}",
+        "next24h": "今後24時間",
+        "nextAt": "次は {{time}}、{{name}}",
+        "failed": "失敗（過去24時間）",
+        "viewInHistory": "履歴で表示"
+      },
+      "needsYou": "対応待ち",
+      "reconnect": "{{name}} の再接続が必要です",
+      "reconnectAction": "再接続",
+      "runningTitle": "実行中",
+      "filter": "表示",
+      "filters": {
+        "all": "すべて",
+        "chats": "チャット",
+        "automations": "オートメーション",
+        "knowledge": "ナレッジ"
+      },
+      "nothingRunning": "実行中のものはありません",
+      "upNext": "次の予定",
+      "nothingPlanned": "今後24時間に実行予定のものはありません",
+      "watching": "監視中",
+      "allMonitors": "すべてのモニター",
+      "nothingWatched": "監視中のものはありません",
+      "checked": "{{time}}に確認",
+      "openCalendar": "カレンダーを開く",
+      "step": "ステップ {{step}}",
+      "stepOf": "ステップ {{step}}/{{total}}",
+      "apiRequests_one": "{{formatted}} 件のリクエスト",
+      "apiRequests_other": "{{formatted}} 件のリクエスト",
+      "reading": "コンテンツを読み込み中",
+      "operation": {
+        "upload": "アップロード",
+        "sync": "同期",
+        "reingest": "再インデックス"
+      },
+      "syncBatch": {
+        "daily": "毎日の同期",
+        "weekly": "毎週の同期",
+        "monthly": "毎月の同期"
+      },
+      "syncSources_one": "{{formatted}} 件のソース",
+      "syncSources_other": "{{formatted}} 件のソース",
+      "syncBlocked_one": "{{formatted}} 件は再接続が必要",
+      "syncBlocked_other": "{{formatted}} 件は再接続が必要"
+    },
+    "calendar": {
+      "label": "カレンダー",
+      "subtitle": "予定された実行、結果ごとの過去の実行、監視中のもの。",
+      "loadError": "カレンダーを読み込めませんでした",
+      "runLoadError": "実行を開けませんでした。もう一度お試しください。",
+      "runNowError": "実行を開始できませんでした。もう一度お試しください。",
+      "todayButton": "今日",
+      "previous": "前へ",
+      "next": "次へ",
+      "agentFilter": "エージェント",
+      "allAgents": "すべてのエージェント",
+      "viewLabel": "表示",
+      "views": {
+        "day": "日",
+        "week": "週",
+        "month": "月",
+        "agenda": "予定リスト"
+      },
+      "monitors": "モニター",
+      "knowledgeSyncs": "ナレッジ同期",
+      "hidePast": "過去の実行を隠す",
+      "legend": {
+        "planned": "予定",
+        "running": "実行中",
+        "success": "成功",
+        "failed": "失敗",
+        "paused": "一時停止またはスキップ",
+        "missed": "未実行",
+        "sync": "ナレッジの同期"
+      },
+      "truncated": "非常に頻繁なスケジュールは、この期間の最初の実行のみ表示されます。",
+      "watching": "監視中",
+      "state": {
+        "planned": "予定",
+        "paused": "一時停止",
+        "pending": "開始中",
+        "running": "実行中",
+        "success": "成功",
+        "failed": "失敗",
+        "skipped": "スキップ",
+        "timeout": "タイムアウト",
+        "missed": "未実行"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "他 {{formatted}} 件",
+      "more_other": "他 {{formatted}} 件",
+      "today": "今日",
+      "tomorrow": "明日",
+      "empty": "この期間に予定はありません",
+      "blockDone_one": "{{formatted}} 回中 {{done}} 回完了",
+      "blockDone_other": "{{formatted}} 回中 {{done}} 回完了",
+      "slotCount_one": "{{formatted}} 回",
+      "slotCount_other": "{{formatted}} 回",
+      "oneTime": "1回限り",
+      "recurring": "定期",
+      "when": "日時",
+      "repeats": "繰り返し",
+      "fromChat": "チャットから",
+      "pausedNote": "このスケジュールは一時停止中のため、この実行は行われません。スケジュールのページで再開してください。",
+      "dayRuns": "この日の実行",
+      "queued": "実行を開始しました。「現在」と実行ログに表示されます。",
+      "openSchedule": "スケジュールを開く",
+      "timezone": "スケジュールのタイムゾーン",
+      "missedNote": "この実行は開始されませんでした。その時点でスケジューラーが停止しているか遅れていました。今すぐ実行するか、ワーカーが beat 付きで動いているか確認してください。",
+      "syncRepeats": {
+        "daily": "毎日（スケジューラーの起動時刻から計算）",
+        "weekly": "毎週（スケジューラーの起動時刻から計算）",
+        "monthly": "30日ごと（スケジューラーの起動時刻から計算）"
+      },
+      "sources": "ソース",
+      "needsReconnecting": "再接続が必要",
+      "lastSynced": "{{time}} に同期",
+      "notSyncedYet": "未同期",
+      "openKnowledge": "ナレッジを開く"
+    },
+    "history": {
+      "label": "履歴",
+      "subtitle": "スケジュール、Webhook、ワークフロー、バックグラウンドジョブ、モニターの完了した実行です。詳細な技術ログは「設定 › ログ」にあります。",
+      "search": "実行を検索",
+      "statusFilter": "ステータス",
+      "kindFilter": "種類",
+      "statusFilters": {
+        "all": "すべてのステータス",
+        "failed": "失敗",
+        "success": "成功",
+        "skipped": "スキップ",
+        "cancelled": "キャンセル"
+      },
+      "kindFilters": {
+        "all": "すべて",
+        "schedule": "スケジュール",
+        "webhook": "Webhook",
+        "workflow": "ワークフロー",
+        "job": "バックグラウンド",
+        "monitor": "モニター通知"
+      },
+      "kind": {
+        "schedule": "スケジュール",
+        "webhook": "Webhook",
+        "workflow": "ワークフロー",
+        "job": "バックグラウンド",
+        "monitor": "モニター"
+      },
+      "status": {
+        "success": "成功",
+        "failed": "失敗",
+        "timeout": "タイムアウト",
+        "skipped": "スキップ",
+        "cancelled": "キャンセル"
+      },
+      "trigger": {
+        "cron": "スケジュール",
+        "manual": "手動",
+        "webhook": "Webhook",
+        "chat": "チャット",
+        "monitor": "変更を検出",
+        "trigger": "Webhook リンク",
+        "approval": "承認リンク",
+        "monitor_paused": "モニター一時停止",
+        "monitor_expired": "モニター期限切れ"
+      },
+      "columns": {
+        "when": "日時",
+        "run": "実行",
+        "owner": "エージェント / チャット",
+        "kind": "種類",
+        "trigger": "トリガー",
+        "status": "ステータス",
+        "duration": "所要時間",
+        "tokens": "トークン"
+      },
+      "yesterday": "昨日",
+      "loadError": "履歴を読み込めませんでした",
+      "runLoadError": "実行を開けませんでした。もう一度お試しください。",
+      "noMatches": "この条件に一致する実行はありません",
+      "empty": "完了した実行はまだありません",
+      "emptyHint": "スケジュール、Webhook、ワークフロー、バックグラウンドジョブ、モニターの実行は、完了するとここに表示されます。",
+      "loadMore": "さらに読み込む",
+      "retention": "既定では、スケジュール実行は90日、Webhook 実行は30日、バックグラウンドジョブとモニター通知は7日間保存されます。ワークフローの実行は一覧に残り、トレースは30日間保存されます。",
+      "period_one": "過去 {{formatted}} 日",
+      "period_other": "過去 {{formatted}} 日",
+      "periodFilter": "期間"
+    }
   }
 }

@@ -10,6 +10,7 @@ from docsgpt.utils import (
     check_required_fields,
     clean_text_for_tts,
     convert_pdf_to_images,
+    count_tokens_docs,
     get_encoding,
     get_field_validation_errors,
     get_gpt_model,
@@ -20,11 +21,13 @@ from docsgpt.utils import (
     limit_chat_history,
     num_tokens_from_object_or_list,
     num_tokens_from_string,
+    display_filename,
     safe_filename,
     truncate_to_line_boundary,
     validate_function_name,
     validate_required_fields,
 )
+from tests.parser.counter_fakes import spy_cl100k
 
 
 class TestGetEncoding:
@@ -128,6 +131,52 @@ class TestSafeFilename:
         assert result.endswith(".pdf")
 
 
+class TestDisplayFilename:
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "name",
+        ["report.pdf", "Отчёт за квартал.docx", "\u6587\u4ef6.pdf", "café menu.xlsx", "my  file (v2).txt"],
+    )
+    def test_keeps_readable_names(self, name):
+        assert display_filename(name) == " ".join(name.split())
+
+    @pytest.mark.unit
+    def test_normalizes_to_nfc(self):
+        assert display_filename("cafe\u0301.txt") == "caf\u00e9.txt"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "name, expected",
+        [
+            ("../../etc/passwd", "passwd"),
+            ("a/b\\c.txt", "c.txt"),
+            ('re:po*rt?"<>|.pdf', "report.pdf"),
+            ("..hidden.txt", "hidden.txt"),
+            ("tab\tnew\nline\x00.md", "tab new line.md"),
+        ],
+    )
+    def test_strips_path_and_reserved_characters(self, name, expected):
+        assert display_filename(name) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("name", ["", None, "..", "///", " .docx", "\x00"])
+    def test_falls_back_to_a_generic_name(self, name):
+        result = display_filename(name, fallback="document")
+        assert result.startswith("document")
+        assert "/" not in result and ".." not in result
+
+    @pytest.mark.unit
+    def test_extension_survives_the_fallback(self):
+        assert display_filename("???.docx", fallback="document") == "document.docx"
+
+    @pytest.mark.unit
+    def test_caps_length_in_utf8_bytes_and_keeps_the_extension(self):
+        result = display_filename("ж" * 500 + ".docx")
+        assert result.endswith(".docx")
+        assert len(result.encode("utf-8")) <= 200
+
+
 class TestNumTokens:
 
     @pytest.mark.unit
@@ -168,6 +217,14 @@ class TestNumTokens:
         assert count > 100000
         assert elapsed < 10, f"pathological encode took {elapsed:.1f}s — tiktoken downgraded?"
 
+    @pytest.mark.unit
+    def test_stays_one_shot_beyond_the_chunking_window(self, monkeypatch):
+        text = "Sentence explaining retrieval, ranking and citation.\n" * 40
+        expected = len(get_encoding().encode_ordinary(text))
+        encoding = spy_cl100k(monkeypatch, window=64)
+        assert num_tokens_from_string(text) == expected
+        assert encoding.encode_lengths == [len(text)]
+
 
 class TestNumTokensFromObjectOrList:
 
@@ -207,6 +264,26 @@ class TestCountTokensDocs:
         doc2.page_content = " foo bar"
         result = count_tokens_docs([doc1, doc2])
         assert result > 0
+
+    @pytest.mark.unit
+    def test_counts_each_doc_without_joining_them(self, monkeypatch):
+        contents = ["alpha beta gamma. " * 20, "delta epsilon zeta. " * 70, "eta theta iota. " * 35]
+        expected = sum(num_tokens_from_string(content) for content in contents)
+        encoding = spy_cl100k(monkeypatch)
+        assert count_tokens_docs([MagicMock(page_content=content) for content in contents]) == expected
+        assert max(encoding.encode_lengths) == max(len(content) for content in contents)
+
+    @pytest.mark.unit
+    def test_long_doc_is_counted_in_bounded_windows(self, monkeypatch):
+        # Mostly whitespace, so one chunk can far exceed the window.
+        doc = MagicMock(page_content="a" + " \n\t" * 1_000 + "b")
+        encoding = spy_cl100k(monkeypatch, window=256)
+        assert count_tokens_docs([doc]) > 0
+        assert max(encoding.encode_lengths) <= 2 * 256
+
+    @pytest.mark.unit
+    def test_no_docs_is_zero(self):
+        assert count_tokens_docs([]) == 0
 
 
 class TestCalculateDocTokenBudget:

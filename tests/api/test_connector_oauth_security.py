@@ -439,7 +439,7 @@ class TestSignInBoundToStarter:
         assert _credentialed_rows(pg_conn, "victim") == []
 
     def test_starter_finishes_own_sign_in(self, app, pg_conn):
-        from docsgpt.api.connector.routes import _origin_of
+        from docsgpt.security.origins import normalize_origin
         from docsgpt.connectors import service
         from docsgpt.core.settings import settings
 
@@ -450,7 +450,7 @@ class TestSignInBoundToStarter:
 
         assert done.status_code == 200
         assert done.json["provider"] == "google_drive"
-        assert done.json["return_origin"] == _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI)
+        assert done.json["return_origin"] == normalize_origin(settings.CONNECTOR_REDIRECT_BASE_URI)
         fake_auth.exchange_code_for_tokens.assert_called_once_with("alice-code")
         rows = _credentialed_rows(pg_conn, "alice")
         assert [str(row.id) for row in rows] == [done.json["connection_id"]]
@@ -634,7 +634,7 @@ class TestSyncSessionOwnership:
 
 
 class TestRemoteUploadSessionOwnership:
-    def _post(self, app, pg_conn, user, token, apply_mock):
+    def _post(self, app, pg_conn, user, token, apply_mock, **form):
         from docsgpt.api.user.sources.upload import UploadRemote
 
         with _patch_db(pg_conn, "docsgpt.api.user.sources.upload"), patch(
@@ -644,6 +644,7 @@ class TestRemoteUploadSessionOwnership:
             data={
                 "user": user, "source": "google_drive", "name": "g",
                 "data": json.dumps({"session_token": token, "file_ids": ["f1"]}),
+                **form,
             },
             content_type="multipart/form-data",
         ):
@@ -668,6 +669,16 @@ class TestRemoteUploadSessionOwnership:
 
         assert r.status_code == 200
         apply_mock.assert_called_once()
+        assert apply_mock.call_args.kwargs["kwargs"]["sync_frequency"] == "never"
+
+    def test_passes_the_sync_frequency_on(self, app, pg_conn):
+        _seed_session(pg_conn, "u-freq-up", "st-freq-up")
+        apply_mock = MagicMock(return_value=MagicMock(id="t"))
+
+        r = self._post(app, pg_conn, "u-freq-up", "st-freq-up", apply_mock, sync_frequency="weekly")
+
+        assert r.status_code == 200
+        assert apply_mock.call_args.kwargs["kwargs"]["sync_frequency"] == "weekly"
 
     def test_rejects_session_issued_for_another_provider(self, app, pg_conn):
         _seed_session(pg_conn, "u-prov-up", "st-prov-up", provider="share_point")

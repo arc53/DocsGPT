@@ -31,10 +31,12 @@
     "dismiss": "Schließen",
     "toolApprovalTitle": "Tool-Freigabe erforderlich",
     "toolApprovalReview": "Prüfen",
-    "toolApprovalFallbackName": "Unterhaltung"
+    "toolApprovalFallbackName": "Unterhaltung",
+    "moreToasts_one": "{{count}} weitere",
+    "moreToasts_other": "{{count}} weitere",
+    "fewerToasts": "Weniger anzeigen"
   },
   "backgroundJobs": {
-    "unread": "Ungelesen",
     "card": {
       "status": {
         "working": "Im Hintergrund",
@@ -63,6 +65,7 @@
     },
     "notify": {
       "title": {
+        "continuation": "Gespräch fortgesetzt",
         "job": "Hintergrund-Job fertig",
         "lost": "Hintergrund-Job unterbrochen",
         "monitor": "Monitor hat angeschlagen",
@@ -71,7 +74,8 @@
         "monitor_paused": "Monitor pausiert",
         "monitor_expired": "Monitor abgelaufen",
         "schedule": "Geplante Aufgabe fertig",
-        "default": "Neue Antwort"
+        "default": "Neue Antwort",
+        "docs_gaps": "Wöchentliche Übersicht der Doku-Lücken"
       },
       "open": "Öffnen",
       "fallbackTitle": "Dein Assistent hat Neuigkeiten"
@@ -85,6 +89,7 @@
       "failed": "Benachrichtigungen konnten nicht aktiviert werden"
     },
     "wake": {
+      "continuation": "Gespräch fortgesetzt",
       "job": "Hintergrund-Job fertig",
       "lost": "Hintergrund-Job unterbrochen",
       "monitor": "Monitor hat angeschlagen",
@@ -162,7 +167,7 @@
         "delete": "Prompt löschen",
         "deleteFailed": "Dieser Prompt konnte nicht gelöscht werden.",
         "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
-        "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um dessen Version zu sehen."
+        "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um die geänderte Version zu sehen."
       }
     },
     "sources": {
@@ -180,7 +185,6 @@
       "addChunk": "Chunk hinzufügen",
       "preLoaded": "Vorgeladen",
       "private": "Privat",
-      "sync": "Synchronisieren",
       "syncDone": "Fertig",
       "syncNow": "Jetzt synchronisieren",
       "syncing": "Synchronisiere...",
@@ -192,8 +196,7 @@
         "never": "Nie",
         "daily": "Täglich",
         "weekly": "Wöchentlich",
-        "monthly": "Monatlich",
-        "option": "Synchronisierung: {{frequency}}"
+        "monthly": "Monatlich"
       },
       "actions": "Aktionen",
       "view": "Anzeigen",
@@ -205,6 +208,7 @@
         "save": "Speichern",
         "saveFailed": "Die Seite konnte nicht gespeichert werden. Bitte versuche es erneut.",
         "forbidden": "Du hast keine Berechtigung, diese Seite zu bearbeiten.",
+        "unsupported": "Dieser Vektorspeicher kann keine einzelnen Seiten ändern und daher kein Wiki aufnehmen.",
         "conflict": "Diese Seite wurde seit dem Öffnen geändert und neu geladen. Deine Änderungen stehen unten – übernimm sie erneut und speichere noch einmal.",
         "editPlaceholder": "Schreibe die Seite in Markdown…",
         "stamp": {
@@ -249,7 +253,6 @@
         "pageLoadFailed": "Diese Seite konnte nicht geladen werden.",
         "editTitle": "Seite bearbeiten",
         "settings": {
-          "action": "Wiki-Einstellungen",
           "title": "Wiki-Einstellungen",
           "outsideEdits": {
             "label": "API- und Widget-Nutzern erlauben, dieses Wiki zu bearbeiten",
@@ -272,8 +275,6 @@
           "costCost": "Dabei erfolgt ein LLM-Aufruf pro Chunk; das verbraucht Tokens und kann bei großen Quellen eine Weile dauern.",
           "estimate": "~1 LLM-Aufruf pro Chunk · ~{{lo}}–{{hi}} Tokens insgesamt (etwa halb Eingabe, halb Ausgabe); die Ausgabe variiert je nachdem, wie entitätsreich das Dokument ist.",
           "confirm": "GraphRAG aktivieren",
-          "inProgress": "Graph wird erstellt…",
-          "inProgressPct": "Graph wird erstellt… {{pct}}%",
           "summaryNodes_one": "{{count}} Entität",
           "summaryNodes_other": "{{count}} Entitäten",
           "summaryEdges_one": "{{count}} Beziehung",
@@ -351,11 +352,12 @@
         "queryPlaceholder": "Frage etwas, das diese Quelle beantworten sollte...",
         "run": "Ausführen",
         "notSavedHint": "Diese Einstellungen gelten nur für diesen Test – sie werden nicht in der Quelle gespeichert. Ändere sie in den Quelleneinstellungen, um sie dauerhaft zu übernehmen.",
+        "notSavedHintEditor": "Diese Einstellungen gelten nur für diesen Test, bis du sie in der Quelle speicherst.",
         "resultSummary_one": "{{count}} Chunk abgerufen · {{retriever}}",
         "resultSummary_other": "{{count}} Chunks abgerufen · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "Keine Chunks für diese Anfrage abgerufen.",
-        "emptyWithThreshold": "Keine Chunks haben den Score-Schwellenwert ({{threshold}}) erreicht. Senke ihn, um knappe Treffer zu sehen.",
+        "emptyWithThreshold": "Keine Chunks haben die Ähnlichkeitsschwelle ({{threshold}}) erreicht. Senke sie, um knappe Treffer zu sehen.",
         "showMore": "Ganzen Chunk anzeigen",
         "showLess": "Weniger anzeigen",
         "noScore": "kein Score",
@@ -367,9 +369,33 @@
         },
         "errors": {
           "failed": "Retrieval-Test fehlgeschlagen. Bitte versuche es erneut."
-        }
+        },
+        "relevance": "Relevanz",
+        "compare": "Mit der Reihenfolge des Retrievers vergleichen",
+        "compareHint": "Zusätzlich alle Kandidaten in der Reihenfolge des Retrievers auflisten, mit ihrer Relevanz und ob das Relevanzmodell sie behalten, hochgestuft oder verworfen hat.",
+        "relevanceRun": {
+          "applied": "in {{ms}} ms nach Relevanz geordnet",
+          "fallback": "Relevanzmodell nicht verwendet ({{reason}}), Reihenfolge des Retrievers beibehalten"
+        },
+        "compareTitle": "Reihenfolge des Retrievers",
+        "compareDescription": "Alle Kandidaten, die die Relevanzstufen erhalten haben, in der Reihenfolge des Retrievers.",
+        "compareColumns": {
+          "before": "Rang",
+          "chunk": "Chunk",
+          "relevance": "Relevanz",
+          "outcome": "Ergebnis"
+        },
+        "compareStatus": {
+          "promoted": "Hochgestuft auf #{{rank}}",
+          "kept": "Behalten als #{{rank}}",
+          "dropped": "Verworfen",
+          "notKept": "Nicht behalten"
+        },
+        "strictness": "Relevanz für diesen Test",
+        "saveToSource": "In Quelle speichern",
+        "savedToSource": "Gespeichert. Die Quelle verwendet jetzt die getesteten Einstellungen."
       },
-      "editConfig": "Quelleneinstellungen",
+      "editConfig": "Einstellungen",
       "shareWithTeam": "Mit Team teilen",
       "deleteWarning": "\"{{name}}\" löschen?",
       "chunks": "Chunks",
@@ -397,14 +423,16 @@
       "retrievalOptions": {
         "title": "Erweiterte Einstellungen",
         "retrieval": {
-          "title": "Retrieval",
+          "title": "Abruf",
           "note": "Diese Änderungen wirken sofort, kein erneutes Indexieren nötig.",
           "tag": "kein erneutes Indexieren",
           "chunks": "Abzurufende Chunks (Top-k)",
-          "scoreThreshold": "Score-Schwellenwert",
-          "scoreThresholdPlaceholder": "Keiner",
-          "scoreThresholdHint": "Nur Chunks über diesem Relevanz-Score (0–1) zurückgeben; höher ist strenger.",
+          "similarityThreshold": "Ähnlichkeitsschwelle",
+          "similarityThresholdPlaceholder": "Keiner",
+          "similarityThresholdHint": "Verwirft Chunks, deren Ähnlichkeitswert vom Retriever unter diesem Wert (0–1) liegt. Gefiltert wird nach dem Wert des Retrievers, nicht nach dem Relevanzmodell.",
           "rephraseQuery": "Anfrage vor der Suche umformulieren",
+          "showLinks": "Auf die Originaldateien verlinken",
+          "showLinksHint": "Quellenangaben und der Agent erhalten den Link jeder Datei in dem Dienst, aus dem sie synchronisiert wurde. Zum Öffnen braucht man dort weiterhin Zugriff auf die Datei.",
           "retriever": "Retriever",
           "retrievers": {
             "classic": "Klassisch",
@@ -433,13 +461,14 @@
           "agentToolHint": "Agenten können diesen Beziehungen auch selbst folgen, wenn die Bereitstellung dieser Quelle „Suchwerkzeug auf Abruf“ ist oder ein agentischer Agent sie nutzt."
         },
         "prescreen": {
-          "enable": "LLM-Vorfilterung aktivieren",
-          "warning": "Ruft eine größere Kandidatenmenge ab und filtert sie mit einem LLM. Das erhöht Latenz und Kosten pro Anfrage.",
+          "enable": "LLM-Vorfilterung",
+          "warning": "Ein LLM prüft eine größere Kandidatenmenge und behält die Chunks, die die Anfrage beantworten. Das erhöht Latenz und Kosten pro Anfrage.",
           "candidateK": "Abzurufende Kandidaten",
           "maxKeep": "Max. zu behaltende Chunks",
           "batchSize": "Batch-Größe",
           "model": "Modell (optional)",
-          "modelPlaceholder": "Standardmäßig das Modell der Anfrage"
+          "modelPlaceholder": "Standardmäßig das Modell der Anfrage",
+          "exclusiveHint": "Sie ersetzt die Relevanz: Wird eines eingeschaltet, schaltet sich das andere aus."
         },
         "graph": {
           "title": "Graph-Extraktion",
@@ -464,9 +493,38 @@
             "semantic": "Semantisch"
           },
           "maxTokens": "Max. Tokens pro Chunk",
+          "maxTokensHint": "Maximal 4.096 Tokens.",
           "minTokens": "Min. Tokens pro Chunk",
           "duplicateHeaders": "Überschriften über Chunks hinweg duplizieren"
-        }
+        },
+        "relevance": {
+          "title": "Relevanz",
+          "tag": "kein erneutes Indexieren",
+          "mode": "Relevanzmodell",
+          "modeHint": "Bewertet jeden abgerufenen Chunk anhand der Anfrage. „Neu ordnen“ stellt die relevantesten nach vorn; „Neu ordnen und filtern“ verwirft zusätzlich die schwachen.",
+          "modes": {
+            "off": "Aus",
+            "reorder": "Neu ordnen",
+            "filter": "Neu ordnen und filtern"
+          },
+          "strictness": "Filterstrenge",
+          "strictnessHint": "Strenger behält weniger Chunks: weniger Tokens pro Antwort, aber ein höheres Risiko, einen wichtigen zu verwerfen.",
+          "presets": {
+            "loose": "Locker",
+            "balanced": "Ausgewogen",
+            "strict": "Streng",
+            "custom": "Benutzerdefiniert ({{value}})"
+          },
+          "minRelevance": "Mindestrelevanz",
+          "minRelevanceHint": "Die genaue Relevanz (0–1), die ein Chunk braucht, um behalten zu werden. Locker ist 0,1, Ausgewogen 0,3, Streng 0,5.",
+          "candidates": "Zu bewertende Kandidaten",
+          "candidatesHint": "Wie viele Chunks der Retriever für das Relevanzmodell abruft, höchstens {{max}}. Standard: {{default}}."
+        },
+        "filtering": {
+          "title": "Filterung",
+          "tag": "kein erneutes Indexieren"
+        },
+        "createHint": "Die Filterung stellst du nach dem ersten Import fein ein, in den Quelleneinstellungen oder unter Retrieval testen."
       },
       "configModal": {
         "title": "Quelleneinstellungen",
@@ -474,7 +532,8 @@
         "subtitleGeneric": "Konfiguriere, wie diese Quelle in Chunks aufgeteilt und abgerufen wird.",
         "save": "Speichern",
         "chunkingChangeHint": "Du hast eine Chunking-Einstellung geändert. Nach dem Speichern muss diese Quelle erneut indexiert werden, damit die Änderung wirkt.",
-        "prescreenInvalidHint": "Prüfe die Vorfilter-Werte: Die abzurufenden Kandidaten müssen mindestens der Chunk-Anzahl entsprechen, und die zu behaltenden Chunks dürfen die Kandidatenzahl nicht überschreiten.",
+        "prescreenInvalidHint": "Prüfe die Werte der LLM-Vorfilterung: Die abzurufenden Kandidaten müssen mindestens der Chunk-Anzahl entsprechen, und die zu behaltenden Chunks dürfen die Kandidatenzahl nicht überschreiten.",
+        "syncAfterSave": "Speichere zuerst deine Änderungen. Die Synchronisierung verwendet die gespeicherten Einstellungen.",
         "reingestRequired": "Deine Änderungen wurden gespeichert. Die geänderten Chunking-Einstellungen wirken erst nach einem erneuten Indexieren. Jetzt erneut indexieren?",
         "reingestLater": "Später",
         "errors": {
@@ -486,7 +545,8 @@
         "add": "Der Chunk konnte nicht hinzugefügt werden",
         "save": "Der Chunk konnte nicht gespeichert werden",
         "delete": "Der Chunk konnte nicht gelöscht werden",
-        "load": "Die Chunks konnten nicht geladen werden"
+        "load": "Die Chunks konnten nicht geladen werden",
+        "busy": "Gerade läuft eine andere Änderung an dieser Quelle. Versuche es erneut, sobald sie fertig ist."
       },
       "chunkPosition": "Chunk {{n}} von {{total}} · {{tokens}} Tokens",
       "chunkCrumb": "Chunk {{n}}",
@@ -533,11 +593,109 @@
       "viaConnection": "über {{name}}",
       "loadError": "Dein Wissen konnte nicht geladen werden.",
       "delete": "Löschen",
-      "deleteConsequence": "Seine Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteConsequence": "Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteFileConsequence": "Ihre Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteDirectoryConsequence": "Alles darin wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "syncConsequence": "Der Inhalt wird aus deinem Cloud-Speicher aktualisiert. Dabei können Änderungen an einzelnen Abschnitten überschrieben werden.",
-      "deleteItemFailed": "„{{name}}“ konnte nicht gelöscht werden."
+      "deleteItemFailed": "„{{name}}“ konnte nicht gelöscht werden.",
+      "injection": {
+        "flaggedOnly": "Nur markierte",
+        "high": "Wahrscheinlich Prompt-Injection",
+        "suspected": "Mögliche Prompt-Injection",
+        "markedSafe": "Als sicher markiert",
+        "markSafe": "Als sicher markieren",
+        "undo": "Rückgängig",
+        "flaggedNotice": "Dieser Chunk liest sich wie eine Prompt-Injection (Wert {{percent}} %). Agenten, die abgerufene Quellen prüfen, markieren ihn oder lassen ihn in ihren Antworten weg.",
+        "safeNotice": "Als sicher markiert: Agenten, die diese Quelle nutzen, behandeln diesen Chunk als unbedenklich. Wenn du den Text bearbeitest, wird die Markierung entfernt.",
+        "reviewFailed": "Der Chunk konnte nicht aktualisiert werden. Bitte versuche es erneut.",
+        "noFlagged": "In dieser Quelle wurde kein Chunk markiert. Ein Chunk wird bewertet, sobald ein Chat ihn abruft."
+      },
+      "website": {
+        "page": "Seite",
+        "pages": "Seiten",
+        "fetched": "Abgerufen",
+        "filterPages": "Seiten filtern",
+        "openPage": "Seite öffnen",
+        "pagesByline_one": "{{pages}} Seite · {{tokens}} Tokens",
+        "pagesByline_other": "{{pages}} Seiten · {{tokens}} Tokens",
+        "sites_one": "{{count}} Website",
+        "sites_other": "{{count}} Websites",
+        "pageCount_one": "{{count}} Seite",
+        "pageCount_other": "{{count}} Seiten",
+        "synced": "{{frequency}} · synchronisiert {{when}}",
+        "notSynced": "Nicht synchronisiert",
+        "fetchedAt": "abgerufen {{when}}",
+        "addPages": "Seiten hinzufügen",
+        "addPagesHint": "Wird jetzt abgerufen und bei jeder Synchronisierung beibehalten. Eine ganze Website baut die Quelle neu auf.",
+        "graphCost": "Diese Quelle hat einen Wissensgraphen. Neue Seiten werden ihm mit einem LLM hinzugefügt, etwa ein Aufruf pro Chunk. Baut das Hinzufügen die Quelle neu auf (eine Seite einer anderen Website), behalten die Seiten, die schon im Graphen sind, ihren Teil davon, und nur neuer oder geänderter Text geht an das LLM.",
+        "addFailed": "Die Seiten konnten nicht hinzugefügt werden.",
+        "pageNotFetched": "Eine Seite konnte nicht abgerufen werden: {{url}}. Sie bleibt in der Liste dieser Quelle, und die nächste Synchronisierung versucht es erneut.",
+        "pagesNotFetched_one": "{{count}} Seite konnte nicht abgerufen werden. Sie bleibt in der Liste dieser Quelle, und die nächste Synchronisierung versucht es erneut.",
+        "pagesNotFetched_other": "{{count}} Seiten konnten nicht abgerufen werden. Sie bleiben in der Liste dieser Quelle, und die nächste Synchronisierung versucht es erneut.",
+        "pageLimit_one": "Diese Quelle kann bis zu {{count}} Seite enthalten.",
+        "pageLimit_other": "Diese Quelle kann bis zu {{count}} Seiten enthalten.",
+        "addingPages": "Seiten werden hinzugefügt …",
+        "refreshing": "Seite wird aktualisiert …",
+        "removing": "Seiten werden entfernt …",
+        "syncing": "Quelle wird synchronisiert …",
+        "refreshPage": "Seite aktualisieren",
+        "refreshFailed": "„{{name}}“ konnte nicht aktualisiert werden; der Inhalt bleibt erhalten.",
+        "refreshOutOfScope": "„{{name}}“ führt jetzt aus dieser Quelle hinaus und wurde deshalb entfernt, wie es auch eine Synchronisierung täte.",
+        "removeFromSource": "Aus der Quelle entfernen",
+        "removeTitle": "„{{name}}“ entfernen?",
+        "removeEntry": "Die Chunks werden gelöscht und die Seite wird von der Liste dieser Quelle genommen.",
+        "removeCrawled": "Sie stammt aus dem Crawlen von {{host}}. Die Chunks werden gelöscht und spätere Synchronisierungen überspringen sie. In den Einstellungen der Quelle kannst du sie wiederherstellen.",
+        "removeGeneric": "Die Chunks werden gelöscht und spätere Synchronisierungen rufen die Seite nicht mehr ab.",
+        "removeFolder": "Die Chunks der Seiten werden gelöscht und spätere Synchronisierungen überspringen alle Adressen unter {{address}}.",
+        "removeFolderGeneric": "Die Chunks der Seiten werden gelöscht und spätere Synchronisierungen rufen die Seiten nicht mehr ab.",
+        "remove": "Entfernen",
+        "removeAndSkip": "Entfernen und überspringen",
+        "removeFailed": "Konnte nicht entfernt werden.",
+        "syncFailed": "Die Quelle konnte nicht synchronisiert werden.",
+        "removeLast": "Das ist das Letzte, was diese Quelle abruft. Lösche stattdessen die Quelle.",
+        "wikiSource": "Diese Quelle ist jetzt ein Wiki: Sie wird direkt bearbeitet und ruft keine Seiten mehr ab.",
+        "chunksUnsupported": "Dieser Vektorspeicher kann keine einzelnen Seiten ändern. Synchronisiere stattdessen die Quelle.",
+        "handEditsNote": "Aktuell gehalten: {{frequency}}. Chunks, die du hier hinzufügst oder bearbeitest, werden bei der nächsten Synchronisierung ersetzt.",
+        "fetches": "Was diese Quelle abruft",
+        "siteSummary": "Ganze Website · {{find}} · Seitenlimit {{max}}",
+        "limitReached": "Seitenlimit erreicht",
+        "pageEntry": "Seite",
+        "removeFromList": "{{address}} von der Liste entfernen",
+        "skipped": "Übersprungen",
+        "restore": "Wiederherstellen",
+        "restoreAddress": "{{address}} wiederherstellen",
+        "saveFailed": "Die Einstellungen konnten nicht gespeichert werden.",
+        "loadFailed": "Die Einstellungen konnten nicht geladen werden.",
+        "lastSynced": "Zuletzt synchronisiert {{when}}.",
+        "appliesNextSync": "Änderungen gelten ab der nächsten Synchronisierung.",
+        "stillRunning": "Die Änderung läuft noch. Öffne die Quelle später erneut, um sie zu sehen.",
+        "changeBusy": "Eine andere Änderung an dieser Quelle lief noch, daher wurde diese nicht ausgeführt. Versuche es erneut.",
+        "queueFailed": "Die Änderung wurde gespeichert, konnte aber noch nicht starten. Die nächste Synchronisierung übernimmt sie.",
+        "sourceGone": "Diese Quelle gibt es nicht mehr.",
+        "siteLimit_one": "Eine Quelle kann Inhalte von bis zu {{count}} Website abrufen.",
+        "siteLimit_other": "Eine Quelle kann Inhalte von bis zu {{count}} Websites abrufen.",
+        "skipLimit_one": "Eine Quelle kann bis zu {{count}} Adresse überspringen.",
+        "skipLimit_other": "Eine Quelle kann bis zu {{count}} Adressen überspringen.",
+        "urlTooLong_one": "Eine Adresse darf höchstens {{count}} Zeichen lang sein.",
+        "urlTooLong_other": "Eine Adresse darf höchstens {{count}} Zeichen lang sein.",
+        "invalidAddress": "„{{url}}“ ist keine Adresse, die diese Quelle abrufen kann.",
+        "invalidConfig": "Diese Einstellungen sind ungültig. Prüfe die Adressen und Limits.",
+        "notFound": "Diese Seite oder dieser Ordner ist nicht mehr in der Quelle. Lade sie neu und versuche es erneut.",
+        "badSyncFrequency": "Dieser Synchronisierungsplan ist nicht verfügbar.",
+        "graphCostRebuild": "Diese Quelle hat einen Wissensgraphen. Eine ganze Website baut die Quelle neu auf. Die Seiten, die schon im Graphen sind, behalten ihren Teil davon; neuer oder geänderter Text wird mit einem LLM hinzugefügt, etwa ein Aufruf pro Chunk.",
+        "tooManyPaths_one": "Du kannst bis zu {{count}} Seite auf einmal entfernen.",
+        "tooManyPaths_other": "Du kannst bis zu {{count}} Seiten auf einmal entfernen.",
+        "notWebsite": "Diese Quelle ist keine Website-Quelle.",
+        "alreadyListed": "Diese Seiten und Websites sind bereits in dieser Quelle.",
+        "badRequest": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut."
+      },
+      "deleteSource": "Quelle löschen",
+      "syncStarted": "{{name}} wird synchronisiert…",
+      "viaConnectionFiles_one": "über {{name}} · {{files}} Datei",
+      "viaConnectionFiles_other": "über {{name}} · {{files}} Dateien",
+      "item": {
+        "tokens": "{{tokens}} Tokens"
+      }
     },
     "analytics": {
       "label": "Analytik",
@@ -549,7 +707,8 @@
         "last24Hours": "24 Stunden",
         "last7Days": "7 Tage",
         "last15Days": "15 Tage",
-        "last30Days": "30 Tage"
+        "last30Days": "30 Tage",
+        "last90Days": "90 Tage"
       },
       "messages": "Nachrichten",
       "tokenUsage": "Token-Verbrauch",
@@ -593,7 +752,203 @@
           "direct": "Chat ohne Agent",
           "agent": "Über Agenten"
         }
-      }
+      },
+      "insights": {
+        "description": "Von einem KI-Modell aus jedem Gespräch geschätzt.",
+        "learnMore": "Mehr erfahren",
+        "coverage": "{{labelled}} von {{total}} Antworten ausgewertet",
+        "loadError": "Die Einblicke konnten nicht geladen werden.",
+        "notEnough": "Noch nicht genug Daten (bisher {{formatted}})",
+        "notEnoughShort": "Noch nicht genug Daten",
+        "notEnoughReplies": "Noch nicht genug Folgenachrichten",
+        "languageNote": "{{share}} dieser Nachrichten sind auf {{languages}}; diese Sprachen liest das Modell weniger genau. {{labels}} können daher weniger zuverlässig sein.",
+        "otherLanguages": "anderen Sprachen",
+        "stats": {
+          "fullyAnswered": "Vollständig beantwortet",
+          "fullyAnsweredHint": "Fragen, die die Antwort vollständig beantwortet hat. Begrüßungen und Smalltalk zählen nicht.",
+          "goalMet": "Ziel erreicht",
+          "goalMetHint": "Gespräche, in denen der Nutzer bekommen hat, worum er gebeten hat, beurteilt am ganzen Gespräch, sobald es ruht.",
+          "frustrated": "Frustriert",
+          "frustratedHint": "Folgenachrichten, die deutlich Frust zeigen. Es zählen nur Nachrichten nach einer Antwort, die erste Nachricht eines Gesprächs also nie.",
+          "asksHuman": "Nach einem Menschen gefragt",
+          "asksHumanHint": "Folgenachrichten, die nach einem Menschen, einem Ticket oder einem anderen Kontaktweg fragen. Eine erste Nachricht mit dieser Bitte zählt nicht.",
+          "docsGaps": "Lücken in der Doku",
+          "docsGapsHint": "Antworten, die zu kurz kamen, weil die Doku die Frage nicht abdeckt oder die Suche die Seite nicht gefunden hat. Unten gruppiert."
+        },
+        "sub": {
+          "ofQuestions_one": "von {{formatted}} Frage",
+          "ofQuestions_other": "von {{formatted}} Fragen",
+          "ofReplies_one": "von {{formatted}} Folgenachricht",
+          "ofReplies_other": "von {{formatted}} Folgenachrichten",
+          "ofConversations_one": "von {{formatted}} Gespräch",
+          "ofConversations_other": "von {{formatted}} Gesprächen",
+          "inAnswers_one": "in {{formatted}} Antwort",
+          "inAnswers_other": "in {{formatted}} Antworten"
+        },
+        "panels": {
+          "answerStatus": "Antwortstatus",
+          "whyNot": "Warum nicht vollständig beantwortet",
+          "requestType": "Art der Anfrage",
+          "shareOfAnswers_one": "Anteil an {{formatted}} Antwort",
+          "shareOfAnswers_other": "Anteil an {{formatted}} Antworten",
+          "shareOfMessages_one": "Anteil an {{formatted}} Nachricht",
+          "shareOfMessages_other": "Anteil an {{formatted}} Nachrichten",
+          "shareOfConversations_one": "Anteil an {{formatted}} Gespräch",
+          "shareOfConversations_other": "Anteil an {{formatted}} Gesprächen",
+          "ofReplies_one": "Von {{formatted}} Folgenachricht",
+          "ofReplies_other": "Von {{formatted}} Folgenachrichten",
+          "barLabel": "{{name}}: {{value}}",
+          "barLabelNone": "{{name}}: noch nicht genug Daten",
+          "noneOfThese": "Keines dieser Themen",
+          "empty": "In diesem Zeitraum gibt es nichts anzuzeigen.",
+          "ofQuestions_one": "Von {{formatted}} Frage",
+          "ofQuestions_other": "Von {{formatted}} Fragen",
+          "topics": "Themen",
+          "overlapNote": "Ein Gespräch kann unter mehreren zählen, daher ergeben sie zusammen nicht 100 %.",
+          "noTopics": {
+            "title": "Noch keine Themen",
+            "description": "Füge Themen hinzu, um zu sehen, worüber Leute fragen.",
+            "action": "Themen einrichten"
+          },
+          "replies": "Wie Nutzer antworteten",
+          "reaction": "Reaktionen auf Antworten",
+          "tone": "Stimmung",
+          "tooltipItem": "{{name}}: {{value}}",
+          "notDrawnMovedOn": "Folgenachrichten, die weitergehen oder etwas ergänzen, etwa eine neue Frage oder eine Nachfrage, werden nicht gezeichnet.",
+          "notDrawnNeutral": "Neutrale Folgenachrichten werden nicht gezeichnet."
+        },
+        "labelNamesInline": {
+          "answer_status": "Antwortstatus",
+          "gap_type": "Grund für unvollständige Antworten",
+          "topic_effective": "Thema",
+          "reaction": "Reaktionen auf Antworten"
+        },
+        "options": {
+          "answerStatus": {
+            "fullyAnswered": "Vollständig beantwortet",
+            "partiallyAnswered": "Teilweise beantwortet",
+            "declined": "Wusste es nicht",
+            "clarifying": "Nach Details gefragt"
+          },
+          "gapType": {
+            "docsMissing": "Lücke in der Doku",
+            "notRetrieved": "Suche fand die Seite nicht",
+            "answerMissed": "Antwort übersah die Seite",
+            "outOfScope": "Außerhalb des Themas",
+            "featureNotSupported": "Nicht unterstützte Funktion",
+            "needsAccountData": "Braucht Kontozugriff oder Personal",
+            "ambiguous": "Unklare Frage",
+            "confidentlyUngrounded": "Antwort nicht durch die Doku gedeckt",
+            "other": "Sonstiges"
+          },
+          "reaction": {
+            "thanks": "Dank oder Bestätigung",
+            "reAsk": "Erneut gefragt",
+            "pushbackOrComplaint": "Widerspruch oder Beschwerde",
+            "movedOn": "Weitergemacht"
+          },
+          "requestType": {
+            "troubleshooting": "Fehlerbehebung",
+            "howTo": "Anleitung",
+            "lookup": "Faktenfrage",
+            "concept": "Erklärung",
+            "comparison": "Vergleich",
+            "featureRequest": "Funktionswunsch",
+            "accountBilling": "Konto oder Abrechnung",
+            "chitChat": "Smalltalk",
+            "other": "Sonstiges"
+          },
+          "sentiment": {
+            "positive": "Positiv",
+            "neutral": "Neutral",
+            "negative": "Negativ"
+          }
+        },
+        "off": {
+          "title": "Einblicke sind für diesen Agenten ausgeschaltet",
+          "description": "Schalte sie ein, um abzuschätzen, ob Antworten geholfen haben und wo die Dokumentation Lücken hat.",
+          "turnOn": "Einschalten"
+        },
+        "noConversations": {
+          "hour": "Keine Gespräche in der letzten Stunde",
+          "last24Hours": "Keine Gespräche in den letzten 24 Stunden",
+          "last7Days": "Keine Gespräche in den letzten 7 Tagen",
+          "last15Days": "Keine Gespräche in den letzten 15 Tagen",
+          "last30Days": "Keine Gespräche in den letzten 30 Tagen"
+        },
+        "noConversationsDescription": "Einblicke erscheinen einige Minuten nach jedem Gespräch.",
+        "analyzing": {
+          "title": "Gespräche werden ausgewertet",
+          "progress_one": "{{labelled}} von {{formatted}} Antwort ausgewertet · neueste zuerst",
+          "progress_other": "{{labelled}} von {{formatted}} Antworten ausgewertet · neueste zuerst"
+        },
+        "olderOnly": {
+          "title": "Keine aktuellen Gespräche zum Auswerten",
+          "description": "Einblicke umfassen Gespräche ab dem {{date}}. Ältere werden nicht ausgewertet; ein Administrator kann sie nachträglich auswerten lassen."
+        },
+        "failedOnly": {
+          "title": "Keine Antwort konnte ausgewertet werden",
+          "description_one": "Das Modell konnte {{formatted}} Antwort in diesem Zeitraum nicht auswerten. Es versucht es erneut, sobald sich das Modell oder seine Fragen ändern.",
+          "description_other": "Das Modell konnte {{formatted}} Antworten in diesem Zeitraum nicht auswerten. Es versucht es erneut, sobald sich das Modell oder seine Fragen ändern."
+        },
+        "failed_one": "{{formatted}} Antwort konnte nicht ausgewertet werden",
+        "failed_other": "{{formatted}} Antworten konnten nicht ausgewertet werden",
+        "settings": {
+          "button": "Einstellungen",
+          "title": "Einstellungen für Einblicke",
+          "saveFailed": "Die Einstellungen für Einblicke konnten nicht gespeichert werden. Versuche es noch einmal."
+        },
+        "headline": {
+          "askedAgainOrPushedBack": "Erneut gefragt oder widersprochen",
+          "previous": "Voriger Zeitraum: {{value}}"
+        }
+      },
+      "gaps": {
+        "heading": "Lücken in der Doku",
+        "description": {
+          "page": "Fragen, die die Doku nicht beantworten konnte, gruppiert nach der Seite, die die Suche als nächste fand.",
+          "source": "Fragen, die die Doku nicht beantworten konnte, gruppiert nach der Quelle der nächsten Seite.",
+          "topic": "Fragen, die die Doku nicht beantworten konnte, gruppiert nach Thema."
+        },
+        "groupBy": "Lücken gruppieren nach",
+        "groups": {
+          "page": "Seite",
+          "source": "Quelle",
+          "topic": "Thema"
+        },
+        "columns": {
+          "gaps": "Lücken",
+          "share": "Anteil der Fragen",
+          "change": "Änderung",
+          "example": "Beispielfrage",
+          "open": "Beispiele"
+        },
+        "share_one": "{{percent}} von {{formatted}}",
+        "share_other": "{{percent}} von {{formatted}}",
+        "gapsCount_one": "{{formatted}} Lücke",
+        "gapsCount_other": "{{formatted}} Lücken",
+        "change": {
+          "new": "Neu",
+          "none": "Keine Änderung",
+          "upLabel": "{{formatted}} mehr als im vorigen Zeitraum",
+          "downLabel": "{{formatted}} weniger als im vorigen Zeitraum",
+          "noEarlier": "Keine früheren Daten"
+        },
+        "noPage": "Keine Seite gefunden",
+        "openRow": "Beispiele für {{name}} anzeigen",
+        "export": "CSV exportieren",
+        "empty": "Keine Lücken in der Doku in diesem Zeitraum.",
+        "emptyDescription": "Hier erscheinen Fragen, die die Doku nicht beantworten konnte.",
+        "loadError": "Die Lücken in der Doku konnten nicht geladen werden.",
+        "panel": {
+          "gaps": "Lücken",
+          "share": "Anteil der Fragen",
+          "previous": "Voriger Zeitraum",
+          "examples": "Beispielfragen",
+          "allInLogs": "Alle Lücken in den Protokollen ansehen"
+        }
+      },
+      "loadError": "Dieses Diagramm konnte nicht geladen werden."
     },
     "logs": {
       "label": "Protokolle",
@@ -601,7 +956,6 @@
       "filterByChatbot": "Nach Chatbot filtern",
       "selectChatbot": "Chatbot auswählen",
       "none": "Keine",
-      "tableHeader": "API-generierte / Chatbot-Konversationen",
       "searchPlaceholder": "Protokolle suchen...",
       "noLogs": "Keine Protokolle gefunden",
       "levels": {
@@ -639,7 +993,9 @@
         "activity": "Aktivität",
         "steps": "Schritte",
         "result": "Ergebnis",
-        "source": "Quelle"
+        "source": "Quelle",
+        "feedback": "Feedback",
+        "passthrough": "Passthrough"
       },
       "trace": {
         "view": "Trace anzeigen",
@@ -670,7 +1026,8 @@
           "chunks_other": "{{count}} Abschnitte",
           "hits_one": "{{count}} Treffer",
           "hits_other": "{{count}} Treffer",
-          "cached": "aus Cache"
+          "cached": "aus Cache",
+          "answered": "{{answered}}/{{total}} beantwortet"
         },
         "status": {
           "ok": "OK",
@@ -684,6 +1041,7 @@
         "kinds": {
           "agent": "Agent",
           "llm": "LLM-Aufruf",
+          "decision": "Entscheidungsmodell-Aufruf",
           "tool": "Tool-Aufruf",
           "retrieval": "Abruf",
           "search": "Vektorsuche",
@@ -745,7 +1103,37 @@
           "allAttributes": "Alle Attribute"
         }
       },
-      "loadError": "Die Protokolle konnten nicht geladen werden."
+      "loadError": "Die Protokolle konnten nicht geladen werden.",
+      "running": "läuft",
+      "failedAtStep": "fehlgeschlagen bei Schritt {{step}}",
+      "failedAtStepOf": "fehlgeschlagen bei Schritt {{step}} von {{total}}",
+      "origin": {
+        "api": "API",
+        "shared": "Geteilt",
+        "chat": "Chat"
+      },
+      "feedback": {
+        "like": "Gefällt",
+        "dislike": "Gefällt nicht"
+      },
+      "labels": {
+        "filterAll": "Alle Labels",
+        "notAnswered": "Nicht vollständig beantwortet",
+        "docsGap": "Lücke in der Doku",
+        "frustrated": "Frustriert",
+        "asksHuman": "Nach einem Menschen gefragt",
+        "negativeReaction": "Erneut gefragt oder widersprochen",
+        "negativeSentiment": "Negative Stimmung",
+        "hint": "Labels sind Schätzungen und können falsch sein.",
+        "conversation": "Gespräch",
+        "clearConversation": "Alle Gespräche anzeigen",
+        "more": "+{{formatted}}",
+        "emptyForFilter": "Keine Nachrichten passen zu diesen Filtern.",
+        "filter": "Label",
+        "topics": "Themen"
+      },
+      "levelFilter": "Stufe",
+      "typeFilter": "Ereignistyp"
     },
     "teams": {
       "label": "Teams",
@@ -761,7 +1149,6 @@
       "save": "Speichern",
       "createTeamError": "Team konnte nicht erstellt werden.",
       "noTeams": "Noch keine Teams.",
-      "noDescription": "Keine Beschreibung",
       "loadError": "Teams konnten nicht geladen werden.",
       "roleAdmin": "Admin",
       "roleMember": "Mitglied",
@@ -847,7 +1234,7 @@
           "stopped": "Gestoppt",
           "writesOff": "Nicht über API",
           "writesNote": "Einige Änderungen sind für API-, Widget- und Link-Nutzer aus.",
-          "writesNoteEditor": "Einige Änderungen sind für API-, Widget- und Link-Nutzer aus. Frag den Eigentümer, ob er sie unter Zugangsdaten erlaubt.",
+          "writesNoteEditor": "Einige Änderungen sind für API-, Widget- und Link-Nutzer aus. Bitte den Eigentümer, sie unter Zugriffsdetails zu erlauben.",
           "access": {
             "member": "Das eigene {{service}}-Konto jeder Person",
             "memberNoService": "Das eigene Konto jeder Person",
@@ -857,8 +1244,8 @@
           },
           "writesSomeOff": "Nicht alles über API",
           "adminOff": "Änderungen von einem Admin deaktiviert",
-          "openAccessDetails": "Zugangsdaten öffnen",
-          "accessDetailsNeedsKey": "Die Zugangsdaten listen diese Änderungen auf, sobald der Agent einen API-Schlüssel hat.",
+          "openAccessDetails": "Zugriffsdetails öffnen",
+          "accessDetailsNeedsKey": "Die Zugriffsdetails listen diese Änderungen auf, sobald der Agent einen API-Schlüssel hat.",
           "reasonShort": {
             "deleted": "Gelöscht",
             "ownerLostAccessYou": "Du kannst es nicht mehr verwenden",
@@ -899,7 +1286,7 @@
             "description": "Den Agenten für alle löschen."
           },
           "editors_can_manage_access_details": {
-            "label": "Bearbeiter dürfen Zugangsdaten verwalten",
+            "label": "Bearbeiter dürfen Zugriffsdetails verwalten",
             "description": "API-Schlüssel, Webhook und öffentlicher Link."
           },
           "viewers_can_see_logs": {
@@ -924,7 +1311,7 @@
         "tool": {
           "editors_can_change_credentials": {
             "label": "Bearbeiter dürfen Anmeldedaten und Verbindung ändern",
-            "description": "Sie ersetzen gespeicherte Geheimnisse; niemand kann sie auslesen."
+            "description": "Bearbeiter ersetzen gespeicherte Geheimnisse; niemand kann sie auslesen."
           },
           "editors_can_share": {
             "label": "Bearbeiter dürfen teilen",
@@ -948,8 +1335,8 @@
         }
       },
       "editorHint": {
-        "agent": "Bearbeiter können ihn ändern, einschließlich Protokollen, Zeitplänen und Zugangsdaten.",
-        "agentNoAccessDetails": "Bearbeiter können ihn ändern, einschließlich Protokollen und Zeitplänen, aber nicht die Zugangsdaten.",
+        "agent": "Bearbeiter können ihn ändern, einschließlich Protokollen, Zeitplänen und Zugriffsdetails.",
+        "agentNoAccessDetails": "Bearbeiter können ihn ändern, einschließlich Protokollen und Zeitplänen, aber nicht die Zugriffsdetails.",
         "source": "Bearbeiter können Chunks und Dateien bearbeiten, synchronisieren und Einstellungen ändern.",
         "tool": "Bearbeiter können Aktionen ändern und Anmeldedaten ersetzen, aber keine Geheimnisse lesen.",
         "toolNoCredentials": "Bearbeiter können Aktionen ändern, aber keine Anmeldedaten.",
@@ -1071,6 +1458,7 @@
       "noToolsFound": "Keine Werkzeuge gefunden",
       "selectToolSetup": "Werkzeug hinzufügen",
       "settingsIconAlt": "Einstellungssymbol",
+      "toolActions": "Tool-Aktionen",
       "configureToolAria": "{{toolName}} konfigurieren",
       "manageTools": "Zu den Werkzeugen",
       "edit": "Bearbeiten",
@@ -1202,6 +1590,8 @@
       "savedSecretPlaceholder": "Gespeichert · neuen Wert eingeben zum Ersetzen",
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Werkzeug",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Werkzeugen",
+      "triggerLabel_one": "Werkzeuge, {{formatted}} ausgewählt",
+      "triggerLabel_other": "Werkzeuge, {{formatted}} ausgewählt",
       "manageInConnectors": "In Konnektoren verwalten",
       "defaultBadge": "Standard",
       "noToolsYet": "Noch keine Werkzeuge",
@@ -1233,13 +1623,11 @@
       "access": "Zugriff",
       "connection": "Verbindung",
       "hostLabel": "Host",
-      "dangerZone": "Gefahrenzone",
       "approvalAskDescription": "Jeden Befehl vor der Ausführung genehmigen.",
       "approvalFullDescription": "Führt jeden Befehl ohne Nachfrage aus, mit Ausnahme der Sicherheits-Sperrliste.",
       "fullAccessWarning": "Vollzugriff: Agenten können auf diesem Rechner jeden Befehl ohne Nachfrage ausführen. Die Sicherheits-Sperrliste gilt weiterhin.",
       "deviceIdLabel": "Geräte-ID",
       "offlineHint": "Nicht verbunden. Führe `docsgpt-cli host` auf dem Rechner aus, um es online zu bringen.",
-      "dangerZoneDescription": "Das Widerrufen stoppt den Daemon auf dem Gerät und entfernt die Kopplung.",
       "auditTitle": "Letzte Aktivität",
       "auditLoading": "Laden…",
       "auditEmpty": "Noch keine Aktivität.",
@@ -1286,7 +1674,7 @@
       "deleteWarning": "\"{{modelName}}\" löschen?",
       "actionsMenuAria": "Aktionen für {{modelName}}",
       "modelsGroup": {
-        "builtin": "DocsGPT-Modelle",
+        "builtin": "Integriert",
         "user": "Meine Modelle"
       },
       "actions": {
@@ -1435,7 +1823,10 @@
         "tokenLabel": "Dein Token",
         "usageTitle": "So verwendest du es",
         "usageHint": "Exportiere es als Umgebungsvariable und sende es als Bearer-Token im Authorization-Header.",
-        "done": "Fertig"
+        "done": "Fertig",
+        "createTool": "Tool für Agenten erstellen",
+        "toolCreated": "Tool erstellt. Du findest es unter Einstellungen › Tools und kannst es einem Agenten hinzufügen.",
+        "toolFailed": "Das Tool konnte nicht erstellt werden."
       },
       "regenerate": {
         "action": "Neu generieren",
@@ -1456,13 +1847,13 @@
       "label": "Konnektoren",
       "subtitle": "Verbinde DocsGPT mit den Diensten, die dein Team nutzt. Eine Verbindung kann Inhalte ins Wissen synchronisieren und Agenten Werkzeuge geben.",
       "search": "Konnektoren suchen...",
-      "addCustom": "Eigenes Werkzeug hinzufügen",
+      "addCustom": "Eigenen Konnektor hinzufügen",
       "custom": {
         "custom_mcp": "MCP-Server",
         "custom_openapi": "OpenAPI / REST"
       },
       "capability": {
-        "sync": "Sync",
+        "sync": "Synchronisieren",
         "read": "Lesen",
         "write": "Schreiben"
       },
@@ -1490,6 +1881,7 @@
         "share_point": "Dateien aus SharePoint-Sites und OneDrive ins Wissen synchronisieren.",
         "confluence": "Confluence-Bereiche und -Seiten ins Wissen synchronisieren.",
         "s3": "Dokumente aus einem S3-Bucket ins Wissen synchronisieren.",
+        "mcp_canva": "Arbeiten Sie mit Canva-Designs, exportieren Sie diese und nutzen Sie Marken-Vorlagen.",
         "reddit": "Reddit-Beiträge zu deinen Suchen ins Wissen synchronisieren.",
         "brave": "Web und Bilder mit der Brave Search API durchsuchen.",
         "telegram": "Nachrichten und Bilder an einen Telegram-Chat senden.",
@@ -1503,12 +1895,19 @@
         "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
         "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen.",
         "mcp_drawio": "Bearbeitbare Flussdiagramme und andere Diagramme mit draw.io erstellen.",
+        "mcp_coingecko": "Aktuelle Kryptopreise, Marktkapitalisierungen, Handelsvolumen, Trend-Coins und Kursverläufe abrufen.",
         "mcp_clickup": "ClickUp-Aufgaben, Dokumente und Listen suchen, lesen und aktualisieren sowie Kommentare hinzufügen.",
         "mcp_zapier": "Mit den in deinem Zapier-MCP-Konto aktivierten Aktionen verbundene Apps lesen oder aktualisieren.",
         "mcp_trello": "Trello-Boards und -Karten finden sowie Karten erstellen und aktualisieren.",
         "mcp_miro": "Miro-Boards finden, Inhalte und Kommentare lesen, Diagramme erstellen und auf Kommentare antworten.",
         "mcp_resend": "E-Mails senden sowie Kontakte, Zielgruppen und Domains verwalten.",
         "mcp_calcom": "Cal.com-Buchungen, Eventtypen, Verfügbarkeit und Zeitpläne lesen und verwalten.",
+        "mcp_airtable": "Datensätze in Airtable-Bases suchen, lesen und aktualisieren.",
+        "mcp_context7": "Aktuelle Dokumentation und Codebeispiele für Bibliotheken nachschlagen.",
+        "mcp_alphavantage": "Aktienkurse, Fundamentaldaten, Devisen, Krypto, Wirtschaftsindikatoren und Marktnachrichten abrufen.",
+        "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",
+        "mcp_twelvedata": "Kurse, Kursverläufe, technische Indikatoren und Fundamentaldaten für Aktien, Devisen, Kryptowährungen und ETFs abrufen.",
+        "mcp_cloudflare": "Workers, DNS, R2 und mehr über die Cloudflare-API verwalten.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
@@ -1525,7 +1924,7 @@
         "tools": "Werkzeuge aus dieser Verbindung",
         "noAccounts": "Noch kein Konto verbunden.",
         "failed": "Diese Verbindung konnte nicht geladen werden.",
-        "lastSync": "Synchronisiert {{date}} · {{frequency}}",
+        "lastSync": "Synchronisiert {{when}}",
         "paused": "Sync pausiert",
         "toolOn": "An",
         "toolOff": "Aus",
@@ -1534,12 +1933,11 @@
         "keyEnding": "Schlüssel {{hint}}",
         "syncMore": "Weitere Inhalte synchronisieren",
         "refreshTools": "Werkzeuge aktualisieren",
-        "noSources": "Aus dieser Verbindung wurde noch nichts synchronisiert.",
+        "noSources": "Noch nichts synchronisiert",
         "remove": "Entfernen",
         "refreshed": "Werkzeuge aktualisiert: {{added}} hinzugefügt, {{removed}} entfernt.",
         "refreshFailed": "Die Werkzeuge konnten nicht aktualisiert werden.",
         "syncNow": "Jetzt synchronisieren",
-        "syncStarted": "{{name}} wird synchronisiert…",
         "syncFailed": "Die Synchronisierung konnte nicht gestartet werden. Versuche es erneut.",
         "toolSwitchFailed": "Das Werkzeug konnte nicht geändert werden. Versuche es erneut.",
         "expired": "Die Anmeldung ist abgelaufen. Verbinde neu, um diese Verbindung weiter zu nutzen.",
@@ -1548,8 +1946,20 @@
         "noTools": "Noch keine Werkzeuge aus dieser Verbindung.",
         "addToolsFailed": "Die Werkzeuge konnten nicht hinzugefügt werden. Versuche es erneut.",
         "rename": "Umbenennen",
-        "toolsHint": "Bei „Vorher fragen“ wirst du im Chat gefragt. Änderungen über API, Widget und Link erlaubst du pro Agent unter Zugangsdaten.",
-        "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut."
+        "toolsHint": "Bei „Vorher fragen“ wirst du im Chat gefragt. Änderungen über API, Widget und Link erlaubst du pro Agent unter Zugriffsdetails.",
+        "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut.",
+        "noSourcesHint": "Wähle Inhalte aus {{name}}, um sie dem Wissen hinzuzufügen.",
+        "indexing": "Wird indexiert",
+        "firstSyncStarted": "Erste Synchronisierung gestartet: {{time}}",
+        "dismissFailedSync": "{{name}} ausblenden",
+        "sourceMenu": "Quellenaktionen",
+        "syncStarting": "Synchronisierung wird gestartet…",
+        "syncRefusedWiki": "Diese Quelle ist jetzt ein Wiki: Sie wird direkt bearbeitet und nicht mehr synchronisiert.",
+        "syncRefusedNotSyncable": "Diese Quelle lässt sich nicht synchronisieren.",
+        "syncRefusedConnector": "Diese Quelle wird über ihre Verbindung synchronisiert.",
+        "syncRefusedInvalid": "Diese Quelle wurde nicht gefunden.",
+        "syncRefusedReconnect": "Der Eigentümer muss das Konto dieser Quelle erneut verbinden, bevor sie synchronisiert werden kann.",
+        "syncRefusedConnectionMissing": "Das Konto dieser Quelle wurde getrennt. Sie kann erst wieder synchronisieren, wenn das Konto erneut verbunden ist."
       },
       "permission": {
         "always": "Erlauben",
@@ -1595,7 +2005,7 @@
         "connectTitle": "{{name}} verbinden",
         "reconnectTitle": "{{name}} neu verbinden",
         "signIn": "Bei {{name}} anmelden",
-        "syncFrequency": "Sync",
+        "syncFrequency": "Synchronisierung",
         "doneTitle": "{{name}} ist verbunden",
         "doneSummaryNone": "Verbunden als {{account}}.",
         "sourcesCount_one": "{{formatted}} Element",
@@ -1606,7 +2016,6 @@
         "tryInChat": "Im Chat ausprobieren",
         "done": "Fertig",
         "connectFailed": "Verbindung fehlgeschlagen. Prüfe die Angaben und versuche es erneut.",
-        "syncFailed": "Die Synchronisierung konnte nicht gestartet werden. Versuche es erneut.",
         "connectedWithKey": "Verbunden mit dem Schlüssel, der auf {{hint}} endet.",
         "doneCounts": "{{sources}} werden ins Wissen synchronisiert, {{tools}} bereit.",
         "doneSources": "{{sources}} werden ins Wissen synchronisiert.",
@@ -1617,6 +2026,9 @@
         "methodOauth": "Mit {{name}} anmelden",
         "methodToken": "Zugriffstoken verwenden",
         "credentialsRejected": "{{name}} hat diese Zugangsdaten nicht akzeptiert. Prüfe sie und versuche es erneut.",
+        "rateLimited": "{{name}} begrenzt die Anfragen dieses Kontos bis {{time}}. Versuche es danach erneut.",
+        "setupReconnect": "Melde dich erneut bei {{name}} an, um die Einrichtung abzuschließen.",
+        "setupDisabled": "Ein Admin hat {{name}} deaktiviert, daher lässt es sich nicht einrichten.",
         "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut oder schalte sie aus, um fortzufahren.",
         "addTools": "Agenten {{name}} nutzen lassen",
         "addToolsDescription": {
@@ -1627,13 +2039,18 @@
         "accountNameHint": "Wird dir und der KI angezeigt, um Konten zu unterscheiden, z. B. Alarm-Bot.",
         "syncToKnowledge": "Ins Wissen synchronisieren",
         "syncToKnowledgeDescription": "Wähle Inhalte aus {{name}}, die Antworten durchsuchen. Bleibt es aus, wird nur verbunden; synchronisieren kannst du später unter Konnektoren.",
-        "syncLater": "Noch wird nichts ins Wissen synchronisiert. Um Inhalte hinzuzufügen, öffne {{name}} unter Konnektoren und wähle Weitere Inhalte synchronisieren.",
+        "syncLater": "Noch wird nichts ins Wissen synchronisiert.",
         "retrievalSettings": "Erweiterte Abrufeinstellungen",
         "chooseWhatToSetUpFor": "Auswählen, was für {{name}} eingerichtet wird",
         "chooseWhatToSyncFrom": "Auswählen, was aus {{name}} synchronisiert wird",
         "signedInAs": "Angemeldet als {{account}}.",
         "finishSetup": "Einrichtung abschließen",
-        "account": "Konto"
+        "account": "Konto",
+        "syncChoice": "Wie du {{name}} nutzen möchtest",
+        "syncNow": "Inhalte jetzt synchronisieren",
+        "syncNowDescription": "Wähle Inhalte aus {{name}} und füge sie dem Wissen hinzu.",
+        "justConnect": "Nur verbinden",
+        "justConnectDescription": "Noch wird nichts hinzugefügt. Synchronisiere Inhalte später unter Konnektoren, wann immer sie gebraucht werden."
       },
       "remove": {
         "title": "\"{{name}}\" entfernen?",
@@ -1702,7 +2119,8 @@
         "searchRepositories": "Repositorys durchsuchen",
         "repositories": "Repositorys",
         "updated": "Aktualisiert {{date}}",
-        "loadFailed": "Deine Repositorys konnten nicht geladen werden."
+        "loadFailed": "Deine Repositorys konnten nicht geladen werden.",
+        "rateLimited": "GitHub begrenzt die Anfragen dieses Kontos bis {{time}}. Versuche es danach erneut."
       },
       "linear": {
         "teams": "Teams",
@@ -1753,7 +2171,17 @@
       "capabilityChip": {
         "sync": "Synchronisiert ins Wissen",
         "tools": "Gibt Agenten Tools"
-      }
+      },
+      "injection": {
+        "flagged": "Mögliche Prompt-Injection",
+        "notice_one": "Die Beschreibung von {{formatted}} Aktion liest sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst.",
+        "notice_other": "Die Beschreibungen von {{formatted}} Aktionen lesen sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst."
+      },
+      "syncContent": "Inhalte synchronisieren",
+      "openInKnowledge": "Im Wissen öffnen"
+    },
+    "insights": {
+      "label": "Einblicke"
     }
   },
   "modals": {
@@ -1769,13 +2197,13 @@
       "start": "Chat starten",
       "name": "Name",
       "choose": "Dateien auswählen",
-      "dropzoneText": "Zum Hochladen klicken oder per Drag & Drop ablegen",
+      "dropzoneText": "Zum Hochladen klicken oder Dateien bzw. einen Ordner hierher ziehen",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, Bilder, Audio, EPUB, JSON oder ZIP, jeweils bis zu 25 MB",
       "filesRejected": "Nicht hinzugefügt (größer als 25 MB oder kein unterstützter Dateityp): {{files}}",
+      "selectFolder": "Oder einen ganzen Ordner auswählen",
       "uploadedFiles": "Hochgeladene Dateien",
       "cancel": "Abbrechen",
       "train": "Zum Wissen hinzufügen",
-      "create": "Erstellen",
       "link": "Link",
       "urlLink": "URL-Link",
       "repoUrl": "Repository-URL",
@@ -1805,13 +2233,9 @@
           "label": "Datei hochladen",
           "heading": "Neues Dokument hochladen"
         },
-        "crawler": {
-          "label": "Crawler",
-          "heading": "Inhalt mit Web-Crawler hinzufügen"
-        },
-        "url": {
-          "label": "Link",
-          "heading": "Inhalt von URL hinzufügen"
+        "website": {
+          "label": "Website",
+          "heading": "Website hinzufügen"
         },
         "github": {
           "label": "GitHub",
@@ -1841,21 +2265,59 @@
           "connect": "Mit Google Drive verbinden",
           "validateFailed": "Die Anmeldung konnte nicht geprüft werden. Versuche es erneut.",
           "pickerFailed": "Die Dateiauswahl konnte nicht geöffnet werden. Versuche es erneut.",
-          "selectedFiles": "Ausgewählte Dateien",
-          "selectFiles": "Dateien auswählen",
+          "selectedFiles": "Ausgewählte Elemente",
+          "selectFiles": "Dateien oder Ordner auswählen",
           "noFilesSelected": "Noch keine Dateien oder Ordner ausgewählt.",
-          "removeItem": "{{name}} entfernen"
+          "removeItem": "{{name}} entfernen",
+          "shareFolders": "Damit diese Ordner synchronisiert werden, gib jeden in Google Drive mit Leseberechtigung frei für:",
+          "filesOnly": "Dieser Server synchronisiert Dateien, keine ganzen Ordner. Öffne einen Ordner in der Auswahl, um die Dateien darin auszuwählen."
         }
       },
       "fields": {
-        "url": "URL",
-        "initialContent": "Anfangsinhalt (optional)"
+        "initialContent": "Anfangsinhalt",
+        "initialContentHint": "Markdown. Seiten kannst du nach dem Erstellen hinzufügen und bearbeiten."
+      },
+      "website": {
+        "pageUrl": "Seitenadresse",
+        "siteUrl": "Website-Adresse",
+        "addAnotherPage": "Weitere Seite hinzufügen",
+        "invalidAddress": "Gib eine öffentliche Webadresse ein, etwa docs.example.com",
+        "removePage": "Diese Adresse entfernen",
+        "removeAddress": "{{address}} entfernen",
+        "maxPages": "Seitenlimit",
+        "maxPagesHint": "Bis zu {{max}}, vom Admin festgelegt.",
+        "pathPrefix": "Nur unterhalb von",
+        "pathPrefixHint": "Nur Adressen, die mit diesem Pfad beginnen.",
+        "pathPrefixPlaceholder": "/ (ganze Website)",
+        "sitemapUrl": "Sitemap-URL",
+        "sitemapUrlHint": "Leer lassen, um die in robots.txt angegebene zu verwenden.",
+        "includeSubdomains": "Subdomains einbeziehen",
+        "sync": "Aktuell halten",
+        "syncHintPage": "Ruft die Seiten erneut ab und übernimmt Änderungen.",
+        "syncHintSite": "Crawlt erneut und übernimmt Änderungen.",
+        "keepLinks": "Links im Seitentext behalten",
+        "keepLinksHint": "Antworten können dann auf die Seiten verlinken, auf die diese Seite verweist. Speichert etwa ein Viertel mehr Text, und die Suche kann etwas schlechter ranken.",
+        "mode": {
+          "label": "Was hinzugefügt wird",
+          "page": "Diese Seite",
+          "site": "Ganze Website",
+          "pageHint": "Fügt genau diese Seiten hinzu.",
+          "siteHint": "Fügt diese Seite und die Seiten hinzu, zu denen sie auf derselben Website führt."
+        },
+        "discovery": {
+          "label": "Seiten finden",
+          "hint": "Automatisch liest die Sitemap und folgt dann Links.",
+          "auto": "Automatisch",
+          "sitemap": "Sitemap",
+          "links": "Links folgen"
+        }
       },
       "github": {
         "privateHint": "Privates Repository? Verbinde dein GitHub-Konto, um es zu synchronisieren.",
         "connect": "GitHub verbinden"
       },
-      "fromService": "Aus einem Dienst"
+      "fromService": "Aus einem Dienst",
+      "removeFile": "{{name}} entfernen"
     },
     "createAPIKey": {
       "label": "Neuen API-Schlüssel erstellen",
@@ -1886,8 +2348,7 @@
     },
     "searchConversations": {
       "searchPlaceholder": "Konversationen durchsuchen",
-      "noResults": "Keine Ergebnisse gefunden",
-      "loading": "Laden..."
+      "noResults": "Keine Ergebnisse gefunden"
     },
     "configTool": {
       "title": "Werkzeug-Konfiguration",
@@ -1964,7 +2425,7 @@
       "addButton": "Hinzufügen"
     },
     "agentDetails": {
-      "title": "Zugangsdaten",
+      "title": "Zugriffsdetails",
       "publicLink": "Öffentlicher Link",
       "apiKey": "API-Schlüssel",
       "webhookUrl": "Webhook-URL",
@@ -2007,36 +2468,36 @@
       "import": "Importieren ({{count}})"
     },
     "importAgent": {
-      "title": "Import agent from YAML",
-      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
-      "dropzoneText": "Click to upload or drag and drop a .yaml file",
-      "invalidFileType": "Only .yaml or .yml files are supported",
-      "readError": "Could not read this agent file",
-      "importError": "Import failed",
-      "willCreate": "Creates a new agent.",
-      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
-      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
-      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
-      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
-      "sources": "Sources",
-      "tools": "Tools",
-      "models": "Models",
-      "sourceMatched": "{{name}}: using your existing source",
-      "sourceMissing": "{{name}}: not found",
-      "leaveUnattached": "Leave unattached",
-      "toolBuiltin": "{{type}}: built-in",
-      "toolReuse": "{{name}}: reusing your existing tool",
-      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
-      "toolCreate": "{{name}}: will be created",
-      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
-      "modelCustom": "{{name}}: custom model",
-      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
-      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
-      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
-      "cancel": "Cancel",
-      "review": "Review",
-      "import": "Import",
-      "continueToAgent": "Continue to agent"
+      "title": "Agent aus YAML importieren",
+      "description": "Lade eine YAML-Datei eines Agenten hoch. Quellen und Werkzeuge werden deinem Konto zugeordnet; Fehlendes kannst du im nächsten Schritt zuordnen oder neu anlegen. Ein neuer Agent wird als Entwurf importiert; ein erneuter Import aktualisiert den passenden Agenten und behält seinen aktuellen Status bei.",
+      "dropzoneText": "Zum Hochladen klicken oder eine .yaml-Datei per Drag & Drop ablegen",
+      "invalidFileType": "Nur .yaml- oder .yml-Dateien werden unterstützt",
+      "readError": "Diese Agentendatei konnte nicht gelesen werden",
+      "importError": "Import fehlgeschlagen",
+      "willCreate": "Erstellt einen neuen Agenten.",
+      "willUpdate": "Aktualisiert einen vorhandenen Agenten (zugeordnet über {{matchedBy}}).",
+      "workflowCreate": "Enthält einen Workflow mit {{nodes}} Knoten – er wird für dich erstellt.",
+      "workflowUpdate": "Enthält einen Workflow mit {{nodes}} Knoten – dein vorhandener Workflow wird aktualisiert.",
+      "workflowDelete": "Enthält keinen Workflow – der vorhandene Workflow des Agenten ({{nodes}} Knoten), sein Ausführungsverlauf und seine Artefakte werden endgültig gelöscht.",
+      "sources": "Quellen",
+      "tools": "Werkzeuge",
+      "models": "Modelle",
+      "sourceMatched": "{{name}}: deine vorhandene Quelle wird verwendet",
+      "sourceMissing": "{{name}}: nicht gefunden",
+      "leaveUnattached": "Nicht verknüpfen",
+      "toolBuiltin": "{{type}}: integriert",
+      "toolReuse": "{{name}}: dein vorhandenes Werkzeug wird wiederverwendet",
+      "toolUnavailable": "{{type}}: auf dieser Instanz nicht verfügbar, wird übersprungen",
+      "toolCreate": "{{name}}: wird erstellt",
+      "secretPlaceholder": "{{field}} (leer lassen, um dieses Werkzeug zu überspringen)",
+      "modelCustom": "{{name}}: eigenes Modell",
+      "apiKeyPlaceholder": "API-Schlüssel (leer lassen, um dieses Modell zu überspringen)",
+      "warningsTitle": "Agent als Entwurf importiert. Einige Punkte brauchen deine Aufmerksamkeit:",
+      "warningsTitlePublished": "Dein veröffentlichter Agent wurde aktualisiert. Einige Punkte brauchen deine Aufmerksamkeit:",
+      "cancel": "Abbrechen",
+      "review": "Prüfen",
+      "import": "Importieren",
+      "continueToAgent": "Weiter zum Agenten"
     },
     "jwt": {
       "title": "JWT-Token hinzufügen",
@@ -2092,6 +2553,8 @@
       "view_more_other": "{{count}} weitere Quellen",
       "noSourcesAvailable": "Noch kein Wissen",
       "selectedCount": "{{count}} ausgewählt",
+      "triggerLabel_one": "Wissen, {{formatted}} ausgewählt",
+      "triggerLabel_other": "Wissen, {{formatted}} ausgewählt",
       "groupOwn": "Deine",
       "groupTeam": "Mit dem Team geteilt",
       "fromConnector": "Aus {{name}}",
@@ -2114,8 +2577,17 @@
         "forbidden": "Diese Quelle wurde entfernt, oder du hast keinen Zugriff mehr darauf. Angezeigt wird der mit der Antwort gespeicherte Auszug.",
         "loadFailed": "Die Passage konnte nicht geladen werden.",
         "openLink": "Link öffnen",
-        "openInKnowledge": "In Wissen öffnen"
-      }
+        "openInKnowledge": "In Wissen öffnen",
+        "withheld": "Die Guardrails dieses Agenten haben diese Quelle aus der Antwort herausgehalten, weil sie eine Prompt-Injection enthalten könnte. Die KI hat diese Passage nicht gelesen."
+      },
+      "relevance": {
+        "strong": "Starke Übereinstimmung",
+        "possible": "Mögliche Übereinstimmung",
+        "weak": "Schwache Übereinstimmung",
+        "tooltip": "Relevanz {{percent}} %"
+      },
+      "withheld": "Zurückgehalten",
+      "withheldNote": "Von den Guardrails dieses Agenten aus der Antwort herausgehalten: Die Quelle enthält möglicherweise eine Prompt-Injection."
     },
     "attachments": {
       "attach": "Anhängen",
@@ -2143,13 +2615,16 @@
     },
     "retry": "Erneut versuchen",
     "failedTitle": "Antwort konnte nicht erstellt werden",
+    "stoppedTitle": "Gestoppt",
     "errors": {
       "contextLength": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien.",
       "contextLengthKnowledge": "Diese Nachricht und ihre angehängten Dateien sind zu groß für das Kontextfenster des Modells. Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
       "contextLengthSized": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien.",
       "contextLengthSizedKnowledge": "Diese Nachricht und ihre angehängten Dateien brauchen etwa {{needed, number}} Tokens, mehr als das Modell aufnehmen kann ({{available, number}} Tokens). Sende weniger oder kleinere Dateien oder nutze „Zum Wissen hinzufügen“, um sie zu durchsuchen, statt sie vollständig zu senden.",
       "serverError": "Bitte versuche es später erneut. Wir entschuldigen uns für die Unannehmlichkeiten.",
-      "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut."
+      "clientDisconnect": "Die Antwort brach ab, bevor etwas erzeugt wurde. Versuche es erneut.",
+      "timeLimit": "Gestoppt: Zeitlimit erreicht. Der bisherige Fortschritt wurde gespeichert.",
+      "stopped": "Du hast diese Antwort gestoppt, bevor etwas geschrieben wurde. Versuche es erneut, um eine zu erhalten."
     },
     "reasoning": "Begründung",
     "wikiWrite": {
@@ -2277,7 +2752,6 @@
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
     },
     "send": "Senden",
-    "viewArtifact": "Artefakt anzeigen",
     "stopSpeaking": "Vorlesen beenden",
     "loadingAudio": "Audio wird geladen",
     "voice": {
@@ -2346,9 +2820,44 @@
       "researched_other": "{{count}} Themen recherchiert"
     },
     "openFile": "Datei öffnen",
+    "opensInNewTab": "Öffnet sich in einem neuen Tab",
     "stepGroup": {
       "title": "Werkzeuge",
       "failed": "{{count}} fehlgeschlagen"
+    },
+    "artifacts": {
+      "kind": {
+        "page": "HTML-Seite",
+        "pdf": "PDF",
+        "slides": "Folien",
+        "document": "Dokument",
+        "spreadsheet": "Tabelle",
+        "data": "Datendatei",
+        "image": "Bild",
+        "file": "Datei"
+      },
+      "version": "v{{version}}",
+      "download": "{{title}} herunterladen",
+      "more_one": "{{count}} weitere Datei",
+      "more_other": "{{count}} weitere Dateien",
+      "fileCount_one": "{{count}} Datei",
+      "fileCount_other": "{{count}} Dateien",
+      "showAll": "Alle {{count}} anzeigen",
+      "listTitle": "Dateien aus dieser Antwort",
+      "backToList": "Zurück zu den Dateien",
+      "group": {
+        "documents": "Dokumente",
+        "images": "Bilder",
+        "data": "Daten",
+        "other": "Weitere Dateien"
+      }
+    },
+    "workflow": {
+      "title": "Workflow",
+      "step": "Schritt {{step}}",
+      "stepOf": "Schritt {{step}} von {{total}}",
+      "stepCount_one": "{{count}} Schritt",
+      "stepCount_other": "{{count}} Schritte"
     }
   },
   "agents": {
@@ -2364,9 +2873,9 @@
     },
     "description": "Entdecke und erstelle benutzerdefinierte Versionen von DocsGPT, die Anweisungen, zusätzliches Wissen und beliebige Kombinationen von Fähigkeiten kombinieren",
     "newAgent": "Neuer Agent",
-    "importAgent": "Import",
-    "exportAgent": "Export as YAML",
-    "exportAgentFailed": "Failed to export agent",
+    "importAgent": "Importieren",
+    "exportAgent": "Als YAML exportieren",
+    "exportAgentFailed": "Agent konnte nicht exportiert werden",
     "close": "Schließen",
     "shareWithTeam": "Mit Team teilen",
     "backToAll": "Zurück zu allen Agenten",
@@ -2377,7 +2886,9 @@
       "tabs": {
         "overview": "Übersicht",
         "logs": "Protokolle",
-        "schedules": "Zeitpläne"
+        "insights": "Einblicke",
+        "schedules": "Zeitpläne",
+        "analytics": "Analytik"
       },
       "fallbackName": "Unbenannter Agent",
       "subnavAriaLabel": "Agenten-Unternavigation"
@@ -2428,7 +2939,7 @@
         "delete": "Löschen",
         "logs": "Protokolle",
         "schedules": "Zeitpläne",
-        "accessDetails": "Zugangsdaten",
+        "accessDetails": "Zugriffsdetails",
         "add": "Hinzufügen",
         "moreActions": "Weitere Aktionen"
       },
@@ -2442,7 +2953,8 @@
         "preview": "Vorschau",
         "basics": "Grundlagen",
         "knowledge": "Wissen und Verhalten",
-        "model": "Modell"
+        "model": "Modell",
+        "analytics": "Einblicke"
       },
       "placeholders": {
         "agentName": "Agentenname",
@@ -2454,7 +2966,9 @@
         "selectModels": "Modelle für diesen Agenten auswählen",
         "selectDefaultModel": "Standardmodell auswählen",
         "enterTokenLimit": "Token-Limit eingeben",
-        "enterRequestLimit": "Anfrage-Limit eingeben"
+        "enterRequestLimit": "Anfrage-Limit eingeben",
+        "contextLimitDefault": "Modellstandard",
+        "historyLimitDefault": "Zusammenfassung nahe am Kontextlimit"
       },
       "sourcePopup": {
         "title": "Wissen auswählen",
@@ -2501,6 +3015,16 @@
         "jsonSchemaDescription": "Definiere ein JSON-Schema, um ein strukturiertes Ausgabeformat zu erzwingen",
         "validJson": "Gültiges JSON",
         "invalidJson": "Ungültiges JSON - zur Aktivierung des Speicherns beheben",
+        "contextLimit": "Kontextlimit",
+        "contextLimitDescription": "Höchstzahl an Tokens aus Verlauf, Dokumenten und Tool-Ergebnissen, die pro Anfrage an das Modell gehen. Ältere Nachrichten werden zusammengefasst, um darunter zu bleiben. Aus: das volle Kontextfenster des Modells.",
+        "contextLimitAboveWindow": "Über dem Kontextfenster von {{model}} ({{limit, number}} Tokens), daher ohne Wirkung.",
+        "limitRange": "Gib {{min, number}} bis {{max, number}} Tokens ein.",
+        "contextLimitTokens": "Kontextlimit in Tokens",
+        "historyLimit": "Verlaufslimit",
+        "historyLimitDescription": "Höchstzahl an Tokens früherer Nachrichten, die pro Anfrage wörtlich gesendet werden. Ältere darüber werden zusammengefasst, die neuesten bleiben. Aus: Zusammenfassung erst nahe am Kontextlimit.",
+        "historyLimitTokens": "Verlaufslimit in Tokens",
+        "historyLimitBelowContext": "Gib mindestens {{min, number}} Tokens ein, unter dem Kontextlimit von {{limit, number}}.",
+        "historyLimitAboveWindow": "Nicht unter dem Kontextfenster von {{model}} ({{limit, number}} Tokens), daher ohne Wirkung.",
         "tokenLimiting": "Token-Limitierung",
         "tokenLimitingDescription": "Begrenze die täglich von diesem Agenten verwendbaren Tokens",
         "requestLimiting": "Anfrage-Limitierung",
@@ -2508,7 +3032,24 @@
         "systemPromptOverride": "Prompt-Überschreibung erlauben",
         "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen",
         "tokenLimit": "Token-Limit",
-        "requestLimit": "Anfragelimit"
+        "requestLimit": "Anfragelimit",
+        "origins": {
+          "label": "Erlaubte Ursprünge",
+          "description": "Nur die aufgeführten Websites und die Websites, denen diese Instanz vertraut, können diesen Agenten mit seinem API-Schlüssel aufrufen",
+          "inputLabel": "Ursprung",
+          "hint": "Eine Website-Adresse ohne Pfad, z. B. https://example.com. Mit Enter hinzufügen.",
+          "placeholder": "https://example.com",
+          "add": "Hinzufügen",
+          "listLabel": "Erlaubte Ursprünge",
+          "remove": "{{origin}} entfernen",
+          "errors": {
+            "invalid": "Gib eine Adresse ein, die mit http:// oder https:// beginnt, z. B. https://example.com",
+            "path": "Lass den Pfad weg: Ein Ursprung besteht nur aus Schema, Host und Port",
+            "duplicate": "{{origin}} ist bereits in der Liste",
+            "full": "Du kannst höchstens {{max}} Ursprünge hinzufügen",
+            "required": "Füge mindestens einen Ursprung hinzu oder schalte dies aus"
+          }
+        }
       },
       "preview": {
         "savedVersion": "gespeicherte Version",
@@ -2516,66 +3057,68 @@
         "publishDescription": "Die Vorschau chattet mit dem veröffentlichten Agenten. Entwürfe bleiben privat, bis Sie sie veröffentlichen.",
         "unsavedChanges": "Sie haben ungespeicherte Änderungen. Die Vorschau nutzt die gespeicherte Version, bis Sie speichern."
       },
-      "dangerZone": {
-        "heading": "Gefahrenzone",
-        "description": "Das Löschen dieses Agenten ist endgültig und entfernt alle seine Zeitpläne und den Ausführungsverlauf.",
-        "deleteButton": "Agent löschen"
-      },
       "externalKb": "Externe KB",
       "errors": {
         "publishFailed": "Der Agent konnte nicht veröffentlicht werden. Bitte erneut versuchen.",
         "saveDraftFailed": "Der Entwurf konnte nicht gespeichert werden. Bitte erneut versuchen."
       },
       "guardrails": {
-        "enable": "Enable guardrails",
-        "enableDescription": "Run the selected checks on this agent's runs",
-        "mode": "Enforcement mode",
-        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
-        "checks": "Checks",
-        "latencyHint": "Approximate added latency when this check runs",
-        "notConfigured": "Not configured",
-        "lockedByFloor": "Required by the instance policy and cannot be removed",
-        "configure": "Configure",
-        "blockMessage": "Blocked-response message",
-        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
-        "failOpen": "Continue if a check fails",
-        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
-        "timeout": "Check timeout (ms)",
-        "loadError": "Could not load the guardrail catalog",
-        "terms": "Banned terms (one per line)",
-        "termsPlaceholder": "competitor name\ninternal codename",
-        "allowHosts": "Allowed hosts (one per line)",
-        "blockHosts": "Blocked hosts (one per line)",
-        "policyText": "Policy",
-        "minOverlap": "Minimum source overlap",
-        "minWords": "Minimum answer length (words)",
-        "confidence": "Confidence threshold",
-        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
-        "activeCount": "{{count}} active",
+        "enable": "Guardrails aktivieren",
+        "enableDescription": "Die ausgewählten Prüfungen bei den Ausführungen dieses Agenten durchführen",
+        "mode": "Durchsetzungsmodus",
+        "monitorHint": "Im Beobachtungsmodus wird aufgezeichnet, was passiert wäre, ohne eine Antwort zu ändern. Beginne hier, sieh dir das Protokoll an und wechsle dann zur Durchsetzung.",
+        "checks": "Prüfungen",
+        "latencyHint": "Ungefähre zusätzliche Latenz, wenn diese Prüfung läuft",
+        "notConfigured": "Nicht konfiguriert",
+        "lockedByFloor": "Von der Richtlinie der Instanz vorgeschrieben und nicht entfernbar",
+        "configure": "Konfigurieren",
+        "blockMessage": "Nachricht bei blockierter Antwort",
+        "blockMessageDescription": "Wird dem Nutzer angezeigt, wenn eine Prüfung eine Anfrage oder Antwort blockiert",
+        "failOpen": "Fortfahren, wenn eine Prüfung fehlschlägt",
+        "failOpenDescription": "Wenn eine Prüfung eine Zeitüberschreitung oder einen Fehler hat, wird die Nachricht trotzdem verarbeitet. Schalte dies aus, um die Verarbeitung stattdessen abzubrechen.",
+        "timeout": "Zeitlimit der Prüfung (ms)",
+        "loadError": "Der Guardrail-Katalog konnte nicht geladen werden",
+        "terms": "Verbotene Begriffe (einer pro Zeile)",
+        "termsPlaceholder": "Name eines Wettbewerbers\ninterner Codename",
+        "allowHosts": "Erlaubte Hosts (einer pro Zeile)",
+        "blockHosts": "Blockierte Hosts (einer pro Zeile)",
+        "policyText": "Richtlinie",
+        "minOverlap": "Minimale Übereinstimmung mit den Quellen",
+        "minWords": "Minimale Antwortlänge (Wörter)",
+        "confidence": "Konfidenzschwelle",
+        "confidenceHint": "Das Bewertungsmodell muss den Inhalt beanstanden und sich dabei mindestens so sicher sein (Standard: 0,7)",
+        "activeCount": "{{count}} aktiv",
         "needsSetup_one": "{{count}} benötigt Einrichtung",
         "needsSetup_other": "{{count}} benötigen Einrichtung",
-        "setupRequired": "Fill in this check's settings before saving.",
-        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
-        "remove": "Remove",
-        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
-        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
-        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "setupRequired": "Fülle vor dem Speichern die Einstellungen dieser Prüfung aus.",
+        "pickAtLeastOne": "Wähle mindestens einen Eintrag – ohne Auswahl kann die Prüfung nicht laufen.",
+        "remove": "Entfernen",
+        "instanceDisabled": "Guardrails sind für diese Instanz ausgeschaltet, daher wird nichts von dem ausgeführt, was hier konfiguriert ist. Bitte deinen Administrator, GUARDRAILS_ENABLED zu setzen.",
+        "floorNotice": "Diese Instanz schreibt {{count}} Kontrolle(n) vor, die immer gelten.",
+        "floorControl": "{{stage}}: {{action}} – von der Richtlinie der Instanz vorgeschrieben",
+        "unknownCheck": "Dieser Agent nutzt eine Prüfung, die hier nicht verfügbar ist ({{check}}). Sie wird wieder ausgeführt, sobald die Prüfung wieder verfügbar ist.",
         "stages": {
-          "input": "User input",
-          "retrieval": "Retrieved sources",
-          "toolResult": "Tool result",
-          "output": "Answer"
+          "input": "Benutzereingabe",
+          "retrieval": "Abgerufene Quellen",
+          "toolResult": "Werkzeugergebnis",
+          "output": "Antwort",
+          "attachment": "Angehängte Dateien"
         },
         "actions": {
-          "flag": "Flag only",
-          "redact": "Redact",
-          "block": "Block"
+          "flag": "Nur markieren",
+          "redact": "Schwärzen",
+          "block": "Blockieren"
         },
         "modes": {
-          "monitorOnly": "Monitor only",
-          "scanAll": "Enforce everywhere"
-        }
+          "monitorOnly": "Nur beobachten",
+          "scanAll": "Überall durchsetzen"
+        },
+        "itemLevelHint": "Blockieren hält nur die markierte Quelle oder Datei zurück.",
+        "advanced": "Erweitert",
+        "threshold": "Schwelle für die Aktion",
+        "thresholdHint": "Ab diesem Wert greift die Aktion der Regel (0 bis 1, Standard 0,9).",
+        "flagThreshold": "Schwelle für Markierungen",
+        "flagThresholdHint": "Ab diesem Wert wird der Text markiert und protokolliert, aber nichts blockiert (Standard 0,5)."
       },
       "byline": {
         "new": "Richten Sie den Agenten ein und veröffentlichen Sie ihn, um mit ihm zu chatten."
@@ -2656,13 +3199,91 @@
         "audienceTitle_other": "Wer sie über diesen Agenten nutzen kann",
         "stopNote_one": "Es läuft nicht mehr, wenn du den Bearbeitungszugriff verlierst.",
         "stopNote_other": "Sie laufen nicht mehr, wenn du den Bearbeitungszugriff verlierst."
+      },
+      "analytics": {
+        "enable": "Einblicke sammeln",
+        "enableDescription": "Liest abgeschlossene Gespräche im Hintergrund und schätzt, ob Antworten geholfen haben und wo die Doku Lücken hat. Die Ergebnisse erscheinen im Tab „Einblicke“ und in den Protokollen.",
+        "learnMore": "Mehr erfahren",
+        "serverOff": "Einblicke sind auf diesem Server ausgeschaltet, daher wirken diese Einstellungen noch nicht. Bitte deinen Administrator, sie einzuschalten.",
+        "topics": "Themen",
+        "countOf": "{{count}} von {{max}}",
+        "addTopic": "Thema hinzufügen",
+        "itemActions": "Aktionen für {{name}}",
+        "edit": "Bearbeiten",
+        "remove": "Entfernen",
+        "modal": {
+          "addTopic": "Thema hinzufügen",
+          "editTopic": "Thema bearbeiten",
+          "name": "Name",
+          "description": "Beschreibung",
+          "submitAdd": "Hinzufügen",
+          "submitSave": "Speichern",
+          "dialogDescription": "Name und Beschreibung sagen dem Modell, was hierher gehört.",
+          "editFolder": "Dieses Thema ist der Ordner \"{{name}}\" aus den Quellen dieses Agenten. Beim Speichern wird es zu deinem eigenen und folgt den Seiten des Ordners nicht mehr.",
+          "namePlaceholder": "Abrechnung",
+          "descriptionHint": "Optional. Macht die Zuordnung genauer: nenne ein paar Seiten, Funktionen oder Wörter, die Nutzer schreiben.",
+          "descriptionPlaceholder": "Preise, Tarife, Plätze oder Rechnungen.",
+          "overlap": "Kann sich mit anderen Themen überschneiden",
+          "overlapDescription": "Wird an jedem ganzen Gespräch geprüft, daher können mehrere zutreffen: etwa für einen Fehlerbericht oder eine Preisfrage quer durch die Doku.",
+          "onePickFull": "Mehr als {{max}} Themen ohne Überschneidung gehen nicht, daher kann sich dieses überschneiden.",
+          "overlapFull": "Mehr als {{max}} Themen mit Überschneidung gehen nicht, daher kann sich dieses nicht überschneiden.",
+          "overlapOff": "Dieser Server prüft keine Themen mit Überschneidung mehr, daher kann sich dieses nicht überschneiden.",
+          "reachOnePick": "Ordnet neue Fragen zu; frühere behalten ihr Thema.",
+          "reachOverlap": "Wird auch an aktuellen Gesprächen geprüft.",
+          "kindChangeToOverlap": "Diese Änderung setzt seine Zahlen zurück: Es hat Fragen zugeordnet und wird jetzt an Gesprächen geprüft.",
+          "kindChangeToOnePick": "Diese Änderung setzt seine Zahlen zurück: Es wurde an Gesprächen geprüft und ordnet jetzt Fragen zu."
+        },
+        "errors": {
+          "nameRequired": "Gib einen Namen ein.",
+          "topicNameTooLong": "Zu lang. Kürze ihn auf {{max}} Zeichen.",
+          "topicNameTaken": "Ein anderes Thema hat schon diesen Namen.",
+          "topicNameReserved": "Dieser Name ist für Fragen reserviert, die zu keinem Thema passen.",
+          "topicDescriptionTooLong": "Zu lang. Kürze sie auf {{max}} (chinesische, japanische und koreanische Zeichen zählen dreifach)."
+        },
+        "digest": "Wöchentliche Übersicht der Doku-Lücken",
+        "digestDescription": "Einmal pro Woche erhält der Eigentümer des Agenten eine Benachrichtigung mit den größten Lücken in der Doku.",
+        "off": "Aus",
+        "topicsDescription": "Worüber Leute fragen. Jede Frage kommt in das eine Thema, das am besten passt.",
+        "fromSources": "Aus Quellen",
+        "hide": "Ausblenden",
+        "groups": {
+          "onePick": "Eins pro Frage",
+          "overlap": "Können sich überschneiden",
+          "overlapDescription": "Werden an ganzen Gesprächen geprüft; mehrere können zutreffen."
+        },
+        "notes": {
+          "foldersFailed": "Die Ordner der Quellen dieses Agenten konnten nicht geladen werden.",
+          "unsaved": "Ordner aus den Quellen dieses Agenten erscheinen, sobald du ihn speicherst.",
+          "unlisted": "Fragen werden auch den Ordnern der Quellen dieses Agenten zugeordnet.",
+          "hidden": "Ausgeblendete Ordner: {{names}}",
+          "show": "Einblenden",
+          "cut": "Diese kleineren Ordner passen nicht mehr, ihre Fragen landen unter Keines dieser Themen: {{names}}",
+          "single": "Ein einzelnes Thema sortiert nichts. Füge ein weiteres hinzu.",
+          "full": "Dieser Agent hat die maximale Zahl an Themen: {{topics}}, die sich nicht überschneiden, und {{overlapping}}, die es können.",
+          "overOnePick": "Dieser Server erlaubt jetzt {{max}} Themen ohne Überschneidung, weniger als dieser Agent hat. Nur die ersten {{max}} ordnen Fragen zu. Entferne welche, um andere hinzuzufügen.",
+          "overOverlapping": "Dieser Server erlaubt jetzt {{max}} Themen mit Überschneidung, weniger als dieser Agent hat. Nur die ersten {{max}} werden geprüft. Entferne welche, um andere hinzuzufügen.",
+          "overlapOff": "Dieser Server prüft keine Themen mit Überschneidung mehr, daher werden diese nicht geprüft. Bearbeite eines, damit es stattdessen Fragen zuordnet, oder entferne es."
+        },
+        "empty": {
+          "title": "Noch keine Themen",
+          "workflow": "Füge hinzu, worüber Leute fragen. Jede Frage kommt in das eine Thema, das am besten passt.",
+          "unsaved": "Themen aus den Quellen dieses Agenten erscheinen, sobald du ihn speicherst. Eigene kannst du jetzt hinzufügen.",
+          "noFolders": "Die Quellen dieses Agenten haben keine Ordner, nach denen Fragen sortiert werden könnten. Füge eigene Themen hinzu.",
+          "allHidden": "Alle Ordner der Quellen dieses Agenten sind ausgeblendet, daher werden Fragen nicht sortiert.",
+          "showFolders": "Ordner einblenden"
+        },
+        "removeTopic": {
+          "title": "\"{{name}}\" entfernen?",
+          "description": "Es kann sich überschneiden und hat daher eigene Ergebnisse. Sie verschwinden aus den Einblicken und Protokollen; wird es erneut hinzugefügt, beginnt es von vorn.",
+          "submit": "Entfernen"
+        }
       }
     },
     "logs": {
       "title": "Agenten-Protokolle",
       "lastUsedAt": "Zuletzt verwendet am",
       "noUsageHistory": "Kein Nutzungsverlauf",
-      "tableHeader": "Agenten-Endpunkt-Protokolle"
+      "description": "API-Aufrufe, geplante Ausführungen und Fehler dieses Agenten."
     },
     "schedules": {
       "title": "Agenten-Zeitpläne",
@@ -2737,6 +3358,7 @@
           "dec": "Dez"
         },
         "frequencyLabel": "Häufigkeit",
+        "customTiming": "Dieser Zeitplan läuft nach einem eigenen Takt: {{pattern}}. Ändere die Zeit unten, um ihn zu ersetzen.",
         "dayOfWeek": "Wochentag"
       },
       "status": {
@@ -2767,7 +3389,8 @@
         "error": "Fehler",
         "errorWithType": "Fehler ({{type}})",
         "output": "Ausgabe",
-        "truncated": "(gekürzt)"
+        "truncated": "(gekürzt)",
+        "openConversation": "Gespräch öffnen"
       },
       "toolCard": {
         "cancelFailed": "Abbrechen fehlgeschlagen",
@@ -2806,7 +3429,18 @@
           "oct": "Oktober",
           "nov": "November",
           "dec": "Dezember"
-        }
+        },
+        "weekdays": "Jeden Werktag um {{time}}",
+        "weekends": "Jeden Wochenendtag um {{time}}",
+        "days": "Jeden {{days}} um {{time}}",
+        "hourly": "Jede Stunde",
+        "hourlyAt": "Jede Stunde um :{{minute}}",
+        "hourlyRange": "Jede Stunde von {{from}} bis {{to}}",
+        "hourlyRangeWeekdays": "Werktags jede Stunde von {{from}} bis {{to}}",
+        "everyMinutes_one": "Jede {{formatted}} Minute",
+        "everyMinutes_other": "Alle {{formatted}} Minuten",
+        "everyHours_one": "Jede {{formatted}} Stunde",
+        "everyHours_other": "Alle {{formatted}} Stunden"
       },
       "runLog": {
         "when": "Wann",
@@ -2816,6 +3450,7 @@
         "loadFailed": "Die Ausführungen konnten nicht geladen werden."
       },
       "actions": "Aktionen für den Zeitplan",
+      "loadFailed": "Die Zeitpläne konnten nicht geladen werden.",
       "cancelTask": "Aufgabe abbrechen",
       "failureStreak_one": "{{count}} Fehlschlag in Folge",
       "failureStreak_other": "{{count}} Fehlschläge in Folge",
@@ -2836,7 +3471,8 @@
         "overdue": "Überfällig"
       },
       "deleteFailed": "Dieser Zeitplan konnte nicht gelöscht werden.",
-      "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
+      "deleteConsequence": "Der Ausführungsverlauf wird ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "allSchedules": "Alle Zeitpläne"
     },
     "shared": {
       "notFound": "Kein Agent gefunden. Bitte stelle sicher, dass der Agent geteilt ist.",
@@ -2874,26 +3510,29 @@
       "deleteConsequence": "Die Agenten darin werden aus dem Ordner verschoben, nicht gelöscht."
     },
     "guardrailEvents": {
-      "heading": "Guardrail activity",
-      "description": "Every control that fired on this agent, and every one that could not run.",
-      "lastDays": "Last {{count}} days",
-      "blocked": "Blocked",
-      "redacted": "Redacted",
-      "flagged": "Flagged",
-      "notEvaluated": "Not evaluated",
-      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
-      "byCheck": "By check",
-      "allChecks": "All checks",
-      "allOutcomes": "All outcomes",
-      "tableHeader": "Guardrail decisions",
-      "when": "When",
-      "check": "Check",
-      "stage": "Stage",
-      "outcome": "Outcome",
-      "detail": "Detail",
-      "empty": "No guardrail has fired on this agent yet.",
-      "emptyForFilter": "No decisions match this filter.",
-      "loadError": "Could not load guardrail activity"
+      "heading": "Guardrail-Aktivität",
+      "description": "Jede Kontrolle, die bei diesem Agenten angeschlagen hat, und jede, die nicht ausgeführt werden konnte.",
+      "blocked": "Blockiert",
+      "redacted": "Geschwärzt",
+      "flagged": "Markiert",
+      "notEvaluated": "Nicht geprüft",
+      "notEvaluatedHint": "Die Prüfung hatte eine Zeitüberschreitung oder einen Fehler, daher wurde dieser Inhalt nie tatsächlich untersucht. Das ist nicht dasselbe wie unbedenklich.",
+      "byCheck": "Nach Prüfung",
+      "allChecks": "Alle Prüfungen",
+      "allOutcomes": "Alle Ergebnisse",
+      "tableHeader": "Guardrail-Entscheidungen",
+      "when": "Zeitpunkt",
+      "check": "Prüfung",
+      "stage": "Phase",
+      "outcome": "Ergebnis",
+      "detail": "Details",
+      "empty": "Für diesen Agenten gibt es noch keine Guardrail-Ereignisse.",
+      "emptyForFilter": "Keine Entscheidungen entsprechen diesem Filter.",
+      "loadError": "Die Guardrail-Aktivität konnte nicht geladen werden",
+      "score": "Wert",
+      "openChunk": "Chunk öffnen",
+      "attachedFile": "Angehängte Datei",
+      "chunkUnavailable": "Dieser Chunk ist nicht mehr in seiner Quelle, oder du kannst diese Quelle nicht öffnen."
     },
     "workflow": {
       "expressionRow": "Ausdruck {{index}}",
@@ -2906,15 +3545,8 @@
       "redo": "Wiederholen",
       "redoHint": "Wiederholen (Strg+Umschalt+Z)",
       "artifacts": {
-        "previewUnsupported": "Dieses Artefakt kann nicht in der Vorschau angezeigt werden",
         "loadListFailed": "Artefakte konnten nicht geladen werden",
-        "loadFailed": "Artefakt konnte nicht geladen werden",
-        "loading": "Artefakte werden geladen...",
-        "inProgress": "Lauf aktiv – Artefakte erscheinen hier, sobald Knoten sie erzeugen.",
-        "empty": "Dieser Lauf hat keine Artefakte erzeugt.",
-        "back": "Zurück zu den Artefakten",
-        "untitled": "Artefakt {{id}}",
-        "fileKind": "Datei"
+        "untitled": "Artefakt {{id}}"
       },
       "builder": {
         "deleteFailed": "Workflow-Agent konnte nicht gelöscht werden",
@@ -3042,13 +3674,13 @@
         "invalidJson": "muss gültiges JSON sein"
       },
       "filePassing": {
-        "auto": "Auto",
+        "auto": "Automatisch",
         "native": "Nativ",
         "extract": "Extrahieren"
       },
       "mobileBlocker": {
-        "title": "Desktop erforderlich",
-        "body": "Der Workflow-Builder braucht für eine gute Bedienung einen größeren Bildschirm. Bitte öffne diese Seite auf einem Desktop- oder Laptop-Computer."
+        "title": "Auf einem größeren Bildschirm öffnen",
+        "body": "Der Workflow-Builder braucht einen breiteren Bildschirm. Nutze einen Computer oder dreh dein Tablet ins Querformat."
       },
       "nodes": {
         "start": "Start",
@@ -3080,10 +3712,10 @@
         "stepCount_other": "({{count}} Schritte)",
         "outputLabel": "Ausgabe:",
         "errorLabel": "Fehler:",
-        "artifacts": "Artefakte",
         "minimapHeading": "Workflow",
         "emptyTitle": "Workflow testen",
-        "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst."
+        "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst.",
+        "backToRun": "Zurück zum Lauf"
       },
       "documents": {
         "modeAll": "Alle Eingabedokumente",
@@ -3121,7 +3753,11 @@
     "showAll_other": "Alle {{formatted}} anzeigen",
     "pageRange_one": "{{from}}–{{to}} von {{formatted}} Agent",
     "pageRange_other": "{{from}}–{{to}} von {{formatted}} Agenten",
-    "deleteConsequence": "Seine Zeitpläne und der Ausführungsverlauf werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
+    "deleteConsequence": "Seine Zeitpläne und der Ausführungsverlauf werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+    "analytics": {
+      "subtitle": "Nachrichtenvolumen, Token-Verbrauch und Nutzerfeedback für diesen Agenten."
+    },
+    "loadError": "Dieser Agent konnte nicht geladen werden."
   },
   "components": {
     "fileUpload": {
@@ -3170,7 +3806,7 @@
     }
   },
   "pageNotFound": {
-    "title": "404",
+    "title": "Seite nicht gefunden",
     "message": "Die gesuchte Seite existiert nicht.",
     "goHome": "Zur Startseite"
   },
@@ -3218,8 +3854,9 @@
       "groups": {
         "personal": "Persönlich",
         "workspace": "Arbeitsbereich",
-        "insights": "Auswertungen",
-        "administration": "Administration"
+        "administration": "Administration",
+        "automations": "Automatisierungen",
+        "monitoring": "Überwachung"
       }
     },
     "openSidebar": "Seitenleiste öffnen",
@@ -3299,7 +3936,6 @@
     "loadError": "Deine Monitore konnten nicht geladen werden",
     "actionError": "Das hat nicht geklappt. Versuche es erneut.",
     "untitled": "Monitor",
-    "watching": "Wird beobachtet",
     "every": "Alle {{interval}}",
     "onEvent": "Wenn es passiert",
     "openConversation": "Gespräch öffnen",
@@ -3376,5 +4012,282 @@
       "conversationGone": "Beendet: Die Unterhaltung kann nicht mehr fortgesetzt werden"
     },
     "endedBecause": "Beendet: {{reason}}"
+  },
+  "activity": {
+    "label": "Aktivität",
+    "schedules": {
+      "label": "Zeitpläne",
+      "subtitle": "Alle wiederkehrenden Ausführungen und einmaligen Aufgaben deiner Agenten, dazu die, die der Assistent in einem Chat angelegt hat.",
+      "search": "Zeitpläne durchsuchen",
+      "createdInChat": "Im Chat erstellt",
+      "createdInChatHint": "Ohne Agent. Jeder gehört zu dem Chat, in dem er entstanden ist.",
+      "agentSchedules": "Zeitpläne des Agenten",
+      "openChat": "Chat öffnen",
+      "noMatches": "Keine Zeitpläne passen zu deiner Suche.",
+      "loadError": "Deine Zeitpläne konnten nicht geladen werden",
+      "empty": "Noch keine Zeitpläne",
+      "emptyHint": "Lege hier einen an oder bitte den Assistenten im Chat, etwas nach Zeitplan zu erledigen.",
+      "agentLabel": "Agent",
+      "agentPlaceholder": "Agenten wählen",
+      "agentSearch": "Agenten suchen",
+      "agentEmpty": "Keine Agenten, die du planen kannst",
+      "teamAgent": "Agent eines Teammitglieds, den du über ein Team verwaltest"
+    },
+    "marks": {
+      "failed": "Etwas ist fehlgeschlagen",
+      "needsYou": "Wartet auf deine Freigabe",
+      "working": "Läuft",
+      "unread": "Ungelesen",
+      "watching": "Beobachtet Änderungen"
+    },
+    "kind": {
+      "chat": "Chat",
+      "job": "Hintergrundauftrag",
+      "code": "Codeausführung",
+      "schedule": "Geplante Ausführung",
+      "workflow": "Workflow",
+      "webhook": "Webhook-Ausführung",
+      "ingest": "Wissen",
+      "api": "API"
+    },
+    "nav": {
+      "running_one": "{{formatted}} läuft",
+      "running_other": "{{formatted}} laufen",
+      "needsYou_one": "{{formatted}} braucht dich",
+      "needsYou_other": "{{formatted}} brauchen dich"
+    },
+    "now": {
+      "label": "Jetzt",
+      "subtitle": "Was läuft, was auf dich wartet und was als Nächstes läuft. Aktualisiert sich live.",
+      "loadError": "Deine Aktivität konnte nicht geladen werden",
+      "stopFailed": "Die Antwort konnte nicht gestoppt werden. Versuche es erneut oder stoppe sie im Chat.",
+      "thinking": "denkt nach",
+      "writing": "schreibt die Antwort",
+      "ranByHand": "manuell gestartet",
+      "due": "fällig {{time}}",
+      "chunks": "{{done}} von {{total}} Abschnitten eingebettet",
+      "background": "Hintergrund",
+      "running": "Läuft",
+      "stop": "Stoppen",
+      "cancel": "Abbrechen",
+      "open": "Öffnen",
+      "approve": "{{tools}} freigeben",
+      "approveAction": "Werkzeugaktion freigeben",
+      "expires": "läuft ab {{time}}",
+      "approval": "Freigabe",
+      "review": "Prüfen",
+      "pausedAfter_one": "{{name}} nach {{formatted}} Fehler pausiert",
+      "pausedAfter_other": "{{name}} nach {{formatted}} Fehlern pausiert",
+      "errorType": {
+        "auth_expired": "eine Anmeldung ist abgelaufen",
+        "tool_not_allowed": "ein Werkzeug war nicht erlaubt",
+        "budget_exceeded": "Token-Budget überschritten",
+        "timeout": "Zeitüberschreitung",
+        "agent_error": "der Agent ist fehlgeschlagen",
+        "internal": "ein interner Fehler",
+        "missed": "Zeitpunkt verpasst",
+        "overlap": "die vorherige Ausführung lief noch",
+        "stream_error": "der Antwortstrom brach ab",
+        "empty_output": "es kam nichts heraus"
+      },
+      "viewRuns": "Ausführungen ansehen",
+      "fromChat": "Aus {{name}}",
+      "timesToday_one": "{{formatted}} Ausführung in den nächsten 24 Stunden",
+      "timesToday_other": "{{formatted}} Ausführungen in den nächsten 24 Stunden",
+      "oneTime": "einmalig",
+      "stats": {
+        "running": "Läuft",
+        "background_one": "{{formatted}} im Hintergrund",
+        "background_other": "{{formatted}} im Hintergrund",
+        "needsYou": "Braucht dich",
+        "approvalExpires": "Eine Freigabe läuft {{time}} ab",
+        "next24h": "Nächste 24 Stunden",
+        "nextAt": "Als Nächstes um {{time}}, {{name}}",
+        "failed": "Fehlgeschlagen, letzte 24 Stunden",
+        "viewInHistory": "Im Verlauf ansehen"
+      },
+      "needsYou": "Braucht dich",
+      "reconnect": "{{name}} muss neu verbunden werden",
+      "reconnectAction": "Neu verbinden",
+      "runningTitle": "Läuft",
+      "filter": "Anzeigen",
+      "filters": {
+        "all": "Alle",
+        "chats": "Chats",
+        "automations": "Automatisierungen",
+        "knowledge": "Wissen"
+      },
+      "nothingRunning": "Gerade läuft nichts",
+      "upNext": "Als Nächstes",
+      "nothingPlanned": "In den nächsten 24 Stunden läuft nichts",
+      "watching": "Beobachtet",
+      "allMonitors": "Alle Monitore",
+      "nothingWatched": "Nichts wird beobachtet",
+      "checked": "geprüft {{time}}",
+      "openCalendar": "Kalender öffnen",
+      "step": "Schritt {{step}}",
+      "stepOf": "Schritt {{step}} von {{total}}",
+      "apiRequests_one": "{{formatted}} Anfrage",
+      "apiRequests_other": "{{formatted}} Anfragen",
+      "reading": "liest den Inhalt",
+      "operation": {
+        "upload": "Hochladen",
+        "sync": "Synchronisierung",
+        "reingest": "Neu indexieren"
+      },
+      "syncBatch": {
+        "daily": "Tägliche Synchronisierung",
+        "weekly": "Wöchentliche Synchronisierung",
+        "monthly": "Monatliche Synchronisierung"
+      },
+      "syncSources_one": "{{formatted}} Quelle",
+      "syncSources_other": "{{formatted}} Quellen",
+      "syncBlocked_one": "{{formatted}} muss neu verbunden werden",
+      "syncBlocked_other": "{{formatted}} müssen neu verbunden werden"
+    },
+    "calendar": {
+      "label": "Kalender",
+      "subtitle": "Geplante Ausführungen, vergangene nach Ergebnis und was beobachtet wird.",
+      "loadError": "Der Kalender konnte nicht geladen werden",
+      "runLoadError": "Der Lauf konnte nicht geöffnet werden. Versuche es erneut.",
+      "runNowError": "Der Lauf konnte nicht gestartet werden. Versuche es erneut.",
+      "todayButton": "Heute",
+      "previous": "Zurück",
+      "next": "Weiter",
+      "agentFilter": "Agent",
+      "allAgents": "Alle Agenten",
+      "viewLabel": "Ansicht",
+      "views": {
+        "day": "Tag",
+        "week": "Woche",
+        "month": "Monat",
+        "agenda": "Agenda"
+      },
+      "monitors": "Monitore",
+      "knowledgeSyncs": "Wissenssynchronisierung",
+      "hidePast": "Vergangene ausblenden",
+      "legend": {
+        "planned": "Geplant",
+        "running": "Läuft",
+        "success": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "paused": "Pausiert oder übersprungen",
+        "missed": "Verpasst",
+        "sync": "Wissenssynchronisierung"
+      },
+      "truncated": "Einige sehr häufige Zeitpläne zeigen in diesem Zeitraum nur ihre ersten Ausführungen.",
+      "watching": "Beobachtet",
+      "state": {
+        "planned": "Geplant",
+        "paused": "Pausiert",
+        "pending": "Startet",
+        "running": "Läuft",
+        "success": "Erfolgreich",
+        "failed": "Fehlgeschlagen",
+        "skipped": "Übersprungen",
+        "timeout": "Zeitüberschreitung",
+        "missed": "Verpasst"
+      },
+      "block_one": "{{name}} ×{{formatted}}",
+      "block_other": "{{name}} ×{{formatted}}",
+      "more_one": "+{{formatted}} weitere",
+      "more_other": "+{{formatted}} weitere",
+      "today": "Heute",
+      "tomorrow": "Morgen",
+      "empty": "In diesen Tagen ist nichts geplant",
+      "blockDone_one": "{{done}} von {{formatted}} Ausführung erledigt",
+      "blockDone_other": "{{done}} von {{formatted}} Ausführungen erledigt",
+      "slotCount_one": "{{formatted}} Lauf",
+      "slotCount_other": "{{formatted}} Läufe",
+      "oneTime": "Einmalig",
+      "recurring": "Wiederkehrend",
+      "when": "Wann",
+      "repeats": "Wiederholt",
+      "fromChat": "Aus Chat",
+      "pausedNote": "Dieser Zeitplan ist pausiert, diese Ausführung findet also nicht statt. Setze ihn auf seiner Seite fort.",
+      "dayRuns": "Ausführungen an diesem Tag",
+      "queued": "Ausführung gestartet. Sie erscheint unter „Jetzt“ und im Ausführungsprotokoll.",
+      "openSchedule": "Zeitplan öffnen",
+      "timezone": "Zeitzone des Zeitplans",
+      "missedNote": "Diese Ausführung hat nie begonnen: Der Scheduler war zu der Zeit aus oder im Rückstand. Starte sie jetzt oder prüfe, ob der Worker mit Beat läuft.",
+      "syncRepeats": {
+        "daily": "Täglich, gezählt ab dem Start des Schedulers",
+        "weekly": "Wöchentlich, gezählt ab dem Start des Schedulers",
+        "monthly": "Alle 30 Tage, gezählt ab dem Start des Schedulers"
+      },
+      "sources": "Quellen",
+      "needsReconnecting": "Muss neu verbunden werden",
+      "lastSynced": "Synchronisiert {{time}}",
+      "notSyncedYet": "Noch nicht synchronisiert",
+      "openKnowledge": "Wissen öffnen"
+    },
+    "history": {
+      "label": "Verlauf",
+      "subtitle": "Abgeschlossene Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore. Einstellungen › Protokolle enthält das vollständige technische Protokoll.",
+      "search": "Ausführungen durchsuchen",
+      "statusFilter": "Status",
+      "kindFilter": "Art",
+      "statusFilters": {
+        "all": "Alle Status",
+        "failed": "Fehlgeschlagen",
+        "success": "Erfolgreich",
+        "skipped": "Übersprungen",
+        "cancelled": "Abgebrochen"
+      },
+      "kindFilters": {
+        "all": "Alle",
+        "schedule": "Zeitpläne",
+        "webhook": "Webhooks",
+        "workflow": "Workflows",
+        "job": "Hintergrund",
+        "monitor": "Monitor-Weckrufe"
+      },
+      "kind": {
+        "schedule": "Zeitplan",
+        "webhook": "Webhook",
+        "workflow": "Workflow",
+        "job": "Hintergrund",
+        "monitor": "Monitor"
+      },
+      "status": {
+        "success": "Erfolg",
+        "failed": "Fehlgeschlagen",
+        "timeout": "Zeitüberschreitung",
+        "skipped": "Übersprungen",
+        "cancelled": "Abgebrochen"
+      },
+      "trigger": {
+        "cron": "Zeitplan",
+        "manual": "Manuell",
+        "webhook": "Webhook",
+        "chat": "Chat",
+        "monitor": "Änderung erkannt",
+        "trigger": "Webhook-Link",
+        "approval": "Freigabe-Link",
+        "monitor_paused": "Monitor pausiert",
+        "monitor_expired": "Monitor abgelaufen"
+      },
+      "columns": {
+        "when": "Wann",
+        "run": "Ausführung",
+        "owner": "Agent / Chat",
+        "kind": "Art",
+        "trigger": "Auslöser",
+        "status": "Status",
+        "duration": "Dauer",
+        "tokens": "Token"
+      },
+      "yesterday": "Gestern",
+      "loadError": "Der Verlauf konnte nicht geladen werden",
+      "runLoadError": "Der Lauf konnte nicht geöffnet werden. Versuche es erneut.",
+      "noMatches": "Keine Ausführungen passen zu diesen Filtern",
+      "empty": "Noch keine abgeschlossenen Ausführungen",
+      "emptyHint": "Ausführungen deiner Zeitpläne, Webhooks, Workflows, Hintergrundaufträge und Monitore erscheinen hier, sobald sie fertig sind.",
+      "loadMore": "Mehr laden",
+      "retention": "Standardmäßig werden geplante Ausführungen 90 Tage aufbewahrt, Webhook-Ausführungen 30 und Hintergrundaufträge und Monitor-Weckrufe 7. Workflow-Ausführungen bleiben in der Liste, ihr Trace wird 30 Tage aufbewahrt.",
+      "period_one": "Letzter {{formatted}} Tag",
+      "period_other": "Letzte {{formatted}} Tage",
+      "periodFilter": "Zeitraum"
+    }
   }
 }

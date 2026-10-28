@@ -30,7 +30,9 @@ from docsgpt.core.model_utils import (
 )
 
 from docsgpt.core.settings import settings
+from docsgpt.decisions import record as decision_record
 from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
+from docsgpt.llm.deadlines import interruptible
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
 from docsgpt.quotas.service import QuotaService
@@ -42,6 +44,7 @@ from docsgpt.storage.db.repositories.conversations import (
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.activity.flags import clear_stop, stop_requested
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.streaming.event_replay import format_sse_event
 from docsgpt.streaming.message_journal import (
@@ -62,6 +65,10 @@ STREAM_HEARTBEAT_INTERVAL = 30
 # stream still gets swept eventually.
 STREAM_HEARTBEAT_MAX_SECONDS = 3600
 
+# How often the heartbeat thread checks for a Stop asked from another page
+# (Activity › Now). Cheap: one Redis EXISTS per running answer.
+STREAM_STOP_POLL_SECONDS = 2
+
 
 class ClientDisconnected(GeneratorExit):
     """Raised inside a stream whose client the route saw go away.
@@ -69,6 +76,15 @@ class ClientDisconnected(GeneratorExit):
     Handled exactly as the generator being closed by a disconnect (the
     partial answer is saved, the row marked aborted), except that the
     stream then ends instead of re-raising: nobody closed it.
+    """
+
+
+class StreamStopped(ClientDisconnected):
+    """Raised inside a stream its user stopped from another page (Activity › Now).
+
+    Handled as a client abort, except that the client is still listening:
+    the stream sends it the terminal event the journal gets, so an open
+    chat tab ends cleanly instead of reconnecting to find it.
     """
 
 
@@ -93,7 +109,9 @@ def _traced_stream(
     trace the route started is activated here for the whole stream and written
     exactly once when the stream ends -- normally, paused, failed or
     abandoned. The request id is resolved here too so the trace and the
-    stream agree on it.
+    stream agree on it. The turn's decision record is activated with it: the
+    one the processor handed the agent (holding any decisions made during
+    setup, and a resumed turn's earlier rounds), or a new one.
     """
     signature = inspect.signature(method)
 
@@ -121,7 +139,10 @@ def _traced_stream(
                 user_id=decoded_token.get("sub") if isinstance(decoded_token, dict) else None,
                 agent_id=arguments.get("agent_id"),
             )
-        with tracing.activate(trace):
+        decisions = getattr(arguments.get("agent"), "decision_record", None)
+        if not isinstance(decisions, decision_record.DecisionRecord):
+            decisions = decision_record.DecisionRecord()
+        with tracing.activate(trace), decision_record.activate(decisions):
             try:
                 yield from method(*bound.args, **bound.kwargs)
             finally:
@@ -138,6 +159,60 @@ def _client_gone(agent: Any) -> bool:
     """Whether the route flagged the agent's client as disconnected."""
     event = getattr(agent, "client_disconnected", None)
     return isinstance(event, threading.Event) and event.is_set()
+
+def _turn_tool_calls(agent: Any, reported: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The turn's tool calls, with those the agent made but had not reported yet.
+
+    An agent reports its calls once, when its turn ends. A stream cut short by
+    a Stop or a dropped connection never reads that line, so without this the
+    message lost its calls, among them a handed-off call's job card and the
+    file the job made.
+
+    Args:
+        agent: The turn's agent.
+        reported: The calls the stream has read so far.
+
+    Returns:
+        ``reported`` merged with the agent's calls.
+    """
+    try:
+        made = agent._get_truncated_tool_calls()
+    except Exception:
+        logger.debug("reading the agent's tool calls failed", exc_info=True)
+        return reported
+    if not isinstance(made, list) or not made:
+        return reported
+    return merge_tool_calls(reported, made)
+
+
+def _stop_background_jobs(context: Any) -> None:
+    """Cancel the jobs a stopped turn handed off, so none of them resumes the chat. Never raises."""
+    if context is None or not getattr(context, "origin_message_id", None):
+        return
+    from docsgpt.background.service import stop_turn_jobs
+
+    try:
+        stop_turn_jobs(context.conversation_id, context.origin_message_id, context.user_id)
+    except Exception:
+        logger.exception("stopping the background jobs of message %s failed", context.origin_message_id)
+
+
+def _show_finished_jobs(context: Any, tool_calls: List[Dict[str, Any]]) -> None:
+    """Put the outcome of jobs that ended mid-stream on the saved entries. Never raises.
+
+    Only a turn whose saved calls carry a job looks anything up.
+    """
+    if context is None or not getattr(context, "origin_message_id", None):
+        return
+    if not any(isinstance(call, dict) and call.get("job_id") for call in tool_calls or []):
+        return
+    from docsgpt.background.service import show_finished_jobs
+
+    try:
+        show_finished_jobs(context.conversation_id, context.origin_message_id, context.user_id)
+    except Exception:
+        logger.exception("showing the finished jobs of message %s failed", context.origin_message_id)
+
 
 def _record_answered_by(agent: Any, query_metadata: Dict[str, Any]) -> None:
     """Keep the models that answered on the message, once a fallback answered.
@@ -310,6 +385,8 @@ class BaseAnswerResource:
         attachment_ids: Optional[List[str]],
         request_id: Optional[str],
         message_id: Optional[str],
+        conversation_id: Optional[str] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
@@ -330,6 +407,8 @@ class BaseAnswerResource:
             attachment_ids: Attached file ids.
             request_id: The turn's request id (links its trace).
             message_id: The reserved message id.
+            conversation_id: The conversation the turn belongs to.
+            passthrough: The request's stored passthrough values.
             error: What failed the turn, if it failed.
             extra: More fields for the row (structured-output details).
         """
@@ -348,7 +427,10 @@ class BaseAnswerResource:
             # Links the Logs row to this turn's execution trace.
             "request_id": request_id,
             "message_id": message_id,
+            "conversation_id": str(conversation_id) if conversation_id else None,
         }
+        if passthrough:
+            log_data["passthrough"] = passthrough
         if error:
             log_data["error"] = error
         if extra:
@@ -543,6 +625,7 @@ class BaseAnswerResource:
         finalize_tool_pause_as_complete: bool = False,
         request_id: Optional[str] = None,
         trace: Optional["tracing.Trace"] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -574,6 +657,8 @@ class BaseAnswerResource:
                 the pre-fetch retrieval); :func:`_traced_stream` activates it
                 and writes it when the stream ends. A new one is started when
                 omitted.
+            passthrough: The request's passthrough values bounded for
+                storage; kept on the conversation and the Logs row.
             finalize_tool_pause_as_complete: Stateless-tool-round mode for
                 the OpenAI-compatible ``/v1/chat/completions`` endpoint.
                 OpenAI clients resume a tool call by re-POSTing the full
@@ -612,6 +697,8 @@ class BaseAnswerResource:
         # The order text, thought and tool calls arrived in, saved under
         # ``query_metadata["segments"]`` so a reload renders the turn as it streamed.
         segments = AnswerSegments(query_metadata)
+        # The decision model's entries for the turn, under ``query_metadata["decisions"]``.
+        decision_record.attach(query_metadata)
         paused = False
         # Set when the agent *yields* a terminal ``error`` event instead of
         # raising. Workflow node failures take that route (the engine catches
@@ -678,6 +765,7 @@ class BaseAnswerResource:
                     model_id=model_id or self.default_model_id,
                     request_id=request_id,
                     index=index,
+                    passthrough=passthrough,
                 )
                 conversation_id = reservation["conversation_id"]
                 reserved_message_id = reservation["message_id"]
@@ -688,6 +776,15 @@ class BaseAnswerResource:
                 )
         elif _continuation and _continuation.get("reserved_message_id"):
             reserved_message_id = _continuation["reserved_message_id"]
+            # A Stop that reached the paused turn after its stream ended is
+            # still stored; the resume is the user carrying on, not stopping.
+            clear_stop(reserved_message_id)
+
+        if reserved_message_id:
+            try:
+                agent.started_by = reserved_message_id
+            except Exception:
+                logger.debug("Could not stamp started_by on the agent")
 
         # Bind the row now so an audit flush that happens before the ``finally``
         # below — an input block returns from ``gen`` immediately and flushes
@@ -730,6 +827,15 @@ class BaseAnswerResource:
         # Set by the heartbeat ticker when it finds the row gone. Checked by
         # the emit loop, which is where the stream regains control.
         stream_cancelled = threading.Event()
+        # Set by the ticker when the user pressed Stop on another page; the
+        # emit loop then ends the stream as a client abort, keeping the text.
+        stop_asked = threading.Event()
+        # Whether ``message.started`` went out, so ``message.finished`` pairs it.
+        started_published = False
+        # Whether the turn's Logs entry is written: a Stop landing on the last
+        # frame must not write a second one.
+        turn_logged = False
+        event_user_id = (decoded_token or {}).get("sub")
 
         def _mark_streaming_once() -> None:
             """Flip the reserved row ``pending → streaming`` exactly once.
@@ -801,15 +907,30 @@ class BaseAnswerResource:
 
             def _tick() -> None:
                 deadline = time.monotonic() + STREAM_HEARTBEAT_MAX_SECONDS
-                while not stop.wait(STREAM_HEARTBEAT_INTERVAL):
+                poll = min(STREAM_STOP_POLL_SECONDS, STREAM_HEARTBEAT_INTERVAL)
+                next_beat = time.monotonic() + STREAM_HEARTBEAT_INTERVAL
+                while not stop.wait(poll):
+                    # Keep stamping after a Stop: a stream inside a long tool
+                    # call only sees it when the call returns.
+                    if not stop_asked.is_set() and stop_requested(message_id):
+                        stop_asked.set()
+                    if stop_asked.is_set() and next_beat == float("inf"):
+                        return
+                    if time.monotonic() < next_beat:
+                        continue
+                    next_beat = time.monotonic() + STREAM_HEARTBEAT_INTERVAL
                     if time.monotonic() > deadline:
+                        # Past the ceiling the row is left to go stale, but
+                        # this thread is also what reads a Stop: keep polling
+                        # for one (a cheap Redis read) until the stream ends.
                         logger.warning(
                             "stream heartbeat ticker hit its %ss ceiling for "
-                            "message_id=%s; stopping",
+                            "message_id=%s; no more heartbeats",
                             STREAM_HEARTBEAT_MAX_SECONDS,
                             message_id,
                         )
-                        return
+                        next_beat = float("inf")
+                        continue
                     try:
                         state = service.heartbeat_message_state(message_id)
                     except Exception:
@@ -875,7 +996,7 @@ class BaseAnswerResource:
         # A slow tool call in this turn may be handed off to a background job.
         # A resumed round with no row of its own (the first /v1 pause finalized
         # it) has nothing to report back to: its jobs are poll-only.
-        bind_background_turn(
+        background_turn = bind_background_turn(
             getattr(agent, "tool_executor", None),
             conversation_id=conversation_id,
             message_id=reserved_message_id,
@@ -995,6 +1116,19 @@ class BaseAnswerResource:
                         query_metadata["folded_background"] = folded
                 gen_iter = agent.gen(query=model_question)
 
+            if background_turn is not None and background_turn.auto_resume():
+                from docsgpt.agents.workflow_agent import WorkflowAgent
+                from docsgpt.core.run_budget import bounded_round
+
+                # Workflow nodes can't defer mid-graph, so a workflow runs unbounded.
+                if not isinstance(agent, WorkflowAgent):
+                    gen_iter = bounded_round(gen_iter)
+
+            # A Stop the ticker saw ends an in-flight provider read, not just the
+            # next chunk. ``StreamStopped`` reaches the abort handler below from
+            # any depth; a supersede still waits for the next chunk or boundary.
+            gen_iter = interruptible(gen_iter, lambda: StreamStopped() if stop_asked.is_set() else None)
+
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
             # fresh ``last_heartbeat_at`` so a model that takes a while to emit
@@ -1015,6 +1149,22 @@ class BaseAnswerResource:
             # The seed above covers t=0; the ticker takes over from the first
             # interval onwards, independently of whether anything is flowing.
             heartbeat_stop = _start_heartbeat_ticker()
+            # The sidebar's working mark and Activity › Now follow these. Only
+            # listed chats: API, /v1 and shared-agent answers run under the
+            # agent owner, and Now shows them as one row per agent instead.
+            if (
+                heartbeat_stop is not None
+                and event_user_id
+                and conversation_id
+                and visibility == "listed"
+            ):
+                publish_user_event(
+                    event_user_id,
+                    "message.started",
+                    {"conversation_id": str(conversation_id), "message_id": reserved_message_id},
+                    scope={"kind": "conversation", "id": str(conversation_id)},
+                )
+                started_published = True
 
             for line in gen_iter:
                 # The emit loop is where the stream regains control between
@@ -1023,6 +1173,11 @@ class BaseAnswerResource:
                 # nothing and is only cancelled when that call returns.
                 if stream_cancelled.is_set():
                     raise StreamSuperseded(reserved_message_id or "")
+                # Stop pressed on Activity › Now: end as a client abort would,
+                # saving what the answer has so far.
+                if stop_asked.is_set():
+                    logger.info("stream stopped by its user: message_id=%s", reserved_message_id)
+                    raise StreamStopped()
                 # A client that cannot rejoin the stream went away (``/v1``):
                 # stop the agent here and save what there is, as an abort.
                 if _client_gone(agent):
@@ -1206,6 +1361,7 @@ class BaseAnswerResource:
                             reserved_message_id=None,
                             request_id=request_id,
                             tool_calls=tool_calls,
+                            passthrough=passthrough,
                         )
                     # Flush the held pause event now (after the state is
                     # saved), in its original position ahead of the terminal
@@ -1264,6 +1420,7 @@ class BaseAnswerResource:
                                 model_id=model_id,
                                 agent_id=agent_id,
                                 model_user_id=model_user_id,
+                                stateless=True,
                             )
                             conversation_id = (
                                 self.conversation_service.save_conversation(
@@ -1302,6 +1459,7 @@ class BaseAnswerResource:
                         reserved_message_id=reserved_message_id,
                         request_id=request_id,
                         tool_calls=tool_calls,
+                        passthrough=passthrough,
                     )
 
                     # Notify the user out-of-band so they can navigate back and
@@ -1401,6 +1559,7 @@ class BaseAnswerResource:
                     model_id=title_model_id,
                     agent_id=agent_id,
                     model_user_id=model_user_id,
+                    stateless=True,
                 )
                 llm._token_usage_source = "title"
 
@@ -1441,7 +1600,27 @@ class BaseAnswerResource:
                             ),
                         } if llm is not None else None,
                         async_title_generation=llm is not None,
+                        # It ran to the end: unread unless the user watches it.
+                        mark_unread_when_away=True,
                     )
+                    if finalize_outcome is MessageUpdateOutcome.UPDATED:
+                        # A Stop that landed after the last event still stops the turn's jobs.
+                        if stop_requested(reserved_message_id):
+                            _stop_background_jobs(background_turn)
+                        else:
+                            if query_metadata.get("budget_deferred") and background_turn is not None:
+                                from docsgpt.background.continuation import defer_round
+
+                                # Guarded: the answer is already saved, and a raise
+                                # would reach the generic ``except`` below.
+                                try:
+                                    defer_round(
+                                        {"id": conversation_id, "user_id": background_turn.user_id},
+                                        reserved_message_id,
+                                    )
+                                except Exception:
+                                    logger.exception("deferring the next round of %s failed", reserved_message_id)
+                            _show_finished_jobs(background_turn, tool_calls)
                     # The outcome used to be discarded here, which is how a
                     # finished answer could vanish silently: if the row was
                     # deleted mid-stream (retry/edit truncation) the write
@@ -1590,11 +1769,14 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
+                conversation_id=conversation_id,
+                passthrough=passthrough,
                 # A yielded error (a failed workflow node) ends the turn
                 # normally but still failed it.
                 error=stream_error,
                 extra=extra,
             )
+            turn_logged = True
 
             yield _emit({"type": "end"})
             # Drain the journal buffer so the terminal ``end`` event is
@@ -1616,6 +1798,12 @@ class BaseAnswerResource:
                 journal_writer.flush()
                 journal_writer.close()
             response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
+            tool_calls = _turn_tool_calls(agent, tool_calls)
+            # The chat's own Stop stores the request and then closes the
+            # stream, so a close can arrive before the ticker has seen it.
+            stopped_by_user = isinstance(stream_exit, StreamStopped) or (
+                reserved_message_id is not None and stop_requested(reserved_message_id)
+            )
             # Save partial response
 
             # Whether the DB row was flipped to ``complete`` during this
@@ -1656,6 +1844,7 @@ class BaseAnswerResource:
                             model_id=title_model_id,
                             agent_id=agent_id,
                             model_user_id=model_user_id,
+                            stateless=True,
                         )
                         llm._token_usage_source = "title"
                     if reserved_message_id is not None:
@@ -1736,6 +1925,7 @@ class BaseAnswerResource:
                     )
             # Journal a terminal event so reconnecting clients stop tailing;
             # ``end`` only when the row is ``complete``, else ``error``.
+            terminal: Optional[dict] = None
             if reserved_message_id is not None:
                 try:
                     sequence_no += 1
@@ -1745,18 +1935,30 @@ class BaseAnswerResource:
                         # check at ``event_replay._payload_is_terminal``
                         # reads ``payload.type``, and the frontend parses
                         # the same key off ``data:``.
+                        terminal = {"type": "end"}
                         record_event(
                             reserved_message_id,
                             sequence_no,
                             "end",
-                            {"type": "end"},
+                            terminal,
                         )
                     else:
                         # Nothing was persisted under the complete status
                         # — mark the row failed so the reconciler doesn't
                         # need to sweep it, and journal an ``error`` so a
                         # reconnecting client surfaces the same failure
-                        # the UI would show on a live error.
+                        # the UI would show on a live error. A Stop says
+                        # so: its code keeps the chat out of the failed ones
+                        # the sidebar marks.
+                        stopped = stopped_by_user
+                        failure_metadata = dict(query_metadata or {})
+                        if stopped:
+                            failure_metadata["error"] = "Stopped by its user before any response was produced."
+                            failure_metadata["error_code"] = "stopped"
+                        else:
+                            # As the journaled event says, so a reload words
+                            # it the same and the chat isn't marked failed.
+                            failure_metadata["error_code"] = "client_disconnect"
                         try:
                             self.conversation_service.finalize_message(
                                 reserved_message_id,
@@ -1765,9 +1967,9 @@ class BaseAnswerResource:
                                 sources=source_log_docs,
                                 tool_calls=tool_calls,
                                 model_id=model_id or self.default_model_id,
-                                metadata=query_metadata if query_metadata else None,
+                                metadata=failure_metadata or None,
                                 status="failed",
-                                error=ConnectionError(
+                                error=None if stopped else ConnectionError(
                                     "client disconnected before response was persisted"
                                 ),
                             )
@@ -1776,21 +1978,60 @@ class BaseAnswerResource:
                                 f"Failed to mark aborted message failed: {fin_err}",
                                 exc_info=True,
                             )
+                        terminal = (
+                            {
+                                "type": "error",
+                                "error": "Stopped before any response was produced.",
+                                "code": "stopped",
+                            }
+                            if stopped
+                            else {
+                                "type": "error",
+                                "error": "Stream aborted before any response was produced.",
+                                "code": "client_disconnect",
+                            }
+                        )
                         record_event(
                             reserved_message_id,
                             sequence_no,
                             "error",
-                            {
-                                "type": "error",
-                                "error": "Stream aborted before any response was produced.",
-                                "code": "client_disconnect",
-                            },
+                            terminal,
                         )
                 except Exception as journal_err:
                     logger.error(
                         f"Failed to journal terminal event on abort: {journal_err}",
                         exc_info=True,
                     )
+            if stopped_by_user:
+                # After the message is saved, so a job that already ended
+                # can show its outcome on the message's entry.
+                _stop_background_jobs(background_turn)
+            else:
+                _show_finished_jobs(background_turn, tool_calls)
+            # A Stop is the user's own end of the turn: it keeps its Logs
+            # entry, as a turn that runs out or fails does. A dropped
+            # connection writes none.
+            if not turn_logged and reserved_message_id is not None and stopped_by_user:
+                self._persist_turn_log(
+                    decoded_token=decoded_token,
+                    user_api_key=user_api_key,
+                    agent_id=agent_id,
+                    question=question,
+                    response=response_full,
+                    sources=source_log_docs,
+                    tool_calls=getattr(agent, "tool_calls", tool_calls) or tool_calls,
+                    attachment_ids=attachment_ids,
+                    request_id=request_id,
+                    message_id=reserved_message_id,
+                    conversation_id=conversation_id,
+                    passthrough=passthrough,
+                    extra={"stopped": True},
+                )
+            if isinstance(stream_exit, StreamStopped) and terminal is not None:
+                # The client is still listening: send it the terminal event,
+                # numbered as journaled. Yielding is only safe because this
+                # was raised here; after a real close() it would fail.
+                yield format_sse_event(terminal, sequence_no)
             if isinstance(stream_exit, ClientDisconnected):
                 # Raised here, not by a close(): the generator ends normally.
                 return
@@ -1910,6 +2151,8 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
+                conversation_id=conversation_id,
+                passthrough=passthrough,
                 error=bounded_error_text(e),
             )
             yield _emit(
@@ -1933,6 +2176,15 @@ class BaseAnswerResource:
             # recycles.
             if heartbeat_stop is not None:
                 heartbeat_stop.set()
+            if reserved_message_id:
+                clear_stop(reserved_message_id)
+            if started_published:
+                publish_user_event(
+                    event_user_id,
+                    "message.finished",
+                    {"conversation_id": str(conversation_id), "message_id": reserved_message_id},
+                    scope={"kind": "conversation", "id": str(conversation_id)},
+                )
             # The audit trail must survive an aborted or failed turn — a
             # guardrail that fired on a stream the client dropped is exactly
             # the event an operator needs to see.
@@ -1960,6 +2212,7 @@ class BaseAnswerResource:
         reserved_message_id: Optional[str],
         request_id: Optional[str],
         tool_calls: List[Dict[str, Any]],
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Save a paused turn's continuation state so a later request can resume it.
 
@@ -1978,6 +2231,8 @@ class BaseAnswerResource:
                 its answer).
             request_id: The turn's request id.
             tool_calls: Every call of the turn so far.
+            passthrough: The request's stored passthrough values; the resume
+                logs the turn with them.
 
         Returns:
             Whether the state was saved.
@@ -2038,6 +2293,7 @@ class BaseAnswerResource:
                     # Every round's calls so far, so the message
                     # the resumed turn finalizes keeps them all.
                     "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
+                    "passthrough": passthrough,
                     # The turn's files (so ``F`` refs still
                     # resolve), its compression point and
                     # backup models.

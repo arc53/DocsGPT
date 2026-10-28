@@ -71,6 +71,8 @@ class _CapabilityFields(BaseModel):
     output_cost_per_million: Optional[float] = Field(default=None, ge=0)
     cached_input_cost_per_million: Optional[float] = Field(default=None, ge=0)
     cache_write_cost_per_million: Optional[float] = Field(default=None, ge=0)
+    first_token_timeout: Optional[float] = Field(default=None, gt=0)
+    stall_timeout: Optional[float] = Field(default=None, gt=0)
     reasoning_effort: Optional[str] = None
     api_flavor: Optional[str] = None
     tool_result_images: Optional[str] = None
@@ -284,6 +286,8 @@ def _build_model(
         output_cost_per_million=pick("output_cost_per_million", None),
         cached_input_cost_per_million=pick("cached_input_cost_per_million", None),
         cache_write_cost_per_million=pick("cache_write_cost_per_million", None),
+        first_token_timeout=pick("first_token_timeout", None),
+        stall_timeout=pick("stall_timeout", None),
         reasoning_effort=pick("reasoning_effort", None),
         api_flavor=pick("api_flavor", "chat_completions"),
         tool_result_images=pick("tool_result_images", None),

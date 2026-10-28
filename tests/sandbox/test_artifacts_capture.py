@@ -372,6 +372,42 @@ def test_resaving_one_file_versions_one_artifact_end_to_end(pg_engine, tmp_path,
         assert stored.read() == b"final"
 
 
+def test_a_non_latin_name_is_kept_and_versions_on_resave(pg_engine, tmp_path, monkeypatch):
+    """A Cyrillic filename survives as the display name and re-saving it adds v2.
+
+    The storage key stays ASCII; only the name the user sees keeps its script.
+    """
+    import uuid
+
+    from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+    from docsgpt.storage.local import LocalStorage
+    from docsgpt.storage.storage_creator import StorageCreator
+
+    monkeypatch.setattr(StorageCreator, "_instance", LocalStorage(base_dir=str(tmp_path)), raising=False)
+    monkeypatch.setattr("docsgpt.storage.db.session.get_engine", lambda: pg_engine)
+    conv = str(uuid.uuid4())
+    kw = {"user_id": "user-1", "conversation_id": conv, "produced_by": {"tool": "code_executor"}}
+
+    first = ac.persist_artifact("Отчёт.docx", b"draft", message_id=str(uuid.uuid4()), **kw)
+    second = ac.persist_artifact("Отчёт.docx", b"final", **kw)
+
+    assert first["filename"] == second["filename"] == "Отчёт.docx"
+    assert first["artifact_id"] == second["artifact_id"]
+    assert (first["version"], second["version"]) == (1, 2)
+    with pg_engine.connect() as conn:
+        versions = ArtifactsRepository(conn).list_versions(first["artifact_id"])
+    assert all(v["storage_path"].isascii() for v in versions)
+    assert all(v["storage_path"].endswith(".docx") for v in versions)
+
+
+@pytest.mark.parametrize("name", ["report.docx", "Отчёт.docx", "Отчёт.док", "\u6587\u4ef6", "a.b.\u6587"])
+def test_storage_keys_are_ascii_whatever_the_name(name):
+    key = ac._storage_key("u", "a", 1, name)
+    assert key.isascii() and key.startswith("inputs/u/artifacts/a/v1/")
+    if name == "report.docx":
+        assert key.endswith("/report.docx")
+
+
 class _BigFileMgr(_FakeMgr):
     """A workspace where some files are over the backend's file cap."""
 

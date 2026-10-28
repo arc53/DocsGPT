@@ -15,12 +15,11 @@ import uuid
 
 from docsgpt.api import api
 from docsgpt.api.user.authz import ROLE_ADMIN, has_role
+from docsgpt.api.user.sources.access import SYNC_FREQUENCIES
 from docsgpt.connectors import catalog, service
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.security.encryption import CredentialDecryptionError
-
-_FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
 connections_ns = Namespace("connections", description="Connectors and connections", path="/api")
 api.add_namespace(connections_ns)
@@ -76,6 +75,13 @@ def _error(message: str, status: int, **extra):
     return make_response(jsonify({"success": False, "error": message, **extra}), status)
 
 
+def _rate_limited(err):
+    """429 for a rate-limited GitHub account: when it resets, so the UI can say so."""
+    response = _error(str(err), 429, code="rate_limited", retry_at=err.reset_at.isoformat())
+    response.headers["Retry-After"] = str(err.retry_after_seconds)
+    return response
+
+
 @connections_ns.route("/connections")
 class ConnectionsList(Resource):
     @api.doc(
@@ -107,6 +113,8 @@ class ConnectionsList(Resource):
                 label = label or github.token_account(credentials.get("access_token"))
             except github.TokenRejected as err:
                 return _error(str(err), 400, code="invalid_credentials")
+            except github.RateLimited as err:
+                return _rate_limited(err)
             except service.TransientConnectionError as err:
                 return _error(str(err), 502)
         try:
@@ -335,7 +343,7 @@ def _start_sync(user_id: str, row: dict, sync: dict):
     if not isinstance(items, dict):
         return ("items must be an object", 400)
     frequency = sync.get("frequency") or definition.default_sync_frequency
-    if frequency not in _FREQUENCIES:
+    if frequency not in SYNC_FREQUENCIES:
         return ("Unknown sync frequency", 400)
     name = (sync.get("name") or "").strip()
     source_config, config_error = _parse_source_config(sync.get("config"))
@@ -439,6 +447,8 @@ class ConnectionRepositories(Resource):
         except github.TokenRejected as err:
             service.mark_reconnect_needed(connection_id, str(err))
             return _error("Reconnect to continue", 409, code="reconnect")
+        except github.RateLimited as err:
+            return _rate_limited(err)
         except service.TransientConnectionError:
             return _error("GitHub is not responding. Try again.", 503)
         except Exception as err:
@@ -560,7 +570,7 @@ class ConnectionPickerToken(Resource):
         if row is None or (row.get("auth_kind") or "oauth") != "oauth":
             return _not_found()
         try:
-            token = service.picker_token(connection_id)
+            token = service.picker_token(connection_id, row.get("provider"))
         except service.ConnectionUnavailable:
             return _error("Reconnect to continue", 409, code="reconnect")
         except service.TransientConnectionError:

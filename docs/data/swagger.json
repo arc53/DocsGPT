@@ -25,6 +25,26 @@
       ],
       "type": "object"
     },
+    "AddWebsitePagesModel": {
+      "properties": {
+        "entries": {
+          "description": "Pages or sites to add (as in /api/website)",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entries",
+        "source_id"
+      ],
+      "type": "object"
+    },
     "AnswerModel": {
       "properties": {
         "active_docs": {
@@ -194,7 +214,7 @@
     "ConnectorSyncModel": {
       "properties": {
         "connection_id": {
-          "description": "Connection to sync with; defaults to the source's own (ignored for team editors, whose sync uses the owner's connection)",
+          "description": "Connection to sync with; defaults to the source's own (ignored for team editors, whose sync always uses the source's own connection)",
           "type": "string"
         },
         "session_token": {
@@ -475,6 +495,66 @@
       ],
       "type": "object"
     },
+    "GetConversationInsightsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "Agent id",
+          "type": "string"
+        },
+        "filter_option": {
+          "default": "last_30_days",
+          "description": "Filter option for analytics",
+          "enum": [
+            "last_hour",
+            "last_24_hour",
+            "last_7_days",
+            "last_15_days",
+            "last_30_days"
+          ],
+          "example": "last_hour",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GetDocsGapsModel": {
+      "properties": {
+        "api_key_id": {
+          "description": "Agent id",
+          "type": "string"
+        },
+        "filter_option": {
+          "default": "last_30_days",
+          "description": "Filter option for analytics",
+          "enum": [
+            "last_hour",
+            "last_24_hour",
+            "last_7_days",
+            "last_15_days",
+            "last_30_days"
+          ],
+          "example": "last_hour",
+          "type": "string"
+        },
+        "group_by": {
+          "default": "page",
+          "description": "Group by the effective topic, or by the source or page of the turn's first retrieved chunk",
+          "enum": [
+            "topic",
+            "source",
+            "page"
+          ],
+          "example": "topic",
+          "type": "string"
+        },
+        "limit": {
+          "default": 25,
+          "description": "Most groups returned (1-50)",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "GetFeedbackAnalyticsModel": {
       "properties": {
         "api_key_id": {
@@ -608,6 +688,18 @@
           "description": "API Key ID",
           "type": "string"
         },
+        "conversation_id": {
+          "description": "Only rows of this conversation (chat turns and scheduled runs)",
+          "type": "string"
+        },
+        "date_from": {
+          "description": "Rows at or after this ISO 8601 moment",
+          "type": "string"
+        },
+        "date_to": {
+          "description": "Rows before this ISO 8601 moment",
+          "type": "string"
+        },
         "event_type": {
           "description": "Filter by event source",
           "enum": [
@@ -620,6 +712,19 @@
             "graph"
           ],
           "example": "chat",
+          "type": "string"
+        },
+        "feedback": {
+          "description": "Only chat turns rated this way",
+          "enum": [
+            "like",
+            "dislike"
+          ],
+          "example": "like",
+          "type": "string"
+        },
+        "label": {
+          "description": "Only chat turns the decision model labelled this way at ANALYTICS_FILTER_MIN_PROBABILITY or better: one of docs_gap, not_answered, negative_reaction, negative_sentiment, frustrated, asks_human, tag:<id> (a topic of the turn's conversation that can overlap) or topic:<name> (the turn's own topic)",
           "type": "string"
         },
         "level": {
@@ -642,11 +747,37 @@
           "description": "Number of logs per page",
           "type": "integer"
         },
+        "passthrough": {
+          "description": "Only chat turns whose passthrough values match every given key, compared as text, e.g. {\"user_id\": \"42\"}",
+          "type": "object"
+        },
         "search": {
           "description": "Substring filter on the summary",
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "InjectionReviewModel": {
+      "properties": {
+        "content_hash": {
+          "description": "The chunk's `injection.content_hash` (sha256 of its text)",
+          "type": "string"
+        },
+        "decision": {
+          "description": "`allow` marks the chunk safe from prompt-injection screening; `clear` undoes it",
+          "enum": [
+            "allow",
+            "clear"
+          ],
+          "example": "allow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content_hash",
+        "decision"
+      ],
       "type": "object"
     },
     "LiveSpeechToTextChunkModel": {
@@ -672,6 +803,18 @@
         "chunk_index",
         "file",
         "session_id"
+      ],
+      "type": "object"
+    },
+    "MCPOAuthCancelModel": {
+      "properties": {
+        "task_id": {
+          "description": "OAuth task to cancel",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
       ],
       "type": "object"
     },
@@ -745,7 +888,7 @@
           "type": "string"
         },
         "file": {
-          "description": "Files to add (for add operation)",
+          "description": "Files to add (for add operation) or the new file set (for sync)",
           "type": "object"
         },
         "file_paths": {
@@ -756,7 +899,7 @@
           "type": "array"
         },
         "operation": {
-          "description": "Operation: 'add', 'remove', or 'remove_directory'",
+          "description": "Operation: 'add', 'remove', 'remove_directory', or 'sync' (the uploaded files and ZIPs become the source's whole file set; files not in the upload are removed)",
           "type": "string"
         },
         "parent_dir": {
@@ -864,6 +1007,27 @@
       ],
       "type": "object"
     },
+    "RefreshWebsitePageModel": {
+      "properties": {
+        "file_path": {
+          "description": "Tree path of the page",
+          "type": "string"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        },
+        "url": {
+          "description": "The page's address, as its tree leaf shows it; when given, the page is found by it wherever a sync moved it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path",
+        "source_id"
+      ],
+      "type": "object"
+    },
     "ReingestSourceModel": {
       "properties": {
         "source_id": {
@@ -879,7 +1043,7 @@
     "RemoteUploadModel": {
       "properties": {
         "data": {
-          "description": "Data to process",
+          "description": "JSON loader config. For source=website: {entries: [{url, mode: page|site, max_pages, path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}], skip: [url or https://host/path/*], keep_links}",
           "type": "string"
         },
         "name": {
@@ -894,6 +1058,10 @@
           "description": "Source of the data",
           "type": "string"
         },
+        "sync_frequency": {
+          "description": "How often to re-fetch: never (default), daily, weekly or monthly",
+          "type": "string"
+        },
         "user": {
           "description": "User ID",
           "type": "string"
@@ -904,6 +1072,29 @@
         "name",
         "source",
         "user"
+      ],
+      "type": "object"
+    },
+    "RemoveWebsitePagesModel": {
+      "properties": {
+        "directory_path": {
+          "description": "Tree path of a folder to remove",
+          "type": "string"
+        },
+        "file_paths": {
+          "description": "Tree paths of pages to remove, up to 1000",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id"
       ],
       "type": "object"
     },
@@ -1057,6 +1248,10 @@
     },
     "SourceSearchModel": {
       "properties": {
+        "compare": {
+          "description": "Also return `candidates`: every chunk the stages received, in retriever order, with its relevance and whether it was kept.",
+          "type": "boolean"
+        },
         "query": {
           "description": "The query to retrieve for",
           "type": "string"
@@ -1490,6 +1685,41 @@
       ],
       "type": "object"
     },
+    "WebsiteSettingsModel": {
+      "properties": {
+        "entries": {
+          "description": "What the source fetches: {url, mode: page|site, max_pages, path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "keep_links": {
+          "description": "Keep the URL of links inside sentences in page text; left out, the stored setting is kept",
+          "type": "boolean"
+        },
+        "skip": {
+          "description": "Pages (url) or sections (https://host/path/*) to leave out; left out, the stored list is kept, and [] clears it",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_id": {
+          "description": "Source ID",
+          "type": "string"
+        },
+        "sync_frequency": {
+          "description": "never, daily, weekly or monthly",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entries",
+        "source_id"
+      ],
+      "type": "object"
+    },
     "WikiPageEditModel": {
       "properties": {
         "content": {
@@ -1518,9 +1748,117 @@
     "version": "1.0"
   },
   "paths": {
+    "/api/activity/history": {
+      "get": {
+        "description": "The caller's finished runs of every kind, newest first: scheduled, webhook and workflow runs, background jobs, and monitor wakes, with one status vocabulary.\nReturns:\n    A Flask response with ``runs`` and ``has_more``, or 400 for an\n    unknown ``kind`` or ``status``.",
+        "operationId": "get_activity_history",
+        "parameters": [
+          {
+            "description": "One of schedule, webhook, workflow, job, monitor; all when left out.",
+            "in": "query",
+            "name": "kind",
+            "type": "string"
+          },
+          {
+            "description": "One of success, failed, timeout, skipped, cancelled (failed includes timed out); all when left out.",
+            "in": "query",
+            "name": "status",
+            "type": "string"
+          },
+          {
+            "description": "Text matched against the run, agent and conversation names.",
+            "in": "query",
+            "name": "q",
+            "type": "string"
+          },
+          {
+            "description": "How far back to look (default 30, at most 90).",
+            "in": "query",
+            "name": "days",
+            "type": "string"
+          },
+          {
+            "description": "Rows per page (default 50, at most 200).",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          },
+          {
+            "description": "Rows to skip.",
+            "in": "query",
+            "name": "offset",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return one page of the caller's finished runs",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/activity/now": {
+      "get": {
+        "description": "What runs for the caller now (chat answers, background jobs, scheduled, webhook and workflow runs, ingests), what waits for them (tool approvals, schedules paused after failures), what runs in the next 24 hours, and the 24-hour counts.\nReturns:\n    A Flask response with ``running``, ``needs_you``, ``up_next``,\n    ``approval_conversations``, ``failed_conversations`` and ``stats``.",
+        "operationId": "get_activity_now",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's Now snapshot",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/activity/planned": {
+      "get": {
+        "description": "The caller's calendar for a window: planned schedule runs (from cron or run_at), past and in-flight runs with their status, coming knowledge syncs (one event per frequency each time it fires, kind sync), and monitors as date ranges. The window may span at most 62 days. A frequent schedule with more events than one schedule may list is summed up per day in tz: one event per day and routine state, with count and until.\nReturns:\n    A Flask response with ``from``, ``to``, ``events`` (schedule and\n    sync events, by ``kind``), ``monitors`` and ``truncated``, or 400\n    for a bad window or time zone.",
+        "operationId": "get_activity_planned",
+        "parameters": [
+          {
+            "description": "Window start, ISO 8601.",
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "Window end (exclusive), ISO 8601.",
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "description": "The viewer's IANA time zone, which days are split in (default UTC).",
+            "in": "query",
+            "name": "tz",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's calendar window",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/add_chunk": {
       "post": {
-        "description": "Adds a new chunk to the document",
+        "description": "Adds a new chunk to the document. 409 (code source_busy) while a sync or page change on the source runs.",
         "operationId": "post_add_chunk",
         "parameters": [
           {
@@ -1651,6 +1989,77 @@
         "x-pat-denied": true
       }
     },
+    "/api/admin/decisions": {
+      "get": {
+        "operationId": "get_admin_decisions_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The decision model as this API process sees it",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/defaults/agents": {
+      "get": {
+        "operationId": "get_admin_agent_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The guardrails new agents start with, and what the injection model costs on this server",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_agent_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store the body's `guardrails` object as the default for new agents; existing agents keep their own",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/defaults/sources": {
+      "get": {
+        "operationId": "get_admin_source_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The default retrieval settings for new sources, and what relevance costs on this server",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_source_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store the body's `retrieval` object as the default for new sources; existing sources keep their own",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/admin/devices/audit": {
       "get": {
         "description": "Filter by decision/user/since.",
@@ -1661,6 +2070,34 @@
           }
         },
         "summary": "Global remote-device command audit feed",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/guardrails": {
+      "get": {
+        "operationId": "get_admin_guardrails_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The floor every agent follows, whether MCP tool descriptions are scored, and the injection model's cost",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_guardrails_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store the body's `floor` (an agent guardrails object, or null for none) and/or `mcp_description_warnings`",
         "tags": [
           "admin"
         ],
@@ -1881,7 +2318,7 @@
     },
     "/api/admin/users": {
       "get": {
-        "description": "Each row carries ``last_seen`` (max auth-event time). Admin status is\nintentionally not joined here; the dashboard cross-references\nGET /api/admin/admins for badges.",
+        "description": "Each row carries ``last_seen`` (max auth-event time) and the stored\n``email`` (null when none is on file); ``?user_id=`` matches either.\nAdmin status is intentionally not joined here; the dashboard\ncross-references GET /api/admin/admins for badges.",
         "operationId": "get_admin_users_resource",
         "responses": {
           "200": {
@@ -2086,6 +2523,23 @@
         ],
         "x-pat-scopes": [
           "agents:keys"
+        ]
+      }
+    },
+    "/api/agents/defaults": {
+      "get": {
+        "description": "The guardrails a new agent starts with (set by an admin under Admin > Defaults), for prefilling the new-agent form: `{guardrails: {...}}`, the built-in defaults when none are set.",
+        "operationId": "get_agent_defaults",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "guardrails"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
         ]
       }
     },
@@ -2323,6 +2777,56 @@
           "type": "string"
         }
       ]
+    },
+    "/api/analytics/topic_folders": {
+      "get": {
+        "description": "The folders of an agent's sources, largest first: one per documentation section, described by up to five page titles. They fill the agent's topic question after its own topics; the settings list them so the owner can hide or edit them. Needs edit access to the agent.",
+        "operationId": "get_get_topic_folders",
+        "parameters": [
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "agents:read"
+        ]
+      }
+    },
+    "/api/analytics/topics": {
+      "get": {
+        "description": "Every topic an agent's conversations are labelled with, sorted by name, each with the Logs 'label' filter that selects it: topic:<name> for a topic that doesn't overlap (its own topics and source folders), tag:<id> for one that can. Needs the agent's logs; an agent the caller can't see gives an empty list.",
+        "operationId": "get_get_agent_topics",
+        "parameters": [
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
+        ]
+      }
     },
     "/api/answer": {
       "post": {
@@ -3137,7 +3641,7 @@
     },
     "/api/connectors/sync": {
       "post": {
-        "description": "Sync connector source to check for modifications",
+        "description": "Sync connector source to check for modifications. A 409 with code connection_missing when the source has no connection (it was removed) and none is named, as for a team editor, who can't name one; code reconnect_needed when a team editor's sync finds the source's connection signed out.",
         "operationId": "post_connector_sync",
         "parameters": [
           {
@@ -3333,7 +3837,7 @@
     },
     "/api/delete_chunk": {
       "delete": {
-        "description": "Deletes a specific chunk from the document.",
+        "description": "Deletes a specific chunk from the document. 409 (code source_busy) while a sync or page change on the source runs.",
         "operationId": "delete_delete_chunk",
         "parameters": [
           {
@@ -3389,7 +3893,7 @@
     },
     "/api/delete_old": {
       "get": {
-        "description": "Deletes old indexes and associated files",
+        "description": "Deletes a source: its index, stored files and row. 409 (code source_busy) while a sync or page change on the source runs; nothing is deleted.",
         "operationId": "get_delete_old_indexes",
         "parameters": [
           {
@@ -3619,6 +4123,12 @@
             "in": "query",
             "name": "search",
             "type": "string"
+          },
+          {
+            "description": "Optional: `flagged` keeps the chunks whose cached prompt-injection score is suspected or high (marked safe ones included)",
+            "in": "query",
+            "name": "injection",
+            "type": "string"
           }
         ],
         "responses": {
@@ -3631,6 +4141,33 @@
         ],
         "x-pat-scopes": [
           "sources:read"
+        ]
+      }
+    },
+    "/api/get_conversation_insights": {
+      "post": {
+        "description": "Insights from the decision model's labels: per label and option the expected count and its rate with a 95% interval widened by the label's calibration error, each label's tier, the same per time bucket, label coverage and the language mix. answer_status rates are over requests (not over greetings). 'available' is the operator switch (DECISION_ANALYTICS_ENABLED with the model available); 'enabled' is that and the agent's own analytics switch. The sweep labels only the last 'backfill_days' (from 'labelling_from'), so coverage splits unlabelled answers into 'unlabelled_recent_turns' (still to be labelled) and 'unlabelled_older_turns' (never labelled without a backfill). For an agent, 'one_pick' lists the options of its topic question (empty when it asks none) and 'overlapping' its topics that can overlap; each one's totals are under 'tag:<id>'. Topics ('topic_effective') are reported for an agent only: each agent has its own list. 'series' is in 'bucket_unit': the filter's own unit while its buckets average 10 analyzed answers, else the next coarser one (minute to hour, hour to day, day to week). A week is named by its first day in the window and carries its last as 'bucket_end'. 'previous' holds answer_status, reaction and sentiment totals over the period of the same length just before the window.",
+        "operationId": "post_get_conversation_insights",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetConversationInsightsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
         ]
       }
     },
@@ -3668,6 +4205,33 @@
         ],
         "x-pat-scopes": [
           "conversations:read"
+        ]
+      }
+    },
+    "/api/get_docs_gaps": {
+      "post": {
+        "description": "Docs gaps: answers that fell short because the docs do not cover the question, as expected counts (sums of the decision model's probabilities) per group, with the group's rate over its answers and a 95% interval, the window just before for the trend, and up to five example questions (gaps at even odds or better). Groups with under half an expected gap are left out; key null means no source was retrieved. previous_labelled counts the labelled answers in the window before, so a group with no earlier gaps can be told from a window that was never labelled; by page, each row's source names the source most of its answers retrieved the page from (null if unknown).",
+        "operationId": "post_get_docs_gaps",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetDocsGapsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "analytics"
+        ],
+        "x-pat-scopes": [
+          "analytics:read"
         ]
       }
     },
@@ -3892,7 +4456,7 @@
     },
     "/api/get_user_logs": {
       "post": {
-        "description": "Get user activity logs with pagination. Merges chat answers (user_logs), request errors (stack_logs) and scheduled agent runs (schedule_runs) into one timeline.",
+        "description": "Get user activity logs with pagination. Merges chat answers (user_logs), request errors (stack_logs) and scheduled agent runs (schedule_runs) into one timeline. Runs are ordered by their start time; ones still going (answers, scheduled, workflow and webhook runs) carry running: true until their finished row replaces them. Finished chat rows carry 'labels', the analytics label keys at ANALYTICS_FILTER_MIN_PROBABILITY or better, and 'tag_names' names the tags on the page.",
         "operationId": "post_get_user_logs",
         "parameters": [
           {
@@ -4085,7 +4649,7 @@
     },
     "/api/manage_source_files": {
       "post": {
-        "description": "Add files, remove files, or remove directories from an existing source",
+        "description": "Add files, remove files, remove directories, or replace the whole file set (sync) of an existing source. The source is then re-ingested: only added, removed and edited files are re-embedded.",
         "operationId": "post_manage_source_files",
         "parameters": [
           {
@@ -4177,9 +4741,36 @@
         "x-pat-denied": true
       }
     },
+    "/api/mcp_server/oauth_cancel": {
+      "post": {
+        "description": "Cancel an MCP OAuth sign-in the caller started, so the worker stops waiting for its callback",
+        "operationId": "post_mcpo_auth_cancel",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/MCPOAuthCancelModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
+        ]
+      }
+    },
     "/api/mcp_server/save": {
       "post": {
-        "description": "Create or update MCP server with automatic tool discovery",
+        "description": "Create or update MCP server with automatic tool discovery. While Admin > Guardrails warns on tool descriptions, each discovered action is scored for prompt injection and stored with `injection: {p, scorer}`; the response's `injection` is `{flagged: [names], unscored: [names]}` (null while the warnings are off). Nothing is deactivated.",
         "operationId": "post_mcp_server_save",
         "parameters": [
           {
@@ -4229,6 +4820,30 @@
         "x-pat-scopes": [
           "tools:write"
         ]
+      }
+    },
+    "/api/messages/{message_id}/cancel": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "message_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Stop the caller's chat answer that is still being written. The stream ends as if its client had disconnected and keeps what it wrote. Answers 202 once the request is stored; the stream sees it within a few seconds, or when a long tool call returns.\nArgs:\n    message_id: The answer's message id.\n\nReturns:\n    202 when the stop was requested, 404 when the caller has no such\n    message, 409 when it is not running (finished, or paused for a\n    tool approval), 503 without Redis.",
+        "operationId": "post_message_cancel",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Ask a running answer to stop",
+        "tags": [
+          "activity"
+        ],
+        "x-pat-denied": true
       }
     },
     "/api/messages/{message_id}/tail": {
@@ -4707,6 +5322,24 @@
         ]
       }
     },
+    "/api/schedules": {
+      "get": {
+        "description": "List the caller's schedules across every agent: their own, agentless ones created in chat, and those of teammates' agents they manage through a team (team: true). Monitors are not included.\nReturns:\n    A Flask response with ``schedules``: schedule rows plus\n    ``agent_name``, ``agent_image`` (a signed URL, never a storage\n    path), ``origin_conversation_name`` and ``team`` (a schedule of a\n    teammate's agent the caller manages through a team).",
+        "operationId": "get_user_schedules",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return the caller's schedules with agent and origin-chat names",
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-scopes": [
+          "schedules:read"
+        ]
+      }
+    },
     "/api/schedules/{schedule_id}": {
       "delete": {
         "description": "Cancel / delete a schedule.",
@@ -5062,6 +5695,23 @@
         ]
       }
     },
+    "/api/sources/defaults": {
+      "get": {
+        "description": "The retrieval settings a new source starts with (set by an admin under Admin > Defaults), for prefilling create forms: `{retrieval: {...}}`, the built-in defaults when none are set.",
+        "operationId": "get_source_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      }
+    },
     "/api/sources/from_attachments": {
       "post": {
         "description": "Creates a Knowledge source from chat attachments the caller already uploaded. The stored originals are copied into a new source and ingested like an upload (a zip contributes its files); the files together may not exceed the upload request limit (413). Returns the source id and the ingest task id; progress arrives as ``source.ingest.*`` events for that source id. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the first request's source and task ids without copying the files or queueing a second ingest.",
@@ -5108,7 +5758,7 @@
     },
     "/api/sources/reingest": {
       "post": {
-        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler.",
+        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler, or to apply a chunking change. A source with no stored files (Website, crawler, connector) is synced from its stored config instead; either way the answer is ``{success, task_id}`` and the task's source.ingest events carry that task_id. A connector source can be refused with a 409: code connection_missing when its connection was removed, reconnect_needed when the owner must sign it in again. Honours an Idempotency-Key header: a repeat with the same key runs nothing new, and a rebuild's repeat answers with the first request's task_id.",
         "operationId": "post_reingest_source",
         "parameters": [
           {
@@ -5210,7 +5860,7 @@
         }
       ],
       "patch": {
-        "description": "Edit a source's behavior config. Retrieval-time fields take effect live; chunking changes require an explicit re-ingest (surfaced as requires_reingest).",
+        "description": "Edit a source's behavior config. Retrieval-time fields take effect live; chunking changes require an explicit re-ingest (surfaced as requires_reingest). A section the body leaves out (chunking, retrieval, graph) keeps its saved value, so a body with only `retrieval` saves just that.",
         "operationId": "patch_source_config_resource",
         "parameters": [
           {
@@ -5334,6 +5984,42 @@
             "description": "Success"
           }
         },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/injection_review": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Mark a flagged chunk safe from prompt-injection screening for agents using this source, or undo that. Needs chunk-edit access. Keyed by the chunk text, so editing the chunk drops the mark. At most 1000 chunks per source. Returns `{success, content_hash, allowed, count}`.\nArgs:\n    source_id: The source.\n\nReturns:\n    Response: ``{\"success\", \"content_hash\", \"allowed\", \"count\"}``, a\n    400 for a bad body or a full allowlist, or the access error.",
+        "operationId": "post_injection_review",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InjectionReviewModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Add a chunk text's hash to the source's owner allowlist, or remove it",
         "tags": [
           "sources"
         ],
@@ -6115,7 +6801,7 @@
     },
     "/api/update_chunk": {
       "put": {
-        "description": "Updates an existing chunk in the document.",
+        "description": "Updates an existing chunk in the document. 409 (code source_busy) while a sync or page change on the source runs.",
         "operationId": "put_update_chunk",
         "parameters": [
           {
@@ -6567,6 +7253,30 @@
         "x-pat-denied": true
       }
     },
+    "/api/user/tokens/{token_id}/tool": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "The body carries the token's plaintext ``token``, which only the caller\nholds (it was just shown to them), and ``base_url``, where the API is\nreached. The tool gets the read endpoints the token may call, with the\ntoken sealed as their ``Authorization`` header.",
+        "operationId": "post_personal_access_token_tool",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Create an API tool that lets agents read this account with the token",
+        "tags": [
+          "tokens"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/webhooks/agents/{webhook_token}": {
       "get": {
         "description": "Webhook listener for agent events (GET). Uses URL query parameters as payload to trigger processing. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the original cached response and does not re-enqueue the task.",
@@ -6601,6 +7311,137 @@
           "agents"
         ],
         "x-pat-denied": true
+      }
+    },
+    "/api/website": {
+      "get": {
+        "description": "A Website source's config, sync schedule and last ingest report. entry_paths lists the tree paths of the pages a mode: page entry lists (by its address, or one that redirected to the page); the other pages were found by a site's crawl.",
+        "operationId": "get_website_settings",
+        "parameters": [
+          {
+            "description": "Source ID",
+            "in": "query",
+            "name": "id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "post": {
+        "description": "Save a Website source's entries, skips, link setting and sync schedule. Applies at the next sync. An address the save adds is checked as in /api/website/pages: one that isn't a web address (user:password@ credentials, a malformed host, a control character) is a 400 with code invalid_address, as is a new skip rule with a control character; a new path with one is a 400 with code invalid_config. What the source already stores is saved as it is.",
+        "operationId": "post_website_settings",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WebsiteSettingsModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/website/pages": {
+      "post": {
+        "description": "Add pages or sites to a Website source; they stay in every sync. Pages are fetched and appended now (mode append). A site rebuilds the source like a sync (mode sync), and so does a page whose host makes a single-host source span several hosts (every page moves under a host folder), or any add on a vector store that can't change single chunks. Only what the source doesn't list yet is added and fetched: a page it lists under any spelling, or a site with the same address and settings; when that leaves nothing, a 400 with code already_listed and nothing is queued. Refused with code page_limit when the source would hold more than WEB_MAX_PAGES pages; a 500 with code queue_failed when the entries were saved but the task couldn't be queued (the next sync fetches them).",
+        "operationId": "post_add_website_pages",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AddWebsitePagesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/website/refresh": {
+      "post": {
+        "description": "Re-fetch one page of a Website source now; if it can't be fetched, its content is kept. A page found by a site's crawl that now leads outside the site's scope or to a skipped address is removed, as the next sync would drop it (the task's failed event carries reason out_of_scope). A 500 with code queue_failed when the task couldn't be queued.",
+        "operationId": "post_refresh_website_page",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RefreshWebsitePageModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
+    "/api/website/remove": {
+      "post": {
+        "description": "Remove pages or a folder from a Website source. The config changes now: a page added by address leaves the list; one found by a site's crawl (or a whole folder) is skipped in later syncs. Their chunks and tree entries go in a background task (task_id), after any running sync; a 500 with code queue_failed when the config was saved but the task couldn't be queued. A page an older url, crawler or sitemap source stored without its address is matched by the address on its chunks; when none is found it is still removed, by its path, and the config is left as it is.",
+        "operationId": "post_remove_website_pages",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RemoveWebsitePagesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
       }
     },
     "/api/workflows": {
@@ -6726,6 +7567,10 @@
     {
       "description": "Answer related operations",
       "name": "answer"
+    },
+    {
+      "description": "What runs now and what is planned",
+      "name": "activity"
     },
     {
       "description": "Analytics and reporting operations",

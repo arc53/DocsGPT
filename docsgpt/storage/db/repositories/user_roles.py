@@ -37,22 +37,27 @@ class UserRolesRepository:
         return [row[0] for row in result.fetchall()]
 
     def list_admins(self) -> list[dict]:
-        """Return one row per user holding ``admin``, with earliest grant + sources."""
+        """Return one row per user holding ``admin``, with earliest grant + sources.
+
+        Each row carries the user's stored ``email`` (None when none is on file).
+        """
         result = self._conn.execute(
             text(
                 """
-                SELECT user_id,
-                       min(granted_at) AS granted_at,
-                       array_agg(DISTINCT source ORDER BY source) AS sources
-                FROM user_roles
-                WHERE role = 'admin'
-                GROUP BY user_id
-                ORDER BY min(granted_at)
+                SELECT r.user_id,
+                       min(r.granted_at) AS granted_at,
+                       array_agg(DISTINCT r.source ORDER BY r.source) AS sources,
+                       u.email
+                FROM user_roles r
+                LEFT JOIN users u ON u.user_id = r.user_id
+                WHERE r.role = 'admin'
+                GROUP BY r.user_id, u.email
+                ORDER BY min(r.granted_at)
                 """
             )
         )
         return [
-            {"user_id": row[0], "granted_at": row[1], "sources": list(row[2])}
+            {"user_id": row[0], "granted_at": row[1], "sources": list(row[2]), "email": row[3]}
             for row in result.fetchall()
         ]
 

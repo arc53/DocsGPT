@@ -2,6 +2,10 @@ import type { AnswerSource } from './chatCompanion';
 import { AnswerSegment } from './answerSegments';
 import { ToolCallsType } from './types';
 
+// Backend placeholder for a producer that ended before writing an answer.
+export const TERMINATED_RESPONSE_PLACEHOLDER =
+  'Response was terminated prior to completion, try regenerating.';
+
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
@@ -55,6 +59,25 @@ export interface Answer {
   schema?: object;
 }
 
+export interface WorkflowStep {
+  nodeId: string;
+  nodeType: string;
+  title: string;
+  status: 'running' | 'completed' | 'failed';
+  /** Client clock, in ms, for the elapsed and duration labels. */
+  startedAt?: number;
+  endedAt?: number;
+  /** One line about what the step did: its output, or the values it set. */
+  detail?: string;
+  error?: string;
+}
+
+export interface WorkflowProgress {
+  steps: WorkflowStep[];
+  /** How many steps the run takes; absent when a branch decides it. */
+  total?: number;
+}
+
 export interface Query {
   prompt: string;
   response?: string;
@@ -70,7 +93,7 @@ export interface Query {
   // or no longer fits, ``getAnswerSegments`` synthesizes one.
   segments?: AnswerSegment[];
   // Set when this answer came from a workflow agent run; lets the chat render
-  // the run's produced artifacts via WorkflowRunArtifacts.
+  // the run's produced artifacts as cards (useRunArtifacts).
   workflow_run_id?: string;
   error?: string;
   // Why the turn failed, when the backend says (``context_length_exceeded``);
@@ -89,6 +112,9 @@ export interface Query {
   structured?: boolean;
   schema?: object;
   research?: ResearchState;
+  // A workflow agent's steps as they run, so the chat can show which one is
+  // working; see ``workflowProgress``.
+  workflow?: WorkflowProgress;
   // WAL placeholder id; lets the client tail an in-flight stream.
   messageId?: string;
   messageStatus?: MessageStatus;

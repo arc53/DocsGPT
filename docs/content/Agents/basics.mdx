@@ -1,7 +1,7 @@
 ---
 title: Agent Basics
 description: Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-25
 ---
 
 import { Callout } from 'nextra/components';
@@ -42,6 +42,8 @@ The main set of instructions or system [prompt](/Agents/prompts) that defines th
 **Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information.
 
 **Agent type:** The underlying operational logic or architecture the agent uses. DocsGPT supports different types of agents, each suited for different kinds of tasks. The agent form offers **Classic** and **Research**; workflow agents are chosen when you create the agent, and the Agentic type is set through the API or an imported YAML file.
+
+**Context limit:** Under **Advanced settings**, the most tokens of conversation history, documents and tool results the agent sends to the model in one request. Leave it empty to use the model's full context window; set it for agents with long-running conversations, such as chat bots, to keep each message's cost down. See [Per-agent context limit](/Agents/context-compression#per-agent-context-limit).
 
 ## Understanding Agent Types
 
@@ -89,7 +91,7 @@ The legacy "ReAct" agent type is still accepted for backwards compatibility but 
 
 ## Navigating and Managing Agents in DocsGPT
 
-You can easily access and manage your agents through the DocsGPT user interface. Recently used agents appear at the top of the left sidebar for quick access. Below these, the "Manage Agents" button will take you to the main Agents page.
+You can easily access and manage your agents through the DocsGPT user interface. Recently used agents appear at the top of the left sidebar for quick access. The grid button next to the **Agents** heading (**Manage Agents**) takes you to the main Agents page. While you have no pinned or published agents, the sidebar shows a **Manage Agents** row instead of the list.
 
 ### Creating a New Agent
 

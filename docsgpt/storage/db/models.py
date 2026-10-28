@@ -22,6 +22,8 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     Column,
+    Computed,
+    Date,
     DateTime,
     ForeignKey,
     Float,
@@ -726,6 +728,9 @@ conversations_table = Table(
     Column("legacy_mongo_id", Text),
     # Set when a message arrived the owner has not seen; opening the chat clears it. See migration 0049.
     Column("unread_at", DateTime(timezone=True)),
+    Column("read_at", DateTime(timezone=True)),
+    # The latest turn's request ``passthrough`` values. See migration 0056.
+    Column("passthrough", JSONB),
 )
 
 conversation_messages_table = Table(
@@ -945,6 +950,97 @@ Index(
 Index("ix_guardrail_events_message", guardrail_events_table.c.message_id)
 Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
 
+# What the decision model said about stored conversations: one row per
+# conversation, message (NULL: the conversation itself) and label, written by
+# the analytics sweep. Reaction rows sit on the answer reacted to and name the
+# reply they read; both sides cascade. No user text. Migration 0057.
+conversation_labels_table = Table(
+    "conversation_labels",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False,
+    ),
+    Column("message_id", UUID(as_uuid=True), ForeignKey("conversation_messages.id", ondelete="CASCADE")),
+    Column("reply_message_id", UUID(as_uuid=True), ForeignKey("conversation_messages.id", ondelete="CASCADE")),
+    Column("user_id", Text, nullable=False),
+    Column("agent_id", UUID(as_uuid=True)),
+    # turn | reaction | message | conversation
+    Column("level", Text, nullable=False),
+    # a question key (answer_status, ..., tag:<id>), a derived label or _error
+    Column("label", Text, nullable=False),
+    Column("top", Text),
+    Column("p_top", Float),
+    Column("probabilities", JSONB, nullable=False),
+    Column("derived", Boolean, nullable=False, server_default="false"),
+    Column("lang", Text),
+    Column("options_hash", Text),
+    Column("schema_hash", Text, nullable=False),
+    Column("model_version", Text, nullable=False),
+    Column("occurred_at", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # what the row's state was built from, as the sweep read it: the message's (or the conversation's latest)
+    # updated_at and a hash of its content; NULL on derived rows
+    Column("source_updated_at", DateTime(timezone=True)),
+    Column("source_hash", Text),
+    # a resolution still pending (generated): what the sweep's pending pass looks for
+    Column(
+        "pending",
+        Boolean,
+        Computed(
+            "CASE WHEN label = 'resolution' THEN COALESCE((probabilities->>'pending')::float8, 0) > 0"
+            " ELSE false END",
+            persisted=True,
+        ),
+        nullable=False,
+    ),
+)
+
+Index(
+    "conversation_labels_target_uidx",
+    conversation_labels_table.c.conversation_id,
+    func.coalesce(conversation_labels_table.c.message_id, text("'00000000-0000-0000-0000-000000000000'::uuid")),
+    conversation_labels_table.c.label,
+    unique=True,
+)
+Index(
+    "conversation_labels_agent_time_idx",
+    conversation_labels_table.c.agent_id,
+    conversation_labels_table.c.occurred_at,
+)
+Index(
+    "conversation_labels_user_time_idx",
+    conversation_labels_table.c.user_id,
+    conversation_labels_table.c.occurred_at,
+)
+Index("conversation_labels_message_idx", conversation_labels_table.c.message_id)
+Index("conversation_labels_reply_idx", conversation_labels_table.c.reply_message_id)
+Index(
+    "conversation_labels_resolution_idx",
+    conversation_labels_table.c.occurred_at,
+    postgresql_where=text("pending"),
+)
+
+# Calls to the decision model per day, feature, mode, model version and status:
+# counters only, the denominators of the guardrail journal. Each process
+# upserts increments once a minute. Migration 0053.
+decision_usage_table = Table(
+    "decision_usage",
+    metadata,
+    Column("day", Date, nullable=False),
+    Column("feature", Text, nullable=False),
+    Column("mode", Text, nullable=False),
+    Column("model_version", Text, nullable=False, server_default=""),
+    Column("status", Text, nullable=False),
+    Column("calls", BigInteger, nullable=False, server_default="0"),
+    Column("states", BigInteger, nullable=False, server_default="0"),
+    Column("answered", BigInteger, nullable=False, server_default="0"),
+    Column("ms_total", Float, nullable=False, server_default="0"),
+    Column("queue_ms_total", Float, nullable=False, server_default="0"),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("day", "feature", "mode", "model_version", "status", name="decision_usage_pkey"),
+)
+
 # One execution trace per request (chat turn, continuation, scheduled or
 # webhook run, search, graph extraction): the span tree as a JSONB array,
 # rendered as a waterfall in the Logs UI. ``message_id`` cascades; deleting a
@@ -1116,6 +1212,8 @@ workflow_runs_table = Table(
     Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("ended_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+    # The step a running run is on (0053); kept after the run ends.
+    Column("progress", JSONB),
 )
 
 
@@ -1155,6 +1253,8 @@ schedules_table = Table(
     Column("consecutive_failure_count", Integer, nullable=False, server_default="0"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Set on create, a timing edit and a resume; never by the dispatcher (0053).
+    Column("plan_changed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 schedule_runs_table = Table(
@@ -1429,7 +1529,8 @@ conversation_wakes_table = Table(
     Column("claimed_at", DateTime(timezone=True)),
     Column("delivered_at", DateTime(timezone=True)),
     CheckConstraint(
-        "source IN ('job', 'monitor', 'monitor_paused', 'monitor_expired', 'trigger', 'approval', 'lost')",
+        "source IN ('job', 'monitor', 'monitor_paused', 'monitor_expired', 'trigger', 'approval', 'lost', "
+        "'continuation')",
         name="conversation_wakes_source_chk",
     ),
     CheckConstraint(

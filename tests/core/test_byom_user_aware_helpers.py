@@ -583,7 +583,7 @@ class TestSharedAgentResolvesOwnerBYOM:
         assert sp.model_id == owner_model["id"]
         assert sp.model_user_id == "owner"
 
-    def test_classic_rag_rephrase_resolves_owner_byom(self, pg_conn, monkeypatch):
+    def test_classic_rag_rephrase_resolves_owner_byom(self, pg_conn, monkeypatch, public_dns):
         """ClassicRAG must resolve a BYOM model_id through LLMCreator so
         the rephrase LLM gets the owner's api_key/base_url and dispatches
         the upstream model name (e.g. ``mistral-large-latest``) — not the
@@ -918,7 +918,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
 
         captured: dict = {}
 
-        def _fake_budget(model_id, user_id=None):
+        def _fake_budget(model_id, user_id=None, context_window_limit=None):
             captured["model_id"] = model_id
             captured["user_id"] = user_id
             return 6000
@@ -944,7 +944,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
 
         captured: dict = {}
 
-        def _fake_limit(history, model_id="docsgpt-local", user_id=None):
+        def _fake_limit(history, max_token_limit=None, model_id="docsgpt-local", user_id=None):
             captured["model_id"] = model_id
             captured["user_id"] = user_id
             return history
@@ -1204,7 +1204,7 @@ class TestNonAgentCallSitesUseUpstreamId:
 @pytest.mark.unit
 class TestAgentSendsUpstreamModelId:
     def test_llm_gen_passes_upstream_id_to_provider(
-        self, pg_conn, byom_model
+        self, pg_conn, byom_model, public_dns
     ):
         """End-to-end: ClassicAgent's _llm_gen must put the user's
         upstream model name (``mistral-large-latest``) in the call to

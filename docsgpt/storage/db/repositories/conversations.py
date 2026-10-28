@@ -23,7 +23,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import conversations_table, conversation_messages_table
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 
@@ -72,6 +72,7 @@ def _message_row_to_dict(row) -> dict:
 class ConversationsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
+        self.retired_message_ids: list[str] = []
 
     # ------------------------------------------------------------------
     # Reference translation helpers
@@ -168,6 +169,7 @@ class ConversationsRepository:
         shared_token: str | None = None,
         visibility: str = "listed",
         legacy_mongo_id: str | None = None,
+        passthrough: dict | None = None,
     ) -> dict:
         """Create a new conversation.
 
@@ -195,6 +197,8 @@ class ConversationsRepository:
             values["shared_token"] = shared_token
         if legacy_mongo_id:
             values["legacy_mongo_id"] = legacy_mongo_id
+        if passthrough:
+            values["passthrough"] = passthrough
 
         stmt = pg_insert(conversations_table).values(**values).returning(conversations_table)
         result = self._conn.execute(stmt)
@@ -334,17 +338,17 @@ class ConversationsRepository:
                 "  SELECT field AS match_field, txt AS match_text "
                 "  FROM ( "
                 "    SELECT 'name'::text AS field, c.name AS txt, 0 AS prio "
-                "    WHERE c.name ILIKE :pattern "
+                "    WHERE c.name ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'prompt'::text, m.prompt, 1 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.prompt ILIKE :pattern "
+                "      AND m.prompt ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'response'::text, m.response, 2 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.response ILIKE :pattern "
+                "      AND m.response ILIKE :pattern ESCAPE '\\' "
                 "  ) s "
                 "  ORDER BY prio "
                 "  LIMIT 1 "
@@ -355,7 +359,7 @@ class ConversationsRepository:
             ),
             {
                 "user_id": user_id,
-                "pattern": f"%{query}%",
+                "pattern": f"%{like_escape(query)}%",
                 "limit": limit,
             },
         )
@@ -953,6 +957,29 @@ class ConversationsRepository:
         )
         return _message_row_to_dict(result.fetchone())
 
+    def delete_in_flight_message(self, message_id: str) -> bool:
+        """Delete a message that is still being written; a finished one is left alone.
+
+        A continuation reserves its row before it runs and takes it back out
+        when it ends silent or fails; its journal goes with it (cascade).
+
+        Args:
+            message_id: The message.
+
+        Returns:
+            True when a row was deleted.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        result = self._conn.execute(
+            text(
+                "DELETE FROM conversation_messages WHERE id = CAST(:id AS uuid) "
+                "AND status IN ('pending', 'streaming')"
+            ),
+            {"id": message_id},
+        )
+        return (result.rowcount or 0) > 0
+
     def update_message_by_id(
         self, message_id: str, fields: dict,
         *, only_if_non_terminal: bool = False,
@@ -1304,16 +1331,12 @@ class ConversationsRepository:
         correctly reports ``NOT_FOUND``, not ``ALREADY_FAILED``. Do not rely on
         the stamp for anything but the ``RETURNING id`` log line.
 
-        What DOES survive is the ``superseded_messages`` tombstone written
-        below. A stream superseded less than ``STREAM_HEARTBEAT_INTERVAL``
-        before it finishes is never cancelled — the ticker in
-        ``api/answer/routes/base.py`` is the only thing that sets the cancel
-        flag, and it cannot be set from here because it is a ``threading.Event``
-        in another worker process — so the stream runs to completion and
-        finalizes into a row that is gone. Without the tombstone that logged an
-        ERROR ``answer_persist_failed``, identical to a genuinely orphaned
-        answer, every time a user hit retry on an answer shorter than the
-        heartbeat interval.
+        The ``superseded_messages`` tombstone survives the delete. The deleted
+        ids are left in ``retired_message_ids`` for the caller to pass to
+        ``cancel_streams`` once the transaction commits, so the owning process
+        stops at its next round or tool boundary. The tombstone distinguishes
+        late finalization from a genuinely orphaned answer while a provider
+        call is still returning.
 
         Args:
             conversation_id: Conversation whose tail is being trimmed.
@@ -1358,7 +1381,7 @@ class ConversationsRepository:
         # Tombstone before the delete, in the same transaction: the late
         # finalize usually runs in a different worker process, so the signal
         # has to be durable. No FK, or the CASCADE below would remove it.
-        self._conn.execute(
+        retired = self._conn.execute(
             text(
                 """
                 INSERT INTO superseded_messages (message_id, conversation_id)
@@ -1367,10 +1390,14 @@ class ConversationsRepository:
                  WHERE conversation_id = CAST(:conv_id AS uuid)
                    AND position > :pos
                 ON CONFLICT (message_id) DO NOTHING
+                RETURNING message_id
                 """
             ),
             {"conv_id": conversation_id, "pos": keep_up_to},
         )
+        # Include terminal rows: the reconciler may already have failed a
+        # still-running stream. Every deleted producer must see cancellation.
+        self.retired_message_ids = [str(row[0]) for row in retired]
         result = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages "
@@ -1426,6 +1453,19 @@ class ConversationsRepository:
             {"days": days},
         )
         return result.rowcount or 0
+
+    def set_passthrough(self, conversation_id: str, passthrough: dict | None) -> bool:
+        """Store the latest turn's ``passthrough`` values on a conversation; ``None`` clears them."""
+        if not looks_like_uuid(conversation_id):
+            return False
+        result = self._conn.execute(
+            text(
+                "UPDATE conversations SET passthrough = CAST(:passthrough AS jsonb) "
+                "WHERE id = CAST(:conv_id AS uuid)"
+            ),
+            {"conv_id": conversation_id, "passthrough": json.dumps(passthrough) if passthrough else None},
+        )
+        return result.rowcount > 0
 
     def set_feedback(
         self, conversation_id: str, position: int, feedback: dict | None,

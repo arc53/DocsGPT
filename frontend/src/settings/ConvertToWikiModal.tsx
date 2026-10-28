@@ -118,6 +118,10 @@ export default function ConvertToWikiModal({
       fail(t('settings.sources.wiki.convert.errors.forbidden'));
       return;
     }
+    if (start.status === 'unsupported') {
+      fail(t('settings.sources.wiki.unsupported'));
+      return;
+    }
     if (start.status === 'conflict') {
       fail(start.message ?? t('settings.sources.wiki.convert.errors.conflict'));
       return;

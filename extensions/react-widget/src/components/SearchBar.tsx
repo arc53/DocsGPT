@@ -18,7 +18,8 @@ import {
   Mic,
   Search,
 } from './icons';
-import { MicButton, VoiceWaveform } from './ComposerControls';
+import { MIC_TITLES, MicButton, VoiceWaveform } from './ComposerControls';
+import { I18nProvider, useMessages } from '../locale/context';
 import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useDictation } from '../hooks/useDictation';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
@@ -549,20 +550,32 @@ const measureDropdown = (field: HTMLElement): DropdownBox => {
   };
 };
 
-export const SearchBar = ({
+export const SearchBar = (props: SearchBarProps) => (
+  <I18nProvider locale={props.locale} translations={props.translations}>
+    <SearchBarInner {...props} />
+  </I18nProvider>
+);
+
+// Inside the provider, so its defaults and dictation read the resolved locale.
+const SearchBarInner = ({
   apiKey = '74039c6d-bff7-44ce-ae55-2973cbf13837',
   apiHost = 'https://gptcloud.arc53.com',
   theme = 'dark',
-  placeholder = 'Search or Ask AI...',
+  placeholder: placeholderProp,
   width = '256px',
-  buttonText = 'Search here',
+  buttonText: buttonTextProp,
   shape = 'pill',
   variant = 'modal',
   avatar,
   poweredBy = true,
   allowedFileExtensions,
   showMicButton,
+  passthrough,
+  onEvent,
 }: SearchBarProps) => {
+  const { locale, t } = useMessages();
+  const placeholder = placeholderProp ?? t('searchPlaceholder');
+  const buttonText = buttonTextProp ?? t('searchButton');
   const isDropdown = variant === 'dropdown';
   const [input, setInput] = React.useState<string>('');
   const [loading, setLoading] = React.useState<boolean>(false);
@@ -785,7 +798,7 @@ export const SearchBar = ({
   const webIndex = (result: Result) =>
     items.findIndex((item) => item.kind === 'result' && item.result === result);
 
-  const shortcut = browserOS === 'mac' ? '⌘K' : 'Ctrl K';
+  const shortcut = browserOS === 'mac' ? '⌘K' : `${t('ctrlKey')} K`;
 
   const comboboxProps = {
     role: 'combobox',
@@ -834,7 +847,7 @@ export const SearchBar = ({
         onClick={() => !dictation.isDictating && openWidget()}
       >
         <AgentAvatar src={avatar} size={24} fallback="person" />
-        <AskLabel>Ask the AI</AskLabel>
+        <AskLabel>{t('askTheAi')}</AskLabel>
         {query && <AskQuery>{query}</AskQuery>}
         {activeIndex === 0 && !isTouch && (
           <RowHint aria-hidden="true">
@@ -842,12 +855,10 @@ export const SearchBar = ({
           </RowHint>
         )}
       </AskRow>
-      {query && loading && <Status>Searching…</Status>}
-      {query && !loading && failed && (
-        <Status>Search didn&apos;t work. You can still ask the AI.</Status>
-      )}
+      {query && loading && <Status>{t('searching')}</Status>}
+      {query && !loading && failed && <Status>{t('searchFailed')}</Status>}
       {query && !loading && !failed && results.length === 0 && (
-        <Status>No results found</Status>
+        <Status>{t('noResults')}</Status>
       )}
       {!loading &&
         snippets.map(({ result, lines }, key) => {
@@ -905,7 +916,7 @@ export const SearchBar = ({
     <ThemeProvider theme={themes[theme]}>
       {/* The field is always on the page, so its face loads with it. */}
       <InterFontFace />
-      <Main>
+      <Main lang={locale}>
         <Container
           ref={containerRef}
           onBlur={(event) => {
@@ -944,11 +955,11 @@ export const SearchBar = ({
                   type="button"
                   $recording={dictation.state === 'recording'}
                   disabled={dictation.state === 'transcribing'}
-                  aria-label={
+                  aria-label={t(
                     dictation.state === 'recording'
-                      ? 'Stop recording'
-                      : 'Voice input'
-                  }
+                      ? MIC_TITLES.recording
+                      : MIC_TITLES.idle,
+                  )}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     setIsResultVisible(true);
@@ -1013,8 +1024,8 @@ export const SearchBar = ({
                       analyserRef={dictation.analyserRef}
                       label={
                         dictation.state === 'recording'
-                          ? 'Listening…'
-                          : 'Finishing…'
+                          ? t('listening')
+                          : t('finishing')
                       }
                       minHeight="48px"
                     />
@@ -1060,6 +1071,9 @@ export const SearchBar = ({
           size={'large'}
           allowedFileExtensions={allowedFileExtensions}
           showMicButton={showMicButton}
+          passthrough={passthrough}
+          onEvent={onEvent}
+          ephemeral
         />
       </Main>
     </ThemeProvider>

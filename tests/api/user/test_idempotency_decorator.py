@@ -669,7 +669,7 @@ class TestPoisonHook:
         assert result["success"] is False
         assert "poison-loop" in result["error"]
 
-    def test_reingest_source_task_keyless_runs_without_lockout(self, pg_conn):
+def test_reingest_source_task_keyless_runs_without_lockout(self, pg_conn):
         """Keyless reingest dispatches synthesize a per-operation guard key from
         the Celery task id instead of a static source_id key, preventing a 24-hour
         lockout between distinct operations while deduplicating retries of the same operation.
@@ -760,3 +760,57 @@ class TestPoisonHook:
         assert _row_for(pg_conn, "key-1") is not None
         assert _row_for(pg_conn, "key-2") is not None
 
+
+@pytest.mark.unit
+class TestBusySkipIsNotCached:
+    """A run skipped because another job held the source never ran: its key must stay free."""
+
+    def test_busy_skip_leaves_no_row_and_the_next_run_runs(self, pg_conn):
+        from docsgpt.api.user.idempotency import with_idempotency
+
+        outcomes = [{"status": "skipped", "reason": "busy"}, {"status": "completed"}]
+        runs = []
+
+        @with_idempotency(task_name="reingest_source_task")
+        def task(self, idempotency_key=None):
+            runs.append(1)
+            return outcomes[len(runs) - 1]
+
+        with _patch_decorator_db(pg_conn):
+            first = task(_fake_celery_self("t1"), idempotency_key="reingest-source:u:s")
+            assert _row_for(pg_conn, "reingest-source:u:s") is None
+            second = task(_fake_celery_self("t2"), idempotency_key="reingest-source:u:s")
+
+        assert first == {"status": "skipped", "reason": "busy"}
+        assert second == {"status": "completed"}
+        assert len(runs) == 2
+        assert _row_for(pg_conn, "reingest-source:u:s")[2] == "completed"
+
+    def test_repeated_busy_skips_never_trip_the_poison_guard(self, pg_conn):
+        from docsgpt.api.user.idempotency import MAX_TASK_ATTEMPTS, with_idempotency
+
+        @with_idempotency(task_name="thing")
+        def task(self, idempotency_key=None):
+            return {"status": "skipped", "reason": "busy"}
+
+        with _patch_decorator_db(pg_conn):
+            results = [task(_fake_celery_self(), idempotency_key="k-busy") for _ in range(MAX_TASK_ATTEMPTS + 2)]
+
+        assert all(r == {"status": "skipped", "reason": "busy"} for r in results)
+
+    def test_a_final_skip_is_still_cached(self, pg_conn):
+        from docsgpt.api.user.idempotency import with_idempotency
+
+        runs = []
+
+        @with_idempotency(task_name="thing")
+        def task(self, idempotency_key=None):
+            runs.append(1)
+            return {"status": "skipped", "reason": "gone"}
+
+        with _patch_decorator_db(pg_conn):
+            task(_fake_celery_self(), idempotency_key="k-gone")
+            task(_fake_celery_self(), idempotency_key="k-gone")
+
+        assert len(runs) == 1
+        assert _row_for(pg_conn, "k-gone")[2] == "completed"

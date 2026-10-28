@@ -22,6 +22,7 @@ graph through the same validation gate as the workflow API.
 from __future__ import annotations
 
 import copy
+import json
 import re
 from typing import Any, Optional
 
@@ -42,6 +43,7 @@ from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.core.model_utils import validate_model_id
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
+from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -676,22 +678,86 @@ def _serialize_workflow(conn, agent: dict, user: str):
     return block, tools, sources, model
 
 
-def _import_config(spec: dict) -> dict:
-    """Validate a spec's ``config`` through the same gate as the API.
+_ORIGIN_FIELDS = ("restrict_origins", "allowed_origins")
 
-    A YAML is hand-editable, so it must not be a way to install a control the
-    write path would have rejected. An invalid block is dropped rather than
-    failing the whole import, and the caller surfaces it as a warning.
-    """
+
+def _config_valid(raw) -> bool:
+    """Whether a file's ``config`` passes the API's validation as written."""
     from docsgpt.api.user.agents.routes import normalize_agent_config
 
     try:
-        return normalize_agent_config(spec.get("config")) or {}
+        normalize_agent_config(raw)
     except ValueError:
-        current_app.logger.warning(
-            "Dropping invalid guardrails config during agent import"
-        )
-        return {}
+        return False
+    return True
+
+
+def _valid_parts(raw: dict) -> dict:
+    """The settings of an invalid ``config`` that still validate, each on its own.
+
+    A setting that fails validation is left out, so it contributes nothing.
+    The origin policy is read leniently instead: a bad entry is dropped but a
+    restriction stays on, so a bad file can't open a key to any origin.
+    """
+    from docsgpt.api.user.agents.routes import normalize_agent_config
+    from docsgpt.guardrails.config import AgentConfig
+
+    parts: dict = {}
+    for key, value in raw.items():
+        if key in _ORIGIN_FIELDS:
+            continue
+        try:
+            parts[key] = normalize_agent_config({key: value})[key]
+        except (ValueError, KeyError):
+            continue
+    origins = {field: raw[field] for field in _ORIGIN_FIELDS if field in raw}
+    if origins:
+        policy = AgentConfig.parse(origins)
+        parts.update({field: copy.deepcopy(getattr(policy, field)) for field in origins})
+    return parts
+
+
+def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
+    """Validate a spec's ``config`` through the same gate as the API.
+
+    A YAML is hand-editable, so it must not be a way to install a control the
+    write path would have rejected. An invalid block does not fail the whole
+    import: the settings that still validate are kept (see ``_valid_parts``).
+
+    On an update, an origin setting the file does not state keeps the agent's
+    stored value, so a file exported before origins existed, or one with no
+    config, can't open the agent's key to any origin. A setting the file
+    states, ``restrict_origins: false`` included, is applied.
+
+    Args:
+        spec: The file's ``spec``.
+        current: The matched agent's stored config on an update, None on create.
+        warnings: Gets a note when the config is not imported as written.
+    """
+    from docsgpt.api.user.agents.routes import normalize_agent_config
+
+    raw = spec.get("config")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            pass
+    kept = {field: current[field] for field in _ORIGIN_FIELDS if field in (current or {})}
+    if (raw is None or raw == "") and kept:
+        raw = {}
+    if isinstance(raw, dict):
+        raw = {**{field: value for field, value in kept.items() if field not in raw}, **raw}
+    try:
+        return normalize_agent_config(raw) or {}
+    except ValueError as err:
+        reason = str(err)
+    if isinstance(raw, dict):
+        current_app.logger.warning("Dropping the invalid parts of an imported agent config")
+        warnings.append(f"Invalid config ({reason}); imported only the parts that are valid")
+        return _valid_parts(raw)
+    current_app.logger.warning("Ignoring an imported agent config that is not a mapping")
+    warnings.append("Config is not a mapping; it was not imported")
+    return _valid_parts(kept)
 
 
 def serialize_agent(conn, agent: dict, user: str) -> dict:
@@ -1601,7 +1667,9 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         "limited_token_mode": bool(_limit(spec, "limited_token_mode")),
         "limited_request_mode": bool(_limit(spec, "limited_request_mode")),
         "allow_system_prompt_override": bool(spec.get("allow_system_prompt_override")),
-        "config": _import_config(spec),
+        "config": _import_config(
+            spec, (agents_repo.get(exclude_id, user) or {}).get("config") if is_update else None, warnings,
+        ),
         "slug": slug,
     }
     orphaned_workflow_id: Optional[str] = None
@@ -1698,7 +1766,16 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
             }
         # Row vanished between resolve and write — fall through to create.
 
-    row = agents_repo.create(user, spec.get("name"), "draft", **{**authoritative, **optional})
+    # A new agent starts from the admin's default guardrails, under the file's
+    # own. Of a file config that failed validation, only the settings that
+    # validate count.
+    file_config = spec.get("config")
+    if not _config_valid(file_config):
+        file_config = authoritative["config"]
+    created_config = _import_config({"config": agent_defaults.seed(conn, file_config)}, None, [])
+    row = agents_repo.create(
+        user, spec.get("name"), "draft", **{**authoritative, **optional, "config": created_config}
+    )
     return {
         "agent_id": str(row["id"]),
         "action": "created",

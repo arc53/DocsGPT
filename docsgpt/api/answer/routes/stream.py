@@ -140,6 +140,7 @@ class StreamResource(Resource, BaseAnswerResource):
                             model_id=processor.model_id,
                             model_user_id=processor.model_user_id,
                             trace=processor.handoff_trace(),
+                            passthrough=processor.passthrough,
                             _continuation={
                                 "messages": messages,
                                 "tools_dict": tools_dict,
@@ -194,6 +195,7 @@ class StreamResource(Resource, BaseAnswerResource):
                         model_user_id=processor.model_user_id,
                         request_id=processor.request_id,
                         trace=processor.handoff_trace(),
+                        passthrough=processor.passthrough,
                     ),
                 ),
                 mimetype="text/event-stream",

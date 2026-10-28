@@ -10,19 +10,13 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from docsgpt.core.settings import settings
+from docsgpt.guardrails import floor as floor_store
 from docsgpt.guardrails.base import ScanContext
 from docsgpt.guardrails.config import AgentConfig, GuardrailsConfig
 from docsgpt.guardrails.engine import GuardrailEngine
-from docsgpt.guardrails.types import Action, StageDecision
+from docsgpt.guardrails.types import ACTION_RANK, StageDecision
 
 logger = logging.getLogger(__name__)
-
-# Higher wins when the floor and an agent disagree about the same control.
-_ACTION_RANK = {
-    Action.FLAG: 0,
-    Action.REDACT: 1,
-    Action.BLOCK: 2,
-}
 
 # Both modes scan every stage, so the merge is only about whether the floor
 # enforces.
@@ -37,25 +31,8 @@ def _merge_mode(agent_mode: str, floor_mode: str) -> str:
 
 
 def instance_floor() -> Optional[GuardrailsConfig]:
-    """The operator-set minimum, or None when unset/invalid."""
-    raw = settings.GUARDRAILS_FLOOR
-    if not raw:
-        return None
-    try:
-        floor = GuardrailsConfig.model_validate(raw)
-    except Exception:
-        logger.error(
-            "GUARDRAILS_FLOOR is invalid and is being ignored; agents run "
-            "without an instance floor until it is fixed"
-        )
-        return None
-    if not floor.enabled:
-        logger.warning(
-            'GUARDRAILS_FLOOR is set but "enabled" is false, so no floor is '
-            "applied; add \"enabled\": true to enforce it"
-        )
-        return None
-    return floor
+    """The floor every agent follows (Admin > Guardrails), or None when there is none."""
+    return floor_store.current()
 
 
 def merge_floor(agent: GuardrailsConfig, floor: Optional[GuardrailsConfig]) -> GuardrailsConfig:
@@ -88,7 +65,7 @@ def merge_floor(agent: GuardrailsConfig, floor: Optional[GuardrailsConfig]) -> G
             continue
         existing.enabled = True
         existing.settings = dict(control.settings)
-        if _ACTION_RANK.get(existing.action, 0) < _ACTION_RANK.get(control.action, 0):
+        if ACTION_RANK.get(existing.action, 0) < ACTION_RANK.get(control.action, 0):
             existing.action = control.action
     merged.controls = list(by_key.values())
     return merged
@@ -132,6 +109,7 @@ def _judge_factory(agent):
             ),
             agent_id=agent.agent_id,
             model_user_id=agent.model_user_id,
+            stateless=True,
         )
         llm._token_usage_source = "guardrail"
         llm._request_id = getattr(agent, "request_id", None)
@@ -178,6 +156,11 @@ class GuardrailRecorder:
             if not verdict.outcome.triggered and verdict.outcome.evaluated:
                 continue
             categories = verdict.outcome.categories or [None]
+            # A triggered item verdict is a row per item, so three withheld
+            # documents write three rows; items that could not be scored are
+            # one row per stage, or a cold cache would write one per document
+            # on every turn.
+            item_ref = verdict.item_ref if verdict.outcome.triggered else None
             for category in categories:
                 dedup_key = (
                     verdict.stage.value,
@@ -185,6 +168,7 @@ class GuardrailRecorder:
                     verdict.action.value,
                     category,
                     verdict.outcome.triggered,
+                    item_ref,
                 )
                 if dedup_key in self._seen:
                     continue
@@ -213,6 +197,7 @@ class GuardrailRecorder:
                             else None
                         ),
                         "detail": verdict.outcome.detail or verdict.outcome.error,
+                        "item_ref": item_ref,
                     }
                 )
         if self.log_context is not None:

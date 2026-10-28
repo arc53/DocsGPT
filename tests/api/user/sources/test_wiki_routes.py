@@ -392,6 +392,28 @@ class TestConvertSourceToWiki:
         assert cfg.kind == "wiki"
         assert cfg.retrieval.exposure == "agentic_tool"
 
+    def test_blank_source_conversion_clears_the_sync_schedule(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import ConvertSourceToWiki
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-convert-scheduled"
+        src = SourcesRepository(pg_conn).create(
+            "blank", user_id=user, type="url", directory_structure={},
+            sync_frequency="weekly",
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/wiki/convert", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ConvertSourceToWiki().post(sid)
+
+        assert response.status_code == 200
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert got["sync_frequency"] == "never"
+
     def test_fileful_source_enqueues_task(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import ConvertSourceToWiki
         from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -735,3 +757,77 @@ class TestWikiSettings:
             )
         assert response.status_code == 404
         assert response.json["success"] is False
+
+
+class TestAStoreWithoutChunkEditsRefusesWikis:
+    """A wiki re-embeds one page at a time; a store that can't (Elasticsearch) would keep stale chunks."""
+
+    @pytest.fixture(autouse=True)
+    def _no_chunk_edits(self, monkeypatch):
+        monkeypatch.setattr(
+            "docsgpt.vectorstore.vector_creator.VectorCreator.supports_chunk_edits",
+            classmethod(lambda cls, store: False),
+        )
+
+    def test_create_is_refused_before_any_row(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import CreateWikiSource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-wiki-es-create"
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.reembed_wiki_page.delay"
+        ) as mock_reembed, app.test_request_context(
+            "/api/sources/wiki", method="POST", json={"name": "W", "initial_content": "# Hi"}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = CreateWikiSource().post()
+
+        assert response.status_code == 400
+        assert response.json["code"] == "wiki_unsupported"
+        assert response.json["message"]
+        assert SourcesRepository(pg_conn).list_for_user(user) == []
+        mock_reembed.assert_not_called()
+
+    def test_a_page_edit_is_refused_before_the_page_changes(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.wiki_pages import WikiPagesRepository
+
+        user = "u-wiki-es-edit"
+        src = SourcesRepository(pg_conn).create("wiki", user_id=user, type="wiki", config={"kind": "wiki"})
+        sid = str(src["id"])
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.reembed_wiki_page.delay"
+        ) as mock_reembed, app.test_request_context(
+            f"/api/sources/{sid}/wiki/page", method="PUT", json={"path": "/notes.md", "content": "body"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = WikiPage().put(sid)
+
+        assert response.status_code == 400
+        assert response.json["code"] == "wiki_unsupported"
+        assert WikiPagesRepository(pg_conn).get_by_path(sid, "/notes.md") is None
+        mock_reembed.assert_not_called()
+
+    def test_conversion_is_refused_before_the_task(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import ConvertSourceToWiki
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-wiki-es-convert"
+        src = SourcesRepository(pg_conn).create(
+            "files", user_id=user, type="file", directory_structure={"a.md": {"type": "text/markdown"}},
+        )
+        sid = str(src["id"])
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.convert_source_to_wiki.delay"
+        ) as mock_convert, app.test_request_context(f"/api/sources/{sid}/wiki/convert", method="POST"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ConvertSourceToWiki().post(sid)
+
+        assert response.status_code == 400
+        assert response.json["code"] == "wiki_unsupported"
+        mock_convert.assert_not_called()
+        assert SourcesRepository(pg_conn).get_any(sid, user)["config"] in (None, {})

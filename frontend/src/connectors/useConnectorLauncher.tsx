@@ -12,7 +12,7 @@ import ConnectWizard, {
   type WizardMode,
 } from './ConnectWizard';
 import { loadConnectors } from './connectorsSlice';
-import { isMcpPreset } from './launchRules';
+import { connectsInWizard } from './launchRules';
 import type { ConnectorDefinition } from './types';
 
 export type LaunchOptions = {
@@ -23,7 +23,9 @@ export type LaunchOptions = {
   mcpServer?: Record<string, unknown>;
   /**
    * Why the wizard opens. `knowledge` (Add knowledge, Knowledge's Connect a
-   * service) starts with Sync into Knowledge on; otherwise it starts off.
+   * service) starts a connector with tools and sync (GitHub, Linear) with
+   * Sync into Knowledge on; otherwise off. A sync-only connector always
+   * starts on Sync content now.
    */
   purpose?: LaunchPurpose;
 };
@@ -103,7 +105,7 @@ export default function useConnectorLauncher({
   const launch = useCallback(
     async (connector: ConnectorDefinition, options: LaunchOptions = {}) => {
       mcpSaved.current = false;
-      if (isMcpPreset(connector)) {
+      if (connectsInWizard(connector)) {
         setActive({
           kind: 'wizard',
           connector,

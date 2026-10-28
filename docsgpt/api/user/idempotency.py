@@ -10,6 +10,7 @@ import uuid
 from typing import Any, Callable, Optional
 
 from celery.exceptions import Ignore, MaxRetriesExceededError
+from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -28,6 +29,11 @@ LEASE_HEARTBEAT_INTERVAL = 30
 # 10 × 60s ≈ 5 min of deferral before giving up on a held lease.
 LEASE_RETRY_MAX = 10
 
+# Skip reasons that mean the task's work never ran and should run when asked
+# again: another job held the source's index lock (``busy``). Such a result is
+# not cached; a per-source key would otherwise replay the skip for 24h.
+RETRYABLE_SKIP_REASONS = frozenset({"busy"})
+
 
 def with_idempotency(
     task_name: str,
@@ -44,7 +50,10 @@ def with_idempotency(
       - live lease held → retry(countdown=LEASE_TTL_SECONDS)
       - attempt_count > MAX_TASK_ATTEMPTS → poison alert; ``on_poison`` fires
     Success writes ``completed``; exceptions leave ``pending`` for
-    autoretry until the poison-loop guard trips.
+    autoretry until the poison-loop guard trips. A result saying the work
+    never ran (``{"status": "skipped", "reason": "busy"}``, see
+    :data:`RETRYABLE_SKIP_REASONS`) drops the row instead, so the same key
+    runs again when asked.
     """
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -137,7 +146,10 @@ def with_idempotency(
             )
             try:
                 result = fn(self, *args, idempotency_key=idempotency_key, **kwargs)
-                _finalize(key, result, status="completed")
+                if _is_retryable_skip(result):
+                    _forget_claim(key, owner_id)
+                else:
+                    _finalize(key, result, status="completed")
                 return result
             except Exception:
                 # Drop the lease so the next retry doesn't wait LEASE_TTL.
@@ -250,6 +262,47 @@ def _finalize(key: str, result_json: Any, *, status: str) -> None:
         logger.exception(
             "idempotency finalize failed for key=%s status=%s", key, status,
         )
+
+
+def _is_retryable_skip(result: Any) -> bool:
+    """Whether ``result`` reports a skip whose work never ran and may run later.
+
+    Args:
+        result: The task body's return value.
+
+    Returns:
+        True for ``{"status": "skipped", "reason": <a RETRYABLE_SKIP_REASONS member>}``.
+    """
+    return (
+        isinstance(result, dict)
+        and result.get("status") == "skipped"
+        and result.get("reason") in RETRYABLE_SKIP_REASONS
+    )
+
+
+def _forget_claim(key: str, owner_id: str) -> None:
+    """Best-effort delete of this run's pending row, so the key can run again.
+
+    Deleting rather than releasing the lease also resets ``attempt_count``
+    (a run that never started its work is not a failed attempt), and a
+    pending row would keep blocking a same-key ``claim_task`` at the HTTP
+    entry.
+
+    Args:
+        key: The idempotency key.
+        owner_id: This run's lease owner; another run's row is left alone.
+    """
+    try:
+        with db_session() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM task_dedup WHERE idempotency_key = :key "
+                    "AND lease_owner_id = :owner AND status = 'pending'"
+                ),
+                {"key": key, "owner": owner_id},
+            )
+    except Exception:
+        logger.exception("idempotency forget-claim failed for key=%s", key)
 
 
 def _release_lease(key: str, owner_id: str) -> None:

@@ -4,10 +4,11 @@ import logging
 import re
 import uuid
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.exc import IntegrityError
 
+from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.default_tools import (
     BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
@@ -40,6 +41,9 @@ from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
+
+# Stored for a call that ran but whose result a time limit stopped before the guardrail checked it.
+_RESULT_WITHHELD = "[Output withheld: the time limit stopped its guardrail check.]"
 
 #: ``user_tools.config`` key holding an api_tool's encrypted header /
 #: query-param values: ``{action: {section: {param: value}}}``, keyed by the
@@ -267,6 +271,50 @@ def sanitize_tool_result(value: Any) -> Any:
     return value
 
 
+def _scan_lines(value: Any, path: str, lines: List[str]) -> None:
+    """Append ``value``'s leaves to ``lines`` as ``path = value`` text.
+
+    A string leaf goes on the line after its ``path =``, verbatim: its
+    newlines and quotes stay real, so a pattern anchored on a line start or
+    stopped by a quote reads it as it reads plain text. ``=`` rather than
+    ``:`` keeps a key named ``system`` from reading as a fake turn. An empty
+    leaf (``None``, ``""``, ``{}``, ``[]``) still gets its ``path =`` line,
+    since its key is persisted with the result.
+    """
+    if value is None or (isinstance(value, (str, dict, list, tuple)) and not value):
+        if path:
+            lines.append(f"{path} =")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _scan_lines(item, f"{path}.{key}" if path else str(key), lines)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _scan_lines(item, path, lines)
+    elif isinstance(value, str):
+        lines.extend([f"{path} =", value] if path else [value])
+    else:
+        lines.append(f"{path} = {value}" if path else str(value))
+
+
+def _scan_text(result: Any) -> str:
+    """The text the ``tool_result`` guardrails read for ``result``.
+
+    Args:
+        result: A tool result, already sanitized.
+
+    Returns:
+        The string itself, a dict, list or tuple as one ``path = value`` line
+        per leaf (see ``_scan_lines``), or ``""`` for anything else.
+    """
+    if isinstance(result, str):
+        return result
+    if not isinstance(result, (dict, list, tuple)) or not result:
+        return ""
+    lines: List[str] = []
+    _scan_lines(result, "", lines)
+    return "\n".join(lines)
+
+
 def bound_result_full(text: str) -> str:
     """Cap the persisted full-result copy at ``RESULT_FULL_MAX_CHARS``."""
     if len(text) <= RESULT_FULL_MAX_CHARS:
@@ -432,6 +480,8 @@ def _record_proposed(
             )
         return inserted
     except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         if _note_missing_parent(message_id, exc):
             logger.warning(
                 "tool_call_attempts: parent message row %s is gone "
@@ -502,6 +552,8 @@ def _mark_executed(
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
             )
     except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         if _note_missing_parent(message_id, exc) or _is_missing_parent(message_id):
             logger.debug(
                 "tool_call_attempts executed write skipped for %s "
@@ -527,7 +579,9 @@ def _mark_failed(
             ToolCallAttemptsRepository(conn).mark_failed(
                 _journal_key(call_id, message_id), error, user_id=user_id
             )
-    except Exception:
+    except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         logger.exception("tool_call_attempts failed-write failed for %s", call_id)
 
 
@@ -684,6 +738,9 @@ class ToolExecutor:
         # (artifact_generator / code_executor) address artifacts by the
         # workflow run rather than a conversation.
         self.workflow_run_id: Optional[str] = None
+        # Set by the headless runner for a scheduled or webhook run with no
+        # conversation, so code_executor still gets a sandbox for the run.
+        self.run_scope_id: Optional[str] = None
         self.message_id: Optional[str] = None
         # The request's own (already user-scoped) chat attachments, stamped onto
         # sandbox tools so a referenced attachment can be lazily bridged to a
@@ -694,6 +751,10 @@ class ToolExecutor:
         # are final. Held here rather than in ``tools_dict``, which is saved
         # with a paused turn and would come back as a detached copy.
         self.citation_registry: Optional[List[Dict]] = None
+        # The agent's per-document retrieval screen (``BaseAgent._screen_docs``),
+        # handed to the search tools so each hit is screened as a retrieved
+        # document before it is formatted into their result.
+        self.retrieval_screen: Optional[Callable[[List[Dict]], List[Dict]]] = None
         # Images the last tool call returned for the model to see (references,
         # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
         # that call's tool message; ``images_shown`` counts them per turn.
@@ -822,7 +883,9 @@ class ToolExecutor:
         try:
             _row, access = resolve_holder_tool(conn, "workflow", holder, tool_id)
             reason = access.reason
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Could not tell why tool %s does not resolve", tool_id)
         log_stopped("workflow", holder, "tool", tool_id, reason)
 
@@ -1176,17 +1239,35 @@ class ToolExecutor:
         A tool result is untrusted third-party text on the same footing as a
         retrieved document, and it is a common exfiltration path for secrets
         that the calling API happened to echo back.
+
+        A structured result (``api_tool``, MCP, search tools) is scanned as
+        one ``path = value`` line per leaf (``_scan_text``). A clean one keeps
+        its shape; a redacted one becomes the masked text, so no half-masked
+        value survives inside it.
         """
         engine = getattr(self, "guardrail_engine", None)
         if engine is None or not engine.has_stage(GuardrailStage.TOOL_RESULT):
             return result
-        if not isinstance(result, str) or not result:
+        text = _scan_text(result)
+        if not text:
             return result
+        # A search tool's hits were screened one by one as retrieved documents
+        # (``retrieval_screen``); its result, which joins them, then gets only
+        # the whole-text controls, so the model check never scores them twice.
+        screened = (
+            tool_name in CITING_TOOLS
+            and self.retrieval_screen is not None
+            and bool(engine.config.controls_for(GuardrailStage.RETRIEVAL, item_level=True))
+        )
         try:
             engine.context.tool_name = tool_name
             engine.context.action_name = action_name
-            decision = engine.evaluate(result, GuardrailStage.TOOL_RESULT)
-        except Exception:
+            decision = engine.evaluate(
+                text, GuardrailStage.TOOL_RESULT, item_level=False if screened else None
+            )
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
             return result
         return resolve_tool_result(result, decision)
@@ -1201,7 +1282,9 @@ class ToolExecutor:
 
             try:
                 self._connections[key] = resolve_connection(tool_data, self.user)
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
                 logger.exception("connection resolution failed for tool %s", key)
                 self._connections[key] = None
         return self._connections[key]
@@ -1229,7 +1312,9 @@ class ToolExecutor:
 
                 try:
                     params = connection_parameters(resolved.row)
-                except Exception:
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     logger.exception("connection parameters failed for tool %s", key)
             self._connection_params[key] = params
         return self._connection_params[key]
@@ -1279,7 +1364,9 @@ class ToolExecutor:
         try:
             with db_readonly() as conn:
                 return UsersRepository(conn).emails_for([user_id]).get(user_id)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("owner name lookup failed")
             return None
 
@@ -1612,7 +1699,9 @@ class ToolExecutor:
                 user_id=self.user,
             )
             return tool.preview_decision(action_name, arguments)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception(
                 "remote_device preview_decision failed; defaulting to a forced prompt",
             )
@@ -1639,7 +1728,9 @@ class ToolExecutor:
             )
             requires_approval, _forced = tool.preview_decision(action_name, arguments)
             return requires_approval
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception(
                 "code_executor preview_decision failed; defaulting to a prompt",
             )
@@ -1715,6 +1806,9 @@ class ToolExecutor:
         is read from the ``tool_calls`` entry each branch of :meth:`_execute`
         appends, so the span matches what the conversation stores.
         """
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(self, "message_id", None))
         span = record_tool_span_start(call)
         recorded = len(self.tool_calls)
         try:
@@ -2078,6 +2172,8 @@ class ToolExecutor:
                 try:
                     value = tool.execute_action(action_name, **call_kwargs)
                 except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     if not known_secrets:
                         raise
                     message = secret_refs.redact(str(exc) or type(exc).__name__, known_secrets)
@@ -2114,12 +2210,11 @@ class ToolExecutor:
                 result = None if outcome.handed_off else outcome.value
             else:
                 result = _invoke()
-            if tool_data["name"] != "api_tool" and not (outcome and outcome.handed_off):
-                result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
             if proposed_ok:
+                # A time limit too: the call may have had side effects, so it must not read as never run.
                 _mark_failed(
-                    call_id, str(exc), message_id=self.message_id, user_id=self.user
+                    call_id, str(exc) or type(exc).__name__, message_id=self.message_id, user_id=self.user
                 )
             raise
 
@@ -2128,11 +2223,69 @@ class ToolExecutor:
                 yield from self._handed_off(tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome)
             )
 
+        def journal_executed(artifact_id: Optional[str] = None, stored: Optional[str] = None) -> str:
+            # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
+            exposed = self.exposed_secrets()
+            if stored is not None:
+                result_full = stored
+            else:
+                result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
+            # Tool side effect has run; flip the journal row so the
+            # message-finalize path can later confirm it. If the proposed
+            # write failed (DB outage), upsert a fresh row in ``executed`` so
+            # the reconciler still sees the side effect.
+            _mark_executed(
+                call_id,
+                result_full,
+                message_id=self.message_id,
+                artifact_id=artifact_id,
+                proposed_ok=proposed_ok,
+                tool_name=tool_data["name"],
+                action_name=action_name,
+                arguments=call_args,
+                tool_id=tool_data.get("id"),
+                user_id=self.user,
+                agent_id=self.agent_id,
+            )
+            return result_full
+
+        def keep_interrupted(
+            artifact_id: Optional[str] = None, stored: Optional[str] = None, call_status: Optional[str] = None
+        ) -> None:
+            """Journal a call a time limit cut after it ran as executed, and keep it in the turn's saved calls."""
+            result_full = journal_executed(artifact_id, stored)
+            tool_call_data["resolved_arguments"] = resolved_arguments
+            tool_call_data["result_full"] = result_full
+            tool_call_data["result"] = truncate_tool_result(result_full)
+            tool_call_data["status"] = call_status or status
+            self.tool_calls.append(tool_call_data)
+
+        if tool_data["name"] != "api_tool":
+            try:
+                result = self._collect_native_parts(tool, result, tool_call_data)
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    # Not screened yet, so unscreened output is never stored.
+                    keep_interrupted(stored=_RESULT_WITHHELD, call_status=result_status(result))
+                elif proposed_ok:
+                    _mark_failed(
+                        call_id, str(exc) or type(exc).__name__, message_id=self.message_id, user_id=self.user
+                    )
+                raise
+
         # Single fan-out point: from here ``result`` reaches the LLM copy,
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
         result = sanitize_tool_result(result)
-        result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
+        # Read before the scan: a redacted dict comes back as text.
+        status = result_status(result)
+        try:
+            result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                # Unscreened output is never stored.
+                keep_interrupted(stored=_RESULT_WITHHELD)
+            raise
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
 
@@ -2140,7 +2293,10 @@ class ToolExecutor:
         if callable(get_artifact_id):
             try:
                 artifact_id = get_artifact_id(action_name, **parameters)
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    keep_interrupted()
+                    raise
                 logger.exception(
                     "Failed to extract artifact_id from tool %s for action %s",
                     tool_data["name"],
@@ -2172,11 +2328,16 @@ class ToolExecutor:
                         # The version this call produced, so a later edit in the
                         # same turn cannot make this call's entry describe it.
                         **({"version": a["version"]} if isinstance(a.get("version"), int) else {}),
+                        # The name the chat's artifact card shows; the filename stays the download name.
+                        **({"title": a["title"]} if isinstance(a.get("title"), str) and a["title"].strip() else {}),
                     }
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")
                 ]
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    keep_interrupted(artifact_id or None)
+                    raise
                 logger.exception(
                     "Failed to extract artifacts from tool %s for action %s",
                     tool_data["name"],
@@ -2184,33 +2345,13 @@ class ToolExecutor:
                 )
             if artifacts:
                 tool_call_data["artifacts"] = artifacts
-        # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
-        exposed = self.exposed_secrets()
-        result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
+        result_full = journal_executed(artifact_id or None)
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
         tool_call_data["result"] = truncate_tool_result(result_full)
         # A tool that ran but reported failure in-band persists as ``error``,
         # not ``completed`` -- the model saw an error and will likely retry.
-        tool_call_data["status"] = result_status(result)
-
-        # Tool side effect has run; flip the journal row so the
-        # message-finalize path can later confirm it. If the proposed
-        # write failed (DB outage), upsert a fresh row in ``executed`` so
-        # the reconciler still sees the side effect.
-        _mark_executed(
-            call_id,
-            result_full,
-            message_id=self.message_id,
-            artifact_id=artifact_id or None,
-            proposed_ok=proposed_ok,
-            tool_name=tool_data["name"],
-            action_name=action_name,
-            arguments=call_args,
-            tool_id=tool_data.get("id"),
-            user_id=self.user,
-            agent_id=self.agent_id,
-        )
+        tool_call_data["status"] = status
 
         stream_tool_call_data = {
             key: value for key, value in tool_call_data.items() if key not in {"result_full", "resolved_arguments"}
@@ -2269,6 +2410,7 @@ class ToolExecutor:
                 cached_config["attachments"] = self.attachments or []
             if isinstance(cached_config, dict) and tool_data["name"] in CITING_TOOLS:
                 cached_config["citation_registry"] = self.citation_registry
+                cached_config["retrieval_screen"] = self.retrieval_screen
             return cached
 
         tm = ToolManager(config={})
@@ -2352,8 +2494,11 @@ class ToolExecutor:
             # ref (A1) and edit_artifact resolve against the workflow run.
             if self.workflow_run_id:
                 tool_config["workflow_run_id"] = self.workflow_run_id
+            elif self.run_scope_id and not self.conversation_id:
+                tool_config["run_scope_id"] = self.run_scope_id
             if tool_data["name"] in CITING_TOOLS:
                 tool_config["citation_registry"] = self.citation_registry
+                tool_config["retrieval_screen"] = self.retrieval_screen
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's
@@ -2487,7 +2632,9 @@ class ToolExecutor:
             return result
         try:
             parts = [p for p in drain() or [] if isinstance(p, dict)]
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Failed to collect images from tool %s", type(tool).__name__)
             return result
         from docsgpt.core.settings import settings

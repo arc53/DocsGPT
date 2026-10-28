@@ -1,17 +1,22 @@
 ---
 title: Analytics and Logs
-description: Read the Analytics charts, filter the Logs list and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
-lastUpdated: 2026-10-08
+description: Read the Analytics charts, the Insights figures and docs gaps, filter the Logs list by label and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
 
 # Analytics and Logs
 
-DocsGPT records every chat, API call, scheduled run and webhook run. You can review them in two places:
+DocsGPT records every chat, API call, scheduled run and webhook run. You review them under **Monitoring**, which has the same three pages for your account and for each agent:
 
-- **Settings → Analytics** and **Settings → Logs** (under **Insights**) cover your account.
-- An agent's **Logs** tab covers that one agent: the same charts, its guardrail activity and its logs.
+- **Analytics**: what was counted: messages, tokens, scheduled runs, tool calls and feedback.
+- **Insights**: what the [decision model](/Models/decision-model) estimates from the conversations themselves: whether answers helped, what people ask about, how they react, and the [docs gaps](#docs-gaps). Only while the operator has insights on.
+- **Logs**: every entry, newest first, with its execution trace. An agent's Logs also has its [guardrail activity](#guardrail-activity).
+
+For your account they are **Settings → Monitoring → Analytics**, **Insights** and **Logs**. For one agent, they are in the agent's sidebar under **Monitoring**, after **Overview** and **Schedules**. The workflow builder has no sidebar, so its toolbar lists the same pages as tabs: **Overview**, **Schedules**, **Analytics**, **Insights** and **Logs**.
+
+For a readable list of what your automations did (scheduled, webhook and workflow runs, background jobs and monitor wakes), use [Activity → History](/Using/activity#history); Logs stays the full technical record.
 
 For metrics and traces sent to an external backend such as Grafana or Honeycomb, see [Observability](/Deploying/Observability). Admins can see usage for the whole instance under **Admin → Usage** (see [Admin dashboard](/Deploying/Access-Control#admin-dashboard)).
 
@@ -19,16 +24,16 @@ For metrics and traces sent to an external backend such as Grafana or Honeycomb,
 
 | Page | Shows |
 | --- | --- |
-| **Settings → Analytics / Logs** | Traffic recorded under your account: your own chats, plus calls through your agents' API keys, webhooks and schedules. When a teammate chats with an agent you shared, that traffic is recorded under their account, not yours. |
-| An agent's **Logs** tab | All traffic on that agent, whoever sent it: your chats, teammates' chats, public links, the API key, webhooks and schedules. |
+| **Settings → Analytics / Insights / Logs** | Traffic recorded under your account: your own chats, plus calls through your agents' API keys, webhooks and schedules. When a teammate chats with an agent you shared, that traffic is recorded under their account, not yours. |
+| An agent's **Analytics**, **Insights** and **Logs** | All traffic on that agent, whoever sent it: your chats, teammates' chats, public links, the API key, webhooks and schedules. |
 
-The agent's **Logs** tab is open to the owner and editors. Viewers see it only when the owner turns on **Viewers can see logs** in the agent's share dialog (see [Teams and sharing](/Using/teams-and-sharing)).
+An agent's Monitoring pages are open to the owner and editors. Viewers see them only when the owner turns on **Viewers can see logs** in the agent's share dialog (see [Teams and sharing](/Using/teams-and-sharing)). Only those who can edit the agent see **Settings** and **Turn on** on its Insights page.
 
 ## Analytics
 
-Pick a period in the top-right corner: **Hour**, **24 Hours**, **7 Days**, **15 Days** or **30 Days** (the default). The last hour is charted per minute, the last 24 hours per hour, and longer periods per day. Times are in UTC.
+Pick a period with the select on the right of the page's toolbar: **Hour**, **24 hours**, **7 days**, **15 days** or **30 days** (the default). The Insights pages have the same select in the same place. The last hour is charted per minute, the last 24 hours per hour, and longer periods per day. Times are in UTC.
 
-If an admin has set a [usage quota](/Deploying/Usage-Quotas) for you, **Your usage quota** at the top shows your tokens and cost against the limit, split into **Chat without an agent** and **Through agents** when both apply, with the time it resets. It doesn't appear when you have no quota, or on an agent's tab.
+If an admin has set a [usage quota](/Deploying/Usage-Quotas) for you, **Your usage quota** at the top of **Settings → Analytics** shows your tokens and cost against the limit, split into **Chat without an agent** and **Through agents** when both apply, with the time it resets. It doesn't appear when you have no quota, or on an agent's Analytics.
 
 The summary cards total the period:
 
@@ -36,34 +41,215 @@ The summary cards total the period:
 | --- | --- |
 | **Messages** | Questions asked. |
 | **Tokens** | Every token billed by a model. Agents send the conversation again on every tool step, so chats that use many tools spend far more tokens than their messages suggest. |
-| **Tool Calls** | Tool actions run. |
-| **Run Success** | Completed scheduled runs as a share of completed plus failed runs. Skipped runs don't count. |
+| **Tool calls** | Tool actions run. |
+| **Run success** | Completed scheduled runs as a share of completed plus failed runs. Skipped runs don't count. |
 | **Feedback** | Thumbs up and thumbs down on answers. |
 
 The charts below them:
 
 - **Messages**: questions per interval.
-- **Token Usage**: **Prompt Tokens** and **Generated Tokens** per interval. **Group by** splits the bars **By model**, **By agent** (not on an agent's tab) or **By flow**, which is what the tokens were spent on, such as chat, a scheduled run or a graph build. More than five groups fold into **Other**. **Background tokens** adds tokens spent outside a user's request, such as title generation, history compression and query rephrasing; it's off by default.
-- **Scheduled Runs**: **Completed**, **Failed** and **Skipped** runs of [agent schedules](/Agents/schedules) per interval.
-- **Tool Usage**: **Successful** and **Failed** calls for each tool.
-- **User Feedback**: **Positive Feedback** and **Negative Feedback** per interval.
+- **Token usage**: **Prompt tokens** and **Generated tokens** per interval. **Group by** keeps the **Total** (the default) or splits the bars **By model**, **By agent** (not on an agent's Analytics) or **By flow**, which is what the tokens were spent on, such as chat, a scheduled run or a graph build. More than five groups fold into **Other**. **Background tokens** adds tokens spent outside a user's request, such as title generation, history compression and query rephrasing; it's off by default.
+- **Scheduled runs**: **Completed**, **Failed** and **Skipped** runs of [agent schedules](/Agents/schedules) per interval.
+- **Tool usage**: **Successful** and **Failed** calls for each tool.
+- **User feedback**: **Positive feedback** and **Negative feedback** per interval.
+
+A chart that fails to load says **Could not load this chart.** with **Retry**; the others still show.
+
+## Insights [#conversation-insights]
+
+Thumbs are rarely given. **Insights** estimate from the conversations themselves whether answers helped, what people ask about, how they react and where the docs fall short. The [decision model](/Models/decision-model) reads each stored conversation in the background and labels it with probabilities; nothing runs while someone is chatting. For your account, the figures are on **Settings → Insights**; for one agent, on the agent's **Insights** page. Both follow the period picked in their toolbar.
+
+Insights are off until the operator sets `DECISION_ANALYTICS_ENABLED=true` (see [Conversation analytics](/Models/decision-model#conversation-analytics)). Until then neither Insights page is listed, and a link to one, such as the [weekly docs-gap summary](#weekly-docs-gap-summary)'s, opens **Settings → Analytics**, or the agent's **Logs**. Once they are on, every agent's conversations are analyzed unless someone who can edit the agent turns off **Collect insights** in its [insights settings](#analytics-settings-for-an-agent).
+
+Messages are analyzed a few minutes after they are sent: a background sweep runs every 5 minutes and leaves a message a minute to settle. **Goal met** and topics that can overlap wait until a conversation has been quiet for 30 minutes. The sweep analyzes only the last 7 days (`ANALYTICS_BACKFILL_DAYS`), newest first, taking turns between agents so a busy one never holds up the others; an operator can analyze further back with [`docsgpt analytics backfill`](/Deploying/Background-Jobs#labelling-past-conversations).
+
+### Before there are figures
+
+Until it has figures, the page shows one message in place of the figures and the docs gaps, with what to do next:
+
+| Message | When |
+| --- | --- |
+| **Insights are off for this agent** | The agent's **Collect insights** is off. **Turn on** opens its [insights settings](#analytics-settings-for-an-agent) with **Collect insights** already switched on; **Save** turns it on. |
+| **No conversations in the last 30 days** (the period picked) | The period has no conversations. Insights appear a few minutes after each conversation. |
+| **Analyzing conversations**, with a progress bar and **12 of 40 answers analyzed · newest first** | Answers in the period are waiting for the sweep and fewer than 10 are done. |
+| **No recent conversations to analyze** | Every answer in the period is older than the 7 days the sweep analyzes, so none will be: "Insights cover conversations from 13 Oct onwards. Older ones aren't analyzed; an admin can backfill them." |
+
+Once there are figures, they open with **Estimated by an AI model from each conversation.** and a **Learn more** link to this section. While some answers in the period are still waiting, that line adds how many are done, such as **118 of 120 answers analyzed**. Answers older than the sweep's 7 days are left out of that count, since they will not be analyzed.
+
+An answer the model couldn't analyze is not tried again until the model or its questions change, so the page doesn't wait on it: the line adds how many, such as **1 answer couldn't be analyzed**, and a period where nothing else is or will be analyzed shows **No answers could be analyzed** in place of the figures.
+
+### The figures
+
+| Tile | What it estimates | Share of |
+| --- | --- | --- |
+| **Fully answered** | Answers that fully addressed the question. | Questions. Greetings, thanks and small talk are left out. |
+| **Goal met** | Conversations where the user got what they asked for, judged from the whole conversation once it has gone quiet. | Conversations |
+| **Frustrated** | Replies that show clear frustration. | Replies |
+| **Asked for a person** | Replies that ask for a person, a ticket or another way to reach you. | Replies |
+| **Docs gaps** | Answers that fell short because the docs don't cover the question or the search didn't find the page: an expected count, broken down under [Docs gaps](#docs-gaps). | Answers |
+
+Each tile's second line says how many items it is a share of, such as **of 81 questions**; hover a tile for what it counts. A figure from fewer than 10 items shows **—** and **Not enough data yet (6 so far)**.
+
+The panels below them:
+
+- **Answer status**: how questions were answered, split into **Fully answered**, **Partially answered**, **Said it didn't know** (in grey: declining when the docs have nothing is not a failure) and **Asked for details**. Greetings and small talk are not counted.
+- **How users replied**: the replies users sent after an answer, read two ways; switch between them above the chart. **Replies to answers** splits them into **Thanks or confirmed**, **Asked again** (the same question rephrased, a sign the answer didn't help), **Pushback or complaint** and **Moved on** (every other reply: a new question, a follow-up, or more detail on the user's own question). **Sentiment** splits the same replies into **Positive**, **Neutral** (factual; describing a problem is neutral) and **Negative**. Read it next to **User feedback** on Analytics: a large gap between thumbs-down and pushback is worth a look.
+- **Why not fully answered**: why answers fell short: **Docs gap** (the docs are missing or the search didn't find the page), **Out of scope** (not about your product), **Unsupported feature** (a feature request), **Needs account access or staff**, **Unclear question** or **Other**. Each answer counts by how likely it fell short, so a fully answered one adds almost nothing. The shares are of all analyzed answers.
+- **Request type**: **Troubleshooting**, **How-to**, **Fact lookup**, **Explanation**, **Comparison**, **Feature request**, **Account or billing**, **Small talk** or **Other**, as a share of user messages.
+- **Topics**: what people ask about, from the agent's [topics](#topics), across the full width in two halves. **One per question** is each message's topic as a share of messages, with **None of these topics** last; a short follow-up such as "and on Windows?" takes the topic of the question it follows, weighted by how likely it is a follow-up. **Can overlap** is the share of conversations each topic that can overlap applies to; a conversation can count under several, so these don't add up to 100%, and one with fewer than 10 analyzed conversations shows **—**. An agent with one kind only shows that kind across the panel. Topics are on an agent's Insights page only, since every agent has its own list. On an agent that asks no topic question and has no topics that can overlap, the panel is left out, and its editors see **No topics yet** with **Set up topics**, which opens its [insights settings](#analytics-settings-for-an-agent).
+
+**Answer status** and **How users replied** open with the period's figure: the share of questions fully answered, and the share of replies that asked again or pushed back (**Negative** on the **Sentiment** side). Under it, a strip shows the whole mix, and **Previous period: 63%** gives the same figure for the period of the same length just before, once that period has at least 10 items.
+
+Below the figure, each column is one interval of the period, such as a day. While intervals average fewer than 10 analyzed answers each, they are one step longer: weeks instead of days, days instead of hours, hours instead of minutes. Answer status stacks each interval's questions by outcome, so a quiet week is a short column. How users replied draws the helpful kind up from a zero line and the others down: **Thanks or confirmed** or **Positive** above, **Asked again** and **Pushback or complaint** or **Negative** below. **Moved on** and **Neutral** are in the strip only. Hover a column for each count and the number of items behind it. When fewer than three intervals hold 10 items each, there is no trend to draw, and the panel shows the period's mix as bars instead.
+
+**Why not fully answered**, **Request type** and **Topics** are bars, each with its share and the number of items above them, such as **Share of 31 answers**. A panel with fewer than 10 items says **Not enough data yet** (**Not enough replies yet** on How users replied).
+
+### How to read the figures
+
+Every figure is an estimate, never a count of labelled items:
+
+- **Rates are sums of probabilities.** An answer the model gives a 70% chance of being fully answered adds 0.7 to **Fully answered**, not 1. Nothing is cut off at a threshold, so an uncertain answer counts for what it is worth. Expected counts, such as docs gaps, are rounded to whole numbers.
+- **The page shows the figure alone.** Small samples are the risk, so a figure from fewer than 10 items is not shown at all. Some labels are less certain than others: **Why not fully answered**, **Request type** and **Replies to answers** are 10 to 15 points overconfident on real traffic, and topics that don't overlap are often wrong on short follow-up messages, so read trends from them, not numbers.
+- **The range is in the API and the CSV.** `/api/get_conversation_insights` gives each rate a `low` and `high`, and the docs-gap export gives each row's: a 95% interval for the sample size, widened by the label's measured calibration error (the last column below). Each label's `tier` in the API says how far to trust it: `dashboard`, `estimated` or `experimental`.
+
+How each label holds up was measured on 2,500 real conversations from Arc53's hosted DocsGPT, labelled again by an independent, much larger model, on an earlier checkpoint trained the same way as the released models. That measures how often the two models agree, not how often either is right.
+
+| Label | Tier (API) | Agreement on real conversations | Calibration error added to its range |
+| --- | --- | --- | --- |
+| Answer status | `dashboard` | 85.5% | ±4.4 points |
+| Goal met | `dashboard` | AUROC 0.89 | ±6.7 points |
+| Frustrated | `dashboard` | AUROC 0.99 | ±2.4 points |
+| Asked for a person | `dashboard` | AUROC 0.99 | ±1.4 points |
+| Sentiment | `dashboard` | 96.3% | ±2.9 points |
+| Topics that can overlap | `dashboard` | Not measured there; 98% balanced accuracy on definitions the model had never seen, in simulated conversations | ±2.2 points |
+| Why not fully answered | `estimated` | 61.5% | ±13.2 points |
+| Replies to answers | `estimated` | 65.9% | ±10 points |
+| Request type | `estimated` | 57.1% | ±15.4 points |
+| Topics, one per question | `experimental` | Not measured; about 52% on simulated conversations | ±10.2 points |
+
+For a yes/no label, AUROC is the chance that a random "yes" scores above a random "no": 1 is perfect, 0.5 is chance. The calibration errors are those of the default CPU model, `arc53/arc-decide-0.4b-v0.2`. The docs-gap figure is computed from why not fully answered, so its range carries that label's error.
+
+### Replies only
+
+**Frustrated**, **Asked for a person**, **Sentiment** and **Replies to answers** read the user's reply to an answer, so only a message sent after an answer has them. A conversation's first message never counts: a first message asking for a person is not caught (its request type may read **Account or billing**). Many conversations are a single question, so these figures are shares of replies, and their tiles say how many.
+
+### Languages
+
+The model was trained on English, Spanish, Chinese and Russian. In all four, sentiment, frustration, asking for a person, goal met and topics that can overlap are within 3 points of each other. Answer status, why not fully answered and topics that don't overlap are 4 to 9 points less accurate in Russian, and replies to answers were 14 points less accurate in Chinese. Other languages are analyzed too, with accuracy nobody has measured.
+
+When more than 10% of the messages behind one of those labels are in a language it reads less accurately, a note above the tiles gives the share and names the labels. A message's language is told from its script (Chinese, Cyrillic, Japanese, Korean) and, for Latin script, from common words: Spanish, French, German, Portuguese and Italian are told apart from English. A short message with too few common words counts as English.
+
+### What is not shown
+
+- A per-conversation resolution and experience score are stored for a later release and not shown yet.
+- No probability of a single message, and no count of messages "with" a label. The [Logs label filter](#labels-in-logs) is the one place a threshold is used.
+- Tool calls are not analyzed.
+
+### What is analyzed
+
+Every stored conversation, however it arrived: chats in the app, shared agents and public links, the API, the OpenAI-compatible API and the widget. Conversations without an agent get every label except topics. Not analyzed:
+
+- Requests sent with `persist: false`, and OpenAI-compatible tool-result rounds that carry no conversation: nothing is stored, so there is nothing to read.
+- Conversations of an agent whose **Collect insights** is off.
+- Messages older than the 7 days the sweep analyzes (`ANALYTICS_BACKFILL_DAYS`), unless an operator [backfills](/Deploying/Background-Jobs#labelling-past-conversations) them.
+- An answer that failed or was stopped is not analyzed as an answer; the question still counts for its request type.
+
+When the model or the questions' wording changes, recent conversations are analyzed again, newest first, and the count beside the intro shows the progress. Labels made with other wording are never mixed into the figures.
+
+## Docs gaps
+
+Below the figures, **Docs gaps** lists the questions the docs could not answer. Pick how to group them; the choice is kept on this device:
+
+- **Page** (the default): the page the search found closest, which is the first source of the answer. Answers that retrieved nothing are grouped under **No page retrieved**.
+- **Source**: the source that page belongs to.
+- **Topic**: the agent's topics that don't overlap, each gap split across them by their probabilities. Only on an agent that asks a topic question.
+
+A gap is an answer that was partially answered, said it didn't know or asked for details, and whose reason was that the docs are missing; its probability is the product of the two. The model can't yet tell docs that don't exist from a page the search didn't find, so both count as a **Docs gap**. A page that exists but is never retrieved shows up too, under whichever page was found instead.
+
+A page is listed by its title, without the ending every listed title shares (such as " | DocsGPT Docs"), or by its URL when it has no title. On **Settings → Insights**, where the pages come from every agent's sources, each page also names its source on a second line; on an agent's Insights, only when its pages come from more than one source.
+
+| Column | Shows |
+| --- | --- |
+| **Gaps** | The expected number of gaps. |
+| **Share of questions** | Gaps as a share of the group's answers, such as **20% of 31**. |
+| **Change** | Against the period of the same length just before: an up arrow and the rise (more gaps), a down arrow and the fall, **New**, or a minus sign for no change. Only the arrows are coloured: up red, down green. It shows **—** while the period before has no analyzed answers, as in the first weeks. |
+| **Example question** | The likeliest gap in the group. |
+
+Groups with less than half an expected gap are left out, and the table lists up to 25. Select a row for its figures (**Gaps**, **Share of questions** and **Previous period**) and up to five example questions: answers in the group that are a gap at even odds or better, likeliest first. Grouped by page, the panel names the page, then its source, then its URL. An example opens Logs on that conversation; **See every docs gap in Logs** opens Logs filtered to docs gaps.
+
+**Export CSV** downloads the table for the current grouping and period, with each page's full title and source, unrounded numbers, each figure's range (`gaps_low`, `gaps_high`, `share_low`, `share_high`) and the example questions. A cell that a spreadsheet would read as a formula is prefixed with `'`.
+
+## Insights settings for an agent [#analytics-settings-for-an-agent]
+
+While the operator has insights on, an agent's insights settings can be opened in three places. They are the same settings in each:
+
+- **Overview**: the **Insights** section of a classic agent's page, saved with the agent's **Save**. While insights are off, **Off** shows beside its title.
+- **Workflow details**: the **Insights** card in a workflow's details (select the workflow's name in the builder's toolbar, or **Edit details** in its ⋯ menu), saved with that panel's **Save**.
+- **Insights**: **Settings** in the toolbar of the agent's Insights page, and **Turn on** while insights are off. It opens a panel with its own **Cancel** and **Save** that saves only these settings, so it never saves unsaved edits made on Overview.
+
+Anyone who can edit the agent can change them, even where only the owner may change its guardrails: these settings are about reporting, not policy. On a server with insights off, the Overview section and the Workflow details card are hidden, except on an agent whose insights settings were already changed, where they say the settings have no effect yet.
+
+**Collect insights** is on by default. Turned off, the agent's conversations are no longer analyzed and its Insights page says so; labels made earlier stay until they expire, and the topics are kept. The rest of the settings hide while it is off.
+
+### Topics
+
+Topics are what people ask about. The list starts with the folders of the agent's sources, and you can add your own next to them.
+
+- **Folders**, marked **From sources**: a topic is the first folder of a page's path, skipping `docs`, `content`, `src` and `en`, with pages at the root under **overview**. The folder name is tidied (leading numbers dropped, dashes and underscores turned into spaces, lower case) and described as "Pages such as: " followed by up to five page titles taken from the file names. The model was trained on topics in that form; folder names alone sorted far worse. When an agent has several sources whose pages all sit at the root, each source is one topic, named after it. A name longer than 60 characters, such as a long uploaded file's, is cut to fit and ends in "…"; two that would cut to the same name get " 2", " 3" and so on. A folder's ⋯ menu edits it, which makes it your own topic that no longer follows the folder's pages, or hides it. **Show**, in the note under the list, brings hidden folders back. The folders appear once the agent is saved.
+- **Your own topics**: **Add topic** adds one, with a name (up to 60 characters, not used twice) and an optional description. A description makes sorting more accurate: name a few pages, features or words users write. Each topic's ⋯ menu edits or removes it.
+
+Each topic either sorts questions or can overlap:
+
+- **One per question**, the default: each user message goes into the one topic that fits it best, or **None of these topics**. Your own topics come first, and folders fill the rest of the 15 places (`ANALYTICS_MAX_TOPICS`), largest first; the note under the list names the folders that don't fit, whose questions count as **None of these topics**. With fewer than two, no topic question is asked, and the list says so. A description has up to 150 units, where a Chinese, Japanese or Korean character counts three. These topics group [docs gaps](#docs-gaps) and the weekly summary. They are tracked by name: a renamed topic starts a new trend line, and adding a removed name again brings its history back. A change applies to messages analyzed from then on; earlier messages keep the topic they were given.
+- **Can overlap other topics**, the switch in a topic's dialog: a yes/no check on each whole conversation, so several can apply, such as "Bug report" or "Pricing question", which cut across the docs. An agent has up to 20 (`ANALYTICS_MAX_OVERLAPPING_TOPICS`; at `0`, the switch is not offered), each with a description of up to 300 units; without one, the model reads the name alone. They are checked once a conversation has been quiet for 30 minutes. Adding or editing one checks the last 7 days of conversations again; editing keeps its history, and removing it, which asks first, hides its past results. Each is one more question per conversation, so on a CPU-only server keep them few (see [the cost](/Models/decision-model#conversation-analytics)).
+
+If an administrator lowers either limit below what an agent already has, its topics stay: the first ones added, up to the new limit, are used, and a note under the list says so. The agent still saves, but no more of that kind can be added until some are removed. At `0`, the switch still shows on a topic that can overlap, so you can turn it off and keep the topic for sorting questions.
+
+Once a topic can overlap, the list splits into **One per question** and **Can overlap**, the same halves as the Topics panel on Insights. Changing a topic from one kind to the other starts its figures over, and the dialog says so. A workflow has no sources of its own, so its list starts empty.
+
+### Weekly docs-gap summary
+
+Off by default. Once a week the agent's owner gets a notification titled with the agent's name, listing its top docs-gap topics with their expected counts (the total, for an agent without topics); **Open** goes to the docs gaps on the agent's **Insights** page. It shows as a toast while a DocsGPT tab is open and as a Web Push notification otherwise, when the operator has set Web Push up (see [Notifications](/Tools/background-jobs#notifications)). A week with less than half an expected gap sends nothing. Editors can turn it on, but only the owner receives it.
+
+## Labels and privacy
+
+- **Labels hold no text.** Each is a probability over fixed options, plus the owner's topic and tag names. The example questions under Docs gaps and in Logs are read from the conversation itself, as Logs always has.
+- **They stay off the conversation.** Labels live in their own table (`conversation_labels`), never in the message, so the chat user and shared conversations never see them.
+- **They go with the conversation.** Deleting a conversation deletes its labels, and editing or regenerating a message deletes the labels that read it. A daily task deletes labels older than 90 days (`ANALYTICS_RETENTION_DAYS`).
+- **The same people see them as see the logs**: on an agent's **Insights** and **Logs** its owner and editors, and viewers when **Viewers can see logs** is on; on **Settings → Insights**, the traffic recorded under your account, except your chats with an agent someone else owns, whose labels name that owner's topics and sources and are theirs to read; and personal access tokens with `analytics:read`, within the agents the token may reach.
+- **Where the text goes.** By default the model runs inside your DocsGPT stack and the text never leaves it. In [API mode](/Models/decision-model#api-mode) the conversation text goes to the decision server the operator configured, which should be one trusted with that data, as an LLM provider is.
+- **They describe people's messages**, such as a reply that was frustrated. Turn off **Collect insights** for an agent whose users should not be analyzed; the operator stops all analysis with `DECISION_ANALYTICS_ENABLED=false`.
 
 ## Logs
 
-The Logs list shows the newest entries first and loads more as you scroll. Narrow it with:
+On an agent's **Logs**, the list comes after [Guardrail activity](#guardrail-activity), under its own **Logs** heading; a link from Insights into Logs scrolls to it.
+
+The Logs list shows the newest entries first and loads more as you scroll. Runs are placed at the time they started. A run that is still going (an answer being written, a scheduled, webhook or workflow run) is listed as **running**, with how long it has run and, for a workflow, the step it is on. The list updates on its own: when the run ends, its finished entry replaces it. An answer being written also says who asked: **API** for calls through the API, **Shared** for someone using a shared agent, **Chat** for a chat in the app. Narrow the list with:
 
 - the level: **All levels**, **Info**, **Warning** or **Error**;
-- the event type: **Chat**, **Scheduled**, **Webhook**, **Workflow**, **System** (request errors), **Search** (the Search API and MCP `search_docs`) or **Graph build**;
+- the event type: **Chat**, **Scheduled**, **Webhook**, **Workflow**, **System** (request errors), **Search** (the Search API and MCP `search_docs`) or **Graph build**, or **Liked** and **Disliked** for answers rated that way;
+- the label, while [insights](#conversation-insights) are on: see [Labels in Logs](#labels-in-logs);
 - **Search logs...**, which matches the entry's summary, usually the question.
 
 Each row shows the time, the event type, the action, how long it took and the summary, colored by level. Click a row to expand it. What it holds depends on the type:
 
-- **Chat**: the agent, the answer, the tool calls and the sources used.
+- **Chat**: the agent, the visitor's like or dislike, the [passthrough](/Agents/prompts#3-passthrough---request-parameters) values the request carried (such as `user_id=emp-42`), the answer, the tool calls and the sources used. A rated answer also shows a thumb in its row.
 - **Scheduled**: the status, what triggered it, the error type, tokens, duration, the conversation the run wrote to, the instruction and the output.
 - **Workflow**: the workflow, its status, duration, steps and result.
 - **Webhook** and **System**: the endpoint and the error or activity details.
 
 **Copy** copies the entry as JSON, without its id, action, timestamp and event type.
+
+### Labels in Logs
+
+While insights are on, chat rows show their labels as chips, in text, coloured by meaning: amber where the answer needs attention (**Docs gap**, **Not fully answered**, **Asked for a person**), red where the user is upset (**Asked again or pushed back**, **Negative sentiment**, **Frustrated**), and grey for the agent's topics that can overlap. The label filter, next to the event type, lists the same labels, and on an agent's **Logs** every one of its topics under **Topics**: a topic that doesn't overlap filters to the turns about it, and one that can overlap to the turns of conversations it applies to. On an agent whose **Collect insights** is off there is no label filter, unless a link opened Logs with one.
+
+A row has a label when the model gives it even odds or better (`ANALYTICS_FILTER_MIN_PROBABILITY`, 0.5), so chips and the filter are wrong now and then, both ways: use them to find conversations, and the [insights](#how-to-read-the-figures), which use no threshold, to count them.
+
+- **Asked again or pushed back** means the user asked the same question again, pushed back or complained; **Negative sentiment**, that the reply's tone was negative. They, **Frustrated** and **Asked for a person** sit on the row of the user message that showed them, the reply to the answer before.
+- **Docs gap** takes the place of **Not fully answered** on the same row, since a gap is one kind of it, and **Frustrated** takes the place of **Negative sentiment**.
+- A row shows up to three chips, and **+2** for the rest.
+- An example question under [Docs gaps](#docs-gaps) opens Logs on its conversation, shown as a **Conversation** chip in the filter row. Remove the chip to see every conversation again.
 
 ## Execution traces
 
@@ -75,7 +261,7 @@ Traces keep short previews, not full prompts, and are deleted after 30 days by d
 
 ## Guardrail activity
 
-An agent's **Logs** tab also has **Guardrail activity**: every [guardrail](/Agents/guardrails) check that blocked, redacted or flagged content on that agent, and every check that couldn't run. Filter it by check and outcome, and choose how many days to show.
+An agent's **Logs** opens with **Guardrail activity**: every [guardrail](/Agents/guardrails) check that blocked, redacted or flagged content on that agent, and every check that couldn't run. Filter it by check and outcome, and choose how many days to show.
 
 <Callout type="info">
 **Not evaluated** means the check timed out or failed, so the content was never inspected. It doesn't mean the content was clean.
@@ -83,4 +269,26 @@ An agent's **Logs** tab also has **Guardrail activity**: every [guardrail](/Agen
 
 ## API
 
-The same data is available over the API, scoped the same way, with an agent's id as `api_key_id` to limit it to that agent: `POST /api/get_message_analytics`, `/api/get_token_analytics`, `/api/get_feedback_analytics`, `/api/get_tool_analytics`, `/api/get_schedule_analytics` and `/api/get_user_logs`, and `GET /api/traces`. A [personal access token](/API/personal-access-tokens) needs the `analytics:read` scope. See the [REST API reference](/API/reference).
+The same data is available over the API, scoped the same way, with an agent's id as `api_key_id` to limit it to that agent: `POST /api/get_message_analytics`, `/api/get_token_analytics`, `/api/get_feedback_analytics`, `/api/get_tool_analytics`, `/api/get_schedule_analytics`, `/api/get_conversation_insights`, `/api/get_docs_gaps` and `/api/get_user_logs`, and `GET /api/traces`. A [personal access token](/API/personal-access-tokens) needs the `analytics:read` scope. See the [REST API reference](/API/reference).
+
+`/api/get_conversation_insights` returns `available` (the operator's switch is on), `enabled` (and, with an agent, the agent's), `backfill_days` and `labelling_from` (how far back the sweep analyzes), `coverage` (turns, replies and conversations in the period against how many are labelled, with the unlabelled turns split into `unlabelled_recent_turns`, still to be analyzed, and `unlabelled_older_turns`, older than `labelling_from`, and `failed_turns`, answers the model could not analyze), `languages`, `language_warnings`, with an agent its `one_pick` (the options of its topic question, empty when it asks none) and `overlapping` (its topics that can overlap, as `id` and `name`, with totals under `tag:<id>`), and `totals` and `series` per label, with the label's `tier` and each option's `expected` count and its `rate`, `low` and `high`. `series` is in `bucket_unit` (`minute`, `hour`, `day` or `week`: the filter's own unit, or the next coarser one while its intervals average fewer than 10 analyzed answers); a week is named by its first day in the period and carries its last as `bucket_end`. `previous` holds the `answer_status`, `reaction` and `sentiment` totals over the period of the same length just before. `/api/get_docs_gaps` takes `group_by` (`page`, `source` or `topic`) and `limit` (1 to 50, 25 by default), and returns `previous_labelled` (the analyzed answers in the period before, `0` while it has none) and the table's rows with `key`, `name`, `source` (by page, the source's name), `expected_gaps`, `turns`, `rate`, `low`, `high`, `previous_expected` and up to five `examples`. `GET /api/analytics/topic_folders?agent_id=` returns the folders of the agent's sources, largest first, as the list shows them; it needs edit access to the agent and, for a token, `agents:read`. `GET /api/analytics/topics?agent_id=` returns every topic the agent's conversations are labelled with, each with the `label` that filters Logs by it; it needs access to the agent's logs and, for a token, `analytics:read`. Topics are reported for an agent only: on the account's figures, `totals` has no `topic_effective`.
+
+`/api/get_user_logs` takes the list's filters and a few more. Chat rows carry `conversation_id`, `passthrough`, `feedback` (`{"text": "like" | "dislike", "timestamp"}`) and `labels` (the chip keys, such as `["docs_gap", "frustrated", "tag:a1b2c3d4"]`, empty when none), and the response's `tag_names` names the topics that can overlap on the page (`{"a1b2c3d4": "Pricing question"}`):
+
+| Field | Filters to |
+| --- | --- |
+| `conversation_id` | The turns of one conversation, and the scheduled runs that wrote to it. |
+| `passthrough` | Chat turns whose passthrough values match every given key, compared as text: `{"user_id": "emp-42"}`. Up to 8 keys. |
+| `feedback` | `like` or `dislike`: chat turns rated that way. |
+| `label` | `not_answered`, `docs_gap`, `frustrated`, `asks_human`, `negative_reaction`, `negative_sentiment`, `tag:<id>` (a topic that can overlap, on the turn's conversation) or `topic:<name>` (the turn's own topic): chat turns with that label at even odds or better. Any other value is a 400. |
+| `date_from`, `date_to` | Entries at or after `date_from` and before `date_to`, as ISO 8601 moments. A moment without a time zone is UTC. |
+
+## Let an agent review the logs
+
+An agent can read these logs through an API tool, for example to report the most common complaints every morning:
+
+1. Create a [personal access token](/API/personal-access-tokens) with `analytics:read`, plus `conversations:read` if the agent should open whole conversations and `agents:read` if it should look up agent ids. Leave it unrestricted: a token limited to some agents can't read logs.
+2. In **Token created**, select **Create tool for agents**. This adds an API tool named **DocsGPT API (*token name*)** with the endpoints the token can read: `list_agents`, `get_logs`, `get_feedback_counts`, `get_message_counts`, `get_conversation` and `get_trace`. The token is stored, encrypted, as the tool's `Authorization` header.
+3. Add the tool to an agent, give it a [schedule](/Agents/schedules) such as "Read yesterday's disliked answers of the Support bot and list the three most common problems", and a tool to report through, such as Telegram or an MCP server for your issue tracker.
+
+The tool calls the API at the address this web app uses. Agent tools can't call `localhost` or private IP addresses, so on an instance reached at such an address the button reports that agents can't reach it and creates nothing. To avoid reporting the same problem twice, have the agent keep notes of what it reported with the memory tool.

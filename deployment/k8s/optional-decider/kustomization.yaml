@@ -1,0 +1,52 @@
+# Opt-in: the decision model in a Deployment of its own (docsgpt-decider), which
+# the API and the worker call at docsgpt-decider-service, instead of in the API
+# process. Turn it on by uncommenting `components:` in ../kustomization.yaml and
+# re-applying with `kubectl apply -k deployment/k8s/`. To turn it off again,
+# comment it out, re-apply, and delete what it created:
+#   kubectl delete deployment/docsgpt-decider service/docsgpt-decider-service pvc/docsgpt-decision-models
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - decider-deploy.yaml
+  - decider-service.yaml
+
+# The address, and the key the decider expects (INTERNAL_KEY). Only this component sends
+# INTERNAL_KEY as DECISION_KEY: a server set in docsgpt-secrets gets the DECISION_KEY set there.
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: docsgpt-api
+      spec:
+        template:
+          spec:
+            containers:
+            - name: docsgpt-api
+              env:
+              - name: DECISION_BASE_URL
+                value: "http://docsgpt-decider-service:7095"
+              - name: DECISION_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: docsgpt-secrets
+                    key: INTERNAL_KEY
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: docsgpt-worker
+      spec:
+        template:
+          spec:
+            containers:
+            - name: docsgpt-worker
+              env:
+              - name: DECISION_BASE_URL
+                value: "http://docsgpt-decider-service:7095"
+              - name: DECISION_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: docsgpt-secrets
+                    key: INTERNAL_KEY

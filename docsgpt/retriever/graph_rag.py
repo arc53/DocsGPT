@@ -186,9 +186,11 @@ def _personalized_pagerank(
 class GraphRAGRetriever(BaseRetriever):
     """Per-source PPR retriever; falls back to ClassicRAG when a source has no graph."""
 
-    # Set by the Dispatcher (see ClassicRAG.base_chunks); forwarded to the inner
-    # ClassicRAG on the fallback path.
+    # Set by the Dispatcher (see ClassicRAG.base_chunks, candidate_k and
+    # candidate_tokens); forwarded to the inner ClassicRAG on the fallback path.
     base_chunks = None
+    candidate_k = None
+    candidate_tokens = None
 
     def __init__(
         self,
@@ -233,6 +235,11 @@ class GraphRAGRetriever(BaseRetriever):
         self.doc_token_limit = doc_token_limit
         self.vectorstores = self._classic.vectorstores
         self.per_source_retrieval = {}
+
+    @property
+    def search_query(self) -> str:
+        """The query this retrieval searched with (see ``ClassicRAG.search_query``)."""
+        return self._classic.search_query
 
     def _embed_query(self, question: str) -> List[float]:
         embedding = get_embeddings()
@@ -577,15 +584,34 @@ class GraphRAGRetriever(BaseRetriever):
         token_budget = max(int(self.doc_token_limit * 0.9), 100)
         cumulative_tokens = 0
         source_top_k = self._source_top_k(source_id)
+        # A rerank pool keeps more of the ranked candidates beside the usual
+        # selection (see ClassicRAG._get_data); the ranking itself is unchanged,
+        # so the pool is what the graph already ranked.
+        pooled = self.candidate_k is not None
+        pool_k = max(source_top_k, self.candidate_k // max(1, len(self.vectorstores))) if pooled else 0
+        pool_budget = max(int(max(self.doc_token_limit, self.candidate_tokens or 0) * 0.9), 100)
+        pool_tokens = 0
+        selected = 0
+        in_selection, in_pool = True, pooled
         for text, metadata in candidates:
-            if len(docs) >= source_top_k:
+            in_selection = in_selection and selected < source_top_k
+            in_pool = in_pool and len(docs) < pool_k
+            if not in_selection and not in_pool:
                 break
             labels = labels_from_metadata(metadata, text, source_id)
             doc_tokens = num_tokens_from_string(f"{labels['filename']}\n{text}")
-            if cumulative_tokens + doc_tokens >= token_budget:
+            in_selection = in_selection and cumulative_tokens + doc_tokens < token_budget
+            in_pool = in_pool and pool_tokens + doc_tokens < pool_budget
+            if not in_selection and not in_pool:
                 break
-            docs.append({"text": text, **labels, **self._connector_labels.for_source(source_id)})
-            cumulative_tokens += doc_tokens
+            doc = {"text": text, **labels, **self._connector_labels.for_source(source_id, metadata)}
+            if pooled:
+                doc["_base"] = in_selection
+                pool_tokens += doc_tokens
+            docs.append(doc)
+            if in_selection:
+                cumulative_tokens += doc_tokens
+                selected += 1
         return docs
 
     def _classic_for_sources(self, source_ids) -> List[Dict[str, Any]]:
@@ -604,6 +630,7 @@ class GraphRAGRetriever(BaseRetriever):
         original = self._classic.vectorstores
         original_overrides = self._classic.per_source_retrieval
         original_base = self._classic.base_chunks
+        original_pool = (self._classic.candidate_k, self._classic.candidate_tokens)
         try:
             self._classic.vectorstores = list(source_ids)
             self._classic.per_source_retrieval = {
@@ -612,11 +639,14 @@ class GraphRAGRetriever(BaseRetriever):
             # The Dispatcher sets these on *this* object; the inner retriever is
             # the one that reads them.
             self._classic.base_chunks = self.base_chunks
+            self._classic.candidate_k = self.candidate_k
+            self._classic.candidate_tokens = self.candidate_tokens
             return self._classic._get_data()
         finally:
             self._classic.vectorstores = original
             self._classic.per_source_retrieval = original_overrides
             self._classic.base_chunks = original_base
+            self._classic.candidate_k, self._classic.candidate_tokens = original_pool
 
     def _classic_for_source(self, source_id) -> List[Dict[str, Any]]:
         """Retrieve one source through the batched classic path."""

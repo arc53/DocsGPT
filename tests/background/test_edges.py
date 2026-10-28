@@ -411,6 +411,23 @@ class TestContinuationEdges:
         assert captured["conversation_id"] == "c"
         assert captured["query"].rstrip().endswith("NO_REPLY.")
 
+    @pytest.mark.parametrize("agent_type, bounded", [("classic", True), ("workflow", False)])
+    def test_only_agents_that_can_defer_run_under_a_round_budget(self, monkeypatch, agent_type, bounded):
+        from docsgpt.core.run_budget import remaining_seconds
+
+        seen = {}
+
+        def fake_headless(config, query, **kwargs):
+            seen["remaining"] = remaining_seconds()
+            return {"answer": "ok"}
+
+        monkeypatch.setattr("docsgpt.agents.headless_runner.run_agent_headless", fake_headless)
+        monkeypatch.setattr(continuation, "db_readonly", MagicMock())
+        monkeypatch.setattr(continuation, "_agent_config", lambda *a: {"agent_type": agent_type, "id": None})
+        continuation._run_turn({"id": "c", "user_id": "u1", "agent_id": None}, [], [{"source": "job"}],
+                               message_id="m")
+        assert (seen["remaining"] is not None) is bounded
+
     def test_the_turn_needs_its_agent(self, monkeypatch):
         monkeypatch.setattr(continuation, "db_readonly", MagicMock())
         monkeypatch.setattr(continuation, "_agent_config", lambda *a: None)

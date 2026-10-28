@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next';
+import { formatCount, intlLocale } from '../../utils/dateTimeUtils';
 import type { Schedule } from '../types/schedule';
 
 export type ScheduleFrequency =
@@ -114,20 +115,30 @@ export function buildRunAtUtc(
   const year = Number(dm[1]);
   const month = clamp(Number(dm[2]), 1, 12);
   const day = clamp(Number(dm[3]), 1, 31);
-  // Compute UTC offset of the chosen tz at the chosen wall-clock instant by
-  // formatting an interim UTC date and reading back the tz parts.
+  // Start with the wall-clock fields interpreted as UTC, then resolve the
+  // timezone offset at the resulting instant (which may cross a DST change).
   const guess = Date.UTC(year, month - 1, day, hour, minute, 0);
-  const parts = formatInTimeZone(guess, timezone);
-  const wallUtc = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    0,
-  );
-  const offset = wallUtc - guess;
-  return new Date(guess - offset).toISOString();
+  const wallAt = (instant: number): number => {
+    const parts = formatInTimeZone(instant, timezone);
+    return Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      0,
+    );
+  };
+  const candidate = guess - (wallAt(guess) - guess);
+  const candidateWall = wallAt(candidate);
+  if (candidateWall === guess) return new Date(candidate).toISOString();
+
+  const corrected = candidate + (guess - candidateWall);
+  if (wallAt(corrected) === guess) return new Date(corrected).toISOString();
+
+  // A skipped spring-forward time has no matching instant; roll forward to
+  // the next valid local time rather than moving it back before the gap.
+  return new Date(Math.max(candidate, corrected)).toISOString();
 }
 
 type TzParts = {
@@ -248,14 +259,15 @@ export function parseCron(expression: string): ParsedCron | null {
   // weekly: * dom, * mon, explicit dow (single value)
   if (dom === '*' && mon === '*' && dow !== '*' && !dow.includes(',')) {
     const d = Number(dow);
-    if (!Number.isFinite(d)) return null;
+    if (!Number.isInteger(d) || d < 0 || d > 7) return null;
     return {
       frequency: 'weekly',
       minute: m,
       hour: h,
       dom: null,
       mon: null,
-      dow: d,
+      // Cron writes Sunday as 0 or 7; the form's days run 0-6.
+      dow: d % 7,
     };
   }
   // daily: * dom, * mon, * dow
@@ -328,6 +340,149 @@ const MONTH_KEYS = [
 // Cron text is plain text: React escapes on render.
 const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
 
+const DOW_NAMES: Record<string, number> = {
+  sun: 0,
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+  sat: 6,
+};
+
+/** A day-of-week field as a set of 0–6 (Sunday = 0), or null when unreadable. */
+function parseDays(field: string): Set<number> | null {
+  if (field === '*') return new Set([0, 1, 2, 3, 4, 5, 6]);
+  const value = (token: string): number | null => {
+    const lower = token.toLowerCase();
+    if (lower in DOW_NAMES) return DOW_NAMES[lower];
+    if (!/^\d$/.test(token)) return null;
+    const n = Number(token);
+    return n === 7 ? 0 : n <= 6 ? n : null;
+  };
+  const days = new Set<number>();
+  for (const part of field.split(',')) {
+    const range = part.split('-');
+    if (range.length === 2) {
+      const from = value(range[0]);
+      const to = value(range[1]);
+      if (from === null || to === null) return null;
+      // 5-7 / FRI-SUN wrap through Sunday.
+      const end = to < from ? to + 7 : to;
+      for (let d = from; d <= end; d++) days.add(d % 7);
+    } else {
+      const day = value(part);
+      if (day === null) return null;
+      days.add(day);
+    }
+  }
+  return days;
+}
+
+const isWeekdays = (days: Set<number>) =>
+  days.size === 5 && [1, 2, 3, 4, 5].every((d) => days.has(d));
+const isWeekend = (days: Set<number>) =>
+  days.size === 2 && days.has(0) && days.has(6);
+
+const plainNumber = (field: string) =>
+  /^\d{1,2}$/.test(field) ? Number(field) : null;
+
+/**
+ * Readable text for common cron shapes the schedule form doesn't produce:
+ * weekdays, weekends, a list of days, hourly (in an hour range, on
+ * weekdays), every N minutes or hours. Null for anything else.
+ */
+function describePattern(expression: string, t?: TFunction): string | null {
+  const parts = expression.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [mn, hr, dom, mon, dow] = parts;
+  if (dom !== '*' || mon !== '*') return null;
+  const days = parseDays(dow);
+  if (!days) return null;
+  const allDays = days.size === 7;
+  const say = (
+    key: string,
+    english: string,
+    values: Record<string, unknown> = {},
+  ) =>
+    t
+      ? t(`agents.schedules.cron.${key}`, { ...NO_ESCAPE, ...values })
+      : english;
+
+  const everyN = /^\*\/(\d{1,2})$/;
+  // Every N minutes, all day, every day.
+  const minutes = everyN.exec(mn);
+  // Only a step that divides the hour (or the day) is truly every N: */7
+  // fires at :56 and then :00, four minutes later.
+  if (minutes && hr === '*' && allDays && 60 % Number(minutes[1]) === 0) {
+    const count = Number(minutes[1]);
+    return say('everyMinutes', `Every ${count} minutes`, {
+      count,
+      formatted: formatCount(count),
+    });
+  }
+  const minute = plainNumber(mn);
+  if (minute === null) return null;
+  // Every N hours, every day.
+  const hours = everyN.exec(hr);
+  if (hours && allDays && minute === 0 && 24 % Number(hours[1]) === 0) {
+    const count = Number(hours[1]);
+    return say('everyHours', `Every ${count} hours`, {
+      count,
+      formatted: formatCount(count),
+    });
+  }
+  // Hourly, all day or in a range, every day or on weekdays.
+  if (hr === '*' && allDays) {
+    return minute === 0
+      ? say('hourly', 'Every hour')
+      : say('hourlyAt', `Every hour at :${pad2(minute)}`, {
+          minute: pad2(minute),
+        });
+  }
+  const hourRange = /^(\d{1,2})-(\d{1,2})$/.exec(hr);
+  if (hourRange && (allDays || isWeekdays(days))) {
+    const from = formatTime12h(Number(hourRange[1]), minute);
+    const to = formatTime12h(Number(hourRange[2]), minute);
+    return allDays
+      ? say('hourlyRange', `Every hour from ${from} to ${to}`, { from, to })
+      : say(
+          'hourlyRangeWeekdays',
+          `Every hour from ${from} to ${to} on weekdays`,
+          { from, to },
+        );
+  }
+  // One time of day on some days.
+  const hour = plainNumber(hr);
+  if (hour === null || allDays || days.size === 1) return null;
+  const time = formatTime12h(hour, minute);
+  if (isWeekdays(days))
+    return say('weekdays', `Every weekday at ${time}`, { time });
+  if (isWeekend(days))
+    return say('weekends', `Every weekend day at ${time}`, { time });
+  // Monday first, as the form's day picker lists them.
+  const ordered = [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+  const names = ordered.map((d) =>
+    t ? t(`agents.schedules.cron.dayNames.${DAY_KEYS[d]}`) : DAY_NAMES[d],
+  );
+  // English lists read as en-GB ("Monday, Wednesday and Friday"), like the
+  // app's dates.
+  const language = t ? intlLocale() : 'en';
+  const list = new Intl.ListFormat(language === 'en' ? 'en-GB' : language, {
+    style: 'long',
+    type: 'conjunction',
+  }).format(names);
+  return say('days', `Every ${list} at ${time}`, { days: list, time });
+}
+
+/**
+ * A cron the form can't show, for a line that already calls it custom: the
+ * pattern's name when it has one (weekdays at 9), else the cron as written.
+ */
+export function describeCustomCron(expression: string, t?: TFunction): string {
+  return describePattern(expression, t) ?? expression;
+}
+
 /**
  * Human-readable label for a cron string the form emits; falls back for custom shapes.
  *
@@ -341,6 +496,10 @@ const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
 export function formatCron(expression?: string | null, t?: TFunction): string {
   if (!expression) return '';
   const parsed = parseCron(expression);
+  if (!parsed) {
+    const pattern = describePattern(expression, t);
+    if (pattern) return pattern;
+  }
   const custom = () =>
     t
       ? t('agents.schedules.cron.custom', { ...NO_ESCAPE, expression })

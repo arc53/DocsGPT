@@ -37,9 +37,14 @@ class LLMCreator:
         backup_models=None,
         model_user_id=None,
         *args,
+        stateless: bool = False,
         **kwargs,
     ):
         """Construct an LLM for the given provider ``type``.
+
+        ``stateless`` marks an instance for one-shot calls: it never chains
+        them through the provider (``previous_response_id``) nor stores them
+        there, so reusing it never bills one call for the ones before it.
 
         ``model_user_id`` is the BYOM-resolution scope. Defaults to
         ``decoded_token['sub']`` (the caller). Pass it explicitly when
@@ -92,6 +97,9 @@ class LLMCreator:
                 user_id = (
                     (decoded_token or {}).get("sub") if decoded_token else None
                 )
+                # The LLM keeps the scope its model was found under, so its
+                # window lookups (``get_token_limit``) find the same model.
+                model_user_id = user_id
             model = ModelRegistry.get_instance().get_model(model_id, user_id=user_id)
             if model is None:
                 # Fail closed. Without a registered model there is no
@@ -206,6 +214,7 @@ class LLMCreator:
         # llm.model_id is the upstream name (BYOM resolves it above); stamp
         # the canonical id (UUID for BYOM) separately for token_usage.
         llm._canonical_model_id = model_id
+        llm.stateless = bool(stateless)
         # The provider plugin that built it: ``openai_compatible`` endpoints
         # run through the OpenAI client, so the class alone cannot name them
         # in traces (see ``docsgpt.tracing.llm.llm_provider``).

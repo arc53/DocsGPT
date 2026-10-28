@@ -11,7 +11,8 @@ import string
 import tempfile
 import threading
 import traceback
-from typing import Any, Dict, List, Optional, Tuple
+from contextlib import ExitStack
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import uuid
 from collections import Counter
@@ -20,14 +21,19 @@ from urllib.parse import urljoin, urlsplit
 import requests
 
 from docsgpt import tracing
+from docsgpt.activity.flags import mark_ingest_running
 from docsgpt.attachment_full_text import copy_full_text, store_full_text
 from docsgpt.core.settings import settings
+from docsgpt.decisions import Budget
+from docsgpt.decisions.features import INJECTION_ATTACHMENT_PARSE
 from docsgpt.events.publisher import publish_user_event
+from docsgpt.guardrails import injection_scoring
 from docsgpt.parser.chunking_creator import ChunkerCreator
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.embedding_pipeline import (
     assert_index_complete,
     embed_and_store_documents,
+    sanitize_content,
 )
 from docsgpt.parser.file.base_parser import DocumentParseError, NoTextLayerError
 from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
@@ -41,7 +47,13 @@ from docsgpt.parser.remote.remote_creator import (
     RemoteCreator,
     normalize_remote_data,
 )
+from docsgpt.parser.remote.website_tree import (
+    page_aliases as _page_aliases,
+    stored_page_key as _web_page_key,
+    tree_leaves as _tree_leaves,
+)
 from docsgpt.parser.schema.base import Document
+from docsgpt.parser.tokenization import count_tokens_windowed
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
     safe_zip_error_message,
@@ -71,11 +83,18 @@ from docsgpt.upload_limits import (
     enforce_parseable_attachment,
     UnsupportedUploadTypeError,
 )
+from docsgpt.vectorstore.index_lock import (
+    WORKER_WAIT_SECONDS,
+    SourceBusy,
+    connection_fetch_lock,
+    graph_extract_lock,
+    source_index_lock,
+)
 from docsgpt.utils import (
     count_tokens_docs,
     get_encoding,
-    num_tokens_from_string,
     safe_filename,
+    strip_null_bytes,
     truncate_to_line_boundary,
 )
 
@@ -89,6 +108,9 @@ MAX_TOKENS = 1250
 ATTACHMENT_MAX_TOKENS = 100_000
 RECURSION_DEPTH = 2
 INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
+# How long a task that found its source busy (another job held the lock past
+# the wait) waits before it runs again.
+BUSY_RETRY_COUNTDOWN_SECONDS = 60
 
 
 def count_structure_files(node: dict) -> int:
@@ -97,6 +119,9 @@ def count_structure_files(node: dict) -> int:
     Directories are plain dicts of children; files are dicts carrying a
     ``token_count`` key. ``len()`` on the root only sees top-level entries,
     which undercounts any repo with subdirectories.
+
+    The tree is walked without recursion: a web page's path follows its URL,
+    which can nest deeper than Python's recursion limit.
 
     Args:
         node: A ``directory_structure`` mapping (or any subtree of one).
@@ -107,13 +132,19 @@ def count_structure_files(node: dict) -> int:
     if not isinstance(node, dict):
         return 0
     total = 0
-    for value in node.values():
-        if isinstance(value, dict):
-            if "token_count" in value and "size_bytes" in value:
-                total += 1
-            else:
-                total += count_structure_files(value)
+    stack = [node]
+    while stack:
+        for value in stack.pop().values():
+            if isinstance(value, dict):
+                if "token_count" in value and "size_bytes" in value:
+                    total += 1
+                else:
+                    stack.append(value)
     return total
+
+
+# Remote loaders whose documents are web pages (``source`` is the page URL).
+_WEB_PAGE_LOADERS = frozenset({"url", "crawler", "sitemap", "website"})
 
 
 def add_file_to_structure(
@@ -123,6 +154,7 @@ def add_file_to_structure(
     *,
     size_bytes: int,
     token_count: int,
+    page: Optional[dict] = None,
 ) -> None:
     """Insert one chunk's stats into a nested ``directory_structure``.
 
@@ -138,6 +170,9 @@ def add_file_to_structure(
         file_type: MIME type recorded on first insert.
         size_bytes: Byte length of this chunk.
         token_count: Token count of this chunk.
+        page: For a web page, its ``url``, ``title`` and ``fetched_at``,
+            recorded on first insert so the Knowledge tree can name the page
+            and link it.
 
     Returns:
         None
@@ -165,6 +200,8 @@ def add_file_to_structure(
             "size_bytes": size_bytes,
             "token_count": token_count,
         }
+        if page:
+            current_level[leaf].update({k: v for k, v in page.items() if v})
 
 
 def graph_extraction_key(source_id, updated_at) -> str:
@@ -245,6 +282,33 @@ def _maybe_enqueue_graph_extraction(cfg, source_id, user):
             exc_info=True,
         )
 
+
+def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None):
+    """Queue the graph's catch-up after a sync re-embedded a graphrag source.
+
+    A sync stores every chunk again under a new id. Rather than reset and
+    re-extract the whole source, the run carries the graph over by chunk
+    content (``sync_graph_to_chunks``) and extracts only new text. A no-op for
+    non-graphrag sources or when GraphRAG is unavailable; never raises, so a
+    broker hiccup cannot fail a sync that succeeded.
+    """
+    if cfg.kind != "graphrag":
+        return
+    from docsgpt.graphrag import graphrag_available
+
+    if not graphrag_available():
+        return
+
+    source_id = str(source_id)
+    try:
+        from docsgpt.api.user.tasks import extract_graph
+
+        key = f"extract-graph:{source_id}:sync:{task_id or uuid.uuid4().hex}"
+        extract_graph.delay(source_id, user, idempotency_key=key, sync=True)
+    except Exception as e:
+        logging.warning(f"Failed to enqueue the graph sync for {source_id}: {e}", exc_info=True)
+
+
 # Re-exported here for backward-compatible imports
 # (``from docsgpt.worker import _derive_source_id`` /
 # ``DOCSGPT_INGEST_NAMESPACE``) from tests and any other in-tree callers.
@@ -280,6 +344,63 @@ def _start_ingest_heartbeat(source_id):
     )
     thread.start()
     return thread, stop_event
+
+
+def _celery_will_retry(task: Any, error: Optional[BaseException]) -> bool:
+    """Whether Celery's autoretry runs ``task`` again after ``error``.
+
+    Mirrors ``celery.app.autoretry``: an error in ``autoretry_for`` and not
+    in ``dont_autoretry_for``, with attempts left. Anything it can't read
+    (a direct call, a test double) counts as the last attempt.
+
+    Args:
+        task: The bound Celery task (the worker's ``self``).
+        error: The error the attempt failed with.
+
+    Returns:
+        True when another attempt follows.
+    """
+    retries = getattr(getattr(task, "request", None), "retries", None)
+    max_retries = getattr(task, "max_retries", None)
+    if error is None or not isinstance(retries, int) or not isinstance(max_retries, int):
+        return False
+    if retries >= max_retries:
+        return False
+    autoretry_for = getattr(task, "autoretry_for", ())
+    dont_autoretry_for = getattr(task, "dont_autoretry_for", ())
+    if not isinstance(autoretry_for, tuple) or not isinstance(dont_autoretry_for, tuple):
+        return False
+    return isinstance(error, autoretry_for) and not isinstance(error, dont_autoretry_for)
+
+
+def close_failed_ingest_progress(
+    source_id: Optional[str],
+    *,
+    task: Any = None,
+    error: Optional[BaseException] = None,
+) -> None:
+    """Close a failed ingest's progress row before ``source.ingest.failed`` goes out.
+
+    The pages refetch on that event; left ``active``, the row would show
+    as in flight (Activity › Now, the sources list) until the reconciler's
+    stalled sweep. A failure Celery will retry leaves the row open: the
+    source is still being ingested, and a closed row reads as failed (the
+    sources list, the wiki-convert guard) through the retry wait. Best
+    effort: a failure here is logged, never raised over the ingest's own
+    error.
+
+    Args:
+        source_id: The source whose ingest failed; ``None`` does nothing.
+        task: The bound Celery task, to tell a retried attempt from the last.
+        error: The error the attempt failed with.
+    """
+    if not source_id or _celery_will_retry(task, error):
+        return
+    try:
+        with db_session() as conn:
+            IngestChunkProgressRepository(conn).mark_failed(str(source_id))
+    except Exception:
+        logging.warning("Could not close the progress row of %s", source_id, exc_info=True)
 
 
 def _stop_ingest_heartbeat(thread, stop_event):
@@ -364,6 +485,38 @@ def _apply_display_names_to_structure(structure, file_name_map, prefix=""):
             next_prefix = f"{prefix}/{name}" if prefix else name
             _apply_display_names_to_structure(node, file_name_map, next_prefix)
     return structure
+
+
+def _structure_files(structure: Any, prefix: str = "") -> Dict[str, dict]:
+    """Every file entry of a ``directory_structure``, keyed by its path relative to the source.
+
+    Args:
+        structure: A ``directory_structure`` mapping, or a subtree of one.
+        prefix: The path of ``structure`` itself.
+
+    Returns:
+        ``{"guide/a.md": {"type": ..., "size_bytes": ..., "sha256": ...}}``.
+    """
+    files: Dict[str, dict] = {}
+    if not isinstance(structure, dict):
+        return files
+    for name, node in structure.items():
+        path = os.path.join(prefix, name) if prefix else name
+        if isinstance(node, dict) and "type" in node and "size_bytes" in node:
+            files[path] = node
+        elif isinstance(node, dict):
+            files.update(_structure_files(node, path))
+    return files
+
+
+def _file_content_changed(old: dict, new: dict) -> bool:
+    """Whether a file kept at the same path has new content, by its ``sha256``.
+
+    An old entry without a hash (ingested before hashes were stored) counts as
+    changed. A new entry without one cannot be compared and counts as unchanged.
+    """
+    new_hash = new.get("sha256")
+    return bool(new_hash) and old.get("sha256") != new_hash
 
 
 def _download_source_files_to_dir(storage, source_file_path, temp_dir):
@@ -534,7 +687,22 @@ def _worker_api_url() -> str:
     return settings.WORKER_API_URL or settings.API_URL
 
 
-def upload_index(full_path, file_data):
+def upload_index(full_path: str, file_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Send a built index and the source's fields to the API, which stores them.
+
+    Args:
+        full_path: The local directory holding the index (FAISS files).
+        file_data: The source's fields, as the form of ``/api/upload_index``.
+
+    Returns:
+        The API's JSON answer (``{}`` when the body isn't a JSON object). For a
+        sync the API refuses with ``{"status": "skipped", "reason": "gone" | "wiki"}``
+        when the source was deleted, or became a wiki, while the sync ran.
+
+    Raises:
+        requests.RequestException: The call failed or answered an HTTP error.
+        FileNotFoundError: A FAISS index file is missing.
+    """
     files = None
     try:
         headers = {}
@@ -579,6 +747,51 @@ def upload_index(full_path, file_data):
         if settings.VECTOR_STORE == "faiss" and files is not None:
             for file in files.values():
                 file.close()
+    try:
+        answer = response.json()
+    except ValueError:
+        return {}
+    return answer if isinstance(answer, dict) else {}
+
+
+def _upload_refusal(answer: Any) -> Optional[str]:
+    """Why the API refused a sync's upload (``gone`` or ``wiki``), or ``None`` when it stored it.
+
+    Args:
+        answer: What ``upload_index`` returned (``None`` from a stub counts as stored).
+
+    Returns:
+        The refusal's reason, or ``None``.
+    """
+    if isinstance(answer, dict) and answer.get("status") == "skipped":
+        return str(answer.get("reason") or "gone")
+    return None
+
+
+def _drop_refused_sync_vectors(reason: str, source_id: str) -> None:
+    """Clear what a refused sync wrote to the vector store for a source deleted while it ran.
+
+    A sync wipes and re-fills the source's chunks before it uploads; on a store
+    other than FAISS they are already written under the source's id, and the
+    delete that ran meanwhile has already cleared it, so nothing else would.
+    FAISS keeps the index in the sync's scratch directory, which the API never
+    saved. A source that became a wiki keeps its chunks: they may already be
+    the wiki's pages. Best effort: a failure is logged.
+
+    Args:
+        reason: The API's refusal.
+        source_id: The source.
+    """
+    if reason != "gone" or settings.VECTOR_STORE == "faiss":
+        return
+    try:
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE, source_id=source_id, embeddings_key=settings.EMBEDDINGS_KEY,
+        ).delete_index()
+    except Exception as err:  # noqa: BLE001 - the sync's outcome is already decided
+        logging.warning(f"Could not drop the vectors of deleted source {source_id}: {err}")
 
 
 # Define the main function for ingesting and processing documents.
@@ -655,18 +868,22 @@ def ingest_worker(
     # Only emit ``queued`` on the original attempt. Celery retries re-run
     # the body, and re-publishing here would oscillate the toast through
     # ``queued`` again between ``failed`` and ``completed``.
+    queued = {
+        "job_name": job_name,
+        "filename": filename,
+        "source_id": source_id_for_events,
+        "operation": "upload",
+    }
     if self.request.retries == 0:
         publish_user_event(
             user,
             "source.ingest.queued",
-            {
-                "job_name": job_name,
-                "filename": filename,
-                "source_id": source_id_for_events,
-                "operation": "upload",
-            },
+            queued,
             scope={"kind": "source", "id": source_id_for_events},
         )
+    else:
+        # The failed attempt before cleared the Activity marker.
+        mark_ingest_running(user, queued)
 
     # Wrap the entire body in try/except so a failure between the
     # ``queued`` publish above and the inner work (e.g. tempdir
@@ -771,6 +988,7 @@ def ingest_worker(
                 chunking_strategy=cfg.chunking.strategy,
                 max_tokens=cfg.chunking.max_tokens,
                 min_tokens=cfg.chunking.min_tokens,
+                chunk_overlap=cfg.chunking.chunk_overlap,
                 duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
@@ -838,6 +1056,7 @@ def ingest_worker(
             _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error(f"Error in ingest_worker: {e}", exc_info=True)
+        close_failed_ingest_progress(source_id_for_events, task=self, error=e)
         publish_user_event(
             user,
             "source.ingest.failed",
@@ -860,16 +1079,28 @@ def ingest_worker(
     }
 
 
-def reingest_source_worker(self, source_id, user):
+# Why a source can't be re-ingested, as its failed event says it.
+_REINGEST_NO_FILES = "This source keeps no files to re-ingest; sync it to rebuild it"
+_REINGEST_WIKI = "This source is a wiki now; its pages are edited in place and it isn't re-ingested"
+
+
+def reingest_source_worker(self, source_id, user, actor_id=None):
     """
     Re-ingestion worker that handles incremental updates by:
     1. Adding chunks from newly added files
     2. Removing chunks from deleted files
+    3. Replacing the chunks of edited files: same path, different content
+       hash (``sha256`` in ``directory_structure``). A file stored without a
+       hash counts as edited, so a source ingested before hashes were kept is
+       re-embedded once and incremental from then on. After a chunking change
+       (``metadata.rechunk_pending``) every file counts as edited, once.
 
     Args:
         self: Task instance
         source_id: ID of the source to re-ingest
         user: User identifier
+        actor_id: The user who asked for the reingest (a team editor), who
+            gets its ``source.ingest.*`` events too; ``None`` for the owner.
 
     Returns:
         dict: Information about the re-ingestion task
@@ -881,6 +1112,13 @@ def reingest_source_worker(self, source_id, user):
         ``completed`` (carrying ``chunks_added`` / ``chunks_deleted``),
         or ``failed``. v1 limitation; revisit if reingest gains a
         progress-driven UI.
+
+        A source that keeps no files (a Website, crawler or connector
+        source) or is a wiki is refused with a ``failed`` event (``reason``
+        ``no_files`` / ``wiki``) rather than raised, which would retry. The
+        work holds the source's index lock (``source_index_lock``); a source
+        busy past the wait, or deleted meanwhile, is refused the same way
+        (``busy`` / ``gone``).
     """
     # Declared at the function scope so the outer except can include
     # ``name`` in the failed event payload when the failure happens
@@ -889,6 +1127,26 @@ def reingest_source_worker(self, source_id, user):
     # Tracks inner-block failures so a ``completed`` event reflects
     # partial-success accurately rather than masking it.
     inner_warnings: list[str] = []
+    # Holds the source's index lock once taken; released on every way out.
+    held = ExitStack()
+
+    def _not_run(reason: str, error: str) -> Dict[str, Any]:
+        logging.info("Not re-ingesting source %s: %s", source_id, reason)
+        _publish_source_event(
+            user, actor_id,
+            "source.ingest.failed",
+            {
+                "source_id": str(source_id),
+                "name": source_name,
+                "filename": source_name,
+                "operation": "reingest",
+                "error": error,
+                "reason": reason,
+                **_task_id_field(self),
+            },
+            scope={"kind": "source", "id": str(source_id)},
+        )
+        return {"source_id": str(source_id), "user": user, "status": "skipped", "reason": reason}
 
     try:
         from docsgpt.vectorstore.vector_creator import VectorCreator
@@ -904,9 +1162,10 @@ def reingest_source_worker(self, source_id, user):
             raise ValueError(f"Source {source_id} not found or access denied")
         source_id = str(source["id"])
         source_name = source.get("name") or ""
-        # Re-chunk with the source's persisted config (classic defaults
-        # when absent/empty), keeping reingest consistent with ingest.
-        cfg = SourceConfig.parse(source.get("config"))
+        if not source.get("file_path"):
+            return _not_run("no_files", _REINGEST_NO_FILES)
+        if _is_wiki_config(source.get("config")):
+            return _not_run("wiki", _REINGEST_WIKI)
 
         # Publish ``queued`` *after* canonicalising ``source_id`` so the
         # event references the same id as the source row. Trade-off
@@ -916,19 +1175,41 @@ def reingest_source_worker(self, source_id, user):
         # conditions also imply broader system trouble. Gate on first
         # attempt only so Celery retries don't re-emit ``queued`` after
         # a prior attempt already published ``failed``.
+        queued = {
+            "source_id": source_id,
+            "name": source_name,
+            # ``filename`` labels the upload toast on auto-create.
+            "filename": source_name,
+            "operation": "reingest",
+        }
         if self.request.retries == 0:
-            publish_user_event(
-                user,
+            _publish_source_event(
+                user, actor_id,
                 "source.ingest.queued",
-                {
-                    "source_id": source_id,
-                    "name": source_name,
-                    # ``filename`` labels the upload toast on auto-create.
-                    "filename": source_name,
-                    "operation": "reingest",
-                },
+                queued,
                 scope={"kind": "source", "id": source_id},
             )
+        else:
+            # The failed attempt before cleared the Activity marker.
+            mark_ingest_running(user, queued)
+
+        try:
+            held.enter_context(source_index_lock(source_id))
+        except SourceBusy:
+            return _not_run("busy", _SYNC_SKIP_MESSAGES["busy"])
+        # Read again under the lock: the source as it is now, or gone.
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
+        if not source:
+            return _not_run("gone", _SYNC_SKIP_MESSAGES["gone"])
+        if not source.get("file_path"):
+            return _not_run("no_files", _REINGEST_NO_FILES)
+        if _is_wiki_config(source.get("config")):
+            # Converted while this waited: the wiki's pages are the source now.
+            return _not_run("wiki", _REINGEST_WIKI)
+        # Re-chunk with the source's persisted config (classic defaults
+        # when absent/empty), keeping reingest consistent with ingest.
+        cfg = SourceConfig.parse(source.get("config"))
 
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
@@ -954,6 +1235,7 @@ def reingest_source_worker(self, source_id, user):
                 f"Directory structure built with token counts: {directory_structure}"
             )
 
+            rechunk = False
             try:
                 old_directory_structure = source.get("directory_structure") or {}
                 if isinstance(old_directory_structure, str):
@@ -962,28 +1244,17 @@ def reingest_source_worker(self, source_id, user):
                     except Exception:
                         old_directory_structure = {}
 
-                def _flatten_directory_structure(struct, prefix=""):
-                    files = set()
-                    if isinstance(struct, dict):
-                        for name, meta in struct.items():
-                            current_path = (
-                                os.path.join(prefix, name) if prefix else name
-                            )
-                            if isinstance(meta, dict) and (
-                                "type" in meta and "size_bytes" in meta
-                            ):
-                                files.add(current_path)
-                            elif isinstance(meta, dict):
-                                files |= _flatten_directory_structure(
-                                    meta, current_path
-                                )
-                    return files
+                old_files = _structure_files(old_directory_structure)
+                new_files = _structure_files(directory_structure)
 
-                old_files = _flatten_directory_structure(old_directory_structure)
-                new_files = _flatten_directory_structure(directory_structure)
-
-                added_files = sorted(new_files - old_files)
-                removed_files = sorted(old_files - new_files)
+                added_files = sorted(new_files.keys() - old_files.keys())
+                removed_files = sorted(old_files.keys() - new_files.keys())
+                metadata = source.get("metadata")
+                rechunk = isinstance(metadata, dict) and bool(metadata.get("rechunk_pending"))
+                modified_files = sorted(
+                    path for path in new_files.keys() & old_files.keys()
+                    if rechunk or _file_content_changed(old_files[path], new_files[path])
+                )
 
                 if added_files:
                     logging.info(f"Files added since last ingest: {added_files}")
@@ -995,17 +1266,21 @@ def reingest_source_worker(self, source_id, user):
                 else:
                     logging.info("No files removed since last ingest.")
 
+                if modified_files:
+                    logging.info(f"Files edited since last ingest: {modified_files}")
+
             except Exception as e:
                 logging.error(
                     f"Error comparing directory structures: {e}", exc_info=True
                 )
                 added_files = []
                 removed_files = []
+                modified_files = []
             try:
-                if not added_files and not removed_files:
+                if not added_files and not removed_files and not modified_files:
                     logging.info("No changes detected.")
-                    publish_user_event(
-                        user,
+                    _publish_source_event(
+                        user, actor_id,
                         "source.ingest.completed",
                         {
                             "source_id": source_id,
@@ -1024,6 +1299,7 @@ def reingest_source_worker(self, source_id, user):
                         "status": "no_changes",
                         "added_files": [],
                         "removed_files": [],
+                        "modified_files": [],
                     }
 
                 vector_store = VectorCreator.create_vectorstore(
@@ -1037,9 +1313,15 @@ def reingest_source_worker(self, source_id, user):
                     meta={"current": 40, "status": "Processing file changes"},
                 )
 
-                # 1) Delete chunks from removed files
+                # 1) Delete chunks of removed files, and of edited files
+                # before their new content is embedded
                 deleted = 0
-                if removed_files:
+                # Files whose chunks may not match their content after this run.
+                # They are stored without a hash, so the next reingest counts
+                # them as edited and rebuilds their chunks.
+                unsynced: set = set()
+                stale_files = set(removed_files) | set(modified_files)
+                if stale_files:
                     try:
                         for ch in vector_store.get_chunks() or []:
                             metadata = (
@@ -1051,7 +1333,7 @@ def reingest_source_worker(self, source_id, user):
 
                             source_file = str(raw_source) if raw_source else ""
 
-                            if source_file in removed_files:
+                            if source_file in stale_files:
                                 cid = ch.get("doc_id")
                                 if cid:
                                     try:
@@ -1062,7 +1344,7 @@ def reingest_source_worker(self, source_id, user):
                                             f"Failed deleting chunk {cid}: {de}"
                                         )
                         logging.info(
-                            f"Deleted {deleted} chunks from {len(removed_files)} removed files"
+                            f"Deleted {deleted} chunks from {len(stale_files)} removed or edited files"
                         )
                     except Exception as e:
                         logging.error(
@@ -1072,14 +1354,17 @@ def reingest_source_worker(self, source_id, user):
                         inner_warnings.append(
                             f"deletion failed: {str(e)[:200]}"
                         )
+                        # Their old chunks may remain beside the new ones.
+                        unsynced.update(modified_files)
 
-                # 2) Add chunks from new files
+                # 2) Add chunks from new and edited files
                 added = 0
-                if added_files:
+                files_to_embed = added_files + modified_files
+                if files_to_embed:
                     try:
-                        # Build list of local files for added files only
+                        # Build list of local files for added and edited files only
                         added_local_files = []
-                        for rel_path in added_files:
+                        for rel_path in files_to_embed:
                             local_path = os.path.join(temp_dir, rel_path)
                             if os.path.isfile(local_path):
                                 added_local_files.append(local_path)
@@ -1092,11 +1377,18 @@ def reingest_source_worker(self, source_id, user):
                                 file_metadata=metadata_from_filename,
                             )
                             raw_docs_new = reader_new.load_data()
+                            # Skipped as unreadable: an edited file's old
+                            # chunks are already gone and it adds none.
+                            unsynced.update(
+                                os.path.relpath(str(failed_path), start=temp_dir)
+                                for failed_path, _ in reader_new.failed_files
+                            )
                             chunker_new = ChunkerCreator.create_chunker(
                                 cfg.chunking.strategy,
                                 chunking_strategy=cfg.chunking.strategy,
                                 max_tokens=cfg.chunking.max_tokens,
                                 min_tokens=cfg.chunking.min_tokens,
+                                chunk_overlap=cfg.chunking.chunk_overlap,
                                 duplicate_headers=cfg.chunking.duplicate_headers,
                             )
                             chunked_new = chunker_new.chunk(documents=raw_docs_new)
@@ -1159,7 +1451,7 @@ def reingest_source_worker(self, source_id, user):
                                 vector_store.add_chunk(d.text, metadata=meta)
                                 added += 1
                             logging.info(
-                                f"Added {added} chunks from {len(added_files)} new files"
+                                f"Added {added} chunks from {len(files_to_embed)} new or edited files"
                             )
                     except Exception as e:
                         logging.error(
@@ -1168,6 +1460,11 @@ def reingest_source_worker(self, source_id, user):
                         inner_warnings.append(
                             f"add failed: {str(e)[:200]}"
                         )
+                        unsynced.update(files_to_embed)
+
+                new_entries = _structure_files(directory_structure)
+                for rel_path in unsynced:
+                    new_entries.get(rel_path, {}).pop("sha256", None)
 
                 # 3) Update source directory structure timestamp
                 try:
@@ -1178,7 +1475,8 @@ def reingest_source_worker(self, source_id, user):
 
                     now = datetime.datetime.now(datetime.timezone.utc)
                     with db_session() as conn:
-                        SourcesRepository(conn).update(
+                        repo = SourcesRepository(conn)
+                        repo.update(
                             source_id, user,
                             {
                                 "directory_structure": directory_structure,
@@ -1186,6 +1484,8 @@ def reingest_source_worker(self, source_id, user):
                                 "tokens": total_tokens,
                             },
                         )
+                        if rechunk and not inner_warnings:
+                            repo.remove_metadata_key(source_id, user, "rechunk_pending")
                 except Exception as e:
                     logging.error(
                         f"Error updating directory_structure in DB: {e}", exc_info=True
@@ -1209,8 +1509,8 @@ def reingest_source_worker(self, source_id, user):
                     # Surface the per-block failures so the toast can warn
                     # rather than claim a clean success.
                     completed_payload["warnings"] = inner_warnings
-                publish_user_event(
-                    user,
+                _publish_source_event(
+                    user, actor_id,
                     "source.ingest.completed",
                     completed_payload,
                     scope={"kind": "source", "id": source_id},
@@ -1223,6 +1523,7 @@ def reingest_source_worker(self, source_id, user):
                     "status": "completed",
                     "added_files": added_files,
                     "removed_files": removed_files,
+                    "modified_files": modified_files,
                     "chunks_added": added,
                     "chunks_deleted": deleted,
                 }
@@ -1234,8 +1535,9 @@ def reingest_source_worker(self, source_id, user):
 
     except Exception as e:
         logging.error(f"Error in reingest_source_worker: {e}", exc_info=True)
-        publish_user_event(
-            user,
+        close_failed_ingest_progress(source_id, task=self, error=e)
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.failed",
             {
                 "source_id": str(source_id),
@@ -1247,6 +1549,41 @@ def reingest_source_worker(self, source_id, user):
             scope={"kind": "source", "id": str(source_id)},
         )
         raise
+    finally:
+        held.close()
+
+
+def _task_id_field(task: Any) -> Dict[str, str]:
+    """``{"task_id": id}`` for a running Celery task, so the UI can match its events to the request.
+
+    Args:
+        task: The bound Celery task (``self``).
+
+    Returns:
+        The field, or ``{}`` when there is no string task id (a direct call).
+    """
+    task_id = getattr(getattr(task, "request", None), "id", None)
+    return {"task_id": task_id} if isinstance(task_id, str) and task_id else {}
+
+
+def _publish_source_event(
+    user: str, actor_id: Optional[str], event_type: str, payload: Dict[str, Any], **kwargs: Any,
+) -> None:
+    """Publish a source event to the source's owner, and to whoever asked for the change.
+
+    A team editor changes a source they don't own: the job runs as the owner,
+    and without a copy of its events the editor's view would never see it end.
+
+    Args:
+        user: The source's owner.
+        actor_id: The user who asked for the change; ``None`` or the owner sends one event.
+        event_type: The event type (``source.ingest.*``).
+        payload: Its payload.
+        **kwargs: Passed to ``publish_user_event`` (``scope``).
+    """
+    publish_user_event(user, event_type, payload, **kwargs)
+    if actor_id and str(actor_id) != str(user):
+        publish_user_event(str(actor_id), event_type, payload, **kwargs)
 
 
 def remote_worker(
@@ -1264,6 +1601,7 @@ def remote_worker(
     idempotency_key=None,
     source_id=None,
     connection_id=None,
+    actor_id=None,
 ):
     safe_user = safe_filename(user)
     full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
@@ -1290,18 +1628,23 @@ def remote_worker(
     # ``update_state``) so the toast UI always sees a queued envelope
     # before any subsequent failed event. Gated on first attempt so
     # Celery retries don't re-emit ``queued`` after a prior ``failed``.
+    queued = {
+        "source_id": source_id_for_events,
+        "job_name": name_job,
+        "loader": loader,
+        "operation": operation_mode,
+        **_task_id_field(self),
+    }
     if self.request.retries == 0:
-        publish_user_event(
-            user,
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.queued",
-            {
-                "source_id": source_id_for_events,
-                "job_name": name_job,
-                "loader": loader,
-                "operation": operation_mode,
-            },
+            queued,
             scope={"kind": "source", "id": source_id_for_events},
         )
+    else:
+        # The failed attempt before cleared the Activity marker.
+        mark_ingest_running(user, queued)
 
     # Wrap ``update_state`` plus the entire body so any pre-loader
     # failure (Celery backend down, OS resource issue) still emits a
@@ -1318,7 +1661,20 @@ def remote_worker(
 
                 raise ConnectionUnavailable("Reconnect to continue", connection_id=str(connection_id))
         try:
-            raw_docs = remote_loader.load_data(loader_input)
+            if connection_id:
+                # One download at a time per connection: sources added together
+                # would otherwise share out its account's API rate limit.
+                with connection_fetch_lock(str(connection_id)):
+                    # Read the credentials again: the connection may have been
+                    # removed or its token replaced while this waited.
+                    loader_input = _with_connection_credentials(source_data, connection_id)
+                    if loader_input is None:
+                        from docsgpt.connectors.service import ConnectionUnavailable
+
+                        raise ConnectionUnavailable("Reconnect to continue", connection_id=str(connection_id))
+                    raw_docs = remote_loader.load_data(loader_input)
+            else:
+                raw_docs = remote_loader.load_data(loader_input)
         except GitHubTokenRejected as exc:
             # A revoked token pauses the connection's sources until the
             # owner reconnects, instead of failing on every schedule.
@@ -1337,6 +1693,7 @@ def remote_worker(
             chunking_strategy=cfg.chunking.strategy,
             max_tokens=cfg.chunking.max_tokens,
             min_tokens=cfg.chunking.min_tokens,
+            chunk_overlap=cfg.chunking.chunk_overlap,
             duplicate_headers=cfg.chunking.duplicate_headers,
         )
         raw_docs = chunker.chunk(documents=raw_docs)
@@ -1347,6 +1704,7 @@ def remote_worker(
         # Build directory structure from loaded documents
         # Format matches local file uploads: nested structure with type, size_bytes, token_count
         directory_structure = {}
+        fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         for doc in raw_docs:
             # Get the file path from extra_info
             # For crawlers: file_path is a virtual path like "guides/setup.md"
@@ -1363,7 +1721,7 @@ def remote_worker(
 
             if file_path:
                 # Calculate token count
-                token_count = num_tokens_from_string(doc.text) if doc.text else 0
+                token_count = count_tokens_windowed(doc.text) if doc.text else 0
 
                 # Estimate size in bytes from text content
                 size_bytes = len(doc.text.encode("utf-8")) if doc.text else 0
@@ -1391,11 +1749,26 @@ def remote_worker(
                 }
                 file_type = mime_types.get(ext, "application/octet-stream")
 
+                # A web page keeps its address and title, so the Knowledge
+                # tree names it and links it instead of showing "index.md".
+                # After a redirect it keeps the addresses it was asked for too
+                # (``requested_urls``): a page entry is listed as typed, so
+                # removing the page must find every entry that leads to it.
+                page = None
+                if loader in _WEB_PAGE_LOADERS and doc.extra_info and doc.extra_info.get("source"):
+                    # The tree is stored as JSONB, which refuses a NUL (a page title, say).
+                    page = strip_null_bytes({
+                        "url": doc.extra_info["source"],
+                        **_alias_fields(_page_aliases(doc.extra_info["source"], doc.extra_info)),
+                        "title": doc.extra_info.get("title"),
+                        "fetched_at": fetched_at,
+                    })
+
                 # Build nested directory structure from path
                 # e.g., "guides/setup.md" -> {"guides": {"setup.md": {...}}}
                 add_file_to_structure(
                     directory_structure, file_path, file_type,
-                    size_bytes=size_bytes, token_count=token_count,
+                    size_bytes=size_bytes, token_count=token_count, page=page,
                 )
 
         # ``len(directory_structure)`` counts only top-level entries, so a
@@ -1413,6 +1786,7 @@ def remote_worker(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
+                actor_id=actor_id,
             )
             assert_index_complete(source_uuid)
         elif operation_mode == "sync":
@@ -1423,6 +1797,7 @@ def remote_worker(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
+                actor_id=actor_id,
             )
             assert_index_complete(source_uuid)
         self.update_state(state="PROGRESS", meta={"current": 100})
@@ -1442,7 +1817,12 @@ def remote_worker(
             "sync_frequency": sync_frequency,
             "directory_structure": json.dumps(directory_structure),
         }
-        if config:
+        if operation_mode == "sync":
+            # The API keeps the row's own name, type, remote_data, schedule
+            # and config: they may have changed since this sync was queued,
+            # and ``config`` here only chose how to chunk.
+            file_data["operation"] = "sync"
+        elif config:
             file_data["config"] = json.dumps(config)
 
         if operation_mode == "sync":
@@ -1459,11 +1839,19 @@ def remote_worker(
                 logging.warning(
                     f"Failed to update last_sync for source {source_id_for_events}: {upd_err}"
                 )
-        upload_index(full_path, file_data)
+        refused = _upload_refusal(upload_index(full_path, file_data))
+        if refused:
+            # No website report either: nothing was stored.
+            return _skip_refused_sync(self, user, source_id_for_events, name_job, loader, refused, actor_id)
         if connection_id:
             _link_source_to_connection(source_id_for_events, str(connection_id))
-        publish_user_event(
-            user,
+        website_fields = {}
+        if loader == "website":
+            website_fields = _record_website_report(
+                source_id_for_events, user, getattr(remote_loader, "report", None) or {}, fetched_at,
+            )
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.completed",
             {
                 "source_id": source_id_for_events,
@@ -1473,14 +1861,20 @@ def remote_worker(
                 "tokens": tokens,
                 # Forward-looking contract: see ingest_worker.
                 "limited": False,
+                **website_fields,
+                **_task_id_field(self),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
-        _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+        if operation_mode == "sync":
+            _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+        else:
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
-        publish_user_event(
-            user,
+        close_failed_ingest_progress(source_id_for_events, task=self, error=e)
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.failed",
             {
                 "source_id": source_id_for_events,
@@ -1488,6 +1882,7 @@ def remote_worker(
                 "loader": loader,
                 "operation": operation_mode,
                 "error": str(e)[:1024],
+                **_task_id_field(self),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
@@ -1505,36 +1900,247 @@ def remote_worker(
     }
 
 
-def sync(
-    self,
-    source_data,
-    name_job,
-    user,
-    loader,
-    sync_frequency,
-    retriever,
-    doc_id=None,
-    directory="temp",
-    connection_id=None,
-):
+def _record_website_report(source_id: str, user: str, report: dict, fetched_at: str) -> dict:
+    """Keep a Website ingest's report on the source and summarise it for the event.
+
+    The source's Settings show it (pages per site, whether the page limit cut a
+    site short); the completed event carries the summary so the notice can
+    say a limit was reached.
+
+    Args:
+        source_id: The source's id.
+        user: The owner.
+        report: ``WebsiteLoader.report``.
+        fetched_at: When the pages were fetched (ISO 8601).
+
+    Returns:
+        ``{"pages": int, "page_limit_reached": bool}`` for the event.
+    """
+    sites = report.get("sites") or []
+    summary = {
+        "pages": int(report.get("pages") or 0),
+        # The top-level flag covers page entries the page cap left out, where no site reached its own limit.
+        "page_limit_reached": bool(report.get("limit_reached")) or any(site.get("limit_reached") for site in sites),
+    }
     try:
-        remote_worker(
+        with db_session() as conn:
+            SourcesRepository(conn).set_metadata_key(
+                source_id, user, "website", {"pages": summary["pages"], "sites": sites, "fetched_at": fetched_at},
+            )
+    except Exception as err:  # noqa: BLE001 - the ingest itself succeeded
+        logging.warning(f"Could not store the website report for {source_id}: {err}")
+    return summary
+
+
+def _is_wiki_config(config: Any) -> bool:
+    """Whether a source's ``config`` (a JSONB object, so a dict) marks it as a wiki."""
+    return isinstance(config, dict) and config.get("kind") == "wiki"
+
+
+# Why a sync was skipped, as its failed event says it.
+_SYNC_SKIP_MESSAGES = {
+    "busy": "Another change to this source is still running; try again when it finishes",
+    "wiki": "This source is a wiki now; it no longer syncs",
+    "gone": "This source was deleted",
+}
+
+# A sync whose row couldn't be read doesn't run: the queued snapshot has no
+# config (it would re-chunk on the defaults) and can't tell a wiki.
+_SYNC_UNREADABLE = "Couldn't read this source to sync it; try again"
+
+
+def _publish_sync_not_run(
+    task: Any, user: str, doc_id: Optional[str], name_job: str, loader: str, error: str,
+    reason: Optional[str] = None, actor_id: Optional[str] = None,
+) -> None:
+    """Close a sync that never ran, or never stored, with the ``source.ingest.failed`` event the UI waits for.
+
+    Args:
+        task: The bound Celery task, for its id.
+        user: The source's owner.
+        doc_id: The source.
+        name_job: Its name.
+        loader: Its loader.
+        error: The message shown.
+        reason: For a skip: ``busy``, ``wiki`` or ``gone``.
+        actor_id: The user who asked for the sync, if not the owner; told too.
+    """
+    source_id = str(doc_id)
+    payload = {
+        "source_id": source_id,
+        "job_name": name_job,
+        "loader": loader,
+        "operation": "sync",
+        "error": error,
+        **({"reason": reason} if reason else {}),
+        **_task_id_field(task),
+    }
+    _publish_source_event(
+        user, actor_id, "source.ingest.failed", payload, scope={"kind": "source", "id": source_id},
+    )
+
+
+def _skip_refused_sync(
+    task: Any, user: str, source_id: str, name: str, loader: str, reason: str, actor_id: Optional[str],
+) -> Dict[str, Any]:
+    """End a sync whose upload the API refused: the source was deleted, or became a wiki, while it ran.
+
+    Nothing was stored, so the sync neither completes nor builds a graph; a
+    deleted source's vectors are dropped (``_drop_refused_sync_vectors``).
+
+    Args:
+        task: The bound Celery task.
+        user: The source's owner.
+        source_id: The source.
+        name: Its name.
+        loader: Its loader.
+        reason: The API's refusal (``gone`` or ``wiki``).
+        actor_id: The user who asked for the sync, if not the owner.
+
+    Returns:
+        ``{"id", "status": "skipped", "reason"}``.
+    """
+    logging.info(f"The API refused the sync of source {source_id}: {reason}")
+    _drop_refused_sync_vectors(reason, source_id)
+    _publish_sync_not_run(
+        task, user, source_id, name, loader, _SYNC_SKIP_MESSAGES.get(reason, _SYNC_SKIP_MESSAGES["gone"]), reason,
+        actor_id=actor_id,
+    )
+    return {"id": source_id, "status": "skipped", "reason": reason}
+
+
+def _run_locked_sync(
+    task: Any, user: str, doc_id: str, name: str, loader: str, run: Callable[[Dict[str, Any]], Dict[str, Any]],
+    *, lock_wait_seconds: float = WORKER_WAIT_SECONDS, notify_skip: bool = True, actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Run a sync on its source's row, read holding the source's index lock.
+
+    The lock makes a sync take turns with a Website page change, a wiki
+    conversion or another sync on the source: each rewrites the index, and a
+    FAISS index is saved whole. A source busy past the wait, deleted or made a
+    wiki meanwhile is skipped; one whose row can't be read doesn't run.
+
+    Args:
+        task: The bound Celery task.
+        user: The source's owner.
+        doc_id: The source.
+        name: Its name when queued, for a skip's event.
+        loader: Its loader when queued, for a skip's event.
+        run: The sync, given the row.
+        lock_wait_seconds: How long to wait for another job on the source.
+        notify_skip: Publish a ``source.ingest.failed`` event (with ``reason``)
+            for a skip. Off for scheduled syncs: nobody waits on them.
+        actor_id: The user who asked for the sync, if not the owner; told too.
+
+    Returns:
+        What ``run`` returned, ``{"status": "skipped", "reason": "busy" | "gone" | "wiki"}``,
+        or ``{"status": "error", "error": ...}`` when the row couldn't be read.
+    """
+
+    def _skipped(reason: str) -> Dict[str, Any]:
+        logging.info("Skipping sync of source %s: %s", doc_id, reason)
+        if notify_skip:
+            _publish_sync_not_run(task, user, doc_id, name, loader, _SYNC_SKIP_MESSAGES[reason], reason, actor_id)
+        return {"status": "skipped", "reason": reason}
+
+    try:
+        with source_index_lock(str(doc_id), wait_seconds=lock_wait_seconds):
+            try:
+                with db_readonly() as conn:
+                    row = SourcesRepository(conn).get_any(str(doc_id), user)
+            except Exception as e:  # noqa: BLE001 - the sync doesn't run on the queued snapshot
+                logging.warning(f"Could not read source {doc_id} for its sync; not running it: {e}")
+                _publish_sync_not_run(task, user, doc_id, name, loader, _SYNC_UNREADABLE, actor_id=actor_id)
+                return {"status": "error", "error": _SYNC_UNREADABLE}
+            if row is None:
+                return _skipped("gone")
+            if _is_wiki_config(row.get("config")):
+                # A sync would replace a wiki's pages with the remote content.
+                return _skipped("wiki")
+            return run(row)
+    except SourceBusy:
+        return _skipped("busy")
+
+
+def sync(
+    self: Any,
+    source_data: Any,
+    name_job: str,
+    user: str,
+    loader: str,
+    sync_frequency: str,
+    retriever: str,
+    doc_id: Optional[str] = None,
+    directory: str = "temp",
+    connection_id: Optional[str] = None,
+    lock_wait_seconds: float = WORKER_WAIT_SECONDS,
+    notify_skip: bool = True,
+    actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Re-read a remote source and rebuild its index, holding its index lock (``_run_locked_sync``).
+
+    The sync crawls the row as it is under the lock (its loader, remote data,
+    schedule and chunking settings), not the arguments it was queued with.
+
+    Args:
+        self: Celery task instance.
+        source_data: The loader input the sync was queued with (the row's wins).
+        name_job: The source's name when queued.
+        user: Its owner.
+        loader: The remote loader when queued.
+        sync_frequency: Its schedule when queued.
+        retriever: Its retriever when queued.
+        doc_id: The source.
+        directory: Scratch directory for the build.
+        connection_id: The connection the loader reads through, if any.
+        lock_wait_seconds: How long to wait for another job on the source.
+        notify_skip: Publish a ``source.ingest.failed`` event (with ``reason``)
+            when the sync is skipped. Off for scheduled syncs: nobody waits on them.
+        actor_id: The user who asked for the sync (a team editor), who gets its
+            ``source.ingest.*`` events too; ``None`` for the owner.
+
+    Returns:
+        ``{"status": "success"}``, ``{"status": "skipped", "reason": "wiki" | "busy" | "gone"}``
+        or ``{"status": "error", "error": ...}``.
+    """
+
+    def _run(row: Dict[str, Any]) -> Dict[str, Any]:
+        row_loader = row.get("type") or loader
+        row_name = row.get("name") or name_job
+        row_data = normalize_remote_data(row_loader, row.get("remote_data"))
+        if not row_data:
+            error = "This source has nothing left to sync"
+            _publish_sync_not_run(self, user, doc_id, row_name, row_loader, error, actor_id=actor_id)
+            return {"status": "error", "error": error}
+        result = remote_worker(
             self,
-            source_data,
-            name_job,
+            row_data,
+            row_name,
             user,
-            loader,
+            row_loader,
             directory,
-            retriever,
-            sync_frequency,
+            row.get("retriever") or retriever,
+            row.get("sync_frequency") or sync_frequency,
             "sync",
             doc_id,
-            connection_id=connection_id,
+            # Re-chunk with the source's own settings, not the defaults.
+            config=row.get("config") or None,
+            connection_id=str(row["connection_id"]) if row.get("connection_id") else connection_id,
+            actor_id=actor_id,
+        )
+        if isinstance(result, dict) and result.get("status") == "skipped":
+            # The API refused the upload; remote_worker has said why.
+            return {"status": "skipped", "reason": result.get("reason")}
+        return {"status": "success"}
+
+    try:
+        return _run_locked_sync(
+            self, user, doc_id, name_job, loader, _run,
+            lock_wait_seconds=lock_wait_seconds, notify_skip=notify_skip, actor_id=actor_id,
         )
     except Exception as e:
         logging.error(f"Error during sync: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
-    return {"status": "success"}
 
 
 # Remote loaders that can only read with a connection (no public fallback).
@@ -1548,7 +2154,7 @@ def sync_worker(self, frequency):
     with db_readonly() as conn:
         result = conn.execute(
             sql_text(
-                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata "
+                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata, config "
                 "FROM sources WHERE sync_frequency = :freq"
             ),
             {"freq": frequency},
@@ -1564,6 +2170,11 @@ def sync_worker(self, frequency):
         doc_id = str(doc.get("id"))
 
         sync_counts["total_sync_count"] += 1
+
+        if _is_wiki_config(doc.get("config")):
+            # A sync would replace a wiki's pages with the remote content.
+            sync_counts["sync_skipped"] += 1
+            continue
 
         # Connector sources sync from their connection, whose token the
         # worker can refresh. Legacy ones with no connection still need the
@@ -1607,13 +2218,16 @@ def sync_worker(self, frequency):
             sync_counts["sync_skipped"] += 1
             continue
 
+        # A source busy with another change is left to the next schedule
+        # rather than holding up every sync after it.
         resp = sync(
             self, source_data, name, user, source_type, frequency, retriever, doc_id,
             connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
+            lock_wait_seconds=0,
+            notify_skip=False,
         )
-        sync_counts[
-            "sync_success" if resp["status"] == "success" else "sync_failure"
-        ] += 1
+        outcome = {"success": "sync_success", "skipped": "sync_skipped"}.get(resp["status"], "sync_failure")
+        sync_counts[outcome] += 1
     return {
         key: sync_counts[key]
         for key in [
@@ -2103,7 +2717,8 @@ def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
 
     Returns:
         Its extraction record, page count, transcript/OCR details and parse
-        warnings, plus ``reused_from`` naming the row.
+        warnings, its prompt-injection score when the current scorer made it,
+        plus ``reused_from`` naming the row.
     """
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
     copied = {
@@ -2111,8 +2726,51 @@ def _reused_parse_metadata(row: Dict[str, Any]) -> Dict[str, Any]:
         for key, value in metadata.items()
         if key in ("extraction", "page_count", "parse_warnings") or key.startswith(("transcript_", "ocr_"))
     }
+    if injection_scoring.from_metadata(metadata.get("injection")) is not None:
+        copied["injection"] = metadata["injection"]
     copied["reused_from"] = str(row.get("id"))
     return copied
+
+
+def _score_attachment_injection(user: str, attachment_id: Any, content: str, metadata: Dict[str, Any]):
+    """Score a stored attachment's text for prompt injection and keep it as ``metadata.injection``.
+
+    Runs once the upload is complete, so the user never waits on it; a turn
+    that sends the file first scores it then, or queues it. Gated by
+    ``DECISION_INJECTION_ENABLED``. A reuse that copied a score of the current
+    scorer is not scored again. A text not wholly scored within the
+    background budget gets no key, and the score cache answers instead.
+    Never raises.
+
+    Args:
+        user: The uploader.
+        attachment_id: The upload's handle.
+        content: The text stored for the prompt.
+        metadata: The metadata just stored.
+
+    Returns:
+        ``{p, scorer, windows_scored, windows_total}`` as stored, or None.
+    """
+    if not settings.DECISION_INJECTION_ENABLED or not (content or "").strip():
+        return None
+    if injection_scoring.from_metadata(metadata.get("injection")) is not None:
+        return None
+    try:
+        result = injection_scoring.score(
+            [content],
+            feature=INJECTION_ATTACHMENT_PARSE,
+            budget=Budget.BACKGROUND,
+            max_windows=settings.GUARDRAILS_INJECTION_ATTACHMENT_MAX_WINDOWS,
+        )
+        if result[0] is None or result.reasons[0] is not None:
+            return None
+        stored = injection_scoring.as_metadata(result[0])
+        with db_session() as conn:
+            AttachmentsRepository(conn).set_metadata_key(str(attachment_id), user, "injection", stored)
+        return stored
+    except Exception:  # noqa: BLE001 - the upload is already complete
+        logging.warning(f"Could not score attachment {attachment_id} for prompt injection", exc_info=True)
+        return None
 
 
 def _write_attachment_failure_row(
@@ -2442,6 +3100,9 @@ def _single_attachment_worker(self, file_info, user, *, emit_events: bool = True
             },
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
+        injection = _score_attachment_injection(user, attachment_id, content, metadata)
+        if injection is not None:
+            metadata = {**metadata, "injection": injection}
 
         return {
             "filename": filename,
@@ -3433,13 +4094,23 @@ def agent_webhook_worker(self, agent_id, payload):
                 agent_config = repo.get_by_legacy_id(str(agent_id))
         if not agent_config:
             raise ValueError(f"Agent with ID {agent_id} not found.")
-        input_data = json.dumps(payload)
+        # Unescaped, so the model (and a prompt-injection check) reads non-ASCII text as written.
+        input_data = json.dumps(payload, ensure_ascii=False)
     except Exception as e:
         logging.error(f"Error processing agent webhook: {e}", exc_info=True)
         raise
     self.update_state(state="PROGRESS", meta={"current": 50})
     from celery.exceptions import SoftTimeLimitExceeded
 
+    # A webhook run has no row until it ends: mark it for Activity › Now.
+    owner_id = agent_config.get("user_id")
+    run_id = getattr(getattr(self, "request", None), "id", None)
+    # Walks the whole payload, which can be tens of thousands of characters.
+    retrieval_query = _webhook_retrieval_query(payload)
+    _mark_webhook_run(
+        owner_id, run_id, agent_config, started=True,
+        summary=retrieval_query[:_WEBHOOK_SUMMARY_MAX_CHARS],
+    )
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
@@ -3448,10 +4119,10 @@ def agent_webhook_worker(self, agent_id, payload):
         outcome = run_agent_headless(
             agent_config,
             input_data,
-            retrieval_query=_webhook_retrieval_query(payload),
+            retrieval_query=retrieval_query,
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
-            request_id=getattr(getattr(self, "request", None), "id", None),
+            request_id=run_id,
         )
         result = {
             "answer": outcome.get("answer", ""),
@@ -3479,7 +4150,56 @@ def agent_webhook_worker(self, agent_id, payload):
         )
         return {"status": "success", "result": result}
     finally:
+        _mark_webhook_run(owner_id, run_id, agent_config, started=False)
         self.update_state(state="PROGRESS", meta={"current": 100})
+
+
+# How much of a webhook run's text its Activity marker keeps for the Logs row.
+_WEBHOOK_SUMMARY_MAX_CHARS = 200
+
+
+def _mark_webhook_run(
+    owner_id: Any, run_id: Any, agent_config: dict, *, started: bool, summary: Optional[str] = None
+) -> None:
+    """Add or remove a webhook run's Activity marker and tell open pages.
+
+    Best-effort: a failure here never touches the run.
+
+    Args:
+        owner_id: The agent's owner, whose Activity lists the run.
+        run_id: The Celery task id.
+        agent_config: The agent row.
+        started: True when the run starts, False when it ends.
+        summary: What the run is about (the payload's human-written text),
+            shown on its Logs row while it runs.
+    """
+    if not owner_id or not run_id:
+        return
+    try:
+        from docsgpt.activity.flags import mark_run_finished, mark_run_started
+        from docsgpt.events.publisher import publish_user_event
+
+        if started:
+            mark_run_started(
+                str(owner_id),
+                str(run_id),
+                {
+                    "kind": "webhook",
+                    "agent_id": str(agent_config.get("id") or ""),
+                    "agent_name": agent_config.get("name"),
+                    "summary": summary,
+                },
+                ttl_seconds=int(settings.WEBHOOK_RUN_TIMEOUT) + 60,
+            )
+        else:
+            mark_run_finished(str(owner_id), str(run_id))
+        publish_user_event(
+            str(owner_id),
+            "activity.updated",
+            {"kind": "webhook", "run_id": str(run_id), "running": started},
+        )
+    except Exception:
+        logging.exception("webhook: Activity marker update failed for %s", run_id)
 
 
 # Fields a person writes, in the order they best say what an event is about.
@@ -3531,7 +4251,7 @@ def _webhook_retrieval_query(payload: Any) -> str:
                 walk(item, depth + 1)
 
     walk(payload, 0)
-    query = "\n".join(dict.fromkeys(found)) or json.dumps(payload)
+    query = "\n".join(dict.fromkeys(found)) or json.dumps(payload, ensure_ascii=False)
     return query[:_WEBHOOK_QUERY_MAX_CHARS]
 
 
@@ -3596,6 +4316,88 @@ def _link_source_to_connection(source_id: str, connection_id: str) -> None:
         logging.warning("Could not link source %s to connection %s", source_id, connection_id, exc_info=True)
 
 
+# Raised when a connector ingest starts storing something new per file, so
+# sources ingested before it re-ingest once. 2: each file's web link.
+_CONNECTOR_INGEST_VERSION = 2
+
+
+def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: Any) -> Optional[str]:
+    """Combine a connector's selection fingerprint with the source's processing settings.
+
+    Changing the chunking or retrieval settings changes the result, so the
+    next sync re-ingests even when no file changed. So does a new
+    ``_CONNECTOR_INGEST_VERSION``. ``retrieval.show_links`` is left out: it
+    only decides what a search returns, not what is ingested.
+
+    Args:
+        selection_fingerprint: The loader's fingerprint of the selected files, or ``None``.
+        config: The source's ``SourceConfig`` dict (or its JSON), or ``None``.
+
+    Returns:
+        A hex digest, or ``None`` when the loader gave no fingerprint.
+    """
+    if not selection_fingerprint:
+        return None
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except ValueError:
+            # Not JSON: hash the raw string, which still changes when the settings do.
+            pass
+    if isinstance(config, dict) and isinstance(config.get("retrieval"), dict):
+        retrieval = {k: v for k, v in config["retrieval"].items() if k != "show_links"}
+        config = {**config, "retrieval": retrieval}
+    payload = json.dumps(
+        {"selection": selection_fingerprint, "config": config or {}, "version": _CONNECTOR_INGEST_VERSION},
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _connector_selection_unchanged(
+    loader: Any, source_config: Dict[str, Any], config: Any, source_id: str, user: str
+) -> bool:
+    """Whether a connector source's selection matches the fingerprint stored at its last ingest.
+
+    Any doubt (no stored fingerprint, a loader without one, an error reading
+    either) answers ``False``, so the sync re-ingests as before.
+
+    Args:
+        loader: The connector loader the sync would download with.
+        source_config: The stored selection (``file_ids``, ``folder_ids``, ``recursive``).
+        config: The source's ``SourceConfig`` dict, or ``None``.
+        source_id: The source being synced.
+        user: The source's owner.
+    """
+    try:
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
+        remote_data = (source or {}).get("remote_data")
+        if isinstance(remote_data, str):
+            remote_data = json.loads(remote_data)
+        previous = remote_data.get("sync_fingerprint") if isinstance(remote_data, dict) else None
+        if not previous:
+            return False
+        current = _connector_sync_fingerprint(loader.sync_fingerprint(source_config), config)
+    except Exception:
+        logging.warning("Could not check source %s for changes; syncing it in full", source_id, exc_info=True)
+        return False
+    return current == previous
+
+
+def _mark_source_synced(source_id: str, user: str) -> None:
+    """Record that a source was synced just now, without changing its index."""
+    try:
+        with db_session() as conn:
+            repo = SourcesRepository(conn)
+            source = repo.get_any(source_id, user)
+            if source is not None:
+                repo.update(str(source["id"]), user, {"date": datetime.datetime.now(datetime.timezone.utc)})
+    except Exception:
+        logging.warning("Failed to update last_sync for source %s", source_id, exc_info=True)
+
+
 def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
     """Re-download and re-index a connector source from its connection.
 
@@ -3609,8 +4411,10 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
         source_id: The source to sync.
 
     Returns:
-        ``{"status": "success" | "paused" | "disabled" | "skipped"}`` plus
-        the ingest result.
+        ``{"status": "success", "result": ...}`` with the ingest result,
+        ``{"status": "paused" | "disabled"}``, ``{"status": "skipped", "reason": ...}``
+        (``wiki``, or the sync's own ``busy`` / ``gone`` / ``wiki``; none when the
+        source or its connection is missing) or the sync's ``{"status": "error", "error": ...}``.
     """
     from docsgpt.connectors.service import ConnectionUnavailable, connector_enabled, normalize_status
     from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
@@ -3634,6 +4438,9 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
         enabled = connection is not None and connector_enabled(conn, connection)
     if not source or not connection:
         return {"status": "skipped"}
+    if _is_wiki_config(source.get("config")):
+        # A sync would replace a wiki's pages with the connector's files.
+        return {"status": "skipped", "reason": "wiki"}
     if not enabled:
         return {"status": "disabled"}
     if normalize_status(connection) != "connected":
@@ -3660,9 +4467,14 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             doc_id=str(source["id"]),
             sync_frequency=source.get("sync_frequency") or "never",
             config=source.get("config") or None,
+            # A scheduled run: nobody waits on it, so a skip goes unannounced.
+            notify_skip=False,
         )
     except ConnectionUnavailable:
         return {"status": "paused"}
+    if isinstance(result, dict) and result.get("status") in ("skipped", "error"):
+        # Busy, deleted or made a wiki meanwhile (or its row couldn't be read): it didn't sync.
+        return result
     return {"status": "success", "result": result}
 
 
@@ -3678,14 +4490,22 @@ def ingest_connector(
     retriever: str = "classic",
     operation_mode: str = "upload",
     doc_id=None,
-    sync_frequency: str = "never",
+    sync_frequency: Optional[str] = "never",
     config=None,
     idempotency_key=None,
     source_id=None,
     connection_id=None,
+    notify_skip: bool = True,
+    actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
+
+    A sync runs on the row read holding the source's index lock
+    (``_run_locked_sync``): it downloads the row's current selection and
+    chunks with its current settings, and its upload is marked
+    ``operation: "sync"``, so the API keeps the row's settings. A first
+    ingest (``upload``) takes no lock: the upload creates its row.
 
     Args:
         job_name: Name of the ingestion job
@@ -3699,20 +4519,81 @@ def ingest_connector(
         retriever: Type of retriever to use
         operation_mode: "upload" for initial ingestion, "sync" for incremental sync
         doc_id: Document ID for sync operations (required when operation_mode="sync")
-        sync_frequency: How often to sync ("never", "daily", "weekly", "monthly")
+        sync_frequency: How often to sync ("never", "daily", "weekly", "monthly"),
+            stored on a new source; ``None`` is "never".
         config: Per-source ``SourceConfig`` dict. ``None``/``{}`` → classic
-            defaults (byte-identical to prior behavior).
+            defaults (byte-identical to prior behavior). A sync uses the
+            row's own instead, and doesn't run if the row can't be read.
         idempotency_key: When provided, the ``source_id`` is derived
             deterministically so a retried upload reuses the same source row.
         source_id: When supplied, the worker uses it verbatim so SSE envelopes
             carry the same id the HTTP route already returned to the frontend
             — required for non-idempotent uploads where the route can't
             predict ``_derive_source_id(idempotency_key)``.
+        notify_skip: Publish a ``source.ingest.failed`` event (with
+            ``reason``) when a sync is skipped. Off for scheduled syncs.
+        actor_id: The user who asked for the ingest or sync (a team editor),
+            who gets its ``source.ingest.*`` events too; ``None`` for the owner.
+
+    Returns:
+        The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``
+        (also when the API refused the sync's upload), or ``{"status": "error", "error": ...}``
+        for a sync whose row can't be read.
     """
     logging.info(
         f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}"
     )
+    sync_frequency = sync_frequency or "never"
+    if operation_mode != "sync" or not doc_id:
+        return _ingest_connector(
+            self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
+            operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,
+            actor_id=actor_id,
+        )
 
+    def _run(row: Dict[str, Any]) -> Dict[str, Any]:
+        selection = row.get("remote_data")
+        if isinstance(selection, str):
+            # A legacy row's remote_data can be JSON text.
+            try:
+                selection = json.loads(selection)
+            except ValueError:
+                selection = None
+        if not isinstance(selection, dict):
+            selection = {}
+        return _ingest_connector(
+            self, row.get("name") or job_name, user, source_type, session_token,
+            selection.get("file_ids", file_ids), selection.get("folder_ids", folder_ids),
+            selection.get("recursive", recursive), row.get("retriever") or retriever, operation_mode, doc_id,
+            row.get("sync_frequency") or sync_frequency, row.get("config") or None, idempotency_key, source_id,
+            connection_id, actor_id=actor_id,
+        )
+
+    return _run_locked_sync(
+        self, user, doc_id, job_name, source_type, _run, notify_skip=notify_skip, actor_id=actor_id,
+    )
+
+
+def _ingest_connector(
+    self: Any,
+    job_name: str,
+    user: str,
+    source_type: str,
+    session_token: Optional[str],
+    file_ids: Optional[List[str]],
+    folder_ids: Optional[List[str]],
+    recursive: bool,
+    retriever: str,
+    operation_mode: str,
+    doc_id: Optional[str],
+    sync_frequency: str,
+    config: Any,
+    idempotency_key: Optional[str],
+    source_id: Optional[str],
+    connection_id: Optional[str],
+    actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """The body of ``ingest_connector`` (same arguments); a sync runs it holding the source's index lock."""
     # Source id resolution mirrors ``ingest_worker`` / ``remote_worker``:
     # sync mode reuses ``doc_id``; otherwise the caller-supplied
     # ``source_id`` (minted by the HTTP route and already echoed to the
@@ -3731,18 +4612,23 @@ def ingest_connector(
     # First-attempt gate: Celery retries re-run the body, and a
     # repeated ``queued`` here would oscillate the toast through
     # ``queued`` again between ``failed`` and ``completed``.
+    queued = {
+        "source_id": source_id_for_events,
+        "job_name": job_name,
+        "loader": source_type,
+        "operation": operation_mode,
+        **_task_id_field(self),
+    }
     if self.request.retries == 0:
-        publish_user_event(
-            user,
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.queued",
-            {
-                "source_id": source_id_for_events,
-                "job_name": job_name,
-                "loader": source_type,
-                "operation": operation_mode,
-            },
+            queued,
             scope={"kind": "source", "id": source_id_for_events},
         )
+    else:
+        # The failed attempt before cleared the Activity marker.
+        mark_ingest_running(user, queued)
 
     self.update_state(state="PROGRESS", meta={"current": 1})
 
@@ -3774,6 +4660,36 @@ def ingest_connector(
                 "recursive": recursive,
             }
 
+            # A sync whose selection has not changed since the last ingest
+            # (same files, same modified times, same settings) keeps the
+            # index it has instead of downloading and embedding it again.
+            if operation_mode == "sync" and doc_id and _connector_selection_unchanged(
+                remote_loader, api_source_config, config, source_id_for_events, user
+            ):
+                logging.info(f"No changes in {source_type} source {source_id_for_events}; sync skipped")
+                _mark_source_synced(source_id_for_events, user)
+                _publish_source_event(
+                    user, actor_id,
+                    "source.ingest.completed",
+                    {
+                        "source_id": source_id_for_events,
+                        "job_name": job_name,
+                        "loader": source_type,
+                        "operation": operation_mode,
+                        **_task_id_field(self),
+                        "tokens": 0,
+                        "no_changes": True,
+                    },
+                    scope={"kind": "source", "id": source_id_for_events},
+                )
+                return {
+                    "user": user,
+                    "name": job_name,
+                    "type": source_type,
+                    "id": source_id_for_events,
+                    "status": "unchanged",
+                }
+
             # Step 2: Download files to temp directory
             self.update_state(
                 state="PROGRESS", meta={"current": 20, "status": "Downloading files"}
@@ -3789,14 +4705,15 @@ def ingest_connector(
                 # Connector returned no files — surface as a benign
                 # ``completed`` event with zero tokens so the toast
                 # closes out cleanly instead of waiting on polling.
-                publish_user_event(
-                    user,
+                _publish_source_event(
+                    user, actor_id,
                     "source.ingest.completed",
                     {
                         "source_id": source_id_for_events,
                         "job_name": job_name,
                         "loader": source_type,
                         "operation": operation_mode,
+                        **_task_id_field(self),
                         "tokens": 0,
                         "no_changes": True,
                     },
@@ -3838,11 +4755,16 @@ def ingest_connector(
                 chunking_strategy=cfg.chunking.strategy,
                 max_tokens=cfg.chunking.max_tokens,
                 min_tokens=cfg.chunking.min_tokens,
+                chunk_overlap=cfg.chunking.chunk_overlap,
                 duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
 
             # Preserve source information in document metadata
+            file_urls = {
+                os.path.normpath(path): url
+                for path, url in (download_info.get("file_urls") or {}).items()
+            }
             for doc in raw_docs:
                 if hasattr(doc, "extra_info") and doc.extra_info:
                     source = doc.extra_info.get("source")
@@ -3851,6 +4773,10 @@ def ingest_connector(
                         doc.extra_info["source"] = os.path.relpath(
                             source, start=temp_dir
                         )
+                    # The file's link in the service it was synced from.
+                    url = file_urls.get(os.path.normpath(doc.extra_info.get("source") or "."))
+                    if url:
+                        doc.extra_info["url"] = url
 
             docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
 
@@ -3876,11 +4802,21 @@ def ingest_connector(
                 docs, vector_store_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
+                actor_id=actor_id,
                 progress_start=60, progress_end=100,
             )
             assert_index_complete(source_uuid)
 
             tokens = count_tokens_docs(docs)
+
+            # The fingerprint lets the next sync skip an unchanged selection.
+            # It is left out when a file failed, so that sync tries again.
+            remote_data = {"provider": source_type, **api_source_config}
+            sync_fingerprint = _connector_sync_fingerprint(
+                download_info.get("sync_fingerprint"), config
+            )
+            if sync_fingerprint:
+                remote_data["sync_fingerprint"] = sync_fingerprint
 
             # Step 6: Upload index files
             file_data = {
@@ -3890,13 +4826,17 @@ def ingest_connector(
                 "retriever": retriever,
                 "id": source_id_for_events,
                 "type": "connector:file",
-                "remote_data": json.dumps(
-                    {"provider": source_type, **api_source_config}
-                ),
+                "remote_data": json.dumps(remote_data),
                 "directory_structure": json.dumps(directory_structure),
                 "sync_frequency": sync_frequency,
             }
-            if config:
+            if operation_mode == "sync":
+                # The API keeps the row's own settings (a wiki conversion or a
+                # schedule change may have landed since the row was read) and
+                # stores only the fingerprint; an empty one clears it.
+                file_data["operation"] = "sync"
+                file_data["sync_fingerprint"] = sync_fingerprint or ""
+            elif config:
                 file_data["config"] = json.dumps(config)
 
             file_data["last_sync"] = datetime.datetime.now(datetime.timezone.utc)
@@ -3918,7 +4858,9 @@ def ingest_connector(
                         upd_err,
                     )
 
-            upload_index(vector_store_path, file_data)
+            refused = _upload_refusal(upload_index(vector_store_path, file_data))
+            if refused:
+                return _skip_refused_sync(self, user, source_id_for_events, job_name, source_type, refused, actor_id)
             if connection_id:
                 _link_source_to_connection(source_id_for_events, connection_id)
 
@@ -3929,19 +4871,23 @@ def ingest_connector(
 
             logging.info(f"Remote ingestion completed: {job_name}")
 
-            publish_user_event(
-                user,
+            _publish_source_event(
+                user, actor_id,
                 "source.ingest.completed",
                 {
                     "source_id": source_id_for_events,
                     "job_name": job_name,
                     "loader": source_type,
                     "operation": operation_mode,
+                    **_task_id_field(self),
                     "tokens": tokens,
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
-            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+            if operation_mode == "sync":
+                _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+            else:
+                _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
 
             return {
                 "user": user,
@@ -3953,14 +4899,16 @@ def ingest_connector(
             }
     except Exception as e:
         logging.error(f"Error during remote ingestion: {e}", exc_info=True)
-        publish_user_event(
-            user,
+        close_failed_ingest_progress(source_id_for_events, task=self, error=e)
+        _publish_source_event(
+            user, actor_id,
             "source.ingest.failed",
             {
                 "source_id": source_id_for_events,
                 "job_name": job_name,
                 "loader": source_type,
                 "operation": operation_mode,
+                **_task_id_field(self),
                 "error": str(e)[:1024],
             },
             scope={"kind": "source", "id": source_id_for_events},
@@ -4070,6 +5018,12 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     chunk metadata shape matches the reingest path (``source``/``title``/
     ``filename``) so retrieval and future targeted deletes line up.
 
+    The work holds the source's index lock (``source_index_lock``): pages
+    re-embedded at once (a wiki conversion queues one task per page) would
+    each save the whole FAISS index and drop the others' chunks. A source
+    busy past the wait retries the task later; once the retries run out the
+    page is marked ``failed``.
+
     Args:
         self: Celery task instance.
         source_id: Source the page belongs to.
@@ -4080,15 +5034,64 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     Returns:
         A status dict: ``{"status", "added", "deleted"}`` on re-embed, or
         ``{"status": "deleted", "deleted": n}`` when the page is gone.
-    """
-    from docsgpt.vectorstore.vector_creator import VectorCreator
 
+    Raises:
+        celery.exceptions.Retry: The source was busy; the task runs again later.
+        SourceBusy: Still busy after the last retry.
+    """
     source_id = str(source_id)
 
     with db_readonly() as conn:
         source = SourcesRepository(conn).get_any(source_id, user)
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+
+    def _out_of_retries(_busy: SourceBusy) -> None:
+        # The page is not embedded, and says so.
+        with db_session() as conn:
+            WikiPagesRepository(conn).set_embed_status(source_id, path, "failed")
+
+    return _locked_or_retry(
+        self, source_index_lock, source_id, lambda: _reembed_wiki_page(source, path, user), _out_of_retries,
+    )
+
+
+def _locked_or_retry(
+    task: Any, lock: Callable[[str], Any], source_id: str, run: Callable[[], Dict[str, Any]],
+    on_exhausted: Callable[[SourceBusy], None],
+) -> Dict[str, Any]:
+    """Run ``run`` holding ``lock`` on the source; a source busy past the wait retries the task later.
+
+    Args:
+        task: The bound Celery task.
+        lock: ``source_index_lock`` or ``graph_extract_lock``.
+        source_id: The source.
+        run: The work.
+        on_exhausted: Called with the error once the retries have run out.
+
+    Returns:
+        What ``run`` returned.
+
+    Raises:
+        celery.exceptions.Retry: The source was busy; the task runs again later.
+        SourceBusy: Still busy after the last retry.
+    """
+    try:
+        with lock(source_id):
+            return run()
+    except SourceBusy as busy:
+        try:
+            raise task.retry(exc=busy, countdown=BUSY_RETRY_COUNTDOWN_SECONDS)
+        except SourceBusy as error:
+            on_exhausted(error)
+            raise
+
+
+def _reembed_wiki_page(source: Dict[str, Any], path: str, user: str) -> Dict[str, Any]:
+    """The body of ``reembed_wiki_page_worker``, run holding the source's index lock."""
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
     source_id = str(source["id"])
     cfg = SourceConfig.parse(source.get("config"))
 
@@ -4110,6 +5113,7 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
             chunking_strategy=cfg.chunking.strategy,
             max_tokens=cfg.chunking.max_tokens,
             min_tokens=cfg.chunking.min_tokens,
+            chunk_overlap=cfg.chunking.chunk_overlap,
             duplicate_headers=cfg.chunking.duplicate_headers,
         )
         chunks = chunker.chunk(
@@ -4151,6 +5155,943 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
         raise
 
     return {"status": "embedded", "added": added, "deleted": deleted}
+
+
+def _alias_fields(aliases: List[str]) -> Dict[str, Any]:
+    """A page leaf's ``requested_urls`` field, or ``{}`` for a page nothing redirected to."""
+    return {"requested_urls": list(aliases)} if aliases else {}
+
+
+def _tree_of(row: Dict[str, Any]) -> Dict[str, Any]:
+    """A source row's ``directory_structure``, or ``{}`` when it holds none."""
+    structure = row.get("directory_structure")
+    return structure if isinstance(structure, dict) else {}
+
+
+def _listed_page_keys(config: Dict[str, Any]) -> set:
+    """The ``page_key`` of every page entry in a Website config."""
+    return {_web_page_key(e["url"]) for e in config.get("entries") or [] if e.get("mode") == "page"}
+
+
+def _unique_page_path(path: str, taken: set) -> str:
+    """``path``, or the first ``stem-N.md`` (N from 2) not in ``taken``, as ``dedupe_virtual_paths`` names them."""
+    if path not in taken:
+        return path
+    stem = path[: -len(".md")] if path.endswith(".md") else path
+    suffix = 2
+    while f"{stem}-{suffix}.md" in taken:
+        suffix += 1
+    return f"{stem}-{suffix}.md"
+
+
+def _delete_chunks_checked(store: Any, chunk_ids: List[str], relist: Callable[[], Iterable[str]]) -> None:
+    """Delete chunks, raising unless every one of them is gone.
+
+    ``delete_chunks`` returns a count, and MongoDB, Qdrant and Milvus report a
+    failed delete only by not counting it. FAISS and pgvector also leave out
+    ids they don't hold, so a short count alone can't tell a failure from a
+    chunk that was already gone: the chunks are listed again, and only an id
+    still listed is a failure.
+
+    Args:
+        store: The source's vector store.
+        chunk_ids: The ids to delete.
+        relist: Lists the ids the deleted chunks were found by (their pages' chunks now).
+
+    Raises:
+        RuntimeError: Some of the chunks are still stored.
+        Exception: Whatever the delete or the listing raised.
+    """
+    ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids))
+    if not ids:
+        return
+    deleted = store.delete_chunks(ids)
+    if isinstance(deleted, int) and deleted >= len(ids):
+        return
+    left = set(ids) & {str(chunk_id) for chunk_id in relist()}
+    if left:
+        raise RuntimeError(f"{len(left)} of {len(ids)} chunks could not be deleted; the change was not saved")
+
+
+def _website_page_targets(
+    operation: str, pages: List[Tuple[str, str]], urls: Optional[List[str]], file_path: Optional[str],
+    taken_paths: Iterable[str] = (), url: Optional[str] = None, requested: Optional[Dict[str, List[str]]] = None,
+) -> Tuple[List[str], Dict[str, Dict[str, Any]], bool]:
+    """What a ``website_pages`` run fetches, and where each page goes in the tree.
+
+    A page already in the tree (matched by ``page_key``, so ``/docs/`` and
+    ``/docs#a`` are one page, or by an address that redirected to it) keeps
+    its path and has its stored copy replaced. A new page takes its virtual
+    path, or a free ``-N`` variant of it when another leaf has that path.
+
+    A refreshed page is found by its address in the tree as it is now (a sync
+    may have moved it), and is fetched from the first address it was asked
+    for, as a sync fetches its entry.
+
+    Args:
+        operation: ``add`` or ``refresh``.
+        pages: ``(path, url)`` of the pages in the tree.
+        urls: For ``add``: the addresses to fetch.
+        file_path: For ``refresh``: the path the route saw, preferred when two leaves hold the page.
+        taken_paths: Every leaf path in the tree, pages or not.
+        url: For ``refresh``: the page's address.
+        requested: ``{path: aliases}`` of the pages stored after a redirect (``_page_aliases``).
+
+    Returns:
+        ``(urls to fetch, {page key: {"path", "old_url"}}, include_host)``;
+        ``old_url`` is the stored address of the page being replaced, or ``None``.
+
+    Raises:
+        ValueError: An unknown operation, or the page to refresh is no longer in the tree.
+    """
+    from docsgpt.parser.remote.base import url_to_virtual_path
+
+    requested = requested or {}
+    if operation == "refresh":
+        key = _web_page_key(url or "")
+        matches = [
+            (path, page_url) for path, page_url in pages
+            if key in {_web_page_key(u) for u in (page_url, *requested.get(path, ())) if u}
+        ]
+        if not matches:
+            raise ValueError(f"The page {url} is no longer in this source")
+        path, stored_url = next((m for m in matches if m[0] == file_path), matches[0])
+        fetch_url = (requested.get(path) or [stored_url])[0]
+        return [fetch_url], {_web_page_key(stored_url): {"path": path, "old_url": stored_url}}, False
+    if operation != "add":
+        raise ValueError(f"Unknown operation {operation!r}")
+    stored = {}
+    for path, url in pages:
+        stored.setdefault(_web_page_key(url), (path, url))
+    for path, url in pages:
+        # An address that redirects to a stored page is that page.
+        for alias in requested.get(path, ()):
+            stored.setdefault(_web_page_key(alias), (path, url))
+    include_host = len({urlsplit(u).netloc for _, u in pages} | {urlsplit(u).netloc for u in urls or []}) > 1
+    taken = {path for path, _ in pages} | set(taken_paths)
+    fetch: List[str] = []
+    targets: Dict[str, Dict[str, Any]] = {}
+    for url in urls or []:
+        key = _web_page_key(url)
+        if key in targets:
+            continue
+        fetch.append(url)
+        if key in stored:
+            targets[key] = {"path": stored[key][0], "old_url": stored[key][1]}
+        else:
+            path = _unique_page_path(url_to_virtual_path(url, include_host), taken)
+            taken.add(path)
+            targets[key] = {"path": path, "old_url": None}
+    return fetch, targets, include_host
+
+
+class PageOutOfScope(ValueError):
+    """A refreshed page now leads where the source's sites and skip rules don't reach; it was removed."""
+
+    #: The ``reason`` on the ``source.ingest.failed`` event, for the UI's wording.
+    reason = "out_of_scope"
+
+
+def _refresh_in_scope(config: Dict[str, Any], addresses: Iterable[Optional[str]], final_url: str) -> bool:
+    """Whether a sync would still keep a refreshed page fetched as ``final_url``.
+
+    A page entry is fetched wherever it leads, so a page any of whose
+    addresses an entry lists is kept. A page found by a site's crawl is kept
+    only when some site entry's scope, skip rules included, accepts the
+    address it was stored under now (a crawl drops a page that redirects out
+    of scope). A config with no entries (an old source whose address didn't
+    parse) can't say, and keeps it.
+
+    Args:
+        config: The source's Website config (an old url, crawler or sitemap
+            source's converted one, which its syncs load too).
+        addresses: The page's stored address, the one it was asked for, and
+            the ones the fetch reported.
+        final_url: The address the fetch answered from.
+
+    Returns:
+        False when a sync would drop the page.
+    """
+    from docsgpt.parser.remote.website_loader import SiteScope
+
+    entries = config.get("entries") or []
+    if not entries:
+        return True
+    listed = _listed_page_keys(config)
+    if any(_web_page_key(address) in listed for address in addresses if address):
+        return True
+    skip = config.get("skip") or []
+    return any(
+        SiteScope(e["url"], e.get("path_prefix") or "", bool(e.get("include_subdomains")), skip).accepts(final_url)
+        for e in entries
+        if e.get("mode") == "site"
+    )
+
+
+def _update_page_graph(
+    cfg: SourceConfig, source_id: str, user: str, task_id: Optional[str], old_chunk_ids: List[str],
+    new_chunk_ids: Iterable[str] = (),
+) -> None:
+    """Bring a graphrag source's graph up to date after a page change, chunk by chunk.
+
+    The deleted chunks' entities and relationships come out first (no LLM
+    call); then ``extract_graph`` is queued, without a reset, for the new
+    chunks only, keyed by the page task so each change gets its own run.
+
+    A no-op for any other source, or when GraphRAG is unavailable. Never
+    raises: a failure is logged and leaves the graph as it was, and the page
+    change stands.
+
+    Args:
+        cfg: The source's config.
+        source_id: The source.
+        user: Its owner.
+        task_id: The page task's id, for the extraction's idempotency key.
+        old_chunk_ids: Ids of the chunks the change deleted.
+        new_chunk_ids: Ids of the chunks the change stored, to extract.
+    """
+    if cfg.kind != "graphrag":
+        return
+    from docsgpt.graphrag import graphrag_available
+
+    if not graphrag_available():
+        return
+    new_ids = [str(chunk_id) for chunk_id in new_chunk_ids]
+    try:
+        if old_chunk_ids:
+            from docsgpt.graphrag.store import GraphStore
+
+            GraphStore().delete_chunks(source_id, old_chunk_ids)
+        if new_ids:
+            from docsgpt.api.user.tasks import extract_graph
+
+            key = f"extract-graph:{source_id}:pages:{task_id or uuid.uuid4().hex}"
+            extract_graph.delay(source_id, user, idempotency_key=key, chunk_ids=new_ids)
+    except Exception as e:  # noqa: BLE001 - the page change is done; the graph catches up at the next build
+        logging.warning(f"Could not update the graph of {source_id} after a page change: {e}", exc_info=True)
+
+
+def _replace_web_page(store: Any, chunker: Any, doc: Document, path: str, old_url: Optional[str],
+                      fetched_at: str) -> Dict[str, Any]:
+    """Store a fetched page's new chunks, in one batch; its previous copy stays until the tree is written.
+
+    ``add_chunks`` stores all of them or none, so a page is never left with
+    partial content. The old chunks are listed before anything is added, so
+    only they are deleted once the tree lists the new copy (``_save_page_changes``).
+
+    Args:
+        store: The source's vector store.
+        chunker: The source's chunker.
+        doc: The fetched page; ``extra_info["source"]`` is its URL and
+            ``extra_info["requested_urls"]`` the addresses that redirected to it.
+        path: Its tree path.
+        old_url: The stored address of the copy it replaces, if any.
+        fetched_at: When it was fetched (ISO 8601).
+
+    Returns:
+        ``{"key", "path", "leaf", "old_url", "requested_urls", "old_ids",
+        "new_ids"}``: the tree change for the page, the chunks it replaces and
+        the ones it added.
+
+    Raises:
+        Exception: Whatever adding the chunks raised; none of them stay.
+    """
+    url = doc.extra_info["source"]
+    aliases = _page_aliases(url, doc.extra_info)
+    doc.extra_info["file_path"] = path
+    # pgvector refuses a NUL in a chunk's text, and JSONB one in its metadata
+    # or the tree's leaf; the full ingest strips them too.
+    title = strip_null_bytes(doc.extra_info.get("title"))
+    # A copy stored under an asked-for address (before it redirected) is this page too.
+    old_ids = store.chunk_ids_by_source_paths([u for u in dict.fromkeys([old_url, url, *aliases]) if u])
+    texts: List[str] = []
+    metadatas: List[Dict[str, Any]] = []
+    token_count = 0
+    size_bytes = 0
+    for chunk in chunker.chunk(documents=[doc]):
+        metadata = strip_null_bytes(dict(chunk.extra_info or {}))
+        metadata.update({"source": url, "file_path": path})
+        if title:
+            metadata["title"] = title
+        text = sanitize_content(chunk.text)
+        texts.append(text)
+        metadatas.append(metadata)
+        token_count += count_tokens_windowed(text)
+        size_bytes += len(text.encode("utf-8"))
+    # One batch per page: FAISS saves the whole index once, not once per chunk.
+    added = store.add_chunks(texts, metadatas) if texts else []
+    new_ids = [chunk_id for chunk_id in added if chunk_id is not None]
+    leaf = {
+        "type": "text/markdown",
+        "size_bytes": size_bytes,
+        "token_count": token_count,
+        "url": url,
+        "title": title,
+        "fetched_at": fetched_at,
+        **_alias_fields(aliases),
+    }
+    return {
+        "key": _web_page_key(url),
+        "path": path,
+        "old_url": old_url,
+        "requested_urls": aliases,
+        "old_ids": old_ids,
+        "new_ids": new_ids,
+        "leaf": leaf,
+    }
+
+
+def _change_keys(change: Dict[str, Any]) -> set:
+    """The ``page_key``s a page change covers: its address, the one it replaced and the ones that led to it."""
+    keys = {change["key"]}
+    for url in (change.get("old_url"), *change.get("requested_urls", ())):
+        if url:
+            keys.add(_web_page_key(url))
+    return keys
+
+
+def _apply_page_changes(structure: Dict[str, Any], changes: List[Dict[str, Any]]) -> List[str]:
+    """Put replaced and added pages into a tree, in place.
+
+    Any entry for the same page (by ``page_key``, the replaced address
+    included) is removed first, so an address variant or a page that now
+    redirects doesn't leave a second entry behind. A removed entry for the
+    same fetched page hands its ``requested_urls`` on to the new one: a page
+    two entries redirect to, added one entry at a time, keeps both.
+
+    Args:
+        structure: ``directory_structure``.
+        changes: ``_replace_web_page`` results.
+
+    Returns:
+        The tree paths written or removed.
+    """
+    from docsgpt.parser.remote.website_tree import remove_pages, set_page
+
+    touched: List[str] = []
+    for change in changes:
+        keys = _change_keys(change)
+        stale = [
+            (path, leaf) for path, leaf in _tree_leaves(structure)
+            if leaf.get("url") and _web_page_key(leaf["url"]) in keys
+        ]
+        url = change["leaf"]["url"]
+        kept_aliases = [
+            alias for _path, leaf in stale if _web_page_key(leaf["url"]) == change["key"]
+            for alias in _page_aliases(leaf["url"], leaf)
+        ]
+        aliases = _page_aliases(url, {"requested_urls": [*kept_aliases, *change.get("requested_urls", ())]})
+        leaf = {k: v for k, v in change["leaf"].items() if k != "requested_urls"}
+        stale_paths = [path for path, _leaf in stale]
+        remove_pages(structure, stale_paths)
+        set_page(structure, change["path"], {**leaf, **_alias_fields(aliases)})
+        touched += [*stale_paths, change["path"]]
+    return list(dict.fromkeys(touched))
+
+
+def _tree_fields(row: Dict[str, Any], structure: Dict[str, Any]) -> Dict[str, Any]:
+    """The fields a page change writes with a source's new tree.
+
+    ``tokens`` follows the tree, and so does the page count of the source's
+    Website report (``metadata.website.pages``), when it has one.
+
+    Args:
+        row: The source row the tree was read from.
+        structure: Its new ``directory_structure``.
+
+    Returns:
+        The fields for ``SourcesRepository.update``.
+    """
+    from docsgpt.parser.remote.website_tree import count_pages, total_tokens
+
+    fields: Dict[str, Any] = {"directory_structure": structure, "tokens": str(total_tokens(structure))}
+    metadata = row.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("website"), dict):
+        fields["metadata"] = {**metadata, "website": {**metadata["website"], "pages": count_pages(structure)}}
+    return fields
+
+
+def _delete_change_chunks(store: Any, change: Dict[str, Any], which: str) -> None:
+    """Delete a page change's old or new chunks, logging rather than raising.
+
+    Args:
+        store: The source's vector store.
+        change: A ``_replace_web_page`` result.
+        which: ``"old_ids"`` or ``"new_ids"``.
+    """
+    ids = change[which]
+    if not ids:
+        return
+    urls = [change["leaf"]["url"]] + [u for u in (change.get("old_url"), *change.get("requested_urls", ())) if u]
+    try:
+        _delete_chunks_checked(store, ids, lambda: store.chunk_ids_by_source_paths(urls))
+    except Exception:  # noqa: BLE001 - the tree is settled; the caller reports the rest
+        logging.error(
+            "Could not delete the %s chunks of %s; they stay stored: %s",
+            "previous" if which == "old_ids" else "new", change["leaf"]["url"], ids, exc_info=True,
+        )
+
+
+def _save_page_changes(
+    store: Any, source_id: str, user: str, changes: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Write a ``website_pages`` run's page changes onto the source's current tree, then drop the old chunks.
+
+    The order is new chunks (already stored), then the tree, then the old
+    chunks, so no page is ever without content and no chunk is left that no
+    tree entry lists. A failed tree write deletes the new chunks and raises,
+    leaving every page its old copy; a failed delete of an old copy leaves it
+    beside the new one under the same address (logged).
+
+    The row is re-read under a row lock, so a change made while the pages
+    were fetched is kept. A replaced page that has left the tree meanwhile
+    is not brought back (both copies' chunks go); a source deleted or made a
+    wiki meanwhile is not touched (only the new chunks go).
+
+    Args:
+        store: The source's vector store.
+        source_id: The source.
+        user: Its owner.
+        changes: ``_replace_web_page`` results.
+
+    Returns:
+        The changes written, and the tree paths they wrote or removed.
+
+    Raises:
+        ValueError: The source is gone or became a wiki; the new chunks were deleted.
+        Exception: The tree write failed; the new chunks were deleted.
+    """
+    from docsgpt.parser.remote.website_tree import web_pages
+
+    kept: List[Dict[str, Any]] = []
+    paths: List[str] = []
+    try:
+        with db_session() as conn:
+            repo = SourcesRepository(conn)
+            row = repo.get_for_update(source_id, user)
+            gone = row is None or _is_wiki_config(row.get("config"))
+            if not gone:
+                structure = _tree_of(row)
+                present = {_web_page_key(url) for _, url in web_pages(structure)}
+                kept = [change for change in changes if change["old_url"] is None or _change_keys(change) & present]
+                paths = _apply_page_changes(structure, kept)
+                repo.update(source_id, user, _tree_fields(row, structure))
+    except Exception:
+        # No entry lists the new chunks: take them out, and the old copies stay as they were.
+        for change in changes:
+            _delete_change_chunks(store, change, "new_ids")
+        raise
+    for change in changes:
+        if gone:
+            _delete_change_chunks(store, change, "new_ids")
+            continue
+        _delete_change_chunks(store, change, "old_ids")
+        if change not in kept:
+            _delete_change_chunks(store, change, "new_ids")
+    if gone:
+        raise ValueError("The source was deleted or became a wiki while its pages were fetched; nothing was changed")
+    return kept, paths
+
+
+def _pages_to_remove(
+    structure: Dict[str, Any], pages: Optional[List[Dict[str, str]]],
+) -> List[Tuple[str, Optional[str]]]:
+    """Resolve a removal's pages against the tree as it is now.
+
+    A page is the leaf any of whose addresses (its ``url`` and
+    ``requested_urls``) has the ``page_key`` of one of the page's, wherever a
+    sync moved it, so a path the route saw can't take another page. A leaf
+    without an address (an older crawler tree) is matched by its path, also
+    when the route resolved an address for it from its chunks.
+
+    Args:
+        structure: ``directory_structure``, as it is now.
+        pages: ``{"path", "url", "requested_urls"?}`` per page.
+
+    Returns:
+        ``(path, url)`` per leaf to remove; ``url`` is ``None`` for a leaf
+        without one. A page no longer in the tree is left out.
+    """
+    leaves = _tree_leaves(structure)
+    by_key: Dict[str, List[Tuple[str, Optional[str]]]] = {}
+    for path, leaf in leaves:
+        if leaf.get("url"):
+            for address in (leaf["url"], *_page_aliases(leaf["url"], leaf)):
+                by_key.setdefault(_web_page_key(address), []).append((path, leaf["url"]))
+    by_path = {path: leaf.get("url") or None for path, leaf in leaves}
+    found: List[Tuple[str, Optional[str]]] = []
+    for page in pages or []:
+        if not isinstance(page, dict):
+            continue
+        addresses = [u for u in (page.get("url"), *_page_aliases(page.get("url"), page)) if u]
+        matched = [match for address in addresses for match in by_key.get(_web_page_key(address), [])]
+        if matched:
+            found.extend(matched)
+        elif page.get("path") in by_path and (not addresses or by_path[page["path"]] is None):
+            found.append((page["path"], by_path[page["path"]]))
+    return list(dict.fromkeys(found))
+
+
+def _not_listed_again(
+    source: Dict[str, Any], structure: Dict[str, Any], found: List[Tuple[str, Optional[str]]],
+    pages: Optional[List[Dict[str, str]]],
+) -> List[Tuple[str, Optional[str]]]:
+    """The pages to remove, less those the source's config lists as page entries now.
+
+    The route unlists a page before it queues the removal; a page added back
+    before the removal got the lock is stored again, and must stay.
+
+    Args:
+        source: The source row, read under the index lock.
+        structure: Its ``directory_structure``.
+        found: ``_pages_to_remove`` results.
+        pages: The removal's pages, for the address the route resolved for a leaf without one.
+
+    Returns:
+        ``found`` without the pages any of whose addresses an entry lists.
+    """
+    from docsgpt.parser.remote.website_tree import config_from_legacy
+
+    listed = _listed_page_keys(config_from_legacy(source.get("type"), source.get("remote_data")) or {})
+    if not listed:
+        return found
+    leaves = dict(_tree_leaves(structure))
+    resolved = {
+        page["path"]: page["url"] for page in pages or []
+        if isinstance(page, dict) and page.get("url") and page.get("path")
+    }
+    kept: List[Tuple[str, Optional[str]]] = []
+    for path, url in found:
+        if url:
+            addresses = [url, *_page_aliases(url, leaves.get(path))]
+        else:
+            addresses = [resolved[path]] if path in resolved else []
+        if any(_web_page_key(address) in listed for address in addresses):
+            logging.info("Not removing %s from %s: the config lists it again", url or path, source.get("id"))
+            continue
+        kept.append((path, url))
+    return kept
+
+
+def _remove_web_pages(
+    source: Dict[str, Any], user: str, task_id: Optional[str], pages: Optional[List[Dict[str, str]]],
+) -> Dict[str, Any]:
+    """Delete pages from a Website source: their chunks first, then their tree entries.
+
+    Run holding the source's index lock, on the row read under it. The pages
+    are looked up in the tree as it is now (``_pages_to_remove``), less any
+    the config lists as a page entry again (``_not_listed_again``). Their
+    chunks go in one batched delete and are checked gone; if any is still
+    stored the tree is not written, so every page still listed keeps its
+    chunks and the removal can be tried again. The tree is written on the row
+    re-read under a row lock. A graphrag source's graph drops the deleted
+    chunks before the tree is written: a retry would no longer find them.
+
+    Args:
+        source: The source row.
+        user: Its owner.
+        task_id: The page task's id.
+        pages: ``{"path", "url", "requested_urls"?}`` of the pages to remove;
+            for a leaf without an address, ``url`` is the one the route
+            resolved from its chunks, or ``""``.
+
+    Returns:
+        ``{"pages": n, "paths": [...]}`` of the pages removed.
+
+    Raises:
+        ValueError: The source was deleted meanwhile.
+        Exception: Whatever deleting the chunks raised, or some are still
+            stored; nothing was written.
+    """
+    from docsgpt.parser.remote.website_tree import remove_pages
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    source_id = str(source["id"])
+    structure = _tree_of(source)
+    found = _not_listed_again(source, structure, _pages_to_remove(structure, pages), pages)
+    if not found:
+        return {"pages": 0, "paths": []}
+
+    store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
+    urls = list(dict.fromkeys(url for _path, url in found if url))
+    # A leaf without an address has its chunks found by the path they were
+    # stored under, and by the address the route resolved for it, if any (a
+    # chunk from an older ingest may carry no path).
+    legacy_paths = [path for path, url in found if not url]
+    legacy_urls = list(dict.fromkeys(
+        page["url"] for page in pages or []
+        if isinstance(page, dict) and page.get("url") and page.get("path") in legacy_paths
+    ))
+
+    def _listed() -> List[str]:
+        ids = store.chunk_ids_by_source_paths(urls) if urls else []
+        ids += store.chunk_ids_by_file_paths(legacy_paths) if legacy_paths else []
+        return ids + (store.chunk_ids_by_source_paths(legacy_urls) if legacy_urls else [])
+
+    chunk_ids = list(dict.fromkeys(_listed()))
+    cfg = SourceConfig.parse(source.get("config"))
+    try:
+        _delete_chunks_checked(store, chunk_ids, _listed)
+    except Exception:
+        # Some chunks may be gone already, and a retry lists only the rest:
+        # the graph drops the deleted ones now or never. The listing reads
+        # what the store holds (a FAISS delete whose save failed has put its
+        # chunks back in the loaded index).
+        try:
+            still = {str(chunk_id) for chunk_id in _listed()}
+        except Exception:  # noqa: BLE001 - can't tell which went; the next full build settles the graph
+            still = None
+        if still is not None:
+            gone = [chunk_id for chunk_id in chunk_ids if str(chunk_id) not in still]
+            if gone:
+                _update_page_graph(cfg, source_id, user, task_id, gone)
+        raise
+    _update_page_graph(cfg, source_id, user, task_id, chunk_ids)
+
+    removed_keys = {_web_page_key(url) for url in urls}
+    with db_session() as conn:
+        repo = SourcesRepository(conn)
+        row = repo.get_for_update(source_id, user)
+        if row is None:
+            raise ValueError(f"Source {source_id} was deleted while its pages were removed")
+        tree = _tree_of(row)
+        # Only the entries still holding a page whose chunks were deleted.
+        stale = [
+            path for path, leaf in _tree_leaves(tree)
+            if (_web_page_key(leaf["url"]) in removed_keys if leaf.get("url") else path in legacy_paths)
+        ]
+        remove_pages(tree, stale)
+        repo.update(source_id, user, _tree_fields(row, tree))
+    return {"pages": len(found), "paths": [path for path, _url in found]}
+
+
+def _sync_instead_of_overfilling(
+    source: Dict[str, Any], config: Dict[str, Any], structure: Dict[str, Any], urls: List[str], user: str,
+    actor_id: Optional[str],
+) -> Optional[str]:
+    """Queue a sync of the source when appending ``urls`` would take it past ``WEB_MAX_PAGES``.
+
+    A sync that held the lock meanwhile may have filled the tree past what
+    the route counted. A sync fetches page entries first and gives the sites
+    what is left, so it makes room for them instead. Pages are counted as the
+    route counts them (``held_pages``).
+
+    Args:
+        source: The source row, read under the index lock.
+        config: Its Website config, which lists ``urls`` as page entries.
+        structure: Its ``directory_structure``.
+        urls: The addresses the add would fetch.
+        user: Its owner.
+        actor_id: The user who asked for the add, told about the sync too.
+
+    Returns:
+        The queued sync's task id, or ``None`` when the pages fit (or add none).
+    """
+    from docsgpt.parser.remote.website_tree import held_pages
+
+    cap = int(settings.WEB_MAX_PAGES)
+    held = held_pages(config, structure)
+    tree_held = held_pages({}, structure)["keys"]
+    adds_pages = any(_web_page_key(page_url) not in tree_held for page_url in urls)
+    if not adds_pages or held["count"] <= cap:
+        return None
+    from docsgpt.api.user.tasks import sync_source
+
+    source_id = str(source["id"])
+    logging.info(
+        "website_pages add on %s: %s pages held past the cap of %s; syncing instead", source_id, held["count"], cap,
+    )
+    task = sync_source.delay(
+        source_data=config,
+        job_name=source.get("name", ""),
+        user=user,
+        loader="website",
+        sync_frequency=source.get("sync_frequency") or "never",
+        retriever=source.get("retriever") or "classic",
+        doc_id=source_id,
+        **({"actor_id": actor_id} if actor_id else {}),
+    )
+    return str(task.id)
+
+
+def _website_to_change(source_id: str, user: str) -> Dict[str, Any]:
+    """Read a Website source under its index lock, refusing a page change it can't take.
+
+    Raises:
+        ValueError: The store can't change single pages, or the source is gone or a wiki.
+    """
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        raise ValueError(
+            f"The {settings.VECTOR_STORE} vector store can't change single pages; sync the source instead"
+        )
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    if _is_wiki_config(source.get("config")):
+        raise ValueError("This source is a wiki now; its pages are edited in place")
+    return source
+
+
+def website_pages_worker(
+    self: Any,
+    source_id: str,
+    user: str,
+    operation: str,
+    urls: Optional[List[str]] = None,
+    file_path: Optional[str] = None,
+    pages: Optional[List[Dict[str, str]]] = None,
+    url: Optional[str] = None,
+    actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Add pages to a Website source, refresh one or remove some, without re-fetching the rest.
+
+    A sync wipes the index and rebuilds it; this changes only the pages named.
+    Each page is fetched first, so one that can't be fetched leaves the source
+    as it was, and a fetched page is stored whole or not at all. Pages
+    finished before a failure stay; the failing page and the ones after it
+    are left as they were, and the task fails. The route sends whole-site
+    additions and pages on a new host to a sync instead: those rename the tree.
+
+    A refreshed page found by a site's crawl that now leads outside the
+    site's scope or skip rules is removed, as the next sync would drop it, and
+    the task fails with ``PageOutOfScope`` (``reason: out_of_scope``). A
+    removal deletes the pages' chunks, then their tree entries. On a graphrag
+    source the graph follows each change without a full rebuild.
+
+    The run holds the source's index lock (``source_index_lock``), so it takes
+    turns with a sync or another page change, and reads the source under it.
+
+    Args:
+        self: Celery task instance.
+        source_id: The Website source.
+        user: Its owner (the route resolves it).
+        operation: ``add`` (fetch ``urls``), ``refresh`` (re-fetch the page
+            ``url``) or ``remove`` (delete ``pages``).
+        urls: For ``add``: page URLs the route listed in the config; only
+            those it still lists when the run starts are fetched.
+        file_path: For ``refresh``: the page's tree path when the route
+            checked it, preferred when two leaves hold the page.
+        pages: For ``remove``: ``{"path", "url", "requested_urls"?}`` of the
+            pages, matched by address (by path for a leaf without one).
+        url: For ``refresh``: the page's address, matched in the tree as it is
+            when the run starts.
+        actor_id: The user who asked for the change (a team editor), who gets
+            its ``source.ingest.*`` events too; ``None`` for the owner.
+
+    Returns:
+        ``{"status": "ok", "pages": n, "paths": [...]}`` (``paths``: the tree
+        paths written or removed), plus ``failed_pages`` (the addresses that
+        gave no page) when an add fetched only some; or ``{"status": "ok",
+        "pages": 0, "mode": "sync", "sync_task_id": ...}`` when the added pages
+        no longer fit within ``WEB_MAX_PAGES`` and a sync was queued instead.
+        The completed event carries the same fields.
+
+    Raises:
+        ValueError: The source or page is unknown, the source is a wiki or
+            its store can't change single pages, or no page could be fetched.
+    """
+    source_id = str(source_id)
+    event_operation = {"add": "add_pages", "remove": "remove_pages"}.get(operation, "refresh_page")
+    envelope = {
+        "source_id": source_id,
+        "job_name": "",
+        "loader": "website",
+        "operation": event_operation,
+        **_task_id_field(self),
+    }
+    task_id = envelope.get("task_id")
+    try:
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
+        if not source:
+            raise ValueError(f"Source {source_id} not found or access denied")
+        source_id = str(source["id"])
+        envelope.update({"source_id": source_id, "job_name": source.get("name", "")})
+        _publish_source_event(
+            user, actor_id, "source.ingest.queued", envelope, scope={"kind": "source", "id": source_id},
+        )
+        with source_index_lock(source_id):
+            source = _website_to_change(source_id, user)
+            if operation == "remove":
+                outcome = _remove_web_pages(source, user, task_id, pages)
+            else:
+                outcome = _run_website_pages(source, user, operation, urls, file_path, task_id, url, actor_id)
+    except Exception as e:
+        # The UI waits on this task's id: every way out ends it.
+        logging.error("website_pages_worker %s failed: %s", event_operation, e, exc_info=True)
+        failed = {**envelope, "error": str(e)[:1024]}
+        if isinstance(e, SourceBusy):
+            failed["reason"] = "busy"
+        elif isinstance(e, PageOutOfScope):
+            failed["reason"] = e.reason
+        _publish_source_event(user, actor_id, "source.ingest.failed", failed, scope={"kind": "source", "id": source_id})
+        raise
+    _publish_source_event(
+        user, actor_id, "source.ingest.completed", {**envelope, "limited": False, **outcome},
+        scope={"kind": "source", "id": source_id},
+    )
+    return {"status": "ok", **outcome}
+
+
+def _run_website_pages(
+    source: Dict[str, Any], user: str, operation: str, urls: Optional[List[str]], file_path: Optional[str],
+    task_id: Optional[str], url: Optional[str], actor_id: Optional[str],
+) -> Dict[str, Any]:
+    """Add or refresh pages, holding the source's index lock, on the row read under it.
+
+    An address that gave no page (a 404, a timeout, a refused or empty page)
+    is reported in ``failed_pages`` when another gave one. Once the pages are
+    saved, a graphrag source's graph follows (``_update_page_graph``), failure
+    or not: the pages finished before a failure are in the source.
+
+    Args:
+        source: The source row.
+        user: Its owner.
+        operation: ``add`` or ``refresh``.
+        urls: For ``add``: the addresses to fetch.
+        file_path: For ``refresh``: the path the route saw.
+        task_id: The page task's id.
+        url: For ``refresh``: the page's address.
+        actor_id: The user who asked for the change, passed to a sync queued instead.
+
+    Returns:
+        The completed event's fields: ``{"pages", "paths", "failed_pages"?}``,
+        or ``{"pages": 0, "mode": "sync", "sync_task_id"}``.
+
+    Raises:
+        ValueError: As ``website_pages_worker``.
+        Exception: Whatever storing a page raised, once the pages before it are saved.
+    """
+    from docsgpt.parser.remote.base import url_to_virtual_path
+    from docsgpt.parser.remote.web_loader import WebLoader
+    from docsgpt.parser.remote.website_tree import config_from_legacy, web_pages
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    source_id = str(source["id"])
+    structure = _tree_of(source)
+    config = config_from_legacy(source.get("type"), source.get("remote_data")) or {}
+    if operation == "add":
+        # A removal that got the lock first may have unlisted an address the
+        # route listed: only addresses the config still lists are fetched.
+        listed = _listed_page_keys(config)
+        urls = [page_url for page_url in urls or [] if _web_page_key(page_url) in listed]
+        if not urls:
+            logging.info("website_pages add on %s: every page left the config before the run", source_id)
+            return {"pages": 0, "paths": []}
+        sync_task_id = _sync_instead_of_overfilling(source, config, structure, urls, user, actor_id)
+        if sync_task_id is not None:
+            return {"pages": 0, "mode": "sync", "sync_task_id": sync_task_id}
+    # Every leaf's path is taken, a leaf without an address's too.
+    leaves = _tree_leaves(structure)
+    leaf_paths = {path for path, _leaf in leaves}
+    requested = {
+        path: aliases for path, leaf in leaves
+        if leaf.get("url") and (aliases := _page_aliases(leaf["url"], leaf))
+    }
+    fetch, targets, include_host = _website_page_targets(
+        operation, web_pages(structure), urls, file_path, taken_paths=leaf_paths, url=url, requested=requested,
+    )
+
+    docs = WebLoader(keep_links=bool(config.get("keep_links"))).load_data(fetch)
+    if not docs:
+        raise ValueError("None of the pages could be fetched; the source is unchanged")
+    fetched = {
+        _web_page_key(address) for doc in docs
+        for address in (doc.extra_info["source"], *_page_aliases(doc.extra_info["source"], doc.extra_info))
+    }
+    failed_pages = [page_url for page_url in fetch if _web_page_key(page_url) not in fetched]
+
+    cfg = SourceConfig.parse(source.get("config"))
+    chunker = ChunkerCreator.create_chunker(
+        cfg.chunking.strategy,
+        chunking_strategy=cfg.chunking.strategy,
+        max_tokens=cfg.chunking.max_tokens,
+        min_tokens=cfg.chunking.min_tokens,
+        chunk_overlap=cfg.chunking.chunk_overlap,
+        duplicate_headers=cfg.chunking.duplicate_headers,
+    )
+    store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
+    fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    taken = leaf_paths | {t["path"] for t in targets.values()}
+    in_tree: Dict[str, Dict[str, Any]] = {}
+    for path, page_url in web_pages(structure):
+        in_tree.setdefault(_web_page_key(page_url), {"path": path, "old_url": page_url})
+    legacy_paths = {path for path, leaf in leaves if not leaf.get("url")}
+    legacy_by_key: Optional[Dict[str, str]] = None
+
+    def _legacy_leaf(addresses: Iterable[str]) -> Optional[str]:
+        """The path of a leaf without an address whose chunks are this page's, read from the chunks once."""
+        nonlocal legacy_by_key
+        if not legacy_paths:
+            return None
+        if legacy_by_key is None:
+            legacy_by_key = {}
+            for chunk in store.get_chunks() or []:
+                metadata = chunk.get("metadata") or {}
+                if metadata.get("file_path") in legacy_paths and metadata.get("source"):
+                    legacy_by_key.setdefault(_web_page_key(metadata["source"]), metadata["file_path"])
+        return next((legacy_by_key[k] for k in map(_web_page_key, addresses) if k in legacy_by_key), None)
+
+    changes: List[Dict[str, Any]] = []
+    failure: Optional[BaseException] = None
+    for doc in docs:
+        doc_url = doc.extra_info["source"]
+        key = _web_page_key(doc_url)
+        if any(change["key"] == key for change in changes):
+            continue
+        target = targets.get(key)
+        asked = _page_aliases(doc_url, doc.extra_info)
+        if target is None:
+            # An address asked for is a stored page (by its requested_urls): replaced in place.
+            target = next(
+                (targets[k] for k in map(_web_page_key, asked) if (targets.get(k) or {}).get("old_url")), None,
+            )
+        if target is None and operation == "refresh":
+            # A refreshed page that now redirects replaces itself, in place.
+            target = next(iter(targets.values()))
+        elif target is None and key in in_tree:
+            # An added address that redirects to a page already in the source.
+            target = in_tree[key]
+        elif target is None:
+            # The loader normalised the address past recognition.
+            target = {"path": _unique_page_path(url_to_virtual_path(doc_url, include_host), taken), "old_url": None}
+            taken.add(target["path"])
+        if target["old_url"] is None:
+            # A page a leaf without an address holds goes back on that leaf's
+            # path: a new path would leave the old leaf listing no chunks.
+            legacy_path = _legacy_leaf([doc_url, *asked])
+            if legacy_path:
+                target = {"path": legacy_path, "old_url": None}
+        if operation == "refresh" and not _refresh_in_scope(
+            config, (target["old_url"], *requested.get(target["path"], ()), doc_url, *asked), doc_url,
+        ):
+            # The next sync drops a crawled page that now leads out of scope,
+            # so the refresh does too rather than store it.
+            _remove_web_pages(source, user, task_id, [{"path": target["path"], "url": target["old_url"]}])
+            moved = f"{target['old_url']} now leads to {doc_url}, which is" if doc_url != target["old_url"] else (
+                f"{doc_url} is"
+            )
+            raise PageOutOfScope(
+                f"{moved} outside this source's sites or skip rules, so the page was removed, as a sync would"
+            )
+        try:
+            changes.append(_replace_web_page(store, chunker, doc, target["path"], target["old_url"], fetched_at))
+        except Exception as err:  # noqa: BLE001 - re-raised once the finished pages are saved
+            failure = err
+            break
+
+    kept, paths = _save_page_changes(store, source_id, user, changes) if changes else ([], [])
+    if changes:
+        # Every replaced copy's chunks were deleted, kept or not; only kept pages add any.
+        old_ids = [chunk_id for change in changes for chunk_id in change["old_ids"]]
+        new_ids = [chunk_id for change in kept for chunk_id in change["new_ids"]]
+        _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids)
+    if failure is not None:
+        raise failure
+    return {"pages": len(kept), "paths": paths, **({"failed_pages": failed_pages} if failed_pages else {})}
 
 
 def _wiki_page_path_from_rel(rel_path):
@@ -4268,6 +6209,14 @@ def convert_source_to_wiki_worker(self, source_id, user):
         ``{"status": "no_pages", ...}`` when nothing was reassembled, or
         ``{"status": "already_wiki"}`` when the source is already a wiki.
     """
+    # It reads every chunk and deletes them: a sync or a Website page change
+    # on the source meanwhile would be lost or half-converted.
+    with source_index_lock(str(source_id)):
+        return _convert_source_to_wiki(self, source_id, user)
+
+
+def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, Any]:
+    """The body of ``convert_source_to_wiki_worker``, run holding the source's index lock."""
     from docsgpt.api.user.tasks import reembed_wiki_page
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
@@ -4352,11 +6301,17 @@ def convert_source_to_wiki_worker(self, source_id, user):
     with db_session() as conn:
         rebuild_wiki_directory_structure(conn, source_id, user)
 
-    for doc_id in original_doc_ids:
+    # One batched delete: FAISS rewrites (and uploads) the whole index once,
+    # not once per chunk. A store without a batch delete loops in the base class.
+    if original_doc_ids:
         try:
-            store.delete_chunk(doc_id)
+            deleted = store.delete_chunks(original_doc_ids)
+            if isinstance(deleted, int) and deleted < len(original_doc_ids):
+                logging.error(
+                    f"Deleted {deleted} of {len(original_doc_ids)} original chunks of {source_id}; the rest stay"
+                )
         except Exception as exc:
-            logging.error(f"Failed deleting original chunk {doc_id}: {exc}")
+            logging.error(f"Failed deleting the original chunks of {source_id}: {exc}", exc_info=True)
 
     for page_path, content_hash in created_pages:
         reembed_wiki_page.delay(
@@ -4368,8 +6323,10 @@ def convert_source_to_wiki_worker(self, source_id, user):
         )
 
     with db_session() as conn:
+        # A wiki is edited in place, so it stops syncing: a sync would
+        # replace its pages with the remote content.
         SourcesRepository(conn).update(
-            source_id, user, {"config": cfg.wiki_enabled()}
+            source_id, user, {"config": cfg.wiki_enabled(), "sync_frequency": "never"}
         )
 
     return {
@@ -4379,7 +6336,7 @@ def convert_source_to_wiki_worker(self, source_id, user):
     }
 
 
-def extract_graph_worker(self, source_id, user):
+def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
     """Build a graphrag source's knowledge graph from its embedded chunks.
 
     Loads the source, fetches its chunks from the vector store, and runs the
@@ -4390,18 +6347,32 @@ def extract_graph_worker(self, source_id, user):
     Streams ``graph.extract.progress`` SSE events as chunks are processed and a
     terminal ``graph.extract.completed``/``graph.extract.failed`` on exit.
 
+    The run holds the source's graph extraction lock (``graph_extract_lock``,
+    not the index lock): each extraction spends what is left of the source's
+    chunk cap, and two at once would each spend all of it. The chunks are
+    read under the lock, as they are when the extraction starts.
+
     Args:
         self: Celery task instance.
         source_id: Source whose graph is being built.
         user: Owner identifier used to load the source and attribute token usage.
+        chunk_ids: For a page change, the chunks it stored: only they are
+            extracted (``extract_graph_for_source``). ``None`` for a build.
+        sync: After a sync re-embedded the source: the graph is carried over
+            to the new chunk ids by content first (``sync_graph_to_chunks``)
+            and only new text is extracted.
 
     Returns:
         ``{"status": "unavailable"}`` when GraphRAG is off, otherwise the
         extraction summary ``{nodes, edges, chunks_processed, ...}``.
+
+    Raises:
+        celery.exceptions.Retry: Another extraction held the source; this
+            one runs again later.
+        SourceBusy: Still held after the last retry (``graph.extract.failed``
+            is published).
     """
     from docsgpt.graphrag import graphrag_available
-    from docsgpt.graphrag.extraction import extract_graph_for_source
-    from docsgpt.vectorstore.vector_creator import VectorCreator
 
     source_id = str(source_id)
 
@@ -4413,12 +6384,40 @@ def extract_graph_worker(self, source_id, user):
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
+
+    def _out_of_retries(error: SourceBusy) -> None:
+        _publish_graph_event(
+            user, source_id, "graph.extract.failed", {"source_id": source_id, "error": str(error)[:1024]},
+        )
+
+    return _locked_or_retry(
+        self, graph_extract_lock, source_id, lambda: _extract_graph(self, source, user, chunk_ids, sync),
+        _out_of_retries,
+    )
+
+
+def _extract_graph(
+    self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]], sync: bool = False
+) -> Dict[str, Any]:
+    """The body of ``extract_graph_worker``, run holding the source's graph extraction lock."""
+    from docsgpt.graphrag.extraction import extract_graph_for_source, sync_graph_to_chunks
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    source_id = str(source["id"])
     cfg = SourceConfig.parse(source.get("config"))
 
     store = VectorCreator.create_vectorstore(
         settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
     )
-    chunks = store.get_chunks() or []
+    if sync:
+        # ``get_chunks`` answers [] on a database error, which a sync would
+        # read as every chunk gone and delete the graph; this read raises.
+        scan = getattr(store, "_scan_chunks", None)
+        chunks = scan() if callable(scan) else store.get_chunks() or []
+        # None: the graph was reset, so the whole source is extracted.
+        chunk_ids = sync_graph_to_chunks(source_id, chunks, config=cfg)
+    else:
+        chunks = store.get_chunks() or []
 
     total = len(chunks)
     # Throttle: at most ~20 progress events regardless of chunk count.
@@ -4473,6 +6472,7 @@ def extract_graph_worker(self, source_id, user):
                 config=cfg,
                 request_id=getattr(self.request, "id", None),
                 progress_cb=_progress,
+                chunk_ids=chunk_ids,
             )
             if isinstance(summary, dict):
                 span.set(

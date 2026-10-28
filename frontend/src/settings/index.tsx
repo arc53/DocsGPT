@@ -2,7 +2,10 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
+import { ACTIVITY_MONITORS_PATH } from '../activity/paths';
 import userService from '../api/services/userService';
+import { isSourceBusy } from '../components/chunkUtils';
+import { syncForgotten } from '../connectors/connectorsSlice';
 import { useMediaQuery } from '../hooks';
 import { Doc } from '../models/misc';
 import SectionIndexPage from '../navigation/SectionIndexPage';
@@ -15,12 +18,12 @@ import {
   setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
-import Analytics from './Analytics';
+import AccountAnalytics from './AccountAnalytics';
+import AccountInsights from './AccountInsights';
 import Connectors from './Connectors';
 import CustomModels from './CustomModels';
 import General from './General';
 import Logs from './Logs';
-import Monitors from '../monitors/Monitors';
 import PersonalAccessTokens from './PersonalAccessTokens';
 import Sources from './Sources';
 import Tools from './Tools';
@@ -59,6 +62,9 @@ export default function Settings() {
       throw new Error(t('settings.sources.errors.delete'));
     }
     if (!response.ok) {
+      // A page change or a sync holding the source: it can be tried again.
+      if (await isSourceBusy(response))
+        throw new Error(t('settings.sources.chunkErrors.busy'));
       throw new Error(
         response.status === 403
           ? t('settings.sources.errors.forbidden')
@@ -69,6 +75,8 @@ export default function Settings() {
       dispatch(setPaginatedDocuments(withoutDoc(paginatedDocuments)));
     }
     if (documents) dispatch(setSourceDocs(withoutDoc(documents)));
+    // A sync started for it this session no longer shows as indexing.
+    if (doc.id) dispatch(syncForgotten([doc.id]));
   };
 
   if (showIndex) {
@@ -95,9 +103,14 @@ export default function Settings() {
             />
           }
         />
-        <Route path="analytics" element={<Analytics />} />
+        <Route path="analytics" element={<AccountAnalytics />} />
+        <Route path="insights" element={<AccountInsights />} />
         <Route path="logs" element={<Logs />} />
-        <Route path="monitors" element={<Monitors />} />
+        {/* Monitors moved to Activity; old links keep working. */}
+        <Route
+          path="monitors"
+          element={<Navigate to={ACTIVITY_MONITORS_PATH} replace />}
+        />
         <Route path="connectors" element={<Connectors />} />
         <Route path="tools" element={<Tools />} />
         <Route

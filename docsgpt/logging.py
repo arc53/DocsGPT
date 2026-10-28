@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from typing import Any, Callable, Dict, Generator, Iterator, List, Optional
 
 from docsgpt import tracing
+from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.core import log_context
 from docsgpt.storage.db.repositories.stack_logs import StackLogsRepository
 from docsgpt.storage.db.session import db_session
@@ -298,7 +299,7 @@ def _emit_activity_finished(
             "duration_ms": duration_ms,
             "status": "error" if (error is not None or context.stream_error) else "ok",
             "error_class": (
-                type(error).__name__
+                ("TimeLimit" if is_budget_exhausted(error) else type(error).__name__)
                 if error is not None
                 else ("StreamError" if context.stream_error else None)
             ),

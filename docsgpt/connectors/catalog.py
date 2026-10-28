@@ -107,6 +107,8 @@ class ConnectorDefinition:
             to an ``api_key`` connector (GitHub's "Sign in with GitHub"
             through a GitHub App). Unlike ``required_settings`` the
             connector works without them, with pasted credentials only.
+        default_actions: The MCP actions that start on when a preset's tool
+            is created; the rest start "Off". Empty turns every action on.
     """
 
     key: str
@@ -130,6 +132,7 @@ class ConnectorDefinition:
     oauth_scopes: tuple[str, ...] = ()
     part_of: Optional[str] = None
     oauth_settings: tuple[str, ...] = ()
+    default_actions: tuple[str, ...] = ()
 
     @property
     def oauth_configured(self) -> bool:
@@ -150,6 +153,18 @@ class ConnectorDefinition:
     def configured(self) -> bool:
         """Whether every required server setting is set."""
         return not self.missing_settings
+
+    @property
+    def picker_client_id(self) -> Optional[str]:
+        """The OAuth client id Google's own file picker opens with, when the picker is needed.
+
+        A Google Drive sign-in with per-file access (``drive.file``) sees only
+        what was picked in Google's picker, so DocsGPT's own file browser
+        would come up empty; the frontend opens Google's picker with this id.
+        """
+        if self.key == "google_drive" and settings.GOOGLE_DRIVE_ACCESS == "file":
+            return settings.GOOGLE_CLIENT_ID or None
+        return None
 
     @property
     def mcp_base_url(self) -> Optional[str]:
@@ -179,6 +194,7 @@ class ConnectorDefinition:
             "oauth_scopes": list(self.oauth_scopes),
             "part_of": self.part_of,
             "sign_in_methods": self.sign_in_methods,
+            "picker_client_id": self.picker_client_id,
         }
 
 
@@ -433,6 +449,7 @@ def _load_presets(path: Optional[Path] = None) -> tuple[ConnectorDefinition, ...
                 docs_url=entry.get("docs_url"),
                 oauth_scopes=tuple(entry.get("oauth_scopes") or ()),
                 part_of=entry.get("part_of"),
+                default_actions=tuple(entry.get("default_actions") or ()),
             )
         )
     return tuple(presets)

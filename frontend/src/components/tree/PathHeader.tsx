@@ -16,7 +16,7 @@ export type Crumb = { label: string; onSelect?: () => void };
  * The header of every source view (files, chunks, wiki, graph): the crumbs
  * (Sources, the source, its folders, the open file and chunk), the source
  * kind's badge, and actions (Test retrieval, the kind's primary action) on
- * the right; the byline (the source's counts and a one-sentence explainer)
+ * the right with the source's ⋯ (`menu`) always last; the byline (the source's counts and a one-sentence explainer)
  * goes under the row. Up one level is a crumb, as on the Tools and Teams
  * detail pages (DetailBreadcrumb), never a back arrow. The crumbs stay on one
  * line: parents truncate, and the last crumb is the current one.
@@ -27,6 +27,7 @@ export default function PathHeader({
   badge,
   byline,
   actions,
+  menu,
 }: {
   /** The first crumb: Sources, or the source when a host draws Sources. */
   root: Crumb;
@@ -36,6 +37,8 @@ export default function PathHeader({
   /** Muted meta line under the row. */
   byline?: ReactNode;
   actions?: ReactNode;
+  /** The source's ⋯ (an ActionMenu, size `toolbar`), after the actions. */
+  menu?: ReactNode;
 }) {
   const crumbs = [root, ...segments];
 
@@ -100,9 +103,10 @@ export default function PathHeader({
           </Breadcrumb>
           {badge ? <span className="flex shrink-0">{badge}</span> : null}
         </div>
-        {actions ? (
+        {actions || menu ? (
           <div className="flex w-full flex-row flex-nowrap items-center justify-end gap-2 sm:w-auto">
             {actions}
+            {menu}
           </div>
         ) : null}
       </div>

@@ -1,7 +1,7 @@
 ---
 title: Air-Gapped Deployment
 description: Run DocsGPT on a network with no internet access.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-25
 ---
 
 import { Callout } from 'nextra/components'
@@ -22,8 +22,9 @@ With a self-hosted LLM, chat, document ingestion and retrieval work offline. The
 | Speech-to-text (microphone, audio files) | OpenAI (`openai`) | `STT_PROVIDER=none` |
 | `read_webpage` chat tool | Any URL the model chooses | Leave it out of `DEFAULT_CHAT_TOOLS` |
 | Embedding models | Hugging Face, the first time a model is used | Bundled in the Docker image; `docsgpt prefetch-models` for pip |
+| Decision model | Hugging Face, the first time a decision feature is turned on (all ship off) | `docsgpt decisions prefetch` on a connected machine, then copy `DECISION_CACHE_DIR` (in Docker, the `decision_models` volume) or point `DECISION_MODEL_PATH` at the copy; see [offline installs](/Models/decision-model#offline-and-air-gapped-installs) |
 
-Features whose purpose is to fetch outside content cannot work offline: URL, crawler, sitemap, GitHub and Reddit sources, the Google Drive, SharePoint and Confluence connectors, web search and other internet-facing tools, and hosted LLM or embedding providers.
+Features whose purpose is to fetch outside content cannot work offline: Website, GitHub and Reddit sources, the Google Drive, SharePoint and Confluence connectors, web search and other internet-facing tools, and hosted LLM or embedding providers.
 
 <Callout type="info">
   Keep the default document parser. `DOC_PARSER_ENGINE=anydoc` needs no models, and OCR is off unless you turn it on. Use the default backend image rather than the `-docling` variant, and don't install the `docling` extra.
@@ -38,7 +39,7 @@ The backend image already contains everything the default configuration loads at
 On a machine with internet access, pull the images and save them to one file:
 
 ```bash
-TAG=<version>   # the release you deploy, e.g. 1.0.0; avoid latest in a mirror
+TAG=<version>   # the release you deploy, e.g. 1.1.0; avoid latest in a mirror
 docker pull arc53/docsgpt:$TAG
 docker pull redis:6-alpine
 docker pull postgres:16-alpine
@@ -63,12 +64,12 @@ To use an embedding model other than the two defaults, build your own backend im
 The [Kubernetes manifests](/Deploying/Kubernetes-Deploying) pin every image. The default stack uses:
 
 ```text
-arc53/docsgpt:1.0.0
+arc53/docsgpt:1.1.0
 pgvector/pgvector:0.8.6-pg16
 redis:7.4-alpine
 ```
 
-The opt-in manifests add `arc53/docsgpt-sandbox:1.0.0` (code-execution sandbox), `qdrant/qdrant:v1.19.1` and `mongo:8.0`. Check the `image:` lines in `deployment/k8s` for the release you deploy, since they change with it. Push the images to your internal registry and point the manifests at it, either by editing the `image:` lines or with an `images:` entry in `kustomization.yaml`:
+The opt-in manifests add `arc53/docsgpt-sandbox:1.1.0` (code-execution sandbox), `qdrant/qdrant:v1.19.1` and `mongo:8.0`. Check the `image:` lines in `deployment/k8s` for the release you deploy, since they change with it. Push the images to your internal registry and point the manifests at it, either by editing the `image:` lines or with an `images:` entry in `kustomization.yaml`:
 
 ```yaml
 images:
@@ -163,7 +164,7 @@ services:
       - ./certs:/etc/nginx/certs:ro
 ```
 
-Start both files together: `docker compose -f docker-compose-standalone.yaml -f docker-compose.airgap.yaml up -d`. Leave the `https` profile off; its Caddy service needs the internet to get a certificate. Add the proxy image to the `docker save` list above. The checkout Compose files also have a `frontend` service; put it on `airgap` too and drop its `ports` the same way.
+Start both files together: `docker compose -f docker-compose-standalone.yaml -f docker-compose.airgap.yaml up -d`. Leave the `https` profile off; its Caddy service needs the internet to get a certificate. With the `decider` profile on, put `decider` on `airgap` too. Add the proxy image to the `docker save` list above. The checkout Compose files also have a `frontend` service; put it on `airgap` too and drop its `ports` the same way.
 
 Docker's published ports bypass host firewalls such as `ufw`. If you rely on host rules instead of internal networks, filter container traffic in the `DOCKER-USER` iptables chain.
 

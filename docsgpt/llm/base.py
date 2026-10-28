@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, ClassVar, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import httpx
 import httpx2
@@ -9,6 +9,8 @@ import openai
 from docsgpt.cache import gen_cache, stream_cache
 
 from docsgpt.core.settings import settings
+from docsgpt.core.run_budget import check_round, is_budget_exhausted
+from docsgpt.llm.deadlines import StreamStalledError, timed_stream
 from docsgpt.error import bounded_error_text
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
@@ -97,6 +99,11 @@ class BaseLLM(ABC):
     # Google, "output_format" for Anthropic); None = the provider has no
     # structured-output kwarg.
     structured_output_kwarg: ClassVar[Optional[str]] = None
+
+    # One-shot callers (graph extraction, titles, compression) reuse an
+    # instance across unrelated calls: a stateless one never chains them on
+    # the provider nor keeps them there (``LLMCreator.create_llm(stateless=)``).
+    stateless: bool = False
 
     # (json_schema, strict) last passed to ``prepare_structured_output_format``;
     # lets a cross-provider fallback re-prepare the schema in the backup's own
@@ -189,6 +196,7 @@ class BaseLLM(ABC):
                     model_id=backup_model_id,
                     agent_id=self.agent_id,
                     model_user_id=self.model_user_id,
+                    stateless=self.stateless,
                 )
                 # Tag the fallback LLM so its rows land as
                 # ``source='fallback'`` in cost-attribution dashboards.
@@ -204,6 +212,8 @@ class BaseLLM(ABC):
                 )
                 return self._fallback_llm
             except Exception as e:
+                if is_budget_exhausted(e):
+                    raise
                 logger.warning(
                     f"Failed to initialize backup model {backup_model_id}: {str(e)}"
                 )
@@ -227,6 +237,7 @@ class BaseLLM(ABC):
                     model_id=settings.FALLBACK_LLM_NAME,
                     agent_id=self.agent_id,
                     model_user_id=self.model_user_id,
+                    stateless=self.stateless,
                 )
                 # Same rationale as the agent-backup branch.
                 self._fallback_llm._token_usage_source = "fallback"
@@ -238,6 +249,8 @@ class BaseLLM(ABC):
                     f"{settings.FALLBACK_LLM_PROVIDER}/{settings.FALLBACK_LLM_NAME}"
                 )
             except Exception as e:
+                if is_budget_exhausted(e):
+                    raise
                 logger.error(
                     f"Failed to initialize fallback LLM: {str(e)}", exc_info=True
                 )
@@ -315,7 +328,7 @@ class BaseLLM(ABC):
                 # Native parts the token counter cannot see (file ids, images).
                 estimated += int(dispatch.usage_tokens(messages) or 0)
             limit = get_token_limit(
-                fallback.model_id,
+                getattr(fallback, "_canonical_model_id", None) or fallback.model_id,
                 user_id=getattr(fallback, "model_user_id", None),
             )
             # 10% slack: the tiktoken estimate over-counts vs provider
@@ -455,11 +468,16 @@ class BaseLLM(ABC):
         return prepared
 
     def _model_window(self, llm) -> Optional[int]:
-        """The context window of ``llm``'s model, or None when unknown."""
+        """The context window of ``llm``'s model, or None when unknown.
+
+        Looked up by the registry id: ``model_id`` is the upstream name, and
+        the registry knows a BYOM model only by its UUID.
+        """
         try:
             from docsgpt.core.model_utils import get_token_limit
 
-            return int(get_token_limit(llm.model_id, user_id=getattr(llm, "model_user_id", None)))
+            model_id = getattr(llm, "_canonical_model_id", None) or llm.model_id
+            return int(get_token_limit(model_id, user_id=getattr(llm, "model_user_id", None)))
         except Exception:
             return None
 
@@ -675,6 +693,8 @@ class BaseLLM(ABC):
             **kwargs: Keyword arguments
         """
 
+        check_round()
+
         def decorated_method():
             method = getattr(self, method_name)
             for decorator in decorators:
@@ -694,6 +714,8 @@ class BaseLLM(ABC):
             self._note_answer(self, kwargs.get("model"))
             return result
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             if not self.fallback_llm:
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
@@ -733,6 +755,28 @@ class BaseLLM(ABC):
             self._note_answer(fallback, fallback.model_id, fallback=True, reason=fallback_reason(e))
             return result
 
+    def _stream_deadlines(self) -> Tuple[float, float]:
+        """This model's first-token and inter-chunk deadlines, in seconds."""
+        caps = self.capabilities
+        return (
+            getattr(caps, "first_token_timeout", None) or settings.LLM_FIRST_TOKEN_TIMEOUT,
+            getattr(caps, "stall_timeout", None) or settings.LLM_STREAM_STALL_TIMEOUT,
+        )
+
+    def _stream_transport_timeout(self) -> httpx2.Timeout:
+        """A socket timeout matching the stream deadlines.
+
+        Bounds a read abandoned on a silent connection, which no provider
+        event can stop, and keeps the SDK default (600 s) from cutting a
+        model whose first-token deadline is longer.
+        """
+        return httpx2.Timeout(max(self._stream_deadlines()), connect=5.0)
+
+    def _timed_stream(self, factory: Callable[[], Iterator[Any]]) -> Iterator[Any]:
+        """Apply this model's deadlines to each provider attempt."""
+        first_token, stall = self._stream_deadlines()
+        return timed_stream(factory, first_token=first_token, stall=stall)
+
     def _stream_with_fallback(
         self, decorated_method, method_name, decorators, *args, **kwargs
     ):
@@ -756,13 +800,15 @@ class BaseLLM(ABC):
         chunks_yielded = 0
         primary_model = kwargs.get("model")
         try:
-            for chunk in decorated_method():
+            for chunk in self._timed_stream(decorated_method):
                 if not chunks_yielded:
                     self._note_answer(self, primary_model)
                 chunks_yielded += 1
                 yield chunk
             return
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             if getattr(self, "_stream_reached_finish", False):
                 # The primary already delivered a finish signal — only
                 # trailing frames (usage chunk, [DONE]) failed. Restreaming
@@ -802,13 +848,15 @@ class BaseLLM(ABC):
                     ),
                 )
                 try:
-                    for chunk in decorated_method():
+                    for chunk in self._timed_stream(decorated_method):
                         if not chunks_yielded:
                             self._note_answer(self, primary_model)
                         chunks_yielded += 1
                         yield chunk
                     return
                 except Exception as retry_e:
+                    if is_budget_exhausted(retry_e):
+                        raise
                     # Retry delivered a full stream but died on a trailing
                     # frame (usage chunk, [DONE]) — same guard the outer
                     # except uses. Without this, the fallback would run
@@ -826,6 +874,10 @@ class BaseLLM(ABC):
                         f"Error: {str(retry_e)}"
                     )
                     e = retry_e
+            if isinstance(e, StreamStalledError) and chunks_yielded:
+                # Output already reached the user; a fallback would repeat it.
+                logger.warning(f"Primary LLM stalled after delivering output; not engaging fallback. Error: {str(e)}")
+                raise e
             if not self.fallback_llm:
                 logger.error(
                     f"Primary LLM failed and no fallback configured: {str(e)}"
@@ -859,7 +911,7 @@ class BaseLLM(ABC):
                 fallback_method = decorator(fallback_method)
             try:
                 yield from self._noting_answer(
-                    fallback_method(fallback, *args, **fallback_kwargs),
+                    fallback._timed_stream(lambda: fallback_method(fallback, *args, **fallback_kwargs)),
                     fallback,
                     fallback.model_id,
                     fallback=True,

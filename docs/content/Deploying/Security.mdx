@@ -1,7 +1,7 @@
 ---
 title: Security Checklist
 description: Harden a DocsGPT install before other people or the internet can reach it - bind addresses, the choice of AUTH_TYPE, the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-27
 ---
 
 import { Callout } from 'nextra/components'
@@ -62,21 +62,38 @@ Tokens travel in the `Authorization` header, readable over plain HTTP. `docsgpt 
 
 ## Outbound network access
 
-URLs that users supply are checked before DocsGPT fetches them, so that nobody can use the instance to reach internal services (server-side request forgery). Both checks refuse `localhost` and cloud metadata host names, and any address that is loopback, private (RFC 1918, `fc00::/7`), link-local (`169.254.0.0/16`, which includes cloud metadata endpoints), carrier-grade NAT (`100.64.0.0/10`), multicast, unspecified or reserved. They differ in how the connection is made:
+URLs that users supply are checked before DocsGPT fetches them, so that nobody can use the instance to reach internal services (server-side request forgery). By default, both checks refuse `localhost` and cloud metadata host names, and any address that is loopback, private (RFC 1918, `fc00::/7`), link-local (`169.254.0.0/16`, which includes cloud metadata endpoints), carrier-grade NAT (`100.64.0.0/10`), multicast, unspecified or reserved. They differ in how the connection is made:
 
 - **Checked and pinned.** Every address the host resolves to is checked, and the request is sent to the checked address, so a DNS change between the check and the request cannot redirect it:
   - the [API Tool](/Tools/api-tool), which also does not follow redirects, and the ntfy tool (error: `URL validation error: ...`),
   - the `read_webpage` tool,
-  - URL, crawler and sitemap sources,
+  - Website sources (pages, crawls and sitemaps), which follow up to five redirects and check each new address like the first,
   - custom models that users add in **Settings → Custom Models** (their base URL).
 - **Checked, not pinned.** The host's address is checked once, and the client then connects on its own:
   - [MCP servers](/Tools/mcp-tools) and custom MCP connectors (`Invalid server URL: <reason>` when you test or save one, `Invalid MCP server URL: <reason>` when a saved tool connects),
   - S3 sources with a custom endpoint,
   - API Tool URLs in an imported agent (unsafe ones are dropped with a warning; the imported tool is pinned when it runs).
 
-There is no allowlist and no setting that relaxes either check. That rules out services on your LAN, on the Docker host, and other services in the same Compose project (their addresses are private).
+A page download by the `read_webpage` tool or a Website source also has an overall time limit, not only a per-read timeout: twice the read timeout, and at least 30 seconds. The limit covers the whole fetch, the response headers included, and a compressed body is checked against it as it arrives, so a server that sends a byte at a time, or compressed data that unpacks to nothing, can't hold a fetch open. A user name and password written into the address (`https://user:pass@example.com/`) are never sent.
 
-To reach an internal service anyway, use a path the operator controls:
+By default that rules out services on your LAN, on the Docker host, and other services in the same Compose project (their addresses are private).
+
+### Allowing private hosts
+
+On an intranet-only install, where the services agents should call (and often DocsGPT's own public URL) have private addresses, the operator can open specific hosts with `SAFE_URL_ALLOWED_HOSTS`, a comma-separated list. Both checks honor it:
+
+```bash
+SAFE_URL_ALLOWED_HOSTS=wiki.corp.example,docsgpt.corp.example,10.16.0.0/16
+```
+
+- A **hostname** entry matches that exact name, case-insensitively and in its IDNA form (`wiki.corp.example` does not match `api.wiki.corp.example`), and lets it resolve to any private address.
+- An **IP or CIDR** entry (`10.16.0.5`, `10.16.0.0/16`, `fd12:3456::/48`) lets any URL reach the addresses inside it, whatever host name leads there.
+- **Loopback** passes only when the address matches an IP entry (`127.0.0.1`, `::1`); a name that resolves to a listed loopback address passes too. A hostname entry never opens loopback, and the `localhost` name stays refused either way.
+- **Never allowed**, whatever is listed: link-local addresses (`169.254.0.0/16`, `fe80::/10`, which hold cloud metadata endpoints), the other metadata endpoints (`fd00:ec2::254`, `fd20:ce::254`, `100.100.100.200`, `metadata.google.internal`) and unspecified addresses (`0.0.0.0`, `::`).
+
+The DNS pinning above is unchanged: the address that was checked is the one dialed. Every user of the instance can point tools at a listed host, so list only the services they should reach.
+
+Without the setting, use a path the operator controls:
 
 - **Models**: set `OPENAI_BASE_URL` (see [Local Inference](/Models/local-inference)) or add a [model YAML](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir). Operator settings are not checked.
 - **APIs and other systems**: write a [custom Python tool](/Tools/creating-a-tool); its code is not bound by the check.
@@ -95,4 +112,4 @@ OpenTelemetry export is off unless you configure it. The version check is on: th
 
 ## Keep an audit trail
 
-Sign-ins, admin actions (users, roles, sessions, quotas, connector policies), personal access tokens and team changes are written to the audit log, which admins read and export from the [activity feed](/Deploying/Access-Control#admin-dashboard). It needs `AUTH_TYPE=oidc`, the mode with admins.
+Sign-ins, admin actions (users, roles, sessions, quotas, connector policies), personal access tokens and team changes are written to the audit log, which admins read and export from the [Audit log feed](/Deploying/Access-Control#audit-log-feed). It needs `AUTH_TYPE=oidc`, the mode with admins.

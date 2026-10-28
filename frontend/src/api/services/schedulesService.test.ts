@@ -1,5 +1,11 @@
+import { configureStore } from '@reduxjs/toolkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import schedulesReducer, {
+  loadRunsForSchedule,
+  loadSchedulesForAgent,
+  selectSchedulesLoadError,
+} from '../../agents/schedules/schedulesSlice';
 import apiClient from '../client';
 import schedulesService from './schedulesService';
 
@@ -28,6 +34,115 @@ describe('schedulesService.statsForAgent', () => {
     );
 
     await expect(schedulesService.statsForAgent('a1', 't')).rejects.toThrow();
+  });
+});
+
+describe('schedulesService GET errors', () => {
+  it('rejects an agent list error rather than returning it as schedules', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue(
+      response({ success: false, message: 'access denied' }, 403),
+    );
+
+    await expect(schedulesService.listForAgent('a1', 't')).rejects.toThrow(
+      'access denied',
+    );
+  });
+
+  it('rejects a run history error rather than returning it as runs', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue(
+      response({ success: false, message: 'access denied' }, 403),
+    );
+
+    await expect(schedulesService.listRuns('s1', 50, 0, 't')).rejects.toThrow(
+      'access denied',
+    );
+  });
+
+  it('rejects an individual schedule that cannot be found', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue(
+      response({ success: false, message: 'schedule not found' }, 404),
+    );
+
+    await expect(schedulesService.get('s1', 't')).rejects.toThrow(
+      'schedule not found',
+    );
+  });
+
+  it('rejects a proxy error page without exposing its JSON parse error', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    } as unknown as Response);
+
+    await expect(schedulesService.listForAgent('a1', 't')).rejects.toThrow(
+      /^$/,
+    );
+  });
+});
+
+describe('schedule loads after an HTTP error', () => {
+  const makeStore = () =>
+    configureStore({ reducer: { schedules: schedulesReducer } });
+
+  it('keeps an agent list on a refused reload', async () => {
+    vi.spyOn(apiClient, 'get')
+      .mockResolvedValueOnce(response({ schedules: [{ id: 's1' }] }))
+      .mockResolvedValueOnce(
+        response({ success: false, message: 'access denied' }, 403),
+      );
+    const store = makeStore();
+    const args = { agentId: 'a1', token: 't' };
+    await store.dispatch(loadSchedulesForAgent(args));
+    const schedules = store.getState().schedules.byAgent.a1;
+
+    const action = await store.dispatch(loadSchedulesForAgent(args));
+
+    expect(action.type).toBe(loadSchedulesForAgent.rejected.type);
+    expect(store.getState().schedules.byAgent.a1).toEqual(schedules);
+    expect(selectSchedulesLoadError(store.getState(), 'a1')).toBe(
+      'access denied',
+    );
+  });
+
+  it('records a fallback error when a gateway returns HTML', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    } as unknown as Response);
+    const store = makeStore();
+
+    const action = await store.dispatch(
+      loadSchedulesForAgent({ agentId: 'a1', token: 't' }),
+    );
+
+    expect(action.type).toBe(loadSchedulesForAgent.rejected.type);
+    expect(selectSchedulesLoadError(store.getState(), 'a1')).toBe(
+      'failed to load schedules',
+    );
+    expect(store.getState().schedules.byAgent.a1).toBeUndefined();
+  });
+
+  it('keeps run history and does not throw on a refused reload', async () => {
+    vi.spyOn(apiClient, 'get')
+      .mockResolvedValueOnce(response({ runs: [{ id: 'r1' }] }))
+      .mockResolvedValueOnce(
+        response({ success: false, message: 'access denied' }, 403),
+      );
+    const store = makeStore();
+    const args = { id: 's1', token: 't' };
+    await store.dispatch(loadRunsForSchedule(args));
+    const runs = store.getState().schedules.runsBySchedule.s1;
+
+    await expect(
+      store.dispatch(loadRunsForSchedule(args)),
+    ).resolves.toMatchObject({ type: loadRunsForSchedule.rejected.type });
+    expect(store.getState().schedules.runsBySchedule.s1).toEqual(runs);
   });
 });
 
@@ -141,6 +256,28 @@ describe('schedulesService run now and pause errors', () => {
 
     await expect(schedulesService.runNow('s1', 't')).resolves.toEqual({
       success: true,
+      run: { id: 'r1' },
+    });
+  });
+});
+
+describe('schedulesService.getRun', () => {
+  it('rejects a run the server could not find', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue(
+      response({ success: false, message: 'Run not found' }, 404),
+    );
+
+    await expect(schedulesService.getRun('s1', 'r1', 't')).rejects.toThrow(
+      'Run not found',
+    );
+  });
+
+  it('returns the run on success', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue(
+      response({ run: { id: 'r1' } }),
+    );
+
+    await expect(schedulesService.getRun('s1', 'r1', 't')).resolves.toEqual({
       run: { id: 'r1' },
     });
   });
