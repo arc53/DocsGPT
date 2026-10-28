@@ -78,7 +78,7 @@ attrs==26.1.0
     #   jsonschema
     #   jsonschema-path
     #   referencing
-authlib==1.8.0
+authlib==1.9.1
     # via fastmcp-slim
 beartype==0.22.9
     # via py-key-value-aio
@@ -111,7 +111,7 @@ celery==5.6.3
     #   docsgpt
 celery-redbeat==2.4.2
     # via docsgpt
-certifi==2026.10.19
+certifi==2026.10.23
     # via
     #   docling-slim
     #   httpcore
@@ -195,7 +195,7 @@ dill==0.4.1
     # via multiprocess
 distro==1.9.0
     # via google-genai
-dnspython==2.8.0
+dnspython==2.9.0
     # via email-validator
 doclang==0.8.0
     # via docling-core
@@ -233,11 +233,11 @@ fast-ebook==0.2.0
     # via docsgpt
 fastembed==0.9.1
     # via docsgpt
-fastmcp==4.0.11
+fastmcp==4.1.2
     # via docsgpt
-fastmcp-slim==4.0.11
+fastmcp-slim==4.1.4
     # via fastmcp
-filelock==4.0.12
+filelock==4.2.1
     # via
     #   huggingface-hub
     #   tldextract
@@ -780,7 +780,7 @@ pylatexenc==2.11
     # via docling-slim
 pyparsing==3.3.3
     # via httplib2
-pypdf==6.21.2
+pypdf==6.21.3
     # via docsgpt
 pypdfium2==5.14.0
     # via
@@ -930,7 +930,7 @@ secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
 semchunk==3.2.5
     # via docling-core
-setuptools==84.0.0
+setuptools==84.1.0
     # via torch
 shapely==2.2.0
     # via rapidocr
