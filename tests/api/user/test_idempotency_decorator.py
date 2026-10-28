@@ -3,6 +3,8 @@
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+from typing import Any
+
 import pytest
 from sqlalchemy import text
 
@@ -669,7 +671,9 @@ class TestPoisonHook:
         assert result["success"] is False
         assert "poison-loop" in result["error"]
 
-    def test_reingest_source_task_keyless_runs_without_lockout(self, pg_conn):
+    def test_reingest_source_task_keyless_runs_without_lockout(
+        self, pg_conn: Any
+    ) -> None:
         """Keyless reingest dispatches synthesize a per-operation guard key from
         the Celery task id instead of a static source_id key, preventing a 24-hour
         lockout between distinct operations while deduplicating retries of the same operation.
@@ -679,7 +683,11 @@ class TestPoisonHook:
         runs = {"count": 0}
 
         @with_idempotency(task_name="reingest_source_task")
-        def task(self, idempotency_key=None, source_id=None):
+        def task(
+            self: Any,
+            idempotency_key: str | None = None,
+            source_id: str | None = None,
+        ) -> dict[str, Any]:
             runs["count"] += 1
             return {"runs": runs["count"]}
 
@@ -697,7 +705,9 @@ class TestPoisonHook:
         assert _row_for(pg_conn, "auto:reingest_source_task:tid-op-1") is not None
         assert _row_for(pg_conn, "auto:reingest_source_task:tid-op-2") is not None
 
-    def test_reingest_source_task_keyless_trips_poison_loop(self, pg_conn):
+    def test_reingest_source_task_keyless_trips_poison_loop(
+        self, pg_conn: Any
+    ) -> None:
         """Repeated failures of a keyless reingest operation trip the poison-loop guard."""
         from docsgpt.api.user.idempotency import (
             MAX_TASK_ATTEMPTS, with_idempotency,
@@ -706,7 +716,11 @@ class TestPoisonHook:
         runs = {"count": 0}
 
         @with_idempotency(task_name="reingest_source_task")
-        def task(self, idempotency_key=None, source_id=None):
+        def task(
+            self: Any,
+            idempotency_key: str | None = None,
+            source_id: str | None = None,
+        ) -> dict[str, Any]:
             runs["count"] += 1
             raise RuntimeError("OOM-style failure")
 
@@ -723,7 +737,9 @@ class TestPoisonHook:
         assert "poison-loop" in result["error"]
         assert _row_for(pg_conn, "auto:reingest_source_task:tid-poison")[2] == "failed"
 
-    def test_reingest_source_task_explicit_key_deduplicates(self, pg_conn):
+    def test_reingest_source_task_explicit_key_deduplicates(
+        self, pg_conn: Any
+    ) -> None:
         """When an explicit idempotency key is passed, same-key retries deduplicate
         while distinct keys execute.
         """
@@ -732,7 +748,11 @@ class TestPoisonHook:
         runs = {"count": 0}
 
         @with_idempotency(task_name="reingest_source_task")
-        def task(self, idempotency_key=None, source_id=None):
+        def task(
+            self: Any,
+            idempotency_key: str | None = None,
+            source_id: str | None = None,
+        ) -> dict[str, Any]:
             runs["count"] += 1
             return {"runs": runs["count"]}
 

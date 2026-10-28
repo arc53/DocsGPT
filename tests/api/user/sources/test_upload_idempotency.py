@@ -2,6 +2,7 @@
 
 import io
 import json
+from typing import Any
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -776,7 +777,7 @@ class TestManageSourceFilesIdempotency:
         # Confirm the loser never invoked the file-save path.
         assert fake_storage.save_file.call_count == 1
 
-    def test_different_key_second_post_enqueues_new_reingest(self, app, pg_conn):
+    def test_different_key_second_post_enqueues_new_reingest(self, app: Flask, pg_conn: Any) -> None:
         """Distinct keys (e.g. from successive user actions) must both execute
         and enqueue separate reingest tasks.
         """

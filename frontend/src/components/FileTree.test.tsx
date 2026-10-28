@@ -184,11 +184,16 @@ describe('FileTree delete', () => {
     manageSourceFiles.mockReturnValue(
       respond({ success: true, reingest_task_id: 'r1', source_id: 's1' }),
     );
-    waitForTerminal.mockResolvedValue('completed');
+    waitForChange.mockResolvedValue({ terminal: 'completed' });
     await deleteRow('rates.pdf');
-    expect(manageSourceFiles).toHaveBeenCalledTimes(1);
-    const key = manageSourceFiles.mock.calls[0][2];
-    expect(typeof key).toBe('string');
-    expect(key.length).toBeGreaterThan(0);
+    await deleteRow('rates.pdf');
+    expect(manageSourceFiles).toHaveBeenCalledTimes(2);
+    const key1 = manageSourceFiles.mock.calls[0][2];
+    const key2 = manageSourceFiles.mock.calls[1][2];
+    expect(typeof key1).toBe('string');
+    expect(key1.length).toBeGreaterThan(0);
+    expect(typeof key2).toBe('string');
+    expect(key2.length).toBeGreaterThan(0);
+    expect(key1).not.toBe(key2);
   });
 });
