@@ -426,6 +426,28 @@ export default function Conversation() {
     setCompanion({ kind: 'artifact', ...artifact });
   }, []);
 
+  const findPromptIndexForArtifact = useCallback(
+    (artifactId: string) =>
+      queries.findIndex((query) =>
+        (query.tool_calls ?? []).some((call) => call.artifact_id === artifactId),
+      ),
+    [queries],
+  );
+
+  const handleScrollToPrompt = useCallback((artifactId: string) => {
+    const index = queries.findIndex((query) =>
+      (query.tool_calls ?? []).some((call) => call.artifact_id === artifactId),
+    );
+    if (index < 0) return;
+    // The prompt marker is rendered by ConversationMessages.
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(
+        `[data-prompt-index=\"${index}\"]`,
+      );
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [queries]);
+
   // The artifact showing, whether opened from its card or from a list.
   const shownArtifact =
     companion?.kind === 'artifact'
@@ -472,6 +494,8 @@ export default function Conversation() {
         toolName={shownCompanion.toolName}
         version={shownCompanion.version}
         conversationId={conversationId}
+        hasPrompt={findPromptIndexForArtifact(shownCompanion.id) >= 0}
+        onScrollToPrompt={() => handleScrollToPrompt(shownCompanion.id)}
       />
     ) : shownCompanion?.kind === 'artifacts' ? (
       <ArtifactsPanel
