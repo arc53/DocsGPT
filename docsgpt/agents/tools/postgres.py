@@ -38,7 +38,7 @@ class PostgresTool(Tool):
             cur.execute(sql_query)
             conn.commit()
 
-            if sql_query.strip().lower().startswith("select"):
+            if cur.description is not None or sql_query.strip().lower().startswith("select"):
                 column_names = (
                     [desc[0] for desc in cur.description] if cur.description else []
                 )
