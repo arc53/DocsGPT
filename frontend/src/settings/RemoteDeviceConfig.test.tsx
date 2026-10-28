@@ -28,10 +28,12 @@ vi.mock('../modals/ConfirmationModal', () => ({
 
 const getDevice = vi.fn();
 const revokeDevice = vi.fn();
+const updateDevice = vi.fn();
 vi.mock('../api/services/devicesService', () => ({
   default: {
     get: (...args: unknown[]) => getDevice(...args),
     revoke: (...args: unknown[]) => revokeDevice(...args),
+    update: (...args: unknown[]) => updateDevice(...args),
     listAudit: () => Promise.resolve({ entries: [] }),
   },
 }));
@@ -67,6 +69,7 @@ describe('RemoteDeviceConfig', () => {
   beforeEach(() => {
     getDevice.mockReset();
     revokeDevice.mockReset();
+    updateDevice.mockReset();
     goBack.mockReset();
     confirmProps.current = null;
     container = document.createElement('div');
@@ -210,5 +213,58 @@ describe('RemoteDeviceConfig', () => {
       await submit();
     });
     expect(goBack).toHaveBeenCalledTimes(1);
+  });
+
+  const rename = async (value: string) => {
+    const input = Array.from(container.querySelectorAll('input')).find(
+      (el) => el.value === 'Laptop',
+    )!;
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setValue.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    return input;
+  };
+
+  const clickSave = async () => {
+    const save = Array.from(container.querySelectorAll('button')).find(
+      (el) => el.textContent === 'settings.tools.save',
+    )!;
+    await act(async () => save.click());
+  };
+
+  const title = () => container.querySelector('h2, h1')?.textContent;
+
+  it('a failed save keeps the device and the edit, and shows an error', async () => {
+    updateDevice.mockRejectedValue(new Error('auth'));
+    await render(device({}));
+    const input = await rename('Renamed');
+    await clickSave();
+
+    expect(updateDevice).toHaveBeenCalledWith(
+      'dev-1',
+      { name: 'Renamed' },
+      'token',
+    );
+    const alert = Array.from(
+      container.querySelectorAll<HTMLElement>('[role="alert"]'),
+    ).find((el) => el.textContent?.includes('common.actionFailed'));
+    expect(alert).toBeDefined();
+    expect(title()).toBe('Laptop');
+    expect(input.value).toBe('Renamed');
+  });
+
+  it('a successful save shows the saved device', async () => {
+    updateDevice.mockResolvedValue(device({ name: 'Renamed' }));
+    await render(device({}));
+    await rename('Renamed');
+    await clickSave();
+
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(title()).toBe('Renamed');
   });
 });

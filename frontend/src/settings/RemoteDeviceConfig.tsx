@@ -70,7 +70,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const [description, setDescription] = React.useState<string>('');
   const [approvalMode, setApprovalMode] = React.useState<ApprovalMode>('ask');
   const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [failed, setFailed] = React.useState(false);
 
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
   const [auditOpen, setAuditOpen] = React.useState(false);
@@ -92,7 +92,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       .then((d) => applyDevice(d))
       .catch((err) => {
         console.error('load device failed', err);
-        setError(err instanceof Error ? err.message : 'load failed');
+        setFailed(true);
       })
       .finally(() => setLoading(false));
   }, [deviceId, token, applyDevice]);
@@ -120,12 +120,13 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       payload.approval_mode = approvalMode;
 
     setSaving(true);
-    setError(null);
+    setFailed(false);
     try {
       const next = await devicesService.update(deviceId, payload, token);
       applyDevice(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'update failed');
+      console.error('update device failed', err);
+      setFailed(true);
     } finally {
       setSaving(false);
     }
@@ -187,9 +188,9 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
         </div>
       </div>
 
-      {error && (
+      {failed && (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{t('common.actionFailed')}</AlertDescription>
         </Alert>
       )}
 
