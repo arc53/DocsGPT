@@ -199,7 +199,7 @@ fastembed==0.9.1
     # via docsgpt
 fastmcp==4.0.11
     # via docsgpt
-fastmcp-slim==4.0.11
+fastmcp-slim==4.1.4
     # via fastmcp
 filelock==4.0.12
     # via
