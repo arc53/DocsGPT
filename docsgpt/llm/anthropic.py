@@ -188,7 +188,9 @@ def _send_x_api_key(api_key: str):
     """An httpx ``auth`` hook that moves the key from ``Authorization: Bearer`` to ``X-Api-Key``.
 
     anthropic 2.x sends the key as a bearer token; a gateway set as a model's
-    ``base_url`` may read only ``X-Api-Key``, the header 1.x sent.
+    ``base_url`` may read only ``X-Api-Key``, the header 1.x sent. httpx drops
+    ``Authorization`` on a cross-origin redirect but keeps ``X-Api-Key``, so a
+    client with this hook must not follow redirects.
     """
 
     def auth(request):
@@ -223,7 +225,9 @@ class AnthropicLLM(BaseLLM):
         check_credential_scope(self.api_key, endpoint, self.provider_name)
         client_kwargs: Dict[str, Any] = {"api_key": self.api_key, "base_url": endpoint}
         if self.api_key and endpoint_origin(endpoint) != endpoint_origin(ANTHROPIC_DEFAULT_BASE_URL):
-            client_kwargs["http_client"] = DefaultHttpxClient(auth=_send_x_api_key(self.api_key))
+            client_kwargs["http_client"] = DefaultHttpxClient(
+                auth=_send_x_api_key(self.api_key), follow_redirects=False
+            )
         self.anthropic = Anthropic(**client_kwargs)
 
         self.storage = StorageCreator.get_storage()
