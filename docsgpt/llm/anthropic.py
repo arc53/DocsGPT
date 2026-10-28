@@ -32,17 +32,6 @@ _PASSTHROUGH_PARAMS = (
     "metadata",
 )
 
-# Sampling params the Messages API still honours on the models that accept
-# them, but which anthropic 1.x removed from ``messages.create``'s signature
-# (passing one is a TypeError). They go through ``extra_body``, which the SDK
-# merges into the request JSON as-is, so the wire request is unchanged and a
-# model that rejects them 400s exactly as it does today.
-_SAMPLING_PARAMS = (
-    "temperature",
-    "top_p",
-    "top_k",
-)
-
 # ``tool_choice`` values in OpenAI's vocabulary mapped to Anthropic's. OpenAI
 # sends a bare string; Anthropic requires an object and 400s on the string.
 # ``any``/``auto``/``none`` are also accepted spelled Anthropic-style, for a
@@ -579,10 +568,11 @@ class AnthropicLLM(BaseLLM):
             messages: Internal conversation history.
             tools: OpenAI-shaped tool definitions, or ``None``.
             kwargs: Caller kwargs; the params in ``_PASSTHROUGH_PARAMS`` are
-                forwarded verbatim, those in ``_SAMPLING_PARAMS`` through
-                ``extra_body``, and the OpenAI aliases ``max_tokens`` /
+                forwarded verbatim, and the OpenAI aliases ``max_tokens`` /
                 ``max_completion_tokens``, ``stop`` and ``tool_choice`` are
-                translated. Everything else is dropped.
+                translated. Everything else is dropped, ``temperature``,
+                ``top_p`` and ``top_k`` included: API version 2026-10-21
+                rejects them.
 
         Returns:
             The keyword arguments for ``client.messages.create``.
@@ -620,12 +610,6 @@ class AnthropicLLM(BaseLLM):
         for key in _PASSTHROUGH_PARAMS:
             if kwargs.get(key) is not None:
                 params[key] = kwargs[key]
-
-        sampling = {
-            key: kwargs[key] for key in _SAMPLING_PARAMS if kwargs.get(key) is not None
-        }
-        if sampling:
-            params["extra_body"] = {**(params.get("extra_body") or {}), **sampling}
 
         # OpenAI's ``stop`` is Anthropic's ``stop_sequences``. A caller that
         # already speaks Anthropic wins.
