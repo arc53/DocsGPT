@@ -195,7 +195,7 @@ dill==0.4.1
     # via multiprocess
 distro==1.9.0
     # via google-genai
-dnspython==2.8.0
+dnspython==2.9.0
     # via email-validator
 doclang==0.8.0
     # via docling-core
