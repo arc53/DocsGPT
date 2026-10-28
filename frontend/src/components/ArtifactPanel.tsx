@@ -59,6 +59,9 @@ type ArtifactPanelProps = {
   onBack?: () => void;
   /** The Back arrow's name; "Back to files" by default. */
   backLabel?: string;
+  /** Scroll the chat to the prompt that generated this artifact. */
+  onScrollToPrompt?: () => void;
+  hasPrompt?: boolean;
 };
 
 const ARTIFACT_TITLE_KEY_BY_TYPE: Record<
@@ -259,6 +262,8 @@ export default function ArtifactPanel({
   conversationId,
   onBack,
   backLabel,
+  onScrollToPrompt,
+  hasPrompt = false,
 }: ArtifactPanelProps) {
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
   const currentFetchIdRef = React.useRef<string | null>(null);
@@ -474,6 +479,13 @@ export default function ArtifactPanel({
 
   return (
     <>
+      {hasPrompt && onScrollToPrompt && (
+        <div className="flex justify-end px-4 pt-2">
+          <Button variant="outline" size="sm" onClick={onScrollToPrompt}>
+            Scroll to Prompt
+          </Button>
+        </div>
+      )}
       <PanelHeader
         title={title || t('components.artifact.preview')}
         description={documentKind ? kindLabel(documentKind) : undefined}
