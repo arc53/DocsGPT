@@ -1645,6 +1645,7 @@
         "stepTwo": "2. 在提示時輸入此配對碼：",
         "start": "產生配對碼",
         "waitingForCli": "等待 CLI 兌換配對碼…",
+        "expired": "此配對碼已過期。請產生新的配對碼以配對裝置。",
         "cancel": "取消"
       },
       "auditDurationValue": "{{value}} 毫秒",

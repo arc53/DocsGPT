@@ -1707,6 +1707,7 @@
         "stepTwo": "2. Saisissez ce code lorsqu’il vous est demandé :",
         "start": "Générer un code",
         "waitingForCli": "En attente de l’utilisation du code par la CLI…",
+        "expired": "Ce code a expiré. Générez-en un nouveau pour associer l’appareil.",
         "cancel": "Annuler"
       },
       "auditDurationValue": "{{value}} ms",

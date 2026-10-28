@@ -1645,6 +1645,7 @@
         "stepTwo": "2. 在提示时输入此代码：",
         "start": "生成代码",
         "waitingForCli": "等待 CLI 兑换代码…",
+        "expired": "此代码已过期。请生成新代码以配对设备。",
         "cancel": "取消"
       },
       "auditDurationValue": "{{value}} 毫秒",

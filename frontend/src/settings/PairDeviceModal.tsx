@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import { baseURL } from '../api/client';
 import devicesService, {
   ApprovalMode,
+  DevicesApiError,
   PairingResponse,
 } from '../api/services/devicesService';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -46,6 +47,9 @@ export default function PairDeviceModal({
 
   const [pairing, setPairing] = React.useState<PairingResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [expired, setExpired] = React.useState(false);
+  // The code's lifetime is known up front, so expiry needn't wait on a poll.
+  const expiresAtRef = React.useRef(0);
   const pollTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
@@ -58,6 +62,7 @@ export default function PairDeviceModal({
     setSubmitting(false);
     setPairing(null);
     setError(null);
+    setExpired(false);
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
@@ -77,6 +82,7 @@ export default function PairDeviceModal({
 
   const handleStart = async () => {
     setError(null);
+    setExpired(false);
     setSubmitting(true);
     try {
       const trimmedName = name.trim();
@@ -86,6 +92,7 @@ export default function PairDeviceModal({
         description: trimmedDescription || undefined,
         approval_mode: approvalMode,
       });
+      expiresAtRef.current = Date.now() + res.expires_in * 1000;
       setPairing(res);
       setStage('waiting');
     } catch (err: unknown) {
@@ -99,7 +106,19 @@ export default function PairDeviceModal({
   // Poll while waiting for the CLI to redeem.
   React.useEffect(() => {
     if (stage !== 'waiting' || !pairing) return;
+    // Cleanup sets this, so a poll still in flight can't reopen a closed
+    // dialog as expired (closing cancels the pairing, which then answers 404).
+    let stopped = false;
+    const expire = () => {
+      setPairing(null);
+      setStage('form');
+      setExpired(true);
+    };
     pollTimerRef.current = setInterval(async () => {
+      if (Date.now() >= expiresAtRef.current) {
+        expire();
+        return;
+      }
       try {
         const s = await devicesService.pollPairing(pairing.device_code, token);
         if (s.status === 'redeemed') {
@@ -111,12 +130,23 @@ export default function PairDeviceModal({
             onPaired?.(s.device_id, s.device_name);
           }
           setModalState('INACTIVE');
+        } else if (
+          !stopped &&
+          (s.status === 'expired' || s.status === 'cancelled')
+        ) {
+          expire();
         }
       } catch (err) {
+        // The server drops a code once it expires or is cancelled.
+        if (err instanceof DevicesApiError && err.status === 404) {
+          if (!stopped) expire();
+          return;
+        }
         console.error('pairing poll failed', err);
       }
     }, 3000);
     return () => {
+      stopped = true;
       if (pollTimerRef.current) {
         clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
@@ -182,6 +212,13 @@ export default function PairDeviceModal({
           </Alert>
         )}
       </div>
+      {expired && (
+        <Alert variant="warning">
+          <AlertDescription>
+            {t('settings.devices.pairing.expired')}
+          </AlertDescription>
+        </Alert>
+      )}
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

@@ -1707,6 +1707,7 @@
         "stepTwo": "2. Introduce este código cuando se te pida:",
         "start": "Generar código",
         "waitingForCli": "Esperando a que la CLI canjee el código…",
+        "expired": "Este código ha caducado. Genera uno nuevo para emparejar el dispositivo.",
         "cancel": "Cancelar"
       },
       "auditDurationValue": "{{value}} ms",

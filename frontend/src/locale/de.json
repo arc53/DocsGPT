@@ -1648,6 +1648,7 @@
         "stepTwo": "2. Gib diesen Code ein, wenn du dazu aufgefordert wirst:",
         "start": "Code generieren",
         "waitingForCli": "Warte, bis die CLI den Code einlöst…",
+        "expired": "Dieser Code ist abgelaufen. Generiere einen neuen, um das Gerät zu koppeln.",
         "cancel": "Abbrechen"
       },
       "auditDurationValue": "{{value}} ms",

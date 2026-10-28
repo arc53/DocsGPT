@@ -1648,6 +1648,7 @@
         "stepTwo": "2. Enter this code when prompted:",
         "start": "Generate code",
         "waitingForCli": "Waiting for the CLI to redeem the code…",
+        "expired": "This code expired. Generate a new one to pair the device.",
         "cancel": "Cancel"
       },
       "auditDurationValue": "{{value}} ms",

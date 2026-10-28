@@ -1645,6 +1645,7 @@
         "stepTwo": "2. 求められたらこのコードを入力:",
         "start": "コードを生成",
         "waitingForCli": "CLIがコードを使用するのを待機中…",
+        "expired": "このコードは期限切れです。新しいコードを生成してデバイスをペアリングしてください。",
         "cancel": "キャンセル"
       },
       "auditDurationValue": "{{value}} ミリ秒",
