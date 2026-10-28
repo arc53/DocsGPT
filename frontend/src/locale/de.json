@@ -1655,7 +1655,8 @@
       "auditShow": "Letzte Befehle anzeigen",
       "auditHide": "Letzte Befehle ausblenden",
       "seen": "zuletzt gesehen {{time}}",
-      "revokeConsequence": "Die CLI auf diesem Gerät wird getrennt und die Kopplung entfernt. Koppel es erneut, um es wieder zu verbinden."
+      "revokeConsequence": "Die CLI auf diesem Gerät wird getrennt und die Kopplung entfernt. Koppel es erneut, um es wieder zu verbinden.",
+      "loadError": "Das Gerät konnte nicht geladen werden."
     },
     "customModels": {
       "label": "Eigene Modelle",

@@ -1714,7 +1714,8 @@
       "auditShow": "Mostrar comandos recientes",
       "auditHide": "Ocultar comandos recientes",
       "seen": "visto {{time}}",
-      "revokeConsequence": "La CLI de este dispositivo se desconecta y se elimina el emparejamiento. Vuelve a emparejarlo para reconectarlo."
+      "revokeConsequence": "La CLI de este dispositivo se desconecta y se elimina el emparejamiento. Vuelve a emparejarlo para reconectarlo.",
+      "loadError": "No se pudo cargar este dispositivo."
     },
     "customModels": {
       "label": "Modelos personalizados",

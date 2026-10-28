@@ -267,4 +267,35 @@ describe('RemoteDeviceConfig', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(title()).toBe('Renamed');
   });
+
+  it('a failed load shows a retryable error, and Retry loads the device', async () => {
+    getDevice
+      .mockRejectedValueOnce(new Error('Request failed (503)'))
+      .mockResolvedValueOnce(device({}));
+    await act(async () => {
+      root.render(<RemoteDeviceConfig tool={tool} handleGoBack={goBack} />);
+    });
+
+    const loadError = () =>
+      container.querySelector<HTMLElement>(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      );
+    expect(loadError()?.textContent).toContain('settings.devices.loadError');
+    expect(container.querySelector('input')).toBeNull();
+
+    const retry = Array.from(loadError()!.querySelectorAll('button')).find(
+      (el) => el.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+
+    expect(getDevice).toHaveBeenCalledTimes(2);
+    expect(loadError()).toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(title()).toBe('Laptop');
+    expect(
+      Array.from(container.querySelectorAll('input')).some(
+        (el) => el.value === 'Laptop',
+      ),
+    ).toBe(true);
+  });
 });

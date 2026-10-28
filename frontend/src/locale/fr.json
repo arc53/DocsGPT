@@ -1714,7 +1714,8 @@
       "auditShow": "Afficher les commandes récentes",
       "auditHide": "Masquer les commandes récentes",
       "seen": "vu {{time}}",
-      "revokeConsequence": "La CLI de cet appareil est déconnectée et l’association supprimée. Associez-le de nouveau pour le reconnecter."
+      "revokeConsequence": "La CLI de cet appareil est déconnectée et l’association supprimée. Associez-le de nouveau pour le reconnecter.",
+      "loadError": "Impossible de charger cet appareil."
     },
     "customModels": {
       "label": "Modèles personnalisés",

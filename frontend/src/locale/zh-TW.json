@@ -1652,7 +1652,8 @@
       "auditShow": "顯示最近的指令",
       "auditHide": "隱藏最近的指令",
       "seen": "{{time}}上線",
-      "revokeConsequence": "此裝置上的 CLI 會中斷連線，配對也會被移除。重新配對即可再次連線。"
+      "revokeConsequence": "此裝置上的 CLI 會中斷連線，配對也會被移除。重新配對即可再次連線。",
+      "loadError": "無法載入此裝置。"
     },
     "customModels": {
       "label": "自訂模型",

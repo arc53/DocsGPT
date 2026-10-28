@@ -1655,7 +1655,8 @@
       "auditShow": "Show recent commands",
       "auditHide": "Hide recent commands",
       "seen": "seen {{time}}",
-      "revokeConsequence": "The CLI on this device is disconnected and the pairing removed. Pair it again to reconnect."
+      "revokeConsequence": "The CLI on this device is disconnected and the pairing removed. Pair it again to reconnect.",
+      "loadError": "Couldn't load this device."
     },
     "customModels": {
       "label": "Custom Models",

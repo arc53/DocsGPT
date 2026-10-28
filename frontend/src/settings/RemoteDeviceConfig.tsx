@@ -20,6 +20,7 @@ import {
   DescriptionItem,
   DescriptionList,
 } from '../components/ui/description-list';
+import { EmptyState } from '../components/ui/empty-state';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { LoadingState } from '../components/ui/loading-state';
@@ -70,7 +71,8 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const [description, setDescription] = React.useState<string>('');
   const [approvalMode, setApprovalMode] = React.useState<ApprovalMode>('ask');
   const [saving, setSaving] = React.useState(false);
-  const [failed, setFailed] = React.useState(false);
+  const [loadFailed, setLoadFailed] = React.useState(false);
+  const [saveFailed, setSaveFailed] = React.useState(false);
 
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
   const [auditOpen, setAuditOpen] = React.useState(false);
@@ -87,12 +89,13 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const loadDevice = React.useCallback(() => {
     if (!deviceId) return;
     setLoading(true);
+    setLoadFailed(false);
     devicesService
       .get(deviceId, token)
       .then((d) => applyDevice(d))
       .catch((err) => {
         console.error('load device failed', err);
-        setFailed(true);
+        setLoadFailed(true);
       })
       .finally(() => setLoading(false));
   }, [deviceId, token, applyDevice]);
@@ -120,13 +123,13 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       payload.approval_mode = approvalMode;
 
     setSaving(true);
-    setFailed(false);
+    setSaveFailed(false);
     try {
       const next = await devicesService.update(deviceId, payload, token);
       applyDevice(next);
     } catch (err) {
       console.error('update device failed', err);
-      setFailed(true);
+      setSaveFailed(true);
     } finally {
       setSaving(false);
     }
@@ -149,6 +152,26 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
   if (loading && !device) {
     return <LoadingState fill="block" size="lg" />;
+  }
+
+  if (loadFailed && !device) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="mb-4 flex min-h-9.5 items-center">
+          <DetailBreadcrumb
+            parentLabel={t('settings.tools.label')}
+            currentLabel={tool.customName || tool.displayName || tool.name}
+            onParentClick={handleGoBack}
+          />
+        </div>
+        <EmptyState
+          tone="destructive"
+          illustration="none"
+          title={t('settings.devices.loadError')}
+          onRetry={loadDevice}
+        />
+      </div>
+    );
   }
 
   return (
@@ -188,7 +211,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
         </div>
       </div>
 
-      {failed && (
+      {saveFailed && (
         <Alert variant="destructive">
           <AlertDescription>{t('common.actionFailed')}</AlertDescription>
         </Alert>
