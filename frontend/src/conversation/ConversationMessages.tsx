@@ -101,6 +101,7 @@ export default function ConversationMessages({
   showHeroOnEmpty = true,
   headerContent,
   onOpenArtifact,
+  onScrollToPrompt,
   onToolAction,
   isSplitView = false,
   agentId,
@@ -123,6 +124,7 @@ export default function ConversationMessages({
   const lastTurnContentLength =
     (lastQuery?.thought?.length ?? 0) + (lastQuery?.response?.length ?? 0);
   const stickToBottomRef = useRef(true);
+
 
   // pin-to-top jump
   // once the user scrolls up past the pin's reserved spacer, collapse it (via the scroller's
@@ -464,7 +466,8 @@ export default function ConversationMessages({
               return (
                 <Fragment key={`${index}-query-fragment`}>
                   <MessageScrollerItem messageId={`q-${index}`} scrollAnchor>
-                    {query.wake ? (
+                    <div data-prompt-index={index} className="scroll-mt-6">
+                      {query.wake ? (
                       <WakeEventRow
                         wake={query.wake}
                         prompt={query.prompt}
@@ -488,7 +491,8 @@ export default function ConversationMessages({
                         sources={query.sources}
                         filesAttached={query.attachments}
                       />
-                    )}
+                      )}
+                    </div>
                   </MessageScrollerItem>
                   {responseView && (
                     <MessageScrollerItem
