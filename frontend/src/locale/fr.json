@@ -1974,6 +1974,7 @@
         "mcp_alphavantage": "Consultez cours boursiers, données fondamentales, devises, cryptos, indicateurs économiques et actualités des marchés.",
         "mcp_neon": "Explorez les projets, branches et schémas Neon Postgres, et exécutez du SQL.",
         "mcp_twelvedata": "Consultez cotations, historique des cours, indicateurs techniques et données fondamentales des actions, devises, cryptos et ETF.",
+        "mcp_cloudflare": "Gérez Workers, DNS, R2 et plus encore via l’API Cloudflare.",
         "github": "Synchronisez des dépôts dans Connaissances et laissez les agents lire le code, les tickets et les pull requests."
       },
       "empty": "Aucune connexion pour l’instant. Connectez un service pour synchroniser son contenu ou fournir de nouveaux outils aux agents.",
