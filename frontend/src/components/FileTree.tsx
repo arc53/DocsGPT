@@ -141,7 +141,11 @@ const FileTree: React.FC<FileTreeProps> = ({
       );
       const result = await response.json();
 
-      if (result.success && result.reingest_task_id) {
+      if (
+        result.success &&
+        result.reingest_task_id &&
+        result.reingest_task_id !== 'deduplicated'
+      ) {
         const reingestSourceId: string | undefined = result.source_id;
         const opStartedAt = Date.now();
 

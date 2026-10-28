@@ -199,4 +199,13 @@ describe('FileTree delete', () => {
       taskId: 'r1',
     });
   });
+
+  it('does not wait for change when reingest_task_id is deduplicated', async () => {
+    manageSourceFiles.mockReturnValue(
+      respond({ success: true, reingest_task_id: 'deduplicated' }),
+    );
+    await deleteRow('rates.pdf');
+    expect(waitForChange).not.toHaveBeenCalled();
+    expect(toasts()).toEqual(['settings.sources.deleteItemFailed(rates.pdf)']);
+  });
 });
