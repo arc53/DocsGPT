@@ -246,5 +246,5 @@
   category: dev
   mcp_url: https://mcp.cloudflare.com/mcp
   auth_kind: mcp_oauth
-  capabilities: [read, write]
+  capabilities: [read]
   docs_url: https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/

@@ -397,5 +397,5 @@ def test_cloudflare_preset_signs_in_with_mcp_oauth():
     assert cloudflare.publisher == "preset"
     assert cloudflare.mcp_url == "https://mcp.cloudflare.com/mcp"
     assert cloudflare.auth_kind == "mcp_oauth"
-    assert cloudflare.capabilities == ("read", "write")
+    assert cloudflare.capabilities == ("read",)
     assert catalog.preset_for_url("https://mcp.cloudflare.com/mcp").key == "mcp:cloudflare"
