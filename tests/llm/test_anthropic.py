@@ -155,7 +155,7 @@ class _FakeMessages:
 
 
 class _FakeAnthropic:
-    def __init__(self, api_key=None, base_url=None):
+    def __init__(self, api_key=None, base_url=None, http_client=None):
         self.api_key = api_key
         self.base_url = base_url
         self.messages = _FakeMessages()
@@ -165,6 +165,7 @@ class _FakeAnthropic:
 def patch_anthropic():
     fake = types.ModuleType("anthropic")
     fake.Anthropic = _FakeAnthropic
+    fake.DefaultHttpxClient = lambda **kwargs: kwargs
     # The real schema transformer: pure, and it is what pins the wire shape.
     fake.transform_schema = _real_transform_schema
 

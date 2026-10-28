@@ -3,11 +3,11 @@ import json
 import logging
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from anthropic import Anthropic, transform_schema
+from anthropic import Anthropic, DefaultHttpxClient, transform_schema
 
 from docsgpt.core.settings import settings
 from docsgpt.llm.base import BaseLLM, optional_int
-from docsgpt.llm.credential_scope import ANTHROPIC_DEFAULT_BASE_URL, check_credential_scope
+from docsgpt.llm.credential_scope import ANTHROPIC_DEFAULT_BASE_URL, check_credential_scope, endpoint_origin
 from docsgpt.llm.deadlines import provider_event
 from docsgpt.llm.tool_images import tool_result
 from docsgpt.storage.storage_creator import StorageCreator
@@ -184,6 +184,22 @@ def _normalize_schema(schema: Any, root: bool = False) -> Any:
     return node
 
 
+def _send_x_api_key(api_key: str):
+    """An httpx ``auth`` hook that moves the key from ``Authorization: Bearer`` to ``X-Api-Key``.
+
+    anthropic 2.x sends the key as a bearer token; a gateway set as a model's
+    ``base_url`` may read only ``X-Api-Key``, the header 1.x sent.
+    """
+
+    def auth(request):
+        if request.headers.get("Authorization") == f"Bearer {api_key}":
+            del request.headers["Authorization"]
+            request.headers["X-Api-Key"] = api_key
+        return request
+
+    return auth
+
+
 class AnthropicLLM(BaseLLM):
     provider_name = "anthropic"
     # Internal gen kwarg; ``_build_request`` sends it as ``output_config.format``.
@@ -205,7 +221,10 @@ class AnthropicLLM(BaseLLM):
         # host the credential check never saw.
         endpoint = base_url or ANTHROPIC_DEFAULT_BASE_URL
         check_credential_scope(self.api_key, endpoint, self.provider_name)
-        self.anthropic = Anthropic(api_key=self.api_key, base_url=endpoint)
+        client_kwargs: Dict[str, Any] = {"api_key": self.api_key, "base_url": endpoint}
+        if self.api_key and endpoint_origin(endpoint) != endpoint_origin(ANTHROPIC_DEFAULT_BASE_URL):
+            client_kwargs["http_client"] = DefaultHttpxClient(auth=_send_x_api_key(self.api_key))
+        self.anthropic = Anthropic(**client_kwargs)
 
         self.storage = StorageCreator.get_storage()
         self._last_usage: Optional[Dict[str, Any]] = None
