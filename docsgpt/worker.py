@@ -1290,6 +1290,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                             "no_changes": True,
                             "chunks_added": 0,
                             "chunks_deleted": 0,
+                            **_task_id_field(self),
                         },
                         scope={"kind": "source", "id": source_id},
                     )
@@ -1504,6 +1505,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     "chunks_added": added,
                     "chunks_deleted": deleted,
                     "tokens": int(total_tokens) if "total_tokens" in locals() else 0,
+                    **_task_id_field(self),
                 }
                 if inner_warnings:
                     # Surface the per-block failures so the toast can warn
@@ -1545,6 +1547,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                 "filename": source_name,
                 "operation": "reingest",
                 "error": str(e)[:1024],
+                **_task_id_field(self),
             },
             scope={"kind": "source", "id": str(source_id)},
         )

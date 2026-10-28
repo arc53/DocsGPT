@@ -195,5 +195,8 @@ describe('FileTree delete', () => {
     expect(typeof key2).toBe('string');
     expect(key2.length).toBeGreaterThan(0);
     expect(key1).not.toBe(key2);
+    expect(waitForChange).toHaveBeenCalledWith('s1', expect.any(Number), {
+      taskId: 'r1',
+    });
   });
 });

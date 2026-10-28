@@ -150,8 +150,8 @@ export function useReingestSseWaiter() {
         const matches = (event: SSEEvent): boolean => {
           if (event.scope?.id !== sourceId) return false;
           const eventTask = event.payload?.task_id;
-          if (taskId && typeof eventTask === 'string')
-            return eventTask === taskId;
+          if (taskId)
+            return typeof eventTask === 'string' && eventTask === taskId;
           const ts = event.ts ? Date.parse(event.ts) : NaN;
           if (Number.isFinite(ts) && ts < opStartedAt - CLOCK_SKEW_MS)
             return false;

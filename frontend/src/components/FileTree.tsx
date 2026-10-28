@@ -145,7 +145,9 @@ const FileTree: React.FC<FileTreeProps> = ({
         const reingestSourceId: string | undefined = result.source_id;
         const opStartedAt = Date.now();
 
-        const { terminal } = await waitForChange(reingestSourceId, opStartedAt);
+        const { terminal } = await waitForChange(reingestSourceId, opStartedAt, {
+          taskId: result.reingest_task_id,
+        });
         if (!mountedRef.current) return false;
 
         if (terminal === 'completed') {
