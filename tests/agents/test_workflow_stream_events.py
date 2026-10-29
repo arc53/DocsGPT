@@ -262,3 +262,52 @@ class TestValidation:
 
         assert AgentNodeConfig().stream_output == "summary"
         assert CodeNodeConfig(stream_output="none").stream_output == "none"
+
+
+@pytest.mark.unit
+class TestReviewFollowUps:
+    def test_a_lone_surrogate_in_the_output_does_not_break_the_step(self, monkeypatch):
+        _stub_answer(monkeypatch, "bad \ud800 text " * 2000)
+
+        event = _step(_run(_engine(_agent())), "extract")
+
+        assert event["summarized"] is True
+        assert _size_escaped(event) <= LIMIT
+
+    def test_a_small_lone_surrogate_output_is_sent_whole(self, monkeypatch):
+        _stub_answer(monkeypatch, "x \ud800 y")
+        event = _step(_run(_engine(_agent())), "extract")
+        assert event["output"] == "x \ud800 y"
+
+    def test_the_run_event_says_whether_the_run_is_saved(self):
+        engine = _engine()
+        engine.run_persisted = False
+        run_event = next(e for e in _run(engine) if e.get("type") == "workflow_run")
+        assert run_event["run_saved"] is False
+        assert next(e for e in _run(_engine()) if e.get("type") == "workflow_run")["run_saved"] is True
+
+    def test_loop_body_steps_carry_no_step_index(self):
+        import threading
+
+        engine = _engine()
+        loop = _node("loop", NodeType.LOOP, "Loop")
+        child = engine._loop_child(loop, 0, 1, threading.Event())
+        from docsgpt.agents.workflows.schemas import PARENT_ID_KEY
+
+        body = _node(
+            "copy", NodeType.STATE, "Copy",
+            operations=[{"expression": '"v"', "target_variable": "k"}], **{PARENT_ID_KEY: "loop"},
+        )
+        child.graph = WorkflowGraph(workflow=Workflow(name="Loop"), nodes=[body], edges=[])
+
+        events = list(child._walk("copy", dict(child.state)))
+
+        finished = next(e for e in events if e.get("status") == "completed")
+        assert "step_index" not in finished
+        assert finished["parent_node_id"] == "loop"
+
+
+def _size_escaped(event: Dict[str, Any]) -> int:
+    from docsgpt.streaming.event_replay import sse_json
+
+    return len(sse_json(event).encode("utf-8"))

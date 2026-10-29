@@ -505,6 +505,20 @@ class TestMessageEventsRepository:
         assert rows[0]["payload"] == {"chunk": "first"}
         assert rows[3]["payload"] == {"type": "end"}
 
+    def test_values_json_has_no_type_for_are_stored_as_text(self, pg_conn):
+        """A live frame sends such a value as its text; the journal stores the same."""
+        from datetime import datetime
+
+        msg = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        at = datetime(2026, 10, 29, 12, 0)
+
+        repo.bulk_record(msg, [(0, "workflow_step", {"state_delta": {"at": at}})])
+        repo.record(msg, 1, "workflow_step", {"state_delta": {"at": at}})
+
+        rows = list(repo.read_after(msg))
+        assert [r["payload"]["state_delta"]["at"] for r in rows] == [str(at), str(at)]
+
     def test_bulk_record_empty_list_is_no_op(self, pg_conn):
         msg = _seed_message(pg_conn)
         repo = MessageEventsRepository(pg_conn)

@@ -71,7 +71,7 @@ class MessageEventsRepository:
                 "message_id": str(message_id),
                 "sequence_no": int(sequence_no),
                 "event_type": event_type,
-                "payload": json.dumps(materialised_payload),
+                "payload": json.dumps(materialised_payload, default=str),
             },
         )
 
@@ -101,7 +101,7 @@ class MessageEventsRepository:
                 "message_id": str(message_id),
                 "sequence_no": int(seq),
                 "event_type": event_type,
-                "payload": json.dumps(payload if payload is not None else {}),
+                "payload": json.dumps(payload if payload is not None else {}, default=str),
             }
             for seq, event_type, payload in events
         ]
@@ -334,7 +334,7 @@ class MessageEventsRepository:
                     "UPDATE message_events SET payload = CAST(:payload AS jsonb) "
                     "WHERE message_id = CAST(:message_id AS uuid) AND sequence_no = :seq"
                 ),
-                {"message_id": str(message_id), "seq": seq, "payload": json.dumps(payload)},
+                {"message_id": str(message_id), "seq": seq, "payload": json.dumps(payload, default=str)},
             )
         return len(changed)
 

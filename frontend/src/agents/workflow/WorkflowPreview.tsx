@@ -143,6 +143,7 @@ export function ExecutionDetails({
   onToggle,
   stepRefs,
   workflowRunId,
+  runSaved = true,
 }: {
   steps: WorkflowExecutionStep[];
   nodes: WorkflowNode[];
@@ -151,6 +152,8 @@ export function ExecutionDetails({
   stepRefs?: React.RefObject<Map<string, HTMLDivElement>>;
   /** The saved run, when there is one; a summarized step loads its full values from it. */
   workflowRunId?: string;
+  /** False for an unsaved draft: its steps are not stored, so nothing can be loaded. */
+  runSaved?: boolean;
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -230,7 +233,10 @@ export function ExecutionDetails({
           // nothing; either can load its full values from the saved run.
           const partial = !full && (step.summarized || step.outputOmitted);
           const canLoadFull =
-            partial && Boolean(workflowRunId) && step.stepIndex !== undefined;
+            partial &&
+            runSaved &&
+            Boolean(workflowRunId) &&
+            step.stepIndex !== undefined;
           const stepOutput = full
             ? full.output
             : step.outputTruncated
@@ -373,6 +379,11 @@ export function ExecutionDetails({
                     </Badge>
                   ))}
                 </div>
+              )}
+              {partial && !runSaved && (
+                <p className="text-muted-foreground text-xs">
+                  {t('agents.workflow.preview.fullOutputUnsaved')}
+                </p>
               )}
               {canLoadFull && (
                 <div className="flex flex-wrap items-center gap-2">
@@ -813,6 +824,9 @@ export default function WorkflowPreview({
                                   {querySteps.length > 0 && (
                                     <ExecutionDetails
                                       workflowRunId={query.workflowRunId}
+                                      runSaved={
+                                        query.workflowRunSaved !== false
+                                      }
                                       steps={querySteps}
                                       nodes={workflowData.nodes}
                                       isOpen={isOpen}

@@ -142,8 +142,10 @@ class _LoopItemCancelled(Exception):
 
 
 def _event_bytes(value: Any) -> int:
-    """Bytes ``value`` takes as the JSON a stream line carries (UTF-8, unescaped)."""
-    return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+    """Bytes ``value`` takes as the JSON a stream line carries (the SSE serialization, as UTF-8)."""
+    from docsgpt.streaming.event_replay import sse_json
+
+    return len(sse_json(value).encode("utf-8"))
 
 
 def _stream_output_mode(node: WorkflowNode) -> str:
@@ -262,6 +264,9 @@ class WorkflowEngine:
             "type": "workflow_run",
             "workflow_run_id": self.workflow_run_id,
             "step_total": self.graph.linear_step_count(count_end=False),
+            # False for an unsaved draft: nothing is stored under this id, so
+            # a summarized step's full values can't be fetched later.
+            "run_saved": self.run_persisted,
         }
 
         start_node = self.graph.get_start_node()
@@ -463,7 +468,11 @@ class WorkflowEngine:
         """
         from docsgpt.core.settings import settings
 
-        fields: Dict[str, Any] = {"step_index": step_index, **extra}
+        fields: Dict[str, Any] = dict(extra)
+        # A loop item's steps are saved inside the loop's step, which the
+        # step route does not address, so they carry no index.
+        if self._loop_item is None:
+            fields["step_index"] = step_index
         if error is not None:
             fields["error"] = error
         mode = _stream_output_mode(node)

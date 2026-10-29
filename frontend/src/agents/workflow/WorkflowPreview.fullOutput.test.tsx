@@ -156,6 +156,25 @@ describe('ExecutionDetails full output on demand', () => {
     expect(showFull()).toBeUndefined();
   });
 
+  it('says to save the workflow when the run is an unsaved draft', async () => {
+    await act(async () => {
+      root.render(
+        <ExecutionDetails
+          steps={[summarized] as never}
+          nodes={nodes}
+          isOpen
+          onToggle={() => undefined}
+          workflowRunId="draft-run"
+          runSaved={false}
+        />,
+      );
+    });
+    expect(showFull()).toBeUndefined();
+    expect(container.textContent).toContain(
+      'agents.workflow.preview.fullOutputUnsaved',
+    );
+  });
+
   it('leaves a whole step as it was', async () => {
     await render(
       { nodeId: 'n1', nodeType: 'code', status: 'completed', output: 'done' },

@@ -521,9 +521,11 @@ is held to `WORKFLOW_STREAM_MAX_EVENT_BYTES` (32 KB by default):
   `state_keys_truncated`.
 
 Every finished step's event also carries `step_index`, its place in the run's
-saved steps. The run keeps every step's full output and state changes, so
-**Show full output** on a summarized step in **Execution details** loads them
-once the run ends. Over the API that is
+saved steps (a loop item's steps, saved inside the loop's step, carry none). The
+run keeps every step's full output and state changes, so **Show full output** on
+a summarized step in **Execution details** loads them once the run ends. A
+preview of a workflow that was never saved stores no run; save it first to load
+a large step's full output. Over the API that is
 `GET /api/workflow_runs/<run_id>/steps/<step_index>` (a
 [personal access token](/API/personal-access-tokens#reading-workflow-runs)
 needs `runs:read`).
@@ -537,9 +539,11 @@ Each node can change this with **Step details in the chat stream**
 | **Always full** (`full`) | The output and state changes, whatever their size |
 | **Status only** (`none`) | The status alone, with `output_omitted: true` |
 
-Use **Status only** for a node whose output the people chatting with the agent
-shouldn't receive, and **Always full** only when a client needs every value from
-the stream itself. An End node's output template is streamed in pieces under
+This setting covers the finished step's event only. An AI Agent node's answer
+streams into the chat while **Stream output to user** is on, whatever this
+setting says. To keep a node's output away from the people chatting with the
+agent, set **Status only** *and* turn **Stream output to user** off. Use
+**Always full** only when a client needs every value from the stream itself. An End node's output template is streamed in pieces under
 the same limit.
 
 ## One workflow per agent

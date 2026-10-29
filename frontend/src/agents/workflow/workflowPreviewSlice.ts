@@ -61,6 +61,8 @@ export interface WorkflowQuery extends Query {
   // The run id for this query's execution; lets the artifacts panel list the
   // run's produced artifacts (GET /api/artifacts?workflow_run_id=).
   workflowRunId?: string;
+  /** False for an unsaved draft's run: nothing is stored under its id. */
+  workflowRunSaved?: boolean;
 }
 
 export interface WorkflowPreviewState {
@@ -222,6 +224,7 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                         setWorkflowRunId({
                           index: targetIndex,
                           workflowRunId: data.workflow_run_id,
+                          saved: data.run_saved,
                         }),
                       );
                     } else if (data.type === 'thought') {
@@ -542,11 +545,16 @@ export const workflowPreviewSlice = createSlice({
     },
     setWorkflowRunId(
       state,
-      action: PayloadAction<{ index: number; workflowRunId: string }>,
+      action: PayloadAction<{
+        index: number;
+        workflowRunId: string;
+        saved?: boolean;
+      }>,
     ) {
-      const { index, workflowRunId } = action.payload;
+      const { index, workflowRunId, saved } = action.payload;
       if (state.queries[index]) {
         state.queries[index].workflowRunId = workflowRunId;
+        state.queries[index].workflowRunSaved = saved;
       }
     },
     setActiveNodeId(state, action: PayloadAction<string | null>) {
