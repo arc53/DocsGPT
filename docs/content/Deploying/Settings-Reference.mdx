@@ -1923,6 +1923,12 @@ Type `int`, default `900`.
 
 Wall clock one node may spend on blocking parses, shared across all of them. Without it a node could serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows on a web threadpool slot.
 
+### `WORKFLOW_DOCUMENT_LINES_CACHE_TTL`
+
+Type `int`, default `86400`.
+
+Seconds the line-numbered text of a workflow input document (file_passing: lines) stays cached in Redis, keyed by the file's content hash, so a later run over the same file skips the parse. 0 disables the cache; a run still reads each document only once.
+
 ### `WORKFLOW_LOOP_MAX_CONCURRENCY`
 
 Type `int`, default `4`, must be `>= 1`.
