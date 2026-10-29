@@ -14,6 +14,7 @@ fails the node with a message naming it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -336,21 +337,35 @@ def _cache_key(version: Dict[str, Any], name: str) -> Optional[str]:
     """The cache key for a document version, or None when its content hash is unknown.
 
     The reader is picked from the extension and the mime type, and the
-    configured-parser fallback depends on the engine and OCR settings, so
+    configured-parser fallback depends on the parser and OCR settings, so
     identical bytes read differently under another name, type or setup get
     a key of their own.
     """
-    from docsgpt.core.settings import settings
-
     sha256 = version.get("sha256")
     if not sha256:
         return None
     suffix = os.path.splitext(name)[1].lower()
     reader = f"{suffix}|{version.get('mime_type') or ''}"
-    parser = (
-        f"{settings.DOC_PARSER_ENGINE}-{settings.OCR_BACKEND}-{settings.OCR_ENGINE}-{int(bool(settings.OCR_ENABLED))}"
-    )
-    return f"workflow:doclines:v{FORMAT_VERSION}:{parser}:{reader}:{sha256}"
+    return f"workflow:doclines:v{FORMAT_VERSION}:{_parser_fingerprint()}:{reader}:{sha256}"
+
+
+# Settings families that can change what the configured parser (and OCR)
+# reads from a file. Every field in them goes into the cache key, so a new
+# one is covered without touching this module.
+_PARSER_SETTING_PREFIXES = ("OCR_", "DOC_PARSER_", "DOCLING_", "ANYDOC_", "PDF_")
+
+
+def _parser_fingerprint() -> str:
+    """A short hash of every parser and OCR setting (credentials left out)."""
+    from docsgpt.core.settings import settings
+
+    values = {
+        field: getattr(settings, field, None)
+        for field in sorted(type(settings).model_fields)
+        if field.startswith(_PARSER_SETTING_PREFIXES) and not field.endswith("_API_KEY")
+    }
+    encoded = json.dumps(values, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]
 
 
 def _cache_ttl() -> int:

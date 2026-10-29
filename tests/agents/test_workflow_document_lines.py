@@ -726,7 +726,16 @@ def test_the_cache_key_separates_identical_bytes_under_another_mime_type(monkeyp
 
 
 @pytest.mark.unit
-def test_changing_the_ocr_engine_misses_the_cache(monkeypatch, parse_queue):
+@pytest.mark.parametrize(
+    "setting, before, after",
+    [
+        ("OCR_ENGINE", "tesseract", "rapidocr"),
+        ("OCR_LANGS", "eng", "eng+deu"),
+        ("OCR_RENDER_DPI", 200, 300),
+        ("DOC_PARSER_ENGINE", "anydoc", "docling"),
+    ],
+)
+def test_changing_a_parser_setting_misses_the_cache(monkeypatch, parse_queue, setting, before, after):
     from docsgpt.core.settings import settings
 
     redis = _FakeRedis()
@@ -734,10 +743,27 @@ def test_changing_the_ocr_engine_misses_the_cache(monkeypatch, parse_queue):
     aid, rec = _artifact(DOCX, "scan.docx", data=b"PK", sha256="same")
     _patch_repo(monkeypatch, {aid: rec})
 
-    monkeypatch.setattr(settings, "OCR_ENGINE", "tesseract")
+    monkeypatch.setattr(settings, setting, before)
     _engine([aid])._materialize_node_attachments(_lines_config(), "Node", [])
-    monkeypatch.setattr(settings, "OCR_ENGINE", "rapidocr")
+    monkeypatch.setattr(settings, setting, after)
     _engine([aid])._materialize_node_attachments(_lines_config(), "Node", [])
 
     assert len(parse_queue.calls) == 2
     assert len(redis.store) == 2
+
+
+@pytest.mark.unit
+def test_a_credential_change_keeps_the_cache(monkeypatch, parse_queue):
+    from docsgpt.core.settings import settings
+
+    redis = _FakeRedis()
+    monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: redis)
+    aid, rec = _artifact(DOCX, "scan.docx", data=b"PK", sha256="same")
+    _patch_repo(monkeypatch, {aid: rec})
+
+    monkeypatch.setattr(settings, "OCR_DEEPSEEK_API_KEY", "old")
+    _engine([aid])._materialize_node_attachments(_lines_config(), "Node", [])
+    monkeypatch.setattr(settings, "OCR_DEEPSEEK_API_KEY", "rotated")
+    _engine([aid])._materialize_node_attachments(_lines_config(), "Node", [])
+
+    assert len(parse_queue.calls) == 1
