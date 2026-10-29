@@ -492,6 +492,82 @@ def test_fail_names_the_item_that_failed_not_one_it_stopped(node_agent):
     assert loop_log["items"][0]["error"] == "Stopped because another item failed."
 
 
+def test_a_failure_stops_new_items_before_the_relay_reaches_it(node_agent):
+    """An item failing while the relay hands out a success's slot starts nothing new."""
+    first_seen = threading.Event()
+
+    def reply(prompt):
+        if prompt == "b":
+            # Fail while the consumer is holding the relay on item 0's event.
+            first_seen.wait(1)
+            raise ValueError("bad item")
+        return prompt
+
+    node_agent["reply"] = reply
+    engine = _engine(
+        {"items": "items", "concurrency": 2},
+        [_agent("summarize", parent="each")],
+        state={"items": ITEMS},
+    )
+
+    for event in engine.execute(engine._initial, "q"):
+        if event.get("type") == "workflow_loop_item" and event["item_index"] == 0 and event["status"] == "completed":
+            first_seen.set()
+            time.sleep(0.3)
+
+    loop_log = next(log for log in engine.execution_log if log["node_id"] == "each")
+    assert loop_log["items"][2]["status"] == "pending"
+    assert [kwargs["prompt"] for kwargs in node_agent["created"]].count("c") == 0
+
+
+def test_each_item_reads_its_own_retrieved_documents(node_agent, monkeypatch):
+    """Concurrent items with sources never format a prompt with another item's documents."""
+    from docsgpt.retriever.retriever_creator import RetrieverCreator
+
+    both_searched = threading.Barrier(2, timeout=2)
+    counter = {"n": 0}
+    lock = threading.Lock()
+
+    class Retriever:
+        def search(self, _query):
+            with lock:
+                counter["n"] += 1
+                text = f"doc{counter['n']}"
+            both_searched.wait()
+            return [{"text": text}]
+
+    monkeypatch.setattr(RetrieverCreator, "create_retriever", staticmethod(lambda *a, **k: Retriever()))
+    monkeypatch.setattr(WorkflowEngine, "_authorized_node_sources", lambda self, sources: list(sources))
+    monkeypatch.setattr(WorkflowEngine, "_node_rerankers", staticmethod(lambda sources: {}))
+    seen = []
+    node_agent["reply"] = lambda prompt: seen.append(prompt) or prompt
+    engine = _engine(
+        {"items": "items", "concurrency": 2, "output_variable": "results"},
+        [_agent("read", parent="each", sources=["s1"], prompt_template="{{ item.name }}:{{ source.content }}")],
+        state={"items": ITEMS[:2]},
+    )
+    engine.agent.retrieved_docs = []
+
+    _run(engine)
+
+    assert sorted(doc.split(":")[1] for doc in seen) == ["doc1", "doc2"]
+    # After the loop, templates read every item's documents in item order.
+    assert sorted(d["text"] for d in engine.agent.retrieved_docs) == ["doc1", "doc2"]
+
+
+def test_an_explicit_null_limit_means_the_default(node_agent):
+    """A loop saved with ``concurrency: null`` runs with the default."""
+    engine = _engine(
+        {"items": "items", "concurrency": None, "max_items": None, "output_variable": "results"},
+        [_agent("summarize", parent="each")],
+        state={"items": ITEMS},
+    )
+
+    _run(engine)
+
+    assert engine.state["results"] == ["A", "B", "C"]
+
+
 def test_progress_skips_steps_inside_a_loop():
     from docsgpt.agents.workflow_agent import WorkflowAgent
 
@@ -574,6 +650,7 @@ def test_validation_accepts_a_condition_in_the_body_without_an_end():
         ({"item_variable": "1x"}, "cannot use '1x'"),
         ({"concurrency": 0}, "concurrency must be a whole number"),
         ({"max_items": "10"}, "max_items must be a whole number"),
+        ({"max_items": None}, "max_items must be a whole number"),
         ({"on_item_error": "retry"}, "on_item_error must be"),
     ],
 )

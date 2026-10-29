@@ -208,6 +208,21 @@ class TestRegistryPermutations:
         assert caps["openai/gpt-oss-120b"] is True
         assert caps["llama-3.3-70b-versatile"] is False
 
+    def test_a_model_and_catalog_without_the_flag_support_structured_output(self, tmp_path) -> None:
+        """Neither the model nor the catalog defaults naming the flag resolves to True."""
+        (tmp_path / "bare.yaml").write_text(
+            "provider: openai_compatible\n"
+            "display_provider: bare\n"
+            "base_url: http://localhost:9999/v1\n"
+            "api_key_env: BARE_KEY\n"
+            "models:\n"
+            "  - id: bare-model\n"
+            "    display_name: Bare\n"
+        )
+        catalogs = load_model_yamls([tmp_path])
+        model = next(m for c in catalogs for m in c.models if m.id == "bare-model")
+        assert model.capabilities.supports_structured_output is True
+
     def test_openai_base_url_replaces_catalog_with_dynamic(self):
         s = _make_settings(
             OPENAI_BASE_URL="http://localhost:11434/v1",

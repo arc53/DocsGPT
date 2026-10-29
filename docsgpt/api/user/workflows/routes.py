@@ -681,8 +681,10 @@ def _loop_errors(nodes: List[Dict], edges: List[Dict]) -> List[str]:
             errors.append(f"Loop '{loop_title}' cannot use '{item_variable}' as its item variable")
 
         for key in ("concurrency", "max_items"):
-            value = config.get(key)
-            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+            if key not in config:
+                continue
+            value = config[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 errors.append(f"Loop '{loop_title}' {key} must be a whole number of at least 1")
 
         if config.get("on_item_error", "fail") not in ("fail", "skip", "collect"):

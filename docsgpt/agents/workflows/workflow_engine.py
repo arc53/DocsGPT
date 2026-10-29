@@ -125,6 +125,9 @@ class WorkflowEngine:
         # that stops the item between nodes once another item failed the loop.
         self._loop_item: Optional[Dict[str, Any]] = None
         self._loop_cancel: Optional[threading.Event] = None
+        # A loop item's own retrieved documents. Items run side by side, so
+        # they keep these here rather than on the shared ``self.agent``.
+        self._item_docs: Optional[List[Dict[str, Any]]] = None
         # Serializes code nodes on the run's one sandbox session: concurrent loop
         # items would otherwise overwrite each other's state.json and captures.
         self._sandbox_lock = threading.Lock()
@@ -237,6 +240,9 @@ class WorkflowEngine:
                     state_delta=log_entry["state_delta"],
                     output=node_output,
                 )
+            except _LoopItemCancelled:
+                # The loop stopped this item mid-node: not a failure of its own.
+                raise
             except Exception as e:
                 logger.error(f"Error executing node {node.id}: {e}", exc_info=True)
                 log_entry["status"] = ExecutionStatus.FAILED.value
@@ -658,6 +664,10 @@ class WorkflowEngine:
         # would cold-drop later nodes' interpreter/filesystem state. The run session
         # is torn down once in ``execute``'s finally when the whole run ends.
         with self._sandbox_lock:
+            # A loop item can wait here while the loop stops, or after the
+            # run's session closed; it must not reopen the session.
+            if self._loop_cancel is not None and self._loop_cancel.is_set():
+                raise _LoopItemCancelled()
             manager.open(session_id)
             loaded = self._materialize_code_inputs(manager, session_id, config.inputs, user_id)
             # Stage prior state as DATA the node code reads with
@@ -1288,7 +1298,9 @@ class WorkflowEngine:
         title = node.title or "Loop"
         if self._loop_item is not None:
             raise WorkflowLoopError(f'Loop "{title}" is inside another loop; loops cannot be nested.')
-        config = LoopNodeConfig(**node.config.get("config", node.config))
+        raw_config = node.config.get("config", node.config)
+        # An explicit null means the default, as an omitted key does.
+        config = LoopNodeConfig(**{key: value for key, value in raw_config.items() if value is not None})
         item_variable = (config.item_variable or "").strip()
         if not _IDENTIFIER_RE.match(item_variable) or item_variable in LOOP_RESERVED_VARIABLES:
             raise WorkflowLoopError(f'Loop "{title}" cannot use "{item_variable}" as its item variable.')
@@ -1349,6 +1361,7 @@ class WorkflowEngine:
         concurrency = max(1, min(config.concurrency, int(settings.WORKFLOW_LOOP_MAX_CONCURRENCY), count))
         cancel = threading.Event()
         events: "queue.Queue[Any]" = queue.Queue()
+        item_docs: Dict[int, List[Dict[str, Any]]] = {}
         done_marker = object()
 
         def run_item(index: int, item: Any) -> None:
@@ -1364,11 +1377,17 @@ class WorkflowEngine:
                 result = child._loop_item_result(config.result_variable)
             except _LoopItemFailed as exc:
                 status, error = ExecutionStatus.FAILED, exc.message
+                if config.on_item_error == "fail":
+                    # At once, not when the relay reaches this item's marker:
+                    # an earlier success marker would otherwise start a new item.
+                    cancel.set()
             except _LoopItemCancelled:
                 status, error = ExecutionStatus.FAILED, _ITEM_STOPPED_MESSAGE
             except Exception as exc:
                 logger.exception("Loop item %s of node %s failed", index, node.id)
                 status, error = ExecutionStatus.FAILED, sanitize_api_error(exc)
+                if config.on_item_error == "fail":
+                    cancel.set()
             finally:
                 # Always sent: the relay below waits for one marker per started item.
                 completed = datetime.now(timezone.utc)
@@ -1381,6 +1400,8 @@ class WorkflowEngine:
                     "duration_ms": int((completed - started).total_seconds() * 1000),
                     "steps": child.execution_log if child is not None else [],
                 }
+                if child is not None and child._item_docs:
+                    item_docs[index] = child._item_docs
                 events.put((done_marker, index, status, error, result, log))
 
         pool = ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="workflow-loop")
@@ -1423,6 +1444,9 @@ class WorkflowEngine:
                 if not cancel.is_set():
                     submit_next()
             finished = True
+            # After the loop, ``{{ source.* }}`` reads every item's documents.
+            if item_docs:
+                self.agent.retrieved_docs = [doc for index in sorted(item_docs) for doc in item_docs[index]]
         finally:
             if not finished:
                 # The stream closed mid-loop: start nothing more and let the
@@ -1648,7 +1672,7 @@ class WorkflowEngine:
         return refs
 
     def _get_source_template_data(self) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
-        docs = getattr(self.agent, "retrieved_docs", None)
+        docs = self._item_docs if self._item_docs is not None else getattr(self.agent, "retrieved_docs", None)
         if not isinstance(docs, list) or len(docs) == 0:
             return None, None
 
@@ -1821,7 +1845,10 @@ class WorkflowEngine:
             if docs:
                 # The parent copy still backs ``{{ source.* }}`` template
                 # resolution; the return value is what reaches the node agent.
-                self.agent.retrieved_docs = docs
+                if self._loop_item is not None:
+                    self._item_docs = docs
+                else:
+                    self.agent.retrieved_docs = docs
             return docs or []
         except Exception:
             logger.exception("Failed to retrieve docs for workflow node")
