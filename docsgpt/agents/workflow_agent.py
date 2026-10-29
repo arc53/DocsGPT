@@ -185,6 +185,8 @@ class WorkflowAgent(BaseAgent):
                                     "title": event.get("node_title"),
                                     "type": event.get("node_type"),
                                     "started_at": datetime.now(timezone.utc).isoformat(),
+                                    # Set when the step is being retried.
+                                    **({"attempt": event["attempt"]} if event.get("attempt") else {}),
                                 },
                             },
                         )
@@ -230,9 +232,11 @@ class WorkflowAgent(BaseAgent):
             nodes_data = self._workflow_data.get("nodes", [])
             edges_data = self._workflow_data.get("edges", [])
 
+            retry_defaults = self._workflow_data.get("retry_defaults")
             workflow = Workflow(
                 name=self._workflow_data.get("name", "Embedded Workflow"),
                 description=self._workflow_data.get("description"),
+                retry_defaults=retry_defaults if isinstance(retry_defaults, dict) else None,
             )
 
             nodes = []
@@ -311,6 +315,7 @@ class WorkflowAgent(BaseAgent):
             workflow = Workflow(
                 name=workflow_row.get("name"),
                 description=workflow_row.get("description"),
+                retry_defaults=workflow_row.get("retry_defaults"),
             )
             nodes = [
                 WorkflowNode(

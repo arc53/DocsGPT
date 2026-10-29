@@ -995,7 +995,8 @@
         "result": "Ergebnis",
         "source": "Quelle",
         "feedback": "Feedback",
-        "passthrough": "Passthrough"
+        "passthrough": "Passthrough",
+        "retries": "Wiederholungen"
       },
       "trace": {
         "view": "Trace anzeigen",
@@ -1133,7 +1134,9 @@
         "topics": "Themen"
       },
       "levelFilter": "Stufe",
-      "typeFilter": "Ereignistyp"
+      "typeFilter": "Ereignistyp",
+      "retriedStep_one": "{{node}}: {{count}} Versuch",
+      "retriedStep_other": "{{node}}: {{count}} Versuche"
     },
     "teams": {
       "label": "Teams",
@@ -2859,7 +2862,11 @@
       "stepCount_one": "{{count}} Schritt",
       "stepCount_other": "{{count}} Schritte",
       "loopItems": "{{done}} von {{total}} Elementen",
-      "loopItemsFailed": "{{count}} fehlgeschlagen"
+      "loopItemsFailed": "{{count}} fehlgeschlagen",
+      "retrying": "Neuer Versuch · Versuch {{attempt}}",
+      "retryingOf": "Neuer Versuch · Versuch {{attempt}} von {{total}}",
+      "attempts_one": "{{count}} Versuch",
+      "attempts_other": "{{count}} Versuche"
     }
   },
   "agents": {
@@ -3690,7 +3697,9 @@
         "loopItemsPath": "Die Elemente der Schleife „{{name}}“ müssen ein Zustandspfad wie extracted.items sein",
         "loopItemVariable": "Schleife „{{name}}“ hat eine unbrauchbare Elementvariable",
         "loopEmpty": "Schleife „{{name}}“ braucht mindestens einen Knoten",
-        "loopEntry": "Schleife „{{name}}“ muss an genau einem Knoten beginnen"
+        "loopEntry": "Schleife „{{name}}“ muss an genau einem Knoten beginnen",
+        "nodeRetry": "Knoten „{{name}}“ hat Wiederholungseinstellungen außerhalb des zulässigen Bereichs",
+        "retryDefaults": "Die Standard-Wiederholungen des Workflows liegen außerhalb des zulässigen Bereichs"
       },
       "schema": {
         "notObject": "muss ein gültiges JSON-Objekt sein",
@@ -3745,7 +3754,11 @@
         "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst.",
         "backToRun": "Zurück zum Lauf",
         "loopItems": "{{done}} von {{total}} Elementen",
-        "loopItemsFailed": "{{count}} fehlgeschlagen"
+        "loopItemsFailed": "{{count}} fehlgeschlagen",
+        "retrying": "Neuer Versuch · Versuch {{attempt}}",
+        "retryingOf": "Neuer Versuch · Versuch {{attempt}} von {{total}}",
+        "attempts_one": "{{count}} Versuch",
+        "attempts_other": "{{count}} Versuche"
       },
       "documents": {
         "modeAll": "Alle Eingabedokumente",
@@ -3767,7 +3780,28 @@
       "zoomOut": "Verkleinern",
       "fitView": "Ansicht anpassen",
       "removeAssignment": "Zuweisung {{index}} entfernen",
-      "removeCondition": "Bedingung {{index}} entfernen"
+      "removeCondition": "Bedingung {{index}} entfernen",
+      "retry": {
+        "title": "Wiederholungen",
+        "defaultsDescription": "Was Agent- und Code-Knoten tun, wenn ein Versuch fehlschlägt. Die Wiederholungseinstellungen eines Knotens haben Vorrang.",
+        "attempts": "Max. Versuche",
+        "inherit": "Standard ({{value}})",
+        "noRetry": "1 (keine Wiederholung)",
+        "backoff": "Wartezeiten (s)",
+        "backoffInvalid": "Zahlen von 0 bis 300, durch Kommas getrennt.",
+        "backoffTooMany": "Höchstens 10 Wartezeiten.",
+        "hint": "Wartet vor jeder Wiederholung {{backoff}} Sekunden; die letzte Wartezeit wiederholt sich.",
+        "hintOff": "Läuft einmal. Erhöhe die Versuche, um Fehler zu wiederholen.",
+        "on": "Wiederholen bei",
+        "onChoice": {
+          "transient": "Fehlern und Zeitüberschreitungen",
+          "invalid_output": "Ungültiger Ausgabe"
+        },
+        "onHint": {
+          "transient": "Serverfehler, Ratenlimits, Zeitüberschreitungen, abgebrochene Verbindungen und leere Antworten.",
+          "invalid_output": "Eine Antwort, die kein gültiges JSON ist oder nicht zum Schema der strukturierten Ausgabe passt."
+        }
+      }
     },
     "typeModal": {
       "title": "Neuen Agenten erstellen",

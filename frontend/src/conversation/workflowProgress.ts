@@ -17,6 +17,15 @@ export type WorkflowStepEvent = {
   /** Set on the steps of a loop's body: the loop and the item they ran for. */
   parent_node_id?: string;
   item_index?: number;
+  /** On a ``running`` event for a retry: the attempt starting (from 2). */
+  attempt?: number;
+  max_attempts?: number;
+  retry_delay_seconds?: number;
+  retry_reason?: 'transient' | 'invalid_output';
+  /** Why the previous attempt failed, short and sanitized. */
+  retry_error?: string;
+  /** On the final event of a step that ran more than once. */
+  attempts?: number;
 };
 
 /** A ``workflow_loop_item`` stream event: one item of a loop started or ended. */
@@ -63,7 +72,8 @@ export function stepDetail(event: WorkflowStepEvent): string | undefined {
 
 /**
  * Applies one ``workflow_step`` event to a turn's progress, in place. Steps
- * keep the order they started in; start, end and note nodes are skipped.
+ * keep the order they started in; start, end and note nodes are skipped. A
+ * ``running`` event with an ``attempt`` past 1 is a retry of the same step.
  * ``answer`` is the turn's streamed text, so the step that wrote it gets no
  * detail line.
  */
@@ -86,11 +96,21 @@ export function applyWorkflowStep(
   };
   step.status = event.status;
   if (event.node_title) step.title = event.node_title;
-  if (event.status === 'running') {
+  const isRetry = event.status === 'running' && (event.attempt ?? 1) > 1;
+  if (isRetry) {
+    // The step's time keeps running from its first attempt.
+    step.attempt = event.attempt;
+    step.maxAttempts = event.max_attempts;
+    step.retryError = event.retry_error || undefined;
+  } else if (event.status === 'running') {
     step.startedAt = now;
     step.endedAt = undefined;
   } else {
     step.endedAt = now;
+    delete step.attempt;
+    delete step.maxAttempts;
+    delete step.retryError;
+    if ((event.attempts ?? 1) > 1) step.attempts = event.attempts;
     // The step that wrote the answer would only repeat its first line.
     const wroteAnswer =
       Boolean(answer?.trim()) &&

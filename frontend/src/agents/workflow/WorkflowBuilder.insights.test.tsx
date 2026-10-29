@@ -278,6 +278,32 @@ describe('WorkflowBuilder insights', () => {
     expect(sentConfig()).toBeNull();
   });
 
+  it('saves the retry defaults on the workflow, not the agent config', async () => {
+    await render();
+    expect(
+      (sheet.props!.details as { retryDefaults: unknown }).retryDefaults,
+    ).toBeNull();
+    const onSave = sheet.props!.onSave as (values: object) => void;
+    await act(async () =>
+      onSave({
+        name: 'Renewal desk',
+        description: '',
+        allowPromptOverride: false,
+        imageFile: null,
+        analytics: details().analytics,
+        retryDefaults: { max_attempts: 3, backoff_seconds: [5] },
+      }),
+    );
+    await act(async () => undefined);
+    expect(updateWorkflow.mock.calls.at(-1)![1]).toMatchObject({
+      retry_defaults: { max_attempts: 3, backoff_seconds: [5] },
+    });
+    expect(sentConfig()).toBeNull();
+    expect(
+      (sheet.props!.details as { retryDefaults: unknown }).retryDefaults,
+    ).toEqual({ max_attempts: 3, backoff_seconds: [5] });
+  });
+
   it('sends no config when the insights are unchanged', async () => {
     await render();
     await save();

@@ -992,7 +992,8 @@
         "result": "结果",
         "source": "来源",
         "feedback": "反馈",
-        "passthrough": "透传参数"
+        "passthrough": "透传参数",
+        "retries": "重试"
       },
       "trace": {
         "view": "查看追踪",
@@ -1130,7 +1131,8 @@
         "topics": "主题"
       },
       "levelFilter": "级别",
-      "typeFilter": "事件类型"
+      "typeFilter": "事件类型",
+      "retriedStep_other": "{{node}}：尝试 {{count}} 次"
     },
     "teams": {
       "label": "团队",
@@ -2841,7 +2843,10 @@
       "stepOf": "第 {{step}} 步，共 {{total}} 步",
       "stepCount_other": "{{count}} 步",
       "loopItems": "{{done}}/{{total}} 项",
-      "loopItemsFailed": "{{count}} 项失败"
+      "loopItemsFailed": "{{count}} 项失败",
+      "retrying": "正在重试 · 第 {{attempt}} 次尝试",
+      "retryingOf": "正在重试 · 第 {{attempt}} 次尝试，共 {{total}} 次",
+      "attempts_other": "尝试 {{count}} 次"
     }
   },
   "agents": {
@@ -3671,7 +3676,9 @@
         "loopItemsPath": "循环“{{name}}”的列表项必须是状态路径，例如 extracted.items",
         "loopItemVariable": "循环“{{name}}”的项变量无法使用",
         "loopEmpty": "循环“{{name}}”内至少需要一个节点",
-        "loopEntry": "循环“{{name}}”必须恰好从一个节点开始"
+        "loopEntry": "循环“{{name}}”必须恰好从一个节点开始",
+        "nodeRetry": "节点“{{name}}”的重试设置超出范围",
+        "retryDefaults": "工作流的默认重试设置超出范围"
       },
       "schema": {
         "notObject": "必须是有效的 JSON 对象",
@@ -3726,7 +3733,10 @@
         "stepCount_one": "（{{count}} 步）",
         "backToRun": "返回运行",
         "loopItems": "{{done}}/{{total}} 项",
-        "loopItemsFailed": "{{count}} 项失败"
+        "loopItemsFailed": "{{count}} 项失败",
+        "retrying": "正在重试 · 第 {{attempt}} 次尝试",
+        "retryingOf": "正在重试 · 第 {{attempt}} 次尝试，共 {{total}} 次",
+        "attempts_other": "尝试 {{count}} 次"
       },
       "documents": {
         "modeAll": "所有输入文档",
@@ -3748,7 +3758,28 @@
       "zoomOut": "缩小",
       "fitView": "适应视图",
       "removeAssignment": "删除赋值 {{index}}",
-      "removeCondition": "删除条件 {{index}}"
+      "removeCondition": "删除条件 {{index}}",
+      "retry": {
+        "title": "重试",
+        "defaultsDescription": "尝试失败时智能体节点和代码节点的处理方式。节点自身的重试设置优先。",
+        "attempts": "最多尝试次数",
+        "inherit": "默认（{{value}}）",
+        "noRetry": "1（不重试）",
+        "backoff": "等待时间（秒）",
+        "backoffInvalid": "请输入 0 到 300 之间的数字，以逗号分隔。",
+        "backoffTooMany": "最多 10 个等待时间。",
+        "hint": "每次重试前等待 {{backoff}} 秒；最后一个等待时间会重复使用。",
+        "hintOff": "只运行一次。提高尝试次数即可在失败时重试。",
+        "on": "重试条件",
+        "onChoice": {
+          "transient": "错误和超时",
+          "invalid_output": "无效输出"
+        },
+        "onHint": {
+          "transient": "服务器错误、速率限制、超时、连接中断和空回复。",
+          "invalid_output": "回复不是有效的 JSON，或与结构化输出的架构不匹配。"
+        }
+      }
     },
     "typeModal": {
       "title": "创建新智能体",

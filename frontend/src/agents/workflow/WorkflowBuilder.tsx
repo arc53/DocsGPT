@@ -61,7 +61,7 @@ import { Agent, AgentConfig, ResourceSponsor, ResourceState } from '../types';
 import { analyticsOf } from '../analyticsConfig';
 import { largestModelWindow } from '../contextLimit';
 import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
-import { ConditionCase, WorkflowNode } from '../types/workflow';
+import { ConditionCase, RetryConfig, WorkflowNode } from '../types/workflow';
 import {
   containerData,
   createDefaultLoopConfig,
@@ -84,6 +84,7 @@ import {
 } from './codeNodeConfig';
 import MobileBlocker from './components/MobileBlocker';
 import { parseSimpleCel } from './simpleCel';
+import { isValidRetryConfig, normalizeRetryConfig } from './retryConfig';
 import { extractUpstreamVariables } from './components/PromptTextArea';
 import { toDocumentVariableOptions } from './documentConfig';
 import { useUndoRedo, WorkflowSnapshot } from './hooks/useUndoRedo';
@@ -208,10 +209,13 @@ function createWorkflowPayload(
   description: string,
   workflowNodes: Node[],
   workflowEdges: Edge[],
+  retryDefaults: RetryConfig | null,
 ) {
   return {
     name,
     description,
+    // Always sent, so clearing the defaults saves too.
+    retry_defaults: normalizeRetryConfig(retryDefaults) ?? null,
     nodes: workflowNodes.map(serializeNode),
     edges: workflowEdges.map((edge) => ({
       id: edge.id,
@@ -259,6 +263,8 @@ function WorkflowBuilderInner() {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [workflowName, setWorkflowName] = useState('New Workflow');
   const [workflowDescription, setWorkflowDescription] = useState('');
+  // What a node's unset retry fields fall back to (``retry_defaults``).
+  const [retryDefaults, setRetryDefaults] = useState<RetryConfig | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   // A save asked for by the details sheet runs after its values reach state.
   const [detailsSaveRequested, setDetailsSaveRequested] = useState(false);
@@ -1153,6 +1159,8 @@ function WorkflowBuilderInner() {
         });
         const nextWorkflowName = workflow.name;
         const nextWorkflowDescription = workflow.description || '';
+        const nextRetryDefaults =
+          normalizeRetryConfig(workflow.retry_defaults) ?? null;
         const mappedNodes = parentsFirst<Node>(
           apiNodes.map((n: WorkflowNode) => {
             const { data: savedData, canvas } = readContainerData(n.data);
@@ -1160,7 +1168,10 @@ function WorkflowBuilderInner() {
               title: n.title,
               label: n.title,
             };
-            if ((n.type === 'agent' || n.type === 'loop') && n.data) {
+            if (n.type === 'agent' && n.data) {
+              const retry = normalizeRetryConfig(savedData.retry);
+              nodeData.config = { ...savedData, retry };
+            } else if (n.type === 'loop' && n.data) {
               nodeData.config = savedData;
             } else if (n.type === 'condition' && n.data) {
               nodeData.config = {
@@ -1202,6 +1213,7 @@ function WorkflowBuilderInner() {
         );
         setWorkflowName(nextWorkflowName);
         setWorkflowDescription(nextWorkflowDescription);
+        setRetryDefaults(nextRetryDefaults);
         setAgentJsonSchemaDrafts({});
         setAgentJsonSchemaErrors({});
         setNodes(mappedNodes);
@@ -1214,6 +1226,7 @@ function WorkflowBuilderInner() {
               nextWorkflowDescription,
               mappedNodes,
               mappedEdges,
+              nextRetryDefaults,
             ),
           ),
         );
@@ -1527,6 +1540,22 @@ function WorkflowBuilderInner() {
       }
     });
 
+    if (!isValidRetryConfig(retryDefaults)) {
+      errors.push(t('agents.workflow.validation.retryDefaults'));
+    }
+    nodes
+      .filter((n) => n.type === 'agent' || n.type === 'code')
+      .forEach((node) => {
+        if (!isValidRetryConfig(node.data?.config?.retry)) {
+          errors.push(
+            t('agents.workflow.validation.nodeRetry', {
+              ...NO_ESCAPE,
+              name: node.data?.title || node.id,
+            }),
+          );
+        }
+      });
+
     nodes
       .filter((n) => n.type === 'loop')
       .forEach((loop) => {
@@ -1538,7 +1567,15 @@ function WorkflowBuilderInner() {
       });
 
     return errors;
-  }, [workflowName, nodes, edges, agentJsonSchemaErrors, availableModels, t]);
+  }, [
+    workflowName,
+    nodes,
+    edges,
+    agentJsonSchemaErrors,
+    availableModels,
+    retryDefaults,
+    t,
+  ]);
 
   const canManageAgent = Boolean(currentAgentId || currentAgent.id);
   const effectiveAgentId = currentAgentId || currentAgent.id || '';
@@ -1546,8 +1583,14 @@ function WorkflowBuilderInner() {
 
   const buildWorkflowPayload = useCallback(
     () =>
-      createWorkflowPayload(workflowName, workflowDescription, nodes, edges),
-    [workflowName, workflowDescription, nodes, edges],
+      createWorkflowPayload(
+        workflowName,
+        workflowDescription,
+        nodes,
+        edges,
+        retryDefaults,
+      ),
+    [workflowName, workflowDescription, nodes, edges, retryDefaults],
   );
 
   const workflowPayloadSignature = useMemo(
@@ -1862,6 +1905,7 @@ function WorkflowBuilderInner() {
       if (persistingRef.current || detailsSaving) return;
       setWorkflowName(values.name);
       setWorkflowDescription(values.description);
+      setRetryDefaults(values.retryDefaults ?? null);
       setCurrentAgent((prev) => ({
         ...prev,
         allow_system_prompt_override: values.allowPromptOverride,
@@ -2337,6 +2381,7 @@ function WorkflowBuilderInner() {
                     selectedAgentModelSupportsStructuredOutput
                   }
                   onJsonSchemaChange={handleAgentJsonSchemaChange}
+                  retryDefaults={retryDefaults}
                 />
               )}
               {selectedNode.type === 'note' && (
@@ -2372,6 +2417,7 @@ function WorkflowBuilderInner() {
                   jsonSchemaText={selectedCodeJsonSchemaText}
                   jsonSchemaError={selectedCodeJsonSchemaError}
                   onJsonSchemaChange={handleCodeJsonSchemaChange}
+                  retryDefaults={retryDefaults}
                 />
               )}
             </NodePanel>
@@ -2397,6 +2443,7 @@ function WorkflowBuilderInner() {
               pendingConfig && 'history_token_limit' in pendingConfig
                 ? (pendingConfig.history_token_limit ?? null)
                 : (currentAgent.config?.history_token_limit ?? null),
+            retryDefaults,
           }}
           modelWindow={workflowModelWindow}
           policyEditable={can(currentAgent, 'edit_policy')}
@@ -2428,6 +2475,7 @@ function WorkflowBuilderInner() {
             workflowData={{
               name: workflowName,
               description: workflowDescription,
+              retry_defaults: normalizeRetryConfig(retryDefaults) ?? null,
               nodes: nodes.filter((n) => n.type !== 'note').map(serializeNode),
               edges: edges.map((e) => ({
                 id: e.id,

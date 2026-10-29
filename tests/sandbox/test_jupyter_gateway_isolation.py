@@ -677,6 +677,7 @@ def test_exec_on_a_kernel_the_gateway_lost_invalidates_the_runtime(monkeypatch):
     assert result.ok is False
     assert result.runtime_invalidated is True
     assert result.error_name == "KernelGoneError" and "new session" in result.error_value
+    assert result.sandbox_error is True
     assert "session-x" not in sb._kernels
 
 
@@ -715,6 +716,7 @@ def test_other_connect_failures_keep_the_kernel(monkeypatch):
     monkeypatch.setattr(jupyter_gateway.websocket, "create_connection", _refused)
     result = sb.exec("session-x", "print(1)")
     assert result.ok is False and result.runtime_invalidated is False
+    assert result.sandbox_error is True
     assert "session-x" in sb._kernels
 
 

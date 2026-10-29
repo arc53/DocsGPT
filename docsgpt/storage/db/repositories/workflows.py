@@ -29,11 +29,14 @@ class WorkflowsRepository:
         name: str,
         description: str | None = None,
         *,
+        retry_defaults: dict | None = None,
         legacy_mongo_id: str | None = None,
     ) -> dict:
         values: dict = {"user_id": user_id, "name": name}
         if description is not None:
             values["description"] = description
+        if retry_defaults is not None:
+            values["retry_defaults"] = retry_defaults
         if legacy_mongo_id is not None:
             values["legacy_mongo_id"] = legacy_mongo_id
 
@@ -86,17 +89,22 @@ class WorkflowsRepository:
         return [row_to_dict(r) for r in result.fetchall()]
 
     def update(self, workflow_id: str, user_id: str, fields: dict) -> bool:
-        allowed = {"name", "description", "current_graph_version", "resource_sponsors"}
+        allowed = {"name", "description", "current_graph_version", "resource_sponsors", "retry_defaults"}
+        jsonb_columns = {"resource_sponsors", "retry_defaults"}
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
             return False
 
         set_parts = [
-            f"{col} = CAST(:{col} AS jsonb)" if col == "resource_sponsors" else f"{col} = :{col}"
+            f"{col} = CAST(:{col} AS jsonb)" if col in jsonb_columns else f"{col} = :{col}"
             for col in filtered
         ]
         if "resource_sponsors" in filtered:
             filtered["resource_sponsors"] = json.dumps(filtered["resource_sponsors"] or {})
+        if "retry_defaults" in filtered:
+            # NULL clears the defaults; CAST(NULL AS jsonb) stays NULL.
+            value = filtered["retry_defaults"]
+            filtered["retry_defaults"] = json.dumps(value) if value is not None else None
         set_parts.append("updated_at = now()")
         params = {**filtered, "id": workflow_id, "user_id": user_id}
 
@@ -172,7 +180,10 @@ class WorkflowsRepository:
             version = 1
 
         clone = self.create(
-            new_owner, source.get("name") or "", description=source.get("description")
+            new_owner,
+            source.get("name") or "",
+            description=source.get("description"),
+            retry_defaults=source.get("retry_defaults"),
         )
         clone_id = str(clone["id"])
 

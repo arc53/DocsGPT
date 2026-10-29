@@ -1079,7 +1079,8 @@
         "result": "Результат",
         "source": "Источник",
         "feedback": "Оценка",
-        "passthrough": "Passthrough"
+        "passthrough": "Passthrough",
+        "retries": "Повторы"
       },
       "trace": {
         "view": "Открыть трассировку",
@@ -1231,7 +1232,11 @@
         "topics": "Темы"
       },
       "levelFilter": "Уровень",
-      "typeFilter": "Тип события"
+      "typeFilter": "Тип события",
+      "retriedStep_one": "{{node}}: {{count}} попытка",
+      "retriedStep_few": "{{node}}: {{count}} попытки",
+      "retriedStep_many": "{{node}}: {{count}} попыток",
+      "retriedStep_other": "{{node}}: {{count}} попыток"
     },
     "teams": {
       "label": "Команды",
@@ -3035,7 +3040,13 @@
       "stepCount_many": "{{count}} шагов",
       "stepCount_other": "{{count}} шагов",
       "loopItems": "{{done}} из {{total}} элементов",
-      "loopItemsFailed": "С ошибкой: {{count}}"
+      "loopItemsFailed": "С ошибкой: {{count}}",
+      "retrying": "Повтор · попытка {{attempt}}",
+      "retryingOf": "Повтор · попытка {{attempt}} из {{total}}",
+      "attempts_one": "{{count}} попытка",
+      "attempts_few": "{{count}} попытки",
+      "attempts_many": "{{count}} попыток",
+      "attempts_other": "{{count}} попыток"
     }
   },
   "agents": {
@@ -3886,7 +3897,9 @@
         "loopItemsPath": "Элементы цикла «{{name}}» должны быть путём в состоянии, например extracted.items",
         "loopItemVariable": "В цикле «{{name}}» указана недопустимая переменная элемента",
         "loopEmpty": "В цикле «{{name}}» должен быть хотя бы один узел",
-        "loopEntry": "Цикл «{{name}}» должен начинаться ровно с одного узла"
+        "loopEntry": "Цикл «{{name}}» должен начинаться ровно с одного узла",
+        "nodeRetry": "У узла «{{name}}» настройки повторов вне допустимого диапазона",
+        "retryDefaults": "Повторы по умолчанию для рабочего процесса вне допустимого диапазона"
       },
       "schema": {
         "notObject": "должна быть корректным JSON-объектом",
@@ -3947,7 +3960,13 @@
         "unsavedDraftAttachments": "Сохраните рабочий процесс, прежде чем прикреплять документы в предпросмотре.",
         "backToRun": "Назад к запуску",
         "loopItems": "{{done}} из {{total}} элементов",
-        "loopItemsFailed": "С ошибкой: {{count}}"
+        "loopItemsFailed": "С ошибкой: {{count}}",
+        "retrying": "Повтор · попытка {{attempt}}",
+        "retryingOf": "Повтор · попытка {{attempt}} из {{total}}",
+        "attempts_one": "{{count}} попытка",
+        "attempts_few": "{{count}} попытки",
+        "attempts_many": "{{count}} попыток",
+        "attempts_other": "{{count}} попыток"
       },
       "documents": {
         "modeAll": "Все входные документы",
@@ -3969,7 +3988,28 @@
       "zoomOut": "Уменьшить",
       "fitView": "Уместить на экране",
       "removeAssignment": "Удалить присваивание {{index}}",
-      "removeCondition": "Удалить условие {{index}}"
+      "removeCondition": "Удалить условие {{index}}",
+      "retry": {
+        "title": "Повторы",
+        "defaultsDescription": "Что делают узлы агента и кода, когда попытка не удалась. Собственные настройки повторов узла имеют приоритет.",
+        "attempts": "Макс. попыток",
+        "inherit": "По умолчанию ({{value}})",
+        "noRetry": "1 (без повторов)",
+        "backoff": "Паузы (с)",
+        "backoffInvalid": "Укажите числа от 0 до 300 через запятую.",
+        "backoffTooMany": "Не больше 10 пауз.",
+        "hint": "Перед каждым повтором ждёт {{backoff}} с; последняя пауза повторяется.",
+        "hintOff": "Выполняется один раз. Увеличьте число попыток, чтобы повторять при сбоях.",
+        "on": "Повторять при",
+        "onChoice": {
+          "transient": "Ошибках и тайм-аутах",
+          "invalid_output": "Неверном выводе"
+        },
+        "onHint": {
+          "transient": "Ошибки сервера, лимиты запросов, тайм-ауты, обрывы соединения и пустые ответы.",
+          "invalid_output": "Ответ, который не является корректным JSON или не соответствует схеме структурированного вывода."
+        }
+      }
     },
     "typeModal": {
       "title": "Создать нового агента",

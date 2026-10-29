@@ -569,6 +569,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 break
             except websocket.WebSocketConnectionClosedException:
                 self._fail(result, "KernelDiedError", "kernel channel closed before completion")
+                result.sandbox_error = True
                 break
             if not raw:
                 continue
@@ -576,6 +577,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 msg = json.loads(raw)
             except json.JSONDecodeError as exc:
                 self._fail(result, "ProtocolError", f"malformed kernel frame: {exc}")
+                result.sandbox_error = True
                 break
             msg_type = msg.get("msg_type") or msg.get("header", {}).get("msg_type")
             content = msg.get("content", {})
@@ -1016,5 +1018,5 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
 
 
 def _error_result(name: str, value: str) -> ExecResult:
-    """Build a failed ExecResult carrying the given error name/value."""
-    return ExecResult(status="error", error_name=name, error_value=value, exit_code=-1)
+    """Build a failed ExecResult for a kernel the gateway could not reach."""
+    return ExecResult(status="error", error_name=name, error_value=value, exit_code=-1, sandbox_error=True)

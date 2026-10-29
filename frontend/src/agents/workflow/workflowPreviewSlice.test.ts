@@ -170,3 +170,63 @@ describe('updateLoopItem', () => {
     expect(state.executionSteps).toEqual([]);
   });
 });
+
+describe('step retries', () => {
+  const agentStep = { nodeId: 'a', nodeType: 'agent', nodeTitle: 'Agent' };
+
+  it('marks a retrying step, then counts its attempts when it ends', () => {
+    let state = reducer(seedState(), addQuery({ prompt: 'q' }));
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...agentStep, status: 'running' },
+      }),
+    );
+    const startedAt = state.executionSteps[0].startedAt;
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: {
+          ...agentStep,
+          status: 'running',
+          attempt: 2,
+          maxAttempts: 3,
+          retryError: 'upstream 503',
+        },
+      }),
+    );
+    expect(state.executionSteps[0]).toMatchObject({
+      status: 'running',
+      startedAt,
+      attempt: 2,
+      maxAttempts: 3,
+      retryError: 'upstream 503',
+    });
+
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...agentStep, status: 'completed', attempts: 2 },
+      }),
+    );
+    const ended = state.queries[0].executionSteps![0];
+    expect(ended.attempts).toBe(2);
+    expect(ended.attempt).toBeUndefined();
+    expect(ended.retryError).toBeUndefined();
+  });
+
+  it('says nothing of attempts for a step that ran once', () => {
+    let state = reducer(seedState(), addQuery({ prompt: 'q' }));
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...agentStep, status: 'completed', attempts: 1 },
+      }),
+    );
+    expect(state.executionSteps[0].attempts).toBeUndefined();
+  });
+});

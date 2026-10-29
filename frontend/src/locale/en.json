@@ -995,7 +995,8 @@
         "result": "Result",
         "source": "Source",
         "feedback": "Feedback",
-        "passthrough": "Passthrough"
+        "passthrough": "Passthrough",
+        "retries": "Retries"
       },
       "trace": {
         "view": "View trace",
@@ -1133,7 +1134,9 @@
         "topics": "Topics"
       },
       "levelFilter": "Level",
-      "typeFilter": "Event type"
+      "typeFilter": "Event type",
+      "retriedStep_one": "{{node}}: {{count}} attempt",
+      "retriedStep_other": "{{node}}: {{count}} attempts"
     },
     "teams": {
       "label": "Teams",
@@ -2859,7 +2862,11 @@
       "stepCount_one": "{{count}} step",
       "stepCount_other": "{{count}} steps",
       "loopItems": "{{done}} of {{total}} items",
-      "loopItemsFailed": "{{count}} failed"
+      "loopItemsFailed": "{{count}} failed",
+      "retrying": "Retrying · attempt {{attempt}}",
+      "retryingOf": "Retrying · attempt {{attempt}} of {{total}}",
+      "attempts_one": "{{count}} attempt",
+      "attempts_other": "{{count}} attempts"
     }
   },
   "agents": {
@@ -3695,7 +3702,9 @@
         "loopItemsPath": "Loop \"{{name}}\" items must be a state path such as extracted.items",
         "loopItemVariable": "Loop \"{{name}}\" has an item variable that can't be used",
         "loopEmpty": "Loop \"{{name}}\" needs at least one node inside it",
-        "loopEntry": "Loop \"{{name}}\" must start at exactly one node"
+        "loopEntry": "Loop \"{{name}}\" must start at exactly one node",
+        "nodeRetry": "Node \"{{name}}\" has retry settings out of range",
+        "retryDefaults": "The workflow's retry defaults are out of range"
       },
       "schema": {
         "notObject": "must be a valid JSON object",
@@ -3750,7 +3759,11 @@
         "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview.",
         "backToRun": "Back to the run",
         "loopItems": "{{done}} of {{total}} items",
-        "loopItemsFailed": "{{count}} failed"
+        "loopItemsFailed": "{{count}} failed",
+        "retrying": "Retrying · attempt {{attempt}}",
+        "retryingOf": "Retrying · attempt {{attempt}} of {{total}}",
+        "attempts_one": "{{count}} attempt",
+        "attempts_other": "{{count}} attempts"
       },
       "documents": {
         "modeAll": "All input docs",
@@ -3767,6 +3780,27 @@
         "searchPlaceholder": "Search variables...",
         "empty": "No variables found",
         "addContext": "Add context"
+      },
+      "retry": {
+        "title": "Retries",
+        "defaultsDescription": "What agent and code nodes do when an attempt fails. A node's own retry settings override these.",
+        "attempts": "Max attempts",
+        "inherit": "Default ({{value}})",
+        "noRetry": "1 (no retries)",
+        "backoff": "Retry delays (s)",
+        "backoffInvalid": "Use numbers from 0 to 300, separated by commas.",
+        "backoffTooMany": "Use at most 10 delays.",
+        "hint": "Waits {{backoff}} seconds before each retry; the last delay repeats.",
+        "hintOff": "Runs once. Raise the attempts to retry failures.",
+        "on": "Retry on",
+        "onChoice": {
+          "transient": "Errors and timeouts",
+          "invalid_output": "Invalid output"
+        },
+        "onHint": {
+          "transient": "Server errors, rate limits, timeouts, dropped connections and empty replies.",
+          "invalid_output": "A reply that isn't valid JSON or doesn't match the structured-output schema."
+        }
       }
     },
     "typeModal": {
