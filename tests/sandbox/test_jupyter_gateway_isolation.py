@@ -788,8 +788,8 @@ def test_open_session_reuses_a_replacement_once_an_old_quarantine_clears(monkeyp
     assert sb._quarantined_kernels == {}
 
 
-def test_a_channel_closed_mid_run_retires_the_kernel(monkeypatch):
-    """The kernel behind a dropped channel may be dead or restarted without the session's state."""
+def test_a_channel_closed_mid_run_keeps_the_kernel_and_its_workspace(monkeypatch):
+    """A dropped channel is retried on the same kernel: a new one would start on an emptied workspace."""
     sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
     sb._kernels["session-x"] = _Kernel("k-dropped", "/tmp/x", "session-x")
     deleted = []
@@ -798,6 +798,6 @@ def test_a_channel_closed_mid_run_retires_the_kernel(monkeypatch):
     result = sb._collect(_FakeWS([]), "m-1", timeout=30, kernel_id="k-dropped", session_id="session-x")
 
     assert result.error_name == "KernelDiedError"
-    assert result.sandbox_error is True and result.runtime_invalidated is True
-    assert deleted == ["k-dropped"]
-    assert "session-x" not in sb._kernels
+    assert result.sandbox_error is True and result.runtime_invalidated is False
+    assert deleted == []
+    assert sb._kernels["session-x"].kernel_id == "k-dropped"
