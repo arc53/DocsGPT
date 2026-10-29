@@ -150,6 +150,7 @@ describe('PairDeviceModal', () => {
       response({ success: false, error: 'pairing_not_found' }, 404),
     ],
     ['reports it expired', response({ ...pairing, status: 'expired' })],
+    ['reports it cancelled', response({ ...pairing, status: 'cancelled' })],
   ])('treats the code as expired when the server %s', async (_case, reply) => {
     vi.spyOn(apiClient, 'post').mockResolvedValue(response(pairing));
     const poll = vi.spyOn(apiClient, 'get').mockResolvedValue(reply);
@@ -160,6 +161,23 @@ describe('PairDeviceModal', () => {
     expectExpiredForm();
     await advance(15_000);
     expect(poll).toHaveBeenCalledTimes(1);
+  });
+
+  it('polls at the interval the server asks for', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ ...pairing, interval: 5 }),
+    );
+    const poll = vi
+      .spyOn(apiClient, 'get')
+      .mockResolvedValue(response({ ...pairing, status: 'pending' }));
+
+    await startPairing();
+    await advance(4999);
+    expect(poll).not.toHaveBeenCalled();
+    await advance(1);
+    expect(poll).toHaveBeenCalledTimes(1);
+    await advance(5000);
+    expect(poll).toHaveBeenCalledTimes(2);
   });
 
   it('keeps waiting through a poll that fails for another reason', async () => {

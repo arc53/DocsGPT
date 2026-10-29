@@ -114,6 +114,7 @@ export default function PairDeviceModal({
       setStage('form');
       setExpired(true);
     };
+    const pollIntervalMs = (pairing.interval > 0 ? pairing.interval : 3) * 1000;
     pollTimerRef.current = setInterval(async () => {
       if (Date.now() >= expiresAtRef.current) {
         expire();
@@ -144,7 +145,7 @@ export default function PairDeviceModal({
         }
         console.error('pairing poll failed', err);
       }
-    }, 3000);
+    }, pollIntervalMs);
     return () => {
       stopped = true;
       if (pollTimerRef.current) {
