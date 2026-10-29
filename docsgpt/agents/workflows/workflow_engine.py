@@ -1,4 +1,5 @@
 import contextvars
+import copy
 import json
 import logging
 import queue
@@ -64,6 +65,9 @@ _CODE_STATE_EXCLUDED_KEYS = frozenset({"chat_history"})
 _EXTRACT_TRUNCATION_ID = "workflow-extract-truncated"
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Error of a loop item stopped because another item failed the loop.
+_ITEM_STOPPED_MESSAGE = "Stopped because another item failed."
 
 
 class WorkflowLoopError(ValueError):
@@ -1305,7 +1309,9 @@ class WorkflowEngine:
         self._last_loop_items = item_logs
 
         if failures and config.on_item_error == "fail":
-            index = min(failures)
+            # Name the item that failed, not one the failure only stopped.
+            causes = [i for i, message in failures.items() if message != _ITEM_STOPPED_MESSAGE]
+            index = min(causes or failures)
             raise WorkflowLoopError(
                 f'Loop "{title}": item {index + 1} of {len(items)} failed: {failures[index]}'
             )
@@ -1352,14 +1358,14 @@ class WorkflowEngine:
             try:
                 events.put(self._loop_item_event(node, index, count, "running"))
                 child = self._loop_child(node, index, count, cancel)
-                child.state[item_variable] = item
+                child.state[item_variable] = copy.deepcopy(item)
                 for event in child._walk(entry.id, dict(child.state)):
                     events.put(event)
                 result = child._loop_item_result(config.result_variable)
             except _LoopItemFailed as exc:
                 status, error = ExecutionStatus.FAILED, exc.message
             except _LoopItemCancelled:
-                status, error = ExecutionStatus.FAILED, "Stopped because another item failed."
+                status, error = ExecutionStatus.FAILED, _ITEM_STOPPED_MESSAGE
             except Exception as exc:
                 logger.exception("Loop item %s of node %s failed", index, node.id)
                 status, error = ExecutionStatus.FAILED, sanitize_api_error(exc)
@@ -1450,9 +1456,9 @@ class WorkflowEngine:
         child._sandbox_lock = self._sandbox_lock
         child._loop_item = {"parent_node_id": node.id, "item_index": index, "item_count": count}
         child._loop_cancel = cancel
-        # Nodes only ever assign top-level keys, so a shallow copy keeps the
-        # item's writes out of the parent and out of the other items.
-        child.state = dict(self.state)
+        # Deep: a template can mutate a nested value in place (``append``),
+        # which would otherwise reach the parent and the other items.
+        child.state = copy.deepcopy(self.state)
         return child
 
     def _loop_item_result(self, result_variable: Optional[str]) -> Any:

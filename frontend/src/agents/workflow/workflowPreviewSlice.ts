@@ -527,6 +527,14 @@ export const workflowPreviewSlice = createSlice({
       state.activeNodeId = initialState.activeNodeId;
       handleWorkflowPreviewAbort();
     },
+    // A retry reruns a query in place: its earlier run's steps (and a
+    // loop's item counts) start over.
+    clearQueryRun(state, action: PayloadAction<{ index: number }>) {
+      const query = state.queries[action.payload.index];
+      if (query) query.executionSteps = [];
+      state.executionSteps = [];
+      state.activeNodeId = null;
+    },
     clearExecutionSteps: (state) => {
       state.executionSteps = [];
       state.activeNodeId = null;
@@ -591,6 +599,7 @@ export const {
   raiseError,
   resetWorkflowPreview,
   clearExecutionSteps,
+  clearQueryRun,
   setPreviewOpen,
 } = workflowPreviewSlice.actions;
 

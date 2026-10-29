@@ -203,7 +203,7 @@ Both modes run the same way:
 - Every condition node needs an **else** branch, which is taken when no case
   matches.
 - Each case with an expression must have an outgoing edge, and every branch
-  must eventually reach an end node.
+  must eventually reach an end node, except inside a [loop](#loop-node).
 
 | Goal | Expression |
 | --- | --- |
@@ -281,10 +281,11 @@ inside it connect only to each other.
   default. Prompt templates read `{{ item.name }}`; Set State and If / Else
   expressions read `item.name`. It can't be a reserved name such as `query`,
   `chat_history`, `input_documents` or a template namespace.
-- **Items at once**: how many items run side by side. It can't exceed
-  `WORKFLOW_LOOP_MAX_CONCURRENCY` (4 by default).
-- **Most items**: a longer list fails the node before any item runs. It can't
-  exceed `WORKFLOW_LOOP_MAX_ITEMS` (100 by default).
+- **Items at once**: how many items run side by side, 4 by default. A higher
+  value is lowered to `WORKFLOW_LOOP_MAX_CONCURRENCY` (4 by default).
+- **Most items**: a longer list fails the node before any item runs. The node
+  default is 50, and a higher value is lowered to `WORKFLOW_LOOP_MAX_ITEMS`
+  (100 by default).
 - **When an item fails**: **Stop and fail the loop** (the default) fails the
   node and writes nothing; items not yet started don't run and running ones stop
   at their next node. **Leave the item out** drops it from the results. **Keep
@@ -350,7 +351,8 @@ a workflow breaks:
   branch and at least two outgoing connections. Each case with an expression
   has exactly one connection, each connection comes from a known case, and in
   Simple mode each case names a variable.
-- Every If / Else branch eventually reaches an End node.
+- Every If / Else branch eventually reaches an End node, except inside a loop,
+  where a branch ends the item.
 - Every Code node has code, and any JSON schema it has is valid.
 - Every Loop node names a list as a state path, has a usable item variable, and
   holds at least one node with exactly one first node. No connection crosses a

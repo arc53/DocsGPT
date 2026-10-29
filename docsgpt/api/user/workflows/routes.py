@@ -649,7 +649,7 @@ def _loop_errors(nodes: List[Dict], edges: List[Dict]) -> List[str]:
         if loop is None or loop.get("type") != "loop":
             errors.append(f"Node '{title(node)}' is inside '{parent}', which is not a loop")
         elif node.get("type") not in LOOP_BODY_NODE_TYPES:
-            errors.append(f"Loop '{title(loop)}' cannot contain a {node.get('type')} node")
+            errors.append(f"Loop '{title(loop)}' cannot contain {node.get('type')} nodes")
 
     for edge in edges:
         source, target = node_map.get(edge.get("source")), node_map.get(edge.get("target"))

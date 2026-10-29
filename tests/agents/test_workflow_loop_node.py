@@ -440,6 +440,58 @@ def test_failed_items_stop_running_items_at_their_next_node(node_agent):
     assert loop_log["items"][1]["error"] == "bad item"
 
 
+def test_a_template_mutating_nested_state_stays_inside_its_item(node_agent):
+    engine = _engine(
+        {"items": "items", "concurrency": 1, "output_variable": "results"},
+        [
+            _agent(
+                "touch",
+                parent="each",
+                prompt_template=(
+                    "{% set _ = seen.append(item.name) %}{% set _ = item.update({'name': 'x'}) %}{{ seen | length }}"
+                ),
+            )
+        ],
+        state={"items": ITEMS[:2], "seen": []},
+    )
+
+    _run(engine)
+
+    assert engine.state["results"] == ["1", "1"]
+    assert engine.state["seen"] == []
+    assert engine.state["items"] == ITEMS[:2]
+
+
+def test_fail_names_the_item_that_failed_not_one_it_stopped(node_agent):
+    failed = threading.Event()
+
+    def reply(prompt):
+        if prompt == "c":
+            failed.set()
+            raise ValueError("bad item")
+        if prompt in ("a", "b"):
+            # Finish the first node only after the failure has stopped the loop.
+            failed.wait(1)
+            time.sleep(0.2)
+        return prompt
+
+    node_agent["reply"] = reply
+    body = [_agent("one", parent="each"), _agent("two", parent="each", prompt_template="again")]
+    engine = _engine(
+        {"items": "items", "concurrency": 3},
+        body,
+        body_edges=[_edge("one", "two")],
+        state={"items": ITEMS},
+    )
+
+    events = _run(engine)
+
+    error = next(e for e in events if e.get("type") == "error")
+    assert "item 3 of 3 failed: bad item" in error["error"]
+    loop_log = next(log for log in engine.execution_log if log["node_id"] == "each")
+    assert loop_log["items"][0]["error"] == "Stopped because another item failed."
+
+
 def test_progress_skips_steps_inside_a_loop():
     from docsgpt.agents.workflow_agent import WorkflowAgent
 
@@ -558,8 +610,8 @@ def test_validation_rejects_nested_loops_and_end_nodes_in_a_body():
         {"id": "stop", "type": "end", "title": "Stop", "data": {"parent_id": "each"}},
     ]
     errors = validate_workflow_structure(*_graph(body=body))
-    assert any("cannot contain a loop node" in error for error in errors)
-    assert any("cannot contain a end node" in error for error in errors)
+    assert any("cannot contain loop nodes" in error for error in errors)
+    assert any("cannot contain end nodes" in error for error in errors)
 
 
 def test_validation_rejects_a_parent_that_is_not_a_loop():

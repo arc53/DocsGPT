@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Attachment } from '../../upload/uploadSlice';
 import reducer, {
   addQuery,
+  clearQueryRun,
   collectCompletedAttachmentIds,
   collectRunAttachmentIds,
   previewSendBlockReason,
@@ -162,5 +163,10 @@ describe('updateLoopItem', () => {
     const expected = { total: 2, done: 2, failed: 1 };
     expect(state.queries[0].executionSteps?.[0].items).toEqual(expected);
     expect(state.executionSteps[0].items).toEqual(expected);
+
+    // A retry of the same query starts its steps and counts over.
+    state = reducer(state, clearQueryRun({ index: 0 }));
+    expect(state.queries[0].executionSteps).toEqual([]);
+    expect(state.executionSteps).toEqual([]);
   });
 });

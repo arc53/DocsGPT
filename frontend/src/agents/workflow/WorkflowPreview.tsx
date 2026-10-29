@@ -47,6 +47,7 @@ import { WorkflowEdge, WorkflowNode } from '../types/workflow';
 import { NODE_COLORS, NODE_ICONS } from './nodeVisuals';
 import {
   addQuery,
+  clearQueryRun,
   fetchWorkflowPreviewAnswer,
   handleWorkflowPreviewAbort,
   previewSendBlockReason,
@@ -526,6 +527,9 @@ export default function WorkflowPreview({
       // attachment-only run is allowed to proceed with an empty question.
       if (trimmedQuestion === '' && !hasCompletedAttachment) return;
 
+      if (isRetry) {
+        dispatch(clearQueryRun({ index: index ?? queries.length - 1 }));
+      }
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
@@ -537,7 +541,7 @@ export default function WorkflowPreview({
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer, hasCompletedAttachment, workflowId],
+    [dispatch, handleFetchAnswer, hasCompletedAttachment, workflowId, queries],
   );
 
   // Clear the block message once it no longer applies (the workflow was saved,
