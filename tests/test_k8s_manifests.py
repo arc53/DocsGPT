@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -285,19 +286,31 @@ def test_schema_wait_retries_a_database_url_it_cannot_parse(name: str, tmp_path:
     env_file = tmp_path / ".env"
     env_file.write_text("")
     env = {"PATH": "/usr/bin:/bin", "POSTGRES_URI": "not a uri", "DOCSGPT_ENV_FILE": str(env_file)}
-    with pytest.raises(subprocess.TimeoutExpired) as waited:
-        subprocess.run(
-            [sys.executable, "-u", "-c", script],
-            env=env,
-            cwd=Path(__file__).resolve().parents[1],
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
-    output = waited.value.stdout or ""
-    if isinstance(output, bytes):
-        output = output.decode()
-    assert "unreachable (ArgumentError)" in output
+    waiter = subprocess.Popen(
+        [sys.executable, "-u", "-c", script],
+        env=env,
+        cwd=Path(__file__).resolve().parents[1],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    give_up = threading.Timer(60, waiter.kill)
+    give_up.start()
+    try:
+        output = ""
+        while "Waiting for" not in output:
+            line = waiter.stdout.readline()
+            if not line:
+                break
+            output += line
+        assert "unreachable (ArgumentError)" in output
+        # Still running well after the first failed check: asleep before the retry, not exiting.
+        with pytest.raises(subprocess.TimeoutExpired):
+            waiter.wait(timeout=2)
+    finally:
+        give_up.cancel()
+        waiter.kill()
+        waiter.wait()
 
 
 def test_worker_runs_the_beat_scheduler() -> None:
