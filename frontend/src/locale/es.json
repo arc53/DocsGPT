@@ -2945,7 +2945,9 @@
       "stepOf": "Paso {{step}} de {{total}}",
       "stepCount_one": "{{count}} paso",
       "stepCount_other": "{{count}} pasos",
-      "stepCount_many": "{{count}} pasos"
+      "stepCount_many": "{{count}} pasos",
+      "loopItems": "{{done}} de {{total}} elementos",
+      "loopItemsFailed": "{{count}} con error"
     }
   },
   "agents": {
@@ -3737,7 +3739,24 @@
         "detailsTitle": "Detalles del flujo de trabajo",
         "detailsDescription": "Nombre, descripción e imagen que se muestran en la tarjeta del agente.",
         "unsavedChanges": "Cambios sin guardar",
-        "editDetailsMenu": "Editar detalles"
+        "editDetailsMenu": "Editar detalles",
+        "loopHint": "Ejecuta nodos para cada elemento de una lista",
+        "loopIntro": "Los nodos dentro del bucle se ejecutan una vez por cada elemento de una lista del estado del flujo de trabajo. Cada elemento se ejecuta sobre su propia copia del estado, y el bucle guarda un resultado por elemento, en el orden de la lista.",
+        "loopItems": "Elementos",
+        "loopItemsHint": "La variable de estado que contiene la lista, como extracted.items.",
+        "loopItemsInvalid": "Usa una ruta de estado como extracted.items.",
+        "loopItemVariable": "Variable del elemento",
+        "loopItemVariableHint": "Los nodos dentro del bucle leen el elemento actual como {{example}}.",
+        "loopItemVariableInvalid": "Usa letras, dígitos y guiones bajos, no un nombre reservado como query.",
+        "loopConcurrency": "Elementos a la vez",
+        "loopMaxItems": "Máximo de elementos",
+        "loopOnError": "Cuando falla un elemento",
+        "loopOnErrorFail": "Detener y hacer fallar el bucle",
+        "loopOnErrorSkip": "Omitir el elemento",
+        "loopOnErrorCollect": "Conservar el error en su lugar",
+        "loopOutputHint": "La lista de resultados, uno por elemento.",
+        "loopResultVariable": "Resultado del elemento",
+        "loopResultVariableHint": "La variable cuyo valor es el resultado de cada elemento. Si se deja vacía, se usa la salida del último nodo ejecutado."
       },
       "validation": {
         "nameRequired": "El nombre del flujo de trabajo es obligatorio",
@@ -3764,7 +3783,12 @@
         "caseNoVariable": "En la condición «{{name}}», el caso «{{handle}}» debe indicar una variable en el modo simple",
         "branchReachEnd": "La rama «{{handle}}» de la condición «{{name}}» debe llegar finalmente a un nodo final",
         "codeRequired": "El nodo de código «{{name}}» debe tener código que ejecutar",
-        "codeSchema": "Esquema JSON del nodo de código «{{name}}»: {{error}}"
+        "codeSchema": "Esquema JSON del nodo de código «{{name}}»: {{error}}",
+        "loopItems": "El bucle «{{name}}» necesita una lista que recorrer",
+        "loopItemsPath": "Los elementos del bucle «{{name}}» deben ser una ruta de estado como extracted.items",
+        "loopItemVariable": "El bucle «{{name}}» tiene una variable de elemento que no se puede usar",
+        "loopEmpty": "El bucle «{{name}}» necesita al menos un nodo dentro",
+        "loopEntry": "El bucle «{{name}}» debe empezar en exactamente un nodo"
       },
       "schema": {
         "notObject": "debe ser un objeto JSON válido",
@@ -3804,7 +3828,11 @@
         "variableCount_other": "{{count}} variables",
         "variableCount_many": "{{count}} variables",
         "variableTitle": "Variable: {{name}}",
-        "valueTitle": "Valor: {{value}}"
+        "valueTitle": "Valor: {{value}}",
+        "loop": "Bucle",
+        "loopSummary": "Para cada {{variable}} en {{items}}",
+        "loopNoItems": "Elige una lista que recorrer",
+        "loopEmpty": "Suelta nodos aquí para ejecutarlos una vez por elemento"
       },
       "preview": {
         "executionDetails": "Detalles de la ejecución",
@@ -3816,7 +3844,9 @@
         "minimapHeading": "Flujo de trabajo",
         "emptyTitle": "Prueba el flujo de trabajo",
         "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa.",
-        "backToRun": "Volver a la ejecución"
+        "backToRun": "Volver a la ejecución",
+        "loopItems": "{{done}} de {{total}} elementos",
+        "loopItemsFailed": "{{count}} con error"
       },
       "documents": {
         "modeAll": "Todos los documentos de entrada",

@@ -10,6 +10,8 @@ import reducer, {
   setPreviewOpen,
   setWorkflowRunId,
   UNSAVED_DRAFT_ATTACHMENTS_MESSAGE,
+  updateExecutionStep,
+  updateLoopItem,
 } from './workflowPreviewSlice';
 
 const seedState = () => reducer(undefined, { type: '@@INIT' });
@@ -123,5 +125,42 @@ describe('setPreviewOpen', () => {
     state = reducer(state, resetWorkflowPreview());
     expect(state.queries).toEqual([]);
     expect(state.previewOpen).toBe(true);
+  });
+});
+
+describe('updateLoopItem', () => {
+  it('counts items on the loop step and keeps them when the step ends', () => {
+    let state = reducer(seedState(), addQuery({ prompt: 'q' }));
+    const loopStep = {
+      nodeId: 'each',
+      nodeType: 'loop',
+      nodeTitle: 'Each',
+    };
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...loopStep, status: 'running' },
+      }),
+    );
+    state = reducer(
+      state,
+      updateLoopItem({ index: 0, nodeId: 'each', total: 2, failed: false }),
+    );
+    state = reducer(
+      state,
+      updateLoopItem({ index: 0, nodeId: 'each', total: 2, failed: true }),
+    );
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...loopStep, status: 'completed' },
+      }),
+    );
+
+    const expected = { total: 2, done: 2, failed: 1 };
+    expect(state.queries[0].executionSteps?.[0].items).toEqual(expected);
+    expect(state.executionSteps[0].items).toEqual(expected);
   });
 });

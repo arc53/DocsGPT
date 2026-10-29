@@ -1,5 +1,16 @@
 export type NodeType =
-  'start' | 'end' | 'agent' | 'note' | 'state' | 'condition' | 'code';
+  'start' | 'end' | 'agent' | 'note' | 'state' | 'condition' | 'code' | 'loop';
+
+/** A loop node: runs the nodes inside it once per item of a state list. */
+export interface LoopNodeConfig {
+  items: string;
+  item_variable: string;
+  concurrency: number;
+  max_items: number;
+  on_item_error: 'fail' | 'skip' | 'collect';
+  output_variable?: string;
+  result_variable?: string;
+}
 
 export interface CodeNodeConfig {
   code: string;

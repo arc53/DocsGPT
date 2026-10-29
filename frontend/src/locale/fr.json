@@ -2945,7 +2945,9 @@
       "stepOf": "Étape {{step}} sur {{total}}",
       "stepCount_one": "{{count}} étape",
       "stepCount_other": "{{count}} étapes",
-      "stepCount_many": "{{count}} étapes"
+      "stepCount_many": "{{count}} étapes",
+      "loopItems": "{{done}} éléments sur {{total}}",
+      "loopItemsFailed": "{{count}} en échec"
     }
   },
   "agents": {
@@ -3742,7 +3744,24 @@
         "detailsTitle": "Détails du workflow",
         "detailsDescription": "Nom, description et image affichés sur la carte de l’agent.",
         "unsavedChanges": "Modifications non enregistrées",
-        "editDetailsMenu": "Modifier les détails"
+        "editDetailsMenu": "Modifier les détails",
+        "loopHint": "Exécuter des nœuds pour chaque élément d’une liste",
+        "loopIntro": "Les nœuds de la boucle s’exécutent une fois pour chaque élément d’une liste de l’état du workflow. Chaque élément s’exécute sur sa propre copie de l’état, et la boucle enregistre un résultat par élément, dans l’ordre de la liste.",
+        "loopItems": "Éléments",
+        "loopItemsHint": "La variable d’état qui contient la liste, par exemple extracted.items.",
+        "loopItemsInvalid": "Utilisez un chemin d’état comme extracted.items.",
+        "loopItemVariable": "Variable d’élément",
+        "loopItemVariableHint": "Les nœuds de la boucle lisent l’élément courant sous la forme {{example}}.",
+        "loopItemVariableInvalid": "Utilisez des lettres, des chiffres et des traits de soulignement, pas un nom réservé comme query.",
+        "loopConcurrency": "Éléments simultanés",
+        "loopMaxItems": "Nombre maximal d’éléments",
+        "loopOnError": "En cas d’échec d’un élément",
+        "loopOnErrorFail": "Arrêter et faire échouer la boucle",
+        "loopOnErrorSkip": "Ignorer l’élément",
+        "loopOnErrorCollect": "Conserver l’erreur à sa place",
+        "loopOutputHint": "La liste des résultats, un par élément.",
+        "loopResultVariable": "Résultat de l’élément",
+        "loopResultVariableHint": "La variable dont la valeur est le résultat de chaque élément. Si elle est vide, la sortie du dernier nœud exécuté est utilisée."
       },
       "validation": {
         "nameRequired": "Le nom du workflow est obligatoire",
@@ -3769,7 +3788,12 @@
         "caseNoVariable": "Le cas « {{handle}} » de la condition « {{name}} » doit indiquer une variable en mode Simple",
         "branchReachEnd": "La branche « {{handle}} » de la condition « {{name}} » doit finir par atteindre un nœud de fin",
         "codeRequired": "Le nœud de code « {{name}} » doit contenir du code à exécuter",
-        "codeSchema": "Nœud de code « {{name}} » : le schéma JSON {{error}}"
+        "codeSchema": "Nœud de code « {{name}} » : le schéma JSON {{error}}",
+        "loopItems": "La boucle « {{name}} » a besoin d’une liste à parcourir",
+        "loopItemsPath": "Les éléments de la boucle « {{name}} » doivent être un chemin d’état comme extracted.items",
+        "loopItemVariable": "La boucle « {{name}} » a une variable d’élément inutilisable",
+        "loopEmpty": "La boucle « {{name}} » doit contenir au moins un nœud",
+        "loopEntry": "La boucle « {{name}} » doit commencer par exactement un nœud"
       },
       "schema": {
         "notObject": "doit être un objet JSON valide",
@@ -3809,7 +3833,11 @@
         "variableCount_other": "{{count}} variables",
         "variableCount_many": "{{count}} variables",
         "variableTitle": "Variable : {{name}}",
-        "valueTitle": "Valeur : {{value}}"
+        "valueTitle": "Valeur : {{value}}",
+        "loop": "Boucle",
+        "loopSummary": "Pour chaque {{variable}} dans {{items}}",
+        "loopNoItems": "Choisissez une liste à parcourir",
+        "loopEmpty": "Déposez des nœuds ici pour les exécuter une fois par élément"
       },
       "preview": {
         "executionDetails": "Détails de l’exécution",
@@ -3821,7 +3849,9 @@
         "minimapHeading": "Workflow",
         "emptyTitle": "Tester le workflow",
         "unsavedDraftAttachments": "Enregistrez le workflow avant de joindre des documents dans l’aperçu.",
-        "backToRun": "Retour à l’exécution"
+        "backToRun": "Retour à l’exécution",
+        "loopItems": "{{done}} éléments sur {{total}}",
+        "loopItemsFailed": "{{count}} en échec"
       },
       "documents": {
         "modeAll": "Tous les documents d’entrée",

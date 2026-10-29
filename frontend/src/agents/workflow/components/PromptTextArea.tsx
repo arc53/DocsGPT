@@ -141,6 +141,23 @@ export function extractUpstreamVariables(
   ];
   const seen = new Set(variables.map((variable) => variable.templatePath));
   const upstreamIds = getUpstreamNodeIds(selectedNodeId, edges);
+  // A node inside a loop also sees everything before the loop, and the item.
+  const loop = nodes.find(
+    (node) =>
+      node.id === nodes.find((n) => n.id === selectedNodeId)?.parentNode,
+  );
+  if (loop) {
+    getUpstreamNodeIds(loop.id, edges).forEach((id) => upstreamIds.add(id));
+    const itemVariable =
+      String(loop.data?.config?.item_variable || '').trim() || 'item';
+    const templatePath = toAgentTemplatePath(itemVariable);
+    seen.add(templatePath);
+    variables.push({
+      label: templatePath,
+      templatePath,
+      section: loop.data.title || loop.data.label || 'Loop',
+    });
+  }
 
   const pushNodeOutput = (
     node: Node,
@@ -161,6 +178,14 @@ export function extractUpstreamVariables(
 
   for (const node of nodes) {
     if (!upstreamIds.has(node.id)) continue;
+
+    if (node.type === 'loop') {
+      pushNodeOutput(node, `node_${node.id}_output`, 'Loop', false);
+      const outputVariable = String(
+        node.data?.config?.output_variable || '',
+      ).trim();
+      if (outputVariable) pushNodeOutput(node, outputVariable, 'Loop', false);
+    }
 
     if (node.type === 'agent' || node.type === 'code') {
       // Agent and code nodes both expose `node_<id>_output` and an optional
@@ -216,6 +241,7 @@ const SECTION_LABEL_KEYS: Record<string, string> = {
   'Workflow input': 'agents.workflow.variables.workflowInput',
   Agent: 'agents.workflow.nodes.agent',
   Code: 'agents.workflow.nodes.code',
+  Loop: 'agents.workflow.nodes.loop',
   'Set State': 'agents.workflow.nodes.setState',
 };
 

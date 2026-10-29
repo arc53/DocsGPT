@@ -20,6 +20,14 @@ export interface WorkflowExecutionStep {
   stateDelta?: Record<string, unknown>;
   output?: unknown;
   error?: string;
+  /** A loop's items so far: how many there are, ended and failed. */
+  items?: LoopItemProgress;
+}
+
+export interface LoopItemProgress {
+  total: number;
+  done: number;
+  failed: number;
 }
 
 interface WorkflowData {
@@ -204,7 +212,22 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                           query: { thought: data.thought },
                         }),
                       );
-                    } else if (data.type === 'workflow_step') {
+                    } else if (data.type === 'workflow_loop_item') {
+                      if (data.status !== 'running') {
+                        dispatch(
+                          updateLoopItem({
+                            index: targetIndex,
+                            nodeId: data.node_id,
+                            total: data.item_count,
+                            failed: data.status === 'failed',
+                          }),
+                        );
+                      }
+                    } else if (
+                      data.type === 'workflow_step' &&
+                      // A loop item's steps show as the loop's item count.
+                      !data.parent_node_id
+                    ) {
                       dispatch(
                         updateExecutionStep({
                           index: targetIndex,
@@ -433,6 +456,7 @@ export const workflowPreviewSlice = createSlice({
           step.stateDelta ?? querySteps[existingIndex].stateDelta;
         updatedStep.output = step.output ?? querySteps[existingIndex].output;
         updatedStep.error = step.error ?? querySteps[existingIndex].error;
+        updatedStep.items = querySteps[existingIndex].items;
         querySteps[existingIndex] = updatedStep;
       } else {
         querySteps.push(updatedStep);
@@ -446,6 +470,30 @@ export const workflowPreviewSlice = createSlice({
       } else {
         state.executionSteps.push(updatedStep);
       }
+    },
+    updateLoopItem(
+      state,
+      action: PayloadAction<{
+        index: number;
+        nodeId: string;
+        total: number;
+        failed: boolean;
+      }>,
+    ) {
+      const { index, nodeId, total, failed } = action.payload;
+      const bump = (step: WorkflowExecutionStep | undefined) => {
+        if (!step) return;
+        const items = step.items ?? { total, done: 0, failed: 0 };
+        step.items = {
+          total,
+          done: items.done + 1,
+          failed: items.failed + (failed ? 1 : 0),
+        };
+      };
+      bump(
+        state.queries[index]?.executionSteps?.find((s) => s.nodeId === nodeId),
+      );
+      bump(state.executionSteps.find((s) => s.nodeId === nodeId));
     },
     setWorkflowRunId(
       state,
@@ -536,6 +584,7 @@ export const {
   updateStreamingSource,
   updateToolCall,
   updateExecutionStep,
+  updateLoopItem,
   setWorkflowRunId,
   setActiveNodeId,
   setStatus,

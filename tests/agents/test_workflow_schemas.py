@@ -50,6 +50,7 @@ class TestNodeType:
             NodeType.STATE,
             NodeType.CONDITION,
             NodeType.CODE,
+            NodeType.LOOP,
         }
 
 

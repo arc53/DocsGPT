@@ -1,11 +1,17 @@
 """Workflow management routes."""
 
+import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 from sqlalchemy import text as sql_text
 
+from docsgpt.agents.workflows.schemas import (
+    LOOP_BODY_NODE_TYPES,
+    LOOP_RESERVED_VARIABLES,
+    parent_id_of,
+)
 from docsgpt.agents.workflows.cel_evaluator import (
     CelEvaluationError,
     validate_cel_expression,
@@ -505,8 +511,11 @@ def validate_workflow_structure(
                         f"has an invalid expression: {exc}"
                     )
 
+        # Inside a loop body a branch ends the item where it stops; there is
+        # no end node to reach.
+        in_loop_body = parent_id_of(cnode.get("data")) is not None
         for handle, handle_edges in outgoing_by_handle.items():
-            if not handle:
+            if not handle or in_loop_body:
                 continue
             for out_edge in handle_edges:
                 target = out_edge.get("target")
@@ -600,11 +609,101 @@ def validate_workflow_structure(
         if schema_error:
             errors.append(f"Code node '{code_title}' JSON schema {schema_error}")
 
+    errors.extend(_loop_errors(nodes, edges))
+
     for node in nodes:
         if not node.get("id"):
             errors.append("All nodes must have an id")
         if not node.get("type"):
             errors.append(f"Node {node.get('id', 'unknown')} must have a type")
+
+    return errors
+
+
+_LOOP_ITEMS_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*$")
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _loop_errors(nodes: List[Dict], edges: List[Dict]) -> List[str]:
+    """Problems with the graph's loop nodes and the nodes inside them.
+
+    Args:
+        nodes: Nodes in builder shape; a body node names its loop in
+            ``data.parent_id``.
+        edges: The graph's edges.
+
+    Returns:
+        list: One message per problem.
+    """
+    errors: List[str] = []
+    node_map = {n.get("id"): n for n in nodes if isinstance(n, dict)}
+
+    def title(node: Dict) -> str:
+        return node.get("title") or node.get("id") or "unknown"
+
+    for node in node_map.values():
+        parent = parent_id_of(node.get("data"))
+        if parent is None:
+            continue
+        loop = node_map.get(parent)
+        if loop is None or loop.get("type") != "loop":
+            errors.append(f"Node '{title(node)}' is inside '{parent}', which is not a loop")
+        elif node.get("type") not in LOOP_BODY_NODE_TYPES:
+            errors.append(f"Loop '{title(loop)}' cannot contain a {node.get('type')} node")
+
+    for edge in edges:
+        source, target = node_map.get(edge.get("source")), node_map.get(edge.get("target"))
+        if source is None or target is None:
+            continue
+        if parent_id_of(source.get("data")) != parent_id_of(target.get("data")):
+            errors.append(
+                f"The connection from '{title(source)}' to '{title(target)}' crosses a loop's boundary"
+            )
+
+    for loop in (n for n in node_map.values() if n.get("type") == "loop"):
+        loop_title = title(loop)
+        raw = loop.get("data") or {}
+        nested = raw.get("config") if isinstance(raw, dict) else None
+        config = nested if isinstance(nested, dict) else raw if isinstance(raw, dict) else {}
+
+        items = config.get("items")
+        if not isinstance(items, str) or not items.strip():
+            errors.append(f"Loop '{loop_title}' must name the state list to loop over")
+        elif not _LOOP_ITEMS_PATH_RE.match(items.strip()):
+            errors.append(f"Loop '{loop_title}' items must be a state path such as extracted.items")
+
+        item_variable = config.get("item_variable", "item")
+        if (
+            not isinstance(item_variable, str)
+            or not _IDENTIFIER_RE.match(item_variable.strip())
+            or item_variable.strip() in LOOP_RESERVED_VARIABLES
+        ):
+            errors.append(f"Loop '{loop_title}' cannot use '{item_variable}' as its item variable")
+
+        for key in ("concurrency", "max_items"):
+            value = config.get(key)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+                errors.append(f"Loop '{loop_title}' {key} must be a whole number of at least 1")
+
+        if config.get("on_item_error", "fail") not in ("fail", "skip", "collect"):
+            errors.append(f"Loop '{loop_title}' on_item_error must be fail, skip or collect")
+
+        for key in ("output_variable", "result_variable"):
+            value = config.get(key)
+            if value not in (None, "") and not isinstance(value, str):
+                errors.append(f"Loop '{loop_title}' {key} must be text")
+
+        body_ids = {
+            n.get("id")
+            for n in node_map.values()
+            if parent_id_of(n.get("data")) == loop.get("id") and n.get("type") != "note"
+        }
+        if not body_ids:
+            errors.append(f"Loop '{loop_title}' needs at least one node inside it")
+            continue
+        targets = {e.get("target") for e in edges if e.get("source") in body_ids}
+        if len(body_ids - targets) != 1:
+            errors.append(f"Loop '{loop_title}' body must start at exactly one node")
 
     return errors
 

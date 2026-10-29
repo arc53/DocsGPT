@@ -1,7 +1,7 @@
 ---
 title: Workflow Nodes
-description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else and Code - and the shared state they read and write.
-lastUpdated: 2026-10-15
+description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else, Code and Loop - and the shared state they read and write.
+lastUpdated: 2026-10-29
 ---
 
 import { Callout } from 'nextra/components';
@@ -36,6 +36,7 @@ DocsGPT workflows are composed of **Nodes** that are connected to form a process
 | [Set State](#set-state-node) | Logic & Data | Writes variables with CEL expressions |
 | [If / Else](#condition-node) | Logic & Data | Branches on conditions |
 | [Code](#code-node) | Logic & Data | Runs Python in the sandbox |
+| [Loop](#loop-node) | Logic & Data | Runs the nodes inside it once per item of a list |
 
 ## The Shared State
 
@@ -264,6 +265,69 @@ sandbox backends and configuration.
 
 ---
 
+## Loop Node
+
+The **Loop Node** takes a list from the state and runs the nodes inside it once
+for each item. It is drawn as a container: drag nodes from the palette onto it
+(or select the loop and click a palette pill) and connect them to each other.
+The loop itself connects to the rest of the graph like any other node; the nodes
+inside it connect only to each other.
+
+- **Items**: the state path of the list, for example `extracted.items`. Dotted
+  segments read object keys and list positions (`rows.0`). A string holding a
+  JSON array, such as an AI Agent node's answer without a schema, is read as
+  that array. Anything else fails the node.
+- **Item variable**: the name the current item has inside the loop, `item` by
+  default. Prompt templates read `{{ item.name }}`; Set State and If / Else
+  expressions read `item.name`. It can't be a reserved name such as `query`,
+  `chat_history`, `input_documents` or a template namespace.
+- **Items at once**: how many items run side by side. It can't exceed
+  `WORKFLOW_LOOP_MAX_CONCURRENCY` (4 by default).
+- **Most items**: a longer list fails the node before any item runs. It can't
+  exceed `WORKFLOW_LOOP_MAX_ITEMS` (100 by default).
+- **When an item fails**: **Stop and fail the loop** (the default) fails the
+  node and writes nothing; items not yet started don't run and running ones stop
+  at their next node. **Leave the item out** drops it from the results. **Keep
+  the error in its place** puts `{"error": "..."}` in that item's slot.
+- **Output Variable**: an extra name for the results, which are always saved as
+  `node_<node_id>_output`. The results are a list in the same order as the
+  items.
+- **Item result**: optional. A variable the nodes inside set; its value becomes
+  the item's result. Without it the result is the output of the last AI Agent
+  or Code node that ran for the item.
+
+Each item runs on its own copy of the state: it sees everything set before the
+loop, and nothing it sets (including the item variable and the inner nodes'
+outputs) reaches the state after the loop or the other items. Only the results
+list is written back.
+
+The nodes inside a loop can be AI Agent, Code, Set State, If / Else and Note
+nodes. A loop can't hold Start, End or another loop. The first node of the body
+is the one no other inner node connects to, and there must be exactly one. An
+item ends where its path has no next node, so an If / Else inside a loop doesn't
+need its branches to reach an End node.
+
+Inside a loop, AI Agent nodes don't stream their text to the chat, since items
+run at the same time. Code nodes in a loop take turns on the run's sandbox
+session. The 50-step limit applies to each item separately, and the loop counts
+as one step of the run.
+
+During a run, the chat and the Preview show how many items have finished. Each
+inner step's `workflow_step` stream event carries `parent_node_id` and
+`item_index`, and a `workflow_loop_item` event marks each item starting and
+ending. The run record keeps one step for the loop with each item's steps
+nested under `items`.
+
+In the stored graph, a node inside a loop names the loop in its `data` as
+`parent_id`:
+
+```json
+{"id": "each_item", "type": "loop", "data": {"items": "extracted.items", "item_variable": "item", "concurrency": 4, "max_items": 50, "on_item_error": "fail", "output_variable": "results"}}
+{"id": "summarize", "type": "agent", "data": {"parent_id": "each_item", "prompt_template": "Summarize {{ item.name }}", "json_schema": {"type": "object"}}}
+```
+
+---
+
 ## Note Node
 
 A **Note** holds free text for whoever edits the workflow: what a branch is for,
@@ -288,8 +352,12 @@ a workflow breaks:
   Simple mode each case names a variable.
 - Every If / Else branch eventually reaches an End node.
 - Every Code node has code, and any JSON schema it has is valid.
+- Every Loop node names a list as a state path, has a usable item variable, and
+  holds at least one node with exactly one first node. No connection crosses a
+  loop's edge.
 
-A run stops after 50 node steps, so a loop needs an exit condition.
+A run stops after 50 node steps, so a cycle in the graph needs an exit
+condition.
 
 ## One workflow per agent
 

@@ -3033,7 +3033,9 @@
       "stepCount_one": "{{count}} шаг",
       "stepCount_few": "{{count}} шага",
       "stepCount_many": "{{count}} шагов",
-      "stepCount_other": "{{count}} шагов"
+      "stepCount_other": "{{count}} шагов",
+      "loopItems": "{{done}} из {{total}} элементов",
+      "loopItemsFailed": "С ошибкой: {{count}}"
     }
   },
   "agents": {
@@ -3835,7 +3837,24 @@
         "detailsTitle": "Сведения о рабочем процессе",
         "detailsDescription": "Название, описание и изображение, которые показываются на карточке агента.",
         "unsavedChanges": "Несохранённые изменения",
-        "editDetailsMenu": "Изменить сведения"
+        "editDetailsMenu": "Изменить сведения",
+        "loopHint": "Запуск узлов для каждого элемента списка",
+        "loopIntro": "Узлы внутри цикла запускаются по одному разу для каждого элемента списка из состояния рабочего процесса. Каждый элемент обрабатывается на собственной копии состояния, а цикл сохраняет по одному результату на элемент в порядке списка.",
+        "loopItems": "Элементы",
+        "loopItemsHint": "Переменная состояния со списком, например extracted.items.",
+        "loopItemsInvalid": "Укажите путь в состоянии, например extracted.items.",
+        "loopItemVariable": "Переменная элемента",
+        "loopItemVariableHint": "Узлы внутри цикла получают текущий элемент как {{example}}.",
+        "loopItemVariableInvalid": "Используйте буквы, цифры и подчёркивания, но не зарезервированное имя, например query.",
+        "loopConcurrency": "Элементов одновременно",
+        "loopMaxItems": "Максимум элементов",
+        "loopOnError": "Если элемент завершился с ошибкой",
+        "loopOnErrorFail": "Остановить цикл с ошибкой",
+        "loopOnErrorSkip": "Пропустить элемент",
+        "loopOnErrorCollect": "Сохранить ошибку на его месте",
+        "loopOutputHint": "Список результатов, по одному на элемент.",
+        "loopResultVariable": "Результат элемента",
+        "loopResultVariableHint": "Переменная, значение которой — результат каждого элемента. Если пусто, используется выход последнего выполненного узла."
       },
       "validation": {
         "nameRequired": "Укажите название рабочего процесса",
@@ -3862,7 +3881,12 @@
         "caseNoVariable": "В условии «{{name}}» для варианта «{{handle}}» в простом режиме нужно указать переменную",
         "branchReachEnd": "Ветка «{{handle}}» условия «{{name}}» должна в итоге вести к конечному узлу",
         "codeRequired": "В узле кода «{{name}}» должен быть код для запуска",
-        "codeSchema": "JSON-схема узла кода «{{name}}»: {{error}}"
+        "codeSchema": "JSON-схема узла кода «{{name}}»: {{error}}",
+        "loopItems": "Циклу «{{name}}» нужен список для перебора",
+        "loopItemsPath": "Элементы цикла «{{name}}» должны быть путём в состоянии, например extracted.items",
+        "loopItemVariable": "В цикле «{{name}}» указана недопустимая переменная элемента",
+        "loopEmpty": "В цикле «{{name}}» должен быть хотя бы один узел",
+        "loopEntry": "Цикл «{{name}}» должен начинаться ровно с одного узла"
       },
       "schema": {
         "notObject": "должна быть корректным JSON-объектом",
@@ -3904,7 +3928,11 @@
         "variableCount_many": "{{count}} переменных",
         "variableCount_other": "{{count}} переменной",
         "variableTitle": "Переменная: {{name}}",
-        "valueTitle": "Значение: {{value}}"
+        "valueTitle": "Значение: {{value}}",
+        "loop": "Цикл",
+        "loopSummary": "Для каждого {{variable}} в {{items}}",
+        "loopNoItems": "Выберите список для цикла",
+        "loopEmpty": "Перетащите сюда узлы, чтобы запускать их для каждого элемента"
       },
       "preview": {
         "executionDetails": "Сведения о выполнении",
@@ -3917,7 +3945,9 @@
         "minimapHeading": "Рабочий процесс",
         "emptyTitle": "Протестируйте рабочий процесс",
         "unsavedDraftAttachments": "Сохраните рабочий процесс, прежде чем прикреплять документы в предпросмотре.",
-        "backToRun": "Назад к запуску"
+        "backToRun": "Назад к запуску",
+        "loopItems": "{{done}} из {{total}} элементов",
+        "loopItemsFailed": "С ошибкой: {{count}}"
       },
       "documents": {
         "modeAll": "Все входные документы",

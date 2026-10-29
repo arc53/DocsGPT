@@ -1,8 +1,12 @@
+import contextvars
 import json
 import logging
+import queue
 import re
+import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
 
@@ -10,15 +14,19 @@ from docsgpt import tracing
 from docsgpt.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from docsgpt.agents.workflows.schemas import (
+    LOOP_RESERVED_VARIABLES,
     AgentNodeConfig,
     AgentType,
     CodeNodeConfig,
     ConditionNodeConfig,
     ExecutionStatus,
+    LoopItemLog,
+    LoopNodeConfig,
     NodeExecutionLog,
     NodeType,
     WorkflowGraph,
     WorkflowNode,
+    parent_id_of,
 )
 from docsgpt.core.json_schema_utils import (
     JsonSchemaValidationError,
@@ -55,6 +63,24 @@ _CODE_STATE_EXCLUDED_KEYS = frozenset({"chat_history"})
 # node skipped past the per-node blocking-extract cap (callers/tests match on it).
 _EXTRACT_TRUNCATION_ID = "workflow-extract-truncated"
 
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class WorkflowLoopError(ValueError):
+    """A loop node is misconfigured or one of its items failed; the message is safe to show."""
+
+
+class _LoopItemFailed(Exception):
+    """A node in a loop item's body failed; carries the message shown for it."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+class _LoopItemCancelled(Exception):
+    """A loop item stopped between nodes because another item failed the loop."""
+
 
 class WorkflowEngine:
     MAX_EXECUTION_STEPS = 50
@@ -88,6 +114,16 @@ class WorkflowEngine:
         self.preextracted_text: Dict[str, str] = {}
         self.state: WorkflowState = {}
         self.execution_log: List[Dict[str, Any]] = []
+        # Per-item logs of the loop node that just ran, folded into its step log.
+        self._last_loop_items: Optional[List[Optional[Dict[str, Any]]]] = None
+        # Set on the engine that runs one loop item: the ``parent_node_id`` /
+        # ``item_index`` / ``item_count`` its step events carry, and the event
+        # that stops the item between nodes once another item failed the loop.
+        self._loop_item: Optional[Dict[str, Any]] = None
+        self._loop_cancel: Optional[threading.Event] = None
+        # Serializes code nodes on the run's one sandbox session: concurrent loop
+        # items would otherwise overwrite each other's state.json and captures.
+        self._sandbox_lock = threading.Lock()
         self._condition_result: Optional[str] = None
         self._template_engine = TemplateEngine()
         self._namespace_manager = NamespaceManager()
@@ -135,22 +171,40 @@ class WorkflowEngine:
         if not start_node:
             yield {"type": "error", "error": "No start node found in workflow."}
             return
-        current_node_id: Optional[str] = start_node.id
-        steps = 0
         # Snapshots are stored as per-node DELTAS: full state copied into
         # every step grows the run row O(n^2) and repeats every upstream
         # output verbatim. Point-in-time state = merge of deltas up to a step.
         # The empty baseline attributes the pre-loop initialization (query,
         # input documents) to the first step so steps alone reconstruct state.
-        pre_state: Dict[str, Any] = {}
+        yield from self._walk(start_node.id, {})
 
+    def _walk(
+        self, current_node_id: Optional[str], pre_state: Dict[str, Any]
+    ) -> Generator[Dict[str, Any], None, None]:
+        """Run nodes from ``current_node_id`` along the graph's edges.
+
+        The top-level run stops at an end node or a failed node. A loop item
+        walks its body the same way and stops where the body has no next node;
+        a failed node there raises ``_LoopItemFailed`` instead of yielding the
+        run's error event.
+
+        Args:
+            current_node_id: The node to start at.
+            pre_state: State before the first node, for its delta.
+        """
+        steps = 0
         while current_node_id and steps < self.MAX_EXECUTION_STEPS:
+            if self._loop_cancel is not None and self._loop_cancel.is_set():
+                raise _LoopItemCancelled()
             node = self.graph.get_node_by_id(current_node_id)
             if not node:
+                if self._loop_item is not None:
+                    raise _LoopItemFailed(f"Node {current_node_id} not found.")
                 yield {"type": "error", "error": f"Node {current_node_id} not found."}
                 break
             log_entry = self._create_log_entry(node)
             self._last_node_tool_calls = []
+            self._last_loop_items = None
             step_span = tracing.start_span(
                 tracing.KIND_STEP,
                 f"workflow_step {node.title or node.type.value}",
@@ -162,13 +216,7 @@ class WorkflowEngine:
                 },
             )
 
-            yield {
-                "type": "workflow_step",
-                "node_id": node.id,
-                "node_type": node.type.value,
-                "node_title": node.title,
-                "status": "running",
-            }
+            yield self._step_event(node, "running")
 
             try:
                 with step_span:
@@ -179,15 +227,12 @@ class WorkflowEngine:
                 output_key = f"node_{node.id}_output"
                 node_output = self.state.get(output_key)
 
-                yield {
-                    "type": "workflow_step",
-                    "node_id": node.id,
-                    "node_type": node.type.value,
-                    "node_title": node.title,
-                    "status": "completed",
-                    "state_delta": log_entry["state_delta"],
-                    "output": node_output,
-                }
+                yield self._step_event(
+                    node,
+                    "completed",
+                    state_delta=log_entry["state_delta"],
+                    output=node_output,
+                )
             except Exception as e:
                 logger.error(f"Error executing node {node.id}: {e}", exc_info=True)
                 log_entry["status"] = ExecutionStatus.FAILED.value
@@ -202,7 +247,7 @@ class WorkflowEngine:
                 # later" — advice that sends the user round the same loop.
                 # Everything else stays sanitized: node internals and upstream
                 # provider errors are not for end users.
-                is_config_error = isinstance(e, CelEvaluationError)
+                is_config_error = isinstance(e, (CelEvaluationError, WorkflowLoopError))
                 user_friendly_error = (
                     f"{node.title or node.type.value}: {e}"
                     if is_config_error
@@ -217,15 +262,14 @@ class WorkflowEngine:
                     curated = {"code": public.code}
                     if public.params:
                         curated["params"] = public.params
-                yield {
-                    "type": "workflow_step",
-                    "node_id": node.id,
-                    "node_type": node.type.value,
-                    "node_title": node.title,
-                    "status": "failed",
-                    "state_delta": log_entry["state_delta"],
-                    "error": user_friendly_error,
-                }
+                yield self._step_event(
+                    node,
+                    "failed",
+                    state_delta=log_entry["state_delta"],
+                    error=user_friendly_error,
+                )
+                if self._loop_item is not None:
+                    raise _LoopItemFailed(user_friendly_error) from e
                 yield {
                     "type": "error",
                     "error": user_friendly_error,
@@ -239,7 +283,8 @@ class WorkflowEngine:
             if node.type == NodeType.END:
                 break
             current_node_id = self._get_next_node_id(current_node_id)
-            if current_node_id is None and node.type != NodeType.END:
+            # A loop body simply ends where it has no next node.
+            if current_node_id is None and node.type != NodeType.END and self._loop_item is None:
                 logger.warning(
                     f"Branch ended at node '{node.title}' ({node.id}) without reaching an end node"
                 )
@@ -265,6 +310,20 @@ class WorkflowEngine:
             "state_delta": {},
         }
 
+    def _step_event(self, node: WorkflowNode, status: str, **fields: Any) -> Dict[str, Any]:
+        """A ``workflow_step`` event; inside a loop item it names the loop and the item."""
+        event: Dict[str, Any] = {
+            "type": "workflow_step",
+            "node_id": node.id,
+            "node_type": node.type.value,
+            "node_title": node.title,
+            "status": status,
+            **fields,
+        }
+        if self._loop_item is not None:
+            event.update(self._loop_item)
+        return event
+
     def _finalize_log_entry(self, log_entry: Dict[str, Any], pre_state: Dict[str, Any]) -> None:
         """Stamp completion time, duration, the node's state delta, and its tool-call summary."""
         completed_at = datetime.now(timezone.utc)
@@ -273,6 +332,11 @@ class WorkflowEngine:
         log_entry["state_delta"] = self._state_delta(pre_state)
         if self._last_node_tool_calls:
             log_entry["tool_calls"] = list(self._last_node_tool_calls)
+        if self._last_loop_items is not None:
+            log_entry["items"] = [
+                entry if entry is not None else {"item_index": index, "status": ExecutionStatus.PENDING.value}
+                for index, entry in enumerate(self._last_loop_items)
+            ]
 
     def _state_delta(self, previous: Dict[str, Any]) -> Dict[str, Any]:
         """Keys this node added or changed. Deleted keys are not tracked; nothing deletes state today."""
@@ -317,6 +381,14 @@ class WorkflowEngine:
     ) -> Generator[Dict[str, str], None, None]:
         logger.info(f"Executing node {node.id} ({node.type.value})")
 
+        # A body node runs only as part of its own loop's items, and a loop
+        # item runs only its own body; an edge across the boundary is refused.
+        own_loop = self._loop_item["parent_node_id"] if self._loop_item is not None else None
+        if parent_id_of(node.config) != own_loop:
+            raise WorkflowLoopError(
+                f'Node "{node.title or node.id}" is connected across a loop\'s boundary.'
+            )
+
         node_handlers = {
             NodeType.START: self._execute_start_node,
             NodeType.NOTE: self._execute_note_node,
@@ -325,6 +397,7 @@ class WorkflowEngine:
             NodeType.STATE: self._execute_state_node,
             NodeType.CONDITION: self._execute_condition_node,
             NodeType.END: self._execute_end_node,
+            NodeType.LOOP: self._execute_loop_node,
         }
 
         handler = node_handlers.get(node.type)
@@ -491,6 +564,8 @@ class WorkflowEngine:
         if node_attachments:
             node_agent.attachments = node_attachments
 
+        # Loop items run side by side; their text would interleave in the answer.
+        streams_to_user = node_config.stream_to_user and self._loop_item is None
         full_response_parts: List[str] = []
         structured_response_parts: List[str] = []
         has_structured_response = False
@@ -512,13 +587,13 @@ class WorkflowEngine:
                 if event.get("structured"):
                     has_structured_response = True
                     structured_response_parts.append(chunk)
-                if node_config.stream_to_user:
+                if streams_to_user:
                     if first_chunk and hasattr(self, "_has_streamed"):
                         yield {"answer": "\n\n"}
                         first_chunk = False
                     yield event
 
-        if node_config.stream_to_user:
+        if streams_to_user:
             self._has_streamed = True
 
         self._last_node_tool_calls = self._summarize_tool_calls(node_agent)
@@ -554,7 +629,7 @@ class WorkflowEngine:
         self, node: WorkflowNode
     ) -> Generator[Dict[str, str], None, None]:
         """Run code in the run-scoped sandbox, persist produced files, and write an artifact reference."""
-        from docsgpt.sandbox.artifacts_capture import capture_artifacts, snapshot_signatures
+        from docsgpt.sandbox.artifacts_capture import snapshot_signatures
         from docsgpt.sandbox.sandbox_creator import SandboxCreator
 
         config = CodeNodeConfig(**node.config.get("config", node.config))
@@ -578,44 +653,27 @@ class WorkflowEngine:
         # agent-node tool in this run, so it is NOT closed here: closing per node
         # would cold-drop later nodes' interpreter/filesystem state. The run session
         # is torn down once in ``execute``'s finally when the whole run ends.
-        manager.open(session_id)
-        loaded = self._materialize_code_inputs(manager, session_id, config.inputs, user_id)
-        # Stage prior state as DATA the node code reads with
-        # ``json.load(open("state.json"))`` -- e.g. ``state["decision"]``. The
-        # file lands at the workspace root, which is the kernel cwd, so a
-        # relative open resolves it. State is never templated into the program.
-        state_json = json.dumps(self._json_safe_state(), default=str).encode("utf-8")
-        manager.put_file(session_id, "state.json", state_json)
-        pre_signatures = snapshot_signatures(manager, session_id)
-        result = manager.exec(session_id, code, timeout=timeout)
-        # Code nodes execute the sandbox directly (no tool_executor); record the
-        # run as a synthetic tool call so the step log shows it like agent nodes.
-        self._last_node_tool_calls = [
-            {
-                "tool_name": "code_executor",
-                "action_name": "run_code",
-                "status": "completed" if result.ok else "error",
-            }
-        ]
-        if result.runtime_invalidated:
-            # A hard timeout destroyed the workspace runtime, so there is
-            # nothing reachable to capture and the timeout below stays primary.
-            artifacts = []
-        elif self.run_persisted:
-            artifacts = capture_artifacts(
-                manager,
-                session_id,
-                pre_signatures,
-                user_id=user_id,
-                workflow_run_id=self.workflow_run_id,
-                produced_by={"node_id": node.id, "node_type": NodeType.CODE.value},
-            )
-        else:
-            # No workflow_runs row backs this run (unsaved/embedded draft): an
-            # artifact parented to this run id would be an unreachable orphan
-            # (403 on get/download). Skip persistence; the sandbox still ran and
-            # ``_build_code_output`` handles the empty-artifacts case.
-            artifacts = []
+        with self._sandbox_lock:
+            manager.open(session_id)
+            loaded = self._materialize_code_inputs(manager, session_id, config.inputs, user_id)
+            # Stage prior state as DATA the node code reads with
+            # ``json.load(open("state.json"))`` -- e.g. ``state["decision"]``. The
+            # file lands at the workspace root, which is the kernel cwd, so a
+            # relative open resolves it. State is never templated into the program.
+            state_json = json.dumps(self._json_safe_state(), default=str).encode("utf-8")
+            manager.put_file(session_id, "state.json", state_json)
+            pre_signatures = snapshot_signatures(manager, session_id)
+            result = manager.exec(session_id, code, timeout=timeout)
+            # Code nodes execute the sandbox directly (no tool_executor); record the
+            # run as a synthetic tool call so the step log shows it like agent nodes.
+            self._last_node_tool_calls = [
+                {
+                    "tool_name": "code_executor",
+                    "action_name": "run_code",
+                    "status": "completed" if result.ok else "error",
+                }
+            ]
+            artifacts = self._capture_code_artifacts(manager, session_id, pre_signatures, result, node, user_id)
 
         if not result.ok:
             error = (
@@ -637,6 +695,37 @@ class WorkflowEngine:
         if config.output_variable:
             self.state[config.output_variable] = output_value
         yield from ()
+
+    def _capture_code_artifacts(
+        self,
+        manager: Any,
+        session_id: str,
+        pre_signatures: Any,
+        result: Any,
+        node: WorkflowNode,
+        user_id: str,
+    ) -> List[Dict[str, Any]]:
+        """Persist the files a code node produced as run-scoped artifacts."""
+        from docsgpt.sandbox.artifacts_capture import capture_artifacts
+
+        if result.runtime_invalidated:
+            # A hard timeout destroyed the workspace runtime, so there is
+            # nothing reachable to capture and the timeout below stays primary.
+            return []
+        if not self.run_persisted:
+            # No workflow_runs row backs this run (unsaved/embedded draft): an
+            # artifact parented to this run id would be an unreachable orphan
+            # (403 on get/download). Skip persistence; the sandbox still ran and
+            # ``_build_code_output`` handles the empty-artifacts case.
+            return []
+        return capture_artifacts(
+            manager,
+            session_id,
+            pre_signatures,
+            user_id=user_id,
+            workflow_run_id=self.workflow_run_id,
+            produced_by={"node_id": node.id, "node_type": NodeType.CODE.value},
+        )
 
     def _build_code_output(
         self,
@@ -1181,6 +1270,233 @@ class WorkflowEngine:
             yield {"answer": formatted_output}
             self._has_streamed = True
 
+    def _execute_loop_node(
+        self, node: WorkflowNode
+    ) -> Generator[Dict[str, Any], None, None]:
+        """Run the loop's body once per item of a state list and store the results in item order.
+
+        Each item runs on its own copy of the state, so items never see each
+        other's writes and the item variable never reaches the parent state.
+        Only ``node_<id>_output`` and ``output_variable`` are written back.
+        """
+        from docsgpt.core.settings import settings
+
+        title = node.title or "Loop"
+        if self._loop_item is not None:
+            raise WorkflowLoopError(f'Loop "{title}" is inside another loop; loops cannot be nested.')
+        config = LoopNodeConfig(**node.config.get("config", node.config))
+        item_variable = (config.item_variable or "").strip()
+        if not _IDENTIFIER_RE.match(item_variable) or item_variable in LOOP_RESERVED_VARIABLES:
+            raise WorkflowLoopError(f'Loop "{title}" cannot use "{item_variable}" as its item variable.')
+        items = self._loop_items(config.items, title)
+        max_items = min(config.max_items, int(settings.WORKFLOW_LOOP_MAX_ITEMS))
+        if len(items) > max_items:
+            raise WorkflowLoopError(f'Loop "{title}" got {len(items)} items; it accepts at most {max_items}.')
+        entry = self.graph.get_body_entry(node.id)
+        if entry is None:
+            raise WorkflowLoopError(f'Loop "{title}" needs a body with one first node.')
+
+        item_logs: List[Optional[Dict[str, Any]]] = [None] * len(items)
+        results: List[Any] = [None] * len(items)
+        failures: Dict[int, str] = {}
+        if items:
+            yield from self._run_loop_items(node, config, item_variable, entry, items, results, failures, item_logs)
+        # Set after the items ran: a node's state resets this before it starts.
+        self._last_loop_items = item_logs
+
+        if failures and config.on_item_error == "fail":
+            index = min(failures)
+            raise WorkflowLoopError(
+                f'Loop "{title}": item {index + 1} of {len(items)} failed: {failures[index]}'
+            )
+        if config.on_item_error == "skip":
+            output: List[Any] = [result for index, result in enumerate(results) if index not in failures]
+        else:
+            output = [
+                {"error": failures[index]} if index in failures else result
+                for index, result in enumerate(results)
+            ]
+        self.state[f"node_{node.id}_output"] = output
+        if config.output_variable:
+            self.state[config.output_variable] = output
+
+    def _run_loop_items(
+        self,
+        node: WorkflowNode,
+        config: LoopNodeConfig,
+        item_variable: str,
+        entry: WorkflowNode,
+        items: List[Any],
+        results: List[Any],
+        failures: Dict[int, str],
+        item_logs: List[Optional[Dict[str, Any]]],
+    ) -> Generator[Dict[str, Any], None, None]:
+        """Run every item on a bounded pool, relaying each item's events as they arrive.
+
+        Fills ``results``, ``failures`` and ``item_logs`` by item index. With
+        ``on_item_error: fail`` the first failure stops the items not yet
+        started and the running ones at their next node.
+        """
+        from docsgpt.core.settings import settings
+
+        count = len(items)
+        concurrency = max(1, min(config.concurrency, int(settings.WORKFLOW_LOOP_MAX_CONCURRENCY), count))
+        cancel = threading.Event()
+        events: "queue.Queue[Any]" = queue.Queue()
+        done_marker = object()
+
+        def run_item(index: int, item: Any) -> None:
+            started = datetime.now(timezone.utc)
+            status, error, result = ExecutionStatus.COMPLETED, None, None
+            child: Optional[WorkflowEngine] = None
+            try:
+                events.put(self._loop_item_event(node, index, count, "running"))
+                child = self._loop_child(node, index, count, cancel)
+                child.state[item_variable] = item
+                for event in child._walk(entry.id, dict(child.state)):
+                    events.put(event)
+                result = child._loop_item_result(config.result_variable)
+            except _LoopItemFailed as exc:
+                status, error = ExecutionStatus.FAILED, exc.message
+            except _LoopItemCancelled:
+                status, error = ExecutionStatus.FAILED, "Stopped because another item failed."
+            except Exception as exc:
+                logger.exception("Loop item %s of node %s failed", index, node.id)
+                status, error = ExecutionStatus.FAILED, sanitize_api_error(exc)
+            finally:
+                # Always sent: the relay below waits for one marker per started item.
+                completed = datetime.now(timezone.utc)
+                log = {
+                    "item_index": index,
+                    "status": status.value,
+                    "error": error,
+                    "started_at": started,
+                    "completed_at": completed,
+                    "duration_ms": int((completed - started).total_seconds() * 1000),
+                    "steps": child.execution_log if child is not None else [],
+                }
+                events.put((done_marker, index, status, error, result, log))
+
+        pool = ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="workflow-loop")
+        pending = iter(enumerate(items))
+        running = 0
+        finished = False
+
+        def submit_next() -> bool:
+            nonlocal running
+            next_item = next(pending, None)
+            if next_item is None:
+                return False
+            # Pool threads don't inherit context variables: carry the trace
+            # (item spans nest under this step), log context and run deadline.
+            ctx = contextvars.copy_context()
+            pool.submit(ctx.run, tracing.wrap(run_item), *next_item)
+            running += 1
+            return True
+
+        try:
+            # Items are handed out one per free slot rather than queued up
+            # front, so nothing new starts once a failure has stopped the loop.
+            while running < concurrency and submit_next():
+                pass
+            while running:
+                message = events.get()
+                if not (isinstance(message, tuple) and message and message[0] is done_marker):
+                    yield message
+                    continue
+                _, index, status, error, result, log = message
+                running -= 1
+                item_logs[index] = log
+                if status == ExecutionStatus.FAILED:
+                    failures[index] = error
+                    if config.on_item_error == "fail":
+                        cancel.set()
+                else:
+                    results[index] = result
+                yield self._loop_item_event(node, index, count, status.value, error)
+                if not cancel.is_set():
+                    submit_next()
+            finished = True
+        finally:
+            if not finished:
+                # The stream closed mid-loop: start nothing more and let the
+                # running items end at their next node without waiting on them.
+                cancel.set()
+            pool.shutdown(wait=finished)
+
+    @staticmethod
+    def _loop_item_event(
+        node: WorkflowNode, index: int, count: int, status: str, error: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """A ``workflow_loop_item`` event: one item of a loop started or ended."""
+        event: Dict[str, Any] = {
+            "type": "workflow_loop_item",
+            "node_id": node.id,
+            "item_index": index,
+            "item_count": count,
+            "status": status,
+        }
+        if error:
+            event["error"] = error
+        return event
+
+    def _loop_child(
+        self, node: WorkflowNode, index: int, count: int, cancel: threading.Event
+    ) -> "WorkflowEngine":
+        """An engine for one loop item: this run's ids and sandbox, a copy of its state."""
+        child = WorkflowEngine(self.graph, self.agent, workflow_run_id=self.workflow_run_id)
+        child.run_persisted = self.run_persisted
+        child.preextracted_text = self.preextracted_text
+        child._sandbox_lock = self._sandbox_lock
+        child._loop_item = {"parent_node_id": node.id, "item_index": index, "item_count": count}
+        child._loop_cancel = cancel
+        # Nodes only ever assign top-level keys, so a shallow copy keeps the
+        # item's writes out of the parent and out of the other items.
+        child.state = dict(self.state)
+        return child
+
+    def _loop_item_result(self, result_variable: Optional[str]) -> Any:
+        """An item's result: ``result_variable`` if set, else the last body node's output."""
+        if result_variable:
+            return self.state.get(result_variable)
+        for log in reversed(self.execution_log):
+            key = f"node_{log['node_id']}_output"
+            if key in self.state:
+                return self.state[key]
+        return None
+
+    def _loop_items(self, path: str, title: str) -> List[Any]:
+        """Resolve a loop's ``items`` state path to its list.
+
+        Dotted segments read dict keys and list indexes; a leading ``agent.``
+        is accepted as in templates. A string holding a JSON array (an agent
+        node without a schema) is parsed.
+        """
+        path = (path or "").strip()
+        if not path:
+            raise WorkflowLoopError(f'Loop "{title}" has no items to read.')
+        parts = path.split(".")
+        if parts[0] == "agent" and "agent" not in self.state and len(parts) > 1:
+            parts = parts[1:]
+        value: Any = self.state
+        for part in parts:
+            if isinstance(value, dict) and part in value:
+                value = value[part]
+            elif isinstance(value, list) and part.isdigit() and int(part) < len(value):
+                value = value[int(part)]
+            else:
+                raise WorkflowLoopError(f'Loop "{title}": "{path}" is not in the workflow state.')
+        if isinstance(value, str) and value.strip().startswith("["):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                pass
+        if not isinstance(value, list):
+            raise WorkflowLoopError(
+                f'Loop "{title}": "{path}" is {type(value).__name__}, not a list.'
+            )
+        return value
+
     def _parse_structured_output(self, raw_response: str) -> tuple[bool, Optional[Any]]:
         normalized_response = raw_response.strip()
         if not normalized_response:
@@ -1533,17 +1849,31 @@ class WorkflowEngine:
         return rerankers
 
     def get_execution_summary(self) -> List[NodeExecutionLog]:
-        return [
-            NodeExecutionLog(
-                node_id=log["node_id"],
-                node_type=log["node_type"],
-                status=ExecutionStatus(log["status"]),
-                started_at=log["started_at"],
-                completed_at=log.get("completed_at"),
-                duration_ms=log.get("duration_ms"),
-                error=log.get("error"),
-                state_delta=log.get("state_delta", {}),
-                tool_calls=log.get("tool_calls", []),
-            )
-            for log in self.execution_log
-        ]
+        return [self._summary_entry(log) for log in self.execution_log]
+
+    @classmethod
+    def _summary_entry(cls, log: Dict[str, Any]) -> NodeExecutionLog:
+        """One step's log as a ``NodeExecutionLog``, a loop's items and their steps included."""
+        return NodeExecutionLog(
+            node_id=log["node_id"],
+            node_type=log["node_type"],
+            status=ExecutionStatus(log["status"]),
+            started_at=log["started_at"],
+            completed_at=log.get("completed_at"),
+            duration_ms=log.get("duration_ms"),
+            error=log.get("error"),
+            state_delta=log.get("state_delta", {}),
+            tool_calls=log.get("tool_calls", []),
+            items=[
+                LoopItemLog(
+                    item_index=item["item_index"],
+                    status=ExecutionStatus(item["status"]),
+                    started_at=item.get("started_at"),
+                    completed_at=item.get("completed_at"),
+                    duration_ms=item.get("duration_ms"),
+                    error=item.get("error"),
+                    steps=[cls._summary_entry(step) for step in item.get("steps", [])],
+                )
+                for item in log.get("items", [])
+            ],
+        )
