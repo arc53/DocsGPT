@@ -1389,13 +1389,18 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
         or "mcp_tool" not in definition.tool_templates
     ):
         return None
-    return {
+    config = {
         "server_url": definition.mcp_url,
         "auth_type": "oauth" if definition.auth_kind == "mcp_oauth" else "none",
         "oauth_scopes": list(definition.oauth_scopes),
         "timeout": 30,
         "transport_type": "auto",
     }
+    if definition.proactive_oauth:
+        # Only a preset that asks for it carries the flag, so the saved config
+        # of every other connector keeps the shape it always had.
+        config["proactive_oauth"] = True
+    return config
 
 
 def connection_mcp_config(definition: Optional[ConnectorDefinition], writes: bool = False) -> Optional[dict]:

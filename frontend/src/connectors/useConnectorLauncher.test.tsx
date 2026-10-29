@@ -42,7 +42,15 @@ vi.mock('./ConnectWizard', () => ({
     );
   },
 }));
-vi.mock('../modals/MCPServerModal', () => ({ default: () => null }));
+const mcpModalProps = vi.hoisted(() => ({
+  server: undefined as Record<string, unknown> | undefined,
+}));
+vi.mock('../modals/MCPServerModal', () => ({
+  default: ({ server }: { server?: Record<string, unknown> }) => {
+    mcpModalProps.server = server;
+    return null;
+  },
+}));
 
 import connectorsService from '../api/services/connectorsService';
 import connectorsReducer from './connectorsSlice';
@@ -76,6 +84,19 @@ const DRIVE = {
   auth_kind: 'oauth',
   mcp_url: null,
   sync_ingestor: 'google_drive',
+} as unknown as ConnectorDefinition;
+
+// A custom MCP connector: it reaches the MCP server form rather than the
+// wizard, so the form's config is built by the launcher.
+const CUSTOM_MCP = {
+  key: 'mcp:custom',
+  name: 'Custom MCP',
+  auth_kind: 'mcp',
+  mcp_url: 'https://mcp.example.com/mcp',
+  publisher: 'custom',
+  oauth_scopes: ['read-mcp', 'contribute-repos'],
+  proactive_oauth: true,
+  sync_ingestor: null,
 } as unknown as ConnectorDefinition;
 
 let launchRef: ((c: ConnectorDefinition, o?: LaunchOptions) => void) | null =
@@ -158,6 +179,20 @@ describe('useConnectorLauncher', () => {
   it('opens a no-auth MCP preset in the wizard, not the server form', async () => {
     await act(async () => launchRef!(DRAWIO));
     expect(wizard()).toBe('connect:');
+  });
+
+  it('gives the MCP server form the connector scopes and the proactive sign-in', async () => {
+    await act(async () => launchRef!(CUSTOM_MCP));
+    expect(mcpModalProps.server).toMatchObject({
+      server_url: 'https://mcp.example.com/mcp',
+      oauth_scopes: 'read-mcp, contribute-repos',
+      proactive_oauth: true,
+    });
+  });
+
+  it('leaves the proactive sign-in off for a connector that does not ask for it', async () => {
+    await act(async () => launchRef!({ ...CUSTOM_MCP, proactive_oauth: false }));
+    expect(mcpModalProps.server).toMatchObject({ proactive_oauth: false });
   });
 
   const purpose = () =>

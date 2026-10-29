@@ -1165,6 +1165,82 @@ describe('ConnectWizard', () => {
     open.mockRestore();
   });
 
+  it('asks a server that never challenges to sign in before the first request', async () => {
+    // Hugging Face serves anonymous MCP requests with HTTP 200, so the
+    // server never challenges and the sign-in would report itself complete
+    // without ever holding a token. The preset asks for the sign-in up front.
+    const huggingface: ConnectorDefinition = {
+      ...base,
+      key: 'mcp:huggingface',
+      name: 'Hugging Face',
+      icon: 'huggingface',
+      auth_kind: 'mcp_oauth',
+      credential_fields: [],
+      tool_templates: ['mcp_tool'],
+      mcp_url: 'https://huggingface.co/mcp',
+      oauth_scopes: [
+        'openid',
+        'profile',
+        'read-mcp',
+        'read-repos',
+        'contribute-repos',
+      ],
+      proactive_oauth: true,
+      publisher: 'preset',
+    };
+    const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
+    mcpApi.testMCPConnection.mockResolvedValue({
+      json: async () => ({ requires_oauth: true, task_id: 'task-1' }),
+    });
+    await render(huggingface);
+    await click('settings.connectors.wizard.signIn');
+
+    expect(mcpApi.testMCPConnection).toHaveBeenCalledTimes(1);
+    expect(mcpApi.testMCPConnection.mock.calls[0][0]).toMatchObject({
+      config: {
+        server_url: 'https://huggingface.co/mcp',
+        auth_type: 'oauth',
+        proactive_oauth: true,
+        oauth_scopes: [
+          'openid',
+          'profile',
+          'read-mcp',
+          'read-repos',
+          'contribute-repos',
+        ],
+      },
+    });
+    open.mockRestore();
+  });
+
+  it('leaves a preset that never challenges to the challenged sign-in', async () => {
+    const notion: ConnectorDefinition = {
+      ...base,
+      key: 'mcp:notion',
+      name: 'Notion',
+      icon: 'notion',
+      auth_kind: 'mcp_oauth',
+      credential_fields: [],
+      tool_templates: ['mcp_tool'],
+      mcp_url: 'https://mcp.notion.com/mcp',
+      oauth_scopes: [],
+      publisher: 'preset',
+    };
+    const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
+    mcpApi.testMCPConnection.mockResolvedValue({
+      json: async () => ({ requires_oauth: true, task_id: 'task-1' }),
+    });
+    await render(notion);
+    await click('settings.connectors.wizard.signIn');
+
+    expect(mcpApi.testMCPConnection.mock.calls[0][0]).toMatchObject({
+      config: { proactive_oauth: false },
+    });
+    open.mockRestore();
+  });
+
   it('connects a no-auth MCP preset with one Connect button', async () => {
     const open = vi.spyOn(window, 'open');
     mcpApi.saveMCPServer.mockResolvedValue({

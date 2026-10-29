@@ -101,6 +101,11 @@ class ConnectorDefinition:
         publisher: ``built_in``, ``preset`` or ``custom``.
         docs_url: Setup guide for admins.
         oauth_scopes: Scopes an MCP preset requests.
+        proactive_oauth: Whether the preset signs in before its first request
+            instead of waiting for the server to challenge. Servers that
+            answer anonymous MCP requests with HTTP 200 never challenge, so
+            the SDK's challenge-driven flow would never start and the sign-in
+            would report itself complete without a token.
         part_of: Another connector this one is shown under, for one service
             offered two ways (the Atlassian MCP preset under Confluence).
         oauth_settings: Server settings that add a second sign-in, OAuth,
@@ -130,6 +135,7 @@ class ConnectorDefinition:
     publisher: str = "built_in"
     docs_url: Optional[str] = None
     oauth_scopes: tuple[str, ...] = ()
+    proactive_oauth: bool = False
     part_of: Optional[str] = None
     oauth_settings: tuple[str, ...] = ()
     default_actions: tuple[str, ...] = ()
@@ -192,6 +198,7 @@ class ConnectorDefinition:
             "publisher": self.publisher,
             "docs_url": self.docs_url,
             "oauth_scopes": list(self.oauth_scopes),
+            "proactive_oauth": self.proactive_oauth,
             "part_of": self.part_of,
             "sign_in_methods": self.sign_in_methods,
             "picker_client_id": self.picker_client_id,
@@ -448,6 +455,7 @@ def _load_presets(path: Optional[Path] = None) -> tuple[ConnectorDefinition, ...
                 publisher="preset",
                 docs_url=entry.get("docs_url"),
                 oauth_scopes=tuple(entry.get("oauth_scopes") or ()),
+                proactive_oauth=bool(entry.get("proactive_oauth", False)),
                 part_of=entry.get("part_of"),
                 default_actions=tuple(entry.get("default_actions") or ()),
             )

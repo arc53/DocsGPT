@@ -1974,6 +1974,7 @@
         "mcp_alphavantage": "Consulta cotizaciones de acciones, datos fundamentales, divisas, criptomonedas, indicadores económicos y noticias del mercado.",
         "mcp_neon": "Explora proyectos, ramas y esquemas de Postgres en Neon, y ejecuta SQL.",
         "mcp_twelvedata": "Consulta cotizaciones, historial de precios, indicadores técnicos y datos fundamentales de acciones, divisas, criptomonedas y ETF.",
+        "mcp_huggingface": "Busca modelos, conjuntos de datos, Spaces y papers de Hugging Face, y usa las herramientas configuradas del Hub.",
         "mcp_cloudflare": "Gestiona Workers, DNS, R2 y más a través de la API de Cloudflare.",
         "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
       },

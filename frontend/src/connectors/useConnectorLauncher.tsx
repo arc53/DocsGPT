@@ -133,6 +133,7 @@ export default function useConnectorLauncher({
                   auth_type:
                     connector.auth_kind === 'mcp_oauth' ? 'oauth' : 'none',
                   oauth_scopes: connector.oauth_scopes.join(', '),
+                  proactive_oauth: connector.proactive_oauth ?? false,
                   preset: true,
                 }
               : undefined),

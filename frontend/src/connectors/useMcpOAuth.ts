@@ -11,6 +11,13 @@ export type McpOAuthConfig = {
   oauth_scopes: string[];
   timeout: number;
   redirect_uri: string;
+  /**
+   * Sign in before the first request instead of waiting for the server to
+   * challenge. Servers that answer anonymous MCP requests with HTTP 200
+   * never challenge, so the sign-in would otherwise report itself complete
+   * without a token.
+   */
+  proactive_oauth?: boolean;
 };
 
 type Handlers = {

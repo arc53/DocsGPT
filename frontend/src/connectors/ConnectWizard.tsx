@@ -316,6 +316,7 @@ export default function ConnectWizard({
     oauth_scopes: connector.oauth_scopes ?? [],
     timeout: 30,
     redirect_uri: `${baseURL.replace(/\/$/, '')}/api/mcp_server/callback`,
+    proactive_oauth: connector.proactive_oauth ?? false,
   });
 
   const saveMcp = async (config: McpSaveConfig, taskId: string | null) => {

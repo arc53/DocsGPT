@@ -61,6 +61,12 @@ export type ConnectorDefinition = {
   publisher: 'built_in' | 'preset' | 'custom';
   docs_url: string | null;
   oauth_scopes: string[];
+  /**
+   * Sign in before the first request instead of waiting for the server to
+   * challenge. Servers that answer anonymous MCP requests with HTTP 200 never
+   * challenge, so the sign-in would report itself complete without a token.
+   */
+  proactive_oauth?: boolean;
   /** Shown under this connector's card (one service offered two ways). */
   part_of?: string | null;
   /**

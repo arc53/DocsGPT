@@ -17,13 +17,20 @@ from fastmcp.client.transports import (
 )
 import httpx2
 from mcp.client.auth import OAuthClientProvider, TokenStorage
+from mcp.client.auth.exceptions import OAuthFlowError
+from mcp.client.auth.oauth2 import check_registration_usable
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
     build_protected_resource_metadata_discovery_urls,
+    create_client_info_from_metadata_url,
+    create_client_registration_request,
     create_oauth_metadata_request,
+    get_client_metadata_scopes,
     handle_auth_metadata_response,
     handle_protected_resource_response,
+    handle_registration_response,
     issuers_match,
+    should_use_client_metadata_url,
     validate_metadata_issuer,
 )
 from mcp.shared._httpx_utils import MCP_DEFAULT_SSE_READ_TIMEOUT, MCP_DEFAULT_TIMEOUT
@@ -179,6 +186,41 @@ def _is_header_mismatch(error: BaseException) -> bool:
     return False
 
 
+def _normalize_oauth_scopes(scopes: Any) -> List[str]:
+    """Normalize OAuth scopes to a list of individual scope strings.
+
+    Scopes arrive in two shapes: a preset carries a list
+    (``["read-mcp", "read-repos"]``), while the frontend's MCP server
+    settings carry a comma-separated string (``"read-mcp, read-repos"``).
+    Joining a string with ``","`` would produce one character per
+    element, so both shapes are normalized here at the single point every
+    consumer reads from.
+
+    Args:
+        scopes: A list of scopes, a comma- or space-separated string, or None.
+
+    Returns:
+        The scopes as a list of individual scope strings, without empties.
+    """
+    if scopes is None:
+        return []
+    if isinstance(scopes, str):
+        parts = scopes.replace(",", " ").split()
+    elif isinstance(scopes, (list, tuple, set)):
+        parts = []
+        for scope in scopes:
+            if scope is None:
+                continue
+            parts.extend(str(scope).replace(",", " ").split())
+    else:
+        parts = str(scopes).replace(",", " ").split()
+    seen: List[str] = []
+    for scope in parts:
+        if scope and scope not in seen:
+            seen.append(scope)
+    return seen
+
+
 def _annotation_hints(annotations: Any) -> Dict[str, bool]:
     """The boolean MCP tool annotation hints, from a model or a dict."""
     if annotations is None:
@@ -233,7 +275,10 @@ class MCPTool(Tool):
             )
         else:
             self.auth_credentials = config.get("auth_credentials", {})
-        self.oauth_scopes = config.get("oauth_scopes", [])
+        self.oauth_scopes = _normalize_oauth_scopes(config.get("oauth_scopes"))
+        # Sign in before the first request for servers that answer anonymous
+        # MCP requests with HTTP 200 and so never challenge the OAuth flow.
+        self.proactive_oauth = bool(config.get("proactive_oauth", False))
         self.oauth_task_id = config.get("oauth_task_id", None)
         self.oauth_client_name = config.get("oauth_client_name", "DocsGPT-MCP")
         # The connection whose OAuth tokens this tool uses. Set by the tool
@@ -254,6 +299,7 @@ class MCPTool(Tool):
         self._param_headers = param_header_maps(config.get("action_schemas") or {})
         self._cache_key = self._generate_cache_key()
         self._client = None
+        self._auth = None
         self.query_mode = config.get("query_mode", False)
         # Images the last call returned, for the model to see (``drain_native_parts``).
         self._native_queue: List[Dict] = []
@@ -319,6 +365,19 @@ class MCPTool(Tool):
             auth_key = "none"
         return f"{self.server_url}#{self.transport_type}#{auth_key}"
 
+    def oauth_signed_in(self) -> bool:
+        """Whether the OAuth client holds a usable access token.
+
+        A server that answers anonymous MCP requests with HTTP 200 gives the
+        OAuth flow no challenge to react to, so the SDK can finish a tool
+        discovery without ever obtaining a token. The sign-in is only real
+        when a token is held.
+        """
+        context = getattr(getattr(self, "_auth", None), "context", None)
+        if context is None:
+            return False
+        return bool(context.is_token_valid())
+
     def _setup_client(self):
         global _mcp_clients_cache
         if not hasattr(self, "_param_headers"):
@@ -363,6 +422,7 @@ class MCPTool(Tool):
                     user_id=self.user_id,
                     redirect_publish=self.oauth_redirect_publish,
                     connection_id=self.connection_id,
+                    proactive_authorization=self.proactive_oauth,
                 )
         elif self.auth_type == "bearer":
             token = self.auth_credentials.get(
@@ -371,6 +431,7 @@ class MCPTool(Tool):
             if token:
                 auth = BearerAuth(token)
         self._client = Client(transport, auth=auth)
+        self._auth = auth
         if not shareable:
             return
         _mcp_clients_cache[self._cache_key] = {
@@ -1011,6 +1072,7 @@ class DocsGPTOAuth(OAuthClientProvider):
         skip_redirect_validation: bool = False,
         redirect_publish=None,
         connection_id: Optional[str] = None,
+        proactive_authorization: bool = False,
     ):
         self.redirect_uri = redirect_uri
         self.redis_client = redis_client
@@ -1021,12 +1083,19 @@ class DocsGPTOAuth(OAuthClientProvider):
         # once the authorization URL is known so the SSE envelope can
         # carry it. ``None`` for any non-worker entrypoint.
         self.redirect_publish = redirect_publish
+        # Whether to sign in before the first request instead of waiting for
+        # the server to challenge. See ``_ensure_authorized``.
+        self.proactive_authorization = proactive_authorization
+        self.proactive_signed_in = False
 
         parsed_url = urlparse(mcp_url)
         self.server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
         if isinstance(scopes, list):
             scopes = " ".join(scopes)
+        elif isinstance(scopes, str):
+            # A comma-separated string is a list of scopes, not one scope.
+            scopes = " ".join(_normalize_oauth_scopes(scopes))
         client_metadata = OAuthClientMetadata(
             client_name=client_name,
             redirect_uris=[AnyHttpUrl(redirect_uri)],
@@ -1084,6 +1153,191 @@ class DocsGPTOAuth(OAuthClientProvider):
             return data, headers
 
         return prepare_token_auth
+
+    async def async_auth_flow(self, request: httpx2.Request):
+        """Run the SDK's auth flow, signing in first when the server needs it.
+
+        The SDK starts its OAuth flow only after the resource answers HTTP
+        401 (or 403 with ``insufficient_scope``). Several MCP servers answer
+        anonymous requests with HTTP 200 instead — Hugging Face serves
+        ``initialize``, ``tools/list`` and ``tools/call`` that way — so the
+        SDK never sees a challenge, never asks for a token, and the connector
+        reports a completed sign-in while every call still runs
+        unauthenticated.
+
+        With ``proactive_authorization`` the sign-in happens before the first
+        request rather than after a challenge, and it reuses the SDK's own
+        discovery, scope selection, registration, PKCE and token-exchange
+        helpers, so the result matches the challenged path.
+        """
+        if self.proactive_authorization:
+            await self._ensure_authorized()
+        async for outgoing in super().async_auth_flow(request):
+            yield outgoing
+
+    async def _ensure_authorized(self) -> None:
+        """Sign in to the resource when it holds no usable access token.
+
+        A stored token that is still valid is used as is. Anything else goes
+        through the full handshake, which publishes the authorization URL for
+        the browser and waits for the callback, exactly as the SDK's
+        challenge-driven flow does.
+        """
+        if self.proactive_signed_in:
+            return
+        async with self.context.lock:
+            if self.proactive_signed_in:
+                return
+            await self._initialize()
+            if self.context.is_token_valid():
+                self.proactive_signed_in = True
+                return
+            await self._proactive_sign_in()
+            self.proactive_signed_in = True
+
+    async def _proactive_sign_in(self) -> None:
+        """Run the OAuth handshake the SDK runs after an HTTP 401 challenge."""
+        server_url = self.context.server_url
+        await self._proactive_discover(server_url)
+        self._proactive_select_scopes()
+        await self._proactive_register_client()
+        auth_code, code_verifier = await self._perform_authorization_code_grant()
+        token_request = await self._exchange_token_authorization_code(
+            auth_code, code_verifier
+        )
+        async with _mcp_http_client(timeout=httpx2.Timeout(30.0)) as client:
+            token_response = await client.send(token_request)
+        await self._handle_token_response(token_response)
+
+    async def _proactive_discover(self, server_url: str) -> None:
+        """Read the resource's metadata and the authorization server's metadata.
+
+        The SDK discovers both inside its 401 branch, so a server that never
+        challenges leaves the handshake with nothing to register a client or
+        mint a token with.
+        """
+        try:
+            async with _mcp_http_client(timeout=httpx2.Timeout(10.0)) as client:
+                for url in build_protected_resource_metadata_discovery_urls(
+                    None, server_url
+                ):
+                    prm = await handle_protected_resource_response(
+                        await client.send(create_oauth_metadata_request(url))
+                    )
+                    if prm and prm.authorization_servers:
+                        await self._validate_resource_match(prm)
+                        self.context.protected_resource_metadata = prm
+                        self.context.auth_server_url = (
+                            self._select_authorization_server(
+                                [str(as_url) for as_url in prm.authorization_servers]
+                            )
+                        )
+                        break
+                else:
+                    raise OAuthFlowError(
+                        f"No protected resource metadata published for {server_url}"
+                    )
+
+                expected_issuer = self._expected_issuer()
+                for url in build_oauth_authorization_server_metadata_discovery_urls(
+                    self.context.auth_server_url, server_url
+                ):
+                    ok, metadata = await handle_auth_metadata_response(
+                        await client.send(create_oauth_metadata_request(url))
+                    )
+                    if not ok:
+                        break
+                    if metadata:
+                        # On the legacy path a root issuer written with its
+                        # trailing slash names the same server, as in the SDK.
+                        if (
+                            self.context.auth_server_url is None
+                            and issuers_match(str(metadata.issuer), expected_issuer)
+                        ):
+                            expected_issuer = str(metadata.issuer)
+                        validate_metadata_issuer(metadata, expected_issuer)
+                        self.context.oauth_metadata = metadata
+                        return
+        except OAuthFlowError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - reported as a flow failure
+            raise OAuthFlowError(
+                f"OAuth discovery failed for {server_url}: {exc}"
+            ) from exc
+        raise OAuthFlowError(
+            f"No OAuth authorization server metadata published for {server_url}"
+        )
+
+    def _proactive_select_scopes(self) -> None:
+        """Choose the scopes to request, keeping the configured ones when they hold.
+
+        The SDK replaces the requested scopes with the server's advertised set.
+        A preset asks for the permissions it needs — Hugging Face asks for
+        ``openid profile read-mcp read-repos contribute-repos`` — while the
+        server advertises everything it supports, so replacing would ask for
+        more than the preset needs. When every requested scope is one the
+        server supports, the request keeps the configured set.
+        """
+        challenged = get_client_metadata_scopes(
+            None,
+            self.context.protected_resource_metadata,
+            self.context.oauth_metadata,
+            self.context.client_metadata.grant_types,
+        )
+        if not challenged:
+            return
+        requested = (self.context.client_metadata.scope or "").split()
+        supported = set(challenged.split())
+        if requested and set(requested).issubset(supported):
+            return
+        self.context.client_metadata.scope = challenged
+
+    async def _proactive_register_client(self) -> None:
+        """Register this client with the authorization server, as the SDK does."""
+        if self.context.client_info:
+            return
+        # The issuer to bind these credentials to, once metadata for it was
+        # actually found.
+        discovered_issuer = (
+            self._expected_issuer() if self.context.oauth_metadata is not None else None
+        )
+        if should_use_client_metadata_url(
+            self.context.oauth_metadata, self.context.client_metadata_url
+        ):
+            # URL-based client ID (CIMD). CIMD records are portable across
+            # authorization servers, so the issuer stamp is informational.
+            client_information = create_client_info_from_metadata_url(
+                self.context.client_metadata_url,  # type: ignore[arg-type]
+                redirect_uris=self.context.client_metadata.redirect_uris,
+            )
+            client_information.issuer = discovered_issuer
+        else:
+            fallback_base = self.context.get_authorization_base_url(
+                self.context.server_url
+            )
+            registration_request = create_client_registration_request(
+                self.context.oauth_metadata, self.context.client_metadata, fallback_base
+            )
+            async with _mcp_http_client(timeout=httpx2.Timeout(30.0)) as client:
+                registration_response = await client.send(registration_request)
+            client_information = await handle_registration_response(registration_response)
+            check_registration_usable(client_information)
+            # Only record the issuer when the registration above actually
+            # targeted the discovered AS — either via its published
+            # registration_endpoint, or because the fallback hit the issuer's
+            # own host (legacy same-origin embedded AS).
+            if (
+                self.context.oauth_metadata is not None
+                and discovered_issuer is not None
+                and (
+                    self.context.oauth_metadata.registration_endpoint is not None
+                    or self.context.get_authorization_base_url(discovered_issuer)
+                    == fallback_base
+                )
+            ):
+                client_information.issuer = discovered_issuer
+        self.context.client_info = client_information
+        await self.context.storage.set_client_info(client_information)
 
     async def _initialize(self) -> None:
         """Load the stored sign-in along with when its access token expires.
