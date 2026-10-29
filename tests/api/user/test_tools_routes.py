@@ -29,7 +29,7 @@ class TestEncryptSecretFields:
             "base_url": {"secret": False},
         }
         with patch(
-            "docsgpt.api.user.tools.routes.encrypt_credentials",
+            "docsgpt.api.user.tools.routes.encrypt_tool_credentials",
             return_value="encrypted-blob",
         ):
             result = _encrypt_secret_fields(config, config_requirements, "user1")
@@ -245,10 +245,10 @@ class TestMergeSecretsOnUpdate:
             "base_url": {"secret": False},
         }
         with patch(
-            "docsgpt.api.user.tools.routes.decrypt_credentials",
+            "docsgpt.api.user.tools.routes.decrypt_tool_credentials",
             return_value={"api_key": "old-key"},
         ), patch(
-            "docsgpt.api.user.tools.routes.encrypt_credentials",
+            "docsgpt.api.user.tools.routes.encrypt_tool_credentials",
             return_value="new-blob",
         ) as mock_encrypt:
             result = _merge_secrets_on_update(
@@ -274,10 +274,10 @@ class TestMergeSecretsOnUpdate:
             "base_url": {"secret": False},
         }
         with patch(
-            "docsgpt.api.user.tools.routes.decrypt_credentials",
+            "docsgpt.api.user.tools.routes.decrypt_tool_credentials",
             return_value={"api_key": "old-key"},
         ), patch(
-            "docsgpt.api.user.tools.routes.encrypt_credentials",
+            "docsgpt.api.user.tools.routes.encrypt_tool_credentials",
             return_value="new-blob",
         ) as mock_encrypt:
             _merge_secrets_on_update(
@@ -297,7 +297,7 @@ class TestMergeSecretsOnUpdate:
             "base_url": {"secret": False},
         }
         with patch(
-            "docsgpt.api.user.tools.routes.decrypt_credentials",
+            "docsgpt.api.user.tools.routes.decrypt_tool_credentials",
             return_value={},
         ):
             result = _merge_secrets_on_update(
@@ -314,10 +314,10 @@ class TestMergeSecretsOnUpdate:
         config_requirements = {"api_key": {"secret": True}}
 
         with patch(
-            "docsgpt.api.user.tools.routes.decrypt_credentials",
+            "docsgpt.api.user.tools.routes.decrypt_tool_credentials",
             return_value={},
         ), patch(
-            "docsgpt.api.user.tools.routes.encrypt_credentials",
+            "docsgpt.api.user.tools.routes.encrypt_tool_credentials",
             return_value="blob2",
         ):
             result = _merge_secrets_on_update(

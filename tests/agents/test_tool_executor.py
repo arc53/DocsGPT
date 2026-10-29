@@ -1389,7 +1389,7 @@ class TestToolExecutorExecute:
             "docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm
         )
         monkeypatch.setattr(
-            "docsgpt.agents.tool_executor.decrypt_credentials",
+            "docsgpt.agents.tool_executor.decrypt_tool_credentials",
             lambda creds, user: {"api_key": "decrypted_key"},
         )
 
@@ -1423,7 +1423,7 @@ class TestToolExecutorExecute:
             return {"api_key": "owner_secret"}
 
         monkeypatch.setattr(
-            "docsgpt.agents.tool_executor.decrypt_credentials", _fake_decrypt
+            "docsgpt.agents.tool_executor.decrypt_tool_credentials", _fake_decrypt
         )
 
         tool_data = {

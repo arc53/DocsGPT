@@ -10,7 +10,10 @@ import pytest
 from flask import Flask
 
 from docsgpt.api.user.resource_access import set_settings
-from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import (
+    decrypt_tool_credentials,
+    encrypt_credentials,
+)
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.team_resource_grants import (
     TeamResourceGrantsRepository,
@@ -206,7 +209,8 @@ class TestApiToolSecrets:
         header = stored["actions"]["get_users"]["headers"]["properties"]["X-Key"]
         assert header["value"] == ""
         assert stored["encrypted_action_secrets"]
-        blob = decrypt_credentials(stored["encrypted_action_secrets"], OWNER)
+        assert stored["encrypted_action_secrets"].startswith("v2:")
+        blob = decrypt_tool_credentials(stored["encrypted_action_secrets"], OWNER)
         assert blob["get_users"]["headers"]["X-Key"] == "sk-secret"
         action = _runtime_action(pg_conn, tool["id"])
         assert action["headers"]["properties"]["X-Key"]["value"] == "sk-secret"
@@ -247,7 +251,8 @@ class TestApiToolSecrets:
         _share(pg_conn, tool["id"], "bob", "editor")
         assert self._save(app, pg_conn, "bob", tool["id"], _api_config()).status_code == 200
         stored = _row(pg_conn, tool["id"])["config"]
-        assert decrypt_credentials(stored["encrypted_action_secrets"], OWNER)
+        assert stored["encrypted_action_secrets"].startswith("v2:")
+        assert decrypt_tool_credentials(stored["encrypted_action_secrets"], OWNER)
         assert UserToolsRepository(pg_conn).list_for_user("bob") == []
 
     def test_url_host_change_clears_secrets_and_requires_new_ones(self, app, pg_conn):
@@ -328,7 +333,10 @@ class TestToolWrites:
                                                   "auth_type": "bearer", "bearer_token": "tok"}}
         assert _call(app, pg_conn, UpdateToolConfig, "ed", json=body).status_code == 200
         stored = _row(pg_conn, tool["id"])["config"]
-        assert decrypt_credentials(stored["encrypted_credentials"], OWNER) == {"bearer_token": "tok"}
+        assert stored["encrypted_credentials"].startswith("v2:")
+        assert decrypt_tool_credentials(
+            stored["encrypted_credentials"], OWNER
+        ) == {"bearer_token": "tok"}
 
     def test_update_tool_config_host_change_clears_stored_secrets(self, app, pg_conn):
         from docsgpt.api.user.tools.routes import UpdateToolConfig
@@ -493,7 +501,12 @@ def _stored_mcp_secret(conn, tool_id):
 
     row = UserToolsRepository(conn).get_any(str(tool_id), OWNER)
     if not row.get("connection_id"):
-        return decrypt_credentials(row["config"]["encrypted_credentials"], OWNER), OWNER
+        return (
+            decrypt_tool_credentials(
+                row["config"]["encrypted_credentials"], OWNER
+            ),
+            OWNER,
+        )
     assert "encrypted_credentials" not in row["config"]
     connection = ConnectorSessionsRepository(conn).get(str(row["connection_id"]))
     return service.get_credentials(connection), connection["user_id"]
