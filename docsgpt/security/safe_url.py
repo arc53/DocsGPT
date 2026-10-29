@@ -34,6 +34,7 @@ dialing the chosen IP literal directly.
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 import threading
 import time
@@ -545,6 +546,14 @@ def _pinned_session(
     # Off, or an env proxy would re-resolve the hostname and dial from its own
     # vantage point: the validated IP is dropped and the TOCTOU window reopens.
     session.trust_env = False
+    # ``trust_env`` also carries the CA bundle, which says nothing about which
+    # address is dialled: keep an operator's private CA for internal hosts.
+    session.verify = (
+        os.environ.get("REQUESTS_CA_BUNDLE")
+        or os.environ.get("CURL_CA_BUNDLE")
+        or os.environ.get("SSL_CERT_FILE")
+        or True
+    )
     if url_credentials and parts.username is not None:
         session.auth = (unquote(parts.username), unquote(parts.password or ""))
     if watchdog is not None:

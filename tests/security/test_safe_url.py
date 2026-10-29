@@ -1216,6 +1216,45 @@ def test_pinned_session_verifies_tls_against_the_ascii_name(monkeypatch):
     assert captured["prepared"].headers["Host"] == "xn--bcher-kva.example"
 
 
+_CA_VARIABLES = ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE")
+
+
+def _session_for_ca_test():
+    """A pinned session for a resolvable public host, without touching DNS."""
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("104.18.6.192")):
+        return _pinned_session("https://api.openai.com/v1", None)[0]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("variable", _CA_VARIABLES)
+def test_pinned_session_keeps_a_custom_ca_bundle(monkeypatch, tmp_path, variable):
+    """A private CA still verifies: it does not change which address is dialled."""
+    bundle = tmp_path / "corp-ca.pem"
+    bundle.write_text("")
+    for name in _CA_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(variable, str(bundle))
+
+    session = _session_for_ca_test()
+    try:
+        assert session.verify == str(bundle)
+    finally:
+        session.close()
+
+
+@pytest.mark.unit
+def test_pinned_session_verify_stays_on_without_a_custom_ca(monkeypatch):
+    """With no CA in the environment, verification stays on with the shipped bundle."""
+    for name in _CA_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
+    session = _session_for_ca_test()
+    try:
+        assert session.verify is True
+    finally:
+        session.close()
+
+
 @pytest.mark.unit
 def test_pinned_session_ignores_environment_proxies(monkeypatch):
     """A proxy would re-resolve the host and discard the validated IP."""
