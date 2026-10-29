@@ -84,7 +84,9 @@ describe('PairDeviceModal', () => {
     );
     const poll = vi
       .spyOn(apiClient, 'get')
-      .mockResolvedValue(response({ ...pairing, status: 'pending' }));
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
 
     await startPairing();
     await act(async () => {
@@ -130,7 +132,9 @@ describe('PairDeviceModal', () => {
     );
     const poll = vi
       .spyOn(apiClient, 'get')
-      .mockResolvedValue(response({ ...pairing, status: 'pending' }));
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
 
     await startPairing();
     await advance(27_000);
@@ -163,13 +167,34 @@ describe('PairDeviceModal', () => {
     expect(poll).toHaveBeenCalledTimes(1);
   });
 
+  it('expires the code on time even when the next poll is later', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ ...pairing, expires_in: 2, interval: 5 }),
+    );
+    const poll = vi
+      .spyOn(apiClient, 'get')
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
+
+    await startPairing();
+    await advance(1999);
+    expect(alertText()).toBe('');
+    await advance(1);
+    expectExpiredForm();
+    await advance(10_000);
+    expect(poll).not.toHaveBeenCalled();
+  });
+
   it('polls at the interval the server asks for', async () => {
     vi.spyOn(apiClient, 'post').mockResolvedValue(
       response({ ...pairing, interval: 5 }),
     );
     const poll = vi
       .spyOn(apiClient, 'get')
-      .mockResolvedValue(response({ ...pairing, status: 'pending' }));
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
 
     await startPairing();
     await advance(4999);
@@ -187,7 +212,9 @@ describe('PairDeviceModal', () => {
       .mockResolvedValueOnce(
         response({ success: false, error: 'internal_error' }, 500),
       )
-      .mockResolvedValue(response({ ...pairing, status: 'pending' }));
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await startPairing();
@@ -205,8 +232,10 @@ describe('PairDeviceModal', () => {
       .mockResolvedValueOnce(
         response({ ...pairing, device_code: 'dc_2', user_code: 'WXYZ-9876' }),
       );
-    vi.spyOn(apiClient, 'get').mockResolvedValue(
-      response({ success: false, error: 'pairing_not_found' }, 404),
+    vi.spyOn(apiClient, 'get').mockImplementation(() =>
+      Promise.resolve(
+        response({ success: false, error: 'pairing_not_found' }, 404),
+      ),
     );
 
     await startPairing();
@@ -218,6 +247,62 @@ describe('PairDeviceModal', () => {
     expect(create.mock.calls[1][1]).toEqual(create.mock.calls[0][1]);
     expect(alertText()).toBe('');
     expect(document.body.textContent).toContain('WXYZ-9876');
+  });
+
+  it('ignores a redemption for a code that expired before a new one started', async () => {
+    const onPaired = vi.fn();
+    vi.spyOn(apiClient, 'post')
+      .mockResolvedValueOnce(response(pairing))
+      .mockResolvedValueOnce(
+        response({ ...pairing, device_code: 'dc_2', user_code: 'WXYZ-9876' }),
+      );
+    let settleFirst!: (value: Response) => void;
+    const poll = vi
+      .spyOn(apiClient, 'get')
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          settleFirst = resolve;
+        }),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          response({ success: false, error: 'pairing_not_found' }, 404),
+        ),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
+
+    await act(async () => {
+      root.render(
+        <PairDeviceModal
+          modalState="ACTIVE"
+          setModalState={setModalState}
+          onPaired={onPaired}
+        />,
+      );
+    });
+    await clickButton('settings.devices.pairing.start');
+    await advance(6000);
+    expectExpiredForm();
+    await clickButton('settings.devices.pairing.start');
+    await act(async () => {
+      settleFirst(
+        response({
+          ...pairing,
+          status: 'redeemed',
+          device_id: 'dev_1',
+          device_name: 'Old laptop',
+        }),
+      );
+    });
+
+    expect(onPaired).not.toHaveBeenCalled();
+    expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
+    expect(document.body.textContent).toContain('WXYZ-9876');
+    const pollsBefore = poll.mock.calls.length;
+    await advance(3000);
+    expect(poll).toHaveBeenCalledTimes(pollsBefore + 1);
   });
 
   it('ignores a poll that settles after the dialog closes', async () => {
