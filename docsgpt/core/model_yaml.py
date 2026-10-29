@@ -278,7 +278,7 @@ def _build_model(
 
     caps = ModelCapabilities(
         supports_tools=pick("supports_tools", False),
-        supports_structured_output=pick("supports_structured_output", False),
+        supports_structured_output=pick("supports_structured_output", True),
         supports_streaming=pick("supports_streaming", True),
         supported_attachment_types=expanded,
         context_window=pick("context_window", 128000),

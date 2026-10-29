@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from docsgpt.background import jobs, reconciler, sandbox_runner
 from docsgpt.background.context import BackgroundContext
 from docsgpt.background.results import LOST_NOTE
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
+
+
+pytestmark = pytest.mark.fresh_db
 
 
 def _job(conversation_id, message_id, key="k", **kwargs):

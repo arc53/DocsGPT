@@ -797,3 +797,57 @@ def test_an_exact_padded_state_key_wins_over_its_trimmed_name():
 
     assert engine._resolve_input_artifact_ids([" report "]) == ["padded"]
     assert engine._resolve_input_artifact_ids(["report"]) == ["trimmed"]
+
+
+# ---------------------------------------------------------------------------
+# Loop items
+# ---------------------------------------------------------------------------
+
+
+def _loop_node() -> WorkflowNode:
+    return WorkflowNode(id="loop_1", workflow_id="wf", type=NodeType.LOOP, title="Loop")
+
+
+@pytest.mark.unit
+def test_a_loop_item_reuses_the_runs_parsed_documents(monkeypatch, parse_queue):
+    import threading
+
+    aid, rec = _artifact(DOCX, "contract.docx", data=b"PK")
+    _patch_repo(monkeypatch, {aid: rec})
+    engine = _engine([aid])
+    engine._materialize_node_attachments(_lines_config(), "Before the loop", [])
+
+    child = engine._loop_child(_loop_node(), 0, 1, threading.Event())
+    out = child._materialize_node_attachments(_lines_config(), "In the loop", [])
+
+    assert len(parse_queue.calls) == 1
+    assert out[0]["content"].endswith("[D1:L1] parsed " + aid[:4])
+    # The item's copy of documents is still the engine's.
+    assert "text" not in child.snapshot_state()["documents"][0]
+    assert "documents" not in child._json_safe_state()
+
+
+@pytest.mark.unit
+def test_concurrent_loop_items_parse_a_document_once(monkeypatch, parse_queue):
+    import threading
+
+    aid, rec = _artifact(DOCX, "contract.docx", data=b"PK")
+    _patch_repo(monkeypatch, {aid: rec})
+    engine = _engine([aid])
+    cancel = threading.Event()
+    children = [engine._loop_child(_loop_node(), index, 4, cancel) for index in range(4)]
+    barrier = threading.Barrier(4)
+    results: List[Any] = [None] * 4
+
+    def _run(index: int) -> None:
+        barrier.wait()
+        results[index] = children[index]._materialize_node_attachments(_lines_config(), "Item", [])
+
+    threads = [threading.Thread(target=_run, args=(index,)) for index in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(parse_queue.calls) == 1
+    assert all(result == results[0] for result in results)

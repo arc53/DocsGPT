@@ -14,6 +14,18 @@ export type WorkflowStepEvent = {
   output?: unknown;
   state_delta?: Record<string, unknown>;
   error?: string;
+  /** Set on the steps of a loop's body: the loop and the item they ran for. */
+  parent_node_id?: string;
+  item_index?: number;
+};
+
+/** A ``workflow_loop_item`` stream event: one item of a loop started or ended. */
+export type WorkflowLoopItemEvent = {
+  node_id: string;
+  item_index: number;
+  item_count: number;
+  status: 'running' | 'completed' | 'failed';
+  error?: string;
 };
 
 function oneLine(value: unknown): string {
@@ -62,6 +74,8 @@ export function applyWorkflowStep(
   answer?: string,
 ): void {
   if (HIDDEN_NODE_TYPES.has(event.node_type)) return;
+  // A loop's body runs once per item; its steps count as the loop's items.
+  if (event.parent_node_id) return;
   const existing = progress.steps.find((s) => s.nodeId === event.node_id);
   const step: WorkflowStep = existing ?? {
     nodeId: event.node_id,
@@ -86,6 +100,22 @@ export function applyWorkflowStep(
     if (event.error) step.error = event.error;
   }
   if (!existing) progress.steps.push(step);
+}
+
+/** Counts an ended item of a loop onto the loop's step, in place. */
+export function applyLoopItem(
+  progress: WorkflowProgress,
+  event: WorkflowLoopItemEvent,
+): void {
+  if (event.status === 'running') return;
+  const step = progress.steps.find((s) => s.nodeId === event.node_id);
+  if (!step) return;
+  const items = step.items ?? { total: event.item_count, done: 0, failed: 0 };
+  step.items = {
+    total: event.item_count,
+    done: items.done + 1,
+    failed: items.failed + (event.status === 'failed' ? 1 : 0),
+  };
 }
 
 /** The step still working, if any. */

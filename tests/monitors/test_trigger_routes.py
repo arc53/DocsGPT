@@ -17,6 +17,9 @@ from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 from docsgpt.storage.db.repositories.trigger_links import TriggerLinksRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 @pytest.fixture()
 def client():
     from docsgpt.app import app as flask_app

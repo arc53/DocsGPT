@@ -26,7 +26,8 @@ class ModelProvider(str, Enum):
 @dataclass
 class ModelCapabilities:
     supports_tools: bool = False
-    supports_structured_output: bool = False
+    # On unless a catalog or BYOM entry turns it off.
+    supports_structured_output: bool = True
     supports_streaming: bool = True
     supported_attachment_types: List[str] = field(default_factory=list)
     context_window: int = 128000

@@ -70,6 +70,8 @@ export interface WorkflowStep {
   /** One line about what the step did: its output, or the values it set. */
   detail?: string;
   error?: string;
+  /** A loop's items: how many there are, how many ended and failed. */
+  items?: { total: number; done: number; failed: number };
 }
 
 export interface WorkflowProgress {

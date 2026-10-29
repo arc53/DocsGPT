@@ -331,12 +331,14 @@ class TestTelegramDefaultChat:
         params = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
         assert "chat_id" in params["telegram_send_message"]["properties"]
 
+    @pytest.mark.fresh_db
     def test_the_default_chat_wins_over_what_the_model_sends(self, pg_conn):
         cid = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
         with _service_db(pg_conn):
             call = _run_send(_executor(), _telegram_tool(cid), {"text": "hi", "chat_id": "666"})
         assert call.kwargs == {"text": "hi", "chat_id": "-1001"}
 
+    @pytest.mark.fresh_db
     def test_each_member_uses_their_own_chat(self, pg_conn):
         owner = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
         _connection(pg_conn, user="bob", secrets={"credentials": {"token": "b", "chat_id": "-2002"}})

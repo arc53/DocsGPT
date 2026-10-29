@@ -1929,6 +1929,18 @@ Type `int`, default `86400`.
 
 Seconds the line-numbered text of a workflow input document (file_passing: lines) stays cached in Redis, keyed by the file's content hash, so a later run over the same file skips the parse. 0 disables the cache; a run still reads each document only once.
 
+### `WORKFLOW_LOOP_MAX_CONCURRENCY`
+
+Type `int`, default `4`, must be `>= 1`.
+
+Most items a loop node runs at once, whatever its own concurrency says. Each running item holds a thread and usually an LLM call.
+
+### `WORKFLOW_LOOP_MAX_ITEMS`
+
+Type `int`, default `100`, must be `>= 1`.
+
+Most items one loop node accepts, whatever its own max_items says; a longer list fails the node.
+
 ### `WORKFLOW_RUN_STALE_SECONDS`
 
 Type `int`, default `3600`.

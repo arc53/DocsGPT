@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import text
 
 from docsgpt.core.settings import settings
 from docsgpt.monitors import tasks
 from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 from docsgpt.storage.db.repositories.trigger_links import TriggerHitsRepository, TriggerLinksRepository
+
+
+pytestmark = pytest.mark.fresh_db
 
 
 def test_dispatch_is_skipped_when_monitors_are_off(monkeypatch):

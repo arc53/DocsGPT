@@ -47,6 +47,7 @@ import { WorkflowEdge, WorkflowNode } from '../types/workflow';
 import { NODE_COLORS, NODE_ICONS } from './nodeVisuals';
 import {
   addQuery,
+  clearQueryRun,
   fetchWorkflowPreviewAnswer,
   handleWorkflowPreviewAbort,
   previewSendBlockReason,
@@ -224,6 +225,18 @@ export function ExecutionDetails({
                   )}
                 </div>
               </div>
+              {step.items && (
+                <p className="text-muted-foreground text-xs">
+                  {t('agents.workflow.preview.loopItems', {
+                    done: step.items.done,
+                    total: step.items.total,
+                  })}
+                  {step.items.failed > 0 &&
+                    ` · ${t('agents.workflow.preview.loopItemsFailed', {
+                      count: step.items.failed,
+                    })}`}
+                </p>
+              )}
               {hasOutput && (
                 <Card variant="filled" padding="sm">
                   <p className="wrap-break-word whitespace-pre-wrap">
@@ -290,6 +303,13 @@ export function WorkflowMiniMap({
   };
 
   const getNodeSubtitle = (node: WorkflowNode) => {
+    const items = executionSteps.find((s) => s.nodeId === node.id)?.items;
+    if (node.type === 'loop' && items) {
+      return t('agents.workflow.preview.loopItems', {
+        done: items.done,
+        total: items.total,
+      });
+    }
     if (node.type === 'agent' && node.data?.model_id) {
       return node.data.model_id;
     }
@@ -507,6 +527,9 @@ export default function WorkflowPreview({
       // attachment-only run is allowed to proceed with an empty question.
       if (trimmedQuestion === '' && !hasCompletedAttachment) return;
 
+      if (isRetry) {
+        dispatch(clearQueryRun({ index: index ?? queries.length - 1 }));
+      }
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
@@ -518,7 +541,7 @@ export default function WorkflowPreview({
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer, hasCompletedAttachment, workflowId],
+    [dispatch, handleFetchAnswer, hasCompletedAttachment, workflowId, queries],
   );
 
   // Clear the block message once it no longer applies (the workflow was saved,

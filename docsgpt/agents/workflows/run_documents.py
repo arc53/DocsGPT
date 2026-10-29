@@ -18,6 +18,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 import zlib
 from typing import Any, Dict, List, Optional, Tuple
@@ -92,7 +93,11 @@ def attachment_text(entry: Dict[str, Any]) -> str:
 
 
 class RunDocuments:
-    """The numbered documents of one workflow run, each read once per artifact version."""
+    """The numbered documents of one workflow run, each read once per artifact version.
+
+    Shared by a run's loop items, which run in threads: reads are serialized,
+    so an item waiting on a document another item is reading gets that read.
+    """
 
     def __init__(self, workflow_run_id: str) -> None:
         self.workflow_run_id = workflow_run_id
@@ -100,10 +105,12 @@ class RunDocuments:
         self._loaded: Dict[str, Tuple[Any, int, Dict[str, Any]]] = {}
         # Documents not among the run's inputs, in the order they were first read.
         self._extra: List[str] = []
+        self._lock = threading.RLock()
 
     def entries(self) -> List[Dict[str, Any]]:
         """Every document read so far, in ``D#`` order."""
-        return [entry for _, _, entry in sorted(self._loaded.values(), key=lambda loaded: loaded[1])]
+        with self._lock:
+            return [entry for _, _, entry in sorted(self._loaded.values(), key=lambda loaded: loaded[1])]
 
     def load(self, raw_ids: List[str], input_ids: List[str], user_id: Optional[str]) -> List[Dict[str, Any]]:
         """Read the given documents, parsing only those not read yet.
@@ -121,17 +128,18 @@ class RunDocuments:
                 could not be read.
         """
         resolved = self._resolve(raw_ids)
-        pending = [
-            (artifact_id, artifact, version)
-            for artifact_id, artifact, version in resolved
-            if self._loaded.get(artifact_id, (None,))[0] != version.get("_number")
-        ]
-        if pending:
-            parsed = self._read_all(pending, user_id)
-            for artifact_id, artifact, version in pending:
-                self._remember(artifact_id, artifact, version, parsed[artifact_id], input_ids)
-        wanted = {artifact_id for artifact_id, _, _ in resolved}
-        return [entry for entry in self.entries() if entry["artifact_id"] in wanted]
+        with self._lock:
+            pending = [
+                (artifact_id, artifact, version)
+                for artifact_id, artifact, version in resolved
+                if self._loaded.get(artifact_id, (None,))[0] != version.get("_number")
+            ]
+            if pending:
+                parsed = self._read_all(pending, user_id)
+                for artifact_id, artifact, version in pending:
+                    self._remember(artifact_id, artifact, version, parsed[artifact_id], input_ids)
+            wanted = {artifact_id for artifact_id, _, _ in resolved}
+            return [entry for entry in self.entries() if entry["artifact_id"] in wanted]
 
     def _resolve(self, raw_ids: List[str]) -> List[Tuple[str, Dict[str, Any], Dict[str, Any]]]:
         from docsgpt.agents.tools.artifact_ref import resolve_artifact_id

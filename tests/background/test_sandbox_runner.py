@@ -14,6 +14,9 @@ from docsgpt.sandbox.base import DetachedState, ExecResult
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 class _Backend:
     def __init__(self, states):
         self.states = list(states)

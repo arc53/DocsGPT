@@ -430,9 +430,13 @@ class TestOcrImages:
 
     def test_images_are_produced_lazily(self):
         produced = []
+        finished = []
+        ahead = []
 
         def items():
             for index, image in _tagged(10):
+                # Rendered pages still waiting for OCR when the next one is rendered.
+                ahead.append(len(produced) - len(finished))
                 produced.append(index)
                 yield index, image
 
@@ -441,12 +445,16 @@ class TestOcrImages:
             concurrency = 2
 
             def ocr_image(self, image):
-                # At most concurrency * 2 rendered pages exist ahead of the one being OCR'd.
-                assert len(produced) - image.info["index"] <= 2 * 2 + 1
+                time.sleep(0.01)
+                finished.append(image.info["index"])
                 return "x"
 
         op.ocr_images(Counting(), items())
         assert produced == list(range(10))
+        # With the one being rendered, at most concurrency * 2 pages exist. A
+        # page counts as finished as its OCR returns, before the pool lets it
+        # go, so this holds however the threads are scheduled.
+        assert max(ahead) + 1 <= 2 * 2
 
 
 class TaggingEngine:

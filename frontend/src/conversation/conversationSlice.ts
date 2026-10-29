@@ -56,7 +56,12 @@ import {
   Status,
 } from './conversationModels';
 import { ToolCallsType } from './types';
-import { applyWorkflowStep, WorkflowStepEvent } from './workflowProgress';
+import {
+  applyLoopItem,
+  applyWorkflowStep,
+  WorkflowLoopItemEvent,
+  WorkflowStepEvent,
+} from './workflowProgress';
 
 // Maps a server message dict into the client ``Query`` shape. Only
 // terminal ``complete`` rows expose ``response``; non-terminal rows
@@ -678,6 +683,13 @@ async function answerQuestion(
                   at: Date.now(),
                 }),
               );
+            } else if (data.type === 'workflow_loop_item') {
+              dispatch(
+                conversationSlice.actions.updateWorkflowLoopItem({
+                  index: targetIndex,
+                  item: data,
+                }),
+              );
             } else if (data.type === 'research_plan') {
               dispatch(
                 updateResearchPlan({
@@ -1246,6 +1258,16 @@ export const conversationSlice = createSlice({
       if (!query.workflow) query.workflow = { steps: [] };
       applyWorkflowStep(query.workflow, step, at, query.response);
     },
+    // One item of a loop ended; the loop's step counts it.
+    updateWorkflowLoopItem(
+      state,
+      action: PayloadAction<{ index: number; item: WorkflowLoopItemEvent }>,
+    ) {
+      const { index, item } = action.payload;
+      const workflow = state.queries[index]?.workflow;
+      if (!workflow || !item?.node_id) return;
+      applyLoopItem(workflow, item);
+    },
     updateResearchPlan(
       state,
       action: PayloadAction<{
@@ -1526,6 +1548,7 @@ export const {
   updateToolCall,
   setWorkflowRunId,
   updateWorkflowStep,
+  updateWorkflowLoopItem,
   updateResearchPlan,
   updateResearchProgress,
   setConversation,
