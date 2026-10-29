@@ -1194,16 +1194,19 @@ class WorkflowEngine:
         """Resolve node ``inputs`` (refs/ids, ``*`` token, or state vars holding a ref or a list of refs)."""
         resolved: List[str] = []
         for raw in inputs or []:
+            if not isinstance(raw, str) or not raw.strip():
+                continue
+            name = raw.strip()
             # ``*`` / ``input_documents`` expands to every run input document.
-            if isinstance(raw, str) and raw.strip() in ("*", "input_documents"):
+            if name in ("*", "input_documents"):
                 resolved.extend(self._input_document_ids())
                 continue
             # ``documents`` before anything has read it means the run's input
             # documents, which is what it will hold once read.
-            if isinstance(raw, str) and raw.strip() == DOCUMENTS_STATE_KEY and DOCUMENTS_STATE_KEY not in self.state:
+            if name == DOCUMENTS_STATE_KEY and DOCUMENTS_STATE_KEY not in self.state:
                 resolved.extend(self._input_document_ids())
                 continue
-            ref = self.state.get(raw) if isinstance(raw, str) else None
+            ref = self.state.get(name)
             if isinstance(ref, dict) and ref.get("artifact_id"):
                 resolved.append(str(ref["artifact_id"]))
             elif isinstance(ref, list):
@@ -1211,8 +1214,8 @@ class WorkflowEngine:
                 for item in ref:
                     if isinstance(item, dict) and item.get("artifact_id"):
                         resolved.append(str(item["artifact_id"]))
-            elif isinstance(raw, str) and raw.strip():
-                resolved.append(raw.strip())
+            else:
+                resolved.append(name)
         # Dedup preserving order so ``["*", "A1"]`` / duplicate refs don't attach twice.
         return list(dict.fromkeys(resolved))
 

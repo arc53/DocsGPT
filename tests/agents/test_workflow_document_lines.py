@@ -783,5 +783,7 @@ def test_documents_as_a_node_selection_before_it_is_loaded_means_the_inputs(monk
     out = engine._materialize_node_attachments(_lines_config(["documents"]), "Node", [])
 
     assert [a["id"] for a in out] == [a1, a2]
-    # Once published, the selection resolves through the state as before.
+    # Once published, the selection resolves through the state as before,
+    # padded or not.
     assert engine._resolve_input_artifact_ids(["documents"]) == [a1, a2]
+    assert engine._resolve_input_artifact_ids([" documents "]) == [a1, a2]
