@@ -207,6 +207,24 @@ class TestHelpersThreadUserId:
             assert caps["supports_tools"] is True
             assert caps["context_window"] == 200_000
 
+    def test_byom_without_the_flag_supports_structured_output(self, pg_conn):
+        row = UserCustomModelsRepository(pg_conn).create(
+            user_id="user-2",
+            upstream_model_id="mistral-small-latest",
+            display_name="No flag",
+            base_url="https://api.mistral.ai/v1",
+            api_key_plaintext="sk-mistral-test",
+            capabilities={"supports_tools": True},
+        )
+        s = _make_settings()
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
+            lambda: _yield(pg_conn),
+        ):
+            ModelRegistry()
+            caps = get_model_capabilities(row["id"], user_id="user-2")
+            assert caps["supports_structured_output"] is True
+
     def test_get_all_available_models_includes_byom_when_authenticated(
         self, pg_conn, byom_model
     ):

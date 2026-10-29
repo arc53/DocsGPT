@@ -589,7 +589,7 @@ def validate_workflow_structure(
         model_id = raw_config.get("model_id")
         if has_json_schema and isinstance(model_id, str) and model_id.strip():
             capabilities = get_model_capabilities(model_id.strip(), user_id=user_id)
-            if capabilities and not capabilities.get("supports_structured_output", False):
+            if capabilities and not capabilities.get("supports_structured_output", True):
                 errors.append(
                     f"Agent node '{agent_title}' selected model does not support structured output"
                 )

@@ -198,14 +198,15 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["openai"] | EXPECTED_IDS["docsgpt"]
 
-    def test_default_model_supports_structured_output(self):
-        # Workflow nodes with a JSON schema refuse a model without the flag;
-        # the hosted endpoint honours ``response_format`` json_schema.
-        s = _make_settings(OPENAI_API_KEY="sk-test", LLM_PROVIDER="openai")
+    def test_structured_output_is_on_unless_a_model_turns_it_off(self):
+        # Workflow nodes with a JSON schema refuse a model without the flag.
+        s = _make_settings(GROQ_API_KEY="gsk-test", LLM_PROVIDER="groq")
         with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
-        model = next(m for m in reg.get_all_models() if m.id == "docsgpt-local")
-        assert model.capabilities.supports_structured_output is True
+        caps = {m.id: m.capabilities.supports_structured_output for m in reg.get_all_models()}
+        assert caps["docsgpt-local"] is True
+        assert caps["openai/gpt-oss-120b"] is True
+        assert caps["llama-3.3-70b-versatile"] is False
 
     def test_openai_base_url_replaces_catalog_with_dynamic(self):
         s = _make_settings(

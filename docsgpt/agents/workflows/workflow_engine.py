@@ -477,7 +477,7 @@ class WorkflowEngine:
         if node_json_schema and node_model_id:
             model_capabilities = get_model_capabilities(node_model_id, user_id=node_user_id)
             if model_capabilities and not model_capabilities.get(
-                "supports_structured_output", False
+                "supports_structured_output", True
             ):
                 raise ValueError(
                     f'Model "{node_model_id}" does not support structured output for node "{node.title}"'
