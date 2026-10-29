@@ -12,6 +12,7 @@ vi.mock('../../../api/services/userService', () => ({
 
 import { DEFAULT_ANALYTICS } from '../../analyticsConfig';
 import type { AnalyticsConfig } from '../../types';
+import type { RetryConfig } from '../../types/workflow';
 import WorkflowDetailsSheet from './WorkflowDetailsSheet';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -22,6 +23,7 @@ const details = {
   allowPromptOverride: false,
   contextWindowLimit: null,
   historyTokenLimit: null,
+  retryDefaults: null,
 };
 
 describe('WorkflowDetailsSheet', () => {
@@ -49,6 +51,7 @@ describe('WorkflowDetailsSheet', () => {
       contextWindowLimit?: number | null;
       historyTokenLimit?: number | null;
       policyEditable?: boolean;
+      retryDefaults?: RetryConfig | null;
     } = {},
   ) => {
     const handlers = { onOpenChange: vi.fn(), onSave: vi.fn() };
@@ -61,6 +64,7 @@ describe('WorkflowDetailsSheet', () => {
             analytics: props.analytics,
             contextWindowLimit: props.contextWindowLimit ?? null,
             historyTokenLimit: props.historyTokenLimit ?? null,
+            retryDefaults: props.retryDefaults ?? null,
           }}
           modelWindow={{ tokens: 128_000, name: 'Model One' }}
           policyEditable={props.policyEditable}
@@ -140,6 +144,7 @@ describe('WorkflowDetailsSheet', () => {
       analytics: DEFAULT_ANALYTICS,
       contextWindowLimit: null,
       historyTokenLimit: null,
+      retryDefaults: null,
       imageFile: null,
     });
   });
@@ -228,6 +233,39 @@ describe('WorkflowDetailsSheet', () => {
     expect(limitInput('contextLimitTokens').disabled).toBe(true);
     expect(limitSwitch('contextLimit').disabled).toBe(true);
     expect(limitSwitch('historyLimit').disabled).toBe(true);
+  });
+
+  it('saves retry defaults typed into the backoff field', () => {
+    const { onSave } = render({ retryDefaults: { max_attempts: 3 } });
+    const backoff = document.querySelector(
+      'input[inputmode="decimal"]',
+    ) as HTMLInputElement;
+    expect(backoff.disabled).toBe(false);
+    expect(button('agents.form.buttons.save').disabled).toBe(true);
+
+    type(backoff, '5, soon');
+    expect(document.body.textContent).toContain(
+      'agents.workflow.retry.backoffInvalid',
+    );
+    expect(button('agents.form.buttons.save').disabled).toBe(true);
+
+    type(backoff, '5, 20');
+    act(() => button('agents.form.buttons.save').click());
+    expect(onSave.mock.calls[0][0].retryDefaults).toEqual({
+      max_attempts: 3,
+      backoff_seconds: [5, 20],
+    });
+  });
+
+  it('leaves the backoff off while the defaults never retry', () => {
+    render();
+    const backoff = document.querySelector(
+      'input[inputmode="decimal"]',
+    ) as HTMLInputElement;
+    expect(backoff.disabled).toBe(true);
+    expect(document.body.textContent).toContain(
+      'agents.workflow.retry.hintOff',
+    );
   });
 
   it('closes on Cancel without saving', () => {

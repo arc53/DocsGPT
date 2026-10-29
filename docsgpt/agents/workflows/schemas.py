@@ -183,6 +183,8 @@ class WorkflowCreate(BaseModel):
 
 class Workflow(WorkflowCreate):
     id: Optional[str] = None
+    # Retry settings every agent and code node inherits unless it sets its own.
+    retry_defaults: Optional[Dict[str, Any]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -265,6 +267,18 @@ class LoopItemLog(BaseModel):
     steps: List["NodeExecutionLog"] = Field(default_factory=list)
 
 
+class NodeAttemptLog(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attempt: int
+    status: ExecutionStatus
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
+    error: Optional[str] = None
+    # The ``retry.on`` reason that covered a failed attempt; None when it was not retryable.
+    reason: Optional[str] = None
+
+
 class NodeExecutionLog(BaseModel):
     model_config = ConfigDict(extra="forbid")
     node_id: str
@@ -282,6 +296,8 @@ class NodeExecutionLog(BaseModel):
     tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
     # A loop node's per-item runs, in item order.
     items: List[LoopItemLog] = Field(default_factory=list)
+    # Each attempt of a node that was retried; empty when it ran once.
+    attempts: List[NodeAttemptLog] = Field(default_factory=list)
 
 
 LoopItemLog.model_rebuild()

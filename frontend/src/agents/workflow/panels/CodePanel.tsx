@@ -4,8 +4,11 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
+import type { RetryConfig } from '../../types/workflow';
 import NodeDocumentsControl from '../components/NodeDocumentsControl';
 import StreamOutputField from '../components/StreamOutputField';
+import NodeRetryControl from '../components/NodeRetryControl';
+import { effectiveRetry } from '../retryConfig';
 import { NO_ESCAPE, schemaErrorText } from '../workflowHelpers';
 import { type NodePanelBodyProps } from './types';
 
@@ -17,9 +20,14 @@ interface CodePanelProps extends NodePanelBodyProps {
   /** The schema's validation fragment, or null. */
   jsonSchemaError: string | null;
   onJsonSchemaChange: (text: string) => void;
+  /** The workflow's retry defaults, which an unset retry field inherits. */
+  retryDefaults?: RetryConfig | null;
 }
 
-/** Settings for a Code node: code, inputs, output and schema. */
+/**
+ * Settings for a Code node: code, inputs, output, schema and retries. A code
+ * node retries only sandbox failures, so it has no choice of what to retry.
+ */
 export default function CodePanel({
   node: selectedNode,
   onUpdate: handleUpdateNodeData,
@@ -27,6 +35,7 @@ export default function CodePanel({
   jsonSchemaText: selectedCodeJsonSchemaText,
   jsonSchemaError: selectedCodeJsonSchemaError,
   onJsonSchemaChange: handleCodeJsonSchemaChange,
+  retryDefaults = null,
 }: CodePanelProps) {
   const { t } = useTranslation();
   return (
@@ -159,6 +168,16 @@ export default function CodePanel({
 }`}
         />
       </FormField>
+      <NodeRetryControl
+        key={selectedNode.id}
+        value={selectedNode.data.config?.retry}
+        onChange={(retry) =>
+          handleUpdateNodeData({
+            config: { ...(selectedNode.data.config || {}), retry },
+          })
+        }
+        inherited={effectiveRetry(undefined, retryDefaults)}
+      />
     </div>
   );
 }

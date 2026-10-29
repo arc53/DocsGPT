@@ -1,3 +1,4 @@
+import contextlib
 import contextvars
 import copy
 import json
@@ -9,11 +10,24 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
 
 from docsgpt import tracing
 from docsgpt.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
+from docsgpt.agents.workflows.retry import (
+    INVALID_OUTPUT,
+    RETRYABLE_NODE_TYPES,
+    TRANSIENT,
+    EmptyCompletionError,
+    InvalidNodeOutputError,
+    RetryPolicy,
+    SandboxInfrastructureError,
+    classify_failure,
+    is_transport_error,
+    resolve_retry_policy,
+    retry_after_seconds,
+)
 from docsgpt.agents.workflows.run_documents import (
     DOCUMENTS_STATE_KEY,
     LINES_INSTRUCTION,
@@ -34,6 +48,7 @@ from docsgpt.agents.workflows.schemas import (
     ExecutionStatus,
     LoopItemLog,
     LoopNodeConfig,
+    NodeAttemptLog,
     NodeExecutionLog,
     NodeType,
     WorkflowGraph,
@@ -44,7 +59,9 @@ from docsgpt.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
 )
+from docsgpt.activity.flags import stream_cancelled
 from docsgpt.agents.context_overflow import is_context_length_error
+from docsgpt.core.run_budget import StreamCancelled, is_budget_exhausted, round_seconds_left
 from docsgpt.error import sanitize_api_error, user_facing_error
 from docsgpt.templates.namespaces import NamespaceManager
 from docsgpt.templates.template_engine import TemplateEngine, TemplateRenderError
@@ -93,6 +110,19 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Error of a loop item stopped because another item failed the loop.
 _ITEM_STOPPED_MESSAGE = "Stopped because another item failed."
+
+# How often a node waiting to retry checks whether the run was stopped.
+_RETRY_POLL_SECONDS = 0.5
+
+# Most characters of a rejected reply's validation error quoted to the next
+# attempt; the error can repeat the whole reply.
+_RETRY_FEEDBACK_MAX_CHARS = 1000
+
+# Added to a node's prompt when its last reply was rejected as invalid output.
+_INVALID_OUTPUT_FEEDBACK = (
+    "Your previous reply could not be used: {error}\n"
+    "Reply again with only JSON that matches the required schema."
+)
 
 
 class WorkflowLoopError(ValueError):
@@ -173,6 +203,13 @@ class WorkflowEngine:
         self.execution_log: List[Dict[str, Any]] = []
         # Per-item logs of the loop node that just ran, folded into its step log.
         self._last_loop_items: Optional[List[Optional[Dict[str, Any]]]] = None
+        # The running node's retry policy and attempt, the attempts it made so
+        # far (folded into its step log once it ran more than once), and why its
+        # last reply was rejected, which the next attempt's prompt quotes.
+        self._node_retry_policy: RetryPolicy = RetryPolicy()
+        self._node_attempt: int = 1
+        self._last_node_attempts: List[Dict[str, Any]] = []
+        self._retry_feedback: Optional[str] = None
         # Set on the engine that runs one loop item: the ``parent_node_id`` /
         # ``item_index`` / ``item_count`` its step events carry, and the event
         # that stops the item between nodes once another item failed the loop.
@@ -268,6 +305,7 @@ class WorkflowEngine:
             step_index = len(self.execution_log)
             self._last_node_tool_calls = []
             self._last_loop_items = None
+            self._last_node_attempts = []
             step_span = tracing.start_span(
                 tracing.KIND_STEP,
                 f"workflow_step {node.title or node.type.value}",
@@ -291,7 +329,12 @@ class WorkflowEngine:
                 node_output = self.state.get(output_key)
 
                 yield self._finished_step_event(
-                    node, "completed", step_index, log_entry["state_delta"], output=node_output
+                    node,
+                    "completed",
+                    step_index,
+                    log_entry["state_delta"],
+                    output=node_output,
+                    **self._attempts_field(),
                 )
             except _LoopItemCancelled:
                 # The loop stopped this item mid-node: not a failure of its own.
@@ -328,7 +371,12 @@ class WorkflowEngine:
                     if public.params:
                         curated["params"] = public.params
                 yield self._finished_step_event(
-                    node, "failed", step_index, log_entry["state_delta"], error=user_friendly_error
+                    node,
+                    "failed",
+                    step_index,
+                    log_entry["state_delta"],
+                    error=user_friendly_error,
+                    **self._attempts_field(),
                 )
                 if self._loop_item is not None:
                     raise _LoopItemFailed(user_friendly_error) from e
@@ -395,6 +443,7 @@ class WorkflowEngine:
         *,
         output: Any = _NO_OUTPUT,
         error: Optional[str] = None,
+        **extra: Any,
     ) -> Dict[str, Any]:
         """A completed or failed step's event, sized by the node's ``stream_output``.
 
@@ -410,10 +459,11 @@ class WorkflowEngine:
             state_delta: The keys the node set (as snapshots carry them).
             output: The node's output, for a completed step.
             error: The error, for a failed step.
+            extra: Small fields sent whatever the mode (``attempts``).
         """
         from docsgpt.core.settings import settings
 
-        fields: Dict[str, Any] = {"step_index": step_index}
+        fields: Dict[str, Any] = {"step_index": step_index, **extra}
         if error is not None:
             fields["error"] = error
         mode = _stream_output_mode(node)
@@ -466,6 +516,8 @@ class WorkflowEngine:
         log_entry["state_delta"] = self._state_delta(pre_state)
         if self._last_node_tool_calls:
             log_entry["tool_calls"] = list(self._last_node_tool_calls)
+        if len(self._last_node_attempts) > 1:
+            log_entry["attempts"] = list(self._last_node_attempts)
         if self._last_loop_items is not None:
             log_entry["items"] = [
                 entry if entry is not None else {"item_index": index, "status": ExecutionStatus.PENDING.value}
@@ -553,8 +605,141 @@ class WorkflowEngine:
         }
 
         handler = node_handlers.get(node.type)
-        if handler:
+        if not handler:
+            return
+        self._node_retry_policy = self._retry_policy(node)
+        self._node_attempt = 1
+        self._retry_feedback = None
+        if not self._node_retry_policy.enabled:
             yield from handler(node)
+            return
+
+        # Each attempt reruns the whole node; a node writes its state only once
+        # it succeeds, so a failed attempt leaves nothing behind.
+        while True:
+            started_at = datetime.now(timezone.utc)
+            streamed = False
+            try:
+                for event in handler(node):
+                    streamed = streamed or "answer" in event
+                    yield event
+            except Exception as exc:
+                if isinstance(exc, _LoopItemCancelled):
+                    raise
+                reason = classify_failure(exc, node.type.value)
+                self._record_attempt(started_at, ExecutionStatus.FAILED, str(exc), reason)
+                delay = self._retry_delay(exc, reason, streamed)
+                if delay is None:
+                    raise
+                logger.warning(
+                    "Workflow node %s attempt %s of %s failed (%s); retrying in %.1fs: %s",
+                    node.id,
+                    self._node_attempt,
+                    self._node_retry_policy.max_attempts,
+                    reason,
+                    delay,
+                    exc,
+                )
+                self._node_attempt += 1
+                yield self._step_event(
+                    node,
+                    "running",
+                    attempt=self._node_attempt,
+                    max_attempts=self._node_retry_policy.max_attempts,
+                    retry_delay_seconds=delay,
+                    retry_reason=reason,
+                    retry_error=sanitize_api_error(exc),
+                )
+                self._wait_before_retry(delay)
+                self._retry_feedback = str(exc)[:_RETRY_FEEDBACK_MAX_CHARS] if reason == INVALID_OUTPUT else None
+                continue
+            self._record_attempt(started_at, ExecutionStatus.COMPLETED)
+            return
+
+    def _retry_policy(self, node: WorkflowNode) -> RetryPolicy:
+        """The node's retry policy: its own ``retry`` over the workflow's ``retry_defaults``."""
+        from docsgpt.core.settings import settings
+
+        if node.type.value not in RETRYABLE_NODE_TYPES:
+            return RetryPolicy()
+        config = node.config.get("config", node.config)
+        return resolve_retry_policy(
+            config.get("retry") if isinstance(config, dict) else None,
+            self.graph.workflow.retry_defaults,
+            max_attempts=int(settings.WORKFLOW_RETRY_MAX_ATTEMPTS),
+            max_delay=float(settings.WORKFLOW_RETRY_MAX_DELAY_SECONDS),
+        )
+
+    def _retries_left_for(self, reason: str) -> bool:
+        """Whether the running node will try again after a failure of ``reason``."""
+        policy = self._node_retry_policy
+        return policy.enabled and reason in policy.on and self._node_attempt < policy.max_attempts
+
+    def _retry_delay(self, error: Exception, reason: Optional[str], streamed: bool) -> Optional[float]:
+        """Seconds to wait before retrying the running node, or None to fail it now.
+
+        No retry when the error is not one the policy covers, the attempts are
+        used up, the attempt already streamed text to the user (it cannot be
+        taken back), the server asked to wait longer than the instance allows,
+        or the wait would run past the run's time limit.
+        """
+        from docsgpt.core.settings import settings
+
+        if reason is None or streamed or not self._retries_left_for(reason):
+            return None
+        delay = self._node_retry_policy.delay_before(self._node_attempt + 1)
+        requested = retry_after_seconds(error) if reason == TRANSIENT else None
+        if requested is not None:
+            if requested > float(settings.WORKFLOW_RETRY_MAX_DELAY_SECONDS):
+                return None
+            delay = requested
+        left = round_seconds_left()
+        if left is not None and delay >= left:
+            return None
+        return delay
+
+    def _wait_before_retry(self, delay: float) -> None:
+        """Sleep before a retry, ending early when the run or its loop is stopped."""
+        message_id = getattr(getattr(self.agent, "tool_executor", None), "message_id", None)
+        deadline = time.monotonic() + delay
+        while True:
+            if self._loop_cancel is not None and self._loop_cancel.is_set():
+                raise _LoopItemCancelled()
+            if stream_cancelled(message_id):
+                raise StreamCancelled()
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return
+            if self._loop_cancel is not None:
+                self._loop_cancel.wait(min(left, _RETRY_POLL_SECONDS))
+            else:
+                time.sleep(min(left, _RETRY_POLL_SECONDS))
+
+    def _record_attempt(
+        self,
+        started_at: datetime,
+        status: ExecutionStatus,
+        error: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> None:
+        """Add one attempt of the running node to its attempt log."""
+        completed_at = datetime.now(timezone.utc)
+        self._last_node_attempts.append(
+            {
+                "attempt": self._node_attempt,
+                "status": status.value,
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "duration_ms": int((completed_at - started_at).total_seconds() * 1000),
+                "error": error,
+                "reason": reason,
+            }
+        )
+
+    def _attempts_field(self) -> Dict[str, Any]:
+        """``{"attempts": n}`` for a step event when the node ran more than once."""
+        count = len(self._last_node_attempts)
+        return {"attempts": count} if count > 1 else {}
 
     def _execute_start_node(
         self, node: WorkflowNode
@@ -592,6 +777,10 @@ class WorkflowEngine:
         node_json_schema = self._normalize_node_json_schema(
             node_config.json_schema, node.title
         )
+        if self._retry_feedback:
+            formatted_prompt = (
+                f"{formatted_prompt}\n\n{_INVALID_OUTPUT_FEEDBACK.format(error=self._retry_feedback)}"
+            )
         node_model_id = node_config.model_id or self.agent.model_id
         # Inherit BYOM scope from parent agent so owner-stored BYOM
         # resolves on shared workflows.
@@ -724,6 +913,12 @@ class WorkflowEngine:
 
         # Loop items run side by side; their text would interleave in the answer.
         streams_to_user = node_config.stream_to_user and self._loop_item is None
+        # Text on the wire can't be taken back, so a reply that may be rejected
+        # and retried as invalid output is held until it validates.
+        hold_stream = (
+            streams_to_user and node_json_schema is not None and self._retries_left_for(INVALID_OUTPUT)
+        )
+        held_events: List[Dict[str, Any]] = []
         full_response_parts: List[str] = []
         structured_response_parts: List[str] = []
         has_structured_response = False
@@ -745,17 +940,21 @@ class WorkflowEngine:
                 if event.get("structured"):
                     has_structured_response = True
                     structured_response_parts.append(chunk)
-                if streams_to_user:
+                if hold_stream:
+                    held_events.append(event)
+                elif streams_to_user:
                     if first_chunk and hasattr(self, "_has_streamed"):
                         yield {"answer": "\n\n"}
                         first_chunk = False
                     yield event
 
-        if streams_to_user:
-            self._has_streamed = True
-
         self._last_node_tool_calls = self._summarize_tool_calls(node_agent)
         full_response = "".join(full_response_parts).strip()
+        # An empty reply is retried while attempts remain; the last attempt
+        # keeps it, as a node without retries always has. A node that called
+        # tools may have answered through them, so it is left alone.
+        if not full_response and not self._last_node_tool_calls and self._retries_left_for(TRANSIENT):
+            raise EmptyCompletionError(f'Node "{node.title}" got an empty reply from the model')
         output_value: Any = full_response
         if has_structured_response:
             structured_response = "".join(structured_response_parts).strip()
@@ -771,11 +970,19 @@ class WorkflowEngine:
                 full_response
             )
             if not parsed_success:
-                raise ValueError(
+                raise InvalidNodeOutputError(
                     "Structured output was expected but response was not valid JSON"
                 )
             output_value = parsed_structured
             self._validate_structured_output(node_json_schema, output_value)
+
+        if streams_to_user:
+            for event in held_events:
+                if first_chunk and hasattr(self, "_has_streamed"):
+                    yield {"answer": "\n\n"}
+                    first_chunk = False
+                yield event
+            self._has_streamed = True
 
         default_output_key = f"node_{node.id}_output"
         self.state[default_output_key] = output_value
@@ -817,7 +1024,7 @@ class WorkflowEngine:
         # agent-node tool in this run, so it is NOT closed here: closing per node
         # would cold-drop later nodes' interpreter/filesystem state. The run session
         # is torn down once in ``execute``'s finally when the whole run ends.
-        with self._sandbox_lock:
+        with self._sandbox_lock, self._sandbox_outages(node):
             # A loop item can wait here while the loop stops, or after the
             # run's session closed; it must not reopen the session.
             if self._loop_cancel is not None and self._loop_cancel.is_set():
@@ -851,6 +1058,8 @@ class WorkflowEngine:
                 if result.error_name
                 else (result.error_value or "execution error")
             )
+            if getattr(result, "sandbox_error", False):
+                raise SandboxInfrastructureError(f'Code node "{node.title}" failed: {error}')
             raise ValueError(f'Code node "{node.title}" failed: {error}')
 
         # The primary produced file becomes the node's pass-by-reference output;
@@ -865,6 +1074,24 @@ class WorkflowEngine:
         if config.output_variable:
             self.state[config.output_variable] = output_value
         yield from ()
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _sandbox_outages(node: WorkflowNode) -> Iterator[None]:
+        """Re-raise a sandbox that is gone, full or unreachable as ``SandboxInfrastructureError``."""
+        from docsgpt.sandbox.base import SandboxGoneError
+        from docsgpt.sandbox.manager import SandboxCapacityError
+
+        try:
+            yield
+        except (SandboxGoneError, SandboxCapacityError) as exc:
+            raise SandboxInfrastructureError(f'Code node "{node.title}" could not reach its sandbox: {exc}') from exc
+        except Exception as exc:
+            if is_transport_error(exc) and not is_budget_exhausted(exc):
+                raise SandboxInfrastructureError(
+                    f'Code node "{node.title}" could not reach its sandbox: {exc}'
+                ) from exc
+            raise
 
     def _capture_code_artifacts(
         self,
@@ -1865,7 +2092,7 @@ class WorkflowEngine:
         try:
             jsonschema.validate(instance=output_value, schema=normalized_schema)
         except jsonschema.exceptions.ValidationError as exc:
-            raise ValueError(f"Structured output did not match schema: {exc.message}") from exc
+            raise InvalidNodeOutputError(f"Structured output did not match schema: {exc.message}") from exc
         except jsonschema.exceptions.SchemaError as exc:
             raise ValueError(f"Invalid JSON schema: {exc.message}") from exc
 
@@ -2166,6 +2393,7 @@ class WorkflowEngine:
             error=log.get("error"),
             state_delta=log.get("state_delta", {}),
             tool_calls=log.get("tool_calls", []),
+            attempts=[NodeAttemptLog(**attempt) for attempt in log.get("attempts", [])],
             items=[
                 LoopItemLog(
                     item_index=item["item_index"],

@@ -404,6 +404,72 @@ In the stored graph, a node inside a loop names the loop in its `data` as
 
 ---
 
+## Retrying a failed node
+
+A temporary upstream failure, such as a 503 from the model provider or a
+dropped connection, fails a node and with it the run. AI Agent and Code nodes
+can retry such failures with a pause between attempts before they give up.
+Retries are off by default.
+
+Set them in the workflow's details, under **Retries**, where every AI Agent and
+Code node inherits them, or on one node: under **Advanced settings** for an AI
+Agent node, at the end of the panel for a Code node. A node's own settings win
+field by field. **Default** keeps the inherited value, and **1 (no retries)**
+turns retries off for that node.
+
+- **Max attempts**: how many times the node runs at most, from 1 to
+  `WORKFLOW_RETRY_MAX_ATTEMPTS` (5 by default). 1 means no retries.
+- **Retry delays (s)**: the pause before each retry, as numbers separated by
+  commas. With `2, 10, 30`, the second attempt waits 2 seconds, the third 10,
+  and any later one 30. Defaults to `2, 10, 30`. A 429 or 503 that sends `Retry-After` waits that long instead.
+- **Retry on**: which failures count, for AI Agent nodes. Both are on by
+  default, and at least one stays on.
+  - **Errors and timeouts**: a 5xx or 429 response, a connect or read timeout, a
+    reset connection, or an empty reply from the model.
+  - **Invalid output**: the reply isn't valid JSON or doesn't match the node's
+    JSON schema. The next attempt's prompt includes the validation error.
+
+A Code node retries only when the sandbox itself failed: it was unreachable, its
+runtime was gone, or it dropped the connection mid-run and the running script
+could be stopped. An error raised by the script, a timeout, a kernel that died
+running the script (out of memory or a crash), a refused sandbox login, or
+stdout that doesn't match the schema is never retried.
+
+Some failures are never retried, whatever the settings: a 400 or other client
+error, an authentication error, a request too long for the model's context
+window, an exhausted usage quota, and a run out of time. A node also fails at
+once when:
+
+- it already streamed text to the chat, which can't be taken back. A node with
+  a JSON schema and **Invalid output** retries holds its reply until it
+  validates, so that it can be retried;
+- the pause would end past the run's time limit, since pauses count toward it;
+- the server's `Retry-After` is longer than `WORKFLOW_RETRY_MAX_DELAY_SECONDS`
+  (300 by default).
+
+Each attempt runs the whole node again, tool calls included, so a tool with side
+effects may run more than once. An empty reply on the last attempt is kept as
+the node's output, as it is without retries.
+
+While a node waits to retry, the chat and the Preview show the attempt it is on,
+and a finished step shows how many attempts it took. Retries inside a loop count
+toward the loop's items instead.
+The retry is a `workflow_step` event with `status: "running"` and `attempt`,
+`max_attempts`, `retry_delay_seconds`, `retry_reason` (`transient` or
+`invalid_output`) and `retry_error`; the step's final event carries `attempts`.
+The run record lists each attempt of a retried node under the step's
+`attempts`, with its status, timing, error and reason.
+
+In the stored graph, a node keeps its settings under `retry` in its `data`, and
+the workflow keeps the inherited ones as `retry_defaults` (also accepted by
+`POST /api/workflows` and `PUT /api/workflows/<id>`):
+
+```json
+{"id": "extract", "type": "agent", "data": {"json_schema": {"type": "object"}, "retry": {"max_attempts": 3, "backoff_seconds": [2, 10, 30], "on": ["transient", "invalid_output"]}}}
+```
+
+---
+
 ## Note Node
 
 A **Note** holds free text for whoever edits the workflow: what a branch is for,
@@ -429,6 +495,8 @@ a workflow breaks:
 - Every If / Else branch eventually reaches an End node, except inside a loop,
   where a branch ends the item.
 - Every Code node has code, and any JSON schema it has is valid.
+- Retry settings, on a node or the workflow, stay within the limits in
+  [Retrying a failed node](#retrying-a-failed-node).
 - Every Loop node names a list as a state path, has a usable item variable, and
   holds at least one node with exactly one first node. No connection crosses a
   loop's edge.

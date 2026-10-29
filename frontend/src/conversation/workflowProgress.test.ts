@@ -131,6 +131,90 @@ describe('applyWorkflowStep', () => {
   });
 });
 
+describe('retries', () => {
+  const retry = (overrides: Partial<WorkflowStepEvent> = {}) =>
+    event({
+      attempt: 2,
+      max_attempts: 3,
+      retry_delay_seconds: 2,
+      retry_reason: 'transient',
+      retry_error: 'upstream 503',
+      ...overrides,
+    });
+
+  it('marks the running step with the attempt, keeping its start time', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 1000);
+    applyWorkflowStep(progress, retry(), 5000);
+    expect(progress.steps).toHaveLength(1);
+    expect(progress.steps[0]).toMatchObject({
+      status: 'running',
+      startedAt: 1000,
+      attempt: 2,
+      maxAttempts: 3,
+      retryError: 'upstream 503',
+    });
+    expect(runningStep(progress)?.attempt).toBe(2);
+  });
+
+  it('counts the attempts once the step ends and drops the retry marks', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 1000);
+    applyWorkflowStep(progress, retry(), 5000);
+    applyWorkflowStep(
+      progress,
+      event({ status: 'completed', output: 'done', attempts: 2 }),
+      9000,
+    );
+    expect(progress.steps).toEqual([
+      {
+        nodeId: 'a',
+        nodeType: 'agent',
+        title: 'Gather notes',
+        status: 'completed',
+        startedAt: 1000,
+        endedAt: 9000,
+        detail: 'done',
+        attempts: 2,
+      },
+    ]);
+  });
+
+  it('keeps the error of a step that failed every attempt', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 0);
+    applyWorkflowStep(progress, retry({ attempt: 3 }), 10);
+    applyWorkflowStep(
+      progress,
+      event({ status: 'failed', error: 'upstream 503', attempts: 3 }),
+      20,
+    );
+    expect(progress.steps[0]).toMatchObject({
+      status: 'failed',
+      error: 'upstream 503',
+      attempts: 3,
+    });
+    expect(progress.steps[0].attempt).toBeUndefined();
+  });
+
+  it('says nothing of attempts for a step that ran once', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 0);
+    applyWorkflowStep(progress, event({ status: 'completed' }), 1);
+    expect(progress.steps[0].attempts).toBeUndefined();
+  });
+
+  it('leaves the retries of a loop body out', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(
+      progress,
+      retry({ node_id: 'body', parent_node_id: 'each', item_index: 0 }),
+      0,
+    );
+    expect(progress.steps).toEqual([]);
+  });
+});
+
 describe('runningStep', () => {
   it('is the step still working', () => {
     const progress: WorkflowProgress = { steps: [] };

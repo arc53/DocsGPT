@@ -1143,6 +1143,8 @@ workflows_table = Table(
     Column("current_graph_version", Integer, nullable=False, server_default="1"),
     # Same shape as ``agents.resource_sponsors``, for node tools and sources.
     Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # The retry policy nodes inherit unless they set their own; NULL means none.
+    Column("retry_defaults", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),

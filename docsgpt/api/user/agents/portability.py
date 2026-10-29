@@ -675,6 +675,8 @@ def _serialize_workflow(conn, agent: dict, user: str):
         "nodes": nodes_out,
         "edges": edges_out,
     }
+    if row.get("retry_defaults"):
+        block["retry_defaults"] = row["retry_defaults"]
     return block, tools, sources, model
 
 
@@ -1502,6 +1504,7 @@ def _apply_workflow(
         _write_graph,
         get_workflow_graph_version,
         normalize_agent_node_json_schemas,
+        retry_config_error,
         validate_workflow_structure,
     )
 
@@ -1544,6 +1547,10 @@ def _apply_workflow(
     ]
 
     errors = validate_workflow_structure(nodes_data, edges_data, user_id=user)
+    retry_defaults = wf_spec.get("retry_defaults")
+    retry_error = retry_config_error(retry_defaults)
+    if retry_error:
+        errors.append(f"Workflow retry defaults {retry_error}")
     if errors:
         raise AgentImportError("Workflow validation failed: " + "; ".join(errors[:5]))
     nodes_data = normalize_agent_node_json_schemas(nodes_data)
@@ -1569,6 +1576,7 @@ def _apply_workflow(
             "name": name,
             "description": description,
             "current_graph_version": next_version,
+            "retry_defaults": retry_defaults,
         }
         # Sponsors of node resources the file dropped go too, so a stale
         # record can't vouch for the resource if someone adds it back.
@@ -1581,7 +1589,7 @@ def _apply_workflow(
         WorkflowEdgesRepository(conn).delete_other_versions(pg_workflow_id, next_version)
         return pg_workflow_id
 
-    created = wf_repo.create(user, name, description=description)
+    created = wf_repo.create(user, name, description=description, retry_defaults=retry_defaults)
     _write_graph(conn, str(created["id"]), 1, nodes_data, edges_data)
     return str(created["id"])
 

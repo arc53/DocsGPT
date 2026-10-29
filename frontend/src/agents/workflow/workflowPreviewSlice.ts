@@ -7,7 +7,7 @@ import {
   clearAttachments,
   toSendableAttachments,
 } from '../../upload/uploadSlice';
-import { WorkflowEdge, WorkflowNode } from '../types/workflow';
+import { RetryConfig, WorkflowEdge, WorkflowNode } from '../types/workflow';
 
 export interface WorkflowExecutionStep {
   nodeId: string;
@@ -33,6 +33,13 @@ export interface WorkflowExecutionStep {
   outputOmitted?: boolean;
   /** Keys a summarized step set, without their values. */
   stateKeysChanged?: string[];
+  /** While a retry runs: its attempt (from 2), out of how many. */
+  attempt?: number;
+  maxAttempts?: number;
+  /** Why the previous attempt failed. */
+  retryError?: string;
+  /** How many attempts a step that ran more than once took. */
+  attempts?: number;
 }
 
 export interface LoopItemProgress {
@@ -44,6 +51,7 @@ export interface LoopItemProgress {
 interface WorkflowData {
   name: string;
   description?: string;
+  retry_defaults?: RetryConfig | null;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
 }
@@ -258,6 +266,10 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                             outputTruncated: data.output_truncated,
                             outputOmitted: data.output_omitted,
                             stateKeysChanged: data.state_keys_changed,
+                            attempt: data.attempt,
+                            maxAttempts: data.max_attempts,
+                            retryError: data.retry_error,
+                            attempts: data.attempts,
                           },
                         }),
                       );
@@ -473,6 +485,16 @@ export const workflowPreviewSlice = createSlice({
               ? querySteps[existingIndex].completedAt
               : undefined,
       };
+
+      // A running event past the first attempt is a retry of the same step;
+      // the end event says how many attempts it took.
+      if (step.status === 'running' && (step.attempt ?? 1) > 1) {
+        updatedStep.attempt = step.attempt;
+        if (step.maxAttempts) updatedStep.maxAttempts = step.maxAttempts;
+        if (step.retryError) updatedStep.retryError = step.retryError;
+      } else if (step.status !== 'running' && (step.attempts ?? 1) > 1) {
+        updatedStep.attempts = step.attempts;
+      }
 
       if (existingIndex !== -1) {
         updatedStep.stateDelta =

@@ -13,6 +13,7 @@ from docsgpt.agents.workflows.schemas import (
     STREAM_OUTPUT_VALUES,
     parent_id_of,
 )
+from docsgpt.agents.workflows.retry import validate_retry_config
 from docsgpt.agents.workflows.cel_evaluator import (
     CelEvaluationError,
     validate_cel_expression,
@@ -296,6 +297,7 @@ def serialize_workflow(w: Dict) -> Dict:
         "id": str(w["id"]),
         "name": w.get("name"),
         "description": w.get("description"),
+        "retry_defaults": w.get("retry_defaults"),
         "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
         "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
     }
@@ -376,6 +378,17 @@ def normalize_agent_node_json_schemas(nodes: List[Dict]) -> List[Dict]:
         normalized_nodes.append(normalized_node)
 
     return normalized_nodes
+
+
+def retry_config_error(raw: Any) -> Optional[str]:
+    """Why a node's ``retry`` or a workflow's ``retry_defaults`` is invalid, or None."""
+    from docsgpt.core.settings import settings
+
+    return validate_retry_config(
+        raw,
+        max_attempts=int(settings.WORKFLOW_RETRY_MAX_ATTEMPTS),
+        max_delay=float(settings.WORKFLOW_RETRY_MAX_DELAY_SECONDS),
+    )
 
 
 def validate_workflow_structure(
@@ -596,6 +609,9 @@ def validate_workflow_structure(
                 )
         if schema_error:
             errors.append(f"Agent node '{agent_title}' JSON schema {schema_error}")
+        retry_error = retry_config_error(raw_config.get("retry"))
+        if retry_error:
+            errors.append(f"Agent node '{agent_title}' retry {retry_error}")
 
     code_nodes = [n for n in nodes if n.get("type") == "code"]
     for code_node in code_nodes:
@@ -609,6 +625,9 @@ def validate_workflow_structure(
         _, schema_error = validate_json_schema_payload(raw_config.get("json_schema"))
         if schema_error:
             errors.append(f"Code node '{code_title}' JSON schema {schema_error}")
+        retry_error = retry_config_error(raw_config.get("retry"))
+        if retry_error:
+            errors.append(f"Code node '{code_title}' retry {retry_error}")
 
     errors.extend(_loop_errors(nodes, edges))
 
@@ -748,9 +767,14 @@ class WorkflowList(Resource):
         nodes_data = data.get("nodes", [])
         edges_data = data.get("edges", [])
 
+        retry_defaults = data.get("retry_defaults")
+
         validation_errors = validate_workflow_structure(
             nodes_data, edges_data, user_id=user_id
         )
+        retry_error = retry_config_error(retry_defaults)
+        if retry_error:
+            validation_errors.append(f"Workflow retry defaults {retry_error}")
         if validation_errors:
             return error_response(
                 "Workflow validation failed", errors=validation_errors
@@ -763,7 +787,9 @@ class WorkflowList(Resource):
                 if denied is not None:
                     return _denied(denied)
                 repo = WorkflowsRepository(conn)
-                workflow = repo.create(user_id, name, description=description)
+                workflow = repo.create(
+                    user_id, name, description=description, retry_defaults=retry_defaults
+                )
                 pg_workflow_id = str(workflow["id"])
                 _write_graph(conn, pg_workflow_id, 1, nodes_data, edges_data)
         except Exception as err:
@@ -858,6 +884,9 @@ class WorkflowDetail(Resource):
                 validation_errors = validate_workflow_structure(
                     nodes_data, edges_data, user_id=acting
                 )
+                retry_error = retry_config_error(data.get("retry_defaults"))
+                if retry_error:
+                    validation_errors.append(f"Workflow retry defaults {retry_error}")
                 if validation_errors:
                     return error_response(
                         "Workflow validation failed", errors=validation_errors
@@ -905,6 +934,9 @@ class WorkflowDetail(Resource):
                     "description": description,
                     "current_graph_version": next_graph_version,
                 }
+                # A client that doesn't send the key keeps the saved defaults.
+                if "retry_defaults" in data:
+                    workflow_fields["retry_defaults"] = data.get("retry_defaults")
                 if plan.sponsors != (workflow.get("resource_sponsors") or {}):
                     workflow_fields["resource_sponsors"] = plan.sponsors
                 repo.update(pg_workflow_id, acting, workflow_fields)

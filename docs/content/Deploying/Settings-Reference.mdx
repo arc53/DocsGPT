@@ -1947,6 +1947,18 @@ Type `int`, default `100`, must be `>= 1`.
 
 Most items one loop node accepts, whatever its own max_items says; a longer list fails the node.
 
+### `WORKFLOW_RETRY_MAX_ATTEMPTS`
+
+Type `int`, default `5`, must be `>= 1`.
+
+Most attempts a workflow node's retry policy may ask for; 1 turns node retries off.
+
+### `WORKFLOW_RETRY_MAX_DELAY_SECONDS`
+
+Type `float`, default `300`, must be `>= 0`.
+
+Longest wait before one retry of a workflow node. A Retry-After longer than this fails the node instead of retrying early.
+
 ### `WORKFLOW_RUN_STALE_SECONDS`
 
 Type `int`, default `3600`.

@@ -992,7 +992,8 @@
         "result": "結果",
         "source": "來源",
         "feedback": "回饋",
-        "passthrough": "透傳參數"
+        "passthrough": "透傳參數",
+        "retries": "重試"
       },
       "trace": {
         "view": "檢視追蹤",
@@ -1130,7 +1131,8 @@
         "topics": "主題"
       },
       "levelFilter": "層級",
-      "typeFilter": "事件類型"
+      "typeFilter": "事件類型",
+      "retriedStep_other": "{{node}}：嘗試 {{count}} 次"
     },
     "teams": {
       "label": "團隊",
@@ -2845,7 +2847,10 @@
       "stepOf": "第 {{step}} 步，共 {{total}} 步",
       "stepCount_other": "{{count}} 步",
       "loopItems": "{{done}}/{{total}} 個項目",
-      "loopItemsFailed": "{{count}} 個失敗"
+      "loopItemsFailed": "{{count}} 個失敗",
+      "retrying": "正在重試 · 第 {{attempt}} 次嘗試",
+      "retryingOf": "正在重試 · 第 {{attempt}} 次嘗試，共 {{total}} 次",
+      "attempts_other": "嘗試 {{count}} 次"
     }
   },
   "agents": {
@@ -3677,7 +3682,9 @@
         "loopItemsPath": "迴圈「{{name}}」的項目必須是狀態路徑，例如 extracted.items",
         "loopItemVariable": "迴圈「{{name}}」的項目變數無法使用",
         "loopEmpty": "迴圈「{{name}}」內至少需要一個節點",
-        "loopEntry": "迴圈「{{name}}」必須恰好從一個節點開始"
+        "loopEntry": "迴圈「{{name}}」必須恰好從一個節點開始",
+        "nodeRetry": "節點「{{name}}」的重試設定超出範圍",
+        "retryDefaults": "工作流程的預設重試設定超出範圍"
       },
       "schema": {
         "notObject": "必須是有效的 JSON 物件",
@@ -3742,7 +3749,10 @@
         "stepCount_one": "（{{count}} 步）",
         "backToRun": "返回執行",
         "loopItems": "{{done}}/{{total}} 個項目",
-        "loopItemsFailed": "{{count}} 個失敗"
+        "loopItemsFailed": "{{count}} 個失敗",
+        "retrying": "正在重試 · 第 {{attempt}} 次嘗試",
+        "retryingOf": "正在重試 · 第 {{attempt}} 次嘗試，共 {{total}} 次",
+        "attempts_other": "嘗試 {{count}} 次"
       },
       "documents": {
         "modeAll": "所有輸入文件",
@@ -3764,7 +3774,28 @@
       "zoomOut": "縮小",
       "fitView": "符合檢視",
       "removeAssignment": "移除指定 {{index}}",
-      "removeCondition": "移除條件 {{index}}"
+      "removeCondition": "移除條件 {{index}}",
+      "retry": {
+        "title": "重試",
+        "defaultsDescription": "嘗試失敗時代理節點與程式碼節點的處理方式。節點本身的重試設定優先。",
+        "attempts": "最多嘗試次數",
+        "inherit": "預設（{{value}}）",
+        "noRetry": "1（不重試）",
+        "backoff": "等待時間（秒）",
+        "backoffInvalid": "請輸入 0 到 300 之間的數字，以逗號分隔。",
+        "backoffTooMany": "最多 10 個等待時間。",
+        "hint": "每次重試前等待 {{backoff}} 秒；最後一個等待時間會重複使用。",
+        "hintOff": "只執行一次。提高嘗試次數即可在失敗時重試。",
+        "on": "重試條件",
+        "onChoice": {
+          "transient": "錯誤與逾時",
+          "invalid_output": "無效輸出"
+        },
+        "onHint": {
+          "transient": "伺服器錯誤、速率限制、逾時、連線中斷與空白回覆。",
+          "invalid_output": "回覆不是有效的 JSON，或與結構化輸出的結構描述不符。"
+        }
+      }
     },
     "typeModal": {
       "title": "建立新代理",
