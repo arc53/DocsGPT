@@ -168,6 +168,47 @@ def test_markdown_fence_closes_with_crlf_line_endings():
     assert "run it" in tups[1][1]
 
 
+def test_markdown_text_before_first_heading_is_kept():
+    content = "Intro paragraph.\n\n# Install\nrun it\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert tups == [(None, "Intro paragraph.\n\n"), ("Install", "run it\n\n")]
+
+
+@pytest.mark.parametrize(
+    "preamble",
+    [
+        "\n\n",
+        "<!-- markdownlint-disable MD033 -->\n",
+        '<p align="center"><img src="logo.png"></p>\n',
+        "---\ntitle: Install\n---\n\nimport { Callout } from 'nextra/components';\n\n",
+        "---\r\ntitle: Install\r\n---\r\n",
+        '+++\ntitle = "Install"\n+++\n',
+        "---\ntitle: Install\n---\n\n{/* Generated file, do not edit. */}\n",
+        '<VersionBadge version="2.10.0" />\n',
+    ],
+)
+def test_markdown_preamble_without_text_adds_no_section(preamble):
+    tups = MarkdownParser().markdown_to_tups(preamble + "# Install\nrun it\n")
+    assert tups == [("Install", "run it\n\n")]
+
+
+def test_markdown_front_matter_stays_with_the_intro_after_it():
+    content = "---\ntitle: Guide\n---\nIntro paragraph.\n## Setup\nsteps\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert tups == [
+        (None, "---\ntitle: Guide\n---\nIntro paragraph.\n"),
+        ("Setup", "steps\n\n"),
+    ]
+
+
+def test_markdown_parse_file_keeps_text_before_first_heading():
+    content = "Project summary.\n## Usage\ntext\n"
+    parser = MarkdownParser()
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("doc.md"))
+    assert result == ["Project summary.\n", "\n\nUsage\ntext\n\n"]
+
+
 def test_tups_chunk_append_small_text_golden():
     parser = MarkdownParser(max_tokens=4)
     assert parser.tups_chunk_append([], None, "ab\n") == [(None, "ab\n")]

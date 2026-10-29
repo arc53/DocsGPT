@@ -5,7 +5,7 @@ Contains parser for md files.
 """
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from docsgpt.parser.file.base_parser import BaseParser
 from docsgpt.parser.tokenization import count_tokens_windowed
@@ -55,6 +55,25 @@ def _strip_html(text: str) -> str:
             lambda match: "" if match.group(1).lower() in closed else match.group(0), text
         )
     return _HTML_TAG_LOWERCASE.sub("", text)
+
+
+# YAML (---) or TOML (+++) front matter opens a document, and MDX files import
+# and export modules, leave comments and place self-closing components above
+# their first heading; none of it is text a reader searches for.
+_FRONT_MATTER = re.compile(r"\A(---|\+\+\+)[ \t\r]*\n.*?^\1[ \t\r]*$", re.DOTALL | re.MULTILINE)
+_MDX_IMPORT_EXPORT = re.compile(r"^(?:import|export)\s.*$", re.MULTILINE)
+_MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.DOTALL)
+_MDX_SELF_CLOSING_COMPONENT = re.compile(r"<[A-Z][\w.]*(?:\s[^<>]*)?/>")
+
+
+def _has_text(preamble: str) -> bool:
+    """Whether text before the first heading holds more than front matter, MDX
+    import and export lines, comments and components, markup and whitespace."""
+    preamble = _FRONT_MATTER.sub("", preamble, count=1)
+    preamble = _MDX_IMPORT_EXPORT.sub("", preamble)
+    preamble = _MDX_COMMENT.sub("", preamble)
+    preamble = _MDX_SELF_CLOSING_COMPONENT.sub("", preamble)
+    return bool(_strip_html(preamble).strip())
 
 
 # A fenced code block opens with three or more backticks or tildes, indented by
@@ -123,6 +142,9 @@ class MarkdownParser(BaseParser):
                     if current_text == "" or None:
                         continue
                     markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
+                elif current_header is None and _has_text(current_text):
+                    # Text before the first heading is a section of its own, without a header.
+                    markdown_tups = self.tups_chunk_append(markdown_tups, None, current_text)
 
                 current_header = line
                 current_text = ""
@@ -131,9 +153,8 @@ class MarkdownParser(BaseParser):
         markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
 
         if current_header is not None:
-            # pass linting, assert keys are defined
             markdown_tups = [
-                (re.sub(r"#", "", cast(str, key)).strip(), _strip_html(value))
+                (None if key is None else re.sub(r"#", "", key).strip(), _strip_html(value))
                 for key, value in markdown_tups
             ]
         else:
