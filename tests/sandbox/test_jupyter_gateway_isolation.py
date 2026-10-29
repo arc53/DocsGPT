@@ -14,6 +14,7 @@ import stat
 import subprocess
 import textwrap
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -794,7 +795,7 @@ def test_a_channel_closed_mid_run_keeps_the_kernel_and_its_workspace(monkeypatch
     sb._kernels["session-x"] = _Kernel("k-dropped", "/tmp/x", "session-x")
     deleted, interrupted = [], []
     monkeypatch.setattr(sb, "_delete_kernel", lambda kernel_id: deleted.append(kernel_id) or True)
-    monkeypatch.setattr(sb, "_interrupt", interrupted.append)
+    monkeypatch.setattr(sb, "_interrupt", lambda kernel_id: interrupted.append(kernel_id) or True)
 
     result = sb._collect(_FakeWS([]), "m-1", timeout=30, kernel_id="k-dropped", session_id="session-x")
 
@@ -804,3 +805,34 @@ def test_a_channel_closed_mid_run_keeps_the_kernel_and_its_workspace(monkeypatch
     # The orphaned cell is stopped so a retry doesn't queue behind it.
     assert interrupted == ["k-dropped"]
     assert sb._kernels["session-x"].kernel_id == "k-dropped"
+
+
+def test_a_dropped_channel_whose_cell_wont_stop_is_not_offered_for_retry(monkeypatch):
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["session-x"] = _Kernel("k-busy", "/tmp/x", "session-x")
+    monkeypatch.setattr(sb, "_interrupt", lambda kernel_id: False)
+
+    result = sb._collect(_FakeWS([]), "m-1", timeout=30, kernel_id="k-busy", session_id="session-x")
+
+    assert result.ok is False and result.sandbox_error is False
+    assert sb._kernels["session-x"].kernel_id == "k-busy"
+
+
+def test_a_malformed_frame_stops_the_cell_before_a_retry(monkeypatch):
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    interrupted = []
+    monkeypatch.setattr(sb, "_interrupt", lambda kernel_id: interrupted.append(kernel_id) or True)
+
+    result = sb._collect(_FakeWS(["{not json"]), "m-1", timeout=30, kernel_id="k-1", session_id="s")
+
+    assert result.error_name == "ProtocolError"
+    assert result.sandbox_error is True
+    assert interrupted == ["k-1"]
+
+
+def test_interrupt_reports_a_refused_request(monkeypatch):
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    monkeypatch.setattr(jupyter_gateway.requests, "post", lambda *a, **k: SimpleNamespace(status_code=404))
+    assert sb._interrupt("k-1") is False
+    monkeypatch.setattr(jupyter_gateway.requests, "post", lambda *a, **k: SimpleNamespace(status_code=204))
+    assert sb._interrupt("k-1") is True
