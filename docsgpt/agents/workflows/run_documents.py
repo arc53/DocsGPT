@@ -349,10 +349,12 @@ def _cache_key(version: Dict[str, Any], name: str) -> Optional[str]:
     return f"workflow:doclines:v{FORMAT_VERSION}:{_parser_fingerprint()}:{reader}:{sha256}"
 
 
-# Settings families that can change what the configured parser (and OCR)
-# reads from a file. Every field in them goes into the cache key, so a new
-# one is covered without touching this module.
-_PARSER_SETTING_PREFIXES = ("OCR_", "DOC_PARSER_", "DOCLING_", "ANYDOC_", "PDF_")
+# Settings families that can change what the configured parser (OCR,
+# speech-to-text, markup) reads from a file: every field the parsers read
+# outside the connector and ingest settings. Every field in them goes into
+# the cache key, so a new one is covered without touching this module.
+_PARSER_SETTING_PREFIXES = ("OCR_", "DOC_PARSER_", "DOCLING_", "ANYDOC_", "PDF_", "PARSE_", "STT_", "MARKUP_")
+_CREDENTIAL_SUFFIXES = ("_API_KEY", "_SECRET", "_TOKEN")
 
 
 def _parser_fingerprint() -> str:
@@ -362,7 +364,7 @@ def _parser_fingerprint() -> str:
     values = {
         field: getattr(settings, field, None)
         for field in sorted(type(settings).model_fields)
-        if field.startswith(_PARSER_SETTING_PREFIXES) and not field.endswith("_API_KEY")
+        if field.startswith(_PARSER_SETTING_PREFIXES) and not field.endswith(_CREDENTIAL_SUFFIXES)
     }
     encoded = json.dumps(values, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:16]

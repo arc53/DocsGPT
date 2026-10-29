@@ -733,6 +733,8 @@ def test_the_cache_key_separates_identical_bytes_under_another_mime_type(monkeyp
         ("OCR_LANGS", "eng", "eng+deu"),
         ("OCR_RENDER_DPI", 200, 300),
         ("DOC_PARSER_ENGINE", "anydoc", "docling"),
+        ("MARKUP_MAX_BYTES", 1000, 2000),
+        ("PARSE_PDF_AS_IMAGE", False, True),
     ],
 )
 def test_changing_a_parser_setting_misses_the_cache(monkeypatch, parse_queue, setting, before, after):
