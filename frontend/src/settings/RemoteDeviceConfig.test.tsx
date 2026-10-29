@@ -258,12 +258,19 @@ describe('RemoteDeviceConfig', () => {
     expect(input.value).toBe('Renamed');
   });
 
-  it('a successful save shows the saved device', async () => {
-    updateDevice.mockResolvedValue(device({ name: 'Renamed' }));
+  it('a successful save clears a previous error and shows the saved device', async () => {
+    updateDevice
+      .mockRejectedValueOnce(new Error('auth'))
+      .mockResolvedValueOnce(device({ name: 'Renamed' }));
     await render(device({}));
     await rename('Renamed');
     await clickSave();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'common.actionFailed',
+    );
+    await clickSave();
 
+    expect(updateDevice).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(title()).toBe('Renamed');
   });
