@@ -1198,6 +1198,11 @@ class WorkflowEngine:
             if isinstance(raw, str) and raw.strip() in ("*", "input_documents"):
                 resolved.extend(self._input_document_ids())
                 continue
+            # ``documents`` before anything has read it means the run's input
+            # documents, which is what it will hold once read.
+            if isinstance(raw, str) and raw.strip() == DOCUMENTS_STATE_KEY and DOCUMENTS_STATE_KEY not in self.state:
+                resolved.extend(self._input_document_ids())
+                continue
             ref = self.state.get(raw) if isinstance(raw, str) else None
             if isinstance(ref, dict) and ref.get("artifact_id"):
                 resolved.append(str(ref["artifact_id"]))

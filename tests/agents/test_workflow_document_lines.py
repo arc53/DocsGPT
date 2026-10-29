@@ -771,3 +771,17 @@ def test_a_credential_change_keeps_the_cache(monkeypatch, parse_queue):
     _engine([aid])._materialize_node_attachments(_lines_config(), "Node", [])
 
     assert len(parse_queue.calls) == 1
+
+
+@pytest.mark.unit
+def test_documents_as_a_node_selection_before_it_is_loaded_means_the_inputs(monkeypatch, parse_queue):
+    a1, r1 = _artifact("text/plain", "a.txt", data=b"alpha")
+    a2, r2 = _artifact("text/plain", "b.txt", data=b"beta")
+    _patch_repo(monkeypatch, {a1: r1, a2: r2})
+    engine = _engine([a1, a2])
+
+    out = engine._materialize_node_attachments(_lines_config(["documents"]), "Node", [])
+
+    assert [a["id"] for a in out] == [a1, a2]
+    # Once published, the selection resolves through the state as before.
+    assert engine._resolve_input_artifact_ids(["documents"]) == [a1, a2]
