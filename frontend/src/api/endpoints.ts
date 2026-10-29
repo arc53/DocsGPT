@@ -224,6 +224,8 @@ const endpoints = {
     RESTORE_ARTIFACT: (artifactId: string) =>
       `/api/artifacts/${artifactId}/restore`,
     WORKFLOWS: '/api/workflows',
+    WORKFLOW_RUN_STEP: (workflowRunId: string, stepIndex: number) =>
+      `/api/workflow_runs/${encodeURIComponent(workflowRunId)}/steps/${stepIndex}`,
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
     CUSTOM_MODELS: '/api/user/models',
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,

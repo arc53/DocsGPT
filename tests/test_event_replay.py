@@ -33,6 +33,7 @@ from docsgpt.streaming.async_event_replay import (
     build_message_event_stream_async,
 )
 from docsgpt.streaming.event_replay import (
+    sse_json,
     _SSE_LINE_SPLIT_PATTERN,
     _decode_pubsub_message,
     encode_pubsub_message,
@@ -59,6 +60,17 @@ class TestFormatSseEvent:
         assert json.loads(body) == {"type": "answer", "answer": "Hi"}
         assert out.endswith("\n\n")
 
+    def test_non_ascii_text_is_sent_as_utf8_not_escapes(self):
+        out = format_sse_event({"type": "answer", "answer": "Привет, 世界"}, sequence_no=1)
+        assert "Привет, 世界" in out
+        assert "\\u" not in out
+
+    def test_text_that_is_not_valid_utf8_falls_back_to_escapes(self):
+        # A lone surrogate cannot be written as UTF-8; escaping keeps the frame valid.
+        out = format_sse_event({"type": "answer", "answer": "a\ud800b"}, sequence_no=1)
+        out.encode("utf-8")
+        assert json.loads(out.split("data: ", 1)[1]) == {"type": "answer", "answer": "a\ud800b"}
+
     def test_negative_sequence_for_synthetic_events(self):
         out = format_sse_event(
             {"type": "error", "code": "snapshot_failed"}, sequence_no=-1
@@ -76,6 +88,20 @@ class TestFormatSseEvent:
 
 
 # ── pub/sub encode/decode ───────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestSseJson:
+    def test_keeps_non_ascii_unescaped(self):
+        assert sse_json({"a": "ü"}) == '{"a": "ü"}'
+
+    def test_falls_back_for_lone_surrogates(self):
+        assert sse_json({"a": "\udfff"}) == '{"a": "\\udfff"}'
+
+    def test_serializes_other_values_as_text(self):
+        from datetime import datetime
+
+        assert '"2026-10-29' in sse_json({"at": datetime(2026, 10, 29)})
 
 
 @pytest.mark.unit

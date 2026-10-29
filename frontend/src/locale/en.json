@@ -3615,6 +3615,8 @@
         "documentsHint": "Documents passed to this agent from uploads or upstream nodes.",
         "filePassing": "File passing",
         "filePassingHint": "Auto: send native when the model supports it, otherwise extract text. Numbered lines: the whole text, each line marked [D#:L#] for citing.",
+        "streamOutput": "Step details in the chat stream",
+        "streamOutputHint": "Summary sends a preview when a step's output is large; the full values stay in the run. Status only sends no output.",
         "structuredOutput": "Structured Output (JSON Schema)",
         "modelNoStructuredOutput": "Selected model does not support structured output.",
         "validSchema": "Valid JSON schema",
@@ -3710,6 +3712,11 @@
         "extract": "Extract",
         "lines": "Numbered lines"
       },
+      "streamOutput": {
+        "summary": "Summary when large",
+        "full": "Always full",
+        "none": "Status only"
+      },
       "mobileBlocker": {
         "title": "Open on a larger screen",
         "body": "The workflow builder needs a wider screen. Use a computer, or turn your tablet sideways."
@@ -3747,6 +3754,10 @@
         "stepCount_one": "({{count}} step)",
         "stepCount_other": "({{count}} steps)",
         "outputLabel": "Output:",
+        "showFullOutput": "Show full output",
+        "fullOutputPending": "The full output is available once the run ends.",
+        "fullOutputFailed": "Couldn't load the full output.",
+        "outputNotStreamed": "This step's output isn't streamed.",
         "errorLabel": "Error:",
         "minimapHeading": "Workflow",
         "emptyTitle": "Test the workflow",

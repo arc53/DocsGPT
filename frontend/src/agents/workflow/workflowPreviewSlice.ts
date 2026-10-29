@@ -22,6 +22,17 @@ export interface WorkflowExecutionStep {
   error?: string;
   /** A loop's items so far: how many there are, ended and failed. */
   items?: LoopItemProgress;
+  /** The step's place in the run's saved steps, to fetch its full values. */
+  stepIndex?: number;
+  /** The stream sent a summary: the event would have been too large. */
+  summarized?: boolean;
+  /** The start of an output too large to stream whole. */
+  outputPreview?: string;
+  outputTruncated?: boolean;
+  /** The node streams its status only (``stream_output: none``). */
+  outputOmitted?: boolean;
+  /** Keys a summarized step set, without their values. */
+  stateKeysChanged?: string[];
 }
 
 export interface LoopItemProgress {
@@ -241,6 +252,12 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                             stateDelta: data.state_delta ?? data.state_snapshot,
                             output: data.output,
                             error: data.error,
+                            stepIndex: data.step_index,
+                            summarized: data.summarized,
+                            outputPreview: data.output_preview,
+                            outputTruncated: data.output_truncated,
+                            outputOmitted: data.output_omitted,
+                            stateKeysChanged: data.state_keys_changed,
                           },
                         }),
                       );
@@ -439,6 +456,12 @@ export const workflowPreviewSlice = createSlice({
         stateDelta: step.stateDelta,
         output: step.output,
         error: step.error,
+        stepIndex: step.stepIndex,
+        summarized: step.summarized,
+        outputPreview: step.outputPreview,
+        outputTruncated: step.outputTruncated,
+        outputOmitted: step.outputOmitted,
+        stateKeysChanged: step.stateKeysChanged,
         startedAt:
           existingIndex !== -1
             ? querySteps[existingIndex].startedAt

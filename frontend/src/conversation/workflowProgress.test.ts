@@ -47,6 +47,29 @@ describe('stepDetail', () => {
     ).toBe('tone: friendly · days: 2');
   });
 
+  it('uses the preview of an output too large to stream', () => {
+    expect(
+      stepDetail(
+        event({
+          summarized: true,
+          output_preview: 'Report: three carriers',
+          output_truncated: true,
+        }),
+      ),
+    ).toBe('Report: three carriers');
+  });
+
+  it('names the keys a summarized step set', () => {
+    expect(
+      stepDetail(
+        event({
+          summarized: true,
+          state_keys_changed: ['query', 'report', 'pages'],
+        }),
+      ),
+    ).toBe('report · pages');
+  });
+
   it('has nothing to say about a step that changed nothing', () => {
     expect(stepDetail(event({ state_delta: { query: 'q' } }))).toBeUndefined();
   });

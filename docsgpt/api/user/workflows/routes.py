@@ -10,6 +10,7 @@ from sqlalchemy import text as sql_text
 from docsgpt.agents.workflows.schemas import (
     LOOP_BODY_NODE_TYPES,
     LOOP_RESERVED_VARIABLES,
+    STREAM_OUTPUT_VALUES,
     parent_id_of,
 )
 from docsgpt.agents.workflows.cel_evaluator import (
@@ -616,6 +617,14 @@ def validate_workflow_structure(
             errors.append("All nodes must have an id")
         if not node.get("type"):
             errors.append(f"Node {node.get('id', 'unknown')} must have a type")
+        data = node.get("data") or {}
+        config = data.get("config", data) if isinstance(data, dict) else {}
+        stream_output = config.get("stream_output") if isinstance(config, dict) else None
+        if stream_output is not None and stream_output not in STREAM_OUTPUT_VALUES:
+            errors.append(
+                f"Node '{node.get('title') or node.get('id')}' has an invalid stream_output; "
+                f"use one of: {', '.join(STREAM_OUTPUT_VALUES)}"
+            )
 
     return errors
 

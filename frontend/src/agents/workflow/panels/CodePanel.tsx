@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
 import NodeDocumentsControl from '../components/NodeDocumentsControl';
+import StreamOutputField from '../components/StreamOutputField';
 import { NO_ESCAPE, schemaErrorText } from '../workflowHelpers';
 import { type NodePanelBodyProps } from './types';
 
@@ -114,6 +115,17 @@ export default function CodePanel({
           placeholder={t('agents.workflow.builder.optional')}
         />
       </FormField>
+      <StreamOutputField
+        value={selectedNode.data.config?.stream_output}
+        onChange={(value) =>
+          handleUpdateNodeData({
+            config: {
+              ...(selectedNode.data.config || {}),
+              stream_output: value,
+            },
+          })
+        }
+      />
       <FormField
         labelSurface="background"
         label={t('agents.workflow.builder.structuredOutput')}

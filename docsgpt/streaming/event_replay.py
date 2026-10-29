@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import text as sql_text
 
@@ -67,6 +67,29 @@ def _payload_is_terminal(
     return event_type in _TERMINAL_EVENT_TYPES
 
 
+def sse_json(payload: Any) -> str:
+    """Serialize an SSE payload: UTF-8 text as is, not as ``\\uXXXX`` escapes.
+
+    The default ASCII escaping makes every non-Latin character six bytes,
+    tripling a Cyrillic or CJK answer on the wire and in the journal. A
+    string that cannot be written as UTF-8 (a lone surrogate) falls back to
+    escapes so the frame stays valid. Values JSON has no type for are sent as
+    their text.
+
+    Args:
+        payload: The event.
+
+    Returns:
+        One line of JSON.
+    """
+    body = json.dumps(payload, ensure_ascii=False, default=str)
+    try:
+        body.encode("utf-8")
+    except UnicodeEncodeError:
+        return json.dumps(payload, default=str)
+    return body
+
+
 def format_sse_event(payload: dict, sequence_no: int) -> str:
     """Encode a journal event as one ``id:``/``data:`` SSE record.
 
@@ -75,7 +98,7 @@ def format_sse_event(payload: dict, sequence_no: int) -> str:
     single ``data:`` line is sufficient — but we still split on any
     line terminator in case a future caller passes a multi-line string.
     """
-    body = json.dumps(payload)
+    body = sse_json(payload)
     lines = [f"id: {sequence_no}"]
     for line in _SSE_LINE_SPLIT_PATTERN.split(body):
         lines.append(f"data: {line}")

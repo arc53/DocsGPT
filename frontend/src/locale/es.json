@@ -3708,6 +3708,8 @@
         "documentsHint": "Documentos que se pasan a este agente desde cargas o nodos anteriores.",
         "filePassing": "Paso de archivos",
         "filePassingHint": "Auto: envía el archivo nativo si el modelo lo admite; si no, extrae el texto. Líneas numeradas: el texto completo, con cada línea marcada [D#:L#] para citarla.",
+        "streamOutput": "Detalles del paso en el flujo del chat",
+        "streamOutputHint": "Resumen envía una vista previa cuando la salida de un paso es grande; los valores completos quedan en la ejecución. Solo estado no envía salida.",
         "structuredOutput": "Salida estructurada (esquema JSON)",
         "modelNoStructuredOutput": "El modelo seleccionado no admite salida estructurada.",
         "validSchema": "Esquema JSON válido",
@@ -3803,6 +3805,11 @@
         "extract": "Extraer",
         "lines": "Líneas numeradas"
       },
+      "streamOutput": {
+        "summary": "Resumen si es grande",
+        "full": "Siempre completa",
+        "none": "Solo estado"
+      },
       "mobileBlocker": {
         "title": "Ábrelo en una pantalla más grande",
         "body": "El creador de flujos de trabajo necesita una pantalla más ancha. Usa un ordenador o gira la tableta en horizontal."
@@ -3843,6 +3850,10 @@
         "stepCount_other": "({{count}} pasos)",
         "stepCount_many": "({{count}} pasos)",
         "outputLabel": "Salida:",
+        "showFullOutput": "Mostrar la salida completa",
+        "fullOutputPending": "La salida completa estará disponible cuando termine la ejecución.",
+        "fullOutputFailed": "No se pudo cargar la salida completa.",
+        "outputNotStreamed": "La salida de este paso no se transmite.",
         "errorLabel": "Error:",
         "minimapHeading": "Flujo de trabajo",
         "emptyTitle": "Prueba el flujo de trabajo",

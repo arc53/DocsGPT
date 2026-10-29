@@ -3610,6 +3610,8 @@
         "documentsHint": "Dokumente, die diesem Agenten aus Uploads oder vorgelagerten Knoten übergeben werden.",
         "filePassing": "Dateiübergabe",
         "filePassingHint": "Auto: nativ senden, wenn das Modell es unterstützt, sonst Text extrahieren. Nummerierte Zeilen: der ganze Text, jede Zeile mit [D#:L#] zum Zitieren markiert.",
+        "streamOutput": "Schrittdetails im Chat-Stream",
+        "streamOutputHint": "Zusammenfassung sendet eine Vorschau, wenn die Ausgabe eines Schritts groß ist; die vollständigen Werte bleiben im Lauf. Nur Status sendet keine Ausgabe.",
         "structuredOutput": "Strukturierte Ausgabe (JSON-Schema)",
         "modelNoStructuredOutput": "Das ausgewählte Modell unterstützt keine strukturierte Ausgabe.",
         "validSchema": "Gültiges JSON-Schema",
@@ -3705,6 +3707,11 @@
         "extract": "Extrahieren",
         "lines": "Nummerierte Zeilen"
       },
+      "streamOutput": {
+        "summary": "Zusammenfassung bei großer Ausgabe",
+        "full": "Immer vollständig",
+        "none": "Nur Status"
+      },
       "mobileBlocker": {
         "title": "Auf einem größeren Bildschirm öffnen",
         "body": "Der Workflow-Builder braucht einen breiteren Bildschirm. Nutze einen Computer oder dreh dein Tablet ins Querformat."
@@ -3742,6 +3749,10 @@
         "stepCount_one": "({{count}} Schritt)",
         "stepCount_other": "({{count}} Schritte)",
         "outputLabel": "Ausgabe:",
+        "showFullOutput": "Vollständige Ausgabe anzeigen",
+        "fullOutputPending": "Die vollständige Ausgabe ist verfügbar, sobald der Lauf endet.",
+        "fullOutputFailed": "Die vollständige Ausgabe konnte nicht geladen werden.",
+        "outputNotStreamed": "Die Ausgabe dieses Schritts wird nicht gestreamt.",
         "errorLabel": "Fehler:",
         "minimapHeading": "Workflow",
         "emptyTitle": "Workflow testen",
