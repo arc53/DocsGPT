@@ -167,11 +167,16 @@ can cite its evidence and a later Code node can check it:
   formats go through the configured document parser, and a PDF without a text
   layer is OCR'd as usual.
 
-The text is never cut. When the documents and the node's prompts don't fit the
-model's context window, the node fails with an error that gives the token
-counts; select fewer documents for the node or pick a model with a larger
-window. A document that can't be read fails the node the same way, naming the
-file.
+The text is never cut. When the documents a node gets through **Numbered lines**
+and its prompts don't fit the model's context window, the node fails before
+calling the model, with an error that gives the token counts; select fewer
+documents for the node or pick a model with a larger window. A document that
+can't be read fails the node the same way, naming the file. Each document is
+sent inside its own `<document>` tag, and the model is told to read what's
+inside as data, not instructions.
+
+Text a Prompt Template pulls in from `documents` isn't measured up front: when
+it doesn't fit, the node fails with the usual context-length error instead.
 
 Each document is parsed once per run, on the parsing worker: a second node
 reading it gets the same text. The text is also cached by the file's content
