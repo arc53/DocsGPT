@@ -795,7 +795,7 @@ def test_a_channel_closed_mid_run_keeps_the_kernel_and_its_workspace(monkeypatch
     sb._kernels["session-x"] = _Kernel("k-dropped", "/tmp/x", "session-x")
     deleted, interrupted = [], []
     monkeypatch.setattr(sb, "_delete_kernel", lambda kernel_id: deleted.append(kernel_id) or True)
-    monkeypatch.setattr(sb, "_interrupt", lambda kernel_id: interrupted.append(kernel_id) or True)
+    monkeypatch.setattr(sb, "_interrupt", lambda kernel_id: interrupted.append(kernel_id) or 204)
 
     result = sb._collect(_FakeWS([]), "m-1", timeout=30, kernel_id="k-dropped", session_id="session-x")
 
@@ -810,7 +810,7 @@ def test_a_channel_closed_mid_run_keeps_the_kernel_and_its_workspace(monkeypatch
 def test_a_dropped_channel_whose_cell_wont_stop_is_not_offered_for_retry(monkeypatch):
     sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
     sb._kernels["session-x"] = _Kernel("k-busy", "/tmp/x", "session-x")
-    monkeypatch.setattr(sb, "_interrupt", lambda kernel_id: False)
+    monkeypatch.setattr(sb, "_interrupt", lambda kernel_id: None)
 
     result = sb._collect(_FakeWS([]), "m-1", timeout=30, kernel_id="k-busy", session_id="session-x")
 
@@ -821,7 +821,7 @@ def test_a_dropped_channel_whose_cell_wont_stop_is_not_offered_for_retry(monkeyp
 def test_a_malformed_frame_stops_the_cell_before_a_retry(monkeypatch):
     sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
     interrupted = []
-    monkeypatch.setattr(sb, "_interrupt", lambda kernel_id: interrupted.append(kernel_id) or True)
+    monkeypatch.setattr(sb, "_interrupt", lambda kernel_id: interrupted.append(kernel_id) or 204)
 
     result = sb._collect(_FakeWS(["{not json"]), "m-1", timeout=30, kernel_id="k-1", session_id="s")
 
@@ -830,9 +830,40 @@ def test_a_malformed_frame_stops_the_cell_before_a_retry(monkeypatch):
     assert interrupted == ["k-1"]
 
 
-def test_interrupt_reports_a_refused_request(monkeypatch):
+def test_a_refused_interrupt_is_not_offered_for_retry(monkeypatch):
     sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["s"] = _Kernel("k-1", "/tmp/s", "s")
+    monkeypatch.setattr(jupyter_gateway.requests, "post", lambda *a, **k: SimpleNamespace(status_code=500))
+
+    result = sb._collect(_FakeWS([]), "m-1", timeout=30, kernel_id="k-1", session_id="s")
+
+    assert result.sandbox_error is False and result.runtime_invalidated is False
+    assert "s" in sb._kernels
+
+
+def test_a_kernel_gone_when_interrupted_is_retried_on_a_fresh_one(monkeypatch):
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["s"] = _Kernel("k-gone", "/tmp/s", "s")
     monkeypatch.setattr(jupyter_gateway.requests, "post", lambda *a, **k: SimpleNamespace(status_code=404))
-    assert sb._interrupt("k-1") is False
-    monkeypatch.setattr(jupyter_gateway.requests, "post", lambda *a, **k: SimpleNamespace(status_code=204))
-    assert sb._interrupt("k-1") is True
+
+    result = sb._collect(_FakeWS([]), "m-1", timeout=30, kernel_id="k-gone", session_id="s")
+
+    assert result.sandbox_error is True and result.runtime_invalidated is True
+    assert "s" not in sb._kernels
+
+
+@pytest.mark.parametrize("status, retryable", [(401, False), (403, False), (502, True)])
+def test_a_refused_handshake_is_not_a_sandbox_outage(monkeypatch, status, retryable):
+    import websocket
+
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    sb._kernels["s"] = _Kernel("k-1", "/tmp/s", "s")
+
+    def _refuse(*args, **kwargs):
+        raise websocket.WebSocketBadStatusException("Handshake status %d %s", status, "Refused")
+
+    monkeypatch.setattr(jupyter_gateway.websocket, "create_connection", _refuse)
+
+    result = sb.exec("s", "print(1)")
+
+    assert result.ok is False and result.sandbox_error is retryable

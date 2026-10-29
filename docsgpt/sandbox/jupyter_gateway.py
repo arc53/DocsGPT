@@ -321,8 +321,8 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         except requests.RequestException:
             return False
 
-    def _interrupt(self, kernel_id: str) -> bool:
-        """Best-effort interrupt so a timed-out/runaway kernel becomes reusable; True when the gateway took it."""
+    def _interrupt(self, kernel_id: str) -> Optional[int]:
+        """Best-effort interrupt so a timed-out/runaway kernel becomes reusable; the gateway's status, if any."""
         try:
             resp = requests.post(
                 f"{self._base_url}/api/kernels/{kernel_id}/interrupt",
@@ -331,11 +331,26 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             )
         except requests.RequestException as exc:
             logger.warning("Failed to interrupt kernel %s: %s", kernel_id, exc)
-            return False
+            return None
         if not 200 <= resp.status_code < 300:
             logger.warning("Interrupting kernel %s answered %s", kernel_id, resp.status_code)
-            return False
-        return True
+        return resp.status_code
+
+    def _release_dropped_run(self, result: ExecResult, kernel_id: str) -> None:
+        """Stop the cell of a run this call stopped reading, and say whether it may be retried.
+
+        The kernel is kept: retiring it would wipe the run's workspace. A cell
+        left running would hold it and a retry would queue behind it, so the
+        run is a retryable sandbox failure only once the cell is stopped, or
+        once the gateway says the kernel is gone (the next open starts fresh).
+        """
+        status = self._interrupt(kernel_id)
+        if status == 404:
+            self._forget_kernel(kernel_id)
+            result.runtime_invalidated = True
+            result.sandbox_error = True
+        else:
+            result.sandbox_error = status is not None and 200 <= status < 300
 
     def _interrupt_and_drain(self, ws: websocket.WebSocket, msg_id: str, kernel_id: str) -> bool:
         """Interrupt and drain the request, returning whether matching idle was observed."""
@@ -487,7 +502,11 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 )
                 result.runtime_invalidated = True
                 return result
-            return _error_result(type(exc).__name__, str(exc) or "failed to open kernel channel")
+            result = _error_result(type(exc).__name__, str(exc) or "failed to open kernel channel")
+            if isinstance(exc, websocket.WebSocketBadStatusException) and exc.status_code in (401, 403):
+                # The gateway answered and refused the credentials; another try can't succeed.
+                result.sandbox_error = False
+            return result
         try:
             msg_id = uuid.uuid4().hex
             ws.send(json.dumps(self._execute_request(msg_id, code)))
@@ -574,12 +593,9 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 break
             except websocket.WebSocketConnectionClosedException:
                 self._fail(result, "KernelDiedError", "kernel channel closed before completion")
-                # The kernel is kept: retiring it would wipe the run's workspace,
-                # and a kernel that did die is caught by the death-state frames or
-                # by the next connect's 404 (KernelGoneError). Its cell may still be
-                # running and would hold the kernel, so the run counts as a sandbox
-                # failure (worth retrying) only once the cell is stopped.
-                result.sandbox_error = self._interrupt(kernel_id)
+                # A kernel that did die is caught by the death-state frames, by the
+                # interrupt's 404, or by the next connect's 404 (KernelGoneError).
+                self._release_dropped_run(result, kernel_id)
                 break
             if not raw:
                 continue
@@ -587,8 +603,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 msg = json.loads(raw)
             except json.JSONDecodeError as exc:
                 self._fail(result, "ProtocolError", f"malformed kernel frame: {exc}")
-                # As for a dropped channel: retryable only once the cell is stopped.
-                result.sandbox_error = self._interrupt(kernel_id)
+                self._release_dropped_run(result, kernel_id)
                 break
             msg_type = msg.get("msg_type") or msg.get("header", {}).get("msg_type")
             content = msg.get("content", {})
