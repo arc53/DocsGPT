@@ -735,6 +735,8 @@ def test_the_cache_key_separates_identical_bytes_under_another_mime_type(monkeyp
         ("DOC_PARSER_ENGINE", "anydoc", "docling"),
         ("MARKUP_MAX_BYTES", 1000, 2000),
         ("PARSE_PDF_AS_IMAGE", False, True),
+        ("OPENAI_STT_MODEL", "whisper-1", "gpt-4o-transcribe"),
+        ("OPENAI_BASE_URL", "https://a.example/v1", "https://b.example/v1"),
     ],
 )
 def test_changing_a_parser_setting_misses_the_cache(monkeypatch, parse_queue, setting, before, after):
