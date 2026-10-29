@@ -3741,7 +3741,7 @@
         "showFullOutput": "完全な出力を表示",
         "fullOutputPending": "完全な出力は実行の終了後に表示できます。",
         "fullOutputFailed": "完全な出力を読み込めませんでした。",
-        "fullOutputUnsaved": "大きなステップの完全な出力を読み込むには、ワークフローを保存してください。",
+        "fullOutputUnsaved": "大きなステップの完全な出力を読み込むには、ワークフローを保存してもう一度実行してください。",
         "outputNotStreamed": "このステップの出力はストリーミングされません。",
         "errorLabel": "エラー:",
         "minimapHeading": "ワークフロー",

@@ -519,6 +519,27 @@ class TestMessageEventsRepository:
         rows = list(repo.read_after(msg))
         assert [r["payload"]["state_delta"]["at"] for r in rows] == [str(at), str(at)]
 
+    def test_values_jsonb_rejects_are_stored_as_text(self, pg_conn):
+        """NaN, infinities, lone surrogates and NUL would fail the jsonb cast and drop the batch."""
+        msg = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        payload = {
+            "nan": float("nan"),
+            "inf": float("inf"),
+            "neg": [float("-inf")],
+            "text": "a\ud800b\x00c",
+            "key\udfff": 1,
+        }
+
+        repo.bulk_record(msg, [(0, "workflow_step", payload)])
+        repo.record(msg, 1, "workflow_step", payload)
+
+        for row in repo.read_after(msg):
+            stored = row["payload"]
+            assert stored["nan"] == "NaN" and stored["inf"] == "Infinity" and stored["neg"] == ["-Infinity"]
+            assert stored["text"] == "a\ufffdb\ufffdc"
+            assert stored["key\ufffd"] == 1
+
     def test_bulk_record_empty_list_is_no_op(self, pg_conn):
         msg = _seed_message(pg_conn)
         repo = MessageEventsRepository(pg_conn)

@@ -3739,7 +3739,7 @@
         "showFullOutput": "显示完整输出",
         "fullOutputPending": "运行结束后即可查看完整输出。",
         "fullOutputFailed": "无法加载完整输出。",
-        "fullOutputUnsaved": "保存工作流后才能加载大型步骤的完整输出。",
+        "fullOutputUnsaved": "保存工作流并重新运行后，才能加载大型步骤的完整输出。",
         "outputNotStreamed": "此步骤的输出不会通过流发送。",
         "errorLabel": "错误：",
         "minimapHeading": "工作流",

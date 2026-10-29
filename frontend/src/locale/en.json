@@ -3766,7 +3766,7 @@
         "showFullOutput": "Show full output",
         "fullOutputPending": "The full output is available once the run ends.",
         "fullOutputFailed": "Couldn't load the full output.",
-        "fullOutputUnsaved": "Save the workflow to load a large step's full output.",
+        "fullOutputUnsaved": "Save the workflow and run it again to load a large step's full output.",
         "outputNotStreamed": "This step's output isn't streamed.",
         "errorLabel": "Error:",
         "minimapHeading": "Workflow",

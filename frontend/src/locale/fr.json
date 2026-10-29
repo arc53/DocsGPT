@@ -3869,7 +3869,7 @@
         "showFullOutput": "Afficher la sortie complète",
         "fullOutputPending": "La sortie complète sera disponible à la fin de l’exécution.",
         "fullOutputFailed": "Impossible de charger la sortie complète.",
-        "fullOutputUnsaved": "Enregistrez le workflow pour charger la sortie complète d’une étape volumineuse.",
+        "fullOutputUnsaved": "Enregistrez le workflow et relancez-le pour charger la sortie complète d’une étape volumineuse.",
         "outputNotStreamed": "La sortie de cette étape n’est pas diffusée.",
         "errorLabel": "Erreur :",
         "minimapHeading": "Workflow",

@@ -3761,7 +3761,7 @@
         "showFullOutput": "Vollständige Ausgabe anzeigen",
         "fullOutputPending": "Die vollständige Ausgabe ist verfügbar, sobald der Lauf endet.",
         "fullOutputFailed": "Die vollständige Ausgabe konnte nicht geladen werden.",
-        "fullOutputUnsaved": "Speichere den Workflow, um die vollständige Ausgabe eines großen Schritts zu laden.",
+        "fullOutputUnsaved": "Speichere den Workflow und führe ihn erneut aus, um die vollständige Ausgabe eines großen Schritts zu laden.",
         "outputNotStreamed": "Die Ausgabe dieses Schritts wird nicht gestreamt.",
         "errorLabel": "Fehler:",
         "minimapHeading": "Workflow",

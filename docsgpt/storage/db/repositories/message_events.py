@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any, Iterator, Mapping, Optional
 
 from sqlalchemy import Connection, text
@@ -19,6 +20,39 @@ from sqlalchemy import Connection, text
 from docsgpt.storage.db.base_repository import row_to_dict
 
 logger = logging.getLogger(__name__)
+
+
+def _jsonb_text(text_value: str) -> str:
+    """``text_value`` with what jsonb rejects (lone surrogates, NUL) replaced by U+FFFD."""
+    cleaned = text_value.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+    return cleaned.replace("\x00", "\ufffd")
+
+
+def _jsonb_safe(value: Any) -> Any:
+    """``value`` with every part a jsonb cast would reject made storable.
+
+    Non-finite floats become ``"NaN"``/``"Infinity"``/``"-Infinity"``, strings
+    (keys included) lose lone surrogates and NUL, and values JSON has no type
+    for become their text, as the live SSE frame sends them. One bad value
+    would otherwise fail the insert and drop the journal's whole batch.
+    """
+    if isinstance(value, str):
+        return _jsonb_text(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return "NaN" if math.isnan(value) else ("Infinity" if value > 0 else "-Infinity")
+    if isinstance(value, Mapping):
+        return {_jsonb_text(str(key)): _jsonb_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonb_safe(item) for item in value]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return _jsonb_text(str(value))
+
+
+def _payload_json(payload: Any) -> str:
+    """Serialize a journal payload for the ``CAST(... AS jsonb)`` in its write."""
+    return json.dumps(_jsonb_safe(payload))
+
 
 
 class MessageEventsRepository:
@@ -71,7 +105,7 @@ class MessageEventsRepository:
                 "message_id": str(message_id),
                 "sequence_no": int(sequence_no),
                 "event_type": event_type,
-                "payload": json.dumps(materialised_payload, default=str),
+                "payload": _payload_json(materialised_payload),
             },
         )
 
@@ -101,7 +135,7 @@ class MessageEventsRepository:
                 "message_id": str(message_id),
                 "sequence_no": int(seq),
                 "event_type": event_type,
-                "payload": json.dumps(payload if payload is not None else {}, default=str),
+                "payload": _payload_json(payload if payload is not None else {}),
             }
             for seq, event_type, payload in events
         ]
@@ -334,7 +368,7 @@ class MessageEventsRepository:
                     "UPDATE message_events SET payload = CAST(:payload AS jsonb) "
                     "WHERE message_id = CAST(:message_id AS uuid) AND sequence_no = :seq"
                 ),
-                {"message_id": str(message_id), "seq": seq, "payload": json.dumps(payload, default=str)},
+                {"message_id": str(message_id), "seq": seq, "payload": _payload_json(payload)},
             )
         return len(changed)
 

@@ -3864,7 +3864,7 @@
         "showFullOutput": "Mostrar la salida completa",
         "fullOutputPending": "La salida completa estará disponible cuando termine la ejecución.",
         "fullOutputFailed": "No se pudo cargar la salida completa.",
-        "fullOutputUnsaved": "Guarda el flujo de trabajo para cargar la salida completa de un paso grande.",
+        "fullOutputUnsaved": "Guarda el flujo de trabajo y vuelve a ejecutarlo para cargar la salida completa de un paso grande.",
         "outputNotStreamed": "La salida de este paso no se transmite.",
         "errorLabel": "Error:",
         "minimapHeading": "Flujo de trabajo",
