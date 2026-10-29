@@ -1449,10 +1449,12 @@ class WorkflowEngine:
                 self.agent.retrieved_docs = [doc for index in sorted(item_docs) for doc in item_docs[index]]
         finally:
             if not finished:
-                # The stream closed mid-loop: start nothing more and let the
-                # running items end at their next node without waiting on them.
+                # The stream closed mid-loop: start nothing more; running items
+                # stop at their next node (a Stop also interrupts their calls).
                 cancel.set()
-            pool.shutdown(wait=finished)
+            # Always wait: the run's sandbox session closes after this returns,
+            # and a running item must not use or reopen it after that.
+            pool.shutdown(wait=True)
 
     @staticmethod
     def _loop_item_event(

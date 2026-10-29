@@ -495,8 +495,10 @@ def test_fail_names_the_item_that_failed_not_one_it_stopped(node_agent):
 def test_a_failure_stops_new_items_before_the_relay_reaches_it(node_agent):
     """An item failing while the relay hands out a success's slot starts nothing new."""
     first_seen = threading.Event()
+    prompts = []
 
     def reply(prompt):
+        prompts.append(prompt)
         if prompt == "b":
             # Fail while the consumer is holding the relay on item 0's event.
             first_seen.wait(1)
@@ -517,7 +519,7 @@ def test_a_failure_stops_new_items_before_the_relay_reaches_it(node_agent):
 
     loop_log = next(log for log in engine.execution_log if log["node_id"] == "each")
     assert loop_log["items"][2]["status"] == "pending"
-    assert [kwargs["prompt"] for kwargs in node_agent["created"]].count("c") == 0
+    assert "c" not in prompts
 
 
 def test_each_item_reads_its_own_retrieved_documents(node_agent, monkeypatch):
@@ -566,6 +568,38 @@ def test_an_explicit_null_limit_means_the_default(node_agent):
     _run(engine)
 
     assert engine.state["results"] == ["A", "B", "C"]
+
+
+def test_closing_the_stream_mid_loop_waits_for_running_items(node_agent):
+    """A closed stream returns only after the running items stopped, before the session closes."""
+    started = threading.Event()
+    finished = []
+
+    def reply(prompt):
+        started.set()
+        time.sleep(0.2)
+        finished.append(prompt)
+        return prompt
+
+    node_agent["reply"] = reply
+    body = [_agent("one", parent="each"), _agent("two", parent="each", prompt_template="again")]
+    engine = _engine(
+        {"items": "items", "concurrency": 2},
+        body,
+        body_edges=[_edge("one", "two")],
+        state={"items": ITEMS},
+    )
+    stream = engine.execute(engine._initial, "q")
+    for event in stream:
+        if event.get("type") == "workflow_loop_item":
+            break
+    started.wait(1)
+
+    stream.close()
+
+    # Both running items finished their first node and stopped before the
+    # second; the third item never started.
+    assert sorted(finished) == ["a", "b"]
 
 
 def test_progress_skips_steps_inside_a_loop():
