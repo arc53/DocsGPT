@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.conversations import (
@@ -445,6 +446,7 @@ class TestCompressionMetadata:
         points = repo.get(conv["id"], "user-1")["compression_metadata"]["compression_points"]
         assert [p["query_index"] for p in points] == [3, 5]
 
+    @pytest.mark.fresh_db
     def test_append_compression_point_dedupes_across_concurrent_sessions(self, pg_engine):
         """The duplicate check runs inside the UPDATE, under the row lock, so
         two sessions racing to persist the same point store it once."""
@@ -784,6 +786,7 @@ class TestConcurrentAppend:
     single trickiest invariant, so we exercise it directly with two
     parallel connections."""
 
+    @pytest.mark.fresh_db
     def test_concurrent_appends_get_distinct_positions(self, pg_engine, pg_conn):
         import threading
 

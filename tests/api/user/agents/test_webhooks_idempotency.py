@@ -170,6 +170,7 @@ class TestWebhookIdempotency:
         assert first.json == second.json
         assert apply_mock.call_count == 1
 
+    @pytest.mark.fresh_db
     def test_concurrent_same_key_only_one_apply_async(self, app, pg_engine):
         """Race test (M3): N parallel webhook POSTs with same key → only ONE apply_async.
 

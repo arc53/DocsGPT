@@ -22,6 +22,9 @@ from docsgpt.sandbox.base import DetachedState, ExecResult
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 def _context(conversation_id, message_id=None, auto_resume=True):
     context = BackgroundContext(user_id="u1", conversation_id=conversation_id, origin_message_id=message_id)
     context._auto_resume = auto_resume

@@ -121,6 +121,8 @@ The database tests do not use your running Postgres. `pytest-postgresql` starts 
 - **Debian/Ubuntu:** `sudo apt install postgresql`, then `export PATH="/usr/lib/postgresql/16/bin:$PATH"` (use the installed version number). The package also starts a server on port 5432, which clashes with the dev compose Postgres; the tests only need the binaries, so you can stop it with `sudo systemctl disable --now postgresql`.
 - Anywhere else, point the plugin at `pg_ctl` with `--postgresql-exec=/path/to/pg_ctl`.
 
+Each test worker clones the migrated schema once, and the database tests share that clone: `pg_conn` runs a test inside a transaction that is rolled back afterwards. A test that has to commit (background work on another thread, code that opens its own engine, a migration) needs `@pytest.mark.fresh_db`, which gives it a database of its own. A test that commits without the marker fails, naming the tables it left rows in.
+
 Then run the suite from the repository root:
 
 ```shell

@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from sqlalchemy import text
 
 from docsgpt.background import jobs
 from docsgpt.background.context import BackgroundContext
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.tool_call_attempts import ToolCallAttemptsRepository
+
+
+pytestmark = pytest.mark.fresh_db
 
 
 def _context(conversation_id, message_id, auto_resume=True):

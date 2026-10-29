@@ -27,6 +27,9 @@ from docsgpt.agents.workflows.schemas import (
 from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 class _StubNodeAgent:
     """Node-agent stub carrying a real ToolExecutor and an LLM-free gen()."""
 

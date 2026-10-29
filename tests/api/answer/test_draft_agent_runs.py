@@ -14,6 +14,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy import text
 
+
+pytestmark = pytest.mark.fresh_db
+
 OWNER = "owner-1"
 AGENT_MODEL = "agent-model"
 

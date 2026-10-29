@@ -181,6 +181,8 @@ install `tests/requirements.txt`). Coverage is off by default; CI passes `--cov=
 and `python -m pytest --cov=docsgpt --cov-report=html` gives a local report. DB-backed tests start a throwaway cluster through
 `pytest-postgresql`, so the PostgreSQL server binaries (`pg_ctl`, `initdb`) must be
 on `PATH` or reachable through `pg_config`; a running Postgres is not required.
+DB tests share one database per worker and roll back through `pg_conn`; a test that
+commits needs `@pytest.mark.fresh_db`, or it fails at teardown naming the tables it wrote.
 See CONTRIBUTING.md "Running the tests".
 
 On **macOS**, run the suite with `KMP_DUPLICATE_LIB_OK=TRUE`:

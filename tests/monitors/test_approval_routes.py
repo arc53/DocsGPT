@@ -12,6 +12,9 @@ from docsgpt.monitors import service, triggers
 from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 @pytest.fixture()
 def client():
     from docsgpt.app import app as flask_app
