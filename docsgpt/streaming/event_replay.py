@@ -23,6 +23,7 @@ from sqlalchemy import text as sql_text
 from docsgpt.storage.db.repositories.message_events import (
     MessageEventsRepository,
 )
+from docsgpt.storage.db.serialization import wire_safe
 from docsgpt.storage.db.session import db_readonly
 
 logger = logging.getLogger(__name__)
@@ -71,10 +72,10 @@ def sse_json(payload: Any) -> str:
     """Serialize an SSE payload: UTF-8 text as is, not as ``\\uXXXX`` escapes.
 
     The default ASCII escaping makes every non-Latin character six bytes,
-    tripling a Cyrillic or CJK answer on the wire and in the journal. A
-    string that cannot be written as UTF-8 (a lone surrogate) falls back to
-    escapes so the frame stays valid. Values JSON has no type for are sent as
-    their text.
+    tripling a Cyrillic or CJK answer on the wire and in the journal. The
+    payload is first made :func:`wire_safe` (no NaN, lone surrogates or NUL),
+    the same normalization the journal applies, so a live frame and its
+    replay match.
 
     Args:
         payload: The event.
@@ -82,12 +83,7 @@ def sse_json(payload: Any) -> str:
     Returns:
         One line of JSON.
     """
-    body = json.dumps(payload, ensure_ascii=False, default=str)
-    try:
-        body.encode("utf-8")
-    except UnicodeEncodeError:
-        return json.dumps(payload, default=str)
-    return body
+    return json.dumps(wire_safe(payload), ensure_ascii=False)
 
 
 def format_sse_event(payload: dict, sequence_no: int) -> str:

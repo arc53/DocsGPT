@@ -543,7 +543,9 @@ Each node can change this with **Step details in the chat stream**
 This setting covers the finished step's event only. An AI Agent node's answer
 streams into the chat while **Stream output to user** is on, whatever this
 setting says. To keep a node's output out of the chat stream, set **Status
-only** *and* turn **Stream output to user** off. Both settings limit what the
+only** *and* turn **Stream output to user** off, and make sure no later node
+shows it: an End node's output template, or another node that streams to the
+user, can still put the node's values into the answer. Both settings limit what the
 stream carries, not who can read the output: the run still saves it, and the
 person who started a saved run can read every step through the step route above.
 Use **Always full** only when a client needs every value from the stream itself. An End node's output template is streamed in pieces under

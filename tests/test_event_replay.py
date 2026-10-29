@@ -65,11 +65,11 @@ class TestFormatSseEvent:
         assert "Привет, 世界" in out
         assert "\\u" not in out
 
-    def test_text_that_is_not_valid_utf8_falls_back_to_escapes(self):
-        # A lone surrogate cannot be written as UTF-8; escaping keeps the frame valid.
+    def test_text_that_is_not_valid_utf8_is_made_valid(self):
+        # A lone surrogate cannot be written as UTF-8; it becomes U+FFFD, as in the journal.
         out = format_sse_event({"type": "answer", "answer": "a\ud800b"}, sequence_no=1)
         out.encode("utf-8")
-        assert json.loads(out.split("data: ", 1)[1]) == {"type": "answer", "answer": "a\ud800b"}
+        assert json.loads(out.split("data: ", 1)[1]) == {"type": "answer", "answer": "a\ufffdb"}
 
     def test_negative_sequence_for_synthetic_events(self):
         out = format_sse_event(
@@ -95,8 +95,12 @@ class TestSseJson:
     def test_keeps_non_ascii_unescaped(self):
         assert sse_json({"a": "ü"}) == '{"a": "ü"}'
 
-    def test_falls_back_for_lone_surrogates(self):
-        assert sse_json({"a": "\udfff"}) == '{"a": "\\udfff"}'
+    def test_replaces_lone_surrogates(self):
+        assert sse_json({"a": "\udfff"}) == '{"a": "\ufffd"}'
+
+    def test_sends_non_finite_numbers_as_text_a_browser_can_parse(self):
+        # NaN/Infinity are not JSON; JSON.parse in the browser rejects them.
+        assert sse_json({"n": float("nan"), "i": [float("inf")]}) == '{"n": "NaN", "i": ["Infinity"]}'
 
     def test_serializes_other_values_as_text(self):
         from datetime import datetime
