@@ -286,8 +286,10 @@ def test_schema_wait_retries_a_database_url_it_cannot_parse(name: str, tmp_path:
     env_file = tmp_path / ".env"
     env_file.write_text("")
     env = {"PATH": "/usr/bin:/bin", "POSTGRES_URI": "not a uri", "DOCSGPT_ENV_FILE": str(env_file)}
+    # Skip the 5 s pause between checks so the test can watch the retry itself.
+    no_pause = "import time\ntime.sleep = lambda seconds: print('slept %s' % seconds, flush=True)\n"
     waiter = subprocess.Popen(
-        [sys.executable, "-u", "-c", script],
+        [sys.executable, "-u", "-c", no_pause + script],
         env=env,
         cwd=Path(__file__).resolve().parents[1],
         stdout=subprocess.PIPE,
@@ -298,15 +300,15 @@ def test_schema_wait_retries_a_database_url_it_cannot_parse(name: str, tmp_path:
     give_up.start()
     try:
         output = ""
-        while "Waiting for" not in output:
+        while output.count("Waiting for") < 2:
             line = waiter.stdout.readline()
             if not line:
                 break
             output += line
         assert "unreachable (ArgumentError)" in output
-        # Still running well after the first failed check: asleep before the retry, not exiting.
-        with pytest.raises(subprocess.TimeoutExpired):
-            waiter.wait(timeout=2)
+        # A second report means it slept and checked again rather than exiting.
+        assert output.count("Waiting for") == 2, output
+        assert "slept 5" in output
     finally:
         give_up.cancel()
         waiter.kill()
