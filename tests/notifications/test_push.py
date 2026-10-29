@@ -15,6 +15,9 @@ from docsgpt.notifications import push
 from docsgpt.storage.db.repositories.push_subscriptions import PushSubscriptionsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 def _b64(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 

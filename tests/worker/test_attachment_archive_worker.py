@@ -18,6 +18,9 @@ import docsgpt.storage.db.engine as engine_module
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.session import db_readonly
 
+
+pytestmark = pytest.mark.fresh_db
+
 USER = "zip-user"
 
 

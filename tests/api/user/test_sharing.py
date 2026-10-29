@@ -269,6 +269,7 @@ class TestShareConversation:
 
 @pytest.mark.unit
 class TestPromptableShareFollowUp:
+    @pytest.mark.fresh_db
     def test_visitor_follow_up_through_share_key_answers(self, pg_engine, monkeypatch):
         """A visitor's question on a promptable link runs the share's backing agent."""
         import json

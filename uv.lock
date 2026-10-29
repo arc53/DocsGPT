@@ -1657,7 +1657,7 @@ dev = [
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
     { name = "pytest-cov", specifier = ">=4.1.0" },
-    { name = "pytest-postgresql", specifier = ">=6.0.0" },
+    { name = "pytest-postgresql", specifier = ">=9.0.0" },
     { name = "pytest-xdist", specifier = ">=3.5" },
     { name = "python-bidi", specifier = ">=0.6.11" },
     { name = "python-docx", specifier = ">=1.1" },

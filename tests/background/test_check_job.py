@@ -16,6 +16,9 @@ from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakes
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 @pytest.fixture(autouse=True)
 def quiet(monkeypatch):
     monkeypatch.setattr(jobs, "_deliver", lambda row: None)

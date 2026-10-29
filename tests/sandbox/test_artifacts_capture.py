@@ -11,6 +11,9 @@ from docsgpt.sandbox import artifacts_capture as ac
 from docsgpt.sandbox.artifacts_capture import _is_scratch, _matches_outputs
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 @pytest.mark.unit
 class TestIsScratch:
     @pytest.mark.parametrize(
