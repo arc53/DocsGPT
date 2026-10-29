@@ -509,14 +509,18 @@ class WorkflowEngine:
                 summary["output_preview"] = text[: min(_OUTPUT_PREVIEW_CHARS, limit // 8)]
                 summary["output_truncated"] = True
         event = self._step_event(node, status, **summary)
-        # A long node title costs the most for the least: drop its copy at
-        # the start of the error ("Title: reason") and cap it first.
+        # A long node title costs the most for the least, and errors repeat
+        # it ("Title: reason", 'Loop "Title" has …'): drop the leading copy
+        # (the title has its own field), cap it, and cap every copy left.
         title, error = event.get("node_title"), event.get("error")
         if _event_bytes(event) > limit and isinstance(title, str) and title:
             if isinstance(error, str) and error.startswith(f"{title}: "):
-                event["error"] = error[len(title) + 2 :]
+                event["error"] = error = error[len(title) + 2 :]
             if len(title) > _TITLE_KEEP_CHARS:
-                event["node_title"] = title[:_TITLE_KEEP_CHARS] + "…"
+                short = title[:_TITLE_KEEP_CHARS] + "…"
+                event["node_title"] = short
+                if isinstance(error, str):
+                    event["error"] = error.replace(title, short)
         # Many changed keys can outgrow the limit on their own: halve the list.
         while _event_bytes(event) > limit and event["state_keys_changed"]:
             event["state_keys_changed"] = event["state_keys_changed"][: len(event["state_keys_changed"]) // 2]

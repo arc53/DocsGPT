@@ -343,3 +343,15 @@ def test_a_long_reason_is_cut_from_its_end(monkeypatch):
     )
     assert _size(event) <= LIMIT
     assert event["error"].startswith("Reason: rrr") and event["error"].endswith("…")
+
+
+@pytest.mark.unit
+def test_a_title_repeated_inside_the_reason_is_shortened_with_it():
+    title = "L" * 5000
+    engine = _engine()
+    node = _node("loop", NodeType.LOOP, title)
+    event = engine._summarized_step_event(
+        node, "failed", {"step_index": 0, "error": f'Loop "{title}" has no items to read.'}, {}, LIMIT
+    )
+    assert _size(event) <= LIMIT
+    assert event["error"] == f'Loop "{"L" * 200}…" has no items to read.'
