@@ -198,8 +198,8 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["openai"] | EXPECTED_IDS["docsgpt"]
 
-    def test_structured_output_is_on_unless_a_model_turns_it_off(self):
-        # Workflow nodes with a JSON schema refuse a model without the flag.
+    def test_structured_output_is_on_unless_a_model_turns_it_off(self) -> None:
+        """A model without the flag supports structured output; an explicit false still wins."""
         s = _make_settings(GROQ_API_KEY="gsk-test", LLM_PROVIDER="groq")
         with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()

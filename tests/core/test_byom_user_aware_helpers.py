@@ -207,7 +207,8 @@ class TestHelpersThreadUserId:
             assert caps["supports_tools"] is True
             assert caps["context_window"] == 200_000
 
-    def test_byom_without_the_flag_supports_structured_output(self, pg_conn):
+    def test_byom_without_the_flag_supports_structured_output(self, pg_conn) -> None:
+        """A BYOM model saved without the flag supports structured output."""
         row = UserCustomModelsRepository(pg_conn).create(
             user_id="user-2",
             upstream_model_id="mistral-small-latest",
