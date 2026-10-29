@@ -43,15 +43,12 @@ def _error(message: str, status: int):
     return make_response(jsonify({"success": False, "message": message}), status)
 
 
-def _parse_time(value: Any) -> Optional[datetime]:
+def _parse_time(value: str) -> Optional[datetime]:
     """An ISO 8601 timestamp as an aware datetime (naive means UTC); None when unparseable."""
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        try:
-            parsed = datetime.fromisoformat(str(value).strip())
-        except ValueError:
-            return None
+    try:
+        parsed = datetime.fromisoformat(str(value).strip())
+    except ValueError:
+        return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
@@ -119,10 +116,8 @@ def _json_size(value: Any) -> int:
     return len(json.dumps(value, default=str).encode("utf-8"))
 
 
-def _capped_state(state: Any) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+def _capped_state(state: Dict[str, Any]) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """The final state with every value over ``STATE_VALUE_MAX_BYTES`` left out and listed."""
-    if not isinstance(state, dict):
-        return {}, []
     kept: Dict[str, Any] = {}
     truncated: List[Dict[str, Any]] = []
     for key, value in state.items():

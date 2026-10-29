@@ -427,3 +427,81 @@ class TestDownload:
         artifact_id = _artifact(db, run_id)
         response = _download(run_id, artifact_id, _pat(["artifacts:read"]), {"version": version})
         assert response.status_code == (404 if version == "2" else 400)
+
+
+# ---------------------------------------------------------------------------
+# Edges
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestEdges:
+    def test_a_reaped_run_reports_the_reapers_note(self, client, db):
+        run_id = _run(db, status="failed", result={"error": "Run did not complete.", "failed_reason": "stale_reaper"})
+        run = _body(_get(client, f"/api/workflow_runs/{run_id}", _pat(["runs:read"])))["run"]
+        assert run["error"] == "Run did not complete."
+
+    def test_a_failed_run_without_a_reason_has_no_error(self, client, db):
+        run_id = _run(db, status="failed", result={"query": "q"})
+        assert _body(_get(client, f"/api/workflow_runs/{run_id}", _pat(["runs:read"])))["run"]["error"] is None
+
+    def test_a_running_run_has_no_duration_yet(self, client, db):
+        wf = _workflow(db)
+        run_id = str(WorkflowRunsRepository(db).create(wf, OWNER, "running", inputs={"agent_id": AGENT_A})["id"])
+        run = _body(_get(client, f"/api/workflow_runs/{run_id}", _pat(["runs:read"])))["run"]
+        assert run["status"] == "running" and run["ended_at"] is None and run["duration_ms"] is None
+
+    def test_a_run_whose_agent_id_is_not_a_uuid_is_outside_every_allowlist(self, client, db):
+        run_id = _run(db, agent="legacy-agent")
+        claims = _pat(["runs:read"], {"agents": [AGENT_A]})
+        assert _get(client, f"/api/workflow_runs/{run_id}", claims).status_code == 404
+        assert _body(_get(client, f"/api/workflow_runs/{run_id}", _pat(["runs:read"])))["run"]["agent_id"] == (
+            "legacy-agent"
+        )
+
+    @pytest.mark.parametrize("path", ["/api/workflow_runs", "/api/workflow_runs/11111111-1111-1111-1111-111111111111"])
+    def test_anonymous_callers_are_401(self, client, db, path):
+        assert _get(client, path, None).status_code == 401
+
+    @pytest.mark.parametrize("path", ["/api/workflow_runs", "/api/workflow_runs/11111111-1111-1111-1111-111111111111"])
+    def test_a_database_failure_is_a_500(self, client, monkeypatch, path):
+        @contextmanager
+        def _broken():
+            raise RuntimeError("db down")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr("docsgpt.api.user.workflow_runs.routes.db_readonly", _broken)
+        response = _get(client, path, _pat(["runs:read"]))
+        assert response.status_code == 500
+        assert "db down" not in response.get_data(as_text=True)
+
+    def test_a_malformed_download_path_is_404(self, db, storage):
+        assert _download("not-a-uuid", "also-not", _pat(["artifacts:read"])).status_code == 404
+
+    def test_a_missing_file_is_404(self, db, monkeypatch):
+        run_id = _run(db)
+        artifact_id = _artifact(db, run_id)
+
+        class _Gone:
+            def get_file(self, path):
+                raise FileNotFoundError(path)
+
+        monkeypatch.setattr(
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage", staticmethod(lambda: _Gone())
+        )
+        assert _download(run_id, artifact_id, _pat(["artifacts:read"])).status_code == 404
+
+    def test_an_unexpected_download_failure_is_a_400(self, db, monkeypatch):
+        run_id = _run(db)
+        artifact_id = _artifact(db, run_id)
+
+        class _Broken:
+            def get_file(self, path):
+                raise RuntimeError("storage down")
+
+        monkeypatch.setattr(
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage", staticmethod(lambda: _Broken())
+        )
+        response = _download(run_id, artifact_id, _pat(["artifacts:read"]))
+        assert response.status_code == 400
+        assert "storage down" not in response.text
