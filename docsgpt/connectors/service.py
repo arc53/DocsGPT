@@ -1395,6 +1395,7 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
         "oauth_scopes": list(definition.oauth_scopes),
         "timeout": 30,
         "transport_type": "auto",
+        "proactive_oauth": definition.proactive_oauth,
     }
 
 

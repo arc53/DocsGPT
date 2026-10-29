@@ -281,4 +281,29 @@ describe('useMcpOAuth', () => {
     });
     expect(api.cancelMCPOAuth).not.toHaveBeenCalled();
   });
+
+  it('sends the proactive sign-in flag to the server with the config', async () => {
+    // The flag lives on the config the hook posts to /api/mcp_server/test;
+    // dropping it here would silently turn the proactive sign-in back off.
+    const { open } = await startWithPopup();
+    await act(async () => {
+      await hook.start(
+        { ...CONFIG, proactive_oauth: true },
+        { onDone: vi.fn(), onError: vi.fn() },
+      );
+    });
+    const sent = api.testMCPConnection.mock.calls.at(-1)![0];
+    expect(sent).toMatchObject({ config: { proactive_oauth: true } });
+    open.mockRestore();
+  });
+
+  it('leaves the proactive sign-in flag off when the server did not ask for it', async () => {
+    const { open } = await startWithPopup();
+    await act(async () => {
+      await hook.start(CONFIG, { onDone: vi.fn(), onError: vi.fn() });
+    });
+    const sent = api.testMCPConnection.mock.calls.at(-1)![0];
+    expect(sent.config).not.toHaveProperty('proactive_oauth');
+    open.mockRestore();
+  });
 });

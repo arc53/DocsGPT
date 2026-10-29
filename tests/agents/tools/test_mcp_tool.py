@@ -1888,6 +1888,7 @@ class TestSetupClientExtended:
         tool.oauth_client_name = "DocsGPT-MCP"
         tool.redirect_uri = "https://example.com/callback"
         tool.query_mode = False
+        tool.proactive_oauth = False
         tool._cache_key = "oauth_interactive_key"
         tool._client = None
         tool.available_tools = []
@@ -3254,6 +3255,7 @@ def _sign_in_tool(task_id, publish):
     tool.oauth_redirect_publish = publish
     tool.redirect_uri = "http://localhost:7091/api/mcp_server/callback"
     tool.query_mode = False
+    tool.proactive_oauth = False
     tool.user_id = "alice"
     tool.connection_id = None
     tool._client = None

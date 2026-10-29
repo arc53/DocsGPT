@@ -4990,6 +4990,18 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
             loop.run_until_complete(run_oauth_discovery())
             tools = mcp_tool.get_actions_metadata()
 
+            if mcp_tool.auth_type == "oauth" and not mcp_tool.oauth_signed_in():
+                # The server answered the discovery anonymously, so no token
+                # was ever obtained: an MCP server that serves anonymous
+                # requests with HTTP 200 gives the OAuth flow no challenge to
+                # react to. Reporting that as a completed sign-in would leave
+                # the connector unauthenticated, so it is a failure the user
+                # has to see.
+                raise RuntimeError(
+                    "OAuth finished without an access token; the server "
+                    "answered the tool discovery anonymously"
+                )
+
             publish_oauth(
                 "mcp.oauth.completed",
                 {"tools": tools, "tools_count": len(tools)},

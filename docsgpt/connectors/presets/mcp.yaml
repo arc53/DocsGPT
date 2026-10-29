@@ -255,6 +255,11 @@
 # to the ones created by this app. It does not grant write access to
 # repositories the user already owns; that needs the write-repos scope.
 # Scopes are space separated in the authorization request.
+#
+# proactive_oauth signs in before the first request. Hugging Face answers
+# anonymous MCP requests with HTTP 200 rather than a 401 challenge, so the
+# SDK's challenge-driven OAuth flow never starts and the sign-in would report
+# itself complete without a token.
 - key: mcp:huggingface
   name: Hugging Face
   description: Search Hugging Face models, datasets, Spaces and papers, and use configured Hub tools.
@@ -264,4 +269,5 @@
   auth_kind: mcp_oauth
   capabilities: [read, write]
   oauth_scopes: [openid, profile, read-mcp, read-repos, contribute-repos]
+  proactive_oauth: true
   docs_url: https://huggingface.co/docs/hub/hf-mcp-server
