@@ -787,3 +787,13 @@ def test_documents_as_a_node_selection_before_it_is_loaded_means_the_inputs(monk
     # padded or not.
     assert engine._resolve_input_artifact_ids(["documents"]) == [a1, a2]
     assert engine._resolve_input_artifact_ids([" documents "]) == [a1, a2]
+
+
+@pytest.mark.unit
+def test_an_exact_padded_state_key_wins_over_its_trimmed_name():
+    engine = _engine([])
+    engine.state[" report "] = {"artifact_id": "padded"}
+    engine.state["report"] = {"artifact_id": "trimmed"}
+
+    assert engine._resolve_input_artifact_ids([" report "]) == ["padded"]
+    assert engine._resolve_input_artifact_ids(["report"]) == ["trimmed"]

@@ -1206,7 +1206,9 @@ class WorkflowEngine:
             if name == DOCUMENTS_STATE_KEY and DOCUMENTS_STATE_KEY not in self.state:
                 resolved.extend(self._input_document_ids())
                 continue
-            ref = self.state.get(name)
+            # An exact key first: an output variable is stored as written,
+            # padding included.
+            ref = self.state[raw] if raw in self.state else self.state.get(name)
             if isinstance(ref, dict) and ref.get("artifact_id"):
                 resolved.append(str(ref["artifact_id"]))
             elif isinstance(ref, list):
