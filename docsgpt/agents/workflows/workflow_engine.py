@@ -1496,6 +1496,7 @@ class WorkflowEngine:
             try:
                 value = json.loads(value)
             except json.JSONDecodeError:
+                # Not JSON after all: the check below reports it as a string.
                 pass
         if not isinstance(value, list):
             raise WorkflowLoopError(
