@@ -191,9 +191,11 @@ document read so far:
 A Prompt Template or Output Template that reads `documents` (for example
 `{% for d in documents %}{{ d.text }}{% endfor %}`) loads every input document
 first, and so does a Code node that lists `documents` in its **Input files**.
-The run record and the step events keep the list without `text`. A workflow
-that writes its own `documents` variable keeps it; the engine then leaves that
-variable alone.
+A Code node that doesn't list it gets no `documents` in its `state.json`, even
+when an earlier node read them. The run record and the step events keep the
+list without `text` and without the table headers. A workflow that writes its
+own `documents` variable keeps it; the engine then leaves that variable alone
+and reads no documents for it.
 
 ---
 

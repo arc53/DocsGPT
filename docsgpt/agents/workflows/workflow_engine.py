@@ -310,9 +310,13 @@ class WorkflowEngine:
 
     def _snapshot_value(self, key: Any, value: Any) -> Any:
         """``value`` as snapshots and stream events carry it."""
-        if key == DOCUMENTS_STATE_KEY and value is not None and value is self._documents_value:
+        if self._is_published_documents(key, value):
             return snapshot_documents(value)
         return value
+
+    def _is_published_documents(self, key: Any, value: Any) -> bool:
+        """Whether ``value`` is the ``documents`` list the engine published (not one the workflow set)."""
+        return key == DOCUMENTS_STATE_KEY and value is not None and value is self._documents_value
 
     @staticmethod
     def _summarize_tool_calls(node_agent: Any) -> List[Dict[str, Any]]:
@@ -609,7 +613,8 @@ class WorkflowEngine:
         # ``documents`` in the inputs asks for the numbered text in
         # ``state.json`` (``state["documents"]``), not for files.
         input_refs = [ref for ref in config.inputs if ref != DOCUMENTS_STATE_KEY]
-        if len(input_refs) != len(config.inputs):
+        wants_documents = len(input_refs) != len(config.inputs)
+        if wants_documents:
             self._load_all_documents()
 
         node_json_schema = self._normalize_node_json_schema(config.json_schema, node.title)
@@ -627,7 +632,9 @@ class WorkflowEngine:
         # ``json.load(open("state.json"))`` -- e.g. ``state["decision"]``. The
         # file lands at the workspace root, which is the kernel cwd, so a
         # relative open resolves it. State is never templated into the program.
-        state_json = json.dumps(self._json_safe_state(), default=str).encode("utf-8")
+        state_json = json.dumps(
+            self._json_safe_state(include_documents=wants_documents), default=str
+        ).encode("utf-8")
         manager.put_file(session_id, "state.json", state_json)
         pre_signatures = snapshot_signatures(manager, session_id)
         result = manager.exec(session_id, code, timeout=timeout)
@@ -978,7 +985,14 @@ class WorkflowEngine:
         return entries
 
     def _load_all_documents(self) -> None:
-        """Read every run input document, for a template or code node that reads ``documents``."""
+        """Read every run input document, for a template or code node that reads ``documents``.
+
+        A ``documents`` the workflow set itself is what that reader gets, so
+        nothing is read for it.
+        """
+        current = self.state.get(DOCUMENTS_STATE_KEY)
+        if current is not None and current is not self._documents_value:
+            return
         ids = self._input_document_ids()
         if ids:
             self._load_documents(ids)
@@ -1208,7 +1222,7 @@ class WorkflowEngine:
         """Sanitize the run id into the sandbox-gateway charset for the session key."""
         return _SESSION_ID_RE.sub("-", str(self.workflow_run_id)) or str(uuid.uuid4())
 
-    def _json_safe_state(self) -> Dict[str, Any]:
+    def _json_safe_state(self, include_documents: bool = False) -> Dict[str, Any]:
         """Project ``self.state`` to a JSON-safe dict (the code node reads it from state.json).
 
         ``chat_history`` is excluded: it is the *caller's* full conversation, and a
@@ -1216,6 +1230,12 @@ class WorkflowEngine:
         in a shared agent) has no legitimate need for it. Since sandbox egress is
         open by design, staging it would let owner-authored code exfiltrate the
         runner's conversation. Node outputs and ``query`` are still exposed.
+
+        The documents' numbered text (``documents``, as the engine published
+        it) is left out for the same reason unless the node asked for it.
+
+        Args:
+            include_documents: Whether the node listed ``documents`` in its inputs.
         """
         projection: Dict[str, Any] = {}
         for key, value in self.state.items():
@@ -1223,6 +1243,8 @@ class WorkflowEngine:
                 continue
             normalized_key = key.strip()
             if not normalized_key or normalized_key in _CODE_STATE_EXCLUDED_KEYS:
+                continue
+            if not include_documents and self._is_published_documents(normalized_key, value):
                 continue
             projection[normalized_key] = value
         return projection

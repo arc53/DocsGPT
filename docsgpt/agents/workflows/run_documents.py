@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import zlib
 from typing import Any, Dict, List, Optional, Tuple
@@ -66,11 +67,22 @@ def is_inline_text_mime(mime_type: str) -> bool:
 
 
 def snapshot_documents(entries: List[Any]) -> List[Any]:
-    """The entries as run snapshots and stream events carry them: everything but the text."""
-    return [
-        {key: value for key, value in entry.items() if key != "text"} if isinstance(entry, dict) else entry
-        for entry in entries
-    ]
+    """The entries as run snapshots and stream events carry them: no document content.
+
+    The text is dropped, and each table keeps only its line span: a header
+    row holds cell values, which can be as sensitive as the text.
+    """
+    return [_snapshot_entry(entry) if isinstance(entry, dict) else entry for entry in entries]
+
+
+def _snapshot_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    projected = {key: value for key, value in entry.items() if key != "text"}
+    if isinstance(entry.get("tables"), list):
+        projected["tables"] = [
+            {key: value for key, value in table.items() if key != "header"} if isinstance(table, dict) else table
+            for table in entry["tables"]
+        ]
+    return projected
 
 
 def attachment_text(entry: Dict[str, Any]) -> str:
@@ -175,24 +187,24 @@ class RunDocuments:
                 raise WorkflowDocumentError(
                     f'Document "{name}" is too large to read ({int(size):,} bytes; the limit is {cap:,}).'
                 )
-            cached = _cache_get(version.get("sha256"))
+            cached = _cache_get(version, name)
             if cached is not None:
                 parsed[artifact_id] = cached
                 continue
             mime_type = version.get("mime_type") or "application/octet-stream"
             if is_inline_text_mime(mime_type):
                 parsed[artifact_id] = self._read_inline(name, version, mime_type, cap)
-                _cache_set(version.get("sha256"), parsed[artifact_id])
+                _cache_set(version, name, parsed[artifact_id])
                 continue
             if inline_parse:
                 parsed[artifact_id] = self._parse_here(artifact_id, name, version, user_id)
-                _cache_set(version.get("sha256"), parsed[artifact_id])
+                _cache_set(version, name, parsed[artifact_id])
                 continue
             dispatched.append(self._dispatch(artifact_id, name, version, user_id))
 
         for artifact_id, name, version, async_result, deadline in dispatched:
             parsed[artifact_id] = self._await(name, async_result, deadline)
-            _cache_set(version.get("sha256"), parsed[artifact_id])
+            _cache_set(version, name, parsed[artifact_id])
         return parsed
 
     @staticmethod
@@ -320,12 +332,23 @@ def _display_name(artifact_id: str, artifact: Optional[Dict[str, Any]], version:
     return str(version.get("filename") or (artifact or {}).get("title") or artifact_id)
 
 
-def _cache_key(sha256: str) -> str:
+def _cache_key(version: Dict[str, Any], name: str) -> Optional[str]:
+    """The cache key for a document version, or None when its content hash is unknown.
+
+    The reader is picked from the extension (and, for a text file without
+    one, the mime type), and the configured-parser fallback depends on the
+    engine and OCR settings, so identical bytes read differently under
+    another name or setup get a key of their own.
+    """
     from docsgpt.core.settings import settings
 
-    # Lines from the configured-parser fallback depend on the engine and OCR.
+    sha256 = version.get("sha256")
+    if not sha256:
+        return None
+    suffix = os.path.splitext(name)[1].lower()
+    reader = suffix or f"mime={version.get('mime_type') or ''}"
     parser = f"{settings.DOC_PARSER_ENGINE}-{settings.OCR_BACKEND}-{int(bool(settings.OCR_ENABLED))}"
-    return f"workflow:doclines:v{FORMAT_VERSION}:{parser}:{sha256}"
+    return f"workflow:doclines:v{FORMAT_VERSION}:{parser}:{reader}:{sha256}"
 
 
 def _cache_ttl() -> int:
@@ -334,15 +357,16 @@ def _cache_ttl() -> int:
     return max(int(settings.WORKFLOW_DOCUMENT_LINES_CACHE_TTL or 0), 0)
 
 
-def _cache_get(sha256: Optional[str]) -> Optional[Dict[str, Any]]:
-    """Cached lines for content with this hash; None on a miss or any Redis failure."""
-    if not sha256 or not _cache_ttl():
+def _cache_get(version: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
+    """Cached lines for this document version; None on a miss or any Redis failure."""
+    key = _cache_key(version, name)
+    if not key or not _cache_ttl():
         return None
     from docsgpt.cache import get_redis_instance
 
     try:
         client = get_redis_instance()
-        raw = client.get(_cache_key(sha256)) if client is not None else None
+        raw = client.get(key) if client is not None else None
         if not raw:
             return None
         value = json.loads(zlib.decompress(raw))
@@ -354,9 +378,10 @@ def _cache_get(sha256: Optional[str]) -> Optional[Dict[str, Any]]:
     return {"lines": value["lines"], "tables": value.get("tables") or []}
 
 
-def _cache_set(sha256: Optional[str], parsed: Dict[str, Any]) -> None:
+def _cache_set(version: Dict[str, Any], name: str, parsed: Dict[str, Any]) -> None:
+    key = _cache_key(version, name)
     ttl = _cache_ttl()
-    if not sha256 or not ttl:
+    if not key or not ttl:
         return
     from docsgpt.cache import get_redis_instance
 
@@ -365,6 +390,6 @@ def _cache_set(sha256: Optional[str], parsed: Dict[str, Any]) -> None:
         if client is None:
             return
         payload = json.dumps({"lines": parsed["lines"], "tables": parsed.get("tables") or []})
-        client.set(_cache_key(sha256), zlib.compress(payload.encode("utf-8")), ex=ttl)
+        client.set(key, zlib.compress(payload.encode("utf-8")), ex=ttl)
     except Exception:
         logger.warning("Workflow documents: line cache write failed", exc_info=True)

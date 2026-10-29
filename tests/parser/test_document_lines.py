@@ -192,3 +192,33 @@ def test_broken_docx_is_an_error_not_an_exception():
 @pytest.mark.unit
 def test_number_lines_prefixes_document_and_line_numbers():
     assert number_lines(3, ["a", "(p.2) b"]) == "[D3:L1] a\n[D3:L2] (p.2) b"
+
+
+@pytest.mark.unit
+def test_xlsx_ignores_a_forged_sheet_dimension(monkeypatch):
+    openpyxl = pytest.importorskip("openpyxl")
+    import re
+    import zipfile
+
+    wb = openpyxl.Workbook()
+    wb.active["A1"] = "only"
+    buf = io.BytesIO()
+    wb.save(buf)
+    src = zipfile.ZipFile(io.BytesIO(buf.getvalue()))
+    out_buf = io.BytesIO()
+    with zipfile.ZipFile(out_buf, "w") as out:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                data = re.sub(rb'<dimension ref="[^"]*"/>', b'<dimension ref="A1:XFD1048576"/>', data)
+            out.writestr(item, data)
+
+    converted = []
+    real_cell_text = document_lines._cell_text
+    monkeypatch.setattr(document_lines, "_cell_text", lambda value: converted.append(value) or real_cell_text(value))
+
+    result = extract_document_lines(out_buf.getvalue(), "forged.xlsx")
+
+    assert result["lines"] == ["(Sheet!A1) only"]
+    # Rows are sized from their own cells, not padded to the declared 16,384 columns.
+    assert len(converted) == 1

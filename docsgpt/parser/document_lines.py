@@ -240,6 +240,9 @@ def _xlsx_lines(data: bytes) -> Dict[str, Any]:
     out = _Lines()
     try:
         for sheet in workbook.worksheets:
+            # The declared <dimension> comes from the file; trusting it pads
+            # every row to its width (up to 16,384 columns).
+            sheet.reset_dimensions()
             rows = []
             first_col: Optional[int] = None
             for row_number, values in enumerate(sheet.iter_rows(min_row=1, min_col=1, values_only=True), start=1):

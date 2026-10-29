@@ -645,3 +645,66 @@ def test_inside_a_celery_worker_documents_parse_in_process(monkeypatch, parse_qu
     assert parse_queue.calls == []
     assert inline_calls == [(aid, {"workflow_run_id": RUN_ID}, "user-1", {"output": "lines"})]
     assert out[0]["content"].endswith("[D1:L1] inline")
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_the_cache_key_separates_identical_bytes_under_another_extension(monkeypatch, parse_queue):
+    redis = _FakeRedis()
+    monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: redis)
+    data = b"Item,Qty\nBolt,10"
+    as_txt, r1 = _artifact("text/plain", "data.txt", data=data, sha256="same")
+    as_csv, r2 = _artifact("text/csv", "data.csv", data=data, sha256="same")
+    _patch_repo(monkeypatch, {as_txt: r1, as_csv: r2})
+
+    _engine([as_txt])._materialize_node_attachments(_lines_config(), "Node", [])
+    out = _engine([as_csv])._materialize_node_attachments(_lines_config(), "Node", [])
+
+    assert out[0]["content"].endswith("[D1:L1] Item | Qty\n[D1:L2] Bolt | 10")
+    assert len(redis.store) == 2
+
+
+@pytest.mark.unit
+def test_snapshots_drop_table_header_values(monkeypatch, parse_queue):
+    aid, rec = _artifact("text/csv", "people.csv", data=b"Alice Smith,555-0100\nBob,555-0101")
+    _patch_repo(monkeypatch, {aid: rec})
+    engine = _engine([aid])
+    engine._materialize_node_attachments(_lines_config(), "Node", [])
+
+    assert engine.state["documents"][0]["tables"][0]["header"] == ["Alice Smith", "555-0100"]
+    assert engine.snapshot_state()["documents"][0]["tables"] == [{"first_line": 1, "last_line": 2}]
+    assert "Alice" not in json.dumps(engine._state_delta({}), default=str)
+
+
+@pytest.mark.unit
+def test_a_code_node_that_does_not_ask_gets_no_document_text(monkeypatch, parse_queue):
+    aid, rec = _artifact("text/plain", "notes.txt", data=b"private line")
+    _patch_repo(monkeypatch, {aid: rec})
+    manager = _FakeManager()
+    monkeypatch.setattr("docsgpt.sandbox.sandbox_creator.SandboxCreator.get_manager", lambda: manager)
+    monkeypatch.setattr("docsgpt.sandbox.artifacts_capture.snapshot_signatures", lambda *a, **k: {})
+    monkeypatch.setattr("docsgpt.sandbox.artifacts_capture.capture_artifacts", lambda *a, **k: [])
+    engine = _engine([aid])
+    engine._materialize_node_attachments(_lines_config(), "Earlier node", [])
+    node = WorkflowNode(id="code_1", workflow_id="wf", type=NodeType.CODE, title="Other", config={"code": "print(1)"})
+
+    list(engine._execute_code_node(node))
+
+    state = json.loads(dict(manager.put_files)["state.json"])
+    assert "documents" not in state
+    assert "private line" not in dict(manager.put_files)["state.json"].decode()
+
+
+@pytest.mark.unit
+def test_a_template_reading_a_workflow_owned_documents_value_reads_no_files(monkeypatch, parse_queue):
+    aid, rec = _artifact(DOCX, "a.docx", data=b"PK")
+    _patch_repo(monkeypatch, {aid: rec})
+    engine = _engine([aid])
+    engine.state["documents"] = ["mine"]
+
+    assert engine._format_template("{{ documents[0] }}") == "mine"
+    assert parse_queue.calls == []
