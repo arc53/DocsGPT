@@ -459,7 +459,7 @@ def test_a_template_mutating_nested_state_stays_inside_its_item(node_agent):
 
     assert engine.state["results"] == ["1", "1"]
     assert engine.state["seen"] == []
-    assert engine.state["items"] == ITEMS[:2]
+    assert engine.state["items"] == [{"name": "a"}, {"name": "b"}]
 
 
 def test_fail_names_the_item_that_failed_not_one_it_stopped(node_agent):
