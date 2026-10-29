@@ -515,6 +515,15 @@ class WorkflowEngine:
             event.pop("output", None)
             event["output_preview"] = ""
             event["output_truncated"] = True
+        # Last, the free text a node's own settings can make long: its error
+        # (which often repeats the title), then its title. The node id
+        # identifies the step and is never shortened.
+        for field in ("error", "node_title"):
+            over = _event_bytes(event) - limit
+            text = event.get(field)
+            if over > 0 and isinstance(text, str) and text:
+                # Each dropped character frees at least a byte; "…" takes three.
+                event[field] = text[: max(0, len(text) - over - 3)] + "…"
         return event
 
     def _finalize_log_entry(self, log_entry: Dict[str, Any], pre_state: Dict[str, Any]) -> None:

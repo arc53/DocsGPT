@@ -98,6 +98,9 @@ class TestSseJson:
     def test_replaces_lone_surrogates(self):
         assert sse_json({"a": "\udfff"}) == '{"a": "\ufffd"}'
 
+    def test_strips_nul_as_the_journal_does(self):
+        assert sse_json({"a\x00": "b\x00c"}) == '{"a": "bc"}'
+
     def test_sends_non_finite_numbers_as_text_a_browser_can_parse(self):
         # NaN/Infinity are not JSON; JSON.parse in the browser rejects them.
         assert sse_json({"n": float("nan"), "i": [float("inf")]}) == '{"n": "NaN", "i": ["Infinity"]}'

@@ -311,3 +311,22 @@ def _size_escaped(event: Dict[str, Any]) -> int:
     from docsgpt.streaming.event_replay import sse_json
 
     return len(sse_json(event).encode("utf-8"))
+
+
+@pytest.mark.unit
+def test_an_oversized_title_and_error_are_shortened_to_fit(monkeypatch):
+    long_title = "T" * 5000
+    state_node = WorkflowNode(
+        id="copy", workflow_id="wf", type=NodeType.STATE, title=long_title,
+        config={"operations": [
+            {"expression": "big", "target_variable": "copied"},
+            {"expression": "missing_" + "x" * 5000 + " + 1", "target_variable": "boom"},
+        ]},
+    )
+    events = _run(_engine(state_node), {"big": "x" * 10000})
+
+    failed = _step(events, "copy", "failed")
+    assert _size(failed) <= LIMIT
+    assert failed["node_id"] == "copy"
+    assert failed["node_title"].startswith("TTT") and len(failed["node_title"]) < len(long_title)
+    assert failed["error"]

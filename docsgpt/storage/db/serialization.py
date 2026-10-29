@@ -102,9 +102,9 @@ class PGNativeJSONEncoder(json.JSONEncoder):
 
 
 def _wire_text(text: str) -> str:
-    """``text`` with lone surrogates and NUL replaced by U+FFFD."""
+    """``text`` with lone surrogates replaced by U+FFFD and NUL removed (as ``strip_null_bytes`` does)."""
     cleaned = text.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
-    return cleaned.replace("\x00", "\ufffd")
+    return cleaned.replace("\x00", "")
 
 
 def wire_safe(value: Any) -> Any:
@@ -115,8 +115,9 @@ def wire_safe(value: Any) -> Any:
 
     * non-finite floats → ``"NaN"``, ``"Infinity"``, ``"-Infinity"`` (not JSON
       tokens; ``JSON.parse`` and ``jsonb`` reject them);
-    * strings and keys → lone surrogates and NUL replaced by U+FFFD (neither
-      UTF-8 nor ``jsonb`` can hold them);
+    * strings and keys → lone surrogates replaced by U+FFFD and NUL removed
+      (neither UTF-8 nor ``jsonb`` can hold them; the journal's own
+      ``strip_null_bytes`` also removes NUL, so both agree);
     * values JSON has no type for → their text.
 
     Args:

@@ -537,7 +537,7 @@ class TestMessageEventsRepository:
         for row in repo.read_after(msg):
             stored = row["payload"]
             assert stored["nan"] == "NaN" and stored["inf"] == "Infinity" and stored["neg"] == ["-Infinity"]
-            assert stored["text"] == "a\ufffdb\ufffdc"
+            assert stored["text"] == "a\ufffdbc"
             assert stored["key\ufffd"] == 1
 
     def test_bulk_record_empty_list_is_no_op(self, pg_conn):
