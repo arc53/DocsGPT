@@ -1785,6 +1785,8 @@
         "conversations": "對話",
         "analytics": "分析",
         "teams": "團隊",
+        "runs": "工作流程執行",
+        "artifacts": "產出物",
         "chat": "聊天"
       },
       "create": {
@@ -1803,7 +1805,7 @@
         "impliedByWrite": "已包含在寫入權限中",
         "restrict": "限制為特定資源",
         "restrictHint": "選填。將權杖限制為您選擇的項目。清單留空表示允許全部。",
-        "restrictNoFamilies": "請先選擇代理、來源、提示詞、工具或聊天的權限範圍，才能限制其資源。",
+        "restrictNoFamilies": "請先選擇代理、來源、提示詞、工具、工作流程、工作流程執行或聊天的權限範圍，才能限制其資源。",
         "allSelected": "全部（不限制）",
         "noResources": "找不到任何內容。",
         "searchResources": "搜尋...",

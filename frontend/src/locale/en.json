@@ -1788,6 +1788,8 @@
         "conversations": "Conversations",
         "analytics": "Analytics",
         "teams": "Teams",
+        "runs": "Workflow runs",
+        "artifacts": "Artifacts",
         "chat": "Chat"
       },
       "create": {
@@ -1806,7 +1808,7 @@
         "impliedByWrite": "Included with write access",
         "restrict": "Restrict to specific resources",
         "restrictHint": "Optional. Limit the token to the items you select. Leave a list empty to allow all of them.",
-        "restrictNoFamilies": "Select a scope for agents, sources, prompts, tools or chat first to restrict its resources.",
+        "restrictNoFamilies": "Select a scope for agents, sources, prompts, tools, workflows, workflow runs or chat first to restrict its resources.",
         "allSelected": "All (no restriction)",
         "noResources": "Nothing found.",
         "searchResources": "Search...",

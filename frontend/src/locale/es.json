@@ -1854,6 +1854,8 @@
         "conversations": "Conversaciones",
         "analytics": "Analíticas",
         "teams": "Equipos",
+        "runs": "Ejecuciones de flujos de trabajo",
+        "artifacts": "Artefactos",
         "chat": "Chat"
       },
       "create": {
@@ -1873,7 +1875,7 @@
         "impliedByWrite": "Incluido con el acceso de escritura",
         "restrict": "Restringir a recursos específicos",
         "restrictHint": "Opcional. Limita el token a los elementos que selecciones. Deja una lista vacía para permitirlos todos.",
-        "restrictNoFamilies": "Selecciona primero un permiso de agentes, fuentes, prompts, herramientas o chat para restringir sus recursos.",
+        "restrictNoFamilies": "Selecciona primero un permiso de agentes, fuentes, prompts, herramientas, flujos de trabajo, ejecuciones de flujos de trabajo o chat para restringir sus recursos.",
         "allSelected": "Todos (sin restricción)",
         "noResources": "No se encontró nada.",
         "searchResources": "Buscar...",

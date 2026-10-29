@@ -1,7 +1,7 @@
 ---
 title: Personal Access Tokens
 description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
-lastUpdated: 2026-10-18
+lastUpdated: 2026-10-29
 ---
 
 # Personal Access Tokens
@@ -92,6 +92,58 @@ jobs:
           docsgpt-cli agents apply -f agents/
 ```
 
+### Reading workflow runs
+
+A token with `chat:run` starts a workflow agent's run over `/stream`. The first event of the stream names the run:
+
+```json
+{"type": "workflow_run", "workflow_run_id": "6b1f0c2e-...", "step_total": 3}
+```
+
+With `runs:read` the token reads that run once it ends (or while it runs: `status` is `running` and `progress` says which step it is on):
+
+```bash
+curl -H "Authorization: Bearer $DOCSGPT_TOKEN" \
+  "$DOCSGPT_URL/api/workflow_runs/$RUN_ID?include=steps,state,artifacts"
+```
+
+```json
+{
+  "success": true,
+  "run": {
+    "id": "6b1f0c2e-...",
+    "agent_id": "3f0e8f0c-...",
+    "workflow_id": "9a2d...",
+    "status": "completed",
+    "query": "Extract the delivery terms",
+    "started_at": "2026-10-29T10:00:00+00:00",
+    "ended_at": "2026-10-29T10:00:12+00:00",
+    "duration_ms": 12000,
+    "error": null,
+    "steps": [
+      {"node_id": "extract", "node_type": "agent", "status": "completed", "duration_ms": 11800,
+       "error": null, "tool_calls": [{"tool_name": "read_document", "action_name": "read", "status": "completed"}]}
+    ],
+    "state": {"query": "Extract the delivery terms", "terms": {"days": 30}},
+    "state_truncated": [{"key": "report", "bytes": 81920}],
+    "artifacts": [
+      {"id": "c41e...", "filename": "terms.xlsx", "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+       "download_url": "/api/workflow_runs/6b1f0c2e-.../artifacts/c41e.../download"}
+    ]
+  }
+}
+```
+
+- `include` picks the extras: `steps` (each step's status, timing, error and tool calls, and a loop node's items with their own steps), `state` (the run's final state) and `artifacts` (the files the run produced; its input documents are left out). Without `include` the run comes back with its status and timing only.
+- A state value larger than 32 KB is left out of `state` and listed in `state_truncated`. Fetch it whole with `?state_key=report`.
+- `error` is the first failed step's error when the run failed.
+
+`GET /api/workflow_runs` lists the runs you started, newest first, with the same status and timing fields. Filter it with `agent_id`, `since` (an ISO 8601 moment), `status` (`pending`, `running`, `completed` or `failed`) and `limit` (1 to 100, default 20).
+
+With `artifacts:read` the token downloads a file the run produced from its `download_url`. Without the scope the download answers `403` with `"error": "insufficient_scope"`. `artifacts:read` also lets an unrestricted token list, read and download its other artifacts through `/api/artifacts` and `/api/artifacts/<id>/download`; deleting or restoring an artifact still needs a session.
+
+A run is read by the person who started it; anyone else's run, and a run outside a restricted token's agents, answers `404`.
+
 ## Scopes
 
 A `write` scope includes the matching `read` scope.
@@ -111,6 +163,8 @@ A `write` scope includes the matching `read` scope.
 | `conversations:read` / `conversations:write` | View / rename, delete and rate conversations |
 | `analytics:read` | View usage analytics and logs |
 | `teams:read` | View teams, members and resource shares |
+| `runs:read` | View the workflow runs you started: status, steps, final state and the files they produced |
+| `artifacts:read` | Download files your workflow runs produced, and view and download your artifacts |
 | `chat:run` | Ask agents and search sources (`/api/answer`, `/stream`, `/api/search`); used for benchmarking |
 
 `agents:keys` is separate from `agents:write` on purpose. Creating, publishing or adopting an agent mints its API key; a token without `agents:keys` gets the key back masked (`1234...90ab`), because an agent key keeps working after the token that saw it is revoked. Put differently: a deployment token that updates agents does not need to be able to read or rotate the secrets other systems use to call them.
@@ -121,7 +175,7 @@ Some parts of the API are never available to a token, whatever its scopes:
 - changing teams, their members and grants (reading them needs `teams:read`), and who may edit a shared resource or wiki;
 - connectors and connections, including their OAuth handshakes, and the MCP server OAuth handshake;
 - all remote device routes, not only pairing;
-- artifacts, speech-to-text and text-to-speech;
+- changing artifacts (deleting one or restoring a version), speech-to-text and text-to-speech;
 - conversation sharing and shared links, and file download;
 - the OpenAI-compatible `/v1` API (use an [agent API key](/API/agent-keys)) and the live event stream `/api/events`;
 - [Activity](/Using/activity#over-the-api) (`/api/activity/now`, `/api/activity/planned`, `/api/activity/history`) and stopping a running answer (`POST /api/messages/<message_id>/cancel`), because they span every chat and agent of the account;
@@ -153,6 +207,7 @@ For a restricted family the token:
   - **Conversations, analytics and message replay** (`/api/messages/<id>/tail`, `/api/messages/<id>/events`) are closed to every restricted token. They span all agents and contain cited source text and tool output.
   - **Schedules** run an agent with a free-form instruction and store the output. A token restricted to agents can list and create schedules for its agents; every other schedule route, and schedules altogether for tokens restricted on another family, are closed.
   - **Workflow writes** are closed to tokens restricted on sources, tools or prompts, because a workflow graph names those inside its nodes. Such a token also cannot attach a workflow to an agent unless it is restricted on workflows too, in which case only the listed workflows can be attached.
+  - **Workflow runs** belong to the agent that ran them. A token restricted to agents lists and reads only those agents' runs and downloads only their files; any other run, and a run started from the workflow builder's preview, answers `404`. Runs and their files are closed to tokens restricted on another family, and the `/api/artifacts` routes are closed to every restricted token.
   - `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
 
 A restriction covers what the token *asks for*, not what an allowed resource already contains: an agent on the list runs with its own sources, prompt and tools even when the token is also restricted on those families. List an agent only if you are happy for the token to use everything that agent uses.

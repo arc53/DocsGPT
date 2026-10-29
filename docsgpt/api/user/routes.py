@@ -34,6 +34,7 @@ from .sources import (
 )
 from .teams import teams_ns
 from .tools import tools_mcp_ns, tools_ns
+from .workflow_runs import workflow_runs_ns
 from .workflows import workflows_ns
 
 
@@ -101,5 +102,6 @@ api.add_namespace(teams_ns)
 api.add_namespace(tools_ns)
 api.add_namespace(tools_mcp_ns)
 
-# Workflows
+# Workflows, and the runs they leave behind
 api.add_namespace(workflows_ns)
+api.add_namespace(workflow_runs_ns)

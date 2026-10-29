@@ -1,7 +1,7 @@
 ---
 title: Setting Up a Development Environment
 description: "Set up a DocsGPT development environment: Postgres and Redis, the backend API and Celery worker, the Vite frontend, the docsgpt dev loop and troubleshooting."
-lastUpdated: 2026-10-21
+lastUpdated: 2026-10-29
 ---
 
 import { Callout } from 'nextra/components'
@@ -317,6 +317,7 @@ A few routes hold a response open for a long time, so they are native-async rout
 | `GET /api/messages/<id>/events` | Resuming a chat answer after the connection drops |
 | `GET /api/devices/sessions/<id>/events` | The command stream of a paired [remote device](/Tools/remote-device) |
 | `GET /api/artifacts/<id>/download` | [Artifact](/Tools/artifacts-and-code-execution#artifacts) downloads |
+| `GET /api/workflow_runs/<run_id>/artifacts/<artifact_id>/download` | Downloads of a [workflow run's](/API/personal-access-tokens#reading-workflow-runs) files |
 
 `docsgpt api`, `docsgpt dev`, `uvicorn docsgpt.asgi:asgi_app`, gunicorn with a uvicorn worker and the Docker
 images all serve the ASGI app. `flask --app docsgpt/app.py run` serves only the Flask app, so these routes

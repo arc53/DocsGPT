@@ -82,8 +82,9 @@ in `docsgpt/asgi.py`:
 - the `/mcp` FastMCP endpoint,
 - the chat reconnect reader `GET /api/messages/<id>/events`,
 - the notification stream `GET /api/events`,
-- the remote-device command stream `GET /api/devices/sessions/<id>/events`, and
-- artifact downloads `GET /api/artifacts/<id>/download`.
+- the remote-device command stream `GET /api/devices/sessions/<id>/events`,
+- artifact downloads `GET /api/artifacts/<id>/download`, and
+- a workflow run's file downloads `GET /api/workflow_runs/<run_id>/artifacts/<artifact_id>/download`.
 
 These are native-async Starlette routes because they hold a response open
 for a long time; on Flask each would pin a WSGI threadpool slot. Under
