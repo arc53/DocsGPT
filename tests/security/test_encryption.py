@@ -275,6 +275,20 @@ class TestToolCredentialsEnvelope:
         assert encryption.encrypt_tool_credentials({}, "user-1") == ""
         assert encryption.decrypt_tool_credentials("", "user-1") == {}
 
+    def test_strict_reader_tells_missing_from_unreadable(self, monkeypatch):
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        assert encryption.load_tool_credentials("", "user-1") == {}
+
+        blob = encryption.encrypt_tool_credentials({"api_key": "k"}, "user-1")
+        assert encryption.load_tool_credentials(blob, "user-1") == {"api_key": "k"}
+
+        with pytest.raises(encryption.CredentialDecryptionError):
+            encryption.load_tool_credentials(blob, "someone-else")
+
+        with pytest.raises(encryption.CredentialDecryptionError):
+            encryption.load_tool_credentials("v2:deadbeef:not-an-envelope", "user-1")
+
 
 @pytest.mark.unit
 class TestResealToolCredentials:

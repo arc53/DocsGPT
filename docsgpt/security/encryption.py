@@ -347,6 +347,35 @@ def decrypt_tool_credentials(blob: str, user_id: str) -> dict:
     return decrypt_credentials(blob, user_id)
 
 
+def load_tool_credentials(blob: str, user_id: str) -> dict:
+    """Decrypt tool secrets, raising when the blob is present but unreadable.
+
+    Rows that keep existing secrets on save must tell "no secrets stored"
+    apart from "the stored secrets cannot be opened", so a save never
+    overwrites ciphertext it could not read.
+
+    Args:
+        blob: The stored string from :func:`encrypt_tool_credentials` or the
+            legacy :func:`encrypt_credentials`.
+        user_id: The owner the blob was written for.
+
+    Returns:
+        The credentials, or an empty dict when nothing is stored.
+
+    Raises:
+        CredentialDecryptionError: The blob exists but no available key
+            opens it, or a v2 envelope fails authentication.
+    """
+    if not blob:
+        return {}
+    if envelope_key_id(blob) is not None:
+        return decrypt_json(blob, user_id)
+    credentials = decrypt_credentials(blob, user_id)
+    if not credentials:
+        raise CredentialDecryptionError("Stored credentials could not be decrypted")
+    return credentials
+
+
 def reseal_tool_credentials(blob: str, user_id: str) -> tuple[str, Optional[str]]:
     """Re-encrypt a tool/MCP/custom-model blob with the current key when needed.
 

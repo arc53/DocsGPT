@@ -245,7 +245,7 @@ class TestMergeSecretsOnUpdate:
             "base_url": {"secret": False},
         }
         with patch(
-            "docsgpt.api.user.tools.routes.decrypt_tool_credentials",
+            "docsgpt.api.user.tools.routes.load_tool_credentials",
             return_value={"api_key": "old-key"},
         ), patch(
             "docsgpt.api.user.tools.routes.encrypt_tool_credentials",
@@ -274,7 +274,7 @@ class TestMergeSecretsOnUpdate:
             "base_url": {"secret": False},
         }
         with patch(
-            "docsgpt.api.user.tools.routes.decrypt_tool_credentials",
+            "docsgpt.api.user.tools.routes.load_tool_credentials",
             return_value={"api_key": "old-key"},
         ), patch(
             "docsgpt.api.user.tools.routes.encrypt_tool_credentials",
@@ -297,7 +297,7 @@ class TestMergeSecretsOnUpdate:
             "base_url": {"secret": False},
         }
         with patch(
-            "docsgpt.api.user.tools.routes.decrypt_tool_credentials",
+            "docsgpt.api.user.tools.routes.load_tool_credentials",
             return_value={},
         ):
             result = _merge_secrets_on_update(
@@ -314,7 +314,7 @@ class TestMergeSecretsOnUpdate:
         config_requirements = {"api_key": {"secret": True}}
 
         with patch(
-            "docsgpt.api.user.tools.routes.decrypt_tool_credentials",
+            "docsgpt.api.user.tools.routes.load_tool_credentials",
             return_value={},
         ), patch(
             "docsgpt.api.user.tools.routes.encrypt_tool_credentials",
@@ -325,6 +325,39 @@ class TestMergeSecretsOnUpdate:
             )
 
         assert "has_encrypted_credentials" not in result
+
+    def test_unreadable_existing_blob_refuses_to_overwrite(self):
+        from docsgpt.api.user.tools.routes import (
+            StoredCredentialsUnreadable,
+            _merge_secrets_on_update,
+        )
+
+        new_config = {"base_url": "https://example.com"}
+        existing_config = {
+            "base_url": "https://old.com",
+            "encrypted_credentials": "v2:deadbeef:not-a-real-envelope",
+        }
+        config_requirements = {"api_key": {"secret": True}}
+
+        with pytest.raises(StoredCredentialsUnreadable):
+            _merge_secrets_on_update(
+                new_config, existing_config, config_requirements, "user1"
+            )
+
+    def test_unreadable_action_secrets_refuse_to_overwrite(self):
+        from docsgpt.api.user.tools.routes import (
+            API_TOOL_SECRETS_KEY,
+            StoredCredentialsUnreadable,
+            _seal_api_tool_secrets,
+        )
+
+        existing_config = {
+            API_TOOL_SECRETS_KEY: "v2:deadbeef:not-a-real-envelope",
+            "actions": {},
+        }
+
+        with pytest.raises(StoredCredentialsUnreadable):
+            _seal_api_tool_secrets({"actions": {}}, existing_config, "user1")
 
 
 # ---------------------------------------------------------------------------

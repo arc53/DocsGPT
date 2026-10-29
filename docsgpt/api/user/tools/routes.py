@@ -40,7 +40,11 @@ from docsgpt.connectors.service import account_tool_names
 from docsgpt.connectors.permissions import action_access, owner_credential_writes
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
-from docsgpt.security.encryption import CredentialDecryptionError, decrypt_tool_credentials, encrypt_tool_credentials
+from docsgpt.security.encryption import (
+    CredentialDecryptionError,
+    encrypt_tool_credentials,
+    load_tool_credentials,
+)
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.notes import NotesRepository
@@ -159,9 +163,14 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
 
     existing_secrets = {}
     if "encrypted_credentials" in existing_config:
-        existing_secrets = decrypt_tool_credentials(
-            existing_config["encrypted_credentials"], user_id
-        )
+        try:
+            existing_secrets = load_tool_credentials(
+                existing_config["encrypted_credentials"], user_id
+            )
+        except CredentialDecryptionError as err:
+            raise StoredCredentialsUnreadable(
+                _STORED_SECRETS_UNREADABLE
+            ) from err
 
     merged_secrets = existing_secrets.copy()
     for key in secret_keys:
@@ -192,6 +201,9 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
 # Access + secrets helpers
 # ---------------------------------------------------------------------------
 _CREDENTIALS_FOR_NEW_SERVER = "Enter credentials for the new server"
+_STORED_SECRETS_UNREADABLE = (
+    "Stored credentials could not be read. Enter them again to save this tool."
+)
 _FORBIDDEN_MESSAGE = "Your access to this item doesn't allow that"
 _MCP_CREDENTIAL_AUTH_TYPES = {"api_key", "bearer", "basic"}
 # ``name`` (the tool type) and ``actions`` are handled on their own.
@@ -206,6 +218,10 @@ _MOVE_THROUGH_MCP_SAVE = (
 
 class CredentialsRequired(Exception):
     """A save moved a tool to a new origin without supplying new secrets."""
+
+
+class StoredCredentialsUnreadable(Exception):
+    """Stored secrets exist but no available key opens them, so a save must not overwrite them."""
 
 
 def denied_response(err: AccessDenied):
@@ -260,10 +276,18 @@ def _secret_props(action: Any):
 
 
 def _stored_api_tool_secrets(config: dict, owner_id: str) -> dict:
-    """Decrypted ``{action: {section: {param: value}}}`` plus legacy plaintext values."""
+    """Decrypted ``{action: {section: {param: value}}}`` plus legacy plaintext values.
+
+    Raises:
+        StoredCredentialsUnreadable: An encrypted blob is present but no
+            available key opens it, so the caller must not overwrite it.
+    """
     config = config or {}
     blob = config.get(API_TOOL_SECRETS_KEY)
-    secrets: dict = decrypt_tool_credentials(blob, owner_id) if blob else {}
+    try:
+        secrets: dict = load_tool_credentials(blob, owner_id) if blob else {}
+    except CredentialDecryptionError as err:
+        raise StoredCredentialsUnreadable(_STORED_SECRETS_UNREADABLE) from err
     for name, action in (config.get("actions") or {}).items():
         for section, param, spec in _secret_props(action):
             value = spec.get("value")
@@ -1219,7 +1243,7 @@ class UpdateTool(Resource):
                     )
         except AccessDenied as err:
             return denied_response(err)
-        except CredentialsRequired as err:
+        except (CredentialsRequired, StoredCredentialsUnreadable) as err:
             return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:
             current_app.logger.error(f"Error updating tool: {err}", exc_info=True)
@@ -1334,7 +1358,7 @@ class UpdateToolConfig(Resource):
                 repo.update(str(tool_doc["id"]), ra.owner_id, {"config": final_config})
         except AccessDenied as err:
             return denied_response(err)
-        except CredentialsRequired as err:
+        except (CredentialsRequired, StoredCredentialsUnreadable) as err:
             return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:
             current_app.logger.error(
