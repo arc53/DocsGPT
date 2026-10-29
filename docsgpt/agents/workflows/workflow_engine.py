@@ -96,6 +96,8 @@ _STREAM_OUTPUT_MODES = frozenset(STREAM_OUTPUT_VALUES)
 _DEFAULT_STREAM_OUTPUT = "summary"
 # Characters of a summarized step's output kept as its preview.
 _OUTPUT_PREVIEW_CHARS = 500
+# Characters of an over-long node title kept before its error is cut.
+_TITLE_KEEP_CHARS = 200
 # Worst-case JSON bytes per character (a ``\u00XX`` escape), and room for the
 # rest of an ``answer`` event, when cutting a long answer into chunks.
 _JSON_BYTES_PER_CHAR = 6
@@ -507,6 +509,14 @@ class WorkflowEngine:
                 summary["output_preview"] = text[: min(_OUTPUT_PREVIEW_CHARS, limit // 8)]
                 summary["output_truncated"] = True
         event = self._step_event(node, status, **summary)
+        # A long node title costs the most for the least: drop its copy at
+        # the start of the error ("Title: reason") and cap it first.
+        title, error = event.get("node_title"), event.get("error")
+        if _event_bytes(event) > limit and isinstance(title, str) and title:
+            if isinstance(error, str) and error.startswith(f"{title}: "):
+                event["error"] = error[len(title) + 2 :]
+            if len(title) > _TITLE_KEEP_CHARS:
+                event["node_title"] = title[:_TITLE_KEEP_CHARS] + "…"
         # Many changed keys can outgrow the limit on their own: halve the list.
         while _event_bytes(event) > limit and event["state_keys_changed"]:
             event["state_keys_changed"] = event["state_keys_changed"][: len(event["state_keys_changed"]) // 2]
@@ -515,9 +525,9 @@ class WorkflowEngine:
             event.pop("output", None)
             event["output_preview"] = ""
             event["output_truncated"] = True
-        # Last, the free text a node's own settings can make long: its error
-        # (which often repeats the title), then its title. The node id
-        # identifies the step and is never shortened.
+        # Last the free text itself: the error (its start says what went
+        # wrong), then the title. The node id identifies the step and is
+        # never shortened.
         for field in ("error", "node_title"):
             over = _event_bytes(event) - limit
             text = event.get(field)

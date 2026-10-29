@@ -328,5 +328,18 @@ def test_an_oversized_title_and_error_are_shortened_to_fit(monkeypatch):
     failed = _step(events, "copy", "failed")
     assert _size(failed) <= LIMIT
     assert failed["node_id"] == "copy"
-    assert failed["node_title"].startswith("TTT") and len(failed["node_title"]) < len(long_title)
-    assert failed["error"]
+    assert failed["node_title"] == "T" * 200 + "…"
+    # The reason survives, without the title it repeated, and so do the keys.
+    assert failed["error"].startswith("CEL evaluation error")
+    assert failed["state_keys_changed"] == ["copied"]
+
+
+@pytest.mark.unit
+def test_a_long_reason_is_cut_from_its_end(monkeypatch):
+    engine = _engine()
+    node = _node("n", NodeType.AGENT, "Short")
+    event = engine._summarized_step_event(
+        node, "failed", {"step_index": 0, "error": "Reason: " + "r" * 10000}, {"k": 1}, LIMIT
+    )
+    assert _size(event) <= LIMIT
+    assert event["error"].startswith("Reason: rrr") and event["error"].endswith("…")
