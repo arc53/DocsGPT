@@ -1,12 +1,19 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
+vi.mock('react-redux', () => ({
+  useSelector: () => 'token',
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
 import type { CustomModel } from '../models/types';
-import { buildInitialFormState, CapabilityChip } from './CustomModelModal';
+import CustomModelModal, {
+  buildInitialFormState,
+  CapabilityChip,
+} from './CustomModelModal';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -92,5 +99,67 @@ describe('buildInitialFormState', () => {
     );
     expect(state.supports_tools).toBe(true);
     expect(state.supports_structured_output).toBe(true);
+  });
+});
+
+describe('CustomModelModal capability chips', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  const chipPressed = (key: string) =>
+    Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="toggle-chip"]',
+      ),
+    )
+      .find(
+        (chip) =>
+          chip.textContent ===
+          `settings.customModels.capabilities.chips.${key}`,
+      )
+      ?.getAttribute('aria-pressed');
+
+  const renderModal = (model: CustomModel | null) => {
+    act(() => {
+      root.render(
+        <CustomModelModal
+          modalState="ACTIVE"
+          setModalState={vi.fn()}
+          model={model}
+          onSaved={vi.fn()}
+        />,
+      );
+    });
+  };
+
+  it('shows tools and structured output on when creating a model', () => {
+    renderModal(null);
+    expect(chipPressed('tools')).toBe('true');
+    expect(chipPressed('structuredOutput')).toBe('true');
+  });
+
+  it('shows both off when editing a model saved without them', () => {
+    renderModal({
+      id: 'm1',
+      upstream_model_id: 'mistral-large',
+      display_name: 'Mistral',
+      base_url: 'https://api.mistral.ai/v1',
+      capabilities: { context_window: 32000 },
+      enabled: true,
+      source: 'user',
+    } as CustomModel);
+    expect(chipPressed('tools')).toBe('false');
+    expect(chipPressed('structuredOutput')).toBe('false');
   });
 });
