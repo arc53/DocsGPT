@@ -73,6 +73,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const [saving, setSaving] = React.useState(false);
   const [loadFailed, setLoadFailed] = React.useState(false);
   const [saveFailed, setSaveFailed] = React.useState(false);
+  const loadRequestId = React.useRef(0);
 
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
   const [auditOpen, setAuditOpen] = React.useState(false);
@@ -88,20 +89,30 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
   const loadDevice = React.useCallback(() => {
     if (!deviceId) return;
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setLoadFailed(false);
+    setSaveFailed(false);
     devicesService
       .get(deviceId, token)
-      .then((d) => applyDevice(d))
+      .then((d) => {
+        if (requestId === loadRequestId.current) applyDevice(d);
+      })
       .catch((err) => {
+        if (requestId !== loadRequestId.current) return;
         console.error('load device failed', err);
         setLoadFailed(true);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (requestId === loadRequestId.current) setLoading(false);
+      });
   }, [deviceId, token, applyDevice]);
 
   React.useEffect(() => {
     loadDevice();
+    return () => {
+      loadRequestId.current += 1;
+    };
   }, [loadDevice]);
 
   const hasUnsavedChanges =

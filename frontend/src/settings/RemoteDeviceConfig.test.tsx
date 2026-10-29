@@ -61,6 +61,12 @@ const tool = {
   config: { device_id: 'dev-1' },
 } as unknown as UserToolType;
 
+const nextTool = {
+  ...tool,
+  id: 'tool-2',
+  config: { device_id: 'dev-2' },
+};
+
 const device = (overrides: Partial<Device>): Device => ({
   id: 'dev-1',
   name: 'Laptop',
@@ -69,6 +75,16 @@ const device = (overrides: Partial<Device>): Device => ({
   last_seen_at: null,
   ...overrides,
 });
+
+const deferredDevice = () => {
+  let resolve!: (value: Device) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<Device>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
 
 describe('RemoteDeviceConfig', () => {
   let container: HTMLDivElement;
@@ -90,11 +106,17 @@ describe('RemoteDeviceConfig', () => {
     container.remove();
   });
 
+  const renderTool = async (selectedTool: UserToolType = tool) => {
+    await act(async () => {
+      root.render(
+        <RemoteDeviceConfig tool={selectedTool} handleGoBack={goBack} />,
+      );
+    });
+  };
+
   const render = async (d: Device) => {
     getDevice.mockResolvedValue(d);
-    await act(async () => {
-      root.render(<RemoteDeviceConfig tool={tool} handleGoBack={goBack} />);
-    });
+    await renderTool();
   };
 
   const badges = () =>
@@ -315,6 +337,84 @@ describe('RemoteDeviceConfig', () => {
     expect(title()).toBe('Renamed');
   });
 
+  it('loading another device clears the previous device save error', async () => {
+    updateDevice.mockRejectedValueOnce(new Error('auth'));
+    await render(device({}));
+    await rename('Renamed');
+    await clickSave();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'common.actionFailed',
+    );
+
+    getDevice.mockResolvedValueOnce(
+      device({ id: 'dev-2', name: 'Workstation' }),
+    );
+    await renderTool(nextTool);
+
+    expect(title()).toBe('Workstation');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it.each(['success', 'failure'] as const)(
+    'ignores a stale load %s after the selected device has loaded',
+    async (outcome) => {
+      const previousRequest = deferredDevice();
+      const currentRequest = deferredDevice();
+      getDevice
+        .mockReturnValueOnce(previousRequest.promise)
+        .mockReturnValueOnce(currentRequest.promise);
+      await renderTool();
+      await renderTool(nextTool);
+      await act(async () => {
+        currentRequest.resolve(device({ id: 'dev-2', name: 'Workstation' }));
+      });
+      expect(title()).toBe('Workstation');
+
+      await act(async () => {
+        if (outcome === 'success') {
+          previousRequest.resolve(device({}));
+        } else {
+          previousRequest.reject(new Error('Request failed (503)'));
+        }
+      });
+
+      expect(getDevice).toHaveBeenNthCalledWith(1, 'dev-1', 'token');
+      expect(getDevice).toHaveBeenNthCalledWith(2, 'dev-2', 'token');
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(title()).toBe('Workstation');
+    },
+  );
+
+  it.each(['success', 'failure'] as const)(
+    'a stale load %s does not finish the selected device loading state',
+    async (outcome) => {
+      const previousRequest = deferredDevice();
+      const currentRequest = deferredDevice();
+      getDevice
+        .mockReturnValueOnce(previousRequest.promise)
+        .mockReturnValueOnce(currentRequest.promise);
+      await renderTool();
+      await renderTool(nextTool);
+      await act(async () => {
+        if (outcome === 'success') {
+          previousRequest.resolve(device({}));
+        } else {
+          previousRequest.reject(new Error('Request failed (503)'));
+        }
+      });
+
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(container.querySelector('input')).toBeNull();
+      expect(container.textContent).not.toContain('Laptop');
+      await act(async () => {
+        currentRequest.resolve(device({ id: 'dev-2', name: 'Workstation' }));
+      });
+
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(title()).toBe('Workstation');
+    },
+  );
+
   it('a failed load shows a retryable error, and Retry loads the device', async () => {
     getDevice
       .mockRejectedValueOnce(new Error('Request failed (503)'))
@@ -349,18 +449,10 @@ describe('RemoteDeviceConfig', () => {
   it('a failed load for another device hides stale settings until Retry succeeds', async () => {
     await render(device({}));
     expect(title()).toBe('Laptop');
-    const nextTool = {
-      ...tool,
-      id: 'tool-2',
-      config: { device_id: 'dev-2' },
-    };
-    let resolveRetry!: (value: Device) => void;
-    const retryRequest = new Promise<Device>((resolve) => {
-      resolveRetry = resolve;
-    });
+    const retryRequest = deferredDevice();
     getDevice
       .mockRejectedValueOnce(new Error('Request failed (503)'))
-      .mockReturnValueOnce(retryRequest);
+      .mockReturnValueOnce(retryRequest.promise);
     await act(async () => {
       root.render(<RemoteDeviceConfig tool={nextTool} handleGoBack={goBack} />);
     });
@@ -380,7 +472,7 @@ describe('RemoteDeviceConfig', () => {
     expect(container.querySelector('input')).toBeNull();
     expect(container.textContent).not.toContain('Laptop');
     await act(async () => {
-      resolveRetry(device({ id: 'dev-2', name: 'Workstation' }));
+      retryRequest.resolve(device({ id: 'dev-2', name: 'Workstation' }));
     });
 
     expect(getDevice).toHaveBeenNthCalledWith(2, 'dev-2', 'token');
