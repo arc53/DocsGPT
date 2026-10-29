@@ -2841,7 +2841,9 @@
       "title": "ワークフロー",
       "step": "ステップ {{step}}",
       "stepOf": "ステップ {{step}}/{{total}}",
-      "stepCount_other": "{{count}} ステップ"
+      "stepCount_other": "{{count}} ステップ",
+      "loopItems": "{{total}} 項目中 {{done}} 項目",
+      "loopItemsFailed": "{{count}} 件失敗"
     }
   },
   "agents": {
@@ -3622,7 +3624,24 @@
         "detailsTitle": "ワークフローの詳細",
         "detailsDescription": "エージェントカードに表示される名前、説明、画像です。",
         "unsavedChanges": "未保存の変更",
-        "editDetailsMenu": "詳細を編集"
+        "editDetailsMenu": "詳細を編集",
+        "loopHint": "リストの各項目に対してノードを実行",
+        "loopIntro": "ループ内のノードは、ワークフローの状態にあるリストの各項目に対して 1 回ずつ実行されます。各項目は状態の個別のコピー上で実行され、ループは項目ごとに 1 つの結果をリストの順序で保存します。",
+        "loopItems": "項目",
+        "loopItemsHint": "リストを保持する状態変数（例: extracted.items）。",
+        "loopItemsInvalid": "extracted.items のような状態パスを使用してください。",
+        "loopItemVariable": "項目変数",
+        "loopItemVariableHint": "ループ内のノードは現在の項目を {{example}} として参照します。",
+        "loopItemVariableInvalid": "英字、数字、アンダースコアを使用し、query などの予約名は使用しないでください。",
+        "loopConcurrency": "同時実行数",
+        "loopMaxItems": "最大項目数",
+        "loopOnError": "項目が失敗したとき",
+        "loopOnErrorFail": "停止してループを失敗にする",
+        "loopOnErrorSkip": "その項目を除外する",
+        "loopOnErrorCollect": "エラーをその位置に残す",
+        "loopOutputHint": "結果のリスト（項目ごとに 1 つ）。",
+        "loopResultVariable": "項目の結果",
+        "loopResultVariableHint": "各項目の結果となる値を持つ変数。空の場合は最後に実行されたノードの出力を使用します。"
       },
       "validation": {
         "nameRequired": "ワークフロー名は必須です",
@@ -3649,7 +3668,12 @@
         "caseNoVariable": "条件「{{name}}」のケース「{{handle}}」では、シンプルモードで変数を指定する必要があります",
         "branchReachEnd": "条件「{{name}}」の分岐「{{handle}}」は最終的に終了ノードに到達する必要があります",
         "codeRequired": "コードノード「{{name}}」には実行するコードが必要です",
-        "codeSchema": "コードノード「{{name}}」の JSON スキーマ: {{error}}"
+        "codeSchema": "コードノード「{{name}}」の JSON スキーマ: {{error}}",
+        "loopItems": "ループ「{{name}}」にはループするリストが必要です",
+        "loopItemsPath": "ループ「{{name}}」の項目は extracted.items のような状態パスである必要があります",
+        "loopItemVariable": "ループ「{{name}}」の項目変数は使用できません",
+        "loopEmpty": "ループ「{{name}}」の中には少なくとも 1 つのノードが必要です",
+        "loopEntry": "ループ「{{name}}」はちょうど 1 つのノードから開始する必要があります"
       },
       "schema": {
         "notObject": "有効な JSON オブジェクトである必要があります",
@@ -3687,7 +3711,11 @@
         "variableTitle": "変数: {{name}}",
         "valueTitle": "値: {{value}}",
         "operationCount_one": "{{count}} 件の操作",
-        "variableCount_one": "{{count}} 個の変数"
+        "variableCount_one": "{{count}} 個の変数",
+        "loop": "ループ",
+        "loopSummary": "{{items}} の各 {{variable}} について",
+        "loopNoItems": "ループするリストを選択",
+        "loopEmpty": "ここにノードをドロップすると、項目ごとに 1 回実行されます"
       },
       "preview": {
         "executionDetails": "実行の詳細",
@@ -3698,7 +3726,9 @@
         "emptyTitle": "ワークフローをテスト",
         "unsavedDraftAttachments": "プレビューでドキュメントを添付する前にワークフローを保存してください。",
         "stepCount_one": "（{{count}} ステップ）",
-        "backToRun": "実行に戻る"
+        "backToRun": "実行に戻る",
+        "loopItems": "{{total}} 項目中 {{done}} 項目",
+        "loopItemsFailed": "{{count}} 件失敗"
       },
       "documents": {
         "modeAll": "すべての入力ドキュメント",

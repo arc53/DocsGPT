@@ -2857,7 +2857,9 @@
       "step": "Schritt {{step}}",
       "stepOf": "Schritt {{step}} von {{total}}",
       "stepCount_one": "{{count}} Schritt",
-      "stepCount_other": "{{count}} Schritte"
+      "stepCount_other": "{{count}} Schritte",
+      "loopItems": "{{done}} von {{total}} Elementen",
+      "loopItemsFailed": "{{count}} fehlgeschlagen"
     }
   },
   "agents": {
@@ -3639,7 +3641,24 @@
         "detailsTitle": "Workflow-Details",
         "detailsDescription": "Name, Beschreibung und Bild, die auf der Agentenkarte angezeigt werden.",
         "unsavedChanges": "Nicht gespeicherte Änderungen",
-        "editDetailsMenu": "Details bearbeiten"
+        "editDetailsMenu": "Details bearbeiten",
+        "loopHint": "Knoten für jedes Element einer Liste ausführen",
+        "loopIntro": "Die Knoten in der Schleife laufen einmal für jedes Element einer Liste im Workflow-Zustand. Jedes Element läuft auf einer eigenen Kopie des Zustands, und die Schleife speichert ein Ergebnis pro Element in der Reihenfolge der Liste.",
+        "loopItems": "Elemente",
+        "loopItemsHint": "Die Zustandsvariable mit der Liste, zum Beispiel extracted.items.",
+        "loopItemsInvalid": "Verwende einen Zustandspfad wie extracted.items.",
+        "loopItemVariable": "Elementvariable",
+        "loopItemVariableHint": "Knoten in der Schleife lesen das aktuelle Element als {{example}}.",
+        "loopItemVariableInvalid": "Verwende Buchstaben, Ziffern und Unterstriche, keinen reservierten Namen wie query.",
+        "loopConcurrency": "Elemente gleichzeitig",
+        "loopMaxItems": "Höchstens Elemente",
+        "loopOnError": "Wenn ein Element fehlschlägt",
+        "loopOnErrorFail": "Anhalten und Schleife fehlschlagen lassen",
+        "loopOnErrorSkip": "Element auslassen",
+        "loopOnErrorCollect": "Fehler an seiner Stelle behalten",
+        "loopOutputHint": "Die Liste der Ergebnisse, eines pro Element.",
+        "loopResultVariable": "Elementergebnis",
+        "loopResultVariableHint": "Die Variable, deren Wert das Ergebnis jedes Elements ist. Leer verwendet die Ausgabe des zuletzt ausgeführten Knotens."
       },
       "validation": {
         "nameRequired": "Workflow-Name ist erforderlich",
@@ -3666,7 +3685,12 @@
         "caseNoVariable": "Bedingung „{{name}}“, Fall „{{handle}}“ muss im einfachen Modus eine Variable angeben",
         "branchReachEnd": "Verzweigung „{{handle}}“ von Bedingung „{{name}}“ muss schließlich einen Endknoten erreichen",
         "codeRequired": "Code-Knoten „{{name}}“ braucht auszuführenden Code",
-        "codeSchema": "JSON-Schema von Code-Knoten „{{name}}“: {{error}}"
+        "codeSchema": "JSON-Schema von Code-Knoten „{{name}}“: {{error}}",
+        "loopItems": "Schleife „{{name}}“ braucht eine Liste zum Durchlaufen",
+        "loopItemsPath": "Die Elemente der Schleife „{{name}}“ müssen ein Zustandspfad wie extracted.items sein",
+        "loopItemVariable": "Schleife „{{name}}“ hat eine unbrauchbare Elementvariable",
+        "loopEmpty": "Schleife „{{name}}“ braucht mindestens einen Knoten",
+        "loopEntry": "Schleife „{{name}}“ muss an genau einem Knoten beginnen"
       },
       "schema": {
         "notObject": "muss ein gültiges JSON-Objekt sein",
@@ -3704,7 +3728,11 @@
         "variableCount_one": "{{count}} Variable",
         "variableCount_other": "{{count}} Variablen",
         "variableTitle": "Variable: {{name}}",
-        "valueTitle": "Wert: {{value}}"
+        "valueTitle": "Wert: {{value}}",
+        "loop": "Schleife",
+        "loopSummary": "Für jedes {{variable}} in {{items}}",
+        "loopNoItems": "Liste für die Schleife auswählen",
+        "loopEmpty": "Knoten hier ablegen, um sie für jedes Element einmal auszuführen"
       },
       "preview": {
         "executionDetails": "Ausführungsdetails",
@@ -3715,7 +3743,9 @@
         "minimapHeading": "Workflow",
         "emptyTitle": "Workflow testen",
         "unsavedDraftAttachments": "Speichere den Workflow, bevor du in der Vorschau Dokumente anhängst.",
-        "backToRun": "Zurück zum Lauf"
+        "backToRun": "Zurück zum Lauf",
+        "loopItems": "{{done}} von {{total}} Elementen",
+        "loopItemsFailed": "{{count}} fehlgeschlagen"
       },
       "documents": {
         "modeAll": "Alle Eingabedokumente",

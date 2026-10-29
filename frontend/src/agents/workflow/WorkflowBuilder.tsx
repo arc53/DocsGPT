@@ -63,6 +63,19 @@ import { largestModelWindow } from '../contextLimit';
 import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import {
+  containerData,
+  createDefaultLoopConfig,
+  findLoopAt,
+  LOOP_BODY_ORIGIN,
+  LOOP_BODY_TYPES,
+  LOOP_DEFAULT_SIZE,
+  loopProblems,
+  parentsFirst,
+  readContainerData,
+  sameContainer,
+  toLoopPosition,
+} from './loopNodeConfig';
+import {
   createDefaultCodeConfig,
   normalizeCodeConfig,
   parseCodeJsonSchemaDraft,
@@ -79,6 +92,7 @@ import {
   CodeNode,
   ConditionNode,
   EndNode,
+  LoopNode,
   NoteNode,
   SetStateNode,
   StartNode,
@@ -90,6 +104,7 @@ import { WorkflowModelsContext } from './WorkflowModelsContext';
 import AgentPanel from './panels/AgentPanel';
 import CodePanel from './panels/CodePanel';
 import ConditionPanel from './panels/ConditionPanel';
+import LoopPanel from './panels/LoopPanel';
 import NotePanel from './panels/NotePanel';
 import StatePanel from './panels/StatePanel';
 import WorkflowPreview from './WorkflowPreview';
@@ -164,6 +179,30 @@ function canReachEnd(
     .some((e) => canReachEnd(e.target, edges, nodeIds, endIds, visited));
 }
 
+// Types whose saved ``data`` is the node's config rather than its canvas data.
+const CONFIG_DATA_TYPES = new Set(['agent', 'condition', 'state', 'loop']);
+
+/**
+ * A canvas node as the workflow API stores it: the type's config (or the
+ * node's data), plus the loop it sits in and a loop's canvas size.
+ */
+function serializeNode(node: Node): WorkflowNode {
+  const data =
+    node.type === 'code'
+      ? serializeCodeConfig(node.data.config)
+      : CONFIG_DATA_TYPES.has(node.type ?? '')
+        ? node.data.config
+        : node.data;
+  const extra = containerData(node);
+  return {
+    id: node.id,
+    type: node.type as WorkflowNode['type'],
+    title: node.data.title || node.data.label || node.type,
+    position: node.position,
+    data: Object.keys(extra).length > 0 ? { ...(data ?? {}), ...extra } : data,
+  };
+}
+
 function createWorkflowPayload(
   name: string,
   description: string,
@@ -173,21 +212,7 @@ function createWorkflowPayload(
   return {
     name,
     description,
-    nodes: workflowNodes.map((node) => ({
-      id: node.id,
-      type: node.type as
-        'start' | 'end' | 'agent' | 'note' | 'state' | 'condition' | 'code',
-      title: node.data.title || node.data.label || node.type,
-      position: node.position,
-      data:
-        node.type === 'code'
-          ? serializeCodeConfig(node.data.config)
-          : node.type === 'agent' ||
-              node.type === 'condition' ||
-              node.type === 'state'
-            ? node.data.config
-            : node.data,
-    })),
+    nodes: workflowNodes.map(serializeNode),
     edges: workflowEdges.map((edge) => ({
       id: edge.id,
       source: edge.source,
@@ -206,6 +231,7 @@ const NODE_TYPES: NodeTypes = {
   state: SetStateNode,
   condition: ConditionNode,
   code: CodeNode,
+  loop: LoopNode,
 };
 
 function WorkflowBuilderInner() {
@@ -377,6 +403,8 @@ function WorkflowBuilderInner() {
 
   const onConnect = useCallback(
     (params: Connection) => {
+      // The nodes in a loop run per item: they connect only to each other.
+      if (!sameContainer(nodes, params.source, params.target)) return;
       const exists = edges.some(
         (e) =>
           e.source === params.source &&
@@ -448,10 +476,11 @@ function WorkflowBuilderInner() {
 
   /**
    * Add a node of a palette type at a flow position, with its default config.
-   * Takes an undo snapshot first; the selection is left as it was.
+   * Inside a loop the position is relative to the loop. Takes an undo
+   * snapshot first; the selection is left as it was.
    */
   const createNode = useCallback(
-    (type: string, position: XYPosition) => {
+    (type: string, position: XYPosition, loop?: Node) => {
       takeSnapshot();
 
       const baseNode: Node = {
@@ -497,6 +526,15 @@ function WorkflowBuilderInner() {
       } else if (type === 'note') {
         baseNode.data.title = 'Note';
         baseNode.data.label = 'Note';
+      } else if (type === 'loop') {
+        baseNode.data.title = 'Loop';
+        baseNode.data.label = 'Loop';
+        baseNode.data.config = createDefaultLoopConfig();
+        baseNode.style = { ...LOOP_DEFAULT_SIZE };
+      }
+      if (loop) {
+        baseNode.parentNode = loop.id;
+        baseNode.extent = 'parent';
       }
 
       setNodes((nds) => nds.concat(baseNode));
@@ -511,15 +549,17 @@ function WorkflowBuilderInner() {
       const type = event.dataTransfer.getData('application/reactflow');
       if (!type) return;
 
-      createNode(
-        type,
-        reactFlowInstance.screenToFlowPosition({
-          x: event.clientX,
-          y: event.clientY,
-        }),
-      );
+      const point = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      // Dropped on a loop: the node joins its body.
+      const loop = LOOP_BODY_TYPES.has(type)
+        ? findLoopAt(nodes, point)
+        : undefined;
+      createNode(type, loop ? toLoopPosition(loop, point) : point, loop);
     },
-    [reactFlowInstance, createNode],
+    [reactFlowInstance, createNode, nodes],
   );
 
   // Click or Enter on a palette pill: beside the selected node, else in the
@@ -529,13 +569,35 @@ function WorkflowBuilderInner() {
       const anchor = selectedNode
         ? nodes.find((n) => n.id === selectedNode.id)
         : undefined;
-      if (anchor) {
+      const fitsInLoop = LOOP_BODY_TYPES.has(type);
+      // A selected loop takes the new node into its body.
+      if (anchor?.type === 'loop' && fitsInLoop) {
         createNode(
           type,
-          findFreePosition(nodes, {
-            x: anchor.position.x + (anchor.width ?? 0) + ADD_BESIDE_GAP_X,
-            y: anchor.position.y,
-          }),
+          findFreePosition(
+            nodes.filter((n) => n.parentNode === anchor.id),
+            LOOP_BODY_ORIGIN,
+          ),
+          anchor,
+        );
+        return;
+      }
+      // Beside a node inside a loop stays inside it, when the type may.
+      const anchorLoop =
+        anchor?.parentNode && fitsInLoop
+          ? nodes.find((n) => n.id === anchor.parentNode)
+          : undefined;
+      if (anchor && (anchorLoop || !anchor.parentNode)) {
+        createNode(
+          type,
+          findFreePosition(
+            nodes.filter((n) => (n.parentNode || undefined) === anchorLoop?.id),
+            {
+              x: anchor.position.x + (anchor.width ?? 0) + ADD_BESIDE_GAP_X,
+              y: anchor.position.y,
+            },
+          ),
+          anchorLoop,
         );
         return;
       }
@@ -549,10 +611,13 @@ function WorkflowBuilderInner() {
       // Positions are a node's top-left corner; centre a typical node.
       createNode(
         type,
-        findFreePosition(nodes, {
-          x: center.x - NEW_NODE_HALF_WIDTH,
-          y: center.y - NEW_NODE_HALF_HEIGHT,
-        }),
+        findFreePosition(
+          nodes.filter((n) => !n.parentNode),
+          {
+            x: center.x - NEW_NODE_HALF_WIDTH,
+            y: center.y - NEW_NODE_HALF_HEIGHT,
+          },
+        ),
       );
     },
     [selectedNode, nodes, createNode, reactFlowInstance],
@@ -571,6 +636,12 @@ function WorkflowBuilderInner() {
       const removableIds = new Set(
         nodesToDelete.filter((n) => n.type !== 'start').map((n) => n.id),
       );
+      // A loop goes with the nodes inside it.
+      nodes.forEach((n) => {
+        if (n.parentNode && removableIds.has(n.parentNode)) {
+          removableIds.add(n.id);
+        }
+      });
       const edgeIdsToDelete = new Set(edgesToDelete.map((e) => e.id));
       if (removableIds.size === 0 && edgeIdsToDelete.size === 0) return;
 
@@ -602,7 +673,7 @@ function WorkflowBuilderInner() {
         setShowNodeConfig(false);
       }
     },
-    [selectedNode, takeSnapshot],
+    [nodes, selectedNode, takeSnapshot],
   );
 
   const handleDeleteNode = useCallback(() => {
@@ -616,8 +687,9 @@ function WorkflowBuilderInner() {
     const original = nodes.find((n) => n.id === selectedNode.id);
     if (!original) return;
     takeSnapshot();
+    const stamp = Date.now();
     const copy: Node = {
-      id: `${original.type}_${Date.now()}`,
+      id: `${original.type}_${stamp}`,
       type: original.type,
       position: {
         x: original.position.x + DUPLICATE_OFFSET,
@@ -625,13 +697,45 @@ function WorkflowBuilderInner() {
       },
       data: structuredClone(original.data),
       selected: true,
+      ...(original.parentNode
+        ? { parentNode: original.parentNode, extent: original.extent }
+        : {}),
+      ...(original.style ? { style: { ...original.style } } : {}),
     };
-    setNodes((nds) =>
-      nds.map((n) => (n.selected ? { ...n, selected: false } : n)).concat(copy),
+    // A loop's copy gets copies of the nodes inside it and their edges.
+    const children = nodes.filter((n) => n.parentNode === original.id);
+    const childIds = new Map(
+      children.map((child, index) => [
+        child.id,
+        `${child.type}_${stamp}_${index}`,
+      ]),
     );
+    const childCopies: Node[] = children.map((child) => ({
+      id: childIds.get(child.id) as string,
+      type: child.type,
+      position: { ...child.position },
+      data: structuredClone(child.data),
+      parentNode: copy.id,
+      extent: 'parent',
+    }));
+    const edgeCopies: Edge[] = edges
+      .filter((edge) => childIds.has(edge.source) && childIds.has(edge.target))
+      .map((edge) => ({
+        ...edge,
+        id: `${edge.id}_${stamp}`,
+        source: childIds.get(edge.source) as string,
+        target: childIds.get(edge.target) as string,
+        selected: false,
+      }));
+    setNodes((nds) =>
+      nds
+        .map((n) => (n.selected ? { ...n, selected: false } : n))
+        .concat(copy, childCopies),
+    );
+    if (edgeCopies.length > 0) setEdges((eds) => eds.concat(edgeCopies));
     setSelectedNode(copy);
     setShowNodeConfig(true);
-  }, [selectedNode, nodes, takeSnapshot]);
+  }, [selectedNode, nodes, edges, takeSnapshot]);
 
   const handleRemoveConditionBranch = useCallback(
     (sourceHandle: string) => {
@@ -1049,34 +1153,38 @@ function WorkflowBuilderInner() {
         });
         const nextWorkflowName = workflow.name;
         const nextWorkflowDescription = workflow.description || '';
-        const mappedNodes = apiNodes.map((n: WorkflowNode) => {
-          const nodeData: Record<string, unknown> = {
-            title: n.title,
-            label: n.title,
-          };
-          if (n.type === 'agent' && n.data) {
-            nodeData.config = n.data;
-          } else if (n.type === 'condition' && n.data) {
-            nodeData.config = {
-              ...n.data,
-              cases: normalizeConditionCases(n.data.cases || []),
+        const mappedNodes = parentsFirst<Node>(
+          apiNodes.map((n: WorkflowNode) => {
+            const { data: savedData, canvas } = readContainerData(n.data);
+            const nodeData: Record<string, unknown> = {
+              title: n.title,
+              label: n.title,
             };
-          } else if (n.type === 'state' && n.data) {
-            nodeData.config = n.data;
-          } else if (n.type === 'code') {
-            nodeData.config = normalizeCodeConfig(
-              n.data as Record<string, unknown> | undefined,
-            );
-          } else if (n.data) {
-            Object.assign(nodeData, n.data);
-          }
-          return {
-            id: n.id,
-            type: n.type,
-            position: n.position,
-            data: nodeData,
-          };
-        });
+            if ((n.type === 'agent' || n.type === 'loop') && n.data) {
+              nodeData.config = savedData;
+            } else if (n.type === 'condition' && n.data) {
+              nodeData.config = {
+                ...savedData,
+                cases: normalizeConditionCases(
+                  (savedData.cases as ConditionCase[]) || [],
+                ),
+              };
+            } else if (n.type === 'state' && n.data) {
+              nodeData.config = savedData;
+            } else if (n.type === 'code') {
+              nodeData.config = normalizeCodeConfig(savedData);
+            } else if (n.data) {
+              Object.assign(nodeData, savedData);
+            }
+            return {
+              id: n.id,
+              type: n.type,
+              position: n.position,
+              data: nodeData,
+              ...canvas,
+            };
+          }),
+        );
         const mappedEdges = apiEdges.map(
           (e: {
             id: string;
@@ -1374,6 +1482,8 @@ function WorkflowBuilderInner() {
       });
 
       outgoing.forEach((edge) => {
+        // In a loop body a branch ends the item where it stops.
+        if (node.parentNode) return;
         if (!canReachEnd(edge.target, edges, nodeIds, endNodeIds)) {
           const handle = edge.sourceHandle || 'branch';
           errors.push(
@@ -1416,6 +1526,16 @@ function WorkflowBuilderInner() {
         );
       }
     });
+
+    nodes
+      .filter((n) => n.type === 'loop')
+      .forEach((loop) => {
+        loopProblems(loop, nodes, edges).forEach((key) =>
+          errors.push(
+            t(key, { ...NO_ESCAPE, name: loop.data?.title || loop.id }),
+          ),
+        );
+      });
 
     return errors;
   }, [workflowName, nodes, edges, agentJsonSchemaErrors, availableModels, t]);
@@ -2238,6 +2358,12 @@ function WorkflowBuilderInner() {
                   onRemoveBranch={handleRemoveConditionBranch}
                 />
               )}
+              {selectedNode.type === 'loop' && (
+                <LoopPanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                />
+              )}
               {selectedNode.type === 'code' && (
                 <CodePanel
                   node={selectedNode}
@@ -2302,20 +2428,7 @@ function WorkflowBuilderInner() {
             workflowData={{
               name: workflowName,
               description: workflowDescription,
-              nodes: nodes
-                .filter((n) => n.type !== 'note')
-                .map((n) => ({
-                  id: n.id,
-                  type: n.type as 'start' | 'end' | 'agent' | 'state' | 'code',
-                  title: n.data.title || n.data.label || n.type,
-                  position: n.position,
-                  data:
-                    n.type === 'code'
-                      ? serializeCodeConfig(n.data.config)
-                      : n.type === 'agent'
-                        ? n.data.config
-                        : n.data,
-                })),
+              nodes: nodes.filter((n) => n.type !== 'note').map(serializeNode),
               edges: edges.map((e) => ({
                 id: e.id,
                 source: e.source,

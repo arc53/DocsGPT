@@ -2841,7 +2841,9 @@
       "title": "工作流程",
       "step": "第 {{step}} 步",
       "stepOf": "第 {{step}} 步，共 {{total}} 步",
-      "stepCount_other": "{{count}} 步"
+      "stepCount_other": "{{count}} 步",
+      "loopItems": "{{done}}/{{total}} 個項目",
+      "loopItemsFailed": "{{count}} 個失敗"
     }
   },
   "agents": {
@@ -3622,7 +3624,24 @@
         "detailsTitle": "工作流程詳細資料",
         "detailsDescription": "顯示在代理卡片上的名稱、說明和圖片。",
         "unsavedChanges": "未儲存的變更",
-        "editDetailsMenu": "編輯詳細資料"
+        "editDetailsMenu": "編輯詳細資料",
+        "loopHint": "為清單中的每個項目執行節點",
+        "loopIntro": "迴圈內的節點會針對工作流程狀態中某個清單的每個項目各執行一次。每個項目都在各自的狀態副本上執行，迴圈會依清單順序為每個項目儲存一個結果。",
+        "loopItems": "項目",
+        "loopItemsHint": "保存清單的狀態變數，例如 extracted.items。",
+        "loopItemsInvalid": "請使用狀態路徑，例如 extracted.items。",
+        "loopItemVariable": "項目變數",
+        "loopItemVariableHint": "迴圈內的節點以 {{example}} 讀取目前項目。",
+        "loopItemVariableInvalid": "請使用字母、數字和底線，且不能使用 query 等保留名稱。",
+        "loopConcurrency": "同時處理項目數",
+        "loopMaxItems": "最多項目數",
+        "loopOnError": "項目失敗時",
+        "loopOnErrorFail": "停止並使迴圈失敗",
+        "loopOnErrorSkip": "略過該項目",
+        "loopOnErrorCollect": "在原位置保留錯誤",
+        "loopOutputHint": "結果清單，每個項目一個結果。",
+        "loopResultVariable": "項目結果",
+        "loopResultVariableHint": "其值作為每個項目結果的變數。留空則使用最後執行之節點的輸出。"
       },
       "validation": {
         "nameRequired": "工作流程名稱為必填",
@@ -3649,7 +3668,12 @@
         "caseNoVariable": "條件「{{name}}」的分支「{{handle}}」在簡易模式下必須指定變數",
         "branchReachEnd": "條件「{{name}}」的分支「{{handle}}」最終必須到達結束節點",
         "codeRequired": "程式碼節點「{{name}}」必須包含要執行的程式碼",
-        "codeSchema": "程式碼節點「{{name}}」的 JSON Schema：{{error}}"
+        "codeSchema": "程式碼節點「{{name}}」的 JSON Schema：{{error}}",
+        "loopItems": "迴圈「{{name}}」需要一個要迴圈處理的清單",
+        "loopItemsPath": "迴圈「{{name}}」的項目必須是狀態路徑，例如 extracted.items",
+        "loopItemVariable": "迴圈「{{name}}」的項目變數無法使用",
+        "loopEmpty": "迴圈「{{name}}」內至少需要一個節點",
+        "loopEntry": "迴圈「{{name}}」必須恰好從一個節點開始"
       },
       "schema": {
         "notObject": "必須是有效的 JSON 物件",
@@ -3687,7 +3711,11 @@
         "variableTitle": "變數：{{name}}",
         "valueTitle": "值：{{value}}",
         "operationCount_one": "{{count}} 個操作",
-        "variableCount_one": "{{count}} 個變數"
+        "variableCount_one": "{{count}} 個變數",
+        "loop": "迴圈",
+        "loopSummary": "對 {{items}} 中的每個 {{variable}}",
+        "loopNoItems": "選擇要迴圈處理的清單",
+        "loopEmpty": "將節點拖放到此處，為每個項目執行一次"
       },
       "preview": {
         "executionDetails": "執行詳細資料",
@@ -3698,7 +3726,9 @@
         "emptyTitle": "測試工作流程",
         "unsavedDraftAttachments": "在預覽中附加文件前，請先儲存工作流程。",
         "stepCount_one": "（{{count}} 步）",
-        "backToRun": "返回執行"
+        "backToRun": "返回執行",
+        "loopItems": "{{done}}/{{total}} 個項目",
+        "loopItemsFailed": "{{count}} 個失敗"
       },
       "documents": {
         "modeAll": "所有輸入文件",

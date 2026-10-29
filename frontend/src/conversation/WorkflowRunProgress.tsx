@@ -116,6 +116,17 @@ function StepRow({
           <p className="text-destructive mt-0.5 text-xs wrap-break-word">
             {step.error}
           </p>
+        ) : step.items ? (
+          <p className="text-muted-foreground mt-0.5 truncate text-xs">
+            {t('conversation.workflow.loopItems', {
+              done: step.items.done,
+              total: step.items.total,
+            })}
+            {step.items.failed > 0 &&
+              ` · ${t('conversation.workflow.loopItemsFailed', {
+                count: step.items.failed,
+              })}`}
+          </p>
         ) : (
           step.detail && (
             <p

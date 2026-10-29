@@ -2839,7 +2839,9 @@
       "title": "工作流",
       "step": "第 {{step}} 步",
       "stepOf": "第 {{step}} 步，共 {{total}} 步",
-      "stepCount_other": "{{count}} 步"
+      "stepCount_other": "{{count}} 步",
+      "loopItems": "{{done}}/{{total}} 项",
+      "loopItemsFailed": "{{count}} 项失败"
     }
   },
   "agents": {
@@ -3620,7 +3622,24 @@
         "detailsTitle": "工作流详情",
         "detailsDescription": "显示在智能体卡片上的名称、描述和图片。",
         "unsavedChanges": "未保存的更改",
-        "editDetailsMenu": "编辑详情"
+        "editDetailsMenu": "编辑详情",
+        "loopHint": "为列表中的每一项运行节点",
+        "loopIntro": "循环内的节点会针对工作流状态中某个列表的每一项各运行一次。每一项都在各自的状态副本上运行，循环按列表顺序为每一项保存一个结果。",
+        "loopItems": "列表项",
+        "loopItemsHint": "保存列表的状态变量，例如 extracted.items。",
+        "loopItemsInvalid": "请使用状态路径，例如 extracted.items。",
+        "loopItemVariable": "项变量",
+        "loopItemVariableHint": "循环内的节点以 {{example}} 读取当前项。",
+        "loopItemVariableInvalid": "请使用字母、数字和下划线，且不能使用 query 等保留名称。",
+        "loopConcurrency": "同时处理项数",
+        "loopMaxItems": "最多项数",
+        "loopOnError": "某项失败时",
+        "loopOnErrorFail": "停止并使循环失败",
+        "loopOnErrorSkip": "跳过该项",
+        "loopOnErrorCollect": "在原位置保留错误",
+        "loopOutputHint": "结果列表，每项一个结果。",
+        "loopResultVariable": "项结果",
+        "loopResultVariableHint": "其值作为每一项结果的变量。留空则使用最后运行的节点的输出。"
       },
       "validation": {
         "nameRequired": "工作流名称为必填项",
@@ -3647,7 +3666,12 @@
         "caseNoVariable": "条件“{{name}}”的分支“{{handle}}”在简单模式下必须指定变量",
         "branchReachEnd": "条件“{{name}}”的分支“{{handle}}”最终必须到达结束节点",
         "codeRequired": "代码节点“{{name}}”必须包含要运行的代码",
-        "codeSchema": "代码节点“{{name}}”的 JSON Schema：{{error}}"
+        "codeSchema": "代码节点“{{name}}”的 JSON Schema：{{error}}",
+        "loopItems": "循环“{{name}}”需要一个要循环的列表",
+        "loopItemsPath": "循环“{{name}}”的列表项必须是状态路径，例如 extracted.items",
+        "loopItemVariable": "循环“{{name}}”的项变量无法使用",
+        "loopEmpty": "循环“{{name}}”内至少需要一个节点",
+        "loopEntry": "循环“{{name}}”必须恰好从一个节点开始"
       },
       "schema": {
         "notObject": "必须是有效的 JSON 对象",
@@ -3685,7 +3709,11 @@
         "variableTitle": "变量：{{name}}",
         "valueTitle": "值：{{value}}",
         "operationCount_one": "{{count}} 个操作",
-        "variableCount_one": "{{count}} 个变量"
+        "variableCount_one": "{{count}} 个变量",
+        "loop": "循环",
+        "loopSummary": "对 {{items}} 中的每个 {{variable}}",
+        "loopNoItems": "选择要循环的列表",
+        "loopEmpty": "将节点拖放到此处，为每个项运行一次"
       },
       "preview": {
         "executionDetails": "执行详情",
@@ -3696,7 +3724,9 @@
         "emptyTitle": "测试工作流",
         "unsavedDraftAttachments": "在预览中附加文档前，请先保存工作流。",
         "stepCount_one": "（{{count}} 步）",
-        "backToRun": "返回运行"
+        "backToRun": "返回运行",
+        "loopItems": "{{done}}/{{total}} 项",
+        "loopItemsFailed": "{{count}} 项失败"
       },
       "documents": {
         "modeAll": "所有输入文档",

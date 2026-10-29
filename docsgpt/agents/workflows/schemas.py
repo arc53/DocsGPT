@@ -13,6 +13,30 @@ class NodeType(str, Enum):
     STATE = "state"
     CONDITION = "condition"
     CODE = "code"
+    LOOP = "loop"
+
+
+# Key in a node's config naming the loop whose body the node belongs to. Body
+# nodes are stored as ordinary graph nodes so every per-node scan (tool and
+# source checks, export, adoption) sees them; only the walk treats them apart.
+PARENT_ID_KEY = "parent_id"
+
+# Node types a loop body may hold.
+LOOP_BODY_NODE_TYPES = frozenset({"agent", "code", "state", "condition", "note"})
+
+# Names a loop's item variable may not take: template namespaces and the
+# run's own inputs, which the item would shadow.
+LOOP_RESERVED_VARIABLES = frozenset(
+    {"agent", "artifacts", "system", "source", "tools", "passthrough", "query", "chat_history", "input_documents"}
+)
+
+
+def parent_id_of(config: Any) -> Optional[str]:
+    """The loop a node's config places it in, or None for a top-level node."""
+    if not isinstance(config, dict):
+        return None
+    value = config.get(PARENT_ID_KEY)
+    return value if isinstance(value, str) and value.strip() else None
 
 
 class AgentType(str, Enum):
@@ -67,6 +91,20 @@ class CodeNodeConfig(BaseModel):
     output_variable: Optional[str] = None
     timeout: Optional[int] = None
     json_schema: Optional[Dict[str, Any]] = None
+
+
+class LoopNodeConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    # State path to the list, e.g. ``extracted.items``.
+    items: str = ""
+    item_variable: str = "item"
+    concurrency: int = Field(default=4, ge=1)
+    max_items: int = Field(default=50, ge=1)
+    on_item_error: Literal["fail", "skip", "collect"] = "fail"
+    output_variable: Optional[str] = None
+    # Item state key whose value is the item's result; unset takes the output
+    # of the last body node that wrote one.
+    result_variable: Optional[str] = None
 
 
 class ConditionCase(BaseModel):
@@ -157,6 +195,22 @@ class WorkflowGraph(BaseModel):
     def get_outgoing_edges(self, node_id: str) -> List[WorkflowEdge]:
         return [edge for edge in self.edges if edge.source_id == node_id]
 
+    def get_body_nodes(self, loop_id: str) -> List[WorkflowNode]:
+        """The nodes inside a loop's body."""
+        return [node for node in self.nodes if parent_id_of(node.config) == loop_id]
+
+    def get_body_entry(self, loop_id: str) -> Optional[WorkflowNode]:
+        """The body node an item starts at: the one no other body node leads to.
+
+        Returns:
+            The entry node, or None when the body is empty or has no single entry.
+        """
+        body = [node for node in self.get_body_nodes(loop_id) if node.type != NodeType.NOTE]
+        body_ids = {node.id for node in body}
+        targets = {edge.target_id for edge in self.edges if edge.source_id in body_ids}
+        entries = [node for node in body if node.id not in targets]
+        return entries[0] if len(entries) == 1 else None
+
     def linear_step_count(self, count_end: bool = True) -> Optional[int]:
         """How many steps a run takes when the graph has one path.
 
@@ -188,6 +242,17 @@ class WorkflowGraph(BaseModel):
         return count or None
 
 
+class LoopItemLog(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    item_index: int
+    status: ExecutionStatus
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
+    error: Optional[str] = None
+    steps: List["NodeExecutionLog"] = Field(default_factory=list)
+
+
 class NodeExecutionLog(BaseModel):
     model_config = ConfigDict(extra="forbid")
     node_id: str
@@ -203,6 +268,11 @@ class NodeExecutionLog(BaseModel):
     state_delta: Dict[str, Any] = Field(default_factory=dict)
     # Compact per-node tool-call summary: [{tool_name, action_name, status}].
     tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
+    # A loop node's per-item runs, in item order.
+    items: List[LoopItemLog] = Field(default_factory=list)
+
+
+LoopItemLog.model_rebuild()
 
 
 class WorkflowRunCreate(BaseModel):

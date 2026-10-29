@@ -2857,7 +2857,9 @@
       "step": "Step {{step}}",
       "stepOf": "Step {{step}} of {{total}}",
       "stepCount_one": "{{count}} step",
-      "stepCount_other": "{{count}} steps"
+      "stepCount_other": "{{count}} steps",
+      "loopItems": "{{done}} of {{total}} items",
+      "loopItemsFailed": "{{count}} failed"
     }
   },
   "agents": {
@@ -3644,7 +3646,24 @@
         "detailsTitle": "Workflow details",
         "detailsDescription": "Name, description and image shown on the agent card.",
         "unsavedChanges": "Unsaved changes",
-        "editDetailsMenu": "Edit details"
+        "editDetailsMenu": "Edit details",
+        "loopHint": "Run nodes for each item in a list",
+        "loopIntro": "The nodes inside the loop run once for each item of a list in the workflow state. Each item runs on its own copy of the state, and the loop stores one result per item, in the list's order.",
+        "loopItems": "Items",
+        "loopItemsHint": "The state variable that holds the list, such as extracted.items.",
+        "loopItemsInvalid": "Use a state path such as extracted.items.",
+        "loopItemVariable": "Item variable",
+        "loopItemVariableHint": "Nodes inside the loop read the current item as {{example}}.",
+        "loopItemVariableInvalid": "Use letters, digits and underscores, not a reserved name such as query.",
+        "loopConcurrency": "Items at once",
+        "loopMaxItems": "Most items",
+        "loopOnError": "When an item fails",
+        "loopOnErrorFail": "Stop and fail the loop",
+        "loopOnErrorSkip": "Leave the item out",
+        "loopOnErrorCollect": "Keep the error in its place",
+        "loopOutputHint": "The list of results, one per item.",
+        "loopResultVariable": "Item result",
+        "loopResultVariableHint": "The variable whose value is each item's result. Empty uses the output of the last node that ran."
       },
       "validation": {
         "nameRequired": "Workflow name is required",
@@ -3671,7 +3690,12 @@
         "caseNoVariable": "Condition \"{{name}}\" case \"{{handle}}\" must specify a variable in Simple mode",
         "branchReachEnd": "Branch \"{{handle}}\" of condition \"{{name}}\" must eventually reach an end node",
         "codeRequired": "Code node \"{{name}}\" must have code to run",
-        "codeSchema": "Code node \"{{name}}\" JSON schema {{error}}"
+        "codeSchema": "Code node \"{{name}}\" JSON schema {{error}}",
+        "loopItems": "Loop \"{{name}}\" needs a list to loop over",
+        "loopItemsPath": "Loop \"{{name}}\" items must be a state path such as extracted.items",
+        "loopItemVariable": "Loop \"{{name}}\" has an item variable that can't be used",
+        "loopEmpty": "Loop \"{{name}}\" needs at least one node inside it",
+        "loopEntry": "Loop \"{{name}}\" must start at exactly one node"
       },
       "schema": {
         "notObject": "must be a valid JSON object",
@@ -3709,7 +3733,11 @@
         "variableCount_one": "{{count}} variable",
         "variableCount_other": "{{count}} variables",
         "variableTitle": "Variable: {{name}}",
-        "valueTitle": "Value: {{value}}"
+        "valueTitle": "Value: {{value}}",
+        "loop": "Loop",
+        "loopSummary": "For each {{variable}} in {{items}}",
+        "loopNoItems": "Choose a list to loop over",
+        "loopEmpty": "Drop nodes here to run them once per item"
       },
       "preview": {
         "executionDetails": "Execution Details",
@@ -3720,7 +3748,9 @@
         "minimapHeading": "Workflow",
         "emptyTitle": "Test the workflow",
         "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview.",
-        "backToRun": "Back to the run"
+        "backToRun": "Back to the run",
+        "loopItems": "{{done}} of {{total}} items",
+        "loopItemsFailed": "{{count}} failed"
       },
       "documents": {
         "modeAll": "All input docs",

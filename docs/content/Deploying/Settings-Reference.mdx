@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-10-29
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -1922,6 +1922,18 @@ Documents per node extracted via the parsing worker. Each issues a separate bloc
 Type `int`, default `900`.
 
 Wall clock one node may spend on blocking parses, shared across all of them. Without it a node could serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows on a web threadpool slot.
+
+### `WORKFLOW_LOOP_MAX_CONCURRENCY`
+
+Type `int`, default `4`, must be `>= 1`.
+
+Most items a loop node runs at once, whatever its own concurrency says. Each running item holds a thread and usually an LLM call.
+
+### `WORKFLOW_LOOP_MAX_ITEMS`
+
+Type `int`, default `100`, must be `>= 1`.
+
+Most items one loop node accepts, whatever its own max_items says; a longer list fails the node.
 
 ### `WORKFLOW_RUN_STALE_SECONDS`
 

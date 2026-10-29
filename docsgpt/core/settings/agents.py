@@ -113,6 +113,19 @@ class AgentSettings(SettingsGroup):
             "could serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows on a web threadpool slot."
         ),
     )
+    WORKFLOW_LOOP_MAX_CONCURRENCY: int = Field(
+        default=4,
+        ge=1,
+        description=(
+            "Most items a loop node runs at once, whatever its own concurrency says. Each running item holds a "
+            "thread and usually an LLM call."
+        ),
+    )
+    WORKFLOW_LOOP_MAX_ITEMS: int = Field(
+        default=100,
+        ge=1,
+        description="Most items one loop node accepts, whatever its own max_items says; a longer list fails the node.",
+    )
     WORKFLOW_RUN_STALE_SECONDS: int = Field(
         default=3600,
         description=(

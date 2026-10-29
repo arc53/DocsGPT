@@ -167,7 +167,13 @@ class WorkflowAgent(BaseAgent):
         done = 0
         try:
             for event in events:
-                if record and event.get("type") == "workflow_step" and event.get("node_type") not in _NOT_STEPS:
+                # A loop item's own steps are progress within the loop's step.
+                if (
+                    record
+                    and event.get("type") == "workflow_step"
+                    and event.get("node_type") not in _NOT_STEPS
+                    and not event.get("parent_node_id")
+                ):
                     if event.get("status") == "running":
                         self._record_progress(
                             str(run_user_id),

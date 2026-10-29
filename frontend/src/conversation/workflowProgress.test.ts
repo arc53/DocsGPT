@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { WorkflowProgress } from './conversationModels';
 import {
+  applyLoopItem,
   applyWorkflowStep,
   runningStep,
   stepDetail,
@@ -115,5 +116,28 @@ describe('runningStep', () => {
     expect(runningStep(progress)).toBeUndefined();
     applyWorkflowStep(progress, event({ node_id: 'b', node_title: 'B' }), 2);
     expect(runningStep(progress)?.nodeId).toBe('b');
+  });
+});
+
+describe('loops', () => {
+  it('counts ended items on the loop and leaves body steps out', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(
+      progress,
+      event({ node_id: 'each', node_type: 'loop' }),
+      1,
+    );
+    applyWorkflowStep(
+      progress,
+      event({ node_id: 'body', parent_node_id: 'each', item_index: 0 }),
+      2,
+    );
+    const item = { node_id: 'each', item_count: 3 };
+    applyLoopItem(progress, { ...item, item_index: 0, status: 'running' });
+    applyLoopItem(progress, { ...item, item_index: 0, status: 'completed' });
+    applyLoopItem(progress, { ...item, item_index: 1, status: 'failed' });
+
+    expect(progress.steps.map((s) => s.nodeId)).toEqual(['each']);
+    expect(progress.steps[0].items).toEqual({ total: 3, done: 2, failed: 1 });
   });
 });
