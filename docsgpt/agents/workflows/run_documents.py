@@ -347,7 +347,9 @@ def _cache_key(version: Dict[str, Any], name: str) -> Optional[str]:
         return None
     suffix = os.path.splitext(name)[1].lower()
     reader = f"{suffix}|{version.get('mime_type') or ''}"
-    parser = f"{settings.DOC_PARSER_ENGINE}-{settings.OCR_BACKEND}-{int(bool(settings.OCR_ENABLED))}"
+    parser = (
+        f"{settings.DOC_PARSER_ENGINE}-{settings.OCR_BACKEND}-{settings.OCR_ENGINE}-{int(bool(settings.OCR_ENABLED))}"
+    )
     return f"workflow:doclines:v{FORMAT_VERSION}:{parser}:{reader}:{sha256}"
 
 
