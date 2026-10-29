@@ -355,8 +355,10 @@ turns retries off for that node.
     JSON schema. The next attempt's prompt includes the validation error.
 
 A Code node retries only when the sandbox itself failed: it was unreachable, its
-runtime was gone, or it dropped the connection mid-run. An error raised by the
-script, a timeout, or stdout that doesn't match the schema is never retried.
+runtime was gone, or it dropped the connection mid-run and the running script
+could be stopped. An error raised by the script, a timeout, a kernel that died
+running the script (out of memory or a crash), a refused sandbox login, or
+stdout that doesn't match the schema is never retried.
 
 Some failures are never retried, whatever the settings: a 400 or other client
 error, an authentication error, a request too long for the model's context
