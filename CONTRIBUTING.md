@@ -113,7 +113,7 @@ Personal preferences belong in your user settings; `.vscode/settings.json` and a
 
 ### Running the tests
 
-Install the test dependencies first. `uv sync` installs them with the `dev` group; with pip, run `pip install -r tests/requirements.txt` next to `docsgpt/requirements.txt`. `pytest-cov` is required, because `pytest.ini` always passes `--cov`. `tests/requirements.txt` also installs the docling extra so its parser tests run; with uv, use `uv sync --extra docling` for the same coverage.
+Install the test dependencies first. `uv sync` installs them with the `dev` group; with pip, run `pip install -r tests/requirements.txt` next to `docsgpt/requirements.txt`. `tests/requirements.txt` also installs the docling extra so its parser tests run; with uv, use `uv sync --extra docling` for the same coverage.
 
 The database tests do not use your running Postgres. `pytest-postgresql` starts a throwaway cluster with `pg_ctl`, so the PostgreSQL server binaries must be on your `PATH` (or reachable through `pg_config --bindir`):
 
@@ -127,7 +127,10 @@ Then run the suite from the repository root:
 python -m pytest            # or: uv run pytest
 python -m pytest -n auto    # in parallel, as CI does
 python -m pytest tests/api  # one area while you work
+python -m pytest -n auto --cov=docsgpt --cov-report=html  # with a coverage report in htmlcov/
 ```
+
+Coverage is off by default, because measuring it and writing the reports takes longer than many test runs; CI measures it on every push.
 
 On **macOS**, set `KMP_DUPLICATE_LIB_OK=TRUE` (for example `KMP_DUPLICATE_LIB_OK=TRUE python -m pytest`). `faiss-cpu` and `torch` each ship their own OpenMP runtime, and loading both into one process aborts the interpreter with `OMP: Error #15`; Linux and CI are not affected.
 

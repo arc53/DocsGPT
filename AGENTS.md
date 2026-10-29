@@ -177,8 +177,8 @@ python -m pytest
 ```
 
 The suite needs the test dependencies (`uv sync` installs the `dev` group; pip users
-install `tests/requirements.txt`, and pytest-cov is mandatory because `pytest.ini`
-passes `--cov`). DB-backed tests start a throwaway cluster through
+install `tests/requirements.txt`). Coverage is off by default; CI passes `--cov=docsgpt`,
+and `python -m pytest --cov=docsgpt --cov-report=html` gives a local report. DB-backed tests start a throwaway cluster through
 `pytest-postgresql`, so the PostgreSQL server binaries (`pg_ctl`, `initdb`) must be
 on `PATH` or reachable through `pg_config`; a running Postgres is not required.
 See CONTRIBUTING.md "Running the tests".
