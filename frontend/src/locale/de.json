@@ -3614,7 +3614,7 @@
         "documents": "Dokumente",
         "documentsHint": "Dokumente, die diesem Agenten aus Uploads oder vorgelagerten Knoten übergeben werden.",
         "filePassing": "Dateiübergabe",
-        "filePassingHint": "Auto: nativ senden, wenn das Modell es unterstützt, sonst Text extrahieren.",
+        "filePassingHint": "Auto: nativ senden, wenn das Modell es unterstützt, sonst Text extrahieren. Nummerierte Zeilen: der ganze Text, jede Zeile mit [D#:L#] zum Zitieren markiert.",
         "structuredOutput": "Strukturierte Ausgabe (JSON-Schema)",
         "modelNoStructuredOutput": "Das ausgewählte Modell unterstützt keine strukturierte Ausgabe.",
         "validSchema": "Gültiges JSON-Schema",
@@ -3709,7 +3709,8 @@
       "filePassing": {
         "auto": "Automatisch",
         "native": "Nativ",
-        "extract": "Extrahieren"
+        "extract": "Extrahieren",
+        "lines": "Nummerierte Zeilen"
       },
       "mobileBlocker": {
         "title": "Auf einem größeren Bildschirm öffnen",

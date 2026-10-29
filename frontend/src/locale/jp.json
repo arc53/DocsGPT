@@ -3595,7 +3595,7 @@
         "documents": "ドキュメント",
         "documentsHint": "アップロードまたは上流ノードからこのエージェントに渡されるドキュメント。",
         "filePassing": "ファイルの受け渡し",
-        "filePassingHint": "自動: モデルが対応していればネイティブで送信し、そうでなければテキストを抽出します。",
+        "filePassingHint": "自動: モデルが対応していればネイティブで送信し、そうでなければテキストを抽出します。行番号付き: 全文を送り、各行に引用用の [D#:L#] を付けます。",
         "structuredOutput": "構造化出力（JSON スキーマ）",
         "modelNoStructuredOutput": "選択したモデルは構造化出力に対応していません。",
         "validSchema": "有効な JSON スキーマ",
@@ -3690,7 +3690,8 @@
       "filePassing": {
         "auto": "自動",
         "native": "ネイティブ",
-        "extract": "抽出"
+        "extract": "抽出",
+        "lines": "行番号付き"
       },
       "mobileBlocker": {
         "title": "より大きな画面で開いてください",

@@ -3714,7 +3714,7 @@
         "documents": "Documentos",
         "documentsHint": "Documentos que se pasan a este agente desde cargas o nodos anteriores.",
         "filePassing": "Paso de archivos",
-        "filePassingHint": "Auto: envía el archivo nativo si el modelo lo admite; si no, extrae el texto.",
+        "filePassingHint": "Auto: envía el archivo nativo si el modelo lo admite; si no, extrae el texto. Líneas numeradas: el texto completo, con cada línea marcada [D#:L#] para citarla.",
         "structuredOutput": "Salida estructurada (esquema JSON)",
         "modelNoStructuredOutput": "El modelo seleccionado no admite salida estructurada.",
         "validSchema": "Esquema JSON válido",
@@ -3809,7 +3809,8 @@
       "filePassing": {
         "auto": "Automático",
         "native": "Nativo",
-        "extract": "Extraer"
+        "extract": "Extraer",
+        "lines": "Líneas numeradas"
       },
       "mobileBlocker": {
         "title": "Ábrelo en una pantalla más grande",

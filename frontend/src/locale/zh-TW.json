@@ -3595,7 +3595,7 @@
         "documents": "文件",
         "documentsHint": "從上傳或上游節點傳給此代理的文件。",
         "filePassing": "檔案傳遞",
-        "filePassingHint": "自動：模型支援時以原生方式傳送，否則擷取文字。",
+        "filePassingHint": "自動：模型支援時以原生方式傳送，否則擷取文字。帶編號的行：傳送全文，每行標註 [D#:L#] 以便引用。",
         "structuredOutput": "結構化輸出（JSON Schema）",
         "modelNoStructuredOutput": "所選模型不支援結構化輸出。",
         "validSchema": "JSON Schema 有效",
@@ -3690,7 +3690,8 @@
       "filePassing": {
         "auto": "自動",
         "native": "原生",
-        "extract": "擷取"
+        "extract": "擷取",
+        "lines": "帶編號的行"
       },
       "mobileBlocker": {
         "title": "請在更大的螢幕上開啟",

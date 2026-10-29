@@ -589,7 +589,7 @@ class WorkflowAgent(BaseAgent):
                 user=run_user_id,
                 status=status,
                 inputs=self._run_inputs(query),
-                outputs=self._serialize_state(self._engine.state),
+                outputs=self._serialize_state(self._engine.snapshot_state()),
                 steps=self._engine.get_execution_summary(),
                 created_at=datetime.now(timezone.utc),
                 completed_at=datetime.now(timezone.utc),

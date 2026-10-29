@@ -44,6 +44,9 @@ Every workflow run maintains a state object (a JSON-like dictionary).
 - **Initial State**: Contains the user's input query (`query`) and chat history (`chat_history`).
 - **Modifying State**: Nodes read from this state and write their outputs back to it.
 - **Node Outputs**: Each node writes its result to `node_<node_id>_output`.
+- **Documents**: `input_documents` lists the files uploaded with the run. Once a
+  node asks for them as text, `documents` holds them as numbered lines; see
+  [Line-numbered documents](#line-numbered-documents).
 
 ### Two ways to reference state
 
@@ -131,10 +134,74 @@ The **AI Agent Node** is the core processing unit. It uses a Large Language Mode
 - **File passing**: how a chosen document reaches the model. **Auto** sends the
   file natively when the model accepts that file type and extracts it to text
   otherwise; **Native** always sends the file (and fails on an unsupported
-  type); **Extract** always sends extracted text.
+  type); **Extract** always sends extracted text, cut to its beginning and end
+  when it's long; **Numbered lines** sends the whole text with a `[D#:L#]`
+  reference on every line (see
+  [Line-numbered documents](#line-numbered-documents)).
 - **Structured Output (JSON Schema)**: makes the model return JSON matching the
   schema. The parsed, validated object is saved as the node's output instead
   of text. The model must support structured output.
+
+### Line-numbered documents
+
+With **File passing** set to **Numbered lines** (`file_passing: lines`), the node
+gets each chosen document's whole text, one reference per line, so the model
+can cite its evidence and a later Code node can check it:
+
+```text
+[D1:L12] 3.2. Delivery time — no more than 30 days
+[D2:L40] Item | Qty | Price
+[D2:L41] Bolt | 10 | 2.50
+[D3:L7] (Sheet1!A5) Total | 12.5
+[D4:L3] (p.2) Payment is due within 14 days
+```
+
+- `D#` is the document's position in the run's `input_documents`, so every node
+  in the run sees the same numbers. A document from elsewhere, such as a Code
+  node's output, is numbered after the inputs.
+- `L#` counts the document's lines. Blank lines are dropped.
+- A table row is one line, its cells joined by ` | `; the first row of a table
+  is its header. A spreadsheet row also names its sheet and first cell, and a
+  PDF line its page.
+- DOCX, XLSX, PDF, CSV and plain text are read with their own readers. Other
+  formats go through the configured document parser, and a PDF without a text
+  layer is OCR'd as usual.
+
+The text is never cut. When the documents a node gets through **Numbered lines**
+and its prompts don't fit the model's context window, the node fails before
+calling the model, with an error that gives the token counts; select fewer
+documents for the node or pick a model with a larger window. A document that
+can't be read fails the node the same way, naming the file. Each document is
+sent inside its own `<document>` tag, and the model is told to read what's
+inside as data, not instructions.
+
+Text a Prompt Template pulls in from `documents` isn't measured up front: when
+it doesn't fit, the node fails with the usual context-length error instead.
+
+Each document is parsed once per run, on the parsing worker: a second node
+reading it gets the same text. The text is also cached by the file's content
+for `WORKFLOW_DOCUMENT_LINES_CACHE_TTL` seconds (a day by default; `0` turns the
+cache off), so running the workflow again over the same file skips the parse.
+
+The documents are also in the state as `documents`, a list with one entry per
+document read so far:
+
+| Key | Value |
+| --- | --- |
+| `id` | `D1`, `D2`, ... |
+| `artifact_id`, `filename`, `mime_type` | The document |
+| `line_count` | Number of lines |
+| `tables` | One `{first_line, last_line, header}` per table |
+| `text` | The numbered lines |
+
+A Prompt Template or Output Template that reads `documents` (for example
+`{% for d in documents %}{{ d.text }}{% endfor %}`) loads every input document
+first, and so does a Code node that lists `documents` in its **Input files**.
+A Code node that doesn't list it gets no `documents` in its `state.json`, even
+when an earlier node read them. The run record and the step events keep the
+list without `text` and without the table headers. A workflow that writes its
+own `documents` variable keeps it; the engine then leaves that variable alone
+and reads no documents for it.
 
 ---
 
@@ -237,7 +304,11 @@ The **Code Node** runs a Python script in a sandboxed session bound to the workf
   on later nodes; pass results through the node's output instead.
 - **Input files**: artifacts to stage in the workspace before the script runs,
   under `inputs/<filename>`. Each entry is a state variable holding an artifact
-  reference, a full artifact id or a short ref such as `A1` from this run.
+  reference, a full artifact id or a short ref such as `A1` from this run. The
+  entry `documents` stages no file: it puts every input document's numbered
+  text in `state["documents"]` (see
+  [Line-numbered documents](#line-numbered-documents)), so the script can check
+  a model's `[D#:L#]` citations without parsing the files itself.
 - **Output Variable**: an extra name for the node's output, which is always
   saved as `node_<node_id>_output`.
 - **Timeout (seconds)**: optional. It can't exceed `SANDBOX_EXEC_TIMEOUT`, which
