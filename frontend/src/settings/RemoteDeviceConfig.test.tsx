@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-redux', () => ({
@@ -12,19 +12,27 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('../hooks', () => ({
+  useMediaQuery: () => ({ isMobile: false, isDesktop: true }),
+}));
+
 vi.mock('../components/ToolIcon', () => ({ default: () => null }));
 vi.mock('../components/CopyButton', () => ({ default: () => null }));
 vi.mock('../navigation/DetailBreadcrumb', () => ({ default: () => null }));
-// The revoke confirm's props; the test calls its handleSubmit directly.
+// Keep the real modal while capturing its props for direct handler checks.
 const confirmProps: { current: Record<string, unknown> | null } = {
   current: null,
 };
-vi.mock('../modals/ConfirmationModal', () => ({
-  default: (props: Record<string, unknown>) => {
-    confirmProps.current = props;
-    return null;
-  },
-}));
+vi.mock('../modals/ConfirmationModal', async (importOriginal) => {
+  const { default: ConfirmationModal } =
+    await importOriginal<typeof import('../modals/ConfirmationModal')>();
+  return {
+    default: (props: ComponentProps<typeof ConfirmationModal>) => {
+      confirmProps.current = props;
+      return <ConfirmationModal {...props} />;
+    },
+  };
+});
 
 const getDevice = vi.fn();
 const revokeDevice = vi.fn();
@@ -215,6 +223,38 @@ describe('RemoteDeviceConfig', () => {
     expect(goBack).toHaveBeenCalledTimes(1);
   });
 
+  it('a failed revoke keeps the real confirmation dialog open with an error', async () => {
+    revokeDevice.mockRejectedValue(new Error('Request failed (401)'));
+    await render(device({}));
+    const menu = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.tools.toolActions"]',
+    )!;
+    await act(async () => {
+      menu.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+    });
+    const revoke = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent === 'settings.devices.revoke')!;
+    await act(async () => revoke.click());
+
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog).not.toBeNull();
+    const submit = Array.from(dialog.querySelectorAll('button')).find(
+      (button) => button.textContent === 'settings.devices.revoke',
+    )!;
+    await act(async () => submit.click());
+
+    expect(revokeDevice).toHaveBeenCalledWith('dev-1', 'token');
+    expect(document.querySelector('[role="dialog"]')).toBe(dialog);
+    expect(dialog.getAttribute('data-state')).toBe('open');
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain(
+      'common.actionFailed',
+    );
+    expect(goBack).not.toHaveBeenCalled();
+  });
+
   const rename = async (value: string) => {
     const input = Array.from(container.querySelectorAll('input')).find(
       (el) => el.value === 'Laptop',
@@ -304,5 +344,48 @@ describe('RemoteDeviceConfig', () => {
         (el) => el.value === 'Laptop',
       ),
     ).toBe(true);
+  });
+
+  it('a failed load for another device hides stale settings until Retry succeeds', async () => {
+    await render(device({}));
+    expect(title()).toBe('Laptop');
+    const nextTool = {
+      ...tool,
+      id: 'tool-2',
+      config: { device_id: 'dev-2' },
+    };
+    let resolveRetry!: (value: Device) => void;
+    const retryRequest = new Promise<Device>((resolve) => {
+      resolveRetry = resolve;
+    });
+    getDevice
+      .mockRejectedValueOnce(new Error('Request failed (503)'))
+      .mockReturnValueOnce(retryRequest);
+    await act(async () => {
+      root.render(<RemoteDeviceConfig tool={nextTool} handleGoBack={goBack} />);
+    });
+
+    const loadError = container.querySelector<HTMLElement>(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    );
+    expect(loadError?.textContent).toContain('settings.devices.loadError');
+    expect(container.querySelector('input')).toBeNull();
+    expect(container.textContent).not.toContain('Laptop');
+    const retry = Array.from(loadError!.querySelectorAll('button')).find(
+      (button) => button.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('input')).toBeNull();
+    expect(container.textContent).not.toContain('Laptop');
+    await act(async () => {
+      resolveRetry(device({ id: 'dev-2', name: 'Workstation' }));
+    });
+
+    expect(getDevice).toHaveBeenNthCalledWith(2, 'dev-2', 'token');
+    expect(getDevice).toHaveBeenNthCalledWith(3, 'dev-2', 'token');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(title()).toBe('Workstation');
   });
 });

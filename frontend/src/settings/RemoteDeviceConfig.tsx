@@ -150,11 +150,11 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       ? ` · ${t('settings.devices.seen', { time: lastSeenAgo })}`
       : '');
 
-  if (loading && !device) {
+  if (loading) {
     return <LoadingState fill="block" size="lg" />;
   }
 
-  if (loadFailed && !device) {
+  if (loadFailed) {
     return (
       <div className="flex flex-col gap-6">
         <div className="mb-4 flex min-h-9.5 items-center">
