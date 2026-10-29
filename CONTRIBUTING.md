@@ -121,7 +121,9 @@ The database tests do not use your running Postgres. `pytest-postgresql` starts 
 - **Debian/Ubuntu:** `sudo apt install postgresql`, then `export PATH="/usr/lib/postgresql/16/bin:$PATH"` (use the installed version number). The package also starts a server on port 5432, which clashes with the dev compose Postgres; the tests only need the binaries, so you can stop it with `sudo systemctl disable --now postgresql`.
 - Anywhere else, point the plugin at `pg_ctl` with `--postgresql-exec=/path/to/pg_ctl`.
 
-Each test worker clones the migrated schema once, and the database tests share that clone: `pg_conn` runs a test inside a transaction that is rolled back afterwards. A test that has to commit (background work on another thread, code that opens its own engine, a migration) needs `@pytest.mark.fresh_db`, which gives it a database of its own. A test that commits without the marker fails, naming the tables it left rows in.
+Each test worker clones the migrated schema once, and the database tests share that clone: `pg_conn` runs a test inside a transaction that is rolled back afterwards. A test that has to commit (background work on another thread, code that opens its own engine, a migration) needs `@pytest.mark.fresh_db`, which gives it a database of its own. A test that commits without the marker fails, naming the tables it left rows in. Use the marker only where a commit is unavoidable: each marked test clones a database, which costs about half a second against a fraction of a millisecond for a rollback. Files named `test_migration_*` get it automatically.
+
+Keep tests fast. Network calls, DNS and Redis are already faked for every test (see the autouse fixtures in `tests/conftest.py`). Do not wait out real sleeps, retry back-off or timeouts: patch the sleep and assert the number of attempts instead. Cover a long time range with the shortest window that still shows the behaviour. CI lists the 25 slowest tests at the end of each run.
 
 Then run the suite from the repository root:
 
@@ -143,7 +145,7 @@ On **macOS**, set `KMP_DUPLICATE_LIB_OK=TRUE` (for example `KMP_DUPLICATE_LIB_OK
 1. Copy the latest revision to `00NN_<slug>.py` with the next number. Set `revision` to the file name without `.py`, and `down_revision` to the previous revision's ID.
 2. Write both `upgrade()` and `downgrade()`, and make them safe to re-run (`IF NOT EXISTS` / `IF EXISTS`), as the existing revisions do.
 3. Mirror the change in the table definitions in `docsgpt/storage/db/models.py`, and read or write the new columns through a repository in `docsgpt/storage/db/repositories/`.
-4. Add a round-trip test, `tests/storage/db/test_migration_00NN.py`, next to the existing ones.
+4. Add a round-trip test, `tests/storage/db/test_migration_00NN.py`, next to the existing ones. Keep the `test_migration_` prefix: it gives the test a database of its own.
 
 The app applies pending revisions on start (`AUTO_MIGRATE`, on by default); `docsgpt migrate` applies them by hand.
 
