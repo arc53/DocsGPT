@@ -1785,6 +1785,8 @@
         "conversations": "对话",
         "analytics": "分析",
         "teams": "团队",
+        "runs": "工作流运行",
+        "artifacts": "产物",
         "chat": "聊天"
       },
       "create": {
@@ -1803,7 +1805,7 @@
         "impliedByWrite": "已包含在写入权限中",
         "restrict": "限制为特定资源",
         "restrictHint": "可选。将令牌限制为您选择的项目。列表留空表示允许全部。",
-        "restrictNoFamilies": "请先选择智能体、来源、提示词、工具或聊天的权限范围，才能限制其资源。",
+        "restrictNoFamilies": "请先选择智能体、来源、提示词、工具、工作流、工作流运行或聊天的权限范围，才能限制其资源。",
         "allSelected": "全部（不限制）",
         "noResources": "未找到任何内容。",
         "searchResources": "搜索...",

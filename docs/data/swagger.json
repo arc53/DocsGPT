@@ -2938,7 +2938,9 @@
         "tags": [
           "artifacts"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "artifacts:read"
+        ]
       }
     },
     "/api/artifacts/{artifact_id}": {
@@ -2966,7 +2968,9 @@
         "tags": [
           "artifacts"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "artifacts:read"
+        ]
       },
       "parameters": [
         {
@@ -3012,7 +3016,9 @@
         "tags": [
           "artifacts"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "artifacts:read"
+        ]
       },
       "parameters": [
         {
@@ -7444,6 +7450,88 @@
         ]
       }
     },
+    "/api/workflow_runs": {
+      "get": {
+        "description": "List the workflow runs you started, newest first",
+        "operationId": "get_workflow_run_list",
+        "parameters": [
+          {
+            "description": "Only runs of this agent",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          },
+          {
+            "description": "Only runs started at or after this ISO 8601 moment",
+            "in": "query",
+            "name": "since",
+            "type": "string"
+          },
+          {
+            "description": "Only runs in this status: pending, running, completed or failed",
+            "in": "query",
+            "name": "status",
+            "type": "string"
+          },
+          {
+            "description": "Most runs to return, 1 to 100 (default 20)",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "workflow_runs"
+        ],
+        "x-pat-scopes": [
+          "runs:read"
+        ]
+      }
+    },
+    "/api/workflow_runs/{run_id}": {
+      "get": {
+        "description": "One workflow run you started: status and timing, plus its steps, final state and produced files on request",
+        "operationId": "get_workflow_run_detail",
+        "parameters": [
+          {
+            "description": "Comma-separated extras: steps, state, artifacts",
+            "in": "query",
+            "name": "include",
+            "type": "string"
+          },
+          {
+            "description": "Return only this key of the final state, in full",
+            "in": "query",
+            "name": "state_key",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "workflow_runs"
+        ],
+        "x-pat-scopes": [
+          "runs:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "run_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
     "/api/workflows": {
       "post": {
         "operationId": "post_workflow_list",
@@ -7682,6 +7770,10 @@
     },
     {
       "name": "workflows"
+    },
+    {
+      "description": "Workflow run results",
+      "name": "workflow_runs"
     },
     {
       "description": "Connector operations",

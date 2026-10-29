@@ -310,6 +310,27 @@ RULES: dict[tuple[str, str], Rule] = {
         "workflows:write", (VIEW, "workflow_id"), blocked_by=_WORKFLOW_CONTENT_FAMILIES
     ),
     ("/api/workflows/<string:workflow_id>", "DELETE"): _rule("workflows:write", (VIEW, "workflow_id")),
+    # Workflow runs belong to the agent that ran them, which is all a run route can prove;
+    # tokens restricted on any other family are kept out. The routes filter by the agent
+    # allowlist themselves, and answer 404 for a run outside it. The download of a run's
+    # files is the native-async route in docsgpt/api/user/workflow_runs/download.py
+    # (``artifacts:read``), outside this table.
+    ("/api/workflow_runs", "GET"): _rule(
+        "runs:read",
+        family="agents",
+        listing=True,
+        refs=(("agents", (QUERY, "agent_id")),),
+        blocked_by=_NON_AGENT_FAMILIES,
+    ),
+    ("/api/workflow_runs/<string:run_id>", "GET"): _rule(
+        "runs:read", family="agents", in_route=True, blocked_by=_NON_AGENT_FAMILIES
+    ),
+    # Every artifact of the user (chats and runs alike), so no restricted token may list or read them.
+    ("/api/artifacts", "GET"): _rule("artifacts:read", family=None, blocked_by=_ALL_FAMILIES),
+    ("/api/artifacts/<artifact_id>", "GET"): _rule("artifacts:read", family=None, blocked_by=_ALL_FAMILIES),
+    ("/api/artifacts/<artifact_id>/versions/<int:version>", "GET"): _rule(
+        "artifacts:read", family=None, blocked_by=_ALL_FAMILIES
+    ),
     # Conversations and analytics span every agent and carry cited source text and tool
     # output, so they are closed to every restricted token.
     ("/api/get_conversations", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
@@ -394,10 +415,9 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),
     "/api/artifact/<artifact_id>": ("*",),
-    "/api/artifacts": ("*",),
-    "/api/artifacts/<artifact_id>": ("*",),
+    # Reading artifacts is ``artifacts:read`` (RULES); changing them needs a session.
+    "/api/artifacts/<artifact_id>": ("DELETE",),
     "/api/artifacts/<artifact_id>/restore": ("*",),
-    "/api/artifacts/<artifact_id>/versions/<int:version>": ("*",),
     "/api/stt": ("*",),
     "/api/stt/live/start": ("*",),
     "/api/stt/live/chunk": ("*",),

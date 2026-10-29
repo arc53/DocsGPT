@@ -137,6 +137,16 @@ class TestScopeEnforcement:
         response = _call(client, "GET", "/api/get_agents", _claims(["agents:write"]))
         assert _denied(response) is None
 
+    def test_artifacts_read_reads_artifacts_but_never_changes_them(self, client):
+        claims = _claims(["artifacts:read"])
+        assert _denied(_call(client, "GET", "/api/artifacts", claims)) is None
+        assert _denied(_call(client, "GET", "/api/artifacts", _claims(["runs:read"]))) == "insufficient_scope"
+        for method, path in (
+            ("DELETE", f"/api/artifacts/{AGENT_A}"),
+            ("POST", f"/api/artifacts/{AGENT_A}/restore"),
+        ):
+            assert _denied(_call(client, method, path, claims, json={})) == "not_available_to_tokens", path
+
     def test_agent_key_regeneration_needs_its_own_scope(self, client):
         response = _call(
             client, "POST", f"/api/regenerate_agent_key/{AGENT_A}", _claims(["agents:write"])
@@ -329,6 +339,24 @@ class TestRelationshipsBeyondIds:
             ("POST", "/api/get_user_logs"),
         ):
             assert _denied(_call(client, method, path, claims, json={})) == "resource_not_allowed", path
+
+    @pytest.mark.parametrize("family", ["sources", "prompts", "tools", "workflows"])
+    def test_workflow_runs_are_closed_to_tokens_restricted_on_anything_but_agents(self, client, family):
+        claims = _claims(["runs:read"], {family: [SOURCE_A]})
+        for path in ("/api/workflow_runs", f"/api/workflow_runs/{AGENT_A}"):
+            assert _denied(_call(client, "GET", path, claims)) == "resource_not_allowed", path
+
+    def test_workflow_run_listing_holds_the_agent_filter_to_the_allowlist(self, client):
+        claims = _claims(["runs:read"], {"agents": [AGENT_A]})
+        assert _denied(_call(client, "GET", f"/api/workflow_runs?agent_id={AGENT_B}", claims)) == (
+            "resource_not_allowed"
+        )
+
+    @pytest.mark.parametrize("family", ["agents", "sources", "prompts", "tools", "workflows"])
+    def test_artifact_reads_are_closed_to_every_restricted_token(self, client, family):
+        claims = _claims(["artifacts:read"], {family: [SOURCE_A]})
+        for path in ("/api/artifacts", f"/api/artifacts/{AGENT_A}", f"/api/artifacts/{AGENT_A}/versions/1"):
+            assert _denied(_call(client, "GET", path, claims)) == "resource_not_allowed", path
 
 
 @pytest.mark.unit
