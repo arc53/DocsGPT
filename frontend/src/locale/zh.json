@@ -3586,7 +3586,7 @@
         "documents": "文档",
         "documentsHint": "从上传或上游节点传给此智能体的文档。",
         "filePassing": "文件传递",
-        "filePassingHint": "自动：模型支持时以原生方式发送，否则提取文本。",
+        "filePassingHint": "自动：模型支持时以原生方式发送，否则提取文本。带编号的行：发送全文，每行标注 [D#:L#] 以便引用。",
         "structuredOutput": "结构化输出（JSON Schema）",
         "modelNoStructuredOutput": "所选模型不支持结构化输出。",
         "validSchema": "JSON Schema 有效",
@@ -3657,7 +3657,8 @@
       "filePassing": {
         "auto": "自动",
         "native": "原生",
-        "extract": "提取"
+        "extract": "提取",
+        "lines": "带编号的行"
       },
       "mobileBlocker": {
         "title": "请在更大的屏幕上打开",

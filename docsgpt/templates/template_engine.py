@@ -112,6 +112,39 @@ class TemplateEngine:
             logger.debug(f"Cannot extract variables: {type(e).__name__}")
             return set()
 
+    def references_variable(self, template_content: str, name: str, via: Set[str] = frozenset()) -> bool:
+        """Whether the template reads ``name``, directly or as ``ns.name`` / ``ns['name']``.
+
+        Args:
+            template_content: Template string to analyze.
+            name: The variable to look for.
+            via: Namespaces the variable may also be read through, such as
+                ``{"agent"}`` for ``agent.name``.
+
+        Returns:
+            True when the template reads the variable; False for a template
+            that does not parse.
+        """
+        if not template_content or name not in template_content:
+            return False
+        try:
+            ast = self._env.parse(template_content)
+        except Exception:
+            return False
+        for node in ast.find_all((nodes.Name, nodes.Getattr, nodes.Getitem)):
+            if isinstance(node, nodes.Name):
+                if node.name == name and node.ctx == "load":
+                    return True
+                continue
+            owner = node.node
+            if not isinstance(owner, nodes.Name) or owner.name not in via:
+                continue
+            if isinstance(node, nodes.Getattr) and node.attr == name:
+                return True
+            if isinstance(node, nodes.Getitem) and isinstance(node.arg, nodes.Const) and node.arg.value == name:
+                return True
+        return False
+
     def extract_tool_usages(
         self, template_content: str
     ) -> Dict[str, Set[Optional[str]]]:

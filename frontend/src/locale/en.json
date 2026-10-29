@@ -3610,7 +3610,7 @@
         "documents": "Documents",
         "documentsHint": "Documents passed to this agent from uploads or upstream nodes.",
         "filePassing": "File passing",
-        "filePassingHint": "Auto: send native when the model supports it, otherwise extract text.",
+        "filePassingHint": "Auto: send native when the model supports it, otherwise extract text. Numbered lines: the whole text, each line marked [D#:L#] for citing.",
         "structuredOutput": "Structured Output (JSON Schema)",
         "modelNoStructuredOutput": "Selected model does not support structured output.",
         "validSchema": "Valid JSON schema",
@@ -3681,7 +3681,8 @@
       "filePassing": {
         "auto": "Auto",
         "native": "Native",
-        "extract": "Extract"
+        "extract": "Extract",
+        "lines": "Numbered lines"
       },
       "mobileBlocker": {
         "title": "Open on a larger screen",

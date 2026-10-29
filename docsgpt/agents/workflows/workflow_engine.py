@@ -9,6 +9,16 @@ from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
 from docsgpt import tracing
 from docsgpt.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
+from docsgpt.agents.workflows.run_documents import (
+    DOCUMENTS_STATE_KEY,
+    LINES_INSTRUCTION,
+    DocumentsTooLargeError,
+    RunDocuments,
+    WorkflowDocumentError,
+    attachment_text,
+    is_inline_text_mime,
+    snapshot_documents,
+)
 from docsgpt.agents.workflows.schemas import (
     AgentNodeConfig,
     AgentType,
@@ -86,6 +96,12 @@ class WorkflowEngine:
         # Populated once per run by ``WorkflowAgent._bridge_attachments``; lifetime is
         # this engine instance, i.e. exactly the run.
         self.preextracted_text: Dict[str, str] = {}
+        # The run's line-numbered documents (``file_passing: lines`` and the
+        # ``documents`` state key); each is read once per artifact version.
+        self._run_documents = RunDocuments(self.workflow_run_id)
+        # The list last published as ``state['documents']``, so snapshots can
+        # drop its text without touching a ``documents`` the workflow set itself.
+        self._documents_value: Optional[List[Dict[str, Any]]] = None
         self.state: WorkflowState = {}
         self.execution_log: List[Dict[str, Any]] = []
         self._condition_result: Optional[str] = None
@@ -202,7 +218,9 @@ class WorkflowEngine:
                 # later" — advice that sends the user round the same loop.
                 # Everything else stays sanitized: node internals and upstream
                 # provider errors are not for end users.
-                is_config_error = isinstance(e, CelEvaluationError)
+                # A document a node could not be given whole is the same: the
+                # message names the document and says what to change.
+                is_config_error = isinstance(e, (CelEvaluationError, WorkflowDocumentError))
                 user_friendly_error = (
                     f"{node.title or node.type.value}: {e}"
                     if is_config_error
@@ -211,7 +229,7 @@ class WorkflowEngine:
                 # A turn too big for the model's window gets the curated
                 # message, with the code and sizes the client words it from.
                 curated: Dict[str, Any] = {}
-                if is_context_length_error(e):
+                if not is_config_error and is_context_length_error(e):
                     public = user_facing_error(e)
                     user_friendly_error = public.message
                     curated = {"code": public.code}
@@ -277,10 +295,24 @@ class WorkflowEngine:
     def _state_delta(self, previous: Dict[str, Any]) -> Dict[str, Any]:
         """Keys this node added or changed. Deleted keys are not tracked; nothing deletes state today."""
         return {
-            key: value
+            key: self._snapshot_value(key, value)
             for key, value in self.state.items()
             if key not in previous or previous[key] != value
         }
+
+    def snapshot_state(self) -> Dict[str, Any]:
+        """The state as the run record keeps it: the documents' text is left out.
+
+        Returns:
+            A shallow copy of the state with ``documents`` reduced to metadata.
+        """
+        return {key: self._snapshot_value(key, value) for key, value in self.state.items()}
+
+    def _snapshot_value(self, key: Any, value: Any) -> Any:
+        """``value`` as snapshots and stream events carry it."""
+        if key == DOCUMENTS_STATE_KEY and value is not None and value is self._documents_value:
+            return snapshot_documents(value)
+        return value
 
     @staticmethod
     def _summarize_tool_calls(node_agent: Any) -> List[Dict[str, Any]]:
@@ -410,6 +442,8 @@ class WorkflowEngine:
         doc_manifest = self._node_document_manifest(node_config)
         if doc_manifest:
             node_prompt = f"{node_prompt}\n\n{doc_manifest}" if node_prompt else doc_manifest
+        if node_config.file_passing == "lines" and node_config.input_documents:
+            node_prompt = f"{node_prompt}\n\n{LINES_INSTRUCTION}" if node_prompt else LINES_INSTRUCTION
 
         # No ``agent_config`` here, deliberately: per-agent guardrails are not
         # wired through workflows yet, so a node runs the instance floor (which
@@ -489,6 +523,10 @@ class WorkflowEngine:
             node_config, node.title, self._agent_supported_attachment_types(node_agent)
         )
         if node_attachments:
+            if node_config.file_passing == "lines":
+                self._check_documents_fit(
+                    node_attachments, node_prompt, formatted_prompt, node_model_id, node_user_id
+                )
             node_agent.attachments = node_attachments
 
         full_response_parts: List[str] = []
@@ -568,6 +606,11 @@ class WorkflowEngine:
         user_id = self._resolve_user_id()
         if not user_id:
             raise ValueError(f'Code node "{node.title}" requires an authenticated user.')
+        # ``documents`` in the inputs asks for the numbered text in
+        # ``state.json`` (``state["documents"]``), not for files.
+        input_refs = [ref for ref in config.inputs if ref != DOCUMENTS_STATE_KEY]
+        if len(input_refs) != len(config.inputs):
+            self._load_all_documents()
 
         node_json_schema = self._normalize_node_json_schema(config.json_schema, node.title)
         session_id = self._session_id()
@@ -579,7 +622,7 @@ class WorkflowEngine:
         # would cold-drop later nodes' interpreter/filesystem state. The run session
         # is torn down once in ``execute``'s finally when the whole run ends.
         manager.open(session_id)
-        loaded = self._materialize_code_inputs(manager, session_id, config.inputs, user_id)
+        loaded = self._materialize_code_inputs(manager, session_id, input_refs, user_id)
         # Stage prior state as DATA the node code reads with
         # ``json.load(open("state.json"))`` -- e.g. ``state["decision"]``. The
         # file lands at the workspace root, which is the kernel cwd, so a
@@ -788,6 +831,11 @@ class WorkflowEngine:
         raw_ids = self._resolve_input_artifact_ids(node_config.input_documents)
         if not raw_ids:
             return []
+        if node_config.file_passing == "lines":
+            return [
+                {"id": entry["artifact_id"], "mime_type": "text/plain", "content": attachment_text(entry)}
+                for entry in self._load_documents(raw_ids)
+            ]
 
         supported = set(supported_types)
         supports_images = any(t.startswith("image/") for t in supported)
@@ -907,6 +955,75 @@ class WorkflowEngine:
                 self._extract_truncation_note(node_title, extract_max, dropped_for_cap)
             )
         return attachments
+
+    def _load_documents(self, raw_ids: List[str]) -> List[Dict[str, Any]]:
+        """Read documents as numbered text (once per version) and publish ``state['documents']``.
+
+        Args:
+            raw_ids: Artifact ids or short refs of this run.
+
+        Returns:
+            Their entries, in ``D#`` order.
+
+        Raises:
+            WorkflowDocumentError: A document could not be read whole.
+        """
+        entries = self._run_documents.load(raw_ids, self._input_document_ids(), self._resolve_user_id())
+        current = self.state.get(DOCUMENTS_STATE_KEY)
+        # A ``documents`` the workflow wrote itself (a state node, an output
+        # variable) is left alone; the node still gets its documents.
+        if current is None or current is self._documents_value:
+            self._documents_value = list(self._run_documents.entries())
+            self.state[DOCUMENTS_STATE_KEY] = self._documents_value
+        return entries
+
+    def _load_all_documents(self) -> None:
+        """Read every run input document, for a template or code node that reads ``documents``."""
+        ids = self._input_document_ids()
+        if ids:
+            self._load_documents(ids)
+        elif DOCUMENTS_STATE_KEY not in self.state:
+            self._documents_value = []
+            self.state[DOCUMENTS_STATE_KEY] = self._documents_value
+
+    @staticmethod
+    def _check_documents_fit(
+        attachments: List[Dict[str, Any]],
+        system_prompt: str,
+        prompt: str,
+        model_id: Optional[str],
+        user_id: Optional[str],
+    ) -> None:
+        """Fail a ``lines`` node whose documents cannot fit its model whole.
+
+        Args:
+            attachments: The node's numbered-text attachments.
+            system_prompt: The node's system prompt.
+            prompt: The node's rendered user prompt.
+            model_id: The node's model.
+            user_id: Scope for resolving a user's own model.
+
+        Raises:
+            DocumentsTooLargeError: The prompt and documents need more tokens
+                than the model's window, less the share held for the answer.
+        """
+        from docsgpt.agents.context_overflow import SAFETY_SHARE
+        from docsgpt.core.model_utils import get_token_limit
+        from docsgpt.utils import num_tokens_from_string
+
+        window = int(get_token_limit(model_id, user_id=user_id))
+        available = window - int(window * SAFETY_SHARE)
+        document_tokens = sum(num_tokens_from_string(a.get("content") or "") for a in attachments)
+        needed = document_tokens + num_tokens_from_string(system_prompt or "") + num_tokens_from_string(prompt or "")
+        if needed <= available:
+            return
+        raise DocumentsTooLargeError(
+            f"the selected documents take about {document_tokens:,} tokens as numbered lines "
+            f"({needed:,} with the prompts), more than model \"{model_id}\" can take ({available:,} tokens). "
+            "Select fewer documents for this node, or use a model with a larger context window.",
+            needed_tokens=needed,
+            available_tokens=available,
+        )
 
     @staticmethod
     def _extract_truncation_note(node_title: str, cap: int, dropped: int) -> Dict[str, Any]:
@@ -1057,9 +1174,7 @@ class WorkflowEngine:
     @staticmethod
     def _is_inline_text_mime(mime_type: str) -> bool:
         """Already-text formats are inlined directly (no Docling round-trip)."""
-        if mime_type.startswith("text/"):
-            return True
-        return mime_type in ("application/json", "application/xml")
+        return is_inline_text_mime(mime_type)
 
     def _resolve_input_artifact_ids(self, inputs: List[str]) -> List[str]:
         """Resolve node ``inputs`` (refs/ids, ``*`` token, or state vars holding a ref or a list of refs)."""
@@ -1259,6 +1374,10 @@ class WorkflowEngine:
             raise ValueError(f"Invalid JSON schema: {exc.message}") from exc
 
     def _format_template(self, template: str) -> str:
+        # ``documents`` is filled on first use: a template that reads it gets
+        # every run input document as numbered text.
+        if self._template_engine.references_variable(template, DOCUMENTS_STATE_KEY, via={"agent"}):
+            self._load_all_documents()
         context = self._build_template_context()
         try:
             return self._template_engine.render(template, context)

@@ -199,3 +199,36 @@ class TestExtractToolUsages:
         )
         result = engine.extract_tool_usages(tpl)
         assert result == {"memory": {"memory_view"}}
+
+
+# ── references_variable ────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestReferencesVariable:
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "{{ documents }}",
+            "{% for d in documents %}{{ d.text }}{% endfor %}",
+            "{{ documents[0].text }}",
+            "{{ agent.documents }}",
+            "{{ agent['documents'][1] }}",
+        ],
+    )
+    def test_reads(self, engine, template):
+        assert engine.references_variable(template, "documents", via={"agent"})
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "",
+            "Summarize the documents",
+            "{{ source.documents }}",
+            "{{ agent.documents }}",
+            "{% for documents in items %}{% endfor %}",
+            "{{ unclosed",
+        ],
+    )
+    def test_does_not_read(self, engine, template):
+        assert not engine.references_variable(template, "documents")

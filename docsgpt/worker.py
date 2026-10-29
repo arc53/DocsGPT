@@ -4008,6 +4008,17 @@ def run_parse_document(artifact_id, parent, user_id, options):
         logging.error("run_parse_document: failed to read input artifact bytes", exc_info=True)
         return {"status": "error", "error": f"failed to read input artifact {artifact_id}."}
 
+    if options.get("output") == "lines":
+        # A workflow's numbered document text (file_passing: lines). Returned
+        # whole: the caller fails the node rather than cut it, and it is
+        # bounded by the parse byte cap. Never persisted as an artifact.
+        from docsgpt.parser import document_lines
+
+        lines = document_lines.extract_document_lines(data, display_name, mime_type=version.get("mime_type"))
+        if lines.get("error"):
+            return {"status": "error", "error": lines["error"]}
+        return {"status": "ok", "lines": lines["lines"], "tables": lines["tables"]}
+
     # Parse returns the FULL content (no max_chars/window here) so the persisted artifact is the
     # complete parse; all view-bounding is applied by ``bound_parse_payload`` below.
     result = parse_document_bytes(

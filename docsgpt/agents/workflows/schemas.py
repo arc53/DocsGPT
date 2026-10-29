@@ -56,8 +56,10 @@ class AgentNodeConfig(BaseModel):
     input_documents: List[str] = Field(default_factory=list)
     # How selected documents reach the model: ``auto`` (native when the model
     # accepts the mime, else extract to text), ``native`` (force native; raise
-    # on an unsupported mime), or ``extract`` (always inline extracted text).
-    file_passing: Literal["auto", "native", "extract"] = "auto"
+    # on an unsupported mime), ``extract`` (always inline extracted text), or
+    # ``lines`` (the whole text with ``[D#:L#]`` line references; never cut,
+    # the node fails when it does not fit).
+    file_passing: Literal["auto", "native", "extract", "lines"] = "auto"
 
 
 class CodeNodeConfig(BaseModel):
