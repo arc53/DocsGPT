@@ -89,6 +89,10 @@ _ITEM_STOPPED_MESSAGE = "Stopped because another item failed."
 # How often a node waiting to retry checks whether the run was stopped.
 _RETRY_POLL_SECONDS = 0.5
 
+# Most characters of a rejected reply's validation error quoted to the next
+# attempt; the error can repeat the whole reply.
+_RETRY_FEEDBACK_MAX_CHARS = 1000
+
 # Added to a node's prompt when its last reply was rejected as invalid output.
 _INVALID_OUTPUT_FEEDBACK = (
     "Your previous reply could not be used: {error}\n"
@@ -495,7 +499,7 @@ class WorkflowEngine:
                     retry_error=sanitize_api_error(exc),
                 )
                 self._wait_before_retry(delay)
-                self._retry_feedback = str(exc) if reason == INVALID_OUTPUT else None
+                self._retry_feedback = str(exc)[:_RETRY_FEEDBACK_MAX_CHARS] if reason == INVALID_OUTPUT else None
                 continue
             self._record_attempt(started_at, ExecutionStatus.COMPLETED)
             return

@@ -49,6 +49,10 @@ _TRANSPORT_ERROR_NAMES = frozenset(
 # How deep to follow ``raise ... from`` when looking for the provider's error.
 _MAX_CAUSE_DEPTH = 5
 
+# Provider error codes for an account out of credit: sent with a 429, but no
+# wait makes the next request succeed.
+_EXHAUSTED_QUOTA_CODES = frozenset({"insufficient_quota"})
+
 
 class InvalidNodeOutputError(ValueError):
     """A node's reply is not valid JSON or does not match its schema."""
@@ -238,14 +242,28 @@ def is_transport_error(error: BaseException) -> bool:
     return False
 
 
+def _provider_codes(error: BaseException) -> set:
+    """The error codes a provider exception carries: its own ``code`` and its body's."""
+    codes = {getattr(error, "code", None)}
+    body = getattr(error, "body", None)
+    if isinstance(body, Mapping):
+        nested = body.get("error")
+        for part in (body, nested if isinstance(nested, Mapping) else {}):
+            codes.update({part.get("code"), part.get("type")})
+    return {code for code in codes if isinstance(code, str)}
+
+
 def _never_retried(error: BaseException) -> bool:
-    """Errors another attempt cannot fix: the run is out of time or quota, or the request is too big."""
+    """Errors another attempt cannot fix: the run or account is out of time or quota, or the request is too big."""
     from docsgpt.agents.context_overflow import is_context_length_error
     from docsgpt.core.run_budget import is_budget_exhausted
     from docsgpt.quotas.service import QuotaExceededError
 
     return any(
-        is_budget_exhausted(current) or isinstance(current, QuotaExceededError) or is_context_length_error(current)
+        is_budget_exhausted(current)
+        or isinstance(current, QuotaExceededError)
+        or is_context_length_error(current)
+        or bool(_provider_codes(current) & _EXHAUSTED_QUOTA_CODES)
         for current in _causes(error)
     )
 

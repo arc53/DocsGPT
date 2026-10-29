@@ -177,6 +177,21 @@ def test_quota_errors_are_never_retried():
     assert classify_failure(quota, "agent") is None
 
 
+def test_an_account_out_of_credit_is_never_retried():
+    response = httpx2.Response(
+        429,
+        json={"error": {"message": "You exceeded your current quota", "code": "insufficient_quota"}},
+        request=_REQUEST,
+    )
+    error = openai.OpenAI(api_key="x")._make_status_error_from_response(response)
+    assert classify_failure(error, "agent") is None
+    # A provider error whose code only sits in the nested body counts too.
+    nested = _status_error(429)
+    nested.code = None
+    nested.body = {"error": {"code": "insufficient_quota"}}
+    assert classify_failure(nested, "agent") is None
+
+
 def test_output_errors_classify_by_kind():
     assert classify_failure(EmptyCompletionError("empty"), "agent") == "transient"
     assert classify_failure(InvalidNodeOutputError("bad json"), "agent") == "invalid_output"
@@ -429,6 +444,17 @@ def test_a_schema_mismatch_is_retried_with_the_validation_error(scripted):
 
     assert "'score' is a required property" in scripted["prompts"][1]
     assert engine.state["node_ask_output"] == {"score": 1}
+
+
+def test_the_quoted_validation_error_is_bounded(scripted):
+    schema = {"type": "object", "properties": {"text": {"type": "integer"}}}
+    huge = '{"text": "' + "x" * 50_000 + '"}'
+    scripted["script"] = [[{"answer": huge}], [{"answer": '{"text": 1}'}]]
+    engine = _engine(_agent_node(json_schema=schema, retry={"max_attempts": 2}))
+
+    _run(engine)
+
+    assert len(scripted["prompts"][1]) < 2_000
 
 
 def test_invalid_output_is_not_retried_without_invalid_output_in_on(scripted):

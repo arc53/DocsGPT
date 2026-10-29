@@ -569,6 +569,10 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 break
             except websocket.WebSocketConnectionClosedException:
                 self._fail(result, "KernelDiedError", "kernel channel closed before completion")
+                # The kernel may be dead, or restarted under the same id without
+                # the session's state; reusing it would run on a broken runtime.
+                self._invalidate_kernel(kernel_id, session_id)
+                result.runtime_invalidated = True
                 result.sandbox_error = True
                 break
             if not raw:
