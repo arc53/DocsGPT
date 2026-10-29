@@ -335,10 +335,10 @@ def _display_name(artifact_id: str, artifact: Optional[Dict[str, Any]], version:
 def _cache_key(version: Dict[str, Any], name: str) -> Optional[str]:
     """The cache key for a document version, or None when its content hash is unknown.
 
-    The reader is picked from the extension (and, for a text file without
-    one, the mime type), and the configured-parser fallback depends on the
-    engine and OCR settings, so identical bytes read differently under
-    another name or setup get a key of their own.
+    The reader is picked from the extension and the mime type, and the
+    configured-parser fallback depends on the engine and OCR settings, so
+    identical bytes read differently under another name, type or setup get
+    a key of their own.
     """
     from docsgpt.core.settings import settings
 
@@ -346,7 +346,7 @@ def _cache_key(version: Dict[str, Any], name: str) -> Optional[str]:
     if not sha256:
         return None
     suffix = os.path.splitext(name)[1].lower()
-    reader = suffix or f"mime={version.get('mime_type') or ''}"
+    reader = f"{suffix}|{version.get('mime_type') or ''}"
     parser = f"{settings.DOC_PARSER_ENGINE}-{settings.OCR_BACKEND}-{int(bool(settings.OCR_ENABLED))}"
     return f"workflow:doclines:v{FORMAT_VERSION}:{parser}:{reader}:{sha256}"
 

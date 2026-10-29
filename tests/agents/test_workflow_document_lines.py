@@ -708,3 +708,18 @@ def test_a_template_reading_a_workflow_owned_documents_value_reads_no_files(monk
 
     assert engine._format_template("{{ documents[0] }}") == "mine"
     assert parse_queue.calls == []
+
+
+@pytest.mark.unit
+def test_the_cache_key_separates_identical_bytes_under_another_mime_type(monkeypatch, parse_queue):
+    redis = _FakeRedis()
+    monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: redis)
+    as_text, r1 = _artifact("text/plain", "data.custom", data=b"hello", sha256="same")
+    as_binary, r2 = _artifact("application/octet-stream", "data.custom", data=b"hello", sha256="same")
+    _patch_repo(monkeypatch, {as_text: r1, as_binary: r2})
+    parse_queue.replies[as_binary] = {"status": "error", "error": "unsupported file type '.custom'."}
+
+    _engine([as_text])._materialize_node_attachments(_lines_config(), "Node", [])
+
+    with pytest.raises(WorkflowDocumentError, match="unsupported file type"):
+        _engine([as_binary])._materialize_node_attachments(_lines_config(), "Node", [])
