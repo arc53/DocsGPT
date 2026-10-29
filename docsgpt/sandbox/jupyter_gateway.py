@@ -571,7 +571,9 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 self._fail(result, "KernelDiedError", "kernel channel closed before completion")
                 # The kernel is kept: retiring it would wipe the run's workspace,
                 # and a kernel that did die is caught by the death-state frames or
-                # by the next connect's 404 (KernelGoneError).
+                # by the next connect's 404 (KernelGoneError). Its cell may still be
+                # running, so stop it over REST; a retry would queue behind it.
+                self._interrupt(kernel_id)
                 result.sandbox_error = True
                 break
             if not raw:

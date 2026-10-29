@@ -792,12 +792,15 @@ def test_a_channel_closed_mid_run_keeps_the_kernel_and_its_workspace(monkeypatch
     """A dropped channel is retried on the same kernel: a new one would start on an emptied workspace."""
     sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
     sb._kernels["session-x"] = _Kernel("k-dropped", "/tmp/x", "session-x")
-    deleted = []
+    deleted, interrupted = [], []
     monkeypatch.setattr(sb, "_delete_kernel", lambda kernel_id: deleted.append(kernel_id) or True)
+    monkeypatch.setattr(sb, "_interrupt", interrupted.append)
 
     result = sb._collect(_FakeWS([]), "m-1", timeout=30, kernel_id="k-dropped", session_id="session-x")
 
     assert result.error_name == "KernelDiedError"
     assert result.sandbox_error is True and result.runtime_invalidated is False
     assert deleted == []
+    # The orphaned cell is stopped so a retry doesn't queue behind it.
+    assert interrupted == ["k-dropped"]
     assert sb._kernels["session-x"].kernel_id == "k-dropped"
