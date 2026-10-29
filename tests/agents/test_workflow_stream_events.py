@@ -355,3 +355,26 @@ def test_a_title_repeated_inside_the_reason_is_shortened_with_it():
     )
     assert _size(event) <= LIMIT
     assert event["error"] == f'Loop "{"L" * 200}…" has no items to read.'
+
+
+@pytest.mark.unit
+def test_status_only_and_running_events_fit_the_limit_too():
+    title = "S" * 10000
+    node = _node("copy", NodeType.STATE, title, stream_output="none",
+                 operations=[{"expression": '"v"', "target_variable": "k"}])
+    events = [e for e in _run(_engine(node)) if e.get("node_id") == "copy"]
+
+    assert [e["status"] for e in events] == ["running", "completed"]
+    for event in events:
+        assert _size(event) <= LIMIT
+        assert event["node_title"] == "S" * 200 + "…"
+    assert events[1]["output_omitted"] is True
+
+
+@pytest.mark.unit
+def test_a_retry_event_fits_the_limit():
+    engine = _engine()
+    node = _node("n", NodeType.AGENT, "T" * 10000)
+    event = engine._step_event(node, "running", attempt=2, max_attempts=3, retry_error="E" * 10000)
+    assert _size(event) <= LIMIT
+    assert event["retry_error"].startswith("EEE") and event["node_title"].startswith("TTT")

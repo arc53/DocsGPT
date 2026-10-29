@@ -98,6 +98,8 @@ _DEFAULT_STREAM_OUTPUT = "summary"
 _OUTPUT_PREVIEW_CHARS = 500
 # Characters of an over-long node title kept before its error is cut.
 _TITLE_KEEP_CHARS = 200
+# Free-text fields of a step event, cut before the title when it is too large.
+_FREE_TEXT_FIELDS = ("error", "retry_error")
 # Worst-case JSON bytes per character (a ``\u00XX`` escape), and room for the
 # rest of an ``answer`` event, when cutting a long answer into chunks.
 _JSON_BYTES_PER_CHAR = 6
@@ -165,6 +167,52 @@ def _answer_chunks(text: str) -> List[str]:
     if len(text) <= size:
         return [text]
     return [text[start : start + size] for start in range(0, len(text), size)]
+
+
+def _shorten_title(event: Dict[str, Any], limit: int) -> None:
+    """Cap an over-long node title, in place, when the event is over ``limit``.
+
+    Errors repeat the title ("Title: reason", 'Loop "Title" has …'): the
+    leading copy is dropped (the title has its own field) and every other
+    copy is capped with it, so the reason keeps its room.
+    """
+    title = event.get("node_title")
+    if _event_bytes(event) <= limit or not isinstance(title, str) or not title:
+        return
+    for field in _FREE_TEXT_FIELDS:
+        text = event.get(field)
+        if isinstance(text, str) and text.startswith(f"{title}: "):
+            event[field] = text[len(title) + 2 :]
+    if len(title) > _TITLE_KEEP_CHARS:
+        short = title[:_TITLE_KEEP_CHARS] + "…"
+        event["node_title"] = short
+        for field in _FREE_TEXT_FIELDS:
+            if isinstance(event.get(field), str):
+                event[field] = event[field].replace(title, short)
+
+
+def _shorten_free_text(event: Dict[str, Any], limit: int) -> None:
+    """Cut the free text of an event still over ``limit``, in place.
+
+    The errors go first, from their end (their start says what went wrong),
+    then the title. The node id identifies the step and is never shortened.
+    """
+    for field in (*_FREE_TEXT_FIELDS, "node_title"):
+        over = _event_bytes(event) - limit
+        text = event.get(field)
+        if over > 0 and isinstance(text, str) and text:
+            # Each dropped character frees at least a byte; "…" takes three.
+            event[field] = text[: max(0, len(text) - over - 3)] + "…"
+
+
+def _fit_text(event: Dict[str, Any]) -> Dict[str, Any]:
+    """An event with only text to cut, held to WORKFLOW_STREAM_MAX_EVENT_BYTES."""
+    from docsgpt.core.settings import settings
+
+    limit = int(settings.WORKFLOW_STREAM_MAX_EVENT_BYTES)
+    _shorten_title(event, limit)
+    _shorten_free_text(event, limit)
+    return event
 
 
 class WorkflowEngine:
@@ -439,6 +487,10 @@ class WorkflowEngine:
         }
         if self._loop_item is not None:
             event.update(self._loop_item)
+        # A running (or retrying) step carries no values, only text a node's
+        # settings can make long; finished steps are sized by their mode.
+        if status == "running":
+            _fit_text(event)
         return event
 
     def _finished_step_event(
@@ -479,7 +531,7 @@ class WorkflowEngine:
             fields["error"] = error
         mode = _stream_output_mode(node)
         if mode == "none":
-            return self._step_event(node, status, **fields, output_omitted=True)
+            return _fit_text(self._step_event(node, status, **fields, output_omitted=True))
         has_output = output is not _NO_OUTPUT
         delta = dict(state_delta)
         if has_output:
@@ -509,18 +561,7 @@ class WorkflowEngine:
                 summary["output_preview"] = text[: min(_OUTPUT_PREVIEW_CHARS, limit // 8)]
                 summary["output_truncated"] = True
         event = self._step_event(node, status, **summary)
-        # A long node title costs the most for the least, and errors repeat
-        # it ("Title: reason", 'Loop "Title" has …'): drop the leading copy
-        # (the title has its own field), cap it, and cap every copy left.
-        title, error = event.get("node_title"), event.get("error")
-        if _event_bytes(event) > limit and isinstance(title, str) and title:
-            if isinstance(error, str) and error.startswith(f"{title}: "):
-                event["error"] = error = error[len(title) + 2 :]
-            if len(title) > _TITLE_KEEP_CHARS:
-                short = title[:_TITLE_KEEP_CHARS] + "…"
-                event["node_title"] = short
-                if isinstance(error, str):
-                    event["error"] = error.replace(title, short)
+        _shorten_title(event, limit)
         # Many changed keys can outgrow the limit on their own: halve the list.
         while _event_bytes(event) > limit and event["state_keys_changed"]:
             event["state_keys_changed"] = event["state_keys_changed"][: len(event["state_keys_changed"]) // 2]
@@ -529,15 +570,7 @@ class WorkflowEngine:
             event.pop("output", None)
             event["output_preview"] = ""
             event["output_truncated"] = True
-        # Last the free text itself: the error (its start says what went
-        # wrong), then the title. The node id identifies the step and is
-        # never shortened.
-        for field in ("error", "node_title"):
-            over = _event_bytes(event) - limit
-            text = event.get(field)
-            if over > 0 and isinstance(text, str) and text:
-                # Each dropped character frees at least a byte; "…" takes three.
-                event[field] = text[: max(0, len(text) - over - 3)] + "…"
+        _shorten_free_text(event, limit)
         return event
 
     def _finalize_log_entry(self, log_entry: Dict[str, Any], pre_state: Dict[str, Any]) -> None:
