@@ -308,4 +308,3 @@ class TestDefaultTokenEndpointAuthMethod:
         data, headers = oauth.context.prepare_token_auth({"grant_type": "authorization_code"}, {})
         assert "Authorization" not in headers
         assert "client_secret" not in data
-
