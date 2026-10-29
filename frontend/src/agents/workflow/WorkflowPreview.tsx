@@ -43,7 +43,7 @@ import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
 import { selectSendableAttachments } from '../../upload/uploadSlice';
 import { usePreviewArtifacts } from '../components/AgentPreviewSheet';
-import { WorkflowEdge, WorkflowNode } from '../types/workflow';
+import { RetryConfig, WorkflowEdge, WorkflowNode } from '../types/workflow';
 import { NODE_COLORS, NODE_ICONS } from './nodeVisuals';
 import {
   addQuery,
@@ -64,6 +64,7 @@ import {
 interface WorkflowData {
   name: string;
   description?: string;
+  retry_defaults?: RetryConfig | null;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
 }
@@ -225,6 +226,13 @@ export function ExecutionDetails({
                   )}
                 </div>
               </div>
+              {step.attempts && step.attempts > 1 && (
+                <p className="text-muted-foreground text-xs">
+                  {t('agents.workflow.preview.attempts', {
+                    count: step.attempts,
+                  })}
+                </p>
+              )}
               {step.items && (
                 <p className="text-muted-foreground text-xs">
                   {t('agents.workflow.preview.loopItems', {
@@ -303,7 +311,16 @@ export function WorkflowMiniMap({
   };
 
   const getNodeSubtitle = (node: WorkflowNode) => {
-    const items = executionSteps.find((s) => s.nodeId === node.id)?.items;
+    const step = executionSteps.find((s) => s.nodeId === node.id);
+    if (step?.status === 'running' && step.attempt) {
+      return step.maxAttempts
+        ? t('agents.workflow.preview.retryingOf', {
+            attempt: step.attempt,
+            total: step.maxAttempts,
+          })
+        : t('agents.workflow.preview.retrying', { attempt: step.attempt });
+    }
+    const items = step?.items;
     if (node.type === 'loop' && items) {
       return t('agents.workflow.preview.loopItems', {
         done: items.done,

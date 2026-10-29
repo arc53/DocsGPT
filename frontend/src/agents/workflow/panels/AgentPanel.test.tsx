@@ -139,4 +139,26 @@ describe('AgentPanel', () => {
     render(makeNode({ json_schema: { type: 'object' } }), '{"type":"object"}');
     expect(advancedToggle().getAttribute('aria-expanded')).toBe('true');
   });
+  it('opens advanced settings on a retry policy and edits what it retries', () => {
+    const { onUpdate } = render(makeNode({ retry: { max_attempts: 3 } }));
+    expect(advancedToggle().getAttribute('aria-expanded')).toBe('true');
+    const chip = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'agents.workflow.retry.onChoice.invalid_output',
+    ) as HTMLButtonElement;
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    act(() => chip.click());
+    expect(onUpdate).toHaveBeenCalledWith({
+      config: expect.objectContaining({
+        retry: { max_attempts: 3, on: ['transient'] },
+      }),
+    });
+  });
+
+  it('leaves the retry choices off while the node never retries', () => {
+    render(makeNode());
+    const chip = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'agents.workflow.retry.onChoice.transient',
+    ) as HTMLButtonElement;
+    expect(chip.disabled).toBe(true);
+  });
 });

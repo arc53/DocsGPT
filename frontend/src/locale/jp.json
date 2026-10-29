@@ -992,7 +992,8 @@
         "result": "結果",
         "source": "ソース",
         "feedback": "評価",
-        "passthrough": "パススルー"
+        "passthrough": "パススルー",
+        "retries": "再試行"
       },
       "trace": {
         "view": "トレースを表示",
@@ -1130,7 +1131,8 @@
         "topics": "トピック"
       },
       "levelFilter": "レベル",
-      "typeFilter": "イベントの種類"
+      "typeFilter": "イベントの種類",
+      "retriedStep_other": "{{node}}: {{count}} 回試行"
     },
     "teams": {
       "label": "チーム",
@@ -2845,7 +2847,10 @@
       "stepOf": "ステップ {{step}}/{{total}}",
       "stepCount_other": "{{count}} ステップ",
       "loopItems": "{{total}} 項目中 {{done}} 項目",
-      "loopItemsFailed": "{{count}} 件失敗"
+      "loopItemsFailed": "{{count}} 件失敗",
+      "retrying": "再試行中 · {{attempt}} 回目",
+      "retryingOf": "再試行中 · {{attempt}}/{{total}} 回目",
+      "attempts_other": "{{count}} 回試行"
     }
   },
   "agents": {
@@ -3675,7 +3680,9 @@
         "loopItemsPath": "ループ「{{name}}」の項目は extracted.items のような状態パスである必要があります",
         "loopItemVariable": "ループ「{{name}}」の項目変数は使用できません",
         "loopEmpty": "ループ「{{name}}」の中には少なくとも 1 つのノードが必要です",
-        "loopEntry": "ループ「{{name}}」はちょうど 1 つのノードから開始する必要があります"
+        "loopEntry": "ループ「{{name}}」はちょうど 1 つのノードから開始する必要があります",
+        "nodeRetry": "ノード「{{name}}」の再試行設定が範囲外です",
+        "retryDefaults": "ワークフローの既定の再試行設定が範囲外です"
       },
       "schema": {
         "notObject": "有効な JSON オブジェクトである必要があります",
@@ -3731,7 +3738,10 @@
         "stepCount_one": "（{{count}} ステップ）",
         "backToRun": "実行に戻る",
         "loopItems": "{{total}} 項目中 {{done}} 項目",
-        "loopItemsFailed": "{{count}} 件失敗"
+        "loopItemsFailed": "{{count}} 件失敗",
+        "retrying": "再試行中 · {{attempt}} 回目",
+        "retryingOf": "再試行中 · {{attempt}}/{{total}} 回目",
+        "attempts_other": "{{count}} 回試行"
       },
       "documents": {
         "modeAll": "すべての入力ドキュメント",
@@ -3753,7 +3763,28 @@
       "zoomOut": "縮小",
       "fitView": "全体を表示",
       "removeAssignment": "割り当て {{index}} を削除",
-      "removeCondition": "条件 {{index}} を削除"
+      "removeCondition": "条件 {{index}} を削除",
+      "retry": {
+        "title": "再試行",
+        "defaultsDescription": "試行が失敗したときのエージェントノードとコードノードの動作です。ノード個別の再試行設定が優先されます。",
+        "attempts": "最大試行回数",
+        "inherit": "既定（{{value}}）",
+        "noRetry": "1（再試行なし）",
+        "backoff": "待機時間（秒）",
+        "backoffInvalid": "0〜300 の数値をカンマ区切りで入力してください。",
+        "backoffTooMany": "待機時間は 10 個までです。",
+        "hint": "再試行のたびに {{backoff}} 秒待機します。最後の待機時間が繰り返されます。",
+        "hintOff": "1 回だけ実行します。失敗を再試行するには試行回数を増やしてください。",
+        "on": "再試行の対象",
+        "onChoice": {
+          "transient": "エラーとタイムアウト",
+          "invalid_output": "無効な出力"
+        },
+        "onHint": {
+          "transient": "サーバーエラー、レート制限、タイムアウト、接続の切断、空の応答。",
+          "invalid_output": "有効な JSON でない応答、または構造化出力のスキーマに一致しない応答。"
+        }
+      }
     },
     "typeModal": {
       "title": "新しいエージェントを作成",

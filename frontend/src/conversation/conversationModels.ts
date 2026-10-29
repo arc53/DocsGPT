@@ -72,6 +72,13 @@ export interface WorkflowStep {
   error?: string;
   /** A loop's items: how many there are, how many ended and failed. */
   items?: { total: number; done: number; failed: number };
+  /** While a retry runs: its attempt (from 2), out of how many. */
+  attempt?: number;
+  maxAttempts?: number;
+  /** Why the previous attempt failed. */
+  retryError?: string;
+  /** How many attempts a step that ran more than once took. */
+  attempts?: number;
 }
 
 export interface WorkflowProgress {

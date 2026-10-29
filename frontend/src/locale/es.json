@@ -1037,7 +1037,8 @@
         "result": "Resultado",
         "source": "Origen",
         "feedback": "Valoración",
-        "passthrough": "Passthrough"
+        "passthrough": "Passthrough",
+        "retries": "Reintentos"
       },
       "trace": {
         "view": "Ver traza",
@@ -1182,7 +1183,10 @@
         "topics": "Temas"
       },
       "levelFilter": "Nivel",
-      "typeFilter": "Tipo de evento"
+      "typeFilter": "Tipo de evento",
+      "retriedStep_one": "{{node}}: {{count}} intento",
+      "retriedStep_many": "{{node}}: {{count}} intentos",
+      "retriedStep_other": "{{node}}: {{count}} intentos"
     },
     "teams": {
       "label": "Equipos",
@@ -2949,7 +2953,12 @@
       "stepCount_other": "{{count}} pasos",
       "stepCount_many": "{{count}} pasos",
       "loopItems": "{{done}} de {{total}} elementos",
-      "loopItemsFailed": "{{count}} con error"
+      "loopItemsFailed": "{{count}} con error",
+      "retrying": "Reintentando · intento {{attempt}}",
+      "retryingOf": "Reintentando · intento {{attempt}} de {{total}}",
+      "attempts_one": "{{count}} intento",
+      "attempts_many": "{{count}} intentos",
+      "attempts_other": "{{count}} intentos"
     }
   },
   "agents": {
@@ -3790,7 +3799,9 @@
         "loopItemsPath": "Los elementos del bucle «{{name}}» deben ser una ruta de estado como extracted.items",
         "loopItemVariable": "El bucle «{{name}}» tiene una variable de elemento que no se puede usar",
         "loopEmpty": "El bucle «{{name}}» necesita al menos un nodo dentro",
-        "loopEntry": "El bucle «{{name}}» debe empezar en exactamente un nodo"
+        "loopEntry": "El bucle «{{name}}» debe empezar en exactamente un nodo",
+        "nodeRetry": "El nodo «{{name}}» tiene una configuración de reintentos fuera de rango",
+        "retryDefaults": "Los reintentos predeterminados del flujo de trabajo están fuera de rango"
       },
       "schema": {
         "notObject": "debe ser un objeto JSON válido",
@@ -3849,7 +3860,12 @@
         "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa.",
         "backToRun": "Volver a la ejecución",
         "loopItems": "{{done}} de {{total}} elementos",
-        "loopItemsFailed": "{{count}} con error"
+        "loopItemsFailed": "{{count}} con error",
+        "retrying": "Reintentando · intento {{attempt}}",
+        "retryingOf": "Reintentando · intento {{attempt}} de {{total}}",
+        "attempts_one": "{{count}} intento",
+        "attempts_many": "{{count}} intentos",
+        "attempts_other": "{{count}} intentos"
       },
       "documents": {
         "modeAll": "Todos los documentos de entrada",
@@ -3871,7 +3887,28 @@
       "zoomOut": "Alejar",
       "fitView": "Ajustar vista",
       "removeAssignment": "Eliminar asignación {{index}}",
-      "removeCondition": "Eliminar condición {{index}}"
+      "removeCondition": "Eliminar condición {{index}}",
+      "retry": {
+        "title": "Reintentos",
+        "defaultsDescription": "Qué hacen los nodos de agente y de código cuando falla un intento. La configuración de reintentos de cada nodo tiene prioridad.",
+        "attempts": "Intentos máx.",
+        "inherit": "Predeterminado ({{value}})",
+        "noRetry": "1 (sin reintentos)",
+        "backoff": "Esperas (s)",
+        "backoffInvalid": "Usa números de 0 a 300, separados por comas.",
+        "backoffTooMany": "Usa como máximo 10 esperas.",
+        "hint": "Espera {{backoff}} segundos antes de cada reintento; la última espera se repite.",
+        "hintOff": "Se ejecuta una vez. Aumenta los intentos para reintentar los fallos.",
+        "on": "Reintentar ante",
+        "onChoice": {
+          "transient": "Errores y tiempos de espera",
+          "invalid_output": "Salida no válida"
+        },
+        "onHint": {
+          "transient": "Errores del servidor, límites de uso, tiempos de espera agotados, conexiones cortadas y respuestas vacías.",
+          "invalid_output": "Una respuesta que no es JSON válido o no coincide con el esquema de salida estructurada."
+        }
+      }
     },
     "typeModal": {
       "title": "Crear un agente nuevo",

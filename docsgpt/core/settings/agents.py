@@ -134,6 +134,19 @@ class AgentSettings(SettingsGroup):
         ge=1,
         description="Most items one loop node accepts, whatever its own max_items says; a longer list fails the node.",
     )
+    WORKFLOW_RETRY_MAX_ATTEMPTS: int = Field(
+        default=5,
+        ge=1,
+        description="Most attempts a workflow node's retry policy may ask for; 1 turns node retries off.",
+    )
+    WORKFLOW_RETRY_MAX_DELAY_SECONDS: float = Field(
+        default=300,
+        ge=0,
+        description=(
+            "Longest wait before one retry of a workflow node. A Retry-After longer than this fails the node "
+            "instead of retrying early."
+        ),
+    )
     WORKFLOW_RUN_STALE_SECONDS: int = Field(
         default=3600,
         description=(

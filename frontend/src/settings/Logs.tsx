@@ -46,7 +46,12 @@ import LabelChips from './LabelChips';
 import TraceChips from './traces/TraceChips';
 import TraceSheet from './traces/TraceSheet';
 import { isLogLabel, LOG_LABELS, revealElement } from './logsLinks';
-import { mergeLoadedPages, newestFirst, uniqueLogs } from './logsPage';
+import {
+  mergeLoadedPages,
+  newestFirst,
+  retriedSteps,
+  uniqueLogs,
+} from './logsPage';
 import { formatDurationMs } from './traces/traceUtils';
 import { AgentTopic, LogData, TraceRef } from './types';
 
@@ -836,6 +841,16 @@ function Log({
     const duration = formatDuration(log.started_at, log.finished_at);
     if (duration)
       detailRows.push([t('settings.logs.detail.duration'), duration]);
+    const retried = retriedSteps(log.steps);
+    if (retried.length)
+      detailRows.push([
+        t('settings.logs.detail.retries'),
+        retried
+          .map(({ nodeId, attempts }) =>
+            t('settings.logs.retriedStep', { node: nodeId, count: attempts }),
+          )
+          .join(', '),
+      ]);
   } else if (log.event_type === 'system' || log.event_type === 'webhook') {
     if (log.endpoint)
       detailRows.push([t('settings.logs.detail.endpoint'), log.endpoint]);

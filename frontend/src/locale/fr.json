@@ -1037,7 +1037,8 @@
         "result": "Résultat",
         "source": "Source",
         "feedback": "Avis",
-        "passthrough": "Passthrough"
+        "passthrough": "Passthrough",
+        "retries": "Nouvelles tentatives"
       },
       "trace": {
         "view": "Voir la trace",
@@ -1182,7 +1183,10 @@
         "topics": "Sujets"
       },
       "levelFilter": "Niveau",
-      "typeFilter": "Type d’événement"
+      "typeFilter": "Type d’événement",
+      "retriedStep_one": "{{node}} : {{count}} tentative",
+      "retriedStep_many": "{{node}} : {{count}} tentatives",
+      "retriedStep_other": "{{node}} : {{count}} tentatives"
     },
     "teams": {
       "label": "Équipes",
@@ -2949,7 +2953,12 @@
       "stepCount_other": "{{count}} étapes",
       "stepCount_many": "{{count}} étapes",
       "loopItems": "{{done}} éléments sur {{total}}",
-      "loopItemsFailed": "{{count}} en échec"
+      "loopItemsFailed": "{{count}} en échec",
+      "retrying": "Nouvelle tentative · tentative {{attempt}}",
+      "retryingOf": "Nouvelle tentative · tentative {{attempt}} sur {{total}}",
+      "attempts_one": "{{count}} tentative",
+      "attempts_many": "{{count}} tentatives",
+      "attempts_other": "{{count}} tentatives"
     }
   },
   "agents": {
@@ -3795,7 +3804,9 @@
         "loopItemsPath": "Les éléments de la boucle « {{name}} » doivent être un chemin d’état comme extracted.items",
         "loopItemVariable": "La boucle « {{name}} » a une variable d’élément inutilisable",
         "loopEmpty": "La boucle « {{name}} » doit contenir au moins un nœud",
-        "loopEntry": "La boucle « {{name}} » doit commencer par exactement un nœud"
+        "loopEntry": "La boucle « {{name}} » doit commencer par exactement un nœud",
+        "nodeRetry": "Le nœud « {{name}} » a des réglages de nouvelle tentative hors limites",
+        "retryDefaults": "Les nouvelles tentatives par défaut du workflow sont hors limites"
       },
       "schema": {
         "notObject": "doit être un objet JSON valide",
@@ -3854,7 +3865,12 @@
         "unsavedDraftAttachments": "Enregistrez le workflow avant de joindre des documents dans l’aperçu.",
         "backToRun": "Retour à l’exécution",
         "loopItems": "{{done}} éléments sur {{total}}",
-        "loopItemsFailed": "{{count}} en échec"
+        "loopItemsFailed": "{{count}} en échec",
+        "retrying": "Nouvelle tentative · tentative {{attempt}}",
+        "retryingOf": "Nouvelle tentative · tentative {{attempt}} sur {{total}}",
+        "attempts_one": "{{count}} tentative",
+        "attempts_many": "{{count}} tentatives",
+        "attempts_other": "{{count}} tentatives"
       },
       "documents": {
         "modeAll": "Tous les documents d’entrée",
@@ -3871,6 +3887,27 @@
         "searchPlaceholder": "Rechercher des variables…",
         "empty": "Aucune variable trouvée",
         "addContext": "Ajouter du contexte"
+      },
+      "retry": {
+        "title": "Nouvelles tentatives",
+        "defaultsDescription": "Ce que font les nœuds agent et code quand une tentative échoue. Les réglages propres à un nœud ont la priorité.",
+        "attempts": "Tentatives max.",
+        "inherit": "Par défaut ({{value}})",
+        "noRetry": "1 (sans nouvelle tentative)",
+        "backoff": "Délais (s)",
+        "backoffInvalid": "Utilisez des nombres de 0 à 300, séparés par des virgules.",
+        "backoffTooMany": "Utilisez au plus 10 délais.",
+        "hint": "Attend {{backoff}} secondes avant chaque nouvelle tentative ; le dernier délai se répète.",
+        "hintOff": "S’exécute une fois. Augmentez les tentatives pour relancer en cas d’échec.",
+        "on": "Relancer en cas de",
+        "onChoice": {
+          "transient": "Erreurs et délais dépassés",
+          "invalid_output": "Sortie non valide"
+        },
+        "onHint": {
+          "transient": "Erreurs serveur, limites de débit, délais dépassés, connexions interrompues et réponses vides.",
+          "invalid_output": "Une réponse qui n’est pas du JSON valide ou ne correspond pas au schéma de sortie structurée."
+        }
       }
     },
     "typeModal": {
