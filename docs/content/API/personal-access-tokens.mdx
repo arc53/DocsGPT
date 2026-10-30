@@ -138,6 +138,8 @@ curl -H "Authorization: Bearer $DOCSGPT_TOKEN" \
 - A state value larger than 32 KB is left out of `state` and listed in `state_truncated`. Fetch it whole with `?state_key=report`.
 - `error` is the first failed step's error when the run failed.
 
+`GET /api/workflow_runs/<run_id>/steps/<step_index>` returns one step whole: its `output` and `state_delta`, which a stream event too large to send whole left out. `step_index` comes from the `workflow_step` event (see [Step details in the stream](/Agents/nodes#step-details-in-the-stream)). While the run is still going it answers `409` with `"code": "step_not_saved_yet"`, since steps are saved when the run ends.
+
 `GET /api/workflow_runs` lists the runs you started, newest first, with the same status and timing fields. Filter it with `agent_id`, `since` (an ISO 8601 moment), `status` (`pending`, `running`, `completed` or `failed`) and `limit` (1 to 100, default 20).
 
 With `artifacts:read` the token downloads a file the run produced from its `download_url`. Without the scope the download answers `403` with `"error": "insufficient_scope"`. `artifacts:read` also lets an unrestricted token list, read and download its other artifacts through `/api/artifacts` and `/api/artifacts/<id>/download`; deleting or restoring an artifact still needs a session.

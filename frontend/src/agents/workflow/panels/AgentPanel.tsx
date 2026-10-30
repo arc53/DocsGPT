@@ -26,12 +26,17 @@ import type { RetryConfig } from '../../types/workflow';
 import NodeDocumentsControl from '../components/NodeDocumentsControl';
 import NodeRetryControl from '../components/NodeRetryControl';
 import PromptTextArea from '../components/PromptTextArea';
+import StreamOutputField from '../components/StreamOutputField';
 import {
   DEFAULT_FILE_PASSING,
   FILE_PASSING_OPTIONS,
   FilePassing,
   normalizeFilePassing,
 } from '../documentConfig';
+import {
+  DEFAULT_STREAM_OUTPUT,
+  normalizeStreamOutput,
+} from '../streamOutputConfig';
 import { effectiveRetry } from '../retryConfig';
 import { NO_ESCAPE, schemaErrorText, type UserTool } from '../workflowHelpers';
 import { type NodePanelBodyProps } from './types';
@@ -93,6 +98,7 @@ export function hasAdvancedAgentSettings(
   return (
     (Array.isArray(inputDocuments) && inputDocuments.length > 0) ||
     normalizeFilePassing(config?.file_passing) !== DEFAULT_FILE_PASSING ||
+    normalizeStreamOutput(config?.stream_output) !== DEFAULT_STREAM_OUTPUT ||
     (config?.json_schema !== undefined && config?.json_schema !== null) ||
     jsonSchemaText.trim() !== '' ||
     Boolean(jsonSchemaError) ||
@@ -384,6 +390,10 @@ export default function AgentPanel({
                 </SelectContent>
               </Select>
             </FormField>
+            <StreamOutputField
+              value={config.stream_output}
+              onChange={(value) => updateConfig({ stream_output: value })}
+            />
             <FormField
               label={t('agents.workflow.builder.structuredOutput')}
               labelSurface="background"

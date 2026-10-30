@@ -453,6 +453,15 @@ const userService = {
       endpoints.USER.LIST_WORKFLOW_RUN_ARTIFACTS(workflowRunId),
       token,
     ),
+  getWorkflowRunStep: (
+    workflowRunId: string,
+    stepIndex: number,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.WORKFLOW_RUN_STEP(workflowRunId, stepIndex),
+      token,
+    ),
   downloadArtifact: (
     artifactId: string,
     token: string | null,

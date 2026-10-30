@@ -98,6 +98,16 @@ describe('setWorkflowRunId', () => {
     expect(state.queries[0].workflowRunId).toBe('run-1');
   });
 
+  it('records whether the run is saved', () => {
+    let state = seedState();
+    state = reducer(state, addQuery({ prompt: 'draft' }));
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'run-2', saved: false }),
+    );
+    expect(state.queries[0].workflowRunSaved).toBe(false);
+  });
+
   it('ignores an out-of-range index without throwing', () => {
     let state = seedState();
     state = reducer(state, addQuery({ prompt: 'q' }));

@@ -247,3 +247,51 @@ class WorkflowRunDetail(Resource):
         if artifacts is not None:
             payload["artifacts"] = [_artifact(str(run["id"]), row) for row in artifacts]
         return make_response(jsonify({"success": True, "run": payload}), 200)
+
+
+@workflow_runs_ns.route("/workflow_runs/<string:run_id>/steps/<int:step_index>")
+class WorkflowRunStep(Resource):
+    @api.doc(
+        description=(
+            "One step of a workflow run you started, with its full output and state changes: what a "
+            "summarized workflow_step stream event (its step_index) left out"
+        )
+    )
+    def get(self, run_id: str, step_index: int):
+        user_id = get_user_id()
+        if not user_id:
+            return _error("Authentication required", 401)
+        try:
+            with db_readonly() as conn:
+                run = visible_run(conn, run_id, user_id, _agent_allowlist())
+        except Exception as err:
+            current_app.logger.error(f"Error reading workflow run step: {err}", exc_info=True)
+            return _error("Could not read the workflow run", 500)
+        if run is None:
+            return _error("Workflow run not found", 404)
+        steps = [step for step in run.get("steps") or [] if isinstance(step, dict)]
+        if step_index >= len(steps):
+            if run.get("status") in (ExecutionStatus.RUNNING.value, ExecutionStatus.PENDING.value):
+                # A run's steps are saved when it ends.
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "code": "step_not_saved_yet",
+                            "message": "The run is still going; its steps are saved when it ends.",
+                        }
+                    ),
+                    409,
+                )
+            return _error("Step not found", 404)
+        step = steps[step_index]
+        delta = step.get("state_delta")
+        if not isinstance(delta, dict):
+            # Runs saved before the rename call it state_snapshot.
+            delta = step.get("state_snapshot") if isinstance(step.get("state_snapshot"), dict) else {}
+        output_key = f"node_{step.get('node_id')}_output"
+        payload = _step(step)
+        payload["step_index"] = step_index
+        payload["output"] = delta.get(output_key)
+        payload["state_delta"] = {key: value for key, value in delta.items() if key != output_key}
+        return make_response(jsonify({"success": True, "step": payload}), 200)

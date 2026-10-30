@@ -36,10 +36,12 @@ import {
 } from '@/components/ui/message-scroller';
 import { cn } from '@/lib/utils';
 
+import userService from '../../api/services/userService';
 import MessageInput from '../../components/MessageInput';
 import { ChatCompanionContext } from '../../conversation/chatCompanion';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
+import { selectToken } from '../../preferences/preferenceSlice';
 import { AppDispatch } from '../../store';
 import { selectSendableAttachments } from '../../upload/uploadSlice';
 import { usePreviewArtifacts } from '../components/AgentPreviewSheet';
@@ -130,23 +132,71 @@ function StepDisclosure({
   );
 }
 
+/** A summarized step's full values, fetched from the run's saved steps. */
+type FullStepValues = { output: unknown; stateDelta: Record<string, unknown> };
+type FullStepLoad = 'loading' | 'pending' | 'failed';
+
 export function ExecutionDetails({
   steps,
   nodes,
   isOpen,
   onToggle,
   stepRefs,
+  workflowRunId,
+  runSaved = true,
 }: {
   steps: WorkflowExecutionStep[];
   nodes: WorkflowNode[];
   isOpen: boolean;
   onToggle: () => void;
   stepRefs?: React.RefObject<Map<string, HTMLDivElement>>;
+  /** The saved run, when there is one; a summarized step loads its full values from it. */
+  workflowRunId?: string;
+  /** False for an unsaved draft: its steps are not stored, so nothing can be loaded. */
+  runSaved?: boolean;
 }) {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
+  const [fullValues, setFullValues] = useState<Record<number, FullStepValues>>(
+    {},
+  );
+  const [fullLoad, setFullLoad] = useState<Record<number, FullStepLoad>>({});
   const completedSteps = steps.filter(
     (s) => s.status === 'completed' || s.status === 'failed',
   );
+
+  // The stream left a large step's values out; the run's saved steps keep them.
+  const loadFullStep = async (stepIndex: number) => {
+    if (!workflowRunId) return;
+    setFullLoad((prev) => ({ ...prev, [stepIndex]: 'loading' }));
+    try {
+      const response = await userService.getWorkflowRunStep(
+        workflowRunId,
+        stepIndex,
+        token,
+      );
+      if (response.status === 409) {
+        setFullLoad((prev) => ({ ...prev, [stepIndex]: 'pending' }));
+        return;
+      }
+      if (!response.ok) throw new Error(String(response.status));
+      const body = await response.json();
+      setFullValues((prev) => ({
+        ...prev,
+        [stepIndex]: {
+          output: body.step?.output,
+          stateDelta: body.step?.state_delta ?? {},
+        },
+      }));
+      setFullLoad((prev) => {
+        const next = { ...prev };
+        delete next[stepIndex];
+        return next;
+      });
+    } catch {
+      setFullLoad((prev) => ({ ...prev, [stepIndex]: 'failed' }));
+    }
+  };
 
   if (completedSteps.length === 0) return null;
 
@@ -173,21 +223,47 @@ export function ExecutionDetails({
           const displayName =
             node?.title || node?.data?.title || step.nodeTitle;
           const StepIcon = NODE_ICONS[step.nodeType] || Circle;
-          const stateVars = step.stateDelta
-            ? Object.entries(step.stateDelta).filter(
+          const full =
+            step.stepIndex !== undefined
+              ? fullValues[step.stepIndex]
+              : undefined;
+          const load =
+            step.stepIndex !== undefined ? fullLoad[step.stepIndex] : undefined;
+          // A summarized step streamed a preview and key names, an omitted one
+          // nothing; either can load its full values from the saved run.
+          const partial = !full && (step.summarized || step.outputOmitted);
+          const canLoadFull =
+            partial &&
+            runSaved &&
+            Boolean(workflowRunId) &&
+            step.stepIndex !== undefined;
+          const stepOutput = full
+            ? full.output
+            : step.outputTruncated
+              ? `${step.outputPreview ?? ''}…`
+              : step.output;
+          const stepDelta = full ? full.stateDelta : step.stateDelta;
+          const stateVars: [string, unknown][] = stepDelta
+            ? Object.entries(stepDelta).filter(
                 ([key]) => !['query', 'chat_history'].includes(key),
               )
             : [];
+          const keyOnlyVars =
+            !full && !stepDelta
+              ? (step.stateKeysChanged ?? []).filter(
+                  (key) => !['query', 'chat_history'].includes(key),
+                )
+              : [];
 
           const truncateText = (text: string, maxLength: number) => {
             if (text.length <= maxLength) return text;
             return text.slice(0, maxLength) + '...';
           };
           const hasOutput =
-            step.output !== undefined &&
-            step.output !== null &&
-            formatValue(step.output) !== '';
-          const formattedOutput = hasOutput ? formatValue(step.output) : '';
+            stepOutput !== undefined &&
+            stepOutput !== null &&
+            formatValue(stepOutput) !== '';
+          const formattedOutput = hasOutput ? formatValue(stepOutput) : '';
 
           // A step is a place you read inside: a subtle panel on the
           // drawer's background, with its output in a filled well.
@@ -246,16 +322,27 @@ export function ExecutionDetails({
                 </p>
               )}
               {hasOutput && (
-                <Card variant="filled" padding="sm">
+                <Card
+                  variant="filled"
+                  padding="sm"
+                  className={cn(full && 'max-h-80 overflow-y-auto')}
+                >
                   <p className="wrap-break-word whitespace-pre-wrap">
                     <span className="text-muted-foreground font-medium">
                       {t('agents.workflow.preview.outputLabel')}{' '}
                     </span>
                     <span className="text-foreground">
-                      {truncateText(formattedOutput, 300)}
+                      {full
+                        ? formattedOutput
+                        : truncateText(formattedOutput, 300)}
                     </span>
                   </p>
                 </Card>
+              )}
+              {step.outputOmitted && !full && (
+                <p className="text-muted-foreground text-xs">
+                  {t('agents.workflow.preview.outputNotStreamed')}
+                </p>
               )}
               {step.error && (
                 <Alert variant="destructive" role="status">
@@ -282,6 +369,42 @@ export function ExecutionDetails({
                       </span>
                     </Badge>
                   ))}
+                </div>
+              )}
+              {keyOnlyVars.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {keyOnlyVars.map((key) => (
+                    <Badge key={key} variant="neutral" className="font-mono">
+                      <span className="max-w-[200px] truncate">{key}</span>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {partial && !runSaved && (
+                <p className="text-muted-foreground text-xs">
+                  {t('agents.workflow.preview.fullOutputUnsaved')}
+                </p>
+              )}
+              {canLoadFull && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={load === 'loading'}
+                    onClick={() => loadFullStep(step.stepIndex as number)}
+                  >
+                    {t('agents.workflow.preview.showFullOutput')}
+                  </Button>
+                  {load === 'pending' && (
+                    <span className="text-muted-foreground text-xs">
+                      {t('agents.workflow.preview.fullOutputPending')}
+                    </span>
+                  )}
+                  {load === 'failed' && (
+                    <span className="text-destructive text-xs">
+                      {t('agents.workflow.preview.fullOutputFailed')}
+                    </span>
+                  )}
                 </div>
               )}
             </Card>
@@ -700,6 +823,10 @@ export default function WorkflowPreview({
                                   {/* Execution Details */}
                                   {querySteps.length > 0 && (
                                     <ExecutionDetails
+                                      workflowRunId={query.workflowRunId}
+                                      runSaved={
+                                        query.workflowRunSaved !== false
+                                      }
                                       steps={querySteps}
                                       nodes={workflowData.nodes}
                                       isOpen={isOpen}

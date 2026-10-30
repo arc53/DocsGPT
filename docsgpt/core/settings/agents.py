@@ -113,6 +113,15 @@ class AgentSettings(SettingsGroup):
             "could serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows on a web threadpool slot."
         ),
     )
+    WORKFLOW_STREAM_MAX_EVENT_BYTES: int = Field(
+        default=32 * 1024,
+        ge=1024,
+        description=(
+            "Largest workflow step event a run streams, in bytes of JSON. A finished step whose output and state "
+            "changes are larger is streamed as a summary (an output preview and the changed keys); the full values "
+            "stay in the run's saved steps. A node set to stream_output: full is exempt."
+        ),
+    )
     WORKFLOW_DOCUMENT_LINES_CACHE_TTL: int = Field(
         default=86400,
         description=(

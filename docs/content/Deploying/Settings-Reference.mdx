@@ -1923,6 +1923,12 @@ Type `int`, default `900`.
 
 Wall clock one node may spend on blocking parses, shared across all of them. Without it a node could serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows on a web threadpool slot.
 
+### `WORKFLOW_STREAM_MAX_EVENT_BYTES`
+
+Type `int`, default `32768`, must be `>= 1024`.
+
+Largest workflow step event a run streams, in bytes of JSON. A finished step whose output and state changes are larger is streamed as a summary (an output preview and the changed keys); the full values stay in the run's saved steps. A node set to stream_output: full is exempt.
+
 ### `WORKFLOW_DOCUMENT_LINES_CACHE_TTL`
 
 Type `int`, default `86400`.

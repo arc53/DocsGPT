@@ -7532,6 +7532,37 @@
         }
       ]
     },
+    "/api/workflow_runs/{run_id}/steps/{step_index}": {
+      "get": {
+        "description": "One step of a workflow run you started, with its full output and state changes: what a summarized workflow_step stream event (its step_index) left out",
+        "operationId": "get_workflow_run_step",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "workflow_runs"
+        ],
+        "x-pat-scopes": [
+          "runs:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "run_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "in": "path",
+          "name": "step_index",
+          "required": true,
+          "type": "integer"
+        }
+      ]
+    },
     "/api/workflows": {
       "post": {
         "operationId": "post_workflow_list",
