@@ -256,6 +256,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/delete_old", "GET"): _rule("sources:write", (QUERY, "source_id")),
     # Each id is checked as delete_old checks its one.
     ("/api/sources/delete", "POST"): _rule("sources:write", (JSON, "ids")),
+    ("/api/sources/usage", "POST"): _rule("sources:read", (JSON, "ids")),
     ("/api/manage_sync", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/sync_source", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/website", "GET"): _rule("sources:read", (QUERY, "id")),

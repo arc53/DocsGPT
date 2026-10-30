@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from docsgpt.agents.default_tools import default_tool_id
-from docsgpt.api.user.resource_usage import EMPTY_USAGE, is_in_use, used_by_many
+from docsgpt.api.user.resource_usage import EMPTY_USAGE, combined_usage, is_in_use, used_by_many
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -200,3 +200,29 @@ class TestBounded:
 
     def test_empty_ids_runs_no_query(self, pg_conn):
         assert used_by_many(pg_conn, ALICE, "tool", [], owned_ids=[]) == {}
+
+
+class TestCombinedUsage:
+    def test_an_agent_on_several_resources_counts_once(self, pg_conn):
+        s1 = str(_source(pg_conn, name="one")["id"])
+        s2 = str(_source(pg_conn, name="two")["id"])
+        _share(pg_conn, "source", s1, ALICE, BOB)
+        _share(pg_conn, "source", s2, ALICE, BOB)
+        _agent(pg_conn, ALICE, "mine", source_id=s1, extra_source_ids=[s2])
+        _agent(pg_conn, BOB, "bob both", source_id=s1, extra_source_ids=[s2])
+        _agent(pg_conn, BOB, "bob one", source_id=s2)
+
+        usage = combined_usage(pg_conn, ALICE, "source", [s1, s2], owned_ids=[s1, s2])
+        assert _names(usage) == ["mine"]
+        # Per source these would sum to 3; Bob's two agents are two.
+        assert usage["others"] == 2
+
+    def test_others_only_for_owned_resources(self, pg_conn):
+        theirs = str(_source(pg_conn, owner=BOB, name="theirs")["id"])
+        _share(pg_conn, "source", theirs, BOB, ALICE)
+        _agent(pg_conn, BOB, "bob private", source_id=theirs)
+        usage = combined_usage(pg_conn, ALICE, "source", [theirs], owned_ids=[])
+        assert usage == EMPTY_USAGE
+
+    def test_no_ids(self, pg_conn):
+        assert combined_usage(pg_conn, ALICE, "source", [], owned_ids=[]) == EMPTY_USAGE

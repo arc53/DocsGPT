@@ -72,6 +72,7 @@ import {
   formatRelative,
 } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
+import type { ResourceUsage } from './types';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import WebsiteTree from '../components/WebsiteTree';
@@ -734,15 +735,41 @@ export default function Sources({
   }, [selecting, confirmingDelete]);
 
   const selectedDocs = Array.from(selected.values());
-  // The agents that lose the selection: each agent the caller can open
-  // once, plus the teammates' agents counted per source.
-  const losingAgents =
-    new Set(
-      selectedDocs.flatMap((doc) =>
-        (doc.used_by?.agents ?? []).map((a) => a.id),
-      ),
-    ).size +
-    selectedDocs.reduce((sum, doc) => sum + (doc.used_by?.others ?? 0), 0);
+  // The agents that lose the selection. The cards can't tell whether two
+  // sources' teammate agents are the same, so the confirm asks the server,
+  // which counts each agent once; until it answers (or if it fails) the
+  // cards' own figures stand in.
+  const [selectionUsage, setSelectionUsage] = useState<ResourceUsage | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!confirmingDelete) {
+      setSelectionUsage(null);
+      return;
+    }
+    const ids = Array.from(selected.keys());
+    if (ids.length === 0) return;
+    let cancelled = false;
+    userService
+      .getSourcesUsage(ids, token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((usage: ResourceUsage | null) => {
+        if (!cancelled && usage) setSelectionUsage(usage);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // Only when the confirm opens: the selection can't change while it is open.
+  }, [confirmingDelete]);
+  const losingAgents = selectionUsage
+    ? agentUseCount(selectionUsage)
+    : new Set(
+        selectedDocs.flatMap((doc) =>
+          (doc.used_by?.agents ?? []).map((a) => a.id),
+        ),
+      ).size +
+      selectedDocs.reduce((sum, doc) => sum + (doc.used_by?.others ?? 0), 0);
 
   /**
    * Deletes the selection, at most BULK_DELETE_MAX ids per request. What

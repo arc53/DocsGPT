@@ -91,6 +91,7 @@ const {
     reingestSource: vi.fn(),
     getDirectoryStructure: vi.fn(),
     deleteSources: vi.fn(),
+    getSourcesUsage: vi.fn(),
   },
 }));
 
@@ -1913,6 +1914,11 @@ describe('Sources select mode', () => {
   beforeEach(() => {
     dispatch.mockReset();
     service.deleteSources.mockReset();
+    service.getSourcesUsage.mockReset();
+    service.getSourcesUsage.mockResolvedValue({
+      ok: true,
+      json: async () => ({ agents: [], others: 0 }),
+    });
     fetchPage.mockReset();
     fetchPage.mockResolvedValue({
       docs: [a, b, teamViewer],
@@ -2041,6 +2047,10 @@ describe('Sources select mode', () => {
     const usedB = owned('b', 'Beta', {
       used_by: { agents: [{ id: 'x', name: 'X' }], others: 2 },
     });
+    service.getSourcesUsage.mockResolvedValue({
+      ok: true,
+      json: async () => ({ agents: [{ id: 'x', name: 'X' }], others: 2 }),
+    });
     await mount(root, [usedA, usedB]);
     await act(async () => toolbarButton('settings.sources.select')!.click());
     await tick('Alpha');
@@ -2051,6 +2061,30 @@ describe('Sources select mode', () => {
     ).toBe(
       'settings.sources.deleteSelectedUsedBy settings.sources.deleteSelectedConsequence',
     );
+  });
+
+  it('asks the server how many agents lose the selection, each counted once', async () => {
+    // Per card, X counts twice and the teammates' agents sum to 3; the server
+    // knows they are the same agents.
+    const usedA = owned('a', 'Alpha', {
+      used_by: { agents: [{ id: 'x', name: 'X' }], others: 1 },
+    });
+    const usedB = owned('b', 'Beta', {
+      used_by: { agents: [{ id: 'x', name: 'X' }], others: 2 },
+    });
+    service.getSourcesUsage.mockResolvedValue({
+      ok: true,
+      json: async () => ({ agents: [], others: 0 }),
+    });
+    await mount(root, [usedA, usedB]);
+    await act(async () => toolbarButton('settings.sources.select')!.click());
+    await tick('Alpha');
+    await tick('Beta');
+    await act(async () => toolbarButton('settings.sources.delete')!.click());
+    expect(service.getSourcesUsage).toHaveBeenCalledWith(['a', 'b'], null);
+    expect(
+      dialog()!.querySelector('[data-slot="dialog-description"]')?.textContent,
+    ).toBe('settings.sources.deleteSelectedConsequence');
   });
 
   it('keeps a partial failure in the dialog and the failed sources ticked', async () => {

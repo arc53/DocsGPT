@@ -114,6 +114,12 @@ const userService = {
    */
   deleteSources: (ids: string[], token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.DELETE_SOURCES, { ids }, token),
+  /**
+   * The agents that use any of the sources, each counted once: 200
+   * `{agents: [{id, name, agent_type}], others: n}`.
+   */
+  getSourcesUsage: (ids: string[], token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.SOURCES_USAGE, { ids }, token),
   getMessageAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data, token),
   getTokenAnalytics: (data: any, token: string | null): Promise<any> =>

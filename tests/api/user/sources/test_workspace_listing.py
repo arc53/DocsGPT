@@ -261,3 +261,43 @@ class TestBulkDelete:
 
             request.decoded_token = None
             assert BulkDeleteSources().post().status_code == 401
+
+
+class TestSelectionUsage:
+    def _post(self, app, pg_conn, body, user=ALICE):
+        from docsgpt.api.user.sources.routes import SourcesUsage
+
+        with _patch_db(pg_conn), app.test_request_context("/api/sources/usage", method="POST", json=body):
+            from flask import request
+
+            request.decoded_token = {"sub": user} if user else None
+            return SourcesUsage().post()
+
+    def test_agents_and_teammates_count_once_across_the_selection(self, app, pg_conn):
+        s1 = str(_source(pg_conn, "one")["id"])
+        s2 = str(_source(pg_conn, "two")["id"])
+        _share(pg_conn, "source", s1, ALICE, BOB)
+        _share(pg_conn, "source", s2, ALICE, BOB)
+        mine = _agent(pg_conn, ALICE, "Helper", source_id=s1, extra_source_ids=[s2])
+        _agent(pg_conn, BOB, "bob both", source_id=s1, extra_source_ids=[s2])
+
+        resp = self._post(app, pg_conn, {"ids": [s1, s2]})
+        assert resp.status_code == 200
+        assert resp.json == {
+            "agents": [{"id": str(mine["id"]), "name": "Helper", "agent_type": "classic"}],
+            "others": 1,
+        }
+
+    def test_sources_the_caller_cannot_see_are_ignored(self, app, pg_conn):
+        hidden = str(_source(pg_conn, "bob's", owner=BOB)["id"])
+        _agent(pg_conn, BOB, "bob agent", source_id=hidden)
+        resp = self._post(app, pg_conn, {"ids": [hidden, str(uuid.uuid4())]})
+        assert resp.status_code == 200
+        assert resp.json == {"agents": [], "others": 0}
+
+    @pytest.mark.parametrize("body", [None, {}, {"ids": []}, {"ids": "abc"}, {"ids": [1]}, {"ids": ["x"] * 1001}])
+    def test_bad_body_is_400(self, app, pg_conn, body):
+        assert self._post(app, pg_conn, body).status_code == 400
+
+    def test_unauthenticated_is_401(self, app, pg_conn):
+        assert self._post(app, pg_conn, {"ids": ["a"]}, user=None).status_code == 401

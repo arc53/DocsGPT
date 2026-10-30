@@ -41,7 +41,7 @@ from docsgpt.api.user.sources.upload import (
     _release_claim,
     reingest_idempotency_key,
 )
-from docsgpt.api.user.resource_usage import attach_used_by, empty_usage, is_in_use, used_by_many
+from docsgpt.api.user.resource_usage import attach_used_by, combined_usage, empty_usage, is_in_use, used_by_many
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
@@ -201,6 +201,10 @@ USAGE_FILTERS = ("all", "in_use", "unused")
 
 #: Most ids one bulk delete takes.
 BULK_DELETE_MAX = 100
+
+#: Most ids one selection-usage read takes: a selection spans pages, and the
+#: bulk delete sends it in BULK_DELETE_MAX chunks.
+SELECTION_USAGE_MAX = 1000
 
 
 def source_kind(row: dict) -> str:
@@ -734,6 +738,59 @@ class BulkDeleteSources(Resource):
                 continue
             deleted.append(source_id)
         return make_response(jsonify({"deleted": deleted, "failed": failed}), 200)
+
+
+@sources_ns.route("/sources/usage")
+class SourcesUsage(Resource):
+    usage_model = api.model(
+        "SourcesUsageModel",
+        {
+            "ids": fields.List(
+                fields.String, required=True, description=f"Source ids, at most {SELECTION_USAGE_MAX}"
+            ),
+        },
+    )
+
+    @api.expect(usage_model)
+    @api.doc(
+        description=(
+            "The agents that use any of the given sources, each counted once: {agents: [{id, name, "
+            "agent_type}], others: n}, as used_by on the listings but for the whole set, so a bulk delete "
+            "can say how many agents lose something. Ids the caller can't see are ignored. A missing or "
+            f"malformed ids list (empty, not strings, more than {SELECTION_USAGE_MAX}) is 400."
+        )
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        body = request.get_json(silent=True)
+        ids = body.get("ids") if isinstance(body, dict) else None
+        if (
+            not isinstance(ids, list)
+            or not ids
+            or len(ids) > SELECTION_USAGE_MAX
+            or not all(isinstance(i, str) and i.strip() for i in ids)
+        ):
+            return error_response(
+                f"ids must be a list of 1 to {SELECTION_USAGE_MAX} source ids", 400, code="invalid_ids"
+            )
+        wanted = {i.strip().lower() for i in ids}
+        try:
+            with db_readonly() as conn:
+                team_shared = visible_with_access(conn, user, "source")
+                rows = SourcesRepository(conn).list_facets_for_user(user, extra_ids=list(team_shared.keys()))
+                visible = [row for row in rows if str(row["id"]).lower() in wanted]
+                usage = combined_usage(
+                    conn, user, "source", [str(row["id"]) for row in visible],
+                    owned_ids=[str(row["id"]) for row in visible if str(row.get("user_id")) == str(user)],
+                    agent_allowlist=allowed_ids(request, "agents"),
+                )
+        except Exception as err:
+            current_app.logger.error(f"Error reading source usage: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(usage), 200)
 
 
 @sources_ns.route("/combine")
