@@ -4,6 +4,8 @@ import {
   isCustomTool,
   isIncludedTool,
   toolGroupLabel,
+  toolKindLabel,
+  toolKindOf,
 } from './toolGroups';
 
 const tool = (id: string, overrides: Record<string, unknown> = {}) => ({
@@ -112,6 +114,43 @@ describe('toolGroupLabel', () => {
       'settings.tools.groupIncluded',
       'settings.tools.groupAdded',
       'Telegram',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
+  });
+});
+
+describe('toolKindOf', () => {
+  it('puts a tool in the group groupTools gives it', () => {
+    const tools = [
+      tool('api', { name: 'api_tool' }),
+      tool('tg', { name: 'telegram', connection_id: 'c-tg' }),
+      tool('mem'),
+      tool('web', { name: 'read_webpage', default: true }),
+    ];
+    expect(tools.map((t) => toolKindOf(t, connections, catalog))).toEqual([
+      'custom',
+      'service',
+      'added',
+      'included',
+    ]);
+    for (const group of groupTools(tools, connections, catalog))
+      for (const member of group.tools)
+        expect(toolKindOf(member, connections, catalog)).toBe(group.kind);
+  });
+});
+
+describe('toolKindLabel', () => {
+  it('names the filter items, Services for every service', () => {
+    const t = ((key: string) => key) as never;
+    expect(
+      (['all', 'included', 'added', 'service', 'custom'] as const).map((k) =>
+        toolKindLabel(t, k),
+      ),
+    ).toEqual([
+      'settings.tools.filters.all',
+      'settings.tools.groupIncluded',
+      'settings.tools.groupAdded',
+      'settings.tools.groupServices',
       'agents.form.toolsPopup.groupCustom',
     ]);
   });

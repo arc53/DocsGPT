@@ -755,7 +755,8 @@
         "notFound": "Ya se eliminó o ya no se comparte contigo.",
         "failed": "Algo salió mal. Inténtalo de nuevo."
       },
-      "deleteSelectedFailed": "No se pudieron eliminar las fuentes."
+      "deleteSelectedFailed": "No se pudieron eliminar las fuentes.",
+      "noKnowledgeFound": "No se encontró conocimiento"
     },
     "analytics": {
       "label": "Analítica",
@@ -1704,7 +1705,9 @@
       },
       "deleteUsedBy_one": "La usa {{formatted}} agente, que la perderá. También se eliminan su configuración y sus acciones. No se puede deshacer.",
       "deleteUsedBy_other": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer.",
-      "deleteUsedBy_many": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer."
+      "deleteUsedBy_many": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer.",
+      "groupServices": "Servicios",
+      "kindFilterLabel": "Filtrar por tipo"
     },
     "prompts": {
       "label": "Prompts",

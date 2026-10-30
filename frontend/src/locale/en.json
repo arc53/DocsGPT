@@ -721,7 +721,8 @@
         "notFound": "Already deleted, or no longer shared with you.",
         "failed": "Something went wrong. Try again."
       },
-      "deleteSelectedFailed": "Couldn’t delete the sources."
+      "deleteSelectedFailed": "Couldn’t delete the sources.",
+      "noKnowledgeFound": "No knowledge found"
     },
     "analytics": {
       "label": "Analytics",
@@ -1637,7 +1638,9 @@
         "unused": "Unused"
       },
       "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this tool. Its settings and actions are deleted too. This can't be undone.",
-      "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this tool. Its settings and actions are deleted too. This can't be undone."
+      "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this tool. Its settings and actions are deleted too. This can't be undone.",
+      "groupServices": "Services",
+      "kindFilterLabel": "Filter by kind"
     },
     "prompts": {
       "label": "Prompts",

@@ -755,7 +755,8 @@
         "notFound": "Introuvable : déjà supprimée ou plus partagée avec vous.",
         "failed": "Une erreur s’est produite. Réessayez."
       },
-      "deleteSelectedFailed": "Impossible de supprimer les sources."
+      "deleteSelectedFailed": "Impossible de supprimer les sources.",
+      "noKnowledgeFound": "Aucune connaissance trouvée"
     },
     "analytics": {
       "label": "Statistiques",
@@ -1704,7 +1705,9 @@
       },
       "deleteUsedBy_one": "Utilisé par {{formatted}} agent, qui perd cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
       "deleteUsedBy_other": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
-      "deleteUsedBy_many": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible."
+      "deleteUsedBy_many": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
+      "groupServices": "Services",
+      "kindFilterLabel": "Filtrer par type"
     },
     "prompts": {
       "label": "Prompts",

@@ -639,10 +639,14 @@ toggle only changes the tick and no row moves under the pointer; reopening
 sorts again. With nothing chosen there is no Selected group. An item's
 `groupHeading` draws a richer heading (an icon and a name) than its `group`
 key; `loneGroupHeading={false}` drops the heading of a group that is alone in
-the list (the tool pickers pass it).
+the list, and every tool and knowledge picker passes it: knowledge rows are
+always grouped Yours / Shared with team, so beside Selected the rest still
+has a heading. A search that finds nothing says "No tools found" or "No
+knowledge found" (`emptyMessage`).
 
 Tools group the same way in the chat picker, the agent builder's picker and
-the Tools page (`groupTools`, `settings/toolGroups.ts`; headings from
+the Tools page, and the pickers' kind track (`settings/useToolKindFilter`)
+uses the same split (`groupTools`, `settings/toolGroups.ts`; headings from
 `toolGroupTitle`): Included (default and builtin tools, so no "Default"
 badge), Added (catalog tools the user added), one group per connected service
 (its icon and name), then Custom (API and MCP tools the user made). A picker

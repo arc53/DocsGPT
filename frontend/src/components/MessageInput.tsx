@@ -90,6 +90,7 @@ import {
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
 import { useSourceKindFilter } from '../settings/SourceKindFilter';
+import { useToolKindFilter } from '../settings/useToolKindFilter';
 import { sourceItemId } from '../utils/sourceUtils';
 import { toSourcePickerItems } from './sourcePickerItems';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -1465,7 +1466,10 @@ export default function MessageInput({
   // one per service, then Custom. A teammate's connection is never in the
   // caller's list, so the tool's own connection id decides, and the
   // service is named from the catalog.
-  const toolItems: MultiSelectPopoverItem[] = toolPickerItems(userTools, {
+  // The picker's kind track (Included · Added · Services · Custom), past
+  // 10 tools; the rows are built from the kind picked.
+  const toolKinds = useToolKindFilter(userTools, isToolsPopupOpen);
+  const toolItems: MultiSelectPopoverItem[] = toolPickerItems(toolKinds.tools, {
     t,
     connections,
     catalog,
@@ -1767,6 +1771,7 @@ export default function MessageInput({
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
                 loading={toolsLoading}
+                filters={toolKinds.filters}
                 onAddTool={() => setAddToolModalState('ACTIVE')}
                 notice={
                   <SignInAgainNotice

@@ -718,7 +718,8 @@
         "notFound": "已被刪除，或不再與你共用。",
         "failed": "發生問題。請再試一次。"
       },
-      "deleteSelectedFailed": "無法刪除這些來源。"
+      "deleteSelectedFailed": "無法刪除這些來源。",
+      "noKnowledgeFound": "找不到知識"
     },
     "analytics": {
       "label": "分析",
@@ -1633,7 +1634,9 @@
         "unused": "未使用"
       },
       "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。",
-      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。"
+      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。",
+      "groupServices": "服務",
+      "kindFilterLabel": "依類型篩選"
     },
     "prompts": {
       "label": "提示詞",

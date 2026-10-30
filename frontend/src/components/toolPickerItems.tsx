@@ -125,6 +125,7 @@ export function toolPickerItems<T extends PickerTool>(
       if (badges.length === 0) return { ...item, description: line };
       return {
         ...item,
+        keywords: line ? [line] : undefined,
         descriptionNode: (
           <div className="flex flex-col items-start gap-0.5">
             <span className="mt-0.5 flex flex-wrap gap-1">{badges}</span>

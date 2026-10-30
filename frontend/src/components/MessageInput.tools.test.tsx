@@ -58,11 +58,14 @@ vi.mock('./message-input', async (importOriginal) => ({
   ToolsTrigger: ({
     items,
     onOpenChange,
+    filters,
   }: {
     items: MultiSelectPopoverItem[];
     onOpenChange: (open: boolean) => void;
+    filters?: React.ReactNode;
   }) => (
     <div>
+      <div data-testid="tool-filters">{filters}</div>
       <button
         type="button"
         data-testid="open-tools"
@@ -278,6 +281,67 @@ describe('MessageInput tools picker', () => {
         .description;
     expect(line('Memory')).toBe('Stores and retrieves information');
     expect(line('Notes memory')).toBe('Remembers account context');
+  });
+
+  it('draws the kind track past 10 tools and narrows the rows to a kind', async () => {
+    mocks.catalog = [];
+    mocks.connections = [];
+    mocks.tools = [
+      ...Array.from({ length: 9 }, (_, i) => ({
+        id: `added-${i}`,
+        name: 'memory',
+        displayName: `Notes ${i}`,
+        status: true,
+        config: {},
+      })),
+      {
+        id: 'web',
+        name: 'read_webpage',
+        displayName: 'Read webpage',
+        default: true,
+        status: true,
+        config: {},
+      },
+      {
+        id: 'api',
+        name: 'api_tool',
+        displayName: 'API',
+        status: true,
+        config: {},
+      },
+    ];
+    await openPicker();
+    const filters = container.querySelector('[data-testid="tool-filters"]')!;
+    const track = filters.querySelector('[data-slot="toggle-group"]');
+    expect(track?.getAttribute('aria-label')).toBe(
+      'settings.tools.kindFilterLabel',
+    );
+    const custom = Array.from(
+      filters.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="toggle-group-item"]',
+      ),
+    ).find((item) =>
+      item.textContent?.startsWith('agents.form.toolsPopup.groupCustom'),
+    )!;
+    await act(async () => custom.click());
+    expect(
+      Array.from(container.querySelectorAll('[data-testid="tool-item"]')).map(
+        (item) => item.firstChild?.textContent,
+      ),
+    ).toEqual(['API']);
+  });
+
+  it('draws no kind track while the tools fit on one screen', async () => {
+    mocks.catalog = [];
+    mocks.connections = [];
+    mocks.tools = [
+      { id: 'a', name: 'memory', displayName: 'A', status: true, config: {} },
+      { id: 'b', name: 'api_tool', displayName: 'B', status: true, config: {} },
+    ];
+    await openPicker();
+    expect(
+      container.querySelector('[data-testid="tool-filters"]')!.innerHTML,
+    ).toBe('');
   });
 
   // Only the agent builder loaded device status before; the chat picker now

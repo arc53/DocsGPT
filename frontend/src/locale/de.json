@@ -721,7 +721,8 @@
         "notFound": "Bereits gelöscht oder nicht mehr mit dir geteilt.",
         "failed": "Etwas ist schiefgelaufen. Versuche es erneut."
       },
-      "deleteSelectedFailed": "Die Quellen konnten nicht gelöscht werden."
+      "deleteSelectedFailed": "Die Quellen konnten nicht gelöscht werden.",
+      "noKnowledgeFound": "Kein Wissen gefunden"
     },
     "analytics": {
       "label": "Analytik",
@@ -1637,7 +1638,9 @@
         "unused": "Unbenutzt"
       },
       "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der es danach nicht mehr hat. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
-      "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die es danach nicht mehr haben. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
+      "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die es danach nicht mehr haben. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "groupServices": "Dienste",
+      "kindFilterLabel": "Nach Art filtern"
     },
     "prompts": {
       "label": "Prompts",

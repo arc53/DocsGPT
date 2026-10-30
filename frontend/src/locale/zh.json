@@ -718,7 +718,8 @@
         "notFound": "已被删除，或不再与你共享。",
         "failed": "出了点问题。请重试。"
       },
-      "deleteSelectedFailed": "无法删除这些来源。"
+      "deleteSelectedFailed": "无法删除这些来源。",
+      "noKnowledgeFound": "未找到知识"
     },
     "analytics": {
       "label": "分析",
@@ -1633,7 +1634,9 @@
         "unused": "未使用"
       },
       "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
-      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。"
+      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
+      "groupServices": "服务",
+      "kindFilterLabel": "按类型筛选"
     },
     "prompts": {
       "label": "提示词",

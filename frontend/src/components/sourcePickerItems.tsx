@@ -15,6 +15,7 @@ import { sourceKindOf } from '../settings/sourceKinds';
 import { sourceItemId } from '../utils/sourceUtils';
 import type { MultiSelectPopoverItem } from './MultiSelectPopover';
 import { Badge } from './ui/badge';
+import { cn } from '@/lib/utils';
 
 export type SourceGroupLabels = { own: string; team: string };
 
@@ -35,17 +36,24 @@ const PROVIDER_ICONS: Record<string, string> = {
  * connection or provider it syncs from; a website's globe; a graph's
  * network; another synced source's cloud; else a file.
  */
-function sourceIcon(doc: Doc, connection: Connection | undefined) {
+export function sourceIcon(
+  doc: Doc,
+  connection: Connection | undefined,
+  className = 'size-5',
+) {
   const kind = sourceKindOf(doc);
-  if (kind === 'wikis') return <BookOpen />;
+  // In the foreground, like a tool's icon: the kind is part of the name.
+  const lucide = cn('text-foreground shrink-0', className);
+  if (kind === 'wikis') return <BookOpen className={lucide} />;
   const logo =
     connection?.icon ??
     PROVIDER_ICONS[(doc.provider ?? doc.type ?? '').toLowerCase()];
-  if (logo) return <ConnectorIcon icon={logo} className="size-4" />;
-  if (kind === 'websites') return <Globe />;
-  if (doc.config?.kind === 'graphrag') return <Network />;
-  if (kind === 'synced') return <Cloud />;
-  return <FileText />;
+  if (logo)
+    return <ConnectorIcon icon={logo} className={cn('shrink-0', className)} />;
+  if (kind === 'websites') return <Globe className={lucide} />;
+  if (doc.config?.kind === 'graphrag') return <Network className={lucide} />;
+  if (kind === 'synced') return <Cloud className={lucide} />;
+  return <FileText className={lucide} />;
 }
 
 type SourcePickerOptions = {
@@ -60,9 +68,9 @@ type SourcePickerOptions = {
  * row has an icon for its kind and one line from its Knowledge card's
  * details (`sourceDetailLine`), with the card's badges above that line: a
  * failed or running ingest, and Reconnect when the caller's connection
- * needs a sign-in. When any source is shared through a team, the rows are
- * grouped into the caller's own, then the team's; otherwise the list stays
- * flat.
+ * needs a sign-in. The rows are grouped into the caller's own, then the
+ * team's; a picker passes `loneGroupHeading={false}`, so a lone group
+ * shows its heading only beside Selected.
  *
  * Args:
  *   docs: The sources.
@@ -77,7 +85,6 @@ export function toSourcePickerItems(
 ): MultiSelectPopoverItem[] {
   const list = docs ?? [];
   const isTeam = (doc: Doc) => doc.ownership === 'team';
-  const hasTeam = list.some(isTeam);
   const toItem = (doc: Doc): MultiSelectPopoverItem => {
     const connection = connectionOf(doc, connections);
     const line = sourceDetailLine(t, doc, connection) || undefined;
@@ -85,7 +92,7 @@ export function toSourcePickerItems(
       id: sourceItemId(doc),
       label: doc.name,
       icon: sourceIcon(doc, connection),
-      ...(hasTeam ? { group: isTeam(doc) ? labels.team : labels.own } : {}),
+      group: isTeam(doc) ? labels.team : labels.own,
     };
     const ingest = ingestState(doc);
     const badges = [];
@@ -99,6 +106,7 @@ export function toSourcePickerItems(
     if (badges.length === 0) return { ...item, description: line };
     return {
       ...item,
+      keywords: line ? [line] : undefined,
       descriptionNode: (
         <div className="flex flex-col items-start gap-0.5">
           <span className="mt-0.5 flex flex-wrap gap-1">{badges}</span>
@@ -114,7 +122,6 @@ export function toSourcePickerItems(
       ),
     };
   };
-  if (!hasTeam) return list.map(toItem);
   return [
     ...list.filter((doc) => !isTeam(doc)).map(toItem),
     ...list.filter(isTeam).map(toItem),

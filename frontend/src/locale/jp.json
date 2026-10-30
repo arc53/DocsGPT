@@ -718,7 +718,8 @@
         "notFound": "すでに削除されたか、共有が解除されています。",
         "failed": "問題が発生しました。もう一度お試しください。"
       },
-      "deleteSelectedFailed": "ソースを削除できませんでした。"
+      "deleteSelectedFailed": "ソースを削除できませんでした。",
+      "noKnowledgeFound": "ナレッジが見つかりません"
     },
     "analytics": {
       "label": "分析",
@@ -1633,7 +1634,9 @@
         "unused": "未使用"
       },
       "deleteUsedBy_one": "{{formatted}}件のエージェントが使用しており、それらはこのツールを使えなくなります。設定とアクションも削除されます。この操作は元に戻せません。",
-      "deleteUsedBy_other": "{{formatted}}件のエージェントが使用しており、それらはこのツールを使えなくなります。設定とアクションも削除されます。この操作は元に戻せません。"
+      "deleteUsedBy_other": "{{formatted}}件のエージェントが使用しており、それらはこのツールを使えなくなります。設定とアクションも削除されます。この操作は元に戻せません。",
+      "groupServices": "サービス",
+      "kindFilterLabel": "種類で絞り込む"
     },
     "prompts": {
       "label": "プロンプト",

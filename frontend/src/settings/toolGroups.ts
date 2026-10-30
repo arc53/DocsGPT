@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next';
 import { toolServiceOf, type ToolService } from '../connectors/toolService';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
 
-type GroupableTool = {
+export type GroupableTool = {
   name: string;
   displayName?: string | null;
   customName?: string | null;
@@ -57,6 +57,47 @@ export const isIncludedTool = (tool: GroupableTool): boolean =>
   !tool.connection_id && Boolean(tool.default || tool.builtin);
 
 /**
+ * Which group a tool goes in, as `groupTools` decides it: a connected
+ * service's tool first, then Custom, Included, and Added for the rest.
+ *
+ * Args:
+ *   tool: The tool.
+ *   connections: The caller's own connections.
+ *   catalog: The connector catalog.
+ *
+ * Returns:
+ *   Its kind.
+ */
+export const toolKindOf = (
+  tool: GroupableTool,
+  connections: Connection[],
+  catalog: ConnectorDefinition[],
+): ToolGroupKind => {
+  if (toolServiceOf(tool, connections, catalog)) return 'service';
+  if (isCustomTool(tool)) return 'custom';
+  if (isIncludedTool(tool)) return 'included';
+  return 'added';
+};
+
+/** The tool kind filter's values (the Tools page track, the pickers'): All first. */
+export const TOOL_KINDS = [
+  'all',
+  'included',
+  'added',
+  'service',
+  'custom',
+] as const;
+export type ToolKindFilter = (typeof TOOL_KINDS)[number];
+
+/** A tool kind filter item's label: All, Included, Added, Services, Custom. */
+export const toolKindLabel = (t: TFunction, kind: ToolKindFilter): string =>
+  kind === 'all'
+    ? t('settings.tools.filters.all')
+    : kind === 'service'
+      ? t('settings.tools.groupServices')
+      : toolGroupLabel(t, { kind });
+
+/**
  * The tools in the groups every tool list shares (the chat picker, the agent
  * builder's picker and the Tools page): Included, Added, one per connected
  * service (in the order they first appear), then Custom. Empty groups are
@@ -95,12 +136,14 @@ export function groupTools<T extends GroupableTool>(
       };
       group.tools.push(tool);
       services.set(key, group);
-    } else if (isCustomTool(tool)) {
-      custom.tools.push(tool);
-    } else if (isIncludedTool(tool)) {
-      included.tools.push(tool);
     } else {
-      added.tools.push(tool);
+      const kind = toolKindOf(tool, connections, catalog);
+      (kind === 'custom'
+        ? custom
+        : kind === 'included'
+          ? included
+          : added
+      ).tools.push(tool);
     }
   }
   return [included, added, ...services.values(), custom].filter(

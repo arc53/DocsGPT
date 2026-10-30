@@ -48,9 +48,12 @@ export default function SourcesTrigger({
       onToggle={onToggle}
       // What is chosen when it opens comes first, fixed while it is open.
       selectedFirst
+      // Rows are grouped Yours / Shared with team; a lone group needs no
+      // heading unless Selected sits above it.
+      loneGroupHeading={false}
       filters={filters}
       searchPlaceholder={t('agents.form.sourcePopup.searchPlaceholder')}
-      emptyMessage={t('conversation.sources.noSourcesAvailable')}
+      emptyMessage={t('settings.sources.noKnowledgeFound')}
       footer={
         <SourcesPopoverFooter
           onNavigate={() => onOpenChange(false)}

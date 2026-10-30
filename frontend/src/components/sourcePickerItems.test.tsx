@@ -48,15 +48,23 @@ describe('toSourcePickerItems', () => {
     expect(build(undefined)).toEqual([]);
   });
 
-  it('stays flat when every source is the caller’s own', () => {
+  it('groups the caller’s own sources even when there are no team ones', () => {
+    // The picker drops a lone group's heading (`loneGroupHeading={false}`),
+    // but beside Selected the rest still gets its "Yours" heading.
     const items = build([
       doc({ id: 'a', name: 'A' }),
       doc({ id: 'b', name: 'B', ownership: 'user' }),
     ]);
     expect(items.map((item) => [item.id, item.label, item.group])).toEqual([
-      ['a', 'A', undefined],
-      ['b', 'B', undefined],
+      ['a', 'A', 'Yours'],
+      ['b', 'B', 'Yours'],
     ]);
+  });
+
+  it('draws a lucide icon at the tile size in the foreground, as tool rows do', () => {
+    const html = iconOf(build([doc({ id: 'a' })])[0]);
+    expect(html).toContain('size-5');
+    expect(html).toContain('text-foreground');
   });
 
   it('groups own sources first, then team-shared ones', () => {
@@ -143,6 +151,8 @@ describe('toSourcePickerItems', () => {
     expect(html[0]).toContain('23/10/2026, 13:36');
     expect(html[1]).toContain('settings.sources.ingestProcessing');
     expect(html[2]).toContain('settings.connectors.status.reconnect');
+    // A badged row's line is still searched.
+    expect(items[0].keywords).toEqual(['23/10/2026, 13:36']);
     // A healthy row keeps the plain line.
     expect(items[3].descriptionNode).toBeUndefined();
     expect(items[3].description).toContain('tokenCount');
