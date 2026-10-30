@@ -60,20 +60,35 @@ def _strip_html(text: str) -> str:
 # YAML (---) or TOML (+++) front matter opens a document, and MDX files import
 # and export modules, leave comments and place self-closing components above
 # their first heading; none of it is text a reader searches for.
-_FRONT_MATTER = re.compile(r"\A(---|\+\+\+)[ \t\r]*\n.*?^\1[ \t\r]*$", re.DOTALL | re.MULTILINE)
-_MDX_IMPORT_EXPORT = re.compile(r"^(?:import|export)\s.*$", re.MULTILINE)
+_FRONT_MATTER = re.compile(r"\A﻿?(---|\+\+\+)[ \t\r]*\n.*?^\1[ \t\r]*$", re.DOTALL | re.MULTILINE)
+# A whole import statement ends in its quoted module, which prose such as
+# "import the SDK first" does not.
+_MDX_IMPORT = re.compile(
+    r"^import\s+(?:[\w$*{},\s]+?\s+from\s*)?(['\"])[^'\"\n]+\1[ \t]*;?[ \t]*(?://[^\n]*)?[ \t\r]*$",
+    re.MULTILINE,
+)
+_MDX_EXPORT = re.compile(
+    r"^export\s+(?:(?:const|let|var)\s+[\w$]+\s*=\s*\{[^{}]*\}[ \t]*;?"
+    r"|(?:const|let|var|function|class|default|async)\b[^\n]*)[ \t\r]*$",
+    re.MULTILINE,
+)
 _MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.DOTALL)
-_MDX_SELF_CLOSING_COMPONENT = re.compile(r"<[A-Z][\w.]*(?:\s[^<>]*)?/>")
+# Quoted and braced attribute values may hold ">".
+_MDX_SELF_CLOSING_COMPONENT = re.compile(
+    r"""<[A-Z][\w.]*(?:\s+(?:(?:[^\s"'{}<>/]|/(?!>))+(?:"[^"]*"|'[^']*'|\{[^{}]*\})?"""
+    r"""|"[^"]*"|'[^']*'|\{[^{}]*\}))*\s*/>"""
+)
+# A comment still open where the first heading was found: a "#" line inside it.
+_OPEN_HTML_COMMENT = re.compile(r"<!--(?:(?!-->).)*\Z", re.DOTALL)
 
 
 def _has_text(preamble: str) -> bool:
     """Whether text before the first heading holds more than front matter, MDX
-    import and export lines, comments and components, markup and whitespace."""
+    import and export statements, comments and components, markup and whitespace."""
     preamble = _FRONT_MATTER.sub("", preamble, count=1)
-    preamble = _MDX_IMPORT_EXPORT.sub("", preamble)
-    preamble = _MDX_COMMENT.sub("", preamble)
-    preamble = _MDX_SELF_CLOSING_COMPONENT.sub("", preamble)
-    return bool(_strip_html(preamble).strip())
+    for pattern in (_MDX_IMPORT, _MDX_EXPORT, _MDX_COMMENT, _MDX_SELF_CLOSING_COMPONENT):
+        preamble = pattern.sub("", preamble)
+    return bool(_OPEN_HTML_COMMENT.sub("", _strip_html(preamble)).strip())
 
 
 # A fenced code block opens with three or more backticks or tildes, indented by
@@ -131,6 +146,12 @@ class MarkdownParser(BaseParser):
         current_text = ""
         # Marker of the open fenced code block, or None outside a code block.
         open_fence: Optional[str] = None
+        # Front matter is metadata: a "#" line in it is a YAML comment, not a heading.
+        front_matter = _FRONT_MATTER.match(markdown_text)
+        if front_matter:
+            front_matter_lines = front_matter.group(0).count("\n") + 1
+            current_text = "\n".join(lines[:front_matter_lines]) + "\n"
+            lines = lines[front_matter_lines:]
 
         for line in lines:
             # A "#" line inside a fenced code block is code (a shell comment, say), not a heading.

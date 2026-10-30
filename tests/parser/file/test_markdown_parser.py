@@ -185,11 +185,30 @@ def test_markdown_text_before_first_heading_is_kept():
         '+++\ntitle = "Install"\n+++\n',
         "---\ntitle: Install\n---\n\n{/* Generated file, do not edit. */}\n",
         '<VersionBadge version="2.10.0" />\n',
+        "﻿---\ntitle: Install\n---\n",
+        "---\n# Generated, do not edit\ntitle: Install\n---\n",
+        "import {\n  Callout,\n  Tabs,\n} from 'nextra/components';\n",
+        "import Image from 'next/image'; // used further down\n",
+        "export const meta = {\n  title: 'Install',\n};\n",
+        '<Badge text="v1 -> v0" />\n',
+        "<Chart data={x > 1} />\n",
     ],
 )
 def test_markdown_preamble_without_text_adds_no_section(preamble):
     tups = MarkdownParser().markdown_to_tups(preamble + "# Install\nrun it\n")
     assert tups == [("Install", "run it\n\n")]
+
+
+def test_markdown_prose_starting_with_import_is_kept():
+    tups = MarkdownParser().markdown_to_tups("import the SDK before setup.\n# Install\nrun it\n")
+    assert tups[0] == (None, "import the SDK before setup.\n")
+
+
+def test_markdown_comment_left_open_before_first_heading_adds_no_section():
+    # A "#" line inside an HTML comment is still taken for a heading; the
+    # comment's opening line alone is not text.
+    tups = MarkdownParser().markdown_to_tups("<!--\n# Note\n-->\n# Install\nrun it\n")
+    assert None not in [h for h, _ in tups]
 
 
 def test_markdown_front_matter_stays_with_the_intro_after_it():
