@@ -3376,6 +3376,11 @@
           "description": "Es kann sich überschneiden und hat daher eigene Ergebnisse. Sie verschwinden aus den Einblicken und Protokollen; wird es erneut hinzugefügt, beginnt es von vorn.",
           "submit": "Entfernen"
         }
+      },
+      "leave": {
+        "title": "Ohne Speichern verlassen?",
+        "description": "Deine Änderungen hier gehen verloren.",
+        "submit": "Verlassen"
       }
     },
     "logs": {

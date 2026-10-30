@@ -726,6 +726,29 @@ describe('NewAgent form', () => {
     });
   };
 
+  const goToTools = () =>
+    container.querySelector<HTMLAnchorElement>(
+      '[data-title="settings.tools.label"] [data-testid="picker-footer"] a',
+    )!;
+
+  it('asks before Go to Tools leaves unsaved changes', async () => {
+    // A new agent is all unsaved.
+    await render();
+    await act(async () => goToTools().click());
+    // This file stubs ConfirmationModal as its confirm button.
+    expect(
+      container.querySelector('[data-testid="confirm-delete"]'),
+    ).not.toBeNull();
+  });
+
+  it('lets Go to Tools go when the agent is saved', async () => {
+    await renderEdit({});
+    await act(async () => goToTools().click());
+    expect(
+      container.querySelector('[data-testid="confirm-delete"]'),
+    ).toBeNull();
+  });
+
   // An editor doesn't list the owner's private tools, but must still be able
   // to take one off the agent.
   it("adds a remove-only row for an attached tool the editor can't list", async () => {

@@ -144,12 +144,14 @@ describe('AgentPanel knowledge and tool pickers', () => {
       attachedSources = [],
       onUpdate = vi.fn<UpdateFn>(),
       onReloadTools = vi.fn(async () => tools),
+      onNavigateAway,
     }: {
       tools?: UserTool[];
       attachedTools?: { id: string; label: string }[];
       attachedSources?: { id: string; label: string }[];
       onUpdate?: Mock<UpdateFn>;
       onReloadTools?: () => Promise<UserTool[]>;
+      onNavigateAway?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
     } = {},
   ) => {
     await act(async () =>
@@ -170,6 +172,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
             modelSupportsStructuredOutput
             onJsonSchemaChange={vi.fn()}
             onReloadTools={onReloadTools}
+            onNavigateAway={onNavigateAway}
           />
         </MemoryRouter>,
       ),
@@ -306,6 +309,33 @@ describe('AgentPanel knowledge and tool pickers', () => {
     expect(add.textContent).toBe('settings.tools.addTool');
     await act(async () => add.click());
     expect(addTool.props?.modalState).toBe('ACTIVE');
+  });
+
+  it('hands the Go to links to the builder, which asks before leaving', async () => {
+    const onNavigateAway = vi.fn((event: React.MouseEvent) =>
+      event.preventDefault(),
+    );
+    await render(makeNode(), { onNavigateAway });
+    await open(toolsTrigger());
+    await act(async () =>
+      document
+        .querySelector<HTMLAnchorElement>(
+          '[data-slot="multi-select-footer"] a',
+        )!
+        .click(),
+    );
+    expect(onNavigateAway).toHaveBeenCalledTimes(1);
+    await act(async () => root.render(<></>));
+    await render(makeNode(), { onNavigateAway });
+    await open(sourcesTrigger());
+    await act(async () =>
+      document
+        .querySelector<HTMLAnchorElement>(
+          '[data-slot="multi-select-footer"] a',
+        )!
+        .click(),
+    );
+    expect(onNavigateAway).toHaveBeenCalledTimes(2);
   });
 
   it('puts a tool added from the footer on the node', async () => {

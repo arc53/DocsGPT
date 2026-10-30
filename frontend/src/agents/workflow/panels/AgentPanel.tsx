@@ -1,5 +1,6 @@
 import { Database, Wrench } from 'lucide-react';
 import {
+  type MouseEvent,
   type ReactNode,
   useEffect,
   useId,
@@ -98,6 +99,11 @@ interface AgentPanelProps extends NodePanelBodyProps {
    * Tools picker's footer can go on the node.
    */
   onReloadTools: () => Promise<UserTool[]>;
+  /**
+   * A picker footer's Go to link, after the picker closes: the builder
+   * prevents it and asks first while the workflow has unsaved changes.
+   */
+  onNavigateAway?: (event: MouseEvent<HTMLAnchorElement>) => void;
 }
 
 /**
@@ -190,6 +196,7 @@ export default function AgentPanel({
   onJsonSchemaChange,
   retryDefaults = null,
   onReloadTools,
+  onNavigateAway,
 }: AgentPanelProps) {
   const { t } = useTranslation();
   const streamId = useId();
@@ -478,7 +485,10 @@ export default function AgentPanel({
             emptyMessage={t('settings.sources.noKnowledgeFound')}
             footer={
               <SourcesPopoverFooter
-                onNavigate={() => setSourcesOpen(false)}
+                onNavigate={(event) => {
+                  setSourcesOpen(false);
+                  onNavigateAway?.(event);
+                }}
                 onUploadClick={() => {
                   setSourcesOpen(false);
                   setUploadOpen(true);
@@ -515,7 +525,10 @@ export default function AgentPanel({
               <PickerFooter
                 to="/settings/tools"
                 linkLabel={t('settings.tools.manageTools')}
-                onNavigate={() => setToolsOpen(false)}
+                onNavigate={(event) => {
+                  setToolsOpen(false);
+                  onNavigateAway?.(event);
+                }}
                 actionLabel={t('settings.tools.addTool')}
                 onAction={() => {
                   setToolsOpen(false);

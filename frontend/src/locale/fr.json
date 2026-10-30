@@ -3483,6 +3483,11 @@
           "description": "Il peut chevaucher d’autres sujets, il a donc ses propres résultats. Ils disparaissent des analyses et des journaux, et l’ajouter à nouveau repart de zéro.",
           "submit": "Retirer"
         }
+      },
+      "leave": {
+        "title": "Quitter sans enregistrer ?",
+        "description": "Les modifications apportées ici seront perdues.",
+        "submit": "Quitter"
       }
     },
     "logs": {

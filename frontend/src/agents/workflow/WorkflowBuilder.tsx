@@ -122,6 +122,7 @@ import {
 } from './workflowHelpers';
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
 import { readerIdFromToken } from '../../utils/personLabel';
+import { useLeaveGuard } from '../../hooks/useLeaveGuard';
 import { canAddToolToOwn, getToolDisplayName } from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
@@ -1599,6 +1600,16 @@ function WorkflowBuilderInner() {
         pendingConfig !== null ||
         takeovers.length > 0
       : false;
+  // A workflow never saved has no saved copy to compare: what was built since
+  // the page opened (beyond its Start node) is what leaving would lose.
+  const [openedSignature] = useState(workflowPayloadSignature);
+  const hasUnsavedWork =
+    hasSavableChanges ||
+    (canManageAgent &&
+      savedWorkflowSignature === null &&
+      workflowPayloadSignature !== openedSignature);
+  // A node's Go to link asks first while there is unsaved work.
+  const leaveGuard = useLeaveGuard(hasUnsavedWork);
 
   // The agent's config as the server has it now, read just before a save
   // that replaces it; throws when it can't be read.
@@ -2376,6 +2387,7 @@ function WorkflowBuilderInner() {
                   onJsonSchemaChange={handleAgentJsonSchemaChange}
                   retryDefaults={retryDefaults}
                   onReloadTools={loadTools}
+                  onNavigateAway={leaveGuard.onNavigate()}
                 />
               )}
               {selectedNode.type === 'note' && (
@@ -2483,6 +2495,7 @@ function WorkflowBuilderInner() {
         </AgentPreviewSheet>
         {sponsorPrompt.modal}
         {signInAgain.modals}
+        {leaveGuard.dialog}
         <ConfirmationModal
           message={
             workflowName

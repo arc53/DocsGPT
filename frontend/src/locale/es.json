@@ -3483,6 +3483,11 @@
           "description": "Puede solaparse, así que tiene resultados propios. Desaparecen de Información y de los registros, y si vuelves a añadirlo, empieza desde cero.",
           "submit": "Quitar"
         }
+      },
+      "leave": {
+        "title": "¿Salir sin guardar?",
+        "description": "Se perderán los cambios que hiciste aquí.",
+        "submit": "Salir"
       }
     },
     "logs": {

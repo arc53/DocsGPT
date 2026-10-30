@@ -1,4 +1,5 @@
 import { ArrowRight } from 'lucide-react';
+import type { MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Button } from './ui/button';
@@ -7,8 +8,11 @@ type PickerFooterProps = {
   /** The settings page the link opens. */
   to: string;
   linkLabel: string;
-  /** Fires when the link is followed so the caller can close its popover. */
-  onNavigate?: () => void;
+  /**
+   * Fires when the link is followed so the caller can close its popover; a
+   * builder with unsaved changes prevents the event and asks first.
+   */
+  onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
   /**
    * The shortcut on the right (Upload new, Add tool). Left out where the
    * host can't use it, so the row is the link alone.

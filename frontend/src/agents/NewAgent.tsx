@@ -66,6 +66,7 @@ import {
 import PromptsModal from '../preferences/PromptsModal';
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useDeviceOnline } from '../hooks/useDeviceOnline';
+import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import {
   TOOL_KINDS,
   toolKindLabel,
@@ -1266,6 +1267,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     setHasChanges(isChanged);
   }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText, takeovers]);
 
+  // The builder's own exits (a picker's Go to link, Upload's Browse
+  // connectors) ask first while the form has changes; a new or draft agent
+  // always has them, since its changes since the last save aren't tracked.
+  const leaveGuard = useLeaveGuard(hasChanges);
+
   const isPublished = agent.status === 'published';
   // What the caller's role allows on this agent (`allowed_actions` from the
   // API). A new agent carries no access fields, so it reads as the owner's.
@@ -1359,6 +1365,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
     >
       {signInAgain.modals}
+      {leaveGuard.dialog}
       {/* Opened from the tool picker's footer; a tool added here goes on
           the agent once the list reloads. */}
       <AddToolModal
@@ -1479,7 +1486,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 emptyMessage={t('settings.sources.noKnowledgeFound')}
                 footer={
                   <SourcesPopoverFooter
-                    onNavigate={() => setIsSourcePopupOpen(false)}
+                    onNavigate={leaveGuard.onNavigate(() =>
+                      setIsSourcePopupOpen(false),
+                    )}
                     onUploadClick={handleUploadClick}
                   />
                 }
@@ -1566,7 +1575,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     <PickerFooter
                       to="/settings/tools"
                       linkLabel={t('settings.tools.manageTools')}
-                      onNavigate={() => setIsToolsPopupOpen(false)}
+                      onNavigate={leaveGuard.onNavigate(() =>
+                        setIsToolsPopupOpen(false),
+                      )}
                       actionLabel={t('settings.tools.addTool')}
                       onAction={() => {
                         setIsToolsPopupOpen(false);
@@ -1623,7 +1634,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     <PickerFooter
                       to="/settings/prompts"
                       linkLabel={t('settings.prompts.manage')}
-                      onNavigate={close}
+                      onNavigate={leaveGuard.onNavigate(close)}
                       actionLabel={t('settings.prompts.addPrompt')}
                       onAction={() => {
                         close();
@@ -2044,7 +2055,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           onSuccessfulUpload={handleUploadedSource}
           selectUploadedDoc={false}
           onBrowseConnectors={() =>
-            navigate('/settings/connectors?capability=sync')
+            leaveGuard.leaveTo('/settings/connectors?capability=sync')
           }
         />
       )}

@@ -3376,6 +3376,11 @@
           "description": "It can overlap, so it has results of its own. They disappear from Insights and Logs, and adding it again starts from scratch.",
           "submit": "Remove"
         }
+      },
+      "leave": {
+        "title": "Leave without saving?",
+        "description": "The changes you made here will be lost.",
+        "submit": "Leave"
       }
     },
     "logs": {
