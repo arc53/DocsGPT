@@ -8,6 +8,14 @@ const userService = {
     apiClient.get(endpoints.USER.ME, token),
   getQuota: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.QUOTA, token),
+  /** `{success, chat_prompt_id}`: the prompt chats without an agent use. */
+  getPreferences: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.PREFERENCES, token),
+  /** 400 `invalid_prompt`; 403/404 for a prompt the caller can't read. */
+  updatePreferences: (
+    data: { chat_prompt_id: string },
+    token: string | null,
+  ): Promise<any> => apiClient.put(endpoints.USER.PREFERENCES, data, token),
   getNewToken: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
   // Token deliberately null: a stale Authorization header must not be able
@@ -100,6 +108,18 @@ const userService = {
     apiClient.get(endpoints.USER.SINGLE_PROMPT(id), token),
   deletePath: (docPath: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.DELETE_PATH(docPath), token),
+  /**
+   * Deletes up to 100 sources: 200 `{deleted: [ids], failed: [{id, error,
+   * code}]}`, even when some fail.
+   */
+  deleteSources: (ids: string[], token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.DELETE_SOURCES, { ids }, token),
+  /**
+   * The agents that use any of the sources, each counted once: 200
+   * `{agents: [{id, name, agent_type}], others: n}`.
+   */
+  getSourcesUsage: (ids: string[], token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.SOURCES_USAGE, { ids }, token),
   getMessageAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data, token),
   getTokenAnalytics: (data: any, token: string | null): Promise<any> =>

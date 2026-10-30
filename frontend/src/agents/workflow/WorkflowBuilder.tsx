@@ -32,10 +32,7 @@ import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
 import { can } from '../../utils/accessUtils';
-import {
-  selectSourceDocs,
-  selectToken,
-} from '../../preferences/preferenceSlice';
+import { selectToken } from '../../preferences/preferenceSlice';
 import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
@@ -125,6 +122,7 @@ import {
 } from './workflowHelpers';
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
 import { readerIdFromToken } from '../../utils/personLabel';
+import { useLeaveGuard } from '../../hooks/useLeaveGuard';
 import { canAddToolToOwn, getToolDisplayName } from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
@@ -243,7 +241,6 @@ function WorkflowBuilderInner() {
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
-  const sourceDocs = useSelector(selectSourceDocs);
   const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
@@ -334,13 +331,6 @@ function WorkflowBuilderInner() {
     tools: { id: string; label: string }[];
     sources: { id: string; label: string }[];
   }>({ tools: [], sources: [] });
-  const sourceOptions = useMemo(
-    () =>
-      (sourceDocs ?? [])
-        .filter((doc) => Boolean(doc.id))
-        .map((doc) => ({ value: doc.id as string, label: doc.name })),
-    [sourceDocs],
-  );
   const [agentJsonSchemaDrafts, setAgentJsonSchemaDrafts] = useState<
     Record<string, string>
   >({});
@@ -960,6 +950,18 @@ function WorkflowBuilderInner() {
     setSelectedNode(null);
   }, []);
 
+  // The tools a node can pick, loaded with the models and again when a node
+  // adds one from its Tools picker. Shared tools the caller can't add to
+  // their own agents stay out.
+  const loadTools = useCallback(async (): Promise<UserTool[]> => {
+    const response = await userService.getUserTools(token);
+    if (!response.ok) throw new Error('Failed to load tools');
+    const data = await response.json();
+    const tools = (data.tools as UserTool[]).filter(canAddToolToOwn);
+    setAvailableTools(tools);
+    return tools;
+  }, [token]);
+
   useEffect(() => {
     const loadModelsAndTools = async () => {
       try {
@@ -979,20 +981,13 @@ function WorkflowBuilderInner() {
           setDefaultAgentModelId(preferredDefaultModel);
         }
 
-        const toolsResponse = await userService.getUserTools(token);
-        if (toolsResponse.ok) {
-          const toolsData = await toolsResponse.json();
-          // Shared tools the caller can't add to their own agents stay out.
-          setAvailableTools(
-            (toolsData.tools as UserTool[]).filter(canAddToolToOwn),
-          );
-        }
+        await loadTools();
       } catch (error) {
         console.error('Failed to load models or tools:', error);
       }
     };
     loadModelsAndTools();
-  }, [token]);
+  }, [token, loadTools]);
 
   useEffect(() => {
     if (!selectedNode || selectedNode.type !== 'agent') return;
@@ -1605,6 +1600,16 @@ function WorkflowBuilderInner() {
         pendingConfig !== null ||
         takeovers.length > 0
       : false;
+  // A workflow never saved has no saved copy to compare: what was built since
+  // the page opened (beyond its Start node) is what leaving would lose.
+  const [openedSignature] = useState(workflowPayloadSignature);
+  const hasUnsavedWork =
+    hasSavableChanges ||
+    (canManageAgent &&
+      savedWorkflowSignature === null &&
+      workflowPayloadSignature !== openedSignature);
+  // A node's Go to link asks first while there is unsaved work.
+  const leaveGuard = useLeaveGuard(hasUnsavedWork);
 
   // The agent's config as the server has it now, read just before a save
   // that replaces it; throws when it can't be read.
@@ -2371,7 +2376,6 @@ function WorkflowBuilderInner() {
                   edges={edges}
                   availableModels={availableModels}
                   availableTools={availableTools}
-                  sourceOptions={sourceOptions}
                   attachedTools={nodeRefNames.tools}
                   attachedSources={nodeRefNames.sources}
                   documentOptions={selectedAgentDocumentOptions}
@@ -2382,6 +2386,8 @@ function WorkflowBuilderInner() {
                   }
                   onJsonSchemaChange={handleAgentJsonSchemaChange}
                   retryDefaults={retryDefaults}
+                  onReloadTools={loadTools}
+                  onNavigateAway={leaveGuard.onNavigate()}
                 />
               )}
               {selectedNode.type === 'note' && (
@@ -2489,6 +2495,7 @@ function WorkflowBuilderInner() {
         </AgentPreviewSheet>
         {sponsorPrompt.modal}
         {signInAgain.modals}
+        {leaveGuard.dialog}
         <ConfirmationModal
           message={
             workflowName

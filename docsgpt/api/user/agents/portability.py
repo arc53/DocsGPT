@@ -45,7 +45,7 @@ from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
 from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.user_custom_models import (
@@ -412,6 +412,9 @@ def _serialize_prompt(conn, agent: dict, user: str):
     prompt_id = agent.get("prompt_id")
     if not prompt_id:
         return "default"
+    if str(prompt_id) in STORED_PROMPT_PRESETS:
+        # A preset has no row: the file carries its name.
+        return str(prompt_id)
     row = PromptsRepository(conn).get(str(prompt_id), user)
     if not row:
         return "default"
@@ -1056,6 +1059,8 @@ def plan_import(conn, user: str, doc: dict) -> dict:
             user, prompt_spec.get("name") or "", prompt_spec.get("content") or ""
         )
         prompt = {"status": "reuse" if existing else "create", "name": prompt_spec.get("name") or ""}
+    elif prompt_spec in STORED_PROMPT_PRESETS:
+        prompt = {"status": "preset", "name": prompt_spec}
     else:
         prompt = {"status": "default"}
 
@@ -1117,7 +1122,21 @@ def plan_import(conn, user: str, doc: dict) -> dict:
 
 
 def _apply_prompt(conn, user: str, spec: dict) -> Optional[str]:
+    """The agent's ``prompt_id`` for the file's prompt.
+
+    Args:
+        conn: Open database connection.
+        user: The importing user.
+        spec: The document's ``spec``.
+
+    Returns:
+        A preset name (``creative`` / ``strict``), the id of the user's prompt
+        with the file's name and content (made when missing), or None for the
+        default and for an unknown name.
+    """
     prompt_spec = spec.get("prompt")
+    if prompt_spec in STORED_PROMPT_PRESETS:
+        return prompt_spec
     if not isinstance(prompt_spec, dict):
         return None
     row = PromptsRepository(conn).find_or_create(

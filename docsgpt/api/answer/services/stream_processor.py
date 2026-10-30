@@ -48,8 +48,8 @@ from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
 from sqlalchemy import text as sql_text
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.agents import AgentsRepository, agent_row_to_dict
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -1306,9 +1306,7 @@ class StreamProcessor:
                         ),
                         {"id": str(agent_id)},
                     )
-                    row = result.fetchone()
-                    if row is not None:
-                        agent = row_to_dict(row)
+                    agent = agent_row_to_dict(result.fetchone())
                 if agent is None:
                     agent = repo.get_by_legacy_id(str(agent_id))
                 if agent is None:

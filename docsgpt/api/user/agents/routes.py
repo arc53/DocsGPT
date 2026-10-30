@@ -52,7 +52,11 @@ from docsgpt.api.user.team_sharing import (
 )
 from docsgpt.agents.default_tools import is_synthesized_tool_id
 from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import (
+    AgentsRepository,
+    expose_prompt_preset,
+    is_agent_prompt_ref,
+)
 from docsgpt.storage.db.repositories.user_custom_models import (
     UserCustomModelsRepository,
 )
@@ -536,8 +540,10 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
         kwargs["extra_source_ids"] = data["extra_source_ids"]
 
     if "prompt_id" in allowed_fields:
+        # A preset name or a prompt's id; the repository stores a preset in
+        # ``prompt_preset``. ``default`` stays NULL.
         prompt_val = data.get("prompt_id")
-        if prompt_val and prompt_val != "default" and looks_like_uuid(prompt_val):
+        if prompt_val and prompt_val != "default" and is_agent_prompt_ref(prompt_val):
             kwargs["prompt_id"] = prompt_val
 
     if "folder_id" in allowed_fields and data.get("folder_id"):
@@ -805,7 +811,9 @@ class CreateAgent(Resource):
             ),
             "chunks": fields.Integer(required=False, description="Chunks count"),
             "retriever": fields.String(required=False, description="Retriever ID"),
-            "prompt_id": fields.String(required=False, description="Prompt ID"),
+            "prompt_id": fields.String(
+                required=False, description="Prompt id, or a preset: default, creative or strict"
+            ),
             "tools": fields.List(
                 fields.String, required=False, description="List of tool identifiers"
             ),
@@ -946,6 +954,8 @@ class CreateAgent(Resource):
             return missing_fields
         if invalid_fields:
             return invalid_fields
+        if "prompt_id" in schema["fields"] and not is_agent_prompt_ref(data.get("prompt_id")):
+            return _reject(f"Invalid prompt_id: {data.get('prompt_id')}", user, "prompt_id")
         image_url, error = handle_image_upload(request, "", user, storage)
         if error:
             return make_response(
@@ -1103,7 +1113,9 @@ class UpdateAgent(Resource):
             ),
             "chunks": fields.Integer(required=False, description="Chunks count"),
             "retriever": fields.String(required=False, description="Retriever ID"),
-            "prompt_id": fields.String(required=False, description="Prompt ID"),
+            "prompt_id": fields.String(
+                required=False, description="Prompt id, or a preset: default, creative or strict"
+            ),
             "tools": fields.List(
                 fields.String, required=False, description="List of tool identifiers"
             ),
@@ -1454,6 +1466,9 @@ class UpdateAgent(Resource):
                             update_fields["prompt_id"] = None
                         elif looks_like_uuid(value):
                             update_fields["prompt_id"] = canonical_uuid(value)
+                        elif is_agent_prompt_ref(value):
+                            # ``creative`` / ``strict``: no row, so nothing to gate.
+                            update_fields["prompt_id"] = value
                         else:
                             return _reject(f"Invalid prompt_id: {value}", user, field)
                     elif field == "allow_system_prompt_override":
@@ -1560,6 +1575,7 @@ class UpdateAgent(Resource):
                 new_prompt_id = update_fields.get("prompt_id")
                 if (
                     new_prompt_id
+                    and looks_like_uuid(str(new_prompt_id))
                     and str(new_prompt_id) != str(existing_agent.get("prompt_id") or "")
                     and not _ref_attachable(conn, "prompt", new_prompt_id, user)
                 ):
@@ -1941,7 +1957,7 @@ class PinnedAgents(Resource):
                         ),
                         {"ids": uuid_pinned},
                     )
-                    pinned_agents = [dict(row._mapping) for row in result.fetchall()]
+                    pinned_agents = [expose_prompt_preset(dict(row._mapping)) for row in result.fetchall()]
                 else:
                     pinned_agents = []
 
@@ -2026,7 +2042,7 @@ class GetTemplateAgents(Resource):
                         "ORDER BY name"
                     ),
                 )
-                template_rows = [dict(row._mapping) for row in result.fetchall()]
+                template_rows = [expose_prompt_preset(dict(row._mapping)) for row in result.fetchall()]
             template_agents = [
                 {
                     "id": str(agent["id"]),
@@ -2149,7 +2165,7 @@ class AdoptAgent(Resource):
                     ).fetchone()
                 if template_row is None:
                     return make_response(jsonify({"status": "Not found"}), 404)
-                template = dict(template_row._mapping)
+                template = expose_prompt_preset(dict(template_row._mapping))
 
                 now = datetime.datetime.now(datetime.timezone.utc)
                 new_key = str(uuid.uuid4())

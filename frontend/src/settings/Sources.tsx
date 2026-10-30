@@ -1,28 +1,30 @@
-import {
-  CalendarIcon,
-  FileText,
-  Globe,
-  HardDrive,
-  Network,
-  RefreshCw,
-  X,
-} from 'lucide-react';
+import { Cloud, HardDrive, Network, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
+import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
-import RoleBadge from '../components/RoleBadge';
+import RoleMeta from '../components/RoleMeta';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card, CardFooter, CardTitle } from '../components/ui/card';
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardTitle,
+} from '../components/ui/card';
+import { MetaItem, MetaLine } from '../components/ui/meta-line';
+import { sourceIcon } from '../components/sourcePickerItems';
 import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
+import { SectionHeader } from '../components/ui/section-header';
+
 import {
   Tooltip,
   TooltipContent,
@@ -30,11 +32,13 @@ import {
 } from '../components/ui/tooltip';
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import { usePageParam, usePageSize } from '../hooks/usePageState';
+import { useUrlFilter } from '../hooks/useUrlFilter';
 import {
   ActiveState,
   Doc,
   DocumentsProps,
   type KnowledgeDoc,
+  type UsageFilter,
 } from '../models/misc';
 import type { SSEEvent } from '../notifications/notificationsSlice';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
@@ -51,13 +55,9 @@ import {
   readKnowledgeLink,
 } from './knowledgeLink';
 import { cn } from '../lib/utils';
-import { can } from '../utils/accessUtils';
-import {
-  EMPTY_VALUE,
-  formatCount,
-  formatDate,
-  formatRelative,
-} from '../utils/dateTimeUtils';
+import { can, isOwner } from '../utils/accessUtils';
+import { formatRelative } from '../utils/dateTimeUtils';
+import { agentUseCount } from '../utils/resourceUsage';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import WebsiteTree from '../components/WebsiteTree';
@@ -78,7 +78,6 @@ import {
   startedSyncAge,
   syncIdsKey,
 } from '../connectors/startedSyncs';
-import type { Connection } from '../connectors/types';
 import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
@@ -86,13 +85,24 @@ import GraphSourceView from '../components/graph/GraphSourceView';
 import { buildPct } from '../components/graph/useGraphBuild';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import {
+  connectionLabel,
+  sourceCardLine,
+  connectionOf,
+  formatTokens,
+  IngestBadge,
+  ingestState,
+} from './sourceDetails';
+import { SourceKindToggle } from './SourceKindFilter';
+import {
   canSyncSource,
   isGraphSource,
   isSyncedSource,
   isWikiSource,
+  SOURCE_KINDS,
+  type SourceKindFilter,
   syncNowIsPrimary,
-  syncSchedule,
 } from './sourceKinds';
+import UsedByAgents from './UsedByAgents';
 import { type AcceptedSync, useSourceActions } from './useSourceActions';
 
 const NO_EVENTS: SSEEvent[] = [];
@@ -122,6 +132,19 @@ function asListedDoc(doc: KnowledgeDoc): Doc {
 const POLL_AFTER_MS = 2 * 60_000;
 const POLL_EVERY_MS = 30_000;
 
+/** The usage filter's values, as the listing takes them; All first. */
+const USAGE_FILTERS = [
+  'all',
+  'in_use',
+  'unused',
+] as const satisfies readonly UsageFilter[];
+/** The usage filter's labels, shared with Tools and Prompts. */
+const USAGE_LABELS: Record<UsageFilter, string> = {
+  all: 'settings.usage.filters.all',
+  in_use: 'settings.usage.filters.inUse',
+  unused: 'settings.usage.filters.unused',
+};
+
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
 
@@ -131,67 +154,6 @@ const defaultSourcePageSize = (): number =>
   window.matchMedia('(min-width: 1024px)').matches
     ? 24
     : 12;
-
-const formatTokens = (tokens: number): string => {
-  const roundToTwoDecimals = (num: number): string => {
-    return (Math.round((num + Number.EPSILON) * 100) / 100).toString();
-  };
-
-  if (tokens >= 1_000_000_000) {
-    return roundToTwoDecimals(tokens / 1_000_000_000) + 'b';
-  } else if (tokens >= 1_000_000) {
-    return roundToTwoDecimals(tokens / 1_000_000) + 'm';
-  } else if (tokens >= 1_000) {
-    return roundToTwoDecimals(tokens / 1_000) + 'k';
-  } else {
-    return tokens.toString();
-  }
-};
-
-/**
- * Where a synced source comes from: the connection's icon and "via <name>"
- * (with its file count when known), the account on hover.
- */
-function ConnectionLine({
-  connection,
-  files,
-}: {
-  connection: Connection;
-  files?: number | null;
-}) {
-  const { t } = useTranslation();
-  return (
-    <span className="flex max-w-full min-w-0 items-center gap-2">
-      <ConnectorIcon
-        icon={connection.icon}
-        className="text-muted-foreground size-3.5 shrink-0"
-      />
-      <span className="truncate" title={connection.account_label}>
-        {files
-          ? t('settings.sources.viaConnectionFiles', {
-              name: connection.name,
-              count: files,
-              files: formatCount(files),
-              interpolation: { escapeValue: false },
-            })
-          : t('settings.sources.viaConnection', {
-              name: connection.name,
-              interpolation: { escapeValue: false },
-            })}
-      </span>
-    </span>
-  );
-}
-
-/** A source's ingest still running, or failed. */
-function IngestBadge({ status }: { status: 'processing' | 'failed' }) {
-  const { t } = useTranslation();
-  return status === 'failed' ? (
-    <Badge variant="destructive">{t('settings.sources.ingestFailed')}</Badge>
-  ) : (
-    <Badge variant="neutral">{t('settings.sources.ingestProcessing')}</Badge>
-  );
-}
 
 export default function Sources({
   paginatedDocuments,
@@ -226,6 +188,26 @@ export default function Sources({
     defaultSourcePageSize(),
   );
   const [totalDocuments, setTotalDocuments] = useState<number>(0);
+  // The kind and usage filters live in the address beside the page; a
+  // change starts on page 1.
+  const [kind, setKind] = useUrlFilter(SOURCE_KINDS, {
+    name: 'kind',
+    clears: ['page'],
+  });
+  const [usage, setUsage] = useUrlFilter(USAGE_FILTERS, {
+    name: 'usage',
+    clears: ['page'],
+  });
+  // The server's counts per kind and per usage (each with the other filter
+  // and the search applied); null from an older backend.
+  const [kindCounts, setKindCounts] = useState<Record<
+    SourceKindFilter,
+    number
+  > | null>(null);
+  const [usageCounts, setUsageCounts] = useState<Record<
+    UsageFilter,
+    number
+  > | null>(null);
 
   const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
@@ -382,12 +364,15 @@ export default function Sources({
         rowsPerPg,
         debouncedSearchTerm,
         token,
+        { kind, usage },
       )
         .then((data) => {
           setLoadFailed(data === null);
           if (data === null) return;
           dispatch(setPaginatedDocuments(data.docs));
           setTotalDocuments(data.totalDocuments);
+          setKindCounts(data.kindCounts ?? null);
+          setUsageCounts(data.usageCounts ?? null);
           // The server clamps a page past the end (the last card on the
           // last page was deleted); follow it.
           if (data.currentPage !== page) setCurrentPage(data.currentPage);
@@ -403,6 +388,8 @@ export default function Sources({
       sortField,
       sortOrder,
       debouncedSearchTerm,
+      kind,
+      usage,
       setCurrentPage,
     ],
   );
@@ -484,14 +471,16 @@ export default function Sources({
     });
   };
 
-  // The first load opens on the URL's page; a new search starts on page 1.
-  const searchedTerm = useRef(debouncedSearchTerm);
+  // The first load opens on the URL's page; a new search or filter starts
+  // on page 1.
+  const listQuery = `${debouncedSearchTerm}\n${kind}\n${usage}`;
+  const queried = useRef(listQuery);
   useEffect(() => {
-    const newSearch = searchedTerm.current !== debouncedSearchTerm;
-    searchedTerm.current = debouncedSearchTerm;
-    if (newSearch) setCurrentPage(1);
-    refreshDocs(undefined, newSearch ? 1 : currentPage, rowsPerPage);
-  }, [debouncedSearchTerm]);
+    const newQuery = queried.current !== listQuery;
+    queried.current = listQuery;
+    if (newQuery) setCurrentPage(1);
+    refreshDocs(undefined, newQuery ? 1 : currentPage, rowsPerPage);
+  }, [listQuery]);
 
   // When a graph build reaches a terminal state via SSE, refresh the list so
   // the badge reflects the final state, then drop the entry. The modal (a
@@ -607,8 +596,11 @@ export default function Sources({
   // The syncs still indexing lead the first page, newest first, filtered by
   // name the way the search filters the listed cards.
   const pendingTerm = debouncedSearchTerm.trim().toLowerCase();
+  // Not a source yet, so a sync's kind is Synced and nothing uses it.
+  const pendingFits =
+    (kind === 'all' || kind === 'synced') && usage !== 'in_use';
   const pendingSyncs =
-    currentPage === 1
+    currentPage === 1 && pendingFits
       ? [...unlistedSyncs]
           .reverse()
           .filter(
@@ -616,6 +608,38 @@ export default function Sources({
               !pendingTerm || sync.name.toLowerCase().includes(pendingTerm),
           )
       : [];
+
+  // Needs attention: with no search or filter, the sources whose ingest
+  // failed or whose connection needs a sign-in (in that order), from the
+  // app's knowledge list so a source on any page counts. Indexing needs no
+  // one, so it stays in the list. They leave the paged grid, and page 1
+  // leads with them; a card on this page is the fresher copy of its source.
+  const unfiltered = !pendingTerm && kind === 'all' && usage === 'all';
+  const attentionRank = (doc: Doc): number | null => {
+    const ingest = ingestState(doc);
+    if (ingest === 'failed') return 0;
+    return connectionNeedsSignIn(connectionOf(doc, connections)) ? 1 : null;
+  };
+  const attentionDocs = unfiltered
+    ? (knowledge ?? [])
+        .map(
+          (listed) =>
+            currentDocuments.find((d) => d.id === listed.id) ??
+            asListedDoc(listed),
+        )
+        .map((doc) => ({ doc, rank: attentionRank(doc) }))
+        .filter(
+          (entry): entry is { doc: Doc; rank: number } => entry.rank !== null,
+        )
+        .sort((a, b) => a.rank - b.rank)
+        .map(({ doc }) => doc)
+    : [];
+  const attentionIds = new Set(attentionDocs.map((doc) => doc.id));
+  const gridDocuments = currentDocuments.filter(
+    (doc) => !attentionIds.has(doc.id),
+  );
+  const showAttention =
+    currentPage === 1 && unfiltered && attentionDocs.length > 0;
 
   // What every source view takes, and what a tree view adds.
   const viewProps = {
@@ -640,6 +664,222 @@ export default function Sources({
     onPagesChanged: () =>
       documentToView?.id && refreshOpenSource(documentToView.id),
   };
+
+  // A sync started this session that isn't a source yet: nothing to open
+  // or manage, so no stretched button and no ⋯ until its real card is
+  // listed. A failed one can only be dismissed.
+  const renderPendingSync = (sync: (typeof pendingSyncs)[number]) => {
+    const connection = connections.find((c) => c.id === sync.connectionId);
+    const failed = sync.state === 'failed';
+    return (
+      <Card
+        key={`pending-${sync.id}`}
+        variant="filled"
+        padding="lg"
+        className="h-full"
+      >
+        {failed && (
+          <div className="absolute top-5 right-6 z-10">
+            <IconButton
+              variant="ghost-on-accent"
+              size="icon-xs"
+              icon={X}
+              label={t('settings.connectors.detail.dismissFailedSync', {
+                name: sync.name,
+                interpolation: { escapeValue: false },
+              })}
+              onClick={() => dispatch(syncForgotten([sync.id]))}
+            />
+          </div>
+        )}
+        {/* A source's tile parts: icon and title, the line, the state pill,
+            then the meta line. */}
+        <div
+          className={cn(
+            'flex w-full min-w-0 items-center gap-3',
+            failed && 'pr-9',
+          )}
+        >
+          {connection ? (
+            <ConnectorIcon icon={connection.icon} className="size-6 shrink-0" />
+          ) : (
+            <Cloud className="text-foreground size-6 shrink-0" />
+          )}
+          <CardTitle
+            className="line-clamp-2 w-full min-w-0 wrap-anywhere"
+            title={sync.name}
+          >
+            {sync.name}
+          </CardTitle>
+        </div>
+        {connection ? (
+          <CardDescription size="xs" className="line-clamp-2 wrap-break-word">
+            {connectionLabel(t, connection)}
+          </CardDescription>
+        ) : null}
+        <div className="flex flex-wrap gap-1">
+          <IngestBadge status={failed ? 'failed' : 'processing'} />
+        </div>
+        <CardFooter className="w-full">
+          <MetaLine>
+            <MetaItem icon={<RefreshCw />}>
+              {t('settings.connectors.detail.firstSyncStarted', {
+                time: formatRelative(sync.startedAt) ?? '',
+                interpolation: { escapeValue: false },
+              })}
+            </MetaItem>
+          </MetaLine>
+        </CardFooter>
+      </Card>
+    );
+  };
+
+  const renderSourceCard = (document: Doc) => {
+    const docId = document.id ? document.id.toString() : '';
+    const connection = connectionOf(document, connections);
+    // Sync stops until the reader signs in again (the shared rule).
+    const paused = connectionNeedsSignIn(connection);
+    const ingest = ingestState(document);
+    const line = sourceCardLine(t, document, connection);
+    const tokens = Number(document.tokens) || 0;
+    const graph = document.config?.kind === 'graphrag';
+    const build = graph && document.id ? graphBuilds[document.id] : undefined;
+    const building = build?.status === 'building';
+    const buildingPct = building ? buildPct(build) : null;
+
+    return (
+      // DESIGN "A clickable card that holds a link": a stretched button
+      // opens the source; the menu, the usage link and Reconnect are siblings
+      // above it, never nested.
+      // The tile's parts are ConnectorTile's: icon and title, the detail
+      // line, the state pills, then the meta line.
+      <Card
+        key={docId}
+        variant="filled"
+        padding="lg"
+        interactive="within"
+        className="h-full"
+      >
+        <div className="flex w-full min-w-0 items-center gap-3 pr-9">
+          <span aria-hidden="true" className="flex shrink-0">
+            {sourceIcon(document, connection, 'size-6')}
+          </span>
+          <button
+            type="button"
+            aria-label={document.name}
+            onClick={() => setDocumentToView(document)}
+            className="flex min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
+          >
+            <CardTitle
+              className="line-clamp-2 w-full min-w-0 wrap-anywhere"
+              title={document.name}
+            >
+              {document.name}
+            </CardTitle>
+          </button>
+        </div>
+        <div className="absolute top-5 right-6 z-10">
+          <ActionMenu
+            options={actions.menuOptions(document, 'card')}
+            triggerLabel={t('settings.sources.menuAlt')}
+            triggerTestId={`menu-button-${docId}`}
+            open={actionMenuDocId === docId}
+            onOpenChange={(open) => setActionMenuDocId(open ? docId : null)}
+          />
+        </div>
+        {line ? (
+          <CardDescription size="xs" className="line-clamp-2 wrap-break-word">
+            {line}
+          </CardDescription>
+        ) : null}
+        {/* Pills are states only: the sign-in, the ingest, a graph build. */}
+        {(connection && paused) || ingest || building ? (
+          <div className="flex flex-wrap gap-1">
+            {connection && paused ? (
+              <Badge variant="warning">
+                {t('settings.connectors.status.reconnect')}
+              </Badge>
+            ) : null}
+            {ingest ? <IngestBadge status={ingest} /> : null}
+            {building ? (
+              <Badge variant="neutral">
+                <Network aria-hidden="true" />
+                {buildingPct !== null
+                  ? t('settings.sources.graphrag.buildingPct', {
+                      pct: buildingPct,
+                    })
+                  : t('settings.sources.graphrag.building')}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
+        <CardFooter className="w-full">
+          <MetaLine>
+            {tokens > 0 ? (
+              <MetaItem
+                icon={<HardDrive />}
+                title={t('settings.sources.tokenCount', {
+                  tokens: formatTokens(tokens),
+                })}
+              >
+                {formatTokens(tokens)}
+              </MetaItem>
+            ) : null}
+            {graph && !building ? (
+              <MetaItem icon={<Network />}>
+                {t('settings.sources.graphrag.badge')}
+              </MetaItem>
+            ) : null}
+            {isOwner(document) ? null : <RoleMeta item={document} />}
+            {agentUseCount(document.used_by) > 0 ? (
+              // A sibling above the stretched button, so its popover opens.
+              <span className="relative z-10">
+                <UsedByAgents usage={document.used_by} />
+              </span>
+            ) : null}
+          </MetaLine>
+          {/* The reader's own connection (only theirs are loaded): sign in
+              again right here, without opening the source. */}
+          {connection && paused ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  className="relative z-10 ml-auto"
+                  onClick={() => reconnect(connection)}
+                >
+                  {t('settings.connectors.status.reconnect')}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('settings.sources.paused', {
+                  name: connection.name,
+                  interpolation: { escapeValue: false },
+                })}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+        </CardFooter>
+      </Card>
+    );
+  };
+
+  const GRID =
+    'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+  const filtered = kind !== 'all' || usage !== 'all';
+  const toolbarAction = (
+    <Button
+      type="button"
+      size="field"
+      shape="pill"
+      onClick={() => setModalState('ACTIVE')}
+    >
+      {t('settings.sources.addSource')}
+    </Button>
+  );
 
   return documentToView ? (
     <div className="flex flex-col">
@@ -735,21 +975,36 @@ export default function Sources({
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           }
-          action={
-            <Button
-              type="button"
-              size="field"
-              shape="pill"
-              onClick={() => setModalState('ACTIVE')}
-            >
-              {t('settings.sources.addSource')}
-            </Button>
-          }
+          action={toolbarAction}
           divider
-        />
+        >
+          {/* One recipe per page: the kind is the pill track, usage the
+              FilterSelect beside it. */}
+          {!loadFailed && (kindCounts || usageCounts) ? (
+            <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
+              {kindCounts && (
+                <SourceKindToggle
+                  value={kind}
+                  onValueChange={setKind}
+                  counts={kindCounts}
+                />
+              )}
+              {usageCounts && (
+                <FilterSelect
+                  value={usage}
+                  onValueChange={setUsage}
+                  values={USAGE_FILTERS}
+                  counts={usageCounts}
+                  labelOf={(value) => t(USAGE_LABELS[value])}
+                  ariaLabel={t('settings.usage.filterLabel')}
+                />
+              )}
+            </div>
+          ) : null}
+        </PageToolbar>
         <div className="relative w-full">
           {loading ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className={GRID}>
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
           ) : loadFailed ? (
@@ -759,8 +1014,10 @@ export default function Sources({
               title={t('settings.sources.loadError')}
               onRetry={() => refreshDocs()}
             />
-          ) : !currentDocuments?.length && pendingSyncs.length === 0 ? (
-            searchTerm ? (
+          ) : !currentDocuments.length &&
+            !showAttention &&
+            pendingSyncs.length === 0 ? (
+            searchTerm || filtered ? (
               <EmptyState
                 size="xs"
                 illustration="none"
@@ -783,236 +1040,39 @@ export default function Sources({
                 }
               />
             )
+          ) : showAttention ? (
+            <div className="flex flex-col gap-8">
+              <section className="flex flex-col gap-3">
+                <SectionHeader
+                  size="sm"
+                  title={t('settings.sources.needsAttention')}
+                  count={attentionDocs.length}
+                />
+                <div className={GRID}>
+                  {attentionDocs.map(renderSourceCard)}
+                </div>
+              </section>
+              {gridDocuments.length + pendingSyncs.length > 0 && (
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    size="sm"
+                    title={t('settings.sources.allKnowledge')}
+                    count={
+                      Math.max(0, totalDocuments - attentionDocs.length) +
+                      pendingSyncs.length
+                    }
+                  />
+                  <div className={GRID}>
+                    {pendingSyncs.map(renderPendingSync)}
+                    {gridDocuments.map(renderSourceCard)}
+                  </div>
+                </section>
+              )}
+            </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {pendingSyncs.map((sync) => {
-                const connection = connections.find(
-                  (c) => c.id === sync.connectionId,
-                );
-                const failed = sync.state === 'failed';
-                return (
-                  // Not a source yet: nothing to open or manage, so no
-                  // stretched button and no ⋯ until its real card is listed.
-                  // A failed one can only be dismissed.
-                  <Card
-                    key={`pending-${sync.id}`}
-                    variant="filled"
-                    padding="lg"
-                    className="min-h-[130px] self-start"
-                  >
-                    {failed && (
-                      <div className="absolute top-5 right-6 z-10">
-                        <IconButton
-                          variant="ghost-on-accent"
-                          size="icon-xs"
-                          icon={X}
-                          label={t(
-                            'settings.connectors.detail.dismissFailedSync',
-                            {
-                              name: sync.name,
-                              interpolation: { escapeValue: false },
-                            },
-                          )}
-                          onClick={() => dispatch(syncForgotten([sync.id]))}
-                        />
-                      </div>
-                    )}
-                    <div
-                      className={cn(
-                        'flex w-full flex-1 flex-col items-start',
-                        failed && 'pr-9',
-                      )}
-                    >
-                      <CardTitle
-                        className="line-clamp-2 w-full min-w-0 wrap-anywhere"
-                        title={sync.name}
-                      >
-                        {sync.name}
-                      </CardTitle>
-                    </div>
-                    <div className="flex flex-col items-start justify-start gap-1">
-                      <IngestBadge status={failed ? 'failed' : 'processing'} />
-                      <CardFooter className="w-full flex-col items-start gap-1">
-                        {connection && (
-                          <ConnectionLine connection={connection} />
-                        )}
-                        <span className="flex items-center gap-2">
-                          <RefreshCw className="size-3.5 shrink-0" />
-                          {t('settings.connectors.detail.firstSyncStarted', {
-                            time: formatRelative(sync.startedAt) ?? '',
-                            interpolation: { escapeValue: false },
-                          })}
-                        </span>
-                      </CardFooter>
-                    </div>
-                  </Card>
-                );
-              })}
-              {currentDocuments.map((document) => {
-                const docId = document.id ? document.id.toString() : '';
-                const connection = document.connectionId
-                  ? connections.find((c) => c.id === document.connectionId)
-                  : undefined;
-                // Sync stops until the reader signs in again (the shared rule).
-                const paused = connectionNeedsSignIn(connection);
-
-                return (
-                  // DESIGN "A clickable card that holds a link": a stretched
-                  // button opens the source; the menu and Reconnect are
-                  // siblings above it, never nested in it.
-                  <Card
-                    key={docId}
-                    variant="filled"
-                    padding="lg"
-                    interactive="within"
-                    // Its own height, not the row's: the meta stays under the title.
-                    className="min-h-[130px] self-start"
-                  >
-                    <button
-                      type="button"
-                      aria-label={document.name}
-                      onClick={() => setDocumentToView(document)}
-                      className="flex w-full flex-1 cursor-pointer flex-col items-start pr-9 text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
-                    >
-                      <CardTitle
-                        className="line-clamp-2 w-full min-w-0 wrap-anywhere"
-                        title={document.name}
-                      >
-                        {document.name}
-                      </CardTitle>
-                    </button>
-                    <div className="absolute top-5 right-6 z-10">
-                      <ActionMenu
-                        options={actions.menuOptions(document, 'card')}
-                        triggerLabel={t('settings.sources.menuAlt')}
-                        triggerTestId={`menu-button-${docId}`}
-                        open={actionMenuDocId === docId}
-                        onOpenChange={(open) =>
-                          setActionMenuDocId(open ? docId : null)
-                        }
-                      />
-                    </div>
-
-                    <div className="flex flex-col items-start justify-start gap-1">
-                      <RoleBadge item={document} />
-                      {connection && paused && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="warning">
-                            {t('settings.connectors.status.reconnect')}
-                          </Badge>
-                          {/* The reader's own connection (only theirs are
-                              loaded): sign in again right here, without
-                              opening the source. */}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                shape="pill"
-                                className="relative z-10"
-                                onClick={() => reconnect(connection)}
-                              >
-                                {t('settings.connectors.status.reconnect')}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t('settings.sources.paused', {
-                                name: connection.name,
-                                interpolation: { escapeValue: false },
-                              })}
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      )}
-                      {(document.ingestStatus === 'failed' ||
-                        document.ingestStatus === 'processing') && (
-                        <IngestBadge status={document.ingestStatus} />
-                      )}
-                      {document.config?.kind === 'graphrag' &&
-                        (() => {
-                          const build = document.id
-                            ? graphBuilds[document.id]
-                            : undefined;
-                          const isBuilding = build?.status === 'building';
-                          const pct = buildPct(build);
-                          return (
-                            <Badge variant="neutral">
-                              <Network aria-hidden="true" />
-                              {isBuilding
-                                ? pct !== null
-                                  ? t('settings.sources.graphrag.buildingPct', {
-                                      pct,
-                                    })
-                                  : t('settings.sources.graphrag.building')
-                                : t('settings.sources.graphrag.badge')}
-                            </Badge>
-                          );
-                        })()}
-                      {/* w-full: the column is items-start, so without it the
-                          footer sizes to a long host line and never truncates. */}
-                      <CardFooter className="w-full flex-col items-start gap-1">
-                        {connection && (
-                          <ConnectionLine
-                            connection={connection}
-                            files={document.files}
-                          />
-                        )}
-                        {document.website ? (
-                          <>
-                            {/* Where a website source comes from, and how it
-                                stays current, instead of its date. */}
-                            <span className="flex max-w-full min-w-0 items-center gap-2">
-                              <Globe className="size-3.5 shrink-0" />
-                              <span className="min-w-0 truncate">
-                                {document.website.hosts.length === 1
-                                  ? document.website.hosts[0]
-                                  : t('settings.sources.website.sites', {
-                                      count: document.website.hosts.length,
-                                    })}
-                              </span>
-                            </span>
-                            <span className="flex items-center gap-2">
-                              <FileText className="size-3.5" />
-                              {t('settings.sources.website.pageCount', {
-                                count: document.website.pages,
-                              })}
-                            </span>
-                          </>
-                        ) : null}
-                        {/* A scheduled source says how it stays current
-                            instead of its date; a website without one shows
-                            neither. */}
-                        {syncSchedule(document) ? (
-                          <span className="flex items-center gap-2">
-                            <RefreshCw className="size-3.5 shrink-0" />
-                            {t('settings.sources.website.synced', {
-                              frequency: t(
-                                `settings.sources.syncFrequency.${syncSchedule(document)}`,
-                              ),
-                              when:
-                                formatRelative(document.date) ?? EMPTY_VALUE,
-                            })}
-                          </span>
-                        ) : document.website ? null : (
-                          <span className="flex items-center gap-2">
-                            <CalendarIcon className="size-3.5" />
-                            {document.date
-                              ? formatDate(document.date)
-                              : EMPTY_VALUE}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-2">
-                          <HardDrive className="size-3.5" />
-                          {document.tokens
-                            ? formatTokens(+document.tokens)
-                            : EMPTY_VALUE}
-                        </span>
-                      </CardFooter>
-                    </div>
-                  </Card>
-                );
-              })}
+            <div className={GRID}>
+              {pendingSyncs.map(renderPendingSync)}
+              {gridDocuments.map(renderSourceCard)}
             </div>
           )}
         </div>

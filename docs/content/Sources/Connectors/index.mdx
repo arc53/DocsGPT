@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components'
@@ -32,7 +32,7 @@ Connections are the single place credentials live when a service requires them. 
 
 ## Using connectors
 
-Open **Settings > Connectors**. Filters narrow the list by category, and **Connected** shows what you already use.
+Open **Settings > Connectors**. Services that need you to sign in again come first, then **Connected**, then **Available**. **All**, **Knowledge** and **Tools** narrow the list to services that sync content or give agents tools, and the **Any status** menu picks **Needs sign-in**, **Connected** or **Not connected**. Each card's last line names your account and what the service can do: **Syncs**, **Looks up**, **Acts**.
 
 1. Pick a connector. Services with OAuth open the provider's sign-in page in a pop-up; API-key services ask for the key.
 2. Choose what the connection sets up. Tool services create their tools right away. Services that only sync (Google Drive, SharePoint, Confluence, Amazon S3, Reddit) ask how to use them: **Sync content now** (picked) or **Just connect**. With **Just connect**, the account is connected and nothing is added yet; you can sync later with **Sync content** on the connection's page. GitHub and Linear, which also offer tools, ask with a **Sync into Knowledge** switch instead: off by default, on when you started from **Add knowledge**. To sync, pick files or folders, how often to sync (never, daily, weekly or monthly) and, under **Advanced retrieval settings**, the same chunking and retrieval options as an upload.
@@ -40,7 +40,7 @@ Open **Settings > Connectors**. Filters narrow the list by category, and **Conne
    The last step says what happened and offers the next one: **Open in Knowledge** for content you just synced, **Try it in chat** when you turned on tools, or **Sync content** when nothing syncs yet.
 3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
 
-**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
+**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow. Tool lists group a connected service's tools under its name, with the account on each tool. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
 
 A connector's page is the one place to manage it: its accounts (**Reconnect**, **Rename**, **Disconnect**), the Knowledge it syncs (each source opens in Knowledge, with **Sync now** in its menu), and its tools (on or off, and what each action may do). Disconnecting keeps synced content but stops its sync: **Sync now** and **Reingest** on such a source are refused until its account is connected again, and it never syncs with another of your accounts.
 

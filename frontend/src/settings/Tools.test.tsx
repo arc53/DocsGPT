@@ -74,6 +74,7 @@ const confirm = vi.hoisted(() => ({
     modalState: string;
     handleSubmit: () => void | Promise<unknown>;
     error?: string;
+    description?: string;
   },
 }));
 vi.mock('../modals/ConfirmationModal', () => ({
@@ -81,6 +82,7 @@ vi.mock('../modals/ConfirmationModal', () => ({
     modalState: string;
     handleSubmit: () => void | Promise<unknown>;
     error?: string;
+    description?: string;
   }) => {
     confirm.props = props;
     return null;
@@ -239,6 +241,20 @@ describe('Tools', () => {
     );
   const switchOf = (id: string) =>
     card(id).querySelector<HTMLButtonElement>('[role="switch"]')!;
+
+  // The tooltip hangs on a wrapper: as the Switch's own trigger it would
+  // overwrite the data-state the track's colour reads.
+  it('keeps the switch state for its colour under the tooltip', async () => {
+    await render([ownTool, editorTool, viewerTool]);
+    for (const id of ['own', 'ed']) {
+      const toggle = switchOf(id);
+      expect(toggle.dataset.state).toBe(
+        toggle.getAttribute('aria-checked') === 'true'
+          ? 'checked'
+          : 'unchecked',
+      );
+    }
+  });
 
   // A safety net: 48 per page, so a usual list never splits.
   it('pages past 48 tools, and a search starts on page 1', async () => {
@@ -496,17 +512,15 @@ describe('Tools', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it('shows the role on a shared tile as a neutral Users Badge', async () => {
+  it('shows the role on a shared tile in its meta line, not as a pill', async () => {
     await render([ownTool, editorTool, viewerTool]);
-    const badge = (id: string) =>
-      card(id).querySelector<HTMLElement>('[data-testid="role-badge"]');
-    expect(badge('own')).toBeNull();
-    expect(badge('ed')?.dataset.variant).toBe('neutral');
-    expect(badge('ed')?.textContent).toBe('teamAccess.editor');
-    expect(badge('vw')?.textContent).toBe('teamAccess.viewer');
-    expect(
-      badge('ed')?.querySelector('svg')?.getAttribute('class'),
-    ).not.toContain('size-3');
+    const role = (id: string) =>
+      card(id).querySelector<HTMLElement>(
+        '[data-slot="card-footer"] [data-testid="role-meta"]',
+      );
+    expect(role('own')).toBeNull();
+    expect(role('ed')?.textContent).toBe('teamAccess.editor');
+    expect(role('vw')?.textContent).toBe('teamAccess.viewer');
   });
 
   // "Configured" is not a health check: only a real state gets a badge.
@@ -727,7 +741,7 @@ describe('Tools page connections', () => {
     ).toBeUndefined();
   });
 
-  it('groups the tools like the composer: built in, each service, custom', async () => {
+  it('groups the tools like the pickers: included, added, each service, custom', async () => {
     getUserTools.mockImplementation(() =>
       jsonResponse({
         tools: [
@@ -743,37 +757,89 @@ describe('Tools page connections', () => {
             actions: [],
             default: true,
           },
+          {
+            id: 'mine',
+            name: 'memory',
+            displayName: 'Memory',
+            customName: 'Account memory',
+            description: 'Remembers accounts',
+            status: true,
+            config: {},
+            actions: [],
+          },
         ],
       }),
     );
     await renderTools(root);
+    // The heading's title, without the count after it.
+    const titleOf = (h: Element) =>
+      Array.from(h.childNodes)
+        .filter(
+          (n) => !(n instanceof HTMLElement && n.dataset.slot === 'count'),
+        )
+        .map((n) => n.textContent)
+        .join('');
     const headers = Array.from(
       container.querySelectorAll('[data-slot="section-header"] h2'),
-    ).map((h) => h.textContent);
-    expect(headers).toEqual([
-      'settings.tools.groupBuiltIn',
+    );
+    expect(headers.map(titleOf)).toEqual([
+      'settings.tools.groupIncluded',
+      'settings.tools.groupAdded',
       'Telegram',
       'Linear',
       'agents.form.toolsPopup.groupCustom',
     ]);
+    // Every section says how many tools it holds.
+    headers.forEach((h) =>
+      expect(h.querySelector('[data-slot="count"]')?.textContent).toMatch(
+        /^\d+$/,
+      ),
+    );
     const section = (title: string) =>
       Array.from(container.querySelectorAll('section')).find(
-        (s) => s.querySelector('h2')?.textContent === title,
+        (s) => titleOf(s.querySelector('h2')!) === title,
       )!;
     expect(section('Telegram').textContent).toContain('Alerts bot');
+    // The kind track splits the tools the same way, with counts.
+    const kinds = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[aria-label="settings.tools.kindFilterLabel"] [data-slot="toggle-group-item"]',
+      ),
+    );
+    expect(kinds.map((k) => k.firstChild?.textContent)).toEqual([
+      'settings.tools.filters.all',
+      'settings.tools.groupIncluded',
+      'settings.tools.groupAdded',
+      'settings.tools.groupServices',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
+    await act(async () => kinds[4].click());
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-slot="section-header"] h2'),
+      ).map(titleOf),
+    ).toEqual(['agents.form.toolsPopup.groupCustom']);
+    await act(async () => kinds[0].click());
     expect(section('agents.form.toolsPopup.groupCustom').textContent).toContain(
       'My API',
     );
-    // The default copy is told apart by a neutral Default badge; the old
-    // "Built-in" badge is gone (the group says it).
-    const memory = section('settings.tools.groupBuiltIn');
-    const badge = memory.querySelector<HTMLElement>('[data-slot="badge"]')!;
-    expect(badge.textContent).toBe('settings.tools.defaultBadge');
-    expect(badge.dataset.variant).toBe('neutral');
-    expect(container.textContent).not.toContain('settings.tools.builtIn');
+    // The default copy sits under Included, which says what the old
+    // "Default" badge said; the one the user added sits under Added.
+    expect(section('settings.tools.groupIncluded').textContent).toContain(
+      'Memory',
+    );
+    expect(section('settings.tools.groupAdded').textContent).toContain(
+      'Account memory',
+    );
+    expect(
+      section('settings.tools.groupIncluded').querySelector(
+        '[data-slot="badge"]',
+      ),
+    ).toBeNull();
+    expect(container.textContent).not.toContain('settings.tools.defaultBadge');
   });
 
-  it("draws a connected tool with its service's logo and no icon in the footer", async () => {
+  it("draws a connected tool with its service's logo, not again in the footer", async () => {
     await renderTools(root);
     const header = card('Linear').querySelector('[data-slot="card-header"]')!;
     // The service logo is decorative (the name is beside it); the generic
@@ -783,17 +849,21 @@ describe('Tools page connections', () => {
     expect(
       card('My API').querySelector('[data-slot="card-header"] [role="img"]'),
     ).not.toBeNull();
-    expect(
-      card('Telegram').querySelector('[data-slot="card-footer"] svg'),
-    ).toBeNull();
+    // The footer's account item has the generic account icon, never the
+    // service's logo a second time.
+    const icons = Array.from(
+      card('Telegram').querySelectorAll('[data-slot="card-footer"] svg'),
+    ).map((svg) => svg.getAttribute('class') ?? '');
+    expect(icons).toEqual([expect.stringContaining('lucide-user-round')]);
   });
 
   it('shows each connected account as its own tool, the account on its footer', async () => {
     await renderTools(root);
     const telegram = card('Telegram');
-    // Which account this card is beside its own switch, and the catalog's
-    // plain description.
+    // Which account this card is, then where it is used, beside its own
+    // switch, and the catalog's plain description.
     const footer = telegram.querySelector('[data-slot="card-footer"]')!;
+    // In the reader's chats is the switch's to say, not the meta line's.
     expect(footer.textContent).toBe('Alerts bot');
     expect(footer.querySelector('[role="switch"]')).not.toBeNull();
     expect(telegram.textContent).toContain(
@@ -1022,5 +1092,188 @@ describe('Tools page connections', () => {
       ),
     ).toBeNull();
     expect(card('own')).toBeDefined();
+  });
+});
+
+describe('Tools usage', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  const usageTool = (
+    id: string,
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> => ({
+    id,
+    name: 'api_tool',
+    displayName: id,
+    customName: '',
+    description: 'Calls an API',
+    status: false,
+    in_chat: false,
+    config: {},
+    actions: [],
+    access: 'owner',
+    allowed_actions: ['delete', 'edit', 'share', 'use', 'use_in_own'],
+    ...overrides,
+  });
+
+  const TOOLS = [
+    usageTool('agented', {
+      used_by: {
+        agents: [
+          { id: 'a1', name: 'Rates desk' },
+          { id: 'a2', name: 'Renewals' },
+          { id: 'a3', name: 'Support' },
+        ],
+        others: 2,
+      },
+      in_chat: true,
+      status: true,
+    }),
+    usageTool('chatted', { in_chat: true, status: true }),
+    usageTool('elsewhere', { used_by: { agents: [], others: 1 } }),
+    usageTool('idle', { used_by: { agents: [], others: 0 } }),
+    // An older server sends no used_by: unknown, so it counts as unused.
+    usageTool('old'),
+  ];
+
+  beforeEach(() => {
+    reduxState.connectors.catalog = [];
+    reduxState.connectors.connections = [];
+    dispatch.mockReset();
+    getUserTools.mockReset();
+    getUserTools.mockImplementation(() => jsonResponse({ tools: TOOLS }));
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  const renderAt = (entry = '/settings/tools') =>
+    act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route
+              path="/settings/tools"
+              element={
+                <>
+                  <Tools />
+                  <Where />
+                </>
+              }
+            />
+            <Route path="/agents/*" element={<Where />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+
+  const titles = () =>
+    Array.from(container.querySelectorAll('[data-slot="card-title"]')).map(
+      (title) => title.textContent,
+    );
+  const card = (title: string) =>
+    Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="card-title"]'),
+    )
+      .find((h) => h.textContent === title)!
+      .closest<HTMLElement>('[data-slot="card"]')!;
+
+  it('puts usage in a pill Select that reads Any use', async () => {
+    await renderAt();
+    const trigger = container.querySelector<HTMLElement>(
+      '[data-slot="select-trigger"][aria-label="settings.usage.filterLabel"]',
+    )!;
+    expect(trigger.getAttribute('data-shape')).toBe('pill');
+    expect(trigger.textContent).toBe('settings.usage.filters.all');
+  });
+
+  it('reads the usage from the address and ANDs it with the search', async () => {
+    await renderAt('/settings/tools?usage=inUse');
+    expect(titles()).toEqual(['agented', 'chatted', 'elsewhere']);
+    const input =
+      container.querySelector<HTMLInputElement>('#tool-search-input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, 'el');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(titles()).toEqual(['elsewhere']);
+  });
+
+  it('says on each card which agents use it; the switch says chats', async () => {
+    await renderAt();
+    const footer = (title: string) =>
+      card(title).querySelector('[data-slot="card-footer"]')?.textContent ?? '';
+    expect(footer('agented')).toContain(
+      'settings.usage.agentsShort:{"count":5,"formatted":"5"}',
+    );
+    expect(footer('chatted')).not.toContain('settings.usage.agents');
+    expect(footer('elsewhere')).toContain(
+      'settings.usage.agentsShort:{"count":1,"formatted":"1"}',
+    );
+    expect(footer('idle')).not.toContain('settings.usage.agents');
+    for (const title of ['agented', 'chatted', 'idle'])
+      expect(footer(title)).not.toContain('settings.usage.inChats');
+  });
+
+  it('lists the agents in a popover, each a link to the agent', async () => {
+    await renderAt();
+    const trigger = Array.from(
+      card('agented').querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent?.startsWith('settings.usage.agents'))!;
+    await act(async () => trigger.click());
+    const content = document.querySelector('[data-slot="popover-content"]')!;
+    const links = Array.from(content.querySelectorAll('a')).map((a) => [
+      a.textContent,
+      a.getAttribute('href'),
+    ]);
+    expect(links).toEqual([
+      ['Rates desk', '/agents/manage/edit/a1'],
+      ['Renewals', '/agents/manage/edit/a2'],
+      ['Support', '/agents/manage/edit/a3'],
+    ]);
+    // A long name truncates in the popover's width, its full value in title.
+    const link = content.querySelector('a')!;
+    expect(link.className).toContain('min-w-0');
+    expect(link.className).toContain('shrink');
+    expect(link.getAttribute('title')).toBe('Rates desk');
+    expect(link.querySelector('.truncate')?.textContent).toBe('Rates desk');
+    expect(content.textContent).toContain(
+      'settings.usage.others:{"count":2,"formatted":"2"}',
+    );
+    // An agent nobody can list here is counted, not a link.
+    const elsewhere = card('elsewhere').querySelector(
+      '[data-slot="card-footer"]',
+    )!;
+    expect(
+      Array.from(elsewhere.querySelectorAll('button')).some((b) =>
+        b.textContent?.startsWith('settings.usage.agents'),
+      ),
+    ).toBe(false);
+  });
+
+  it('names the usage in the delete confirmation', async () => {
+    await renderAt();
+    const del = (title: string) =>
+      Array.from(
+        card(title).querySelectorAll<HTMLButtonElement>(
+          '[data-testid="menu"] button',
+        ),
+      ).find((b) => b.textContent === 'settings.tools.delete')!;
+    await act(async () => del('agented').click());
+    expect(confirm.props?.description).toBe(
+      'settings.tools.deleteUsedBy:{"count":5,"formatted":"5"}',
+    );
+    await act(async () => del('idle').click());
+    expect(confirm.props?.description).toBe('settings.tools.deleteConsequence');
   });
 });

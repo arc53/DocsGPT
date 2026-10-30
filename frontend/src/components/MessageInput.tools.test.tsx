@@ -22,6 +22,15 @@ const mocks = vi.hoisted(() => ({
   queued: [] as Promise<unknown>[],
   catalog: [] as unknown[],
   connections: [] as unknown[],
+  devices: vi.fn(() =>
+    Promise.resolve({
+      devices: [{ id: 'd1', last_seen_at: new Date().toISOString() }],
+    }),
+  ),
+}));
+
+vi.mock('../api/services/devicesService', () => ({
+  default: { list: () => mocks.devices() },
 }));
 
 vi.mock('../api/services/userService', () => ({
@@ -49,18 +58,26 @@ vi.mock('./message-input', async (importOriginal) => ({
   ToolsTrigger: ({
     items,
     onOpenChange,
+    filters,
   }: {
     items: MultiSelectPopoverItem[];
     onOpenChange: (open: boolean) => void;
+    filters?: React.ReactNode;
   }) => (
     <div>
+      <div data-testid="tool-filters">{filters}</div>
       <button
         type="button"
         data-testid="open-tools"
         onClick={() => onOpenChange(true)}
       />
       {items.map((item) => (
-        <div key={item.id} data-testid="tool-item" data-group={item.group}>
+        <div
+          key={item.id}
+          data-testid="tool-item"
+          data-group={item.group}
+          data-description={item.description}
+        >
           {item.label}
           {item.descriptionNode && (
             <div data-testid="tool-note">{item.descriptionNode}</div>
@@ -214,9 +231,158 @@ describe('MessageInput tools picker', () => {
     ];
     await openPicker();
     expect(groups()).toEqual({
-      Memory: 'settings.tools.groupBuiltIn',
-      'Team Linear': 'Linear',
+      Memory: 'included',
+      'Team Linear': 'service:Linear',
     });
+  });
+
+  // The same groups as the agent builder and the Tools page.
+  it('groups included, added, each service, then custom', async () => {
+    mocks.catalog = [];
+    mocks.connections = [];
+    mocks.tools = [
+      {
+        id: 'api',
+        name: 'api_tool',
+        displayName: 'API',
+        customName: 'Rates API',
+        status: true,
+        config: {},
+      },
+      {
+        id: 'mine',
+        name: 'memory',
+        displayName: 'Notes memory',
+        description: 'Remembers account context',
+        status: true,
+        config: {},
+      },
+      {
+        id: 'mem',
+        name: 'memory',
+        displayName: 'Memory',
+        description: 'Stores and retrieves information',
+        default: true,
+        status: true,
+        config: {},
+      },
+    ];
+    await openPicker();
+    expect(groups()).toEqual({
+      Memory: 'included',
+      'Notes memory': 'added',
+      'Rates API': 'custom',
+    });
+    // Each row's line tells copies of one tool apart.
+    const line = (label: string) =>
+      Array.from(
+        container.querySelectorAll<HTMLElement>('[data-testid="tool-item"]'),
+      ).find((item) => item.firstChild?.textContent === label)?.dataset
+        .description;
+    expect(line('Memory')).toBe('Stores and retrieves information');
+    expect(line('Notes memory')).toBe('Remembers account context');
+  });
+
+  it('draws the kind track past 10 tools and narrows the rows to a kind', async () => {
+    mocks.catalog = [];
+    mocks.connections = [];
+    mocks.tools = [
+      ...Array.from({ length: 9 }, (_, i) => ({
+        id: `added-${i}`,
+        name: 'memory',
+        displayName: `Notes ${i}`,
+        status: true,
+        config: {},
+      })),
+      {
+        id: 'web',
+        name: 'read_webpage',
+        displayName: 'Read webpage',
+        default: true,
+        status: true,
+        config: {},
+      },
+      {
+        id: 'api',
+        name: 'api_tool',
+        displayName: 'API',
+        status: true,
+        config: {},
+      },
+    ];
+    await openPicker();
+    const filters = container.querySelector('[data-testid="tool-filters"]')!;
+    const track = filters.querySelector('[data-slot="toggle-group"]');
+    expect(track?.getAttribute('aria-label')).toBe(
+      'settings.tools.kindFilterLabel',
+    );
+    const custom = Array.from(
+      filters.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="toggle-group-item"]',
+      ),
+    ).find((item) =>
+      item.textContent?.startsWith('agents.form.toolsPopup.groupCustom'),
+    )!;
+    await act(async () => custom.click());
+    expect(
+      Array.from(container.querySelectorAll('[data-testid="tool-item"]')).map(
+        (item) => item.firstChild?.textContent,
+      ),
+    ).toEqual(['API']);
+  });
+
+  it('draws no kind track while the tools fit on one screen', async () => {
+    mocks.catalog = [];
+    mocks.connections = [];
+    mocks.tools = [
+      { id: 'a', name: 'memory', displayName: 'A', status: true, config: {} },
+      { id: 'b', name: 'api_tool', displayName: 'B', status: true, config: {} },
+    ];
+    await openPicker();
+    expect(
+      container.querySelector('[data-testid="tool-filters"]')!.innerHTML,
+    ).toBe('');
+  });
+
+  // Only the agent builder loaded device status before; the chat picker now
+  // asks for it when it opens with a remote device in the list.
+  it('marks a remote device online once the picker opens', async () => {
+    mocks.devices.mockClear();
+    mocks.catalog = [];
+    mocks.connections = [];
+    mocks.tools = [
+      {
+        id: 'dev',
+        name: 'remote_device',
+        displayName: 'Laptop',
+        description: 'Spreadsheet clean-up',
+        status: true,
+        config: { device_id: 'd1' },
+      },
+    ];
+    await openPicker();
+    expect(mocks.devices).toHaveBeenCalled();
+    const badge = container.querySelector(
+      '[data-testid="tool-note"] [data-slot="badge"]',
+    )!;
+    expect(badge.textContent).toBe('settings.devices.online');
+    expect(badge.getAttribute('data-variant')).toBe('success');
+  });
+
+  it('asks for devices only when a remote device is listed', async () => {
+    mocks.devices.mockClear();
+    mocks.tools = [
+      {
+        id: 'mem',
+        name: 'memory',
+        displayName: 'Memory',
+        default: true,
+        status: true,
+        config: {},
+      },
+    ];
+    await openPicker();
+    expect(mocks.devices).not.toHaveBeenCalled();
   });
 
   it('marks a tool whose connection needs signing in with the Reconnect badge', async () => {

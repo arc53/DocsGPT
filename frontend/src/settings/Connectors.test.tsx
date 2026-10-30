@@ -186,25 +186,23 @@ describe('Connectors page', () => {
 
   it('renders every card state', async () => {
     await render();
-    // Available: no badge and no footer; the tile itself is the action.
-    expect(footer('telegram')).toBeNull();
-    expect(badges('telegram').map((b) => b.textContent)).not.toContain(
-      'settings.connectors.status.connect',
+    // Available: no state pill; the footer says only what it can do.
+    expect(badges('telegram')).toHaveLength(0);
+    expect(footer('telegram')!.textContent).toBe(
+      'settings.connectors.capabilityShort.write',
     );
-    // The state leads the badge row; how many accounts is footer meta.
-    expect(badges('google_drive')[0].textContent).toBe(
-      'settings.connectors.status.connected',
-    );
-    expect(badges('google_drive')[0].dataset.variant).toBe('success');
+    // Connected: its section says so, so no pill repeats it; how many
+    // accounts leads the meta line.
+    expect(badges('google_drive')).toHaveLength(0);
     expect(footer('google_drive')!.textContent).toBe(
-      'settings.connectors.status.connectedCount:2',
+      'settings.connectors.status.connectedCount:2·settings.connectors.capabilityShort.sync',
     );
     expect(badges('confluence')[0].textContent).toBe(
       'settings.connectors.status.reconnect',
     );
     expect(badges('confluence')[0].dataset.variant).toBe('warning');
-    // A custom entry makes a new tool on each click: no state, no cue.
-    expect(footer('custom_mcp')).toBeNull();
+    // A custom entry makes a new tool on each click: no state pill.
+    expect(badges('custom_mcp')).toHaveLength(0);
     expect(card('share_point')!.textContent).toContain(
       'settings.connectors.status.needsAdminSetup',
     );
@@ -232,20 +230,48 @@ describe('Connectors page', () => {
       ],
     });
     await render();
-    expect(footer('confluence')!.textContent).toBe('dana@meridian.example');
+    expect(footer('confluence')!.textContent).toBe(
+      'dana@meridian.example·settings.connectors.capabilityShort.sync',
+    );
   });
 
-  it('closes the toolbar with a rule and puts no plus on the page action', async () => {
+  it('closes the toolbar with a rule and a plain primary action', async () => {
     await render();
     const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
     expect(toolbar.querySelector('[data-slot="separator"]')).not.toBeNull();
     const action = Array.from(toolbar.querySelectorAll('button')).find(
       (b) => b.textContent === 'settings.connectors.addCustom',
     )!;
-    expect(action.querySelectorAll('svg')).toHaveLength(1);
-    expect(action.querySelector('svg')!.getAttribute('class')).toContain(
-      'lucide-chevron-down',
+    // One button that opens a chooser, like New agent: no menu, no icon.
+    expect(action.querySelector('svg')).toBeNull();
+    expect(action.getAttribute('aria-haspopup')).toBeNull();
+  });
+
+  it('chooses the kind of custom connector from option cards', async () => {
+    launch.mockClear();
+    await render();
+    const action = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="page-toolbar"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.connectors.addCustom')!;
+    await act(async () => action.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain('settings.connectors.addCustom');
+    expect(dialog.textContent).toContain(
+      'settings.connectors.addCustomDescription',
     );
+    const cards = Array.from(
+      dialog.querySelectorAll<HTMLButtonElement>('[data-slot="option-card"]'),
+    );
+    expect(cards.map((c) => c.textContent)).toEqual([
+      'settings.connectors.custom.custom_mcpsettings.connectors.descriptions.custom_mcp',
+    ]);
+    await act(async () => cards[0].click());
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'custom_mcp' }),
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('opens the drawer on the account a ?connection= link names', async () => {
@@ -268,13 +294,21 @@ describe('Connectors page', () => {
     expect(keys[keys.length - 1]).toBe('connector-card-brave');
   });
 
-  it('shows capability chips', async () => {
+  it('says what a service does in the meta line, not in pills', async () => {
     await render();
-    expect(card('google_drive')!.textContent).toContain(
-      'settings.connectors.capabilityPlain.sync',
+    const items = Array.from(
+      footer('telegram')!.querySelectorAll<HTMLElement>(
+        '[data-slot="meta-item"]',
+      ),
     );
-    expect(card('telegram')!.textContent).toContain(
-      'settings.connectors.capabilityPlain.write',
+    expect(items.map((item) => [item.textContent, item.title])).toEqual([
+      [
+        'settings.connectors.capabilityShort.write',
+        'settings.connectors.capabilityPlain.write',
+      ],
+    ]);
+    expect(card('telegram')!.textContent).not.toContain(
+      'settings.connectors.capabilityPlain',
     );
   });
 
@@ -289,35 +323,53 @@ describe('Connectors page', () => {
     `${item.firstChild?.textContent} ${item.querySelector('[data-slot="count"]')?.textContent}`;
   const pill = (key: string) =>
     pills().find((item) =>
-      pillText(item).startsWith(`settings.connectors.filters.${key} `),
+      pillText(item).startsWith(
+        `settings.connectors.capabilityFilters.${key} `,
+      ),
     );
   const location = () =>
     container.querySelector('[data-testid="location"]')!.textContent ?? '';
+  const sectionTitles = () =>
+    Array.from(
+      container.querySelectorAll('[data-slot="section-header"] h2'),
+    ).map((h) => h.textContent);
 
-  it('filters by state, not category: All, Connected, Disconnected with counts', async () => {
+  it('splits the list by what a service does, with counts', async () => {
     await render();
     expect(pills().map(pillText)).toEqual([
-      expect.stringMatching(/^settings\.connectors\.filters\.all \d+$/),
-      'settings.connectors.filters.connected 1',
-      'settings.connectors.filters.disconnected 1',
+      'settings.connectors.capabilityFilters.all 6',
+      'settings.connectors.capabilityFilters.sync 2',
+      'settings.connectors.capabilityFilters.tools 4',
     ]);
-    expect(container.textContent).not.toContain(
-      'settings.connectors.categories',
-    );
-    // Three pills fit a phone: no Select stands in for them.
-    expect(container.querySelector('[role="combobox"]')).toBeNull();
-    // Page-toolbar filter: a sm group that hugs, drawing its own track.
     const group = container.querySelector('[data-slot="toggle-group"]')!;
-    expect(group.className).toContain('bg-muted');
-    expect(group.className).toContain('w-fit');
-    expect(group.parentElement!.className).not.toContain('bg-muted');
+    expect(group.getAttribute('aria-label')).toBe(
+      'settings.connectors.capabilityFilterLabel',
+    );
     expect(
       group.querySelector('[data-slot="toggle-group-item"]')!.className,
     ).toContain('h-8');
   });
 
+  it('puts the status in a pill Select that reads Any status', async () => {
+    await render();
+    const trigger = container.querySelector<HTMLElement>(
+      '[data-slot="select-trigger"][aria-label="settings.connectors.statusFilterLabel"]',
+    )!;
+    expect(trigger.getAttribute('data-shape')).toBe('pill');
+    expect(trigger.textContent).toBe('settings.connectors.statusFilters.all');
+  });
+
+  it('sections the list: needs sign-in, connected, then available', async () => {
+    await render();
+    expect(sectionTitles()).toEqual([
+      'settings.connectors.sections.reconnect1',
+      'settings.connectors.sections.connected1',
+      'settings.connectors.sections.available4',
+    ]);
+  });
+
   it('filters to services with a working account', async () => {
-    await render('/settings/connectors?filter=connected');
+    await render('/settings/connectors?status=connected');
     expect(card('google_drive')).not.toBeNull();
     expect(card('confluence')).toBeNull();
     expect(card('telegram')).toBeNull();
@@ -335,27 +387,27 @@ describe('Connectors page', () => {
         },
       ],
     });
-    await render('/settings/connectors?filter=disconnected');
+    await render('/settings/connectors?status=reconnect');
     expect(card('confluence')).not.toBeNull();
     expect(card('telegram')).not.toBeNull();
     expect(card('google_drive')).toBeNull();
   });
 
-  it('keeps the filter in the address', async () => {
+  it('keeps the kind in the address', async () => {
     await render();
-    await act(async () => pill('disconnected')!.click());
-    expect(location()).toContain('filter=disconnected');
+    await act(async () => pill('tools')!.click());
+    expect(location()).toContain('capability=tools');
+    expect(card('google_drive')).toBeNull();
     await act(async () => pill('all')!.click());
-    expect(location()).not.toContain('filter=');
+    expect(location()).not.toContain('capability=');
   });
 
-  it('offers no state that nothing is in', async () => {
+  it('offers no kind that would narrow nothing', async () => {
     service.getCatalog.mockResolvedValue({
       success: true,
       connectors: [definition({})],
     });
     await render();
-    // Only All would be left: no filter row at all.
     expect(pills()).toHaveLength(0);
   });
 
@@ -364,28 +416,15 @@ describe('Connectors page', () => {
       success: true,
       connectors: [definition({})],
     });
-    await render('/settings/connectors?filter=connected');
+    await render('/settings/connectors?status=connected');
     expect(container.textContent).toContain('settings.connectors.empty');
   });
 
-  it('shows a narrowed list as a chip that clears it', async () => {
+  it('opens on the Knowledge kind from a ?capability=sync link', async () => {
     await render('/settings/connectors?capability=sync');
-    expect(container.textContent).toContain(
-      'settings.connectors.capabilityChip.sync',
-    );
     expect(card('telegram')).toBeNull();
-    const clear = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="settings.connectors.capabilityFilter.clear"]',
-    )!;
-    // Badge onRemove's X: a 24px target, not a hand-built 12px button.
-    expect(clear.dataset.slot).toBe('badge-remove');
-    expect(clear.closest('[data-slot="badge"]')).not.toBeNull();
-    await act(async () => clear.click());
-    expect(container.textContent).not.toContain(
-      'settings.connectors.capabilityChip.sync',
-    );
-    expect(location()).not.toContain('capability=');
-    expect(card('telegram')).not.toBeNull();
+    expect(card('google_drive')).not.toBeNull();
+    expect(pill('sync')!.dataset.state).toBe('on');
   });
 
   describe('opened for Knowledge', () => {
@@ -464,10 +503,10 @@ describe('Connectors page', () => {
     expect(card('mcp:atlassian')).toBeNull();
     const confluence = card('confluence')!;
     expect(confluence.textContent).toContain(
-      'settings.connectors.capabilityPlain.sync',
+      'settings.connectors.capabilityShort.sync',
     );
     expect(confluence.textContent).toContain(
-      'settings.connectors.capabilityPlain.write',
+      'settings.connectors.capabilityShort.write',
     );
   });
 

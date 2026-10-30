@@ -133,10 +133,9 @@
     "label": "Einstellungen",
     "general": {
       "label": "Allgemein",
-      "subtitle": "Legen Sie fest, wie DocsGPT aussieht, welche Sprache es verwendet und welchen Prompt Ihre Chats nutzen.",
+      "subtitle": "Legen Sie fest, wie DocsGPT aussieht und welche Sprache es verwendet.",
       "sections": {
         "appearance": "Darstellung",
-        "chat": "Chat",
         "dangerZone": "Gefahrenzone"
       },
       "theme": "Design",
@@ -146,8 +145,6 @@
       "light": "Hell",
       "dark": "Dunkel",
       "chunks": "Chunks pro Anfrage",
-      "prompt": "Aktiver Prompt",
-      "promptDescription": "Der System-Prompt für Chats ohne Agent. Agenten verwenden ihren eigenen.",
       "deleteAllLabel": "Alle Konversationen löschen",
       "deleteAllDescription": "Löscht alle Unterhaltungen in Ihrem Konto dauerhaft. Dies kann nicht rückgängig gemacht werden.",
       "addNew": "Neu hinzufügen",
@@ -157,18 +154,7 @@
       "medium": "Mittel",
       "high": "Hoch",
       "unlimited": "Unbegrenzt",
-      "default": "Standard",
-      "add": "Hinzufügen",
-      "promptActions": {
-        "select": "Prompt auswählen",
-        "edit": "Prompt bearbeiten",
-        "view": "Prompt anzeigen",
-        "duplicate": "Prompt duplizieren",
-        "delete": "Prompt löschen",
-        "deleteFailed": "Dieser Prompt konnte nicht gelöscht werden.",
-        "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
-        "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um die geänderte Version zu sehen."
-      }
+      "default": "Standard"
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",
@@ -179,7 +165,7 @@
       "type": "Typ",
       "tokenUsage": "Token-Verbrauch",
       "noData": "Noch kein Wissen",
-      "searchPlaceholder": "Suchen...",
+      "searchPlaceholder": "Wissen durchsuchen…",
       "addNew": "Neu hinzufügen",
       "addSource": "Wissen hinzufügen",
       "addChunk": "Chunk hinzufügen",
@@ -695,7 +681,22 @@
       "viaConnectionFiles_other": "über {{name}} · {{files}} Dateien",
       "item": {
         "tokens": "{{tokens}} Tokens"
-      }
+      },
+      "tokenCount": "{{tokens}} Tokens",
+      "kinds": {
+        "all": "Alle",
+        "files": "Dateien",
+        "websites": "Websites",
+        "synced": "Synchronisiert",
+        "wikis": "Wikis",
+        "shared": "Geteilt"
+      },
+      "kindFilterLabel": "Nach Art filtern",
+      "needsAttention": "Braucht Aufmerksamkeit",
+      "allKnowledge": "Gesamtes Wissen",
+      "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der diese Quelle danach nicht mehr hat. Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die diese Quelle danach nicht mehr haben. Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "noKnowledgeFound": "Kein Wissen gefunden"
     },
     "analytics": {
       "label": "Analytik",
@@ -1455,8 +1456,8 @@
     },
     "tools": {
       "label": "Werkzeuge",
-      "subtitle": "Aktionen, die deine Agenten ausführen können. Integrierte Werkzeuge findest du hier. Werkzeuge eines verbundenen Dienstes sind unter diesem Dienst gruppiert.",
-      "searchPlaceholder": "Werkzeuge suchen...",
+      "subtitle": "Aktionen, die deine Agenten ausführen können. Enthaltene Werkzeuge gehören zu DocsGPT. Werkzeuge eines verbundenen Dienstes sind unter diesem Dienst gruppiert.",
+      "searchPlaceholder": "Werkzeuge suchen…",
       "addTool": "Werkzeug hinzufügen",
       "noToolsFound": "Keine Werkzeuge gefunden",
       "selectToolSetup": "Werkzeug hinzufügen",
@@ -1596,13 +1597,67 @@
       "triggerLabel_one": "Werkzeuge, {{formatted}} ausgewählt",
       "triggerLabel_other": "Werkzeuge, {{formatted}} ausgewählt",
       "manageInConnectors": "In Konnektoren verwalten",
-      "defaultBadge": "Standard",
       "noToolsYet": "Noch keine Werkzeuge",
       "connectService": "Dienst verbinden",
       "filledBy": "Ausgefüllt von",
       "loadError": "Deine Werkzeuge konnten nicht geladen werden.",
       "deleteConsequence": "Seine Einstellungen und Aktionen werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
-      "deleteActionConsequence": "Sie wird entfernt, wenn du das Tool speicherst."
+      "deleteActionConsequence": "Sie wird entfernt, wenn du das Tool speicherst.",
+      "groupIncluded": "Enthalten",
+      "groupAdded": "Hinzugefügt",
+      "filters": {
+        "all": "Alle"
+      },
+      "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der es danach nicht mehr hat. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die es danach nicht mehr haben. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "groupServices": "Dienste",
+      "kindFilterLabel": "Nach Art filtern"
+    },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "System-Prompts legen fest, wie das Modell antwortet. Der ausgewählte gilt für Chats ohne Agent; Agenten wählen ihren eigenen.",
+      "searchPlaceholder": "Prompts suchen…",
+      "addPrompt": "Prompt hinzufügen",
+      "manage": "Zu den Prompts",
+      "select": "Prompt auswählen",
+      "filters": {
+        "all": "Alle"
+      },
+      "sections": {
+        "included": "Enthalten",
+        "yours": "Deine",
+        "shared": "Mit dem Team geteilt"
+      },
+      "presets": {
+        "default": "Antwortet aus deinen Dokumenten und zitiert sie. Decken sie die Frage nicht ab, sagt er das und antwortet dann aus allgemeinem Wissen.",
+        "creative": "Wie default, dazu Ideen, Beispiele und originelle Blickwinkel – die Fakten bleiben korrekt.",
+        "strict": "Antwortet nur aus deinen Dokumenten, Werkzeugen und dem Chat. Sagt, was fehlt, statt zu raten."
+      },
+      "chatPromptLabel": "Prompt für Chats ohne Agent",
+      "useInChats": "{{name}} in Chats verwenden",
+      "chatPromptFailed": "Der Prompt für deine Chats konnte nicht geändert werden.",
+      "actions": "Aktionen für {{name}}",
+      "edit": "Bearbeiten",
+      "view": "Ansehen",
+      "duplicate": "Duplizieren",
+      "shareWithTeam": "Mit Team teilen",
+      "delete": "Löschen",
+      "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der danach den Standard-Prompt nutzt. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die danach den Standard-Prompt nutzen. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedByInChats_one": "Von {{formatted}} Agenten und deinen Chats verwendet, die danach den Standard-Prompt nutzen. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedByInChats_other": "Von {{formatted}} Agenten und deinen Chats verwendet, die danach den Standard-Prompt nutzen. Dies kann nicht rückgängig gemacht werden.",
+      "deleteInChats": "Deine Chats verwenden ihn und nutzen danach den Standard-Prompt. Dies kann nicht rückgängig gemacht werden.",
+      "deleteFailed": "Dieser Prompt konnte nicht gelöscht werden.",
+      "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
+      "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um die geänderte Version zu sehen.",
+      "loadError": "Deine Prompts konnten nicht geladen werden.",
+      "noPromptsFound": "Keine Prompts gefunden",
+      "kinds": {
+        "shared": "Geteilt"
+      },
+      "kindFilterLabel": "Nach Art filtern",
+      "chatPromptOn": "In Chats ohne Agenten verwendet",
+      "chatPromptOff": "In Chats ohne Agenten verwenden"
     },
     "devices": {
       "label": "Geräte",
@@ -2105,9 +2160,6 @@
         "ownerWarningNoAccount": "Teammitglieder handeln mit deinem {{name}}-Konto."
       },
       "createFailed": "Der Konnektor konnte nicht hinzugefügt werden. Versuche es erneut.",
-      "capabilityFilter": {
-        "clear": "Alle Konnektoren anzeigen"
-      },
       "capabilityPlain": {
         "sync": "Synchronisiert ins Wissen",
         "read": "Schlägt nach",
@@ -2167,26 +2219,56 @@
         "failed": "Das Konto konnte nicht umbenannt werden. Versuche es erneut."
       },
       "browseAll": "Alle Konnektoren ansehen",
-      "filters": {
-        "all": "Alle",
-        "connected": "Verbunden",
-        "disconnected": "Getrennt"
-      },
-      "filterLabel": "Konnektoren filtern",
-      "capabilityChip": {
-        "sync": "Synchronisiert ins Wissen",
-        "tools": "Gibt Agenten Tools"
-      },
       "injection": {
         "flagged": "Mögliche Prompt-Injection",
         "notice_one": "Die Beschreibung von {{formatted}} Aktion liest sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst.",
         "notice_other": "Die Beschreibungen von {{formatted}} Aktionen lesen sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst."
       },
       "syncContent": "Inhalte synchronisieren",
-      "openInKnowledge": "Im Wissen öffnen"
+      "openInKnowledge": "Im Wissen öffnen",
+      "capabilityShort": {
+        "sync": "Synchronisiert",
+        "read": "Sucht",
+        "write": "Handelt"
+      },
+      "capabilityFilters": {
+        "all": "Alle",
+        "sync": "Wissen",
+        "tools": "Tools"
+      },
+      "capabilityFilterLabel": "Nach Funktion filtern",
+      "statusFilters": {
+        "all": "Jeder Status",
+        "reconnect": "Anmeldung nötig",
+        "connected": "Verbunden",
+        "available": "Nicht verbunden"
+      },
+      "statusFilterLabel": "Nach Status filtern",
+      "sections": {
+        "reconnect": "Anmeldung nötig",
+        "connected": "Verbunden",
+        "available": "Verfügbar"
+      },
+      "addCustomDescription": "Einen Server oder eine API verbinden, die nicht im Katalog ist."
     },
     "insights": {
       "label": "Einblicke"
+    },
+    "usage": {
+      "agents_one": "Von {{formatted}} Agenten verwendet",
+      "agents_other": "Von {{formatted}} Agenten verwendet",
+      "others_one": "und {{formatted}} weiterer in deinen Teams",
+      "others_other": "und {{formatted}} weitere in deinen Teams",
+      "agentsShort_one": "{{formatted}} Agent",
+      "agentsShort_other": "{{formatted}} Agenten",
+      "filters": {
+        "all": "Jede Nutzung",
+        "inUse": "In Verwendung",
+        "unused": "Unbenutzt"
+      },
+      "filterLabel": "Nach Verwendung filtern",
+      "inChatsOn": "In meinen Chats an",
+      "inChatsOff": "In meinen Chats aus"
     }
   },
   "modals": {
@@ -2407,8 +2489,7 @@
       "learnAboutPrompts": "Mehr über Prompts erfahren →",
       "publicPromptEditDisabled": "Öffentliche Prompts können nicht bearbeitet werden",
       "promptTypePublic": "öffentlich",
-      "promptTypePrivate": "privat",
-      "delete": "Löschen"
+      "promptTypePrivate": "privat"
     },
     "chunk": {
       "add": "Chunk hinzufügen",
@@ -2552,11 +2633,9 @@
     },
     "sources": {
       "title": "Quellen",
-      "text": "Wissen auswählen",
       "link": "Quellen-Link",
       "view_more_one": "{{count}} weitere Quelle",
       "view_more_other": "{{count}} weitere Quellen",
-      "noSourcesAvailable": "Noch kein Wissen",
       "selectedCount": "{{count}} ausgewählt",
       "triggerLabel_one": "Wissen, {{formatted}} ausgewählt",
       "triggerLabel_other": "Wissen, {{formatted}} ausgewählt",
@@ -2982,22 +3061,11 @@
         "historyLimitDefault": "Zusammenfassung nahe am Kontextlimit"
       },
       "sourcePopup": {
-        "title": "Wissen auswählen",
-        "searchPlaceholder": "Wissen durchsuchen...",
-        "noOptionsMessage": "Noch kein Wissen",
-        "groupOwn": "Deine Quellen",
-        "groupTeam": "Mit dem Team geteilt",
+        "searchPlaceholder": "Wissen durchsuchen…",
         "noSourceHint": "Optional. Ohne Wissen antwortet der Agent nur mit dem Modell und seinen Werkzeugen."
       },
       "toolsPopup": {
-        "title": "Werkzeuge auswählen",
-        "searchPlaceholder": "Werkzeuge suchen...",
-        "noOptionsMessage": "Keine Werkzeuge verfügbar",
-        "groupBuiltin": "Integriert",
-        "groupDefault": "Integriert",
         "groupCustom": "Benutzerdefiniert",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "An diesem Agenten",
         "attachedHint": "Von jemand anderem hinzugefügt. Du kannst es entfernen."
       },
       "modelsPopup": {
@@ -3288,6 +3356,11 @@
           "description": "Es kann sich überschneiden und hat daher eigene Ergebnisse. Sie verschwinden aus den Einblicken und Protokollen; wird es erneut hinzugefügt, beginnt es von vorn.",
           "submit": "Entfernen"
         }
+      },
+      "leave": {
+        "title": "Ohne Speichern verlassen?",
+        "description": "Deine Änderungen hier gehen verloren.",
+        "submit": "Verlassen"
       }
     },
     "logs": {
@@ -3881,7 +3954,8 @@
     },
     "multiSelect": {
       "more_one": "+{{count}} weitere",
-      "more_other": "+{{count}} weitere"
+      "more_other": "+{{count}} weitere",
+      "selectedGroup": "Ausgewählt"
     }
   },
   "pageNotFound": {

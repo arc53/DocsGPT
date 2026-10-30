@@ -1,11 +1,9 @@
-import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
 import {
   confirmTakeOver,
   NO_AUDIENCE,
   readSponsorRefusal,
   saveWithSponsorConsent,
-  withAttachedOptions,
-  withAttachedToolRows,
+  unlistedAttachedTools,
 } from './sponsorConsent';
 
 const json = (status: number, body: unknown) =>
@@ -61,33 +59,24 @@ describe('readSponsorRefusal', () => {
   });
 });
 
-describe('withAttachedToolRows', () => {
-  const labels = { group: 'On this agent', description: 'Remove only' };
-  const listed: MultiSelectPopoverItem[] = [
-    { id: 'mine', label: 'My tool', group: 'Custom' },
-  ];
+describe('unlistedAttachedTools', () => {
+  const listed = [{ id: 'mine' }];
 
-  it('adds a removable row for an attached tool the caller cannot list', () => {
-    const items = withAttachedToolRows(
-      listed,
-      [
-        { id: 'mine', name: 'api_tool', display_name: 'My tool' },
-        { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
-      ],
-      labels,
-    );
-    expect(items.map((item) => item.id)).toEqual(['mine', 'owners']);
-    const locked = items[1];
-    expect(locked.label).toBe('Owner Jira');
-    expect(locked.group).toBe('On this agent');
-    expect(locked.description).toBe('Remove only');
-    expect(locked.disabled).toBeFalsy();
+  it('keeps an attached tool the caller cannot list', () => {
+    const tools = unlistedAttachedTools(listed, [
+      { id: 'mine', name: 'api_tool', display_name: 'My tool' },
+      { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
+    ]);
+    expect(tools).toEqual([
+      { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
+    ]);
   });
 
-  it('keeps one row per tool when it is listed or repeated', () => {
+  it('keeps one per tool when it is repeated', () => {
     const tool = { id: 'owners', name: 'jira', display_name: 'Owner Jira' };
-    const items = withAttachedToolRows(listed, [tool, tool], labels);
-    expect(items.map((item) => item.id)).toEqual(['mine', 'owners']);
+    expect(
+      unlistedAttachedTools(listed, [tool, tool]).map((item) => item.id),
+    ).toEqual(['owners']);
   });
 });
 
@@ -156,34 +145,6 @@ describe('saveWithSponsorConsent', () => {
     const failure = json(400, { success: false, error: 'Workflow invalid' });
     const send = vi.fn(async () => failure);
     expect(await saveWithSponsorConsent(send, vi.fn())).toBe(failure);
-  });
-});
-
-describe('withAttachedOptions', () => {
-  // The chip shows the plain name; only the list row says who added it.
-  it('adds a plainly named option, marked in its description, for a selected id the caller cannot list', () => {
-    const options = withAttachedOptions(
-      [{ value: 'mine', label: 'Mine' }],
-      [
-        { id: 'owners', label: 'Owner tool' },
-        { id: 'unselected', label: 'Elsewhere' },
-      ],
-      ['mine', 'owners'],
-      'Added by someone else',
-    );
-    expect(options).toEqual([
-      { value: 'mine', label: 'Mine' },
-      {
-        value: 'owners',
-        label: 'Owner tool',
-        description: 'Added by someone else',
-      },
-    ]);
-  });
-
-  it('falls back to the id when no name is known', () => {
-    const options = withAttachedOptions([], [], ['x1'], 'd');
-    expect(options).toEqual([{ value: 'x1', label: 'x1', description: 'd' }]);
   });
 });
 

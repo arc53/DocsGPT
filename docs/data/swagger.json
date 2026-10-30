@@ -131,6 +131,21 @@
       ],
       "type": "object"
     },
+    "BulkDeleteSourcesModel": {
+      "properties": {
+        "ids": {
+          "description": "Source ids to delete, at most 100",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "type": "object"
+    },
     "BulkMoveAgents": {
       "properties": {
         "agent_ids": {
@@ -303,7 +318,7 @@
           "type": "string"
         },
         "prompt_id": {
-          "description": "Prompt ID",
+          "description": "Prompt id, or a preset: default, creative or strict",
           "type": "string"
         },
         "request_limit": {
@@ -1266,6 +1281,21 @@
       ],
       "type": "object"
     },
+    "SourcesUsageModel": {
+      "properties": {
+        "ids": {
+          "description": "Source ids, at most 1000",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "type": "object"
+    },
     "SpeechToTextModel": {
       "properties": {
         "file": {
@@ -1453,7 +1483,7 @@
           "type": "string"
         },
         "prompt_id": {
-          "description": "Prompt ID",
+          "description": "Prompt id, or a preset: default, creative or strict",
           "type": "string"
         },
         "request_limit": {
@@ -1682,6 +1712,18 @@
         "file",
         "name",
         "user"
+      ],
+      "type": "object"
+    },
+    "UserPreferencesModel": {
+      "properties": {
+        "chat_prompt_id": {
+          "description": "The prompt chats use: default, creative, strict, or the id of a prompt the caller can read",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chat_prompt_id"
       ],
       "type": "object"
     },
@@ -5718,6 +5760,33 @@
         ]
       }
     },
+    "/api/sources/delete": {
+      "post": {
+        "description": "Deletes several sources, each as GET /api/delete_old would (the same access check, index lock and cleanup). Answers 200 with {deleted: [ids], failed: [{id, error, code}]} even when some fail; code is not_found, forbidden, source_busy or failed. A missing or malformed ids list (empty, not strings, more than 100) is 400.",
+        "operationId": "post_bulk_delete_sources",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/BulkDeleteSourcesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:write"
+        ]
+      }
+    },
     "/api/sources/from_attachments": {
       "post": {
         "description": "Creates a Knowledge source from chat attachments the caller already uploaded. The stored originals are copied into a new source and ingested like an upload (a zip contributes its files); the files together may not exceed the upload request limit (413). Returns the source id and the ingest task id; progress arrives as ``source.ingest.*`` events for that source id. Honors an optional ``Idempotency-Key`` header: a repeat request with the same key within 24h returns the first request's source and task ids without copying the files or queueing a second ingest.",
@@ -5747,8 +5816,52 @@
     },
     "/api/sources/paginated": {
       "get": {
-        "description": "Get document with pagination, sorting and filtering",
+        "description": "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` (the agents using it). ``kind_counts`` counts every kind with the search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search and kind filters applied.",
         "operationId": "get_paginated_sources",
+        "parameters": [
+          {
+            "description": "Page number, from 1",
+            "in": "query",
+            "name": "page",
+            "type": "string"
+          },
+          {
+            "description": "Rows per page",
+            "in": "query",
+            "name": "rows",
+            "type": "string"
+          },
+          {
+            "description": "date (default), name, tokens, type, created_at or updated_at",
+            "in": "query",
+            "name": "sort",
+            "type": "string"
+          },
+          {
+            "description": "asc or desc (default)",
+            "in": "query",
+            "name": "order",
+            "type": "string"
+          },
+          {
+            "description": "Substring of the name, case-insensitive",
+            "in": "query",
+            "name": "search",
+            "type": "string"
+          },
+          {
+            "description": "all (default), files, websites, synced, wikis, or shared (sources a team shares with the caller, of any kind)",
+            "in": "query",
+            "name": "kind",
+            "type": "string"
+          },
+          {
+            "description": "all (default), in_use (some agent uses it) or unused",
+            "in": "query",
+            "name": "usage",
+            "type": "string"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
@@ -5786,6 +5899,33 @@
         ],
         "x-pat-scopes": [
           "sources:write"
+        ]
+      }
+    },
+    "/api/sources/usage": {
+      "post": {
+        "description": "The agents that use any of the given sources, each counted once: {agents: [{id, name, agent_type}], others: n}, as used_by on the listings but for the whole set, so a bulk delete can say how many agents lose something. Ids the caller can't see are ignored. A missing or malformed ids list (empty, not strings, more than 1000) is 400.",
+        "operationId": "post_sources_usage",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SourcesUsageModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
         ]
       }
     },
@@ -7164,6 +7304,50 @@
         ],
         "x-pat-scopes": [
           "models:write"
+        ]
+      }
+    },
+    "/api/user/preferences": {
+      "get": {
+        "description": "The caller's preferences: {success, chat_prompt_id}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller.",
+        "operationId": "get_preferences_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return ``{success, chat_prompt_id}`` for the caller",
+        "tags": [
+          "me"
+        ],
+        "x-pat-scopes": [
+          "prompts:read"
+        ]
+      },
+      "put": {
+        "description": "Set the prompt the caller's chats use. 400 for a value that is neither a preset nor a prompt id; 404 when the caller can't read the prompt.",
+        "operationId": "put_preferences_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UserPreferencesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store ``chat_prompt_id`` after checking the caller may use that prompt",
+        "tags": [
+          "me"
+        ],
+        "x-pat-scopes": [
+          "prompts:write"
         ]
       }
     },

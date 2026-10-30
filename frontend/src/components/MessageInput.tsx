@@ -1,7 +1,7 @@
 import { envVar } from '@/env';
 import { useAvoidToasts } from '@/components/ui/toast-layout';
 import { cn } from '@/lib/utils';
-import { CloudUpload, Database } from 'lucide-react';
+import { CloudUpload } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -45,20 +45,16 @@ import {
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
-import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
-import ToolIcon from './ToolIcon';
-import ConnectorIcon from '../connectors/ConnectorIcon';
+import { toolPickerItems } from './toolPickerItems';
 import {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
-import { toolServiceOf } from '../connectors/toolService';
-import { groupTools } from '../settings/toolGroups';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
@@ -92,7 +88,11 @@ import {
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
-import { sourceItemId, toSourcePickerItems } from '../utils/sourceUtils';
+import { useSourceKindFilter } from '../settings/SourceKindFilter';
+import { useDeviceOnline } from '../hooks/useDeviceOnline';
+import { useToolKindFilter } from '../settings/useToolKindFilter';
+import { sourceItemId } from '../utils/sourceUtils';
+import { toSourcePickerItems } from './sourcePickerItems';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
@@ -1366,17 +1366,19 @@ export default function MessageInput({
     void _docs;
   };
 
+  // The picker's kind filter, back on All each time it opens.
+  const sourceKinds = useSourceKindFilter(sourceDocs, isSourcesPopupOpen);
   const sourceItems: MultiSelectPopoverItem[] = useMemo(
     () =>
-      toSourcePickerItems(
-        sourceDocs,
-        {
+      toSourcePickerItems(sourceKinds.docs, {
+        t,
+        labels: {
           own: t('conversation.sources.groupOwn'),
           team: t('conversation.sources.groupTeam'),
         },
-        <Database />,
-      ),
-    [sourceDocs, t],
+        connections,
+      }),
+    [sourceKinds.docs, t, connections],
   );
 
   const selectedSourceIds = (
@@ -1439,55 +1441,22 @@ export default function MessageInput({
     }
   }, [isToolsPopupOpen, fetchUserTools]);
 
-  // Tools from a connected service sit under that service; the rest are
-  // built in. Groups only appear once some tool comes from a connection.
-  // A teammate's connection is never in the caller's list, so the tool's own
-  // connection id decides, and the service is named from the catalog.
-  const toolService = (tool: UserToolType) =>
-    toolServiceOf(tool, connections, catalog);
-  const anyConnectedTool = userTools.some((tool) => !!tool.connection_id);
-  // Same groups as the Tools page and the agent builder: built in, one per
-  // service, then custom tools (an API tool, an MCP server with no
-  // connection).
-  const toolItems: MultiSelectPopoverItem[] = groupTools(
-    userTools,
+  // Remote devices' online state, asked for when the picker opens.
+  const deviceOnline = useDeviceOnline(isToolsPopupOpen, userTools);
+
+  // The groups the agent builder and the Tools page use: Included, Added,
+  // one per service, then Custom. A teammate's connection is never in the
+  // caller's list, so the tool's own connection id decides, and the
+  // service is named from the catalog.
+  // The picker's kind track (Included · Added · Services · Custom), past
+  // 10 tools; the rows are built from the kind picked.
+  const toolKinds = useToolKindFilter(userTools, isToolsPopupOpen);
+  const toolItems: MultiSelectPopoverItem[] = toolPickerItems(toolKinds.tools, {
+    t,
     connections,
     catalog,
-  )
-    .flatMap((group) => group.tools.map((tool) => ({ tool, group })))
-    .map(({ tool, group }) => {
-      const service = toolService(tool);
-      const connection = service?.connection;
-      return {
-        id: tool.id,
-        label: tool.customName || tool.displayName,
-        icon: service?.icon ? (
-          <ConnectorIcon icon={service.icon} className="size-5" />
-        ) : (
-          <ToolIcon name={tool.name} className="size-5" />
-        ),
-        group: anyConnectedTool
-          ? group.kind === 'service'
-            ? group.service?.name
-            : group.kind === 'custom'
-              ? t('agents.form.toolsPopup.groupCustom')
-              : t('settings.tools.groupBuiltIn')
-          : undefined,
-        // Shared-by line; the sign-in warning below wins when both apply.
-        description:
-          !isOwner(tool) && tool.shared_via
-            ? t('settings.tools.sharedBy', {
-                interpolation: { escapeValue: false },
-                team: tool.shared_via,
-              })
-            : undefined,
-        descriptionNode: connectionNeedsSignIn(connection) ? (
-          <Badge variant="warning">
-            {t('settings.connectors.status.reconnect')}
-          </Badge>
-        ) : undefined,
-      };
-    });
+    deviceOnline,
+  });
   // Each broken connection once, with the tool it would re-sign (an MCP
   // preset keeps its tool rather than gaining a second one).
   const brokenConnections = connections
@@ -1772,6 +1741,7 @@ export default function MessageInput({
                 onToggle={handleToggleSource}
                 selectedDocs={selectedDocs}
                 onUploadClick={handleUploadClick}
+                filters={sourceKinds.filters}
               />
             )}
 
@@ -1783,6 +1753,7 @@ export default function MessageInput({
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
                 loading={toolsLoading}
+                filters={toolKinds.filters}
                 onAddTool={() => setAddToolModalState('ACTIVE')}
                 notice={
                   <SignInAgainNotice

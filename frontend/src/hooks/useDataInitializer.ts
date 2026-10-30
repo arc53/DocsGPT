@@ -7,6 +7,7 @@ import {
   selectConnectorsEnabled,
   setConnectorsEnabled,
 } from '../connectors/connectorsSlice';
+import { fetchChatPromptId, loadChatPrompt } from '../preferences/chatPrompt';
 import { claimLegacySessionTokens } from '../utils/providerUtils';
 import {
   getDocs,
@@ -35,14 +36,18 @@ import type { AppDispatch } from '../store';
  * Custom hook responsible for initializing all application data on mount.
  * This hook handles:
  * - Fetching and setting up source documents
- * - Fetching and setting up prompts
+ * - Fetching and setting up prompts, and the chat prompt the server keeps
  * - Fetching and setting up conversations
  * - Reading which speech features the server has switched on, and whether
  *   conversation insights are, with the insights editor's limits
  *
- * @param isAuthLoading -
+ * @param isAuthLoading - Auth is still resolving; nothing loads until it is done.
+ * @param authType - The server's auth mode (`none`, `simple_jwt`, …), once known.
  */
-export default function useDataInitializer(isAuthLoading: boolean) {
+export default function useDataInitializer(
+  isAuthLoading: boolean,
+  authType?: string | null,
+) {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const conversations = useSelector(selectConversations);
@@ -107,24 +112,36 @@ export default function useDataInitializer(isAuthLoading: boolean) {
     fetchDocs();
   }, [isAuthLoading, token]);
 
-  // Initialize prompts
+  // Initialize prompts and the one chats use. A mode that needs a token
+  // and has none (the sign-in is still to come) asks the server nothing
+  // about the user and keeps default.
+  const signedOut = !token && !!authType && authType !== 'none';
   useEffect(() => {
     // Skip if auth is still loading
     if (isAuthLoading) {
       return;
     }
 
+    let cancelled = false;
     const fetchPromptsData = async () => {
       try {
-        const data = await getPrompts(token);
+        const [data, chatPromptId] = await Promise.all([
+          getPrompts(token),
+          signedOut ? Promise.resolve(null) : fetchChatPromptId(token),
+        ]);
+        if (cancelled) return;
         dispatch(setPrompts(data));
+        await dispatch(loadChatPrompt(chatPromptId, data, token));
       } catch (error) {
         console.error('Failed to fetch prompts:', error);
       }
     };
 
     fetchPromptsData();
-  }, [isAuthLoading, token]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthLoading, token, signedOut]);
 
   // Initialize conversations
   useEffect(() => {

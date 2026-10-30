@@ -493,7 +493,7 @@ export default function ButtonSection() {
       </Example>
       <Example
         title="Segmented control"
-        code='<ToggleGroup type="single" value onValueChange={(v) => v && set(v)}> · the track is built in · sm 38px (forms, page toolbars) · size="xs" 36px (dense panels) · fill when it is the only control on its row · type="multiple" · <ToggleGroupItem count>'
+        code='<ToggleGroup type="single" value onValueChange={(v) => v && set(v)}> · the track is built in · sm 38px (forms, page toolbars) · size="xs" 36px (dense panels) · fill when it is the only control on its row (fill=grow keeps labels whole and scrolls: a picker track) · type="multiple" · <ToggleGroupItem count>'
       >
         <div className="flex flex-col gap-6">
           <div className="flex flex-wrap items-center gap-2">

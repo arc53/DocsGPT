@@ -59,6 +59,19 @@ describe('getActiveItem', () => {
     ).toBe('accessTokens');
   });
 
+  it('lists Prompts in Workspace between Tools and Custom Models', () => {
+    const workspace = SETTINGS_SECTION.groups.find(
+      (group) => group.key === 'workspace',
+    )!;
+    const keys = workspace.items.map((item) => item.key);
+    expect(
+      keys.slice(keys.indexOf('tools'), keys.indexOf('tools') + 3),
+    ).toEqual(['tools', 'prompts', 'customModels']);
+    expect(getActiveItem(SETTINGS_SECTION, '/settings/prompts')?.key).toBe(
+      'prompts',
+    );
+  });
+
   it('keeps the parent item active inside a detail route', () => {
     expect(getActiveItem(SETTINGS_SECTION, '/settings/tools/slack')?.key).toBe(
       'tools',

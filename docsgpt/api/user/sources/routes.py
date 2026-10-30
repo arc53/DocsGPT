@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from docsgpt.agents.tools.path_utils import validate_tool_path
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
-from docsgpt.api.pat.rules import filter_listing
+from docsgpt.api.pat.rules import allowed_ids, filter_listing
 from docsgpt.api.user.tasks import (
     convert_source_to_wiki,
     extract_graph,
@@ -41,6 +41,7 @@ from docsgpt.api.user.sources.upload import (
     _release_claim,
     reingest_idempotency_key,
 )
+from docsgpt.api.user.resource_usage import attach_used_by, combined_usage, empty_usage, is_in_use, used_by_many
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
@@ -192,6 +193,92 @@ def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -
     return entry
 
 
+#: The ``kind`` filter of the paginated listing; ``all`` first.
+SOURCE_KINDS = ("all", "files", "websites", "synced", "wikis", "shared")
+
+#: The ``usage`` filter of the paginated listing.
+USAGE_FILTERS = ("all", "in_use", "unused")
+
+#: Most ids one bulk delete takes.
+BULK_DELETE_MAX = 100
+
+#: Most ids one selection-usage read takes: a selection spans pages, and the
+#: bulk delete sends it in BULK_DELETE_MAX chunks.
+SELECTION_USAGE_MAX = 1000
+
+
+def source_kind(row: dict) -> str:
+    """Which of the content kinds a source is: ``wikis``, ``websites``, ``synced`` or ``files``.
+
+    Mirrors the frontend (``settings/sourceKinds.ts``) so the counts the
+    listing returns match the filter the UI draws. The four kinds partition
+    the sources; a source matching more than one takes the first that fits:
+
+    1. ``wikis``: ``config.kind`` is ``wiki`` or the type is ``wiki``
+       (``isWikiSource``). A wiki never syncs, whatever schedule it kept.
+    2. ``websites``: a Website source, or one made by the url, crawler or
+       sitemap loaders (the rows that carry a ``website`` summary). A
+       website on a schedule stays a website.
+    3. ``synced``: content from a connection or a schedule
+       (``isSyncedSource``): a ``connection_id``, a ``connector*`` type, or a
+       ``sync_frequency`` other than ``never``.
+    4. ``files``: everything else: uploads, a graph source, a remote loader
+       that never syncs.
+
+    ``shared`` is not one of them: it cuts across the four (a team's file is
+    both ``files`` and ``shared``), see :func:`matches_kind`.
+
+    Args:
+        row: A ``sources`` row; only ``type``, ``config``, ``remote_data``,
+            ``sync_frequency`` and ``connection_id`` are read.
+
+    Returns:
+        str: The kind.
+    """
+    try:
+        is_wiki = _is_wiki(row)
+    except Exception:  # noqa: BLE001 - an unreadable config is not a wiki
+        is_wiki = False
+    if is_wiki or row.get("type") == "wiki":
+        return "wikis"
+    try:
+        is_website = config_from_legacy(row.get("type"), row.get("remote_data")) is not None
+    except Exception:  # noqa: BLE001 - as in _website_summary, a bad row is not a website
+        is_website = False
+    if is_website:
+        return "websites"
+    frequency = row.get("sync_frequency")
+    if row.get("connection_id") or str(row.get("type") or "").startswith("connector") or (
+        frequency and frequency != "never"
+    ):
+        return "synced"
+    return "files"
+
+
+def matches_kind(kind: str, content_kind: str, shared: bool) -> bool:
+    """Whether a source passes the listing's ``kind`` filter.
+
+    Args:
+        kind: The filter, one of :data:`SOURCE_KINDS`.
+        content_kind: The source's :func:`source_kind`.
+        shared: Whether a team shares the source with the caller (they don't own it).
+
+    Returns:
+        bool: True for ``all``; for ``shared``, the team's sources of any
+        kind; otherwise the sources of that content kind, own and shared.
+    """
+    if kind == "all":
+        return True
+    if kind == "shared":
+        return shared
+    return content_kind == kind
+
+
+def matches_usage(usage: str, in_use: bool) -> bool:
+    """Whether a source passes the listing's ``usage`` filter (``all``, ``in_use`` or ``unused``)."""
+    return usage == "all" or (usage == "in_use") == in_use
+
+
 @sources_ns.route("/sources")
 class CombinedJson(Resource):
     @api.doc(description="Provide JSON file with combined available indexes")
@@ -208,13 +295,15 @@ class CombinedJson(Resource):
         try:
             with db_readonly() as conn:
                 repo = SourcesRepository(conn)
-                indexes = repo.list_for_user(user)
-                owned_ids = {str(i["id"]) for i in indexes}
                 # Sources shared with the caller's teams — surfaced here so they
                 # are attachable to the member's own agents (direct sharing).
+                # One query for both, so the team's rows carry ``ingest_status`` too.
                 team_shared = visible_with_access(conn, user, "source")
-                shared_ids = [sid for sid in team_shared if sid not in owned_ids]
-                shared_sources = repo.list_by_ids(shared_ids)
+                rows = repo.list_for_user(user, extra_ids=list(team_shared))
+                indexes = [r for r in rows if str(r.get("user_id")) == str(user)]
+                owned_ids = {str(i["id"]) for i in indexes}
+                shared_sources = [r for r in rows if str(r["id"]) not in owned_ids]
+                shared_ids = [str(r["id"]) for r in shared_sources]
                 switches = settings_many(conn, "source", [*owned_ids, *shared_ids])
             # list_for_user sorts by created_at DESC; legacy shape sorted by
             # "date" DESC. Both are monotonic on creation so the ordering is
@@ -248,6 +337,8 @@ class CombinedJson(Resource):
                     # to this list, and a website source opens as one.
                     "website": _website_summary(index),
                     "files": _file_count(index),
+                    # As in the paginated listing (SourcesRepository.list_for_user).
+                    "ingestStatus": index.get("ingest_status"),
                 }
                 return _with_access(
                     entry,
@@ -265,15 +356,40 @@ class CombinedJson(Resource):
                         team_access=team_shared.get(str(index["id"])),
                     )
                 )
+            data = filter_listing(request, "sources", data)
+            with db_readonly() as conn:
+                attach_used_by(
+                    conn, user, "source", data,
+                    owned_ids=owned_ids, agent_allowlist=allowed_ids(request, "agents"),
+                )
         except Exception as err:
             current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(filter_listing(request, "sources", data)), 200)
+        return make_response(jsonify(data), 200)
 
 
 @sources_ns.route("/sources/paginated")
 class PaginatedSources(Resource):
-    @api.doc(description="Get document with pagination, sorting and filtering")
+    @api.doc(
+        description=(
+            "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` "
+            "(the agents using it). ``kind_counts`` counts every kind with the search and usage "
+            "filters applied; ``usage_counts`` counts all/in_use/unused with the search and kind "
+            "filters applied."
+        ),
+        params={
+            "page": "Page number, from 1",
+            "rows": "Rows per page",
+            "sort": "date (default), name, tokens, type, created_at or updated_at",
+            "order": "asc or desc (default)",
+            "search": "Substring of the name, case-insensitive",
+            "kind": (
+                "all (default), files, websites, synced, wikis, or shared (sources a team shares "
+                "with the caller, of any kind)"
+            ),
+            "usage": "all (default), in_use (some agent uses it) or unused",
+        },
+    )
     def get(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -284,6 +400,14 @@ class PaginatedSources(Resource):
         page = max(1, int(request.args.get("page", 1)))
         rows_per_page = max(1, int(request.args.get("rows", 10)))
         search_term = request.args.get("search", "").strip() or None
+        kind = request.args.get("kind", "all").strip() or "all"
+        usage = request.args.get("usage", "all").strip() or "all"
+        if kind not in SOURCE_KINDS or usage not in USAGE_FILTERS:
+            return error_response(
+                f"kind must be one of {', '.join(SOURCE_KINDS)}; usage one of {', '.join(USAGE_FILTERS)}",
+                400,
+                code="invalid_filter",
+            )
 
         try:
             with db_readonly() as conn:
@@ -293,9 +417,36 @@ class PaginatedSources(Resource):
                 # by id so count/sort/search/pagination stay correct.
                 team_shared = visible_with_access(conn, user, "source")
                 extra_ids = list(team_shared.keys())
-                total_documents = repo.count_for_user(
-                    user, search_term=search_term, extra_ids=extra_ids,
+                # Kind and usage are judged in Python over every row the search
+                # matches (light columns only); the window is then read in SQL,
+                # narrowed to the ids that pass, so sorting and paging stay there.
+                facets = repo.list_facets_for_user(user, search_term=search_term, extra_ids=extra_ids)
+                ids = [str(row["id"]) for row in facets]
+                used_by = used_by_many(
+                    conn, user, "source", ids,
+                    owned_ids=[str(row["id"]) for row in facets if str(row.get("user_id")) == str(user)],
+                    agent_allowlist=allowed_ids(request, "agents"),
                 )
+                kind_counts = dict.fromkeys(SOURCE_KINDS, 0)
+                usage_counts = dict.fromkeys(USAGE_FILTERS, 0)
+                matching: list[str] = []
+                for row in facets:
+                    sid = str(row["id"])
+                    content_kind = source_kind(row)
+                    shared = str(row.get("user_id")) != str(user)
+                    in_use = is_in_use(used_by.get(sid))
+                    kind_ok = matches_kind(kind, content_kind, shared)
+                    usage_ok = matches_usage(usage, in_use)
+                    if usage_ok:
+                        for name in SOURCE_KINDS:
+                            kind_counts[name] += matches_kind(name, content_kind, shared)
+                    if kind_ok:
+                        for name in USAGE_FILTERS:
+                            usage_counts[name] += matches_usage(name, in_use)
+                    if kind_ok and usage_ok:
+                        matching.append(sid)
+                filtered = kind != "all" or usage != "all"
+                total_documents = len(matching)
                 # Prior in-Python implementation returned ``totalPages = 1``
                 # for empty result sets (``max(1, ceil(0/rows))``); we
                 # preserve that contract so the frontend pager stays stable.
@@ -310,6 +461,7 @@ class PaginatedSources(Resource):
                     sort_field=sort_field,
                     sort_order=sort_order,
                     extra_ids=extra_ids,
+                    only_ids=matching if filtered else None,
                 )
                 switches = settings_many(
                     conn, "source", [str(doc["id"]) for doc in window]
@@ -348,6 +500,7 @@ class PaginatedSources(Resource):
                     "connectionId": _connection_id(doc),
                     "website": _website_summary(doc),
                     "files": _file_count(doc),
+                    "used_by": used_by.get(str(doc["id"])) or empty_usage(),
                 }
                 paginated_docs.append(
                     _with_access(
@@ -361,6 +514,8 @@ class PaginatedSources(Resource):
                 "totalPages": total_pages,
                 "currentPage": effective_page,
                 "paginated": paginated_docs,
+                "kind_counts": kind_counts,
+                "usage_counts": usage_counts,
             }
             return make_response(jsonify(response), 200)
         except Exception as err:
@@ -468,6 +623,37 @@ def _delete_source_unlocked(owner: str, doc: dict, *, actor: Optional[str] = Non
     return True
 
 
+class SourceDeleteFailed(Exception):
+    """A source's delete was authorised but did not go through (its lookup, index, files or row)."""
+
+
+def delete_source_for(user: str, source_id: str) -> None:
+    """Delete a source on a caller's behalf: the one path behind ``delete_old`` and the bulk delete.
+
+    Owner-only unless the owner turned ``editors_can_delete`` on; the row is
+    deleted as the owner either way, holding the source's index lock.
+
+    Args:
+        user: The caller's ``sub``.
+        source_id: The source to delete.
+
+    Raises:
+        AccessDenied: 404 when the caller can't see the source, 403 when their role can't delete it.
+        SourceBusy: A sync or page change holds the source; nothing was deleted.
+        SourceDeleteFailed: The lookup or the delete failed.
+    """
+    try:
+        with db_readonly() as conn:
+            doc, ra = load_source(conn, source_id, user, "delete")
+    except AccessDenied:
+        raise
+    except Exception as err:
+        current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
+        raise SourceDeleteFailed(str(source_id)) from err
+    if not delete_source(ra.owner_id, doc, actor=user, raise_busy=True):
+        raise SourceDeleteFailed(str(source_id))
+
+
 @sources_ns.route("/delete_old")
 class DeleteOldIndexes(Resource):
     @api.doc(
@@ -487,23 +673,124 @@ class DeleteOldIndexes(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
-        # Owner-only unless the owner turned ``editors_can_delete`` on; the
-        # row is deleted as the owner either way.
         try:
-            with db_readonly() as conn:
-                doc, ra = load_source(conn, source_id, user, "delete")
+            delete_source_for(user, source_id)
         except AccessDenied as err:
             return denied_response(err)
-        except Exception as err:
-            current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        try:
-            deleted = delete_source(ra.owner_id, doc, actor=user, raise_busy=True)
         except SourceBusy:
             return _sync_refusal(SOURCE_BUSY, "source_busy", 409)
-        if not deleted:
+        except SourceDeleteFailed:
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
+
+
+@sources_ns.route("/sources/delete")
+class BulkDeleteSources(Resource):
+    bulk_delete_model = api.model(
+        "BulkDeleteSourcesModel",
+        {
+            "ids": fields.List(
+                fields.String, required=True, description=f"Source ids to delete, at most {BULK_DELETE_MAX}"
+            ),
+        },
+    )
+
+    @api.expect(bulk_delete_model)
+    @api.doc(
+        description=(
+            "Deletes several sources, each as GET /api/delete_old would (the same access check, index lock "
+            "and cleanup). Answers 200 with {deleted: [ids], failed: [{id, error, code}]} even when some "
+            "fail; code is not_found, forbidden, source_busy or failed. A missing or malformed ids list "
+            f"(empty, not strings, more than {BULK_DELETE_MAX}) is 400."
+        )
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        body = request.get_json(silent=True)
+        ids = body.get("ids") if isinstance(body, dict) else None
+        if (
+            not isinstance(ids, list)
+            or not ids
+            or len(ids) > BULK_DELETE_MAX
+            or not all(isinstance(i, str) and i.strip() for i in ids)
+        ):
+            return error_response(
+                f"ids must be a list of 1 to {BULK_DELETE_MAX} source ids", 400, code="invalid_ids"
+            )
+        deleted: list[str] = []
+        failed: list[dict] = []
+        for source_id in dict.fromkeys(i.strip() for i in ids):
+            try:
+                delete_source_for(user, source_id)
+            except AccessDenied as err:
+                code = "forbidden" if err.status == 403 else "not_found"
+                failed.append({"id": source_id, "error": err.message, "code": code})
+                continue
+            except SourceBusy:
+                failed.append({"id": source_id, "error": SOURCE_BUSY, "code": "source_busy"})
+                continue
+            except Exception as err:  # noqa: BLE001 - one failure must not stop the rest
+                current_app.logger.error(f"Error deleting source {source_id}: {err}", exc_info=True)
+                failed.append({"id": source_id, "error": "The source could not be deleted", "code": "failed"})
+                continue
+            deleted.append(source_id)
+        return make_response(jsonify({"deleted": deleted, "failed": failed}), 200)
+
+
+@sources_ns.route("/sources/usage")
+class SourcesUsage(Resource):
+    usage_model = api.model(
+        "SourcesUsageModel",
+        {
+            "ids": fields.List(
+                fields.String, required=True, description=f"Source ids, at most {SELECTION_USAGE_MAX}"
+            ),
+        },
+    )
+
+    @api.expect(usage_model)
+    @api.doc(
+        description=(
+            "The agents that use any of the given sources, each counted once: {agents: [{id, name, "
+            "agent_type}], others: n}, as used_by on the listings but for the whole set, so a bulk delete "
+            "can say how many agents lose something. Ids the caller can't see are ignored. A missing or "
+            f"malformed ids list (empty, not strings, more than {SELECTION_USAGE_MAX}) is 400."
+        )
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        body = request.get_json(silent=True)
+        ids = body.get("ids") if isinstance(body, dict) else None
+        if (
+            not isinstance(ids, list)
+            or not ids
+            or len(ids) > SELECTION_USAGE_MAX
+            or not all(isinstance(i, str) and i.strip() for i in ids)
+        ):
+            return error_response(
+                f"ids must be a list of 1 to {SELECTION_USAGE_MAX} source ids", 400, code="invalid_ids"
+            )
+        wanted = {i.strip().lower() for i in ids}
+        try:
+            with db_readonly() as conn:
+                team_shared = visible_with_access(conn, user, "source")
+                rows = SourcesRepository(conn).list_facets_for_user(user, extra_ids=list(team_shared.keys()))
+                visible = [row for row in rows if str(row["id"]).lower() in wanted]
+                usage = combined_usage(
+                    conn, user, "source", [str(row["id"]) for row in visible],
+                    owned_ids=[str(row["id"]) for row in visible if str(row.get("user_id")) == str(user)],
+                    agent_allowlist=allowed_ids(request, "agents"),
+                )
+        except Exception as err:
+            current_app.logger.error(f"Error reading source usage: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(usage), 200)
 
 
 @sources_ns.route("/combine")

@@ -1,7 +1,7 @@
 ---
 title: Add Knowledge
 description: Add files, web pages, whole websites, GitHub repositories and synced services to DocsGPT Knowledge, keep them up to date, and use them in chats and agents.
-lastUpdated: 2026-10-24
+lastUpdated: 2026-10-31
 ---
 
 import { Callout } from 'nextra/components'
@@ -158,6 +158,15 @@ For a private repository, use **Connect GitHub** in the form, or **Pick a reposi
 
 ## Manage your knowledge
 
+The Knowledge page shows each source as a card: an icon for its kind, a line of details (such as its site and pages, or the account it syncs from, with when it last synced), a badge when it needs you (**Indexing failed**, **Indexing…**, **Reconnect**), and a last line with its size, your role on a shared source, and **N agents** when agents use it; click that for a list of links to the agents. To narrow the list:
+
+- **All**, **Files**, **Websites**, **Synced**, **Wikis** and **Shared** filter by kind. **Synced** is content from a connection or on a sync schedule; **Shared** is what teams shared with you, of any kind.
+- The **Any use** menu beside them shows only the sources an agent uses (**In use**) or none does (**Unused**).
+
+With no search or filter, page 1 opens with **Needs attention**: sources whose ingest failed and those whose connection needs **Reconnect**. **All knowledge** follows with the rest, led by any synced service still indexing its first copy.
+
+Deleting many sources at once is API-only: `POST /api/sources/delete` with a list of `ids`. See the [REST API reference](/API/reference).
+
 Each source on the Knowledge page has a menu. Which items appear depends on the source type and on your access to it:
 
 - **View** opens the source's files and chunks. If you can edit the source, you can edit, add and delete chunks. While a sync or a page change runs on the source, a chunk change waits a few seconds, then is refused with "Another change to this source is running. Try again once it’s done."
@@ -185,7 +194,9 @@ To build a knowledge graph over a source, see [GraphRAG](/Sources/GraphRAG).
 
 ## Use knowledge in chats and agents
 
-- **In a chat without an agent**, click **Knowledge** in the composer and select one or more sources. Answers draw on the chunks retrieved from them and cite them. The menu's footer has **Go to Knowledge**, **Connect more** (the connectors that sync into Knowledge) and **Upload new**.
+- **In a chat without an agent**, click **Knowledge** in the composer and select one or more sources. Answers draw on the chunks retrieved from them and cite them. The menu's footer has **Go to Knowledge** and **Upload new**.
 - **In an agent**, pick sources in the agent builder's **Knowledge** field (**Select knowledge**). Knowledge is optional: without it, the agent answers from the model and its tools. When you chat with an agent, the composer hides the Knowledge button because the agent uses its own. See [Agents](/Agents/basics).
+
+Both pickers show an icon for each source's kind and the same details line as its card, with a badge when its ingest failed or is running, or its connection needs **Reconnect**. The sources already selected come first, under **Selected**, and the same kind filter (**All**, **Files**, **Websites**, **Synced**, **Wikis**, **Shared**) narrows the list once you have more than 10 sources. When teams share sources with you, they are listed under **Shared with team**, after **Yours**.
 
 **Attach** in the composer is different. It adds a file to the current conversation only. To reuse a file across chats and agents, add it to Knowledge instead.

@@ -134,10 +134,9 @@
     "label": "Configuración",
     "general": {
       "label": "General",
-      "subtitle": "Elige el aspecto de DocsGPT, el idioma que usa y el prompt de tus chats.",
+      "subtitle": "Elige el aspecto de DocsGPT y el idioma que usa.",
       "sections": {
         "appearance": "Apariencia",
-        "chat": "Chat",
         "dangerZone": "Zona de peligro"
       },
       "theme": "Tema",
@@ -147,8 +146,6 @@
       "light": "Claro",
       "dark": "Oscuro",
       "chunks": "Fragmentos procesados por consulta",
-      "prompt": "Prompt Activo",
-      "promptDescription": "El prompt del sistema para los chats sin agente. Los agentes usan el suyo.",
       "deleteAllLabel": "Eliminar todas las conversaciones",
       "deleteAllDescription": "Elimina de forma permanente todas las conversaciones de tu cuenta. No se puede deshacer.",
       "addNew": "Añadir Nuevo",
@@ -158,18 +155,7 @@
       "medium": "Medio",
       "high": "Alto",
       "unlimited": "Ilimitado",
-      "default": "Predeterminado",
-      "add": "Añadir",
-      "promptActions": {
-        "select": "Selecciona un prompt",
-        "edit": "Editar prompt",
-        "view": "Ver prompt",
-        "duplicate": "Duplicar prompt",
-        "delete": "Eliminar prompt",
-        "deleteFailed": "No se pudo eliminar este prompt.",
-        "saveFailed": "No se pudo guardar este prompt.",
-        "editConflict": "Otra persona cambió este prompt. Vuelve a abrirlo para ver su versión."
-      }
+      "default": "Predeterminado"
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
@@ -180,7 +166,7 @@
       "type": "Tipo",
       "tokenUsage": "Uso de Tokens",
       "noData": "Aún no hay conocimiento",
-      "searchPlaceholder": "Buscar...",
+      "searchPlaceholder": "Buscar conocimiento…",
       "addNew": "Agregar Nuevo",
       "addSource": "Añadir conocimiento",
       "addChunk": "Agregar fragmento",
@@ -723,7 +709,23 @@
       "viaConnectionFiles_many": "mediante {{name}} · {{files}} archivos",
       "item": {
         "tokens": "{{tokens}} tokens"
-      }
+      },
+      "tokenCount": "{{tokens}} tokens",
+      "kinds": {
+        "all": "Todas",
+        "files": "Archivos",
+        "websites": "Sitios web",
+        "synced": "Sincronizadas",
+        "wikis": "Wikis",
+        "shared": "Compartidas"
+      },
+      "kindFilterLabel": "Filtrar por tipo",
+      "needsAttention": "Requiere atención",
+      "allKnowledge": "Todo el conocimiento",
+      "deleteUsedBy_one": "La usa {{formatted}} agente, que la perderá. También se eliminan sus archivos y fragmentos. No se puede deshacer.",
+      "deleteUsedBy_other": "La usan {{formatted}} agentes, que la perderán. También se eliminan sus archivos y fragmentos. No se puede deshacer.",
+      "deleteUsedBy_many": "La usan {{formatted}} agentes, que la perderán. También se eliminan sus archivos y fragmentos. No se puede deshacer.",
+      "noKnowledgeFound": "No se encontró conocimiento"
     },
     "analytics": {
       "label": "Analítica",
@@ -1512,8 +1514,8 @@
     },
     "tools": {
       "label": "Herramientas",
-      "subtitle": "Acciones que pueden realizar tus agentes. Aquí están las herramientas integradas. Las herramientas de un servicio conectado se agrupan bajo ese servicio.",
-      "searchPlaceholder": "Buscar...",
+      "subtitle": "Acciones que pueden realizar tus agentes. Las herramientas incluidas vienen con DocsGPT. Las herramientas de un servicio conectado se agrupan bajo ese servicio.",
+      "searchPlaceholder": "Buscar herramientas…",
       "addTool": "Añadir herramienta",
       "noToolsFound": "No se encontraron herramientas",
       "selectToolSetup": "Añadir una herramienta",
@@ -1656,13 +1658,70 @@
       "triggerLabel_other": "Herramientas, {{formatted}} seleccionadas",
       "triggerLabel_many": "Herramientas, {{formatted}} seleccionadas",
       "manageInConnectors": "Gestionar en Conectores",
-      "defaultBadge": "Predeterminada",
       "noToolsYet": "Aún no hay herramientas",
       "connectService": "Conectar un servicio",
       "filledBy": "Completado por",
       "loadError": "No se pudieron cargar tus herramientas.",
       "deleteConsequence": "También se eliminan su configuración y sus acciones. No se puede deshacer.",
-      "deleteActionConsequence": "Se elimina cuando guardes la herramienta."
+      "deleteActionConsequence": "Se elimina cuando guardes la herramienta.",
+      "groupIncluded": "Incluidas",
+      "groupAdded": "Añadidas",
+      "filters": {
+        "all": "Todas"
+      },
+      "deleteUsedBy_one": "La usa {{formatted}} agente, que la perderá. También se eliminan su configuración y sus acciones. No se puede deshacer.",
+      "deleteUsedBy_other": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer.",
+      "deleteUsedBy_many": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer.",
+      "groupServices": "Servicios",
+      "kindFilterLabel": "Filtrar por tipo"
+    },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "Los prompts del sistema indican al modelo cómo responder. El que elijas se usa en los chats sin agente; los agentes eligen el suyo.",
+      "searchPlaceholder": "Buscar prompts…",
+      "addPrompt": "Añadir prompt",
+      "manage": "Ir a Prompts",
+      "select": "Selecciona un prompt",
+      "filters": {
+        "all": "Todos"
+      },
+      "sections": {
+        "included": "Incluidos",
+        "yours": "Tuyos",
+        "shared": "Compartidos con el equipo"
+      },
+      "presets": {
+        "default": "Responde a partir de tus documentos y los cita. Si no cubren la pregunta, lo dice y responde con conocimiento general.",
+        "creative": "Como default, con ideas, ejemplos y enfoques imaginativos, sin perder la exactitud de los hechos.",
+        "strict": "Responde solo a partir de tus documentos, herramientas y el chat. Dice qué falta en lugar de suponer."
+      },
+      "chatPromptLabel": "Prompt para los chats sin agente",
+      "useInChats": "Usar {{name}} en los chats",
+      "chatPromptFailed": "No se pudo cambiar el prompt de tus chats.",
+      "actions": "Acciones de {{name}}",
+      "edit": "Editar",
+      "view": "Ver",
+      "duplicate": "Duplicar",
+      "shareWithTeam": "Compartir con el equipo",
+      "delete": "Eliminar",
+      "deleteUsedBy_one": "Lo usa {{formatted}} agente, que volverá al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedBy_other": "Lo usan {{formatted}} agentes, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedBy_many": "Lo usan {{formatted}} agentes, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedByInChats_one": "Lo usan {{formatted}} agente y tus chats, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedByInChats_other": "Lo usan {{formatted}} agentes y tus chats, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedByInChats_many": "Lo usan {{formatted}} agentes y tus chats, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteInChats": "Lo usan tus chats, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteFailed": "No se pudo eliminar este prompt.",
+      "saveFailed": "No se pudo guardar este prompt.",
+      "editConflict": "Otra persona cambió este prompt. Vuelve a abrirlo para ver su versión.",
+      "loadError": "No se pudieron cargar tus prompts.",
+      "noPromptsFound": "No se encontraron prompts",
+      "kinds": {
+        "shared": "Compartidos"
+      },
+      "kindFilterLabel": "Filtrar por tipo",
+      "chatPromptOn": "Se usa en chats sin agente",
+      "chatPromptOff": "Usar en chats sin agente"
     },
     "devices": {
       "label": "Dispositivos",
@@ -2181,9 +2240,6 @@
         "ownerWarningNoAccount": "Los miembros del equipo actuarán con tu cuenta de {{name}}."
       },
       "createFailed": "No se pudo añadir el conector. Inténtalo de nuevo.",
-      "capabilityFilter": {
-        "clear": "Mostrar todos los conectores"
-      },
       "capabilityPlain": {
         "sync": "Sincroniza en Conocimiento",
         "read": "Consulta datos",
@@ -2244,16 +2300,6 @@
         "failed": "No se pudo cambiar el nombre de la cuenta. Inténtalo de nuevo."
       },
       "browseAll": "Ver todos los conectores",
-      "filters": {
-        "all": "Todos",
-        "connected": "Conectados",
-        "disconnected": "Desconectados"
-      },
-      "filterLabel": "Filtrar conectores",
-      "capabilityChip": {
-        "sync": "Sincroniza en Conocimiento",
-        "tools": "Da herramientas a los agentes"
-      },
       "injection": {
         "flagged": "Posible inyección de prompt",
         "notice_one": "La descripción de {{formatted}} acción parece contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísala en Personalizar antes de permitirla.",
@@ -2261,10 +2307,53 @@
         "notice_other": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas."
       },
       "syncContent": "Sincronizar contenido",
-      "openInKnowledge": "Abrir en Conocimiento"
+      "openInKnowledge": "Abrir en Conocimiento",
+      "capabilityShort": {
+        "sync": "Sincroniza",
+        "read": "Consulta",
+        "write": "Actúa"
+      },
+      "capabilityFilters": {
+        "all": "Todos",
+        "sync": "Conocimiento",
+        "tools": "Herramientas"
+      },
+      "capabilityFilterLabel": "Filtrar por función",
+      "statusFilters": {
+        "all": "Cualquier estado",
+        "reconnect": "Requiere iniciar sesión",
+        "connected": "Conectados",
+        "available": "Sin conectar"
+      },
+      "statusFilterLabel": "Filtrar por estado",
+      "sections": {
+        "reconnect": "Requiere iniciar sesión",
+        "connected": "Conectados",
+        "available": "Disponibles"
+      },
+      "addCustomDescription": "Conecta un servidor o una API que no está en el catálogo."
     },
     "insights": {
       "label": "Información"
+    },
+    "usage": {
+      "agents_one": "En uso en {{formatted}} agente",
+      "agents_other": "En uso en {{formatted}} agentes",
+      "agents_many": "En uso en {{formatted}} agentes",
+      "others_one": "y {{formatted}} más en tus equipos",
+      "others_other": "y {{formatted}} más en tus equipos",
+      "others_many": "y {{formatted}} más en tus equipos",
+      "agentsShort_one": "{{formatted}} agente",
+      "agentsShort_other": "{{formatted}} agentes",
+      "agentsShort_many": "{{formatted}} agentes",
+      "filters": {
+        "all": "Cualquier uso",
+        "inUse": "En uso",
+        "unused": "Sin usar"
+      },
+      "filterLabel": "Filtrar por uso",
+      "inChatsOn": "Activada en mis chats",
+      "inChatsOff": "Desactivada en mis chats"
     }
   },
   "modals": {
@@ -2485,8 +2574,7 @@
       "learnAboutPrompts": "Aprende sobre los Prompts →",
       "publicPromptEditDisabled": "Los prompts públicos no se pueden editar",
       "promptTypePublic": "público",
-      "promptTypePrivate": "privado",
-      "delete": "Eliminar"
+      "promptTypePrivate": "privado"
     },
     "chunk": {
       "add": "Agregar fragmento",
@@ -2632,12 +2720,10 @@
     },
     "sources": {
       "title": "Fuentes",
-      "text": "Elegir conocimiento",
       "link": "Enlace fuente",
       "view_more_one": "Ver {{count}} fuente más",
       "view_more_other": "Ver {{count}} fuentes más",
       "view_more_many": "Ver {{count}} fuentes más",
-      "noSourcesAvailable": "Aún no hay conocimiento",
       "selectedCount": "{{count}} seleccionados",
       "triggerLabel_one": "Conocimiento, {{formatted}} seleccionada",
       "triggerLabel_other": "Conocimiento, {{formatted}} seleccionadas",
@@ -3072,22 +3158,11 @@
         "historyLimitDefault": "Se resume cerca del límite de contexto"
       },
       "sourcePopup": {
-        "title": "Seleccionar conocimiento",
-        "searchPlaceholder": "Buscar conocimiento...",
-        "noOptionsMessage": "Aún no hay conocimiento",
-        "groupOwn": "Tus fuentes",
-        "groupTeam": "Compartidas con el equipo",
+        "searchPlaceholder": "Buscar conocimiento…",
         "noSourceHint": "Opcional. Sin conocimiento, el agente responde solo con el modelo y sus herramientas."
       },
       "toolsPopup": {
-        "title": "Seleccionar Herramientas",
-        "searchPlaceholder": "Buscar herramientas...",
-        "noOptionsMessage": "No hay herramientas disponibles",
-        "groupBuiltin": "Integradas",
-        "groupDefault": "Integradas",
         "groupCustom": "Personalizadas",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "En este agente",
         "attachedHint": "Lo añadió otra persona. Puedes quitarlo."
       },
       "modelsPopup": {
@@ -3383,6 +3458,11 @@
           "description": "Puede solaparse, así que tiene resultados propios. Desaparecen de Información y de los registros, y si vuelves a añadirlo, empieza desde cero.",
           "submit": "Quitar"
         }
+      },
+      "leave": {
+        "title": "¿Salir sin guardar?",
+        "description": "Se perderán los cambios que hiciste aquí.",
+        "submit": "Salir"
       }
     },
     "logs": {
@@ -3989,7 +4069,8 @@
     "multiSelect": {
       "more_one": "+{{count}} más",
       "more_other": "+{{count}} más",
-      "more_many": "+{{count}} más"
+      "more_many": "+{{count}} más",
+      "selectedGroup": "Seleccionados"
     }
   },
   "pageNotFound": {

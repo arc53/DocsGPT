@@ -1508,6 +1508,17 @@ describe('Sources citation link', () => {
       expect(pendingCard()).toBeUndefined();
     });
 
+    // Indexing needs no one: it leads the list, not Needs attention.
+    it('leads the list outside Needs attention', async () => {
+      await render('/settings/knowledge', [doc()]);
+      expect(container.textContent).not.toContain(
+        'settings.sources.needsAttention',
+      );
+      expect(pendingCard()).toBeDefined();
+      await typeSearch('HAND');
+      expect(pendingCard()).toBeDefined();
+    });
+
     it('shows while its name matches the search', async () => {
       await render('/settings/knowledge', [doc()]);
       await typeSearch('HAND');
@@ -1637,10 +1648,320 @@ describe('Sources citation link', () => {
     const back = viewOf('chunks')!.querySelector('button')!;
     await act(async () => back.click());
     const open = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="settings.sources.viewSource"], [data-slot="card"] > button',
+      // The card's stretched open button: the one plain button in it.
+      'button[aria-label="settings.sources.viewSource"], [data-slot="card"] button[aria-label]:not([data-slot])',
     );
     expect(open).not.toBeNull();
     await act(async () => open!.click());
     expect(viewOf('chunks')?.dataset.linked).toBe('');
+  });
+});
+
+describe('Sources filters and usage', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const KIND_COUNTS = {
+    all: 9,
+    files: 4,
+    websites: 2,
+    synced: 0,
+    wikis: 1,
+    shared: 1,
+  };
+  const USAGE_COUNTS = { all: 9, in_use: 3, unused: 6 };
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchPage.mockReset();
+    fetchPage.mockResolvedValue({
+      docs: [doc()],
+      totalDocuments: 30,
+      totalPages: 3,
+      currentPage: 1,
+      nextCursor: '',
+      kindCounts: KIND_COUNTS,
+      usageCounts: USAGE_COUNTS,
+    });
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  const where = () =>
+    container.querySelector('[data-testid="where"]')!.textContent;
+  const kindItems = () =>
+    Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="toggle-group-item"]',
+      ),
+    );
+
+  it('sends the kind and usage in the address to the listing', async () => {
+    await mount(root, [doc()], {
+      entry: '/settings/knowledge?kind=websites&usage=in_use',
+    });
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'websites',
+      usage: 'in_use',
+    });
+  });
+
+  it("filters by kind with the server's counts, in the address, from page 1", async () => {
+    await mount(root, [doc()], { entry: '/settings/knowledge?page=2' });
+    // An empty kind is left out.
+    expect(
+      kindItems().map((item) => [
+        item.firstChild?.textContent,
+        item.querySelector('[data-slot="count"]')?.textContent,
+      ]),
+    ).toEqual([
+      ['settings.sources.kinds.all', '9'],
+      ['settings.sources.kinds.files', '4'],
+      ['settings.sources.kinds.websites', '2'],
+      ['settings.sources.kinds.wikis', '1'],
+      ['settings.sources.kinds.shared', '1'],
+    ]);
+    // The page toolbar's size.
+    expect(
+      container.querySelector('[data-slot="toggle-group"]')?.className,
+    ).toContain('p-0.75');
+    fetchPage.mockClear();
+    await act(async () =>
+      kindItems()
+        .find(
+          (item) =>
+            item.firstChild?.textContent === 'settings.sources.kinds.websites',
+        )!
+        .click(),
+    );
+    expect(where()).toBe('?kind=websites');
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetchPage.mock.calls[0][2]).toBe(1);
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'websites',
+      usage: 'all',
+    });
+  });
+
+  // One recipe per page: usage is the FilterSelect beside the kind track,
+  // and its default reads Any use, never a second All.
+  it('filters by usage with a pill Select that reads Any use', async () => {
+    await mount(root, [doc()]);
+    const trigger = container.querySelector<HTMLElement>(
+      '[data-slot="select-trigger"][aria-label="settings.usage.filterLabel"]',
+    )!;
+    expect(trigger).not.toBeNull();
+    expect(trigger.getAttribute('data-shape')).toBe('pill');
+    expect(trigger.textContent).toBe('settings.usage.filters.all');
+  });
+
+  it('says no match under a filter, with no way in', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [],
+      totalDocuments: 0,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+      kindCounts: { ...KIND_COUNTS, wikis: 0 },
+      usageCounts: USAGE_COUNTS,
+    });
+    await mount(root, [], { entry: '/settings/knowledge?kind=wikis' });
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('settings.sources.noResults');
+    expect(empty.querySelector('button')).toBeNull();
+  });
+
+  it('says which agents use a source on its card and in its delete confirm', async () => {
+    const used = doc({
+      access: 'owner',
+      allowed_actions: [...OWNER, 'use'],
+      used_by: { agents: [{ id: 'a-1', name: 'Support bot' }], others: 1 },
+    });
+    await mount(root, [used]);
+    const card = container.querySelector('[data-slot="card"]')!;
+    expect(card.textContent).toContain('settings.usage.agents');
+    await openMenu('menu-button-src-1');
+    const item = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'settings.sources.delete')!;
+    await act(async () => item.click());
+    expect(
+      document.querySelector('[role="dialog"] [data-slot="dialog-description"]')
+        ?.textContent,
+    ).toBe('settings.sources.deleteUsedBy');
+  });
+
+  it('keeps facts in the meta line and states in pills', async () => {
+    const shared = doc({
+      id: 'g',
+      name: 'Graph',
+      access: 'viewer',
+      ownership: 'team',
+      tokens: '0',
+      config: { kind: 'graphrag' },
+      ingestStatus: 'failed',
+    } as Partial<Doc>);
+    await mount(root, [shared]);
+    const card = container.querySelector('[data-slot="card"]')!;
+    const meta = Array.from(card.querySelectorAll('[data-slot="meta-item"]'));
+    // No "0" tokens; Graph and the role are facts, not pills.
+    expect(meta.map((item) => item.textContent)).toEqual([
+      'settings.sources.graphrag.badge',
+      'teamAccess.viewer',
+    ]);
+    expect(
+      Array.from(card.querySelectorAll('[data-slot="badge"]')).map(
+        (b) => b.textContent,
+      ),
+    ).toEqual(['settings.sources.ingestFailed']);
+  });
+});
+
+describe('Sources needs attention', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const failed = doc({ id: 'f', name: 'Failed', ingestStatus: 'failed' });
+  const running = doc({ id: 'p', name: 'Running', ingestStatus: 'processing' });
+  const paused = doc({ id: 'r', name: 'Paused', connectionId: 'conn-1' });
+  const fine = doc({ id: 'o', name: 'Fine' });
+
+  beforeEach(() => {
+    fetchPage.mockReset();
+    fetchPage.mockResolvedValue({
+      docs: [fine, failed],
+      totalDocuments: 4,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    withConnection('reconnect_needed');
+    knowledge.docs = [running, fine, paused, failed];
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    knowledge.docs = undefined;
+    connectors.connections = [];
+  });
+
+  /** Each section's eyebrow and the sources it holds, in order. */
+  const sections = () =>
+    Array.from(container.querySelectorAll('section')).map((section) => [
+      section.querySelector('h2')?.textContent ?? null,
+      Array.from(
+        section.querySelectorAll<HTMLButtonElement>(
+          // The card's stretched open button (the controls carry a slot).
+          '[data-slot="card"] button[aria-label]:not([data-slot])',
+        ),
+      ).map((b) => b.getAttribute('aria-label')),
+    ]);
+
+  it('leads page 1 with failed and reconnect sources, listed once', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [fine, failed, running],
+      totalDocuments: 4,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    await mount(root, [fine, failed, running]);
+    // Indexing needs no one, so a running source stays in the list.
+    expect(sections()).toEqual([
+      ['settings.sources.needsAttention2', ['Failed', 'Paused']],
+      ['settings.sources.allKnowledge2', ['Fine', 'Running']],
+    ]);
+  });
+
+  it.each([
+    ['on page 2', '/settings/knowledge?page=2'],
+    ['while filtered', '/settings/knowledge?kind=files'],
+  ])('is not shown %s', async (_, entry) => {
+    fetchPage.mockResolvedValue({
+      docs: [fine, failed],
+      totalDocuments: 30,
+      totalPages: 3,
+      currentPage: entry.includes('page=2') ? 2 : 1,
+      nextCursor: '',
+    });
+    await mount(root, [fine, failed], { entry });
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+  });
+
+  it('is not shown while searching, and the failed card stays in the list', async () => {
+    await mount(root, [fine, failed]);
+    await typeSearch('a');
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+    expect(
+      container.querySelector('button[aria-label="Failed"]'),
+    ).not.toBeNull();
+  });
+});
+
+describe('Sources toolbar', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+  const owned = doc({
+    id: 'a',
+    name: 'Alpha',
+    access: 'owner',
+    allowed_actions: [...OWNER, 'use'],
+  });
+
+  beforeEach(() => {
+    dispatch.mockReset();
+    fetchPage.mockReset();
+    fetchPage.mockResolvedValue({
+      docs: [owned],
+      totalDocuments: 1,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  it('offers Add knowledge alone: no Select mode, the card keeps its menu', async () => {
+    await mount(root, [owned]);
+    const labels = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="page-toolbar"] button',
+      ),
+    ).map((button) => button.textContent);
+    expect(labels).toEqual(['settings.sources.addSource']);
+    expect(container.querySelector('[role="checkbox"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="menu-button-a"]'),
+    ).not.toBeNull();
   });
 });
