@@ -201,18 +201,20 @@ describe('AgentCard menu', () => {
     expect(items.map((i) => i.textContent)).not.toContain('agents.edit');
   });
 
-  it('shows the role on a shared tile as a neutral Users Badge', async () => {
+  it('shows the role on a shared tile in its meta line, not as a pill', async () => {
     await render(agentWith('editor', EDITOR_ACTIONS), 'team');
-    const badge = container.querySelector<HTMLElement>(
-      '[data-testid="role-badge"]',
+    const role = container.querySelector<HTMLElement>(
+      '[data-testid="role-meta"]',
     );
-    expect(badge?.dataset.variant).toBe('neutral');
-    expect(badge?.textContent).toBe('teamAccess.editor');
+    expect(role?.textContent).toBe('teamAccess.editor');
+    expect(role?.closest('[data-slot="card-footer"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull();
   });
 
-  it('shows no role badge on an own agent', async () => {
+  it('shows no role on an own agent', async () => {
     await render(agentWith('owner', OWNER_ACTIONS), 'user');
-    expect(container.querySelector('[data-testid="role-badge"]')).toBeNull();
+    expect(container.querySelector('[data-testid="role-meta"]')).toBeNull();
+    expect(container.querySelector('[data-slot="card-footer"]')).toBeNull();
   });
 
   it('gives a viewer Pin only', async () => {

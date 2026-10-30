@@ -1671,7 +1671,9 @@
       "kinds": {
         "shared": "共享"
       },
-      "kindFilterLabel": "依類型篩選"
+      "kindFilterLabel": "依類型篩選",
+      "chatPromptOn": "用於無代理的聊天",
+      "chatPromptOff": "在無代理的聊天中使用"
     },
     "devices": {
       "label": "裝置",
@@ -2267,7 +2269,6 @@
       "agents_other": "{{formatted}} 個代理正在使用",
       "others_one": "以及你團隊中的另外 {{formatted}} 個",
       "others_other": "以及你團隊中的另外 {{formatted}} 個",
-      "inChats": "用於聊天",
       "agentsShort_one": "{{formatted}} 個代理",
       "agentsShort_other": "{{formatted}} 個代理",
       "filters": {
@@ -2275,7 +2276,9 @@
         "inUse": "使用中",
         "unused": "未使用"
       },
-      "filterLabel": "依使用情況篩選"
+      "filterLabel": "依使用情況篩選",
+      "inChatsOn": "已在我的聊天中啟用",
+      "inChatsOff": "未在我的聊天中啟用"
     }
   },
   "modals": {
@@ -2641,7 +2644,6 @@
       "title": "來源",
       "link": "來源連結",
       "view_more": "查看更多 {{count}} 個來源",
-      "noSourcesAvailable": "還沒有知識",
       "selectedCount": "已選 {{count}} 個",
       "triggerLabel_one": "知識庫，已選 {{formatted}} 個",
       "triggerLabel_other": "知識庫，已選 {{formatted}} 個",
@@ -3061,11 +3063,9 @@
       },
       "sourcePopup": {
         "searchPlaceholder": "搜尋知識…",
-        "noOptionsMessage": "還沒有知識",
         "noSourceHint": "選填。沒有知識時，代理只用模型和它的工具回答。"
       },
       "toolsPopup": {
-        "noOptionsMessage": "沒有可用的工具",
         "groupCustom": "自訂",
         "attachedHint": "由其他人新增。你可以將其移除。"
       },

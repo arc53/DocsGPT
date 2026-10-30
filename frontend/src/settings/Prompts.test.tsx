@@ -243,8 +243,11 @@ describe('Prompts page', () => {
     expect(card('Vendor checks').textContent).toContain(
       'You check vendors before onboarding.',
     );
+    // The role is a fact in the meta line, not a pill.
     expect(
-      card('Deal desk').querySelector('[data-testid="role-badge"]'),
+      card('Deal desk').querySelector(
+        '[data-slot="card-footer"] [data-testid="role-meta"]',
+      ),
     ).not.toBeNull();
   });
 
@@ -254,10 +257,13 @@ describe('Prompts page', () => {
     expect(card('Vendor checks').textContent).toContain(
       'settings.usage.agentsShort:{"count":2,"formatted":"2"}',
     );
-    expect(card('Vendor checks').textContent).toContain(
+    // The radio says it is the chat prompt; no badge repeats it.
+    expect(card('Vendor checks').textContent).not.toContain(
       'settings.usage.inChats',
     );
-    expect(card('default').textContent).not.toContain('settings.usage.inChats');
+    expect(
+      card('Vendor checks').querySelector('[data-slot="badge"]'),
+    ).toBeNull();
     expect(radioOf('Vendor checks').getAttribute('aria-checked')).toBe('true');
     expect(radioOf('default').getAttribute('aria-checked')).toBe('false');
   });
@@ -284,8 +290,8 @@ describe('Prompts page', () => {
       'tok',
     );
     expect(chatPromptId()).toBe('p-idle');
-    expect(card('Escalation summary').textContent).toContain(
-      'settings.usage.inChats',
+    expect(radioOf('Escalation summary').getAttribute('aria-checked')).toBe(
+      'true',
     );
   });
 

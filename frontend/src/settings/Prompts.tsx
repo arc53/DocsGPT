@@ -5,10 +5,16 @@ import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
-import RoleBadge from '../components/RoleBadge';
+import RoleMeta from '../components/RoleMeta';
+import { isOwner } from '../utils/accessUtils';
+import { MetaLine } from '../components/ui/meta-line';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
   Card,
@@ -193,7 +199,10 @@ export default function Prompts() {
           onClick={() => openPrompt(prompt)}
           className="flex w-full min-w-0 cursor-pointer pr-9 text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
         >
-          <CardTitle className="min-w-0 truncate" title={prompt.name}>
+          <CardTitle
+            className="line-clamp-2 min-w-0 wrap-anywhere"
+            title={prompt.name}
+          >
             {prompt.name}
           </CardTitle>
         </button>
@@ -213,24 +222,32 @@ export default function Prompts() {
             {description}
           </CardDescription>
         ) : null}
-        <div className="flex flex-wrap gap-1 empty:hidden">
-          {inChats ? <Badge>{t('settings.usage.inChats')}</Badge> : null}
-          <RoleBadge item={prompt} />
-        </div>
+        {/* Facts in the meta line; the radio says whether it is the chat
+            prompt, with no badge repeating it. */}
         <CardFooter className="mt-auto w-full">
-          {agentUseCount(prompt.used_by) > 0 ? (
-            <span className="relative z-10 min-w-0">
+          <MetaLine className="relative z-10">
+            {isOwner(prompt) ? null : <RoleMeta item={prompt} />}
+            {agentUseCount(prompt.used_by) > 0 ? (
               <UsedByAgents usage={prompt.used_by} />
-            </span>
-          ) : null}
+            ) : null}
+          </MetaLine>
           <span className="relative z-10 ml-auto flex shrink-0">
-            <RadioGroupItem
-              value={prompt.id}
-              aria-label={t('settings.prompts.useInChats', {
-                interpolation: { escapeValue: false },
-                name: prompt.name,
-              })}
-            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <RadioGroupItem
+                  value={prompt.id}
+                  aria-label={t('settings.prompts.useInChats', {
+                    interpolation: { escapeValue: false },
+                    name: prompt.name,
+                  })}
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                {inChats
+                  ? t('settings.prompts.chatPromptOn')
+                  : t('settings.prompts.chatPromptOff')}
+              </TooltipContent>
+            </Tooltip>
           </span>
         </CardFooter>
       </Card>

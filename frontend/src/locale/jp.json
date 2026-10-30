@@ -1671,7 +1671,9 @@
       "kinds": {
         "shared": "共有"
       },
-      "kindFilterLabel": "種類で絞り込む"
+      "kindFilterLabel": "種類で絞り込む",
+      "chatPromptOn": "エージェントなしのチャットで使用中",
+      "chatPromptOff": "エージェントなしのチャットで使用"
     },
     "devices": {
       "label": "デバイス",
@@ -2267,7 +2269,6 @@
       "agents_other": "{{formatted}}件のエージェントで使用",
       "others_one": "ほかにチームで{{formatted}}件",
       "others_other": "ほかにチームで{{formatted}}件",
-      "inChats": "チャットで使用",
       "agentsShort_one": "{{formatted}}件のエージェント",
       "agentsShort_other": "{{formatted}}件のエージェント",
       "filters": {
@@ -2275,7 +2276,9 @@
         "inUse": "使用中",
         "unused": "未使用"
       },
-      "filterLabel": "使用状況で絞り込む"
+      "filterLabel": "使用状況で絞り込む",
+      "inChatsOn": "自分のチャットでオン",
+      "inChatsOff": "自分のチャットでオフ"
     }
   },
   "modals": {
@@ -2641,7 +2644,6 @@
       "title": "ソース",
       "link": "ソースリンク",
       "view_more": "さらに{{count}}個のソース",
-      "noSourcesAvailable": "ナレッジはまだありません",
       "selectedCount": "{{count}} 件選択中",
       "triggerLabel_one": "ナレッジ、{{formatted}} 件選択中",
       "triggerLabel_other": "ナレッジ、{{formatted}} 件選択中",
@@ -3061,11 +3063,9 @@
       },
       "sourcePopup": {
         "searchPlaceholder": "ナレッジを検索…",
-        "noOptionsMessage": "ナレッジはまだありません",
         "noSourceHint": "任意です。ナレッジがない場合、エージェントはモデルとツールだけで回答します。"
       },
       "toolsPopup": {
-        "noOptionsMessage": "利用可能なツールがありません",
         "groupCustom": "カスタム",
         "attachedHint": "他のユーザーが追加しました。削除できます。"
       },

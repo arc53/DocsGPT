@@ -1675,7 +1675,9 @@
       "kinds": {
         "shared": "Shared"
       },
-      "kindFilterLabel": "Filter by kind"
+      "kindFilterLabel": "Filter by kind",
+      "chatPromptOn": "Used in chats without an agent",
+      "chatPromptOff": "Use in chats without an agent"
     },
     "devices": {
       "label": "Devices",
@@ -2276,7 +2278,6 @@
       "agents_other": "Used by {{formatted}} agents",
       "others_one": "and {{formatted}} other on your teams",
       "others_other": "and {{formatted}} others on your teams",
-      "inChats": "In chats",
       "agentsShort_one": "{{formatted}} agent",
       "agentsShort_other": "{{formatted}} agents",
       "filters": {
@@ -2284,7 +2285,9 @@
         "inUse": "In use",
         "unused": "Unused"
       },
-      "filterLabel": "Filter by use"
+      "filterLabel": "Filter by use",
+      "inChatsOn": "On in my chats",
+      "inChatsOff": "Off in my chats"
     }
   },
   "modals": {
@@ -2652,7 +2655,6 @@
       "link": "Source link",
       "view_more_one": "{{count}} more source",
       "view_more_other": "{{count}} more sources",
-      "noSourcesAvailable": "No knowledge yet",
       "selectedCount": "{{count}} selected",
       "triggerLabel_one": "Knowledge, {{formatted}} selected",
       "triggerLabel_other": "Knowledge, {{formatted}} selected",
@@ -3079,11 +3081,9 @@
       },
       "sourcePopup": {
         "searchPlaceholder": "Search knowledge…",
-        "noOptionsMessage": "No knowledge yet",
         "noSourceHint": "Optional. Without knowledge the agent answers from the model and its tools only."
       },
       "toolsPopup": {
-        "noOptionsMessage": "No tools available",
         "groupCustom": "Custom",
         "attachedHint": "Added by someone else. You can remove it."
       },

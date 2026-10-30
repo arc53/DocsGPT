@@ -1813,7 +1813,9 @@
       "kinds": {
         "shared": "Общие"
       },
-      "kindFilterLabel": "Фильтр по типу"
+      "kindFilterLabel": "Фильтр по типу",
+      "chatPromptOn": "Используется в чатах без агента",
+      "chatPromptOff": "Использовать в чатах без агента"
     },
     "devices": {
       "label": "Устройства",
@@ -2454,7 +2456,6 @@
       "others_few": "и ещё {{formatted}} в ваших командах",
       "others_many": "и ещё {{formatted}} в ваших командах",
       "others_other": "и ещё {{formatted}} в ваших командах",
-      "inChats": "В чатах",
       "agentsShort_one": "{{formatted}} агент",
       "agentsShort_other": "{{formatted}} агентов",
       "agentsShort_many": "{{formatted}} агентов",
@@ -2464,7 +2465,9 @@
         "inUse": "Используются",
         "unused": "Не используются"
       },
-      "filterLabel": "Фильтр по использованию"
+      "filterLabel": "Фильтр по использованию",
+      "inChatsOn": "Включён в моих чатах",
+      "inChatsOff": "Выключен в моих чатах"
     }
   },
   "modals": {
@@ -2838,7 +2841,6 @@
       "view_more_few": "ещё {{count}} источника",
       "view_more_many": "ещё {{count}} источников",
       "view_more_other": "ещё {{count}} источников",
-      "noSourcesAvailable": "Знаний пока нет",
       "selectedCount": "Выбрано: {{count}}",
       "triggerLabel_one": "Знания, выбрано: {{formatted}}",
       "triggerLabel_few": "Знания, выбрано: {{formatted}}",
@@ -3283,11 +3285,9 @@
       },
       "sourcePopup": {
         "searchPlaceholder": "Поиск по знаниям…",
-        "noOptionsMessage": "Знаний пока нет",
         "noSourceHint": "Необязательно. Без знаний агент отвечает только с помощью модели и своих инструментов."
       },
       "toolsPopup": {
-        "noOptionsMessage": "Нет доступных инструментов",
         "groupCustom": "Пользовательские",
         "attachedHint": "Добавлено другим пользователем. Вы можете удалить это."
       },

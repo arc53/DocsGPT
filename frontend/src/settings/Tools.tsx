@@ -1,4 +1,12 @@
-import { Eye, Pencil, Plug, RefreshCw, Trash2, Users } from 'lucide-react';
+import {
+  Eye,
+  Pencil,
+  Plug,
+  RefreshCw,
+  Trash2,
+  UserRound,
+  Users,
+} from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -11,7 +19,13 @@ import PageToolbar from '../components/PageToolbar';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
 import SearchInput from '../components/SearchInput';
-import RoleBadge from '../components/RoleBadge';
+import RoleMeta from '../components/RoleMeta';
+import { MetaItem, MetaLine } from '../components/ui/meta-line';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Badge } from '../components/ui/badge';
@@ -574,27 +588,23 @@ export default function Tools() {
         ? connectorDescription(t, connector)
         : tool.description;
     const account = connection ? accountLine(t, connection) : null;
-    // The meta line: the account, then where the tool is used.
-    const meta: { key: string; node: React.ReactNode }[] = [];
-    if (account)
-      meta.push({
-        key: 'account',
-        node: (
-          <span className="min-w-0 truncate" title={account}>
+    // The meta line: the account, the reader's role, then the agents that
+    // use it. Whether it is in the reader's chats is the switch's to say.
+    const meta = (
+      <MetaLine>
+        {account ? (
+          <MetaItem icon={<UserRound />} title={account}>
             {account}
-          </span>
-        ),
-      });
-    if (agentUseCount(tool.used_by) > 0)
-      meta.push({
-        key: 'agents',
-        node: <UsedByAgents usage={tool.used_by} />,
-      });
-    if (toolInChat(tool))
-      meta.push({
-        key: 'chats',
-        node: <span>{t('settings.usage.inChats')}</span>,
-      });
+          </MetaItem>
+        ) : null}
+        {isOwner(tool) ? null : <RoleMeta item={tool} />}
+        {agentUseCount(tool.used_by) > 0 ? (
+          <UsedByAgents usage={tool.used_by} />
+        ) : null}
+      </MetaLine>
+    );
+    const hasMeta =
+      !!account || !isOwner(tool) || agentUseCount(tool.used_by) > 0;
     return (
       <ConnectorTile
         key={tool.id}
@@ -624,42 +634,39 @@ export default function Tools() {
             />
           ) : undefined
         }
-        badges={
-          <>
-            {stateBadge(tool)}
-            <RoleBadge item={tool} />
-          </>
-        }
+        badges={stateBadge(tool)}
         // Which account this is (each account of a service is its own
         // tool), where it is used (agents, the caller's chats) and the
         // caller's own "In my chats" switch, named for screen readers only.
         // A shared tool without use_in_own can't be in the caller's chats
         // at all, so it has no switch.
         footer={
-          meta.length > 0 || canAddToolToOwn(tool) ? (
+          hasMeta || canAddToolToOwn(tool) ? (
             <>
-              {meta.length > 0 && (
-                <span className="flex min-w-0 flex-wrap items-center gap-x-1">
-                  {meta.map((part, index) => (
-                    <React.Fragment key={part.key}>
-                      {index > 0 && <span aria-hidden="true">·</span>}
-                      {part.node}
-                    </React.Fragment>
-                  ))}
-                </span>
-              )}
+              {meta}
               {canAddToolToOwn(tool) && (
-                <Switch
-                  className="ml-auto shrink-0"
-                  checked={toolInChat(tool)}
-                  onCheckedChange={(checked) =>
-                    updateToolStatus(tool.id, checked)
-                  }
-                  aria-label={t('settings.tools.useInMyChatsAria', {
-                    interpolation: { escapeValue: false },
-                    toolName: tool.customName || tool.displayName,
-                  })}
-                />
+                // No visible label: the switch shows the state, and its
+                // tooltip says what it does.
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Switch
+                      className="ml-auto shrink-0"
+                      checked={toolInChat(tool)}
+                      onCheckedChange={(checked) =>
+                        updateToolStatus(tool.id, checked)
+                      }
+                      aria-label={t('settings.tools.useInMyChatsAria', {
+                        interpolation: { escapeValue: false },
+                        toolName: tool.customName || tool.displayName,
+                      })}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {toolInChat(tool)
+                      ? t('settings.usage.inChatsOn')
+                      : t('settings.usage.inChatsOff')}
+                  </TooltipContent>
+                </Tooltip>
               )}
             </>
           ) : undefined

@@ -498,17 +498,15 @@ describe('Tools', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it('shows the role on a shared tile as a neutral Users Badge', async () => {
+  it('shows the role on a shared tile in its meta line, not as a pill', async () => {
     await render([ownTool, editorTool, viewerTool]);
-    const badge = (id: string) =>
-      card(id).querySelector<HTMLElement>('[data-testid="role-badge"]');
-    expect(badge('own')).toBeNull();
-    expect(badge('ed')?.dataset.variant).toBe('neutral');
-    expect(badge('ed')?.textContent).toBe('teamAccess.editor');
-    expect(badge('vw')?.textContent).toBe('teamAccess.viewer');
-    expect(
-      badge('ed')?.querySelector('svg')?.getAttribute('class'),
-    ).not.toContain('size-3');
+    const role = (id: string) =>
+      card(id).querySelector<HTMLElement>(
+        '[data-slot="card-footer"] [data-testid="role-meta"]',
+      );
+    expect(role('own')).toBeNull();
+    expect(role('ed')?.textContent).toBe('teamAccess.editor');
+    expect(role('vw')?.textContent).toBe('teamAccess.viewer');
   });
 
   // "Configured" is not a health check: only a real state gets a badge.
@@ -827,7 +825,7 @@ describe('Tools page connections', () => {
     expect(container.textContent).not.toContain('settings.tools.defaultBadge');
   });
 
-  it("draws a connected tool with its service's logo and no icon in the footer", async () => {
+  it("draws a connected tool with its service's logo, not again in the footer", async () => {
     await renderTools(root);
     const header = card('Linear').querySelector('[data-slot="card-header"]')!;
     // The service logo is decorative (the name is beside it); the generic
@@ -837,9 +835,12 @@ describe('Tools page connections', () => {
     expect(
       card('My API').querySelector('[data-slot="card-header"] [role="img"]'),
     ).not.toBeNull();
-    expect(
-      card('Telegram').querySelector('[data-slot="card-footer"] svg'),
-    ).toBeNull();
+    // The footer's account item has the generic account icon, never the
+    // service's logo a second time.
+    const icons = Array.from(
+      card('Telegram').querySelectorAll('[data-slot="card-footer"] svg'),
+    ).map((svg) => svg.getAttribute('class') ?? '');
+    expect(icons).toEqual([expect.stringContaining('lucide-user-round')]);
   });
 
   it('shows each connected account as its own tool, the account on its footer', async () => {
@@ -848,7 +849,8 @@ describe('Tools page connections', () => {
     // Which account this card is, then where it is used, beside its own
     // switch, and the catalog's plain description.
     const footer = telegram.querySelector('[data-slot="card-footer"]')!;
-    expect(footer.textContent).toBe('Alerts bot·settings.usage.inChats');
+    // In the reader's chats is the switch's to say, not the meta line's.
+    expect(footer.textContent).toBe('Alerts bot');
     expect(footer.querySelector('[role="switch"]')).not.toBeNull();
     expect(telegram.textContent).toContain(
       'settings.connectors.descriptions.telegram',
@@ -888,7 +890,7 @@ describe('Tools page connections', () => {
     ];
     await renderTools(root);
     const footer = card('GitHub').querySelector('[data-slot="card-footer"]')!;
-    expect(footer.textContent).toBe('dartpain·settings.usage.inChats');
+    expect(footer.textContent).toBe('dartpain');
   });
 
   it('says a connected tool needs reconnecting, with no raw MCP reconnect', async () => {
@@ -1193,21 +1195,20 @@ describe('Tools usage', () => {
     expect(titles()).toEqual(['elsewhere']);
   });
 
-  it('says on each card which agents use it and whether it is in chats', async () => {
+  it('says on each card which agents use it; the switch says chats', async () => {
     await renderAt();
     const footer = (title: string) =>
       card(title).querySelector('[data-slot="card-footer"]')?.textContent ?? '';
     expect(footer('agented')).toContain(
       'settings.usage.agentsShort:{"count":5,"formatted":"5"}',
     );
-    expect(footer('agented')).toContain('settings.usage.inChats');
     expect(footer('chatted')).not.toContain('settings.usage.agents');
-    expect(footer('chatted')).toContain('settings.usage.inChats');
     expect(footer('elsewhere')).toContain(
       'settings.usage.agentsShort:{"count":1,"formatted":"1"}',
     );
     expect(footer('idle')).not.toContain('settings.usage.agents');
-    expect(footer('idle')).not.toContain('settings.usage.inChats');
+    for (const title of ['agented', 'chatted', 'idle'])
+      expect(footer(title)).not.toContain('settings.usage.inChats');
   });
 
   it('lists the agents in a popover, each a link to the agent', async () => {

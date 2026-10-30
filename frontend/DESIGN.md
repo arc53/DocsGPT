@@ -909,8 +909,11 @@ Which one-of-N control:
 
 `Switch` (Radix) is an on/off setting, placed inside a `SettingRow` that names
 it. A tool's own "In my chats" on/off is the one exception. On a Tools page
-tile it is a bare `Switch` at the tile's bottom-right, named only by its
-`aria-label` (no visible label); in a connection's drawer, a tool row ends in
+tile it is a bare `Switch` at the tile's bottom-right, named by its
+`aria-label` with no visible label and no "In chats" text in the meta line
+(the switch shows the state); a `Tooltip` says it on hover and focus ("On in
+my chats" / "Off in my chats"). The Prompts card's radio follows the same
+rule: no "In chats" badge, a tooltip ("Used in chats without an agent"); in a connection's drawer, a tool row ends in
 a `Label text-muted-foreground text-xs font-normal` + `Switch` pair. Either way
 it is the caller's own preference, never a switch that turns the tool off for
 everyone. The track is `primary` when on and `bg-input` when off, with a white

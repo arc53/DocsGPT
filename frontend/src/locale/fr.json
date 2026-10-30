@@ -1744,7 +1744,9 @@
       "kinds": {
         "shared": "Partagés"
       },
-      "kindFilterLabel": "Filtrer par type"
+      "kindFilterLabel": "Filtrer par type",
+      "chatPromptOn": "Utilisé dans les conversations sans agent",
+      "chatPromptOff": "Utiliser dans les conversations sans agent"
     },
     "devices": {
       "label": "Appareils",
@@ -2365,7 +2367,6 @@
       "others_one": "et {{formatted}} autre dans vos équipes",
       "others_other": "et {{formatted}} autres dans vos équipes",
       "others_many": "et {{formatted}} autres dans vos équipes",
-      "inChats": "Dans les conversations",
       "agentsShort_one": "{{formatted}} agent",
       "agentsShort_other": "{{formatted}} agents",
       "agentsShort_many": "{{formatted}} agents",
@@ -2374,7 +2375,9 @@
         "inUse": "En usage",
         "unused": "Sans usage"
       },
-      "filterLabel": "Filtrer par utilisation"
+      "filterLabel": "Filtrer par utilisation",
+      "inChatsOn": "Activé dans mes conversations",
+      "inChatsOff": "Désactivé dans mes conversations"
     }
   },
   "modals": {
@@ -2745,7 +2748,6 @@
       "view_more_one": "{{count}} autre source",
       "view_more_other": "{{count}} autres sources",
       "view_more_many": "{{count}} autres sources",
-      "noSourcesAvailable": "Aucune connaissance pour l’instant",
       "selectedCount": "{{count}} sélectionné(s)",
       "triggerLabel_one": "Connaissances, {{formatted}} sélectionnée",
       "triggerLabel_other": "Connaissances, {{formatted}} sélectionnées",
@@ -3181,11 +3183,9 @@
       },
       "sourcePopup": {
         "searchPlaceholder": "Rechercher des connaissances…",
-        "noOptionsMessage": "Aucune connaissance pour l’instant",
         "noSourceHint": "Facultatif. Sans connaissances, l’agent répond uniquement à partir du modèle et de ses outils."
       },
       "toolsPopup": {
-        "noOptionsMessage": "Aucun outil disponible",
         "groupCustom": "Personnalisés",
         "attachedHint": "Ajouté par quelqu’un d’autre. Vous pouvez le retirer."
       },

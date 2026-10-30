@@ -1744,7 +1744,9 @@
       "kinds": {
         "shared": "Compartidos"
       },
-      "kindFilterLabel": "Filtrar por tipo"
+      "kindFilterLabel": "Filtrar por tipo",
+      "chatPromptOn": "Se usa en chats sin agente",
+      "chatPromptOff": "Usar en chats sin agente"
     },
     "devices": {
       "label": "Dispositivos",
@@ -2365,7 +2367,6 @@
       "others_one": "y {{formatted}} más en tus equipos",
       "others_other": "y {{formatted}} más en tus equipos",
       "others_many": "y {{formatted}} más en tus equipos",
-      "inChats": "En chats",
       "agentsShort_one": "{{formatted}} agente",
       "agentsShort_other": "{{formatted}} agentes",
       "agentsShort_many": "{{formatted}} agentes",
@@ -2374,7 +2375,9 @@
         "inUse": "En uso",
         "unused": "Sin usar"
       },
-      "filterLabel": "Filtrar por uso"
+      "filterLabel": "Filtrar por uso",
+      "inChatsOn": "Activada en mis chats",
+      "inChatsOff": "Desactivada en mis chats"
     }
   },
   "modals": {
@@ -2745,7 +2748,6 @@
       "view_more_one": "Ver {{count}} fuente más",
       "view_more_other": "Ver {{count}} fuentes más",
       "view_more_many": "Ver {{count}} fuentes más",
-      "noSourcesAvailable": "Aún no hay conocimiento",
       "selectedCount": "{{count}} seleccionados",
       "triggerLabel_one": "Conocimiento, {{formatted}} seleccionada",
       "triggerLabel_other": "Conocimiento, {{formatted}} seleccionadas",
@@ -3181,11 +3183,9 @@
       },
       "sourcePopup": {
         "searchPlaceholder": "Buscar conocimiento…",
-        "noOptionsMessage": "Aún no hay conocimiento",
         "noSourceHint": "Opcional. Sin conocimiento, el agente responde solo con el modelo y sus herramientas."
       },
       "toolsPopup": {
-        "noOptionsMessage": "No hay herramientas disponibles",
         "groupCustom": "Personalizadas",
         "attachedHint": "Lo añadió otra persona. Puedes quitarlo."
       },

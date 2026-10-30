@@ -1671,7 +1671,9 @@
       "kinds": {
         "shared": "共享"
       },
-      "kindFilterLabel": "按类型筛选"
+      "kindFilterLabel": "按类型筛选",
+      "chatPromptOn": "用于无智能体的聊天",
+      "chatPromptOff": "在无智能体的聊天中使用"
     },
     "devices": {
       "label": "设备",
@@ -2266,7 +2268,6 @@
       "agents_other": "{{formatted}} 个智能体在使用",
       "others_one": "以及你团队中的另外 {{formatted}} 个",
       "others_other": "以及你团队中的另外 {{formatted}} 个",
-      "inChats": "用于聊天",
       "agentsShort_one": "{{formatted}} 个智能体",
       "agentsShort_other": "{{formatted}} 个智能体",
       "filters": {
@@ -2274,7 +2275,9 @@
         "inUse": "使用中",
         "unused": "未使用"
       },
-      "filterLabel": "按使用情况筛选"
+      "filterLabel": "按使用情况筛选",
+      "inChatsOn": "已在我的聊天中启用",
+      "inChatsOff": "未在我的聊天中启用"
     }
   },
   "modals": {
@@ -2639,7 +2642,6 @@
       "title": "来源",
       "link": "来源链接",
       "view_more": "还有{{count}}个来源",
-      "noSourcesAvailable": "还没有知识",
       "selectedCount": "已选 {{count}} 个",
       "triggerLabel_one": "知识库，已选 {{formatted}} 个",
       "triggerLabel_other": "知识库，已选 {{formatted}} 个",
@@ -3059,11 +3061,9 @@
       },
       "sourcePopup": {
         "searchPlaceholder": "搜索知识…",
-        "noOptionsMessage": "还没有知识",
         "noSourceHint": "可选。没有知识时，智能体只用模型和它的工具回答。"
       },
       "toolsPopup": {
-        "noOptionsMessage": "没有可用的工具",
         "groupCustom": "自定义",
         "attachedHint": "由其他人添加。你可以将其移除。"
       },

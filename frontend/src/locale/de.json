@@ -1675,7 +1675,9 @@
       "kinds": {
         "shared": "Geteilt"
       },
-      "kindFilterLabel": "Nach Art filtern"
+      "kindFilterLabel": "Nach Art filtern",
+      "chatPromptOn": "In Chats ohne Agenten verwendet",
+      "chatPromptOff": "In Chats ohne Agenten verwenden"
     },
     "devices": {
       "label": "Geräte",
@@ -2276,7 +2278,6 @@
       "agents_other": "Von {{formatted}} Agenten verwendet",
       "others_one": "und {{formatted}} weiterer in deinen Teams",
       "others_other": "und {{formatted}} weitere in deinen Teams",
-      "inChats": "In Chats",
       "agentsShort_one": "{{formatted}} Agent",
       "agentsShort_other": "{{formatted}} Agenten",
       "filters": {
@@ -2284,7 +2285,9 @@
         "inUse": "In Verwendung",
         "unused": "Unbenutzt"
       },
-      "filterLabel": "Nach Verwendung filtern"
+      "filterLabel": "Nach Verwendung filtern",
+      "inChatsOn": "In meinen Chats an",
+      "inChatsOff": "In meinen Chats aus"
     }
   },
   "modals": {
@@ -2652,7 +2655,6 @@
       "link": "Quellen-Link",
       "view_more_one": "{{count}} weitere Quelle",
       "view_more_other": "{{count}} weitere Quellen",
-      "noSourcesAvailable": "Noch kein Wissen",
       "selectedCount": "{{count}} ausgewählt",
       "triggerLabel_one": "Wissen, {{formatted}} ausgewählt",
       "triggerLabel_other": "Wissen, {{formatted}} ausgewählt",
@@ -3079,11 +3081,9 @@
       },
       "sourcePopup": {
         "searchPlaceholder": "Wissen durchsuchen…",
-        "noOptionsMessage": "Noch kein Wissen",
         "noSourceHint": "Optional. Ohne Wissen antwortet der Agent nur mit dem Modell und seinen Werkzeugen."
       },
       "toolsPopup": {
-        "noOptionsMessage": "Keine Werkzeuge verfügbar",
         "groupCustom": "Benutzerdefiniert",
         "attachedHint": "Von jemand anderem hinzugefügt. Du kannst es entfernen."
       },
