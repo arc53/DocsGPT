@@ -133,10 +133,9 @@
     "label": "Settings",
     "general": {
       "label": "General",
-      "subtitle": "Choose how DocsGPT looks, which language it uses, and the prompt your chats use.",
+      "subtitle": "Choose how DocsGPT looks and which language it uses.",
       "sections": {
         "appearance": "Appearance",
-        "chat": "Chat",
         "dangerZone": "Danger zone"
       },
       "theme": "Theme",
@@ -146,8 +145,6 @@
       "light": "Light",
       "dark": "Dark",
       "chunks": "Chunks processed per query",
-      "prompt": "Active prompt",
-      "promptDescription": "The system prompt for chats without an agent. Agents use their own.",
       "deleteAllLabel": "Delete all conversations",
       "deleteAllDescription": "Permanently deletes every conversation in your account. This can't be undone.",
       "addNew": "Add New",
@@ -157,18 +154,7 @@
       "medium": "Medium",
       "high": "High",
       "unlimited": "Unlimited",
-      "default": "Default",
-      "add": "Add",
-      "promptActions": {
-        "select": "Select a prompt",
-        "edit": "Edit prompt",
-        "view": "View prompt",
-        "duplicate": "Duplicate prompt",
-        "delete": "Delete prompt",
-        "deleteFailed": "Couldn't delete this prompt.",
-        "saveFailed": "Couldn't save this prompt.",
-        "editConflict": "Someone else changed this prompt. Reopen it to see their version."
-      }
+      "default": "Default"
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
@@ -1653,6 +1639,49 @@
       "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this tool. Its settings and actions are deleted too. This can't be undone.",
       "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this tool. Its settings and actions are deleted too. This can't be undone."
     },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "System prompts tell the model how to answer. The one you pick is used in chats without an agent; agents choose their own.",
+      "searchPlaceholder": "Search prompts…",
+      "addPrompt": "Add prompt",
+      "manage": "Go to Prompts",
+      "select": "Select a prompt",
+      "filterLabel": "Filter prompts",
+      "filters": {
+        "all": "All",
+        "inUse": "In use",
+        "unused": "Unused"
+      },
+      "sections": {
+        "included": "Included",
+        "yours": "Yours",
+        "shared": "Shared with team"
+      },
+      "presets": {
+        "default": "Answers from your documents and cites them. When they don't cover the question, it says so, then answers from general knowledge.",
+        "creative": "Like default, plus ideas, examples and imaginative angles, with the facts kept accurate.",
+        "strict": "Answers only from your documents, tools and the chat. Says what is missing instead of guessing."
+      },
+      "chatPromptLabel": "Prompt for chats without an agent",
+      "useInChats": "Use {{name}} in chats",
+      "chatPromptFailed": "Couldn't change the prompt your chats use.",
+      "actions": "Actions for {{name}}",
+      "edit": "Edit",
+      "view": "View",
+      "duplicate": "Duplicate",
+      "shareWithTeam": "Share with team",
+      "delete": "Delete",
+      "deleteUsedBy_one": "Used by {{formatted}} agent, which goes back to the default prompt. This can't be undone.",
+      "deleteUsedBy_other": "Used by {{formatted}} agents, which go back to the default prompt. This can't be undone.",
+      "deleteUsedByInChats_one": "Used by {{formatted}} agent and your chats, which go back to the default prompt. This can't be undone.",
+      "deleteUsedByInChats_other": "Used by {{formatted}} agents and your chats, which go back to the default prompt. This can't be undone.",
+      "deleteInChats": "Your chats use it and go back to the default prompt. This can't be undone.",
+      "deleteFailed": "Couldn't delete this prompt.",
+      "saveFailed": "Couldn't save this prompt.",
+      "editConflict": "Someone else changed this prompt. Reopen it to see their version.",
+      "loadError": "Couldn't load your prompts.",
+      "noPromptsFound": "No prompts found"
+    },
     "devices": {
       "label": "Devices",
       "subtitle": "Pair remote machines that agents can drive via shell commands.",
@@ -2463,8 +2492,7 @@
       "learnAboutPrompts": "Learn about Prompts →",
       "publicPromptEditDisabled": "Public prompts cannot be edited",
       "promptTypePublic": "public",
-      "promptTypePrivate": "private",
-      "delete": "Delete"
+      "promptTypePrivate": "private"
     },
     "chunk": {
       "add": "Add chunk",

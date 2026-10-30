@@ -8,6 +8,14 @@ const userService = {
     apiClient.get(endpoints.USER.ME, token),
   getQuota: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.QUOTA, token),
+  /** `{success, chat_prompt_id}`: the prompt chats without an agent use. */
+  getPreferences: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.PREFERENCES, token),
+  /** 400 `invalid_prompt`; 403/404 for a prompt the caller can't read. */
+  updatePreferences: (
+    data: { chat_prompt_id: string },
+    token: string | null,
+  ): Promise<any> => apiClient.put(endpoints.USER.PREFERENCES, data, token),
   getNewToken: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
   // Token deliberately null: a stale Authorization header must not be able

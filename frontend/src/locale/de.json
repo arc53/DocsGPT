@@ -133,10 +133,9 @@
     "label": "Einstellungen",
     "general": {
       "label": "Allgemein",
-      "subtitle": "Legen Sie fest, wie DocsGPT aussieht, welche Sprache es verwendet und welchen Prompt Ihre Chats nutzen.",
+      "subtitle": "Legen Sie fest, wie DocsGPT aussieht und welche Sprache es verwendet.",
       "sections": {
         "appearance": "Darstellung",
-        "chat": "Chat",
         "dangerZone": "Gefahrenzone"
       },
       "theme": "Design",
@@ -146,8 +145,6 @@
       "light": "Hell",
       "dark": "Dunkel",
       "chunks": "Chunks pro Anfrage",
-      "prompt": "Aktiver Prompt",
-      "promptDescription": "Der System-Prompt für Chats ohne Agent. Agenten verwenden ihren eigenen.",
       "deleteAllLabel": "Alle Konversationen löschen",
       "deleteAllDescription": "Löscht alle Unterhaltungen in Ihrem Konto dauerhaft. Dies kann nicht rückgängig gemacht werden.",
       "addNew": "Neu hinzufügen",
@@ -157,18 +154,7 @@
       "medium": "Mittel",
       "high": "Hoch",
       "unlimited": "Unbegrenzt",
-      "default": "Standard",
-      "add": "Hinzufügen",
-      "promptActions": {
-        "select": "Prompt auswählen",
-        "edit": "Prompt bearbeiten",
-        "view": "Prompt anzeigen",
-        "duplicate": "Prompt duplizieren",
-        "delete": "Prompt löschen",
-        "deleteFailed": "Dieser Prompt konnte nicht gelöscht werden.",
-        "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
-        "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um die geänderte Version zu sehen."
-      }
+      "default": "Standard"
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",
@@ -1653,6 +1639,49 @@
       "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der es danach nicht mehr hat. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die es danach nicht mehr haben. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
     },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "System-Prompts legen fest, wie das Modell antwortet. Der ausgewählte gilt für Chats ohne Agent; Agenten wählen ihren eigenen.",
+      "searchPlaceholder": "Prompts suchen…",
+      "addPrompt": "Prompt hinzufügen",
+      "manage": "Zu den Prompts",
+      "select": "Prompt auswählen",
+      "filterLabel": "Prompts filtern",
+      "filters": {
+        "all": "Alle",
+        "inUse": "In Verwendung",
+        "unused": "Unbenutzt"
+      },
+      "sections": {
+        "included": "Enthalten",
+        "yours": "Deine",
+        "shared": "Mit dem Team geteilt"
+      },
+      "presets": {
+        "default": "Antwortet aus deinen Dokumenten und zitiert sie. Decken sie die Frage nicht ab, sagt er das und antwortet dann aus allgemeinem Wissen.",
+        "creative": "Wie default, dazu Ideen, Beispiele und originelle Blickwinkel – die Fakten bleiben korrekt.",
+        "strict": "Antwortet nur aus deinen Dokumenten, Werkzeugen und dem Chat. Sagt, was fehlt, statt zu raten."
+      },
+      "chatPromptLabel": "Prompt für Chats ohne Agent",
+      "useInChats": "{{name}} in Chats verwenden",
+      "chatPromptFailed": "Der Prompt für deine Chats konnte nicht geändert werden.",
+      "actions": "Aktionen für {{name}}",
+      "edit": "Bearbeiten",
+      "view": "Ansehen",
+      "duplicate": "Duplizieren",
+      "shareWithTeam": "Mit Team teilen",
+      "delete": "Löschen",
+      "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der danach den Standard-Prompt nutzt. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die danach den Standard-Prompt nutzen. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedByInChats_one": "Von {{formatted}} Agenten und deinen Chats verwendet, die danach den Standard-Prompt nutzen. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedByInChats_other": "Von {{formatted}} Agenten und deinen Chats verwendet, die danach den Standard-Prompt nutzen. Dies kann nicht rückgängig gemacht werden.",
+      "deleteInChats": "Deine Chats verwenden ihn und nutzen danach den Standard-Prompt. Dies kann nicht rückgängig gemacht werden.",
+      "deleteFailed": "Dieser Prompt konnte nicht gelöscht werden.",
+      "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
+      "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um die geänderte Version zu sehen.",
+      "loadError": "Deine Prompts konnten nicht geladen werden.",
+      "noPromptsFound": "Keine Prompts gefunden"
+    },
     "devices": {
       "label": "Geräte",
       "subtitle": "Kopple entfernte Rechner, die Agenten über Shell-Befehle steuern können.",
@@ -2463,8 +2492,7 @@
       "learnAboutPrompts": "Mehr über Prompts erfahren →",
       "publicPromptEditDisabled": "Öffentliche Prompts können nicht bearbeitet werden",
       "promptTypePublic": "öffentlich",
-      "promptTypePrivate": "privat",
-      "delete": "Löschen"
+      "promptTypePrivate": "privat"
     },
     "chunk": {
       "add": "Chunk hinzufügen",

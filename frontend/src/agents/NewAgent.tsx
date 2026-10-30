@@ -17,6 +17,7 @@ import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Combobox, type ComboboxGroup } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 
@@ -64,7 +65,6 @@ import {
   setPrompts,
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
-import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
 import { deviceOnlineMap } from '../utils/deviceUtils';
@@ -253,6 +253,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const promptOverrideSwitchId = useId();
   const sourcesPickerId = useId();
   const toolsPickerId = useId();
+  const promptPickerId = useId();
   const modelsPickerId = useId();
   const [previewOpen, setPreviewOpen] = useState(false);
   const previewStatus = useSelector(selectPreviewStatus);
@@ -411,6 +412,33 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const promptAddedBy = agent.prompt_id
     ? addedByLabel('prompt', agent.prompt_id)
     : null;
+
+  // The prompt picker's groups, as the Prompts page has them.
+  const promptGroups: ComboboxGroup[] = (
+    [
+      ['public', 'included'],
+      ['private', 'yours'],
+      ['team', 'shared'],
+    ] as const
+  )
+    .map(([type, key]) => ({
+      heading: t(`settings.prompts.sections.${key}`),
+      options: prompts
+        .filter((prompt) => prompt.type === type)
+        .map((prompt) => ({ value: prompt.id, label: prompt.name })),
+    }))
+    .filter((group) => group.options.length > 0);
+  // The picked prompt when it isn't listed: a teammate's agent names the
+  // owner's prompt, and a preset reads as its id before the list loads.
+  const pickedPromptId = agent.prompt_id || 'default';
+  const pickedPromptLabel =
+    agent.prompt_name ||
+    (['default', 'creative', 'strict'].includes(pickedPromptId)
+      ? pickedPromptId
+      : '');
+  const promptValueOption = pickedPromptLabel
+    ? { value: pickedPromptId, label: pickedPromptLabel }
+    : undefined;
 
   /** Picker rows with their "Added by" line in the row's description. */
   const withAddedBy = useCallback(
@@ -1547,49 +1575,35 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </FormField>
             <div className="flex flex-col sm:col-span-2">
-              <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <Prompts
-                    prompts={prompts}
-                    selectedPrompt={
-                      prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                      // Owner-resolved name from the agent payload: lets a team
-                      // member see the owner's prompt name (which isn't in their
-                      // own prompts list). 'public' hides owner-only edit/share
-                      // affordances on a prompt the viewer doesn't own.
-                      (agent.prompt_name
-                        ? {
-                            name: agent.prompt_name,
-                            id: agent.prompt_id || 'default',
-                            type: 'public',
-                          }
-                        : prompts[0]) || {
-                        name: 'default',
-                        id: 'default',
-                        type: 'public',
-                      }
-                    }
-                    onSelectPrompt={(name, id) =>
-                      setAgent({ ...agent, prompt_id: id })
-                    }
-                    setPrompts={(newPrompts) =>
-                      dispatch(setPrompts(newPrompts))
-                    }
-                    title={t('agents.form.sections.prompt')}
-                    titleAs="field"
-                    labelSurface="background"
-                    showAddButton={false}
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline-primary"
-                  size="field"
-                  onClick={() => setAddPromptModal('ACTIVE')}
-                >
-                  {t('agents.form.buttons.add')}
-                </Button>
-              </div>
+              <FormField
+                id={promptPickerId}
+                label={t('agents.form.sections.prompt')}
+                labelSurface="background"
+              >
+                <Combobox
+                  groups={promptGroups}
+                  value={agent.prompt_id || 'default'}
+                  valueOption={promptValueOption}
+                  onValueChange={(id) =>
+                    setAgent((prev) => ({ ...prev, prompt_id: id }))
+                  }
+                  placeholder={t('settings.prompts.select')}
+                  searchPlaceholder={t('settings.prompts.searchPlaceholder')}
+                  emptyText={t('settings.prompts.noPromptsFound')}
+                  footer={({ close }) => (
+                    <PickerFooter
+                      to="/settings/prompts"
+                      linkLabel={t('settings.prompts.manage')}
+                      onNavigate={close}
+                      actionLabel={t('settings.prompts.addPrompt')}
+                      onAction={() => {
+                        close();
+                        setAddPromptModal('ACTIVE');
+                      }}
+                    />
+                  )}
+                />
+              </FormField>
               {/* The prompt Select has no description slot, so the mark of a
                   prompt that runs with an editor's access is a hint under it. */}
               {promptAddedBy && (

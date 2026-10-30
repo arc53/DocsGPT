@@ -147,13 +147,10 @@ export type Prompt = {
   allowed_actions?: string[];
   team_access?: 'viewer' | 'editor' | null;
   updated_at?: string | null;
-};
-
-export type PromptProps = {
-  prompts: Prompt[];
-  selectedPrompt: { name: string; id: string; type: string };
-  onSelectPrompt: (name: string, id: string, type: string) => void;
-  setPrompts: (prompts: { name: string; id: string; type: string }[]) => void;
+  /** The start of its text, whitespace collapsed; none on a preset. */
+  preview?: string;
+  /** The agents that use it (`/api/get_prompts`). */
+  used_by?: ResourceUsage | null;
 };
 
 export type DocumentsProps = {

@@ -276,9 +276,10 @@ Patterns:
   `size="field" shape="pill"`, with no min-width or hand height. With
   `shape="pill"` its text starts 21px in, like the Input and Select pills
   beside it. The agent form's pickers are `combobox field`, each labelled by
-  a `FormField` (the Prompt picker through `Prompts titleAs="field"`), its Add
-  button `outline-primary field`, the only `outline-primary` on the agent
-  pages themselves (the Access details modal they open has its own).
+  a `FormField`; the Prompt picker is a plain `Combobox` whose footer goes to
+  Prompts or adds one, like the tool and knowledge pickers. Their footers'
+  Add is the only `outline-primary` on the agent pages themselves (the Access
+  details modal they open has its own).
 - **Shape by place.** Form controls (Input, SelectTrigger, a combobox Button,
   Textarea, and a button inline with a field such as Add or Run) are square
   in forms, modals and sheets. Pill is for page chrome: header and toolbar
@@ -374,7 +375,7 @@ marks structure.
 
 | Role                 | Variant                                                                           | Examples                                                                             |
 | -------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Thing (a tile)       | `filled`, on a page or in a modal                                                 | agents, folders, sources, tools, custom models, teams, chunks, the shared agent card |
+| Thing (a tile)       | `filled`, on a page or in a modal                                                 | agents, folders, sources, tools, prompts, custom models, teams, chunks, the shared agent card |
 | Place (a panel)      | `subtle` on the page or a right drawer, `outline` on a card (modal, bottom sheet) | the agent form's sections, chart panels, stat tiles, log tables, schedule rows       |
 | Choice (picker tile) | `outline interactive`, or `OptionCard`                                            | the Add tool tiles; a chosen tile is an `OptionCard` `selected`, drawn by the border |
 | Well                 | `CodeBlock` / `CopyField` (a `filled sm` Card they draw)                          | code, a token to copy, run output, inside a panel (see Code blocks below)            |
@@ -592,7 +593,7 @@ bleed, over an unframed `CommandList`, and caps itself at the height Radix
 says is free (`--radix-popover-content-available-height`, at most 600px).
 A picker's footer (`MultiSelectPopover footer`, `Combobox footer`) links to the
 page that manages the list, as a `link inline` Button with a 12px `ArrowRight`
-(Go to Knowledge, Go to Tools). A shortcut action (Upload new, Add tool; an `outline-primary pill`)
+(Go to Knowledge, Go to Tools, Go to Prompts). A shortcut action (Upload new, Add tool, Add prompt; an `outline-primary pill`)
 sits at the right end of the same row: `flex flex-wrap items-center
 justify-between gap-3`, so on a narrow sheet or in a long locale it wraps under
 the link rather than taking a row of its own everywhere. Every picker uses
@@ -718,8 +719,8 @@ labels and wires it (see FormField).
 - A server-searched list passes `shouldFilter={false}` with `search` /
   `onSearchChange`, and `valueOption` when the picked option isn't in the
   current results.
-- Row actions (a prompt's Edit or View) go in `renderItem`, which replaces
-  the row's body.
+- Rows carry no actions: what you do to an item (a prompt's Edit, Share or
+  Delete) is on its page, and the picker's footer links there.
 - `mode="add"` is a picker that adds something (Share's "Add people or
   teams"): the trigger always shows the placeholder and no row is marked.
 - `footer` pins a row under the list, the same `PickerFooter` row as the

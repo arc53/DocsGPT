@@ -164,7 +164,6 @@ vi.mock('../components/MultiSelectPopover', () => ({
 
 vi.mock('./workflow/WorkflowBuilder', () => ({ default: () => null }));
 vi.mock('./AgentPreview', () => ({ default: () => null }));
-vi.mock('../settings/Prompts', () => ({ default: () => null }));
 vi.mock('./components/GuardrailsSection', () => ({
   default: (props: { disabled?: boolean }) => {
     mocks.guardrailsProps(props);
@@ -359,12 +358,49 @@ describe('NewAgent form', () => {
     }
   });
 
-  it('renders the Add prompt button at the field height', async () => {
-    await render();
-    const add = buttonByText('agents.form.buttons.add');
-    expect(add.getAttribute('data-variant')).toBe('outline-primary');
-    expect(add.getAttribute('data-size')).toBe('field');
-    expect(add.getAttribute('data-shape')).toBe('default');
+  // The prompt is picked like a tool or a source: a plain picker whose
+  // footer goes to the Prompts page or adds one; no row actions, no Add
+  // button beside it.
+  it('picks the prompt from a plain Combobox with a Go to Prompts footer', async () => {
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'p1', name: 'Tone', type: 'private', access: 'owner' },
+    ] as never[];
+    try {
+      await render();
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[data-slot="combobox-trigger"]',
+      )!;
+      expect(trigger.textContent).toContain('default');
+      expect(
+        trigger.closest('[data-slot="form-field"]')?.querySelector('label')
+          ?.textContent,
+      ).toBe('agents.form.sections.prompt');
+      expect(buttonByText('agents.form.buttons.add')).toBeUndefined();
+      await act(async () => {
+        trigger.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+        );
+        trigger.click();
+      });
+      const list = document.body.querySelector('[cmdk-list]')!;
+      const rows = Array.from(list.querySelectorAll('[cmdk-item]'));
+      expect(rows.map((row) => row.textContent)).toEqual(['default', 'Tone']);
+      // No edit, duplicate, share or delete icons in a row.
+      expect(list.querySelector('button')).toBeNull();
+      const link = Array.from(document.body.querySelectorAll('a')).find(
+        (a) => a.textContent === 'settings.prompts.manage',
+      )!;
+      expect(link.getAttribute('href')).toBe('/settings/prompts');
+      const add = Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'settings.prompts.addPrompt',
+      )!;
+      expect(add.getAttribute('data-variant')).toBe('outline-primary');
+      await act(async () => (rows[1] as HTMLElement).click());
+      expect(trigger.textContent).toContain('Tone');
+    } finally {
+      mockState.preference.prompts = [];
+    }
   });
 
   it('renders the token and request limits as default-size square Inputs', async () => {

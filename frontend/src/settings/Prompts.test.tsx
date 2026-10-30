@@ -1,78 +1,161 @@
+import { configureStore } from '@reduxjs/toolkit';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-
-const dispatch = vi.fn();
-vi.mock('react-redux', () => ({
-  useSelector: () => 'test-token',
-  useDispatch: () => dispatch,
-}));
+import { Provider } from 'react-redux';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) => {
+      const { interpolation: _i, ...rest } = opts ?? {};
+      void _i;
+      return Object.keys(rest).length ? `${key}:${JSON.stringify(rest)}` : key;
+    },
+  }),
 }));
 
-const deletePrompt = vi.fn();
-const updatePrompt = vi.fn();
-const getSinglePrompt = vi.fn();
-vi.mock('../api/services/userService', () => ({
-  default: {
-    deletePrompt: (...args: unknown[]) => deletePrompt(...args),
-    updatePrompt: (...args: unknown[]) => updatePrompt(...args),
-    getSinglePrompt: (...args: unknown[]) => getSinglePrompt(...args),
+// The menu is a Radix dropdown; the tests only need its options.
+vi.mock('../components/ui/dropdown-menu', () => ({
+  ActionMenu: ({
+    options,
+  }: {
+    options: { label: string; onClick: () => void }[];
+  }) => (
+    <div data-testid="menu">
+      {options.map((o) => (
+        <button key={o.label} type="button" onClick={o.onClick}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  ),
+}));
+
+const service = vi.hoisted(() => ({
+  getPrompts: vi.fn(),
+  deletePrompt: vi.fn(),
+  updatePrompt: vi.fn(),
+  createPrompt: vi.fn(),
+  getSinglePrompt: vi.fn(),
+  getPreferences: vi.fn(),
+  updatePreferences: vi.fn(),
+}));
+vi.mock('../api/services/userService', () => ({ default: service }));
+
+const confirm = vi.hoisted(() => ({
+  props: null as null | {
+    message: string;
+    description?: string;
+    error?: string;
+    handleSubmit: () => void | Promise<unknown>;
   },
 }));
-vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: (props: NonNullable<typeof confirm.props>) => {
+    confirm.props = props;
+    return null;
+  },
+}));
 const promptsModalProps = vi.fn();
 vi.mock('../preferences/PromptsModal', () => ({
-  default: (props: unknown) => {
+  default: (props: { modalState: string }) => {
     promptsModalProps(props);
     return null;
   },
 }));
-const confirm = vi.hoisted(() => ({
-  result: undefined as void | Promise<unknown>,
-}));
-vi.mock('../modals/ConfirmationModal', () => ({
-  default: ({
-    handleSubmit,
-    error,
-  }: {
-    handleSubmit: () => void | Promise<unknown>;
-    error?: string;
-  }) => (
-    <>
-      <button
-        type="button"
-        data-testid="confirm"
-        onClick={() => {
-          const result = handleSubmit();
-          // Mark it handled; the tests assert on it afterwards.
-          if (result) result.catch(() => undefined);
-          confirm.result = result;
-        }}
-      >
-        confirm
-      </button>
-      <p data-testid="confirm-error">{error}</p>
-    </>
-  ),
+const shareModalProps = vi.fn();
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: unknown) => {
+    shareModalProps(props);
+    return null;
+  },
 }));
 
+import actionToastReducer from '../notifications/actionToastSlice';
+import preferenceReducer, {
+  setPrompt,
+  setToken,
+} from '../preferences/preferenceSlice';
 import Prompts from './Prompts';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const prompts = [
-  { id: 'p1', name: 'Default', type: 'public' },
-  { id: 'p2', name: 'Vendor due diligence', type: 'private' },
-  { id: 'p3', name: 'Carrier rate summary', type: 'private' },
-];
+const response = (body: unknown, ok = true, status = 200) =>
+  Promise.resolve({ ok, status, json: () => Promise.resolve(body) });
 
-describe('Prompts', () => {
+const OWNER_ACTIONS = ['delete', 'duplicate', 'edit', 'share', 'use'];
+const presets = [
+  {
+    id: 'default',
+    name: 'default',
+    type: 'public',
+    used_by: { agents: [{ id: 'a1', name: 'Docs', agent_type: 'classic' }] },
+  },
+  { id: 'creative', name: 'creative', type: 'public', used_by: null },
+  { id: 'strict', name: 'strict', type: 'public', used_by: null },
+];
+const own = {
+  id: 'p-own',
+  name: 'Vendor checks',
+  type: 'private',
+  preview: 'You check vendors before onboarding.',
+  access: 'owner',
+  allowed_actions: OWNER_ACTIONS,
+  used_by: {
+    agents: [{ id: 'a2', name: 'Procurement', agent_type: 'classic' }],
+    others: 1,
+  },
+};
+const idle = {
+  id: 'p-idle',
+  name: 'Escalation summary',
+  type: 'private',
+  preview: 'Summarise for tier 2.',
+  access: 'owner',
+  allowed_actions: OWNER_ACTIONS,
+  used_by: { agents: [], others: 0 },
+};
+const viewer = {
+  id: 'p-team',
+  name: 'Deal desk',
+  type: 'team',
+  team_access: 'viewer',
+  preview: 'Brief the rep.',
+  access: 'viewer',
+  allowed_actions: ['use', 'duplicate'],
+  used_by: { agents: [], others: 0 },
+};
+const listed = [...presets, own, idle, viewer];
+
+function Where() {
+  const location = useLocation();
+  return <div data-testid="where">{location.search}</div>;
+}
+
+describe('Prompts page', () => {
   let container: HTMLDivElement;
   let root: Root;
+  let store: ReturnType<typeof makeStore>;
+
+  const makeStore = () =>
+    configureStore({
+      reducer: {
+        preference: preferenceReducer,
+        actionToast: actionToastReducer,
+      },
+    });
 
   beforeEach(() => {
+    Object.values(service).forEach((fn) => fn.mockReset());
+    service.getPrompts.mockImplementation(() => response(listed));
+    service.updatePreferences.mockImplementation(() =>
+      response({ success: true }),
+    );
+    promptsModalProps.mockReset();
+    shareModalProps.mockReset();
+    confirm.props = null;
+    store = makeStore();
+    store.dispatch(setToken('tok'));
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -81,441 +164,293 @@ describe('Prompts', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    document.body.innerHTML = '';
   });
 
-  const renderPrompts = (
-    extra: Partial<React.ComponentProps<typeof Prompts>> = {},
-  ) =>
-    act(() => {
+  const render = (entry = '/settings/prompts') =>
+    act(async () => {
       root.render(
-        <Prompts
-          prompts={prompts}
-          selectedPrompt={prompts[1]}
-          onSelectPrompt={() => undefined}
-          setPrompts={() => undefined}
-          {...extra}
-        />,
+        <Provider store={store}>
+          <MemoryRouter initialEntries={[entry]}>
+            <Routes>
+              <Route
+                path="/settings/prompts"
+                element={
+                  <>
+                    <Prompts />
+                    <Where />
+                  </>
+                }
+              />
+            </Routes>
+          </MemoryRouter>
+        </Provider>,
       );
     });
 
-  it('renders the prompt picker as a 38px combobox field pill', () => {
-    renderPrompts();
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[role="combobox"]',
-    );
-    expect(trigger?.getAttribute('data-variant')).toBe('combobox');
-    expect(trigger?.getAttribute('data-size')).toBe('field');
-    expect(trigger?.getAttribute('data-shape')).toBe('pill');
-    expect(trigger?.className).toMatch(/(^|\s)h-9\.5(\s|$)/);
-    expect(trigger?.className).not.toMatch(/(^|\s)h-10\.5(\s|$)/);
-  });
-
-  it('is the shared Combobox, its popover at least 18rem wide', () => {
-    renderPrompts();
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[role="combobox"]',
+  const cards = () =>
+    Array.from(container.querySelectorAll<HTMLElement>('[data-slot="card"]'));
+  const card = (name: string) =>
+    cards().find(
+      (c) => c.querySelector('[data-slot="card-title"]')?.textContent === name,
     )!;
-    expect(trigger.dataset.slot).toBe('combobox-trigger');
-    // One chevron, a direct child (SelectTrigger's recipe).
-    const icons = trigger.querySelectorAll('svg');
-    expect(icons).toHaveLength(1);
-    expect(icons[0].parentElement).toBe(trigger);
-    expect(icons[0].getAttribute('class')).toContain('lucide-chevron-down');
-    act(() => {
-      trigger.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-      trigger.click();
-    });
-    const content = document.body.querySelector<HTMLElement>(
-      '[data-slot="popover-content"]',
-    )!;
-    expect(content.className.split(' ')).toEqual(
-      expect.arrayContaining(['w-72', 'min-w-(--radix-popover-trigger-width)']),
+  const titles = () =>
+    cards().map(
+      (c) => c.querySelector('[data-slot="card-title"]')?.textContent,
     );
-    expect(content.className).not.toContain(
-      ' w-(--radix-popover-trigger-width)',
+  const radioOf = (name: string) =>
+    card(name).querySelector<HTMLButtonElement>('[role="radio"]')!;
+  const menuLabels = (name: string) =>
+    Array.from(card(name).querySelectorAll('[data-testid="menu"] button')).map(
+      (b) => b.textContent,
     );
-  });
-
-  it('puts the edit pencil beside the picker, not inside it', () => {
-    renderPrompts();
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[role="combobox"]',
-    );
-    expect(trigger?.querySelector('[role="button"], button')).toBeNull();
-    const edit = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="settings.general.promptActions.edit"]',
-    );
-    expect(edit).not.toBeNull();
-    expect(edit?.getAttribute('data-variant')).toBe('ghost-muted');
-    expect(edit?.getAttribute('data-size')).toBe('icon-xs');
-    expect(edit?.parentElement).toBe(trigger?.parentElement);
-  });
-
-  it('renders a SettingRow on Settings whose label names the picker', () => {
-    renderPrompts({ description: 'Used without an agent.' });
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[role="combobox"]',
-    )!;
-    expect(
-      container.querySelector('[data-slot="form-field-label"]'),
-    ).toBeNull();
-    const row = container.querySelector('[data-slot="setting-row"]')!;
-    const label = row.querySelector<HTMLLabelElement>('label')!;
-    expect(label.textContent).toBe('settings.general.prompt');
-    expect(trigger.id).toBeTruthy();
-    expect(label.htmlFor).toBe(trigger.id);
-    expect(row.textContent).toContain('Used without an agent.');
-    expect(trigger.hasAttribute('aria-label')).toBe(false);
-    // 224px from sm, full width when the row stacks on a phone.
-    expect(trigger.className.split(' ')).toEqual(
-      expect.arrayContaining(['w-full', 'sm:w-56']),
-    );
-  });
-
-  it('keeps a section heading above the picker with titleAs="heading"', () => {
-    renderPrompts({
-      titleAs: 'heading',
-      title: 'Prompt',
-    });
-    expect(
-      container.querySelector('[data-slot="form-field-label"]'),
-    ).toBeNull();
-    const heading = container.querySelector(
-      '[data-slot="section-header"] > h2',
-    )!;
-    expect(heading.textContent).toBe('Prompt');
-    expect(heading.className.split(' ')).toEqual(
-      expect.arrayContaining(['text-lg', 'font-semibold']),
-    );
-    expect(
-      container
-        .querySelector('button[role="combobox"]')
-        ?.getAttribute('aria-label'),
-    ).toBe('Prompt');
-  });
-
-  it('labels the picker with a floating FormField label with titleAs="field"', () => {
-    renderPrompts({
-      titleAs: 'field',
-      title: 'Prompt',
-      labelSurface: 'background',
-      showAddButton: false,
-    });
-    expect(container.querySelector('[data-slot="section-header"]')).toBeNull();
-    const label = container.querySelector<HTMLLabelElement>(
-      '[data-slot="form-field-label"]',
-    )!;
-    expect(label.textContent).toBe('Prompt');
-    expect(label.className).toContain('bg-background');
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[role="combobox"]',
-    )!;
-    expect(trigger.id).toBeTruthy();
-    expect(label.htmlFor).toBe(trigger.id);
-    expect(trigger.hasAttribute('aria-label')).toBe(false);
-    expect(trigger.className).toContain('w-full');
-  });
-
-  it('makes Add a neutral outline pill sized to the field row', () => {
-    renderPrompts();
-    const add = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[data-slot="button"]'),
-    ).find((b) => b.textContent === 'settings.general.add');
-    expect(add?.getAttribute('data-size')).toBe('field');
-    expect(add?.getAttribute('data-shape')).toBe('pill');
-    expect(add?.getAttribute('data-variant')).toBe('outline');
-    expect(add?.className).not.toMatch(/(^|\s)h-11\.5(\s|$)/);
-  });
-
-  it('marks only the active prompt as checked in the list', () => {
-    act(() => {
-      root.render(
-        <Prompts
-          prompts={prompts}
-          selectedPrompt={prompts[1]}
-          onSelectPrompt={() => undefined}
-          setPrompts={() => undefined}
-        />,
-      );
-    });
-
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[role="combobox"]',
-    );
-    expect(trigger).not.toBeNull();
-    act(() => {
-      trigger!.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-      );
-      trigger!.click();
-    });
-
-    const items = Array.from(
-      document.body.querySelectorAll<HTMLElement>('[data-slot="command-item"]'),
-    );
-    expect(items).toHaveLength(3);
-
-    const byName = (name: string) =>
-      items.find((item) => item.textContent?.includes(name));
-    expect(byName('Vendor due diligence')?.dataset.checked).toBe('true');
-    expect(byName('Default')?.dataset.checked).toBeUndefined();
-    expect(byName('Carrier rate summary')?.dataset.checked).toBeUndefined();
-    // The fill comes from the checked API, not from page classes.
-    expect(byName('Vendor due diligence')?.className).not.toMatch(
-      /(^|\s)(bg-accent|font-medium)(\s|$)/,
-    );
-    // Row actions are IconButtons: named, with a tooltip instead of `title`.
-    const actions = Array.from(
-      byName('Vendor due diligence')!.querySelectorAll('button'),
-    );
-    expect(actions.length).toBeGreaterThan(0);
-    for (const action of actions) {
-      expect(action.getAttribute('aria-label')).toBeTruthy();
-      expect(action.hasAttribute('title')).toBe(false);
-      expect(action.dataset.slot).toBe('tooltip-trigger');
-    }
-  });
-
-  describe('access', () => {
-    const json = (body: unknown, ok = true, status = 200) =>
-      Promise.resolve({ ok, status, json: () => Promise.resolve(body) });
-    const own = {
-      id: 'own',
-      name: 'Own prompt',
-      type: 'private',
-      access: 'owner' as const,
-      allowed_actions: [
-        'delete',
-        'duplicate',
-        'edit',
-        'manage_settings',
-        'share',
-        'use',
-      ],
-    };
-    const editor = {
-      id: 'ed',
-      name: 'Editor prompt',
-      type: 'team',
-      access: 'editor' as const,
-      allowed_actions: ['duplicate', 'edit', 'use'],
-    };
-    const viewer = {
-      id: 'vw',
-      name: 'Viewer prompt',
-      type: 'team',
-      access: 'viewer' as const,
-      allowed_actions: ['duplicate', 'use'],
-    };
-    const viewerNoCopy = {
-      id: 'vn',
-      name: 'Locked prompt',
-      type: 'team',
-      access: 'viewer' as const,
-      allowed_actions: ['use'],
-    };
-    const all = [prompts[0], own, editor, viewer, viewerNoCopy];
-
-    beforeEach(() => {
-      dispatch.mockReset();
-      deletePrompt.mockReset();
-      updatePrompt.mockReset();
-      getSinglePrompt.mockReset();
-      promptsModalProps.mockReset();
-    });
-
-    const openPicker = () =>
-      act(() => {
-        const trigger = container.querySelector<HTMLButtonElement>(
-          'button[role="combobox"]',
-        )!;
-        trigger.dispatchEvent(
-          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-        );
-        trigger.click();
-      });
-    const row = (name: string) =>
+  const clickMenu = (name: string, label: string) =>
+    act(async () =>
       Array.from(
-        document.body.querySelectorAll<HTMLElement>(
-          '[data-slot="command-item"]',
+        card(name).querySelectorAll<HTMLButtonElement>(
+          '[data-testid="menu"] button',
         ),
-      ).find((item) => item.textContent?.includes(name))!;
-    const actionsOf = (name: string) =>
-      Array.from(row(name).querySelectorAll('button')).map((b) =>
-        b.getAttribute('aria-label'),
-      );
-    const lastModalProps = () =>
-      promptsModalProps.mock.calls.at(-1)![0] as {
-        readOnly?: boolean;
-        handleEditPrompt: (id: string, type: string) => void;
-        onDuplicate?: () => void;
-      };
+      )
+        .find((b) => b.textContent === label)!
+        .click(),
+    );
+  const chatPromptId = () => store.getState().preference.prompt.id;
 
-    it('gives the owner Edit, Duplicate, Share and Delete', () => {
-      renderPrompts({ prompts: all, selectedPrompt: own });
-      openPicker();
-      expect(actionsOf('Own prompt')).toEqual([
-        'settings.general.promptActions.edit',
-        'settings.general.promptActions.duplicate',
-        'agents.shareWithTeam',
-        'settings.general.promptActions.delete',
-      ]);
-    });
+  it('lists Included, Yours and Shared with team as filled cards', async () => {
+    await render();
+    const headings = Array.from(container.querySelectorAll('h2')).map(
+      (h) => h.textContent,
+    );
+    expect(headings).toEqual([
+      'settings.prompts.sections.included',
+      'settings.prompts.sections.yours',
+      'settings.prompts.sections.shared',
+    ]);
+    expect(titles()).toEqual([
+      'default',
+      'creative',
+      'strict',
+      'Vendor checks',
+      'Escalation summary',
+      'Deal desk',
+    ]);
+    for (const c of cards())
+      expect(c.getAttribute('data-variant')).toBe('filled');
+    // A preset says what it does; a prompt of yours shows its start.
+    expect(card('strict').textContent).toContain(
+      'settings.prompts.presets.strict',
+    );
+    expect(card('Vendor checks').textContent).toContain(
+      'You check vendors before onboarding.',
+    );
+    expect(
+      card('Deal desk').querySelector('[data-testid="role-badge"]'),
+    ).not.toBeNull();
+  });
 
-    it('gives an editor Edit and Duplicate', () => {
-      renderPrompts({ prompts: all, selectedPrompt: own });
-      openPicker();
-      expect(actionsOf('Editor prompt')).toEqual([
-        'settings.general.promptActions.edit',
-        'settings.general.promptActions.duplicate',
-      ]);
-    });
+  it('says which agents use a prompt and marks the chat prompt', async () => {
+    store.dispatch(setPrompt({ id: 'p-own', name: 'x', type: 'private' }));
+    await render();
+    expect(card('Vendor checks').textContent).toContain(
+      'settings.usage.agents:{"count":2,"formatted":"2"}',
+    );
+    expect(card('Vendor checks').textContent).toContain(
+      'settings.usage.inChats',
+    );
+    expect(card('default').textContent).not.toContain('settings.usage.inChats');
+    expect(radioOf('Vendor checks').getAttribute('aria-checked')).toBe('true');
+    expect(radioOf('default').getAttribute('aria-checked')).toBe('false');
+  });
 
-    it('gives a viewer View, and Duplicate only when allowed', () => {
-      renderPrompts({ prompts: all, selectedPrompt: own });
-      openPicker();
-      expect(actionsOf('Viewer prompt')).toEqual([
-        'settings.general.promptActions.view',
-        'settings.general.promptActions.duplicate',
-      ]);
-      expect(actionsOf('Locked prompt')).toEqual([
-        'settings.general.promptActions.view',
-      ]);
-    });
+  it('has one radio group across the sections, each radio named', async () => {
+    await render();
+    const group = container.querySelector(
+      '[aria-label="settings.prompts.chatPromptLabel"]',
+    )!;
+    expect(group.getAttribute('role')).toBe('radiogroup');
+    expect(group.querySelectorAll('[role="radio"]')).toHaveLength(6);
+    for (const c of cards())
+      expect(c.querySelectorAll('[role="radio"]')).toHaveLength(1);
+    expect(radioOf('strict').getAttribute('aria-label')).toBe(
+      'settings.prompts.useInChats:{"name":"strict"}',
+    );
+  });
 
-    it("opens a viewer's prompt read-only", async () => {
-      getSinglePrompt.mockReturnValue(json({ content: 'Hello' }));
-      renderPrompts({ prompts: all, selectedPrompt: own });
-      openPicker();
-      await act(async () => {
-        (row('Viewer prompt').querySelector('button') as HTMLElement).click();
-      });
-      expect(lastModalProps().readOnly).toBe(true);
-    });
+  it('saves the picked radio as the chat prompt on the server', async () => {
+    await render();
+    await act(async () => radioOf('Escalation summary').click());
+    expect(service.updatePreferences).toHaveBeenCalledWith(
+      { chat_prompt_id: 'p-idle' },
+      'tok',
+    );
+    expect(chatPromptId()).toBe('p-idle');
+    expect(card('Escalation summary').textContent).toContain(
+      'settings.usage.inChats',
+    );
+  });
 
-    it("keeps the server's actions for a selected prompt missing from the list", async () => {
-      getSinglePrompt.mockReturnValue(json({ content: 'Hello' }));
-      const unlisted = {
-        id: 'ul',
-        name: 'Unlisted prompt',
-        type: 'team',
-        access: 'editor' as const,
-        allowed_actions: ['edit', 'use'],
-      };
-      renderPrompts({ prompts: all, selectedPrompt: unlisted });
-      await act(async () => {
-        container
-          .querySelector<HTMLButtonElement>(
-            'button[aria-label="settings.general.promptActions.edit"]',
-          )!
-          .click();
-      });
-      expect(lastModalProps().onDuplicate).toBeUndefined();
+  it('switches the radio back and shows an error when the save fails', async () => {
+    service.updatePreferences.mockImplementation(() =>
+      response({}, false, 500),
+    );
+    await render();
+    await act(async () => radioOf('creative').click());
+    expect(chatPromptId()).toBe('default');
+    expect(radioOf('default').getAttribute('aria-checked')).toBe('true');
+    expect(store.getState().actionToast.current).toMatchObject({
+      variant: 'destructive',
+      message: 'settings.prompts.chatPromptFailed',
     });
+  });
 
-    it('closes the picker when Delete opens its confirmation', async () => {
-      renderPrompts({ prompts: all, selectedPrompt: own });
-      openPicker();
-      await act(async () => {
-        (
-          row('Own prompt').querySelector(
-            'button[aria-label="settings.general.promptActions.delete"]',
-          ) as HTMLElement
-        ).click();
-      });
-      expect(
-        document.body.querySelector('[data-testid="confirm"]'),
-      ).not.toBeNull();
-      expect(
-        document.body.querySelector('[data-slot="command-item"]'),
-      ).toBeNull();
-    });
+  it('gives a preset View and Duplicate, your own Edit, Duplicate, Share and Delete', async () => {
+    await render();
+    expect(menuLabels('default')).toEqual([
+      'settings.prompts.view',
+      'settings.prompts.duplicate',
+    ]);
+    expect(menuLabels('Vendor checks')).toEqual([
+      'settings.prompts.edit',
+      'settings.prompts.duplicate',
+      'settings.prompts.shareWithTeam',
+      'settings.prompts.delete',
+    ]);
+    expect(menuLabels('Deal desk')).toEqual([
+      'settings.prompts.view',
+      'settings.prompts.duplicate',
+    ]);
+  });
 
-    it('keeps the row and the error in the dialog when the delete fails', async () => {
-      deletePrompt.mockReturnValue(json({ success: false }, false, 403));
-      const setPrompts = vi.fn();
-      renderPrompts({ prompts: all, selectedPrompt: own, setPrompts });
-      openPicker();
-      await act(async () => {
-        (
-          row('Own prompt').querySelector(
-            'button[aria-label="settings.general.promptActions.delete"]',
-          ) as HTMLElement
-        ).click();
-      });
-      await act(async () => {
-        (
-          document.body.querySelector('[data-testid="confirm"]') as HTMLElement
-        ).click();
-      });
-      await expect(confirm.result).rejects.toThrow();
-      expect(setPrompts).not.toHaveBeenCalled();
-      expect(
-        document.body.querySelector('[data-testid="confirm-error"]')!
-          .textContent,
-      ).toBe('settings.general.promptActions.deleteFailed');
-      expect(dispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          payload: expect.objectContaining({ variant: 'destructive' }),
-        }),
-      );
+  it("opens a viewer's prompt read-only from its card", async () => {
+    service.getSinglePrompt.mockImplementation(() =>
+      response({ content: 'Brief the rep.' }),
+    );
+    await render();
+    await act(async () =>
+      card('Deal desk')
+        .querySelector<HTMLButtonElement>('button[type="button"]')!
+        .click(),
+    );
+    const last = promptsModalProps.mock.calls.at(-1)![0];
+    expect(last).toMatchObject({
+      modalState: 'ACTIVE',
+      type: 'EDIT',
+      readOnly: true,
     });
+  });
 
-    it('removes the row once the delete succeeds', async () => {
-      deletePrompt.mockReturnValue(json({ success: true }));
-      const setPrompts = vi.fn();
-      renderPrompts({ prompts: all, selectedPrompt: own, setPrompts });
-      openPicker();
-      await act(async () => {
-        (
-          row('Own prompt').querySelector(
-            'button[aria-label="settings.general.promptActions.delete"]',
-          ) as HTMLElement
-        ).click();
-      });
-      await act(async () => {
-        (
-          document.body.querySelector('[data-testid="confirm"]') as HTMLElement
-        ).click();
-      });
-      await expect(confirm.result).resolves.toBeUndefined();
-      expect(setPrompts).toHaveBeenCalledWith(
-        all.filter((p) => p.id !== 'own'),
-      );
+  it('opens the share dialog for your own prompt', async () => {
+    await render();
+    await clickMenu('Vendor checks', 'settings.prompts.shareWithTeam');
+    expect(shareModalProps.mock.calls.at(-1)![0]).toMatchObject({
+      resourceType: 'prompt',
+      resourceId: 'p-own',
+      resourceName: 'Vendor checks',
     });
+  });
 
-    it('sends the loaded updated_at and reports a 409 as an edit conflict', async () => {
-      getSinglePrompt.mockReturnValue(
-        json({ content: 'Hello', updated_at: '2026-09-01T10:00:00Z' }),
-      );
-      updatePrompt.mockReturnValue(
-        json({ success: false, code: 'stale_write' }, false, 409),
-      );
-      renderPrompts({ prompts: all, selectedPrompt: own });
-      openPicker();
-      await act(async () => {
-        (row('Editor prompt').querySelector('button') as HTMLElement).click();
-      });
-      expect(lastModalProps().readOnly).toBe(false);
-      await act(async () => lastModalProps().handleEditPrompt('ed', 'team'));
-      expect(updatePrompt).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'ed',
-          expected_updated_at: '2026-09-01T10:00:00Z',
-        }),
-        'test-token',
-      );
-      expect(dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          payload: {
-            variant: 'destructive',
-            message: 'settings.general.promptActions.editConflict',
-          },
-        }),
-      );
+  it('filters by use, the chat prompt counting as in use', async () => {
+    store.dispatch(setPrompt({ id: 'p-idle', name: 'x', type: 'private' }));
+    await render('/settings/prompts?filter=inUse');
+    expect(titles()).toEqual([
+      'default',
+      'Vendor checks',
+      'Escalation summary',
+    ]);
+  });
+
+  it('lists the prompts nothing uses under Unused', async () => {
+    store.dispatch(setPrompt({ id: 'p-idle', name: 'x', type: 'private' }));
+    await render('/settings/prompts?filter=unused');
+    expect(titles()).toEqual(['creative', 'strict', 'Deal desk']);
+  });
+
+  it('keeps the usage filter in the address', async () => {
+    await render();
+    const unused = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) =>
+      b.textContent?.startsWith('settings.prompts.filters.unused'),
+    )!;
+    await act(async () => unused.click());
+    expect(container.querySelector('[data-testid="where"]')!.textContent).toBe(
+      '?filter=unused',
+    );
+  });
+
+  it('says when a search matches nothing', async () => {
+    await render();
+    const input = container.querySelector<HTMLInputElement>(
+      '#prompt-search-input',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, 'zzz');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
     });
+    expect(cards()).toHaveLength(0);
+    expect(container.textContent).toContain('settings.prompts.noPromptsFound');
+  });
+
+  it('shows a failed load as an error with Retry', async () => {
+    service.getPrompts.mockImplementation(() => response({}, false, 500));
+    await render();
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('settings.prompts.loadError');
+    service.getPrompts.mockImplementation(() => response(listed));
+    await act(async () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find((b) => b.textContent === 'retry')!
+        .click(),
+    );
+    expect(titles()).toContain('Vendor checks');
+  });
+
+  it('names the usage in the delete confirm', async () => {
+    store.dispatch(setPrompt({ id: 'p-own', name: 'x', type: 'private' }));
+    await render();
+    await clickMenu('Vendor checks', 'settings.prompts.delete');
+    expect(confirm.props!.message).toBe(
+      'modals.prompts.deleteConfirmation:{"name":"Vendor checks"}',
+    );
+    expect(confirm.props!.description).toBe(
+      'settings.prompts.deleteUsedByInChats:{"count":2,"formatted":"2"}',
+    );
+  });
+
+  it('says only that it cannot be undone for an unused prompt', async () => {
+    await render();
+    await clickMenu('Escalation summary', 'settings.prompts.delete');
+    expect(confirm.props!.description).toBe('common.cantUndo');
+  });
+
+  it('falls back to default when the chat prompt is deleted', async () => {
+    store.dispatch(setPrompt({ id: 'p-idle', name: 'x', type: 'private' }));
+    service.deletePrompt.mockImplementation(() => response({ success: true }));
+    await render();
+    await clickMenu('Escalation summary', 'settings.prompts.delete');
+    expect(confirm.props!.description).toBe('settings.prompts.deleteInChats');
+    await act(async () => {
+      await confirm.props!.handleSubmit();
+    });
+    expect(service.deletePrompt).toHaveBeenCalledWith({ id: 'p-idle' }, 'tok');
+    expect(titles()).not.toContain('Escalation summary');
+    expect(chatPromptId()).toBe('default');
+    expect(radioOf('default').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('keeps the card and rejects when the delete fails', async () => {
+    service.deletePrompt.mockImplementation(() => response({}, false, 403));
+    await render();
+    await clickMenu('Escalation summary', 'settings.prompts.delete');
+    let result: void | Promise<unknown> = undefined;
+    await act(async () => {
+      result = confirm.props!.handleSubmit();
+      (result as Promise<unknown>).catch(() => undefined);
+    });
+    await expect(result).rejects.toThrow();
+    expect(confirm.props!.error).toBe('settings.prompts.deleteFailed');
+    expect(titles()).toContain('Escalation summary');
   });
 });

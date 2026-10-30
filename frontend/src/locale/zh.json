@@ -132,10 +132,9 @@
     "label": "设置",
     "general": {
       "label": "一般",
-      "subtitle": "选择 DocsGPT 的外观、界面语言以及聊天使用的提示词。",
+      "subtitle": "选择 DocsGPT 的外观和界面语言。",
       "sections": {
         "appearance": "外观",
-        "chat": "聊天",
         "dangerZone": "危险操作"
       },
       "theme": "主题",
@@ -145,8 +144,6 @@
       "light": "浅色",
       "dark": "暗色",
       "chunks": "每个查询处理的块",
-      "prompt": "提示",
-      "promptDescription": "不使用智能体的聊天所用的系统提示词。智能体使用各自的提示词。",
       "deleteAllLabel": "删除所有对话",
       "deleteAllDescription": "永久删除您账户中的所有对话。此操作无法撤销。",
       "addNew": "添加新的",
@@ -156,18 +153,7 @@
       "medium": "中",
       "high": "高",
       "unlimited": "无限",
-      "default": "默认",
-      "add": "添加",
-      "promptActions": {
-        "select": "选择提示词",
-        "edit": "编辑提示词",
-        "view": "查看提示词",
-        "duplicate": "复制提示词",
-        "delete": "删除提示词",
-        "deleteFailed": "无法删除此提示词。",
-        "saveFailed": "无法保存此提示词。",
-        "editConflict": "其他人已更改此提示词。请重新打开以查看其版本。"
-      }
+      "default": "默认"
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
@@ -1649,6 +1635,49 @@
       "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
       "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。"
     },
+    "prompts": {
+      "label": "提示词",
+      "subtitle": "系统提示词决定模型如何回答。你选择的提示词用于不使用智能体的聊天；智能体使用各自的提示词。",
+      "searchPlaceholder": "搜索提示词…",
+      "addPrompt": "添加提示词",
+      "manage": "前往提示词",
+      "select": "选择提示词",
+      "filterLabel": "筛选提示词",
+      "filters": {
+        "all": "全部",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "sections": {
+        "included": "自带",
+        "yours": "你的",
+        "shared": "团队共享"
+      },
+      "presets": {
+        "default": "根据你的文档回答并注明出处。文档无法回答时会说明，再用通用知识作答。",
+        "creative": "与 default 相同，另外提供想法、示例和富有想象力的角度，同时保持事实准确。",
+        "strict": "只根据你的文档、工具和聊天内容回答。缺少信息时会说明，而不是猜测。"
+      },
+      "chatPromptLabel": "不使用智能体的聊天所用的提示词",
+      "useInChats": "在聊天中使用 {{name}}",
+      "chatPromptFailed": "无法更改聊天使用的提示词。",
+      "actions": "{{name}} 的操作",
+      "edit": "编辑",
+      "view": "查看",
+      "duplicate": "创建副本",
+      "shareWithTeam": "与团队共享",
+      "delete": "删除",
+      "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteUsedByInChats_one": "有 {{formatted}} 个智能体和你的聊天在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteUsedByInChats_other": "有 {{formatted}} 个智能体和你的聊天在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteInChats": "你的聊天正在使用它，删除后将改用默认提示词。此操作无法撤销。",
+      "deleteFailed": "无法删除此提示词。",
+      "saveFailed": "无法保存此提示词。",
+      "editConflict": "其他人已更改此提示词。请重新打开以查看其版本。",
+      "loadError": "无法加载你的提示词。",
+      "noPromptsFound": "未找到提示词"
+    },
     "devices": {
       "label": "设备",
       "subtitle": "配对远程机器，让智能体可以通过 shell 命令操作它们。",
@@ -2453,8 +2482,7 @@
       "learnAboutPrompts": "了解提示 →",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",
-      "promptTypePrivate": "私人",
-      "delete": "删除"
+      "promptTypePrivate": "私人"
     },
     "chunk": {
       "add": "添加块",

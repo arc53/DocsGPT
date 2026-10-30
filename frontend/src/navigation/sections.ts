@@ -15,6 +15,7 @@ import {
   LayoutGrid,
   LayoutTemplate,
   Lightbulb,
+  MessageSquareText,
   Plug,
   Radar,
   ScrollText,
@@ -149,6 +150,12 @@ export const SETTINGS_SECTION: Section = {
           path: '/settings/tools',
           labelKey: 'settings.tools.label',
           icon: Wrench,
+        },
+        {
+          key: 'prompts',
+          path: '/settings/prompts',
+          labelKey: 'settings.prompts.label',
+          icon: MessageSquareText,
         },
         {
           key: 'customModels',

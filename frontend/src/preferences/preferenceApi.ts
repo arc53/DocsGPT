@@ -211,40 +211,8 @@ export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
   return validDocs.length > 0 ? validDocs : null;
 }
 
-export function getLocalPrompt(
-  availablePrompts?: Prompt[] | null,
-): Prompt | null {
-  const promptString = localStorage.getItem('DocsGPTPrompt');
-  const selectedPrompt = promptString
-    ? (JSON.parse(promptString) as Prompt)
-    : null;
-
-  if (!availablePrompts || !selectedPrompt) {
-    return selectedPrompt;
-  }
-
-  const isPromptAvailable = (selected: Prompt) => {
-    return availablePrompts.some((available) => {
-      return available.id === selected.id;
-    });
-  };
-
-  const isValid = isPromptAvailable(selectedPrompt);
-
-  if (!isValid) {
-    localStorage.removeItem('DocsGPTPrompt');
-    return null;
-  }
-
-  return selectedPrompt;
-}
-
 export function setLocalApiKey(key: string): void {
   localStorage.setItem('DocsGPTApiKey', key);
-}
-
-export function setLocalPrompt(prompt: Prompt): void {
-  localStorage.setItem('DocsGPTPrompt', JSON.stringify(prompt));
 }
 
 export function setLocalRecentDocs(docs: Doc[] | null): void {

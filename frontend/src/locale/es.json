@@ -134,10 +134,9 @@
     "label": "Configuración",
     "general": {
       "label": "General",
-      "subtitle": "Elige el aspecto de DocsGPT, el idioma que usa y el prompt de tus chats.",
+      "subtitle": "Elige el aspecto de DocsGPT y el idioma que usa.",
       "sections": {
         "appearance": "Apariencia",
-        "chat": "Chat",
         "dangerZone": "Zona de peligro"
       },
       "theme": "Tema",
@@ -147,8 +146,6 @@
       "light": "Claro",
       "dark": "Oscuro",
       "chunks": "Fragmentos procesados por consulta",
-      "prompt": "Prompt Activo",
-      "promptDescription": "El prompt del sistema para los chats sin agente. Los agentes usan el suyo.",
       "deleteAllLabel": "Eliminar todas las conversaciones",
       "deleteAllDescription": "Elimina de forma permanente todas las conversaciones de tu cuenta. No se puede deshacer.",
       "addNew": "Añadir Nuevo",
@@ -158,18 +155,7 @@
       "medium": "Medio",
       "high": "Alto",
       "unlimited": "Ilimitado",
-      "default": "Predeterminado",
-      "add": "Añadir",
-      "promptActions": {
-        "select": "Selecciona un prompt",
-        "edit": "Editar prompt",
-        "view": "Ver prompt",
-        "duplicate": "Duplicar prompt",
-        "delete": "Eliminar prompt",
-        "deleteFailed": "No se pudo eliminar este prompt.",
-        "saveFailed": "No se pudo guardar este prompt.",
-        "editConflict": "Otra persona cambió este prompt. Vuelve a abrirlo para ver su versión."
-      }
+      "default": "Predeterminado"
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
@@ -1720,6 +1706,51 @@
       "deleteUsedBy_other": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer.",
       "deleteUsedBy_many": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer."
     },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "Los prompts del sistema indican al modelo cómo responder. El que elijas se usa en los chats sin agente; los agentes eligen el suyo.",
+      "searchPlaceholder": "Buscar prompts…",
+      "addPrompt": "Añadir prompt",
+      "manage": "Ir a Prompts",
+      "select": "Selecciona un prompt",
+      "filterLabel": "Filtrar prompts",
+      "filters": {
+        "all": "Todos",
+        "inUse": "En uso",
+        "unused": "Sin usar"
+      },
+      "sections": {
+        "included": "Incluidos",
+        "yours": "Tuyos",
+        "shared": "Compartidos con el equipo"
+      },
+      "presets": {
+        "default": "Responde a partir de tus documentos y los cita. Si no cubren la pregunta, lo dice y responde con conocimiento general.",
+        "creative": "Como default, con ideas, ejemplos y enfoques imaginativos, sin perder la exactitud de los hechos.",
+        "strict": "Responde solo a partir de tus documentos, herramientas y el chat. Dice qué falta en lugar de suponer."
+      },
+      "chatPromptLabel": "Prompt para los chats sin agente",
+      "useInChats": "Usar {{name}} en los chats",
+      "chatPromptFailed": "No se pudo cambiar el prompt de tus chats.",
+      "actions": "Acciones de {{name}}",
+      "edit": "Editar",
+      "view": "Ver",
+      "duplicate": "Duplicar",
+      "shareWithTeam": "Compartir con el equipo",
+      "delete": "Eliminar",
+      "deleteUsedBy_one": "Lo usa {{formatted}} agente, que volverá al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedBy_other": "Lo usan {{formatted}} agentes, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedBy_many": "Lo usan {{formatted}} agentes, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedByInChats_one": "Lo usan {{formatted}} agente y tus chats, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedByInChats_other": "Lo usan {{formatted}} agentes y tus chats, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteUsedByInChats_many": "Lo usan {{formatted}} agentes y tus chats, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteInChats": "Lo usan tus chats, que volverán al prompt predeterminado. No se puede deshacer.",
+      "deleteFailed": "No se pudo eliminar este prompt.",
+      "saveFailed": "No se pudo guardar este prompt.",
+      "editConflict": "Otra persona cambió este prompt. Vuelve a abrirlo para ver su versión.",
+      "loadError": "No se pudieron cargar tus prompts.",
+      "noPromptsFound": "No se encontraron prompts"
+    },
     "devices": {
       "label": "Dispositivos",
       "subtitle": "Empareja máquinas remotas que los agentes pueden controlar mediante comandos de shell.",
@@ -2550,8 +2581,7 @@
       "learnAboutPrompts": "Aprende sobre los Prompts →",
       "publicPromptEditDisabled": "Los prompts públicos no se pueden editar",
       "promptTypePublic": "público",
-      "promptTypePrivate": "privado",
-      "delete": "Eliminar"
+      "promptTypePrivate": "privado"
     },
     "chunk": {
       "add": "Agregar fragmento",

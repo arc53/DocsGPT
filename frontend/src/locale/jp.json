@@ -132,10 +132,9 @@
     "label": "設定",
     "general": {
       "label": "一般",
-      "subtitle": "DocsGPTの外観、表示言語、チャットで使うプロンプトを選択します。",
+      "subtitle": "DocsGPTの外観と表示言語を選択します。",
       "sections": {
         "appearance": "外観",
-        "chat": "チャット",
         "dangerZone": "危険な操作"
       },
       "theme": "テーマ",
@@ -145,8 +144,6 @@
       "light": "ライト",
       "dark": "ダーク",
       "chunks": "クエリごとに処理されるチャンク",
-      "prompt": "アクティブプロンプト",
-      "promptDescription": "エージェントを使わないチャットのシステムプロンプト。エージェントは独自のものを使います。",
       "deleteAllLabel": "すべての会話を削除",
       "deleteAllDescription": "アカウント内のすべての会話を完全に削除します。この操作は元に戻せません。",
       "addNew": "新規追加",
@@ -156,18 +153,7 @@
       "medium": "中",
       "high": "高",
       "unlimited": "無制限",
-      "default": "デフォルト",
-      "add": "追加",
-      "promptActions": {
-        "select": "プロンプトを選択",
-        "edit": "プロンプトを編集",
-        "view": "プロンプトを表示",
-        "duplicate": "プロンプトを複製",
-        "delete": "プロンプトを削除",
-        "deleteFailed": "このプロンプトを削除できませんでした。",
-        "saveFailed": "このプロンプトを保存できませんでした。",
-        "editConflict": "他のユーザーがこのプロンプトを変更しました。開き直して最新の内容を確認してください。"
-      }
+      "default": "デフォルト"
     },
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",
@@ -1649,6 +1635,49 @@
       "deleteUsedBy_one": "{{formatted}}件のエージェントが使用しており、それらはこのツールを使えなくなります。設定とアクションも削除されます。この操作は元に戻せません。",
       "deleteUsedBy_other": "{{formatted}}件のエージェントが使用しており、それらはこのツールを使えなくなります。設定とアクションも削除されます。この操作は元に戻せません。"
     },
+    "prompts": {
+      "label": "プロンプト",
+      "subtitle": "システムプロンプトは、モデルの回答方法を指示します。選んだプロンプトはエージェントを使わないチャットで使われ、エージェントはそれぞれ独自のものを選びます。",
+      "searchPlaceholder": "プロンプトを検索…",
+      "addPrompt": "プロンプトを追加",
+      "manage": "プロンプトへ移動",
+      "select": "プロンプトを選択",
+      "filterLabel": "プロンプトを絞り込む",
+      "filters": {
+        "all": "すべて",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "sections": {
+        "included": "標準搭載",
+        "yours": "あなたのもの",
+        "shared": "チームと共有"
+      },
+      "presets": {
+        "default": "ドキュメントをもとに回答し、出典を示します。ドキュメントで答えられない場合はその旨を伝え、一般的な知識で回答します。",
+        "creative": "defaultと同様に回答しつつ、アイデアや例、創造的な視点を加えます。事実の正確さは保ちます。",
+        "strict": "ドキュメント、ツール、チャットの内容だけから回答します。推測せず、足りない情報を伝えます。"
+      },
+      "chatPromptLabel": "エージェントを使わないチャットのプロンプト",
+      "useInChats": "{{name}} をチャットで使用",
+      "chatPromptFailed": "チャットで使うプロンプトを変更できませんでした。",
+      "actions": "{{name}} の操作",
+      "edit": "編集",
+      "view": "表示",
+      "duplicate": "複製",
+      "shareWithTeam": "チームと共有",
+      "delete": "削除",
+      "deleteUsedBy_one": "{{formatted}}件のエージェントが使用しており、それらはデフォルトのプロンプトに戻ります。この操作は元に戻せません。",
+      "deleteUsedBy_other": "{{formatted}}件のエージェントが使用しており、それらはデフォルトのプロンプトに戻ります。この操作は元に戻せません。",
+      "deleteUsedByInChats_one": "{{formatted}}件のエージェントとあなたのチャットが使用しており、それらはデフォルトのプロンプトに戻ります。この操作は元に戻せません。",
+      "deleteUsedByInChats_other": "{{formatted}}件のエージェントとあなたのチャットが使用しており、それらはデフォルトのプロンプトに戻ります。この操作は元に戻せません。",
+      "deleteInChats": "あなたのチャットで使用しており、チャットはデフォルトのプロンプトに戻ります。この操作は元に戻せません。",
+      "deleteFailed": "このプロンプトを削除できませんでした。",
+      "saveFailed": "このプロンプトを保存できませんでした。",
+      "editConflict": "他のユーザーがこのプロンプトを変更しました。開き直して最新の内容を確認してください。",
+      "loadError": "プロンプトを読み込めませんでした。",
+      "noPromptsFound": "プロンプトが見つかりません"
+    },
     "devices": {
       "label": "デバイス",
       "subtitle": "エージェントがシェルコマンドで操作できるリモートマシンをペアリングします。",
@@ -2454,8 +2483,7 @@
       "learnAboutPrompts": "プロンプトについて学ぶ →",
       "publicPromptEditDisabled": "公開プロンプトは編集できません",
       "promptTypePublic": "公開",
-      "promptTypePrivate": "非公開",
-      "delete": "削除"
+      "promptTypePrivate": "非公開"
     },
     "chunk": {
       "add": "チャンクを追加",

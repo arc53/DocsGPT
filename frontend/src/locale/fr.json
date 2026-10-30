@@ -134,10 +134,9 @@
     "label": "Paramètres",
     "general": {
       "label": "Général",
-      "subtitle": "Choisissez l’apparence de DocsGPT, sa langue et le prompt utilisé par vos conversations.",
+      "subtitle": "Choisissez l’apparence de DocsGPT et sa langue.",
       "sections": {
         "appearance": "Apparence",
-        "chat": "Conversation",
         "dangerZone": "Zone de danger"
       },
       "theme": "Thème",
@@ -147,8 +146,6 @@
       "light": "Clair",
       "dark": "Sombre",
       "chunks": "Fragments traités par requête",
-      "prompt": "Prompt actif",
-      "promptDescription": "Le prompt système des conversations sans agent. Les agents utilisent le leur.",
       "deleteAllLabel": "Supprimer toutes les conversations",
       "deleteAllDescription": "Supprime définitivement toutes les conversations de votre compte. Cette action est irréversible.",
       "addNew": "Ajouter",
@@ -158,18 +155,7 @@
       "medium": "Moyen",
       "high": "Élevé",
       "unlimited": "Illimité",
-      "default": "Par défaut",
-      "add": "Ajouter",
-      "promptActions": {
-        "select": "Sélectionner un prompt",
-        "edit": "Modifier le prompt",
-        "view": "Afficher le prompt",
-        "duplicate": "Dupliquer le prompt",
-        "delete": "Supprimer le prompt",
-        "deleteFailed": "Impossible de supprimer ce prompt.",
-        "saveFailed": "Impossible d’enregistrer ce prompt.",
-        "editConflict": "Quelqu’un d’autre a modifié ce prompt. Rouvrez-le pour voir sa version."
-      }
+      "default": "Par défaut"
     },
     "sources": {
       "title": "Gérez ici tous les fichiers sources auxquels vous avez accès et ceux que vous avez importés.",
@@ -1720,6 +1706,51 @@
       "deleteUsedBy_other": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
       "deleteUsedBy_many": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible."
     },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "Les prompts système indiquent au modèle comment répondre. Celui que vous choisissez sert aux conversations sans agent ; les agents choisissent le leur.",
+      "searchPlaceholder": "Rechercher des prompts…",
+      "addPrompt": "Ajouter un prompt",
+      "manage": "Accéder aux prompts",
+      "select": "Sélectionner un prompt",
+      "filterLabel": "Filtrer les prompts",
+      "filters": {
+        "all": "Tous",
+        "inUse": "Utilisés",
+        "unused": "Inutilisés"
+      },
+      "sections": {
+        "included": "Inclus",
+        "yours": "Les vôtres",
+        "shared": "Partagés avec l’équipe"
+      },
+      "presets": {
+        "default": "Répond à partir de vos documents et les cite. S’ils ne couvrent pas la question, il le dit, puis répond avec des connaissances générales.",
+        "creative": "Comme default, avec en plus des idées, des exemples et des angles inventifs, sans rien perdre de l’exactitude des faits.",
+        "strict": "Répond uniquement à partir de vos documents, de vos outils et de la conversation. Signale ce qui manque au lieu de deviner."
+      },
+      "chatPromptLabel": "Prompt des conversations sans agent",
+      "useInChats": "Utiliser {{name}} dans les conversations",
+      "chatPromptFailed": "Impossible de changer le prompt de vos conversations.",
+      "actions": "Actions pour {{name}}",
+      "edit": "Modifier",
+      "view": "Afficher",
+      "duplicate": "Dupliquer",
+      "shareWithTeam": "Partager avec l’équipe",
+      "delete": "Supprimer",
+      "deleteUsedBy_one": "Utilisé par {{formatted}} agent, qui revient au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedBy_other": "Utilisé par {{formatted}} agents, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedBy_many": "Utilisé par {{formatted}} agents, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedByInChats_one": "Utilisé par {{formatted}} agent et vos conversations, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedByInChats_other": "Utilisé par {{formatted}} agents et vos conversations, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedByInChats_many": "Utilisé par {{formatted}} agents et vos conversations, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteInChats": "Vos conversations l’utilisent et reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteFailed": "Impossible de supprimer ce prompt.",
+      "saveFailed": "Impossible d’enregistrer ce prompt.",
+      "editConflict": "Quelqu’un d’autre a modifié ce prompt. Rouvrez-le pour voir sa version.",
+      "loadError": "Impossible de charger vos prompts.",
+      "noPromptsFound": "Aucun prompt trouvé"
+    },
     "devices": {
       "label": "Appareils",
       "subtitle": "Associez des machines distantes que les agents peuvent piloter via des commandes shell.",
@@ -2077,7 +2108,7 @@
         "rename": "Renommer",
         "toolsHint": "« Demander d’abord » vous sollicite dans la conversation. Les modifications via l’API, le widget et les liens s’autorisent par agent dans les détails d’accès.",
         "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez.",
-        "noSourcesHint": "Choisissez du contenu dans {{name}} pour l’ajouter aux connaissances.",
+        "noSourcesHint": "Choisissez du contenu dans {{name}} pour l\u2019ajouter aux connaissances.",
         "indexing": "Indexation",
         "firstSyncStarted": "Première synchronisation lancée {{time}}",
         "dismissFailedSync": "Ignorer {{name}}",
@@ -2550,8 +2581,7 @@
       "learnAboutPrompts": "En savoir plus sur les prompts →",
       "publicPromptEditDisabled": "Les prompts publics ne sont pas modifiables",
       "promptTypePublic": "public",
-      "promptTypePrivate": "privé",
-      "delete": "Supprimer"
+      "promptTypePrivate": "privé"
     },
     "chunk": {
       "add": "Ajouter un fragment",
@@ -3435,7 +3465,7 @@
         },
         "removeTopic": {
           "title": "Retirer « {{name}} » ?",
-          "description": "Il peut chevaucher d’autres sujets, il a donc ses propres résultats. Ils disparaissent des analyses et des journaux, et l’ajouter à nouveau repart de zéro.",
+          "description": "Il peut chevaucher d’autres sujets, il a donc ses propres résultats. Ils disparaissent des analyses et des journaux, et l\u2019ajouter à nouveau repart de zéro.",
           "submit": "Retirer"
         }
       }
