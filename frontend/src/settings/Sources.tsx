@@ -624,16 +624,15 @@ export default function Sources({
       : [];
 
   // Needs attention: with no search or filter, the sources whose ingest
-  // failed, whose connection needs a sign-in, or that are still indexing
-  // (in that order), from the app's knowledge list so a source on any page
-  // counts. They leave the paged grid, and page 1 leads with them; a card
-  // on this page is the fresher copy of its source.
+  // failed or whose connection needs a sign-in (in that order), from the
+  // app's knowledge list so a source on any page counts. Indexing needs no
+  // one, so it stays in the list. They leave the paged grid, and page 1
+  // leads with them; a card on this page is the fresher copy of its source.
   const unfiltered = !pendingTerm && kind === 'all' && usage === 'all';
   const attentionRank = (doc: Doc): number | null => {
     const ingest = ingestState(doc);
     if (ingest === 'failed') return 0;
-    if (connectionNeedsSignIn(connectionOf(doc, connections))) return 1;
-    return ingest === 'processing' ? 2 : null;
+    return connectionNeedsSignIn(connectionOf(doc, connections)) ? 1 : null;
   };
   const attentionDocs = unfiltered
     ? (knowledge ?? [])
@@ -654,9 +653,7 @@ export default function Sources({
     (doc) => !attentionIds.has(doc.id),
   );
   const showAttention =
-    currentPage === 1 &&
-    unfiltered &&
-    attentionDocs.length + pendingSyncs.length > 0;
+    currentPage === 1 && unfiltered && attentionDocs.length > 0;
 
   // Select mode: the cards the caller can delete get a checkbox, and the
   // ticked ones go together. The selection keeps each source (its name and
@@ -1280,21 +1277,24 @@ export default function Sources({
                 <SectionHeader
                   size="sm"
                   title={t('settings.sources.needsAttention')}
-                  count={attentionDocs.length + pendingSyncs.length}
+                  count={attentionDocs.length}
                 />
                 <div className={GRID}>
                   {attentionDocs.map(renderSourceCard)}
-                  {pendingSyncs.map(renderPendingSync)}
                 </div>
               </section>
-              {gridDocuments.length > 0 && (
+              {gridDocuments.length + pendingSyncs.length > 0 && (
                 <section className="flex flex-col gap-3">
                   <SectionHeader
                     size="sm"
                     title={t('settings.sources.allKnowledge')}
-                    count={Math.max(0, totalDocuments - attentionDocs.length)}
+                    count={
+                      Math.max(0, totalDocuments - attentionDocs.length) +
+                      pendingSyncs.length
+                    }
                   />
                   <div className={GRID}>
+                    {pendingSyncs.map(renderPendingSync)}
                     {gridDocuments.map(renderSourceCard)}
                   </div>
                 </section>

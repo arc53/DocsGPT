@@ -1510,18 +1510,14 @@ describe('Sources citation link', () => {
       expect(pendingCard()).toBeUndefined();
     });
 
-    // K2: with no search or filter it leads page 1 under Needs attention;
-    // a search shows it among the cards, with no section.
-    it('joins Needs attention, which a search drops', async () => {
+    // Indexing needs no one: it leads the list, not Needs attention.
+    it('leads the list outside Needs attention', async () => {
       await render('/settings/knowledge', [doc()]);
-      const heading = Array.from(container.querySelectorAll('h2')).find((h) =>
-        h.textContent?.startsWith('settings.sources.needsAttention'),
-      )!;
-      expect(heading.closest('section')!.textContent).toContain('Handbook');
-      await typeSearch('HAND');
       expect(container.textContent).not.toContain(
         'settings.sources.needsAttention',
       );
+      expect(pendingCard()).toBeDefined();
+      await typeSearch('HAND');
       expect(pendingCard()).toBeDefined();
     });
 
@@ -1879,11 +1875,19 @@ describe('Sources needs attention', () => {
       ).map((b) => b.getAttribute('aria-label')),
     ]);
 
-  it('leads page 1 with failed, reconnect and indexing sources, listed once', async () => {
-    await mount(root, [fine, failed]);
+  it('leads page 1 with failed and reconnect sources, listed once', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [fine, failed, running],
+      totalDocuments: 4,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    await mount(root, [fine, failed, running]);
+    // Indexing needs no one, so a running source stays in the list.
     expect(sections()).toEqual([
-      ['settings.sources.needsAttention3', ['Failed', 'Paused', 'Running']],
-      ['settings.sources.allKnowledge1', ['Fine']],
+      ['settings.sources.needsAttention2', ['Failed', 'Paused']],
+      ['settings.sources.allKnowledge2', ['Fine', 'Running']],
     ]);
   });
 
