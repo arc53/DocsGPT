@@ -391,13 +391,51 @@ def retry_config_error(raw: Any) -> Optional[str]:
     )
 
 
+def _editor_only_model(model_id: Any, owner_id: str | None, editor_id: str | None) -> bool:
+    """Whether ``model_id`` is a custom model of the editor that the owner lacks.
+
+    A node's model resolves in the workflow owner's account whoever runs it,
+    so an editor's own custom model on the owner's workflow can never run.
+
+    Args:
+        model_id: The node's ``model_id``.
+        owner_id: The workflow's owner.
+        editor_id: The team editor saving it, or None for the owner's own save.
+
+    Returns:
+        True when the editor has the model and the owner doesn't.
+    """
+    if not editor_id or not owner_id or editor_id == owner_id:
+        return False
+    if not isinstance(model_id, str) or not model_id.strip():
+        return False
+    from docsgpt.core.model_registry import ModelRegistry
+
+    registry = ModelRegistry.get_instance()
+    model_id = model_id.strip()
+    return registry.model_exists(model_id, user_id=editor_id) and not registry.model_exists(
+        model_id, user_id=owner_id
+    )
+
+
 def validate_workflow_structure(
-    nodes: List[Dict], edges: List[Dict], user_id: str | None = None
+    nodes: List[Dict], edges: List[Dict], user_id: str | None = None, editor_id: str | None = None
 ) -> List[str]:
     """Validate workflow graph structure.
 
     ``user_id`` is required so per-user BYOM custom-model UUIDs resolve
     when checking each agent node's structured-output capability.
+
+    Args:
+        nodes: The graph's nodes.
+        edges: The graph's edges.
+        user_id: The workflow's owner, whose account a node's model resolves in.
+        editor_id: A team editor saving the owner's workflow, if any. A node
+            set to one of the editor's own custom models is refused: the owner
+            has no copy of it, so the node would fail for everyone.
+
+    Returns:
+        The errors found; empty when the graph is valid.
     """
     errors = []
 
@@ -601,6 +639,11 @@ def validate_workflow_structure(
         has_json_schema = normalized_schema is not None
 
         model_id = raw_config.get("model_id")
+        if _editor_only_model(model_id, user_id, editor_id):
+            errors.append(
+                f"Agent node '{agent_title}' uses your custom model, which the workflow's owner "
+                "doesn't have. Pick a model the owner can use."
+            )
         if has_json_schema and isinstance(model_id, str) and model_id.strip():
             capabilities = get_model_capabilities(model_id.strip(), user_id=user_id)
             if capabilities and not capabilities.get("supports_structured_output", True):
@@ -882,7 +925,7 @@ class WorkflowDetail(Resource):
                 # Validated as the owner: the workflow runs with the owner's
                 # models, so their BYOM ids are the ones that must resolve.
                 validation_errors = validate_workflow_structure(
-                    nodes_data, edges_data, user_id=acting
+                    nodes_data, edges_data, user_id=acting, editor_id=user_id
                 )
                 retry_error = retry_config_error(data.get("retry_defaults"))
                 if retry_error:

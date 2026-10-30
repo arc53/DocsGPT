@@ -1,7 +1,7 @@
 ---
 title: Custom Models
 description: Add your own OpenAI-compatible model in Settings → Custom Models - the fields, Test connection, where the model appears, how its API key is stored, why only public endpoints are allowed, and the /api/user/models endpoints.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components'
@@ -49,6 +49,12 @@ Enabled custom models are listed next to the operator's models in:
 - the model lists in a source's settings (the GraphRAG extraction model, for example).
 
 An agent that uses your custom model keeps using it for everyone who can run the agent: team members you share it with and [agent API key](/API/agent-keys) callers. Their requests go to your endpoint with your key. If you delete the model, or its key can no longer be decrypted, the agent falls back to the instance's default model.
+
+The same goes for a workflow **AI Agent** node set to your custom model: whoever runs the workflow agent, the node calls your endpoint with your key, and the usage counts toward the agent. A node's model is always looked up in the workflow owner's account, so:
+
+- If you delete or disable the model, the nodes set to it fail with *Model '…' is not available* until you pick another model for them. They don't fall back to the default model.
+- A team editor of your workflow can set a node to one of your custom models, but not to one of their own: the save is refused, because you don't have that model.
+- A node without a model of its own runs on the agent's model, as before.
 
 To edit or delete a model, open the menu on its card in **Settings → Custom Models**. A model disabled through the API (`"enabled": false`) shows a **Disabled** badge and is hidden from the pickers.
 
