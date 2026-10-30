@@ -212,8 +212,12 @@ describe('AddToolModal', () => {
     expect(connected.dataset.variant).toBe('outline');
     expect(connected.className).not.toMatch(/\bh-44\b/);
     const available = service('mcp:notion')!;
-    // Available: no footer cue; no badge already says it isn't connected.
-    expect(available.querySelector('[data-slot="card-footer"]')).toBeNull();
+    // Available: no state pill and no account; the meta line says only
+    // what the service can do.
+    expect(available.querySelector('[data-slot="badge"]')).toBeNull();
+    expect(
+      available.querySelector('[data-slot="card-footer"]')!.textContent,
+    ).not.toContain('settings.connectors.status');
   });
 
   it('lists the custom kinds last and launches them in place', async () => {

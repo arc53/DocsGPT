@@ -2170,9 +2170,6 @@
         "ownerWarningNoAccount": "团队成员将以你的 {{name}} 账号操作。"
       },
       "createFailed": "无法添加连接器。请重试。",
-      "capabilityFilter": {
-        "clear": "显示所有连接器"
-      },
       "capabilityPlain": {
         "sync": "同步到知识库",
         "read": "查找信息",
@@ -2231,22 +2228,35 @@
         "failed": "无法重命名账户。请重试。"
       },
       "browseAll": "浏览所有连接器",
-      "filters": {
-        "all": "全部",
-        "connected": "已连接",
-        "disconnected": "已断开"
-      },
-      "filterLabel": "筛选连接器",
-      "capabilityChip": {
-        "sync": "同步到知识库",
-        "tools": "为智能体提供工具"
-      },
       "injection": {
         "flagged": "疑似提示词注入",
         "notice_other": "有 {{formatted}} 个操作的描述看起来像是为 AI 植入的指令，可能是提示词注入。允许之前，请在“自定义”中检查。"
       },
       "syncContent": "同步内容",
-      "openInKnowledge": "在知识库中打开"
+      "openInKnowledge": "在知识库中打开",
+      "capabilityShort": {
+        "sync": "同步",
+        "read": "查询",
+        "write": "执行操作"
+      },
+      "capabilityFilters": {
+        "all": "全部",
+        "sync": "知识",
+        "tools": "工具"
+      },
+      "capabilityFilterLabel": "按功能筛选",
+      "statusFilters": {
+        "all": "不限状态",
+        "reconnect": "需要登录",
+        "connected": "已连接",
+        "available": "未连接"
+      },
+      "statusFilterLabel": "按状态筛选",
+      "sections": {
+        "reconnect": "需要登录",
+        "connected": "已连接",
+        "available": "可用"
+      }
     },
     "insights": {
       "label": "洞察"

@@ -11,21 +11,6 @@ import {
   type SourceKindFilter,
 } from './sourceKinds';
 
-/**
- * The kinds worth drawing: `shownFilters`, and none at all while All is
- * picked and no kind would narrow the list (every source is one kind).
- */
-const shownKinds = (
-  value: SourceKindFilter,
-  counts: Record<SourceKindFilter, number>,
-): SourceKindFilter[] => {
-  const kinds = shownFilters(SOURCE_KINDS, value, counts);
-  const narrows = kinds.some(
-    (kind) => kind !== 'all' && counts[kind] !== counts.all,
-  );
-  return value === 'all' && !narrows ? [] : kinds;
-};
-
 type SourceKindToggleProps = {
   value: SourceKindFilter;
   onValueChange: (kind: SourceKindFilter) => void;
@@ -47,7 +32,7 @@ export function SourceKindToggle({
   size = 'sm',
 }: SourceKindToggleProps) {
   const { t } = useTranslation();
-  const kinds = shownKinds(value, counts);
+  const kinds = shownFilters(SOURCE_KINDS, value, counts);
   if (kinds.length === 0) return null;
   return (
     <ToggleGroup

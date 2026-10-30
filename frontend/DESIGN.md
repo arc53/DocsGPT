@@ -973,9 +973,8 @@ Share's dense list step), each item its label with the kind's `count`,
 beside a `SearchInput` (`w-full sm:w-56`); no match is `EmptyState size="xs"
 illustration="none"`.
 
-A state or usage filter on a list page (Connectors' All · Connected ·
-Disconnected) follows the same rules, plus these, all in
-`hooks/useUrlFilter.ts`:
+A list page's filters (a kind track, a usage or status `FilterSelect`) follow
+the same rules, plus these, all in `hooks/useUrlFilter.ts`:
 
 - **The address holds it.** `const [filter, setFilter] =
 useUrlFilter(FILTERS)` reads and writes `?filter=`, leaves the default
@@ -983,15 +982,18 @@ useUrlFilter(FILTERS)` reads and writes `?filter=`, leaves the default
   other params, so Back and a reload keep the filter. `{ name }` picks
   another param; `{ clears: ['page'] }` drops a paged list's page when the
   filter changes.
-- **No item leads to an empty list.** `shownFilters(FILTERS, filter,
-counts)` hides an item whose count is 0 unless it is the selected one, and
-  returns nothing when only All would remain: then the page draws no group
-  at all.
+- **No item leads to an empty list, or changes nothing.** `shownFilters(FILTERS,
+filter, counts)` hides an item whose count is 0 unless it is the selected
+  one, and while All is picked returns nothing when only All would remain or
+  when no item would narrow the list: then the page draws no group at all.
 - **One recipe per page.** A Workspace list page's ToggleGroup is the
   _kind_, what the item is, the same split as its sections and its picker:
   Tools (Included · Added · Services · Custom), Knowledge (Files · Websites
   · Synced · Wikis · Shared), Prompts (Included · Yours · Shared),
-  Connectors (Knowledge · Tools, by capability). How the items are used or
+  Connectors (Knowledge · Tools, by capability; `?capability=sync` is how
+  Add knowledge links to it), sectioned Needs sign-in · Connected ·
+  Available, with the status (Any status · Needs sign-in · Connected · Not
+  connected) in the FilterSelect. How the items are used or
   their state is the one `components/FilterSelect` beside it, a pill Select
   whose default reads "Any use" or "Any status" without a count (so it never
   echoes the track's All), each option with its count, and with the same

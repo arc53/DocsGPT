@@ -2263,9 +2263,6 @@
         "ownerWarningNoAccount": "Los miembros del equipo actuarán con tu cuenta de {{name}}."
       },
       "createFailed": "No se pudo añadir el conector. Inténtalo de nuevo.",
-      "capabilityFilter": {
-        "clear": "Mostrar todos los conectores"
-      },
       "capabilityPlain": {
         "sync": "Sincroniza en Conocimiento",
         "read": "Consulta datos",
@@ -2326,16 +2323,6 @@
         "failed": "No se pudo cambiar el nombre de la cuenta. Inténtalo de nuevo."
       },
       "browseAll": "Ver todos los conectores",
-      "filters": {
-        "all": "Todos",
-        "connected": "Conectados",
-        "disconnected": "Desconectados"
-      },
-      "filterLabel": "Filtrar conectores",
-      "capabilityChip": {
-        "sync": "Sincroniza en Conocimiento",
-        "tools": "Da herramientas a los agentes"
-      },
       "injection": {
         "flagged": "Posible inyección de prompt",
         "notice_one": "La descripción de {{formatted}} acción parece contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísala en Personalizar antes de permitirla.",
@@ -2343,7 +2330,30 @@
         "notice_other": "Las descripciones de {{formatted}} acciones parecen contener instrucciones colocadas para la IA, una posible inyección de prompt. Revísalas en Personalizar antes de permitirlas."
       },
       "syncContent": "Sincronizar contenido",
-      "openInKnowledge": "Abrir en Conocimiento"
+      "openInKnowledge": "Abrir en Conocimiento",
+      "capabilityShort": {
+        "sync": "Sincroniza",
+        "read": "Consulta",
+        "write": "Actúa"
+      },
+      "capabilityFilters": {
+        "all": "Todos",
+        "sync": "Conocimiento",
+        "tools": "Herramientas"
+      },
+      "capabilityFilterLabel": "Filtrar por función",
+      "statusFilters": {
+        "all": "Cualquier estado",
+        "reconnect": "Requiere iniciar sesión",
+        "connected": "Conectados",
+        "available": "Sin conectar"
+      },
+      "statusFilterLabel": "Filtrar por estado",
+      "sections": {
+        "reconnect": "Requiere iniciar sesión",
+        "connected": "Conectados",
+        "available": "Disponibles"
+      }
     },
     "insights": {
       "label": "Información"

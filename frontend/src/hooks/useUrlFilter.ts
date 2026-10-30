@@ -58,8 +58,10 @@ export function useUrlFilter<T extends string>(
 
 /**
  * The filter items worth showing: an item whose count is 0 is hidden unless
- * it is the selected one, and the first (All) always stays. When only All
- * would remain, nothing is returned, so the caller hides the whole group.
+ * it is the selected one, and the first (All) always stays. While All is
+ * picked, the group is hidden when only All would remain or when no item
+ * would narrow the list (every item holds what All holds), so a filter
+ * never offers a choice that changes nothing.
  *
  * Args:
  *   values: The filter's values, All first.
@@ -74,8 +76,12 @@ export function shownFilters<T extends string>(
   selected: T,
   counts: Record<T, number>,
 ): T[] {
+  const all = values[0];
   const shown = values.filter(
-    (value, index) => index === 0 || value === selected || counts[value] > 0,
+    (value) => value === all || value === selected || counts[value] > 0,
   );
-  return shown.length > 1 ? shown : [];
+  const narrows = shown.some(
+    (value) => value !== all && counts[value] !== counts[all],
+  );
+  return shown.length > 1 && (selected !== all || narrows) ? shown : [];
 }

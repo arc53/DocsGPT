@@ -2178,9 +2178,6 @@
         "ownerWarningNoAccount": "Teammitglieder handeln mit deinem {{name}}-Konto."
       },
       "createFailed": "Der Konnektor konnte nicht hinzugefügt werden. Versuche es erneut.",
-      "capabilityFilter": {
-        "clear": "Alle Konnektoren anzeigen"
-      },
       "capabilityPlain": {
         "sync": "Synchronisiert ins Wissen",
         "read": "Schlägt nach",
@@ -2240,23 +2237,36 @@
         "failed": "Das Konto konnte nicht umbenannt werden. Versuche es erneut."
       },
       "browseAll": "Alle Konnektoren ansehen",
-      "filters": {
-        "all": "Alle",
-        "connected": "Verbunden",
-        "disconnected": "Getrennt"
-      },
-      "filterLabel": "Konnektoren filtern",
-      "capabilityChip": {
-        "sync": "Synchronisiert ins Wissen",
-        "tools": "Gibt Agenten Tools"
-      },
       "injection": {
         "flagged": "Mögliche Prompt-Injection",
         "notice_one": "Die Beschreibung von {{formatted}} Aktion liest sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst.",
         "notice_other": "Die Beschreibungen von {{formatted}} Aktionen lesen sich wie für die KI eingeschleuste Anweisungen, also eine mögliche Prompt-Injection. Prüfe sie unter Anpassen, bevor du sie erlaubst."
       },
       "syncContent": "Inhalte synchronisieren",
-      "openInKnowledge": "Im Wissen öffnen"
+      "openInKnowledge": "Im Wissen öffnen",
+      "capabilityShort": {
+        "sync": "Synchronisiert",
+        "read": "Sucht",
+        "write": "Handelt"
+      },
+      "capabilityFilters": {
+        "all": "Alle",
+        "sync": "Wissen",
+        "tools": "Tools"
+      },
+      "capabilityFilterLabel": "Nach Funktion filtern",
+      "statusFilters": {
+        "all": "Jeder Status",
+        "reconnect": "Anmeldung nötig",
+        "connected": "Verbunden",
+        "available": "Nicht verbunden"
+      },
+      "statusFilterLabel": "Nach Status filtern",
+      "sections": {
+        "reconnect": "Anmeldung nötig",
+        "connected": "Verbunden",
+        "available": "Verfügbar"
+      }
     },
     "insights": {
       "label": "Einblicke"

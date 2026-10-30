@@ -2178,9 +2178,6 @@
         "ownerWarningNoAccount": "Team members will act as your {{name}} account."
       },
       "createFailed": "Could not add the connector. Try again.",
-      "capabilityFilter": {
-        "clear": "Show all connectors"
-      },
       "capabilityPlain": {
         "sync": "Syncs into Knowledge",
         "read": "Looks things up",
@@ -2240,23 +2237,36 @@
         "failed": "Could not rename the account. Try again."
       },
       "browseAll": "Browse all connectors",
-      "filters": {
-        "all": "All",
-        "connected": "Connected",
-        "disconnected": "Disconnected"
-      },
-      "filterLabel": "Filter connectors",
-      "capabilityChip": {
-        "sync": "Syncs into Knowledge",
-        "tools": "Gives agents tools"
-      },
       "injection": {
         "flagged": "Possible prompt injection",
         "notice_one": "The description of {{formatted}} action reads like instructions planted for the AI, a possible prompt injection. Check it under Customize before you allow it.",
         "notice_other": "The descriptions of {{formatted}} actions read like instructions planted for the AI, a possible prompt injection. Check them under Customize before you allow them."
       },
       "syncContent": "Sync content",
-      "openInKnowledge": "Open in Knowledge"
+      "openInKnowledge": "Open in Knowledge",
+      "capabilityShort": {
+        "sync": "Syncs",
+        "read": "Looks up",
+        "write": "Acts"
+      },
+      "capabilityFilters": {
+        "all": "All",
+        "sync": "Knowledge",
+        "tools": "Tools"
+      },
+      "capabilityFilterLabel": "Filter by what it does",
+      "statusFilters": {
+        "all": "Any status",
+        "reconnect": "Needs sign-in",
+        "connected": "Connected",
+        "available": "Not connected"
+      },
+      "statusFilterLabel": "Filter by status",
+      "sections": {
+        "reconnect": "Needs sign-in",
+        "connected": "Connected",
+        "available": "Available"
+      }
     },
     "insights": {
       "label": "Insights"

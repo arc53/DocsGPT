@@ -2263,9 +2263,6 @@
         "ownerWarningNoAccount": "Les membres de l’équipe agiront avec votre compte {{name}}."
       },
       "createFailed": "Impossible d’ajouter le connecteur. Réessayez.",
-      "capabilityFilter": {
-        "clear": "Afficher tous les connecteurs"
-      },
       "capabilityPlain": {
         "sync": "Se synchronise dans Connaissances",
         "read": "Consulte des informations",
@@ -2326,16 +2323,6 @@
         "failed": "Impossible de renommer le compte. Réessayez."
       },
       "browseAll": "Parcourir tous les connecteurs",
-      "filters": {
-        "all": "Tous",
-        "connected": "Connectés",
-        "disconnected": "Déconnectés"
-      },
-      "filterLabel": "Filtrer les connecteurs",
-      "capabilityChip": {
-        "sync": "Se synchronise dans Connaissances",
-        "tools": "Fournit des outils aux agents"
-      },
       "injection": {
         "flagged": "Injection de prompt possible",
         "notice_one": "La description de {{formatted}} action ressemble à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-la dans Personnaliser avant de l’autoriser.",
@@ -2343,7 +2330,30 @@
         "notice_other": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser."
       },
       "syncContent": "Synchroniser du contenu",
-      "openInKnowledge": "Ouvrir dans Connaissances"
+      "openInKnowledge": "Ouvrir dans Connaissances",
+      "capabilityShort": {
+        "sync": "Synchronise",
+        "read": "Consulte",
+        "write": "Agit"
+      },
+      "capabilityFilters": {
+        "all": "Tous",
+        "sync": "Connaissances",
+        "tools": "Outils"
+      },
+      "capabilityFilterLabel": "Filtrer par fonction",
+      "statusFilters": {
+        "all": "Tout statut",
+        "reconnect": "Connexion requise",
+        "connected": "Connectés",
+        "available": "Non connectés"
+      },
+      "statusFilterLabel": "Filtrer par statut",
+      "sections": {
+        "reconnect": "Connexion requise",
+        "connected": "Connectés",
+        "available": "Disponibles"
+      }
     },
     "insights": {
       "label": "Analyses"

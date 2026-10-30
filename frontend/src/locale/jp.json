@@ -2170,9 +2170,6 @@
         "ownerWarningNoAccount": "チームメンバーはあなたの {{name}} アカウントで操作します。"
       },
       "createFailed": "コネクタを追加できませんでした。もう一度お試しください。",
-      "capabilityFilter": {
-        "clear": "すべてのコネクタを表示"
-      },
       "capabilityPlain": {
         "sync": "ナレッジに同期",
         "read": "情報を調べる",
@@ -2231,23 +2228,36 @@
         "failed": "アカウント名を変更できませんでした。もう一度お試しください。"
       },
       "browseAll": "すべてのコネクタを見る",
-      "filters": {
-        "all": "すべて",
-        "connected": "接続済み",
-        "disconnected": "切断済み"
-      },
-      "filterLabel": "コネクタを絞り込む",
-      "capabilityChip": {
-        "sync": "ナレッジに同期",
-        "tools": "エージェントにツールを提供"
-      },
       "injection": {
         "flagged": "プロンプトインジェクションの疑い",
         "notice_one": "{{formatted}} 件のアクションの説明に、AI 向けに仕込まれた指示のような記述があります（プロンプトインジェクションの疑い）。許可する前に「カスタマイズ」で確認してください。",
         "notice_other": "{{formatted}} 件のアクションの説明に、AI 向けに仕込まれた指示のような記述があります（プロンプトインジェクションの疑い）。許可する前に「カスタマイズ」で確認してください。"
       },
       "syncContent": "コンテンツを同期",
-      "openInKnowledge": "ナレッジで開く"
+      "openInKnowledge": "ナレッジで開く",
+      "capabilityShort": {
+        "sync": "同期",
+        "read": "検索",
+        "write": "操作"
+      },
+      "capabilityFilters": {
+        "all": "すべて",
+        "sync": "ナレッジ",
+        "tools": "ツール"
+      },
+      "capabilityFilterLabel": "機能で絞り込む",
+      "statusFilters": {
+        "all": "すべての状態",
+        "reconnect": "再サインインが必要",
+        "connected": "接続済み",
+        "available": "未接続"
+      },
+      "statusFilterLabel": "状態で絞り込む",
+      "sections": {
+        "reconnect": "再サインインが必要",
+        "connected": "接続済み",
+        "available": "利用可能"
+      }
     },
     "insights": {
       "label": "インサイト"

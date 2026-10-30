@@ -61,9 +61,7 @@ export function usePickerKindFilter<T, K extends string>(
     [list, kind, matches],
   );
   const shown = shownFilters(kinds, kind, counts);
-  const narrows = shown.some((k) => k !== all && counts[k] !== counts[all]);
-  const visible =
-    kind !== all || (list.length > PICKER_FILTER_MIN_ITEMS && narrows);
+  const visible = kind !== all || list.length > PICKER_FILTER_MIN_ITEMS;
   return {
     kind,
     items,

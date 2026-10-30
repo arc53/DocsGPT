@@ -97,7 +97,7 @@ describe('useUrlFilter', () => {
 describe('shownFilters', () => {
   const counts: Record<State, number> = {
     all: 4,
-    connected: 4,
+    connected: 3,
     disconnected: 0,
   };
 
@@ -117,6 +117,22 @@ describe('shownFilters', () => {
     expect(
       shownFilters(STATES, 'all', { all: 3, connected: 0, disconnected: 0 }),
     ).toEqual([]);
+  });
+
+  it('returns nothing while All is picked and no item would narrow the list', () => {
+    expect(
+      shownFilters(STATES, 'all', { all: 4, connected: 4, disconnected: 0 }),
+    ).toEqual([]);
+  });
+
+  it('keeps a picked item that narrows nothing, so it can be left', () => {
+    expect(
+      shownFilters(STATES, 'connected', {
+        all: 4,
+        connected: 4,
+        disconnected: 0,
+      }),
+    ).toEqual(['all', 'connected']);
   });
 
   it('keeps All at 0 (an empty list still has its All)', () => {

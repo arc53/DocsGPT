@@ -2170,9 +2170,6 @@
         "ownerWarningNoAccount": "團隊成員將以你的 {{name}} 帳號操作。"
       },
       "createFailed": "無法新增連接器。請再試一次。",
-      "capabilityFilter": {
-        "clear": "顯示所有連接器"
-      },
       "capabilityPlain": {
         "sync": "同步到知識庫",
         "read": "查詢資訊",
@@ -2231,23 +2228,36 @@
         "failed": "無法重新命名帳戶。請再試一次。"
       },
       "browseAll": "瀏覽所有連接器",
-      "filters": {
-        "all": "全部",
-        "connected": "已連線",
-        "disconnected": "已中斷"
-      },
-      "filterLabel": "篩選連接器",
-      "capabilityChip": {
-        "sync": "同步到知識庫",
-        "tools": "為代理提供工具"
-      },
       "injection": {
         "flagged": "疑似提示詞注入",
         "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
         "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
       },
       "syncContent": "同步內容",
-      "openInKnowledge": "在知識庫中開啟"
+      "openInKnowledge": "在知識庫中開啟",
+      "capabilityShort": {
+        "sync": "同步",
+        "read": "查詢",
+        "write": "執行操作"
+      },
+      "capabilityFilters": {
+        "all": "全部",
+        "sync": "知識",
+        "tools": "工具"
+      },
+      "capabilityFilterLabel": "依功能篩選",
+      "statusFilters": {
+        "all": "不限狀態",
+        "reconnect": "需要登入",
+        "connected": "已連線",
+        "available": "未連線"
+      },
+      "statusFilterLabel": "依狀態篩選",
+      "sections": {
+        "reconnect": "需要登入",
+        "connected": "已連線",
+        "available": "可用"
+      }
     },
     "insights": {
       "label": "洞察"
