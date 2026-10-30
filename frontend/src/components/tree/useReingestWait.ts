@@ -4,12 +4,12 @@ import { useStore } from 'react-redux';
 import type { SSEEvent } from '../../notifications/notificationsSlice';
 import type { RootState } from '../../store';
 
-const MAX_WAIT_MS = 5 * 60_000;
+const MAX_WAIT_MS = 10 * 60_000;
 /**
  * How far behind this browser the server's clock may run. An event's own
  * `ts` older than the operation by more than this is a replayed old one.
  */
-const CLOCK_SKEW_MS = 5 * 60_000;
+const CLOCK_SKEW_MS = 10 * 60_000;
 
 export type ReingestTerminal = 'completed' | 'failed' | 'timeout' | 'unmounted';
 
@@ -150,8 +150,8 @@ export function useReingestSseWaiter() {
         const matches = (event: SSEEvent): boolean => {
           if (event.scope?.id !== sourceId) return false;
           const eventTask = event.payload?.task_id;
-          if (taskId && typeof eventTask === 'string')
-            return eventTask === taskId;
+          if (taskId)
+            return typeof eventTask === 'string' && eventTask === taskId;
           const ts = event.ts ? Date.parse(event.ts) : NaN;
           if (Number.isFinite(ts) && ts < opStartedAt - CLOCK_SKEW_MS)
             return false;

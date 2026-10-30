@@ -119,6 +119,7 @@ def _emit_ingest_poison_event(task_name, bound):
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
+    task_id = getattr(getattr(bound.get("self"), "request", None), "id", None)
     if not user or not source_id:
         return
     from docsgpt.events.publisher import publish_user_event
@@ -130,6 +131,7 @@ def _emit_ingest_poison_event(task_name, bound):
         "source.ingest.failed",
         {
             "source_id": str(source_id),
+            "task_id": str(task_id) if task_id else "",
             "filename": bound.get("filename") or "",
             "operation": _INGEST_POISON_OPERATION.get(task_name, "upload"),
             "error": "Ingestion stopped after repeated failures.",
