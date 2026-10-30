@@ -75,12 +75,12 @@ class TestToolsUsedBy:
 
         tools = self._tools(app, pg_conn, ALICE)
         assert tools[tid]["used_by"] == {
-            "agents": [{"id": str(agent["id"]), "name": "Researcher"}],
+            "agents": [{"id": str(agent["id"]), "name": "Researcher", "agent_type": "classic"}],
             "others": 1,
         }
         memory = tools[default_tool_id("memory")]
         assert memory["default"] is True
-        assert memory["used_by"]["agents"] == [{"id": str(agent["id"]), "name": "Researcher"}]
+        assert memory["used_by"]["agents"] == [{"id": str(agent["id"]), "name": "Researcher", "agent_type": "classic"}]
         assert memory["used_by"]["others"] == 0
         # Every row carries the field, used or not.
         assert all("used_by" in t for t in tools.values())

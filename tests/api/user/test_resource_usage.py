@@ -66,7 +66,7 @@ class TestTools:
         _agent(pg_conn, ALICE, "unrelated", tools=[])
         usage = used_by_many(pg_conn, ALICE, "tool", [tid], owned_ids=[tid])
         assert _names(usage[tid]) == ["Alpha", "zeta"]
-        assert usage[tid]["agents"][0] == {"id": str(a["id"]), "name": "Alpha"}
+        assert usage[tid]["agents"][0] == {"id": str(a["id"]), "name": "Alpha", "agent_type": "classic"}
         assert usage[tid]["others"] == 0
 
     def test_unused_resource_gets_empty_usage(self, pg_conn):
@@ -94,6 +94,8 @@ class TestTools:
         )
         usage = used_by_many(pg_conn, ALICE, "tool", [old_tool, new_tool], owned_ids=[old_tool, new_tool])
         assert _names(usage[new_tool]) == ["flow"]
+        # The type picks the editor a link opens.
+        assert usage[new_tool]["agents"][0]["agent_type"] == "workflow"
         assert usage[old_tool] == EMPTY_USAGE
 
     def test_workflow_agent_classic_columns_are_ignored(self, pg_conn):

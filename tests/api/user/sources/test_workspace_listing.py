@@ -121,7 +121,7 @@ class TestFullList:
         resp = _get(app, pg_conn, CombinedJson, "/api/sources")
         assert resp.status_code == 200
         rows = {r["id"]: r for r in resp.json}
-        assert rows[library["file"]]["used_by"] == {"agents": [{"id": str(agent["id"]), "name": "Helper"}], "others": 0}
+        assert rows[library["file"]]["used_by"] == {"agents": [{"id": str(agent["id"]), "name": "Helper", "agent_type": "classic"}], "others": 0}
         assert rows[library["web"]]["used_by"] == {"agents": [], "others": 1}
         assert rows[library["shared"]]["used_by"]["agents"][0]["name"] == "Helper"
         assert rows[library["file"]]["ingestStatus"] == "processing"

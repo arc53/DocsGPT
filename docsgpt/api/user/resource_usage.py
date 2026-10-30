@@ -43,7 +43,7 @@ DEFAULT_PROMPT = "default"
 _CLASSIC = "a.agent_type IS DISTINCT FROM 'workflow'"
 
 _CLASSIC_TOOLS_SQL = f"""
-    SELECT a.id::text AS agent_id, a.name, a.user_id, r.ref
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, r.ref
     FROM agents a
     CROSS JOIN LATERAL jsonb_array_elements_text(
         CASE WHEN jsonb_typeof(a.tools) = 'array' THEN a.tools ELSE '[]'::jsonb END
@@ -53,7 +53,7 @@ _CLASSIC_TOOLS_SQL = f"""
 """
 
 _CLASSIC_SOURCES_SQL = f"""
-    SELECT a.id::text AS agent_id, a.name, a.user_id, s.sid::text AS ref
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, s.sid::text AS ref
     FROM agents a
     CROSS JOIN LATERAL unnest(array_append(a.extra_source_ids, a.source_id)) AS s(sid)
     WHERE {_CLASSIC}
@@ -62,7 +62,7 @@ _CLASSIC_SOURCES_SQL = f"""
 """
 
 _CLASSIC_PROMPTS_SQL = f"""
-    SELECT a.id::text AS agent_id, a.name, a.user_id, COALESCE(a.prompt_id::text, '{DEFAULT_PROMPT}') AS ref
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, COALESCE(a.prompt_id::text, '{DEFAULT_PROMPT}') AS ref
     FROM agents a
     WHERE {_CLASSIC}
       AND (a.prompt_id = ANY(CAST(:ids AS uuid[]))
@@ -72,7 +72,7 @@ _CLASSIC_PROMPTS_SQL = f"""
 
 # Agent nodes of each workflow agent's current graph version.
 _WORKFLOW_SQL = """
-    SELECT a.id::text AS agent_id, a.name, a.user_id, lower(r.ref) AS ref
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, lower(r.ref) AS ref
     FROM agents a
     JOIN workflows w ON w.id = a.workflow_id
     JOIN workflow_nodes n ON n.workflow_id = w.id AND n.graph_version = w.current_graph_version
@@ -148,7 +148,7 @@ def _key(resource_id: str) -> str:
 def _usage_rows(
     conn: Connection, kind: UsageKind, uuid_ids: list[str], user_id: str, team_agents: list[str], with_default: bool
 ) -> list:
-    """Every ``(agent_id, name, user_id, ref)`` naming one of the ids, whoever owns the agent."""
+    """Every ``(agent_id, name, user_id, agent_type, ref)`` naming one of the ids, whoever owns the agent."""
     rows: list = []
     if kind == "prompt":
         if uuid_ids or with_default:
@@ -191,7 +191,7 @@ def used_by_many(
             Agents outside it are treated as ones the caller can't open.
 
     Returns:
-        dict[str, dict]: ``{resource_id: {"agents": [{"id", "name"}], "others": n}}``
+        dict[str, dict]: ``{resource_id: {"agents": [{"id", "name", "agent_type"}], "others": n}}``
         for every id given, agents sorted by name.
     """
     keys = {str(rid): _key(rid) for rid in resource_ids}
@@ -212,22 +212,24 @@ def used_by_many(
             return False
         return owner == user_id or agent_id in visible
 
-    listed: dict[str, dict[str, str]] = {k: {} for k in wanted}
+    listed: dict[str, dict[str, tuple[str, str]]] = {k: {} for k in wanted}
     hidden: dict[str, set[str]] = {k: set() for k in wanted}
-    for agent_id, name, owner, ref in _usage_rows(conn, kind, uuid_ids, user_id, team_agents, with_default):
+    for agent_id, name, owner, agent_type, ref in _usage_rows(conn, kind, uuid_ids, user_id, team_agents, with_default):
         ref_key = _key(ref)
         if ref_key not in wanted:
             continue
         if _can_open(agent_id, owner):
-            listed[ref_key][agent_id] = name
+            listed[ref_key][agent_id] = (name, agent_type or "classic")
         elif ref_key in owned:
             hidden[ref_key].add(agent_id)
 
     out: dict[str, dict] = {}
     for rid, key in keys.items():
-        agents = sorted(listed[key].items(), key=lambda item: ((item[1] or "").casefold(), item[0]))
+        agents = sorted(listed[key].items(), key=lambda item: ((item[1][0] or "").casefold(), item[0]))
         out[rid] = {
-            "agents": [{"id": agent_id, "name": name} for agent_id, name in agents],
+            "agents": [
+                {"id": agent_id, "name": name, "agent_type": agent_type} for agent_id, (name, agent_type) in agents
+            ],
             "others": len(hidden[key] - listed[key].keys()),
         }
     return out
