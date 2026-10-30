@@ -692,7 +692,47 @@
       "viaConnectionFiles_other": "透過 {{name}} · {{files}} 個檔案",
       "item": {
         "tokens": "{{tokens}} Token"
-      }
+      },
+      "tokenCount": "{{tokens}} Token",
+      "kinds": {
+        "all": "全部",
+        "files": "檔案",
+        "websites": "網站",
+        "synced": "已同步",
+        "wikis": "Wiki",
+        "shared": "共享"
+      },
+      "kindFilterLabel": "依類型篩選",
+      "usageFilters": {
+        "all": "全部",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "usageFilterLabel": "依使用情況篩選",
+      "needsAttention": "需要處理",
+      "allKnowledge": "所有知識",
+      "select": "選取",
+      "selectAllOnPage": "全選本頁",
+      "selectSource": "選取 {{name}}",
+      "selectedCount_one": "已選 {{formatted}} 個",
+      "selectedCount_other": "已選 {{formatted}} 個",
+      "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
+      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
+      "deleteSelectedWarning_one": "要刪除 {{formatted}} 個來源嗎？",
+      "deleteSelectedWarning_other": "要刪除 {{formatted}} 個來源嗎？",
+      "deleteSelectedConsequence_one": "其檔案與區塊也會一併刪除。此操作無法復原。",
+      "deleteSelectedConsequence_other": "其檔案與區塊也會一併刪除。此操作無法復原。",
+      "deleteSelectedUsedBy_one": "有 {{formatted}} 個代理將失去這些知識。",
+      "deleteSelectedUsedBy_other": "有 {{formatted}} 個代理將失去這些知識。",
+      "deleteSomeFailed_one": "有 {{formatted}} 個來源未能刪除。",
+      "deleteSomeFailed_other": "有 {{formatted}} 個來源未能刪除。",
+      "deleteFailedReasons": {
+        "busy": "同步或其他變更仍在進行。請在其完成後再試一次。",
+        "forbidden": "你沒有刪除權限。",
+        "notFound": "已被刪除，或不再與你共用。",
+        "failed": "發生問題。請再試一次。"
+      },
+      "deleteSelectedFailed": "無法刪除這些來源。"
     },
     "analytics": {
       "label": "分析",

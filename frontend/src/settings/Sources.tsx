@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
+import userService from '../api/services/userService';
 import PageToolbar from '../components/PageToolbar';
 import RoleBadge from '../components/RoleBadge';
 import SearchInput from '../components/SearchInput';
@@ -19,10 +20,19 @@ import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardFooter, CardTitle } from '../components/ui/card';
+import { Checkbox } from '../components/ui/checkbox';
 import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
+import { SectionHeader } from '../components/ui/section-header';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import {
   Tooltip,
   TooltipContent,
@@ -30,11 +40,14 @@ import {
 } from '../components/ui/tooltip';
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import { usePageParam, usePageSize } from '../hooks/usePageState';
+import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import {
   ActiveState,
   Doc,
   DocumentsProps,
   type KnowledgeDoc,
+  type UsageFilter,
 } from '../models/misc';
 import type { SSEEvent } from '../notifications/notificationsSlice';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
@@ -58,6 +71,7 @@ import {
   formatDate,
   formatRelative,
 } from '../utils/dateTimeUtils';
+import { agentUseCount } from '../utils/resourceUsage';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import WebsiteTree from '../components/WebsiteTree';
@@ -86,13 +100,25 @@ import GraphSourceView from '../components/graph/GraphSourceView';
 import { buildPct } from '../components/graph/useGraphBuild';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import {
+  connectionLabel,
+  connectionOf,
+  formatTokens,
+  IngestBadge,
+  ingestState,
+  scheduleLabel,
+  websiteHostsLabel,
+} from './sourceDetails';
+import { SourceKindToggle } from './SourceKindFilter';
+import {
   canSyncSource,
   isGraphSource,
   isSyncedSource,
   isWikiSource,
+  SOURCE_KINDS,
+  type SourceKindFilter,
   syncNowIsPrimary,
-  syncSchedule,
 } from './sourceKinds';
+import UsedByAgents from './UsedByAgents';
 import { type AcceptedSync, useSourceActions } from './useSourceActions';
 
 const NO_EVENTS: SSEEvent[] = [];
@@ -122,6 +148,28 @@ function asListedDoc(doc: KnowledgeDoc): Doc {
 const POLL_AFTER_MS = 2 * 60_000;
 const POLL_EVERY_MS = 30_000;
 
+/** The usage filter's values, as the listing takes them; All first. */
+const USAGE_FILTERS = [
+  'all',
+  'in_use',
+  'unused',
+] as const satisfies readonly UsageFilter[];
+const USAGE_LABELS: Record<UsageFilter, string> = {
+  all: 'settings.sources.usageFilters.all',
+  in_use: 'settings.sources.usageFilters.inUse',
+  unused: 'settings.sources.usageFilters.unused',
+};
+
+/** The most ids `POST /api/sources/delete` takes at once. */
+const BULK_DELETE_MAX = 100;
+
+/** What a failed bulk delete's `code` says, as a reason key. */
+const DELETE_FAILURE_REASONS: Record<string, string> = {
+  source_busy: 'settings.sources.deleteFailedReasons.busy',
+  forbidden: 'settings.sources.deleteFailedReasons.forbidden',
+  not_found: 'settings.sources.deleteFailedReasons.notFound',
+};
+
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
 
@@ -131,22 +179,6 @@ const defaultSourcePageSize = (): number =>
   window.matchMedia('(min-width: 1024px)').matches
     ? 24
     : 12;
-
-const formatTokens = (tokens: number): string => {
-  const roundToTwoDecimals = (num: number): string => {
-    return (Math.round((num + Number.EPSILON) * 100) / 100).toString();
-  };
-
-  if (tokens >= 1_000_000_000) {
-    return roundToTwoDecimals(tokens / 1_000_000_000) + 'b';
-  } else if (tokens >= 1_000_000) {
-    return roundToTwoDecimals(tokens / 1_000_000) + 'm';
-  } else if (tokens >= 1_000) {
-    return roundToTwoDecimals(tokens / 1_000) + 'k';
-  } else {
-    return tokens.toString();
-  }
-};
 
 /**
  * Where a synced source comes from: the connection's icon and "via <name>"
@@ -167,29 +199,9 @@ function ConnectionLine({
         className="text-muted-foreground size-3.5 shrink-0"
       />
       <span className="truncate" title={connection.account_label}>
-        {files
-          ? t('settings.sources.viaConnectionFiles', {
-              name: connection.name,
-              count: files,
-              files: formatCount(files),
-              interpolation: { escapeValue: false },
-            })
-          : t('settings.sources.viaConnection', {
-              name: connection.name,
-              interpolation: { escapeValue: false },
-            })}
+        {connectionLabel(t, connection, files)}
       </span>
     </span>
-  );
-}
-
-/** A source's ingest still running, or failed. */
-function IngestBadge({ status }: { status: 'processing' | 'failed' }) {
-  const { t } = useTranslation();
-  return status === 'failed' ? (
-    <Badge variant="destructive">{t('settings.sources.ingestFailed')}</Badge>
-  ) : (
-    <Badge variant="neutral">{t('settings.sources.ingestProcessing')}</Badge>
   );
 }
 
@@ -226,6 +238,26 @@ export default function Sources({
     defaultSourcePageSize(),
   );
   const [totalDocuments, setTotalDocuments] = useState<number>(0);
+  // The kind and usage filters live in the address beside the page; a
+  // change starts on page 1.
+  const [kind, setKind] = useUrlFilter(SOURCE_KINDS, {
+    name: 'kind',
+    clears: ['page'],
+  });
+  const [usage, setUsage] = useUrlFilter(USAGE_FILTERS, {
+    name: 'usage',
+    clears: ['page'],
+  });
+  // The server's counts per kind and per usage (each with the other filter
+  // and the search applied); null from an older backend.
+  const [kindCounts, setKindCounts] = useState<Record<
+    SourceKindFilter,
+    number
+  > | null>(null);
+  const [usageCounts, setUsageCounts] = useState<Record<
+    UsageFilter,
+    number
+  > | null>(null);
 
   const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
@@ -382,12 +414,15 @@ export default function Sources({
         rowsPerPg,
         debouncedSearchTerm,
         token,
+        { kind, usage },
       )
         .then((data) => {
           setLoadFailed(data === null);
           if (data === null) return;
           dispatch(setPaginatedDocuments(data.docs));
           setTotalDocuments(data.totalDocuments);
+          setKindCounts(data.kindCounts ?? null);
+          setUsageCounts(data.usageCounts ?? null);
           // The server clamps a page past the end (the last card on the
           // last page was deleted); follow it.
           if (data.currentPage !== page) setCurrentPage(data.currentPage);
@@ -403,6 +438,8 @@ export default function Sources({
       sortField,
       sortOrder,
       debouncedSearchTerm,
+      kind,
+      usage,
       setCurrentPage,
     ],
   );
@@ -484,14 +521,16 @@ export default function Sources({
     });
   };
 
-  // The first load opens on the URL's page; a new search starts on page 1.
-  const searchedTerm = useRef(debouncedSearchTerm);
+  // The first load opens on the URL's page; a new search or filter starts
+  // on page 1.
+  const listQuery = `${debouncedSearchTerm}\n${kind}\n${usage}`;
+  const queried = useRef(listQuery);
   useEffect(() => {
-    const newSearch = searchedTerm.current !== debouncedSearchTerm;
-    searchedTerm.current = debouncedSearchTerm;
-    if (newSearch) setCurrentPage(1);
-    refreshDocs(undefined, newSearch ? 1 : currentPage, rowsPerPage);
-  }, [debouncedSearchTerm]);
+    const newQuery = queried.current !== listQuery;
+    queried.current = listQuery;
+    if (newQuery) setCurrentPage(1);
+    refreshDocs(undefined, newQuery ? 1 : currentPage, rowsPerPage);
+  }, [listQuery]);
 
   // When a graph build reaches a terminal state via SSE, refresh the list so
   // the badge reflects the final state, then drop the entry. The modal (a
@@ -607,8 +646,11 @@ export default function Sources({
   // The syncs still indexing lead the first page, newest first, filtered by
   // name the way the search filters the listed cards.
   const pendingTerm = debouncedSearchTerm.trim().toLowerCase();
+  // Not a source yet, so a sync's kind is Synced and nothing uses it.
+  const pendingFits =
+    (kind === 'all' || kind === 'synced') && usage !== 'in_use';
   const pendingSyncs =
-    currentPage === 1
+    currentPage === 1 && pendingFits
       ? [...unlistedSyncs]
           .reverse()
           .filter(
@@ -616,6 +658,156 @@ export default function Sources({
               !pendingTerm || sync.name.toLowerCase().includes(pendingTerm),
           )
       : [];
+
+  // Needs attention: with no search or filter, the sources whose ingest
+  // failed, whose connection needs a sign-in, or that are still indexing
+  // (in that order), from the app's knowledge list so a source on any page
+  // counts. They leave the paged grid, and page 1 leads with them; a card
+  // on this page is the fresher copy of its source.
+  const unfiltered = !pendingTerm && kind === 'all' && usage === 'all';
+  const attentionRank = (doc: Doc): number | null => {
+    const ingest = ingestState(doc);
+    if (ingest === 'failed') return 0;
+    if (connectionNeedsSignIn(connectionOf(doc, connections))) return 1;
+    return ingest === 'processing' ? 2 : null;
+  };
+  const attentionDocs = unfiltered
+    ? (knowledge ?? [])
+        .map(
+          (listed) =>
+            currentDocuments.find((d) => d.id === listed.id) ??
+            asListedDoc(listed),
+        )
+        .map((doc) => ({ doc, rank: attentionRank(doc) }))
+        .filter(
+          (entry): entry is { doc: Doc; rank: number } => entry.rank !== null,
+        )
+        .sort((a, b) => a.rank - b.rank)
+        .map(({ doc }) => doc)
+    : [];
+  const attentionIds = new Set(attentionDocs.map((doc) => doc.id));
+  const gridDocuments = currentDocuments.filter(
+    (doc) => !attentionIds.has(doc.id),
+  );
+  const showAttention =
+    currentPage === 1 &&
+    unfiltered &&
+    attentionDocs.length + pendingSyncs.length > 0;
+
+  // Select mode: the cards the caller can delete get a checkbox, and the
+  // ticked ones go together. The selection keeps each source (its name and
+  // `used_by`), so it survives a page change.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Map<string, Doc>>(new Map());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const canTick = (doc: Doc) => !!doc.id && can(doc, 'delete');
+  const toggleSelected = (doc: Doc) =>
+    setSelected((current) => {
+      const next = new Map(current);
+      if (doc.id && next.has(doc.id)) next.delete(doc.id);
+      else if (doc.id) next.set(doc.id, doc);
+      return next;
+    });
+  const tickable = [
+    ...(showAttention ? attentionDocs : []),
+    ...gridDocuments,
+  ].filter(canTick);
+  const allTicked = tickable.every((doc) => selected.has(doc.id ?? ''));
+  const selectAllOnPage = () =>
+    setSelected((current) => {
+      const next = new Map(current);
+      tickable.forEach((doc) => next.set(doc.id ?? '', doc));
+      return next;
+    });
+  const leaveSelecting = () => {
+    setSelecting(false);
+    setSelected(new Map());
+  };
+  // Escape leaves the mode, unless it closes the confirm.
+  useEffect(() => {
+    if (!selecting || confirmingDelete) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) leaveSelecting();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [selecting, confirmingDelete]);
+
+  const selectedDocs = Array.from(selected.values());
+  // The agents that lose the selection: each agent the caller can open
+  // once, plus the teammates' agents counted per source.
+  const losingAgents =
+    new Set(
+      selectedDocs.flatMap((doc) =>
+        (doc.used_by?.agents ?? []).map((a) => a.id),
+      ),
+    ).size +
+    selectedDocs.reduce((sum, doc) => sum + (doc.used_by?.others ?? 0), 0);
+
+  /**
+   * Deletes the selection, at most BULK_DELETE_MAX ids per request. What
+   * went leaves the lists; what failed stays ticked, and the confirm stays
+   * open saying how many and why (rejecting keeps it open).
+   */
+  const deleteSelected = async () => {
+    const ids = selectedDocs.map((doc) => doc.id ?? '').filter(Boolean);
+    const deleted: string[] = [];
+    const failed: { id: string; code: string }[] = [];
+    let requestFailed = false;
+    for (let i = 0; i < ids.length; i += BULK_DELETE_MAX) {
+      const batch = ids.slice(i, i + BULK_DELETE_MAX);
+      try {
+        const response = await userService.deleteSources(batch, token);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const body = await response.json();
+        deleted.push(...(body.deleted ?? []));
+        failed.push(...(body.failed ?? []));
+      } catch (error) {
+        console.error(error);
+        requestFailed = true;
+        batch.forEach((id) => failed.push({ id, code: 'failed' }));
+      }
+    }
+    if (deleted.length > 0) {
+      const gone = new Set(deleted);
+      if (knowledge)
+        dispatch(setSourceDocs(knowledge.filter((d) => !gone.has(d.id ?? ''))));
+      dispatch(syncForgotten(deleted));
+      refreshDocs();
+    }
+    if (failed.length === 0) {
+      leaveSelecting();
+      return;
+    }
+    setSelected((current) => {
+      const next = new Map<string, Doc>();
+      failed.forEach(({ id }) => {
+        const doc = current.get(id);
+        if (doc) next.set(id, doc);
+      });
+      return next;
+    });
+    if (requestFailed && deleted.length === 0)
+      throw new Error(t('settings.sources.deleteSelectedFailed'));
+    const reasons = Array.from(
+      new Set(
+        failed.map(
+          ({ code }) =>
+            DELETE_FAILURE_REASONS[code] ??
+            'settings.sources.deleteFailedReasons.failed',
+        ),
+      ),
+    ).map((key) => t(key));
+    throw new Error(
+      [
+        t('settings.sources.deleteSomeFailed', {
+          count: failed.length,
+          formatted: formatCount(failed.length),
+        }),
+        ...reasons,
+      ].join(' '),
+    );
+  };
 
   // What every source view takes, and what a tree view adds.
   const viewProps = {
@@ -640,6 +832,305 @@ export default function Sources({
     onPagesChanged: () =>
       documentToView?.id && refreshOpenSource(documentToView.id),
   };
+
+  // A sync started this session that isn't a source yet: nothing to open
+  // or manage, so no stretched button and no ⋯ until its real card is
+  // listed. A failed one can only be dismissed.
+  const renderPendingSync = (sync: (typeof pendingSyncs)[number]) => {
+    const connection = connections.find((c) => c.id === sync.connectionId);
+    const failed = sync.state === 'failed';
+    return (
+      <Card
+        key={`pending-${sync.id}`}
+        variant="filled"
+        padding="lg"
+        className="min-h-[130px] self-start"
+      >
+        {failed && (
+          <div className="absolute top-5 right-6 z-10">
+            <IconButton
+              variant="ghost-on-accent"
+              size="icon-xs"
+              icon={X}
+              label={t('settings.connectors.detail.dismissFailedSync', {
+                name: sync.name,
+                interpolation: { escapeValue: false },
+              })}
+              onClick={() => dispatch(syncForgotten([sync.id]))}
+            />
+          </div>
+        )}
+        <div
+          className={cn(
+            'flex w-full flex-1 flex-col items-start',
+            failed && 'pr-9',
+          )}
+        >
+          <CardTitle
+            className="line-clamp-2 w-full min-w-0 wrap-anywhere"
+            title={sync.name}
+          >
+            {sync.name}
+          </CardTitle>
+        </div>
+        <div className="flex flex-col items-start justify-start gap-1">
+          <IngestBadge status={failed ? 'failed' : 'processing'} />
+          <CardFooter className="w-full flex-col items-start gap-1">
+            {connection && <ConnectionLine connection={connection} />}
+            <span className="flex items-center gap-2">
+              <RefreshCw className="size-3.5 shrink-0" />
+              {t('settings.connectors.detail.firstSyncStarted', {
+                time: formatRelative(sync.startedAt) ?? '',
+                interpolation: { escapeValue: false },
+              })}
+            </span>
+          </CardFooter>
+        </div>
+      </Card>
+    );
+  };
+
+  const renderSourceCard = (document: Doc) => {
+    const docId = document.id ? document.id.toString() : '';
+    const connection = connectionOf(document, connections);
+    // Sync stops until the reader signs in again (the shared rule).
+    const paused = connectionNeedsSignIn(connection);
+    const ingest = ingestState(document);
+    const schedule = scheduleLabel(t, document);
+    const pickable = selecting && canTick(document);
+    const ticked = pickable && selected.has(docId);
+
+    return (
+      // DESIGN "A clickable card that holds a link": a stretched button
+      // opens the source (in select mode, ticks it); the menu, the checkbox
+      // and Reconnect are siblings above it, never nested in it.
+      <Card
+        key={docId}
+        variant="filled"
+        padding="lg"
+        interactive="within"
+        // Its own height, not the row's: the meta stays under the title.
+        // A ticked tile shows it in its checkbox (Card has no selected look;
+        // that belongs to OptionCard).
+        className="min-h-[130px] self-start"
+      >
+        <button
+          type="button"
+          aria-label={document.name}
+          aria-pressed={pickable ? ticked : undefined}
+          disabled={selecting && !pickable}
+          onClick={() =>
+            selecting ? toggleSelected(document) : setDocumentToView(document)
+          }
+          className="flex w-full flex-1 cursor-pointer flex-col items-start pr-9 text-left outline-none after:absolute after:inset-0 after:rounded-2xl disabled:cursor-default"
+        >
+          <CardTitle
+            className="line-clamp-2 w-full min-w-0 wrap-anywhere"
+            title={document.name}
+          >
+            {document.name}
+          </CardTitle>
+        </button>
+        {selecting ? (
+          pickable ? (
+            <div className="absolute top-5 right-6 z-10 flex size-8 items-center justify-center">
+              <Checkbox
+                checked={ticked}
+                onCheckedChange={() => toggleSelected(document)}
+                aria-label={t('settings.sources.selectSource', {
+                  name: document.name,
+                  interpolation: { escapeValue: false },
+                })}
+              />
+            </div>
+          ) : null
+        ) : (
+          <div className="absolute top-5 right-6 z-10">
+            <ActionMenu
+              options={actions.menuOptions(document, 'card')}
+              triggerLabel={t('settings.sources.menuAlt')}
+              triggerTestId={`menu-button-${docId}`}
+              open={actionMenuDocId === docId}
+              onOpenChange={(open) => setActionMenuDocId(open ? docId : null)}
+            />
+          </div>
+        )}
+
+        <div className="flex flex-col items-start justify-start gap-1">
+          <RoleBadge item={document} />
+          {connection && paused && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="warning">
+                {t('settings.connectors.status.reconnect')}
+              </Badge>
+              {/* The reader's own connection (only theirs are loaded): sign
+                  in again right here, without opening the source. */}
+              {!selecting && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      shape="pill"
+                      className="relative z-10"
+                      onClick={() => reconnect(connection)}
+                    >
+                      {t('settings.connectors.status.reconnect')}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {t('settings.sources.paused', {
+                      name: connection.name,
+                      interpolation: { escapeValue: false },
+                    })}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          )}
+          {ingest && <IngestBadge status={ingest} />}
+          {document.config?.kind === 'graphrag' &&
+            (() => {
+              const build = document.id ? graphBuilds[document.id] : undefined;
+              const isBuilding = build?.status === 'building';
+              const pct = buildPct(build);
+              return (
+                <Badge variant="neutral">
+                  <Network aria-hidden="true" />
+                  {isBuilding
+                    ? pct !== null
+                      ? t('settings.sources.graphrag.buildingPct', { pct })
+                      : t('settings.sources.graphrag.building')
+                    : t('settings.sources.graphrag.badge')}
+                </Badge>
+              );
+            })()}
+          {/* w-full: the column is items-start, so without it the footer
+              sizes to a long host line and never truncates. */}
+          <CardFooter className="w-full flex-col items-start gap-1">
+            {connection && (
+              <ConnectionLine connection={connection} files={document.files} />
+            )}
+            {document.website ? (
+              <>
+                {/* Where a website source comes from, and how it stays
+                    current, instead of its date. */}
+                <span className="flex max-w-full min-w-0 items-center gap-2">
+                  <Globe className="size-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {websiteHostsLabel(t, document.website)}
+                  </span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <FileText className="size-3.5" />
+                  {t('settings.sources.website.pageCount', {
+                    count: document.website.pages,
+                  })}
+                </span>
+              </>
+            ) : null}
+            {/* A scheduled source says how it stays current instead of its
+                date; a website without one shows neither. */}
+            {schedule ? (
+              <span className="flex items-center gap-2">
+                <RefreshCw className="size-3.5 shrink-0" />
+                {t('settings.sources.website.synced', {
+                  frequency: schedule,
+                  when: formatRelative(document.date) ?? EMPTY_VALUE,
+                })}
+              </span>
+            ) : document.website ? null : (
+              <span className="flex items-center gap-2">
+                <CalendarIcon className="size-3.5" />
+                {document.date ? formatDate(document.date) : EMPTY_VALUE}
+              </span>
+            )}
+            <span className="flex items-center gap-2">
+              <HardDrive className="size-3.5" />
+              {document.tokens ? formatTokens(+document.tokens) : EMPTY_VALUE}
+            </span>
+            {agentUseCount(document.used_by) > 0 && (
+              // A sibling above the stretched button, so its popover opens.
+              <span className="relative z-10">
+                <UsedByAgents usage={document.used_by} />
+              </span>
+            )}
+          </CardFooter>
+        </div>
+      </Card>
+    );
+  };
+
+  const GRID =
+    'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+  const usageFilters = usageCounts
+    ? shownFilters(USAGE_FILTERS, usage, usageCounts)
+    : [];
+  const filtered = kind !== 'all' || usage !== 'all';
+  const selectedCount = selected.size;
+
+  const toolbarAction = selecting ? (
+    <div className="flex flex-wrap items-center gap-3">
+      <span aria-live="polite" className="text-sm">
+        {t('settings.sources.selectedCount', {
+          count: selectedCount,
+          formatted: formatCount(selectedCount),
+        })}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="field"
+        shape="pill"
+        disabled={tickable.length === 0 || allTicked}
+        onClick={selectAllOnPage}
+      >
+        {t('settings.sources.selectAllOnPage')}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="field"
+        shape="pill"
+        onClick={leaveSelecting}
+      >
+        {t('cancel')}
+      </Button>
+      <Button
+        type="button"
+        variant="destructive-outline"
+        size="field"
+        shape="pill"
+        disabled={selectedCount === 0}
+        onClick={() => setConfirmingDelete(true)}
+      >
+        {t('settings.sources.delete')}
+      </Button>
+    </div>
+  ) : (
+    <div className="flex flex-wrap items-center gap-3">
+      {currentDocuments.length > 0 && (
+        <Button
+          type="button"
+          variant="outline"
+          size="field"
+          shape="pill"
+          onClick={() => setSelecting(true)}
+        >
+          {t('settings.sources.select')}
+        </Button>
+      )}
+      <Button
+        type="button"
+        size="field"
+        shape="pill"
+        onClick={() => setModalState('ACTIVE')}
+      >
+        {t('settings.sources.addSource')}
+      </Button>
+    </div>
+  );
 
   return documentToView ? (
     <div className="flex flex-col">
@@ -735,21 +1226,51 @@ export default function Sources({
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           }
-          action={
-            <Button
-              type="button"
-              size="field"
-              shape="pill"
-              onClick={() => setModalState('ACTIVE')}
-            >
-              {t('settings.sources.addSource')}
-            </Button>
-          }
+          action={toolbarAction}
           divider
-        />
+        >
+          {/* One ToggleGroup per page: the kind is the pill track, usage a
+              pill Select beside it. */}
+          {!loadFailed && (kindCounts || usageFilters.length > 0) ? (
+            <div className="mb-6 flex flex-wrap items-center gap-3">
+              {kindCounts && (
+                <SourceKindToggle
+                  value={kind}
+                  onValueChange={setKind}
+                  counts={kindCounts}
+                />
+              )}
+              {usageCounts && usageFilters.length > 0 && (
+                <Select
+                  value={usage}
+                  onValueChange={(value) => setUsage(value as UsageFilter)}
+                >
+                  <SelectTrigger
+                    className="min-w-[125px]"
+                    size="field"
+                    shape="pill"
+                    aria-label={t('settings.sources.usageFilterLabel')}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent fit>
+                    {usageFilters.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {t(USAGE_LABELS[value])}
+                        <span className="text-muted-foreground tabular-nums">
+                          {formatCount(usageCounts[value])}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          ) : null}
+        </PageToolbar>
         <div className="relative w-full">
           {loading ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className={GRID}>
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
           ) : loadFailed ? (
@@ -759,8 +1280,10 @@ export default function Sources({
               title={t('settings.sources.loadError')}
               onRetry={() => refreshDocs()}
             />
-          ) : !currentDocuments?.length && pendingSyncs.length === 0 ? (
-            searchTerm ? (
+          ) : !currentDocuments.length &&
+            !showAttention &&
+            pendingSyncs.length === 0 ? (
+            searchTerm || filtered ? (
               <EmptyState
                 size="xs"
                 illustration="none"
@@ -783,236 +1306,36 @@ export default function Sources({
                 }
               />
             )
+          ) : showAttention ? (
+            <div className="flex flex-col gap-8">
+              <section className="flex flex-col gap-3">
+                <SectionHeader
+                  size="sm"
+                  title={t('settings.sources.needsAttention')}
+                  count={attentionDocs.length + pendingSyncs.length}
+                />
+                <div className={GRID}>
+                  {attentionDocs.map(renderSourceCard)}
+                  {pendingSyncs.map(renderPendingSync)}
+                </div>
+              </section>
+              {gridDocuments.length > 0 && (
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    size="sm"
+                    title={t('settings.sources.allKnowledge')}
+                    count={Math.max(0, totalDocuments - attentionDocs.length)}
+                  />
+                  <div className={GRID}>
+                    {gridDocuments.map(renderSourceCard)}
+                  </div>
+                </section>
+              )}
+            </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {pendingSyncs.map((sync) => {
-                const connection = connections.find(
-                  (c) => c.id === sync.connectionId,
-                );
-                const failed = sync.state === 'failed';
-                return (
-                  // Not a source yet: nothing to open or manage, so no
-                  // stretched button and no ⋯ until its real card is listed.
-                  // A failed one can only be dismissed.
-                  <Card
-                    key={`pending-${sync.id}`}
-                    variant="filled"
-                    padding="lg"
-                    className="min-h-[130px] self-start"
-                  >
-                    {failed && (
-                      <div className="absolute top-5 right-6 z-10">
-                        <IconButton
-                          variant="ghost-on-accent"
-                          size="icon-xs"
-                          icon={X}
-                          label={t(
-                            'settings.connectors.detail.dismissFailedSync',
-                            {
-                              name: sync.name,
-                              interpolation: { escapeValue: false },
-                            },
-                          )}
-                          onClick={() => dispatch(syncForgotten([sync.id]))}
-                        />
-                      </div>
-                    )}
-                    <div
-                      className={cn(
-                        'flex w-full flex-1 flex-col items-start',
-                        failed && 'pr-9',
-                      )}
-                    >
-                      <CardTitle
-                        className="line-clamp-2 w-full min-w-0 wrap-anywhere"
-                        title={sync.name}
-                      >
-                        {sync.name}
-                      </CardTitle>
-                    </div>
-                    <div className="flex flex-col items-start justify-start gap-1">
-                      <IngestBadge status={failed ? 'failed' : 'processing'} />
-                      <CardFooter className="w-full flex-col items-start gap-1">
-                        {connection && (
-                          <ConnectionLine connection={connection} />
-                        )}
-                        <span className="flex items-center gap-2">
-                          <RefreshCw className="size-3.5 shrink-0" />
-                          {t('settings.connectors.detail.firstSyncStarted', {
-                            time: formatRelative(sync.startedAt) ?? '',
-                            interpolation: { escapeValue: false },
-                          })}
-                        </span>
-                      </CardFooter>
-                    </div>
-                  </Card>
-                );
-              })}
-              {currentDocuments.map((document) => {
-                const docId = document.id ? document.id.toString() : '';
-                const connection = document.connectionId
-                  ? connections.find((c) => c.id === document.connectionId)
-                  : undefined;
-                // Sync stops until the reader signs in again (the shared rule).
-                const paused = connectionNeedsSignIn(connection);
-
-                return (
-                  // DESIGN "A clickable card that holds a link": a stretched
-                  // button opens the source; the menu and Reconnect are
-                  // siblings above it, never nested in it.
-                  <Card
-                    key={docId}
-                    variant="filled"
-                    padding="lg"
-                    interactive="within"
-                    // Its own height, not the row's: the meta stays under the title.
-                    className="min-h-[130px] self-start"
-                  >
-                    <button
-                      type="button"
-                      aria-label={document.name}
-                      onClick={() => setDocumentToView(document)}
-                      className="flex w-full flex-1 cursor-pointer flex-col items-start pr-9 text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
-                    >
-                      <CardTitle
-                        className="line-clamp-2 w-full min-w-0 wrap-anywhere"
-                        title={document.name}
-                      >
-                        {document.name}
-                      </CardTitle>
-                    </button>
-                    <div className="absolute top-5 right-6 z-10">
-                      <ActionMenu
-                        options={actions.menuOptions(document, 'card')}
-                        triggerLabel={t('settings.sources.menuAlt')}
-                        triggerTestId={`menu-button-${docId}`}
-                        open={actionMenuDocId === docId}
-                        onOpenChange={(open) =>
-                          setActionMenuDocId(open ? docId : null)
-                        }
-                      />
-                    </div>
-
-                    <div className="flex flex-col items-start justify-start gap-1">
-                      <RoleBadge item={document} />
-                      {connection && paused && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="warning">
-                            {t('settings.connectors.status.reconnect')}
-                          </Badge>
-                          {/* The reader's own connection (only theirs are
-                              loaded): sign in again right here, without
-                              opening the source. */}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                shape="pill"
-                                className="relative z-10"
-                                onClick={() => reconnect(connection)}
-                              >
-                                {t('settings.connectors.status.reconnect')}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t('settings.sources.paused', {
-                                name: connection.name,
-                                interpolation: { escapeValue: false },
-                              })}
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      )}
-                      {(document.ingestStatus === 'failed' ||
-                        document.ingestStatus === 'processing') && (
-                        <IngestBadge status={document.ingestStatus} />
-                      )}
-                      {document.config?.kind === 'graphrag' &&
-                        (() => {
-                          const build = document.id
-                            ? graphBuilds[document.id]
-                            : undefined;
-                          const isBuilding = build?.status === 'building';
-                          const pct = buildPct(build);
-                          return (
-                            <Badge variant="neutral">
-                              <Network aria-hidden="true" />
-                              {isBuilding
-                                ? pct !== null
-                                  ? t('settings.sources.graphrag.buildingPct', {
-                                      pct,
-                                    })
-                                  : t('settings.sources.graphrag.building')
-                                : t('settings.sources.graphrag.badge')}
-                            </Badge>
-                          );
-                        })()}
-                      {/* w-full: the column is items-start, so without it the
-                          footer sizes to a long host line and never truncates. */}
-                      <CardFooter className="w-full flex-col items-start gap-1">
-                        {connection && (
-                          <ConnectionLine
-                            connection={connection}
-                            files={document.files}
-                          />
-                        )}
-                        {document.website ? (
-                          <>
-                            {/* Where a website source comes from, and how it
-                                stays current, instead of its date. */}
-                            <span className="flex max-w-full min-w-0 items-center gap-2">
-                              <Globe className="size-3.5 shrink-0" />
-                              <span className="min-w-0 truncate">
-                                {document.website.hosts.length === 1
-                                  ? document.website.hosts[0]
-                                  : t('settings.sources.website.sites', {
-                                      count: document.website.hosts.length,
-                                    })}
-                              </span>
-                            </span>
-                            <span className="flex items-center gap-2">
-                              <FileText className="size-3.5" />
-                              {t('settings.sources.website.pageCount', {
-                                count: document.website.pages,
-                              })}
-                            </span>
-                          </>
-                        ) : null}
-                        {/* A scheduled source says how it stays current
-                            instead of its date; a website without one shows
-                            neither. */}
-                        {syncSchedule(document) ? (
-                          <span className="flex items-center gap-2">
-                            <RefreshCw className="size-3.5 shrink-0" />
-                            {t('settings.sources.website.synced', {
-                              frequency: t(
-                                `settings.sources.syncFrequency.${syncSchedule(document)}`,
-                              ),
-                              when:
-                                formatRelative(document.date) ?? EMPTY_VALUE,
-                            })}
-                          </span>
-                        ) : document.website ? null : (
-                          <span className="flex items-center gap-2">
-                            <CalendarIcon className="size-3.5" />
-                            {document.date
-                              ? formatDate(document.date)
-                              : EMPTY_VALUE}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-2">
-                          <HardDrive className="size-3.5" />
-                          {document.tokens
-                            ? formatTokens(+document.tokens)
-                            : EMPTY_VALUE}
-                        </span>
-                      </CardFooter>
-                    </div>
-                  </Card>
-                );
-              })}
+            <div className={GRID}>
+              {pendingSyncs.map(renderPendingSync)}
+              {gridDocuments.map(renderSourceCard)}
             </div>
           )}
         </div>
@@ -1054,6 +1377,36 @@ export default function Sources({
           }
         />
       )}
+
+      <ConfirmationModal
+        message={t('settings.sources.deleteSelectedWarning', {
+          count: selectedCount,
+          formatted: formatCount(selectedCount),
+        })}
+        description={[
+          losingAgents > 0
+            ? t('settings.sources.deleteSelectedUsedBy', {
+                count: losingAgents,
+                formatted: formatCount(losingAgents),
+              })
+            : null,
+          t('settings.sources.deleteSelectedConsequence', {
+            count: selectedCount,
+          }),
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        modalState={confirmingDelete ? 'ACTIVE' : 'INACTIVE'}
+        setModalState={(state) => setConfirmingDelete(state === 'ACTIVE')}
+        handleSubmit={deleteSelected}
+        error={(reason) =>
+          reason instanceof Error && reason.message
+            ? reason.message
+            : t('settings.sources.deleteSelectedFailed')
+        }
+        submitLabel={t('settings.sources.delete')}
+        variant="destructive"
+      />
 
       {signInModals}
 

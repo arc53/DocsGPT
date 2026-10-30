@@ -74,8 +74,9 @@ import {
   selectedSourceIdsFromAgent,
   serializeAgentSources,
   sourceItemId,
-  toSourcePickerItems,
 } from '../utils/sourceUtils';
+import { toSourcePickerItems } from '../components/sourcePickerItems';
+import { useSourceKindFilter } from '../settings/SourceKindFilter';
 import {
   getToolDisplayName,
   isAgentPickerToolVisible,
@@ -451,24 +452,43 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [addedByLabel],
   );
 
+  // The picker's kind filter, back on All each time it opens.
+  const sourceKinds = useSourceKindFilter(sourceDocs, isSourcePopupOpen);
   const sourceItems = useMemo(() => {
-    const items = toSourcePickerItems(
-      sourceDocs,
-      {
+    const items = toSourcePickerItems(sourceKinds.docs, {
+      t,
+      labels: {
         own: t('conversation.sources.groupOwn'),
         team: t('conversation.sources.groupTeam'),
       },
-      <Database />,
-    );
+      connections: toolContext.connections,
+    });
     // An attached source the caller can't list — an owner's private source on
     // a team-shared agent — still needs a row of its own, or it reads as
-    // selected with nothing to switch it off.
-    const listed = new Set(items.map((item) => item.id));
-    const unlisted = Array.from(selectedSourceIds)
-      .filter((id) => !listed.has(id))
-      .map((id) => ({ id, label: resolveSourceLabel(id), icon: <Database /> }));
+    // selected with nothing to switch it off. Its kind is unknown, so a kind
+    // filter leaves it out.
+    const listed = new Set((sourceDocs ?? []).map((doc) => sourceItemId(doc)));
+    const unlisted =
+      sourceKinds.kind === 'all'
+        ? Array.from(selectedSourceIds)
+            .filter((id) => !listed.has(id))
+            .map((id) => ({
+              id,
+              label: resolveSourceLabel(id),
+              icon: <Database />,
+            }))
+        : [];
     return withAddedBy([...items, ...unlisted], 'source');
-  }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t, withAddedBy]);
+  }, [
+    resolveSourceLabel,
+    selectedSourceIds,
+    sourceDocs,
+    sourceKinds.docs,
+    sourceKinds.kind,
+    t,
+    toolContext.connections,
+    withAddedBy,
+  ]);
 
   // The caller's tools, plus a remove-only row for each tool on the agent
   // they can't list (the owner's private tools on a shared agent), grouped
@@ -1392,6 +1412,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 onOpenChange={setIsSourcePopupOpen}
                 title={t('conversation.sources.knowledge')}
                 items={sourceItems}
+                // What is on the agent when it opens comes first.
+                selectedFirst
+                filters={sourceKinds.filters}
                 selectedIds={Array.from(selectedSourceIds)}
                 onToggle={(id) => {
                   const next = new Set(selectedSourceIds);

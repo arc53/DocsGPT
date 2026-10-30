@@ -28,9 +28,12 @@ export async function getDocsWithPagination(
   rowsPerPage = 10,
   searchTerm = '',
   token: string | null,
+  { kind = 'all', usage = 'all' }: { kind?: string; usage?: string } = {},
 ): Promise<GetDocsResponse | null> {
   try {
-    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
+    // The kind and usage filters are sent only when set.
+    const filters = `${kind !== 'all' ? `&kind=${kind}` : ''}${usage !== 'all' ? `&usage=${usage}` : ''}`;
+    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}${filters}`;
     const response = await userService.getDocsWithPagination(query, token);
     if (!response.ok)
       throw new Error(`Failed to load sources (${response.status})`);
@@ -46,6 +49,8 @@ export async function getDocsWithPagination(
       totalPages: data.totalPages,
       currentPage: data.currentPage ?? pageNumber,
       nextCursor: data.nextCursor,
+      kindCounts: data.kind_counts,
+      usageCounts: data.usage_counts,
     };
   } catch (error) {
     console.log(error);

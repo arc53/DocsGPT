@@ -695,7 +695,47 @@
       "viaConnectionFiles_other": "über {{name}} · {{files}} Dateien",
       "item": {
         "tokens": "{{tokens}} Tokens"
-      }
+      },
+      "tokenCount": "{{tokens}} Tokens",
+      "kinds": {
+        "all": "Alle",
+        "files": "Dateien",
+        "websites": "Websites",
+        "synced": "Synchronisiert",
+        "wikis": "Wikis",
+        "shared": "Geteilt"
+      },
+      "kindFilterLabel": "Nach Art filtern",
+      "usageFilters": {
+        "all": "Alle",
+        "inUse": "In Verwendung",
+        "unused": "Unbenutzt"
+      },
+      "usageFilterLabel": "Nach Verwendung filtern",
+      "needsAttention": "Braucht Aufmerksamkeit",
+      "allKnowledge": "Gesamtes Wissen",
+      "select": "Auswählen",
+      "selectAllOnPage": "Alle auf der Seite auswählen",
+      "selectSource": "{{name}} auswählen",
+      "selectedCount_one": "{{formatted}} ausgewählt",
+      "selectedCount_other": "{{formatted}} ausgewählt",
+      "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der diese Quelle danach nicht mehr hat. Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die diese Quelle danach nicht mehr haben. Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteSelectedWarning_one": "{{formatted}} Quelle löschen?",
+      "deleteSelectedWarning_other": "{{formatted}} Quellen löschen?",
+      "deleteSelectedConsequence_one": "Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteSelectedConsequence_other": "Ihre Dateien und Abschnitte werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteSelectedUsedBy_one": "Von {{formatted}} Agenten verwendet, der dieses Wissen danach nicht mehr hat.",
+      "deleteSelectedUsedBy_other": "Von {{formatted}} Agenten verwendet, die dieses Wissen danach nicht mehr haben.",
+      "deleteSomeFailed_one": "{{formatted}} Quelle wurde nicht gelöscht.",
+      "deleteSomeFailed_other": "{{formatted}} Quellen wurden nicht gelöscht.",
+      "deleteFailedReasons": {
+        "busy": "Eine Synchronisierung oder andere Änderung lief noch. Versuche es erneut, sobald sie fertig ist.",
+        "forbidden": "Zum Löschen fehlt dir die Berechtigung.",
+        "notFound": "Bereits gelöscht oder nicht mehr mit dir geteilt.",
+        "failed": "Etwas ist schiefgelaufen. Versuche es erneut."
+      },
+      "deleteSelectedFailed": "Die Quellen konnten nicht gelöscht werden."
     },
     "analytics": {
       "label": "Analytik",

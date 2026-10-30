@@ -90,6 +90,7 @@ const {
     syncConnector: vi.fn(),
     reingestSource: vi.fn(),
     getDirectoryStructure: vi.fn(),
+    deleteSources: vi.fn(),
   },
 }));
 
@@ -1508,6 +1509,21 @@ describe('Sources citation link', () => {
       expect(pendingCard()).toBeUndefined();
     });
 
+    // K2: with no search or filter it leads page 1 under Needs attention;
+    // a search shows it among the cards, with no section.
+    it('joins Needs attention, which a search drops', async () => {
+      await render('/settings/knowledge', [doc()]);
+      const heading = Array.from(container.querySelectorAll('h2')).find((h) =>
+        h.textContent?.startsWith('settings.sources.needsAttention'),
+      )!;
+      expect(heading.closest('section')!.textContent).toContain('Handbook');
+      await typeSearch('HAND');
+      expect(container.textContent).not.toContain(
+        'settings.sources.needsAttention',
+      );
+      expect(pendingCard()).toBeDefined();
+    });
+
     it('shows while its name matches the search', async () => {
       await render('/settings/knowledge', [doc()]);
       await typeSearch('HAND');
@@ -1642,5 +1658,440 @@ describe('Sources citation link', () => {
     expect(open).not.toBeNull();
     await act(async () => open!.click());
     expect(viewOf('chunks')?.dataset.linked).toBe('');
+  });
+});
+
+describe('Sources filters and usage', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const KIND_COUNTS = {
+    all: 9,
+    files: 4,
+    websites: 2,
+    synced: 0,
+    wikis: 1,
+    shared: 1,
+  };
+  const USAGE_COUNTS = { all: 9, in_use: 3, unused: 6 };
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchPage.mockReset();
+    fetchPage.mockResolvedValue({
+      docs: [doc()],
+      totalDocuments: 30,
+      totalPages: 3,
+      currentPage: 1,
+      nextCursor: '',
+      kindCounts: KIND_COUNTS,
+      usageCounts: USAGE_COUNTS,
+    });
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  const where = () =>
+    container.querySelector('[data-testid="where"]')!.textContent;
+  const kindItems = () =>
+    Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="toggle-group-item"]',
+      ),
+    );
+
+  it('sends the kind and usage in the address to the listing', async () => {
+    await mount(root, [doc()], {
+      entry: '/settings/knowledge?kind=websites&usage=in_use',
+    });
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'websites',
+      usage: 'in_use',
+    });
+  });
+
+  it("filters by kind with the server's counts, in the address, from page 1", async () => {
+    await mount(root, [doc()], { entry: '/settings/knowledge?page=2' });
+    // An empty kind is left out.
+    expect(
+      kindItems().map((item) => [
+        item.firstChild?.textContent,
+        item.querySelector('[data-slot="count"]')?.textContent,
+      ]),
+    ).toEqual([
+      ['settings.sources.kinds.all', '9'],
+      ['settings.sources.kinds.files', '4'],
+      ['settings.sources.kinds.websites', '2'],
+      ['settings.sources.kinds.wikis', '1'],
+      ['settings.sources.kinds.shared', '1'],
+    ]);
+    // The page toolbar's size.
+    expect(
+      container.querySelector('[data-slot="toggle-group"]')?.className,
+    ).toContain('p-0.75');
+    fetchPage.mockClear();
+    await act(async () =>
+      kindItems()
+        .find(
+          (item) =>
+            item.firstChild?.textContent === 'settings.sources.kinds.websites',
+        )!
+        .click(),
+    );
+    expect(where()).toBe('?kind=websites');
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetchPage.mock.calls[0][2]).toBe(1);
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'websites',
+      usage: 'all',
+    });
+  });
+
+  // One ToggleGroup per page: usage is a pill Select beside it.
+  it('filters by usage with a pill Select', async () => {
+    await mount(root, [doc()]);
+    const trigger = container.querySelector<HTMLElement>(
+      '[data-slot="select-trigger"][aria-label="settings.sources.usageFilterLabel"]',
+    )!;
+    expect(trigger).not.toBeNull();
+    expect(trigger.getAttribute('data-shape')).toBe('pill');
+    expect(trigger.textContent).toContain('settings.sources.usageFilters.all');
+  });
+
+  it('says no match under a filter, with no way in', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [],
+      totalDocuments: 0,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+      kindCounts: { ...KIND_COUNTS, wikis: 0 },
+      usageCounts: USAGE_COUNTS,
+    });
+    await mount(root, [], { entry: '/settings/knowledge?kind=wikis' });
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('settings.sources.noResults');
+    expect(empty.querySelector('button')).toBeNull();
+  });
+
+  it('says which agents use a source on its card and in its delete confirm', async () => {
+    const used = doc({
+      access: 'owner',
+      allowed_actions: [...OWNER, 'use'],
+      used_by: { agents: [{ id: 'a-1', name: 'Support bot' }], others: 1 },
+    });
+    await mount(root, [used]);
+    const card = container.querySelector('[data-slot="card"]')!;
+    expect(card.textContent).toContain('settings.usage.agents');
+    await openMenu('menu-button-src-1');
+    const item = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'settings.sources.delete')!;
+    await act(async () => item.click());
+    expect(
+      document.querySelector('[role="dialog"] [data-slot="dialog-description"]')
+        ?.textContent,
+    ).toBe('settings.sources.deleteUsedBy');
+  });
+});
+
+describe('Sources needs attention', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const failed = doc({ id: 'f', name: 'Failed', ingestStatus: 'failed' });
+  const running = doc({ id: 'p', name: 'Running', ingestStatus: 'processing' });
+  const paused = doc({ id: 'r', name: 'Paused', connectionId: 'conn-1' });
+  const fine = doc({ id: 'o', name: 'Fine' });
+
+  beforeEach(() => {
+    fetchPage.mockReset();
+    fetchPage.mockResolvedValue({
+      docs: [fine, failed],
+      totalDocuments: 4,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    withConnection('reconnect_needed');
+    knowledge.docs = [running, fine, paused, failed];
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    knowledge.docs = undefined;
+    connectors.connections = [];
+  });
+
+  /** Each section's eyebrow and the sources it holds, in order. */
+  const sections = () =>
+    Array.from(container.querySelectorAll('section')).map((section) => [
+      section.querySelector('h2')?.textContent ?? null,
+      Array.from(
+        section.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="card"] > button[aria-label]',
+        ),
+      ).map((b) => b.getAttribute('aria-label')),
+    ]);
+
+  it('leads page 1 with failed, reconnect and indexing sources, listed once', async () => {
+    await mount(root, [fine, failed]);
+    expect(sections()).toEqual([
+      ['settings.sources.needsAttention3', ['Failed', 'Paused', 'Running']],
+      ['settings.sources.allKnowledge1', ['Fine']],
+    ]);
+  });
+
+  it.each([
+    ['on page 2', '/settings/knowledge?page=2'],
+    ['while filtered', '/settings/knowledge?kind=files'],
+  ])('is not shown %s', async (_, entry) => {
+    fetchPage.mockResolvedValue({
+      docs: [fine, failed],
+      totalDocuments: 30,
+      totalPages: 3,
+      currentPage: entry.includes('page=2') ? 2 : 1,
+      nextCursor: '',
+    });
+    await mount(root, [fine, failed], { entry });
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+  });
+
+  it('is not shown while searching, and the failed card stays in the list', async () => {
+    await mount(root, [fine, failed]);
+    await typeSearch('a');
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+    expect(
+      container.querySelector('button[aria-label="Failed"]'),
+    ).not.toBeNull();
+  });
+});
+
+describe('Sources select mode', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const owned = (id: string, name: string, fields: Partial<Doc> = {}) =>
+    doc({
+      id,
+      name,
+      access: 'owner',
+      allowed_actions: [...OWNER, 'use'],
+      ...fields,
+    });
+  const a = owned('a', 'Alpha');
+  const b = owned('b', 'Beta');
+  const teamViewer = doc({
+    id: 'v',
+    name: 'Viewed',
+    access: 'viewer',
+    ownership: 'team',
+    allowed_actions: VIEWER,
+  });
+
+  beforeEach(() => {
+    dispatch.mockReset();
+    service.deleteSources.mockReset();
+    fetchPage.mockReset();
+    fetchPage.mockResolvedValue({
+      docs: [a, b, teamViewer],
+      totalDocuments: 3,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  const toolbarButton = (label: string) =>
+    Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="page-toolbar"] button',
+      ),
+    ).find((button) => button.textContent === label);
+  const checkboxes = () =>
+    Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]'));
+  const checkboxOf = (name: string) =>
+    container
+      .querySelector(`button[aria-label="${name}"]`)!
+      .closest('[data-slot="card"]')!
+      .querySelector<HTMLElement>('[role="checkbox"]');
+  const tick = (name: string) =>
+    act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!
+        .click(),
+    );
+  const startSelecting = async () => {
+    await mount(root, [a, b, teamViewer]);
+    await act(async () => toolbarButton('settings.sources.select')!.click());
+  };
+  const dialog = () => document.querySelector('[role="dialog"]');
+  const submit = () =>
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((button) => button.textContent === 'settings.sources.delete')!;
+
+  it('ticks the cards the caller can delete instead of opening them', async () => {
+    await startSelecting();
+    // A checkbox where the ⋯ was, and none on a team viewer's card.
+    expect(checkboxes()).toHaveLength(2);
+    expect(container.querySelector('[data-testid="menu-button-a"]')).toBeNull();
+    expect(checkboxOf('Viewed')).toBeNull();
+    await tick('Alpha');
+    expect(checkboxOf('Alpha')!.getAttribute('aria-checked')).toBe('true');
+    expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    expect(toolbar.textContent).toContain('settings.sources.selectedCount');
+    expect(
+      toolbar.querySelector('[aria-live="polite"]')?.textContent,
+    ).toContain('settings.sources.selectedCount');
+    // Delete waits for a pick; Select all on page ticks the rest.
+    expect(toolbarButton('settings.sources.delete')!.disabled).toBe(false);
+    await act(async () =>
+      toolbarButton('settings.sources.selectAllOnPage')!.click(),
+    );
+    expect(checkboxOf('Beta')!.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('Cancel and Escape leave the mode and drop the selection', async () => {
+    await startSelecting();
+    expect(toolbarButton('settings.sources.delete')!.disabled).toBe(true);
+    await tick('Alpha');
+    await act(async () => toolbarButton('cancel')!.click());
+    expect(checkboxes()).toHaveLength(0);
+    expect(
+      container.querySelector('[data-testid="menu-button-a"]'),
+    ).not.toBeNull();
+    await act(async () => toolbarButton('settings.sources.select')!.click());
+    expect(checkboxOf('Alpha')!.getAttribute('aria-checked')).toBe('false');
+    await act(async () =>
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      ),
+    );
+    expect(checkboxes()).toHaveLength(0);
+  });
+
+  it('deletes the selection in one request after a confirm', async () => {
+    service.deleteSources.mockResolvedValue({
+      ok: true,
+      json: async () => ({ deleted: ['a', 'b'], failed: [] }),
+    });
+    await startSelecting();
+    await tick('Alpha');
+    await tick('Beta');
+    await act(async () => toolbarButton('settings.sources.delete')!.click());
+    expect(dialog()!.textContent).toContain(
+      'settings.sources.deleteSelectedWarning',
+    );
+    expect(
+      dialog()!.querySelector('[data-slot="dialog-description"]')?.textContent,
+    ).toBe('settings.sources.deleteSelectedConsequence');
+    expect(submit().getAttribute('data-variant')).toBe('destructive');
+    fetchPage.mockClear();
+    await act(async () => submit().click());
+    expect(service.deleteSources).toHaveBeenCalledWith(['a', 'b'], null);
+    expect(dialog()).toBeNull();
+    expect(fetchPage).toHaveBeenCalled();
+    expect(checkboxes()).toHaveLength(0);
+    expect(
+      dispatch.mock.calls.some(
+        ([action]) =>
+          action?.type === syncForgotten.type &&
+          JSON.stringify(action.payload) === '["a","b"]',
+      ),
+    ).toBe(true);
+  });
+
+  it('names the agents that lose the selection', async () => {
+    const usedA = owned('a', 'Alpha', {
+      used_by: { agents: [{ id: 'x', name: 'X' }], others: 0 },
+    });
+    const usedB = owned('b', 'Beta', {
+      used_by: { agents: [{ id: 'x', name: 'X' }], others: 2 },
+    });
+    await mount(root, [usedA, usedB]);
+    await act(async () => toolbarButton('settings.sources.select')!.click());
+    await tick('Alpha');
+    await tick('Beta');
+    await act(async () => toolbarButton('settings.sources.delete')!.click());
+    expect(
+      dialog()!.querySelector('[data-slot="dialog-description"]')?.textContent,
+    ).toBe(
+      'settings.sources.deleteSelectedUsedBy settings.sources.deleteSelectedConsequence',
+    );
+  });
+
+  it('keeps a partial failure in the dialog and the failed sources ticked', async () => {
+    service.deleteSources.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        deleted: ['a'],
+        failed: [{ id: 'b', error: 'busy', code: 'source_busy' }],
+      }),
+    });
+    await startSelecting();
+    await tick('Alpha');
+    await tick('Beta');
+    await act(async () => toolbarButton('settings.sources.delete')!.click());
+    fetchPage.mockClear();
+    await act(async () => submit().click());
+    expect(dialog()).not.toBeNull();
+    expect(dialog()!.textContent).toContain(
+      'settings.sources.deleteSomeFailed',
+    );
+    expect(dialog()!.textContent).toContain(
+      'settings.sources.deleteFailedReasons.busy',
+    );
+    // What went is gone from the lists.
+    expect(fetchPage).toHaveBeenCalled();
+    expect(checkboxOf('Alpha')!.getAttribute('aria-checked')).toBe('false');
+    expect(checkboxOf('Beta')!.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('keeps a failed request in the dialog', async () => {
+    service.deleteSources.mockResolvedValue({
+      ok: false,
+      json: async () => ({}),
+    });
+    await startSelecting();
+    await tick('Alpha');
+    await act(async () => toolbarButton('settings.sources.delete')!.click());
+    await act(async () => submit().click());
+    expect(dialog()!.textContent).toContain(
+      'settings.sources.deleteSelectedFailed',
+    );
+    expect(checkboxOf('Alpha')!.getAttribute('aria-checked')).toBe('true');
   });
 });

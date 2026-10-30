@@ -46,6 +46,11 @@ export type MultiSelectPopoverProps = {
   searchPlaceholder?: string;
   loading?: boolean;
   footer?: React.ReactNode;
+  /**
+   * Controls drawn under the search (a kind filter), outside cmdk's key
+   * handling, so Enter and the arrows work them rather than the list.
+   */
+  filters?: React.ReactNode;
   align?: 'start' | 'center' | 'end';
   side?: 'top' | 'right' | 'bottom' | 'left';
   /** Extra layout classes for the popup (the desktop popover or the mobile sheet). */
@@ -90,6 +95,7 @@ export function MultiSelectPopover({
   searchPlaceholder,
   loading = false,
   footer,
+  filters,
   align = 'start',
   side = 'bottom',
   className,
@@ -223,6 +229,17 @@ export function MultiSelectPopover({
           <CommandInput placeholder={effectivePlaceholder} />
         </div>
       )}
+      {filters ? (
+        // cmdk's root turns Enter into "toggle the highlighted row" and
+        // takes the arrows; a filter's keys stop here.
+        <div
+          data-slot="multi-select-filters"
+          className="shrink-0 px-3 pt-2 pb-1"
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          {filters}
+        </div>
+      ) : null}
 
       {loading ? (
         <LoadingState fill="block" size="sm" />

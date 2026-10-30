@@ -89,4 +89,43 @@ describe('chat picker chrome', () => {
     expect(placeholder).toBe('agents.form.sourcePopup.searchPlaceholder');
     expect(footer?.querySelector('a')).not.toBeNull();
   });
+
+  // P2 and K1: the chosen sources on top, the kind filter under the search.
+  it('lists the chosen knowledge first and draws the kind filter', () => {
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <SourcesTrigger
+            open
+            onOpenChange={() => undefined}
+            items={[
+              { id: 'a', label: 'Alpha' },
+              { id: 'b', label: 'Beta' },
+            ]}
+            selectedIds={['b']}
+            onToggle={() => undefined}
+            selectedDocs={null}
+            onUploadClick={() => undefined}
+            filters={<span data-testid="kinds">kinds</span>}
+          />
+        </MemoryRouter>,
+      );
+    });
+    const content = document.querySelector('[data-slot="popover-content"]')!;
+    const groups = Array.from(content.querySelectorAll('[cmdk-group]')).map(
+      (group) => [
+        group.querySelector('[cmdk-group-heading]')?.textContent ?? null,
+        Array.from(group.querySelectorAll('[cmdk-item]')).map((item) =>
+          item.textContent?.trim(),
+        ),
+      ],
+    );
+    expect(groups).toEqual([
+      ['components.multiSelect.selectedGroup', ['Beta']],
+      [null, ['Alpha']],
+    ]);
+    expect(
+      content.querySelector('[data-slot="multi-select-filters"]')?.textContent,
+    ).toBe('kinds');
+  });
 });

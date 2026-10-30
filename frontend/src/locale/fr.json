@@ -723,7 +723,53 @@
       "viaConnectionFiles_many": "via {{name}} · {{files}} fichiers",
       "item": {
         "tokens": "{{tokens}} jetons"
-      }
+      },
+      "tokenCount": "{{tokens}} jetons",
+      "kinds": {
+        "all": "Toutes",
+        "files": "Fichiers",
+        "websites": "Sites web",
+        "synced": "Synchronisées",
+        "wikis": "Wikis",
+        "shared": "Partagées"
+      },
+      "kindFilterLabel": "Filtrer par type",
+      "usageFilters": {
+        "all": "Toutes",
+        "inUse": "Utilisées",
+        "unused": "Inutilisées"
+      },
+      "usageFilterLabel": "Filtrer par utilisation",
+      "needsAttention": "À traiter",
+      "allKnowledge": "Toutes les connaissances",
+      "select": "Sélectionner",
+      "selectAllOnPage": "Tout sélectionner sur la page",
+      "selectSource": "Sélectionner {{name}}",
+      "selectedCount_one": "{{formatted}} sélectionnée",
+      "selectedCount_other": "{{formatted}} sélectionnées",
+      "selectedCount_many": "{{formatted}} sélectionnées",
+      "deleteUsedBy_one": "Utilisée par {{formatted}} agent, qui perd cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_other": "Utilisée par {{formatted}} agents, qui perdent cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_many": "Utilisée par {{formatted}} agents, qui perdent cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteSelectedWarning_one": "Supprimer {{formatted}} source ?",
+      "deleteSelectedWarning_other": "Supprimer {{formatted}} sources ?",
+      "deleteSelectedWarning_many": "Supprimer {{formatted}} sources ?",
+      "deleteSelectedConsequence_one": "Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteSelectedConsequence_other": "Leurs fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteSelectedConsequence_many": "Leurs fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteSelectedUsedBy_one": "{{formatted}} agent perd ces connaissances.",
+      "deleteSelectedUsedBy_other": "{{formatted}} agents perdent ces connaissances.",
+      "deleteSelectedUsedBy_many": "{{formatted}} agents perdent ces connaissances.",
+      "deleteSomeFailed_one": "{{formatted}} source n’a pas été supprimée.",
+      "deleteSomeFailed_other": "{{formatted}} sources n’ont pas été supprimées.",
+      "deleteSomeFailed_many": "{{formatted}} sources n’ont pas été supprimées.",
+      "deleteFailedReasons": {
+        "busy": "Une synchronisation ou une autre modification était en cours. Réessayez une fois qu’elle est terminée.",
+        "forbidden": "La suppression demande une autorisation que vous n’avez pas.",
+        "notFound": "Introuvable : déjà supprimée ou plus partagée avec vous.",
+        "failed": "Une erreur s’est produite. Réessayez."
+      },
+      "deleteSelectedFailed": "Impossible de supprimer les sources."
     },
     "analytics": {
       "label": "Statistiques",

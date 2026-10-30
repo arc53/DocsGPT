@@ -1172,6 +1172,8 @@ describe('NewAgent form', () => {
     expect(sources.dataset.search).toBe(
       'agents.form.sourcePopup.searchPlaceholder',
     );
+    // The sources on the agent come first too.
+    expect(sources.dataset.selectedFirst).toBe('true');
     expect(tools.dataset.title).toBe('settings.tools.label');
     expect(tools.dataset.search).toBe('settings.tools.searchPlaceholder');
     expect(tools.dataset.selectedFirst).toBe('true');

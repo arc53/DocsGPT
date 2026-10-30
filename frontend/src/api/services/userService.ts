@@ -100,6 +100,12 @@ const userService = {
     apiClient.get(endpoints.USER.SINGLE_PROMPT(id), token),
   deletePath: (docPath: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.DELETE_PATH(docPath), token),
+  /**
+   * Deletes up to 100 sources: 200 `{deleted: [ids], failed: [{id, error,
+   * code}]}`, even when some fail.
+   */
+  deleteSources: (ids: string[], token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.DELETE_SOURCES, { ids }, token),
   getMessageAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data, token),
   getTokenAnalytics: (data: any, token: string | null): Promise<any> =>

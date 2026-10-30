@@ -1,3 +1,6 @@
+import type { SourceKindFilter } from '../settings/sourceKinds';
+import type { ResourceUsage } from '../settings/types';
+
 export type ActiveState = 'ACTIVE' | 'INACTIVE';
 
 export type User = {
@@ -107,6 +110,8 @@ export type Doc = {
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;
   allowed_actions?: string[];
+  // The agents that use it (both lists; absent from an older backend).
+  used_by?: ResourceUsage;
 };
 
 /**
@@ -123,7 +128,14 @@ export type GetDocsResponse = {
   /** The page served: the one asked for, clamped to the last. */
   currentPage: number;
   nextCursor: string;
+  /** Sources per kind, the search and usage filters applied (paginated list). */
+  kindCounts?: Record<SourceKindFilter, number>;
+  /** Sources per usage, the search and kind filters applied (paginated list). */
+  usageCounts?: Record<UsageFilter, number>;
 };
+
+/** The Knowledge page's usage filter, as `/api/sources/paginated` takes it. */
+export type UsageFilter = 'all' | 'in_use' | 'unused';
 
 export type Prompt = {
   name: string;

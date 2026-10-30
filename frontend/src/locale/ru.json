@@ -751,7 +751,59 @@
       "viaConnectionFiles_few": "через {{name}} · файлов: {{files}}",
       "item": {
         "tokens": "токенов: {{tokens}}"
-      }
+      },
+      "tokenCount": "токенов: {{tokens}}",
+      "kinds": {
+        "all": "Все",
+        "files": "Файлы",
+        "websites": "Сайты",
+        "synced": "Синхронизируемые",
+        "wikis": "Вики",
+        "shared": "Общие"
+      },
+      "kindFilterLabel": "Фильтр по типу",
+      "usageFilters": {
+        "all": "Все",
+        "inUse": "Используются",
+        "unused": "Не используются"
+      },
+      "usageFilterLabel": "Фильтр по использованию",
+      "needsAttention": "Требуют внимания",
+      "allKnowledge": "Все знания",
+      "select": "Выбрать",
+      "selectAllOnPage": "Выбрать все на странице",
+      "selectSource": "Выбрать {{name}}",
+      "selectedCount_one": "Выбрано: {{formatted}}",
+      "selectedCount_few": "Выбрано: {{formatted}}",
+      "selectedCount_many": "Выбрано: {{formatted}}",
+      "selectedCount_other": "Выбрано: {{formatted}}",
+      "deleteUsedBy_one": "Используется в {{formatted}} агенте, и там его больше не будет. Его файлы и фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteUsedBy_few": "Используется в {{formatted}} агентах, и там его больше не будет. Его файлы и фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteUsedBy_many": "Используется в {{formatted}} агентах, и там его больше не будет. Его файлы и фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteUsedBy_other": "Используется в {{formatted}} агентах, и там его больше не будет. Его файлы и фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteSelectedWarning_one": "Удалить {{formatted}} источник?",
+      "deleteSelectedWarning_few": "Удалить {{formatted}} источника?",
+      "deleteSelectedWarning_many": "Удалить {{formatted}} источников?",
+      "deleteSelectedWarning_other": "Удалить {{formatted}} источника?",
+      "deleteSelectedConsequence_one": "Его файлы и фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteSelectedConsequence_few": "Их файлы и фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteSelectedConsequence_many": "Их файлы и фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteSelectedConsequence_other": "Их файлы и фрагменты тоже будут удалены. Это действие нельзя отменить.",
+      "deleteSelectedUsedBy_one": "{{formatted}} агент потеряет эти знания.",
+      "deleteSelectedUsedBy_few": "{{formatted}} агента потеряют эти знания.",
+      "deleteSelectedUsedBy_many": "{{formatted}} агентов потеряют эти знания.",
+      "deleteSelectedUsedBy_other": "{{formatted}} агента потеряют эти знания.",
+      "deleteSomeFailed_one": "{{formatted}} источник не удалён.",
+      "deleteSomeFailed_few": "{{formatted}} источника не удалены.",
+      "deleteSomeFailed_many": "{{formatted}} источников не удалены.",
+      "deleteSomeFailed_other": "{{formatted}} источника не удалены.",
+      "deleteFailedReasons": {
+        "busy": "Шла синхронизация или другое изменение. Попробуйте ещё раз, когда оно завершится.",
+        "forbidden": "Для удаления не хватает прав.",
+        "notFound": "Уже удалено или больше вам не доступно.",
+        "failed": "Что-то пошло не так. Попробуйте ещё раз."
+      },
+      "deleteSelectedFailed": "Не удалось удалить источники."
     },
     "analytics": {
       "label": "Аналитика",

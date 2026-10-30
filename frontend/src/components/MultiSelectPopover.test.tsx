@@ -222,6 +222,63 @@ describe('MultiSelectPopover', () => {
     });
   });
 
+  describe('filters', () => {
+    const renderWithFilters = (onToggle = vi.fn()) =>
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={items}
+            selectedIds={[]}
+            onToggle={onToggle}
+            filters={<button type="button">Websites</button>}
+          />,
+        );
+      });
+
+    const strip = () =>
+      document.querySelector<HTMLElement>('[data-slot="multi-select-filters"]');
+
+    it('draws the filter row between the search and the list', () => {
+      renderWithFilters();
+      const row = strip()!;
+      const input = document.querySelector('[data-slot="command-input"]')!;
+      const list = document.querySelector('[data-slot="command-list"]')!;
+      expect(
+        input.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        row.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(row.className.split(' ')).toEqual(
+        expect.arrayContaining(['px-3', 'pt-2', 'pb-1']),
+      );
+    });
+
+    it('keeps its keys from cmdk: Enter presses a filter, not the row', () => {
+      const onToggle = vi.fn();
+      renderWithFilters(onToggle);
+      const button = strip()!.querySelector('button')!;
+      act(() => {
+        button.focus();
+        const event = new KeyboardEvent('keydown', {
+          key: 'Enter',
+          bubbles: true,
+          cancelable: true,
+        });
+        button.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      });
+      expect(onToggle).not.toHaveBeenCalled();
+    });
+
+    it('draws no row without filters', () => {
+      render();
+      expect(strip()).toBeNull();
+    });
+  });
+
   describe('selectedFirst', () => {
     const grouped = [
       { id: 'a', label: 'Alpha', group: 'one' },

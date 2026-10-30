@@ -1,4 +1,5 @@
 import { Database } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Doc } from '../../models/misc';
@@ -19,6 +20,8 @@ type SourcesTriggerProps = {
   onToggle: (id: string) => void;
   selectedDocs: Doc[] | null | undefined;
   onUploadClick: () => void;
+  /** The kind filter drawn under the search (`useSourceKindFilter`). */
+  filters?: ReactNode;
 };
 
 export default function SourcesTrigger({
@@ -29,6 +32,7 @@ export default function SourcesTrigger({
   onToggle,
   selectedDocs,
   onUploadClick,
+  filters,
 }: SourcesTriggerProps) {
   const { t } = useTranslation();
   const docs = selectedDocs ?? [];
@@ -42,6 +46,9 @@ export default function SourcesTrigger({
       items={items}
       selectedIds={selectedIds}
       onToggle={onToggle}
+      // What is chosen when it opens comes first, fixed while it is open.
+      selectedFirst
+      filters={filters}
       searchPlaceholder={t('agents.form.sourcePopup.searchPlaceholder')}
       emptyMessage={t('conversation.sources.noSourcesAvailable')}
       footer={

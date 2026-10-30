@@ -1,7 +1,7 @@
 import { envVar } from '@/env';
 import { useAvoidToasts } from '@/components/ui/toast-layout';
 import { cn } from '@/lib/utils';
-import { CloudUpload, Database } from 'lucide-react';
+import { CloudUpload } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -89,7 +89,9 @@ import {
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
-import { sourceItemId, toSourcePickerItems } from '../utils/sourceUtils';
+import { useSourceKindFilter } from '../settings/SourceKindFilter';
+import { sourceItemId } from '../utils/sourceUtils';
+import { toSourcePickerItems } from './sourcePickerItems';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
@@ -1364,17 +1366,19 @@ export default function MessageInput({
     void _docs;
   };
 
+  // The picker's kind filter, back on All each time it opens.
+  const sourceKinds = useSourceKindFilter(sourceDocs, isSourcesPopupOpen);
   const sourceItems: MultiSelectPopoverItem[] = useMemo(
     () =>
-      toSourcePickerItems(
-        sourceDocs,
-        {
+      toSourcePickerItems(sourceKinds.docs, {
+        t,
+        labels: {
           own: t('conversation.sources.groupOwn'),
           team: t('conversation.sources.groupTeam'),
         },
-        <Database />,
-      ),
-    [sourceDocs, t],
+        connections,
+      }),
+    [sourceKinds.docs, t, connections],
   );
 
   const selectedSourceIds = (
@@ -1751,6 +1755,7 @@ export default function MessageInput({
                 onToggle={handleToggleSource}
                 selectedDocs={selectedDocs}
                 onUploadClick={handleUploadClick}
+                filters={sourceKinds.filters}
               />
             )}
 
