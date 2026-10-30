@@ -60,33 +60,56 @@ def _strip_html(text: str) -> str:
 # YAML (---) or TOML (+++) front matter opens a document, and MDX files import
 # and export modules, leave comments and place self-closing components above
 # their first heading; none of it is text a reader searches for.
-_FRONT_MATTER = re.compile(r"\A﻿?(---|\+\+\+)[ \t\r]*\n.*?^\1[ \t\r]*$", re.DOTALL | re.MULTILINE)
+_FRONT_MATTER = re.compile(r"\A\ufeff?(---|\+\+\+)[ \t\r]*\n.*?^\1[ \t\r]*$", re.DOTALL | re.MULTILINE)
+# Between "---" lines, front matter holds YAML: keys, list items, indented values
+# and comments. A horizontal rule above a heading and prose does not.
+_YAML_KEY = re.compile(r"[^\s#:\-][^:\n]*:(?:[ \t]|\r?$)")
+_YAML_LINE = re.compile(r"[ \t\r]*$|[ \t]*#|[ \t]*-(?:[ \t]|\r?$)|[ \t]+\S")
 # A whole import statement ends in its quoted module, which prose such as
-# "import the SDK first" does not.
+# "import the SDK first" does not. Its words and the whitespace between them
+# never overlap, so a long run of spaces is matched in linear time.
 _MDX_IMPORT = re.compile(
-    r"^import\s+(?:[\w$*{},\s]+?\s+from\s*)?(['\"])[^'\"\n]+\1[ \t]*;?[ \t]*(?://[^\n]*)?[ \t\r]*$",
+    r"^import[ \t]+(?:[\w$*{},]+(?:\s+[\w$*{},]+)*\s+from[ \t]*)?(['\"])[^'\"\n]+\1"
+    r"[ \t]*;?[ \t]*(?://[^\n]*)?[ \t\r]*$",
     re.MULTILINE,
 )
 _MDX_EXPORT = re.compile(
-    r"^export\s+(?:(?:const|let|var)\s+[\w$]+\s*=\s*\{[^{}]*\}[ \t]*;?"
+    r"^export[ \t]+(?:(?:const|let|var)\s+[\w$]+\s*=\s*\{[^{}]*\}[ \t]*;?"
     r"|(?:const|let|var|function|class|default|async)\b[^\n]*)[ \t\r]*$",
     re.MULTILINE,
 )
 _MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.DOTALL)
-# Quoted and braced attribute values may hold ">".
+# Quoted and braced attribute values may hold ">", and braces nest once, as in
+# style={{ color: "red" }}.
+_BRACED = r"\{(?:[^{}]|\{[^{}]*\})*\}"
 _MDX_SELF_CLOSING_COMPONENT = re.compile(
-    r"""<[A-Z][\w.]*(?:\s+(?:(?:[^\s"'{}<>/]|/(?!>))+(?:"[^"]*"|'[^']*'|\{[^{}]*\})?"""
-    r"""|"[^"]*"|'[^']*'|\{[^{}]*\}))*\s*/>"""
+    r"""<[A-Z][\w.]*(?:\s+(?:(?:[^\s"'{}<>/]|/(?!>))+(?:"[^"]*"|'[^']*'|""" + _BRACED + r""")?"""
+    r"""|"[^"]*"|'[^']*'|""" + _BRACED + r"""))*\s*/>"""
 )
+_THEMATIC_BREAK = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t\r]*$", re.MULTILINE)
 # A comment still open where the first heading was found: a "#" line inside it.
 _OPEN_HTML_COMMENT = re.compile(r"<!--(?:(?!-->).)*\Z", re.DOTALL)
 
 
+def _front_matter(text: str) -> Optional["re.Match[str]"]:
+    """The front matter block that opens text, if there is one."""
+    match = _FRONT_MATTER.match(text)
+    if match and match.group(1) == "---":
+        lines = match.group(0).split("\n")[1:-1]
+        is_yaml = all(_YAML_KEY.match(line) or _YAML_LINE.match(line) for line in lines)
+        if not is_yaml or not any(_YAML_KEY.match(line) for line in lines):
+            return None
+    return match
+
+
 def _has_text(preamble: str) -> bool:
     """Whether text before the first heading holds more than front matter, MDX
-    import and export statements, comments and components, markup and whitespace."""
-    preamble = _FRONT_MATTER.sub("", preamble, count=1)
-    for pattern in (_MDX_IMPORT, _MDX_EXPORT, _MDX_COMMENT, _MDX_SELF_CLOSING_COMPONENT):
+    import and export statements, comments and components, horizontal rules,
+    markup and whitespace."""
+    front_matter = _front_matter(preamble)
+    if front_matter:
+        preamble = preamble[front_matter.end():]
+    for pattern in (_MDX_IMPORT, _MDX_EXPORT, _MDX_COMMENT, _MDX_SELF_CLOSING_COMPONENT, _THEMATIC_BREAK):
         preamble = pattern.sub("", preamble)
     return bool(_OPEN_HTML_COMMENT.sub("", _strip_html(preamble)).strip())
 
@@ -147,7 +170,7 @@ class MarkdownParser(BaseParser):
         # Marker of the open fenced code block, or None outside a code block.
         open_fence: Optional[str] = None
         # Front matter is metadata: a "#" line in it is a YAML comment, not a heading.
-        front_matter = _FRONT_MATTER.match(markdown_text)
+        front_matter = _front_matter(markdown_text)
         if front_matter:
             front_matter_lines = front_matter.group(0).count("\n") + 1
             current_text = "\n".join(lines[:front_matter_lines]) + "\n"
