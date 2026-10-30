@@ -7,10 +7,10 @@ in ``default_model_id``); ``upstream_model_id`` is what we send verbatim
 to the provider's API.
 
 API key handling: callers pass plaintext via ``api_key_plaintext``;
-this module wraps the existing ``docsgpt.security.encryption``
-helper (AES-CBC + per-user PBKDF2 salt) and writes the base64 ciphertext
-to the ``api_key_encrypted`` column. Decryption is the caller's
-responsibility (they hold the ``user_id``).
+this module wraps the v2 ``docsgpt.security.encryption``
+helper (AES-GCM with per-owner binding, legacy v1 blobs still readable)
+and writes the envelope to the ``api_key_encrypted`` column. Decryption is
+the caller's responsibility (they hold the ``user_id``).
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from typing import Any, Optional
 from sqlalchemy import Connection, func, text
 
 from docsgpt.security.encryption import (
-    decrypt_credentials,
-    encrypt_credentials,
+    decrypt_tool_credentials,
+    encrypt_tool_credentials,
 )
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.models import user_custom_models_table
@@ -51,8 +51,8 @@ class UserCustomModelsRepository:
 
     @staticmethod
     def _encrypt_api_key(api_key_plaintext: str, user_id: str) -> str:
-        """Encrypt ``api_key_plaintext`` with the per-user PBKDF2 scheme."""
-        return encrypt_credentials({"api_key": api_key_plaintext}, user_id)
+        """Encrypt ``api_key_plaintext`` with the v2 envelope."""
+        return encrypt_tool_credentials({"api_key": api_key_plaintext}, user_id)
 
     @staticmethod
     def _decrypt_api_key(api_key_encrypted: str, user_id: str) -> Optional[str]:
@@ -61,7 +61,7 @@ class UserCustomModelsRepository:
         proceeding with the upstream call)."""
         if not api_key_encrypted:
             return None
-        creds = decrypt_credentials(api_key_encrypted, user_id)
+        creds = decrypt_tool_credentials(api_key_encrypted, user_id)
         return creds.get("api_key") if creds else None
 
     @staticmethod

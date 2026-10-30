@@ -40,7 +40,11 @@ from docsgpt.connectors.service import account_tool_names
 from docsgpt.connectors.permissions import action_access, owner_credential_writes
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
-from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import (
+    CredentialDecryptionError,
+    encrypt_tool_credentials,
+    load_tool_credentials,
+)
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.notes import NotesRepository
@@ -108,7 +112,7 @@ def _encrypt_secret_fields(config, config_requirements, user_id):
 
     storage_config = config.copy()
     secret_values = {k: config[k] for k in secret_keys}
-    storage_config["encrypted_credentials"] = encrypt_credentials(secret_values, user_id)
+    storage_config["encrypted_credentials"] = encrypt_tool_credentials(secret_values, user_id)
     for key in secret_keys:
         storage_config.pop(key, None)
     return storage_config
@@ -139,6 +143,31 @@ def _validate_config(config, config_requirements, has_existing_secrets=False):
     return errors
 
 
+def _secret_keys_in_scope(config: dict, config_requirements: dict) -> list[str]:
+    """Secret keys whose ``depends_on`` condition the given config meets.
+
+    MCP declares ``api_key``, ``bearer_token`` and ``password`` as separate
+    optional secrets; only the one for the chosen ``auth_type`` is in scope,
+    so a save never has to retain secrets the tool does not use.
+
+    Args:
+        config: The effective non-secret config.
+        config_requirements: The tool's config schema.
+
+    Returns:
+        The secret keys the config currently needs.
+    """
+    keys = []
+    for key, spec in config_requirements.items():
+        if not spec.get("secret"):
+            continue
+        depends_on = spec.get("depends_on")
+        if depends_on and not all(config.get(dk) == dv for dk, dv in depends_on.items()):
+            continue
+        keys.append(key)
+    return keys
+
+
 def _merge_secrets_on_update(new_config, existing_config, config_requirements, user_id):
     """Merge incoming config with existing encrypted secrets and re-encrypt.
 
@@ -147,7 +176,15 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
     send, strips plain-text secrets from the stored config, and re-encrypts
     the merged result.
 
+    A stored blob no available key opens is only a dead end when a value would
+    have to be kept from it.  Re-entering every secret the tool needs replaces
+    the unreadable ciphertext with a fresh v2 blob instead.
+
     Returns the final ``config`` dict ready for persistence.
+
+    Raises:
+        StoredCredentialsUnreadable: The stored blob cannot be opened and some
+            secret it would have supplied was not sent again.
     """
     secret_keys = [
         key for key, spec in config_requirements.items()
@@ -159,9 +196,29 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
 
     existing_secrets = {}
     if "encrypted_credentials" in existing_config:
-        existing_secrets = decrypt_credentials(
-            existing_config["encrypted_credentials"], user_id
-        )
+        try:
+            existing_secrets = load_tool_credentials(
+                existing_config["encrypted_credentials"], user_id
+            )
+        except CredentialDecryptionError as err:
+            # Judge completeness against the config the save would store: the
+            # stored non-secrets overlaid with the submitted ones, so a partial
+            # config cannot hide a still-needed secret.
+            effective = {
+                k: v for k, v in existing_config.items()
+                if k not in secret_keys and k != "encrypted_credentials"
+            }
+            effective.update(
+                {k: v for k, v in new_config.items() if k not in secret_keys}
+            )
+            missing = [
+                key for key in _secret_keys_in_scope(effective, config_requirements)
+                if not _has_value(new_config.get(key))
+            ]
+            if missing:
+                raise StoredCredentialsUnreadable(
+                    _STORED_SECRETS_UNREADABLE
+                ) from err
 
     merged_secrets = existing_secrets.copy()
     for key in secret_keys:
@@ -178,7 +235,7 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
     )
 
     if merged_secrets:
-        storage_config["encrypted_credentials"] = encrypt_credentials(
+        storage_config["encrypted_credentials"] = encrypt_tool_credentials(
             merged_secrets, user_id
         )
     else:
@@ -192,6 +249,9 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
 # Access + secrets helpers
 # ---------------------------------------------------------------------------
 _CREDENTIALS_FOR_NEW_SERVER = "Enter credentials for the new server"
+_STORED_SECRETS_UNREADABLE = (
+    "Stored credentials could not be read. Enter them again to save this tool."
+)
 _FORBIDDEN_MESSAGE = "Your access to this item doesn't allow that"
 _MCP_CREDENTIAL_AUTH_TYPES = {"api_key", "bearer", "basic"}
 # ``name`` (the tool type) and ``actions`` are handled on their own.
@@ -206,6 +266,10 @@ _MOVE_THROUGH_MCP_SAVE = (
 
 class CredentialsRequired(Exception):
     """A save moved a tool to a new origin without supplying new secrets."""
+
+
+class StoredCredentialsUnreadable(Exception):
+    """Stored secrets exist but no available key opens them, so a save must not overwrite them."""
 
 
 def denied_response(err: AccessDenied):
@@ -259,17 +323,31 @@ def _secret_props(action: Any):
                 yield section, param, spec
 
 
-def _stored_api_tool_secrets(config: dict, owner_id: str) -> dict:
-    """Decrypted ``{action: {section: {param: value}}}`` plus legacy plaintext values."""
+def _stored_api_tool_secrets(config: dict, owner_id: str) -> tuple[dict, bool]:
+    """Decrypted ``{action: {section: {param: value}}}`` plus legacy plaintext values.
+
+    Args:
+        config: The stored ``user_tools.config``.
+        owner_id: The tool row's ``user_id`` — the encryption key owner.
+
+    Returns:
+        ``(secrets, unreadable)``.  ``unreadable`` reports an encrypted blob no
+        available key opens, so a caller that needs a stored value can refuse
+        while one that replaces every value can still save.
+    """
     config = config or {}
     blob = config.get(API_TOOL_SECRETS_KEY)
-    secrets: dict = decrypt_credentials(blob, owner_id) if blob else {}
+    unreadable = False
+    try:
+        secrets: dict = load_tool_credentials(blob, owner_id) if blob else {}
+    except CredentialDecryptionError:
+        secrets, unreadable = {}, True
     for name, action in (config.get("actions") or {}).items():
         for section, param, spec in _secret_props(action):
             value = spec.get("value")
             if _has_value(value):
                 secrets.setdefault(name, {}).setdefault(section, {}).setdefault(param, value)
-    return secrets
+    return secrets, unreadable
 
 
 def mask_api_tool_config(config: dict) -> dict:
@@ -297,7 +375,8 @@ def _seal_api_tool_secrets(new_config: dict, existing_config: dict, owner_id: st
     An incoming entry with a value replaces the stored one; an empty value with
     ``has_value`` keeps it (legacy plaintext values included); anything else
     clears it. When an action's URL origin changes the stored values are not
-    carried over.
+    carried over. A blob no key opens is refused only when a value would have
+    to be kept from it; re-entering every value replaces it with a fresh blob.
 
     Args:
         new_config: The config the client sent.
@@ -310,9 +389,11 @@ def _seal_api_tool_secrets(new_config: dict, existing_config: dict, owner_id: st
     Raises:
         CredentialsRequired: an origin changed, the client asked to keep a value,
             and there is nothing to keep.
+        StoredCredentialsUnreadable: The stored blob cannot be opened and a
+            value it would have supplied was not sent again.
     """
     existing_config = existing_config or {}
-    stored = _stored_api_tool_secrets(existing_config, owner_id)
+    stored, unreadable = _stored_api_tool_secrets(existing_config, owner_id)
     old_actions = existing_config.get("actions") or {}
     out = copy.deepcopy(new_config or {})
     out.pop(API_TOOL_SECRETS_KEY, None)
@@ -332,6 +413,10 @@ def _seal_api_tool_secrets(new_config: dict, existing_config: dict, owner_id: st
                 if not _has_value(kept):
                     if moved:
                         raise CredentialsRequired(_CREDENTIALS_FOR_NEW_SERVER)
+                    if unreadable:
+                        raise StoredCredentialsUnreadable(
+                            _STORED_SECRETS_UNREADABLE
+                        )
                     kept = None
             else:
                 kept = None
@@ -340,7 +425,7 @@ def _seal_api_tool_secrets(new_config: dict, existing_config: dict, owner_id: st
             if kept is not None:
                 sealed.setdefault(name, {}).setdefault(section, {})[param] = kept
     if sealed:
-        out[API_TOOL_SECRETS_KEY] = encrypt_credentials(sealed, owner_id)
+        out[API_TOOL_SECRETS_KEY] = encrypt_tool_credentials(sealed, owner_id)
     return out
 
 
@@ -1219,7 +1304,7 @@ class UpdateTool(Resource):
                     )
         except AccessDenied as err:
             return denied_response(err)
-        except CredentialsRequired as err:
+        except (CredentialsRequired, StoredCredentialsUnreadable) as err:
             return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:
             current_app.logger.error(f"Error updating tool: {err}", exc_info=True)
@@ -1334,7 +1419,7 @@ class UpdateToolConfig(Resource):
                 repo.update(str(tool_doc["id"]), ra.owner_id, {"config": final_config})
         except AccessDenied as err:
             return denied_response(err)
-        except CredentialsRequired as err:
+        except (CredentialsRequired, StoredCredentialsUnreadable) as err:
             return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:
             current_app.logger.error(
