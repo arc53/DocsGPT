@@ -242,6 +242,20 @@ describe('Tools', () => {
   const switchOf = (id: string) =>
     card(id).querySelector<HTMLButtonElement>('[role="switch"]')!;
 
+  // The tooltip hangs on a wrapper: as the Switch's own trigger it would
+  // overwrite the data-state the track's colour reads.
+  it('keeps the switch state for its colour under the tooltip', async () => {
+    await render([ownTool, editorTool, viewerTool]);
+    for (const id of ['own', 'ed']) {
+      const toggle = switchOf(id);
+      expect(toggle.dataset.state).toBe(
+        toggle.getAttribute('aria-checked') === 'true'
+          ? 'checked'
+          : 'unchecked',
+      );
+    }
+  });
+
   // A safety net: 48 per page, so a usual list never splits.
   it('pages past 48 tools, and a search starts on page 1', async () => {
     const many = Array.from({ length: 50 }, (_, i) => ({

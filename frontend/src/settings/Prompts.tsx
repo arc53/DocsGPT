@@ -231,9 +231,11 @@ export default function Prompts() {
               <UsedByAgents usage={prompt.used_by} />
             ) : null}
           </MetaLine>
-          <span className="relative z-10 ml-auto flex shrink-0">
-            <Tooltip>
-              <TooltipTrigger asChild>
+          {/* The tooltip hangs on a wrapper: as the trigger itself it would
+              set the radio's data-state. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="relative z-10 ml-auto flex shrink-0">
                 <RadioGroupItem
                   value={prompt.id}
                   aria-label={t('settings.prompts.useInChats', {
@@ -241,14 +243,14 @@ export default function Prompts() {
                     name: prompt.name,
                   })}
                 />
-              </TooltipTrigger>
-              <TooltipContent>
-                {inChats
-                  ? t('settings.prompts.chatPromptOn')
-                  : t('settings.prompts.chatPromptOff')}
-              </TooltipContent>
-            </Tooltip>
-          </span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {inChats
+                ? t('settings.prompts.chatPromptOn')
+                : t('settings.prompts.chatPromptOff')}
+            </TooltipContent>
+          </Tooltip>
         </CardFooter>
       </Card>
     );

@@ -646,20 +646,23 @@ export default function Tools() {
               {meta}
               {canAddToolToOwn(tool) && (
                 // No visible label: the switch shows the state, and its
-                // tooltip says what it does.
+                // tooltip says what it does. The tooltip hangs on a wrapper:
+                // as the trigger itself it would set the switch's data-state.
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Switch
-                      className="ml-auto shrink-0"
-                      checked={toolInChat(tool)}
-                      onCheckedChange={(checked) =>
-                        updateToolStatus(tool.id, checked)
-                      }
-                      aria-label={t('settings.tools.useInMyChatsAria', {
-                        interpolation: { escapeValue: false },
-                        toolName: tool.customName || tool.displayName,
-                      })}
-                    />
+                    <span className="ml-auto flex shrink-0">
+                      <Switch
+                        className="shrink-0"
+                        checked={toolInChat(tool)}
+                        onCheckedChange={(checked) =>
+                          updateToolStatus(tool.id, checked)
+                        }
+                        aria-label={t('settings.tools.useInMyChatsAria', {
+                          interpolation: { escapeValue: false },
+                          toolName: tool.customName || tool.displayName,
+                        })}
+                      />
+                    </span>
                   </TooltipTrigger>
                   <TooltipContent>
                     {toolInChat(tool)

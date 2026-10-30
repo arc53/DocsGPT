@@ -268,6 +268,13 @@ describe('Prompts page', () => {
     expect(radioOf('default').getAttribute('aria-checked')).toBe('false');
   });
 
+  it('keeps the radio state for its look under the tooltip', async () => {
+    store.dispatch(setPrompt({ id: 'p-own', name: 'x', type: 'private' }));
+    await render();
+    expect(radioOf('Vendor checks').dataset.state).toBe('checked');
+    expect(radioOf('default').dataset.state).toBe('unchecked');
+  });
+
   it('has one radio group across the sections, each radio named', async () => {
     await render();
     const group = container.querySelector(
