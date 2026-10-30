@@ -240,6 +240,17 @@ describe('AgentCard menu', () => {
     ).toBeNull();
   });
 
+  it('marks a draft with a neutral Draft pill, as the workflow builder does', async () => {
+    await render(
+      { ...agentWith('owner', OWNER_ACTIONS), status: 'draft' },
+      'user',
+    );
+    const badge = container.querySelector('[data-slot="badge"]');
+    expect(badge?.getAttribute('data-variant')).toBe('neutral');
+    expect(badge?.textContent).toBe('agents.card.draft');
+    expect(container.textContent).not.toContain('(agents.card.draft)');
+  });
+
   it('treats an own agent without access fields as the owner', async () => {
     const own = {
       ...agentWith('owner', []),

@@ -586,7 +586,9 @@ what a connector can do, the account, tokens, the agents that use it, Graph)
 are `MetaItem`s in the tile's `MetaLine` (see Card › Tile text). The pills
 sit in one `flex flex-wrap gap-1` row after the description, state first,
 the card's `gap-3` above and below; never a column of pills inside the meta
-lines. Badge's contract allows `font-mono` (chips that show
+lines. The agent tile is the exception: its height is fixed (`h-44`), so its
+one state, a `neutral` Draft, sits in the avatar row instead of taking a
+description line. Badge's contract allows `font-mono` (chips that show
 identifiers: token scopes, workflow state keys) and `tabular-nums` (stat
 chips: durations, counts); no disable needed. HTTP method pills take their variant from
 `getMethodBadgeVariant` (`utils/httpMethodColors.ts`): GET `success`, POST

@@ -19,6 +19,7 @@ import userService from '../api/services/userService';
 import RoleMeta from '../components/RoleMeta';
 import { MetaLine } from '../components/ui/meta-line';
 import { Avatar } from '../components/ui/avatar';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
   Card,
@@ -318,7 +319,7 @@ export default function AgentCard({
       padding="lg"
       className="relative h-44 gap-1"
     >
-      <div className="mb-1 flex w-full items-center gap-1 px-1">
+      <div className="mb-1 flex w-full items-center gap-2 px-1">
         {/* Decorative: the title beside it names the agent. */}
         <Avatar
           src={agent.image}
@@ -327,10 +328,9 @@ export default function AgentCard({
           shape="circle"
           imgClassName="size-7 object-contain"
         />
+        {/* A state, so a pill (the workflow builder's Draft is the same). */}
         {agent.status === 'draft' && (
-          <p className="text-foreground text-xs opacity-50">
-            ({t('agents.card.draft')})
-          </p>
+          <Badge variant="neutral">{t('agents.card.draft')}</Badge>
         )}
       </div>
       {canOpen ? (
