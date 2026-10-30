@@ -254,6 +254,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/sources/from_attachments", "POST"): _rule("sources:write"),
     ("/api/sources/wiki", "POST"): _rule("sources:write"),
     ("/api/delete_old", "GET"): _rule("sources:write", (QUERY, "source_id")),
+    # Each id is checked as delete_old checks its one.
+    ("/api/sources/delete", "POST"): _rule("sources:write", (JSON, "ids")),
     ("/api/manage_sync", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/sync_source", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/website", "GET"): _rule("sources:read", (QUERY, "id")),
@@ -277,6 +279,10 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_prompts", "GET"): _rule("prompts:read", listing=True),
     ("/api/get_single_prompt", "GET"): _rule("prompts:read", (QUERY, "id")),
     ("/api/create_prompt", "POST"): _rule("prompts:write"),
+    # The caller's chat prompt. Its stored id can't be proven from the request, so the read is
+    # closed to prompt-restricted tokens; a write names the prompt it picks.
+    ("/api/user/preferences", "GET"): _rule("prompts:read"),
+    ("/api/user/preferences", "PUT"): _rule("prompts:write", (JSON, "chat_prompt_id")),
     ("/api/update_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     ("/api/delete_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     # Tools

@@ -297,6 +297,31 @@ class UsersRepository:
                 {"user_id": user_id, "tool_name": tool_name},
             )
 
+    def set_chat_prompt_id(self, user_id: str, prompt_id: str) -> None:
+        """Store the prompt the user's chats use in ``tool_preferences.chat_prompt_id``.
+
+        It sits beside ``disabled_default_tools``: both are the user's chat
+        settings. The caller validates the id (a preset name or a prompt the
+        user can read); the other keys are kept.
+
+        Args:
+            user_id: Auth-provider ``sub``.
+            prompt_id: A preset name or a prompt's canonical UUID.
+        """
+        self.upsert(user_id)
+        self._conn.execute(
+            text(
+                """
+                UPDATE users
+                SET tool_preferences = COALESCE(tool_preferences, '{}'::jsonb)
+                        || jsonb_build_object('chat_prompt_id', CAST(:prompt_id AS text)),
+                    updated_at = now()
+                WHERE user_id = :user_id
+                """
+            ),
+            {"user_id": user_id, "prompt_id": prompt_id},
+        )
+
     # ------------------------------------------------------------------
     # SCIM provisioning
     # ------------------------------------------------------------------
