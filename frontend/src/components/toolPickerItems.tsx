@@ -40,6 +40,11 @@ type ToolPickerOptions<T extends PickerTool> = {
   deviceOnline?: Map<string, boolean>;
   /** A row's line in place of the usual one (a tool the caller can't list). */
   lineFor?: (tool: T) => string | undefined;
+  /**
+   * Text joined to the end of a row's line with " · " ("Added by Lena" in
+   * the agent builder), so the row keeps one line.
+   */
+  lineSuffix?: (tool: T) => string | null | undefined;
 };
 
 /**
@@ -58,7 +63,14 @@ type ToolPickerOptions<T extends PickerTool> = {
  */
 export function toolPickerItems<T extends PickerTool>(
   tools: T[],
-  { t, connections, catalog, deviceOnline, lineFor }: ToolPickerOptions<T>,
+  {
+    t,
+    connections,
+    catalog,
+    deviceOnline,
+    lineFor,
+    lineSuffix,
+  }: ToolPickerOptions<T>,
 ): MultiSelectPopoverItem[] {
   return groupTools(tools, connections, catalog).flatMap((group) => {
     const groupHeading = toolGroupTitle(t, group, 'size-3.5');
@@ -85,10 +97,15 @@ export function toolPickerItems<T extends PickerTool>(
             })
           : undefined;
       const line =
-        lineFor?.(tool) ??
-        sharedBy ??
-        (connection ? accountLine(t, connection) : undefined) ??
-        catalogText;
+        [
+          lineFor?.(tool) ??
+            sharedBy ??
+            (connection ? accountLine(t, connection) : undefined) ??
+            catalogText,
+          lineSuffix?.(tool),
+        ]
+          .filter(Boolean)
+          .join(' · ') || undefined;
 
       const badges = [];
       if (connectionNeedsSignIn(connection)) {

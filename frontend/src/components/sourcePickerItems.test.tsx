@@ -157,4 +157,12 @@ describe('toSourcePickerItems', () => {
     expect(items[3].descriptionNode).toBeUndefined();
     expect(items[3].description).toContain('tokenCount');
   });
+
+  it('joins a line suffix to the row line, so it stays one line', () => {
+    const [item] = toSourcePickerItems(
+      [doc({ id: 'u', date: '2026-10-23 13:36' })],
+      { t, labels, connections: [], lineSuffix: () => 'Added by Lena' },
+    );
+    expect(item.description).toBe('23/10/2026, 13:36 · Added by Lena');
+  });
 });

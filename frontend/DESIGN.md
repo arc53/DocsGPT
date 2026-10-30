@@ -276,8 +276,9 @@ size="xs"`. It is the same tint as a pressed toggle; the difference is that
   `size="field" shape="pill"`, with no min-width or hand height. With
   `shape="pill"` its text starts 21px in, like the Input and Select pills
   beside it. The agent form's pickers are `combobox field`, each labelled by
-  a `FormField`; the Prompt picker is a plain `Combobox` whose footer goes to
-  Prompts or adds one, like the tool and knowledge pickers. Their footers'
+  a `FormField`; the Prompt picker is a `Combobox` with the pickers' `title`,
+  row lines, kind track and phone sheet, whose footer goes to Prompts or adds
+  one, like the tool and knowledge pickers. Their footers'
   Add is the only `outline-primary` on the agent pages themselves (the Access
   details modal they open has its own).
 - **Shape by place.** Form controls (Input, SelectTrigger, a combobox Button,
@@ -768,6 +769,19 @@ labels and wires it (see FormField).
   presses them. Pass a function, `footer={({ close }) => …}`, and call
   `close` from the link's `onNavigate` and before the action opens a modal,
   as the other pickers do.
+- `title` draws the picker's title over the search, the multi-pick pickers'
+  `SectionHeader size="xs"` ("Prompt"); a titled picker grows to their height
+  (up to 600px, the list scrolling inside).
+- `filters` is a strip under the search for the kind track
+  (`usePickerKindFilter`, see ToggleGroup); its keys stop there, so Enter and
+  the arrows work the track rather than the list.
+- `mobileSheet` opens it on a phone as a bottom `Sheet` with the handle and
+  the title, like the multi-pick pickers, with the search unfocused; picking a
+  row closes it. The agent form's Prompt picker passes it.
+- An option's `description` is a muted `text-xs` line under its label in the
+  row only (a preset's purpose, the start of a prompt), searched like the
+  label. In a list with lines every label is `font-medium` and the picked row
+  ends in a 16px `Check` as well as its `checked` tint.
 
 A multi-pick is `MultiSelect` (see Badge).
 

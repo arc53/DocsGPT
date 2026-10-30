@@ -65,6 +65,13 @@ import {
   setPrompts,
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
+import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
+import {
+  TOOL_KINDS,
+  toolKindLabel,
+  toolKindOf,
+  type ToolKindFilter,
+} from '../settings/toolGroups';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
 import { deviceOnlineMap } from '../utils/deviceUtils';
@@ -143,6 +150,18 @@ const extractApiError = async (
   return fallback;
 };
 
+/** The Prompt picker's kinds (the Prompts page's sections) and their `type`. */
+const PROMPT_KIND_TYPES = {
+  included: 'public',
+  yours: 'private',
+  shared: 'team',
+} as const;
+const PROMPT_KINDS = ['all', 'included', 'yours', 'shared'] as const;
+type PromptKind = (typeof PROMPT_KINDS)[number];
+const promptOfKind = (kind: PromptKind, prompt: Prompt): boolean =>
+  kind === 'all' || prompt.type === PROMPT_KIND_TYPES[kind];
+const PROMPT_PRESETS = ['default', 'creative', 'strict'];
+
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -220,6 +239,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [systemDefaultModelId, setSystemDefaultModelId] = useState('');
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
+  const [isPromptPickerOpen, setIsPromptPickerOpen] = useState(false);
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -413,19 +433,37 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     ? addedByLabel('prompt', agent.prompt_id)
     : null;
 
+  // The prompt picker's kind filter, back on All each time it opens.
+  const promptKinds = usePickerKindFilter(prompts, isPromptPickerOpen, {
+    kinds: PROMPT_KINDS,
+    matches: promptOfKind,
+    labelOf: (kind) =>
+      kind === 'all'
+        ? t('settings.prompts.filters.all')
+        : kind === 'shared'
+          ? t('settings.prompts.kinds.shared')
+          : t(`settings.prompts.sections.${kind}`),
+    ariaLabel: t('settings.prompts.kindFilterLabel'),
+  });
+  // A row's line, as its Prompts page card says it: a preset's purpose, else
+  // the start of the prompt (the list names no sharer for a teammate's).
+  const promptLine = (prompt: Prompt): string | undefined =>
+    PROMPT_PRESETS.includes(prompt.id) && prompt.type === 'public'
+      ? t(`settings.prompts.presets.${prompt.id}`)
+      : prompt.preview || undefined;
   // The prompt picker's groups, as the Prompts page has them.
-  const promptGroups: ComboboxGroup[] = (
-    [
-      ['public', 'included'],
-      ['private', 'yours'],
-      ['team', 'shared'],
-    ] as const
+  const promptGroups: ComboboxGroup[] = PROMPT_KINDS.filter(
+    (kind) => kind !== 'all',
   )
-    .map(([type, key]) => ({
-      heading: t(`settings.prompts.sections.${key}`),
-      options: prompts
-        .filter((prompt) => prompt.type === type)
-        .map((prompt) => ({ value: prompt.id, label: prompt.name })),
+    .map((kind) => ({
+      heading: t(`settings.prompts.sections.${kind}`),
+      options: promptKinds.items
+        .filter((prompt) => prompt.type === PROMPT_KIND_TYPES[kind])
+        .map((prompt) => ({
+          value: prompt.id,
+          label: prompt.name,
+          description: promptLine(prompt),
+        })),
     }))
     .filter((group) => group.options.length > 0);
   // The picked prompt when it isn't listed: a teammate's agent names the
@@ -433,53 +471,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const pickedPromptId = agent.prompt_id || 'default';
   const pickedPromptLabel =
     agent.prompt_name ||
-    (['default', 'creative', 'strict'].includes(pickedPromptId)
-      ? pickedPromptId
-      : '');
+    (PROMPT_PRESETS.includes(pickedPromptId) ? pickedPromptId : '');
   const promptValueOption = pickedPromptLabel
     ? { value: pickedPromptId, label: pickedPromptLabel }
     : undefined;
 
   /** Picker rows with their "Added by" line in the row's description. */
-  const withAddedBy = useCallback(
-    (
-      items: MultiSelectPopoverItem[],
-      type: ResourceSponsor['type'],
-    ): MultiSelectPopoverItem[] =>
-      items.map((item) => {
-        const addedBy = addedByLabel(type, item.id);
-        if (!addedBy) return item;
-        // The row's own line (and any status badge) stays under it.
-        const line =
-          item.descriptionNode ??
-          (item.description ? (
-            <p
-              className="text-muted-foreground truncate text-xs"
-              title={item.description}
-            >
-              {item.description}
-            </p>
-          ) : null);
-        if (!line) return { ...item, description: addedBy };
-        return {
-          ...item,
-          description: undefined,
-          descriptionNode: (
-            <>
-              <p
-                className="text-muted-foreground truncate text-xs"
-                title={addedBy}
-              >
-                {addedBy}
-              </p>
-              {line}
-            </>
-          ),
-        };
-      }),
-    [addedByLabel],
-  );
-
   // The picker's kind filter, back on All each time it opens.
   const sourceKinds = useSourceKindFilter(sourceDocs, isSourcePopupOpen);
   const sourceItems = useMemo(() => {
@@ -490,6 +487,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         team: t('conversation.sources.groupTeam'),
       },
       connections: toolContext.connections,
+      // Who added a source joins its line, so the row keeps one line.
+      lineSuffix: (doc) => addedByLabel('source', sourceItemId(doc)),
     });
     // An attached source the caller can't list — an owner's private source on
     // a team-shared agent — still needs a row of its own, or it reads as
@@ -504,10 +503,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               id,
               label: resolveSourceLabel(id),
               icon: <Database />,
+              description: addedByLabel('source', id) ?? undefined,
             }))
         : [];
-    return withAddedBy([...items, ...unlisted], 'source');
+    return [...items, ...unlisted];
   }, [
+    addedByLabel,
     resolveSourceLabel,
     selectedSourceIds,
     sourceDocs,
@@ -515,27 +516,46 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     sourceKinds.kind,
     t,
     toolContext.connections,
-    withAddedBy,
   ]);
 
   // The caller's tools, plus a remove-only row for each tool on the agent
   // they can't list (the owner's private tools on a shared agent), grouped
   // as the chat picker and the Tools page group them.
+  const pickerTools = useMemo(
+    () => [
+      ...rawUserTools,
+      ...unlistedAttachedTools(rawUserTools, attachedTools),
+    ],
+    [attachedTools, rawUserTools],
+  );
+  // The picker's kind filter, by the connections the rows are grouped by:
+  // the builder loads its own, so not useToolKindFilter's store copy.
+  const toolKindMatches = useCallback(
+    (kind: ToolKindFilter, tool: UserToolType | ToolSummary) =>
+      kind === 'all' ||
+      toolKindOf(tool, toolContext.connections, toolContext.catalog) === kind,
+    [toolContext.connections, toolContext.catalog],
+  );
+  const toolKinds = usePickerKindFilter(pickerTools, isToolsPopupOpen, {
+    kinds: TOOL_KINDS,
+    matches: toolKindMatches,
+    labelOf: (kind) => toolKindLabel(t, kind),
+    ariaLabel: t('settings.tools.kindFilterLabel'),
+  });
   const toolItems = useMemo(() => {
-    const unlisted = unlistedAttachedTools(rawUserTools, attachedTools);
-    const unlistedIds = new Set(unlisted.map((tool) => tool.id));
-    return withAddedBy(
-      toolPickerItems([...rawUserTools, ...unlisted], {
-        t,
-        ...toolContext,
-        lineFor: (tool) =>
-          unlistedIds.has(tool.id)
-            ? t('agents.form.toolsPopup.attachedHint')
-            : undefined,
-      }),
-      'tool',
-    );
-  }, [attachedTools, rawUserTools, t, toolContext, withAddedBy]);
+    const listed = new Set(rawUserTools.map((tool) => tool.id));
+    return toolPickerItems(toolKinds.items, {
+      t,
+      ...toolContext,
+      lineFor: (tool) =>
+        listed.has(tool.id)
+          ? undefined
+          : t('agents.form.toolsPopup.attachedHint'),
+      // Who added a tool joins its line ("a@x · Added by Bob"), so the row
+      // keeps one line.
+      lineSuffix: (tool) => addedByLabel('tool', tool.id),
+    });
+  }, [addedByLabel, rawUserTools, t, toolContext, toolKinds.items]);
 
   const selectedSourceNames = useMemo(
     () =>
@@ -1442,6 +1462,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 items={sourceItems}
                 // What is on the agent when it opens comes first.
                 selectedFirst
+                // Knowledge is always grouped Yours / Shared with team.
+                loneGroupHeading={false}
                 filters={sourceKinds.filters}
                 selectedIds={Array.from(selectedSourceIds)}
                 onToggle={(id) => {
@@ -1453,7 +1475,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 searchPlaceholder={t(
                   'agents.form.sourcePopup.searchPlaceholder',
                 )}
-                emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
+                emptyMessage={t('settings.sources.noKnowledgeFound')}
                 footer={
                   <SourcesPopoverFooter
                     onNavigate={() => setIsSourcePopupOpen(false)}
@@ -1498,6 +1520,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 // group needs no heading.
                 selectedFirst
                 loneGroupHeading={false}
+                filters={toolKinds.filters}
                 selectedIds={selectedTools.map((tool) => tool.id)}
                 onToggle={(id) => {
                   const exists = selectedTools.find((t) => t.id === id);
@@ -1519,7 +1542,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   ]);
                 }}
                 searchPlaceholder={t('settings.tools.searchPlaceholder')}
-                emptyMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                emptyMessage={t('settings.tools.noToolsFound')}
                 footer={
                   // A sign-in notice goes above the Go to Tools row.
                   <div className="flex flex-col gap-3">
@@ -1581,6 +1604,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 labelSurface="background"
               >
                 <Combobox
+                  open={isPromptPickerOpen}
+                  onOpenChange={setIsPromptPickerOpen}
+                  title={t('agents.form.sections.prompt')}
+                  mobileSheet
+                  filters={promptKinds.filters}
                   groups={promptGroups}
                   value={agent.prompt_id || 'default'}
                   valueOption={promptValueOption}
@@ -1604,8 +1632,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   )}
                 />
               </FormField>
-              {/* The prompt Select has no description slot, so the mark of a
-                  prompt that runs with an editor's access is a hint under it. */}
+              {/* The mark of the picked prompt running with an editor's
+                  access is a hint under the picker, seen without opening it. */}
               {promptAddedBy && (
                 <p className="text-muted-foreground mt-1.5 text-xs">
                   {promptAddedBy}

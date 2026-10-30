@@ -61,6 +61,11 @@ type SourcePickerOptions = {
   labels: SourceGroupLabels;
   /** The caller's own connections. */
   connections: Connection[];
+  /**
+   * Text joined to the end of a row's line with " · " ("Added by Lena" in
+   * the agent builder), so the row keeps one line.
+   */
+  lineSuffix?: (doc: Doc) => string | null | undefined;
 };
 
 /**
@@ -81,13 +86,16 @@ type SourcePickerOptions = {
  */
 export function toSourcePickerItems(
   docs: Doc[] | null | undefined,
-  { t, labels, connections }: SourcePickerOptions,
+  { t, labels, connections, lineSuffix }: SourcePickerOptions,
 ): MultiSelectPopoverItem[] {
   const list = docs ?? [];
   const isTeam = (doc: Doc) => doc.ownership === 'team';
   const toItem = (doc: Doc): MultiSelectPopoverItem => {
     const connection = connectionOf(doc, connections);
-    const line = sourceDetailLine(t, doc, connection) || undefined;
+    const line =
+      [sourceDetailLine(t, doc, connection), lineSuffix?.(doc)]
+        .filter(Boolean)
+        .join(' · ') || undefined;
     const item: MultiSelectPopoverItem = {
       id: sourceItemId(doc),
       label: doc.name,

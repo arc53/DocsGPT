@@ -11,6 +11,13 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+// The prompt picker turns into a bottom sheet on a phone.
+const media = vi.hoisted(() => ({ isMobile: false, isDesktop: true }));
+vi.mock('../hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../hooks')>()),
+  useMediaQuery: () => media,
+}));
+
 const mockState = {
   preference: {
     token: null,
@@ -126,6 +133,9 @@ vi.mock('../components/MultiSelectPopover', () => ({
     searchPlaceholder,
     selectedFirst,
     footer,
+    filters,
+    emptyMessage,
+    loneGroupHeading,
   }: {
     trigger: React.ReactNode;
     items: MultiSelectPopoverItem[];
@@ -134,15 +144,21 @@ vi.mock('../components/MultiSelectPopover', () => ({
     searchPlaceholder?: string;
     selectedFirst?: boolean;
     footer?: React.ReactNode;
+    filters?: React.ReactNode;
+    emptyMessage?: string;
+    loneGroupHeading?: boolean;
   }) => (
     <div
       data-testid="picker"
       data-title={title}
       data-search={searchPlaceholder}
       data-selected-first={selectedFirst ? 'true' : undefined}
+      data-empty={emptyMessage}
+      data-lone-group-heading={String(loneGroupHeading ?? true)}
     >
       {trigger}
       <div data-testid="picker-footer">{footer}</div>
+      <div data-testid="picker-filters">{filters}</div>
       {items.map((item) => (
         <div
           key={item.id}
@@ -290,6 +306,8 @@ describe('NewAgent form', () => {
     mocks.defaultModelId = '';
     mocks.connections = [];
     mocks.catalog = [];
+    media.isMobile = false;
+    media.isDesktop = true;
   });
 
   const render = async () => {
@@ -385,7 +403,10 @@ describe('NewAgent form', () => {
       });
       const list = document.body.querySelector('[cmdk-list]')!;
       const rows = Array.from(list.querySelectorAll('[cmdk-item]'));
-      expect(rows.map((row) => row.textContent)).toEqual(['default', 'Tone']);
+      expect(rows.map((row) => row.getAttribute('data-value'))).toEqual([
+        'default',
+        'p1',
+      ]);
       // No edit, duplicate, share or delete icons in a row.
       expect(list.querySelector('button')).toBeNull();
       const link = Array.from(document.body.querySelectorAll('a')).find(
@@ -398,6 +419,147 @@ describe('NewAgent form', () => {
       expect(add.getAttribute('data-variant')).toBe('outline-primary');
       await act(async () => (rows[1] as HTMLElement).click());
       expect(trigger.textContent).toContain('Tone');
+    } finally {
+      mockState.preference.prompts = [];
+    }
+  });
+
+  const openPromptPicker = async () => {
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-slot="combobox-trigger"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+  };
+  const promptRow = (value: string) =>
+    document.body.querySelector<HTMLElement>(
+      `[cmdk-item][data-value="${value}"]`,
+    )!;
+  const promptLine = (value: string) =>
+    promptRow(value)?.querySelector('[data-slot="combobox-description"]')
+      ?.textContent;
+
+  // W10: the Prompt picker has the other pickers' chrome: a title, one line
+  // per row that says what the prompt is, and a check on the picked row.
+  it("gives the prompt picker the pickers' title and a line per row", async () => {
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'creative', name: 'creative', type: 'public' },
+      {
+        id: 'p1',
+        name: 'Tone',
+        type: 'private',
+        access: 'owner',
+        preview: 'You are terse.',
+      },
+      {
+        id: 'p2',
+        name: 'Escalations',
+        type: 'team',
+        access: 'viewer',
+        preview: 'Escalate politely.',
+      },
+    ] as never[];
+    try {
+      await render();
+      await openPromptPicker();
+      const content = document.body.querySelector(
+        '[data-slot="popover-content"]',
+      )!;
+      expect(content.querySelector('h3')?.textContent).toBe(
+        'agents.form.sections.prompt',
+      );
+      expect(promptLine('default')).toBe('settings.prompts.presets.default');
+      expect(promptLine('creative')).toBe('settings.prompts.presets.creative');
+      expect(promptLine('p1')).toBe('You are terse.');
+      expect(promptLine('p2')).toBe('Escalate politely.');
+      expect(promptRow('default').querySelector('svg.lucide-check')).not.toBe(
+        null,
+      );
+      // Four prompts fit: no kind track.
+      expect(content.querySelector('[data-slot="combobox-filters"]')).toBe(
+        null,
+      );
+    } finally {
+      mockState.preference.prompts = [];
+    }
+  });
+
+  it('filters the prompt picker by kind past ten prompts', async () => {
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'creative', name: 'creative', type: 'public' },
+      { id: 'strict', name: 'strict', type: 'public' },
+      ...Array.from({ length: 7 }, (_, i) => ({
+        id: `own-${i}`,
+        name: `Mine ${i}`,
+        type: 'private',
+        access: 'owner',
+      })),
+      { id: 'team-1', name: 'Theirs', type: 'team', access: 'viewer' },
+    ] as never[];
+    try {
+      await render();
+      await openPromptPicker();
+      const track = document.body.querySelector(
+        '[data-slot="combobox-filters"]',
+      )!;
+      const kinds = Array.from(
+        track.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="toggle-group-item"]',
+        ),
+      );
+      expect(kinds.map((kind) => kind.firstChild?.textContent)).toEqual([
+        'settings.prompts.filters.all',
+        'settings.prompts.sections.included',
+        'settings.prompts.sections.yours',
+        // Short, as on the Prompts page's track.
+        'settings.prompts.kinds.shared',
+      ]);
+      await act(async () => kinds[2].click());
+      const rows = Array.from(
+        document.body.querySelectorAll('[cmdk-item]'),
+      ).map((row) => row.getAttribute('data-value'));
+      expect(rows).toHaveLength(7);
+      expect(rows.every((id) => id?.startsWith('own-'))).toBe(true);
+    } finally {
+      mockState.preference.prompts = [];
+    }
+  });
+
+  it('opens the prompt picker as a bottom sheet on a phone', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'strict', name: 'strict', type: 'public' },
+    ] as never[];
+    try {
+      await render();
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[data-slot="combobox-trigger"]')!
+          .click(),
+      );
+      const sheet = document.body.querySelector<HTMLElement>(
+        '[data-slot="sheet-content"]',
+      )!;
+      expect(sheet.dataset.side).toBe('bottom');
+      expect(sheet.querySelector('[data-slot="sheet-handle"]')).not.toBe(null);
+      expect(sheet.querySelector('h3')?.textContent).toBe(
+        'agents.form.sections.prompt',
+      );
+      await act(async () => promptRow('strict').click());
+      expect(document.body.querySelector('[data-slot="sheet-content"]')).toBe(
+        null,
+      );
+      expect(
+        container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
+      ).toContain('strict');
     } finally {
       mockState.preference.prompts = [];
     }
@@ -625,7 +787,58 @@ describe('NewAgent form', () => {
     ).toBeNull();
   });
 
-  // The prompt Select has no description slot: the mark is a hint under it.
+  // A picker row has one line: who added a tool joins it, after the line.
+  it("folds who added a tool into the row's one line", async () => {
+    mocks.tools = [
+      {
+        id: 'crm',
+        name: 'api_tool',
+        display_name: 'CRM',
+        description: 'Calls the CRM',
+      },
+      {
+        id: 'linear',
+        name: 'mcp_tool',
+        display_name: 'Linear',
+        connection_id: 'c-lin',
+      },
+    ];
+    mocks.connections = [
+      {
+        id: 'c-lin',
+        name: 'Linear',
+        account_label: 'a@x',
+        icon: 'linear',
+        status: 'reconnect_needed',
+      },
+    ];
+    const sponsor = (id: string) => ({
+      type: 'tool',
+      id,
+      user_id: 'bob',
+      label: 'bob@example.com',
+      active: true,
+    });
+    await renderEdit({
+      tools: ['crm', 'linear'],
+      shared: true,
+      resource_sponsors: [sponsor('crm'), sponsor('linear')],
+    });
+    expect(
+      container
+        .querySelector('[data-item="crm"]')
+        ?.getAttribute('data-description'),
+    ).toBe('Calls the CRM · agents.form.sponsors.addedBy');
+    // A row with a status badge keeps the badge above its one line.
+    const linear = container.querySelector('[data-item="linear"]')!;
+    expect(linear.querySelector('[data-slot="badge"]')).not.toBe(null);
+    const lines = Array.from(linear.querySelectorAll('p')).map(
+      (p) => p.textContent,
+    );
+    expect(lines).toEqual(['a@x · agents.form.sponsors.addedBy']);
+  });
+
+  // The picked prompt's mark is a hint under its picker, seen while closed.
   it('marks a sponsored prompt under its picker', async () => {
     await renderEdit({
       prompt_id: 'p1',
@@ -1220,6 +1433,59 @@ describe('NewAgent form', () => {
     );
     expect(footer.textContent).toContain('settings.tools.manageTools');
     expect(footer.textContent).toContain('settings.tools.addTool');
+  });
+
+  it('filters the tools picker by kind past ten tools', async () => {
+    mocks.tools = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        id: `api-${i}`,
+        name: 'api_tool',
+        display_name: `API ${i}`,
+      })),
+      { id: 'notes', name: 'notes', display_name: 'Notes' },
+    ];
+    await render();
+    const tools = container.querySelectorAll('[data-testid="picker"]')[1];
+    const kinds = Array.from(
+      tools.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="picker-filters"] [data-slot="toggle-group-item"]',
+      ),
+    );
+    expect(kinds.map((kind) => kind.firstChild?.textContent)).toEqual([
+      'settings.tools.filters.all',
+      'settings.tools.groupAdded',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
+    await act(async () => kinds[1].click());
+    expect(
+      Array.from(tools.querySelectorAll('[data-item]')).map((item) =>
+        item.getAttribute('data-item'),
+      ),
+    ).toEqual(['notes']);
+  });
+
+  it('draws no tool kind track for a short list', async () => {
+    mocks.tools = [
+      { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      { id: 'notes', name: 'notes', display_name: 'Notes' },
+    ];
+    await render();
+    const tools = container.querySelectorAll('[data-testid="picker"]')[1];
+    expect(
+      tools.querySelector('[data-testid="picker-filters"]')?.childElementCount,
+    ).toBe(0);
+  });
+
+  it("says what each builder picker didn't find, with no lone heading", async () => {
+    await render();
+    const [sources, tools] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-testid="picker"]'),
+    );
+    expect(sources.dataset.empty).toBe('settings.sources.noKnowledgeFound');
+    // Knowledge is always grouped Yours / Shared with team.
+    expect(sources.dataset.loneGroupHeading).toBe('false');
+    expect(tools.dataset.empty).toBe('settings.tools.noToolsFound');
+    expect(tools.dataset.loneGroupHeading).toBe('false');
   });
 
   it('adds a tool from the picker and puts it on the agent', async () => {

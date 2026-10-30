@@ -110,6 +110,18 @@ describe('toolPickerItems', () => {
     expect(row.descriptionNode).toBeUndefined();
   });
 
+  it('joins a line suffix to the row line, or stands alone without one', () => {
+    const [withLine, bare] = build(
+      [
+        { id: 'mem', displayName: 'Memory', description: 'Remembers things' },
+        { id: 'raw', displayName: 'Raw' },
+      ],
+      { lineSuffix: () => 'Added by Lena' },
+    );
+    expect(withLine.description).toBe('Remembers things · Added by Lena');
+    expect(bare.description).toBe('Added by Lena');
+  });
+
   it("names a teammate's tool by who shared it before anything else", () => {
     const [row] = build([
       {
