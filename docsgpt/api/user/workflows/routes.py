@@ -639,7 +639,10 @@ def validate_workflow_structure(
         has_json_schema = normalized_schema is not None
 
         model_id = raw_config.get("model_id")
-        if _editor_only_model(model_id, user_id, editor_id):
+        # The engine reads a node's settings from ``data.config`` when present.
+        nested_config = raw_config.get("config")
+        run_model_id = nested_config.get("model_id") if isinstance(nested_config, dict) else model_id
+        if _editor_only_model(run_model_id, user_id, editor_id):
             errors.append(
                 f"Agent node '{agent_title}' uses your custom model, which the workflow's owner "
                 "doesn't have. Pick a model the owner can use."

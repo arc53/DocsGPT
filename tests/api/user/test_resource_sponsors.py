@@ -607,9 +607,10 @@ class TestWorkflows:
         assert WorkflowsRepository(pg_conn).get_by_id(wid)["resource_sponsors"] == {}
 
     @staticmethod
-    def _model_body(model_id):
+    def _model_body(model_id, nested=False):
         body = _wf_body()
-        body["nodes"][1]["data"] = {"agent_type": "classic", "system_prompt": "s", "model_id": model_id}
+        config = {"agent_type": "classic", "system_prompt": "s", "model_id": model_id}
+        body["nodes"][1]["data"] = {"config": config} if nested else config
         return body
 
     @staticmethod
@@ -618,13 +619,14 @@ class TestWorkflows:
 
         monkeypatch.setattr(ModelRegistry, "_user_models_for", lambda self, user_id: layers.get(user_id, {}))
 
-    def test_editor_cannot_set_their_own_custom_model_on_a_node(self, app, pg_conn, monkeypatch):
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_editor_cannot_set_their_own_custom_model_on_a_node(self, app, pg_conn, monkeypatch, nested):
         # A node's model resolves in the owner's account, where the editor's
         # custom model doesn't exist: the node would fail for everyone.
         wid, _ = self._setup(pg_conn)
         self._custom_models(monkeypatch, {EDITOR: {"editors-model": object()}})
 
-        resp = self._put(app, pg_conn, wid, EDITOR, self._model_body("editors-model"))
+        resp = self._put(app, pg_conn, wid, EDITOR, self._model_body("editors-model", nested))
 
         assert _status(resp) == 400
         assert any("which the workflow's owner doesn't have" in e for e in resp.get_json()["errors"])
