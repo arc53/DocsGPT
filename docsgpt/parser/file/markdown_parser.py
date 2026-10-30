@@ -61,6 +61,7 @@ def _strip_html(text: str) -> str:
 # at most three spaces (CommonMark). Backtick info strings cannot hold backticks.
 _FENCE_OPEN = re.compile(r"^ {0,3}(?:(`{3,})[^`]*|(~{3,}).*)$")
 _FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t\r]*$")
+_BLANK_LINE = re.compile(r"\r?\n[ \t]*\r?\n")
 
 
 def _is_escaped(text: str, index: int) -> bool:
@@ -73,10 +74,16 @@ def _is_escaped(text: str, index: int) -> bool:
     return backslashes % 2 == 1
 
 
-def _closing_delimiter(text: str, start: int, opening: str, closing: str) -> Optional[int]:
+def _closing_delimiter(
+    text: str,
+    start: int,
+    opening: str,
+    closing: str,
+    end: int,
+) -> Optional[int]:
     """Find a balanced closing delimiter, ignoring escaped delimiters."""
     depth = 0
-    for index in range(start, len(text)):
+    for index in range(start, end):
         char = text[index]
         if char not in {opening, closing} or _is_escaped(text, index):
             continue
@@ -89,12 +96,12 @@ def _closing_delimiter(text: str, start: int, opening: str, closing: str) -> Opt
     return None
 
 
-def _closing_inline_destination(text: str, start: int) -> Optional[int]:
+def _closing_inline_destination(text: str, start: int, end: int) -> Optional[int]:
     """Find the end of an inline image destination and optional title."""
     depth = 0
     quote: Optional[str] = None
     in_angle_destination = False
-    for index in range(start, len(text)):
+    for index in range(start, end):
         char = text[index]
         if char not in {'"', "'", "<", ">", "(", ")"} or _is_escaped(text, index):
             continue
@@ -134,20 +141,28 @@ def _remove_markdown_images(content: str) -> str:
             search_from = image_start + 2
             continue
 
-        alt_end = _closing_delimiter(content, image_start + 1, "[", "]")
+        paragraph_break = _BLANK_LINE.search(content, image_start)
+        paragraph_end = paragraph_break.start() if paragraph_break else len(content)
+        alt_end = _closing_delimiter(
+            content, image_start + 1, "[", "]", paragraph_end
+        )
         if alt_end is None:
-            cleaned.append(content[cursor:])
-            break
+            search_from = image_start + 2
+            continue
 
         image_end = alt_end + 1
         if image_end < len(content) and content[image_end] == "(":
-            destination_end = _closing_inline_destination(content, image_end)
+            destination_end = _closing_inline_destination(
+                content, image_end, paragraph_end
+            )
             if destination_end is None:
                 search_from = image_end + 1
                 continue
             image_end = destination_end + 1
         elif image_end < len(content) and content[image_end] == "[":
-            reference_end = _closing_delimiter(content, image_end, "[", "]")
+            reference_end = _closing_delimiter(
+                content, image_end, "[", "]", paragraph_end
+            )
             if reference_end is None:
                 search_from = image_end + 1
                 continue

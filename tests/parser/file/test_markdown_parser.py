@@ -103,6 +103,30 @@ def test_markdown_removes_supported_image_forms_and_preserves_escaped_images():
     assert cleaned == "inline  titled  angle  reference  collapsed  shortcut  obsidian  apostrophe  escaped \\![literal](keep.png)"
 
 
+def test_markdown_unclosed_alt_text_does_not_block_later_images():
+    content = "Type ![ to start.\n\nLater ![ok](a.png)"
+
+    cleaned = MarkdownParser().remove_images(content)
+
+    assert cleaned == "Type ![ to start.\n\nLater "
+
+
+def test_markdown_image_destination_does_not_cross_paragraphs():
+    content = "Before ![broken](asset\n\nkeep) after\n\nLater ![ok](a.png)"
+
+    cleaned = MarkdownParser().remove_images(content)
+
+    assert cleaned == "Before ![broken](asset\n\nkeep) after\n\nLater "
+
+
+def test_markdown_image_reference_does_not_cross_paragraphs():
+    content = "Before ![broken][label\n\nkeep] after\n\nLater ![ok](a.png)"
+
+    cleaned = MarkdownParser().remove_images(content)
+
+    assert cleaned == "Before ![broken][label\n\nkeep] after\n\nLater "
+
+
 def test_markdown_token_chunking_via_max_tokens():
 
     raw = "abcdefghij"  # 10 chars
