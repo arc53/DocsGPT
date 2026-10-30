@@ -2355,7 +2355,8 @@
         "reconnect": "Connexion requise",
         "connected": "Connectés",
         "available": "Disponibles"
-      }
+      },
+      "addCustomDescription": "Connectez un serveur ou une API absent du catalogue."
     },
     "insights": {
       "label": "Analyses"

@@ -2259,7 +2259,8 @@
         "reconnect": "需要登入",
         "connected": "已連線",
         "available": "可用"
-      }
+      },
+      "addCustomDescription": "連接目錄中沒有的伺服器或 API。"
     },
     "insights": {
       "label": "洞察"

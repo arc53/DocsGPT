@@ -2259,7 +2259,8 @@
         "reconnect": "再サインインが必要",
         "connected": "接続済み",
         "available": "利用可能"
-      }
+      },
+      "addCustomDescription": "カタログにないサーバーや API を接続します。"
     },
     "insights": {
       "label": "インサイト"

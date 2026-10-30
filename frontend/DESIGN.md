@@ -547,7 +547,10 @@ SectionHeaders.
 The picker tile: a whole-card `<button>` with an icon in a tinted square, a
 title and an optional description; `selected` fills the icon square and
 outlines the card. Use it wherever the user picks one of several ways to
-proceed (agent type, source type). Title-only tiles keep the same layout.
+proceed (agent type, source type, a custom connector's kind). A page's
+"Add" is one primary Button; when it starts more than one way, it opens a
+`Modal` of OptionCards (New agent, Add custom connector), never a dropdown
+menu. Title-only tiles keep the same layout.
 Pass `selected` (true or false) only in a
 single-select picker inside a `role="radiogroup"`; the tile is then a radio.
 Tiles that advance a step or navigate (Upload's source types, the agent-type

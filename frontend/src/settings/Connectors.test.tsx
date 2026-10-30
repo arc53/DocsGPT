@@ -235,17 +235,43 @@ describe('Connectors page', () => {
     );
   });
 
-  it('closes the toolbar with a rule and puts no plus on the page action', async () => {
+  it('closes the toolbar with a rule and a plain primary action', async () => {
     await render();
     const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
     expect(toolbar.querySelector('[data-slot="separator"]')).not.toBeNull();
     const action = Array.from(toolbar.querySelectorAll('button')).find(
       (b) => b.textContent === 'settings.connectors.addCustom',
     )!;
-    expect(action.querySelectorAll('svg')).toHaveLength(1);
-    expect(action.querySelector('svg')!.getAttribute('class')).toContain(
-      'lucide-chevron-down',
+    // One button that opens a chooser, like New agent: no menu, no icon.
+    expect(action.querySelector('svg')).toBeNull();
+    expect(action.getAttribute('aria-haspopup')).toBeNull();
+  });
+
+  it('chooses the kind of custom connector from option cards', async () => {
+    launch.mockClear();
+    await render();
+    const action = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="page-toolbar"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.connectors.addCustom')!;
+    await act(async () => action.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain('settings.connectors.addCustom');
+    expect(dialog.textContent).toContain(
+      'settings.connectors.addCustomDescription',
     );
+    const cards = Array.from(
+      dialog.querySelectorAll<HTMLButtonElement>('[data-slot="option-card"]'),
+    );
+    expect(cards.map((c) => c.textContent)).toEqual([
+      'settings.connectors.custom.custom_mcpsettings.connectors.descriptions.custom_mcp',
+    ]);
+    await act(async () => cards[0].click());
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'custom_mcp' }),
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('opens the drawer on the account a ?connection= link names', async () => {

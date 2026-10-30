@@ -2355,7 +2355,8 @@
         "reconnect": "Requiere iniciar sesión",
         "connected": "Conectados",
         "available": "Disponibles"
-      }
+      },
+      "addCustomDescription": "Conecta un servidor o una API que no está en el catálogo."
     },
     "insights": {
       "label": "Información"

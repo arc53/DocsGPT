@@ -2268,7 +2268,8 @@
         "reconnect": "Anmeldung nötig",
         "connected": "Verbunden",
         "available": "Verfügbar"
-      }
+      },
+      "addCustomDescription": "Einen Server oder eine API verbinden, die nicht im Katalog ist."
     },
     "insights": {
       "label": "Einblicke"

@@ -2268,7 +2268,8 @@
         "reconnect": "Needs sign-in",
         "connected": "Connected",
         "available": "Available"
-      }
+      },
+      "addCustomDescription": "Connect a server or API that isn't in the catalog."
     },
     "insights": {
       "label": "Insights"

@@ -1,4 +1,3 @@
-import { ChevronDown } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -9,13 +8,12 @@ import PageToolbar from '../components/PageToolbar';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
-import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { SectionHeader } from '../components/ui/section-header';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConnectionDrawer from '../connectors/ConnectionDrawer';
 import ConnectorCard from '../connectors/ConnectorCard';
-import ConnectorIcon from '../connectors/ConnectorIcon';
+import AddCustomConnectorModal from '../connectors/AddCustomConnectorModal';
 import {
   byState,
   catalogCards,
@@ -82,6 +80,7 @@ export default function Connectors() {
   const [status, setStatus] = useUrlFilter(STATUSES, { name: 'status' });
   const connectorParam = searchParams.get('connector');
   const [openKey, setOpenKey] = useState<string | null>(connectorParam);
+  const [choosingCustom, setChoosingCustom] = useState(false);
   // A `?connector=` link followed while this page is already open (the
   // global Reconnect toast) changes only the search: open what it names.
   const [seenConnectorParam, setSeenConnectorParam] = useState(connectorParam);
@@ -211,20 +210,16 @@ export default function Connectors() {
           />
         }
         action={
-          <ActionMenu
-            trigger={
-              <Button type="button" size="field" shape="pill">
-                {t('settings.connectors.addCustom')}
-                <ChevronDown />
-              </Button>
-            }
-            menuWidth="sm"
-            options={custom.map((connector) => ({
-              label: connectorName(t, connector),
-              icon: <ConnectorIcon icon={connector.icon} className="size-4" />,
-              onClick: () => launch(connector),
-            }))}
-          />
+          custom.length > 0 ? (
+            <Button
+              type="button"
+              size="field"
+              shape="pill"
+              onClick={() => setChoosingCustom(true)}
+            >
+              {t('settings.connectors.addCustom')}
+            </Button>
+          ) : undefined
         }
         divider
       >
@@ -322,6 +317,12 @@ export default function Connectors() {
         }}
       />
       {modals}
+      <AddCustomConnectorModal
+        open={choosingCustom}
+        onOpenChange={setChoosingCustom}
+        connectors={custom}
+        onPick={(connector) => launch(connector)}
+      />
     </div>
   );
 }

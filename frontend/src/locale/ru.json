@@ -2442,7 +2442,8 @@
         "reconnect": "Нужен вход",
         "connected": "Подключены",
         "available": "Доступны"
-      }
+      },
+      "addCustomDescription": "Подключите сервер или API, которых нет в каталоге."
     },
     "insights": {
       "label": "Инсайты"

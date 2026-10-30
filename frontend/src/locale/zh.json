@@ -2258,7 +2258,8 @@
         "reconnect": "需要登录",
         "connected": "已连接",
         "available": "可用"
-      }
+      },
+      "addCustomDescription": "连接目录中没有的服务器或 API。"
     },
     "insights": {
       "label": "洞察"
