@@ -360,7 +360,8 @@ inside it connect only to each other.
 - **When an item fails**: **Stop and fail the loop** (the default) fails the
   node and writes nothing; items not yet started don't run and running ones stop
   at their next node. **Leave the item out** drops it from the results. **Keep
-  the error in its place** puts `{"error": "..."}` in that item's slot.
+  the error in its place** puts `{"error": "..."}` in that item's slot. An item
+  whose body is still going after 50 node steps counts as failed too.
 - **Output Variable**: an extra name for the results, which are always saved as
   `node_<node_id>_output`. The results are a list in the same order as the
   items.

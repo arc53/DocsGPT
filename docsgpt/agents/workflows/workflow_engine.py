@@ -367,6 +367,13 @@ class WorkflowEngine:
             logger.warning(
                 f"Workflow reached max steps limit ({self.MAX_EXECUTION_STEPS})"
             )
+            if self._loop_item is not None:
+                # Like any failure in a loop body, this goes to the loop, which
+                # applies ``on_item_error``; the run's error event is not yielded.
+                raise _LoopItemFailed(
+                    f"The loop body stopped after {self.MAX_EXECUTION_STEPS} steps without finishing. "
+                    "A cycle in the body, such as a condition that keeps routing back, is the usual cause."
+                )
             # A loop that never converges would otherwise be finalized as a
             # completed run with a truncated (often empty) answer.
             self.step_limit_reached = True
