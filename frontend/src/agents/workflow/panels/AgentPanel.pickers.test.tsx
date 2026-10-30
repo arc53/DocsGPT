@@ -51,6 +51,23 @@ vi.mock('../../../upload/Upload', () => ({
     return <div data-testid="upload" />;
   },
 }));
+// The Add tool dialog, as a stub that reports a new tool on demand.
+const addTool = vi.hoisted(() => ({
+  props: null as null | {
+    modalState: string;
+    setModalState: (state: string) => void;
+    onToolAdded: (toolId: string) => void;
+    onDevicePaired?: (deviceId: string) => void;
+  },
+}));
+vi.mock('../../../modals/AddToolModal', () => ({
+  default: (props: NonNullable<typeof addTool.props>) => {
+    addTool.props = props;
+    return null;
+  },
+}));
+const devices = vi.hoisted(() => ({ list: vi.fn() }));
+vi.mock('../../../api/services/devicesService', () => ({ default: devices }));
 vi.mock('../components/PromptTextArea', () => ({
   default: () => null,
   extractUpstreamVariables: () => [],
@@ -95,6 +112,9 @@ describe('AgentPanel knowledge and tool pickers', () => {
   beforeEach(() => {
     media.isMobile = false;
     upload.props = null;
+    addTool.props = null;
+    devices.list.mockReset();
+    devices.list.mockResolvedValue({ devices: [] });
     store.dispatch.mockClear();
     store.state = {
       preference: { token: 'tok', sourceDocs: DOCS },
@@ -123,11 +143,13 @@ describe('AgentPanel knowledge and tool pickers', () => {
       attachedTools = [],
       attachedSources = [],
       onUpdate = vi.fn<UpdateFn>(),
+      onReloadTools = vi.fn(async () => tools),
     }: {
       tools?: UserTool[];
       attachedTools?: { id: string; label: string }[];
       attachedSources?: { id: string; label: string }[];
       onUpdate?: Mock<UpdateFn>;
+      onReloadTools?: () => Promise<UserTool[]>;
     } = {},
   ) => {
     await act(async () =>
@@ -147,6 +169,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
             jsonSchemaError={null}
             modelSupportsStructuredOutput
             onJsonSchemaChange={vi.fn()}
+            onReloadTools={onReloadTools}
           />
         </MemoryRouter>,
       ),
@@ -279,8 +302,57 @@ describe('AgentPanel knowledge and tool pickers', () => {
     const link = footer.querySelector('a')!;
     expect(link.textContent).toBe('settings.tools.manageTools');
     expect(link.getAttribute('href')).toBe('/settings/tools');
-    // The builder owns the tool list, so Add tool has nowhere to land here.
-    expect(footer.querySelector('button')).toBeNull();
+    const add = footer.querySelector('button')!;
+    expect(add.textContent).toBe('settings.tools.addTool');
+    await act(async () => add.click());
+    expect(addTool.props?.modalState).toBe('ACTIVE');
+  });
+
+  it('puts a tool added from the footer on the node', async () => {
+    const added: UserTool = { id: 'new', name: 'ntfy', displayName: 'ntfy' };
+    const onReloadTools = vi.fn(async () => [...TOOLS, added]);
+    const onUpdate = vi.fn<UpdateFn>();
+    await render(makeNode({ tools: ['brave'] }), { onUpdate, onReloadTools });
+    await act(async () => addTool.props!.onToolAdded('new'));
+    expect(onReloadTools).toHaveBeenCalled();
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      config: expect.objectContaining({ tools: ['brave', 'new'] }),
+    });
+  });
+
+  it('puts a device paired from the footer on the node', async () => {
+    const paired = {
+      id: 'tool-dev',
+      name: 'remote_device',
+      displayName: 'Laptop',
+      config: { device_id: 'dev-1' },
+    } as UserTool;
+    const onUpdate = vi.fn<UpdateFn>();
+    await render(makeNode(), {
+      onUpdate,
+      onReloadTools: vi.fn(async () => [...TOOLS, paired]),
+    });
+    await act(async () => addTool.props!.onDevicePaired!('dev-1'));
+    expect(addTool.props?.modalState).toBe('INACTIVE');
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      config: expect.objectContaining({ tools: ['tool-dev'] }),
+    });
+  });
+
+  it("shows a device's Online or Offline, as the other tool pickers do", async () => {
+    devices.list.mockResolvedValue({
+      devices: [{ id: 'dev-1', last_seen_at: new Date().toISOString() }],
+    });
+    const device = {
+      id: 'tool-dev',
+      name: 'remote_device',
+      displayName: 'Laptop',
+      config: { device_id: 'dev-1' },
+    } as UserTool;
+    await render(makeNode(), { tools: [...TOOLS, device] });
+    await open(toolsTrigger());
+    expect(devices.list).toHaveBeenCalledWith('tok');
+    expect(row('Laptop').textContent).toContain('settings.devices.online');
   });
 
   it('saves the picked tools as ids, as before', async () => {

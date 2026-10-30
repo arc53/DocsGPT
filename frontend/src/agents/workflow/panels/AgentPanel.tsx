@@ -46,9 +46,12 @@ import {
   selectSourceDocs,
   selectToken,
 } from '../../../preferences/preferenceSlice';
+import { useDeviceOnline } from '../../../hooks/useDeviceOnline';
 import { useSourceKindFilter } from '../../../settings/SourceKindFilter';
 import { useToolKindFilter } from '../../../settings/useToolKindFilter';
 import type { AppDispatch } from '../../../store';
+import AddToolModal from '../../../modals/AddToolModal';
+import type { ActiveState } from '../../../models/misc';
 import Upload from '../../../upload/Upload';
 import { getToolDisplayName } from '../../../utils/toolUtils';
 import type { RetryConfig } from '../../types/workflow';
@@ -90,6 +93,11 @@ interface AgentPanelProps extends NodePanelBodyProps {
   onJsonSchemaChange: (text: string) => void;
   /** The workflow's retry defaults, which an unset retry field inherits. */
   retryDefaults?: RetryConfig | null;
+  /**
+   * Reloads the builder's tool list and returns it, so a tool added from the
+   * Tools picker's footer can go on the node.
+   */
+  onReloadTools: () => Promise<UserTool[]>;
 }
 
 /**
@@ -181,6 +189,7 @@ export default function AgentPanel({
   modelSupportsStructuredOutput,
   onJsonSchemaChange,
   retryDefaults = null,
+  onReloadTools,
 }: AgentPanelProps) {
   const { t } = useTranslation();
   const streamId = useId();
@@ -201,6 +210,7 @@ export default function AgentPanel({
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [addToolState, setAddToolState] = useState<ActiveState>('INACTIVE');
   // A node saves its sources by id, so a source without one can't be picked.
   const sourceDocs = useMemo(
     () => (storedDocs ?? []).filter((doc) => Boolean(doc.id)),
@@ -231,6 +241,28 @@ export default function AgentPanel({
     if (sources.includes(sourceId)) return;
     update({ config: { ...currentConfig, sources: [...sources, sourceId] } });
   };
+  // A tool added from the Tools footer goes on the node it was added from,
+  // once the reloaded list holds it: by its id, or a paired device's tool by
+  // the device.
+  const attachAddedTool = async (
+    nodeId: string,
+    added: { toolId?: string; deviceId?: string },
+  ) => {
+    const tools = await onReloadTools().catch(() => null);
+    const tool = tools?.find((item) =>
+      added.toolId
+        ? item.id === added.toolId
+        : item.name === 'remote_device' &&
+          item.config?.device_id === added.deviceId,
+    );
+    if (!tool || !mounted.current) return;
+    const { node: current, onUpdate: update } = latest.current;
+    if (current.id !== nodeId) return;
+    const currentConfig = current.data.config || {};
+    const nodeTools: string[] = currentConfig.tools || [];
+    if (nodeTools.includes(tool.id)) return;
+    update({ config: { ...currentConfig, tools: [...nodeTools, tool.id] } });
+  };
 
   // The rows name the caller's connections and the catalog's services.
   const openPicker = (setOpen: (open: boolean) => void) => (next: boolean) => {
@@ -247,6 +279,8 @@ export default function AgentPanel({
   // The pickers' kind tracks, back on All each time they open.
   const sourceKinds = useSourceKindFilter(sourceDocs, sourcesOpen);
   const toolKinds = useToolKindFilter(availableTools, toolsOpen);
+  // Remote devices' online state, asked for each time the Tools picker opens.
+  const deviceOnline = useDeviceOnline(toolsOpen, availableTools);
 
   const sourceItems = [
     ...toSourcePickerItems(sourceKinds.docs, {
@@ -268,7 +302,12 @@ export default function AgentPanel({
       : []),
   ];
   const toolItems = [
-    ...toolPickerItems(toolKinds.tools, { t, connections, catalog }),
+    ...toolPickerItems(toolKinds.tools, {
+      t,
+      connections,
+      catalog,
+      deviceOnline,
+    }),
     ...(toolKinds.kind === 'all'
       ? unlistedRows(
           pickedTools,
@@ -472,13 +511,16 @@ export default function AgentPanel({
             onToggle={(id) => updateConfig({ tools: toggled(pickedTools, id) })}
             searchPlaceholder={t('settings.tools.searchPlaceholder')}
             emptyMessage={t('settings.tools.noToolsFound')}
-            // Only the link: the builder loads the tool list once, so a tool
-            // added here would not show until the page reloads.
             footer={
               <PickerFooter
                 to="/settings/tools"
                 linkLabel={t('settings.tools.manageTools')}
                 onNavigate={() => setToolsOpen(false)}
+                actionLabel={t('settings.tools.addTool')}
+                onAction={() => {
+                  setToolsOpen(false);
+                  setAddToolState('ACTIVE');
+                }}
               />
             }
             trigger={
@@ -627,6 +669,18 @@ export default function AgentPanel({
           selectUploadedDoc={false}
         />
       )}
+      {/* Opened from the Tools picker's footer, as in the agent builder. */}
+      <AddToolModal
+        message={t('settings.tools.selectToolSetup')}
+        modalState={addToolState}
+        setModalState={setAddToolState}
+        getUserTools={() => void onReloadTools().catch(() => undefined)}
+        onToolAdded={(toolId) => attachAddedTool(node.id, { toolId })}
+        onDevicePaired={(deviceId) => {
+          setAddToolState('INACTIVE');
+          void attachAddedTool(node.id, { deviceId });
+        }}
+      />
     </div>
   );
 }

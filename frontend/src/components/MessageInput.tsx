@@ -18,7 +18,6 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import endpoints from '../api/endpoints';
-import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
 import SendArrow from '../assets/send.svg?react';
 import {
@@ -90,13 +89,13 @@ import {
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
 import { useSourceKindFilter } from '../settings/SourceKindFilter';
+import { useDeviceOnline } from '../hooks/useDeviceOnline';
 import { useToolKindFilter } from '../settings/useToolKindFilter';
 import { sourceItemId } from '../utils/sourceUtils';
 import { toSourcePickerItems } from './sourcePickerItems';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
-import { deviceOnlineMap } from '../utils/deviceUtils';
 import { isChatPickerToolVisible, toolInChat } from '../utils/toolUtils';
 
 const generateId = (): string =>
@@ -1442,25 +1441,8 @@ export default function MessageInput({
     }
   }, [isToolsPopupOpen, fetchUserTools]);
 
-  // Remote devices' online state, asked for when the picker opens with a
-  // device in the list; until it answers the rows show no status.
-  const hasRemoteDevice = userTools.some(
-    (tool) => tool.name === 'remote_device',
-  );
-  const [deviceOnline, setDeviceOnline] = useState<Map<string, boolean>>();
-  useEffect(() => {
-    if (!isToolsPopupOpen || !hasRemoteDevice) return;
-    let current = true;
-    devicesService
-      .list(token)
-      .then((result) => {
-        if (current) setDeviceOnline(deviceOnlineMap(result?.devices ?? []));
-      })
-      .catch(() => undefined);
-    return () => {
-      current = false;
-    };
-  }, [isToolsPopupOpen, hasRemoteDevice, token]);
+  // Remote devices' online state, asked for when the picker opens.
+  const deviceOnline = useDeviceOnline(isToolsPopupOpen, userTools);
 
   // The groups the agent builder and the Tools page use: Included, Added,
   // one per service, then Custom. A teammate's connection is never in the

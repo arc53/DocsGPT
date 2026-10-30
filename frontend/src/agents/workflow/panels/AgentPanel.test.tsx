@@ -2,6 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { type Node } from 'reactflow';
 
+vi.mock('../../../modals/AddToolModal', () => ({ default: () => null }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -71,6 +72,7 @@ describe('AgentPanel', () => {
           jsonSchemaError={null}
           modelSupportsStructuredOutput
           onJsonSchemaChange={vi.fn()}
+          onReloadTools={vi.fn(async () => [])}
         />,
       );
     });

@@ -11,8 +11,7 @@ type PickerFooterProps = {
   onNavigate?: () => void;
   /**
    * The shortcut on the right (Upload new, Add tool). Left out where the
-   * host can't use it (the workflow agent node's Tools: the builder loads
-   * its tool list once), so the row is the link alone.
+   * host can't use it, so the row is the link alone.
    */
   actionLabel?: string;
   onAction?: () => void;

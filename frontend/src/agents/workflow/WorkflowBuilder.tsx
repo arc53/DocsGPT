@@ -949,6 +949,18 @@ function WorkflowBuilderInner() {
     setSelectedNode(null);
   }, []);
 
+  // The tools a node can pick, loaded with the models and again when a node
+  // adds one from its Tools picker. Shared tools the caller can't add to
+  // their own agents stay out.
+  const loadTools = useCallback(async (): Promise<UserTool[]> => {
+    const response = await userService.getUserTools(token);
+    if (!response.ok) throw new Error('Failed to load tools');
+    const data = await response.json();
+    const tools = (data.tools as UserTool[]).filter(canAddToolToOwn);
+    setAvailableTools(tools);
+    return tools;
+  }, [token]);
+
   useEffect(() => {
     const loadModelsAndTools = async () => {
       try {
@@ -968,20 +980,13 @@ function WorkflowBuilderInner() {
           setDefaultAgentModelId(preferredDefaultModel);
         }
 
-        const toolsResponse = await userService.getUserTools(token);
-        if (toolsResponse.ok) {
-          const toolsData = await toolsResponse.json();
-          // Shared tools the caller can't add to their own agents stay out.
-          setAvailableTools(
-            (toolsData.tools as UserTool[]).filter(canAddToolToOwn),
-          );
-        }
+        await loadTools();
       } catch (error) {
         console.error('Failed to load models or tools:', error);
       }
     };
     loadModelsAndTools();
-  }, [token]);
+  }, [token, loadTools]);
 
   useEffect(() => {
     if (!selectedNode || selectedNode.type !== 'agent') return;
@@ -2370,6 +2375,7 @@ function WorkflowBuilderInner() {
                   }
                   onJsonSchemaChange={handleAgentJsonSchemaChange}
                   retryDefaults={retryDefaults}
+                  onReloadTools={loadTools}
                 />
               )}
               {selectedNode.type === 'note' && (

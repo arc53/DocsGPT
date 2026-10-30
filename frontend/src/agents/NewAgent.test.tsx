@@ -136,6 +136,7 @@ vi.mock('../components/MultiSelectPopover', () => ({
     filters,
     emptyMessage,
     loneGroupHeading,
+    onOpenChange,
   }: {
     trigger: React.ReactNode;
     items: MultiSelectPopoverItem[];
@@ -147,6 +148,7 @@ vi.mock('../components/MultiSelectPopover', () => ({
     filters?: React.ReactNode;
     emptyMessage?: string;
     loneGroupHeading?: boolean;
+    onOpenChange?: (open: boolean) => void;
   }) => (
     <div
       data-testid="picker"
@@ -157,6 +159,8 @@ vi.mock('../components/MultiSelectPopover', () => ({
       data-lone-group-heading={String(loneGroupHeading ?? true)}
     >
       {trigger}
+      {/* A span, so the tests that count the picker's buttons skip it. */}
+      <span data-testid="picker-open" onClick={() => onOpenChange?.(true)} />
       <div data-testid="picker-footer">{footer}</div>
       <div data-testid="picker-filters">{filters}</div>
       {items.map((item) => (
@@ -1512,8 +1516,19 @@ describe('NewAgent form', () => {
     expect(trigger.textContent).toBe('Fresh notes');
   });
 
-  it('shows the device status as a Badge', async () => {
+  it('shows the device status as a Badge once the picker opens', async () => {
     await render();
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull();
+    const tools = Array.from(
+      container.querySelectorAll('[data-testid="picker"]'),
+    ).find(
+      (picker) => picker.getAttribute('data-title') === 'settings.tools.label',
+    )!;
+    await act(async () =>
+      tools
+        .querySelector<HTMLButtonElement>('[data-testid="picker-open"]')!
+        .click(),
+    );
     const badge = container.querySelector('[data-slot="badge"]');
     expect(badge?.textContent).toBe('settings.devices.online');
     expect(badge?.getAttribute('data-variant')).toBe('success');

@@ -634,8 +634,10 @@ page that manages the list, as a `link inline` Button with a 12px `ArrowRight`
 (Go to Knowledge, Go to Tools, Go to Prompts). A shortcut action (Upload new, Add tool, Add prompt; an `outline-primary pill`)
 sits at the right end of the same row: `flex flex-wrap items-center
 justify-between gap-3`, so on a narrow sheet or in a long locale it wraps under
-the link rather than taking a row of its own everywhere. A picker whose host can't use the shortcut (the workflow agent node's Tools:
-the builder loads its tool list once) shows only the Go to … link. Every
+the link rather than taking a row of its own everywhere. A picker whose host can't use the shortcut shows only the Go to …
+link; every picker today has one (the workflow agent node's Add tool reloads the builder's tool list and puts the new
+tool on the node, as the agent builder does). A tool picker's device Online / Offline comes from `useDeviceOnline`,
+asked each time the picker opens. Every
 picker uses `PickerFooter` for this row (`SourcesPopoverFooter` wraps it for sources); a
 notice (connections to sign in again) goes above it. Both footers sit in their
 own `border-t px-4 py-4` strip after the `Command`, outside cmdk, whose Enter

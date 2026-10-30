@@ -37,6 +37,8 @@ export interface UserTool {
   access?: AccessFields['access'];
   allowed_actions?: string[];
   ownership?: AccessFields['ownership'];
+  /** A paired device's tool names its device here. */
+  config?: { device_id?: string } & Record<string, unknown>;
 }
 
 /**

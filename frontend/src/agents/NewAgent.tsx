@@ -34,7 +34,6 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
-import devicesService from '../api/services/devicesService';
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import { FileUpload } from '../components/FileUpload';
@@ -66,6 +65,7 @@ import {
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
+import { useDeviceOnline } from '../hooks/useDeviceOnline';
 import {
   TOOL_KINDS,
   toolKindLabel,
@@ -74,7 +74,6 @@ import {
 } from '../settings/toolGroups';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
-import { deviceOnlineMap } from '../utils/deviceUtils';
 import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import Upload from '../upload/Upload';
 import {
@@ -212,8 +211,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [toolContext, setToolContext] = useState<{
     connections: Connection[];
     catalog: ConnectorDefinition[];
-    deviceOnline: Map<string, boolean>;
-  }>({ connections: [], catalog: [], deviceOnline: new Map() });
+  }>({ connections: [], catalog: [] });
   const [addToolModalState, setAddToolModalState] =
     useState<ActiveState>('INACTIVE');
   // A tool added from the picker goes on the agent once the list has it.
@@ -542,11 +540,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     labelOf: (kind) => toolKindLabel(t, kind),
     ariaLabel: t('settings.tools.kindFilterLabel'),
   });
+  // Remote devices' online state, asked for each time the picker opens.
+  const deviceOnline = useDeviceOnline(isToolsPopupOpen, rawUserTools);
   const toolItems = useMemo(() => {
     const listed = new Set(rawUserTools.map((tool) => tool.id));
     return toolPickerItems(toolKinds.items, {
       t,
       ...toolContext,
+      deviceOnline,
       lineFor: (tool) =>
         listed.has(tool.id)
           ? undefined
@@ -555,7 +556,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       // keeps one line.
       lineSuffix: (tool) => addedByLabel('tool', tool.id),
     });
-  }, [addedByLabel, rawUserTools, t, toolContext, toolKinds.items]);
+  }, [
+    addedByLabel,
+    deviceOnline,
+    rawUserTools,
+    t,
+    toolContext,
+    toolKinds.items,
+  ]);
 
   const selectedSourceNames = useMemo(
     () =>
@@ -977,12 +985,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   useEffect(() => {
     const getTools = async () => {
-      const [toolsResponse, devicesResult, connectionsResult, catalogResult] =
+      const [toolsResponse, connectionsResult, catalogResult] =
         await Promise.all([
           userService.getUserTools(token),
-          // Tolerate failures here: the picker should still render the
-          // tool list even if /api/devices returns an error or 401.
-          devicesService.list(token).catch(() => ({ devices: [] })),
           connectorsService
             .listConnections(token)
             .catch(() => ({ connections: [] })),
@@ -1005,11 +1010,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         isAgentPickerToolVisible,
       );
       setRawUserTools(visibleTools);
-      setToolContext({
-        connections: ownConnections,
-        catalog,
-        deviceOnline: deviceOnlineMap(devicesResult.devices || []),
-      });
+      setToolContext({ connections: ownConnections, catalog });
       // The tool just added from the picker goes on the agent.
       const added = addedToolRef.current;
       const addedTool = added
