@@ -212,7 +212,7 @@ class NotesTool(Tool):
 
         # Case-insensitive replacement
         import re
-        updated_note = re.sub(re.escape(old_str), new_str, current_note, flags=re.IGNORECASE)
+        updated_note = re.sub(re.escape(old_str), lambda _m: new_str, current_note, flags=re.IGNORECASE)
 
         with db_session() as conn:
             row = NotesRepository(conn).upsert(
