@@ -1757,15 +1757,16 @@ describe('Sources filters and usage', () => {
     });
   });
 
-  // One ToggleGroup per page: usage is a pill Select beside it.
-  it('filters by usage with a pill Select', async () => {
+  // One recipe per page: usage is the FilterSelect beside the kind track,
+  // and its default reads Any use, never a second All.
+  it('filters by usage with a pill Select that reads Any use', async () => {
     await mount(root, [doc()]);
     const trigger = container.querySelector<HTMLElement>(
-      '[data-slot="select-trigger"][aria-label="settings.sources.usageFilterLabel"]',
+      '[data-slot="select-trigger"][aria-label="settings.usage.filterLabel"]',
     )!;
     expect(trigger).not.toBeNull();
     expect(trigger.getAttribute('data-shape')).toBe('pill');
-    expect(trigger.textContent).toContain('settings.sources.usageFilters.all');
+    expect(trigger.textContent).toBe('settings.usage.filters.all');
   });
 
   it('says no match under a filter, with no way in', async () => {

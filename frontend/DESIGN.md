@@ -995,7 +995,10 @@ counts)` hides an item whose count is 0 unless it is the selected one, and
   their state is the one `components/FilterSelect` beside it, a pill Select
   whose default reads "Any use" or "Any status" without a count (so it never
   echoes the track's All), each option with its count, and with the same
-  `shownFilters` rules. Never a second ToggleGroup.
+  `shownFilters` rules. Never a second ToggleGroup. Each filter counts with
+  the other applied, both live in the address (`?kind=`, `?usage=`), and the
+  page's sections (`SectionHeader size="sm"`) carry their whole count, not the
+  part on the current page.
 
 A picker filters by the same kinds: `usePickerKindFilter`
 (`hooks/usePickerKindFilter.tsx`) gives the xs track to pass as the picker's

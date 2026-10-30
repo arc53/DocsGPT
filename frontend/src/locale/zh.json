@@ -164,7 +164,7 @@
       "type": "类型",
       "tokenUsage": "令牌使用",
       "noData": "还没有知识",
-      "searchPlaceholder": "搜索...",
+      "searchPlaceholder": "搜索知识…",
       "addNew": "添加新文档",
       "addSource": "添加知识",
       "addChunk": "添加块",
@@ -689,12 +689,6 @@
         "shared": "共享"
       },
       "kindFilterLabel": "按类型筛选",
-      "usageFilters": {
-        "all": "全部",
-        "inUse": "使用中",
-        "unused": "未使用"
-      },
-      "usageFilterLabel": "按使用情况筛选",
       "needsAttention": "需要处理",
       "allKnowledge": "全部知识",
       "select": "选择",
@@ -1627,11 +1621,8 @@
       "deleteActionConsequence": "保存工具后即会移除。",
       "groupIncluded": "自带",
       "groupAdded": "已添加",
-      "filterLabel": "筛选工具",
       "filters": {
-        "all": "全部",
-        "inUse": "使用中",
-        "unused": "未使用"
+        "all": "全部"
       },
       "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
       "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
@@ -1645,11 +1636,8 @@
       "addPrompt": "添加提示词",
       "manage": "前往提示词",
       "select": "选择提示词",
-      "filterLabel": "筛选提示词",
       "filters": {
-        "all": "全部",
-        "inUse": "使用中",
-        "unused": "未使用"
+        "all": "全部"
       },
       "sections": {
         "included": "自带",
@@ -1679,7 +1667,11 @@
       "saveFailed": "无法保存此提示词。",
       "editConflict": "其他人已更改此提示词。请重新打开以查看其版本。",
       "loadError": "无法加载你的提示词。",
-      "noPromptsFound": "未找到提示词"
+      "noPromptsFound": "未找到提示词",
+      "kinds": {
+        "shared": "共享"
+      },
+      "kindFilterLabel": "按类型筛选"
     },
     "devices": {
       "label": "设备",
@@ -2266,7 +2258,13 @@
       "others_other": "以及你团队中的另外 {{formatted}} 个",
       "inChats": "用于聊天",
       "agentsShort_one": "{{formatted}} 个智能体",
-      "agentsShort_other": "{{formatted}} 个智能体"
+      "agentsShort_other": "{{formatted}} 个智能体",
+      "filters": {
+        "all": "不限使用情况",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "filterLabel": "按使用情况筛选"
     }
   },
   "modals": {

@@ -759,21 +759,55 @@ describe('Tools page connections', () => {
       }),
     );
     await renderTools(root);
+    // The heading's title, without the count after it.
+    const titleOf = (h: Element) =>
+      Array.from(h.childNodes)
+        .filter(
+          (n) => !(n instanceof HTMLElement && n.dataset.slot === 'count'),
+        )
+        .map((n) => n.textContent)
+        .join('');
     const headers = Array.from(
       container.querySelectorAll('[data-slot="section-header"] h2'),
-    ).map((h) => h.textContent);
-    expect(headers).toEqual([
+    );
+    expect(headers.map(titleOf)).toEqual([
       'settings.tools.groupIncluded',
       'settings.tools.groupAdded',
       'Telegram',
       'Linear',
       'agents.form.toolsPopup.groupCustom',
     ]);
+    // Every section says how many tools it holds.
+    headers.forEach((h) =>
+      expect(h.querySelector('[data-slot="count"]')?.textContent).toMatch(
+        /^\d+$/,
+      ),
+    );
     const section = (title: string) =>
       Array.from(container.querySelectorAll('section')).find(
-        (s) => s.querySelector('h2')?.textContent === title,
+        (s) => titleOf(s.querySelector('h2')!) === title,
       )!;
     expect(section('Telegram').textContent).toContain('Alerts bot');
+    // The kind track splits the tools the same way, with counts.
+    const kinds = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[aria-label="settings.tools.kindFilterLabel"] [data-slot="toggle-group-item"]',
+      ),
+    );
+    expect(kinds.map((k) => k.firstChild?.textContent)).toEqual([
+      'settings.tools.filters.all',
+      'settings.tools.groupIncluded',
+      'settings.tools.groupAdded',
+      'settings.tools.groupServices',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
+    await act(async () => kinds[4].click());
+    expect(
+      Array.from(
+        container.querySelectorAll('[data-slot="section-header"] h2'),
+      ).map(titleOf),
+    ).toEqual(['agents.form.toolsPopup.groupCustom']);
+    await act(async () => kinds[0].click());
     expect(section('agents.form.toolsPopup.groupCustom').textContent).toContain(
       'My API',
     );
@@ -1128,19 +1162,6 @@ describe('Tools usage', () => {
     Array.from(container.querySelectorAll('[data-slot="card-title"]')).map(
       (title) => title.textContent,
     );
-  const filterItems = () =>
-    Array.from(
-      container.querySelectorAll<HTMLButtonElement>(
-        '[data-slot="toggle-group-item"]',
-      ),
-    );
-  const filterItem = (value: string) =>
-    filterItems().find(
-      (item) =>
-        item.firstChild?.textContent === `settings.tools.filters.${value}`,
-    )!;
-  const where = () =>
-    container.querySelector('[data-testid="where"]')?.textContent;
   const card = (title: string) =>
     Array.from(
       container.querySelectorAll<HTMLElement>('[data-slot="card-title"]'),
@@ -1148,28 +1169,17 @@ describe('Tools usage', () => {
       .find((h) => h.textContent === title)!
       .closest<HTMLElement>('[data-slot="card"]')!;
 
-  it('filters by use, with counts, and keeps the filter in the address', async () => {
+  it('puts usage in a pill Select that reads Any use', async () => {
     await renderAt();
-    const counts = filterItems().map((item) => [
-      item.firstChild?.textContent,
-      item.querySelector('[data-slot="count"]')?.textContent,
-    ]);
-    expect(counts).toEqual([
-      ['settings.tools.filters.all', '5'],
-      ['settings.tools.filters.inUse', '3'],
-      ['settings.tools.filters.unused', '2'],
-    ]);
-    await act(async () => filterItem('unused').click());
-    expect(titles()).toEqual(['idle', 'old']);
-    expect(where()).toBe('/settings/tools?filter=unused');
-    await act(async () => filterItem('inUse').click());
-    expect(titles()).toEqual(['agented', 'chatted', 'elsewhere']);
-    await act(async () => filterItem('all').click());
-    expect(where()).toBe('/settings/tools');
+    const trigger = container.querySelector<HTMLElement>(
+      '[data-slot="select-trigger"][aria-label="settings.usage.filterLabel"]',
+    )!;
+    expect(trigger.getAttribute('data-shape')).toBe('pill');
+    expect(trigger.textContent).toBe('settings.usage.filters.all');
   });
 
-  it('reads the filter from the address and ANDs it with the search', async () => {
-    await renderAt('/settings/tools?filter=inUse');
+  it('reads the usage from the address and ANDs it with the search', async () => {
+    await renderAt('/settings/tools?usage=inUse');
     expect(titles()).toEqual(['agented', 'chatted', 'elsewhere']);
     const input =
       container.querySelector<HTMLInputElement>('#tool-search-input')!;

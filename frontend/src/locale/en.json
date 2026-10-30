@@ -165,7 +165,7 @@
       "type": "Type",
       "tokenUsage": "Token Usage",
       "noData": "No knowledge yet",
-      "searchPlaceholder": "Search...",
+      "searchPlaceholder": "Search knowledge…",
       "addNew": "Add New",
       "addSource": "Add knowledge",
       "addChunk": "Add chunk",
@@ -692,12 +692,6 @@
         "shared": "Shared"
       },
       "kindFilterLabel": "Filter by kind",
-      "usageFilters": {
-        "all": "All",
-        "inUse": "In use",
-        "unused": "Unused"
-      },
-      "usageFilterLabel": "Filter by use",
       "needsAttention": "Needs attention",
       "allKnowledge": "All knowledge",
       "select": "Select",
@@ -1631,11 +1625,8 @@
       "deleteActionConsequence": "It's removed when you save the tool.",
       "groupIncluded": "Included",
       "groupAdded": "Added",
-      "filterLabel": "Filter tools",
       "filters": {
-        "all": "All",
-        "inUse": "In use",
-        "unused": "Unused"
+        "all": "All"
       },
       "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this tool. Its settings and actions are deleted too. This can't be undone.",
       "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this tool. Its settings and actions are deleted too. This can't be undone.",
@@ -1649,11 +1640,8 @@
       "addPrompt": "Add prompt",
       "manage": "Go to Prompts",
       "select": "Select a prompt",
-      "filterLabel": "Filter prompts",
       "filters": {
-        "all": "All",
-        "inUse": "In use",
-        "unused": "Unused"
+        "all": "All"
       },
       "sections": {
         "included": "Included",
@@ -1683,7 +1671,11 @@
       "saveFailed": "Couldn't save this prompt.",
       "editConflict": "Someone else changed this prompt. Reopen it to see their version.",
       "loadError": "Couldn't load your prompts.",
-      "noPromptsFound": "No prompts found"
+      "noPromptsFound": "No prompts found",
+      "kinds": {
+        "shared": "Shared"
+      },
+      "kindFilterLabel": "Filter by kind"
     },
     "devices": {
       "label": "Devices",
@@ -2276,7 +2268,13 @@
       "others_other": "and {{formatted}} others on your teams",
       "inChats": "In chats",
       "agentsShort_one": "{{formatted}} agent",
-      "agentsShort_other": "{{formatted}} agents"
+      "agentsShort_other": "{{formatted}} agents",
+      "filters": {
+        "all": "Any use",
+        "inUse": "In use",
+        "unused": "Unused"
+      },
+      "filterLabel": "Filter by use"
     }
   },
   "modals": {

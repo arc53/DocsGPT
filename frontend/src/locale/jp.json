@@ -164,7 +164,7 @@
       "type": "タイプ",
       "tokenUsage": "トークン使用量",
       "noData": "ナレッジはまだありません",
-      "searchPlaceholder": "検索...",
+      "searchPlaceholder": "ナレッジを検索…",
       "addNew": "新規追加",
       "addSource": "ナレッジを追加",
       "addChunk": "チャンクを追加",
@@ -689,12 +689,6 @@
         "shared": "共有"
       },
       "kindFilterLabel": "種類で絞り込む",
-      "usageFilters": {
-        "all": "すべて",
-        "inUse": "使用中",
-        "unused": "未使用"
-      },
-      "usageFilterLabel": "使用状況で絞り込む",
       "needsAttention": "要対応",
       "allKnowledge": "すべてのナレッジ",
       "select": "選択",
@@ -1627,11 +1621,8 @@
       "deleteActionConsequence": "ツールを保存すると削除されます。",
       "groupIncluded": "標準搭載",
       "groupAdded": "追加済み",
-      "filterLabel": "ツールを絞り込む",
       "filters": {
-        "all": "すべて",
-        "inUse": "使用中",
-        "unused": "未使用"
+        "all": "すべて"
       },
       "deleteUsedBy_one": "{{formatted}}件のエージェントが使用しており、それらはこのツールを使えなくなります。設定とアクションも削除されます。この操作は元に戻せません。",
       "deleteUsedBy_other": "{{formatted}}件のエージェントが使用しており、それらはこのツールを使えなくなります。設定とアクションも削除されます。この操作は元に戻せません。",
@@ -1645,11 +1636,8 @@
       "addPrompt": "プロンプトを追加",
       "manage": "プロンプトへ移動",
       "select": "プロンプトを選択",
-      "filterLabel": "プロンプトを絞り込む",
       "filters": {
-        "all": "すべて",
-        "inUse": "使用中",
-        "unused": "未使用"
+        "all": "すべて"
       },
       "sections": {
         "included": "標準搭載",
@@ -1679,7 +1667,11 @@
       "saveFailed": "このプロンプトを保存できませんでした。",
       "editConflict": "他のユーザーがこのプロンプトを変更しました。開き直して最新の内容を確認してください。",
       "loadError": "プロンプトを読み込めませんでした。",
-      "noPromptsFound": "プロンプトが見つかりません"
+      "noPromptsFound": "プロンプトが見つかりません",
+      "kinds": {
+        "shared": "共有"
+      },
+      "kindFilterLabel": "種類で絞り込む"
     },
     "devices": {
       "label": "デバイス",
@@ -2267,7 +2259,13 @@
       "others_other": "ほかにチームで{{formatted}}件",
       "inChats": "チャットで使用",
       "agentsShort_one": "{{formatted}}件のエージェント",
-      "agentsShort_other": "{{formatted}}件のエージェント"
+      "agentsShort_other": "{{formatted}}件のエージェント",
+      "filters": {
+        "all": "すべての使用状況",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "filterLabel": "使用状況で絞り込む"
     }
   },
   "modals": {

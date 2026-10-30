@@ -165,7 +165,7 @@
       "type": "Typ",
       "tokenUsage": "Token-Verbrauch",
       "noData": "Noch kein Wissen",
-      "searchPlaceholder": "Suchen...",
+      "searchPlaceholder": "Wissen durchsuchen…",
       "addNew": "Neu hinzufügen",
       "addSource": "Wissen hinzufügen",
       "addChunk": "Chunk hinzufügen",
@@ -692,12 +692,6 @@
         "shared": "Geteilt"
       },
       "kindFilterLabel": "Nach Art filtern",
-      "usageFilters": {
-        "all": "Alle",
-        "inUse": "In Verwendung",
-        "unused": "Unbenutzt"
-      },
-      "usageFilterLabel": "Nach Verwendung filtern",
       "needsAttention": "Braucht Aufmerksamkeit",
       "allKnowledge": "Gesamtes Wissen",
       "select": "Auswählen",
@@ -1631,11 +1625,8 @@
       "deleteActionConsequence": "Sie wird entfernt, wenn du das Tool speicherst.",
       "groupIncluded": "Enthalten",
       "groupAdded": "Hinzugefügt",
-      "filterLabel": "Werkzeuge filtern",
       "filters": {
-        "all": "Alle",
-        "inUse": "In Verwendung",
-        "unused": "Unbenutzt"
+        "all": "Alle"
       },
       "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der es danach nicht mehr hat. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die es danach nicht mehr haben. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
@@ -1649,11 +1640,8 @@
       "addPrompt": "Prompt hinzufügen",
       "manage": "Zu den Prompts",
       "select": "Prompt auswählen",
-      "filterLabel": "Prompts filtern",
       "filters": {
-        "all": "Alle",
-        "inUse": "In Verwendung",
-        "unused": "Unbenutzt"
+        "all": "Alle"
       },
       "sections": {
         "included": "Enthalten",
@@ -1683,7 +1671,11 @@
       "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
       "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um die geänderte Version zu sehen.",
       "loadError": "Deine Prompts konnten nicht geladen werden.",
-      "noPromptsFound": "Keine Prompts gefunden"
+      "noPromptsFound": "Keine Prompts gefunden",
+      "kinds": {
+        "shared": "Geteilt"
+      },
+      "kindFilterLabel": "Nach Art filtern"
     },
     "devices": {
       "label": "Geräte",
@@ -2276,7 +2268,13 @@
       "others_other": "und {{formatted}} weitere in deinen Teams",
       "inChats": "In Chats",
       "agentsShort_one": "{{formatted}} Agent",
-      "agentsShort_other": "{{formatted}} Agenten"
+      "agentsShort_other": "{{formatted}} Agenten",
+      "filters": {
+        "all": "Jede Nutzung",
+        "inUse": "In Verwendung",
+        "unused": "Unbenutzt"
+      },
+      "filterLabel": "Nach Verwendung filtern"
     }
   },
   "modals": {

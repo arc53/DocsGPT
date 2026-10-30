@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
 import RoleBadge from '../components/RoleBadge';
 import SearchInput from '../components/SearchInput';
@@ -38,8 +39,8 @@ import { agentUseCount } from '../utils/resourceUsage';
 import UsedByAgents from './UsedByAgents';
 import usePromptActions from './usePromptActions';
 
-const FILTERS = ['all', 'inUse', 'unused'] as const;
-type Filter = (typeof FILTERS)[number];
+const USAGE_FILTERS = ['all', 'inUse', 'unused'] as const;
+type UsageFilter = (typeof USAGE_FILTERS)[number];
 
 /** The page's sections, by the prompt's `type`. */
 const SECTIONS = [
@@ -47,6 +48,10 @@ const SECTIONS = [
   { key: 'yours', type: 'private' },
   { key: 'shared', type: 'team' },
 ] as const;
+
+/** The kind track's values: All, then one per section. */
+const KINDS = ['all', ...SECTIONS.map((section) => section.key)] as const;
+type KindFilter = (typeof KINDS)[number];
 
 const PRESETS = ['default', 'creative', 'strict'];
 
@@ -66,8 +71,10 @@ export default function Prompts() {
   // The first load failed: an error with Retry, not an empty page.
   const [loadFailed, setLoadFailed] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
-  // The address holds the usage filter, so Back and a reload keep it.
-  const [filter, setFilter] = useUrlFilter(FILTERS);
+  // The address holds the kind and usage filters, so Back and a reload
+  // keep them.
+  const [kind, setKind] = useUrlFilter(KINDS, { name: 'kind' });
+  const [usage, setUsage] = useUrlFilter(USAGE_FILTERS, { name: 'usage' });
 
   const showList = (list: Prompt[]) => {
     setPromptList(list);
@@ -128,21 +135,34 @@ export default function Prompts() {
   /** In use: an agent uses it, or chats without an agent do. */
   const isInUse = (prompt: Prompt) =>
     agentUseCount(prompt.used_by) > 0 || prompt.id === chatPrompt.id;
-  const matchesFilter = (prompt: Prompt, key: Filter) =>
+  const matchesUsage = (prompt: Prompt, key: UsageFilter) =>
     key === 'all' || (key === 'inUse') === isInUse(prompt);
-  const counts = Object.fromEntries(
-    FILTERS.map((key) => [
+  const matchesKind = (prompt: Prompt, key: KindFilter) =>
+    key === 'all' ||
+    SECTIONS.some((s) => s.key === key && s.type === prompt.type);
+  // Each filter counts with the other one applied.
+  const kindCounts = Object.fromEntries(
+    KINDS.map((key) => [
       key,
-      prompts.filter((prompt) => matchesFilter(prompt, key)).length,
+      prompts.filter((p) => matchesUsage(p, usage) && matchesKind(p, key))
+        .length,
     ]),
-  ) as Record<Filter, number>;
-  // No pill leads to an empty list; with only All left there is no row.
-  const filters = shownFilters(FILTERS, filter, counts);
+  ) as Record<KindFilter, number>;
+  const usageCounts = Object.fromEntries(
+    USAGE_FILTERS.map((key) => [
+      key,
+      prompts.filter((p) => matchesKind(p, kind) && matchesUsage(p, key))
+        .length,
+    ]),
+  ) as Record<UsageFilter, number>;
+  // No pill leads to an empty list; with only All left there is no track.
+  const kinds = shownFilters(KINDS, kind, kindCounts);
 
   const query = searchTerm.trim().toLowerCase();
   const shown = prompts.filter(
     (prompt) =>
-      matchesFilter(prompt, filter) &&
+      matchesKind(prompt, kind) &&
+      matchesUsage(prompt, usage) &&
       prompt.name.toLowerCase().includes(query),
   );
   const sections = SECTIONS.map((section) => ({
@@ -238,20 +258,38 @@ export default function Prompts() {
         }
         divider
       >
-        {filters.length > 0 && !loading && !loadFailed ? (
-          <div className="mb-6 flex flex-wrap items-center gap-3">
-            <ToggleGroup
-              type="single"
-              value={filter}
-              onValueChange={(value) => value && setFilter(value as Filter)}
-              aria-label={t('settings.prompts.filterLabel')}
-            >
-              {filters.map((key) => (
-                <ToggleGroupItem key={key} value={key} count={counts[key]}>
-                  {t(`settings.prompts.filters.${key}`)}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+        {!loading && !loadFailed && prompts.length > 0 ? (
+          <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
+            {kinds.length > 0 ? (
+              <ToggleGroup
+                type="single"
+                value={kind}
+                onValueChange={(value) => value && setKind(value as KindFilter)}
+                aria-label={t('settings.prompts.kindFilterLabel')}
+              >
+                {kinds.map((key) => (
+                  <ToggleGroupItem
+                    key={key}
+                    value={key}
+                    count={kindCounts[key]}
+                  >
+                    {key === 'all'
+                      ? t('settings.prompts.filters.all')
+                      : key === 'shared'
+                        ? t('settings.prompts.kinds.shared')
+                        : t(`settings.prompts.sections.${key}`)}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            ) : null}
+            <FilterSelect
+              value={usage}
+              onValueChange={setUsage}
+              values={USAGE_FILTERS}
+              counts={usageCounts}
+              labelOf={(value) => t(`settings.usage.filters.${value}`)}
+              ariaLabel={t('settings.usage.filterLabel')}
+            />
           </div>
         ) : null}
       </PageToolbar>
@@ -287,6 +325,7 @@ export default function Prompts() {
                   as="h2"
                   size="sm"
                   title={t(`settings.prompts.sections.${section.key}`)}
+                  count={section.prompts.length}
                 />
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {section.prompts.map(renderCard)}

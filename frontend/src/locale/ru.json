@@ -167,7 +167,7 @@
       "type": "Тип",
       "tokenUsage": "Использование токена",
       "noData": "Знаний пока нет",
-      "searchPlaceholder": "Поиск...",
+      "searchPlaceholder": "Поиск по знаниям…",
       "addNew": "добавить новый",
       "addSource": "Добавить знания",
       "addChunk": "Добавить фрагмент",
@@ -748,12 +748,6 @@
         "shared": "Общие"
       },
       "kindFilterLabel": "Фильтр по типу",
-      "usageFilters": {
-        "all": "Все",
-        "inUse": "Используются",
-        "unused": "Не используются"
-      },
-      "usageFilterLabel": "Фильтр по использованию",
       "needsAttention": "Требуют внимания",
       "allKnowledge": "Все знания",
       "select": "Выбрать",
@@ -1763,11 +1757,8 @@
       "deleteActionConsequence": "Оно будет удалено, когда вы сохраните инструмент.",
       "groupIncluded": "В комплекте",
       "groupAdded": "Добавленные",
-      "filterLabel": "Фильтр инструментов",
       "filters": {
-        "all": "Все",
-        "inUse": "Используются",
-        "unused": "Не используются"
+        "all": "Все"
       },
       "deleteUsedBy_one": "Используется в {{formatted}} агенте, и там его больше не будет. Настройки и действия инструмента тоже будут удалены. Это действие нельзя отменить.",
       "deleteUsedBy_few": "Используется в {{formatted}} агентах, и там его больше не будет. Настройки и действия инструмента тоже будут удалены. Это действие нельзя отменить.",
@@ -1783,11 +1774,8 @@
       "addPrompt": "Добавить промпт",
       "manage": "Перейти к промптам",
       "select": "Выберите промпт",
-      "filterLabel": "Фильтр промптов",
       "filters": {
-        "all": "Все",
-        "inUse": "Используются",
-        "unused": "Не используются"
+        "all": "Все"
       },
       "sections": {
         "included": "В комплекте",
@@ -1821,7 +1809,11 @@
       "saveFailed": "Не удалось сохранить этот промпт.",
       "editConflict": "Кто-то другой изменил этот промпт. Откройте его заново, чтобы увидеть новую версию.",
       "loadError": "Не удалось загрузить промпты.",
-      "noPromptsFound": "Промпты не найдены"
+      "noPromptsFound": "Промпты не найдены",
+      "kinds": {
+        "shared": "Общие"
+      },
+      "kindFilterLabel": "Фильтр по типу"
     },
     "devices": {
       "label": "Устройства",
@@ -2456,7 +2448,13 @@
       "agentsShort_one": "{{formatted}} агент",
       "agentsShort_other": "{{formatted}} агентов",
       "agentsShort_many": "{{formatted}} агентов",
-      "agentsShort_few": "{{formatted}} агента"
+      "agentsShort_few": "{{formatted}} агента",
+      "filters": {
+        "all": "Любое использование",
+        "inUse": "Используются",
+        "unused": "Не используются"
+      },
+      "filterLabel": "Фильтр по использованию"
     }
   },
   "modals": {

@@ -220,10 +220,11 @@ describe('Prompts page', () => {
     const headings = Array.from(container.querySelectorAll('h2')).map(
       (h) => h.textContent,
     );
+    // Each heading carries its count.
     expect(headings).toEqual([
-      'settings.prompts.sections.included',
-      'settings.prompts.sections.yours',
-      'settings.prompts.sections.shared',
+      'settings.prompts.sections.included3',
+      'settings.prompts.sections.yours2',
+      'settings.prompts.sections.shared1',
     ]);
     expect(titles()).toEqual([
       'default',
@@ -350,7 +351,7 @@ describe('Prompts page', () => {
 
   it('filters by use, the chat prompt counting as in use', async () => {
     store.dispatch(setPrompt({ id: 'p-idle', name: 'x', type: 'private' }));
-    await render('/settings/prompts?filter=inUse');
+    await render('/settings/prompts?usage=inUse');
     expect(titles()).toEqual([
       'default',
       'Vendor checks',
@@ -360,21 +361,37 @@ describe('Prompts page', () => {
 
   it('lists the prompts nothing uses under Unused', async () => {
     store.dispatch(setPrompt({ id: 'p-idle', name: 'x', type: 'private' }));
-    await render('/settings/prompts?filter=unused');
+    await render('/settings/prompts?usage=unused');
     expect(titles()).toEqual(['creative', 'strict', 'Deal desk']);
   });
 
-  it('keeps the usage filter in the address', async () => {
+  it('filters by kind with a track that keeps it in the address', async () => {
     await render();
-    const unused = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) =>
-      b.textContent?.startsWith('settings.prompts.filters.unused'),
-    )!;
-    await act(async () => unused.click());
-    expect(container.querySelector('[data-testid="where"]')!.textContent).toBe(
-      '?filter=unused',
+    const items = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[aria-label="settings.prompts.kindFilterLabel"] [data-slot="toggle-group-item"]',
+      ),
     );
+    expect(items.map((b) => b.firstChild?.textContent)).toEqual([
+      'settings.prompts.filters.all',
+      'settings.prompts.sections.included',
+      'settings.prompts.sections.yours',
+      'settings.prompts.kinds.shared',
+    ]);
+    await act(async () => items[2].click());
+    expect(container.querySelector('[data-testid="where"]')!.textContent).toBe(
+      '?kind=yours',
+    );
+    expect(titles()).toEqual(['Vendor checks', 'Escalation summary']);
+  });
+
+  it('puts usage in a pill Select that reads Any use', async () => {
+    await render();
+    const trigger = container.querySelector<HTMLElement>(
+      '[data-slot="select-trigger"][aria-label="settings.usage.filterLabel"]',
+    )!;
+    expect(trigger.getAttribute('data-shape')).toBe('pill');
+    expect(trigger.textContent).toBe('settings.usage.filters.all');
   });
 
   it('says when a search matches nothing', async () => {

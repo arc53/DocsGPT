@@ -164,7 +164,7 @@
       "type": "類型",
       "tokenUsage": "Token 使用量",
       "noData": "還沒有知識",
-      "searchPlaceholder": "搜尋...",
+      "searchPlaceholder": "搜尋知識…",
       "addNew": "新增文件",
       "addSource": "新增知識",
       "addChunk": "新增區塊",
@@ -689,12 +689,6 @@
         "shared": "共享"
       },
       "kindFilterLabel": "依類型篩選",
-      "usageFilters": {
-        "all": "全部",
-        "inUse": "使用中",
-        "unused": "未使用"
-      },
-      "usageFilterLabel": "依使用情況篩選",
       "needsAttention": "需要處理",
       "allKnowledge": "所有知識",
       "select": "選取",
@@ -1627,11 +1621,8 @@
       "deleteActionConsequence": "儲存工具後即會移除。",
       "groupIncluded": "隨附",
       "groupAdded": "已新增",
-      "filterLabel": "篩選工具",
       "filters": {
-        "all": "全部",
-        "inUse": "使用中",
-        "unused": "未使用"
+        "all": "全部"
       },
       "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。",
       "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。",
@@ -1645,11 +1636,8 @@
       "addPrompt": "新增提示詞",
       "manage": "前往提示詞",
       "select": "選擇提示詞",
-      "filterLabel": "篩選提示詞",
       "filters": {
-        "all": "全部",
-        "inUse": "使用中",
-        "unused": "未使用"
+        "all": "全部"
       },
       "sections": {
         "included": "隨附",
@@ -1679,7 +1667,11 @@
       "saveFailed": "無法儲存此提示詞。",
       "editConflict": "其他人已變更此提示詞。請重新開啟以查看其版本。",
       "loadError": "無法載入你的提示詞。",
-      "noPromptsFound": "找不到提示詞"
+      "noPromptsFound": "找不到提示詞",
+      "kinds": {
+        "shared": "共享"
+      },
+      "kindFilterLabel": "依類型篩選"
     },
     "devices": {
       "label": "裝置",
@@ -2267,7 +2259,13 @@
       "others_other": "以及你團隊中的另外 {{formatted}} 個",
       "inChats": "用於聊天",
       "agentsShort_one": "{{formatted}} 個代理",
-      "agentsShort_other": "{{formatted}} 個代理"
+      "agentsShort_other": "{{formatted}} 個代理",
+      "filters": {
+        "all": "不限使用情況",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "filterLabel": "依使用情況篩選"
     }
   },
   "modals": {

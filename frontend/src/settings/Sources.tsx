@@ -13,6 +13,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
+import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
 import RoleBadge from '../components/RoleBadge';
 import SearchInput from '../components/SearchInput';
@@ -26,13 +27,7 @@ import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import { SectionHeader } from '../components/ui/section-header';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
+
 import {
   Tooltip,
   TooltipContent,
@@ -40,7 +35,7 @@ import {
 } from '../components/ui/tooltip';
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import { usePageParam, usePageSize } from '../hooks/usePageState';
-import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
+import { useUrlFilter } from '../hooks/useUrlFilter';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import {
   ActiveState,
@@ -155,10 +150,11 @@ const USAGE_FILTERS = [
   'in_use',
   'unused',
 ] as const satisfies readonly UsageFilter[];
+/** The usage filter's labels, shared with Tools and Prompts. */
 const USAGE_LABELS: Record<UsageFilter, string> = {
-  all: 'settings.sources.usageFilters.all',
-  in_use: 'settings.sources.usageFilters.inUse',
-  unused: 'settings.sources.usageFilters.unused',
+  all: 'settings.usage.filters.all',
+  in_use: 'settings.usage.filters.inUse',
+  unused: 'settings.usage.filters.unused',
 };
 
 /** The most ids `POST /api/sources/delete` takes at once. */
@@ -1091,9 +1087,6 @@ export default function Sources({
 
   const GRID =
     'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
-  const usageFilters = usageCounts
-    ? shownFilters(USAGE_FILTERS, usage, usageCounts)
-    : [];
   const filtered = kind !== 'all' || usage !== 'all';
   const selectedCount = selected.size;
 
@@ -1256,10 +1249,10 @@ export default function Sources({
           action={toolbarAction}
           divider
         >
-          {/* One ToggleGroup per page: the kind is the pill track, usage a
-              pill Select beside it. */}
-          {!loadFailed && (kindCounts || usageFilters.length > 0) ? (
-            <div className="mb-6 flex flex-wrap items-center gap-3">
+          {/* One recipe per page: the kind is the pill track, usage the
+              FilterSelect beside it. */}
+          {!loadFailed && (kindCounts || usageCounts) ? (
+            <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
               {kindCounts && (
                 <SourceKindToggle
                   value={kind}
@@ -1267,30 +1260,15 @@ export default function Sources({
                   counts={kindCounts}
                 />
               )}
-              {usageCounts && usageFilters.length > 0 && (
-                <Select
+              {usageCounts && (
+                <FilterSelect
                   value={usage}
-                  onValueChange={(value) => setUsage(value as UsageFilter)}
-                >
-                  <SelectTrigger
-                    className="min-w-[125px]"
-                    size="field"
-                    shape="pill"
-                    aria-label={t('settings.sources.usageFilterLabel')}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent fit>
-                    {usageFilters.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {t(USAGE_LABELS[value])}
-                        <span className="text-muted-foreground tabular-nums">
-                          {formatCount(usageCounts[value])}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onValueChange={setUsage}
+                  values={USAGE_FILTERS}
+                  counts={usageCounts}
+                  labelOf={(value) => t(USAGE_LABELS[value])}
+                  ariaLabel={t('settings.usage.filterLabel')}
+                />
               )}
             </div>
           ) : null}

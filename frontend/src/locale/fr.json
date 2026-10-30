@@ -166,7 +166,7 @@
       "type": "Type",
       "tokenUsage": "Consommation de jetons",
       "noData": "Aucune connaissance pour l’instant",
-      "searchPlaceholder": "Rechercher…",
+      "searchPlaceholder": "Rechercher des connaissances…",
       "addNew": "Ajouter",
       "addSource": "Ajouter des connaissances",
       "addChunk": "Ajouter un fragment",
@@ -720,12 +720,6 @@
         "shared": "Partagées"
       },
       "kindFilterLabel": "Filtrer par type",
-      "usageFilters": {
-        "all": "Toutes",
-        "inUse": "Utilisées",
-        "unused": "Inutilisées"
-      },
-      "usageFilterLabel": "Filtrer par utilisation",
       "needsAttention": "À traiter",
       "allKnowledge": "Toutes les connaissances",
       "select": "Sélectionner",
@@ -1697,11 +1691,8 @@
       "deleteActionConsequence": "Elle sera supprimée lorsque vous enregistrerez l’outil.",
       "groupIncluded": "Inclus",
       "groupAdded": "Ajoutés",
-      "filterLabel": "Filtrer les outils",
       "filters": {
-        "all": "Tous",
-        "inUse": "Utilisés",
-        "unused": "Inutilisés"
+        "all": "Tous"
       },
       "deleteUsedBy_one": "Utilisé par {{formatted}} agent, qui perd cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
       "deleteUsedBy_other": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
@@ -1716,11 +1707,8 @@
       "addPrompt": "Ajouter un prompt",
       "manage": "Accéder aux prompts",
       "select": "Sélectionner un prompt",
-      "filterLabel": "Filtrer les prompts",
       "filters": {
-        "all": "Tous",
-        "inUse": "Utilisés",
-        "unused": "Inutilisés"
+        "all": "Tous"
       },
       "sections": {
         "included": "Inclus",
@@ -1752,7 +1740,11 @@
       "saveFailed": "Impossible d’enregistrer ce prompt.",
       "editConflict": "Quelqu’un d’autre a modifié ce prompt. Rouvrez-le pour voir sa version.",
       "loadError": "Impossible de charger vos prompts.",
-      "noPromptsFound": "Aucun prompt trouvé"
+      "noPromptsFound": "Aucun prompt trouvé",
+      "kinds": {
+        "shared": "Partagés"
+      },
+      "kindFilterLabel": "Filtrer par type"
     },
     "devices": {
       "label": "Appareils",
@@ -2366,7 +2358,13 @@
       "inChats": "Dans les conversations",
       "agentsShort_one": "{{formatted}} agent",
       "agentsShort_other": "{{formatted}} agents",
-      "agentsShort_many": "{{formatted}} agents"
+      "agentsShort_many": "{{formatted}} agents",
+      "filters": {
+        "all": "Tout usage",
+        "inUse": "En usage",
+        "unused": "Sans usage"
+      },
+      "filterLabel": "Filtrer par utilisation"
     }
   },
   "modals": {

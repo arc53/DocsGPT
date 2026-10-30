@@ -166,7 +166,7 @@
       "type": "Tipo",
       "tokenUsage": "Uso de Tokens",
       "noData": "Aún no hay conocimiento",
-      "searchPlaceholder": "Buscar...",
+      "searchPlaceholder": "Buscar conocimiento…",
       "addNew": "Agregar Nuevo",
       "addSource": "Añadir conocimiento",
       "addChunk": "Agregar fragmento",
@@ -720,12 +720,6 @@
         "shared": "Compartidas"
       },
       "kindFilterLabel": "Filtrar por tipo",
-      "usageFilters": {
-        "all": "Todas",
-        "inUse": "En uso",
-        "unused": "Sin usar"
-      },
-      "usageFilterLabel": "Filtrar por uso",
       "needsAttention": "Requiere atención",
       "allKnowledge": "Todo el conocimiento",
       "select": "Seleccionar",
@@ -1697,11 +1691,8 @@
       "deleteActionConsequence": "Se elimina cuando guardes la herramienta.",
       "groupIncluded": "Incluidas",
       "groupAdded": "Añadidas",
-      "filterLabel": "Filtrar herramientas",
       "filters": {
-        "all": "Todas",
-        "inUse": "En uso",
-        "unused": "Sin usar"
+        "all": "Todas"
       },
       "deleteUsedBy_one": "La usa {{formatted}} agente, que la perderá. También se eliminan su configuración y sus acciones. No se puede deshacer.",
       "deleteUsedBy_other": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer.",
@@ -1716,11 +1707,8 @@
       "addPrompt": "Añadir prompt",
       "manage": "Ir a Prompts",
       "select": "Selecciona un prompt",
-      "filterLabel": "Filtrar prompts",
       "filters": {
-        "all": "Todos",
-        "inUse": "En uso",
-        "unused": "Sin usar"
+        "all": "Todos"
       },
       "sections": {
         "included": "Incluidos",
@@ -1752,7 +1740,11 @@
       "saveFailed": "No se pudo guardar este prompt.",
       "editConflict": "Otra persona cambió este prompt. Vuelve a abrirlo para ver su versión.",
       "loadError": "No se pudieron cargar tus prompts.",
-      "noPromptsFound": "No se encontraron prompts"
+      "noPromptsFound": "No se encontraron prompts",
+      "kinds": {
+        "shared": "Compartidos"
+      },
+      "kindFilterLabel": "Filtrar por tipo"
     },
     "devices": {
       "label": "Dispositivos",
@@ -2366,7 +2358,13 @@
       "inChats": "En chats",
       "agentsShort_one": "{{formatted}} agente",
       "agentsShort_other": "{{formatted}} agentes",
-      "agentsShort_many": "{{formatted}} agentes"
+      "agentsShort_many": "{{formatted}} agentes",
+      "filters": {
+        "all": "Cualquier uso",
+        "inUse": "En uso",
+        "unused": "Sin usar"
+      },
+      "filterLabel": "Filtrar por uso"
     }
   },
   "modals": {

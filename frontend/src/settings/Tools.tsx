@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
+import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
@@ -56,12 +57,18 @@ import {
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { toolGroupTitle } from './toolGroupTitle';
-import { groupTools } from './toolGroups';
+import {
+  groupTools,
+  TOOL_KINDS,
+  toolKindLabel,
+  toolKindOf,
+  type ToolKindFilter,
+} from './toolGroups';
 import { APIToolType, UserToolType } from './types';
 import UsedByAgents from './UsedByAgents';
 
-const FILTERS = ['all', 'inUse', 'unused'] as const;
-type Filter = (typeof FILTERS)[number];
+const USAGE_FILTERS = ['all', 'inUse', 'unused'] as const;
+type UsageFilter = (typeof USAGE_FILTERS)[number];
 
 /** In use: an agent uses it, or it is on in the caller's own chats. */
 const isToolInUse = (tool: UserToolType): boolean =>
@@ -77,8 +84,10 @@ export default function Tools() {
   const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = React.useState('');
-  // The address holds the usage filter, so Back and a reload keep it.
-  const [filter, setFilter] = useUrlFilter(FILTERS);
+  // The address holds the kind and usage filters, so Back and a reload
+  // keep them.
+  const [kind, setKind] = useUrlFilter(TOOL_KINDS, { name: 'kind' });
+  const [usage, setUsage] = useUrlFilter(USAGE_FILTERS, { name: 'usage' });
   const [addToolModalState, setAddToolModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [userTools, setUserTools] = React.useState<UserToolType[]>([]);
@@ -468,23 +477,44 @@ export default function Tools() {
       .catch(() => undefined);
   }, [newApiTool]);
 
-  const matchesFilter = (tool: UserToolType, key: Filter) =>
+  const matchesUsage = (tool: UserToolType, key: UsageFilter) =>
     key === 'all' || (key === 'inUse') === isToolInUse(tool);
-  const counts = Object.fromEntries(
-    FILTERS.map((key) => [
+  const matchesKind = (tool: UserToolType, key: ToolKindFilter) =>
+    key === 'all' || toolKindOf(tool, connections, catalog) === key;
+  // Each filter counts with the other one applied, as Knowledge's do.
+  const kindCounts = Object.fromEntries(
+    TOOL_KINDS.map((key) => [
       key,
-      userTools.filter((tool) => matchesFilter(tool, key)).length,
+      userTools.filter(
+        (tool) => matchesUsage(tool, usage) && matchesKind(tool, key),
+      ).length,
     ]),
-  ) as Record<Filter, number>;
-  // No pill leads to an empty list; with only All left there is no row.
-  const filters = shownFilters(FILTERS, filter, counts);
+  ) as Record<ToolKindFilter, number>;
+  const usageCounts = Object.fromEntries(
+    USAGE_FILTERS.map((key) => [
+      key,
+      userTools.filter(
+        (tool) => matchesKind(tool, kind) && matchesUsage(tool, key),
+      ).length,
+    ]),
+  ) as Record<UsageFilter, number>;
+  // No pill leads to an empty list; with only All left there is no track.
+  const kinds = shownFilters(TOOL_KINDS, kind, kindCounts);
 
   const filteredTools = userTools.filter(
     (tool) =>
-      matchesFilter(tool, filter) &&
+      matchesKind(tool, kind) &&
+      matchesUsage(tool, usage) &&
       (tool.customName || tool.displayName)
         .toLowerCase()
         .includes(searchTerm.toLowerCase()),
+  );
+  // A section's count is its whole group, not the part on this page.
+  const groupSizes = new Map(
+    groupTools(filteredTools, connections, catalog).map((group) => [
+      group.key,
+      group.tools.length,
+    ]),
   );
   // Grouped like the pickers. Paged in group order, so a group that runs
   // past a page carries on (under its header) on the next one.
@@ -498,7 +528,7 @@ export default function Tools() {
   } = useClientPage(
     orderedTools,
     SHORT_LIST_PAGE_SIZE,
-    `${filter}\n${searchTerm}`,
+    `${kind}\n${usage}\n${searchTerm}`,
   );
   const pageGroups = groupTools(pageTools, connections, catalog);
 
@@ -698,26 +728,38 @@ export default function Tools() {
               }
               divider
             >
-              {filters.length > 0 && !loading && !loadFailed ? (
-                <div className="mb-6 flex flex-wrap items-center gap-3">
-                  <ToggleGroup
-                    type="single"
-                    value={filter}
-                    onValueChange={(value) =>
-                      value && setFilter(value as Filter)
-                    }
-                    aria-label={t('settings.tools.filterLabel')}
-                  >
-                    {filters.map((key) => (
-                      <ToggleGroupItem
-                        key={key}
-                        value={key}
-                        count={counts[key]}
-                      >
-                        {t(`settings.tools.filters.${key}`)}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
+              {!loading &&
+              !loadFailed &&
+              (kinds.length > 0 || usageCounts.all > 0) ? (
+                <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
+                  {kinds.length > 0 ? (
+                    <ToggleGroup
+                      type="single"
+                      value={kind}
+                      onValueChange={(value) =>
+                        value && setKind(value as ToolKindFilter)
+                      }
+                      aria-label={t('settings.tools.kindFilterLabel')}
+                    >
+                      {kinds.map((key) => (
+                        <ToggleGroupItem
+                          key={key}
+                          value={key}
+                          count={kindCounts[key]}
+                        >
+                          {toolKindLabel(t, key)}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  ) : null}
+                  <FilterSelect
+                    value={usage}
+                    onValueChange={setUsage}
+                    values={USAGE_FILTERS}
+                    counts={usageCounts}
+                    labelOf={(value) => t(`settings.usage.filters.${value}`)}
+                    ariaLabel={t('settings.usage.filterLabel')}
+                  />
                 </div>
               ) : null}
             </PageToolbar>
@@ -771,6 +813,7 @@ export default function Tools() {
                       <SectionHeader
                         size="sm"
                         title={toolGroupTitle(t, group)}
+                        count={groupSizes.get(group.key)}
                       />
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {group.tools.map(renderTile)}
