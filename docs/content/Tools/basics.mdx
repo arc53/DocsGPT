@@ -141,9 +141,11 @@ To change the defaults for the whole instance, set `DEFAULT_CHAT_TOOLS` to a JSO
 - One group per connected service, headed by the service's icon and name. Each card names the account it uses. These tools are managed in **Settings → Connectors**.
 - **Custom**: API tools and MCP servers you made.
 
-A card's last line says where the tool is used: **Used by N agents**, which you can click for a list of links to those agents, and **In chats** while the tool is on in your chats without an agent. The switch on the card turns it on or off there. **All**, **In use** and **Unused** filter the page. Deleting a tool that agents use says how many lose it.
+A card's last line holds its facts: the account it uses, your role on a tool a team shared with you, and **N agents**, which you can click for a list of links to the agents that use it. The switch at the card's bottom right turns the tool on or off in your chats without an agent; hover it to see which.
 
-In a chat, the composer's **Tools** menu uses the same groups, and so does the agent builder's **Tools** field (**Select tools**). Both list the tools already selected first, under **Selected**, and end with **Go to Tools**, which opens this page, and **Add tool**.
+To narrow the page, **All**, **Included**, **Added**, **Services** and **Custom** filter by group, each with its count, and the **Any use** menu beside them shows only the tools that are **In use** (by an agent or your chats) or **Unused**. Deleting a tool that agents use says how many lose it.
+
+In a chat, the composer's **Tools** menu uses the same groups, and so does the agent builder's **Tools** field (**Select tools**) and a workflow's agent node. They list the tools already selected first, under **Selected**, and end with **Go to Tools**, which opens this page, and **Add tool** (a workflow node has only the link). When you have more than 10 tools, the same group filter appears under the search.
 
 ## Using Tools in DocsGPT (User Perspective)
 
