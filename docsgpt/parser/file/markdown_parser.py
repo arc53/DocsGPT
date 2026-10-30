@@ -69,7 +69,7 @@ _YAML_LINE = re.compile(r"[ \t\r]*$|[ \t]*#|[ \t]*-(?:[ \t]|\r?$)|[ \t]+\S")
 # "import the SDK first" does not. Its words and the whitespace between them
 # never overlap, so a long run of spaces is matched in linear time.
 _MDX_IMPORT = re.compile(
-    r"^import[ \t]+(?:[\w$*{},]+(?:\s+[\w$*{},]+)*\s+from[ \t]*)?(['\"])[^'\"\n]+\1"
+    r"^import\s+(?:[\w$*{},]+(?:\s+[\w$*{},]+)*\s+from\s*)?(['\"])[^'\"\n]+\1"
     r"[ \t]*;?[ \t]*(?://[^\n]*)?[ \t\r]*$",
     re.MULTILINE,
 )

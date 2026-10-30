@@ -189,6 +189,8 @@ def test_markdown_text_before_first_heading_is_kept():
         "---\n# Generated, do not edit\ntitle: Install\n---\n",
         "import {\n  Callout,\n  Tabs,\n} from 'nextra/components';\n",
         "import Image from 'next/image'; // used further down\n",
+        "import\n  Callout from 'nextra/components';\n",
+        "import Callout from\n  'nextra/components';\n",
         "export const meta = {\n  title: 'Install',\n};\n",
         '<Badge text="v1 -> v0" />\n',
         "<Chart data={x > 1} />\n",
