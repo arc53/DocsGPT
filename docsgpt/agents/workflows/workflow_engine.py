@@ -847,9 +847,8 @@ class WorkflowEngine:
                 f"{formatted_prompt}\n\n{_INVALID_OUTPUT_FEEDBACK.format(error=self._retry_feedback)}"
             )
         node_model_id = node_config.model_id or self.agent.model_id
-        # Inherit BYOM scope from parent agent so owner-stored BYOM
-        # resolves on shared workflows.
-        node_user_id = getattr(self.agent, "model_user_id", None) or (
+        node_model_user_id = self._node_model_user_id(node_config)
+        node_user_id = node_model_user_id or (
             self.agent.decoded_token.get("sub")
             if isinstance(self.agent.decoded_token, dict)
             else None
@@ -902,7 +901,7 @@ class WorkflowEngine:
             "endpoint": self.agent.endpoint,
             "llm_name": node_llm_name,
             "model_id": node_model_id,
-            "model_user_id": getattr(self.agent, "model_user_id", None),
+            "model_user_id": node_model_user_id,
             "api_key": node_api_key,
             "tool_ids": node_config.tools,
             "tool_owner": self._workflow_owner_id(),
@@ -937,6 +936,7 @@ class WorkflowEngine:
                 "retriever_name": node_config.retriever or "classic",
                 "chunks": int(node_config.chunks) if node_config.chunks else 6,
                 "model_id": node_model_id,
+                "model_user_id": node_model_user_id,
                 "llm_name": node_llm_name,
                 "api_key": node_api_key,
                 "decoded_token": self.agent.decoded_token,
@@ -2271,6 +2271,25 @@ class WorkflowEngine:
             setattr(node_executor, attr, bool(getattr(run_executor, attr, False)))
         for attr in ("tool_allowlist", "api_write_allowlist"):
             setattr(node_executor, attr, set(getattr(run_executor, attr, None) or ()))
+
+    def _node_model_user_id(self, node_config: AgentNodeConfig) -> Optional[str]:
+        """The account a node's model is looked up in (its BYOM scope).
+
+        A model set on the node was chosen by the workflow's author, so it
+        resolves in the owner's account whoever runs the workflow: custom
+        model ids are per-user, and the caller has no copy of the owner's.
+        A node without one runs on the run's model, in the run's scope.
+
+        Args:
+            node_config: The agent node's configuration.
+
+        Returns:
+            The owner's id for a node that sets ``model_id``; otherwise the
+            parent agent's ``model_user_id``, which may be None (the caller).
+        """
+        if node_config.model_id:
+            return self._workflow_owner_id()
+        return getattr(self.agent, "model_user_id", None)
 
     def _workflow_owner_id(self) -> Optional[str]:
         """The workflow's owner, whom node tools and sources run as.

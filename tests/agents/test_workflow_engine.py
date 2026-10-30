@@ -326,8 +326,9 @@ def test_validate_workflow_structure_accepts_output_variable_and_schema_together
     assert errors == []
 
 
+@pytest.mark.parametrize("nested", [False, True])
 def test_validate_workflow_structure_rejects_unsupported_structured_output_model(
-    monkeypatch,
+    monkeypatch, nested
 ):
     monkeypatch.setattr(
         workflow_routes,
@@ -348,6 +349,9 @@ def test_validate_workflow_structure_rejects_unsupported_structured_output_model
         },
         {"id": "end", "type": "end", "title": "End", "data": {}},
     ]
+    if nested:
+        # The engine reads ``data.config`` when present, so the save checks it.
+        nodes[1]["data"] = {"config": nodes[1]["data"]}
     edges = [
         {"id": "edge_1", "source": "start", "target": "agent"},
         {"id": "edge_2", "source": "agent", "target": "end"},

@@ -1,7 +1,7 @@
 ---
 title: Workflow Nodes
 description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else, Code and Loop - and the shared state they read and write.
-lastUpdated: 2026-10-29
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components';
@@ -95,7 +95,11 @@ The **AI Agent Node** is the core processing unit. It uses a Large Language Mode
 
 - **Agent Type**: **Classic** (retrieves from the node's knowledge before
   answering) or **Research** (plans and searches in several steps).
-- **Model**: the model this node calls. Every agent node needs one.
+- **Model**: the model this node calls. The builder asks for one on every
+  agent node; a node saved through the API without one runs on the agent's
+  model. A [custom model](/Models/custom-models#where-the-model-appears) set
+  here is the workflow owner's: whoever runs the workflow agent, the node calls
+  it with the owner's endpoint and key.
 
 **Prompt**
 
