@@ -6,6 +6,8 @@ import SectionShell from '../navigation/SectionShell';
 import { ADMIN_SECTION } from '../navigation/sections';
 import Admins from './Admins';
 import Activity from './Activity';
+import Defaults from './Defaults';
+import Guardrails from './Guardrails';
 import Overview from './Overview';
 import Quotas from './Quotas';
 import Connectors from './Connectors';
@@ -41,6 +43,8 @@ export default function Admin() {
         <Route path="usage" element={<Usage />} />
         <Route path="quotas" element={<Quotas />} />
         <Route path="connectors" element={<Connectors />} />
+        <Route path="guardrails" element={<Guardrails />} />
+        <Route path="defaults" element={<Defaults />} />
         <Route path="audit" element={<Activity />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>

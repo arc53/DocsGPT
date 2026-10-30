@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -36,11 +37,23 @@ vi.mock('../api/services/userService', () => ({ default: users }));
 import actionToastReducer, {
   selectActionToast,
 } from '../notifications/actionToastSlice';
+import notificationsReducer, {
+  sseEventReceived,
+} from '../notifications/notificationsSlice';
 import ConnectionDrawer from './ConnectionDrawer';
-import connectorsReducer from './connectorsSlice';
+import connectorsReducer, {
+  selectStartedSyncs,
+  syncStarted,
+  type StartedSync,
+} from './connectorsSlice';
 import type { ConnectorDefinition } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+/** Where a source row leads, with the source it opens. */
+function KnowledgePage() {
+  return <div>KNOWLEDGE{useLocation().search}</div>;
+}
 
 const DRIVE = {
   key: 'google_drive',
@@ -105,17 +118,23 @@ describe('ConnectionDrawer', () => {
   let store: ReturnType<typeof makeStore>;
   const makeStore = (
     extra: Record<string, unknown>[] = [],
-    { loaded = true, own = true }: { loaded?: boolean; own?: boolean } = {},
+    {
+      loaded = true,
+      own = true,
+      startedSyncs = [],
+    }: { loaded?: boolean; own?: boolean; startedSyncs?: StartedSync[] } = {},
   ) =>
     configureStore({
       reducer: {
         connectors: connectorsReducer,
         actionToast: actionToastReducer,
+        notifications: notificationsReducer,
         preference: (state = { token: null }) => state,
       },
       preloadedState: {
         connectors: {
           enabled: true,
+          startedSyncs,
           loading: !loaded,
           loaded,
           failed: false,
@@ -162,27 +181,39 @@ describe('ConnectionDrawer', () => {
     parts?: ConnectorDefinition[];
     loaded?: boolean;
     own?: boolean;
+    startedSyncs?: StartedSync[];
+    onConnect?: (connector: ConnectorDefinition, options?: unknown) => void;
   };
   const draw = async (
-    connector: ConnectorDefinition,
+    connector: ConnectorDefinition | null,
     options: RenderOptions,
   ) => {
     await act(async () => {
       root.render(
         <Provider store={store}>
-          <ConnectionDrawer
-            connector={connector}
-            parts={options.parts}
-            initialConnectionId={options.initialConnectionId}
-            onClose={vi.fn()}
-            onConnect={vi.fn()}
-          />
+          <MemoryRouter initialEntries={['/settings/connectors']}>
+            <Routes>
+              <Route
+                path="/settings/connectors"
+                element={
+                  <ConnectionDrawer
+                    connector={connector}
+                    parts={options.parts}
+                    initialConnectionId={options.initialConnectionId}
+                    onClose={vi.fn()}
+                    onConnect={options.onConnect ?? vi.fn()}
+                  />
+                }
+              />
+              <Route path="/settings/knowledge" element={<KnowledgePage />} />
+            </Routes>
+          </MemoryRouter>
         </Provider>,
       );
     });
   };
   const render = async (
-    connector: ConnectorDefinition = DRIVE,
+    connector: ConnectorDefinition | null = DRIVE,
     options: RenderOptions = {},
   ) => {
     store = makeStore(options.extra, options);
@@ -452,19 +483,422 @@ describe('ConnectionDrawer', () => {
     ).toBe('destructive');
   });
 
-  it('syncs a source now through its connection', async () => {
-    users.syncConnector.mockResolvedValue({
-      json: async () => ({ success: true }),
+  const openSourceMenu = async (name = 'Handbook') => {
+    const trigger = accountRow(name).querySelector<HTMLButtonElement>(
+      '[aria-label="settings.connectors.detail.sourceMenu"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
     });
+  };
+  const menuLabels = () =>
+    Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((el) => el.textContent);
+
+  it('syncs a source now from its menu, once at a time', async () => {
+    let answer: (value: unknown) => void = () => {};
+    users.syncConnector.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
     await render();
-    await act(async () => button('settings.connectors.detail.syncNow').click());
+    await openSourceMenu();
+    expect(menuLabels()).toEqual([
+      'settings.connectors.detail.syncNow',
+      'settings.connectors.openInKnowledge',
+    ]);
+    await act(async () =>
+      menuItem('settings.connectors.detail.syncNow').click(),
+    );
     expect(users.syncConnector).toHaveBeenCalledWith('src-1', null);
     expect(users.syncSource).not.toHaveBeenCalled();
+    // Pending: a spinner on the row, and no second start.
+    expect(
+      accountRow('Handbook').querySelector('[data-slot="spinner"]'),
+    ).not.toBeNull();
+    await openSourceMenu();
+    expect(
+      menuItem('settings.connectors.detail.syncNow').hasAttribute(
+        'data-disabled',
+      ),
+    ).toBe(true);
+    await act(async () => {
+      answer({ json: async () => ({ success: true }) });
+    });
+    expect(
+      accountRow('Handbook').querySelector('[data-slot="spinner"]'),
+    ).toBeNull();
+    expect(users.syncConnector).toHaveBeenCalledTimes(1);
     expect(
       selectActionToast(
         store.getState() as Parameters<typeof selectActionToast>[0],
       )?.variant,
     ).toBe('success');
+  });
+
+  it('offers no Sync now on a source converted to a wiki', async () => {
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: {
+        ...DETAIL,
+        sources: [{ ...DETAIL.sources[0], kind: 'wiki' }],
+      },
+    });
+    await render();
+    await openSourceMenu();
+    expect(menuLabels()).toEqual(['settings.connectors.openInKnowledge']);
+  });
+
+  // The wording of every refusal is syncRefusal's (syncRefusal.test.ts).
+  it.each([
+    [
+      'a coded refusal in its own words',
+      () =>
+        users.syncConnector.mockResolvedValue({
+          json: async () => ({
+            success: false,
+            code: 'wiki',
+            error: 'English text',
+          }),
+        }),
+      'settings.connectors.detail.syncRefusedWiki',
+    ],
+    [
+      'a failed request as the localized failure',
+      () => users.syncConnector.mockRejectedValue(new Error('offline')),
+      'settings.connectors.detail.syncFailed',
+    ],
+  ])('toasts %s', async (_, answer, message) => {
+    answer();
+    await render();
+    await openSourceMenu();
+    await act(async () =>
+      menuItem('settings.connectors.detail.syncNow').click(),
+    );
+    const toast = selectActionToast(
+      store.getState() as Parameters<typeof selectActionToast>[0],
+    );
+    expect(toast?.variant).toBe('destructive');
+    expect(toast?.message).toBe(message);
+  });
+
+  it('offers no Sync now while the connection is not connected', async () => {
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: {
+        ...DETAIL,
+        status: 'reconnect_needed',
+        sources: [{ ...DETAIL.sources[0], sync_state: 'paused_reconnect' }],
+      },
+    });
+    await render(DRIVE, {
+      own: false,
+      extra: [
+        {
+          id: 'conn-1',
+          connector_key: 'google_drive',
+          status: 'reconnect_needed',
+        },
+      ],
+    });
+    await openSourceMenu();
+    expect(menuLabels()).toEqual(['settings.connectors.openInKnowledge']);
+    expect(text()).toContain('settings.connectors.detail.paused');
+  });
+
+  it('opens a source in Knowledge from its row', async () => {
+    await render();
+    const open = accountRow('Handbook').querySelector<HTMLButtonElement>(
+      'button[data-source-open]',
+    )!;
+    expect(open.textContent).toBe('Handbook');
+    // It truncates, so the full name is on the node.
+    expect(open.title).toBe('Handbook');
+    await act(async () => open.click());
+    expect(text()).toContain('KNOWLEDGE?source=src-1');
+  });
+
+  it('opens a source in Knowledge from its menu', async () => {
+    await render();
+    await openSourceMenu();
+    await act(async () =>
+      menuItem('settings.connectors.openInKnowledge').click(),
+    );
+    expect(text()).toContain('KNOWLEDGE?source=src-1');
+  });
+
+  it('says how a source stays current, the way its card does', async () => {
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: {
+        ...DETAIL,
+        sources: [
+          { ...DETAIL.sources[0], last_sync: '2026-10-20T10:00:00Z' },
+          {
+            ...DETAIL.sources[0],
+            id: 'src-2',
+            name: 'Notes',
+            sync_frequency: 'never',
+            last_sync: '2026-10-20T10:00:00Z',
+          },
+        ],
+      },
+    });
+    await render();
+    expect(accountRow('Handbook').textContent).toContain(
+      'settings.sources.website.synced',
+    );
+    expect(accountRow('Notes').textContent).toContain(
+      'settings.connectors.detail.lastSync',
+    );
+  });
+
+  describe('knowledge from this connection', () => {
+    const startedIds = () =>
+      selectStartedSyncs(
+        store.getState() as Parameters<typeof selectStartedSyncs>[0],
+      ).map((sync) => sync.id);
+    const started = (minutesAgo = 0, id = 'src-new', name = 'Contracts') => ({
+      id,
+      name,
+      connectionId: 'conn-1',
+      startedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    });
+    /** A source's first ingest ending, as the event stream says it. */
+    const ingestEnded = (
+      id: string,
+      outcome: 'completed' | 'failed' = 'completed',
+    ) =>
+      act(async () => {
+        store.dispatch(
+          sseEventReceived({
+            id: `ev-${id}-${outcome}`,
+            type: `source.ingest.${outcome}`,
+            scope: { kind: 'source', id },
+            payload: {},
+          }),
+        );
+      });
+
+    it('offers Sync content in an empty state, with no header link', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...DETAIL, sources: [] },
+      });
+      const onConnect = vi.fn();
+      await render(DRIVE, { onConnect });
+      const empty = document.body.querySelector<HTMLElement>(
+        '[data-slot="empty-state"]',
+      )!;
+      expect(empty.dataset.size).toBe('sm');
+      expect(empty.textContent).toContain(
+        'settings.connectors.detail.noSources',
+      );
+      expect(empty.textContent).toContain(
+        'settings.connectors.detail.noSourcesHint',
+      );
+      expect(button('settings.connectors.detail.syncMore')).toBeUndefined();
+      const sync = button('settings.connectors.syncContent');
+      expect(sync.dataset.variant).toBe('outline');
+      await act(async () => sync.click());
+      expect(onConnect).toHaveBeenCalledWith(DRIVE, {
+        mode: 'sync',
+        connectionId: 'conn-1',
+      });
+    });
+
+    it('links Sync more content once there is a source', async () => {
+      await render();
+      expect(button('settings.connectors.detail.syncMore')).toBeDefined();
+      expect(button('settings.connectors.syncContent')).toBeUndefined();
+    });
+
+    it('lists a sync it started as indexing until the server lists it', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...DETAIL, sources: [] },
+      });
+      await render(DRIVE, {
+        startedSyncs: [
+          started(),
+          // Another account's sync stays with that account.
+          {
+            ...started(0, 'src-elsewhere', 'Elsewhere'),
+            connectionId: 'conn-9',
+          },
+        ],
+      });
+      const row = accountRow('Contracts');
+      expect(row.textContent).toContain('settings.connectors.detail.indexing');
+      expect(row.textContent).toContain(
+        'settings.connectors.detail.firstSyncStarted',
+      );
+      // Not in Knowledge yet: nothing to open or sync.
+      expect(row.querySelector('button')).toBeNull();
+      expect(text()).not.toContain('Elsewhere');
+      // Not "nothing synced" meanwhile; Sync more is offered.
+      expect(
+        document.body.querySelector('[data-slot="empty-state"]'),
+      ).toBeNull();
+      expect(button('settings.connectors.detail.syncMore')).toBeDefined();
+      // Its ingest finishing reloads the list, which now has it.
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: {
+          ...DETAIL,
+          sources: [{ ...DETAIL.sources[0], id: 'src-new', name: 'Contracts' }],
+        },
+      });
+      connectors.listConnections.mockResolvedValueOnce({
+        success: true,
+        connections: [
+          { id: 'conn-1', connector_key: 'google_drive', status: 'connected' },
+        ],
+      });
+      const calls = connectors.getConnection.mock.calls.length;
+      await ingestEnded('src-new');
+      expect(connectors.getConnection.mock.calls.length).toBeGreaterThan(calls);
+      expect(accountRow('Contracts').textContent).not.toContain(
+        'settings.connectors.detail.indexing',
+      );
+      // Listed now, it is no longer kept as started.
+      expect(startedIds()).toEqual(['src-elsewhere']);
+    });
+
+    const renderUnlisted = async () => {
+      // Never listed: the source was deleted, or can't be listed.
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...DETAIL, sources: [] },
+      });
+      connectors.listConnections.mockResolvedValue({
+        success: true,
+        connections: [
+          {
+            id: 'conn-1',
+            connector_key: 'google_drive',
+            status: 'connected',
+          },
+        ],
+      });
+      await render(DRIVE, { startedSyncs: [started()] });
+      expect(text()).toContain('Contracts');
+    };
+
+    it('stops showing a sync once its ingest completed, listed or not', async () => {
+      await renderUnlisted();
+      await ingestEnded('src-new');
+      // The account still shows, without the sync.
+      expect(text()).toContain('lena@example.com');
+      expect(text()).not.toContain('Contracts');
+      expect(text()).not.toContain('settings.connectors.detail.indexing');
+      // A finished one the reload still doesn't list is forgotten, so the
+      // next drawer doesn't reload for it again.
+      expect(startedIds()).toEqual([]);
+    });
+
+    it('shows a failed first sync as failed until it is dismissed', async () => {
+      await renderUnlisted();
+      await ingestEnded('src-new', 'failed');
+      const row = accountRow('Contracts');
+      expect(row.textContent).toContain('settings.sources.ingestFailed');
+      expect(row.textContent).not.toContain(
+        'settings.connectors.detail.indexing',
+      );
+      expect(startedIds()).toEqual(['src-new']);
+      const dismiss = row.querySelector<HTMLButtonElement>(
+        'button[aria-label^="settings.connectors.detail.dismissFailedSync"]',
+      )!;
+      await act(async () => dismiss.click());
+      expect(startedIds()).toEqual([]);
+      expect(text()).not.toContain('Contracts');
+      expect(text()).toContain('lena@example.com');
+    });
+
+    it('lists the indexing syncs before the failed ones, whatever their start order', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...DETAIL, sources: [] },
+      });
+      await render(DRIVE, {
+        startedSyncs: [
+          started(0, 'src-a', 'Alpha'),
+          started(0, 'src-b', 'Beta'),
+          started(0, 'src-c', 'Gamma'),
+        ],
+      });
+      await ingestEnded('src-a', 'failed');
+      const rows = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[data-slot="list-row"]'),
+      )
+        .map((row) => row.textContent ?? '')
+        .filter((row) => /Alpha|Beta|Gamma/.test(row));
+      expect(rows.map((row) => row.match(/Alpha|Beta|Gamma/)?.[0])).toEqual([
+        'Beta',
+        'Gamma',
+        'Alpha',
+      ]);
+      expect(rows[2]).toContain('settings.sources.ingestFailed');
+      expect(rows[0]).toContain('settings.connectors.detail.indexing');
+    });
+
+    it('gives up on a sync with no word on its ingest after 15 minutes', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...DETAIL, sources: [] },
+      });
+      await render(DRIVE, { startedSyncs: [started(16)] });
+      expect(text()).not.toContain('Contracts');
+      expect(text()).not.toContain('settings.connectors.detail.indexing');
+    });
+
+    it('gives up 15 minutes after a sync started while it was mounted', async () => {
+      vi.useFakeTimers({ now: new Date('2026-10-23T10:00:00Z') });
+      try {
+        connectors.getConnection.mockResolvedValue({
+          success: true,
+          connection: { ...DETAIL, sources: [] },
+        });
+        await render(DRIVE);
+        await act(async () => vi.advanceTimersByTime(5 * 60_000));
+        await act(async () => store.dispatch(syncStarted([started()])));
+        expect(text()).toContain('Contracts');
+        await act(async () => vi.advanceTimersByTime(15 * 60_000 - 1_000));
+        expect(text()).toContain('Contracts');
+        await act(async () => vi.advanceTimersByTime(2_000));
+        expect(text()).not.toContain('Contracts');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does nothing about a finished sync while closed', async () => {
+      await render(null, { startedSyncs: [started()] });
+      const loads = connectors.listConnections.mock.calls.length;
+      const reads = connectors.getConnection.mock.calls.length;
+      await ingestEnded('src-new');
+      expect(connectors.listConnections.mock.calls.length).toBe(loads);
+      expect(connectors.getConnection.mock.calls.length).toBe(reads);
+      // Kept for the drawer that opens on its account.
+      expect(startedIds()).toEqual(['src-new']);
+    });
+
+    it("leaves another account's finished sync to that account", async () => {
+      await render(DRIVE, {
+        startedSyncs: [{ ...started(), connectionId: 'conn-9' }],
+      });
+      const loads = connectors.listConnections.mock.calls.length;
+      const reads = connectors.getConnection.mock.calls.length;
+      await ingestEnded('src-new');
+      expect(connectors.listConnections.mock.calls.length).toBe(loads);
+      expect(connectors.getConnection.mock.calls.length).toBe(reads);
+      expect(startedIds()).toEqual(['src-new']);
+    });
   });
 
   it('says in plain words that an expired sign-in needs redoing', async () => {
@@ -657,6 +1091,48 @@ describe('ConnectionDrawer', () => {
         expect(group.classList.contains('w-full')).toBe(true);
       }
     });
+
+    it.each([
+      // The removed account's sync goes with its sources; another's stays.
+      ['deleteSources', ['src-other']],
+      ['keepSources', ['src-new', 'src-other']],
+    ])(
+      'removing an account (%s) forgets the syncs whose sources went with it',
+      async (choice, kept) => {
+        connectors.remove.mockResolvedValue({ success: true });
+        await render(DRIVE, {
+          startedSyncs: [
+            {
+              id: 'src-new',
+              name: 'Contracts',
+              connectionId: 'conn-1',
+              startedAt: new Date().toISOString(),
+            },
+            {
+              id: 'src-other',
+              name: 'Elsewhere',
+              connectionId: 'conn-9',
+              startedAt: new Date().toISOString(),
+            },
+          ],
+        });
+        await openAccountMenu();
+        await act(async () =>
+          menuItem('settings.connectors.detail.remove').click(),
+        );
+        await act(async () =>
+          inDialog(`settings.connectors.remove.${choice}`).click(),
+        );
+        await act(async () =>
+          inDialog('settings.connectors.detail.remove').click(),
+        );
+        expect(connectors.remove).toHaveBeenCalled();
+        const left = selectStartedSyncs(
+          store.getState() as Parameters<typeof selectStartedSyncs>[0],
+        ).map((sync) => sync.id);
+        expect(left).toEqual(kept);
+      },
+    );
 
     it("names a part's account by its own service when it has no name", async () => {
       connectors.getConnection.mockImplementation(async (id: string) => ({

@@ -81,6 +81,29 @@ class TestExecuteLoop:
         assert events[0]["type"] == "workflow_run"
 
     @pytest.mark.unit
+    def test_workflow_run_carries_the_step_total(self):
+        """The chat's "step N of M": steps between start and end, end left out."""
+        nodes = [
+            _make_node("n1", NodeType.START, "Start"),
+            _make_node("n2", NodeType.STATE, "Set tone", config={"operations": []}),
+            _make_node("n3", NodeType.END, "End", config={"config": {}}),
+        ]
+        edges = [_make_edge("e1", "n1", "n2"), _make_edge("e2", "n2", "n3")]
+        engine = WorkflowEngine(_make_graph(nodes, edges), _make_agent())
+        events = list(engine.execute({}, "hello"))
+        assert events[0]["step_total"] == 1
+
+    @pytest.mark.unit
+    def test_workflow_run_step_total_is_none_with_a_branch(self):
+        nodes = [
+            _make_node("n1", NodeType.START, "Start"),
+            _make_node("n2", NodeType.CONDITION, "Urgent?", config={"cases": []}),
+        ]
+        engine = WorkflowEngine(_make_graph(nodes, [_make_edge("e1", "n1", "n2")]), _make_agent())
+        events = list(engine.execute({}, "hello"))
+        assert events[0]["step_total"] is None
+
+    @pytest.mark.unit
     def test_start_to_end(self):
         nodes = [
             _make_node("n1", NodeType.START, "Start"),

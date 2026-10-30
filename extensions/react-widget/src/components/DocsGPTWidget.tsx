@@ -2,14 +2,24 @@ import React, { useRef } from 'react';
 import DOMPurify from 'dompurify';
 import styled, { keyframes, css, ThemeProvider } from 'styled-components';
 import {
+  AnswerSource,
   FEEDBACK,
   MESSAGE_TYPE,
   Query,
+  QuestionSource,
   SentAttachment,
   Status,
+  WidgetController,
+  WidgetCoreHandle,
   WidgetCoreProps,
+  WidgetEvent,
   WidgetProps,
 } from '../types/index';
+import {
+  callSafely,
+  createEmitter,
+  type WidgetEventInit,
+} from '../utils/events';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
 import {
   acceptAttribute,
@@ -17,10 +27,31 @@ import {
   useAttachments,
 } from '../hooks/useAttachments';
 import { useBackDismiss } from '../hooks/useBackDismiss';
+import { useClientLayoutEffect } from '../hooks/useClientLayoutEffect';
 import { useDictation } from '../hooks/useDictation';
+import { SIDEBAR_WIDTH_VAR, useSidebarResize } from '../hooks/useSidebarResize';
 import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
 import { isTouchPrimary, isWebSource, sourceLabel } from '../utils/helper';
 import { renderAnswer } from '../utils/markdown';
+import {
+  conversationTitle,
+  createConversationStore,
+  fromStoredTurn,
+  newConversationId,
+  removeConversation,
+  removeStorageWithSuffixes,
+  setTurnFeedback,
+  storageKey,
+  toStoredTurn,
+  upsertConversation,
+  type StoredConversation,
+  type StoredTurn,
+} from '../utils/conversationStore';
+import {
+  parseSidebarWidth,
+  SIDEBAR_DEFAULT_WIDTH,
+} from '../utils/sidebarWidth';
+import { I18nProvider, useMessages } from '../locale/context';
 import {
   AttachButton,
   AttachmentChips,
@@ -34,6 +65,8 @@ import {
   VoiceWaveform,
 } from './ComposerControls';
 import { AgentAvatar, PoweredBy } from './Branding';
+import { HistoryView } from './HistoryView';
+import { IconButton } from './IconButton';
 import {
   ArrowDown,
   Check,
@@ -45,11 +78,13 @@ import {
   ExternalLink,
   FileText,
   Globe,
+  History,
   Maximize2,
   MessageCircle,
   Minimize2,
   RotateCcw,
   SendArrow,
+  SquarePen,
   ThumbsDown,
   ThumbsUp,
   X,
@@ -69,12 +104,15 @@ import {
   type StreamEvent,
 } from '../utils/streamEvents';
 
-/** What the stream's catch block shows when the request itself failed. */
-const CONNECTION_ERROR =
-  'Something went wrong. Check your connection and try again.';
-
 /** How long a source a citation opened stays highlighted. */
 const SOURCE_HIGHLIGHT_MS = 2000;
+
+/** Below this a sidebar gets the narrow header and an icon-only mic. */
+const SIDEBAR_COMPACT_WIDTH = 400;
+// The sidebar's container, named so a host's own containers never match.
+const narrowSidebarQuery = `@container dgpt-sidebar (width < ${SIDEBAR_COMPACT_WIDTH}px)`;
+/** Longer than the slide-in, after which a re-dock doesn't replay it. */
+const SIDEBAR_SLIDE_MS = 320;
 
 /** `example.com/faq` for a source's URL; the URL itself if it won't parse. */
 const sourceHost = (source: string) => {
@@ -86,6 +124,37 @@ const sourceHost = (source: string) => {
     return source;
   }
 };
+
+/** `a, b, and c` in the locale's own style, where the engine can. */
+const formatList = (items: string[], locale: string) => {
+  // ES2021, past the lib this package compiles against.
+  const { ListFormat } = Intl as unknown as {
+    ListFormat?: new (
+      locale: string,
+      options: { type: 'conjunction' },
+    ) => { format: (list: string[]) => string };
+  };
+  try {
+    if (ListFormat)
+      return new ListFormat(locale, { type: 'conjunction' }).format(items);
+  } catch {
+    // An engine without the locale's data; the plain join still reads.
+  }
+  return items.join(', ');
+};
+
+/** What decides whether a stored conversation changed. */
+const savedSignature = (turns: StoredTurn[], conversationId: string | null) =>
+  JSON.stringify([conversationId, turns]);
+
+// The width at which the panel goes full screen.
+const MOBILE_QUERY = '(max-width: 768px)';
+const subscribeToMobile = (onChange: () => void) => {
+  const query = window.matchMedia?.(MOBILE_QUERY);
+  query?.addEventListener?.('change', onChange);
+  return () => query?.removeEventListener?.('change', onChange);
+};
+const isMobileWidth = () => Boolean(window.matchMedia?.(MOBILE_QUERY).matches);
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -189,6 +258,37 @@ const settleIn = keyframes`
     transform: none;
   }
 `;
+type SidebarSide = 'left' | 'right';
+// Past the edge by the shadow's reach, so none of it lingers on screen.
+const sidebarOffscreen = {
+  right: 'translateX(calc(100% + 40px))',
+  left: 'translateX(calc(-100% - 40px))',
+};
+const sidebarIn = {
+  right: keyframes`
+    from {
+      transform: ${sidebarOffscreen.right};
+    }
+  `,
+  left: keyframes`
+    from {
+      transform: ${sidebarOffscreen.left};
+    }
+  `,
+};
+const sidebarOut = {
+  right: keyframes`
+    to {
+      transform: ${sidebarOffscreen.right};
+    }
+  `,
+  left: keyframes`
+    to {
+      transform: ${sidebarOffscreen.left};
+    }
+  `,
+};
+
 const Overlay = styled.div`
   position: fixed;
   top: 0;
@@ -200,7 +300,12 @@ const Overlay = styled.div`
   transition: opacity 0.5s;
 `;
 
-const WidgetContainer = styled.div<{ $modal?: boolean }>`
+const WidgetContainer = styled.div<{
+  $modal?: boolean;
+  $sidebar?: SidebarSide;
+  $isOpen?: boolean;
+  $slideIn?: boolean;
+}>`
   all: initial;
   position: fixed;
   right: ${(props) => (props.$modal ? '50%' : '10px')};
@@ -221,9 +326,47 @@ const WidgetContainer = styled.div<{ $modal?: boolean }>`
       transform: none;
     }
   }
+
+  /* Docked to the window's edge, over the page. Top and bottom follow the
+     visual viewport, so a tablet's keyboard doesn't cover the composer. */
+  ${({ $sidebar, $isOpen, $slideIn }) =>
+    $sidebar &&
+    css`
+      container: dgpt-sidebar / inline-size;
+      top: var(--dgpt-vv-top, 0px);
+      bottom: var(--dgpt-vv-bottom, 0px);
+      ${$sidebar}: 0;
+      ${$sidebar === 'right' ? 'left' : 'right'}: auto;
+      width: calc(
+        var(${SIDEBAR_WIDTH_VAR}, ${SIDEBAR_DEFAULT_WIDTH}px) +
+          env(safe-area-inset-${$sidebar}, 0px)
+      );
+      /* Only as it opens; docking again after a phone-width spell doesn't
+         slide. */
+      animation: ${
+        $isOpen
+          ? $slideIn
+            ? css`
+                ${sidebarIn[$sidebar]} 280ms cubic-bezier(0.16, 1, 0.3, 1)
+              `
+            : 'none'
+          : css`
+              ${sidebarOut[$sidebar]} 200ms cubic-bezier(0.4, 0, 1, 1) forwards
+            `
+      };
+
+      @media (prefers-reduced-motion: reduce) {
+        animation: none;
+        /* Gone at once rather than after the unmount delay. */
+        visibility: ${$isOpen ? 'visible' : 'hidden'};
+      }
+    `}
 `;
 
-const StyledContainer = styled.div<{ $isOpen: boolean }>`
+const StyledContainer = styled.div<{
+  $isOpen: boolean;
+  $sidebar?: SidebarSide;
+}>`
   all: initial;
   box-sizing: border-box;
   max-height: ${(props) => props.theme.dimensions!.maxHeight};
@@ -289,6 +432,105 @@ const StyledContainer = styled.div<{ $isOpen: boolean }>`
     /* Expanding is desktop-only; easing after the keyboard reads as lag. */
     transition: none;
   }
+
+  /* Fills the docked container, which does the sliding. Safe-area padding
+     keeps the header and composer clear of a notch or home indicator. */
+  ${({ $sidebar, theme }) =>
+    $sidebar &&
+    css`
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      padding: env(safe-area-inset-top, 0px)
+        ${$sidebar === 'right' ? 'env(safe-area-inset-right, 0px)' : '0'}
+        env(safe-area-inset-bottom, 0px)
+        ${$sidebar === 'left' ? 'env(safe-area-inset-left, 0px)' : '0'};
+      border-radius: 0;
+      border-${$sidebar === 'right' ? 'left' : 'right'}: 1px solid
+        ${theme.border};
+      box-shadow: ${shadows.sidebar};
+      overscroll-behavior: contain;
+      animation: none;
+      transition: none;
+
+      @media (prefers-reduced-motion: reduce) {
+        animation: none;
+      }
+    `}
+`;
+
+// A wide hit area over the sidebar's inner edge. On hover, while dragging
+// and on keyboard focus a line lights up along the edge, with a grip at its
+// middle.
+const ResizeHandle = styled.div<{ $side: SidebarSide; $dragging: boolean }>`
+  --dgpt-handle-width: 11px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Centred on the panel's 1px border. */
+  ${(props) => (props.$side === 'right' ? 'left' : 'right')}: calc(
+    0.5px - var(--dgpt-handle-width) / 2
+  );
+  z-index: 6;
+  width: var(--dgpt-handle-width);
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+
+  /* A fingertip needs more than a mouse. */
+  @media (pointer: coarse) {
+    --dgpt-handle-width: 24px;
+  }
+
+  &::after,
+  &::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: ${(props) => (props.$dragging ? 1 : 0)};
+    transition: opacity 0.15s ease;
+  }
+
+  &::after {
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: ${(props) => props.theme.ring};
+  }
+
+  &::before {
+    z-index: 1;
+    top: calc(50% - 16px);
+    width: 4px;
+    height: 32px;
+    border-radius: ${radii.full};
+    background-color: ${(props) => props.theme.mutedForeground};
+  }
+
+  &:hover::after,
+  &:hover::before {
+    opacity: 1;
+    /* A pointer passing over the edge doesn't flash it. */
+    transition-delay: 0.15s;
+  }
+
+  &:focus-visible::after,
+  &:focus-visible::before {
+    opacity: 1;
+  }
+
+  &:focus-visible::after {
+    box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &::after,
+    &::before {
+      transition: none;
+    }
+  }
 `;
 
 // The app's default Button in pill shape, at launcher scale.
@@ -345,33 +587,6 @@ const FloatingButton = styled.button<{ $bg?: string; $hidden: boolean }>`
     animation: none;
   }
 `;
-// ghost-muted icon-sm: 32px, rounded-md, accent hover.
-const IconButton = styled.button`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: ${radii.md};
-  background-color: transparent;
-  color: ${(props) => props.theme.mutedForeground};
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-
-  &:hover {
-    background-color: ${(props) => props.theme.accent};
-    color: ${(props) => props.theme.foreground};
-  }
-
-  ${focusRing}
-`;
-
 const ExpandButton = styled(IconButton)`
   @media only screen and (max-width: 768px) {
     display: none;
@@ -387,6 +602,20 @@ const Header = styled.div`
   box-sizing: border-box;
   padding: 16px 16px 12px 16px;
   border-bottom: 1px solid ${(props) => props.theme.border};
+
+  /* A narrow sidebar keeps its header to two short lines: a smaller avatar,
+     and the title and description on a line each (see Title, Description). */
+  ${narrowSidebarQuery} {
+    && > :first-child {
+      width: 32px;
+      height: 32px;
+    }
+
+    && > :first-child svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
 `;
 
 const ContentWrapper = styled.div`
@@ -397,12 +626,37 @@ const ContentWrapper = styled.div`
   flex: 1;
 `;
 
-const HeaderActions = styled.div`
+const HeaderActions = styled.div<{ $compact?: boolean }>`
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
   margin: -4px -8px 0 0;
+  /* A narrow panel can't spare every button's width from the title: the
+     panel's own buttons on top, the chat's below. */
+  ${(props) =>
+    props.$compact &&
+    css`
+      flex-direction: column;
+      align-items: flex-end;
+    `}
+
+  /* A narrow sidebar puts Close on top and the chat's buttons below; with
+     only two buttons they still share a row. */
+  ${narrowSidebarQuery} {
+    flex-wrap: wrap-reverse;
+    justify-content: flex-end;
+    max-width: 68px;
+  }
+`;
+
+const HeaderActionsRow = styled.div`
+  display: flex;
+  gap: 4px;
+
+  &:empty {
+    display: none;
+  }
 `;
 
 const Title = styled.h3`
@@ -412,6 +666,12 @@ const Title = styled.h3`
   color: ${(props) => props.theme.foreground};
   margin: 0;
   overflow-wrap: break-word;
+
+  ${narrowSidebarQuery} {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
 `;
 
 const Description = styled.p`
@@ -421,15 +681,24 @@ const Description = styled.p`
   margin: 0;
   padding: 0;
   overflow-wrap: break-word;
+
+  ${narrowSidebarQuery} {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
 `;
 
-const Conversation = styled.div`
+const Conversation = styled.div<{ $hidden?: boolean }>`
   height: 100%;
   box-sizing: border-box;
   padding: 16px;
   text-align: left;
   overflow-y: auto;
-  display: flex;
+  /* Scrolling past either end doesn't carry on into the host page. */
+  overscroll-behavior: contain;
+  display: ${(props) => (props.$hidden ? 'none' : 'flex')};
   flex-direction: column;
   gap: 20px;
   scrollbar-width: thin;
@@ -571,7 +840,7 @@ const Markdown = styled.div`
   }
 
   a {
-    color: ${(props) => props.theme.primary};
+    color: ${(props) => props.theme.link};
     text-decoration: none;
     text-underline-offset: 4px;
     border-radius: ${radii.sm};
@@ -819,9 +1088,18 @@ const Markdown = styled.div`
     scrollbar-color: ${(props) => props.theme.scrollbarThumb} transparent;
   }
 
+  /* Reset what a host page's own \`code\` rule may set, or every line of the
+     block gets the host's inline-code chip. */
   .dgpt-code-body code {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: inherit;
     font-family: inherit;
     font-size: inherit;
+    font-weight: inherit;
     white-space: inherit;
   }
 
@@ -1062,10 +1340,11 @@ const ConversationArea = styled.div`
   flex: 1;
   min-height: 0;
 `;
-const Composer = styled.div`
+// The credit line pads the bottom; without it the composer pads itself.
+const Composer = styled.div<{ $noCredit?: boolean }>`
   flex-shrink: 0;
   box-sizing: border-box;
-  padding: 12px 16px 0 16px;
+  padding: 12px 16px ${(props) => (props.$noCredit ? '16px' : '0')} 16px;
 `;
 // border bg-card rounded-3xl; the rows pad themselves.
 const PromptContainer = styled.form<{ $stacked?: boolean }>`
@@ -1191,10 +1470,11 @@ const StopGlyph = styled.span`
   background-color: currentColor;
 `;
 // Centred in the empty conversation.
-const HeroContainer = styled.div`
+// Centred in the floating panel; at the top of a full-height sidebar.
+const HeroContainer = styled.div<{ $top?: boolean }>`
   box-sizing: border-box;
   width: 100%;
-  margin: auto 0;
+  margin: ${(props) => (props.$top ? '8px 0 auto' : 'auto 0')};
 `;
 // SharedAgentCard: a filled Card, at the top of the conversation.
 const HeroWrapper = styled.div`
@@ -1221,6 +1501,68 @@ const HeroTitle = styled.h3`
   margin: 0px;
   padding: 0px;
   overflow-wrap: break-word;
+`;
+const SuggestedQuestions = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+`;
+const SuggestedQuestionsLabel = styled.p`
+  margin: 0;
+  padding: 0 4px;
+  color: ${(props) => props.theme.mutedForeground};
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.33;
+`;
+const SuggestedQuestionsList = styled.ul`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+`;
+const SuggestedQuestion = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid ${(props) => props.theme.border};
+  border-radius: ${radii.xl};
+  background-color: ${(props) => props.theme.controlFill};
+  color: ${(props) => props.theme.foreground};
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.43;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  & > span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+
+  & > svg {
+    flex-shrink: 0;
+    color: ${(props) => props.theme.mutedForeground};
+  }
+
+  &:hover:not(:disabled) {
+    background-color: ${(props) => props.theme.controlHover};
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  ${focusRing}
 `;
 // A filled Card turns muted text to foreground.
 const HeroDescription = styled.p`
@@ -1375,32 +1717,60 @@ const AnswerMarkdown = React.memo(function AnswerMarkdown({
   response,
   sourceCount,
   turn,
+  openSourceLabel,
+  copyCodeLabel,
+  newTabLabel,
   onAnswerClick,
 }: {
   response: string;
   sourceCount: number;
   turn: number;
+  openSourceLabel: string;
+  copyCodeLabel: string;
+  newTabLabel: string;
   onAnswerClick: (
     turn: number,
     event: React.MouseEvent<HTMLDivElement>,
   ) => void;
 }) {
+  // Answer links open a new tab; the hidden hint says so to screen readers
+  // without landing in copied text.
+  const newTabHintId = React.useId();
   const html = React.useMemo(
     () =>
-      DOMPurify.sanitize(renderAnswer(response, { sourceCount }), {
-        ADD_ATTR: ['target'],
-      }),
-    [response, sourceCount],
+      DOMPurify.sanitize(
+        renderAnswer(response, {
+          sourceCount,
+          openSourceLabel,
+          copyCodeLabel,
+          newTabHintId,
+        }),
+        { ADD_ATTR: ['target'] },
+      ),
+    [response, sourceCount, openSourceLabel, copyCodeLabel, newTabHintId],
   );
   return (
-    <Markdown
-      onClick={(event) => onAnswerClick(turn, event)}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <Markdown
+        onClick={(event) => onAnswerClick(turn, event)}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {html.includes('<a ') && (
+        <span id={newTabHintId} hidden>
+          {newTabLabel}
+        </span>
+      )}
+    </>
   );
 });
 
 type Source = NonNullable<Query['sources']>[number];
+
+/** A source as events report it: a title, and a URL for web pages only. */
+const answerSource = (source: Source): AnswerSource =>
+  isWebSource(source.source)
+    ? { title: source.title || sourceHost(source.source), url: source.source }
+    : { title: sourceLabel(source.title, source.source) };
 
 const SourcesComponent = ({
   sources,
@@ -1408,6 +1778,7 @@ const SourcesComponent = ({
   open,
   highlighted,
   onToggle,
+  onOpenLink,
 }: {
   sources: Source[];
   /** The answer's index, which keys its rows for a citation to find. */
@@ -1415,76 +1786,97 @@ const SourcesComponent = ({
   open: boolean;
   highlighted: number | null;
   onToggle: () => void;
-}) => (
-  <SourcesBlock>
-    <SourcesToggle type="button" aria-expanded={open} onClick={onToggle}>
-      <Database size={16} />
-      <span>Sources</span>
-      <span className="dgpt-sources-count">{sources.length}</span>
-      <ChevronRight size={16} className="dgpt-sources-chevron" />
-    </SourcesToggle>
-    {open && (
-      <SourcesWell>
-        {sources.map((source, index) => {
-          const key = `${turn}-${index}`;
-          const isHighlighted = highlighted === index;
-          // A file's `source` is its path in the library, which no visitor
-          // can open; only a web source is a link.
-          return isWebSource(source.source) ? (
-            <SourceLink
-              key={key}
-              data-source={key}
-              data-highlighted={isHighlighted}
-              href={source.source}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Globe size={16} />
-              <SourceText>
-                <span className="dgpt-source-title">
-                  {source.title || sourceHost(source.source)}
-                </span>
-                <span className="dgpt-source-detail">
-                  {sourceHost(source.source)}
-                </span>
-              </SourceText>
-              <ExternalLink size={12} className="dgpt-source-external" />
-            </SourceLink>
-          ) : (
-            <SourceItem
-              key={key}
-              data-source={key}
-              data-highlighted={isHighlighted}
-              tabIndex={-1}
-            >
-              <FileText size={16} />
-              <SourceText>
-                <span className="dgpt-source-title">
-                  {sourceLabel(source.title, source.source)}
-                </span>
-                {source.text && (
-                  <span className="dgpt-source-detail">{source.text}</span>
-                )}
-              </SourceText>
-            </SourceItem>
-          );
-        })}
-      </SourcesWell>
-    )}
-  </SourcesBlock>
-);
+  onOpenLink: (source: Source) => void;
+}) => {
+  const { t } = useMessages();
+  return (
+    <SourcesBlock>
+      <SourcesToggle type="button" aria-expanded={open} onClick={onToggle}>
+        <Database size={16} />
+        <span>{t('sources')}</span>
+        <span className="dgpt-sources-count">{sources.length}</span>
+        <ChevronRight size={16} className="dgpt-sources-chevron" />
+      </SourcesToggle>
+      {open && (
+        <SourcesWell>
+          {sources.map((source, index) => {
+            const key = `${turn}-${index}`;
+            const isHighlighted = highlighted === index;
+            // A file's `source` is its path in the library, which no visitor
+            // can open; only a web source is a link.
+            return isWebSource(source.source) ? (
+              <SourceLink
+                key={key}
+                data-source={key}
+                data-highlighted={isHighlighted}
+                href={source.source}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => onOpenLink(source)}
+                // A middle click opens it in a new tab too.
+                onAuxClick={(event) => {
+                  if (event.button === 1) onOpenLink(source);
+                }}
+              >
+                <Globe size={16} />
+                <SourceText>
+                  <span className="dgpt-source-title">
+                    {source.title || sourceHost(source.source)}
+                  </span>
+                  <span className="dgpt-source-detail">
+                    {sourceHost(source.source)}
+                  </span>
+                </SourceText>
+                <ExternalLink size={12} className="dgpt-source-external" />
+              </SourceLink>
+            ) : (
+              <SourceItem
+                key={key}
+                data-source={key}
+                data-highlighted={isHighlighted}
+                tabIndex={-1}
+              >
+                <FileText size={16} />
+                <SourceText>
+                  <span className="dgpt-source-title">
+                    {sourceLabel(source.title, source.source)}
+                  </span>
+                  {source.text && (
+                    <span className="dgpt-source-detail">{source.text}</span>
+                  )}
+                </SourceText>
+              </SourceItem>
+            );
+          })}
+        </SourcesWell>
+      )}
+    </SourcesBlock>
+  );
+};
 
 const Hero = ({
   title,
   description,
   icon,
+  questions,
+  questionsLabel,
+  questionsDisabledReason,
+  onQuestion,
+  anchorTop,
 }: {
   title: string;
   description: string;
   icon?: string;
+  questions: string[];
+  questionsLabel: string;
+  /** Set while a send is blocked; the questions are disabled with it as their tooltip. */
+  questionsDisabledReason?: string;
+  onQuestion: (question: string) => void;
+  anchorTop?: boolean;
 }) => {
+  const labelId = React.useId();
   return (
-    <HeroContainer>
+    <HeroContainer $top={anchorTop}>
       <HeroWrapper>
         <AgentAvatar src={icon} size={48} fallback="mark" />
         <HeroText>
@@ -1492,34 +1884,119 @@ const Hero = ({
           <HeroDescription>{description}</HeroDescription>
         </HeroText>
       </HeroWrapper>
+      {questions.length > 0 && (
+        <SuggestedQuestions>
+          {questionsLabel && (
+            <SuggestedQuestionsLabel id={labelId}>
+              {questionsLabel}
+            </SuggestedQuestionsLabel>
+          )}
+          <SuggestedQuestionsList
+            aria-labelledby={questionsLabel ? labelId : undefined}
+          >
+            {questions.map((question, index) => (
+              <li key={`${index}-${question}`}>
+                <SuggestedQuestion
+                  type="button"
+                  onClick={() => onQuestion(question)}
+                  disabled={Boolean(questionsDisabledReason)}
+                  title={questionsDisabledReason}
+                >
+                  <span>{question}</span>
+                  <ChevronRight size={16} />
+                </SuggestedQuestion>
+              </li>
+            ))}
+          </SuggestedQuestionsList>
+        </SuggestedQuestions>
+      )}
     </HeroContainer>
   );
 };
-export const DocsGPTWidget = (props: WidgetProps) => {
+/** The chat with its launcher button. `ref` receives a `WidgetController`. */
+export const DocsGPTWidget = React.forwardRef<WidgetController, WidgetProps>(
+  function DocsGPTWidget(props, ref) {
+    return (
+      <I18nProvider locale={props.locale} translations={props.translations}>
+        <Launcher {...props} controllerRef={ref} />
+      </I18nProvider>
+    );
+  },
+);
+
+// Inside the provider, so its defaults read the resolved locale.
+const Launcher = (
+  props: WidgetProps & { controllerRef?: React.Ref<WidgetController> },
+) => {
+  const { locale, t } = useMessages();
   const {
     buttonIcon,
-    buttonText = 'Ask a question',
+    buttonText = t('launcherButton'),
     buttonBg,
     defaultOpen = false,
+    onEvent,
+    controllerRef,
     ...coreProps
   } = props;
 
   const [open, setOpen] = React.useState<boolean>(defaultOpen);
   const [isFloatingButtonVisible, setIsFloatingButtonVisible] =
     React.useState(!defaultOpen);
+  // State lags a render behind; the controller answers isOpen() at once.
+  const openRef = React.useRef(defaultOpen);
+  const coreRef = React.useRef<WidgetCoreHandle>(null);
+  const launcherRef = React.useRef<HTMLButtonElement>(null);
 
-  const handleClose = () => {
-    setIsFloatingButtonVisible(true);
-    setOpen(false);
-  };
-  const handleOpen = () => {
-    setOpen(true);
-    setIsFloatingButtonVisible(false);
-  };
+  const setOpenState = React.useCallback((next: boolean) => {
+    openRef.current = next;
+    setOpen(next);
+    setIsFloatingButtonVisible(!next);
+  }, []);
+  const handleClose = () => setOpenState(false);
+  const handleOpen = () => setOpenState(true);
+
+  // The host's onEvent first, then the controller's subscribers.
+  const onEventRef = React.useRef(onEvent);
+  onEventRef.current = onEvent;
+  const [emitter] = React.useState(createEmitter);
+  const emit = React.useCallback(
+    (event: WidgetEvent) => {
+      callSafely(onEventRef.current, event);
+      emitter.emit(event);
+    },
+    [emitter],
+  );
+
+  React.useImperativeHandle(
+    controllerRef,
+    (): WidgetController => ({
+      open: () => setOpenState(true),
+      close: () => setOpenState(false),
+      toggle: () => setOpenState(!openRef.current),
+      isOpen: () => openRef.current,
+      focus: () => {
+        setOpenState(true);
+        coreRef.current?.focus();
+      },
+      // The panel picks the question up once it has opened.
+      ask: (question, options) => {
+        setOpenState(true);
+        coreRef.current?.ask(String(question ?? ''), options?.send !== false);
+      },
+      on: emitter.on,
+      off: emitter.off,
+      newChat: () => coreRef.current?.newChat(),
+      clearHistory: () => coreRef.current?.clearHistory(),
+    }),
+    [emitter, setOpenState],
+  );
+
   return (
     <ThemeProvider theme={themes[coreProps.theme ?? 'dark']}>
       <FloatingButton
+        ref={launcherRef}
         type="button"
+        lang={locale}
         $bg={buttonBg}
         onClick={handleOpen}
         $hidden={!isFloatingButtonVisible}
@@ -1531,7 +2008,14 @@ export const DocsGPTWidget = (props: WidgetProps) => {
         )}
         <span>{buttonText}</span>
       </FloatingButton>
-      <WidgetCore isOpen={open} handleClose={handleClose} {...coreProps} />
+      <WidgetCore
+        {...coreProps}
+        isOpen={open}
+        handleClose={handleClose}
+        onEvent={emit}
+        coreRef={coreRef}
+        returnFocusRef={launcherRef}
+      />
     </ThemeProvider>
   );
 };
@@ -1541,11 +2025,16 @@ export const WidgetCore = ({
   apiKey = '527686a3-e867-4b4d-9fec-f5f45fdb613a',
   avatar,
   heroIcon,
-  title = 'Get AI assistance',
-  description = "DocsGPT's AI Chatbot is here to help",
-  heroTitle = 'Welcome to DocsGPT !',
-  heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
-  size = 'medium',
+  title,
+  description,
+  heroTitle,
+  heroDescription,
+  suggestedQuestions,
+  suggestedQuestionsLabel,
+  size: sizeProp = 'medium',
+  layout = 'floating',
+  sidebarSide,
+  sidebarWidth,
   theme = 'dark',
   collectFeedback = true,
   isOpen = false,
@@ -1555,7 +2044,17 @@ export const WidgetCore = ({
   allowedFileExtensions,
   showMicButton = false,
   poweredBy = true,
+  passthrough,
+  persistConversations = true,
+  ephemeral = false,
+  onEvent,
+  coreRef,
+  returnFocusRef,
 }: WidgetCoreProps) => {
+  const { locale, t, plural } = useMessages();
+  const sidebarLayout = layout === 'sidebar';
+  // The sidebar has one size of its own.
+  const size = sidebarLayout ? 'medium' : sizeProp;
   const [prompt, setPrompt] = React.useState<string>('');
   const [mounted, setMounted] = React.useState(false);
   const [status, setStatus] = React.useState<Status>('idle');
@@ -1582,6 +2081,232 @@ export const WidgetCore = ({
   } | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Ends the streaming turn as stopped, reporting it once.
+  const stopTurnRef = useRef<(() => void) | null>(null);
+  // Stream handlers and memoised click handlers outlive their render; events
+  // read these instead of stale state.
+  const conversationIdRef = useRef<string | null>(null);
+  const queriesRef = useRef(queries);
+  queriesRef.current = queries;
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+  // ask() and focus() calls from the host, run once the panel is on screen.
+  const pendingActionsRef = useRef<
+    ({ type: 'ask'; question: string; send: boolean } | { type: 'focus' })[]
+  >([]);
+  const [pendingTick, setPendingTick] = React.useState(0);
+
+  // `conversationId` defaults to the chat on screen; an outcome that lands
+  // after the visitor moved on passes the one it belongs to.
+  const emit = React.useCallback(
+    (event: WidgetEventInit, conversationId = conversationIdRef.current) => {
+      callSafely(onEventRef.current, {
+        ...event,
+        conversationId,
+      } as WidgetEvent);
+    },
+    [],
+  );
+
+  const updateConversationId = (id: string | null) => {
+    conversationIdRef.current = id;
+    setConversationId(id);
+  };
+
+  // Saved conversations. React state stays the truth while mounted; storage
+  // is written when a question goes out, an answer settles or feedback
+  // changes, never per streamed token.
+  const persistence = ephemeral
+    ? 'none'
+    : persistConversations === false
+      ? 'off'
+      : 'on';
+  const storeKey = storageKey(apiHost, apiKey);
+  const store = React.useMemo(
+    () => (persistence === 'on' ? createConversationStore(storeKey) : null),
+    [persistence, storeKey],
+  );
+  const [storedConversations, setStoredConversations] = React.useState<
+    StoredConversation[]
+  >([]);
+  const [view, setView] = React.useState<'chat' | 'history'>('chat');
+  // The local id of the conversation on screen; null until its first save.
+  const [activeId, setActiveIdState] = React.useState<string | null>(null);
+  const activeIdRef = useRef<string | null>(null);
+  const setActiveId = (id: string | null) => {
+    activeIdRef.current = id;
+    setActiveIdState(id);
+  };
+  const savedSignatureRef = useRef('');
+  // Bumped whenever the chat on screen is replaced.
+  const chatEpochRef = useRef(0);
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  // Bumped to land a restored conversation on its latest turn.
+  const [restoreTick, setRestoreTick] = React.useState(0);
+  const historyButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  /** Writes the chat on screen, unless it's unchanged since the last write. */
+  const saveConversation = (
+    turns: Query[],
+    streaming: boolean,
+    serverId: string | null,
+  ) => {
+    if (!store || turns.length === 0) return;
+    const stored = turns.map((query, index) =>
+      toStoredTurn(query, streaming && index === turns.length - 1),
+    );
+    const signature = savedSignature(stored, serverId);
+    if (signature === savedSignatureRef.current) return;
+    savedSignatureRef.current = signature;
+    const id = activeIdRef.current ?? newConversationId();
+    setActiveId(id);
+    const next = store.update((state) =>
+      upsertConversation(state, {
+        id,
+        conversationId: serverId,
+        title: conversationTitle(turns[0].prompt),
+        updatedAt: Date.now(),
+        turns: stored,
+      }),
+    );
+    setStoredConversations(next.conversations);
+  };
+
+  const feedbackSignature = queries.map((query) => query.feedback ?? '').join();
+  React.useEffect(() => {
+    saveConversation(queries, status === 'loading', conversationId);
+  }, [queries.length, status, conversationId, feedbackSignature]);
+
+  React.useEffect(() => {
+    if (persistence === 'off') removeStorageWithSuffixes(storeKey);
+  }, [persistence, storeKey]);
+
+  const resetChat = () => {
+    chatEpochRef.current += 1;
+    setQueries([]);
+    updateConversationId(null);
+    setActiveId(null);
+    savedSignatureRef.current = '';
+    setOpenSources(new Set());
+    setHighlightedSource(null);
+    setCopiedIndex(null);
+    setFeedbackErrorIndex(null);
+    setIsPinnedToLatest(true);
+  };
+
+  /** Puts a stored conversation on screen, ready to continue. */
+  const showConversation = (conversation: StoredConversation) => {
+    const restored = conversation.turns.map((turn) =>
+      fromStoredTurn(turn, t('interrupted')),
+    );
+    resetChat();
+    setActiveId(conversation.id);
+    // Seen as saved, so viewing it doesn't move it to the top of History.
+    savedSignatureRef.current = savedSignature(
+      restored.map((query) => toStoredTurn(query)),
+      conversation.conversationId,
+    );
+    setQueries(restored);
+    updateConversationId(conversation.conversationId);
+    setRestoreTick((tick) => tick + 1);
+    emit({ type: 'conversation_restored' });
+  };
+
+  // An answer still streaming is stopped (reported once, as answer_stopped)
+  // and saved as far as it got.
+  const leaveConversation = () => {
+    if (statusRef.current !== 'loading') return;
+    stopGenerating();
+    saveConversation(queriesRef.current, false, conversationIdRef.current);
+  };
+
+  const startNewChat = () => {
+    setView('chat');
+    if (queriesRef.current.length === 0) return;
+    leaveConversation();
+    emit({ type: 'new_chat' });
+    resetChat();
+    if (store)
+      setStoredConversations(
+        store.update((state) => ({ ...state, activeId: null })).conversations,
+      );
+  };
+
+  const clearHistory = () => {
+    if (statusRef.current === 'loading') stopGenerating();
+    if (store) store.clear();
+    else if (persistence === 'off') removeStorageWithSuffixes(storeKey);
+    setStoredConversations([]);
+    emit({ type: 'history_cleared' });
+    if (queriesRef.current.length > 0) emit({ type: 'new_chat' });
+    resetChat();
+  };
+
+  const selectConversation = (conversation: StoredConversation) => {
+    if (conversation.id !== activeIdRef.current) {
+      leaveConversation();
+      showConversation(conversation);
+      if (store)
+        setStoredConversations(
+          store.update((state) => ({ ...state, activeId: conversation.id }))
+            .conversations,
+        );
+    }
+    setView('chat');
+    if (!touchPrimary) focusPrompt();
+  };
+
+  const deleteConversation = (id: string) => {
+    if (!store) return;
+    setStoredConversations(
+      store.update((state) => removeConversation(state, id)).conversations,
+    );
+    if (id !== activeIdRef.current) return;
+    if (statusRef.current === 'loading') stopGenerating();
+    emit({ type: 'new_chat' });
+    resetChat();
+  };
+
+  const closeHistory = () => {
+    setView('chat');
+    window.requestAnimationFrame(() =>
+      (historyButtonRef.current ?? promptRef.current)?.focus(),
+    );
+  };
+
+  // Another agent (apiKey or apiHost changed): nothing of this chat may reach
+  // its storage, nor its conversation id that agent's server.
+  const loadedKeyRef = useRef<string | null>(null);
+  React.useEffect(() => {
+    const previous = loadedKeyRef.current;
+    loadedKeyRef.current = storeKey;
+    if (previous === null || previous === storeKey) return;
+    if (statusRef.current === 'loading') stopGenerating();
+    resetChat();
+    setView('chat');
+  }, [storeKey]);
+
+  // Restore the conversation that was on screen, and follow other tabs'
+  // changes to the list without switching the one shown here.
+  React.useEffect(() => {
+    if (!store) {
+      setStoredConversations([]);
+      return;
+    }
+    const state = store.read();
+    setStoredConversations(state.conversations);
+    const active = state.conversations.find(
+      (item) => item.id === state.activeId,
+    );
+    if (active && active.id !== activeIdRef.current) showConversation(active);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== store.key) return;
+      setStoredConversations(store.read().conversations);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [store]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
@@ -1599,6 +2324,30 @@ export const WidgetCore = ({
   const closePanel = () => {
     (handleClose as ((event?: React.MouseEvent) => void) | undefined)?.();
   };
+
+  const mobileWidth = React.useSyncExternalStore(
+    subscribeToMobile,
+    isMobileWidth,
+    () => false,
+  );
+
+  // Below the mobile width the sidebar is the full-screen panel too.
+  const docked: SidebarSide | undefined =
+    sidebarLayout && !mobileWidth
+      ? sidebarSide === 'left'
+        ? 'left'
+        : 'right'
+      : undefined;
+  const sidebar = useSidebarResize({
+    active: Boolean(docked) && isOpen,
+    side: docked ?? 'right',
+    defaultWidth: parseSidebarWidth(sidebarWidth) ?? SIDEBAR_DEFAULT_WIDTH,
+    storageKey:
+      sidebarLayout && persistence === 'on'
+        ? storageKey(apiHost, apiKey, 'width')
+        : null,
+    containerRef,
+  });
 
   // The node exists only once mounted.
   useVisualViewportBounds(isOpen && mounted, containerRef);
@@ -1660,14 +2409,37 @@ export const WidgetCore = ({
     onEnd: focusPrompt,
   });
 
+  // Before the effect below, so `open` precedes the search bar's question.
+  const wasOpenRef = useRef(false);
+  React.useEffect(() => {
+    if (isOpen === wasOpenRef.current) return;
+    wasOpenRef.current = isOpen;
+    emit({ type: isOpen ? 'open' : 'close' });
+    // Focus left inside the closing panel would be lost; elsewhere on the
+    // page it stays where the visitor put it.
+    if (!isOpen && containerRef.current?.contains(document.activeElement))
+      returnFocusRef?.current?.focus();
+  }, [isOpen]);
+
+  // The sidebar slides in as it opens, and only then.
+  const [slideIn, setSlideIn] = React.useState(true);
+  useClientLayoutEffect(() => {
+    if (!isOpen) return;
+    setSlideIn(true);
+    const timer = window.setTimeout(() => setSlideIn(false), SIDEBAR_SLIDE_MS);
+    return () => window.clearTimeout(timer);
+  }, [isOpen]);
+
   React.useEffect(() => {
     if (isOpen) {
       setMounted(true); // Mount the component
-      appendQuery(prefilledQuery);
+      appendQuery(prefilledQuery, { source: 'search' });
     } else {
       // Wait for animations before unmounting
       const timeout = setTimeout(() => {
         setMounted(false);
+        // Reopening shows the chat, not the list left open.
+        setView('chat');
       }, 250);
       return () => clearTimeout(timeout);
     }
@@ -1691,6 +2463,15 @@ export const WidgetCore = ({
 
   // Explicit request: land immediately rather than easing.
   const jumpToLatest = () => scrollToLatest(false);
+
+  // A restored conversation, a reopened panel or the way back from History
+  // lands on the latest turn, before paint.
+  useClientLayoutEffect(() => {
+    const el = conversationRef.current;
+    if (!el || view !== 'chat') return;
+    el.scrollTop = el.scrollHeight;
+    setIsPinnedToLatest(true);
+  }, [restoreTick, view, mounted]);
 
   const handleConversationScroll = () => {
     const el = conversationRef.current;
@@ -1742,6 +2523,10 @@ export const WidgetCore = ({
 
     const previous = query.feedback;
     const next = previous === feedback ? undefined : feedback;
+    // The reply can land after the visitor has moved to another chat.
+    const epoch = chatEpochRef.current;
+    const ownerId = activeIdRef.current;
+    const ownerStore = store;
 
     setFeedbackAt(index, next);
 
@@ -1760,8 +2545,26 @@ export const WidgetCore = ({
       if (response.status !== 200) {
         throw new Error(`Feedback rejected with status ${response.status}`);
       }
+      emit(
+        {
+          type: 'feedback',
+          question: query.prompt,
+          answer: query.response,
+          value:
+            next === 'LIKE' ? 'like' : next === 'DISLIKE' ? 'dislike' : null,
+        },
+        conversationId,
+      );
     } catch (err) {
       console.warn('Feedback not saved:', err);
+      if (epoch !== chatEpochRef.current) {
+        // Not on screen any more: undo the rating where it was saved.
+        if (ownerStore && ownerId)
+          ownerStore.update((state) =>
+            setTurnFeedback(state, ownerId, index, previous),
+          );
+        return;
+      }
       setFeedbackAt(index, previous);
       setFeedbackErrorIndex(index);
       setTimeout(
@@ -1771,7 +2574,12 @@ export const WidgetCore = ({
     }
   }
 
+  // The widget's own errors follow the locale; the server's are shown as sent.
+  const errorText = (query: Query) =>
+    query.errorKey ? t(query.errorKey) : (query.error ?? '');
+
   const stopGenerating = () => {
+    stopTurnRef.current?.();
     abortRef.current?.abort();
     abortRef.current = null;
     setStatus('idle');
@@ -1781,6 +2589,35 @@ export const WidgetCore = ({
     setStatus('loading');
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // What the host hears about this turn: the answer as it stands, and one
+    // outcome, whichever path ends it first.
+    let answer = '';
+    let sources: Source[] = [];
+    let settled = false;
+    const settle = (
+      outcome:
+        | { type: 'answer_completed' }
+        | { type: 'answer_failed'; error: string }
+        | { type: 'answer_stopped' },
+    ) => {
+      if (settled) return;
+      settled = true;
+      if (stopTurnRef.current === stopTurn) stopTurnRef.current = null;
+      if (outcome.type === 'answer_completed')
+        emit({
+          type: 'answer_completed',
+          question,
+          answer,
+          sources: sources.map(answerSource),
+        });
+      else if (outcome.type === 'answer_failed')
+        emit({ type: 'answer_failed', question, error: outcome.error });
+      else emit({ type: 'answer_stopped', question });
+    };
+    const stopTurn = () => settle({ type: 'answer_stopped' });
+    stopTurnRef.current = stopTurn;
+
     try {
       await fetchAnswerStreaming({
         signal: controller.signal,
@@ -1790,6 +2627,7 @@ export const WidgetCore = ({
         history: queries,
         conversationId: conversationId,
         attachments: attachmentIds,
+        passthrough,
         onEvent: (event: MessageEvent) => {
           let data: StreamEvent;
           try {
@@ -1812,6 +2650,7 @@ export const WidgetCore = ({
 
           const appendAnswer = (d: StreamEvent) => {
             if (typeof d.answer !== 'string') return;
+            answer += d.answer;
             patch((query) => {
               query.response = (query.response ?? '') + d.answer;
             });
@@ -1829,15 +2668,20 @@ export const WidgetCore = ({
 
           const handlers: Record<string, (d: StreamEvent) => void> = {
             answer: appendAnswer,
-            end: () => setStatus('idle'),
-            id: (d) => setConversationId(d.id as string),
+            end: () => {
+              setStatus('idle');
+              settle({ type: 'answer_completed' });
+            },
+            id: (d) => updateConversationId(d.id as string),
             error: (d) => {
               patch((query) => {
                 query.error = d.error as string;
               });
               setStatus('idle');
+              settle({ type: 'answer_failed', error: String(d.error ?? '') });
             },
             source: (d) => {
+              if (Array.isArray(d.source)) sources = d.source as Source[];
               if (!showSources) return;
               patch((query) => {
                 query.sources = d.source as Query['sources'];
@@ -1854,7 +2698,7 @@ export const WidgetCore = ({
               }),
             // Workflow agents report progress per node instead of `notice`.
             workflow_step: (d) => {
-              const label = workflowStepLabel(d);
+              const label = workflowStepLabel(d, t);
               if (label) {
                 patch((query) => {
                   query.notice = label;
@@ -1866,13 +2710,18 @@ export const WidgetCore = ({
             // Blocked content must leave the screen, reasoning included.
             guardrail: (d) => {
               if (!d.retract) return;
+              answer = '';
               patch((query) => {
                 query.response = '';
                 query.thought = '';
               });
             },
-            // Recorded server-side; nothing to render.
-            message_id: () => undefined,
+            // Sent before any token, so even a first answer that is stopped
+            // or fails reports its conversation.
+            message_id: (d) => {
+              if (typeof d.conversation_id === 'string')
+                updateConversationId(d.conversation_id);
+            },
           };
 
           // Unknown types are ignored; untyped frames are answer deltas.
@@ -1882,14 +2731,46 @@ export const WidgetCore = ({
       });
     } catch {
       const updatedQueries = [...queries];
-      updatedQueries[updatedQueries.length - 1].error = CONNECTION_ERROR;
+      const failed = updatedQueries[updatedQueries.length - 1];
+      failed.error = t('connectionError');
+      failed.errorKey = 'connectionError';
       setQueries(updatedQueries);
       setStatus('idle');
+      settle({ type: 'answer_failed', error: t('connectionError') });
       //setEventInterrupt(false)
+      return;
+    }
+    // The stream closed without an end or error frame: keep partial text,
+    // but an empty turn becomes a failure the visitor can retry.
+    if (!settled && !controller.signal.aborted) {
+      setStatus('idle');
+      if (answer) {
+        settle({ type: 'answer_completed' });
+        return;
+      }
+      setQueries((prev: Query[]) => {
+        if (prev.length === 0) return prev;
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          error: t('connectionError'),
+          errorKey: 'connectionError',
+        };
+        return updated;
+      });
+      settle({ type: 'answer_failed', error: t('connectionError') });
     }
   }
 
-  const appendQuery = async (userQuery: string) => {
+  // A suggested question is sent with keepDraft, so text the user had
+  // started typing stays in the composer.
+  const appendQuery = async (
+    userQuery: string,
+    {
+      keepDraft = false,
+      source,
+    }: { keepDraft?: boolean; source: QuestionSource },
+  ) => {
     if (!userQuery) return;
 
     // Only parsed attachments have a server id. The send is held until none
@@ -1904,13 +2785,15 @@ export const WidgetCore = ({
       prompt: userQuery,
       attachments: sent.length > 0 ? sent : undefined,
     });
-    setPrompt('');
+    if (!keepDraft) setPrompt('');
     if (sent.length > 0) clearAttachments();
+    emit({ type: 'question_submitted', question: userQuery, source });
     await stream(
       userQuery,
       sent.map((attachment) => attachment.id),
     );
   };
+  /** Copies `text`; true once it is on the clipboard. */
   const handleCopy = async (text: string, index: number) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -1919,9 +2802,17 @@ export const WidgetCore = ({
         () => setCopiedIndex((cur) => (cur === index ? null : cur)),
         1600,
       );
+      return true;
     } catch (err) {
       console.warn('Copy failed:', err);
+      return false;
     }
+  };
+
+  const copyAnswer = async (query: Query, index: number) => {
+    const answer = query.response ?? '';
+    if (await handleCopy(answer, index))
+      emit({ type: 'answer_copied', question: query.prompt, answer });
   };
 
   const toggleSources = (turn: number) =>
@@ -1961,6 +2852,8 @@ export const WidgetCore = ({
     () => () => {
       if (highlightTimerRef.current !== null)
         window.clearTimeout(highlightTimerRef.current);
+      // Unmounted (destroy(), or the host removed it): drop the stream too.
+      abortRef.current?.abort();
     },
     [],
   );
@@ -1978,22 +2871,29 @@ export const WidgetCore = ({
       }
       const copy = target.closest<HTMLButtonElement>('.dgpt-code-copy');
       if (!copy) return;
-      const code =
-        copy.closest('.dgpt-code')?.querySelector('pre code')?.textContent ??
-        '';
+      const block = copy.closest('.dgpt-code');
+      const code = block?.querySelector('pre code')?.textContent ?? '';
       navigator.clipboard
         .writeText(code)
         .then(() => {
+          emit({
+            type: 'code_copied',
+            question: queriesRef.current[turn]?.prompt ?? '',
+            code,
+            language:
+              block?.querySelector('.dgpt-code-language')?.textContent ||
+              'text',
+          });
           copy.classList.add('is-copied');
-          copy.setAttribute('aria-label', 'Copied');
+          copy.setAttribute('aria-label', t('copied'));
           window.setTimeout(() => {
             copy.classList.remove('is-copied');
-            copy.setAttribute('aria-label', 'Copy code');
+            copy.setAttribute('aria-label', t('copyCode'));
           }, 2000);
         })
         .catch((err) => console.warn('Copy failed:', err));
     },
-    [openCitedSource],
+    [openCitedSource, t, emit],
   );
 
   // Re-runs the turn in place instead of appending a duplicate prompt.
@@ -2012,6 +2912,7 @@ export const WidgetCore = ({
     setOpenSources((prev) => new Set([...prev].filter((turn) => turn < index)));
     setHighlightedSource((prev) => (prev && prev.turn >= index ? null : prev));
     setIsPinnedToLatest(true);
+    emit({ type: 'question_submitted', question: prompt, source: 'retry' });
     await stream(
       prompt,
       (attached ?? []).map((attachment) => attachment.id),
@@ -2021,13 +2922,8 @@ export const WidgetCore = ({
   // Pending and failed attachments both block sending. The pending note
   // takes precedence because it clears on its own.
   const pendingNote =
-    pendingCount > 0
-      ? `Waiting for ${pendingCount} file${pendingCount === 1 ? '' : 's'} to finish\u2026`
-      : null;
-  const failedNote =
-    failedCount > 0
-      ? 'Remove the file that could not be attached, then send.'
-      : null;
+    pendingCount > 0 ? plural('waitingForFiles', pendingCount) : null;
+  const failedNote = failedCount > 0 ? t('removeFailedFile') : null;
   const sendBlockedReason = pendingNote ?? failedNote;
   const isDictating = dictation.isDictating;
   const canSubmit =
@@ -2040,8 +2936,73 @@ export const WidgetCore = ({
     if (!canSubmit) return;
     // Reset first, so the empty composer does not render tall for a frame.
     if (promptRef.current) promptRef.current.style.height = 'auto';
-    await appendQuery(prompt);
+    await appendQuery(prompt, { source: 'composer' });
   };
+
+  const heroQuestions = React.useMemo(
+    () =>
+      (suggestedQuestions ?? [])
+        .map((question) => question.trim())
+        .filter(Boolean),
+    [suggestedQuestions],
+  );
+  // The composer's send gate, minus the typed-text check.
+  const questionBlockedReason =
+    sendBlockedReason ?? (isDictating ? t('stopDictatingToSend') : undefined);
+
+  const sendSuggestedQuestion = async (question: string) => {
+    if (questionBlockedReason || status === 'loading') return;
+    await appendQuery(question, { keepDraft: true, source: 'suggestion' });
+  };
+
+  // ask() goes through the suggested questions' gate: blocked, it only fills
+  // the composer, so the question is never lost.
+  const runPendingAction = (action: (typeof pendingActionsRef.current)[0]) => {
+    setView('chat');
+    if (action.type === 'focus') {
+      focusPrompt();
+      return;
+    }
+    const question = action.question.trim();
+    if (!question) return;
+    if (action.send && !questionBlockedReason && status !== 'loading') {
+      void appendQuery(question, { keepDraft: true, source: 'api' });
+      return;
+    }
+    applyDraft(question);
+    focusPrompt();
+  };
+
+  // The controller outlives renders; these read the latest state.
+  const historyActionsRef = useRef({ startNewChat, clearHistory });
+  historyActionsRef.current = { startNewChat, clearHistory };
+
+  React.useImperativeHandle(
+    coreRef,
+    (): WidgetCoreHandle => ({
+      newChat: () => historyActionsRef.current.startNewChat(),
+      clearHistory: () => historyActionsRef.current.clearHistory(),
+      ask: (question, send) => {
+        pendingActionsRef.current.push({ type: 'ask', question, send });
+        setPendingTick((tick) => tick + 1);
+      },
+      focus: () => {
+        pendingActionsRef.current.push({ type: 'focus' });
+        setPendingTick((tick) => tick + 1);
+      },
+    }),
+    [],
+  );
+
+  // One action per render, so a second ask() sees the first one's send.
+  React.useEffect(() => {
+    if (!isOpen || !mounted) return;
+    const action = pendingActionsRef.current.shift();
+    if (!action) return;
+    if (pendingActionsRef.current.length > 0)
+      setPendingTick((tick) => tick + 1);
+    runPendingAction(action);
+  }, [pendingTick, isOpen, mounted]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -2138,8 +3099,8 @@ export const WidgetCore = ({
     // A notice/node title is more specific than "Thinking", but goes stale
     // once tokens arrive.
     const label = query.response
-      ? 'Generating\u2026'
-      : (query.notice ?? 'Thinking\u2026');
+      ? t('generating')
+      : (query.notice ?? t('thinking'));
     return (
       <StatusLine role="status" aria-live="polite">
         <StatusDot />
@@ -2162,18 +3123,22 @@ export const WidgetCore = ({
       : null;
 
   const sendControl =
+    // Distinct keys: reusing the node would turn Stop into a submit button
+    // mid-click and send the draft.
     status === 'loading' ? (
       <StyledButton
+        key="stop"
         type="button"
         onClick={stopGenerating}
-        aria-label="Stop generating"
+        aria-label={t('stopGenerating')}
       >
         <StopGlyph />
       </StyledButton>
     ) : (
       <StyledButton
+        key="send"
         disabled={!canSubmit}
-        aria-label="Send message"
+        aria-label={t('sendMessage')}
         title={sendBlockedReason ?? undefined}
       >
         <SendArrow size={16} />
@@ -2184,12 +3149,75 @@ export const WidgetCore = ({
     typeof size === 'object' && 'custom' in size
       ? sizesConfig.getCustom(size.custom)
       : sizesConfig[size];
-  const canExpand = size !== 'large';
+  const canExpand = size !== 'large' && !sidebarLayout;
   const dimensions =
     canExpand && isExpanded
       ? expandedDimensions(baseDimensions)
       : baseDimensions;
   if (!mounted) return null;
+
+  // Two rows in the small panel, Expand and Close on top; the DOM follows
+  // what's on screen so Tab does too. Full screen has room for one row. A
+  // narrow sidebar stacks its header by container query instead, so it
+  // follows a drag as it happens.
+  const compactHeader = size === 'small' && !mobileWidth;
+  // The mic's label goes once the width is set; mid-drag it would flicker.
+  const narrowSidebar =
+    Boolean(docked) && sidebar.width < SIDEBAR_COMPACT_WIDTH;
+  const chatActions = (
+    <>
+      {queries.length > 0 && (
+        <IconButton
+          type="button"
+          onClick={() => {
+            startNewChat();
+            if (!touchPrimary) focusPrompt();
+          }}
+          aria-label={t('newChat')}
+          title={t('newChat')}
+        >
+          <SquarePen size={16} />
+        </IconButton>
+      )}
+      {store && (storedConversations.length > 0 || view === 'history') && (
+        <IconButton
+          ref={historyButtonRef}
+          type="button"
+          onClick={() =>
+            view === 'history' ? closeHistory() : setView('history')
+          }
+          aria-label={t('chatHistory')}
+          title={t('chatHistory')}
+          aria-pressed={view === 'history'}
+        >
+          <History size={16} />
+        </IconButton>
+      )}
+    </>
+  );
+  const panelActions = (
+    <>
+      {canExpand && (
+        <ExpandButton
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          aria-label={isExpanded ? t('collapseChat') : t('expandChat')}
+          title={isExpanded ? t('collapseChat') : t('expandChat')}
+          aria-expanded={isExpanded}
+        >
+          {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </ExpandButton>
+      )}
+      <IconButton
+        type="button"
+        onClick={handleClose}
+        aria-label={t('closeChat')}
+        title={t('closeChat')}
+      >
+        <X size={16} />
+      </IconButton>
+    </>
+  );
 
   return (
     <ThemeProvider theme={{ ...themes[theme], dimensions }}>
@@ -2198,50 +3226,72 @@ export const WidgetCore = ({
       {
         <WidgetContainer
           ref={containerRef}
+          lang={locale}
           className={`${size !== 'large' ? (isOpen ? 'open' : 'close') : 'modal'}`}
           $modal={size === 'large'}
+          $sidebar={docked}
+          $isOpen={isOpen}
+          $slideIn={slideIn}
+          style={
+            docked
+              ? ({
+                  [SIDEBAR_WIDTH_VAR]: `${sidebar.width}px`,
+                } as React.CSSProperties)
+              : undefined
+          }
         >
           <StyledContainer
             $isOpen={isOpen}
+            $sidebar={docked}
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            // Escape leaves History from anywhere in the panel, the header too.
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape' || view !== 'history') return;
+              event.preventDefault();
+              closeHistory();
+            }}
           >
             <Header>
               <AgentAvatar src={avatar} size={40} fallback="person" />
               <ContentWrapper>
-                <Title>{title}</Title>
-                <Description>{description}</Description>
+                <Title>{title ?? t('headerTitle')}</Title>
+                <Description>
+                  {description ?? t('headerDescription')}
+                </Description>
               </ContentWrapper>
-              <HeaderActions>
-                {canExpand && (
-                  <ExpandButton
-                    type="button"
-                    onClick={() => setIsExpanded((prev) => !prev)}
-                    aria-label={isExpanded ? 'Collapse chat' : 'Expand chat'}
-                    aria-expanded={isExpanded}
-                  >
-                    {isExpanded ? (
-                      <Minimize2 size={16} />
-                    ) : (
-                      <Maximize2 size={16} />
-                    )}
-                  </ExpandButton>
+              <HeaderActions $compact={compactHeader}>
+                {compactHeader ? (
+                  <>
+                    <HeaderActionsRow>{panelActions}</HeaderActionsRow>
+                    <HeaderActionsRow>{chatActions}</HeaderActionsRow>
+                  </>
+                ) : (
+                  <>
+                    {chatActions}
+                    {panelActions}
+                  </>
                 )}
-                <IconButton
-                  type="button"
-                  onClick={handleClose}
-                  aria-label="Close chat"
-                >
-                  <X size={16} />
-                </IconButton>
               </HeaderActions>
             </Header>
             <ConversationArea>
+              {view === 'history' && store && (
+                <HistoryView
+                  conversations={storedConversations}
+                  activeId={activeId}
+                  onSelect={selectConversation}
+                  onDelete={deleteConversation}
+                  onClearAll={clearHistory}
+                  onBack={closeHistory}
+                />
+              )}
+              {/* Kept mounted under History, so its answers aren't rebuilt. */}
               <Conversation
                 ref={conversationRef}
                 onScroll={handleConversationScroll}
+                $hidden={view === 'history'}
               >
                 {queries.length > 0 ? (
                   queries?.map((query, index) => {
@@ -2283,12 +3333,23 @@ export const WidgetCore = ({
                                     : null
                                 }
                                 onToggle={() => toggleSources(index)}
+                                onOpenLink={(source) =>
+                                  emit({
+                                    type: 'source_clicked',
+                                    title: answerSource(source).title,
+                                    url: source.source,
+                                  })
+                                }
                               />
                             )}
                             {query.toolCalls && query.toolCalls.length > 0 && (
                               <StatusLine>
-                                Used{' '}
-                                {query.toolCalls.map(prettifyName).join(', ')}
+                                {t('toolsUsed', {
+                                  tools: formatList(
+                                    query.toolCalls.map(prettifyName),
+                                    locale,
+                                  ),
+                                })}
                               </StatusLine>
                             )}
                             <Message
@@ -2303,6 +3364,9 @@ export const WidgetCore = ({
                                 response={query.response}
                                 sourceCount={sources.length}
                                 turn={index}
+                                openSourceLabel={t('openSource')}
+                                copyCodeLabel={t('copyCode')}
+                                newTabLabel={t('opensInNewTab')}
                                 onAnswerClick={handleAnswerClick}
                               />
                             </Message>
@@ -2313,12 +3377,12 @@ export const WidgetCore = ({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleCopy(query.response ?? '', index);
+                                  copyAnswer(query, index);
                                 }}
                                 aria-label={
                                   copiedIndex === index
-                                    ? 'Copied'
-                                    : 'Copy answer'
+                                    ? t('copied')
+                                    : t('copyAnswer')
                                 }
                                 $copied={copiedIndex === index}
                               >
@@ -2337,7 +3401,7 @@ export const WidgetCore = ({
                                       e.stopPropagation();
                                       handleFeedback('LIKE', index);
                                     }}
-                                    aria-label="Good response"
+                                    aria-label={t('goodResponse')}
                                     aria-pressed={query.feedback === 'LIKE'}
                                     $tone={
                                       query.feedback === 'LIKE'
@@ -2353,7 +3417,7 @@ export const WidgetCore = ({
                                       e.stopPropagation();
                                       handleFeedback('DISLIKE', index);
                                     }}
-                                    aria-label="Bad response"
+                                    aria-label={t('badResponse')}
                                     aria-pressed={query.feedback === 'DISLIKE'}
                                     $tone={
                                       query.feedback === 'DISLIKE'
@@ -2367,7 +3431,7 @@ export const WidgetCore = ({
                               )}
                               {feedbackErrorIndex === index && (
                                 <ActionHint role="status">
-                                  Couldn&apos;t save
+                                  {t('feedbackNotSaved')}
                                 </ActionHint>
                               )}
                             </ActionsRow>
@@ -2376,13 +3440,9 @@ export const WidgetCore = ({
                           <ErrorTurn>
                             <ErrorAlert role="alert">
                               <CircleAlert size={16} />
-                              <ErrorTitle>
-                                Couldn&apos;t generate a response
-                              </ErrorTitle>
-                              <ErrorText
-                                $raw={query.error !== CONNECTION_ERROR}
-                              >
-                                {query.error}
+                              <ErrorTitle>{t('answerFailed')}</ErrorTitle>
+                              <ErrorText $raw={!query.errorKey}>
+                                {errorText(query)}
                               </ErrorText>
                             </ErrorAlert>
                             <ActionsRow>
@@ -2390,19 +3450,19 @@ export const WidgetCore = ({
                                 type="button"
                                 onClick={() => handleRetry(index)}
                                 disabled={status === 'loading'}
-                                aria-label="Retry"
+                                aria-label={t('retry')}
                               >
                                 <RotateCcw size={16} />
                               </ActionButton>
                               <ActionButton
                                 type="button"
                                 onClick={() =>
-                                  handleCopy(query.error ?? '', index)
+                                  handleCopy(errorText(query), index)
                                 }
                                 aria-label={
                                   copiedIndex === index
-                                    ? 'Copied'
-                                    : 'Copy error'
+                                    ? t('copied')
+                                    : t('copyError')
                                 }
                                 $copied={copiedIndex === index}
                               >
@@ -2424,23 +3484,34 @@ export const WidgetCore = ({
                   })
                 ) : (
                   <Hero
-                    title={heroTitle}
-                    description={heroDescription}
+                    title={heroTitle ?? t('heroTitle')}
+                    description={heroDescription ?? t('heroDescription')}
                     icon={heroIcon}
+                    questions={heroQuestions}
+                    questionsLabel={
+                      suggestedQuestionsLabel ?? t('suggestedQuestions')
+                    }
+                    questionsDisabledReason={questionBlockedReason}
+                    anchorTop={Boolean(docked)}
+                    onQuestion={sendSuggestedQuestion}
                   />
                 )}
               </Conversation>
-              {!isPinnedToLatest && queries.length > 0 && (
+              {view === 'chat' && !isPinnedToLatest && queries.length > 0 && (
                 <ScrollToLatest
                   type="button"
                   onClick={jumpToLatest}
-                  aria-label="Scroll to latest message"
+                  aria-label={t('scrollToLatest')}
                 >
                   <ArrowDown size={16} />
                 </ScrollToLatest>
               )}
             </ConversationArea>
-            <Composer>
+            {/* Hidden, not unmounted, so the draft and its files survive. */}
+            <Composer
+              $noCredit={poweredBy === false}
+              hidden={view === 'history'}
+            >
               {attachmentsEnabled && (
                 <HiddenFileInput
                   ref={attachmentInputRef}
@@ -2466,8 +3537,8 @@ export const WidgetCore = ({
                       analyserRef={dictation.analyserRef}
                       label={
                         dictation.state === 'recording'
-                          ? 'Listening\u2026'
-                          : 'Finishing\u2026'
+                          ? t('listening')
+                          : t('finishing')
                       }
                       minHeight={size === 'large' ? '64px' : '48px'}
                     />
@@ -2482,8 +3553,8 @@ export const WidgetCore = ({
                     onInput={handleUserInput}
                     value={prompt}
                     onChange={handlePromptChange}
-                    placeholder="Ask your question"
-                    aria-label="Ask your question"
+                    placeholder={t('composerPlaceholder')}
+                    aria-label={t('composerPlaceholder')}
                     onKeyDown={handlePromptKeyDown}
                     onPaste={handlePromptPaste}
                     /* Typing would be overwritten by the next interim
@@ -2506,6 +3577,11 @@ export const WidgetCore = ({
                       {dictation.available && (
                         <MicButton
                           state={dictation.state}
+                          // A 320px row can't fit two labelled buttons in
+                          // every language.
+                          variant={
+                            size === 'small' || narrowSidebar ? 'icon' : 'pill'
+                          }
                           // Enabled while recording: it is how dictation stops.
                           disabled={
                             status === 'loading' && dictation.state === 'idle'
@@ -2532,11 +3608,20 @@ export const WidgetCore = ({
               <DropOverlay>
                 <DropTarget>
                   <CloudUpload size={16} />
-                  Drop files to attach
+                  {t('dropFiles')}
                 </DropTarget>
               </DropOverlay>
             )}
           </StyledContainer>
+          {/* After the panel, so Tab reaches the chat first. */}
+          {docked && (
+            <ResizeHandle
+              {...sidebar.handleProps}
+              aria-label={t('resizeSidebar')}
+              $side={docked}
+              $dragging={sidebar.dragging}
+            />
+          )}
         </WidgetContainer>
       }
     </ThemeProvider>

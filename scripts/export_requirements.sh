@@ -42,8 +42,9 @@ export_file() {
 
 export_file docsgpt/requirements.txt \
 "Core runtime. Optional extras live in requirements-<extra>.txt:
-  docling  DOC_PARSER_ENGINE=docling, docling OCR backend, read_document structured output
-  milvus   VECTOR_STORE=milvus"
+  docling          DOC_PARSER_ENGINE=docling, docling OCR backend, read_document structured output
+  milvus           VECTOR_STORE=milvus
+  decisions-torch  docsgpt decide-server --device mps|cuda (native installs only)"
 
 INDEX_URL=https://download.pytorch.org/whl/cpu export_file docsgpt/requirements-docling.txt \
 "Core runtime plus the docling extra: DOC_PARSER_ENGINE=docling, the docling
@@ -60,6 +61,16 @@ common packages, so with uv either run 'uv sync --extra docling' (the lock
 pins the index per package) or set UV_INDEX_STRATEGY=unsafe-best-match.
 Docker: --build-arg EXTRAS=docling" \
   --extra docling
+
+INDEX_URL=https://download.pytorch.org/whl/cpu export_file docsgpt/requirements-decisions-torch.txt \
+"Core runtime plus the decisions-torch extra: torch and transformers for
+'docsgpt decide-server --device mps' (the decision model on a Mac's GPU) or
+'--device cuda'. For native installs only: no image installs it, and the API
+and the worker never import torch (it cannot share a macOS process with faiss).
+On Linux torch comes from the CPU-only PyTorch index; for --device cuda,
+reinstall torch from PyPI on top. With uv, prefer
+'uv sync --extra decisions-torch' (see requirements-docling.txt for why)." \
+  --extra decisions-torch
 
 export_file docsgpt/requirements-milvus.txt \
 "Core runtime plus the milvus extra (VECTOR_STORE=milvus): pymilvus and the

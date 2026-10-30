@@ -3,27 +3,28 @@
 DESIGN.md is the system; this is how each area applies it. DESIGN.md holds the tokens, the
 `ui/` component contracts, spacing, type, radius, motion, focus and the approved exceptions,
 and every rule there holds here too. This file is the per-area spec: the page chrome every
-section page shares, the agent pages, the app chrome, the chat, the source views, the workflow
-builder and the connectors. A "see X" below points to a section of this file unless it names
+section page shares, the agent pages, the Monitoring pages, the app chrome, the chat, the source views, the
+workflow builder, the connectors and Activity. A "see X" below points to a section of this file unless it names
 DESIGN.md.
 
 ## Contents
 
 - [Page chrome: SectionShell, PageToolbar, SearchInput](#page-chrome-sectionshell-pagetoolbar-searchinput)
 - [Agent pages](#agent-pages)
+- [Monitoring pages: Analytics, Insights, Logs](#monitoring-pages-analytics-insights-logs)
 - [App chrome: the phone top bar and New Chat](#app-chrome-the-phone-top-bar-and-new-chat)
 - [Chat composer](#chat-composer)
 - [Chat answer column](#chat-answer-column)
 - [Source views](#source-views-componentstree-wikiviewer-componentsgraph-graphview)
 - [Workflow builder](#workflow-builder-agentsworkflow)
 - [Connectors](#connectors-connectors-conversationtoolcallcard)
+- [Activity](#activity-activity)
 
 ## Page chrome: SectionShell, PageToolbar, SearchInput
 
-Every section page (settings, admin, agents, teams) is wrapped in
+Every section page (settings, admin, agents, teams, activity) is wrapped in
 `navigation/SectionShell` (`width` `default` 6xl, `wide` 7xl for admin,
-`narrow` 5xl; `title` replaces the section title; `titleAction` puts a page-level
-control, such as a toolbar `ActionMenu`, at the title row's end;
+`narrow` 5xl; `title` replaces the section title;
 `header={false}` drops the title for the phone section index, which draws
 its own);
 it draws the title and
@@ -32,7 +33,9 @@ under the title is `components/PageToolbar`: `intro`, then the page `search`
 (left, `max-w-md`) and the page `action` (right, `Button size="field"
 shape="pill"`, text only: no `Plus`, a dropdown keeps its `ChevronDown`), then `children` (notices that belong to the action, such as
 a limit warning), then `divider` (a `Separator`). With no `search` the intro
-moves into the row's left slot (`max-w-2xl`) beside the action. A page search
+moves into the row's left slot (`max-w-2xl`) beside the action. The row
+stacks below `sm` (the action under the intro, spanning it); `stack={false}`
+keeps a small action, such as a lone ⋯, beside the intro there. A page search
 is `components/SearchInput`: the 38px pill (one size everywhere) with a
 search icon and a floating `label` on `labelSurface="background"` (its
 default); a placeholder-only search is named by its placeholder. A source
@@ -43,49 +46,64 @@ pill, text 40px in, the ring on the frame), because its rows are
 wrapper carries `data-variant` for styling from the parent. Nothing else
 hand-frames a `CommandInput`.
 
-An agent's tabs (Overview, Logs, Schedules) share one header,
+An agent's pages (Overview and Schedules, then the Monitoring group: Analytics, Insights and Logs) share one header,
 `agents/components/AgentPageToolbar` on top of `PageToolbar`, under
 `SectionShell`'s title (the tab's name, or "New agent" through SectionShell's
 `title` prop). Its props: `name` (the agent, first in a muted byline),
 `status` (a Badge beside the name, Overview's Published / Draft), `meta` (the
-tab's context after a middle dot, "Last used" on Logs and Schedules),
-`actions` (the tab's buttons on the right, at most three; the page's ⋯ goes
-in the title row, not here), `intro` (a line that replaces
+page's context after a middle dot, "Last used" on every page of a saved agent),
+`actions` (the page's buttons on the right, at most three; on Analytics and Insights the window select, and Insights' Settings beside it),
+`menu` (the agent's ⋯, last in the row after the actions, as a source view's
+`PathHeader menu`; with no actions it stays beside the byline on a phone), `intro` (a line that replaces
 the byline: the new-agent form) and `children` (notices between the row and
 the rule, such as the failed-save `Alert`). With a status badge the meta
 takes its own line on a phone. The row keeps the 38px field height when a
-tab has no actions, so the rule lands in the same place on every tab.
+page has no actions (Logs), so the rule lands in the same place on every page.
 `AgentPageHeader` remains only in the workflow builder's fixed toolbar. All
-three tabs are `SectionShell` pages at the default width; the agent preview
+five pages are `SectionShell` pages at the default width; the agent preview
 is a drawer (see DESIGN.md › Modal, not Dialog). Overview groups its fields into three
 `subtle lg` panels (Basics, Knowledge and behaviour, Model) with the two-up
-field grid, then Advanced, Guardrails and the danger zone. Schedules shows a
+field grid, then Advanced, Guardrails and Insights. Schedules shows a
 `StatCard` row, Recurring / One-time as `ui/tabs`, and
 each schedule as a `ScheduleRow` (see Agent pages).
 
+A detail page inside a list section (an open team, tool or remote device)
+swaps the list's `PageToolbar` for a crumb row at the 38px field height
+(`min-h-9.5`): `DetailBreadcrumb` on the left; on the right the page's
+buttons (`field` pills: the tool's Save) and the object's ⋯ (`ActionMenu
+size="toolbar"`) last, as a source view's `PathHeader` ends with its `menu`.
+An open tool's ⋯ is its tile's menu less Edit / View (`getMenuOptions(tool,
+true)` in `settings/Tools`, whose dialogs serve both); a device's holds
+Revoke. A delete or revoke is the ⋯'s last item, `destructive` after a rule.
+
 ## Agent pages
 
-The agent section pages (Overview, Logs, Schedules), the agent form and the workflow builder's
-toolbar. Their header row is `AgentPageToolbar` (see Page chrome).
+The agent section pages (Overview, Schedules, Analytics, Insights, Logs), the agent form and the workflow builder's
+toolbar. The three Monitoring pages have their own section (see Monitoring pages). Their header row is `AgentPageToolbar` (see Page chrome).
 
 Buttons:
 
-- One variant and size per role on the agent pages (Overview, Logs,
-  Schedules, the workflow builder's toolbar): the page's primary action is
+- One variant and size per role on the agent pages (Overview, Schedules,
+  Analytics, Insights, Logs, the workflow builder's toolbar): the page's primary action is
   `default field pill` (Publish, Save, New schedule), a secondary action
   `outline field pill` (Save draft, Preview with `Play` first), Cancel `ghost
 field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
-  at the end of the title row, through `SectionShell titleAction`: Access
-  details and Share with team on Overview (each only when the role allows
+  last in the toolbar row, through `AgentPageToolbar menu`, on Overview
+  only (and the workflow's phone Overview, `MobileBlocker`; Schedules and
+  the Monitoring pages keep to their own actions): Access details and
+  Share with team (each only when the role allows
   it, see DESIGN.md › Access and roles), and Preview until the agent is
-  published (before that the preview only says "Publish to preview"). So the
-  row never holds more than three buttons and fits a phone, where the main
-  one stretches across it (`flex-1 sm:flex-none`; `PageToolbar`'s action slot
-  spans the stacked row below `sm`). The workflow builder's toolbar has no
-  title row and keeps its ⋯ at the row's end, holding Edit details, Access
-  details, Share with team and Delete (see Workflow builder). The
-  agent's Delete is in Overview's danger zone; only the workflow builder's
-  toolbar has it in the ⋯ menu, as a `destructive` item. The row itself is
+  published (before that the preview only says "Publish to preview"); each
+  item has its icon (`Link`, `Users`, `Play`), and the ⋯ isn't drawn with no
+  items. So the row never holds more than three buttons and the ⋯, and fits a
+  phone, where the main one stretches across it (`flex-1 sm:flex-none`;
+  `PageToolbar`'s action slot spans the stacked row below `sm`, the ⋯ at its
+  end). The workflow builder's toolbar keeps its ⋯ at the row's end too, holding Edit details, Access
+  details, Share with team and Delete (see Workflow builder). Delete is the
+  agent ⋯'s last item on both, a `destructive` item after a rule
+  (`separatorBefore`) that opens the confirm. The menu comes from
+  `agents/hooks/useAgentMenu`, which also draws the dialogs; Overview adds
+  Preview first and opens its own Access details. The row itself is
   `agents/components/AgentPageToolbar` (see Page chrome). A row's common
   action is `outline sm pill` (a schedule's Run now or Resume) with its other
   actions in the row's `ActionMenu`; a delete there is a `destructive` item
@@ -94,14 +112,14 @@ field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
 Cards (the recipes by role in DESIGN.md › Card surfaces, applied here):
 
 - Form sections (the agent form's Basics, Knowledge and behaviour, Model,
-  Advanced, Guardrails) are `subtle lg` with `gap-5`; Basics, Knowledge and
-  behaviour and Model are titled by a `SectionHeader`, Advanced and
-  Guardrails by a `CollapsibleTrigger look="section"` in an `<h2>` (see
-  DESIGN.md › Disclosure), its status badges beside the `<h2>`. The toggle
+  Advanced, Guardrails, Insights) are `subtle lg` with `gap-5`; Basics, Knowledge and
+  behaviour and Model are titled by a `SectionHeader`, Advanced,
+  Guardrails and Insights by a `CollapsibleTrigger look="section"` in an `<h2>` (see
+  DESIGN.md › Disclosure), its status badges beside the `<h2>` (Insights' `neutral`
+  Off while the agent collects none). The toggle
   and its Collapsible share a plain `<div>`, and the body opens with `pt-5`
   (its rows in a `flex flex-col gap-5` column, no `mt-*`), so every section
-  has 20px under its title and none under a closed toggle. The danger zone
-  follows them (see DESIGN.md › Card, Danger zone).
+  has 20px under its title and none under a closed toggle.
 - Guardrails' stage panels (one per active check and stage) are `Card
 variant="subtle" padding="sm"`, `tone="destructive"` while the control
   needs setup; their fields use `float={false}` on that fill (see DESIGN.md ›
@@ -109,6 +127,221 @@ variant="subtle" padding="sm"`, `tone="destructive"` while the control
 - A schedule is `agents/schedules/ScheduleRow`: `subtle`, `padding="none"`,
   with its run log flush under it; a chevron `IconButton ghost-muted
 icon-xs` toggles the runs.
+
+## Monitoring pages: Analytics, Insights, Logs
+
+The same three pages at two levels, under one group heading, Monitoring
+(`navigation.sections.groups.monitoring`): an agent's sidebar puts Overview and
+Schedules first, then Analytics, Insights and Logs; Settings' Monitoring group
+holds the account's three (`/settings/analytics`, `/settings/insights`,
+`/settings/logs`). Both lists live in `navigation/sections.ts`:
+`buildAgentSection` for an agent (each item behind its `TAB_ACTIONS` action:
+the Monitoring pages need `view_logs`, Schedules `manage_schedules`) and
+`SETTINGS_SECTION`. Insights is `feature: 'analytics'`, listed only while
+`/api/config` reports analytics on (`selectAnalyticsEnabled`, the one read in
+the store); a deep link while it is off redirects (an agent's to its Logs,
+Settings' to Analytics) instead of drawing an empty page. The workflow builder
+has no sidebar: `AgentPageHeader` draws the same items flat and in order
+(`getVisibleGroups(buildAgentSection(…)).flatMap`), five `NavTab`s with
+Overview current, and `MobileBlocker` lists them after Overview as `outline`
+Buttons; neither keeps a list of its own.
+
+Page chrome (see Page chrome): the window select, `settings/TimeFilterSelect`
+(`field pill`, `min-w-[125px]`, `SelectContent fit`; Hour, 24 hours, 7 days,
+15 days, 30 days, the default last), is the toolbar's action on every
+Analytics and Insights page: `AgentPageToolbar actions` on an agent,
+`PageToolbar action` beside the `intro` in Settings. On an agent's Insights it
+shares the slot with Settings (`outline field pill`, `Settings2` first), shown
+only to a role that may edit the agent. Logs has no window select; Guardrail
+activity keeps its own day select inside its panel. An agent's Logs is
+Guardrail activity, then a `<section id="logs">` (the drill-down target, which
+`revealElement` scrolls to) headed by a `SectionHeader` "Logs" with
+agent-scoped copy. Each agent page reads the agent once (`useAgent`); a failed
+read is `EmptyState tone="destructive" size="sm" illustration="none" onRetry`
+under the toolbar.
+
+Chart panels: every chart on Analytics and Insights is
+`settings/insights/ChartPanel`, never a hand-built Card. It is `subtle lg`,
+`min-h-[345px]`, and fills its grid row; the chart sits out of flow, so the
+row's height comes from its tallest panel and never from a canvas. The title is
+a `SectionHeader as="h2" size="xs"` (the panels sit straight under the page's
+title), and `actions` share its wrapping row (Token usage's Group by select,
+and its Background tokens switch pushed right with `ml-auto`). The body is one
+of: `loading`, the `analysis` SkeletonLoader in the chart's place under the
+real title; `error` with `onRetry`, the destructive `EmptyState size="sm"`
+("Could not load this chart." on Analytics); `empty`, an `EmptyState size="sm"
+illustration="none"` saying why there is no figure yet; `children`, an in-flow
+body that sizes itself (Insights' share bars when there is no trend to draw);
+else the chart and its legend container. `summary` sits in flow between the
+title row and the body (Insights' headline), and only with figures. Analytics pairs them in `xl:flex-row` rows; Insights lays them
+in `grid-cols-1 xl:grid-cols-2` with `gap-3`, in rows of equal height.
+
+Insights (`settings/insights/ConversationInsights`, the body of an agent's
+Insights and of Settings › Insights) draws one state from `insightsState`.
+Only `partial` and `ready` (`showsFigures`) draw the intro, the language note
+(an `info` Alert, `role="note"`), the tiles, the panels and Docs gaps; every
+other state is one `EmptyState size="sm" illustration="none"` that names its
+next step, and the panels say nothing about it:
+
+- `agentOff`: "Insights are off for this agent" and, for a role that may edit
+  it, Turn on (`outline field pill`), which opens the settings drawer already
+  switched on.
+- `noTraffic`: "No conversations in the last 30 days", named by the window.
+- `analyzing`: "Analyzing conversations", "12 of 40 answers analyzed · newest
+  first" (`tabular-nums`) and a `Progress` in the action slot (`w-64 sm:w-96`),
+  only while unlabelled answers sit inside the labelling window and fewer than
+  `MIN_SAMPLE` are done.
+- `olderOnly`: every answer in the window predates the labelling window ("Insights
+  cover conversations from 13 Oct onwards…", the date in `headingLocale`).
+- `loading` is `InsightsSkeleton`: the five tiles and the four panels every
+  window has, in grid order under their real titles, so nothing moves or
+  renames when the figures land; `error` is the destructive EmptyState.
+
+The intro ("Estimated by an AI model from each conversation.", Learn more to
+the docs' `#conversation-insights`, and "N of M answers analyzed" while
+`partial`) shows only above figures: Settings passes it as the toolbar's
+`intro` (`InsightsIntro`, with `intro={false}` on the body), an agent's page
+draws it inline. Figures are the estimate alone: no confidence ranges and no
+tier badges (both stay in the API, and the ranges in the CSV). The guard is
+`MIN_SAMPLE` (10): under it a tile reads `—` with "Not enough data yet (6 so
+far)", a panel "Not enough data yet", a tag row `—`.
+
+- Tiles are five `StatCard`s in `grid-cols-2 md:grid-cols-3 lg:grid-cols-5`, the
+  last `col-span-2 md:col-span-1` so it never sits alone on a phone (Analytics'
+  five cards take the same rule); `sub` names the denominator ("of 81
+  questions"), `hint` what the figure counts.
+- The two chart panels (Answer status, How users replied) open with an
+  `InsightHeadline` in `ChartPanel summary`: the period's figure (`text-2xl
+  font-bold`), what it is and its denominator ("of 67 questions"), and
+  "Previous period: 63%" with an up, down or equal arrow once the previous
+  period (`previous` in the API) has `MIN_SAMPLE`. Over time they draw counts,
+  never shares, so a quiet week is a short column: `AnalyticsChart
+  columnTooltip` (one tooltip per column with each non-empty series rounded,
+  "<1" for slivers, the bucket's count in the footer; level x labels). The
+  headline's mix strip and its legend ("Fully answered 59%") name the series,
+  so the chart draws no legend. Buckets are the API's `bucket_unit` (it
+  coarsens days to weeks while they average under 10 answers), labelled by
+  `bucketLabel` ("17 Oct", "13–19 Oct", "14:00"). Fewer than `MIN_BUCKETS` (3)
+  buckets with `MIN_SAMPLE` items each is no trend: the panel shows the
+  period's mix as `ShareBars` under the headline, without the strip, each bar
+  in its series' colour (the row's `tone`, a `Progress` variant; `muted` for
+  the neutral kind).
+- Answer status stacks the four outcomes; greetings are not drawn. How users
+  replied reads the same replies two ways, switched by a `ToggleGroup
+  size="xs"` (Replies to answers / Sentiment) in the title row: the good kind
+  up from zero, the bad kinds down (`AnalyticsChart diverging`, the zero line
+  in the tick colour), the neutral kind (Moved on, Neutral) in the headline
+  only, with a muted line saying it isn't drawn. As bars it shows both under
+  `SectionHeader as="h3" size="sm"` headings, without the toggle.
+  Series take colour by meaning (`success`, `warning`, `destructive`, `info`
+  for Asked for details); a series that is no failure, "Said it didn't know",
+  Neutral and Moved on, is `muted-foreground`.
+- Share lists (Request type, Why not fully answered, Topics) are
+  `ShareBars` in a `subtle lg` Card with a `SectionHeader as="h2" size="xs"` and a
+  muted `text-xs` "Share of N answers" line: per row the label (`text-xs`,
+  wrapping, `sm:w-40`), a stock `ui/Progress` (the brand colour: these
+  options have no good or bad) and the whole percent, as one
+  `sr-only` text run ("How-to: 38%") with the drawing `aria-hidden`. A panel
+  left alone on the last row spans both columns and lays its rows in two.
+- Topics (agent pages only; each agent has its own list) always spans both
+  columns, after Why not fully answered. With both kinds it is two halves, from
+  `xl` side by side, each under a `SectionHeader as="h3" size="sm"` named as the
+  settings groups (One per question, a share of messages; Can overlap, a share
+  of conversations, with a muted "don't add up to 100%" line), each list named
+  by its heading. With one kind, its bars in two columns and no halves. An
+  overlapping topic under the sample floor reads `—`; the rows sort by share.
+  Without either kind it is left out, except for editors of an agent that asks
+  no topic question: `EmptyState sm` with Set up topics (`outline field pill`),
+  which opens the settings drawer.
+- One name per label on every surface (charts, tiles, Logs): Replies to
+  answers, Docs gap, Asked again or pushed back; copy says "analyzed", never
+  "labelled".
+
+Docs gaps (`settings/DocsGaps`) is its own section after the figures,
+`id="docs-gaps"` (the weekly summary's target, scrolled to once it has
+loaded): a `SectionHeader` whose `actions` are the Page / Source / Topic
+`ToggleGroup` (Topic only on an agent with topics that don't overlap; the pick kept in
+localStorage) and Export CSV (`outline field pill`, `Download` first). From `lg`
+the rows are a `Table`; below it, `filled interactive` tiles with a
+`MetaSegment` line. A row opens a `SidePanel`: the page name as its title, then
+the source and the URL (`font-mono text-xs wrap-anywhere`) as its description,
+a `DescriptionList` (Gaps, Share of questions, Previous period) and the examples
+as interactive `ListRows` linking into Logs.
+
+- Page names drop the tail that every titled row shares (`pageNames`; per
+  source when not all rows share one); the CSV keeps the full title. The
+  source is a muted second line: always in Settings, where the page alone
+  doesn't say where it is from, and on an agent only when its rows name more
+  than one source.
+- Change: `—` (with an `sr-only` "No earlier data") until the previous period
+  has labelled answers (`previous_labelled`), then "New", a `Minus` for no
+  change, or an arrow with `+N` / `−N`. The text stays plain (`muted-foreground`
+  for New and the dash, foreground for the number); only the arrows take a
+  hue: up `destructive`, down `success`.
+
+Logs label chips (`settings/LabelChips`, in the row's header) are text-only
+`Badge`s, since status and outcome badges carry no icon, coloured by meaning:
+`warning` where the answer needs attention (Docs gap, Not fully answered,
+Asked for a person), `destructive` where the user is upset (Asked again or
+pushed back, Negative sentiment, Frustrated), `neutral` for the agent's
+topics that can overlap (truncating at `max-w-48`) and the "+N" for the rest (named in `sr-only`). At
+most three; a docs gap stands for not fully answered, frustrated for negative
+sentiment. The Logs filter selects are named (`aria-label`), `field pill` with
+a `min-w-[…]` and `SelectContent fit`; the label select is there from the first
+paint (the flag from Redux) and, on an agent, only while it collects insights.
+On an agent it ends with a Topics group: every topic, as `/api/analytics/topics`
+lists it (folders included), sorted by name and without badges.
+
+Insights settings are one body, `agents/components/InsightsSettingsBody`, in
+three hosts that each save it their own way:
+
+- Overview's Insights section, `AnalyticsSection`: a collapsible form section
+  (see Agent pages) saved by the agent's Save; the source folders load only
+  once it opens (`active`).
+- The Workflow details card (`subtle lg`, `SectionHeader as="h3" size="xs"`, the
+  body at `headingLevel="h4"` with `topicSource="none"`), saved by that sheet's
+  Save.
+- The Insights page's Settings drawer, `InsightsSettingsSheet`: a modal
+  `SidePanel` with `PanelHeader` (the agent's name as description) and its own
+  Cancel / Save, which saves only `config.analytics` on top of the saved config,
+  so it never meets unsaved Overview edits. Turn on opens it with
+  `startEnabled`.
+
+The first two hide while the server has insights off, unless the agent already
+has settings of its own, and then show an `info` Alert that they don't run yet.
+The body edits `value` only and renders sibling blocks for its host's
+`flex flex-col gap-5`: Collect insights (`SettingRow` and `Switch`, with Learn
+more to the docs' `#analytics-settings-for-an-agent`); then, only while it is
+on, Topics; then the Weekly docs-gap summary switch.
+
+Topics is one `SectionHeader size="xs"` (the `count` is the rows shown) with
+Add topic (`outline sm`, `Plus`) over one `Card variant="subtle"
+padding="none"`:
+
+- Rows: the source folders (a `neutral` From sources `Badge` with `Folder` in
+  the title) and the owner's own topics, by name. A folder's ⋯ is Edit (it
+  becomes an own topic and the folder hides) and Hide; an own topic's is Edit
+  and Remove, after a separator, confirming only for one that can overlap,
+  whose results go with it. Each ⋯ is the same `ActionMenu`.
+- Groups: none until a topic can overlap; then One per question and Can
+  overlap, each under a `SectionHeader size="sm"` one heading level down, named
+  as the halves of the Insights Topics panel.
+- Notes under the rows, muted `text-xs` lines with a `link` `size="text"`
+  action: hidden folders (Show), folders past the limit, folders that failed
+  (Retry), one topic on its own, both limits reached (Add topic leaves), the
+  folders that come after the first save, and the folders a read-only caller
+  can't list.
+- Empty: `EmptyState sm` with `illustration="none"` in the card, its copy by
+  cause (a workflow, unsaved, no folders, every folder hidden with Show
+  folders); three skeleton rows while folders load.
+
+`TopicModal` adds and edits both kinds: name, optional description (its
+budget, and the counter past 80%, follow the kind), Can overlap other topics
+as a `SettingRow` and `Switch` (off by default, locked when the other kind is
+full, absent when the server allows none), then a muted line on what the change
+reaches, or a `warning` Alert when an edit changes the kind. Workflows pass
+`topicSource="none"` and never load folders. A confirm or the dialog keeps its
+copy while it animates closed (`useKept`).
 
 ## App chrome: the phone top bar and New Chat
 
@@ -146,6 +379,12 @@ a chat".
   Sources) are `outline sm pill`. Their icons are `size-3.5 sm:size-4`
   with no margin; the size's `gap-1.5` spaces them, and the label span keeps
   `text-xs sm:text-sm` so the row still fits on a phone.
+- Tools and Knowledge show what is on without opening the picker. Tools
+  adds a `Badge` with the count of tools on in this chat. Knowledge names
+  a single source; with several it keeps the "Knowledge" label, adds the
+  count `Badge` and lists the names in its `title`. The badge is
+  `tabular-nums` and `aria-hidden`; the trigger's `aria-label` says the
+  count instead. With nothing on (or one source), neither has a badge.
 - The attachment chips above the field (`message-input/AttachmentChipList`)
   sit in one `scrollbar-overlay` area capped at `max-h-32 sm:max-h-48` (about
   two and a half rows on a phone, three and a half wider, so the cut row
@@ -180,6 +419,9 @@ that fixes the error (Add to Knowledge, when a turn's files overflowed the
 model) is an `outline sm pill` Button with a leading lucide icon under the
 message, in a `text-foreground` wrapper so its label is body text rather than
 the alert's red; a link in the alert's colour does not read as a control.
+An answer its user stopped before it wrote anything (`error_code: "stopped"`)
+is the same block as a note, `Alert variant="info" role="note"` titled
+`conversation.stoppedTitle`, with the same Retry and Copy: nothing failed.
 
 The rows in an answer's step column (Sources, Reasoning, each tool step) are
 one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a
@@ -224,6 +466,39 @@ that order into blocks:
   icon is a brand mark in its own colours, or that has none, draws a lucide
   stand-in (wiki `BookOpen`, Brave and DuckDuckGo `Search`, Telegram `Send`,
   ntfy `Bell`, Postgres `Database`). The Tools page keeps the brand marks.
+
+An answer's artifacts (files and notes its tool calls made, and its
+workflow run's files) are cards between the answer and its action row
+(`components/ArtifactCard`, built by `conversation/artifactCards`), never
+chips in the action row, which holds only the answer's own actions:
+
+- A card is the answer's surface (`bg-answer-surface`, `hover:bg-accent`,
+  `rounded-2xl p-3`): the kind's lucide icon on the brand soft fill
+  (`bg-secondary text-secondary-foreground`, a 40px `rounded-xl` square; the
+  grey icon tile would vanish, as `muted` is the answer surface in light),
+  the title (the artifact's title, else its filename) and a muted meta line,
+  the kind and the version its turn made ("PDF · v2"). The whole card opens
+  the artifact in the side panel on that version through a stretched button
+  named by the title; Download (`ghost-muted icon-sm pill`, `z-10`) saves
+  that version (DESIGN.md › A clickable card that holds a link). The card the
+  panel shows is `bg-secondary` (the open-row rule).
+- The list is a container query: two columns once the answer column fits two
+  (`@min-[33rem]`, across the full answer column), one below that, so the builder
+  preview's narrow column stacks them on any screen. Its outer box is
+  `w-full min-w-0`: in the answer's wrapping flex column a container-query
+  box has no width of its own and lays its height out as if stacked.
+- Order: documents (HTML, PDF, slides, documents, spreadsheets, notes), then
+  images, then data and other files, each in the order produced; one card per
+  artifact.
+- Past four, the first three cards and a fourth, "N more files · Show all
+  M", with a chevron instead of Download, that opens the answer's list in the
+  side panel (`conversation/ArtifactsPanel`): `ListRows` grouped by kind
+  under `SectionHeader size="xs"` with counts, in a `subtle` Card, each row
+  opening that artifact as the panel's second level with Back to the list,
+  the Sources pattern. The fourth card is open while its list shows.
+- A workflow run's files are listed only where they can open (not in a
+  shared chat), quietly: no spinner, nothing for a run that made none, a
+  destructive `EmptyState` with Retry when the list fails.
 
 A cited source opens in that panel as its second level, `CitationReader`:
 a source card under the answer, a tile in the list and an inline `[n]` pill
@@ -271,8 +546,32 @@ wiki, a knowledge graph) is one shell:
   have none); `byline` is one muted `text-sm` line of counts ("33 files ·
   11,420 tokens", "12 pages · 8,111 tokens · …", "371 entities · 1,172
   relationships"), where a kind that needs explaining adds one sentence. No
-  explainer box. Actions on the right: Test retrieval (`outline field pill`)
-  and the kind's one primary action (Add file, Sync).
+  explainer box. Actions on the right, source-level only: Test retrieval
+  (`outline field pill`), the kind's one primary action (`default field
+  pill`, text only: Add file for an upload, Add pages for a website, Sync now
+  for a synced source, none for a wiki or a graph), then the source's ⋯
+  (`ActionMenu size="toolbar"`, PathHeader's `menu`, always last). The ⋯ is
+  `settings/useSourceActions`' `menuOptions(doc, 'view')`: the card's menu less
+  View and Test retrieval (and less Sync now where that is the primary); its
+  Delete is "Delete source" and returns to the list. File and page actions
+  never sit in this row.
+- **Synced sources** (`settings/sourceKinds` `isSyncedSource`: a connection, a
+  connector type or a schedule, whatever the stored type, so S3 and GitHub
+  too) open in `ConnectorTree`: the connection's badge, the schedule in the
+  byline ("12 files · 13,080 tokens · Weekly · synced 2 days ago"), Sync now,
+  and no Add file or file Delete (a sync replaces them). A website keeps
+  WebsiteTree and Add pages, with Sync now in its ⋯.
+- **Source menu** (the card's ⋯ and the view's): View, Reingest (a failed
+  ingest only), Sync now, Settings, Test retrieval, Convert to wiki, Share with
+  team, then Delete after a rule (`separatorBefore`); never more than that, and
+  no per-value rows (the schedule is a field in Settings). Settings is one
+  dialog, `SourceConfigModal`: its first section depends on the kind (a
+  website's pages, skips, Keep links and schedule; a synced source's "Keep up
+  to date"; nothing for an upload), then RetrievalOptions, with Sync now in the
+  footer; a viewer with `view_config` reads only the retrieval part. A wiki's
+  Settings is WikiSettingsModal. A card whose source has a schedule shows
+  "{frequency} · synced {when}" instead of its date, and "via {connection} ·
+  N files" for a connection.
 - **Navigator**: `SourceNavigator`, a `w-64` column shown only when there is
   more than one thing to open (files, wiki pages). A filter `CommandInput
 variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
@@ -288,6 +587,16 @@ variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
   scrolls). A source with one file opens
   straight on its chunk list, and a wiki with one page on its reader at full
   width: no navigator, no table.
+- **Item bar**: an open file or website page (TreeBrowser: uploads, websites,
+  synced sources; a wiki page has the Reader) has `tree/ItemBar` above its chunks, the
+  same wherever it was opened (table, navigator, citation, the one-file
+  shortcut): a `subtle` Card with one `ListRow`, the item's icon and name, its
+  address (`link inline` with ExternalLink) or size, muted counts ("N chunks ·
+  N tokens · fetched …") and the row's ⋯ less View. The source's last item has
+  no Remove or Delete (Delete source covers it), and an empty menu draws no ⋯.
+  Notices about the item (a synced website's hand-edits note) go under the bar.
+  The header byline stays the source's. Leaving the navigator with the pointer
+  hands cmdk's highlight back to the open item, so only one row looks picked.
 - **Reader**: `ReaderPanel`, the content you read (a wiki page, an open
   chunk): a `subtle` Card with `padding="none"`, its meta (muted 12px lines)
   left and its actions right in a `min-h-14 px-6` header row, a `Separator`,
@@ -324,9 +633,15 @@ pill`) and Save (`default lg pill`, off until the draft or a field changes, and 
   · Files (Files is the embedded file tree; a source with no folder structure
   shows its embedded chunk list there instead, as the plain view does). A tab's own action goes in the
   header's action row after Test retrieval, only while that tab is open (the
-  Files tab's Add file or Sync, portalled through `TreeBrowser`'s
+  Files tab's Add file or Sync now, portalled through `TreeBrowser`'s
   `actionsTarget`), as on the agent pages; the embedded tree draws no row of
-  its own. The Graph tab's toolbar holds the
+  its own. A website source's page changes and the syncs started from its ⋯
+  are held by the graph view (`tree/useWebsiteChanges`), not by the Files
+  tab's WebsiteTree, which mounts only while that tab is open: they finish
+  and toast whichever tab shows, the running one's muted label ("Syncing the
+  source…") sits after Test retrieval on the other tabs, and the view reports
+  them (`onBusyChange`) so the ⋯'s Sync now is off meanwhile. Overlapping
+  changes each hold the busy state until the last ends. The Graph tab's toolbar holds the
   entity search (`graph/GraphEntitySearch`: a `SearchInput` whose results
   over the server's `/graph/nodes?q=` open in a Command anchored under it,
   the field keeping focus and driving the list with the arrows and Enter),
@@ -467,6 +782,19 @@ the column widths, never `min-w-[…]` pins (see DESIGN.md › Table). Add knowl
 tiles, then "From a service" (see DESIGN.md › OptionCard) and "Browse all connectors"
 (`settings.connectors.browseAll`, 12px `ArrowRight`) under the tiles.
 
+Add knowledge's forms (Upload, Website, New wiki): Name first, the
+kind's fields, then the `Advanced settings` disclosure, and one submit, "Add to
+Knowledge", for all three. A wiki's "Initial content" is a default Textarea
+with its hint in FormField `hint`. A website's "Keep links in page text" is a
+Website field (`WebsiteFields keepLinks`), not a chunking setting.
+`settings/components/RetrievalOptions` is flat groups with `GroupHeader`
+eyebrows (h3, "· tag"): Retrieval · Relevance · Filtering · Graph retrieval ·
+Graph extraction · Chunking, never a nested toggle. `variant="create"` (the
+add forms and the connector wizard's sync setup) drops the re-ingest tags and
+the Filtering group (unless inherited LLM screening doesn't add up) and ends
+with the muted "Fine-tune filtering after the first ingest…" line; Source
+settings, Test retrieval and admin Defaults use the default.
+
 The connection drawer (`ConnectionDrawer`, a `default` SidePanel) keeps the
 capability badges in `PanelHeader` children. Its accounts are one `Card subtle
 padding="none" overflow-hidden` of ListRows (name, account line, status Badge,
@@ -479,6 +807,16 @@ after a separator (`separatorBefore`); both confirmations name the account,
 say what the account actually has and are async submits (see DESIGN.md ›
 Modal, not Dialog). Disconnect's submit is primary; only
 Remove is destructive. "In my chats" stays as in DESIGN.md › Switch.
+
+The drawer's "Knowledge from this connection": with nothing synced, an
+`EmptyState size="sm"` with an outline "Sync content"; with sources, the header
+link "Sync more content". Each source row opens the source in Knowledge
+through a stretched button, its description worded as the source's card
+("Weekly · synced 2 days ago"), and its ⋯ is Sync now (connected and not
+paused only; a row `Spinner xs` and a disabled item while it starts) and Open
+in Knowledge. Syncs this session started show first as neutral "Indexing"
+rows ("First sync started …") until the server lists the source
+(`connectorsSlice.startedSyncs`).
 
 Per-action permissions are `connectors/PermissionGroup` everywhere (the
 drawer's ToolPermissions, an agent's API write allowlist, the Tools page
@@ -496,12 +834,23 @@ inline `CollapsibleTrigger`, named "Parameters for {action}").
 The connect wizard (`ConnectWizard`) is a `size="lg"` Modal on every step,
 with the connector's icon tile in `leading` (`Avatar size="xl" shape="square"
 variant="icon"`, as in the connection drawer's header; see DESIGN.md › Avatar) and a `description` (the
-service's description, then "Signed in as …"). Every step title names the
-service ("Choose what to sync from GitHub") and doesn't change with a switch.
-The setup step's footer is one submit named by what it does ("Add to
-Knowledge" while Sync is on, else "Finish setup"; Cancel + "Add to Knowledge"
-when syncing more), never Skip. Every path ends on the done step, whose
-summary is a `success` Alert. With several accounts and none chosen, the
+service's description, then the account: "Signed in as …", or "Connected
+with the key ending …" for a pasted key). Every step title names the service
+("Choose what to sync from GitHub") and doesn't change with a choice. A
+sync-only connector (`setup.tools === 'off'`: S3, Drive, SharePoint,
+Confluence, Reddit) asks how to use it on its first connect with two `OptionCard`s in a
+`role="radiogroup"`, "Sync content now" (picked from any entry point) and
+"Just connect"; the setup form sits under them behind a `Separator` in a
+Collapsible that folds away on Just connect and keeps its values. A connector
+with tools and sync (GitHub, Linear) keeps one switch each. The setup step's
+footer is one submit named by what it does ("Add to Knowledge" while syncing,
+else "Finish setup"; Cancel + "Add to Knowledge" when syncing more), never
+Skip. Every path ends on the done step, whose summary is a `success` Alert
+that reports and never gives directions; its footer follows what happened: a
+lone Done after a reconnect; Done + "Open in Knowledge" (the first new source)
+when sources were created; Done + "Try it in chat" (a new chat with no sources
+picked) when only tools were turned on; outline "Sync content" (the sync step
+in place, on the account just connected) + Done when nothing syncs yet. With several accounts and none chosen, the
 first setup field is an account Select. The pickers (repositories, Linear,
 SharePoint / Confluence / Drive files) are one recipe: a search on
 `labelSurface="card"`, then an `outline padding="none" overflow-hidden` Card
@@ -527,3 +876,56 @@ pill actions. The arguments stay behind the Details chevron. The card sits in
 a `w-full min-w-0` wrapper with its margins on an inner div, because the
 answer bubble is a wrapping flex column and would let a one-line preview widen
 the card past the column.
+
+## Activity (`activity/`)
+
+A section like Settings: `activity/index.tsx` puts Now, Calendar and History,
+then the Automations group (Schedules across every agent, and Monitors, which
+moved here from Settings; `/settings/monitors` redirects) in `ACTIVITY_SECTION`,
+and below `lg` the root is the `SectionIndexPage`. Times on these pages are
+24-hour `formatClock`, and day and range headings use `headingLocale()` (see
+the dates rule in DESIGN.md › Pagination); a monitor's end is `formatDeadline`, the one
+time in the browser's own clock.
+
+A sidebar chat carries one status mark, `activity/ConversationMark`, in a
+fixed `size-4` slot so every mark's centre lines up. It shows the most urgent
+state the chat is in: failed (`bg-destructive` dot), needs you (`bg-warning`
+dot, an approval waiting), working (`Spinner size="xs"`), unread
+(`bg-primary` dot), watching (a hollow `border-muted-foreground` ring:
+something is on, nothing to do). The tooltip names every state, joined with
+` · `. A new chat state joins `useConversationStates` at its place in that
+order; it never gets a second mark beside the first.
+
+The sidebar's Activity row ends in `ActivityNavBadge`: a dot while something
+needs the user (red only when a schedule paused itself after failures, else
+amber) and the running count (`formatCount`), `text-xs text-muted-foreground
+tabular-nums`, named by a `Tooltip` on the right as ConversationMark is. On the
+collapsed rail it is the dot alone, at the icon's corner, and the
+counts are an `sr-only` span the icon button names with `aria-describedby`.
+`useActivitySummary` is the one count for the row and the Now page.
+
+A Now row's leading icon is the `Avatar variant="icon" size="sm"
+shape="square"` tile; in Needs you a waiting row's tile is `bg-warning/10
+text-warning` and a failed one's `bg-destructive/10 text-destructive`, the
+same `size-8 rounded-md` square (Avatar has no status tone). Running rows end
+in an `info` Badge.
+
+Calendar events take their look from `calendar/layout.ts`, never inline
+classes: `STATE_CLASS` per run state and `SYNC_CLASS` for a knowledge sync,
+and the legend reads the same maps. A planned slot is the brand soft fill
+with a `border-l-2 border-primary` stripe; a run is `bg-<role>/10` with a
+full-strength `border-l-2 border-<role>` stripe, because on a 20px block a
+`/50` stripe disappears; skipped and paused are a dashed
+`border-muted-foreground` on the background, missed the same dash in
+`border-warning` (nobody chose it: the scheduler was down), a sync is
+`bg-muted` dashed. A running run adds a pulsing `bg-info` dot. Event hover is
+`hover:brightness-95`, the calendar's exception to the fill-change hover: an
+accent fill would hide the state colour. Events are raw buttons positioned
+with `--top` / `--height` custom properties, so each carries `focusRing` and
+`outline-none`.
+
+The pages stay live without a reload: the Now snapshot (`activitySlice`) is
+loaded every 60 s by `useActivityLoader` and refetched, debounced, on the
+realtime events that change it (`message.*`, `schedule.*`, `job.updated`,
+`workflow.run.step`, `activity.updated`). A relative time or an Overdue label
+re-renders through `useClock`, never a timer of its own.

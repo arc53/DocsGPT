@@ -161,6 +161,7 @@ def _build_llm(user_id: str, model_id: str, request_id: str):
         decoded_token={"sub": user_id},
         model_id=model_id,
         model_user_id=user_id,
+        stateless=True,
     )
     llm._token_usage_source = TOKEN_USAGE_SOURCE
     llm._request_id = request_id

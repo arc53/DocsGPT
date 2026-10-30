@@ -1,11 +1,13 @@
 import { useTranslation } from 'react-i18next';
 
+import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
 import { PanelBody, PanelHeader } from '../components/ui/side-panel';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { connectorIconKey } from '../connectors/i18n';
 import type { AnswerSource } from './chatCompanion';
 import CitationReader from './CitationReader';
+import SourceRelevance from './SourceRelevance';
 
 /**
  * An answer's sources, as side panel content: docked in the chat's slot, or
@@ -85,6 +87,13 @@ function SourceTile({
         <span className="text-foreground line-clamp-3 text-sm font-semibold wrap-break-word">
           {`${position}. ${source.title}`}
         </span>
+        {source.withheld ? (
+          <Badge variant="warning" className="self-start">
+            {t('conversation.sources.withheld')}
+          </Badge>
+        ) : (
+          <SourceRelevance relevance={source.relevance} />
+        )}
         {source.connector_name ? (
           <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
             <ConnectorIcon
@@ -100,7 +109,9 @@ function SourceTile({
           </span>
         ) : null}
         <span className="text-foreground line-clamp-4 text-xs wrap-break-word">
-          {source.text}
+          {source.withheld
+            ? t('conversation.sources.withheldNote')
+            : source.text}
         </span>
       </button>
     </Card>

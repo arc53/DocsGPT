@@ -1,7 +1,7 @@
 ---
 title: 'Changelog'
 description: What changed in each DocsGPT release, with links to the upgrade steps an existing deployment needs.
-lastUpdated: 2026-10-08
+lastUpdated: 2026-10-25
 ---
 
 import { Callout } from 'nextra/components'
@@ -12,6 +12,85 @@ The notable changes in each release. Every release on GitHub also carries
 [auto-generated notes](https://github.com/arc53/DocsGPT/releases) listing every merged pull
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
 Entries start at 0.17.0; see GitHub for earlier releases.
+
+## 1.1.0
+
+<Callout type="warning">
+  **Upgrade actions.** Read [Upgrading to 1.1.0](/upgrading#upgrading-to-110) before you upgrade:
+
+  - Source uploads, connector ingests, re-ingests, syncs and graph builds run on a new Celery queue,
+    `ingest`. A worker started with an explicit `-Q` list must add it, or new sources stay in
+    "processing" and nothing is logged. A worker without `-Q` picks it up on its own.
+  - New Google Drive sign-ins ask only for the files and folders a member picks (`drive.file`).
+    Enable the Google Picker API, and set `GOOGLE_SERVICE_ACCOUNT_KEY` (or `GOOGLE_DRIVE_ACCESS=readonly`)
+    to keep syncing whole folders. Existing connections keep working.
+  - `GUARDRAILS_FLOOR` is deprecated. Its value is stored as the instance floor on the first start,
+    then edited in **Admin → Guardrails**.
+  - With `DECISION_ANALYTICS_ENABLED=true`, a worker must consume the new `analytics` queue.
+  - Migrations `0053` to `0057` run on start. `0057` builds an index on `conversation_messages`
+    concurrently, which can take a while on a large install. Before rolling back to 1.0.0, read the
+    note at the end of [Upgrading to 1.1.0](/upgrading#upgrading-to-110).
+</Callout>
+
+### Sources
+
+- One **Website** source replaces Link, Crawler and Sitemap: single pages and whole sites in one
+  source, with skip rules, keeping each page's main content as Markdown. Existing Link, Crawler and
+  Sitemap sources keep syncing and become Website sources the first time they are edited.
+  `WEB_MAX_PAGES` caps the pages one source holds. See
+  [Add web pages or a website](/Sources/adding-knowledge#add-web-pages-or-a-website).
+- A whole folder can be uploaded at once.
+- A re-ingest re-embeds only the files that were added, edited or removed, by content hash, and
+  applies a changed chunking setting to every file. `manage_source_files` gains a `sync` operation
+  that replaces a source's files in place; `docsgpt-cli sources upload --sync` uses it.
+- Google Drive: folders and shared drives can be picked, a folder's contents can be read through a
+  service account, and citations from Drive, SharePoint and Confluence link to the original file.
+  See [Google Drive](/Sources/Connectors/google-drive).
+- Parsing: Markdown keeps `#` lines inside code blocks and strips only real HTML tags, RST keeps
+  numbers, layout and text it used to drop, a JSON file holding one value is read as one row, the
+  recursive chunker takes a token overlap, and nested sitemaps are followed to a bounded depth.
+
+### Agents and chat
+
+- A per-agent **Context limit** caps the tokens one request sends to the model, for bots and widgets
+  that keep one conversation for weeks. See
+  [Per-agent context limit](/Agents/context-compression#per-agent-context-limit).
+- An **Activity** tab shows what is running now, what is planned, past runs, schedules and monitors,
+  and stops or resumes them. See [Activity](/Using/activity).
+- Chats that finish while you are away are marked unread, and the tab title counts them.
+- Generated files show as artifact cards in the chat. Word documents take headings, lists and tables
+  as blocks, API clients can download artifacts without the agent key in the URL, and large
+  attachments can be passed by reference.
+- Scheduled and webhook runs can use the code executor. Stop also cancels the background jobs a
+  turn started, file names in any script are kept, and a paused turn keeps its attachments when it
+  resumes.
+
+### Decision model
+
+A small decision model can score, classify and check text for DocsGPT. Every feature ships off.
+See [Decision model](/Models/decision-model).
+
+- Relevance: a per-source setting reorders, or filters, retrieved chunks by modelled relevance.
+- Prompt-injection scanning of documents, tool results and tool descriptions.
+- Conversation analytics and a docs-gap report in Insights.
+- It runs in the API and the worker, in a separate decider container, or against a decision server.
+
+### API and integrations
+
+- **Passthrough** values, such as your own user id, travel with each question from the widget,
+  `/v1/chat/completions` and workflow runs, and show up in conversations and Logs.
+- `/v1` usage reports cached prompt tokens, and the Responses prompt cache is kept across turns.
+- The chat widget is published at 0.13.0: translated UI, a JavaScript API, conversation history, a
+  sidebar layout and suggested questions. See [Chat widget](/Extensions/chat-widget).
+- MCP connector presets for Airtable, Alpha Vantage, CoinGecko, Context7, draw.io and Neon.
+- The admin console shows user emails.
+
+### Fixes
+
+- The crawler stays on the host it started from, and embedding inputs are bounded.
+- Errors no longer return an exception's text to the client.
+- The notification stream reconnects after a long outage.
+- The Kubernetes worker keeps the public API URL.
 
 ## 1.0.0
 

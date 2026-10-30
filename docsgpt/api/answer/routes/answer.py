@@ -127,6 +127,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     agent_id=processor.agent_id,
                     model_id=processor.model_id,
                     trace=processor.trace,
+                    passthrough=processor.passthrough,
                     _continuation={
                         "messages": messages,
                         "tools_dict": tools_dict,
@@ -171,6 +172,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     model_id=processor.model_id,
                     request_id=processor.request_id,
                     trace=processor.trace,
+                    passthrough=processor.passthrough,
                 )
 
             stream_result = self.process_response_stream(stream)

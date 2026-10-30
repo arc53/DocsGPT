@@ -2,10 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import AgentPreviewSheet from '../../../agents/components/AgentPreviewSheet';
 import type { WorkflowNode } from '../../../agents/types/workflow';
-import {
-  ExecutionDetails,
-  RunArtifactsSection,
-} from '../../../agents/workflow/WorkflowPreview';
+import { ExecutionDetails } from '../../../agents/workflow/WorkflowPreview';
 import type { WorkflowExecutionStep } from '../../../agents/workflow/workflowPreviewSlice';
 
 // Sample run for the Agent preview drawer example.
@@ -68,11 +65,6 @@ export default function AgentPreviewDemo() {
             nodes={DEMO_WORKFLOW_NODES}
             isOpen={demoStepsOpen}
             onToggle={() => setDemoStepsOpen(!demoStepsOpen)}
-          />
-          <RunArtifactsSection
-            workflowRunId="demo"
-            isOpen={false}
-            onToggle={() => undefined}
           />
         </div>
       </AgentPreviewSheet>

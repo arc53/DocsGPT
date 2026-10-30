@@ -494,6 +494,7 @@ class TestDeleteChunk:
         src = _seed_source(pg_conn, user=user)
 
         fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [{"doc_id": "c", "text": "t", "metadata": {}}]
         fake_store.delete_chunk.return_value = True
 
         with _patch_db(pg_conn), patch(
@@ -506,6 +507,7 @@ class TestDeleteChunk:
             request.decoded_token = {"sub": user}
             response = DeleteChunk().delete()
         assert response.status_code == 200
+        fake_store.delete_chunk.assert_called_once_with("c")
 
     def test_returns_404_chunk_not_found(self, app, pg_conn):
         from docsgpt.api.user.sources.chunks import DeleteChunk
@@ -514,6 +516,7 @@ class TestDeleteChunk:
         src = _seed_source(pg_conn, user=user)
 
         fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [{"doc_id": "c", "text": "t", "metadata": {}}]
         fake_store.delete_chunk.return_value = False
 
         with _patch_db(pg_conn), patch(
@@ -526,6 +529,64 @@ class TestDeleteChunk:
             request.decoded_token = {"sub": user}
             response = DeleteChunk().delete()
         assert response.status_code == 404
+
+
+class _SharedCollection:
+    """Chunks of every source in one collection, as MongoDB, Qdrant and Milvus keep them.
+
+    ``store(source_id)`` lists only that source's chunks, but its
+    ``delete_chunk`` removes an id whichever source holds it: the store
+    alone doesn't keep one source's delete off another's chunks.
+    """
+
+    def __init__(self):
+        self.chunks = {}
+
+    def add(self, source_id, chunk_id, text):
+        self.chunks[chunk_id] = {"source_id": str(source_id), "text": text}
+
+    def store(self, source_id):
+        collection = self
+        store = MagicMock()
+        store.get_chunks.side_effect = lambda: [
+            {"doc_id": cid, "text": c["text"], "metadata": {}}
+            for cid, c in collection.chunks.items() if c["source_id"] == str(source_id)
+        ]
+        store.delete_chunk.side_effect = lambda chunk_id: collection.chunks.pop(chunk_id, None) is not None
+        return store
+
+
+class TestDeleteChunkAcrossSources:
+    def test_a_chunk_of_another_source_is_not_deleted(self, app, pg_conn):
+        """An editor of one source names a chunk id from a source they only view."""
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        victim, attacker = "u-xsrc-victim", "u-xsrc-attacker"
+        theirs = _seed_source(pg_conn, user=victim, name="victim-src")
+        mine = _seed_source(pg_conn, user=attacker, name="attacker-src")
+        team = TeamsRepository(pg_conn).create("Acme", "acme-xsrc", victim)
+        TeamMembersRepository(pg_conn).add_member(team["id"], attacker, role="team_member")
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", str(theirs["id"]), owner_id=victim, granted_by=victim, access_level="viewer",
+        )
+        collection = _SharedCollection()
+        collection.add(theirs["id"], "victim-chunk", "secret")
+        collection.add(mine["id"], "own-chunk", "mine")
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", side_effect=collection.store,
+        ), app.test_request_context(
+            f"/api/delete_chunk?id={mine['id']}&chunk_id=victim-chunk", method="DELETE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": attacker}
+            response = DeleteChunk().delete()
+
+        assert response.status_code == 404
+        assert "victim-chunk" in collection.chunks
 
 
 class TestUpdateChunk:
@@ -997,3 +1058,113 @@ class TestChunkByKey:
         assert response.status_code == 200
         assert response.json["source"]["access"] == "viewer"
         assert "edit" not in response.json["source"]["allowed_actions"]
+
+
+def _chunk_edit(app, pg_conn, kind: str, source_id: str, user: str):
+    """Run one chunk add, update or delete against ``source_id``."""
+    from docsgpt.api.user.sources import chunks
+
+    if kind == "add":
+        ctx = app.test_request_context(
+            "/api/add_chunk", method="POST", json={"id": source_id, "text": "a new chunk"}
+        )
+        call = lambda: chunks.AddChunk().post()  # noqa: E731
+    elif kind == "update":
+        ctx = app.test_request_context(
+            "/api/update_chunk", method="PUT", json={"id": source_id, "chunk_id": "c1", "text": "edited"}
+        )
+        call = lambda: chunks.UpdateChunk().put()  # noqa: E731
+    else:
+        ctx = app.test_request_context(f"/api/delete_chunk?id={source_id}&chunk_id=c1", method="DELETE")
+        call = lambda: chunks.DeleteChunk().delete()  # noqa: E731
+    with ctx:
+        from flask import request
+        request.decoded_token = {"sub": user}
+        return call()
+
+
+class TestChunkEditsTakeTheIndexLock:
+    """A page-change job loads a FAISS index once and saves all of it; an unlocked chunk edit would be lost."""
+
+    def _store(self):
+        store = MagicMock()
+        store.add_chunk.return_value = "c2"
+        store.delete_chunk.return_value = True
+        store.get_chunks.return_value = [{"doc_id": "c1", "text": "old", "metadata": {}}]
+        store.update_chunk.return_value = "c1"
+        return store
+
+    @pytest.mark.parametrize("kind", ["add", "update", "delete"])
+    def test_the_edit_runs_holding_the_lock(self, app, pg_conn, kind):
+        user = f"u-lock-{kind}"
+        src = _seed_source(pg_conn, user=user)
+        store = self._store()
+        held = []
+
+        @contextmanager
+        def fake_lock(source_id, wait_seconds, **kwargs):
+            held.append((source_id, wait_seconds))
+            yield
+            held.append("released")
+
+        def load(_source_id):
+            # The index is loaded under the lock, so it holds the job's last save.
+            assert len(held) == 1
+            return store
+
+        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.access.source_index_lock", fake_lock), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", side_effect=load
+        ):
+            response = _chunk_edit(app, pg_conn, kind, str(src["id"]), user)
+
+        assert response.status_code in (200, 201)
+        assert held[0][0] == str(src["id"])
+        # A request waits seconds, not the worker's hour.
+        assert 0 < held[0][1] <= 5
+        assert held[-1] == "released"
+
+    @pytest.mark.parametrize("kind", ["add", "update", "delete"])
+    def test_a_busy_source_is_409(self, app, pg_conn, kind):
+        from docsgpt.vectorstore.index_lock import SourceBusy
+
+        user = f"u-busy-{kind}"
+        src = _seed_source(pg_conn, user=user)
+        store = self._store()
+
+        @contextmanager
+        def busy(*args, **kwargs):
+            raise SourceBusy("busy")
+            yield
+
+        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.access.source_index_lock", busy), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+        ) as get_store:
+            response = _chunk_edit(app, pg_conn, kind, str(src["id"]), user)
+
+        assert response.status_code == 409
+        assert response.json["success"] is False
+        assert response.json["code"] == "source_busy"
+        assert response.json["error"]
+        get_store.assert_not_called()
+
+    def test_a_held_redis_lock_refuses_the_edit_and_a_free_one_is_released(self, app, pg_conn, monkeypatch):
+        from docsgpt.vectorstore.index_lock import lock_key
+        from tests.vectorstore.test_index_lock import LockRedis
+
+        redis = LockRedis()
+        monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: redis)
+        monkeypatch.setattr("docsgpt.api.user.sources.access.EDIT_LOCK_WAIT_SECONDS", 0.1)
+        user = "u-lock-redis"
+        src = _seed_source(pg_conn, user=user)
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", return_value=self._store()
+        ):
+            free = _chunk_edit(app, pg_conn, "add", str(src["id"]), user)
+            released = redis.get(lock_key(str(src["id"]))) is None
+            redis.set(lock_key(str(src["id"])), "a-sync")
+            held = _chunk_edit(app, pg_conn, "add", str(src["id"]), user)
+
+        assert free.status_code == 201 and released
+        assert held.status_code == 409
+        # The sync's lock is left alone.
+        assert redis.get(lock_key(str(src["id"]))) == b"a-sync"

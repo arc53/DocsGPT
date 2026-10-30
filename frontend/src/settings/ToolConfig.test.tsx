@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-redux', () => ({
@@ -136,10 +136,18 @@ describe('ToolConfig', () => {
     container.remove();
   });
 
-  const render = async (tool: UserToolType | APIToolType) => {
+  const render = async (
+    tool: UserToolType | APIToolType,
+    menu?: React.ReactNode,
+  ) => {
     await act(async () => {
       root.render(
-        <ToolConfig tool={tool} setTool={() => {}} handleGoBack={() => {}} />,
+        <ToolConfig
+          tool={tool}
+          setTool={() => {}}
+          handleGoBack={() => {}}
+          menu={menu}
+        />,
       );
     });
   };
@@ -149,12 +157,20 @@ describe('ToolConfig', () => {
       (el) => el.textContent === text,
     );
 
-  it('renders the header Save as a small pill with no class overrides', async () => {
+  // The field height every page header's buttons share.
+  it('renders the header Save as a field pill with no class overrides', async () => {
     await render(userTool);
     const save = buttonByText('settings.tools.save');
-    expect(save?.dataset.size).toBe('sm');
+    expect(save?.dataset.size).toBe('field');
     expect(save?.dataset.shape).toBe('pill');
     expect(save?.className).not.toMatch(/text-white|text-xs/);
+  });
+
+  // The tool's ⋯ ends the crumb row, after Save.
+  it('puts the menu after Save', async () => {
+    await render(userTool, <button type="button">menu</button>);
+    const save = buttonByText('settings.tools.save')!;
+    expect(save.nextElementSibling?.textContent).toBe('menu');
   });
 
   it('renders the actions search as a labelled pill SearchInput with an inset icon', async () => {
@@ -271,6 +287,27 @@ describe('ToolConfig', () => {
     expect(
       container.querySelector<HTMLElement>('[role="alert"]')?.textContent,
     ).toBe('settings.tools.saveFailed');
+  });
+
+  it('marks an MCP action whose description reads like a prompt injection', async () => {
+    const scored = (name: string, p: number) => ({
+      ...userTool.actions[0],
+      name,
+      injection: { p, scorer: 'arc-decide:v0.2' },
+    });
+    await render({
+      ...userTool,
+      name: 'mcp_tool',
+      actions: [scored('search', 0.71), scored('fetch', 0.1)],
+    } as UserToolType);
+    const badges = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="badge"]'),
+    ).filter(
+      (badge) => badge.textContent === 'settings.connectors.injection.flagged',
+    );
+    expect(badges).toHaveLength(1);
+    expect(badges[0].dataset.variant).toBe('warning');
+    expect(badges[0].closest('button')?.textContent).toContain('Search');
   });
 
   describe('a shared MCP server', () => {
@@ -1048,6 +1085,74 @@ describe('ToolConfig', () => {
       expect(
         (current as UserToolType).actions[0].parameters.properties.q,
       ).toMatchObject({ filled_by_llm: false, required: false });
+    });
+  });
+
+  describe('API action fields', () => {
+    let current: UserToolType | APIToolType;
+    // The settings page keeps the tool in state, as Tools does.
+    function Live({ initial }: { initial: UserToolType | APIToolType }) {
+      const [tool, setTool] = useState(initial);
+      current = tool;
+      return (
+        <ToolConfig tool={tool} setTool={setTool} handleGoBack={() => {}} />
+      );
+    }
+    const headerValue = () =>
+      container.querySelector<HTMLInputElement>(
+        'input[placeholder="settings.tools.headerValuePlaceholder"]',
+      )!;
+    const setValue = (input: HTMLInputElement, value: string) => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set?.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const renderOpen = async () => {
+      await act(async () => {
+        root.render(<Live initial={apiTool} />);
+      });
+      await act(async () => {
+        (
+          container.querySelector(
+            'button[aria-expanded][aria-controls]',
+          ) as HTMLElement
+        ).click();
+      });
+    };
+
+    it('settles when two edits land in one commit', async () => {
+      await renderOpen();
+      const input = headerValue();
+      let renders = 0;
+      const observer = new MutationObserver(() => renders++);
+      observer.observe(input, { attributes: true, attributeFilter: ['value'] });
+      // Outside act, so React schedules as in a browser and fast typing can
+      // batch two keystrokes before the effects of the first one run.
+      Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: false });
+      try {
+        setValue(input, 'a');
+        setValue(input, 'ab');
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      } finally {
+        observer.disconnect();
+        Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+      }
+      expect(renders).toBeLessThan(5);
+      expect(headerValue().value).toBe('ab');
+    });
+
+    it('keeps every character typed into a header value', async () => {
+      await renderOpen();
+      for (const value of ['a', 'ap', 'app', 'appl']) {
+        await act(async () => setValue(headerValue(), value));
+      }
+      expect(headerValue().value).toBe('appl');
+      expect(
+        (current as APIToolType).config.actions.list.headers.properties.Accept
+          .value,
+      ).toBe('appl');
     });
   });
 });

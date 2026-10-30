@@ -47,6 +47,15 @@ def _patch_store(monkeypatch, chunks):
     return store
 
 
+def _deleted(store):
+    """The ids the convert deleted: in one ``delete_chunks`` call, never chunk by chunk."""
+    store.delete_chunk.assert_not_called()
+    if not store.delete_chunks.called:
+        return set()
+    assert store.delete_chunks.call_count == 1
+    return set(store.delete_chunks.call_args.args[0])
+
+
 def _patch_reembed(monkeypatch):
     delay = MagicMock(name="reembed_delay")
     monkeypatch.setattr("docsgpt.api.user.tasks.reembed_wiki_page.delay", delay)
@@ -113,9 +122,41 @@ class TestConvertSourceToWikiWorker:
         result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
         assert result["status"] == "converted"
-        deleted = {c.args[0] for c in store.delete_chunk.call_args_list}
-        assert deleted == {"g1", "g2", "i1"}
+        assert _deleted(store) == {"g1", "g2", "i1"}
         assert delay.call_count == 2
+
+    def test_a_failed_delete_still_converts(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        # The pages are written: a chunk left behind is logged, not a failed convert.
+        from docsgpt import worker
+
+        source_id = _seed_source(pg_conn)
+        store = _patch_store(monkeypatch, [_chunk("body.", source="guide.md", doc_id="g1")])
+        store.delete_chunks.side_effect = OSError("index save failed")
+        delay = _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["status"] == "converted"
+        assert delay.call_count == 1
+
+    def test_convert_clears_the_sync_schedule(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """A wiki is edited in place; a scheduled sync would replace its pages."""
+        from docsgpt import worker
+
+        repo = SourcesRepository(pg_conn)
+        source_id = _seed_source(pg_conn)
+        repo.update(source_id, "alice", {"sync_frequency": "weekly"})
+        _patch_store(monkeypatch, [_chunk("body.", source="guide.md", doc_id="g1")])
+        _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["status"] == "converted"
+        assert repo.get_any(source_id, "alice")["sync_frequency"] == "never"
 
     def test_chunk_without_doc_id_not_deleted(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -130,7 +171,7 @@ class TestConvertSourceToWikiWorker:
         result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
         assert result["status"] == "converted"
-        store.delete_chunk.assert_not_called()
+        assert _deleted(store) == set()
 
     def test_skipped_chunk_with_doc_id_still_deleted(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -152,8 +193,7 @@ class TestConvertSourceToWikiWorker:
         result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
         assert result["pages_created"] == 1
-        deleted = {c.args[0] for c in store.delete_chunk.call_args_list}
-        assert deleted == {"ok", "evil"}
+        assert _deleted(store) == {"ok", "evil"}
 
     def test_no_pages_path_deletes_nothing(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -167,7 +207,7 @@ class TestConvertSourceToWikiWorker:
         result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
         assert result["status"] == "no_pages"
-        store.delete_chunk.assert_not_called()
+        assert _deleted(store) == set()
 
     def test_kind_flipped_and_exposure_defaulted(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -438,3 +478,23 @@ class TestConvertSourceToWikiWorker:
         assert result["status"] == "already_wiki"
         store.get_chunks.assert_not_called()
         delay.assert_not_called()
+
+
+@pytest.mark.unit
+class TestConvertTakesTurns:
+    def test_converts_holding_the_source_index_lock(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, held_lock,
+    ):
+        # A sync or a Website page change on the source rewrites the chunks
+        # this reads and deletes; they take turns.
+        from docsgpt import worker
+
+        source_id = _seed_source(pg_conn)
+        store = _patch_store(monkeypatch, [_chunk("body.", source="a.md", doc_id="a1")])
+        _patch_reembed(monkeypatch)
+        store.get_chunks.side_effect = (
+            lambda: held_lock.append("reading") or [_chunk("body.", source="a.md", doc_id="a1")]
+        )
+
+        assert worker.convert_source_to_wiki_worker(task_self, source_id, "alice")["status"] == "converted"
+        assert held_lock == [source_id, "reading", "released"]

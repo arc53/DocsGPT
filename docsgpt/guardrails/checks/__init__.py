@@ -2,6 +2,7 @@
 
 from docsgpt.guardrails.checks.heuristics import GroundednessCheck, InjectionCheck
 from docsgpt.guardrails.checks.judge import PolicyCheck
+from docsgpt.guardrails.checks.model_injection import ModelInjectionCheck
 from docsgpt.guardrails.checks.patterns import (
     DenylistCheck,
     PIICheck,
@@ -16,6 +17,7 @@ BUILTIN_CHECKS = (
     DenylistCheck,
     URLCheck,
     InjectionCheck,
+    ModelInjectionCheck,
     GroundednessCheck,
     PolicyCheck,
 )

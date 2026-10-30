@@ -36,7 +36,7 @@ import {
   selectSourceDocs,
   selectToken,
 } from '../../preferences/preferenceSlice';
-import { agentEditPath, agentsListPath } from '../paths';
+import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
 import AgentPreviewSheet from '../components/AgentPreviewSheet';
@@ -57,8 +57,24 @@ import WorkflowDetailsSheet, {
   type WorkflowDetailsSave,
 } from './components/WorkflowDetailsSheet';
 import type { SponsorAudience } from '../sponsorConsent';
-import { Agent, ResourceSponsor, ResourceState } from '../types';
-import { ConditionCase, WorkflowNode } from '../types/workflow';
+import { Agent, AgentConfig, ResourceSponsor, ResourceState } from '../types';
+import { analyticsOf } from '../analyticsConfig';
+import { largestModelWindow } from '../contextLimit';
+import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
+import { ConditionCase, RetryConfig, WorkflowNode } from '../types/workflow';
+import {
+  containerData,
+  createDefaultLoopConfig,
+  findLoopAt,
+  LOOP_BODY_ORIGIN,
+  LOOP_BODY_TYPES,
+  LOOP_DEFAULT_SIZE,
+  loopProblems,
+  parentsFirst,
+  readContainerData,
+  sameContainer,
+  toLoopPosition,
+} from './loopNodeConfig';
 import {
   createDefaultCodeConfig,
   normalizeCodeConfig,
@@ -68,6 +84,7 @@ import {
 } from './codeNodeConfig';
 import MobileBlocker from './components/MobileBlocker';
 import { parseSimpleCel } from './simpleCel';
+import { isValidRetryConfig, normalizeRetryConfig } from './retryConfig';
 import { extractUpstreamVariables } from './components/PromptTextArea';
 import { toDocumentVariableOptions } from './documentConfig';
 import { useUndoRedo, WorkflowSnapshot } from './hooks/useUndoRedo';
@@ -76,6 +93,7 @@ import {
   CodeNode,
   ConditionNode,
   EndNode,
+  LoopNode,
   NoteNode,
   SetStateNode,
   StartNode,
@@ -87,6 +105,7 @@ import { WorkflowModelsContext } from './WorkflowModelsContext';
 import AgentPanel from './panels/AgentPanel';
 import CodePanel from './panels/CodePanel';
 import ConditionPanel from './panels/ConditionPanel';
+import LoopPanel from './panels/LoopPanel';
 import NotePanel from './panels/NotePanel';
 import StatePanel from './panels/StatePanel';
 import WorkflowPreview from './WorkflowPreview';
@@ -161,30 +180,43 @@ function canReachEnd(
     .some((e) => canReachEnd(e.target, edges, nodeIds, endIds, visited));
 }
 
+// Types whose saved ``data`` is the node's config rather than its canvas data.
+const CONFIG_DATA_TYPES = new Set(['agent', 'condition', 'state', 'loop']);
+
+/**
+ * A canvas node as the workflow API stores it: the type's config (or the
+ * node's data), plus the loop it sits in and a loop's canvas size.
+ */
+function serializeNode(node: Node): WorkflowNode {
+  const data =
+    node.type === 'code'
+      ? serializeCodeConfig(node.data.config)
+      : CONFIG_DATA_TYPES.has(node.type ?? '')
+        ? node.data.config
+        : node.data;
+  const extra = containerData(node);
+  return {
+    id: node.id,
+    type: node.type as WorkflowNode['type'],
+    title: node.data.title || node.data.label || node.type,
+    position: node.position,
+    data: Object.keys(extra).length > 0 ? { ...(data ?? {}), ...extra } : data,
+  };
+}
+
 function createWorkflowPayload(
   name: string,
   description: string,
   workflowNodes: Node[],
   workflowEdges: Edge[],
+  retryDefaults: RetryConfig | null,
 ) {
   return {
     name,
     description,
-    nodes: workflowNodes.map((node) => ({
-      id: node.id,
-      type: node.type as
-        'start' | 'end' | 'agent' | 'note' | 'state' | 'condition' | 'code',
-      title: node.data.title || node.data.label || node.type,
-      position: node.position,
-      data:
-        node.type === 'code'
-          ? serializeCodeConfig(node.data.config)
-          : node.type === 'agent' ||
-              node.type === 'condition' ||
-              node.type === 'state'
-            ? node.data.config
-            : node.data,
-    })),
+    // Always sent, so clearing the defaults saves too.
+    retry_defaults: normalizeRetryConfig(retryDefaults) ?? null,
+    nodes: workflowNodes.map(serializeNode),
     edges: workflowEdges.map((edge) => ({
       id: edge.id,
       source: edge.source,
@@ -203,6 +235,7 @@ const NODE_TYPES: NodeTypes = {
   state: SetStateNode,
   condition: ConditionNode,
   code: CodeNode,
+  loop: LoopNode,
 };
 
 function WorkflowBuilderInner() {
@@ -222,12 +255,16 @@ function WorkflowBuilderInner() {
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(
     agentId || null,
   );
+  // A saved workflow's agent is loading (the phone screen waits for it).
+  const [agentLoading, setAgentLoading] = useState(Boolean(agentId));
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [workflowName, setWorkflowName] = useState('New Workflow');
   const [workflowDescription, setWorkflowDescription] = useState('');
+  // What a node's unset retry fields fall back to (``retry_defaults``).
+  const [retryDefaults, setRetryDefaults] = useState<RetryConfig | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   // A save asked for by the details sheet runs after its values reach state.
   const [detailsSaveRequested, setDetailsSaveRequested] = useState(false);
@@ -273,6 +310,10 @@ function WorkflowBuilderInner() {
     createEmptyWorkflowAgent(),
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
+  // The config keys changed in Workflow details (insights, context limit),
+  // laid over the saved config with the next save; null when none changed.
+  const [pendingConfig, setPendingConfig] = useState<AgentConfig | null>(null);
+  const analyticsAvailability = useAnalyticsAvailability();
   const [savedWorkflowSignature, setSavedWorkflowSignature] = useState<
     string | null
   >(null);
@@ -368,6 +409,8 @@ function WorkflowBuilderInner() {
 
   const onConnect = useCallback(
     (params: Connection) => {
+      // The nodes in a loop run per item: they connect only to each other.
+      if (!sameContainer(nodes, params.source, params.target)) return;
       const exists = edges.some(
         (e) =>
           e.source === params.source &&
@@ -439,10 +482,11 @@ function WorkflowBuilderInner() {
 
   /**
    * Add a node of a palette type at a flow position, with its default config.
-   * Takes an undo snapshot first; the selection is left as it was.
+   * Inside a loop the position is relative to the loop. Takes an undo
+   * snapshot first; the selection is left as it was.
    */
   const createNode = useCallback(
-    (type: string, position: XYPosition) => {
+    (type: string, position: XYPosition, loop?: Node) => {
       takeSnapshot();
 
       const baseNode: Node = {
@@ -488,6 +532,15 @@ function WorkflowBuilderInner() {
       } else if (type === 'note') {
         baseNode.data.title = 'Note';
         baseNode.data.label = 'Note';
+      } else if (type === 'loop') {
+        baseNode.data.title = 'Loop';
+        baseNode.data.label = 'Loop';
+        baseNode.data.config = createDefaultLoopConfig();
+        baseNode.style = { ...LOOP_DEFAULT_SIZE };
+      }
+      if (loop) {
+        baseNode.parentNode = loop.id;
+        baseNode.extent = 'parent';
       }
 
       setNodes((nds) => nds.concat(baseNode));
@@ -502,15 +555,17 @@ function WorkflowBuilderInner() {
       const type = event.dataTransfer.getData('application/reactflow');
       if (!type) return;
 
-      createNode(
-        type,
-        reactFlowInstance.screenToFlowPosition({
-          x: event.clientX,
-          y: event.clientY,
-        }),
-      );
+      const point = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      // Dropped on a loop: the node joins its body.
+      const loop = LOOP_BODY_TYPES.has(type)
+        ? findLoopAt(nodes, point)
+        : undefined;
+      createNode(type, loop ? toLoopPosition(loop, point) : point, loop);
     },
-    [reactFlowInstance, createNode],
+    [reactFlowInstance, createNode, nodes],
   );
 
   // Click or Enter on a palette pill: beside the selected node, else in the
@@ -520,13 +575,35 @@ function WorkflowBuilderInner() {
       const anchor = selectedNode
         ? nodes.find((n) => n.id === selectedNode.id)
         : undefined;
-      if (anchor) {
+      const fitsInLoop = LOOP_BODY_TYPES.has(type);
+      // A selected loop takes the new node into its body.
+      if (anchor?.type === 'loop' && fitsInLoop) {
         createNode(
           type,
-          findFreePosition(nodes, {
-            x: anchor.position.x + (anchor.width ?? 0) + ADD_BESIDE_GAP_X,
-            y: anchor.position.y,
-          }),
+          findFreePosition(
+            nodes.filter((n) => n.parentNode === anchor.id),
+            LOOP_BODY_ORIGIN,
+          ),
+          anchor,
+        );
+        return;
+      }
+      // Beside a node inside a loop stays inside it, when the type may.
+      const anchorLoop =
+        anchor?.parentNode && fitsInLoop
+          ? nodes.find((n) => n.id === anchor.parentNode)
+          : undefined;
+      if (anchor && (anchorLoop || !anchor.parentNode)) {
+        createNode(
+          type,
+          findFreePosition(
+            nodes.filter((n) => (n.parentNode || undefined) === anchorLoop?.id),
+            {
+              x: anchor.position.x + (anchor.width ?? 0) + ADD_BESIDE_GAP_X,
+              y: anchor.position.y,
+            },
+          ),
+          anchorLoop,
         );
         return;
       }
@@ -540,10 +617,13 @@ function WorkflowBuilderInner() {
       // Positions are a node's top-left corner; centre a typical node.
       createNode(
         type,
-        findFreePosition(nodes, {
-          x: center.x - NEW_NODE_HALF_WIDTH,
-          y: center.y - NEW_NODE_HALF_HEIGHT,
-        }),
+        findFreePosition(
+          nodes.filter((n) => !n.parentNode),
+          {
+            x: center.x - NEW_NODE_HALF_WIDTH,
+            y: center.y - NEW_NODE_HALF_HEIGHT,
+          },
+        ),
       );
     },
     [selectedNode, nodes, createNode, reactFlowInstance],
@@ -562,6 +642,12 @@ function WorkflowBuilderInner() {
       const removableIds = new Set(
         nodesToDelete.filter((n) => n.type !== 'start').map((n) => n.id),
       );
+      // A loop goes with the nodes inside it.
+      nodes.forEach((n) => {
+        if (n.parentNode && removableIds.has(n.parentNode)) {
+          removableIds.add(n.id);
+        }
+      });
       const edgeIdsToDelete = new Set(edgesToDelete.map((e) => e.id));
       if (removableIds.size === 0 && edgeIdsToDelete.size === 0) return;
 
@@ -593,7 +679,7 @@ function WorkflowBuilderInner() {
         setShowNodeConfig(false);
       }
     },
-    [selectedNode, takeSnapshot],
+    [nodes, selectedNode, takeSnapshot],
   );
 
   const handleDeleteNode = useCallback(() => {
@@ -607,8 +693,9 @@ function WorkflowBuilderInner() {
     const original = nodes.find((n) => n.id === selectedNode.id);
     if (!original) return;
     takeSnapshot();
+    const stamp = Date.now();
     const copy: Node = {
-      id: `${original.type}_${Date.now()}`,
+      id: `${original.type}_${stamp}`,
       type: original.type,
       position: {
         x: original.position.x + DUPLICATE_OFFSET,
@@ -616,13 +703,45 @@ function WorkflowBuilderInner() {
       },
       data: structuredClone(original.data),
       selected: true,
+      ...(original.parentNode
+        ? { parentNode: original.parentNode, extent: original.extent }
+        : {}),
+      ...(original.style ? { style: { ...original.style } } : {}),
     };
-    setNodes((nds) =>
-      nds.map((n) => (n.selected ? { ...n, selected: false } : n)).concat(copy),
+    // A loop's copy gets copies of the nodes inside it and their edges.
+    const children = nodes.filter((n) => n.parentNode === original.id);
+    const childIds = new Map(
+      children.map((child, index) => [
+        child.id,
+        `${child.type}_${stamp}_${index}`,
+      ]),
     );
+    const childCopies: Node[] = children.map((child) => ({
+      id: childIds.get(child.id) as string,
+      type: child.type,
+      position: { ...child.position },
+      data: structuredClone(child.data),
+      parentNode: copy.id,
+      extent: 'parent',
+    }));
+    const edgeCopies: Edge[] = edges
+      .filter((edge) => childIds.has(edge.source) && childIds.has(edge.target))
+      .map((edge) => ({
+        ...edge,
+        id: `${edge.id}_${stamp}`,
+        source: childIds.get(edge.source) as string,
+        target: childIds.get(edge.target) as string,
+        selected: false,
+      }));
+    setNodes((nds) =>
+      nds
+        .map((n) => (n.selected ? { ...n, selected: false } : n))
+        .concat(copy, childCopies),
+    );
+    if (edgeCopies.length > 0) setEdges((eds) => eds.concat(edgeCopies));
     setSelectedNode(copy);
     setShowNodeConfig(true);
-  }, [selectedNode, nodes, takeSnapshot]);
+  }, [selectedNode, nodes, edges, takeSnapshot]);
 
   const handleRemoveConditionBranch = useCallback(
     (sourceHandle: string) => {
@@ -724,6 +843,24 @@ function WorkflowBuilderInner() {
   const navigateBackToAgents = useCallback(() => {
     navigate(agentsListPath(folderId));
   }, [navigate, folderId]);
+
+  // Access details saves these itself; the builder's copy follows, so the
+  // dialog (desktop or phone) reopens on what was saved.
+  const handleKeyRegenerated = useCallback(
+    (key: string) => setCurrentAgent((prev) => ({ ...prev, key })),
+    [],
+  );
+  const handleConfigChange = useCallback(
+    (config: AgentConfig) =>
+      setCurrentAgent((prev) => ({
+        ...prev,
+        config: {
+          ...(prev.config ?? {}),
+          api_write_allowlist: config.api_write_allowlist,
+        },
+      })),
+    [],
+  );
 
   const handleDeleteAgent = useCallback(async () => {
     const agentToDelete = currentAgentId || currentAgent.id;
@@ -931,6 +1068,7 @@ function WorkflowBuilderInner() {
   useEffect(() => {
     const loadAgentDetails = async () => {
       if (!agentId) return;
+      setAgentLoading(true);
       try {
         const response = await userService.getAgent(agentId, token);
         if (!response.ok) throw new Error('Failed to fetch agent');
@@ -948,6 +1086,8 @@ function WorkflowBuilderInner() {
         }
       } catch (error) {
         console.error('Failed to load agent:', error);
+      } finally {
+        setAgentLoading(false);
       }
     };
     loadAgentDetails();
@@ -1019,34 +1159,43 @@ function WorkflowBuilderInner() {
         });
         const nextWorkflowName = workflow.name;
         const nextWorkflowDescription = workflow.description || '';
-        const mappedNodes = apiNodes.map((n: WorkflowNode) => {
-          const nodeData: Record<string, unknown> = {
-            title: n.title,
-            label: n.title,
-          };
-          if (n.type === 'agent' && n.data) {
-            nodeData.config = n.data;
-          } else if (n.type === 'condition' && n.data) {
-            nodeData.config = {
-              ...n.data,
-              cases: normalizeConditionCases(n.data.cases || []),
+        const nextRetryDefaults =
+          normalizeRetryConfig(workflow.retry_defaults) ?? null;
+        const mappedNodes = parentsFirst<Node>(
+          apiNodes.map((n: WorkflowNode) => {
+            const { data: savedData, canvas } = readContainerData(n.data);
+            const nodeData: Record<string, unknown> = {
+              title: n.title,
+              label: n.title,
             };
-          } else if (n.type === 'state' && n.data) {
-            nodeData.config = n.data;
-          } else if (n.type === 'code') {
-            nodeData.config = normalizeCodeConfig(
-              n.data as Record<string, unknown> | undefined,
-            );
-          } else if (n.data) {
-            Object.assign(nodeData, n.data);
-          }
-          return {
-            id: n.id,
-            type: n.type,
-            position: n.position,
-            data: nodeData,
-          };
-        });
+            if (n.type === 'agent' && n.data) {
+              const retry = normalizeRetryConfig(savedData.retry);
+              nodeData.config = { ...savedData, retry };
+            } else if (n.type === 'loop' && n.data) {
+              nodeData.config = savedData;
+            } else if (n.type === 'condition' && n.data) {
+              nodeData.config = {
+                ...savedData,
+                cases: normalizeConditionCases(
+                  (savedData.cases as ConditionCase[]) || [],
+                ),
+              };
+            } else if (n.type === 'state' && n.data) {
+              nodeData.config = savedData;
+            } else if (n.type === 'code') {
+              nodeData.config = normalizeCodeConfig(savedData);
+            } else if (n.data) {
+              Object.assign(nodeData, savedData);
+            }
+            return {
+              id: n.id,
+              type: n.type,
+              position: n.position,
+              data: nodeData,
+              ...canvas,
+            };
+          }),
+        );
         const mappedEdges = apiEdges.map(
           (e: {
             id: string;
@@ -1064,6 +1213,7 @@ function WorkflowBuilderInner() {
         );
         setWorkflowName(nextWorkflowName);
         setWorkflowDescription(nextWorkflowDescription);
+        setRetryDefaults(nextRetryDefaults);
         setAgentJsonSchemaDrafts({});
         setAgentJsonSchemaErrors({});
         setNodes(mappedNodes);
@@ -1076,6 +1226,7 @@ function WorkflowBuilderInner() {
               nextWorkflowDescription,
               mappedNodes,
               mappedEdges,
+              nextRetryDefaults,
             ),
           ),
         );
@@ -1344,6 +1495,8 @@ function WorkflowBuilderInner() {
       });
 
       outgoing.forEach((edge) => {
+        // In a loop body a branch ends the item where it stops.
+        if (node.parentNode) return;
         if (!canReachEnd(edge.target, edges, nodeIds, endNodeIds)) {
           const handle = edge.sourceHandle || 'branch';
           errors.push(
@@ -1387,8 +1540,42 @@ function WorkflowBuilderInner() {
       }
     });
 
+    if (!isValidRetryConfig(retryDefaults)) {
+      errors.push(t('agents.workflow.validation.retryDefaults'));
+    }
+    nodes
+      .filter((n) => n.type === 'agent' || n.type === 'code')
+      .forEach((node) => {
+        if (!isValidRetryConfig(node.data?.config?.retry)) {
+          errors.push(
+            t('agents.workflow.validation.nodeRetry', {
+              ...NO_ESCAPE,
+              name: node.data?.title || node.id,
+            }),
+          );
+        }
+      });
+
+    nodes
+      .filter((n) => n.type === 'loop')
+      .forEach((loop) => {
+        loopProblems(loop, nodes, edges).forEach((key) =>
+          errors.push(
+            t(key, { ...NO_ESCAPE, name: loop.data?.title || loop.id }),
+          ),
+        );
+      });
+
     return errors;
-  }, [workflowName, nodes, edges, agentJsonSchemaErrors, availableModels, t]);
+  }, [
+    workflowName,
+    nodes,
+    edges,
+    agentJsonSchemaErrors,
+    availableModels,
+    retryDefaults,
+    t,
+  ]);
 
   const canManageAgent = Boolean(currentAgentId || currentAgent.id);
   const effectiveAgentId = currentAgentId || currentAgent.id || '';
@@ -1396,8 +1583,14 @@ function WorkflowBuilderInner() {
 
   const buildWorkflowPayload = useCallback(
     () =>
-      createWorkflowPayload(workflowName, workflowDescription, nodes, edges),
-    [workflowName, workflowDescription, nodes, edges],
+      createWorkflowPayload(
+        workflowName,
+        workflowDescription,
+        nodes,
+        edges,
+        retryDefaults,
+      ),
+    [workflowName, workflowDescription, nodes, edges, retryDefaults],
   );
 
   const workflowPayloadSignature = useMemo(
@@ -1409,11 +1602,28 @@ function WorkflowBuilderInner() {
     canManageAgent && savedWorkflowSignature !== null
       ? workflowPayloadSignature !== savedWorkflowSignature ||
         imageFile !== null ||
+        pendingConfig !== null ||
         takeovers.length > 0
       : false;
 
+  // The agent's config as the server has it now, read just before a save
+  // that replaces it; throws when it can't be read.
+  const readSavedConfig = useCallback(
+    async (id: string) => {
+      const response = await userService.getAgent(id, token);
+      if (!response.ok)
+        throw new Error(t('agents.workflow.builder.updateAgentFailed'));
+      const agent = (await response.json()) as Agent;
+      return agent.config;
+    },
+    [token, t],
+  );
+
+  // One save at a time: a second one beside it would race it to the server.
+  const persistingRef = useRef(false);
   const persistWorkflow = useCallback(
     async (navigateAfterSuccess: boolean): Promise<WorkflowSaveOutcome> => {
+      if (persistingRef.current) return 'cancelled';
       setPublishErrors([]);
       setErrorContext('publish');
 
@@ -1423,6 +1633,7 @@ function WorkflowBuilderInner() {
         return 'failed';
       }
 
+      persistingRef.current = true;
       setIsPublishing(true);
       let createdWorkflowId: string | null = null;
       try {
@@ -1480,6 +1691,19 @@ function WorkflowBuilderInner() {
             if (imageFile) {
               agentFormData.append('image', imageFile);
             }
+            // Only what Workflow details changed. The config replaces the
+            // stored one whole, so the rest comes from the server's copy as
+            // it is now, not as the builder loaded it: a guardrails or
+            // allowlist change saved meanwhile elsewhere stays. No fresh
+            // copy, no save.
+            const savedConfig = pendingConfig
+              ? {
+                  ...((await readSavedConfig(effectiveAgentId)) ?? {}),
+                  ...pendingConfig,
+                }
+              : null;
+            if (savedConfig)
+              agentFormData.append('config', JSON.stringify(savedConfig));
             const agentUpdateResponse = await userService.updateAgent(
               effectiveAgentId,
               agentFormData,
@@ -1499,7 +1723,11 @@ function WorkflowBuilderInner() {
               description:
                 workflowDescription || `Workflow agent: ${workflowName}`,
               image: updatedAgent?.image || prev.image || '',
+              ...(savedConfig
+                ? { config: updatedAgent?.config ?? savedConfig }
+                : {}),
             }));
+            setPendingConfig(null);
           }
           setImageFile(null);
           setSavedWorkflowSignature(JSON.stringify(workflowPayload));
@@ -1551,6 +1779,12 @@ function WorkflowBuilderInner() {
           agentFormData.append('image', imageFile);
         }
         if (folderId) agentFormData.append('folder_id', folderId);
+        // A new agent: there is no stored config to read again.
+        const createdConfig = pendingConfig
+          ? { ...(currentAgent.config ?? {}), ...pendingConfig }
+          : null;
+        if (createdConfig)
+          agentFormData.append('config', JSON.stringify(createdConfig));
 
         const agentResponse = await userService.createAgent(
           agentFormData,
@@ -1576,7 +1810,11 @@ function WorkflowBuilderInner() {
             workflow: savedWorkflowId || undefined,
             agent_type: 'workflow',
             status: 'published',
+            ...(createdConfig
+              ? { config: agentData.config ?? createdConfig }
+              : {}),
           });
+          setPendingConfig(null);
         }
 
         setImageFile(null);
@@ -1610,6 +1848,7 @@ function WorkflowBuilderInner() {
         ]);
         return 'failed';
       } finally {
+        persistingRef.current = false;
         setIsPublishing(false);
       }
     },
@@ -1623,6 +1862,9 @@ function WorkflowBuilderInner() {
       workflowDescription,
       imageFile,
       currentAgent.allow_system_prompt_override,
+      currentAgent.config,
+      readSavedConfig,
+      pendingConfig,
       folderId,
       navigateBackToAgents,
       t,
@@ -1633,31 +1875,84 @@ function WorkflowBuilderInner() {
     ],
   );
 
+  // Each opening of the details sheet: a save started from an earlier one
+  // never closes or marks a later one.
+  const detailsSessionRef = useRef(0);
   const openDetails = useCallback(() => {
+    detailsSessionRef.current += 1;
     setDetailsSaveFailed(false);
     setShowDetails(true);
   }, []);
+  // Cancel, the X, Escape and the scrim do nothing while its save is out.
+  const handleDetailsOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        openDetails();
+        return;
+      }
+      if (detailsSaving) return;
+      detailsSessionRef.current += 1;
+      setShowDetails(false);
+    },
+    [detailsSaving, openDetails],
+  );
 
   // Save from the details sheet: put its values into the builder, then save
   // once they are in state (the effect below), so the request carries them.
-  const handleDetailsSave = useCallback((values: WorkflowDetailsSave) => {
-    setWorkflowName(values.name);
-    setWorkflowDescription(values.description);
-    setCurrentAgent((prev) => ({
-      ...prev,
-      allow_system_prompt_override: values.allowPromptOverride,
-    }));
-    if (values.imageFile) setImageFile(values.imageFile);
-    setDetailsSaveRequested(true);
-  }, []);
+  const handleDetailsSave = useCallback(
+    (values: WorkflowDetailsSave) => {
+      // A save is already out: this one would race it.
+      if (persistingRef.current || detailsSaving) return;
+      setWorkflowName(values.name);
+      setWorkflowDescription(values.description);
+      setRetryDefaults(values.retryDefaults ?? null);
+      setCurrentAgent((prev) => ({
+        ...prev,
+        allow_system_prompt_override: values.allowPromptOverride,
+      }));
+      if (values.imageFile) setImageFile(values.imageFile);
+      // Only changed keys go in, and unchanged ones send no config at all,
+      // so a stale copy never overwrites a save made meanwhile from the
+      // Insights page.
+      const changed: AgentConfig = {};
+      if (
+        values.analytics &&
+        JSON.stringify(analyticsOf(values.analytics)) !==
+          JSON.stringify(analyticsOf(currentAgent.config?.analytics))
+      )
+        changed.analytics = values.analytics;
+      if (
+        values.contextWindowLimit !== undefined &&
+        values.contextWindowLimit !==
+          (currentAgent.config?.context_window_limit ?? null)
+      )
+        changed.context_window_limit = values.contextWindowLimit;
+      if (
+        values.historyTokenLimit !== undefined &&
+        values.historyTokenLimit !==
+          (currentAgent.config?.history_token_limit ?? null)
+      )
+        changed.history_token_limit = values.historyTokenLimit;
+      setPendingConfig(Object.keys(changed).length > 0 ? changed : null);
+      setDetailsSaveRequested(true);
+    },
+    [
+      currentAgent.config?.analytics,
+      currentAgent.config?.context_window_limit,
+      currentAgent.config?.history_token_limit,
+      detailsSaving,
+    ],
+  );
 
   useEffect(() => {
     if (!detailsSaveRequested) return;
     setDetailsSaveRequested(false);
     setDetailsSaving(true);
     setDetailsSaveFailed(false);
+    const session = detailsSessionRef.current;
     void persistWorkflow(false).then((outcome) => {
       setDetailsSaving(false);
+      if (session !== detailsSessionRef.current) return;
       if (outcome === 'saved') setShowDetails(false);
       // Declining the sponsor confirmation leaves the sheet open, no error.
       else if (outcome === 'failed') setDetailsSaveFailed(true);
@@ -1803,6 +2098,18 @@ function WorkflowBuilderInner() {
     return validateJsonSchemaConfig(selectedNode.data.config?.json_schema);
   }, [selectedNode, agentJsonSchemaErrors]);
 
+  // The largest window among the agent nodes' models, for the note on a limit
+  // past it; a node without one runs on the default.
+  const workflowModelWindow = useMemo(() => {
+    const ids = nodes
+      .filter((node) => node.type === 'agent')
+      .map((node) => node.data.config?.model_id || defaultAgentModelId);
+    return largestModelWindow(
+      availableModels,
+      ids.length > 0 ? ids : [defaultAgentModelId],
+    );
+  }, [nodes, availableModels, defaultAgentModelId]);
+
   const selectedAgentModelSupportsStructuredOutput = useMemo(() => {
     if (!selectedNode || selectedNode.type !== 'agent') return true;
     const modelId = selectedNode.data.config?.model_id;
@@ -1855,13 +2162,18 @@ function WorkflowBuilderInner() {
 
   return (
     <>
-      <MobileBlocker />
+      <MobileBlocker
+        agent={canManageAgent ? currentAgent : null}
+        loading={agentLoading}
+        onDeleted={navigateBackToAgents}
+        onKeyRegenerated={handleKeyRegenerated}
+        onConfigChange={handleConfigChange}
+      />
       <div className="bg-background fixed inset-0 z-50 hidden h-dvh w-full flex-col lg:flex">
         <div className="border-border bg-background flex items-center justify-between gap-4 border-b px-6 py-4">
           <AgentPageHeader
             agentId={canManageAgent ? effectiveAgentId : undefined}
             agentName={workflowName || t('agents.workflow.builder.newWorkflow')}
-            agentEditPath={agentEditPath(effectiveAgentId, true)}
             agentImage={currentAgentImage}
             access={canManageAgent ? currentAgent : undefined}
             onNameClick={openDetails}
@@ -2069,6 +2381,7 @@ function WorkflowBuilderInner() {
                     selectedAgentModelSupportsStructuredOutput
                   }
                   onJsonSchemaChange={handleAgentJsonSchemaChange}
+                  retryDefaults={retryDefaults}
                 />
               )}
               {selectedNode.type === 'note' && (
@@ -2090,6 +2403,12 @@ function WorkflowBuilderInner() {
                   onRemoveBranch={handleRemoveConditionBranch}
                 />
               )}
+              {selectedNode.type === 'loop' && (
+                <LoopPanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                />
+              )}
               {selectedNode.type === 'code' && (
                 <CodePanel
                   node={selectedNode}
@@ -2098,6 +2417,7 @@ function WorkflowBuilderInner() {
                   jsonSchemaText={selectedCodeJsonSchemaText}
                   jsonSchemaError={selectedCodeJsonSchemaError}
                   onJsonSchemaChange={handleCodeJsonSchemaChange}
+                  retryDefaults={retryDefaults}
                 />
               )}
             </NodePanel>
@@ -2106,13 +2426,33 @@ function WorkflowBuilderInner() {
 
         <WorkflowDetailsSheet
           open={showDetails}
-          onOpenChange={setShowDetails}
+          onOpenChange={handleDetailsOpenChange}
           details={{
             name: workflowName,
             description: workflowDescription,
             allowPromptOverride: Boolean(
               currentAgent.allow_system_prompt_override,
             ),
+            analytics:
+              pendingConfig?.analytics ?? currentAgent.config?.analytics,
+            contextWindowLimit:
+              pendingConfig && 'context_window_limit' in pendingConfig
+                ? (pendingConfig.context_window_limit ?? null)
+                : (currentAgent.config?.context_window_limit ?? null),
+            historyTokenLimit:
+              pendingConfig && 'history_token_limit' in pendingConfig
+                ? (pendingConfig.history_token_limit ?? null)
+                : (currentAgent.config?.history_token_limit ?? null),
+            retryDefaults,
+          }}
+          modelWindow={workflowModelWindow}
+          policyEditable={can(currentAgent, 'edit_policy')}
+          insights={{
+            available: analyticsAvailability.enabled,
+            maxTopics: analyticsAvailability.maxTopics,
+            maxOverlapping: analyticsAvailability.maxOverlapping,
+            agentId: effectiveAgentId || undefined,
+            token,
           }}
           currentImage={currentAgentImage}
           saving={detailsSaving}
@@ -2135,20 +2475,8 @@ function WorkflowBuilderInner() {
             workflowData={{
               name: workflowName,
               description: workflowDescription,
-              nodes: nodes
-                .filter((n) => n.type !== 'note')
-                .map((n) => ({
-                  id: n.id,
-                  type: n.type as 'start' | 'end' | 'agent' | 'state' | 'code',
-                  title: n.data.title || n.data.label || n.type,
-                  position: n.position,
-                  data:
-                    n.type === 'code'
-                      ? serializeCodeConfig(n.data.config)
-                      : n.type === 'agent'
-                        ? n.data.config
-                        : n.data,
-                })),
+              retry_defaults: normalizeRetryConfig(retryDefaults) ?? null,
+              nodes: nodes.filter((n) => n.type !== 'note').map(serializeNode),
               edges: edges.map((e) => ({
                 id: e.id,
                 source: e.source,
@@ -2206,9 +2534,8 @@ function WorkflowBuilderInner() {
               if (state === 'INACTIVE') setDetailsOnApiWrites(false);
             }}
             openApiWrites={detailsOnApiWrites}
-            onKeyRegenerated={(key) =>
-              setCurrentAgent((prev) => ({ ...prev, key }))
-            }
+            onKeyRegenerated={handleKeyRegenerated}
+            onConfigChange={handleConfigChange}
           />
         )}
       </div>

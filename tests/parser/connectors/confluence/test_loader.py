@@ -535,6 +535,7 @@ class TestDownloadToDirectory:
     def test_string_file_ids_converted_to_list(self, loader):
         loader._download_page = MagicMock(return_value=True)
         loader._download_page_attachments = MagicMock(return_value=0)
+        loader._download_space = MagicMock(return_value=0)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             target = os.path.join(tmpdir, "out")
@@ -543,6 +544,7 @@ class TestDownloadToDirectory:
             )
 
         loader._download_page.assert_called_once_with("p1", target)
+        loader._download_space.assert_called_once_with("sp1", target)
         assert result["files_downloaded"] == 1
 
     @pytest.mark.unit
@@ -587,6 +589,102 @@ class TestDownloadToDirectory:
 # ---------------------------------------------------------------------------
 # _download_page
 # ---------------------------------------------------------------------------
+
+
+class TestDownloadFileUrls:
+    BASE = "https://acme.atlassian.net/wiki"
+
+    @staticmethod
+    def _file_resp(content=b"PDF"):
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.iter_content = MagicMock(return_value=[content])
+        return resp
+
+    def _page(self, links):
+        return _mock_response({
+            "id": "p1", "title": "My Page", "body": {"storage": {"value": "<p>x</p>"}}, "_links": links,
+        })
+
+    def _attachments(self, links):
+        return _mock_response({
+            "results": [{
+                "id": "att1", "title": "doc.pdf", "mediaType": "application/pdf",
+                "_links": {"download": "/download/att1", "webui": "/pages/viewpageattachments.action?pageId=p1"},
+            }],
+            "_links": links,
+        })
+
+    @pytest.mark.unit
+    def test_pages_and_attachments_get_their_web_links(self, loader):
+        responses = [
+            self._page({"webui": "/spaces/ENG/pages/p1/My+Page", "base": self.BASE}),
+            self._attachments({"base": self.BASE}),
+            self._file_resp(),
+        ]
+        with patch("requests.get", side_effect=responses):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["file_urls"] == {
+            "My Page.html": f"{self.BASE}/spaces/ENG/pages/p1/My+Page",
+            "doc.pdf": f"{self.BASE}/pages/viewpageattachments.action?pageId=p1",
+        }
+
+    @pytest.mark.unit
+    def test_page_without_base_takes_the_sites_from_a_listing(self, loader):
+        responses = [
+            self._page({"webui": "/spaces/ENG/pages/p1/My+Page"}),
+            self._attachments({"base": self.BASE}),
+            self._file_resp(),
+        ]
+        with patch("requests.get", side_effect=responses):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["file_urls"]["My Page.html"] == f"{self.BASE}/spaces/ENG/pages/p1/My+Page"
+
+    @pytest.mark.unit
+    def test_site_looked_up_once_when_no_response_names_it(self, loader):
+        responses = [
+            self._page({"webui": "/spaces/ENG/pages/p1/My+Page"}),
+            _mock_response({"results": [], "_links": {}}),
+            _mock_response({"results": [], "_links": {"base": self.BASE}}),
+        ]
+        with patch("requests.get", side_effect=responses) as get:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["file_urls"] == {"My Page.html": f"{self.BASE}/spaces/ENG/pages/p1/My+Page"}
+        assert get.call_args_list[-1].args[0].endswith("/spaces")
+
+    @pytest.mark.unit
+    def test_no_links_without_a_site(self, loader):
+        responses = [
+            self._page({"webui": "/spaces/ENG/pages/p1/My+Page"}),
+            _mock_response({"results": [], "_links": {}}),
+            _mock_response({}, status_code=500),
+        ]
+        with patch("requests.get", side_effect=responses):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["files_downloaded"] == 1
+        assert result["file_urls"] == {}
+
+
+    @pytest.mark.unit
+    def test_absolute_links_kept_without_a_site(self, loader):
+        responses = [
+            self._page({"webui": "https://acme.atlassian.net/wiki/spaces/ENG/pages/p1"}),
+            _mock_response({"results": [], "_links": {}}),
+        ]
+        with patch("requests.get", side_effect=responses) as get:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["file_urls"] == {"My Page.html": "https://acme.atlassian.net/wiki/spaces/ENG/pages/p1"}
+        assert get.call_count == 2, "no site lookup when every link is absolute"
 
 
 class TestDownloadPage:

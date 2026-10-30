@@ -172,8 +172,18 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/template_agents", "GET"): _rule("agents:read", open=True),
     ("/api/export_agent", "GET"): _rule("agents:read", (QUERY, "id")),
     ("/api/guardrails/catalog", "GET"): _rule("agents:read", open=True),
+    # The admin's defaults for new agents: no agent's data, so open to restricted tokens.
+    ("/api/agents/defaults", "GET"): _rule("agents:read", open=True),
     ("/api/guardrails/events", "GET"): _rule("agents:read", (QUERY, "agent_id")),
     ("/api/guardrails/summary", "GET"): _rule("agents:read", (QUERY, "agent_id")),
+    # Both read one agent's topics and its sources' folder names, so they prove the agent and
+    # are closed to tokens restricted on the families an agent's sources hang off.
+    ("/api/analytics/topic_folders", "GET"): _rule(
+        "agents:read", (QUERY, "agent_id"), blocked_by=_NON_AGENT_FAMILIES
+    ),
+    ("/api/analytics/topics", "GET"): _rule(
+        "analytics:read", (QUERY, "agent_id"), family="agents", blocked_by=_NON_AGENT_FAMILIES
+    ),
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),
     ("/api/agents/folders/<string:folder_id>", "GET"): _rule("agents:read"),
     ("/api/create_agent", "POST"): _rule("agents:write", refs=_AGENT_BODY_REFS, check=_agent_body_check),
@@ -207,6 +217,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/agents/<string:agent_id>/schedules", "POST"): _rule(
         "schedules:write", refs=(("agents", (VIEW, "agent_id")),), blocked_by=_NON_AGENT_FAMILIES
     ),
+    # Lists schedules of every agent, so a token limited to some agents can't use it.
+    ("/api/schedules", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs/<string:run_id>", "GET"): _rule(
@@ -220,6 +232,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/sources", "GET"): _rule("sources:read", listing=True),
     # Counted and paged in SQL, so it cannot be narrowed here; restricted tokens use /api/sources.
     ("/api/sources/paginated", "GET"): _rule("sources:read"),
+    # The admin's defaults for new sources: no source's data, so open to restricted tokens.
+    ("/api/sources/defaults", "GET"): _rule("sources:read", open=True),
     ("/api/directory_structure", "GET"): _rule("sources:read", (QUERY, "id")),
     ("/api/get_chunks", "GET"): _rule("sources:read", (QUERY, "id")),
     # The chunk behind a citation; scoped to its source like get_chunks.
@@ -242,9 +256,15 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/delete_old", "GET"): _rule("sources:write", (QUERY, "source_id")),
     ("/api/manage_sync", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/sync_source", "POST"): _rule("sources:write", (JSON, "source_id")),
+    ("/api/website", "GET"): _rule("sources:read", (QUERY, "id")),
+    ("/api/website", "POST"): _rule("sources:write", (JSON, "source_id")),
+    ("/api/website/pages", "POST"): _rule("sources:write", (JSON, "source_id")),
+    ("/api/website/refresh", "POST"): _rule("sources:write", (JSON, "source_id")),
+    ("/api/website/remove", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/sources/reingest", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/manage_source_files", "POST"): _rule("sources:write", (FORM, "source_id")),
     ("/api/sources/<string:source_id>/config", "PATCH"): _rule("sources:write", (VIEW, "source_id")),
+    ("/api/sources/<string:source_id>/injection_review", "POST"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/page", "PUT"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/convert", "POST"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/graphrag/enable", "POST"): _rule(
@@ -270,6 +290,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/update_tool_status", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/delete_tool", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/mcp_server/test", "POST"): _rule("tools:write", open=True),
+    # Cancels a sign-in the caller started; the route checks it is theirs.
+    ("/api/mcp_server/oauth_cancel", "POST"): _rule("tools:write", open=True),
     ("/api/mcp_server/save", "POST"): _rule("tools:write", (JSON, "id")),
     # Models
     ("/api/models", "GET"): _rule(any_of=("models:read", "chat:run"), open=True),
@@ -288,6 +310,27 @@ RULES: dict[tuple[str, str], Rule] = {
         "workflows:write", (VIEW, "workflow_id"), blocked_by=_WORKFLOW_CONTENT_FAMILIES
     ),
     ("/api/workflows/<string:workflow_id>", "DELETE"): _rule("workflows:write", (VIEW, "workflow_id")),
+    # Workflow runs belong to the agent that ran them, which is all a run route can prove;
+    # tokens restricted on any other family are kept out. The routes filter by the agent
+    # allowlist themselves, and answer 404 for a run outside it. The download of a run's
+    # files is the native-async route in docsgpt/api/user/workflow_runs/download.py
+    # (``artifacts:read``), outside this table.
+    ("/api/workflow_runs", "GET"): _rule(
+        "runs:read",
+        family="agents",
+        listing=True,
+        refs=(("agents", (QUERY, "agent_id")),),
+        blocked_by=_NON_AGENT_FAMILIES,
+    ),
+    ("/api/workflow_runs/<string:run_id>", "GET"): _rule(
+        "runs:read", family="agents", in_route=True, blocked_by=_NON_AGENT_FAMILIES
+    ),
+    # Every artifact of the user (chats and runs alike), so no restricted token may list or read them.
+    ("/api/artifacts", "GET"): _rule("artifacts:read", family=None, blocked_by=_ALL_FAMILIES),
+    ("/api/artifacts/<artifact_id>", "GET"): _rule("artifacts:read", family=None, blocked_by=_ALL_FAMILIES),
+    ("/api/artifacts/<artifact_id>/versions/<int:version>", "GET"): _rule(
+        "artifacts:read", family=None, blocked_by=_ALL_FAMILIES
+    ),
     # Conversations and analytics span every agent and carry cited source text and tool
     # output, so they are closed to every restricted token.
     ("/api/get_conversations", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
@@ -319,6 +362,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_tool_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_schedule_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_user_logs", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
+    ("/api/get_conversation_insights", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
+    ("/api/get_docs_gaps", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/traces", "GET"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     # Teams (read only)
     ("/api/teams", "GET"): _rule("teams:read"),
@@ -346,6 +391,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/user/tokens": ("*",),
     "/api/user/tokens/<string:token_id>": ("*",),
     "/api/user/tokens/<string:token_id>/regenerate": ("*",),
+    "/api/user/tokens/<string:token_id>/tool": ("*",),
     "/api/generate_token": ("*",),
     "/api/combine": ("*",),
     "/api/download": ("*",),
@@ -354,6 +400,11 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/shared_agent": ("*",),
     "/api/shared_conversation/<string:identifier>": ("*",),
     "/api/webhooks/agents/<string:webhook_token>": ("*",),
+    # Spans every chat, agent and run of the user, like conversations do.
+    "/api/activity/now": ("*",),
+    "/api/activity/planned": ("*",),
+    "/api/activity/history": ("*",),
+    "/api/messages/<string:message_id>/cancel": ("*",),
     # Monitor links: public, the token in the path is the credential (no session or PAT).
     "/api/triggers/<string:token>": ("*",),
     "/api/approvals/<string:token>": ("*",),
@@ -364,10 +415,9 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),
     "/api/artifact/<artifact_id>": ("*",),
-    "/api/artifacts": ("*",),
-    "/api/artifacts/<artifact_id>": ("*",),
+    # Reading artifacts is ``artifacts:read`` (RULES); changing them needs a session.
+    "/api/artifacts/<artifact_id>": ("DELETE",),
     "/api/artifacts/<artifact_id>/restore": ("*",),
-    "/api/artifacts/<artifact_id>/versions/<int:version>": ("*",),
     "/api/stt": ("*",),
     "/api/stt/live/start": ("*",),
     "/api/stt/live/chunk": ("*",),
@@ -396,6 +446,7 @@ DENIED_PREFIXES = (
     "/api/connectors/",
     "/api/connections",
     "/api/devices",
+    "/api/internal/",
     "/scim/",
     "/static/",
     "/swaggerui/",

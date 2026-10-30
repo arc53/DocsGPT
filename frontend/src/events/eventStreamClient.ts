@@ -36,11 +36,11 @@ export interface EventStreamOptions {
    */
   onAuthFailure?: () => void;
   /**
-   * Invoked once when the reconnect loop bails out after
-   * ``MAX_CONSECUTIVE_ERRORS`` non-401 failures. Lets the caller surface
-   * a warning instead of the connection silently going dark.
+   * Invoked once per failure streak, when ``MAX_CONSECUTIVE_ERRORS``
+   * non-401 failures in a row drop the loop to its slow retry. The loop
+   * keeps going; this only lets the caller say so.
    */
-  onPermanentFailure?: () => void;
+  onErrorBudgetSpent?: () => void;
 }
 
 export interface EventStreamConnection {
@@ -56,14 +56,29 @@ export interface EventStreamConnection {
 const BACKOFF_SCHEDULE_MS = [0, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 const HEALTHY_DEBOUNCE_MS = 2_000;
 /**
- * Reconnect ceilings. Without these, the ``while (!closed)`` loop spins
- * forever on a persistently-failing endpoint — expired token (401s) or
- * sustained server outage (5xx). Both counters reset on a successful
- * stream open. Untested (no frontend test harness); behaviour verified
- * by manual trace of the loop in ``connectEventStream``.
+ * Reconnect ceilings. A run of 401s means the token is stale: the loop
+ * stops and hands it to ``onAuthFailure``. Any other run of failures
+ * (offline, a sleeping laptop, a server outage) only slows the loop to
+ * ``SLOW_RETRY_MS``: a tab left open overnight must still hear its
+ * attachments and background jobs finish the next morning. Both counters
+ * reset on a successful stream open.
  */
 const MAX_CONSECUTIVE_401 = 3;
 const MAX_CONSECUTIVE_ERRORS = 20;
+const SLOW_RETRY_MS = 60_000;
+/**
+ * The server sends a keepalive every 15 s (``SSE_KEEPALIVE_SECONDS``). A
+ * stream silent for this long is dead even though the browser never said
+ * so (a half-open connection after a sleep or a network change), so the
+ * attempt is dropped and the loop reconnects, replaying what it missed.
+ */
+const STREAM_IDLE_TIMEOUT_MS = 60_000;
+/**
+ * When the tab wakes (shown, focused, back online), a stream silent for
+ * longer than this is dropped at once instead of waiting out the idle
+ * timeout.
+ */
+const STREAM_WAKE_STALE_MS = 30_000;
 
 /** Up-to-±20% random jitter so N tabs reconnecting in lockstep stagger. */
 function withJitter(delayMs: number): number {
@@ -84,6 +99,10 @@ function withJitter(delayMs: number): number {
  * rather than as a header so the request stays a CORS-simple GET — a
  * custom header would force a preflight OPTIONS that the production
  * cross-origin deployment isn't allowlisted for.
+ *
+ * The tab coming back (``online``, ``focus``, ``visibilitychange`` to
+ * visible) cuts a retry wait short, and drops a stream that has gone
+ * quiet, so a returning user is reconnected at once.
  */
 export function connectEventStream(
   opts: EventStreamOptions,
@@ -104,17 +123,76 @@ export function connectEventStream(
     opts.onHealthChange(h);
   };
 
+  const recordFailure = () => {
+    notifyHealth('unhealthy');
+    consecutiveErrors += 1;
+    if (consecutiveErrors === MAX_CONSECUTIVE_ERRORS) {
+      opts.onErrorBudgetSpent?.();
+    }
+    attempt = Math.min(attempt + 1, BACKOFF_SCHEDULE_MS.length - 1);
+  };
+
+  // Set while the loop waits to retry; calling it ends the wait early.
+  let endRetryWait: (() => void) | null = null;
+  // The open attempt, and when it last heard from the server.
+  let attemptController: AbortController | null = null;
+  let lastHeardAt = 0;
+  let reconnectNow = false;
+
+  const waitBeforeRetry = (ms: number) =>
+    new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        controller.signal.removeEventListener('abort', done);
+        endRetryWait = null;
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      controller.signal.addEventListener('abort', done, { once: true });
+      endRetryWait = done;
+    });
+
+  const wake = () => {
+    if (closed) return;
+    if (endRetryWait) {
+      endRetryWait();
+    } else if (
+      attemptController &&
+      Date.now() - lastHeardAt > STREAM_WAKE_STALE_MS
+    ) {
+      reconnectNow = true;
+      attemptController.abort();
+    }
+  };
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') wake();
+  };
+  window.addEventListener('online', wake);
+  window.addEventListener('focus', wake);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  const removeWakeListeners = () => {
+    window.removeEventListener('online', wake);
+    window.removeEventListener('focus', wake);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+  };
+
   void (async () => {
     while (!closed) {
-      const baseDelay =
-        BACKOFF_SCHEDULE_MS[Math.min(attempt, BACKOFF_SCHEDULE_MS.length - 1)];
-      const delay = withJitter(baseDelay);
+      let delay: number;
+      if (reconnectNow) {
+        delay = 0;
+        reconnectNow = false;
+      } else if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        delay = withJitter(SLOW_RETRY_MS);
+      } else {
+        delay = withJitter(
+          BACKOFF_SCHEDULE_MS[
+            Math.min(attempt, BACKOFF_SCHEDULE_MS.length - 1)
+          ],
+        );
+      }
       if (delay > 0) {
-        try {
-          await sleep(delay, controller.signal);
-        } catch {
-          return; // aborted while waiting
-        }
+        await waitBeforeRetry(delay);
         if (closed) return;
       }
 
@@ -144,39 +222,51 @@ export function connectEventStream(
         headers.Authorization = `Bearer ${opts.token}`;
       }
 
+      // One controller per attempt, so the idle watchdog and a wake can
+      // drop this attempt without closing the whole connection.
+      const thisAttempt = new AbortController();
+      const { signal } = thisAttempt;
+      const abortAttempt = () => thisAttempt.abort();
+      controller.signal.addEventListener('abort', abortAttempt, {
+        once: true,
+      });
+      attemptController = thisAttempt;
+      let idleTimer: ReturnType<typeof setTimeout> | undefined;
+      const heard = () => {
+        lastHeardAt = Date.now();
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(abortAttempt, STREAM_IDLE_TIMEOUT_MS);
+      };
+      heard();
+
       try {
         const response = await fetch(url.toString(), {
           method: 'GET',
           headers,
-          signal: controller.signal,
+          signal,
           // SSE must not be cached.
           cache: 'no-store',
         });
 
         if (!response.ok || !response.body) {
-          notifyHealth('unhealthy');
           // 401 typically means token expired. Bail out after N
-          // consecutive 401s so the loop doesn't spin forever at the
-          // 30s backoff cap with a stale token; the caller is
-          // responsible for refreshing auth via ``onAuthFailure``.
+          // consecutive 401s so the loop doesn't spin forever with a
+          // stale token; the caller is responsible for refreshing auth
+          // via ``onAuthFailure``.
           if (response.status === 401) {
             consecutive401 += 1;
-            consecutiveErrors += 1;
             if (consecutive401 >= MAX_CONSECUTIVE_401) {
+              notifyHealth('unhealthy');
+              removeWakeListeners();
               opts.onAuthFailure?.();
               return;
             }
           } else {
             consecutive401 = 0;
-            consecutiveErrors += 1;
           }
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            opts.onPermanentFailure?.();
-            return;
-          }
+          recordFailure();
           // 429: server-side per-user concurrency cap; backoff harder.
           if (response.status === 429) attempt = Math.max(attempt, 4);
-          else attempt = Math.min(attempt + 1, BACKOFF_SCHEDULE_MS.length - 1);
           continue;
         }
         consecutive401 = 0;
@@ -197,7 +287,7 @@ export function connectEventStream(
         const debounceTimer = setTimeout(markHealthy, HEALTHY_DEBOUNCE_MS);
 
         try {
-          await readSSEStream(response.body, controller.signal, (record) => {
+          await readSSEStream(response.body, signal, heard, (record) => {
             if (record.id !== undefined) {
               lastEventId = record.id || null;
               if (record.id) opts.onLastEventId?.(record.id);
@@ -243,29 +333,18 @@ export function connectEventStream(
           clearTimeout(debounceTimer);
         }
 
-        // The reader returned without abort — server closed the stream.
-        // Fall through to reconnect.
-        notifyHealth('unhealthy');
-        consecutiveErrors += 1;
-        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-          opts.onPermanentFailure?.();
-          return;
-        }
-        attempt = Math.min(attempt + 1, BACKOFF_SCHEDULE_MS.length - 1);
-      } catch (err) {
-        if (
-          closed ||
-          (err instanceof DOMException && err.name === 'AbortError')
-        ) {
-          return;
-        }
-        notifyHealth('unhealthy');
-        consecutiveErrors += 1;
-        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-          opts.onPermanentFailure?.();
-          return;
-        }
-        attempt = Math.min(attempt + 1, BACKOFF_SCHEDULE_MS.length - 1);
+        // The reader returned: the server closed the stream, or this
+        // attempt was dropped as idle or stale. Fall through to reconnect.
+        if (closed) return;
+        recordFailure();
+      } catch {
+        if (closed) return;
+        // A network error, or this attempt dropped while connecting.
+        recordFailure();
+      } finally {
+        clearTimeout(idleTimer);
+        controller.signal.removeEventListener('abort', abortAttempt);
+        attemptController = null;
       }
     }
   })();
@@ -274,6 +353,7 @@ export function connectEventStream(
     close() {
       if (closed) return;
       closed = true;
+      removeWakeListeners();
       controller.abort();
     },
   };
@@ -292,12 +372,14 @@ interface ParsedSSERecord {
 
 /**
  * Drain a ``ReadableStream<Uint8Array>`` of ``\n\n``-delimited SSE records,
- * forwarding each parsed record to ``onRecord``. Honours the WHATWG SSE
+ * forwarding each parsed record to ``onRecord``. ``onBytes`` fires on every
+ * chunk, keepalive comments included. Honours the WHATWG SSE
  * spec's mixed line-terminator handling and SSE comment lines.
  */
 async function readSSEStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
+  onBytes: () => void,
   onRecord: (record: ParsedSSERecord) => void,
 ): Promise<void> {
   const reader = body.getReader();
@@ -309,6 +391,7 @@ async function readSSEStream(
       if (signal.aborted) return;
       const { done, value } = await reader.read();
       if (done) return;
+      onBytes();
       buffer += decoder.decode(value, { stream: true });
 
       // SSE records are separated by a blank line. WHATWG spec accepts
@@ -364,23 +447,4 @@ function parseSSERecord(raw: string): ParsedSSERecord | null {
     id,
     data: sawDataField ? dataParts.join('\n') : undefined,
   };
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', onAbort);
-      reject(new DOMException('Aborted', 'AbortError'));
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
 }

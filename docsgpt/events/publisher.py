@@ -56,6 +56,18 @@ def _notify_monitors(user_id: str, event_type: str, payload: dict[str, Any]) -> 
         logger.exception("ingest monitors hook failed for %s", event_type)
 
 
+def _track_activity(user_id: str, event_type: str, payload: dict[str, Any]) -> None:
+    """Keep Activity's marker of a running ingest (whether or not SSE is on); never raises."""
+    if not event_type.startswith("source.ingest."):
+        return
+    try:
+        from docsgpt.activity import flags
+
+        flags.track_ingest_event(user_id, event_type, payload)
+    except Exception:
+        logger.exception("activity ingest marker failed for %s", event_type)
+
+
 def publish_user_event(
     user_id: str,
     event_type: str,
@@ -77,6 +89,7 @@ def publish_user_event(
         )
         return None
     _notify_monitors(user_id, event_type, payload)
+    _track_activity(user_id, event_type, payload)
     if not settings.ENABLE_SSE_PUSH:
         return None
 

@@ -16,7 +16,30 @@ vi.mock('react-router-dom', () => ({
 
 vi.mock('../components/MessageInput', () => ({ default: () => null }));
 vi.mock('../conversation/ConversationMessages', () => ({
-  default: () => <div data-testid="messages" />,
+  default: (props: {
+    onOpenArtifact?: (request: {
+      id: string;
+      toolName: string;
+      version?: number;
+    }) => void;
+  }) => (
+    <div data-testid="messages">
+      {props.onOpenArtifact && (
+        <button
+          type="button"
+          data-testid="open-artifact"
+          onClick={() =>
+            props.onOpenArtifact?.({ id: 'run-file', toolName: '', version: 1 })
+          }
+        />
+      )}
+    </div>
+  ),
+}));
+vi.mock('../components/ArtifactPanel', () => ({
+  default: (props: { artifactId: string }) => (
+    <div data-testid="artifact-panel">{props.artifactId}</div>
+  ),
 }));
 vi.mock('./SharedAgentCard', () => ({ default: () => null }));
 vi.mock('../conversation/conversationSlice', () => ({
@@ -91,5 +114,23 @@ describe('SharedAgent', () => {
     getSharedAgent.mockResolvedValue({ ok: false, status: 500 });
     await render();
     expect(state()?.dataset.tone).toBe('destructive');
+  });
+
+  // The runner owns the run, so its files open here as they do in the chat.
+  it("opens an answer's artifact in a side panel", async () => {
+    getSharedAgent.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'a1', name: 'Vendor Due Diligence' }),
+    });
+    await render();
+    const open = container.querySelector<HTMLButtonElement>(
+      '[data-testid="open-artifact"]',
+    );
+    expect(open).not.toBeNull();
+    await act(async () => open!.click());
+    const panel = document.querySelector('[data-testid="artifact-panel"]');
+    expect(panel?.textContent).toBe('run-file');
+    expect(panel?.closest('[role="dialog"]')).not.toBeNull();
   });
 });

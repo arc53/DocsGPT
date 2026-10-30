@@ -34,7 +34,7 @@ DEFAULT_SKIP_ASSOCIATIONS = "OWNER,MEMBER,COLLABORATOR"
 DEFAULT_MAINTAINERS = "dartpain,pabik,ManishMadan2882,siiddhantt,tenokami,arc53-machine"
 # Events a bot legitimately sends: CodeRabbit's status, and CI runs started for a bot's push.
 BOT_SENT_EVENTS = frozenset({"status", "workflow_run"})
-LOCALES = ("de", "en", "es", "jp", "ru", "zh", "zh-TW")
+LOCALES = ("de", "en", "es", "fr", "jp", "ru", "zh", "zh-TW")
 MARKER = "docsgpt-triage"
 
 BODY_LIMIT = 6000

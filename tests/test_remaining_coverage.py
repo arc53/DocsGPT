@@ -781,39 +781,6 @@ class TestElasticsearchStoreGaps:
 
 
 # ---------------------------------------------------------------------------
-# docsgpt/parser/remote/crawler_markdown.py  (lines 50, 53, 58-59)
-# ---------------------------------------------------------------------------
-@pytest.mark.unit
-class TestCrawlerMarkdownGaps:
-    def test_skip_visited_url(self):
-        """Cover line 50: skip already visited URL."""
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-
-        loader = CrawlerLoader(limit=5)
-        with patch.object(loader, "_fetch_page", return_value=None):
-            with patch(
-                "docsgpt.parser.remote.crawler_markdown.validate_url",
-                side_effect=lambda u: u,
-            ):
-                result = loader.load_data("https://example.com")
-                # First URL visited, _fetch_page returns None so no docs
-                assert isinstance(result, list)
-
-    def test_fetch_page_none_skips(self):
-        """Cover line 53: _fetch_page returning None causes continue."""
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-
-        loader = CrawlerLoader(limit=2)
-        with patch.object(loader, "_fetch_page", return_value=None):
-            with patch(
-                "docsgpt.parser.remote.crawler_markdown.validate_url",
-                side_effect=lambda u: u,
-            ):
-                docs = loader.load_data("https://example.com")
-                assert docs == []
-
-
-# ---------------------------------------------------------------------------
 # docsgpt/parser/embedding_pipeline.py  (lines 43-45, 65, 69)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit

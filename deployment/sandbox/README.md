@@ -192,7 +192,7 @@ What is in it:
 
 - **Python libraries:** pandas, numpy, matplotlib, openpyxl, python-docx,
   python-pptx, reportlab, lxml, Pillow, requests, beautifulsoup4, PyYAML, pypdf,
-  PyPDF2, pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio, at the
+  pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio, at the
   exact versions in the manifest.
 - **Commands:** headless LibreOffice (`soffice`), headless Chromium
   (`chromium-headless-shell`), `tesseract` (English), poppler's `pdftotext`
@@ -380,10 +380,11 @@ or a hosted API (`OCR_DEEPSEEK_PROVIDER`) and leaves this worker light.
 **Dev / single-worker setups:** a worker started without `-Q` already consumes
 every configured queue, `parsing` included, so no extra flag is needed. Only if
 you restrict queues with `-Q` must you include `parsing` (and `embeddings`) or
-run a dedicated parsing worker, or the tool's await never resolves:
+run a dedicated parsing worker, or the tool's await never resolves. Keep
+`analytics` in the list too, or conversation analytics never runs:
 
 ```bash
-celery -A docsgpt.app.celery worker -B -Q docsgpt,parsing,embeddings -l INFO
+celery -A docsgpt.app.celery worker -B -Q docsgpt,parsing,embeddings,ingest,analytics -l INFO
 ```
 
 Tuning settings: `DOCUMENT_PARSE_TIMEOUT` (seconds the tool awaits before

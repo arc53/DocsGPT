@@ -5,6 +5,9 @@ import { MemoryRouter } from 'react-router-dom';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+// The only selector read is whether the server labels conversations.
+const server = vi.hoisted(() => ({ analytics: false }));
+vi.mock('react-redux', () => ({ useSelector: () => server.analytics }));
 
 import AgentPageHeader from './AgentPageHeader';
 
@@ -15,6 +18,7 @@ describe('AgentPageHeader sub-nav', () => {
   let root: Root;
 
   beforeEach(() => {
+    server.analytics = false;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -41,7 +45,7 @@ describe('AgentPageHeader sub-nav', () => {
       'nav[aria-label="agents.pageHeader.subnavAriaLabel"]',
     );
     const tabs = Array.from(nav?.children ?? []);
-    expect(tabs).toHaveLength(3);
+    expect(tabs).toHaveLength(4);
     for (const tab of tabs) {
       expect(tab.getAttribute('data-slot')).toBe('nav-tab');
       expect(tab.className).toContain('h-9');
@@ -77,6 +81,7 @@ describe('AgentPageHeader sub-nav', () => {
     );
     expect(Array.from(nav?.children ?? []).map((t) => t.textContent)).toEqual([
       'agents.pageHeader.tabs.overview',
+      'agents.pageHeader.tabs.analytics',
       'agents.pageHeader.tabs.logs',
     ]);
   });
@@ -126,5 +131,68 @@ describe('AgentPageHeader sub-nav', () => {
         'nav[aria-label="agents.pageHeader.subnavAriaLabel"]',
       ),
     ).toBeNull();
+  });
+
+  it('adds Insights after Analytics while the server labels conversations', () => {
+    server.analytics = true;
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <AgentPageHeader
+            agentId="a1"
+            agentName="Renewals"
+            onNameClick={vi.fn()}
+            access={{
+              access: 'editor',
+              allowed_actions: ['view', 'view_logs'],
+            }}
+          />
+        </MemoryRouter>,
+      );
+    });
+    const nav = container.querySelector(
+      'nav[aria-label="agents.pageHeader.subnavAriaLabel"]',
+    );
+    const tabs = Array.from(nav?.children ?? []);
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'agents.pageHeader.tabs.overview',
+      'agents.pageHeader.tabs.analytics',
+      'agents.pageHeader.tabs.insights',
+      'agents.pageHeader.tabs.logs',
+    ]);
+    expect(tabs[2].getAttribute('href')).toBe('/agents/manage/insights/a1');
+  });
+
+  // One tab list with the sidebar (`buildAgentSection`), in its order.
+  it("follows the agent sidebar's order", () => {
+    server.analytics = true;
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <AgentPageHeader
+            agentId="a1"
+            agentName="Renewals"
+            onNameClick={vi.fn()}
+          />
+        </MemoryRouter>,
+      );
+    });
+    const nav = container.querySelector(
+      'nav[aria-label="agents.pageHeader.subnavAriaLabel"]',
+    );
+    const tabs = Array.from(nav?.children ?? []);
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'agents.pageHeader.tabs.overview',
+      'agents.pageHeader.tabs.schedules',
+      'agents.pageHeader.tabs.analytics',
+      'agents.pageHeader.tabs.insights',
+      'agents.pageHeader.tabs.logs',
+    ]);
+    expect(tabs.slice(1).map((tab) => tab.getAttribute('href'))).toEqual([
+      '/agents/manage/schedules/a1',
+      '/agents/manage/analytics/a1',
+      '/agents/manage/insights/a1',
+      '/agents/manage/logs/a1',
+    ]);
   });
 });

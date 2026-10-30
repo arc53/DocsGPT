@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import de from './de.json';
 import en from './en.json';
 import es from './es.json';
+import fr from './fr.json';
 import jp from './jp.json';
 import ru from './ru.json';
 import zhTW from './zh-TW.json';
@@ -32,7 +33,7 @@ const block = (locale: object, path: string): Tree =>
 const keysOf = (locale: object, path: string): string[] =>
   Array.from(new Set(flatten(block(locale, path)))).sort();
 
-const LOCALES = { es, de, jp, ru, zh, zhTW };
+const LOCALES = { es, de, fr, jp, ru, zh, zhTW };
 
 // Every block the Connectors work adds strings to.
 const BLOCKS = ['settings.connectors'];

@@ -159,7 +159,7 @@ class TestCatalogRoute:
         names = {c["name"] for c in payload["checks"]}
         assert names == {
             "pii", "secrets", "denylist", "url", "injection",
-            "groundedness", "policy",
+            "injection_model", "groundedness", "policy",
         }, f"unexpected catalog: {sorted(names)}"
 
     def test_each_check_carries_the_ui_contract(self, app):
@@ -183,25 +183,23 @@ class TestCatalogRoute:
     def test_reports_the_instance_floor(self, app, monkeypatch):
         import json
 
-        from docsgpt.core.settings import settings
+        from docsgpt.guardrails.config import GuardrailsConfig
 
         monkeypatch.setattr(
-            settings,
-            "GUARDRAILS_FLOOR",
-            {"enabled": True,
-             "controls": [{"check": "secrets", "stage": "output",
-                           "action": "redact"}]},
+            "docsgpt.guardrails.floor._floor",
+            GuardrailsConfig.model_validate(
+                {"enabled": True,
+                 "controls": [{"check": "secrets", "stage": "output",
+                               "action": "redact"}]}
+            ),
         )
         payload = json.loads(self._get(app).get_data(as_text=True))
         assert payload["floor"] is not None
         assert payload["floor"]["controls"][0]["check"] == "secrets"
 
-    def test_floor_is_null_when_unset(self, app, monkeypatch):
+    def test_floor_is_null_when_unset(self, app):
         import json
 
-        from docsgpt.core.settings import settings
-
-        monkeypatch.setattr(settings, "GUARDRAILS_FLOOR", {})
         payload = json.loads(self._get(app).get_data(as_text=True))
         assert payload["floor"] is None
 

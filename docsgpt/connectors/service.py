@@ -19,6 +19,7 @@ from docsgpt.storage.db.repositories.connector_sessions import (
     owns_connector_session,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.storage.db.source_config import SourceConfig
 
 STATUS_CONNECTED = "connected"
 STATUS_RECONNECT = "reconnect_needed"
@@ -210,7 +211,11 @@ def list_connections(conn, user_id: str) -> list[dict]:
 
 
 def serialize_source(row: dict, connection_status: Optional[str] = None) -> dict:
-    """A source linked to a connection, as the connection drawer lists it."""
+    """A source linked to a connection, as the connection drawer lists it.
+
+    ``kind`` is the source's behaviour (``classic``, ``wiki``, ``graphrag``):
+    a source converted to a wiki doesn't sync, so the drawer offers no Sync now.
+    """
     metadata = _json(row.get("metadata")) or {}
     sync_state = metadata.get("sync_state") if isinstance(metadata, dict) else None
     if connection_status in (STATUS_RECONNECT, STATUS_DISCONNECTED) and not sync_state:
@@ -219,6 +224,7 @@ def serialize_source(row: dict, connection_status: Optional[str] = None) -> dict
         "id": str(row["id"]),
         "name": row.get("name"),
         "type": row.get("type"),
+        "kind": SourceConfig.parse(_json(row.get("config"))).kind,
         "last_sync": _iso(row.get("date")),
         "sync_frequency": row.get("sync_frequency") or "never",
         "sync_state": sync_state or "active",
@@ -281,6 +287,8 @@ def serialize_tool(
                 "access": access,
                 "permission": action_permission(action),
                 "parameters": serialize_parameters(action, account_parameters),
+                # ``{p, scorer}`` while Admin > Guardrails warns on tool descriptions.
+                "injection": action.get("injection") if isinstance(action.get("injection"), dict) else None,
             }
         )
     return {
@@ -1033,13 +1041,23 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
     return repo.get(str(target["id"]))
 
 
-def picker_token(connection_id: str) -> dict:
-    """What a browser-side picker needs: a short-lived access token, never the refresh token."""
+def picker_token(connection_id: str, provider: Optional[str] = None) -> dict:
+    """What a browser-side picker needs: a short-lived access token, never the refresh token.
+
+    Args:
+        connection_id: The connection the picker browses.
+        provider: The connection's provider; its auth adds picker settings
+            such as how Google Drive folders are read.
+    """
+    from docsgpt.parser.connectors.connector_creator import ConnectorCreator
+
     token_info = get_valid_token_info(connection_id)
+    options = ConnectorCreator.create_auth(provider).picker_options(token_info) if provider else {}
     return {
         "access_token": token_info.get("access_token"),
         "expiry": token_info.get("expiry"),
         "allows_shared_content": bool(token_info.get("allows_shared_content")),
+        **options,
     }
 
 
@@ -1080,6 +1098,47 @@ def resolve_request_connection(user_id: str, provider: Optional[str], data: dict
     if provider and (row.get("provider") or "").lower() != provider.lower():
         return None
     return row
+
+
+def owner_sync_connection(conn, owner_id: str, provider: str, connection_id: str) -> Optional[dict]:
+    """The source's own connection, when the owner can sync with it, or None.
+
+    Used when a sync of a connector source is queued for its owner without a
+    browser naming a connection (a team editor's Sync now, a Reingest): the
+    sync runs with the owner's account the source names. A connection that is
+    not connected (signed out, flagged for reconnect, holding no
+    credentials), cannot be decrypted, or has an expired access token that
+    can't be refreshed counts as missing.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The source owner's ``sub``.
+        provider: The source's connector provider.
+        connection_id: The source's own connection; a source that names none
+            is refused by the caller (another of the owner's accounts would
+            read its selection).
+
+    Returns:
+        Optional[dict]: The connection row, or None when the owner must reconnect.
+    """
+    from docsgpt.parser.connectors.connector_creator import ConnectorCreator
+    from docsgpt.security.encryption import CredentialDecryptionError
+
+    session = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
+    if not owns_connector_session(session, owner_id, provider) or normalize_status(session) != STATUS_CONNECTED:
+        return None
+    try:
+        token_info = read_secrets(session).get("token_info") or {}
+    except CredentialDecryptionError:
+        return None
+    if isinstance(token_info, dict) and token_info and not token_info.get("refresh_token"):
+        try:
+            if ConnectorCreator.create_auth(provider).is_token_expired(token_info):
+                return None
+        except Exception:
+            # Providers without an expiry check leave the verdict to the sync.
+            pass
+    return session
 
 
 # ---------------------------------------------------------------------------
@@ -1255,7 +1314,9 @@ def create_tool_for_connection(
     doc = (tool.__doc__ or template).strip().split("\n", 1)
     if actions is None:
         actions = tool.get_actions_metadata()
-    actions = apply_default_permissions(template, _transform_actions(actions))
+    actions = apply_default_permissions(
+        template, _transform_actions(actions), definition.default_actions if definition else (),
+    )
     for index, action in enumerate(actions):
         permission = (permissions or {}).get(action.get("name"))
         if permission:
@@ -1313,6 +1374,7 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
 
     The OAuth tokens are not part of it: they stay on the connection, which
     the tool is linked to, and the executor signs in with them at run time.
+    A keyless preset (``auth_kind: mcp``, such as draw.io) uses no auth.
 
     Args:
         definition: The connector.
@@ -1329,7 +1391,7 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
         return None
     return {
         "server_url": definition.mcp_url,
-        "auth_type": "oauth",
+        "auth_type": "oauth" if definition.auth_kind == "mcp_oauth" else "none",
         "oauth_scopes": list(definition.oauth_scopes),
         "timeout": 30,
         "transport_type": "auto",

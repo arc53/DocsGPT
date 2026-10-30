@@ -2,6 +2,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MemoryRouter } from 'react-router-dom';
+
 import '../../locale/i18n';
 import type { ScheduleRun } from '../types/schedule';
 import RunDetailDrawer from './RunDetailDrawer';
@@ -148,5 +150,28 @@ describe('RunDetailDrawer', () => {
       root.render(<RunDetailDrawer run={null} onClose={vi.fn()} />),
     );
     expect(content()).toBeNull();
+  });
+
+  it('links to the run conversation when the run has one', async () => {
+    await act(async () =>
+      root.render(
+        <MemoryRouter>
+          <RunDetailDrawer
+            run={{ ...run, conversation_id: 'c-42' }}
+            onClose={vi.fn()}
+          />
+        </MemoryRouter>,
+      ),
+    );
+    const link =
+      content()!.querySelector<HTMLAnchorElement>('a[href="/c/c-42"]');
+    expect(link?.textContent).toContain('Open conversation');
+  });
+
+  it('shows no conversation link without one', async () => {
+    await act(async () =>
+      root.render(<RunDetailDrawer run={run} onClose={vi.fn()} />),
+    );
+    expect(content()!.querySelector('a[href^="/c/"]')).toBeNull();
   });
 });

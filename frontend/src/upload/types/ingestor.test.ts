@@ -44,12 +44,8 @@ describe('wiki ingestor schema', () => {
 describe('Add knowledge tiles', () => {
   // GitHub sits with the services ("From a service"), not among these.
   it('lists the no-account types, without GitHub', () => {
-    expect(UPLOAD_AND_WEB_INGESTORS).toEqual([
-      'local_file',
-      'url',
-      'crawler',
-      'wiki',
-    ]);
+    // One Website tile covers a page, several pages or a whole site.
+    expect(UPLOAD_AND_WEB_INGESTORS).toEqual(['local_file', 'website', 'wiki']);
   });
 
   it('gives every tile a lucide icon', () => {

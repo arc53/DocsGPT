@@ -279,7 +279,7 @@ class ModelRegistry:
                     caps = ModelCapabilities(
                         supports_tools=bool(caps_raw.get("supports_tools", False)),
                         supports_structured_output=bool(
-                            caps_raw.get("supports_structured_output", False)
+                            caps_raw.get("supports_structured_output", True)
                         ),
                         supports_streaming=bool(
                             caps_raw.get("supports_streaming", True)

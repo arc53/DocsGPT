@@ -137,6 +137,20 @@ export type WithMonitors = { monitors?: MonitorsState };
 export const selectMonitorsState = (state: WithMonitors): MonitorsState =>
   state.monitors ?? initialState;
 
+/**
+ * Each monitor's id and status, as a key, or null until the list has loaded.
+ * It moves when a monitor is created, paused, resumed, cancelled or ends, not
+ * on a plain check: the Calendar follows it to redraw Watching.
+ */
+export const selectMonitorStatusKey = (state: WithMonitors): string | null => {
+  const { loaded, order, byId } = selectMonitorsState(state);
+  if (!loaded) return null;
+  return order
+    .map((id) => `${id}:${byId[id]?.status ?? ''}`)
+    .sort()
+    .join('|');
+};
+
 export const selectMonitors = createSelector(
   [selectMonitorsState],
   ({ order, byId }): Monitor[] =>

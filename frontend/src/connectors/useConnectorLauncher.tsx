@@ -23,7 +23,9 @@ export type LaunchOptions = {
   mcpServer?: Record<string, unknown>;
   /**
    * Why the wizard opens. `knowledge` (Add knowledge, Knowledge's Connect a
-   * service) starts with Sync into Knowledge on; otherwise it starts off.
+   * service) starts a connector with tools and sync (GitHub, Linear) with
+   * Sync into Knowledge on; otherwise off. A sync-only connector always
+   * starts on Sync content now.
    */
   purpose?: LaunchPurpose;
 };

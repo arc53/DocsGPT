@@ -1,23 +1,16 @@
 import {
-  BookOpen,
   CalendarIcon,
-  Check,
-  Eye,
+  FileText,
+  Globe,
   HardDrive,
   Network,
   RefreshCw,
-  Search,
-  SlidersHorizontal,
-  Trash2,
-  Users,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-
-import userService from '../api/services/userService';
-import modelService from '../api/services/modelService';
 
 import PageToolbar from '../components/PageToolbar';
 import RoleBadge from '../components/RoleBadge';
@@ -26,8 +19,9 @@ import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardFooter, CardTitle } from '../components/ui/card';
-import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
+import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
+import { IconButton } from '../components/ui/icon-button';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import {
   Tooltip,
@@ -36,11 +30,13 @@ import {
 } from '../components/ui/tooltip';
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import { usePageParam, usePageSize } from '../hooks/usePageState';
-import ConfirmationModal from '../modals/ConfirmationModal';
-import { ActiveState, Doc, DocumentsProps } from '../models/misc';
-import type { Model } from '../models/types';
-import { showActionToast } from '../notifications/actionToastSlice';
-import ShareToTeamModal from '../teams/ShareToTeamModal';
+import {
+  ActiveState,
+  Doc,
+  DocumentsProps,
+  type KnowledgeDoc,
+} from '../models/misc';
+import type { SSEEvent } from '../notifications/notificationsSlice';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
   selectSourceDocs,
@@ -54,16 +50,17 @@ import {
   type KnowledgeLink,
   readKnowledgeLink,
 } from './knowledgeLink';
-import {
-  addUploadTask,
-  removeUploadTask,
-  selectUploadTasks,
-  updateUploadTask,
-} from '../upload/uploadSlice';
+import { cn } from '../lib/utils';
 import { can } from '../utils/accessUtils';
-import { EMPTY_VALUE, formatDate } from '../utils/dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatCount,
+  formatDate,
+  formatRelative,
+} from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
+import WebsiteTree from '../components/WebsiteTree';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import {
@@ -71,17 +68,59 @@ import {
   loadConnectors,
   selectConnections,
   selectConnectorsLoaded,
+  selectStartedSyncs,
+  syncForgotten,
 } from '../connectors/connectorsSlice';
+import {
+  firstIngestState,
+  partitionStartedSyncs,
+  STARTED_SYNC_GIVE_UP_MS,
+  startedSyncAge,
+  syncIdsKey,
+} from '../connectors/startedSyncs';
+import type { Connection } from '../connectors/types';
 import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
 import GraphSourceView from '../components/graph/GraphSourceView';
-import ConvertToWikiModal from './ConvertToWikiModal';
-import EnableGraphRAGModal from './EnableGraphRAGModal';
+import { buildPct } from '../components/graph/useGraphBuild';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
-import SourceConfigModal from './SourceConfigModal';
-import TestRetrievalModal from './TestRetrievalModal';
-import WikiSettingsModal from './WikiSettingsModal';
+import {
+  canSyncSource,
+  isGraphSource,
+  isSyncedSource,
+  isWikiSource,
+  syncNowIsPrimary,
+  syncSchedule,
+} from './sourceKinds';
+import { type AcceptedSync, useSourceActions } from './useSourceActions';
+
+const NO_EVENTS: SSEEvent[] = [];
+const selectEvents = (state: {
+  notifications?: { recentEvents?: SSEEvent[] };
+}) => state.notifications?.recentEvents ?? NO_EVENTS;
+
+/**
+ * A knowledge-list source in the paginated listing's shape, so a source view
+ * opened from it picks the same view as from its card: `isNested` from
+ * `is_nested`, and `website` and `files` as given (absent from an older
+ * backend, which then opens a website in the file view).
+ */
+function asListedDoc(doc: KnowledgeDoc): Doc {
+  const { is_nested: isNested, ...rest } = doc;
+  return {
+    ...rest,
+    isNested: doc.isNested ?? isNested,
+    website: doc.website ?? null,
+    files: doc.files ?? null,
+  };
+}
+
+// A sync with no word on its first ingest (live events off, or the stream
+// resumed past the event) is looked for on the lists instead: from 2 minutes
+// after it started, every 30 s, until STARTED_SYNC_GIVE_UP_MS.
+const POLL_AFTER_MS = 2 * 60_000;
+const POLL_EVERY_MS = 30_000;
 
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
@@ -109,6 +148,51 @@ const formatTokens = (tokens: number): string => {
   }
 };
 
+/**
+ * Where a synced source comes from: the connection's icon and "via <name>"
+ * (with its file count when known), the account on hover.
+ */
+function ConnectionLine({
+  connection,
+  files,
+}: {
+  connection: Connection;
+  files?: number | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span className="flex max-w-full min-w-0 items-center gap-2">
+      <ConnectorIcon
+        icon={connection.icon}
+        className="text-muted-foreground size-3.5 shrink-0"
+      />
+      <span className="truncate" title={connection.account_label}>
+        {files
+          ? t('settings.sources.viaConnectionFiles', {
+              name: connection.name,
+              count: files,
+              files: formatCount(files),
+              interpolation: { escapeValue: false },
+            })
+          : t('settings.sources.viaConnection', {
+              name: connection.name,
+              interpolation: { escapeValue: false },
+            })}
+      </span>
+    </span>
+  );
+}
+
+/** A source's ingest still running, or failed. */
+function IngestBadge({ status }: { status: 'processing' | 'failed' }) {
+  const { t } = useTranslation();
+  return status === 'failed' ? (
+    <Badge variant="destructive">{t('settings.sources.ingestFailed')}</Badge>
+  ) : (
+    <Badge variant="neutral">{t('settings.sources.ingestProcessing')}</Badge>
+  );
+}
+
 export default function Sources({
   paginatedDocuments,
   handleDeleteDocument,
@@ -117,7 +201,6 @@ export default function Sources({
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
-  const uploadTasks = useSelector(selectUploadTasks);
   const connections = useSelector(selectConnections);
   // Signing in again reloads the connections, which lifts the pause.
   const { reconnect, modals: signInModals } = useSignInAgain();
@@ -130,7 +213,6 @@ export default function Sources({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 500);
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
-  const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useLoaderState(false);
   // The last page load failed: an error with Retry, not "no sources".
   const [loadFailed, setLoadFailed] = useState(false);
@@ -148,12 +230,6 @@ export default function Sources({
   const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
   const currentDocuments = paginatedDocuments ?? [];
-  const syncOptions = [
-    { label: t('settings.sources.syncFrequency.never'), value: 'never' },
-    { label: t('settings.sources.syncFrequency.daily'), value: 'daily' },
-    { label: t('settings.sources.syncFrequency.weekly'), value: 'weekly' },
-    { label: t('settings.sources.syncFrequency.monthly'), value: 'monthly' },
-  ];
   const [documentToView, setDocumentToView] = useState<Doc>();
   // A citation's "Open in Knowledge" (see knowledgeLink.ts): the source opens
   // on the cited chunk or wiki page, once. The source comes from this page
@@ -162,13 +238,34 @@ export default function Sources({
   const knowledge = useSelector(selectSourceDocs);
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewLink, setViewLink] = useState<KnowledgeLink | null>(null);
-  useEffect(() => {
-    const link = readKnowledgeLink(searchParams);
-    if (!link) return;
-    const listed =
-      paginatedDocuments?.find((d) => d.id === link.sourceId) ??
-      knowledge?.find((d) => d.id === link.sourceId);
-    if (!listed && knowledge == null) return; // the list is still loading
+  // A sync started this session is listed once its first ingest finishes.
+  // Until then it shows as a card of its own, and the wizard's Open in
+  // Knowledge, which can come before the source exists, waits for it.
+  const startedSyncs = useSelector(selectStartedSyncs);
+  const events = useSelector(selectEvents);
+  const linkedId = searchParams.get('source');
+  const linkedSyncState =
+    linkedId && startedSyncs.some((sync) => sync.id === linkedId)
+      ? (firstIngestState(events, linkedId) ?? 'indexing')
+      : null;
+  // The finished syncs whose lists have been read again.
+  const [reloaded, setReloaded] = useState<string[]>([]);
+  const reloading = useRef(new Set<string>());
+  const isListed = (id: string) =>
+    !!paginatedDocuments?.some((d) => d.id === id) ||
+    !!knowledge?.some((d) => d.id === id);
+  // Started but not listed. A finished one still missing after the reload
+  // (one the caller can't list) is no longer shown as indexing.
+  const unlistedSyncs = partitionStartedSyncs(
+    startedSyncs,
+    isListed,
+    events,
+  ).unlisted.filter(
+    (sync) => !(sync.state === 'completed' && reloaded.includes(sync.id)),
+  );
+  // A link that waited opens only if the user hasn't opened another source.
+  const waitedFor = useRef<string | null>(null);
+  const dropLink = () =>
     setSearchParams(
       (params) => {
         const next = new URLSearchParams(params);
@@ -177,64 +274,86 @@ export default function Sources({
       },
       { replace: true },
     );
+  useEffect(() => {
+    const link = readKnowledgeLink(searchParams);
+    if (!link) return;
+    const listed =
+      paginatedDocuments?.find((d) => d.id === link.sourceId) ??
+      knowledge?.find((d) => d.id === link.sourceId);
+    if (!listed && knowledge == null) return; // the list is still loading
+    if (
+      !listed &&
+      (linkedSyncState === 'indexing' ||
+        (linkedSyncState === 'completed' && !reloaded.includes(link.sourceId)))
+    ) {
+      // Still indexing, or finished and the lists are being read again.
+      waitedFor.current = link.sourceId;
+      return;
+    }
+    dropLink();
+    const waited = waitedFor.current === link.sourceId;
+    waitedFor.current = null;
     if (!listed) return;
-    // The app-wide list names the folder flag `is_nested`.
-    const raw = listed as Doc & { is_nested?: boolean };
-    setDocumentToView({
-      ...listed,
-      isNested: listed.isNested ?? raw.is_nested,
-    });
+    const linked = asListedDoc(listed);
+    setDocumentToView((open) => (waited && open ? open : linked));
     setViewLink(link);
-  }, [searchParams, knowledge, paginatedDocuments]);
+  }, [searchParams, knowledge, paginatedDocuments, linkedSyncState, reloaded]);
+  // Opening another source while the link waits spends it: the waited-for
+  // source then just appears on the list when it's ready.
+  useEffect(() => {
+    const waiting = waitedFor.current;
+    if (!waiting || !documentToView || documentToView.id === waiting) return;
+    waitedFor.current = null;
+    dropLink();
+  }, [documentToView]);
+  // A refreshed page carries the open source's new state (converted to a
+  // wiki, a finished graph build), and the view follows it.
+  useEffect(() => {
+    setDocumentToView((doc) => {
+      const fresh = doc?.id
+        ? paginatedDocuments?.find((d) => d.id === doc.id)
+        : undefined;
+      return doc && fresh ? { ...doc, ...fresh } : doc;
+    });
+  }, [paginatedDocuments]);
+  // The last sync started from a menu or Source settings; the open website
+  // view waits for it when it is its own (see WebsiteTree's `sync`). Leaving
+  // the view drops it, so opening the source later doesn't wait again.
+  const [startedSync, setStartedSync] = useState<
+    (AcceptedSync & { sourceId: string }) | null
+  >(null);
+  // Only a website view waits for a started sync (and says when it ended):
+  // its page list, or the graph view around it. Only there is its Sync now
+  // off meanwhile.
+  const viewWaits =
+    !!documentToView?.website &&
+    (isGraphSource(documentToView) || !!documentToView.isNested);
+  const viewSync =
+    viewWaits && startedSync?.sourceId === documentToView?.id
+      ? startedSync
+      : null;
+  const settleSync = (settled: AcceptedSync) =>
+    setStartedSync((current) => (current === settled ? null : current));
+  // The website view whose page change or sync is in flight (it says so
+  // through onBusyChange): its Sync now is off too, so a sync doesn't queue
+  // behind a change and refuse as busy.
+  const [busyViewId, setBusyViewId] = useState<string | null>(null);
+  const reportBusy = (id: string) => (busy: boolean) =>
+    setBusyViewId((current) => (busy ? id : current === id ? null : current));
+  // Bumped when the open source's settings are saved (see WebsiteTree).
+  const [settingsVersion, setSettingsVersion] = useState(0);
   const closeDocument = () => {
     setDocumentToView(undefined);
     setViewLink(null);
+    setStartedSync(null);
+    setBusyViewId(null);
   };
-  const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
-  const [documentForWikiSettings, setDocumentForWikiSettings] =
-    useState<Doc | null>(null);
-  const [documentToConfigure, setDocumentToConfigure] = useState<Doc | null>(
-    null,
-  );
-  const [configModalState, setConfigModalState] =
-    useState<ActiveState>('INACTIVE');
-  const [documentToTest, setDocumentToTest] = useState<Doc | null>(null);
-  const [testRetrievalState, setTestRetrievalState] =
-    useState<ActiveState>('INACTIVE');
-  const [documentToConvert, setDocumentToConvert] = useState<Doc | null>(null);
-  const [convertModalState, setConvertModalState] =
-    useState<ActiveState>('INACTIVE');
-  const [documentToGraphRAG, setDocumentToGraphRAG] = useState<Doc | null>(
-    null,
-  );
-  const [graphRAGModalState, setGraphRAGModalState] =
-    useState<ActiveState>('INACTIVE');
-  const [graphRAGAvailable, setGraphRAGAvailable] = useState<boolean>(false);
-  const [hybridAvailable, setHybridAvailable] = useState<boolean>(false);
-  const [availableModels, setAvailableModels] = useState<Model[]>([]);
   // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
   // badge survives closing the modal and reflects the real backend state.
   const graphBuilds = useSelector(selectGraphBuilds);
 
-  /**
-   * Shows a failed source action as a destructive toast: the forbidden
-   * message on a 403, else the action's own.
-   */
-  const showActionError = (message: string, status?: number) =>
-    dispatch(
-      showActionToast({
-        variant: 'destructive',
-        message:
-          status === 403 ? t('settings.sources.errors.forbidden') : message,
-      }),
-    );
-
   const refreshDocs = useCallback(
-    (
-      field: 'date' | 'tokens' | undefined,
-      pageNumber?: number,
-      rows?: number,
-    ) => {
+    (field?: 'date' | 'tokens', pageNumber?: number, rows?: number) => {
       const page = pageNumber ?? currentPage;
       const rowsPerPg = rows ?? rowsPerPage;
 
@@ -288,288 +407,83 @@ export default function Sources({
     ],
   );
 
-  const handleManageSync = (doc: Doc, sync_frequency: string) => {
-    setLoading(true);
-    userService
-      .manageSync({ source_id: doc.id, sync_frequency }, token)
-      .then((response: Response) => {
-        if (!response.ok) {
-          showActionError(
-            t('settings.sources.errors.syncFrequency'),
-            response.status,
-          );
-          return null;
-        }
-        return getDocs(token);
-      })
-      .then((data) => {
-        if (data === null) return null;
-        dispatch(setSourceDocs(data));
-        return getDocsWithPagination(
-          sortField,
-          sortOrder,
-          currentPage,
-          rowsPerPage,
-          searchTerm,
-          token,
-        );
-      })
-      .then((paginatedData) => {
-        if (paginatedData === null) return;
-        dispatch(
-          setPaginatedDocuments(paginatedData ? paginatedData.docs : []),
-        );
-        setTotalDocuments(paginatedData ? paginatedData.totalDocuments : 0);
+  /**
+   * Updates one source in place (a saved schedule or config): its card, the
+   * app's knowledge list and an open view of it, without reloading the grid.
+   */
+  const patchDoc = (id: string, patch: Partial<Doc>) => {
+    const apply = (list: Doc[]) =>
+      list.map((d) => (d.id === id ? { ...d, ...patch } : d));
+    if (paginatedDocuments)
+      dispatch(setPaginatedDocuments(apply(paginatedDocuments)));
+    if (knowledge) dispatch(setSourceDocs(apply(knowledge)));
+    setDocumentToView((doc) => (doc?.id === id ? { ...doc, ...patch } : doc));
+  };
+
+  const actions = useSourceActions({
+    onView: (doc) => setDocumentToView(doc),
+    onDelete: (doc) =>
+      handleDeleteDocument(
+        currentDocuments.findIndex((d) => d.id === doc.id),
+        doc,
+      ),
+    // A delete refetches the page, so the total stays right and a page left
+    // empty steps back (the server clamps it; refreshDocs follows). Deleting
+    // the open source returns to the list.
+    onDeleted: (doc) => {
+      if (documentToView?.id === doc.id) closeDocument();
+      refreshDocs();
+    },
+    // An open source (one opened from a citation may be off this page)
+    // follows its own reingest, wiki conversion or graph enable.
+    onChanged: () =>
+      documentToView?.id ? refreshOpenSource(documentToView.id) : refreshDocs(),
+    onPatched: (id, patch) => {
+      patchDoc(id, patch);
+      // The open view reads what it keeps of the settings again.
+      if (id === documentToView?.id) setSettingsVersion((v) => v + 1);
+    },
+    onSyncStarted: (doc, sync) =>
+      doc.id && setStartedSync({ ...sync, sourceId: doc.id }),
+    syncingId:
+      viewSync?.sourceId ??
+      (busyViewId && busyViewId === documentToView?.id ? busyViewId : null),
+  });
+
+  /**
+   * Reads the app's knowledge list again into the store.
+   *
+   * @returns The list, or null when it couldn't be read.
+   */
+  const reloadKnowledge = () =>
+    getDocs(token)
+      .then((docs) => {
+        if (docs) dispatch(setSourceDocs(docs));
+        return docs;
       })
       .catch((error) => {
-        console.error('Error in handleManageSync:', error);
-        showActionError(t('settings.sources.errors.syncFrequency'));
-      })
-      .finally(() => {
-        setLoading(false);
+        console.error(error);
+        return null;
       });
-  };
 
-  const handleSyncNow = async (doc: Doc) => {
-    if (!doc.id) {
-      return;
-    }
-    const syncFailed = t('settings.sources.errors.sync');
-    try {
-      let response: Response;
-      if (doc.type?.startsWith('connector')) {
-        // The server finds the connector from the source itself.
-        response = await userService.syncConnector(doc.id, token);
-      } else {
-        response = await userService.syncSource({ source_id: doc.id }, token);
-      }
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        console.error('Sync now failed:', data?.error || data?.message);
-        showActionError(syncFailed, response.status);
-      }
-    } catch (error) {
-      console.error('Error syncing source:', error);
-      showActionError(syncFailed);
-    }
-  };
-
-  const handleReingest = async (doc: Doc) => {
-    if (!doc.id) {
-      return;
-    }
-    const sourceId = doc.id;
-    // Drop stale toast rows for this source (a finished/dismissed task
-    // would swallow the reingest's SSE events), then open a fresh one.
-    uploadTasks
-      .filter((task) => task.sourceId === sourceId)
-      .forEach((task) => dispatch(removeUploadTask(task.id)));
-    const reingestTaskId = `reingest-${sourceId}-${Date.now()}`;
-    dispatch(
-      addUploadTask({
-        id: reingestTaskId,
-        fileName: doc.name || sourceId,
-        progress: 0,
-        status: 'training',
-        sourceId,
-      }),
-    );
-    try {
-      const response = await userService.reingestSource(
-        { source_id: sourceId },
-        token,
+  /**
+   * Reads the open source again after its pages changed (added, refreshed,
+   * removed or synced in its view): this page of cards, which the open view
+   * follows, and the app's knowledge list, which also carries a source opened
+   * from off this page (its hosts, page count and sync date).
+   */
+  const refreshOpenSource = (id: string) => {
+    refreshDocs();
+    void reloadKnowledge().then((docs) => {
+      const fresh = docs?.find((d) => d.id === id);
+      if (!fresh) return;
+      const listed = asListedDoc(fresh);
+      setDocumentToView((open) =>
+        open?.id === id ? { ...open, ...listed } : open,
       );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        console.error('Reingest failed:', data?.error || data?.message);
-        dispatch(
-          updateUploadTask({
-            id: reingestTaskId,
-            updates: {
-              status: 'failed',
-              errorMessage: data?.error || data?.message,
-            },
-          }),
-        );
-        showActionError(t('settings.sources.errors.reingest'), response.status);
-        return;
-      }
-      refreshDocs(undefined, currentPage, rowsPerPage);
-    } catch (error) {
-      console.error('Error reingesting source:', error);
-      showActionError(t('settings.sources.errors.reingest'));
-      dispatch(
-        updateUploadTask({
-          id: reingestTaskId,
-          updates: { status: 'failed' },
-        }),
-      );
-    }
+    });
   };
 
-  const [documentToDelete, setDocumentToDelete] = useState<{
-    index: number;
-    document: Doc;
-  } | null>(null);
-  const [deleteModalState, setDeleteModalState] =
-    useState<ActiveState>('INACTIVE');
-
-  const handleDeleteConfirmation = (index: number, document: Doc) => {
-    setDocumentToDelete({ index, document });
-    setDeleteModalState('ACTIVE');
-  };
-
-  // Returned to ConfirmationModal: it stays pending while the delete runs
-  // and keeps a failure (its message) in the dialog. A delete then refetches
-  // the page, so the total stays right and a page left empty steps back
-  // (the server clamps it; refreshDocs follows).
-  const handleConfirmedDelete = async () => {
-    if (!documentToDelete) return;
-    await handleDeleteDocument(
-      documentToDelete.index,
-      documentToDelete.document,
-    );
-    setDocumentToDelete(null);
-    refreshDocs(undefined, currentPage, rowsPerPage);
-  };
-
-  const getActionOptions = (index: number, document: Doc): MenuOption[] => {
-    const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
-    const isGraphRAG = document.config?.kind === 'graphrag';
-    // The server's allowed_actions decide every write (utils/accessUtils).
-    const canEdit = can(document, 'edit');
-    const actions: MenuOption[] = [
-      {
-        icon: isGraphRAG ? Network : Eye,
-        label: isWiki
-          ? t('settings.sources.wiki.view')
-          : isGraphRAG
-            ? t('settings.sources.graphrag.view.action')
-            : t('settings.sources.view'),
-        onClick: () => {
-          setDocumentToView(document);
-        },
-        variant: 'default',
-      },
-    ];
-
-    if (canEdit && document.ingestStatus === 'failed') {
-      actions.push({
-        icon: RefreshCw,
-        label: t('settings.sources.reingest'),
-        onClick: () => {
-          handleReingest(document);
-        },
-        variant: 'default',
-      });
-    }
-
-    if (canEdit && document.syncFrequency) {
-      // One row per sync frequency; the current one carries the check.
-      syncOptions.forEach((opt) => {
-        actions.push({
-          icon: document.syncFrequency === opt.value ? Check : RefreshCw,
-          label: t('settings.sources.syncFrequency.option', {
-            frequency: opt.label,
-          }),
-          onClick: () => {
-            handleManageSync(document, opt.value);
-          },
-          variant: 'default',
-        });
-      });
-      actions.push({
-        icon: RefreshCw,
-        label: t('settings.sources.syncNow'),
-        onClick: () => {
-          handleSyncNow(document);
-        },
-        variant: 'default',
-      });
-    }
-
-    // Editors edit the config; a viewer may read it (view_config).
-    if (document.id && !isWiki && (canEdit || can(document, 'view_config'))) {
-      actions.push({
-        icon: canEdit ? SlidersHorizontal : Eye,
-        label: canEdit
-          ? t('settings.sources.editConfig')
-          : t('settings.sources.viewConfig'),
-        onClick: () => {
-          setDocumentToConfigure(document);
-          setConfigModalState('ACTIVE');
-        },
-        variant: 'default',
-      });
-    }
-
-    // A wiki's own settings are the owner's (manage_settings).
-    if (document.id && isWiki && can(document, 'manage_settings')) {
-      actions.push({
-        icon: SlidersHorizontal,
-        label: t('settings.sources.wiki.settings.action'),
-        onClick: () => {
-          setDocumentForWikiSettings(document);
-        },
-        variant: 'default',
-      });
-    }
-
-    if (document.id) {
-      actions.push({
-        icon: Search,
-        label: t('settings.sources.testRetrieval.action'),
-        onClick: () => {
-          setDocumentToTest(document);
-          setTestRetrievalState('ACTIVE');
-        },
-        variant: 'default',
-      });
-    }
-
-    if (
-      document.id &&
-      !isWiki &&
-      canEdit &&
-      document.ingestStatus !== 'processing' &&
-      document.ingestStatus !== 'failed'
-    ) {
-      actions.push({
-        icon: BookOpen,
-        label: t('settings.sources.wiki.convert.action'),
-        onClick: () => {
-          setDocumentToConvert(document);
-          setConvertModalState('ACTIVE');
-        },
-        variant: 'default',
-      });
-    }
-
-    // Owner-only unless the owner lets editors share (editors_can_share).
-    if (document.id && can(document, 'share')) {
-      actions.push({
-        icon: Users,
-        label: t('settings.sources.shareWithTeam'),
-        onClick: () => {
-          setDocumentToShare(document);
-        },
-        variant: 'default',
-      });
-    }
-
-    if (can(document, 'delete')) {
-      actions.push({
-        icon: Trash2,
-        label: t('settings.sources.delete'),
-        onClick: () => {
-          handleDeleteConfirmation(index, document);
-        },
-        variant: 'destructive',
-      });
-    }
-
-    return actions;
-  };
   // The first load opens on the URL's page; a new search starts on page 1.
   const searchedTerm = useRef(debouncedSearchTerm);
   useEffect(() => {
@@ -589,110 +503,191 @@ export default function Sources({
     );
     if (terminal.length === 0) return;
     terminal.forEach(([sourceId]) => dispatch(clearGraphBuild(sourceId)));
-    refreshDocs(undefined, currentPage, rowsPerPage);
+    refreshDocs();
   }, [graphBuilds, dispatch, refreshDocs, currentPage, rowsPerPage]);
 
+  // A started sync's first ingest finished: read this page and the app's
+  // knowledge list again, once, so its real card replaces the pending one.
+  const finishedKey = syncIdsKey(unlistedSyncs, 'completed');
   useEffect(() => {
-    let cancelled = false;
-    userService
-      .getConfig()
-      .then((response) => response.json())
-      .then((config) => {
-        if (!cancelled) {
-          setGraphRAGAvailable(!!config?.graphrag_available);
-          setHybridAvailable(!!config?.hybrid_available);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    const ids = finishedKey
+      .split(',')
+      .filter((id) => id && !reloading.current.has(id));
+    if (ids.length === 0) return;
+    ids.forEach((id) => reloading.current.add(id));
+    refreshDocs();
+    void reloadKnowledge().then(() => setReloaded((done) => [...done, ...ids]));
+  }, [finishedKey]);
 
-  // Models back the graphrag extraction-model picker in the source settings
-  // modal; only fetched when the instance supports graphrag.
+  // The fallback when no event comes (see POLL_AFTER_MS): read the app's
+  // knowledge list, and this page too once a waited-for source is on it.
+  // At the give-up the link is dropped, so nothing opens by surprise later;
+  // the card stays as indexing until a list holds the source.
+  const pollLists = useRef<(ids: string[]) => void>(() => undefined);
+  const giveUp = useRef<(ids: string[]) => void>(() => undefined);
   useEffect(() => {
-    if (!graphRAGAvailable) return;
-    let cancelled = false;
-    modelService
-      .getModels(token)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled && data)
-          setAvailableModels(modelService.transformModels(data.models || []));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
+    pollLists.current = (ids) => {
+      void reloadKnowledge().then((docs) => {
+        if (docs?.some((d) => d.id && ids.includes(d.id))) refreshDocs();
+      });
     };
-  }, [graphRAGAvailable, token]);
+    giveUp.current = (ids) => {
+      if (!linkedId || !ids.includes(linkedId)) return;
+      waitedFor.current = null;
+      dropLink();
+    };
+  });
+  const waitingKey = syncIdsKey(unlistedSyncs, null);
+  useEffect(() => {
+    const waiting = startedSyncs.filter((sync) =>
+      waitingKey.split(',').includes(sync.id),
+    );
+    if (waiting.length === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = (poll: boolean) => {
+      const now = Date.now();
+      const ages = waiting
+        .map((sync) => ({ id: sync.id, age: startedSyncAge(sync, now) }))
+        .filter(({ age }) => Number.isFinite(age));
+      const expired = ages.filter(({ age }) => age >= STARTED_SYNC_GIVE_UP_MS);
+      if (expired.length > 0) giveUp.current(expired.map(({ id }) => id));
+      const active = ages.filter(({ age }) => age < STARTED_SYNC_GIVE_UP_MS);
+      if (active.length === 0) return;
+      const due = active.filter(({ age }) => age >= POLL_AFTER_MS);
+      if (poll && due.length > 0) pollLists.current(due.map(({ id }) => id));
+      const next = Math.min(
+        ...active.map(({ age }) =>
+          age < POLL_AFTER_MS
+            ? POLL_AFTER_MS - age
+            : Math.min(POLL_EVERY_MS, STARTED_SYNC_GIVE_UP_MS - age),
+        ),
+      );
+      timer = setTimeout(() => check(true), next);
+    };
+    // The page has just loaded the list, so the first check only schedules.
+    check(false);
+    return () => clearTimeout(timer);
+  }, [waitingKey, startedSyncs]);
 
-  // Rendered inside the open source view's own header row.
+  // Chunk, file, wiki and graph writes follow the source's `edit` action.
+  const viewCanEdit = documentToView ? can(documentToView, 'edit') : false;
+
+  // The open source's title row: Test retrieval, the kind's primary action
+  // (drawn by the view: Add file, Add pages, Sync now), then the source's ⋯.
   const testRetrievalAction = documentToView ? (
     <Button
       type="button"
       variant="outline"
       shape="pill"
       size="field"
-      onClick={() => {
-        setDocumentToTest(documentToView);
-        setTestRetrievalState('ACTIVE');
-      }}
+      onClick={() => actions.openTestRetrieval(documentToView)}
     >
       {t('settings.sources.testRetrieval.action')}
     </Button>
   ) : null;
-
-  // Chunk, file, wiki and graph writes follow the source's `edit` action.
-  const viewCanEdit = documentToView ? can(documentToView, 'edit') : false;
+  const viewMenuOptions = documentToView
+    ? actions.menuOptions(documentToView, 'view')
+    : [];
+  const viewMenu =
+    viewMenuOptions.length > 0 ? (
+      <ActionMenu
+        size="toolbar"
+        options={viewMenuOptions}
+        triggerLabel={t('settings.sources.menuAlt')}
+        triggerTestId="source-view-menu"
+      />
+    ) : null;
+  const viewConnection = documentToView?.connectionId
+    ? connections.find((c) => c.id === documentToView.connectionId)
+    : undefined;
+  const viewSynced = documentToView ? isSyncedSource(documentToView) : false;
   // The link only applies to the source it opened.
   const link =
     viewLink && viewLink.sourceId === documentToView?.id ? viewLink : null;
+  // The syncs still indexing lead the first page, newest first, filtered by
+  // name the way the search filters the listed cards.
+  const pendingTerm = debouncedSearchTerm.trim().toLowerCase();
+  const pendingSyncs =
+    currentPage === 1
+      ? [...unlistedSyncs]
+          .reverse()
+          .filter(
+            (sync) =>
+              !pendingTerm || sync.name.toLowerCase().includes(pendingTerm),
+          )
+      : [];
+
+  // What every source view takes, and what a tree view adds.
+  const viewProps = {
+    docId: documentToView?.id || '',
+    canEdit: viewCanEdit,
+    sourceName: documentToView?.name ?? '',
+    onBackToDocuments: closeDocument,
+    headerAction: testRetrievalAction,
+    headerMenu: viewMenu,
+    linkedChunk: link?.chunk,
+  };
+  const treeProps = { ...viewProps, initialPath: link?.chunk?.path };
+  // A website's page list, in its own view or the graph view's Files tab:
+  // its byline, a sync started elsewhere, and its page changes.
+  const websiteProps = {
+    syncFrequency: documentToView?.syncFrequency,
+    syncedAt: documentToView?.date,
+    settingsVersion,
+    sync: viewSync,
+    onSyncSettled: settleSync,
+    onBusyChange: reportBusy(documentToView?.id || ''),
+    onPagesChanged: () =>
+      documentToView?.id && refreshOpenSource(documentToView.id),
+  };
 
   return documentToView ? (
     <div className="flex flex-col">
-      {documentToView.config?.kind === 'wiki' ||
-      documentToView.type === 'wiki' ? (
+      {isWikiSource(documentToView) ? (
         <WikiViewer
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
           canEdit={viewCanEdit}
           onBackToDocuments={closeDocument}
           headerAction={testRetrievalAction}
+          headerMenu={viewMenu}
           initialPath={link?.wikiPage}
         />
-      ) : documentToView.config?.kind === 'graphrag' ? (
+      ) : isGraphSource(documentToView) ? (
         <GraphSourceView
-          docId={documentToView.id || ''}
-          sourceName={documentToView.name}
+          // One view per source: another source's waits and state never
+          // carry over.
+          key={documentToView.id}
+          {...viewProps}
+          {...websiteProps}
           sourceType={documentToView.type}
+          synced={viewSynced}
+          canSync={canSyncSource(documentToView)}
           isNested={!!documentToView.isNested}
-          canEdit={viewCanEdit}
-          onBackToDocuments={closeDocument}
-          headerAction={testRetrievalAction}
-          linkedChunk={link?.chunk}
+          website={documentToView.website}
         />
       ) : documentToView.isNested ? (
-        documentToView.type === 'connector:file' ? (
+        documentToView.website ? (
+          <WebsiteTree
+            key={documentToView.id}
+            {...treeProps}
+            {...websiteProps}
+            hosts={documentToView.website.hosts}
+          />
+        ) : viewSynced ? (
+          // Synced from a connection or on a schedule, whatever its stored
+          // type (an S3 or GitHub source is typed by its loader): Sync now,
+          // no Add file, since a sync replaces the files.
           <ConnectorTree
-            docId={documentToView.id || ''}
-            canEdit={viewCanEdit}
-            sourceName={documentToView.name}
-            onBackToDocuments={closeDocument}
-            headerAction={testRetrievalAction}
-            initialPath={link?.chunk?.path}
-            linkedChunk={link?.chunk}
+            {...treeProps}
+            sourceType={documentToView.type}
+            connection={viewConnection}
+            canSync={canSyncSource(documentToView)}
+            syncFrequency={documentToView.syncFrequency}
+            syncedAt={documentToView.date}
           />
         ) : (
-          <FileTree
-            docId={documentToView.id || ''}
-            canEdit={viewCanEdit}
-            sourceName={documentToView.name}
-            onBackToDocuments={closeDocument}
-            headerAction={testRetrievalAction}
-            initialPath={link?.chunk?.path}
-            linkedChunk={link?.chunk}
-          />
+          <FileTree {...treeProps} />
         )
       ) : (
         <Chunks
@@ -700,18 +695,30 @@ export default function Sources({
           documentName={documentToView.name}
           canEdit={viewCanEdit}
           handleGoBack={closeDocument}
-          headerAction={testRetrievalAction}
+          headerAction={
+            <>
+              {testRetrievalAction}
+              {/* A flat synced source has no tree to sync from: the
+                  button starts the sync and toasts. */}
+              {viewCanEdit &&
+              syncNowIsPrimary(documentToView) &&
+              canSyncSource(documentToView) ? (
+                <Button
+                  type="button"
+                  shape="pill"
+                  size="field"
+                  onClick={() => void actions.syncNow(documentToView)}
+                >
+                  {t('settings.sources.syncNow')}
+                </Button>
+              ) : null}
+            </>
+          }
+          headerMenu={viewMenu}
           linkedChunk={link?.chunk}
         />
       )}
-      <TestRetrievalModal
-        modalState={testRetrievalState}
-        setModalState={setTestRetrievalState}
-        document={documentToTest}
-        hybridAvailable={hybridAvailable}
-        graphRAGAvailable={graphRAGAvailable}
-        availableModels={availableModels}
-      />
+      {actions.modals}
     </div>
   ) : (
     <div className="flex w-full max-w-full flex-col">
@@ -733,10 +740,7 @@ export default function Sources({
               type="button"
               size="field"
               shape="pill"
-              onClick={() => {
-                setIsOnboarding(false);
-                setModalState('ACTIVE');
-              }}
+              onClick={() => setModalState('ACTIVE')}
             >
               {t('settings.sources.addSource')}
             </Button>
@@ -753,9 +757,9 @@ export default function Sources({
               tone="destructive"
               illustration="none"
               title={t('settings.sources.loadError')}
-              onRetry={() => refreshDocs(undefined, currentPage, rowsPerPage)}
+              onRetry={() => refreshDocs()}
             />
-          ) : !currentDocuments?.length ? (
+          ) : !currentDocuments?.length && pendingSyncs.length === 0 ? (
             searchTerm ? (
               <EmptyState
                 size="xs"
@@ -772,10 +776,7 @@ export default function Sources({
                   <Button
                     type="button"
                     shape="pill"
-                    onClick={() => {
-                      setIsOnboarding(false);
-                      setModalState('ACTIVE');
-                    }}
+                    onClick={() => setModalState('ACTIVE')}
                   >
                     {t('settings.sources.addSource')}
                   </Button>
@@ -784,7 +785,70 @@ export default function Sources({
             )
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {currentDocuments.map((document, index) => {
+              {pendingSyncs.map((sync) => {
+                const connection = connections.find(
+                  (c) => c.id === sync.connectionId,
+                );
+                const failed = sync.state === 'failed';
+                return (
+                  // Not a source yet: nothing to open or manage, so no
+                  // stretched button and no ⋯ until its real card is listed.
+                  // A failed one can only be dismissed.
+                  <Card
+                    key={`pending-${sync.id}`}
+                    variant="filled"
+                    padding="lg"
+                    className="min-h-[130px] self-start"
+                  >
+                    {failed && (
+                      <div className="absolute top-5 right-6 z-10">
+                        <IconButton
+                          variant="ghost-on-accent"
+                          size="icon-xs"
+                          icon={X}
+                          label={t(
+                            'settings.connectors.detail.dismissFailedSync',
+                            {
+                              name: sync.name,
+                              interpolation: { escapeValue: false },
+                            },
+                          )}
+                          onClick={() => dispatch(syncForgotten([sync.id]))}
+                        />
+                      </div>
+                    )}
+                    <div
+                      className={cn(
+                        'flex w-full flex-1 flex-col items-start',
+                        failed && 'pr-9',
+                      )}
+                    >
+                      <CardTitle
+                        className="line-clamp-2 w-full min-w-0 wrap-anywhere"
+                        title={sync.name}
+                      >
+                        {sync.name}
+                      </CardTitle>
+                    </div>
+                    <div className="flex flex-col items-start justify-start gap-1">
+                      <IngestBadge status={failed ? 'failed' : 'processing'} />
+                      <CardFooter className="w-full flex-col items-start gap-1">
+                        {connection && (
+                          <ConnectionLine connection={connection} />
+                        )}
+                        <span className="flex items-center gap-2">
+                          <RefreshCw className="size-3.5 shrink-0" />
+                          {t('settings.connectors.detail.firstSyncStarted', {
+                            time: formatRelative(sync.startedAt) ?? '',
+                            interpolation: { escapeValue: false },
+                          })}
+                        </span>
+                      </CardFooter>
+                    </div>
+                  </Card>
+                );
+              })}
+              {currentDocuments.map((document) => {
                 const docId = document.id ? document.id.toString() : '';
                 const connection = document.connectionId
                   ? connections.find((c) => c.id === document.connectionId)
@@ -819,7 +883,7 @@ export default function Sources({
                     </button>
                     <div className="absolute top-5 right-6 z-10">
                       <ActionMenu
-                        options={getActionOptions(index, document)}
+                        options={actions.menuOptions(document, 'card')}
                         triggerLabel={t('settings.sources.menuAlt')}
                         triggerTestId={`menu-button-${docId}`}
                         open={actionMenuDocId === docId}
@@ -861,15 +925,9 @@ export default function Sources({
                           </Tooltip>
                         </div>
                       )}
-                      {document.ingestStatus === 'failed' && (
-                        <Badge variant="destructive">
-                          {t('settings.sources.ingestFailed')}
-                        </Badge>
-                      )}
-                      {document.ingestStatus === 'processing' && (
-                        <Badge variant="neutral">
-                          {t('settings.sources.ingestProcessing')}
-                        </Badge>
+                      {(document.ingestStatus === 'failed' ||
+                        document.ingestStatus === 'processing') && (
+                        <IngestBadge status={document.ingestStatus} />
                       )}
                       {document.config?.kind === 'graphrag' &&
                         (() => {
@@ -877,15 +935,7 @@ export default function Sources({
                             ? graphBuilds[document.id]
                             : undefined;
                           const isBuilding = build?.status === 'building';
-                          const pct =
-                            isBuilding && build.total > 0
-                              ? Math.min(
-                                  100,
-                                  Math.round(
-                                    (build.current / build.total) * 100,
-                                  ),
-                                )
-                              : null;
+                          const pct = buildPct(build);
                           return (
                             <Badge variant="neutral">
                               <Network aria-hidden="true" />
@@ -899,30 +949,59 @@ export default function Sources({
                             </Badge>
                           );
                         })()}
-                      <CardFooter className="flex-col items-start gap-1">
+                      {/* w-full: the column is items-start, so without it the
+                          footer sizes to a long host line and never truncates. */}
+                      <CardFooter className="w-full flex-col items-start gap-1">
                         {connection && (
-                          <span className="flex max-w-full min-w-0 items-center gap-2">
-                            <ConnectorIcon
-                              icon={connection.icon}
-                              className="text-muted-foreground size-3.5 shrink-0"
-                            />
-                            <span
-                              className="truncate"
-                              title={connection.account_label}
-                            >
-                              {t('settings.sources.viaConnection', {
-                                name: connection.name,
-                                interpolation: { escapeValue: false },
+                          <ConnectionLine
+                            connection={connection}
+                            files={document.files}
+                          />
+                        )}
+                        {document.website ? (
+                          <>
+                            {/* Where a website source comes from, and how it
+                                stays current, instead of its date. */}
+                            <span className="flex max-w-full min-w-0 items-center gap-2">
+                              <Globe className="size-3.5 shrink-0" />
+                              <span className="min-w-0 truncate">
+                                {document.website.hosts.length === 1
+                                  ? document.website.hosts[0]
+                                  : t('settings.sources.website.sites', {
+                                      count: document.website.hosts.length,
+                                    })}
+                              </span>
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <FileText className="size-3.5" />
+                              {t('settings.sources.website.pageCount', {
+                                count: document.website.pages,
                               })}
                             </span>
+                          </>
+                        ) : null}
+                        {/* A scheduled source says how it stays current
+                            instead of its date; a website without one shows
+                            neither. */}
+                        {syncSchedule(document) ? (
+                          <span className="flex items-center gap-2">
+                            <RefreshCw className="size-3.5 shrink-0" />
+                            {t('settings.sources.website.synced', {
+                              frequency: t(
+                                `settings.sources.syncFrequency.${syncSchedule(document)}`,
+                              ),
+                              when:
+                                formatRelative(document.date) ?? EMPTY_VALUE,
+                            })}
+                          </span>
+                        ) : document.website ? null : (
+                          <span className="flex items-center gap-2">
+                            <CalendarIcon className="size-3.5" />
+                            {document.date
+                              ? formatDate(document.date)
+                              : EMPTY_VALUE}
                           </span>
                         )}
-                        <span className="flex items-center gap-2">
-                          <CalendarIcon className="size-3.5" />
-                          {document.date
-                            ? formatDate(document.date)
-                            : EMPTY_VALUE}
-                        </span>
                         <span className="flex items-center gap-2">
                           <HardDrive className="size-3.5" />
                           {document.tokens
@@ -966,12 +1045,10 @@ export default function Sources({
         <Upload
           receivedFile={[]}
           setModalState={setModalState}
-          isOnboarding={isOnboarding}
+          isOnboarding={false}
           renderTab={null}
           close={() => setModalState('INACTIVE')}
-          onSuccessfulUpload={() =>
-            refreshDocs(undefined, currentPage, rowsPerPage)
-          }
+          onSuccessfulUpload={() => refreshDocs()}
           onBrowseConnectors={() =>
             navigate('/settings/connectors?capability=sync')
           }
@@ -980,106 +1057,7 @@ export default function Sources({
 
       {signInModals}
 
-      {deleteModalState === 'ACTIVE' && documentToDelete && (
-        <ConfirmationModal
-          message={t('settings.sources.deleteWarning', {
-            interpolation: { escapeValue: false },
-            name: documentToDelete.document.name,
-          })}
-          description={t('settings.sources.deleteConsequence')}
-          modalState={deleteModalState}
-          setModalState={setDeleteModalState}
-          handleSubmit={handleConfirmedDelete}
-          error={(error) =>
-            error instanceof Error && error.message
-              ? error.message
-              : t('settings.sources.errors.delete')
-          }
-          handleCancel={() => {
-            setDeleteModalState('INACTIVE');
-            setDocumentToDelete(null);
-          }}
-          submitLabel={t('settings.sources.delete')}
-          variant="destructive"
-        />
-      )}
-
-      {documentToShare && documentToShare.id && (
-        <ShareToTeamModal
-          resourceType="source"
-          resourceId={documentToShare.id}
-          resourceName={documentToShare.name}
-          onClose={() => setDocumentToShare(null)}
-        />
-      )}
-
-      <SourceConfigModal
-        modalState={configModalState}
-        setModalState={(state) => {
-          setConfigModalState(state);
-          if (state === 'INACTIVE') {
-            setDocumentToConfigure(null);
-          }
-        }}
-        document={documentToConfigure}
-        onReingest={handleReingest}
-        hybridAvailable={hybridAvailable}
-        graphRAGAvailable={graphRAGAvailable}
-        availableModels={availableModels}
-        onEnableGraphRAG={(doc) => {
-          setDocumentToGraphRAG(doc);
-          setGraphRAGModalState('ACTIVE');
-        }}
-      />
-
-      <TestRetrievalModal
-        modalState={testRetrievalState}
-        setModalState={(state) => {
-          setTestRetrievalState(state);
-          if (state === 'INACTIVE') {
-            setDocumentToTest(null);
-          }
-        }}
-        document={documentToTest}
-        hybridAvailable={hybridAvailable}
-        graphRAGAvailable={graphRAGAvailable}
-        availableModels={availableModels}
-      />
-
-      {documentForWikiSettings && (
-        <WikiSettingsModal
-          document={documentForWikiSettings}
-          onClose={() => setDocumentForWikiSettings(null)}
-        />
-      )}
-
-      <ConvertToWikiModal
-        modalState={convertModalState}
-        setModalState={(state) => {
-          setConvertModalState(state);
-          if (state === 'INACTIVE') {
-            setDocumentToConvert(null);
-          }
-        }}
-        document={documentToConvert}
-        onConverted={() => refreshDocs(undefined, currentPage, rowsPerPage)}
-      />
-
-      <EnableGraphRAGModal
-        modalState={graphRAGModalState}
-        setModalState={(state) => {
-          setGraphRAGModalState(state);
-          if (state === 'INACTIVE') {
-            setDocumentToGraphRAG(null);
-          }
-        }}
-        document={documentToGraphRAG}
-        onEnabled={() => {
-          // The "building" badge is now driven by SSE progress events; just
-          // refresh so the source flips to graphrag kind in the list.
-          refreshDocs(undefined, currentPage, rowsPerPage);
-        }}
-      />
+      {actions.modals}
     </div>
   );
 }

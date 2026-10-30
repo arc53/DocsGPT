@@ -24,6 +24,20 @@ export type TaskOutcome =
   | { state: 'completed'; attachmentId?: string }
   | { state: 'failed' };
 
+/**
+ * A failed upload. `message` is the server's own reason when it gave one,
+ * else empty, so the caller shows its translated text for `reason`.
+ */
+export class UploadError extends Error {
+  constructor(
+    readonly reason: 'failed' | 'timeout',
+    serverMessage = '',
+  ) {
+    super(serverMessage);
+    this.name = 'UploadError';
+  }
+}
+
 /** The route composes these itself (too large, unsupported type), so they are safe to show. */
 const errorMessageFrom = (body: string): string | undefined => {
   try {
@@ -66,7 +80,7 @@ export function uploadAttachment({
       signal?.removeEventListener('abort', onAbort);
       const fallback = errorMessageFrom(xhr.responseText);
       if (xhr.status !== 200) {
-        reject(new Error(fallback ?? 'Upload failed.'));
+        reject(new UploadError('failed', fallback));
         return;
       }
       try {
@@ -75,18 +89,18 @@ export function uploadAttachment({
         // too, in case the route stops special-casing one file.
         const task = response?.task_id ? response : response?.tasks?.[0];
         if (!task?.task_id) {
-          reject(new Error(fallback ?? 'Upload failed.'));
+          reject(new UploadError('failed', fallback));
           return;
         }
         resolve({ taskId: task.task_id });
       } catch {
-        reject(new Error('Upload failed.'));
+        reject(new UploadError('failed'));
       }
     };
 
     xhr.onerror = () => {
       signal?.removeEventListener('abort', onAbort);
-      reject(new Error('Upload failed.'));
+      reject(new UploadError('failed'));
     };
     xhr.onabort = () => {
       signal?.removeEventListener('abort', onAbort);
@@ -95,7 +109,7 @@ export function uploadAttachment({
 
     xhr.ontimeout = () => {
       signal?.removeEventListener('abort', onAbort);
-      reject(new Error('Upload timed out.'));
+      reject(new UploadError('timeout'));
     };
 
     xhr.open('POST', `${apiHost}/api/store_attachment`);

@@ -178,6 +178,19 @@ class BackgroundJobsRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
+    def list_for_message(self, conversation_id: str, message_id: str, user_id: str) -> list[dict]:
+        """The jobs one turn handed off, oldest first."""
+        if not looks_like_uuid(conversation_id) or not looks_like_uuid(message_id):
+            return []
+        rows = self._conn.execute(
+            text(
+                "SELECT * FROM background_jobs WHERE conversation_id = CAST(:conversation_id AS uuid) "
+                "AND origin_message_id = CAST(:message_id AS uuid) AND user_id = :user_id ORDER BY created_at"
+            ),
+            {"conversation_id": str(conversation_id), "message_id": str(message_id), "user_id": user_id},
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
     def count_working(self, *, user_id: Optional[str] = None, conversation_id: Optional[str] = None) -> int:
         """Running jobs for a user and/or a conversation."""
         clauses = ["status = 'working'"]

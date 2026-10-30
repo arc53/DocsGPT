@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  agentAnalyticsPath,
   agentChatPath,
   agentEditPathFor,
   agentsFilterPath,
@@ -52,6 +53,12 @@ describe('agentEditPathFor', () => {
   });
 });
 
+describe('agentAnalyticsPath', () => {
+  it("is the agent's own page under the management root", () => {
+    expect(agentAnalyticsPath('a1')).toBe('/agents/manage/analytics/a1');
+  });
+});
+
 describe('matchAgentScopedRoute', () => {
   it('recognises each of an agent’s pages', () => {
     expect(matchAgentScopedRoute('/agents/manage/edit/a1')).toEqual({
@@ -60,6 +67,12 @@ describe('matchAgentScopedRoute', () => {
       workflow: false,
     });
     expect(matchAgentScopedRoute('/agents/manage/logs/a1')?.page).toBe('logs');
+    expect(matchAgentScopedRoute(agentAnalyticsPath('a1'))?.page).toBe(
+      'analytics',
+    );
+    expect(matchAgentScopedRoute('/agents/manage/insights/a1')?.page).toBe(
+      'insights',
+    );
     expect(matchAgentScopedRoute('/agents/manage/schedules/a1')?.page).toBe(
       'schedules',
     );

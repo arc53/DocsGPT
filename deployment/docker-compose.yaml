@@ -2,6 +2,14 @@
 # on DOCSGPT_BIND (default 127.0.0.1, this machine only; 0.0.0.0 for every
 # interface, after setting AUTH_TYPE), Postgres and Redis on 127.0.0.1 only. Run it
 # with --env-file .env from the repository root so DOCSGPT_BIND is read.
+# The decision model runs in the backend, which the worker calls, and loads
+# nothing until a decision feature is turned on. To serve it from the decider
+# container instead, add three lines to .env:
+#   COMPOSE_PROFILES=decider
+#   DECISION_BASE_URL=http://decider:7095
+#   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+# The decider refuses to start without DECISION_KEY, and the backend does not
+# wait for it (decisions fail open).
 name: docsgpt-oss
 services:
   frontend:
@@ -66,6 +74,7 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
@@ -85,9 +94,14 @@ services:
     # parse_document) and `embeddings` (query embedding) queues. Without `parsing`
     # the read_document await never resolves; without `embeddings` every search
     # fails after EMBEDDINGS_DELEGATE_TIMEOUT, because EMBEDDINGS_DELEGATE_TO_WORKER
-    # is on by default. For heavy/OCR parsing run a separate worker with `-Q parsing`;
-    # to keep query latency off the ingest pool, another with `-Q embeddings`.
-    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    # is on by default. Without `ingest` no upload, sync or remote ingest ever runs.
+    # `analytics` carries the conversation-analytics sweep (idle unless
+    # DECISION_ANALYTICS_ENABLED); on a 1-CPU host, see "The analytics queue" in
+    # docs/content/Deploying/Background-Jobs.mdx first. For heavy/OCR parsing run a
+    # separate worker with `-Q parsing`; to keep query latency off the ingest pool,
+    # another with `-Q embeddings`; to keep long ingests from holding the slots beat
+    # tasks need, another with `-Q ingest`.
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest,analytics
     env_file:
       - ../.env
     environment:
@@ -104,11 +118,31 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
       postgres:
         condition: service_healthy
+
+  # The decision model (docsgpt decide-server), on the CPU, idle until a
+  # decision feature is turned on. Only with the decider profile (see the top).
+  decider:
+    profiles: [decider]
+    user: root
+    build:
+      context: ..
+      dockerfile: docsgpt/Dockerfile
+      args:
+        EXTRAS: ${EXTRAS:-}
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
+    command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu
+    env_file:
+      - ../.env
+    volumes:
+      - decision_models:/app/models/decision
+    mem_limit: ${DECISION_MEMORY:-2g}
 
   redis:
     image: redis:6-alpine
@@ -133,3 +167,4 @@ services:
 
 volumes:
   postgres_data:
+  decision_models:

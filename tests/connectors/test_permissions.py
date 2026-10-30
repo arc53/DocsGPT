@@ -73,3 +73,18 @@ class TestPermissions:
         )
         assert stamped[0] == {"name": "search", "access": "read"}
         assert stamped[1]["access"] == "write" and stamped[1]["require_approval"] is True
+
+    def test_defaults_turn_off_actions_outside_enabled(self):
+        read_only = {"readOnlyHint": True}
+        stamped = p.apply_default_permissions(
+            "mcp_tool",
+            [{"name": "GLOBAL_QUOTE", "annotations": read_only}, {"name": "MACDEXT", "annotations": read_only}],
+            enabled=("GLOBAL_QUOTE",),
+        )
+        assert p.action_permission(stamped[0]) == "always"
+        assert p.action_permission(stamped[1]) == "off"
+        assert stamped[1]["access"] == "read"
+
+    def test_defaults_without_enabled_leave_every_action_on(self):
+        stamped = p.apply_default_permissions("mcp_tool", [{"name": "search"}, {"name": "list_pages"}])
+        assert all(p.action_permission(action) == "always" for action in stamped)

@@ -8,6 +8,7 @@ const palette = {
   success: 's',
   warning: 'w',
   destructive: 'd',
+  info: 'i',
   border: 'b',
   mutedForeground: 'm',
 };

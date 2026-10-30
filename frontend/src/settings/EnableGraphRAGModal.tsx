@@ -13,6 +13,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../store';
 import { formatCount } from '../utils/dateTimeUtils';
 
+import { buildPct } from '../components/graph/useGraphBuild';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import {
   GraphRAGSummary,
@@ -194,10 +195,7 @@ export default function EnableGraphRAGModal({
     fail(start.message);
   };
 
-  const progressPct =
-    build && build.status === 'building' && build.total > 0
-      ? Math.min(100, Math.round((build.current / build.total) * 100))
-      : null;
+  const progressPct = buildPct(build);
 
   let footer: ReactNode = null;
   if (phase === 'confirm') {
@@ -269,14 +267,14 @@ export default function EnableGraphRAGModal({
           (progressPct === null ? (
             <LoadingState
               fill="block"
-              label={t('settings.sources.graphrag.enable.inProgress')}
+              label={t('settings.sources.graphrag.building')}
             />
           ) : (
             // The bar sits under the caption, so the block's py-10 moves to
             // this wrapper and the ring only centres itself.
             <div className="flex flex-col items-center gap-3 py-10">
               <LoadingState
-                label={t('settings.sources.graphrag.enable.inProgressPct', {
+                label={t('settings.sources.graphrag.buildingPct', {
                   pct: progressPct,
                 })}
               />

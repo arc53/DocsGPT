@@ -1,4 +1,5 @@
 import base64
+import datetime
 import pytest
 from unittest.mock import patch, MagicMock
 import requests
@@ -14,6 +15,14 @@ def _no_instance_token(monkeypatch):
     from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "GITHUB_ACCESS_TOKEN", None)
+
+
+@pytest.fixture(autouse=True)
+def _per_file_fetches(monkeypatch):
+    """These tests cover the tree + per-file path, which ``load_data`` falls back
+    to when the repository archive can't be read; the archive itself is
+    covered in ``test_github_archive.py``."""
+    monkeypatch.setattr(GitHubLoader, "_read_archive", lambda self, repo, branch: None)
 
 
 def make_response(json_data=None, status_code=200, raise_error=None):
@@ -626,3 +635,75 @@ class TestGitHubLoaderInstanceTokenIsPublicOnly:
 
         assert loader.load_data("owner/repo")
         assert "Authorization" not in loader.headers
+
+
+def _rate_limited(reset_in_seconds=None, retry_after=None, status=403):
+    import time as _time
+
+    headers = {}
+    if reset_in_seconds is not None:
+        headers = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(_time.time()) + reset_in_seconds)}
+    if retry_after is not None:
+        headers["Retry-After"] = str(retry_after)
+    resp = MagicMock(status_code=status, headers=headers)
+    resp.json.return_value = {"message": "API rate limit exceeded for user ID 1."}
+    return resp
+
+
+@pytest.mark.unit
+class TestGitHubLoaderRateLimit:
+    """A rate limit stops the ingest with the reset time; it never skips files."""
+
+    @patch("docsgpt.parser.remote.github_loader.time.sleep")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_a_long_reset_is_not_waited_out(self, mock_get, mock_sleep):
+        from docsgpt.parser.remote.github_loader import GitHubRateLimited
+
+        mock_get.return_value = _rate_limited(reset_in_seconds=2800)
+        loader = GitHubLoader(access_token="github_pat_x")
+        with pytest.raises(GitHubRateLimited) as caught:
+            loader._make_request("https://api.github.com/repos/o/r")
+        mock_sleep.assert_not_called()
+        assert mock_get.call_count == 1
+        assert "UTC" in str(caught.value)
+        assert "GITHUB_ACCESS_TOKEN" not in str(caught.value)
+
+    @patch("docsgpt.parser.remote.github_loader.time.sleep")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_a_short_secondary_limit_is_waited_out(self, mock_get, mock_sleep):
+        mock_get.side_effect = [_rate_limited(retry_after=5, status=429), make_response({"ok": True}, 200)]
+        loader = GitHubLoader(access_token="github_pat_x")
+        assert loader._make_request("https://api.github.com/repos/o/r").status_code == 200
+        mock_sleep.assert_called_once_with(5)
+
+    def test_a_rate_limited_file_stops_the_ingest_instead_of_skipping(self, monkeypatch):
+        from docsgpt.parser.remote.github_loader import GitHubRateLimited
+
+        loader = GitHubLoader()
+        monkeypatch.setattr(loader, "_max_workers", lambda: 1)
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+        paths = [f"f{i}.py" for i in range(20)]
+        monkeypatch.setattr(loader, "fetch_repo_tree", lambda repo, branch: ([(p, 5) for p in paths], False))
+        fetched = []
+
+        def fetch(repo, path):
+            fetched.append(path)
+            if path == "f2.py":
+                raise GitHubRateLimited(datetime.datetime(2099, 1, 1, 12, 55, tzinfo=datetime.timezone.utc))
+            return "code"
+
+        monkeypatch.setattr(loader, "fetch_file_content", fetch)
+        with pytest.raises(GitHubRateLimited):
+            loader.load_data("owner/repo")
+        # The files after the limit are not requested only to fail too.
+        assert fetched == ["f0.py", "f1.py", "f2.py"]
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_a_connection_token_error_does_not_mention_the_server_token(self, mock_get):
+        resp = MagicMock(status_code=403, headers={"X-RateLimit-Remaining": "50"})
+        resp.json.return_value = {"message": "Resource not accessible by personal access token"}
+        mock_get.return_value = resp
+        loader = GitHubLoader(access_token="github_pat_x")
+        with pytest.raises(Exception, match="GitHub API error") as caught:
+            loader._make_request("https://api.github.com/repos/o/r")
+        assert "GITHUB_ACCESS_TOKEN" not in str(caught.value)

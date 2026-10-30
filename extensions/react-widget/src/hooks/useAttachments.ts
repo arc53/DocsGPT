@@ -1,13 +1,16 @@
 import React from 'react';
 
-import { fetchTaskOutcome, uploadAttachment } from '../requests/attachmentsApi';
+import { useMessages } from '../locale/context';
+import {
+  fetchTaskOutcome,
+  uploadAttachment,
+  UploadError,
+} from '../requests/attachmentsApi';
 import { Attachment } from '../types/index';
 
 const POLL_INTERVAL_MS = 1500;
 // A large PDF with OCR can take minutes to parse.
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
-
-const PROCESSING_FAILED = 'Could not read this file.';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -67,6 +70,10 @@ export const useAttachments = ({
   const [attachments, setAttachments] = React.useState<Attachment[]>([]);
   // One per chip, so removing it cancels the upload and stops the poll.
   const controllersRef = React.useRef(new Map<string, AbortController>());
+  // A poll outlives renders; it reads the messages current when it fails.
+  const { t } = useMessages();
+  const tRef = React.useRef(t);
+  tRef.current = t;
 
   const patch = React.useCallback(
     (id: string, updates: Partial<Attachment>) => {
@@ -104,17 +111,24 @@ export const useAttachments = ({
               progress: 100,
               attachmentId: outcome.attachmentId,
             });
-          else patch(id, { status: 'failed', error: PROCESSING_FAILED });
+          else
+            patch(id, {
+              status: 'failed',
+              error: tRef.current('fileUnreadable'),
+            });
           return;
         }
         if (outcome.state === 'failed') {
-          patch(id, { status: 'failed', error: PROCESSING_FAILED });
+          patch(id, {
+            status: 'failed',
+            error: tRef.current('fileUnreadable'),
+          });
           return;
         }
         if (Date.now() > deadline) {
           patch(id, {
             status: 'failed',
-            error: 'Took too long to process.',
+            error: tRef.current('fileTooSlow'),
           });
           return;
         }
@@ -138,7 +152,9 @@ export const useAttachments = ({
               fileName: file.name,
               status: 'failed',
               progress: 0,
-              error: `${extension || 'That file type'} is not accepted here.`,
+              error: extension
+                ? tRef.current('fileTypeRejected', { extension })
+                : tRef.current('fileTypeUnknownRejected'),
             },
           ]);
           return;
@@ -165,12 +181,18 @@ export const useAttachments = ({
           })
           .catch((error: unknown) => {
             if (controller.signal.aborted) return;
+            // The server's own reason is shown as written.
+            const serverMessage =
+              error instanceof Error && error.message ? error.message : '';
             patch(id, {
               status: 'failed',
               error:
-                error instanceof Error && error.message
-                  ? error.message
-                  : 'Upload failed.',
+                serverMessage ||
+                tRef.current(
+                  error instanceof UploadError && error.reason === 'timeout'
+                    ? 'uploadTimedOut'
+                    : 'uploadFailed',
+                ),
             });
           })
           .finally(() => {

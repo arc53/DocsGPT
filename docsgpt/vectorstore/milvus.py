@@ -2,7 +2,7 @@ import logging
 import os
 import uuid
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from docsgpt.core.optional_deps import require
 from docsgpt.core.settings import settings
@@ -27,6 +27,11 @@ def _without_milvus_uri_env():
     finally:
         if previous is not sentinel:
             os.environ["MILVUS_URI"] = previous
+
+
+def _quote(value: str) -> str:
+    """A Milvus expression string literal for ``value``, its backslashes and quotes escaped."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 class MilvusStore(BaseVectorStore):
@@ -215,10 +220,51 @@ class MilvusStore(BaseVectorStore):
         return ids[0]
 
     def delete_chunk(self, chunk_id: str) -> bool:
-        """Delete a single chunk by id."""
+        """Delete one of this source's chunks by id.
+
+        Returns:
+            False when this source has no such chunk (another source's id
+            included) or the delete failed (logged).
+        """
+        return self.delete_chunks([chunk_id]) == 1
+
+    def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
+        """Delete several of this source's chunks in one call.
+
+        The collection holds every source, so an id alone could name another
+        source's row: the rows are looked up and deleted with this source's
+        filter, and only the ones found are counted.
+
+        Args:
+            chunk_ids: Ids to delete; other sources' and missing ids are skipped.
+
+        Returns:
+            How many were deleted; 0 when the client failed (logged).
+        """
+        ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids))
+        if not ids:
+            return 0
         try:
-            self._client.delete(collection_name=self._collection, ids=[chunk_id])
-            return True
+            own = self._client.query(
+                collection_name=self._collection, filter=self._ids_filter(ids), output_fields=["id"],
+            )
+            own_ids = list(dict.fromkeys(str(row.get("id")) for row in own if row.get("id") in ids))
+            if not own_ids:
+                return 0
+            self._client.delete(collection_name=self._collection, filter=self._ids_filter(own_ids))
+            return len(own_ids)
         except Exception as e:
-            logging.error("Error deleting chunk: %s", e, exc_info=True)
-            return False
+            logging.error("Error deleting chunks: %s", e, exc_info=True)
+            return 0
+
+    def _ids_filter(self, ids: List[str]) -> str:
+        """Boolean expression for this source's rows among ``ids``.
+
+        Args:
+            ids: Row ids, quoted and escaped into the expression.
+
+        Returns:
+            ``id in [...] and source_id == "..."``.
+        """
+        quoted = ", ".join(_quote(chunk_id) for chunk_id in ids)
+        return f"id in [{quoted}] and {self._filter}"

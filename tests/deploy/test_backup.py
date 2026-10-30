@@ -187,7 +187,7 @@ class TestRestore:
         argv = ["restore", str(archive), "--dir", str(tmp_path), "--yes"]
         assert _run(argv, _context(docker)) == 0
         joined = [" ".join(args) for _, args in docker.calls]
-        assert any(call.startswith("--profile https down") for call in joined), joined
+        assert any(call.startswith("--profile https --profile decider down") for call in joined), joined
         assert any("psql" in call for call in joined), joined
         assert any(call.startswith("up -d") for call in joined), joined
 

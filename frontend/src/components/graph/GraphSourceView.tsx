@@ -1,4 +1,4 @@
-import { Waypoints } from 'lucide-react';
+import { Network, Waypoints } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
+import type { Doc } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatCount } from '../../utils/dateTimeUtils';
 import type { LinkedChunk } from '../chunkUtils';
@@ -22,6 +23,8 @@ import ConnectorTree from '../ConnectorTree';
 import FileTree from '../FileTree';
 import GraphView, { type GraphLoadStatus } from '../GraphView';
 import PathHeader, { type Crumb } from '../tree/PathHeader';
+import WebsiteTree from '../WebsiteTree';
+import { type WebsiteSync, useWebsiteChanges } from '../tree/useWebsiteChanges';
 import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
@@ -32,6 +35,7 @@ import {
 } from '../graphViewUtils';
 import GraphEntities from './GraphEntities';
 import type { GraphNodeRef } from './GraphNodePanel';
+import useGraphBuild from './useGraphBuild';
 
 const DEFAULT_LIMIT = 100;
 
@@ -43,14 +47,57 @@ interface GraphSourceViewProps {
   /** The source's `type`; `connector:file` sources browse as a connector tree. */
   sourceType?: string;
   /**
+   * Synced from a connection or on a schedule, whatever its type (an S3 or
+   * GitHub source): the Files tab browses as a connector tree too (Sync
+   * now, no Add file).
+   */
+  synced?: boolean;
+  /**
+   * Whether the source can sync at all (`canSyncSource`): false hides the
+   * Files tab's Sync now (a connector source whose connection was removed).
+   * Defaults to true.
+   */
+  canSync?: boolean;
+  /**
    * Whether the source has a folder structure (`bool(directory_structure)`).
    * Without one the Files tab shows the chunk list, as the plain source view
    * does. Defaults to true.
    */
   isNested?: boolean;
+  /**
+   * A Website source's hosts and page count (the sources list's `website`):
+   * the Files tab lists its pages, with Add pages, Refresh and Remove.
+   */
+  website?: Doc['website'];
+  /** `sources.sync_frequency`, for a Website source's byline. */
+  syncFrequency?: string;
+  /** When the source was last ingested or synced (a Website source's byline). */
+  syncedAt?: string;
+  /** A Website source: bumped when its settings are saved (see WebsiteTree). */
+  settingsVersion?: number;
+  /**
+   * A Website source: a sync the host started. The view waits for it on
+   * every tab, as for its page list's own changes (see `useWebsiteChanges`).
+   */
+  sync?: WebsiteSync | null;
+  /** A Website source: the view's wait for `sync` ended. */
+  onSyncSettled?: (sync: WebsiteSync) => void;
+  /**
+   * A Website source: called once a page change (add, refresh, remove, a
+   * sync) has finished, after the graph is read again, so the host can read
+   * the source again too.
+   */
+  onPagesChanged?: () => void;
+  /**
+   * A Website source: whether a page change or a sync is in flight, each
+   * time that turns, so the host holds its Sync now meanwhile.
+   */
+  onBusyChange?: (busy: boolean) => void;
   onBackToDocuments: () => void;
   /** Extra header control (Test retrieval), right-aligned in the title row. */
   headerAction?: ReactNode;
+  /** The source's ⋯, last in the title row. */
+  headerMenu?: ReactNode;
   /**
    * Whether the caller may change the source (`can(source, 'edit')`). False
    * hides the Files tab's writes and the graph chunk drawer's Edit.
@@ -74,9 +121,20 @@ export default function GraphSourceView({
   docId,
   sourceName,
   sourceType,
+  synced = false,
+  canSync = true,
   isNested = true,
+  website,
+  syncFrequency,
+  syncedAt,
+  settingsVersion,
+  sync,
+  onSyncSettled,
+  onPagesChanged,
+  onBusyChange,
   onBackToDocuments,
   headerAction,
+  headerMenu,
   canEdit = true,
   linkedChunk,
 }: GraphSourceViewProps) {
@@ -133,6 +191,31 @@ export default function GraphSourceView({
 
   const fold = useMemo(() => foldGraphTypes(data.nodes), [data.nodes]);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  // A build running for this source (an Add pages or Refresh page extracting
+  // its new chunks, a sync rebuilding): the badge shows it, and the graph and
+  // its totals are read again once it ends.
+  const build = useGraphBuild(docId);
+  const wasBuilding = useRef(build.building);
+  useEffect(() => {
+    if (wasBuilding.current && !build.building) retry();
+    wasBuilding.current = build.building;
+  }, [build.building, retry]);
+
+  // A Website source's page changes and the syncs the host starts: held
+  // here, not by the Files tab's page list, which is mounted only while that
+  // tab is open, so they finish (and say so) whichever tab shows.
+  const changes = useWebsiteChanges({
+    docId,
+    sync: website ? sync : null,
+    onSyncSettled,
+    // A removal changes the graph without a build.
+    onPagesChanged: () => {
+      retry();
+      onPagesChanged?.();
+    },
+    onBusyChange,
+  });
 
   // "Open in Files" is a one-off request: leaving the Files tab drops it, so
   // a later visit opens the tree at its root rather than on that file again.
@@ -202,12 +285,34 @@ export default function GraphSourceView({
       onOpenChunkChange={setOpenChunkPosition}
       linkedChunk={linked}
     />
-  ) : sourceType === 'connector:file' ? (
-    <ConnectorTree
+  ) : website ? (
+    // Before the connector tree: a website on a schedule is synced too, but
+    // its pages are added, refreshed and removed one by one.
+    <WebsiteTree
       embedded
+      graph
       canEdit={canEdit}
       docId={docId}
       sourceName={sourceName}
+      hosts={website.hosts}
+      syncFrequency={syncFrequency}
+      syncedAt={syncedAt}
+      settingsVersion={settingsVersion}
+      onBackToDocuments={onBackToDocuments}
+      initialPath={filesPath}
+      linkedChunk={linked}
+      actionsTarget={filesActions}
+      onCrumbsChange={setFilesCrumbs}
+      changes={changes}
+    />
+  ) : synced || sourceType === 'connector:file' ? (
+    <ConnectorTree
+      embedded
+      canEdit={canEdit}
+      canSync={canSync}
+      docId={docId}
+      sourceName={sourceName}
+      sourceType={sourceType}
       onBackToDocuments={onBackToDocuments}
       initialPath={filesPath}
       linkedChunk={linked}
@@ -241,10 +346,19 @@ export default function GraphSourceView({
             : [{ label: sourceName }]
         }
         badge={
-          <Badge variant="neutral">
-            <Waypoints />
-            {t('settings.sources.graphrag.view.title')}
-          </Badge>
+          build.building ? (
+            <Badge variant="neutral">
+              <Network aria-hidden="true" />
+              {build.pct !== null
+                ? t('settings.sources.graphrag.buildingPct', { pct: build.pct })
+                : t('settings.sources.graphrag.building')}
+            </Badge>
+          ) : (
+            <Badge variant="neutral">
+              <Waypoints />
+              {t('settings.sources.graphrag.view.title')}
+            </Badge>
+          )
         }
         byline={
           stats
@@ -267,13 +381,22 @@ export default function GraphSourceView({
         actions={
           <>
             {headerAction}
-            {/* The Files tab's own action (Add file, Sync) portals in here,
-                beside Test retrieval, like on a plain source. */}
+            {/* A change still running, where the Files tab's page list
+                would say so: on the other tabs, or a source without one. */}
+            {changes.status && !(tab === 'files' && isNested && website) ? (
+              <div className="text-muted-foreground text-sm">
+                {changes.status}
+              </div>
+            ) : null}
+            {/* The Files tab's own action (Add file, Add pages, Sync)
+                portals in here, beside Test retrieval, like on a plain
+                source. */}
             {tab === 'files' && isNested ? (
               <div ref={setFilesActions} className="flex items-center gap-2" />
             ) : null}
           </>
         }
+        menu={headerMenu}
       />
       <Tabs value={tab} onValueChange={(value) => changeTab(value as GraphTab)}>
         <TabsList>

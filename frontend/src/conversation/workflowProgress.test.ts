@@ -1,0 +1,227 @@
+import { describe, expect, it } from 'vitest';
+
+import { WorkflowProgress } from './conversationModels';
+import {
+  applyLoopItem,
+  applyWorkflowStep,
+  runningStep,
+  stepDetail,
+  WorkflowStepEvent,
+} from './workflowProgress';
+
+const event = (
+  overrides: Partial<WorkflowStepEvent> = {},
+): WorkflowStepEvent => ({
+  node_id: 'a',
+  node_type: 'agent',
+  node_title: 'Gather notes',
+  status: 'running',
+  ...overrides,
+});
+
+describe('stepDetail', () => {
+  it('summarises the output on one line without markdown markers', () => {
+    expect(
+      stepDetail(event({ output: '## Notes\n\n**Alps** are\n`high`' })),
+    ).toBe('Notes Alps are high');
+  });
+
+  it('cuts a long output short', () => {
+    const detail = stepDetail(event({ output: 'x'.repeat(500) }))!;
+    expect(detail).toHaveLength(140);
+    expect(detail.endsWith('…')).toBe(true);
+  });
+
+  it('lists the state a step set, leaving internal keys out', () => {
+    expect(
+      stepDetail(
+        event({
+          state_delta: {
+            tone: 'friendly',
+            days: 2,
+            query: 'q',
+            node_a_output: 'x',
+          },
+        }),
+      ),
+    ).toBe('tone: friendly · days: 2');
+  });
+
+  it('has nothing to say about a step that changed nothing', () => {
+    expect(stepDetail(event({ state_delta: { query: 'q' } }))).toBeUndefined();
+  });
+});
+
+describe('applyWorkflowStep', () => {
+  it('adds a step when it starts and closes it when it ends', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 1000);
+    applyWorkflowStep(
+      progress,
+      event({ status: 'completed', output: 'three notes' }),
+      4000,
+    );
+    expect(progress.steps).toEqual([
+      {
+        nodeId: 'a',
+        nodeType: 'agent',
+        title: 'Gather notes',
+        status: 'completed',
+        startedAt: 1000,
+        endedAt: 4000,
+        detail: 'three notes',
+      },
+    ]);
+  });
+
+  it('skips the start, end and note nodes', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    for (const type of ['start', 'end', 'note'])
+      applyWorkflowStep(progress, event({ node_type: type }), 0);
+    expect(progress.steps).toEqual([]);
+  });
+
+  it('keeps the error of a failed step', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 0);
+    applyWorkflowStep(
+      progress,
+      event({ status: 'failed', error: 'model timed out' }),
+      10,
+    );
+    expect(progress.steps[0]).toMatchObject({
+      status: 'failed',
+      error: 'model timed out',
+    });
+  });
+
+  it('gives the step that wrote the answer no detail line', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 0);
+    applyWorkflowStep(
+      progress,
+      event({ status: 'completed', output: 'The answer.' }),
+      10,
+      'The answer.',
+    );
+    expect(progress.steps[0].detail).toBeUndefined();
+  });
+});
+
+describe('retries', () => {
+  const retry = (overrides: Partial<WorkflowStepEvent> = {}) =>
+    event({
+      attempt: 2,
+      max_attempts: 3,
+      retry_delay_seconds: 2,
+      retry_reason: 'transient',
+      retry_error: 'upstream 503',
+      ...overrides,
+    });
+
+  it('marks the running step with the attempt, keeping its start time', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 1000);
+    applyWorkflowStep(progress, retry(), 5000);
+    expect(progress.steps).toHaveLength(1);
+    expect(progress.steps[0]).toMatchObject({
+      status: 'running',
+      startedAt: 1000,
+      attempt: 2,
+      maxAttempts: 3,
+      retryError: 'upstream 503',
+    });
+    expect(runningStep(progress)?.attempt).toBe(2);
+  });
+
+  it('counts the attempts once the step ends and drops the retry marks', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 1000);
+    applyWorkflowStep(progress, retry(), 5000);
+    applyWorkflowStep(
+      progress,
+      event({ status: 'completed', output: 'done', attempts: 2 }),
+      9000,
+    );
+    expect(progress.steps).toEqual([
+      {
+        nodeId: 'a',
+        nodeType: 'agent',
+        title: 'Gather notes',
+        status: 'completed',
+        startedAt: 1000,
+        endedAt: 9000,
+        detail: 'done',
+        attempts: 2,
+      },
+    ]);
+  });
+
+  it('keeps the error of a step that failed every attempt', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 0);
+    applyWorkflowStep(progress, retry({ attempt: 3 }), 10);
+    applyWorkflowStep(
+      progress,
+      event({ status: 'failed', error: 'upstream 503', attempts: 3 }),
+      20,
+    );
+    expect(progress.steps[0]).toMatchObject({
+      status: 'failed',
+      error: 'upstream 503',
+      attempts: 3,
+    });
+    expect(progress.steps[0].attempt).toBeUndefined();
+  });
+
+  it('says nothing of attempts for a step that ran once', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 0);
+    applyWorkflowStep(progress, event({ status: 'completed' }), 1);
+    expect(progress.steps[0].attempts).toBeUndefined();
+  });
+
+  it('leaves the retries of a loop body out', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(
+      progress,
+      retry({ node_id: 'body', parent_node_id: 'each', item_index: 0 }),
+      0,
+    );
+    expect(progress.steps).toEqual([]);
+  });
+});
+
+describe('runningStep', () => {
+  it('is the step still working', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(progress, event(), 0);
+    applyWorkflowStep(progress, event({ status: 'completed' }), 1);
+    expect(runningStep(progress)).toBeUndefined();
+    applyWorkflowStep(progress, event({ node_id: 'b', node_title: 'B' }), 2);
+    expect(runningStep(progress)?.nodeId).toBe('b');
+  });
+});
+
+describe('loops', () => {
+  it('counts ended items on the loop and leaves body steps out', () => {
+    const progress: WorkflowProgress = { steps: [] };
+    applyWorkflowStep(
+      progress,
+      event({ node_id: 'each', node_type: 'loop' }),
+      1,
+    );
+    applyWorkflowStep(
+      progress,
+      event({ node_id: 'body', parent_node_id: 'each', item_index: 0 }),
+      2,
+    );
+    const item = { node_id: 'each', item_count: 3 };
+    applyLoopItem(progress, { ...item, item_index: 0, status: 'running' });
+    applyLoopItem(progress, { ...item, item_index: 0, status: 'completed' });
+    applyLoopItem(progress, { ...item, item_index: 1, status: 'failed' });
+
+    expect(progress.steps.map((s) => s.nodeId)).toEqual(['each']);
+    expect(progress.steps[0].items).toEqual({ total: 3, done: 2, failed: 1 });
+  });
+});

@@ -1,0 +1,174 @@
+{
+  "heads": {
+    "noul": {
+      "tokens": [
+        9834,
+        902
+      ],
+      "bias": 0.0023702443577349186
+    },
+    "score:4": {
+      "tokens": [
+        15,
+        16,
+        17,
+        18
+      ],
+      "bias": [
+        0.0011492845369502902,
+        -0.003303258214145899,
+        0.0005224453052505851,
+        0.0006493947003036737
+      ]
+    },
+    "score:3": {
+      "tokens": [
+        20,
+        21,
+        22
+      ],
+      "bias": [
+        0.0025686242152005434,
+        0.002364307176321745,
+        -0.00862978771328926
+      ]
+    },
+    "choice": {
+      "tokens": [
+        362,
+        425,
+        356,
+        422,
+        468,
+        434,
+        479,
+        472,
+        358,
+        619,
+        730,
+        444,
+        386,
+        451,
+        506,
+        393
+      ],
+      "bias": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "source": "/Users/alextu/arcd-work/data/checkpoints/p5-v01",
+  "base_model": "Qwen/Qwen3-0.6B-Base",
+  "prompt_hash": "78cfb276f93a",
+  "temperature": {
+    "noul": 1.0391223038351698,
+    "score": 1.023003591673832,
+    "choice": 1.4125375446227555,
+    "by_question": {
+      "relevant": 1.0000000000000004,
+      "injection": 1.2115276586285892,
+      "supported": 0.926118728128794,
+      "goal_met": 0.5623413251903493,
+      "tag": 1.0000000000000004,
+      "frustrated": 0.3831186849557289,
+      "asks_human": 0.7356422544596417,
+      "needs_retrieval": 1.0797751623277103,
+      "needs_clarification": 1.0000000000000004,
+      "answer": 1.995262314968881,
+      "tool_needed": 1.1220184543019638,
+      "right_tool": 0.9623506263980889,
+      "tool_succeeded": 1.0000000000000004,
+      "result_used": 0.7644222742526006,
+      "induced_by_untrusted": 1.0391223038351698,
+      "grade": 1.0000000000000004,
+      "severity": 1.0797751623277103,
+      "complexity": 1.0391223038351698,
+      "sentiment": 0.6072021956909888,
+      "answer_status": 0.7644222742526006,
+      "unanswered_reason": 0.7356422544596417,
+      "request_type": 0.6556418494179792,
+      "intent": 1.4125375446227555,
+      "topic": 1.0391223038351698,
+      "reaction": 0.7943282347242819
+    },
+    "fit_sets": {
+      "intent": {
+        "path": "train/massive/temperature_fit.jsonl",
+        "rows": 897
+      },
+      "answer_status": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 3091
+      },
+      "unanswered_reason": {
+        "path": "train/an-calib-realistic-v01/rows.jsonl",
+        "rows": 816
+      },
+      "reaction": {
+        "path": "train/an-calib-realistic-v01/rows.jsonl",
+        "rows": 818
+      },
+      "frustrated": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 1268
+      },
+      "asks_human": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 1518
+      },
+      "sentiment": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 1454
+      },
+      "request_type": {
+        "path": "train/an-calib-realistic-v01/rows.jsonl",
+        "rows": 1899
+      },
+      "goal_met": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 1645
+      },
+      "topic": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 444
+      },
+      "tool_needed": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1327
+      },
+      "right_tool": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1322
+      },
+      "tool_succeeded": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1327
+      },
+      "result_used": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1322
+      },
+      "induced_by_untrusted": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1327
+      }
+    }
+  },
+  "max_state_tokens": 2048,
+  "choices": 16
+}

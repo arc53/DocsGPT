@@ -37,9 +37,18 @@ def test_chunk_key_matches_postgres_md5_for_non_ascii(pg_conn):
 class TestLabelsFromMetadata:
     def test_carry_source_id_and_chunk_key(self):
         metadata = {"title": "a.pdf", "source": "a.pdf", "source_id": "abc-123"}
-        labels = labels_from_metadata(metadata, "some text", "fallback-id")
+        labels = labels_from_metadata(metadata, "some text", "abc-123")
         assert labels["source_id"] == "abc-123"
         assert labels["chunk_key"] == chunk_key("some text")
+
+    def test_source_id_is_the_store_searched_not_the_chunks_own_say(self):
+        # A chunk's metadata can be written through the chunk API (a FAISS store kept it as sent), so a
+        # ``source_id`` there must not move the chunk to another source: the store's id is the source searched.
+        metadata = {"title": "a.pdf", "source": "a.pdf", "source_id": "someone-elses-source"}
+        assert labels_from_metadata(metadata, "t", "abc-123")["source_id"] == "abc-123"
+
+    def test_source_id_falls_back_to_metadata_without_a_store_id(self):
+        assert labels_from_metadata({"source_id": "abc-123"}, "t", "")["source_id"] == "abc-123"
 
     def test_keep_the_labels_retrievers_and_prompts_rely_on(self):
         labels = labels_from_metadata({"title": "a.pdf", "source": "a.pdf"}, "t", "s")

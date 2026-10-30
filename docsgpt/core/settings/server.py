@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import Field
+from pydantic_settings import NoDecode
 
-from docsgpt.core.settings._shared import SettingsGroup
+from docsgpt.core.settings._shared import EnvList, SettingsGroup
 
 
 class ServerSettings(SettingsGroup):
@@ -36,6 +37,18 @@ class ServerSettings(SettingsGroup):
         description=(
             "Public base URL for user-facing endpoint references in prompts, and the prefix of the artifact "
             "download URLs API responses carry (relative paths when unset)."
+        ),
+    )
+    SAFE_URL_ALLOWED_HOSTS: Annotated[list[str], NoDecode, EnvList()] = Field(
+        default_factory=list,
+        description=(
+            "Private-network hosts that user-supplied URLs (API and MCP tools, read_webpage, monitors, custom model "
+            "base URLs, the API tool a personal access token makes) may reach, as a comma list or JSON list. An "
+            "entry is an exact hostname (`wiki.corp.example`, not its subdomains), which passes for any private "
+            "address it resolves to, or an IP or CIDR range (`10.16.0.0/16`), which passes the addresses inside "
+            "it. Loopback passes only through an IP entry (`127.0.0.1`), never a name. Link-local and cloud "
+            "metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`, `fd20:ce::254`, `metadata.google.internal`) and `0.0.0.0` "
+            "are refused whatever is listed. Empty, every private address is refused."
         ),
     )
     GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = Field(

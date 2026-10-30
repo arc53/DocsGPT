@@ -7,6 +7,19 @@ import {
 import connectorsService from '../api/services/connectorsService';
 import type { Connection, ConnectorDefinition } from './types';
 
+/**
+ * A source a connection's sync just started. The server lists a synced
+ * source only once its first ingest has finished, so the connection drawer
+ * shows these meanwhile, as indexing.
+ */
+export type StartedSync = {
+  id: string;
+  name: string;
+  connectionId: string;
+  /** ISO time the sync was started. */
+  startedAt: string;
+};
+
 export type ConnectorsState = {
   /** False when the backend predates connectors (`/api/config`). */
   enabled: boolean;
@@ -21,6 +34,8 @@ export type ConnectorsState = {
    * hold connections from before a connect.
    */
   latestRequestId?: string | null;
+  /** Syncs started this session, newest last (see `StartedSync`). */
+  startedSyncs?: StartedSync[];
 };
 
 const initialState: ConnectorsState = {
@@ -31,6 +46,7 @@ const initialState: ConnectorsState = {
   loaded: false,
   failed: false,
   latestRequestId: null,
+  startedSyncs: [],
 };
 
 /**
@@ -62,6 +78,24 @@ const connectorsSlice = createSlice({
     setConnectorsEnabled(state, action: PayloadAction<boolean>) {
       state.enabled = action.payload;
     },
+    /** Records the sources a sync started (one entry per source id). */
+    syncStarted(state, action: PayloadAction<StartedSync[]>) {
+      const ids = new Set(action.payload.map((sync) => sync.id));
+      state.startedSyncs = [
+        ...(state.startedSyncs ?? []).filter((sync) => !ids.has(sync.id)),
+        ...action.payload,
+      ];
+    },
+    /**
+     * Drops started syncs that no longer need showing: their source is
+     * listed, deleted, or its first ingest finished elsewhere.
+     */
+    syncForgotten(state, action: PayloadAction<string[]>) {
+      const ids = new Set(action.payload);
+      state.startedSyncs = (state.startedSyncs ?? []).filter(
+        (sync) => !ids.has(sync.id),
+      );
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -87,7 +121,8 @@ const connectorsSlice = createSlice({
   },
 });
 
-export const { setConnectorsEnabled } = connectorsSlice.actions;
+export const { setConnectorsEnabled, syncStarted, syncForgotten } =
+  connectorsSlice.actions;
 
 type RootLike = { connectors: ConnectorsState };
 
@@ -114,11 +149,19 @@ export const connectionNeedsSignIn = (
 /** Any connection that needs signing in again (`connectionNeedsSignIn`). */
 export const selectConnectionsNeedAttention = (state: RootLike) =>
   (state.connectors?.connections ?? []).some(connectionNeedsSignIn);
+/** How many connections need signing in again (`connectionNeedsSignIn`). */
+export const selectSignInNeededCount = (state: RootLike) =>
+  (state.connectors?.connections ?? []).filter(connectionNeedsSignIn).length;
 export const selectConnectorsLoading = (state: RootLike) =>
   state.connectors.loading;
 export const selectConnectorsLoaded = (state: RootLike) =>
   state.connectors.loaded;
 export const selectConnectorsFailed = (state: RootLike) =>
   state.connectors.failed;
+
+const NO_STARTED_SYNCS: StartedSync[] = [];
+/** The syncs started this session (see `StartedSync`). */
+export const selectStartedSyncs = (state: RootLike) =>
+  state.connectors?.startedSyncs ?? NO_STARTED_SYNCS;
 
 export default connectorsSlice.reducer;

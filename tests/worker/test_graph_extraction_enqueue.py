@@ -197,6 +197,43 @@ class TestRemoteWorkerEnqueuesGraphExtraction:
         reset.assert_called_once_with(sid)
         delay.assert_called_once()
 
+    def test_a_sync_carries_the_graph_over_instead_of_resetting(
+        self, task_self, pg_conn, patch_worker_db, monkeypatch,
+        _mock_remote_pipeline,
+    ):
+        """A sync re-embeds every chunk under a new id; the graph follows by
+        content in the extraction run, so it is neither reset nor rebuilt."""
+        from docsgpt import worker
+
+        monkeypatch.setattr(
+            "docsgpt.graphrag.graphrag_available", lambda: True
+        )
+        reset = MagicMock(name="reset_graph")
+        monkeypatch.setattr(worker, "_reset_graph_for_source", reset)
+        delay = _patch_delay(monkeypatch)
+
+        config = {"kind": "graphrag", "retrieval": {"retriever": "graphrag"}}
+        sid = _seed_source(pg_conn, "bob", config)
+
+        worker.remote_worker(
+            task_self,
+            {"urls": ["http://example.com"]},
+            "graph-remote",
+            "bob",
+            "crawler",
+            directory="temp",
+            retriever="classic",
+            operation_mode="sync",
+            doc_id=sid,
+            config=config,
+        )
+
+        reset.assert_not_called()
+        delay.assert_called_once()
+        assert delay.call_args.args[:2] == (sid, "bob")
+        assert delay.call_args.kwargs["sync"] is True
+        assert delay.call_args.kwargs["idempotency_key"].startswith(f"extract-graph:{sid}:sync:")
+
     def test_classic_source_does_not_enqueue(
         self, task_self, pg_conn, patch_worker_db, monkeypatch,
         _mock_remote_pipeline,

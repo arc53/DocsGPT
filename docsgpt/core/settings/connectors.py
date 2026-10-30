@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import Field
 
@@ -15,6 +15,22 @@ class ConnectorSettings(SettingsGroup):
     # Google Drive integration.
     GOOGLE_CLIENT_ID: Optional[str] = Field(default=None, description="Google OAuth client id.")
     GOOGLE_CLIENT_SECRET: Optional[str] = Field(default=None, description="Google OAuth client secret.")
+    GOOGLE_DRIVE_ACCESS: Literal["file", "readonly"] = Field(
+        default="file",
+        description=(
+            "What the Google Drive sign-in asks for. `file`: only the files and folders a user picks in Google's "
+            "picker (`drive.file`, which Google does not restrict); a folder's contents are read through "
+            "`GOOGLE_SERVICE_ACCOUNT_KEY`. `readonly`: the whole Drive (`drive.readonly`, a restricted scope that "
+            "needs Google's verification for an External app), so folders need no service account."
+        ),
+    )
+    GOOGLE_SERVICE_ACCOUNT_KEY: Optional[str] = Field(
+        default=None,
+        description=(
+            "JSON key of a Google service account, or the path to the key file. With `GOOGLE_DRIVE_ACCESS=file`, "
+            "users share a folder with the account's email to sync the whole folder."
+        ),
+    )
     CONNECTOR_REDIRECT_BASE_URI: str = Field(
         default="http://127.0.0.1:7091/api/connectors/callback",
         description=(

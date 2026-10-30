@@ -11,6 +11,10 @@ which matters because DocsGPT's agent loop is a chain of suspended
 generators. Ending a span pops anything left above it (marked
 ``cancelled``), and :meth:`Trace.finish` closes whatever is still open, so a
 generator finalized late can never corrupt the tree or the stored record.
+
+Work handed to another thread goes through :func:`wrap`, which carries the
+trace there along with every context variable registered with :func:`carry`
+(the request's decision record, for one).
 """
 
 from __future__ import annotations
@@ -38,6 +42,8 @@ KIND_EMBEDDING = "embedding"
 KIND_RERANK = "rerank"
 KIND_GUARDRAIL = "guardrail"
 KIND_STEP = "step"
+#: A call to the decision model (``docsgpt.decisions``); always a leaf.
+KIND_DECISION = "decision"
 
 #: Kinds that become the implicit parent of spans started while they are open.
 CONTAINER_KINDS = frozenset(
@@ -67,6 +73,9 @@ BINDABLE_IDS = frozenset(
 )
 
 _current: ContextVar[Optional["Trace"]] = ContextVar("docsgpt_trace", default=None)
+
+#: Context variables :func:`wrap` hands to other threads along with the trace.
+_carried: List[ContextVar] = []
 
 
 def _new_id() -> str:
@@ -444,7 +453,7 @@ class Trace:
                     total += int(value)
             return total
 
-        return {
+        summary = {
             "llm_calls": len(llm),
             "tool_calls": len(tools),
             "retrieval_calls": len(retrieval),
@@ -453,6 +462,16 @@ class Trace:
             "output_tokens": _tokens("gen_ai.usage.output_tokens"),
             "errors": sum(1 for s in self.spans if s.status == STATUS_ERROR),
         }
+        # Only traces that asked the decision model carry its counters. A call
+        # that left any of its states unanswered counts as a failure.
+        decisions = [s for s in self.spans if s.kind == KIND_DECISION]
+        if decisions:
+            summary["decision_calls"] = len(decisions)
+            summary["decision_failures"] = sum(
+                1 for s in decisions if s.attributes.get("docsgpt.decision.status") != "ok"
+            )
+            summary["decision_ms"] = round(sum(s.duration_ms or 0 for s in decisions), 1)
+        return summary
 
     def to_record(self) -> Dict[str, Any]:
         """The ``request_traces`` row for this (finished) trace."""
@@ -612,29 +631,55 @@ def mark_content_blocked() -> None:
         trace.content_blocked = True
 
 
+def carry(var: ContextVar) -> ContextVar:
+    """Register ``var`` so :func:`wrap` hands its value to other threads too.
+
+    Each variable is carried on its own rather than by copying the whole
+    context, because one ``Context`` cannot be entered by two threads at once
+    and a guardrail stage runs several checks side by side.
+
+    Args:
+        var: A module-level context variable.
+
+    Returns:
+        ``var``, so a module can register it where it defines it.
+    """
+    if var not in _carried:
+        _carried.append(var)
+    return var
+
+
 def wrap(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Bind the current trace and parent span into ``fn`` for another thread.
+    """Bind the current trace, parent span and carried variables into ``fn`` for another thread.
 
     Use around work handed to a thread pool or ``threading.Thread``; those do
-    not inherit context variables. Without an active trace ``fn`` is returned
-    unchanged.
+    not inherit context variables. The variables registered with :func:`carry`
+    are bound whether or not a trace is active; one holding ``None`` (unset,
+    or reset after a finalized generator) carries nothing. With neither a
+    trace nor a carried value, ``fn`` is returned unchanged.
     """
     trace = _current.get()
-    if trace is None:
+    values = [(var, value) for var in _carried if (value := var.get(None)) is not None]
+    if trace is None and not values:
         return fn
-    parent = trace.current_parent()
+    parent = trace.current_parent() if trace is not None else None
 
     @functools.wraps(fn)
     def _run(*args: Any, **kwargs: Any) -> Any:
-        token = _current.set(trace)
-        undo = trace._seed_thread(parent)
+        tokens = [(var, var.set(value)) for var, value in values]
+        token = _current.set(trace) if trace is not None else None
+        undo = trace._seed_thread(parent) if trace is not None else None
         try:
             return fn(*args, **kwargs)
         finally:
-            undo()
-            try:
-                _current.reset(token)
-            except ValueError:
-                _current.set(None)
+            if undo is not None:
+                undo()
+            if token is not None:
+                try:
+                    _current.reset(token)
+                except ValueError:
+                    _current.set(None)
+            for var, var_token in reversed(tokens):
+                var.reset(var_token)
 
     return _run

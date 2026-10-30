@@ -20,6 +20,7 @@ describe('Progress', () => {
       'warning',
       'destructive',
       'info',
+      'muted',
     ] as const) {
       expect(
         renderToStaticMarkup(<Progress value={50} variant={variant} />),

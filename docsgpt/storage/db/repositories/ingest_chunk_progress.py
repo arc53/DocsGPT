@@ -87,13 +87,19 @@ class IngestChunkProgressRepository:
     def record_chunk(
         self, source_id: str, last_index: int, embedded_chunks: int
     ) -> None:
-        """Persist progress after a chunk is embedded."""
+        """Persist progress after a chunk is embedded.
+
+        Also sets ``status`` back to ``'active'``: an ingest that is still
+        embedding is not stalled, though another ingest of the same source
+        may have failed and closed the row (``mark_failed``) meanwhile.
+        """
         self._conn.execute(
             text(
                 """
                 UPDATE ingest_chunk_progress
                 SET last_index = :last_index,
                     embedded_chunks = :embedded_chunks,
+                    status = 'active',
                     last_updated = now()
                 WHERE source_id = CAST(:source_id AS uuid)
                 """
@@ -129,6 +135,37 @@ class IngestChunkProgressRepository:
             text(
                 "DELETE FROM ingest_chunk_progress "
                 "WHERE source_id = CAST(:source_id AS uuid)"
+            ),
+            {"source_id": str(source_id)},
+        )
+        return result.rowcount > 0
+
+    def mark_failed(self, source_id: str) -> bool:
+        """Close an unfinished checkpoint whose ingest just failed.
+
+        Sets ``status`` to ``'stalled'``, the one terminal value the column
+        allows, which every reader already takes as "ended without
+        finishing": the sources list shows it as failed and Activity › Now
+        drops it. Without this the row looks in flight until the
+        reconciler's stalled sweep. A finished row is left alone (the
+        failure came after embedding), and ``init_progress`` reopens the
+        row when a retry starts embedding again.
+
+        Args:
+            source_id: The source whose ingest failed.
+
+        Returns:
+            ``True`` when a row was closed.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE ingest_chunk_progress
+                SET status = 'stalled'
+                WHERE source_id = CAST(:source_id AS uuid)
+                  AND status = 'active'
+                  AND embedded_chunks < total_chunks
+                """
             ),
             {"source_id": str(source_id)},
         )

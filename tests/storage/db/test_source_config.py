@@ -6,11 +6,15 @@ import pytest
 from pydantic import ValidationError
 
 from docsgpt.storage.db.source_config import (
+    DEFAULT_CANDIDATE_K,
+    RELEVANCE_OR_PRESCREEN,
     ChunkingConfig,
     GraphConfig,
     PreScreenConfig,
+    RerankerConfig,
     RetrievalConfig,
     SourceConfig,
+    validation_message,
 )
 
 
@@ -34,7 +38,14 @@ class TestParseLenient:
         assert c.strategy == "classic_chunk"
         assert c.max_tokens == 1250
         assert c.min_tokens == 150
+        assert c.chunk_overlap == 0
         assert c.duplicate_headers is False
+
+    def test_chunk_overlap_validation(self):
+        """Ensure chunk_overlap permits non-negative values and rejects negative values."""
+        assert ChunkingConfig(chunk_overlap=50).chunk_overlap == 50
+        with pytest.raises(ValidationError, match="chunk_overlap must be >= 0"):
+            ChunkingConfig(chunk_overlap=-1)
 
     def test_retrieval_defaults(self):
         r = RetrievalConfig()
@@ -43,8 +54,13 @@ class TestParseLenient:
         assert r.chunks == 6
         assert r.score_threshold is None
         assert r.rephrase_query is True
+        assert r.show_links is True
         assert r.reranker is None
         assert r.prescreen is None
+
+    def test_show_links_can_be_turned_off(self):
+        cfg = SourceConfig.model_validate({"retrieval": {"show_links": False}})
+        assert cfg.retrieval.show_links is False
 
     def test_parse_partial_merges_onto_defaults(self):
         cfg = SourceConfig.parse({"retrieval": {"chunks": 5}})
@@ -52,6 +68,20 @@ class TestParseLenient:
         # Untouched fields keep their defaults.
         assert cfg.retrieval.retriever == "classic"
         assert cfg.chunking.max_tokens == 1250
+
+    def test_parse_clamps_legacy_chunk_size_without_discarding_config(self):
+        cfg = SourceConfig.parse(
+            {
+                "kind": "wiki",
+                "chunking": {"strategy": "recursive", "max_tokens": 100_000},
+                "retrieval": {"chunks": 5},
+            }
+        )
+
+        assert cfg.kind == "wiki"
+        assert cfg.chunking.strategy == "recursive"
+        assert cfg.chunking.max_tokens == 4096
+        assert cfg.retrieval.chunks == 5
 
     def test_parse_bad_type_falls_back_to_defaults(self):
         # Lenient read: a non-dict / invalid blob never crashes the caller.
@@ -81,6 +111,17 @@ class TestStrictWrite:
     def test_chunks_accepts_small_and_ceiling_values(self):
         assert RetrievalConfig(chunks=2).chunks == 2
         assert RetrievalConfig(chunks=500).chunks == 500
+
+    def test_chunk_max_tokens_rejects_values_above_ceiling(self):
+        with pytest.raises(ValidationError, match="must be <= 4096"):
+            ChunkingConfig(max_tokens=100_000)
+
+    def test_chunk_max_tokens_rejects_values_below_one(self):
+        with pytest.raises(ValidationError, match="must be >= 1"):
+            ChunkingConfig(max_tokens=0)
+
+    def test_chunk_max_tokens_accepts_ceiling(self):
+        assert ChunkingConfig(max_tokens=4096).max_tokens == 4096
 
     def test_model_validate_accepts_full_valid_config(self):
         cfg = SourceConfig.model_validate(
@@ -150,6 +191,84 @@ class TestPreScreenConfig:
         # A garbage stored prescreen blob never crashes the read path.
         rc = RetrievalConfig.model_construct(prescreen={"candidate_k": "x"})
         assert rc.prescreen_config() is None
+
+
+@pytest.mark.unit
+class TestPrescreenIsLlmOnly:
+    def test_a_stored_llm_backend_still_validates(self):
+        ps = PreScreenConfig.model_validate({"backend": "llm", "candidate_k": 40, "max_keep": 8})
+        assert ps.model_dump() == {"candidate_k": 40, "model": None, "batch_size": 10, "max_keep": 8}
+        cfg = SourceConfig.parse({"retrieval": {"prescreen": {"backend": "llm", "candidate_k": 40}}})
+        assert cfg.retrieval.prescreen == {"candidate_k": 40, "model": None, "batch_size": 10, "max_keep": 8}
+        assert RetrievalConfig(prescreen={"backend": "llm"}).prescreen_config().candidate_k == 40
+
+    @pytest.mark.parametrize("bad", [{"backend": "decision"}, {"min_relevance": 0.3}])
+    def test_the_decision_fields_are_gone(self, bad):
+        with pytest.raises(ValidationError):
+            PreScreenConfig(**bad)
+
+
+@pytest.mark.unit
+class TestRerankerConfig:
+    def test_defaults(self):
+        r = RerankerConfig()
+        assert (r.type, r.min_relevance, r.candidate_k) == ("decision", None, None)
+        assert (r.threshold, r.pool) == (0.0, DEFAULT_CANDIDATE_K) and DEFAULT_CANDIDATE_K == 20
+
+    def test_fills_the_slot(self):
+        r = RetrievalConfig(reranker={"type": "decision", "min_relevance": 0.1, "candidate_k": 30})
+        assert r.reranker == {"type": "decision", "min_relevance": 0.1, "candidate_k": 30}
+        assert r.reranker_config() == RerankerConfig(min_relevance=0.1, candidate_k=30)
+        assert (r.reranker_config().threshold, r.reranker_config().pool) == (0.1, 30)
+
+    def test_null_is_off(self):
+        assert RetrievalConfig().reranker is None and RetrievalConfig().reranker_config() is None
+        assert RetrievalConfig(reranker=None).reranker_config() is None
+
+    @pytest.mark.parametrize(
+        "bad",
+        [{"type": "off"}, {"type": "cohere"}, {"min_relevance": 2}, {"candidate_k": 0}, {"candidate_k": 101},
+         {"model": "x"}],
+    )
+    def test_strict_on_write(self, bad):
+        with pytest.raises(ValidationError):
+            RetrievalConfig(reranker=bad)
+
+    def test_lenient_on_read(self):
+        # The slot was reserved and took any dict; such a row is off and keeps the rest of its config.
+        cfg = SourceConfig.parse({"retrieval": {"chunks": 4, "reranker": {"kind": "cross-encoder"}}})
+        assert cfg.retrieval.chunks == 4 and cfg.retrieval.reranker is None
+        cfg = SourceConfig.parse({"retrieval": {"chunks": 4, "reranker": {"type": "off"}}})
+        assert cfg.retrieval.chunks == 4 and cfg.retrieval.reranker is None
+
+    def test_accessor_is_lenient(self):
+        r = RetrievalConfig.model_construct(reranker={"type": "bogus"})
+        assert r.reranker_config() is None
+
+
+@pytest.mark.unit
+class TestRelevanceOrPrescreen:
+    def test_both_set_is_refused_with_a_message_a_user_can_act_on(self):
+        with pytest.raises(ValidationError) as caught:
+            RetrievalConfig(reranker={"min_relevance": 0.3}, prescreen={"candidate_k": 40})
+        assert RELEVANCE_OR_PRESCREEN in str(caught.value)
+        assert validation_message(caught.value, "static") == RELEVANCE_OR_PRESCREEN
+
+    def test_other_failures_keep_the_static_message(self):
+        with pytest.raises(ValidationError) as caught:
+            RetrievalConfig(reranker={"min_relevance": 2})
+        assert validation_message(caught.value, "static") == "static"
+
+    def test_either_alone_is_fine(self):
+        assert RetrievalConfig(reranker={}).reranker_config() is not None
+        assert RetrievalConfig(prescreen={}).prescreen_config() is not None
+
+    def test_a_stored_row_with_both_keeps_its_prescreen(self):
+        cfg = SourceConfig.parse(
+            {"chunking": {"max_tokens": 900}, "retrieval": {"reranker": {}, "prescreen": {"candidate_k": 40}}}
+        )
+        assert cfg.chunking.max_tokens == 900
+        assert cfg.retrieval.reranker is None and cfg.retrieval.prescreen_config().candidate_k == 40
 
 
 @pytest.mark.unit

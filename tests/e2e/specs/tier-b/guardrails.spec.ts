@@ -50,6 +50,7 @@ const EXPECTED_CHECKS = [
   'denylist',
   'groundedness',
   'injection',
+  'injection_model',
   'pii',
   'policy',
   'secrets',

@@ -250,12 +250,12 @@ class AdminQuotasResource(Resource):
                     }
                 )
             user_rows = repo.list_by_scope("user")
+            emails = UsersRepository(conn).emails_for(r["subject_id"] for r in user_rows)
             if users_q is not None:
-                emails = UsersRepository(conn).emails_for(r["subject_id"] for r in user_rows)
                 user_rows = [
                     r for r in user_rows if _matches(users_q, r["subject_id"], emails.get(r["subject_id"]))
                 ]
-            user_policies = [_policy_json(r) for r in user_rows]
+            user_policies = [{**_policy_json(r), "email": emails.get(r["subject_id"])} for r in user_rows]
             body = {
                 "success": True,
                 "period": settings.QUOTA_PERIOD,

@@ -69,6 +69,17 @@ export type ScheduleRun = {
 
 export type ScheduleListResponse = { schedules: Schedule[] };
 
+/** A schedule from the cross-agent list, with the names it is grouped by. */
+export type UserSchedule = Schedule & {
+  agent_name?: string | null;
+  agent_image?: string | null;
+  origin_conversation_name?: string | null;
+  /** A teammate's agent's schedule, managed through a team. */
+  team?: boolean;
+};
+
+export type UserScheduleListResponse = { schedules: UserSchedule[] };
+
 /** Run totals for an agent's schedules over the last `days` days. */
 export type ScheduleStats = {
   days: number;

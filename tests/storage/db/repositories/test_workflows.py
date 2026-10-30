@@ -64,6 +64,21 @@ class TestListForUser:
 
 
 class TestUpdate:
+    def test_updates_and_clears_retry_defaults(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "wf", retry_defaults={"max_attempts": 3})
+        assert repo.get(created["id"], "user-1")["retry_defaults"] == {"max_attempts": 3}
+        assert repo.update(created["id"], "user-1", {"retry_defaults": {"max_attempts": 2, "on": ["transient"]}})
+        assert repo.get(created["id"], "user-1")["retry_defaults"] == {"max_attempts": 2, "on": ["transient"]}
+        assert repo.update(created["id"], "user-1", {"retry_defaults": None})
+        assert repo.get(created["id"], "user-1")["retry_defaults"] is None
+
+    def test_clone_keeps_retry_defaults(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "wf", retry_defaults={"max_attempts": 4})
+        clone = repo.clone_to_user(str(created["id"]), "user-2", from_owner="user-1")
+        assert clone["retry_defaults"] == {"max_attempts": 4}
+
     def test_updates_name(self, pg_conn):
         repo = _repo(pg_conn)
         created = repo.create("user-1", "old")

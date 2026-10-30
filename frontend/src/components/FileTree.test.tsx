@@ -69,10 +69,10 @@ vi.mock('../modals/ConfirmationModal', () => ({
     ) : null,
 }));
 
-const waitForTerminal = vi.fn();
+const waitForChange = vi.fn();
 vi.mock('./tree/useReingestWait', () => ({
   useReingestSseWaiter: () => ({
-    waitForTerminal: (...a: unknown[]) => waitForTerminal(...a),
+    waitForChange: (...a: unknown[]) => waitForChange(...a),
     mountedRef: { current: true },
   }),
 }));
@@ -106,7 +106,7 @@ describe('FileTree delete', () => {
   beforeEach(() => {
     mockDispatch.mockReset();
     manageSourceFiles.mockReset();
-    waitForTerminal.mockReset();
+    waitForChange.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -166,7 +166,7 @@ describe('FileTree delete', () => {
     manageSourceFiles.mockReturnValue(
       respond({ success: true, reingest_task_id: 'r1', source_id: 's1' }),
     );
-    waitForTerminal.mockResolvedValue('failed');
+    waitForChange.mockResolvedValue({ terminal: 'failed' });
     await deleteRow('rates.pdf');
     expect(toasts()).toEqual(['settings.sources.deleteItemFailed(rates.pdf)']);
   });
@@ -175,7 +175,7 @@ describe('FileTree delete', () => {
     manageSourceFiles.mockReturnValue(
       respond({ success: true, reingest_task_id: 'r1', source_id: 's1' }),
     );
-    waitForTerminal.mockResolvedValue('completed');
+    waitForChange.mockResolvedValue({ terminal: 'completed' });
     await deleteRow('rates.pdf');
     expect(toasts()).toEqual([]);
   });

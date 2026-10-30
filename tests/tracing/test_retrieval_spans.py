@@ -151,3 +151,13 @@ class TestPrescreen:
         llm_spans = [s for s in trace.spans if s.kind == tracing.KIND_LLM]
         assert len(llm_spans) == 3
         assert all(s.parent_id == rerank.id for s in llm_spans)
+
+
+class TestDescribeDocuments:
+    def test_previews_carry_relevance_when_scored(self, trace):
+        from docsgpt.tracing.retrieval import describe_documents
+
+        span = tracing.start_span(tracing.KIND_RETRIEVAL, "retrieval")
+        describe_documents(span, [{"text": "a", "source": "s", "relevance": 0.81}, {"text": "b", "source": "s"}])
+        chunks = span.previews["chunks"]
+        assert "0.81" in str(chunks) and str(chunks).count("relevance") == 1

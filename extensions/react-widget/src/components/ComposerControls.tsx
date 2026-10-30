@@ -1,6 +1,8 @@
 import React from 'react';
 import styled, { css, keyframes, useTheme } from 'styled-components';
 
+import { useMessages, type I18n } from '../locale/context';
+import type { Messages } from '../locale/en';
 import { Attachment } from '../types/index';
 import { CircleAlert, LoaderCircle, Mic, Paperclip, X } from './icons';
 import { focusRing, radii, shadows } from './tokens';
@@ -147,12 +149,12 @@ const ChipRemove = styled.button<{ $failed?: boolean }>`
   ${focusRing}
 `;
 
-const statusLabel = (attachment: Attachment): string => {
+const statusLabel = (attachment: Attachment, t: I18n['t']): string => {
   if (attachment.status === 'uploading')
-    return `Uploading ${attachment.progress}%`;
-  if (attachment.status === 'processing') return 'Processing';
-  if (attachment.status === 'failed') return attachment.error ?? 'Failed';
-  return 'Ready';
+    return t('uploading', { percent: attachment.progress });
+  if (attachment.status === 'processing') return t('processing');
+  if (attachment.status === 'failed') return attachment.error ?? t('failed');
+  return t('ready');
 };
 
 export const AttachmentChips = ({
@@ -162,6 +164,7 @@ export const AttachmentChips = ({
   attachments: Attachment[];
   onRemove: (id: string) => void;
 }) => {
+  const { t } = useMessages();
   // Tooltips are unreachable on touch, so failure reasons are shown inline.
   const failures = attachments.filter(
     (attachment) => attachment.status === 'failed' && attachment.error,
@@ -177,7 +180,7 @@ export const AttachmentChips = ({
               key={attachment.id}
               $failed={failed}
               $pending={!failed && attachment.status !== 'completed'}
-              title={`${attachment.fileName} — ${statusLabel(attachment)}`}
+              title={`${attachment.fileName} — ${statusLabel(attachment, t)}`}
             >
               <ChipGlyph aria-hidden="true" $failed={failed}>
                 {failed ? (
@@ -193,7 +196,7 @@ export const AttachmentChips = ({
                 type="button"
                 $failed={failed}
                 onClick={() => onRemove(attachment.id)}
-                aria-label={`Remove ${attachment.fileName}`}
+                aria-label={t('removeFile', { name: attachment.fileName })}
               >
                 <X size={14} />
               </ChipRemove>
@@ -324,32 +327,36 @@ export const AttachButton = ({
 }: {
   onClick: () => void;
   disabled?: boolean;
-}) => (
-  // A label wrapping a display:none input cannot be reached by keyboard.
-  <ControlButton
-    type="button"
-    onClick={onClick}
-    disabled={disabled}
-    aria-label="Attach files"
-  >
-    <Paperclip size={16} />
-    Attach
-  </ControlButton>
-);
+}) => {
+  const { t } = useMessages();
+  return (
+    // A label wrapping a display:none input cannot be reached by keyboard.
+    <ControlButton
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={t('attachFiles')}
+    >
+      <Paperclip size={16} />
+      {t('attach')}
+    </ControlButton>
+  );
+};
 
 export type MicButtonState = 'idle' | 'recording' | 'transcribing';
 
-const MIC_LABELS: Record<MicButtonState, string> = {
-  idle: 'Voice',
-  recording: 'Stop',
-  transcribing: 'Transcribing',
-};
+const MIC_LABELS = {
+  idle: 'micVoice',
+  recording: 'micStop',
+  transcribing: 'micTranscribing',
+} as const satisfies Record<MicButtonState, keyof Messages>;
 
-const MIC_TITLES: Record<MicButtonState, string> = {
-  idle: 'Voice input',
-  recording: 'Stop recording',
-  transcribing: 'Transcribing audio',
-};
+/** The microphone's accessible name in each state. */
+export const MIC_TITLES = {
+  idle: 'voiceInput',
+  recording: 'stopRecording',
+  transcribing: 'transcribingAudio',
+} as const satisfies Record<MicButtonState, keyof Messages>;
 
 export const MicButton = ({
   state,
@@ -361,25 +368,30 @@ export const MicButton = ({
   disabled?: boolean;
   onClick: () => void;
   variant?: 'pill' | 'icon';
-}) => (
-  <ControlButton
-    type="button"
-    onClick={onClick}
-    disabled={disabled || state === 'transcribing'}
-    $recording={state === 'recording'}
-    $iconOnly={variant === 'icon'}
-    aria-label={MIC_TITLES[state]}
-  >
-    {state === 'recording' ? (
-      <SquareGlyph aria-hidden="true" />
-    ) : state === 'transcribing' ? (
-      <Spinner size={16} />
-    ) : (
-      <Mic size={16} />
-    )}
-    {variant === 'pill' && MIC_LABELS[state]}
-  </ControlButton>
-);
+}) => {
+  const { t } = useMessages();
+  return (
+    <ControlButton
+      type="button"
+      onClick={onClick}
+      disabled={disabled || state === 'transcribing'}
+      $recording={state === 'recording'}
+      $iconOnly={variant === 'icon'}
+      aria-label={t(MIC_TITLES[state])}
+      // With no visible text, the name is also the tooltip.
+      title={variant === 'icon' ? t(MIC_TITLES[state]) : undefined}
+    >
+      {state === 'recording' ? (
+        <SquareGlyph aria-hidden="true" />
+      ) : state === 'transcribing' ? (
+        <Spinner size={16} />
+      ) : (
+        <Mic size={16} />
+      )}
+      {variant === 'pill' && t(MIC_LABELS[state])}
+    </ControlButton>
+  );
+};
 
 export const ComposerNote = styled.div<{ $tone?: 'danger' }>`
   padding: 4px 4px 0 4px;

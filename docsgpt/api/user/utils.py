@@ -48,8 +48,8 @@ def success_response(
     return make_response(jsonify(body), status)
 
 
-def error_response(message: str, status: int = 400, **kwargs) -> Response:
-    """Shape an error JSON response; any kwargs are merged into the body."""
+def error_response(message: str, status: int = 400, /, **kwargs) -> Response:
+    """Shape an error JSON response; any kwargs (``code``, a ``message`` mirror) are merged into the body."""
     body = {"success": False, "error": message, **kwargs}
     return make_response(jsonify(body), status)
 

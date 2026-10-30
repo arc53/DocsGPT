@@ -1,17 +1,26 @@
 # Pre-built images from Docker Hub (mirrored at ghcr.io/arc53). setup.sh and
 # setup.ps1 run this file. Run it from the repository root:
 #   docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d
-#   DOCSGPT_IMAGE_TAG      develop (default, follows main) or a release, e.g. 1.0.0;
+#   DOCSGPT_IMAGE_TAG      develop (default, follows main) or a release, e.g. 1.1.0;
 #                          pin a release for anything beyond trying it out
 #   DOCSGPT_IMAGE_VARIANT  empty (default, slim) or -docling: docling parser engine,
 #                          its models, and tesseract baked in (OCR-ready)
 #   DOCSGPT_BIND           interface the API (7091) and UI (5173) are published on:
 #                          127.0.0.1 (default, this machine only) or 0.0.0.0 (every
 #                          interface; set AUTH_TYPE first, see Deploying/Security)
+#   DECISION_MEMORY        the decider's memory limit (default: 2g)
 # Set them in ../.env and pass it with --env-file .env (Compose otherwise looks
 # for deployment/.env), or in the shell. Postgres and Redis are
 # published on 127.0.0.1 only, for a backend run on the host. deployment/docker-compose-standalone.yaml runs
 # the same images without a git checkout, with the backend serving the UI on one port.
+#
+# The decision model runs in the backend, which the worker calls, and loads
+# nothing until a decision feature is turned on. To serve it from the decider
+# container instead, add three lines to ../.env:
+#   COMPOSE_PROFILES=decider
+#   DECISION_BASE_URL=http://decider:7095
+#   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+# The decider refuses to start without DECISION_KEY.
 name: docsgpt-oss
 services:
 
@@ -56,6 +65,7 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
@@ -67,7 +77,7 @@ services:
     user: root
     image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-develop}${DOCSGPT_IMAGE_VARIANT:-}
     # `parsing` queue carries read_document/parse_document; required for its await to resolve.
-    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest,analytics
     env_file:
       - ../.env
     environment:
@@ -83,11 +93,26 @@ services:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
       postgres:
         condition: service_healthy
+
+  # The decision model (docsgpt decide-server), on the CPU, idle until a
+  # decision feature is turned on. Only with the decider profile (see the top);
+  # the backend does not wait for it.
+  decider:
+    profiles: [decider]
+    user: root
+    image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-develop}${DOCSGPT_IMAGE_VARIANT:-}
+    command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu
+    env_file:
+      - ../.env
+    volumes:
+      - decision_models:/app/models/decision
+    mem_limit: ${DECISION_MEMORY:-2g}
 
   # NOTE: sandboxed code execution (the `code_executor` / `artifact_generator`
   # tools) is an OPT-IN feature and is intentionally NOT part of this default
@@ -119,3 +144,4 @@ services:
 
 volumes:
   postgres_data:
+  decision_models:

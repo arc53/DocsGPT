@@ -18,6 +18,9 @@ from tests.monitors.helpers import executor_stub
 from tests.monitors.test_sources import TOOLS, FakeExecutor
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 def _caller(conversation_id, **extra):
     return service.Caller(user_id="u1", conversation_id=conversation_id, **extra)
 

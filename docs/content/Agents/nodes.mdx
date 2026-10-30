@@ -1,7 +1,7 @@
 ---
 title: Workflow Nodes
-description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else and Code - and the shared state they read and write.
-lastUpdated: 2026-10-13
+description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else, Code and Loop - and the shared state they read and write.
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components';
@@ -36,6 +36,7 @@ DocsGPT workflows are composed of **Nodes** that are connected to form a process
 | [Set State](#set-state-node) | Logic & Data | Writes variables with CEL expressions |
 | [If / Else](#condition-node) | Logic & Data | Branches on conditions |
 | [Code](#code-node) | Logic & Data | Runs Python in the sandbox |
+| [Loop](#loop-node) | Logic & Data | Runs the nodes inside it once per item of a list |
 
 ## The Shared State
 
@@ -43,6 +44,9 @@ Every workflow run maintains a state object (a JSON-like dictionary).
 - **Initial State**: Contains the user's input query (`query`) and chat history (`chat_history`).
 - **Modifying State**: Nodes read from this state and write their outputs back to it.
 - **Node Outputs**: Each node writes its result to `node_<node_id>_output`.
+- **Documents**: `input_documents` lists the files uploaded with the run. Once a
+  node asks for them as text, `documents` holds them as numbered lines; see
+  [Line-numbered documents](#line-numbered-documents).
 
 ### Two ways to reference state
 
@@ -130,10 +134,74 @@ The **AI Agent Node** is the core processing unit. It uses a Large Language Mode
 - **File passing**: how a chosen document reaches the model. **Auto** sends the
   file natively when the model accepts that file type and extracts it to text
   otherwise; **Native** always sends the file (and fails on an unsupported
-  type); **Extract** always sends extracted text.
+  type); **Extract** always sends extracted text, cut to its beginning and end
+  when it's long; **Numbered lines** sends the whole text with a `[D#:L#]`
+  reference on every line (see
+  [Line-numbered documents](#line-numbered-documents)).
 - **Structured Output (JSON Schema)**: makes the model return JSON matching the
   schema. The parsed, validated object is saved as the node's output instead
   of text. The model must support structured output.
+
+### Line-numbered documents
+
+With **File passing** set to **Numbered lines** (`file_passing: lines`), the node
+gets each chosen document's whole text, one reference per line, so the model
+can cite its evidence and a later Code node can check it:
+
+```text
+[D1:L12] 3.2. Delivery time — no more than 30 days
+[D2:L40] Item | Qty | Price
+[D2:L41] Bolt | 10 | 2.50
+[D3:L7] (Sheet1!A5) Total | 12.5
+[D4:L3] (p.2) Payment is due within 14 days
+```
+
+- `D#` is the document's position in the run's `input_documents`, so every node
+  in the run sees the same numbers. A document from elsewhere, such as a Code
+  node's output, is numbered after the inputs.
+- `L#` counts the document's lines. Blank lines are dropped.
+- A table row is one line, its cells joined by ` | `; the first row of a table
+  is its header. A spreadsheet row also names its sheet and first cell, and a
+  PDF line its page.
+- DOCX, XLSX, PDF, CSV and plain text are read with their own readers. Other
+  formats go through the configured document parser, and a PDF without a text
+  layer is OCR'd as usual.
+
+The text is never cut. When the documents a node gets through **Numbered lines**
+and its prompts don't fit the model's context window, the node fails before
+calling the model, with an error that gives the token counts; select fewer
+documents for the node or pick a model with a larger window. A document that
+can't be read fails the node the same way, naming the file. Each document is
+sent inside its own `<document>` tag, and the model is told to read what's
+inside as data, not instructions.
+
+Text a Prompt Template pulls in from `documents` isn't measured up front: when
+it doesn't fit, the node fails with the usual context-length error instead.
+
+Each document is parsed once per run, on the parsing worker: a second node
+reading it gets the same text. The text is also cached by the file's content
+for `WORKFLOW_DOCUMENT_LINES_CACHE_TTL` seconds (a day by default; `0` turns the
+cache off), so running the workflow again over the same file skips the parse.
+
+The documents are also in the state as `documents`, a list with one entry per
+document read so far:
+
+| Key | Value |
+| --- | --- |
+| `id` | `D1`, `D2`, ... |
+| `artifact_id`, `filename`, `mime_type` | The document |
+| `line_count` | Number of lines |
+| `tables` | One `{first_line, last_line, header}` per table |
+| `text` | The numbered lines |
+
+A Prompt Template or Output Template that reads `documents` (for example
+`{% for d in documents %}{{ d.text }}{% endfor %}`) loads every input document
+first, and so does a Code node that lists `documents` in its **Input files**.
+A Code node that doesn't list it gets no `documents` in its `state.json`, even
+when an earlier node read them. The run record and the step events keep the
+list without `text` and without the table headers. A workflow that writes its
+own `documents` variable keeps it; the engine then leaves that variable alone
+and reads no documents for it.
 
 ---
 
@@ -202,7 +270,7 @@ Both modes run the same way:
 - Every condition node needs an **else** branch, which is taken when no case
   matches.
 - Each case with an expression must have an outgoing edge, and every branch
-  must eventually reach an end node.
+  must eventually reach an end node, except inside a [loop](#loop-node).
 
 | Goal | Expression |
 | --- | --- |
@@ -236,7 +304,11 @@ The **Code Node** runs a Python script in a sandboxed session bound to the workf
   on later nodes; pass results through the node's output instead.
 - **Input files**: artifacts to stage in the workspace before the script runs,
   under `inputs/<filename>`. Each entry is a state variable holding an artifact
-  reference, a full artifact id or a short ref such as `A1` from this run.
+  reference, a full artifact id or a short ref such as `A1` from this run. The
+  entry `documents` stages no file: it puts every input document's numbered
+  text in `state["documents"]` (see
+  [Line-numbered documents](#line-numbered-documents)), so the script can check
+  a model's `[D#:L#]` citations without parsing the files itself.
 - **Output Variable**: an extra name for the node's output, which is always
   saved as `node_<node_id>_output`.
 - **Timeout (seconds)**: optional. It can't exceed `SANDBOX_EXEC_TIMEOUT`, which
@@ -264,6 +336,136 @@ sandbox backends and configuration.
 
 ---
 
+## Loop Node
+
+The **Loop Node** takes a list from the state and runs the nodes inside it once
+for each item. It is drawn as a container: drag nodes from the palette onto it
+(or select the loop and click a palette pill) and connect them to each other.
+The loop itself connects to the rest of the graph like any other node; the nodes
+inside it connect only to each other.
+
+- **Items**: the state path of the list, for example `extracted.items`. Dotted
+  segments read object keys and list positions (`rows.0`). A string holding a
+  JSON array, such as an AI Agent node's answer without a schema, is read as
+  that array. Anything else fails the node.
+- **Item variable**: the name the current item has inside the loop, `item` by
+  default. Prompt templates read `{{ item.name }}`; Set State and If / Else
+  expressions read `item.name`. It can't be a reserved name such as `query`,
+  `chat_history`, `input_documents` or a template namespace.
+- **Items at once**: how many items run side by side, 4 by default. A higher
+  value is lowered to `WORKFLOW_LOOP_MAX_CONCURRENCY` (4 by default).
+- **Most items**: a longer list fails the node before any item runs. The node
+  default is 50, and a higher value is lowered to `WORKFLOW_LOOP_MAX_ITEMS`
+  (100 by default).
+- **When an item fails**: **Stop and fail the loop** (the default) fails the
+  node and writes nothing; items not yet started don't run and running ones stop
+  at their next node. **Leave the item out** drops it from the results. **Keep
+  the error in its place** puts `{"error": "..."}` in that item's slot.
+- **Output Variable**: an extra name for the results, which are always saved as
+  `node_<node_id>_output`. The results are a list in the same order as the
+  items.
+- **Item result**: optional. A variable the nodes inside set; its value becomes
+  the item's result. Without it the result is the output of the last AI Agent
+  or Code node that ran for the item.
+
+Each item runs on its own copy of the state: it sees everything set before the
+loop, and nothing it sets (including the item variable and the inner nodes'
+outputs) reaches the state after the loop or the other items. Only the results
+list is written back.
+
+The nodes inside a loop can be AI Agent, Code, Set State, If / Else and Note
+nodes. A loop can't hold Start, End or another loop. The first node of the body
+is the one no other inner node connects to, and there must be exactly one. An
+item ends where its path has no next node, so an If / Else inside a loop doesn't
+need its branches to reach an End node.
+
+Inside a loop, AI Agent nodes don't stream their text to the chat, since items
+run at the same time. Code nodes in a loop take turns on the run's sandbox
+session. The 50-step limit applies to each item separately, and the loop counts
+as one step of the run.
+
+During a run, the chat and the Preview show how many items have finished. Each
+inner step's `workflow_step` stream event carries `parent_node_id` and
+`item_index`, and a `workflow_loop_item` event marks each item starting and
+ending. The run record keeps one step for the loop with each item's steps
+nested under `items`.
+
+In the stored graph, a node inside a loop names the loop in its `data` as
+`parent_id`:
+
+```json
+{"id": "each_item", "type": "loop", "data": {"items": "extracted.items", "item_variable": "item", "concurrency": 4, "max_items": 50, "on_item_error": "fail", "output_variable": "results"}}
+{"id": "summarize", "type": "agent", "data": {"parent_id": "each_item", "prompt_template": "Summarize {{ item.name }}", "json_schema": {"type": "object"}}}
+```
+
+---
+
+## Retrying a failed node
+
+A temporary upstream failure, such as a 503 from the model provider or a
+dropped connection, fails a node and with it the run. AI Agent and Code nodes
+can retry such failures with a pause between attempts before they give up.
+Retries are off by default.
+
+Set them in the workflow's details, under **Retries**, where every AI Agent and
+Code node inherits them, or on one node: under **Advanced settings** for an AI
+Agent node, at the end of the panel for a Code node. A node's own settings win
+field by field. **Default** keeps the inherited value, and **1 (no retries)**
+turns retries off for that node.
+
+- **Max attempts**: how many times the node runs at most, from 1 to
+  `WORKFLOW_RETRY_MAX_ATTEMPTS` (5 by default). 1 means no retries.
+- **Retry delays (s)**: the pause before each retry, as numbers separated by
+  commas. With `2, 10, 30`, the second attempt waits 2 seconds, the third 10,
+  and any later one 30. Defaults to `2, 10, 30`. A 429 or 503 that sends `Retry-After` waits that long instead.
+- **Retry on**: which failures count, for AI Agent nodes. Both are on by
+  default, and at least one stays on.
+  - **Errors and timeouts**: a 5xx or 429 response, a connect or read timeout, a
+    reset connection, or an empty reply from the model.
+  - **Invalid output**: the reply isn't valid JSON or doesn't match the node's
+    JSON schema. The next attempt's prompt includes the validation error.
+
+A Code node retries only when the sandbox itself failed: it was unreachable, its
+runtime was gone, or it dropped the connection mid-run and the running script
+could be stopped. An error raised by the script, a timeout, a kernel that died
+running the script (out of memory or a crash), a refused sandbox login, or
+stdout that doesn't match the schema is never retried.
+
+Some failures are never retried, whatever the settings: a 400 or other client
+error, an authentication error, a request too long for the model's context
+window, an exhausted usage quota, and a run out of time. A node also fails at
+once when:
+
+- it already streamed text to the chat, which can't be taken back. A node with
+  a JSON schema and **Invalid output** retries holds its reply until it
+  validates, so that it can be retried;
+- the pause would end past the run's time limit, since pauses count toward it;
+- the server's `Retry-After` is longer than `WORKFLOW_RETRY_MAX_DELAY_SECONDS`
+  (300 by default).
+
+Each attempt runs the whole node again, tool calls included, so a tool with side
+effects may run more than once. An empty reply on the last attempt is kept as
+the node's output, as it is without retries.
+
+While a node waits to retry, the chat and the Preview show the attempt it is on,
+and a finished step shows how many attempts it took. Retries inside a loop count
+toward the loop's items instead.
+The retry is a `workflow_step` event with `status: "running"` and `attempt`,
+`max_attempts`, `retry_delay_seconds`, `retry_reason` (`transient` or
+`invalid_output`) and `retry_error`; the step's final event carries `attempts`.
+The run record lists each attempt of a retried node under the step's
+`attempts`, with its status, timing, error and reason.
+
+In the stored graph, a node keeps its settings under `retry` in its `data`, and
+the workflow keeps the inherited ones as `retry_defaults` (also accepted by
+`POST /api/workflows` and `PUT /api/workflows/<id>`):
+
+```json
+{"id": "extract", "type": "agent", "data": {"json_schema": {"type": "object"}, "retry": {"max_attempts": 3, "backoff_seconds": [2, 10, 30], "on": ["transient", "invalid_output"]}}}
+```
+
+---
+
 ## Note Node
 
 A **Note** holds free text for whoever edits the workflow: what a branch is for,
@@ -286,8 +488,22 @@ a workflow breaks:
   branch and at least two outgoing connections. Each case with an expression
   has exactly one connection, each connection comes from a known case, and in
   Simple mode each case names a variable.
-- Every If / Else branch eventually reaches an End node.
+- Every If / Else branch eventually reaches an End node, except inside a loop,
+  where a branch ends the item.
 - Every Code node has code, and any JSON schema it has is valid.
+- Retry settings, on a node or the workflow, stay within the limits in
+  [Retrying a failed node](#retrying-a-failed-node).
+- Every Loop node names a list as a state path, has a usable item variable, and
+  holds at least one node with exactly one first node. No connection crosses a
+  loop's edge.
 
 A run that is still going after 50 node steps stops with an error and is recorded as failed,
-so a loop needs an exit condition.
+so a cycle in the graph needs an exit condition.
+
+## One workflow per agent
+
+A workflow belongs to the agent it was built in, and deleting a workflow agent
+deletes its workflow. Over the API, creating an agent (`POST /api/create_agent`)
+with a `workflow` that another agent already uses, or switching an agent to one
+with `PUT /api/update_agent/<agent_id>`, answers `409` with "This workflow
+belongs to another agent". Create a new workflow for the new agent instead.

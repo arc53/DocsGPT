@@ -18,8 +18,9 @@ from docsgpt.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
 
-# The crawler's conventions (``crawler_markdown.py`` / ``read_webpage.py``),
-# so file and web ingestion produce the same Markdown shape.
+# Shared with the web loaders (``remote/page_content.py``) and the
+# ``read_webpage`` tool, so file and web ingestion produce the same Markdown
+# shape.
 #
 # ``table_infer_header``: a GFM table cannot start with a body row, so without
 # it markdownify puts an empty header above any table that carries no ``<th>``
@@ -41,34 +42,33 @@ _DROP_TAGS = ("title", "script", "style", "noscript", "template")
 _URI_ATTRIBUTES = ("src", "href", "srcset", "poster", "data")
 
 
-def html_to_markdown(html: Union[str, bytes]) -> str:
-    """Convert an HTML/XHTML document to Markdown.
-
-    Args:
-        html: The markup. Pass the raw bytes when you have them: BeautifulSoup
-            then decodes by the document's own BOM / ``<meta charset>``
-            instead of the process locale, so a windows-1250 page keeps its
-            diacritics.
-
-    Returns:
-        Markdown with runs of blank lines collapsed to one.
-    """
-    from bs4 import BeautifulSoup
-
-    return soup_to_markdown(BeautifulSoup(html, "html.parser"))
+class MarkupTooDeepError(ValueError):
+    """Markup nested too deep for the recursive Markdown conversion."""
 
 
-def soup_to_markdown(soup) -> str:
+def soup_to_markdown(soup, converter=None, plain_when_too_deep: bool = True) -> str:
     """Convert a parsed ``BeautifulSoup`` tree to Markdown.
 
     Destructive: the non-content elements in ``_DROP_TAGS`` (including
     ``<title>``) are removed from ``soup``; read the title first.
 
+    markdownify converts one element per recursion level, so a tree nested a
+    few hundred deep (html.parser nests every unclosed ``<p>``, ``<li>`` or
+    ``<span>`` in the one before it) exhausts Python's recursion limit.
+
     Args:
-        soup: The parsed document.
+        soup: The parsed document (or one element of it).
+        converter: A ``MarkdownConverter`` to use instead of the default one
+            built from ``MARKDOWNIFY_OPTIONS`` (the web extractor passes one
+            that rewrites links).
+        plain_when_too_deep: For a tree nested too deep, return its plain
+            text, one line per string; ``False`` raises ``MarkupTooDeepError``.
 
     Returns:
         Markdown with runs of blank lines collapsed to one.
+
+    Raises:
+        MarkupTooDeepError: The tree is too deep and ``plain_when_too_deep`` is off.
     """
     from bs4 import CData, Declaration, ProcessingInstruction
     from markdownify import MarkdownConverter
@@ -86,7 +86,15 @@ def soup_to_markdown(soup) -> str:
                 value = " ".join(value)
             if isinstance(value, str) and "data:" in value.lower():
                 del tag[attribute]
-    markdown = MarkdownConverter(**MARKDOWNIFY_OPTIONS).convert_soup(soup)
+    converter = converter or MarkdownConverter(**MARKDOWNIFY_OPTIONS)
+    try:
+        markdown = converter.convert_soup(soup)
+    except RecursionError as e:
+        if not plain_when_too_deep:
+            raise MarkupTooDeepError("markup is nested too deep to convert to Markdown") from e
+        logger.warning("Markup is nested too deep to convert to Markdown; keeping its plain text")
+        # get_text walks the tree without recursing.
+        markdown = soup.get_text("\n", strip=True)
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
 
@@ -150,13 +158,28 @@ def read_markup_head(file: Path, max_bytes: int) -> bytes:
         if max_bytes <= 0:
             return fh.read()
         head = fh.read(max_bytes + 1)
-    if len(head) <= max_bytes:
-        return head
+    return cap_markup_bytes(head, max_bytes, Path(file).name)
+
+
+def cap_markup_bytes(data: bytes, max_bytes: int, label: str = "markup") -> bytes:
+    """Head-truncate markup bytes to ``max_bytes``, as ``read_markup_head`` does.
+
+    Args:
+        data: The markup.
+        max_bytes: Size gate; ``<= 0`` keeps everything.
+        label: What to name in the warning (a file name or a URL).
+
+    Returns:
+        ``data``, or its first ``max_bytes`` cut on a line boundary and
+        without a torn trailing character.
+    """
+    if max_bytes <= 0 or len(data) <= max_bytes:
+        return data
     logger.warning(
-        f"Markup {Path(file).name} exceeds MARKUP_MAX_BYTES ({max_bytes}); "
+        f"Markup {label} exceeds MARKUP_MAX_BYTES ({max_bytes}); "
         f"parsing the first {max_bytes} bytes to bound memory"
     )
-    head = head[:max_bytes]
+    head = data[:max_bytes]
     if head[:2] in (b"\xff\xfe", b"\xfe\xff"):
         # UTF-16 (BOM-declared): a byte-level line cut lands between the two
         # bytes of a code unit and the strict decode then fails outright, so

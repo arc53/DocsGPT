@@ -9,8 +9,10 @@ import { markdownCode, markdownHeadings, markdownTables } from '@/lib/markdown';
 import { cn } from '@/lib/utils';
 
 import userService from '../api/services/userService';
+import { artifactKind } from '../conversation/artifactCards';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { useArtifactKindLabel } from './ArtifactCard';
 import { isDocumentArtifact, type DocumentArtifact } from './artifactViewUtils';
 import CopyButton from './CopyButton';
 import DocumentArtifactView from './DocumentArtifactView';
@@ -50,7 +52,13 @@ type ArtifactData =
 type ArtifactPanelProps = {
   artifactId: string | null;
   toolName?: string;
+  /** The version to show first (the one its card names); else the current one. */
+  version?: number;
   conversationId: string | null;
+  /** Back to where it was opened from: an answer's files, or the preview's run. */
+  onBack?: () => void;
+  /** The Back arrow's name; "Back to files" by default. */
+  backLabel?: string;
 };
 
 const ARTIFACT_TITLE_KEY_BY_TYPE: Record<
@@ -99,9 +107,12 @@ function TodoListView({ data }: { data: TodoArtifactData }) {
       </div>
       <div className="flex-1 overflow-y-auto">
         {data.items.length === 0 ? (
-          <p className="text-muted-foreground text-center text-sm">
-            {t('components.artifact.todo.empty')}
-          </p>
+          <EmptyState
+            size="sm"
+            illustration="none"
+            title={t('components.artifact.todo.empty')}
+            className="h-full"
+          />
         ) : (
           <ul className="space-y-2">
             {data.items.map((item, index) => (
@@ -224,9 +235,12 @@ function NoteView({ data }: { data: NoteArtifactData }) {
             </ReactMarkdown>
           </div>
         ) : (
-          <p className="text-muted-foreground text-sm">
-            {t('components.artifact.note.empty')}
-          </p>
+          <EmptyState
+            size="sm"
+            illustration="none"
+            title={t('components.artifact.note.empty')}
+            className="h-full"
+          />
         )}
       </div>
     </div>
@@ -241,7 +255,10 @@ function NoteView({ data }: { data: NoteArtifactData }) {
 export default function ArtifactPanel({
   artifactId,
   toolName,
+  version,
   conversationId,
+  onBack,
+  backLabel,
 }: ArtifactPanelProps) {
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
   const currentFetchIdRef = React.useRef<string | null>(null);
@@ -253,12 +270,26 @@ export default function ArtifactPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // After a restore the view remounts on the new current version, not on
+  // the version the card named.
+  const [followCurrent, setFollowCurrent] = useState(false);
   const [effectiveArtifactId, setEffectiveArtifactId] = useState<string | null>(
     artifactId,
   );
 
   const title =
     documentArtifact?.title || getArtifactTitle(t, artifact, toolName);
+  const kindLabel = useArtifactKindLabel();
+  // A file names its kind under the title, as its card does.
+  const currentRow = documentArtifact?.versions.find(
+    (v) => v.version === documentArtifact.current_version,
+  );
+  const documentKind = documentArtifact
+    ? artifactKind({
+        filename: currentRow?.filename,
+        mimeType: currentRow?.mime_type,
+      })
+    : null;
 
   // Reset last successful todo artifact ID when conversation changes
   useEffect(() => {
@@ -408,18 +439,23 @@ export default function ArtifactPanel({
       return (
         <DocumentArtifactView
           artifact={documentArtifact}
-          onRefresh={() => setRefreshNonce((n) => n + 1)}
+          initialVersion={followCurrent ? undefined : version}
+          onRefresh={() => {
+            setFollowCurrent(true);
+            setRefreshNonce((n) => n + 1);
+          }}
         />
       );
     }
     // Avoid rendering an empty panel if the artifact couldn't be loaded for any reason.
     if (!artifact) {
       return (
-        <div className="flex h-full items-center justify-center">
-          <p className="text-muted-foreground text-sm">
-            {t('components.artifact.notFound')}
-          </p>
-        </div>
+        <EmptyState
+          size="sm"
+          illustration="none"
+          title={t('components.artifact.notFound')}
+          className="h-full"
+        />
       );
     }
     switch (artifact.artifact_type) {
@@ -438,7 +474,16 @@ export default function ArtifactPanel({
 
   return (
     <>
-      <PanelHeader title={title || t('components.artifact.preview')} />
+      <PanelHeader
+        title={title || t('components.artifact.preview')}
+        description={documentKind ? kindLabel(documentKind) : undefined}
+        onBack={onBack}
+        backLabel={
+          onBack
+            ? (backLabel ?? t('conversation.artifacts.backToList'))
+            : undefined
+        }
+      />
       <PanelBody scroll={false}>{renderContent()}</PanelBody>
     </>
   );

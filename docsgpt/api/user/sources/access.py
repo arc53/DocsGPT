@@ -1,4 +1,4 @@
-"""Role checks shared by the source routes (sources, chunks, upload, search).
+"""Role checks and shared refusals for the source routes (sources, chunks, upload, search, website).
 
 Thin wrappers over :mod:`docsgpt.api.user.resource_access` so every source
 endpoint resolves the row the same way and answers denials with the same
@@ -8,13 +8,39 @@ their role may not perform the action.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import ContextManager, Optional
 
 from flask import jsonify, make_response
 from sqlalchemy import Connection
 
 from docsgpt.api.user.resource_access import AccessDenied, ResourceAccess, require
 from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.vectorstore.index_lock import source_index_lock
+
+#: The sync schedules a source can have.
+SYNC_FREQUENCIES = ("never", "daily", "weekly", "monthly")
+
+#: The ``source_busy`` wording: a request found a sync or page change holding the source's index lock.
+SOURCE_BUSY = "Another change to this source is still running; try again when it finishes"
+
+#: How long a request (a source delete, a chunk edit) waits for a sync or page change on the source before a 409.
+EDIT_LOCK_WAIT_SECONDS = 3.0
+
+
+def edit_lock(source_id: str) -> ContextManager[None]:
+    """The source's index lock, as a request takes it: a few seconds' wait, then ``SourceBusy``.
+
+    A sync or a Website page change loads a FAISS index once and saves the
+    whole of it, so a chunk edit made meanwhile would be lost, and a delete
+    would see the index saved again afterwards.
+
+    Args:
+        source_id: The source.
+
+    Returns:
+        The lock's context manager.
+    """
+    return source_index_lock(source_id, wait_seconds=EDIT_LOCK_WAIT_SECONDS, poll_seconds=0.25)
 
 
 def load_source(

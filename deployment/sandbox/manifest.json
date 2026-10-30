@@ -57,7 +57,7 @@
       "use": "XML and HTML parsing"
     },
     {
-      "spec": "pillow==12.3.0",
+      "spec": "pillow==13.0.0",
       "import": "PIL",
       "use": "images"
     },
@@ -77,14 +77,9 @@
       "use": "YAML"
     },
     {
-      "spec": "pypdf==6.19.0",
+      "spec": "pypdf==6.21.2",
       "import": "pypdf",
       "use": "read, merge and split PDFs"
-    },
-    {
-      "spec": "PyPDF2==3.0.1",
-      "import": "PyPDF2",
-      "use": "older pypdf API that existing code imports"
     },
     {
       "spec": "pdfplumber==0.11.10",

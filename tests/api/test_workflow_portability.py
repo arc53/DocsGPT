@@ -533,3 +533,29 @@ def test_duplicate_source_names_warn_and_dedupe(pg_conn):
     agent_node = [n for n in graph_nodes if n["node_type"] == "agent"][0]
     # Collapsed onto the oldest match, and not stored twice.
     assert agent_node["config"]["sources"] == [str(older["id"])]
+
+
+def test_retry_defaults_travel_with_the_workflow(pg_conn):
+    owner = "u_wf_retry_owner"
+    agent, wf = _seed_workflow_agent(pg_conn, owner)
+    defaults = {"max_attempts": 3, "backoff_seconds": [2, 10], "on": ["transient"]}
+    WorkflowsRepository(pg_conn).update(str(wf["id"]), owner, {"retry_defaults": defaults})
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, owner)))
+    assert doc["spec"]["workflow"]["retry_defaults"] == defaults
+
+    importer = "u_wf_retry_importer"
+    result = apply_import(pg_conn, importer, doc, {})
+
+    created = AgentsRepository(pg_conn).get(result["agent_id"], importer)
+    wf_row = WorkflowsRepository(pg_conn).get(str(created["workflow_id"]), importer)
+    assert wf_row["retry_defaults"] == defaults
+
+
+def test_import_rejects_invalid_retry_defaults(pg_conn):
+    owner = "u_wf_retry_bad"
+    agent, _ = _seed_workflow_agent(pg_conn, owner)
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, owner)))
+    doc["spec"]["workflow"]["retry_defaults"] = {"max_attempts": 0}
+
+    with pytest.raises(AgentImportError, match="retry defaults"):
+        apply_import(pg_conn, "u_wf_retry_bad_importer", doc, {})

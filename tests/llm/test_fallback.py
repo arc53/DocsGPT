@@ -228,7 +228,7 @@ class TestFallbackLLMResolution:
         """No backup models + no global FALLBACK_* → fallback_llm is None."""
         monkeypatch.setattr(
             "docsgpt.llm.base.settings",
-            MagicMock(FALLBACK_LLM_PROVIDER=None),
+            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
         )
         primary = FakeLLM(backup_models=[])
         assert primary.fallback_llm is None
@@ -265,7 +265,7 @@ class TestNonStreamingFallback:
         """Primary fails and no fallback configured → exception propagates."""
         monkeypatch.setattr(
             "docsgpt.llm.base.settings",
-            MagicMock(FALLBACK_LLM_PROVIDER=None),
+            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
         )
         primary = FakeLLM(fail_at=0, backup_models=[])
         with pytest.raises(RuntimeError, match="primary model unavailable"):
@@ -326,7 +326,7 @@ class TestStreamingFallback:
         """Primary stream fails and no fallback → exception propagates."""
         monkeypatch.setattr(
             "docsgpt.llm.base.settings",
-            MagicMock(FALLBACK_LLM_PROVIDER=None),
+            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
         )
         primary = FakeLLM(stream_chunks=["x"], fail_at=0, backup_models=[])
         with pytest.raises(RuntimeError, match="mid-stream failure"):
@@ -475,7 +475,7 @@ class TestStreamingFallback:
         """
         monkeypatch.setattr(
             "docsgpt.llm.base.settings",
-            MagicMock(FALLBACK_LLM_PROVIDER=None),
+            MagicMock(FALLBACK_LLM_PROVIDER=None, LLM_FIRST_TOKEN_TIMEOUT=300, LLM_STREAM_STALL_TIMEOUT=120),
         )
         primary = FakeLLM(
             stream_chunks=["ok1"],
@@ -1046,6 +1046,35 @@ class TestLLMCreatorPassesModelUserId:
         assert llm._is_byom is expected
         assert llm._canonical_model_id == model_id
 
+    def test_the_scope_the_model_was_found_under_reaches_the_llm(self, monkeypatch):
+        """Without ``model_user_id`` the caller's sub finds a BYOM model; its window lookups need it too."""
+        from types import SimpleNamespace
+
+        from docsgpt.llm.llm_creator import LLMCreator
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+        captured = {}
+
+        class _LLM:
+            def __init__(self, *args, **kwargs):
+                captured.update(kwargs)
+
+        monkeypatch.setattr(PROVIDERS_BY_NAME["openai"], "llm_class", _LLM)
+        model = SimpleNamespace(
+            source="user", api_key="own-key", base_url=None, upstream_model_id=None, capabilities=None
+        )
+        registry = SimpleNamespace(get_model=lambda _id, user_id=None: model if user_id == "u1" else None)
+        monkeypatch.setattr(
+            "docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry
+        )
+
+        LLMCreator.create_llm(
+            type="openai", api_key="k", user_api_key=None,
+            decoded_token={"sub": "u1"}, model_id="byom-uuid",
+        )
+
+        assert captured["model_user_id"] == "u1"
+
 
 # Tests — responding-provider tracking (cross-provider fallback handler fix)
 
@@ -1151,6 +1180,20 @@ class TestFallbackPayloadSizeGate:
         with pytest.raises(RuntimeError, match="mid-stream failure"):
             list(primary.gen_stream(**self.BIG_ARGS))
         assert backup.gen_stream_called is False
+
+    def test_a_byom_fallback_is_measured_by_its_registry_id(
+        self, monkeypatch, patch_model_utils
+    ):
+        backup = FakeLLM(responses=["backup ok"])
+        backup._canonical_model_id = "byom-uuid"
+        primary = self._primary_with_backup(patch_model_utils, backup)
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_token_limit",
+            lambda mid, user_id=None: 10 if mid == "byom-uuid" else 100000,
+        )
+        with pytest.raises(RuntimeError, match="primary model unavailable"):
+            primary.gen(**self.BIG_ARGS)
+        assert backup.gen_called is False
 
     def test_fallback_proceeds_when_payload_fits(
         self, monkeypatch, patch_model_utils
@@ -1882,6 +1925,8 @@ class _StrictChatCompletions:
         "stop",
         "n",
         "user",
+        # A per-request SDK option, not a body field.
+        "timeout",
     }
 
     def __init__(self):

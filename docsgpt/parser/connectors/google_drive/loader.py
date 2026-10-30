@@ -3,10 +3,13 @@ Google Drive loader for DocsGPT.
 Loads documents from Google Drive using Google Drive API.
 """
 
+import contextlib
+import hashlib
 import io
+import json
 import logging
 import os
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.errors import HttpError
@@ -14,6 +17,25 @@ from googleapiclient.errors import HttpError
 from docsgpt.parser.connectors.base import BaseConnectorLoader
 from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
 from docsgpt.parser.schema.base import Document
+
+_FOLDER_MIME = 'application/vnd.google-apps.folder'
+_SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
+# Metadata read for every walked item; shortcutDetails says where a shortcut points,
+# inheritedPermissionsDisabled whether an item keeps its folder's sharing.
+_ITEM_FIELDS = (
+    'id,name,mimeType,modifiedTime,driveId,webViewLink,inheritedPermissionsDisabled,'
+    'shortcutDetails(targetId,targetMimeType)'
+)
+# Retries after the first attempt. Google's client retries 5xx, 429, rate-limit
+# 403s and dropped connections with exponential backoff and jitter (1s, 2s, 4s...).
+_NUM_RETRIES = 5
+_RATE_LIMIT_REASONS = {'rateLimitExceeded', 'userRateLimitExceeded'}
+# Download refusals that follow from the file's content, which only changes
+# with its modifiedTime. Other refusals (sharing, permissions) can lift
+# without it changing, so they keep the selection from being fingerprinted.
+_CONTENT_REFUSAL_REASONS = {'exportSizeLimitExceeded', 'fileNotDownloadable'}
+# Longest file name most filesystems accept, in bytes.
+_MAX_NAME_BYTES = 255
 
 
 class GoogleDriveLoader(BaseConnectorLoader):
@@ -53,9 +75,12 @@ class GoogleDriveLoader(BaseConnectorLoader):
         self.session_token = session_token
 
         _, token_info = self._load_token_info(session_token, connection_id)
+        self._token_info = token_info
         # Google refresh tokens do not rotate, so the credentials object may
         # renew the access token in memory for the rest of this run.
         self.credentials = self.auth.create_credentials_from_token_info(token_info)
+        # The client that reads a picked folder's contents, chosen on first use.
+        self._folder_reader = None
 
         try:
             self.service = self.auth.build_drive_service(self.credentials)
@@ -154,10 +179,15 @@ class GoogleDriveLoader(BaseConnectorLoader):
             else:
                 # Browsing mode: list immediate children of provided folder or root
                 parent_id = folder_id if folder_id else 'root'
-                documents = self._list_items_in_parent(
-                    parent_id, 
-                    limit=limit, 
-                    load_content=load_content, 
+                # The top level also offers the user's shared drives, as
+                # folders listed ahead of My Drive on the first page.
+                shared_drives: List[Document] = []
+                if not folder_id and not page_token and not search_query:
+                    shared_drives = self._list_shared_drives(limit - 1 if limit else 100)
+                documents = shared_drives + self._list_items_in_parent(
+                    parent_id,
+                    limit=limit - len(shared_drives) if limit else limit,
+                    load_content=load_content,
                     page_token=page_token,
                     search_query=search_query
                 )
@@ -179,7 +209,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 fileId=file_id,
                 fields='id,name,mimeType,size,createdTime,modifiedTime,parents',
                 supportsAllDrives=True
-            ).execute()
+            ).execute(num_retries=_NUM_RETRIES)
 
             return self._process_file(file_metadata, load_content=load_content)
 
@@ -217,6 +247,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 query += f" and name contains '{safe_search}'"
 
             next_token_out: Optional[str] = None
+            drive_scope = self._drive_scope(parent_id)
 
             while True:
                 page_size = 100
@@ -233,8 +264,9 @@ class GoogleDriveLoader(BaseConnectorLoader):
                     pageSize=page_size,
                     orderBy='name',
                     supportsAllDrives=True,
-                    includeItemsFromAllDrives=True
-                ).execute()
+                    includeItemsFromAllDrives=True,
+                    **drive_scope
+                ).execute(num_retries=_NUM_RETRIES)
 
                 items = results.get('files', [])
                 for item in items:
@@ -273,6 +305,57 @@ class GoogleDriveLoader(BaseConnectorLoader):
 
 
 
+
+    def _list_shared_drives(self, limit: int) -> List[Document]:
+        """The shared drives the user is a member of, as folders to browse into.
+
+        Args:
+            limit: The most drives to return.
+        """
+        if limit <= 0:
+            return []
+        try:
+            results = self.service.drives().list(
+                pageSize=min(100, limit),
+                fields='drives(id,name)',
+            ).execute(num_retries=_NUM_RETRIES)
+        except Exception as e:
+            logging.warning(f"Could not list shared drives: {e}")
+            return []
+        return [
+            Document(
+                text="",
+                doc_id=drive['id'],
+                extra_info={
+                    'file_name': drive.get('name', 'Unknown'),
+                    'mime_type': _FOLDER_MIME,
+                    'source': 'google_drive',
+                    'is_folder': True,
+                    'shared_drive': True,
+                },
+            )
+            for drive in results.get('drives', [])
+        ]
+
+    def _drive_scope(self, folder_id: str) -> Dict[str, str]:
+        """``files.list`` arguments that list a folder within its shared drive.
+
+        The default corpus only holds files the user owns or was shared
+        directly, so a shared drive's folders are listed within that drive.
+        Empty for My Drive, or when the folder cannot be read.
+        """
+        if folder_id == 'root':
+            return {}
+        try:
+            drive_id = self.service.files().get(
+                fileId=folder_id,
+                fields='driveId',
+                supportsAllDrives=True,
+            ).execute(num_retries=_NUM_RETRIES).get('driveId')
+        except Exception as e:
+            logging.warning(f"Could not read folder {folder_id}: {e}")
+            return {}
+        return {'corpora': 'drive', 'driveId': drive_id} if drive_id else {}
 
     def _download_file_content(self, file_id: str, mime_type: str) -> Optional[str]:
         if not self.credentials.token:
@@ -321,7 +404,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
             done = False
             while done is False:
                 try:
-                    _, done = downloader.next_chunk()
+                    _, done = downloader.next_chunk(num_retries=_NUM_RETRIES)
                 except HttpError as e:
                     logging.error(f"HTTP error downloading file {file_id}: {e.resp.status} - {e.content}")
                     return None
@@ -364,15 +447,6 @@ class GoogleDriveLoader(BaseConnectorLoader):
             logging.error(f"Error downloading file {file_id}: {e}")
             return None
 
-
-    def _download_file_to_directory(self, file_id: str, local_dir: str) -> bool:
-        try:
-            self._ensure_service()
-            return self._download_single_file(file_id, local_dir)
-        except Exception as e:
-            logging.error(f"Error downloading file {file_id}: {e}", exc_info=True)
-            return False
-
     def _ensure_service(self):
         if not self.service:
             try:
@@ -380,184 +454,438 @@ class GoogleDriveLoader(BaseConnectorLoader):
             except Exception as e:
                 raise ValueError(f"Cannot access Google Drive: {e}")
 
-    def _download_single_file(self, file_id: str, local_dir: str) -> bool:
-        file_metadata = self.service.files().get(
-            fileId=file_id,
-            fields='name,mimeType',
-            supportsAllDrives=True
-        ).execute()
+    def _folder_service(self):
+        """The Drive client that lists a picked folder's contents and downloads them.
 
-        file_name = file_metadata['name']
-        mime_type = file_metadata['mimeType']
+        The user's own sign-in when it reads the whole Drive (``drive.readonly``).
+        A ``drive.file`` sign-in sees only the picked folder itself, so its
+        contents are read through the service account, which sees the folder
+        once the user shares it.
 
-        if mime_type not in self.SUPPORTED_MIME_TYPES and not mime_type.startswith('application/vnd.google-apps.'):
-            return False
+        Raises:
+            ValueError: Per-file access and no service account is configured.
+        """
+        if self._folder_reader is None:
+            if self.auth.reads_whole_drive(self._token_info):
+                self._folder_reader = self.service
+            else:
+                reader = self.auth.build_service_account_service()
+                if reader is None:
+                    raise ValueError(
+                        "Reading a Google Drive folder needs GOOGLE_SERVICE_ACCOUNT_KEY "
+                        "(or GOOGLE_DRIVE_ACCESS=readonly)"
+                    )
+                self._folder_reader = reader
+        return self._folder_reader
 
-        os.makedirs(local_dir, exist_ok=True)
-        full_path = os.path.join(local_dir, file_name)
+    def _get_item(self, item_id: str, service=None) -> Dict[str, Any]:
+        """Fetch one item's metadata, retrying rate limits and server errors.
 
-        if mime_type in self.EXPORT_FORMATS:
-            export_mime_type = self.EXPORT_FORMATS[mime_type]
-            request = self.service.files().export_media(
-                fileId=file_id,
-                mimeType=export_mime_type
-            )
-            extension = self._get_extension_for_mime_type(export_mime_type)
-            if not full_path.endswith(extension):
-                full_path += extension
-        else:
-            request = self.service.files().get_media(fileId=file_id, supportsAllDrives=True)
+        Args:
+            item_id: The file or folder.
+            service: The client to ask; the user's own sign-in by default.
+        """
+        return (service or self.service).files().get(
+            fileId=item_id,
+            fields=_ITEM_FIELDS,
+            supportsAllDrives=True,
+        ).execute(num_retries=_NUM_RETRIES)
 
-        with open(full_path, 'wb') as f:
-            downloader = MediaIoBaseDownload(f, request)
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
+    def _list_children(self, folder: Dict[str, Any], service=None) -> Iterator[Dict[str, Any]]:
+        """Yield every untrashed child of ``folder``, page by page.
 
-        return True
+        Items in a shared drive are listed within that drive (``corpora=drive``);
+        the default corpus only holds files the user owns or was shared directly.
 
-    def _download_folder_recursive(self, folder_id: str, local_dir: str, recursive: bool = True) -> int:
-        files_downloaded = 0
-        try:
-            os.makedirs(local_dir, exist_ok=True)
-
-            query = f"'{folder_id}' in parents and trashed=false"
-            page_token = None
-
-            while True:
-                results = self.service.files().list(
-                    q=query,
-                    fields='nextPageToken, files(id, name, mimeType)',
-                    pageToken=page_token,
-                    pageSize=1000,
-                    supportsAllDrives=True,
-                    includeItemsFromAllDrives=True
-                ).execute()
-
-                items = results.get('files', [])
-                logging.info(f"Found {len(items)} items in folder {folder_id}")
-
-                for item in items:
-                    item_name = item['name']
-                    item_id = item['id']
-                    mime_type = item['mimeType']
-
-                    if mime_type == 'application/vnd.google-apps.folder':
-                        if recursive:
-                            # Create subfolder and recurse
-                            subfolder_path = os.path.join(local_dir, item_name)
-                            os.makedirs(subfolder_path, exist_ok=True)
-                            subfolder_files = self._download_folder_recursive(
-                                item_id,
-                                subfolder_path,
-                                recursive
-                            )
-                            files_downloaded += subfolder_files
-                            logging.info(f"Downloaded {subfolder_files} files from subfolder {item_name}")
-                    else:
-                        # Download file
-                        success = self._download_single_file(item_id, local_dir)
-                        if success:
-                            files_downloaded += 1
-                            logging.info(f"Downloaded file: {item_name}")
-                        else:
-                            logging.warning(f"Failed to download file: {item_name}")
-
-                page_token = results.get('nextPageToken')
-                if not page_token:
-                    break
-
-            return files_downloaded
-
-        except Exception as e:
-            logging.error(f"Error in _download_folder_recursive for folder {folder_id}: {e}", exc_info=True)
-            return files_downloaded
-
-    def _get_extension_for_mime_type(self, mime_type: str) -> str:
-        extensions = {
-            'application/pdf': '.pdf',
-            'text/plain': '.txt',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-            'text/html': '.html',
-            'text/markdown': '.md',
+        Args:
+            folder: The folder's metadata.
+            service: The client to list with; the user's own sign-in by default.
+        """
+        params: Dict[str, Any] = {
+            'q': f"'{folder['id']}' in parents and trashed=false",
+            'fields': f'nextPageToken,files({_ITEM_FIELDS})',
+            'pageSize': 1000,
+            'supportsAllDrives': True,
+            'includeItemsFromAllDrives': True,
         }
-        return extensions.get(mime_type, '.bin')
+        if folder.get('driveId'):
+            params['corpora'] = 'drive'
+            params['driveId'] = folder['driveId']
+        page_token = None
+        while True:
+            results = (service or self.service).files().list(
+                pageToken=page_token, **params
+            ).execute(num_retries=_NUM_RETRIES)
+            yield from results.get('files', [])
+            page_token = results.get('nextPageToken')
+            if not page_token:
+                return
 
-    def _download_folder_contents(self, folder_id: str, local_dir: str, recursive: bool = True) -> int:
+    def _resolve_shortcut(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Return the item a shortcut points to, under the shortcut's own name.
+
+        Items that are not shortcuts come back unchanged. ``None`` when the
+        target was deleted or is no longer shared with the user.
+        """
+        if item.get('mimeType') != _SHORTCUT_MIME:
+            return item
+        target_id = (item.get('shortcutDetails') or {}).get('targetId')
+        if not target_id:
+            return None
         try:
-            self._ensure_service()
-            return self._download_folder_recursive(folder_id, local_dir, recursive)
+            target = self._get_item(target_id)
+        except HttpError as e:
+            if _is_permanent_error(e):
+                logging.info(f"Skipping shortcut {item.get('name')!r}: its target is not available")
+                return None
+            raise
+        return {**target, 'name': item.get('name') or target.get('name')}
+
+    def _walk_selection(
+        self, config: Dict[str, Any], stats: '_WalkStats'
+    ) -> Iterator[Tuple[Dict[str, Any], Tuple[str, ...], Any]]:
+        """Yield ``(file_metadata, relative_path_parts, service)`` for every file in a selection.
+
+        ``service`` is the client that downloads the file. A picked file is
+        read with the user's own sign-in; a selected folder's contents with
+        :meth:`_folder_service`. A picked folder is first read with the user's
+        sign-in, which proves the user may see it: with ``drive.file`` that
+        only succeeds for a folder the user picked. When the service account
+        reads the contents, an item that does not inherit the picked folder's
+        sharing (``inheritedPermissionsDisabled``) is left out, and shortcuts
+        are resolved with the user's sign-in, so the walk never reaches what
+        the user could not open themselves.
+
+        Selected folders become top-level directories and their subfolders are
+        walked when ``recursive`` is set. Shortcuts are followed; a folder or
+        file reached twice (a shortcut to an ancestor, or to a file that is also
+        selected) is visited once. Each path part is a sanitized, de-duplicated
+        file name, so two items called ``report.pdf`` become ``report.pdf`` and
+        ``report_1.pdf`` instead of one overwriting the other.
+
+        An item that cannot be read is logged and counted in ``stats``; the walk
+        carries on with the rest.
+
+        Args:
+            config: ``file_ids``, ``folder_ids`` (lists or single ids) and ``recursive``.
+            stats: Collects counts of failed and skipped items.
+        """
+        recursive = config.get('recursive', True)
+        seen_folders: Set[str] = set()
+        seen_files: Set[str] = set()
+        taken: Set[Tuple[Tuple[str, ...], str]] = set()
+
+        def visit(item: Dict[str, Any], parent: Tuple[str, ...], top_level: bool, reader):
+            try:
+                resolved = self._resolve_shortcut(item)
+            except Exception as e:
+                stats.record_failure(item.get('name') or item.get('id'), e)
+                return
+            if resolved is None:
+                stats.skipped += 1
+                return
+            item_id = resolved.get('id')
+            mime_type = resolved.get('mimeType')
+            if mime_type == _FOLDER_MIME:
+                if item_id in seen_folders or not (top_level or recursive):
+                    return
+                seen_folders.add(item_id)
+                if top_level:
+                    reader = self._top_level_folder_reader(resolved, stats)
+                    if reader is None:
+                        return
+                folder_parts = parent + (_unique_name(taken, parent, _safe_name(resolved.get('name')), is_dir=True),)
+                try:
+                    children = list(self._list_children(resolved, reader))
+                except Exception as e:
+                    stats.record_failure(resolved.get('name') or item_id, e)
+                    return
+                for child in children:
+                    if reader is not self.service and child.get('inheritedPermissionsDisabled'):
+                        # Shared apart from the picked folder: the user's access
+                        # to that folder says nothing about this item.
+                        logging.info(f"Skipping Google Drive item {child.get('name')!r}: its sharing is restricted")
+                        stats.skipped += 1
+                        continue
+                    yield from visit(child, folder_parts, top_level=False, reader=reader)
+                return
+            if item_id in seen_files:
+                return
+            if mime_type not in self.SUPPORTED_MIME_TYPES:
+                stats.skipped += 1
+                return
+            seen_files.add(item_id)
+            name = _unique_name(taken, parent, self._local_file_name(resolved), is_dir=False)
+            yield resolved, parent + (name,), reader
+
+        for key in ('file_ids', 'folder_ids'):
+            ids = config.get(key) or []
+            if isinstance(ids, str):
+                ids = [ids]
+            for item_id in ids:
+                try:
+                    item = self._get_item(item_id)
+                except Exception as e:
+                    stats.record_failure(item_id, e)
+                    continue
+                yield from visit(item, (), top_level=True, reader=self.service)
+
+    def _top_level_folder_reader(self, folder: Dict[str, Any], stats: '_WalkStats'):
+        """The client that reads a selected folder's contents, or None when nothing can.
+
+        The service account must see the folder itself before it is listed:
+        listing a folder it cannot see returns nothing rather than an error.
+        A folder that cannot be read is counted as skipped, so the rest of the
+        selection still syncs; once it is shared, its files change the
+        fingerprint and the next sync picks them up.
+        """
+        name = folder.get('name') or folder.get('id')
+        try:
+            reader = self._folder_service()
         except Exception as e:
-            logging.error(f"Error downloading folder {folder_id}: {e}", exc_info=True)
-            return 0
+            # No service account, or a key Google's client cannot load.
+            logging.warning(f"Skipping Google Drive folder {name!r}: {e}")
+            stats.skipped += 1
+            return None
+        if reader is self.service:
+            return reader
+        try:
+            self._get_item(folder['id'], reader)
+        except Exception as e:
+            if not _is_permanent_error(e):
+                stats.record_failure(name, e)
+                return None
+            logging.warning(
+                f"Skipping Google Drive folder {name!r}: it is not shared with "
+                f"{self.auth.service_account_email()}"
+            )
+            stats.skipped += 1
+            return None
+        return reader
+
+    def _local_file_name(self, file_metadata: Dict[str, Any]) -> str:
+        """The sanitized name a file is saved under, with an extension its parser recognizes."""
+        name = _safe_name(file_metadata.get('name'))
+        mime_type = file_metadata.get('mimeType')
+        if mime_type in self.EXPORT_FORMATS:
+            extension = self.SUPPORTED_MIME_TYPES[mime_type]
+            if not name.lower().endswith(extension):
+                name += extension
+        elif not os.path.splitext(name)[1]:
+            name += self.SUPPORTED_MIME_TYPES.get(mime_type, '')
+        return _fit_name(name)
+
+    def _download_file(self, file_metadata: Dict[str, Any], path: str, service=None) -> None:
+        """Download (or export, for Google Docs, Sheets and Slides) one file to ``path``.
+
+        A partly written file is removed when the download fails.
+
+        Args:
+            file_metadata: The file's metadata.
+            path: Where to write it.
+            service: The client to download with; the user's own sign-in by default.
+        """
+        service = service or self.service
+        file_id = file_metadata['id']
+        mime_type = file_metadata['mimeType']
+        if mime_type in self.EXPORT_FORMATS:
+            request = service.files().export_media(
+                fileId=file_id,
+                mimeType=self.EXPORT_FORMATS[mime_type]
+            )
+        else:
+            request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            with open(path, 'wb') as f:
+                downloader = MediaIoBaseDownload(f, request)
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk(num_retries=_NUM_RETRIES)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.remove(path)
+            raise
+
+    def sync_fingerprint(self, source_config: Dict[str, Any]) -> Optional[str]:
+        """Fingerprint the selection from file metadata alone, without downloading.
+
+        Changes when a file is added, removed, renamed, moved or modified.
+        ``None`` when part of the selection could not be read, since the
+        fingerprint would then not describe all of it.
+        """
+        self._ensure_service()
+        stats = _WalkStats()
+        entries = [
+            (parts, meta.get('id'), meta.get('modifiedTime'))
+            for meta, parts, _ in self._walk_selection(source_config, stats)
+        ]
+        return None if stats.failed else _fingerprint(entries)
 
     def download_to_directory(self, local_dir: str, source_config: dict = None) -> dict:
+        """Download the selected files and folders into ``local_dir``.
+
+        Each file is downloaded on its own: one that fails (an export over
+        Google's size limit, a file type Google cannot download) is logged and
+        counted, and the rest still arrive.
+
+        Args:
+            local_dir: Directory to write into; nothing is written outside it.
+            source_config: ``file_ids``, ``folder_ids`` and ``recursive``.
+
+        Returns:
+            The download summary: ``files_downloaded``, ``files_failed``,
+            ``files_skipped``, ``sync_fingerprint``, ``directory_path``,
+            ``empty_result``, ``source_type``, ``config_used`` and
+            ``file_urls`` (each downloaded file's path under ``local_dir`` →
+            its Drive link), plus ``error`` when the download could not run. ``sync_fingerprint``
+            is ``None`` when a file or folder failed, or a file was refused
+            for a reason other than its content (sharing, permissions), since
+            that can change without the file's ``modifiedTime`` changing.
+        """
         if source_config is None:
             source_config = {}
 
         config = source_config if source_config else getattr(self, 'config', {})
+        stats = _WalkStats()
         files_downloaded = 0
+        entries = []
+        file_urls = {}
+        fingerprintable = True
 
         try:
-            folder_ids = config.get('folder_ids', [])
-            file_ids = config.get('file_ids', [])
-            recursive = config.get('recursive', True)
+            if not config.get('file_ids') and not config.get('folder_ids'):
+                raise ValueError("No folder_ids or file_ids provided for download")
 
             self._ensure_service()
+            os.makedirs(local_dir, exist_ok=True)
 
-            if file_ids:
-                if isinstance(file_ids, str):
-                    file_ids = [file_ids]
-
-                for file_id in file_ids:
-                    if self._download_file_to_directory(file_id, local_dir):
-                        files_downloaded += 1
-
-            # Process folders
-            if folder_ids:
-                if isinstance(folder_ids, str):
-                    folder_ids = [folder_ids]
-
-                for folder_id in folder_ids:
-                    try:
-                        folder_metadata = self.service.files().get(
-                            fileId=folder_id,
-                            fields='name',
-                            supportsAllDrives=True
-                        ).execute()
-                        folder_name = folder_metadata.get('name', '')
-                        folder_path = os.path.join(local_dir, folder_name)
-                        os.makedirs(folder_path, exist_ok=True)
-
-                        folder_files = self._download_folder_recursive(
-                            folder_id,
-                            folder_path,
-                            recursive
-                        )
-                        files_downloaded += folder_files
-                        logging.info(f"Downloaded {folder_files} files from folder {folder_name}")
-                    except Exception as e:
-                        logging.error(f"Error downloading folder {folder_id}: {e}", exc_info=True)
-
-            if not file_ids and not folder_ids:
-                raise ValueError("No folder_ids or file_ids provided for download")
+            for file_metadata, parts, reader in self._walk_selection(config, stats):
+                entries.append((parts, file_metadata.get('id'), file_metadata.get('modifiedTime')))
+                try:
+                    self._download_file(file_metadata, _safe_join(local_dir, parts), reader)
+                    files_downloaded += 1
+                    if file_metadata.get('webViewLink'):
+                        file_urls[os.path.join(*parts)] = file_metadata['webViewLink']
+                except Exception as e:
+                    stats.record_failure(file_metadata.get('name'), e)
+                    if not _error_reasons(e) & _CONTENT_REFUSAL_REASONS:
+                        fingerprintable = False
 
             return {
                 "files_downloaded": files_downloaded,
+                "files_failed": stats.failed,
+                "files_skipped": stats.skipped,
+                "sync_fingerprint": _fingerprint(entries) if fingerprintable and not stats.failed else None,
                 "directory_path": local_dir,
                 "empty_result": files_downloaded == 0,
                 "source_type": "google_drive",
-                "config_used": config
+                "config_used": config,
+                "file_urls": file_urls,
             }
 
         except Exception as e:
             return {
                 "files_downloaded": files_downloaded,
+                "files_failed": stats.failed,
+                "files_skipped": stats.skipped,
+                "sync_fingerprint": None,
                 "directory_path": local_dir,
                 "empty_result": True,
                 "source_type": "google_drive",
                 "config_used": config,
+                "file_urls": file_urls,
                 "error": str(e)
             }
+
+
+class _WalkStats:
+    """Counts the items a walk could not read (``failed``) or left out on purpose (``skipped``).
+
+    Refusals that retrying would not change (a deleted item, an unreadable
+    folder, an export over Google's size limit) count as skipped and do not
+    block the sync fingerprint on their own. An item the walk could not read
+    is absent from the fingerprint, and every sync walks again, so its files
+    change the fingerprint once it can be read. A refused *download* is
+    different, since the fingerprint walk never downloads: ``download_to_directory``
+    withholds the fingerprint unless the refusal is about the file's content.
+    """
+
+    def __init__(self) -> None:
+        self.failed = 0
+        self.skipped = 0
+
+    def record_failure(self, name: Any, error: Exception) -> None:
+        if _is_permanent_error(error):
+            self.skipped += 1
+            logging.info(f"Skipping Google Drive item {name!r}: {error}")
+        else:
+            self.failed += 1
+            logging.warning(f"Could not download Google Drive item {name!r}: {error}")
+
+
+def _is_permanent_error(error: Exception) -> bool:
+    """Whether Google refused for good, rather than for now (rate limit, outage, expired sign-in)."""
+    if not isinstance(error, HttpError):
+        return False
+    status = error.resp.status
+    if status in (401, 429) or status >= 500:
+        return False
+    return not _error_reasons(error) & _RATE_LIMIT_REASONS
+
+
+def _error_reasons(error: Exception) -> Set[str]:
+    """The ``reason`` codes of a Drive API error (``exportSizeLimitExceeded``...); empty for other errors."""
+    details = getattr(error, 'error_details', None)
+    if not isinstance(error, HttpError) or not isinstance(details, list):
+        return set()
+    return {d.get('reason') for d in details if isinstance(d, dict) and d.get('reason')}
+
+
+def _safe_name(name: Optional[str]) -> str:
+    """A Drive name made safe as one path part: no separators, no ``.``/``..``, no NUL."""
+    cleaned = (name or '').replace('\x00', '').replace('/', '_').replace('\\', '_').strip()
+    return '_' if cleaned in ('', '.', '..') else cleaned
+
+
+def _fit_name(name: str, suffix: str = '', is_dir: bool = False) -> str:
+    """``name`` with ``suffix`` added before its extension, cut to the filesystem's name limit."""
+    stem, extension = (name, '') if is_dir else os.path.splitext(name)
+    if len(extension.encode('utf-8')) > 32:
+        stem, extension = name, ''
+    budget = _MAX_NAME_BYTES - len(suffix.encode('utf-8')) - len(extension.encode('utf-8'))
+    stem = stem.encode('utf-8')[:budget].decode('utf-8', 'ignore') or '_'
+    return f"{stem}{suffix}{extension}"
+
+
+def _unique_name(
+    taken: Set[Tuple[Tuple[str, ...], str]], parent: Tuple[str, ...], name: str, is_dir: bool
+) -> str:
+    """Claim ``name`` in ``parent``, numbering it ``name_1``, ``name_2``... when already used.
+
+    Names compare case-insensitively, so they stay distinct on a
+    case-insensitive filesystem too.
+    """
+    candidate = _fit_name(name, is_dir=is_dir)
+    counter = 0
+    while (parent, candidate.casefold()) in taken:
+        counter += 1
+        candidate = _fit_name(name, f'_{counter}', is_dir=is_dir)
+    taken.add((parent, candidate.casefold()))
+    return candidate
+
+
+def _safe_join(root: str, parts: Tuple[str, ...]) -> str:
+    """Join ``parts`` under ``root``, refusing any path that would land outside it."""
+    root_real = os.path.realpath(root)
+    path = os.path.realpath(os.path.join(root_real, *parts))
+    if os.path.commonpath([root_real, path]) != root_real or path == root_real:
+        raise ValueError(f"Refusing to write outside the download directory: {parts!r}")
+    return path
+
+
+def _fingerprint(entries: List[Tuple[Tuple[str, ...], Optional[str], Optional[str]]]) -> str:
+    """A stable hash of ``(path, id, modifiedTime)`` for every file in a selection."""
+    payload = json.dumps(sorted([list(parts), file_id, modified] for parts, file_id, modified in entries))
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()

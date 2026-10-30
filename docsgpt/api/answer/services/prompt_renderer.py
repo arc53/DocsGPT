@@ -66,7 +66,8 @@ def format_docs_for_prompt(docs: Optional[list]) -> Optional[str]:
 
     Each chunk is wrapped in a ``<document index="n">`` block with a
     ``<source>`` subtag (when a filename/title is known) so the model can
-    tell chunks apart and cite them by name.
+    tell chunks apart and cite them by name, and a ``<url>`` subtag when the
+    chunk's file has a link in the service it was synced from.
     """
     if not docs:
         return None
@@ -76,6 +77,8 @@ def format_docs_for_prompt(docs: Optional[list]) -> Optional[str]:
         lines = [f'<document index="{i}">']
         if source:
             lines.append(f"<source>{source}</source>")
+        if doc.get("url"):
+            lines.append(f"<url>{doc['url']}</url>")
         lines.append(f"<content>\n{doc.get('text', '')}\n</content>")
         lines.append("</document>")
         parts.append("\n".join(lines))

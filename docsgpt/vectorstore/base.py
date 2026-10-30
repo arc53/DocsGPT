@@ -2,7 +2,7 @@ import hashlib
 import logging
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import requests
 
@@ -470,6 +470,25 @@ def build_local_embeddings(
     return embedding_instance
 
 
+def legacy_path_key(metadata: Dict[str, Any]) -> Optional[str]:
+    """The tree path a chunk was stored under: its ``file_path``, else its ``key``, else its ``title``.
+
+    An ingest that predates ``file_path`` on every web page named the tree
+    entry by the document's ``key`` or ``title``, in that order.
+
+    Args:
+        metadata: The chunk's metadata.
+
+    Returns:
+        The path, or ``None`` when the chunk carries none of them.
+    """
+    for field in ("file_path", "key", "title"):
+        value = metadata.get(field)
+        if value:
+            return str(value)
+    return None
+
+
 class InvalidChunkMetadataError(ValueError):
     """Chunk metadata the store cannot write, such as a key it reserves.
 
@@ -587,19 +606,105 @@ class BaseVectorStore(ABC):
             )
         raise RuntimeError(f"Failed to delete old chunk {chunk_id} during update") from delete_error
 
-    def delete_chunks_by_source_path(self, path) -> int:
-        """Delete every chunk whose ``metadata.source`` equals ``path``.
+    @classmethod
+    def supports_chunk_edits(cls) -> bool:
+        """Whether the store overrides ``add_chunk``, ``get_chunks`` and ``delete_chunk`` (the base ones do nothing)."""
+        return all(
+            getattr(cls, name) is not getattr(BaseVectorStore, name)
+            for name in ("add_chunk", "get_chunks", "delete_chunk")
+        )
 
-        Default implementation iterates ``get_chunks()`` and deletes the
-        matches via ``delete_chunk()`` — works for any store. Override with a
-        single targeted statement where the store supports it. Returns the
-        number of chunks deleted.
+    def delete_chunks_by_source_path(self, path: str) -> int:
+        """Delete every chunk whose ``metadata.source`` equals ``path``; returns how many were deleted.
+
+        Raises:
+            NotImplementedError: The store cannot list its chunks, so a failed
+                listing is never a silent no-op.
+        """
+        ids = self.chunk_ids_by_source_paths([path])
+        return self.delete_chunks(ids) if ids else 0
+
+    def _chunk_ids_where(self, key: Callable[[dict], Any], paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``key(metadata)`` is one of ``paths``, in :meth:`_scan_chunks` order.
+
+        Args:
+            key: Reads the matched value from a chunk's metadata.
+            paths: The values to match.
+
+        Returns:
+            The ids; none for no ``paths``, without listing the store.
+
+        Raises:
+            NotImplementedError: The store cannot list its chunks.
+        """
+        wanted = set(paths)
+        if not wanted:
+            return []
+        return [str(chunk.get("doc_id")) for chunk in self._scan_chunks() if key(chunk.get("metadata") or {}) in wanted]
+
+    def chunk_ids_by_source_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``metadata.source`` is one of ``paths``."""
+        return self._chunk_ids_where(lambda metadata: metadata.get("source"), paths)
+
+    def add_chunks(self, texts: List[str], metadatas: Optional[List[Dict[str, Any]]] = None) -> List[str]:
+        """Add several chunks, all or none; stores that save per write override this to save once.
+
+        Adds them one by one with :meth:`add_chunk`. If one fails, the ones
+        already added are deleted again (best effort, logged when it falls
+        short) and the error is raised, so a caller is never left holding
+        chunks it has no ids for.
+
+        Args:
+            texts: The chunks' texts.
+            metadatas: Their metadata, one dict per text; ``None`` for none.
+
+        Returns:
+            The new chunks' ids, in order.
+
+        Raises:
+            Exception: Whatever adding a chunk raised, after the rollback.
+        """
+        metadatas = list(metadatas) if metadatas is not None else [{} for _ in texts]
+        ids: List[str] = []
+        try:
+            for text, metadata in zip(texts, metadatas):
+                ids.append(self.add_chunk(text, metadata))
+        except Exception:
+            added = [chunk_id for chunk_id in ids if chunk_id is not None]
+            if added:
+                try:
+                    deleted = self.delete_chunks(added)
+                except Exception:  # noqa: BLE001 - the original error is the one to report
+                    deleted = 0
+                    logging.error("delete_chunks failed during the rollback", exc_info=True)
+                if not isinstance(deleted, int) or deleted < len(added):
+                    logging.error(
+                        "Could not roll back the chunks added before a failure; they may stay stored: %s", added,
+                    )
+            raise
+        return ids
+
+    def chunk_ids_by_file_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``metadata.file_path`` is one of ``paths``.
+
+        For a page whose tree entry predates entries carrying the page's
+        address: its chunks are found by the tree path they were stored under.
+        A chunk from an ingest older still carries no ``file_path``; its tree
+        entry was named by its ``key``, or without one by its ``title``, so
+        those are matched for it (``legacy_path_key``).
+        """
+        return self._chunk_ids_where(legacy_path_key, paths)
+
+    def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
+        """Delete several chunks, returning how many went (a missing or failed id isn't counted).
+
+        Stores that save per write override this to save once. A caller that
+        must know every chunk is gone lists them again when the count is short.
         """
         deleted = 0
-        for chunk in self.get_chunks() or []:
-            if (chunk.get("metadata") or {}).get("source") == path:
-                if self.delete_chunk(chunk.get("doc_id")):
-                    deleted += 1
+        for chunk_id in chunk_ids:
+            if self.delete_chunk(chunk_id):
+                deleted += 1
         return deleted
 
     def _scan_chunks(self) -> List[dict]:

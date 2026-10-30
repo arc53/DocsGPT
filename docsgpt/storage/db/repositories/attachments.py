@@ -455,6 +455,33 @@ class AttachmentsRepository:
         )
         return result.rowcount > 0
 
+    def set_metadata_key(self, legacy_mongo_id: str, user_id: str, key: str, value: Any) -> bool:
+        """Write one ``metadata`` key of an upload's row, keeping the others.
+
+        A background write after the row was stored (a prompt-injection score)
+        must not undo another key written meanwhile.
+
+        Args:
+            legacy_mongo_id: The upload's handle.
+            user_id: The uploader; the row is scoped to them.
+            key: The top-level metadata key.
+            value: Its JSON value.
+
+        Returns:
+            True when a row was updated.
+        """
+        if user_id is None or legacy_mongo_id is None:
+            return False
+        result = self._conn.execute(
+            text(
+                "UPDATE attachments SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), "
+                "CAST(:path AS text[]), CAST(:value AS jsonb)) "
+                "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
+            ),
+            {"path": [key], "value": json.dumps(value), "legacy_id": str(legacy_mongo_id), "user_id": user_id},
+        )
+        return result.rowcount > 0
+
     def update_metadata_if_content_null(
         self, legacy_mongo_id: str, user_id: str, metadata: Any
     ) -> bool:

@@ -215,9 +215,12 @@ function BytesPreview({
 
 export default function DocumentArtifactView({
   artifact,
+  initialVersion,
   onRefresh,
 }: {
   artifact: DocumentArtifact;
+  /** The version to show first (a card's); the current one when unset or gone. */
+  initialVersion?: number;
   onRefresh: () => void;
 }) {
   const { t } = useTranslation();
@@ -226,9 +229,12 @@ export default function DocumentArtifactView({
     () => sortVersionsDesc(artifact.versions),
     [artifact.versions],
   );
-  const [selectedVersion, setSelectedVersion] = useState<number>(
-    artifact.current_version,
-  );
+  const startVersion =
+    initialVersion !== undefined &&
+    artifact.versions.some((v) => v.version === initialVersion)
+      ? initialVersion
+      : artifact.current_version;
+  const [selectedVersion, setSelectedVersion] = useState<number>(startVersion);
   const [downloading, setDownloading] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -244,9 +250,27 @@ export default function DocumentArtifactView({
     };
   }, []);
 
+  // Another artifact or card shows its version; a restore (a new current
+  // version of the same artifact) shows the new current one.
+  const shownRef = useRef({
+    id: artifact.id,
+    initialVersion,
+    current: artifact.current_version,
+  });
   useEffect(() => {
-    setSelectedVersion(artifact.current_version);
-  }, [artifact.id, artifact.current_version]);
+    const shown = shownRef.current;
+    shownRef.current = {
+      id: artifact.id,
+      initialVersion,
+      current: artifact.current_version,
+    };
+    if (shown.id !== artifact.id || shown.initialVersion !== initialVersion) {
+      setSelectedVersion(startVersion);
+    } else if (shown.current !== artifact.current_version) {
+      setSelectedVersion(artifact.current_version);
+    }
+    // startVersion follows from these three.
+  }, [artifact.id, artifact.current_version, initialVersion]);
 
   const selectedRow: ArtifactVersion | null = useMemo(() => {
     return (

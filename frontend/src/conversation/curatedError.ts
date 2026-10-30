@@ -85,6 +85,10 @@ export function curatedErrorText(
       return t('conversation.errors.serverError');
     case 'client_disconnect':
       return t('conversation.errors.clientDisconnect');
+    case 'time_limit':
+      return t('conversation.errors.timeLimit');
+    case 'stopped':
+      return t('conversation.errors.stopped');
     default:
       return message;
   }

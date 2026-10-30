@@ -38,6 +38,15 @@ class AgentSettings(SettingsGroup):
             'ends with a "timeout" result; the worker kills it 60 seconds later if it has not stopped by then.'
         ),
     )
+    AGENT_TRUSTED_ORIGINS: Annotated[list[str], NoDecode, EnvList(none_is_empty=True)] = Field(
+        default=["https://app.docsgpt.cloud", "https://ent.docsgpt.cloud"],
+        description=(
+            "Browser origins every agent that restricts its origins accepts besides its own list, as a JSON "
+            "list or comma-separated origins. This instance's own frontend is always accepted too: API_URL, "
+            "OIDC_FRONTEND_URL, and localhost:5173 when API_URL is on loopback. none (or []) trusts no extra "
+            "origin; an empty value keeps the default."
+        ),
+    )
     ENABLE_TOOL_PREFETCH: bool = Field(default=True, description="Pre-fetch retrieval before the agent's first turn.")
     TOOL_RESULT_MAX_TOKENS: int = Field(
         default=20000,
@@ -102,6 +111,40 @@ class AgentSettings(SettingsGroup):
         description=(
             "Wall clock one node may spend on blocking parses, shared across all of them. Without it a node "
             "could serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows on a web threadpool slot."
+        ),
+    )
+    WORKFLOW_DOCUMENT_LINES_CACHE_TTL: int = Field(
+        default=86400,
+        description=(
+            "Seconds the line-numbered text of a workflow input document (file_passing: lines) stays cached in "
+            "Redis, keyed by the file's content hash, so a later run over the same file skips the parse. 0 "
+            "disables the cache; a run still reads each document only once."
+        ),
+    )
+    WORKFLOW_LOOP_MAX_CONCURRENCY: int = Field(
+        default=4,
+        ge=1,
+        description=(
+            "Most items a loop node runs at once, whatever its own concurrency says. Each running item holds a "
+            "thread and usually an LLM call."
+        ),
+    )
+    WORKFLOW_LOOP_MAX_ITEMS: int = Field(
+        default=100,
+        ge=1,
+        description="Most items one loop node accepts, whatever its own max_items says; a longer list fails the node.",
+    )
+    WORKFLOW_RETRY_MAX_ATTEMPTS: int = Field(
+        default=5,
+        ge=1,
+        description="Most attempts a workflow node's retry policy may ask for; 1 turns node retries off.",
+    )
+    WORKFLOW_RETRY_MAX_DELAY_SECONDS: float = Field(
+        default=300,
+        ge=0,
+        description=(
+            "Longest wait before one retry of a workflow node. A Retry-After longer than this fails the node "
+            "instead of retrying early."
         ),
     )
     WORKFLOW_RUN_STALE_SECONDS: int = Field(

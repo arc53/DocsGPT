@@ -34,6 +34,7 @@ const policy = (i: number, scope: 'team' | 'user') => ({
   updated_at: null,
   team_name: scope === 'team' ? `Team ${i}` : undefined,
   member_count: 3,
+  email: null as string | null,
 });
 
 const quotas = (teamsTotal: number, usersTotal: number) => ({
@@ -87,6 +88,24 @@ describe('Quotas paging', () => {
     Array.from(
       container.querySelectorAll<HTMLElement>('[data-slot="pagination-full"]'),
     );
+
+  it('a user override names the user by email over the user id', async () => {
+    const res = quotas(0, 2);
+    getQuotas.mockResolvedValue({
+      json: async () => {
+        const body = await res.json();
+        body.users[0].email = 'u0@example.com';
+        return body;
+      },
+    });
+    await render();
+    const cells = Array.from(
+      container.querySelectorAll('tbody tr td:first-child'),
+    ).map((td) => td.textContent);
+    expect(cells).toContainEqual(expect.stringContaining('u0@example.com'));
+    expect(cells).toContainEqual(expect.stringContaining('user-0'));
+    expect(cells).toContainEqual(expect.stringContaining('user-1'));
+  });
 
   it('asks for the first page of each table, 25 rows each', async () => {
     getQuotas.mockResolvedValue(quotas(2, 1));

@@ -8,10 +8,19 @@ the request; the overflow is dropped (lossy by design).
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from docsgpt.core.settings import settings
+from docsgpt.parser import tokenization
 from docsgpt.utils import get_encoding
 from docsgpt.vectorstore import base
 from docsgpt.vectorstore.base import RemoteEmbeddings
+
+
+@pytest.fixture(autouse=True)
+def _no_tokenizer_download(monkeypatch):
+    """Model ``m`` has no Hugging Face repo, so it counts in cl100k without asking the hub."""
+    monkeypatch.setattr(tokenization, "_load_hf_counter", lambda repo: None)
 
 
 def _capture_post(monkeypatch):

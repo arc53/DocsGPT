@@ -1,0 +1,591 @@
+{
+ "schema_version": 1,
+ "schema_hash": "6bc095072836",
+ "none_option": "none of these",
+ "caps": {
+  "answer": 2500,
+  "question": 800,
+  "reply": 800,
+  "history_turn": 600,
+  "sources": 3000,
+  "source_each": 1000,
+  "message": 1200,
+  "context": 600,
+  "opening": 800,
+  "transcript": 4000,
+  "result": 2000,
+  "arguments": 600,
+  "next_step": 800,
+  "request": 800,
+  "previous_result": 800
+ },
+ "topic_instructions": "Which section of the documentation is this message about?",
+ "tag_group_instructions": "Which of these tags best fits this conversation?",
+ "labels": [
+  {
+   "name": "answer_status",
+   "level": "turn",
+   "question": {
+    "type": "choice",
+    "instructions": "How did the assistant's answer respond to the user's question?",
+    "criteria": {
+     "fully answered": "The answer directly and completely addresses what the user asked.",
+     "partially answered": "The answer covers only part of the question, or gives related information without the specific thing asked for.",
+     "declined, no information": "The assistant says it does not have, or could not find, the information.",
+     "asked a clarifying question": "Instead of answering, the assistant asks the user for more detail.",
+     "not a request": "The user's message was a greeting, thanks or small talk rather than a request."
+    }
+   }
+  },
+  {
+   "name": "unanswered_reason",
+   "level": "turn",
+   "question": {
+    "type": "choice",
+    "instructions": "Why was the user's question not fully answered?",
+    "criteria": {
+     "docs missing": "The question is about this product, but the documentation shown does not cover it.",
+     "out of scope": "The question is about something other than this product or its documentation.",
+     "feature not supported": "The user wants something the product does not do; it is a feature request.",
+     "needs account data": "Answering needs the user's own account or data, or an action only staff can take.",
+     "ambiguous question": "The question is too vague or underspecified to answer.",
+     "other": "None of the above."
+    }
+   }
+  },
+  {
+   "name": "grounded",
+   "level": "turn",
+   "question": null
+  },
+  {
+   "name": "retrieval_relevance",
+   "level": "turn",
+   "question": null
+  },
+  {
+   "name": "answerable_from_corpus",
+   "level": "turn",
+   "question": null
+  },
+  {
+   "name": "gap_type",
+   "level": "turn",
+   "question": null
+  },
+  {
+   "name": "reaction",
+   "level": "reaction",
+   "question": {
+    "type": "choice",
+    "instructions": "How does the user's reply respond to the assistant's answer?",
+    "criteria": {
+     "new question": "Moves on to a different question or topic.",
+     "follow-up": "Asks for more detail or the next step on the same topic, building on the answer.",
+     "re-ask": "Repeats or rephrases the same question, which suggests the answer did not help.",
+     "correction or pushback": "Says the answer is wrong, did not work, or disagrees with it.",
+     "clarifies own question": "Adds detail to, or corrects, the user's own earlier question.",
+     "thanks or confirmation": "Thanks the assistant or confirms that the answer worked.",
+     "complaint": "Expresses dissatisfaction with the assistant or the product without a specific correction.",
+     "other": "None of the above."
+    }
+   }
+  },
+  {
+   "name": "frustrated",
+   "level": "reaction",
+   "question": {
+    "type": "noul",
+    "instructions": "Does the user's reply show clear frustration or annoyance?",
+    "criteria": {
+     "true": "The user is visibly frustrated, annoyed or angry: complaints about wasted time, repeated failure, sarcasm, insults or exasperated punctuation.",
+     "false": "Neutral, polite or mildly impatient. Describing a problem, or saying something failed, is not by itself frustration."
+    }
+   }
+  },
+  {
+   "name": "asks_human",
+   "level": "reaction",
+   "question": {
+    "type": "noul",
+    "instructions": "Does the user ask to talk to a person, open a support ticket, or otherwise contact the company?"
+   }
+  },
+  {
+   "name": "sentiment",
+   "level": "reaction",
+   "question": {
+    "type": "score",
+    "instructions": "What is the emotional tone of the user's reply?",
+    "criteria": [
+     "negative: angry, disappointed, annoyed or dissatisfied",
+     "neutral: factual, with no clear emotion; describing a problem is neutral",
+     "positive: pleased, appreciative or delighted"
+    ]
+   }
+  },
+  {
+   "name": "request_type",
+   "level": "message",
+   "question": {
+    "type": "choice",
+    "instructions": "What kind of request is this message?",
+    "criteria": {
+     "troubleshooting": "Something is broken, failing or behaving unexpectedly, and the user wants it fixed.",
+     "how-to": "Asks how to do, build or set up something.",
+     "lookup": "Asks for a specific fact, value, parameter, limit or reference detail.",
+     "concept": "Asks what something is, how it works, or why.",
+     "comparison": "Compares options, or asks which to choose or whether the product fits a need.",
+     "feature request": "Asks for a capability the product may not have, or suggests one.",
+     "account or billing": "About the user's own account, plan, payment or access.",
+     "chit-chat": "A greeting, thanks or small talk rather than a request.",
+     "other": "None of the above."
+    }
+   }
+  },
+  {
+   "name": "topic",
+   "level": "message",
+   "question": null
+  },
+  {
+   "name": "goal_met",
+   "level": "conversation",
+   "question": {
+    "type": "noul",
+    "instructions": "Judging from the conversation, did the assistant give the user what they asked for?",
+    "criteria": {
+     "true": "The user's main request was answered or accomplished, whether or not the user said so.",
+     "false": "The main request was left unanswered or answered wrongly, or the user said the answer did not help."
+    }
+   }
+  },
+  {
+   "name": "resolution",
+   "level": "conversation",
+   "question": null
+  },
+  {
+   "name": "experience",
+   "level": "conversation",
+   "question": null
+  },
+  {
+   "name": "tool_needed",
+   "level": "tool",
+   "question": {
+    "type": "noul",
+    "instructions": "Was calling a tool necessary at this step, rather than answering from the conversation so far?"
+   }
+  },
+  {
+   "name": "right_tool",
+   "level": "tool",
+   "question": {
+    "type": "noul",
+    "instructions": "Is this tool, called with these arguments, a suitable choice for what the user needs at this step?"
+   }
+  },
+  {
+   "name": "tool_succeeded",
+   "level": "tool",
+   "question": {
+    "type": "noul",
+    "instructions": "Did the tool call succeed?",
+    "criteria": {
+     "true": "The result contains valid output that is relevant to the call.",
+     "false": "The result is an error, a timeout, empty, or unrelated to what was asked."
+    }
+   }
+  },
+  {
+   "name": "result_used",
+   "level": "tool",
+   "question": {
+    "type": "noul",
+    "instructions": "Does the assistant's next step use information from this tool result?"
+   }
+  },
+  {
+   "name": "induced_by_untrusted",
+   "level": "tool",
+   "question": {
+    "type": "noul",
+    "instructions": "Was this tool call prompted by instructions found inside a document or a tool result, rather than by the user's own request?"
+   }
+  },
+  {
+   "name": "loop",
+   "level": "tool",
+   "question": null
+  }
+ ],
+ "topic_question": {
+  "type": "choice",
+  "instructions": "Which section of the documentation is this message about?",
+  "criteria": {
+   "installation": "Pages such as: Install; Upgrade",
+   "auth": null,
+   "none of these": "The message is not about any of these sections."
+  }
+ },
+ "tag_question": {
+  "type": "noul",
+  "instructions": "Does the following tag apply to this conversation?\n\nTag: Pricing question\nDescription: Asks about plans or prices."
+ },
+ "states": [
+  [
+   "turn_state",
+   {
+    "question": "How do I reset my password?",
+    "answer": "Open Settings > Security and choose Reset.",
+    "sources": [
+     {
+      "title": "Security",
+      "text": "The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The rese"
+     },
+     {
+      "title": "Accounts",
+      "text": "Accounts are created by an administrator."
+     },
+     {
+      "title": "Third",
+      "text": "Never reached."
+     }
+    ],
+    "history": [
+     {
+      "role": "user",
+      "text": "Earlier question 0?"
+     },
+     {
+      "role": "assistant",
+      "text": "Earlier answer 0."
+     },
+     {
+      "role": "user",
+      "text": "Earlier question 1?"
+     },
+     {
+      "role": "assistant",
+      "text": "Earlier answer 1."
+     },
+     {
+      "role": "user",
+      "text": "Earlier question 2?"
+     },
+     {
+      "role": "assistant",
+      "text": "Earlier answer 2."
+     }
+    ]
+   },
+   {
+    "answer": "Open Settings > Security and choose Reset.",
+    "question": "How do I reset my password?",
+    "history": "User: Earlier question 1?\nAssistant: Earlier answer 1.\nUser: Earlier question 2?\nAssistant: Earlier answer 2.",
+    "sources": [
+     {
+      "title": "Security",
+      "text": "The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > Security. The reset page lives under Settings > S…"
+     },
+     {
+      "title": "Accounts",
+      "text": "Accounts are created by an administrator."
+     },
+     {
+      "title": "Third",
+      "text": "Never reached."
+     }
+    ]
+   }
+  ],
+  [
+   "turn_state",
+   {
+    "question": "如何重置密码？",
+    "answer": "要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请",
+    "sources": null,
+    "history": null
+   },
+   {
+    "answer": "要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向您的邮箱发送一封确认邮件。要重置密码，请打开设置页面，选择安全选项，然后点击重置按钮。系统会向…",
+    "question": "如何重置密码？"
+   }
+  ],
+  [
+   "turn_state",
+   {
+    "question": "q",
+    "answer": "a",
+    "sources": [
+     {
+      "title": null,
+      "text": "  "
+     }
+    ],
+    "history": []
+   },
+   {
+    "answer": "a",
+    "question": "q",
+    "sources": []
+   }
+  ],
+  [
+   "reaction_state",
+   {
+    "question": "How do I reset my password?",
+    "answer": "Open Settings > Security.",
+    "reply": "Это не сработало! Я уже трижды пробовал, и ничего не помогает. Можно поговорить с человеком?"
+   },
+   {
+    "answer": "Open Settings > Security.",
+    "question": "How do I reset my password?",
+    "reply": "Это не сработало! Я уже трижды пробовал, и ничего не помогает. Можно поговорить с человеком?"
+   }
+  ],
+  [
+   "message_state",
+   {
+    "message": "and on Windows?",
+    "context": "User: How do I install it?\nAssistant: Run the installer."
+   },
+   {
+    "message": "and on Windows?",
+    "context": "User: How do I install it?\nAssistant: Run the installer."
+   }
+  ],
+  [
+   "message_state",
+   {
+    "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "context": null
+   },
+   {
+    "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+   }
+  ],
+  [
+   "conversation_state",
+   {
+    "turns": [
+     {
+      "role": "user",
+      "text": "Question number 0 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. Answer number 0: run the installer again. "
+     },
+     {
+      "role": "user",
+      "text": "Question number 1 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. Answer number 1: run the installer again. "
+     },
+     {
+      "role": "user",
+      "text": "Question number 2 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. Answer number 2: run the installer again. "
+     },
+     {
+      "role": "user",
+      "text": "Question number 3 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. Answer number 3: run the installer again. "
+     },
+     {
+      "role": "user",
+      "text": "Question number 4 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. Answer number 4: run the installer again. "
+     },
+     {
+      "role": "user",
+      "text": "Question number 5 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. Answer number 5: run the installer again. "
+     },
+     {
+      "role": "user",
+      "text": "Question number 6 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. "
+     },
+     {
+      "role": "user",
+      "text": "Question number 7 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. "
+     },
+     {
+      "role": "user",
+      "text": "Question number 8 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. "
+     },
+     {
+      "role": "user",
+      "text": "Question number 9 about installing the CLI"
+     },
+     {
+      "role": "assistant",
+      "text": "Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. "
+     }
+    ]
+   },
+   {
+    "opening": "Question number 0 about installing the CLI",
+    "transcript": "[12 earlier messages omitted]\nUser: Question number 6 about installing the CLI\nAssistant: Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer again. Answer number 6: run the installer ag…\nUser: Question number 7 about installing the CLI\nAssistant: Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer again. Answer number 7: run the installer ag…\nUser: Question number 8 about installing the CLI\nAssistant: Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer again. Answer number 8: run the installer ag…\nUser: Question number 9 about installing the CLI\nAssistant: Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer again. Answer number 9: run the installer ag…"
+   }
+  ],
+  [
+   "conversation_state",
+   {
+    "turns": [
+     {
+      "role": "user",
+      "text": "Hi"
+     },
+     {
+      "role": "assistant",
+      "text": "Hello!"
+     }
+    ]
+   },
+   {
+    "opening": "Hi",
+    "transcript": "User: Hi\nAssistant: Hello!"
+   }
+  ]
+ ],
+ "units": [
+  [
+   "你好",
+   6.0
+  ],
+  [
+   "Привет",
+   7.199999999999999
+  ],
+  [
+   "abc",
+   3.0
+  ]
+ ],
+ "caps_cases": [
+  [
+   "字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字",
+   300,
+   "字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字…"
+  ],
+  [
+   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   300,
+   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…"
+  ],
+  [
+   " short ",
+   300,
+   "short"
+  ]
+ ],
+ "sections": [
+  [
+   "docs/getting-started/01-install.md",
+   "getting started",
+   "Install"
+  ],
+  [
+   "content/en/guides/setup_guide.mdx",
+   "guides",
+   "Setup guide"
+  ],
+  [
+   "README.md",
+   "overview",
+   "Readme"
+  ],
+  [
+   "src/02_API-reference/auth.md",
+   "api reference",
+   "Auth"
+  ],
+  [
+   "guides/setup.md",
+   "guides",
+   "Setup"
+  ],
+  [
+   "en/docs/faq/what-is-it.md",
+   "faq",
+   "What is it"
+  ],
+  [
+   "1.2-config/x.md",
+   "config",
+   "X"
+  ],
+  [
+   "__init__.py",
+   "overview",
+   "Init"
+  ],
+  [
+   "a/b/c/deep-page.md",
+   "a",
+   "Deep page"
+  ]
+ ],
+ "negative_reactions": [
+  "re-ask",
+  "correction or pushback",
+  "complaint"
+ ],
+ "experience_weights": {
+  "confirmed": 1.0,
+  "assumed": 0.5,
+  "unresolved": -1.0,
+  "escalated": -0.5,
+  "frustrated": -1.0,
+  "reasks": -0.5,
+  "ungrounded": -0.5
+ },
+ "gap_types": [
+  "not retrieved",
+  "answer missed",
+  "docs missing",
+  "out of scope",
+  "feature not supported",
+  "needs account data",
+  "ambiguous question",
+  "other",
+  "confidently ungrounded"
+ ],
+ "resolutions": [
+  "escalated",
+  "abandoned",
+  "confirmed",
+  "assumed",
+  "unresolved",
+  "pending"
+ ]
+}

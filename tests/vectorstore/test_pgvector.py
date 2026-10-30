@@ -360,14 +360,67 @@ class TestPGVectorStoreDeleteChunksBySourcePath:
         assert store.delete_chunks_by_source_path("/missing.md") == 0
         mock_conn.commit.assert_called_once()
 
-    def test_rolls_back_and_raises_on_error(self):
+
+@pytest.mark.unit
+class TestPGVectorStoreChunksBySourcePaths:
+    def test_lists_ids_in_one_targeted_select(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchall.return_value = [(4,), (9,)]
+
+        assert store.chunk_ids_by_source_paths(["/a", "/b"]) == ["4", "9"]
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "metadata->>'source' = ANY(%s)" in sql
+        assert params == ("src1", ["/a", "/b"])
+
+    def test_no_paths_runs_no_query(self):
+        store, _, mock_cursor, _ = _make_store()
+        assert store.chunk_ids_by_source_paths([]) == []
+        assert store.chunk_ids_by_file_paths([]) == []
+        mock_cursor.execute.assert_not_called()
+
+    @pytest.mark.parametrize("call", [
+        lambda store: store.delete_chunks_by_source_path("/x.md"),
+        lambda store: store.chunk_ids_by_source_paths(["/a"]),
+        lambda store: store.chunk_ids_by_file_paths(["guide.md"]),
+        lambda store: store.delete_chunks(["4"]),
+    ], ids=["delete_by_source_path", "ids_by_source_paths", "ids_by_file_paths", "delete_chunks"])
+    def test_an_error_rolls_back_and_is_raised_not_read_as_no_chunks(self, call):
+        """A page removal reads "no chunks" as safe to drop the tree entry; an outage must not look like that."""
         store, mock_conn, mock_cursor, _ = _make_store()
-        mock_cursor.execute.side_effect = Exception("delete failed")
+        mock_cursor.execute.side_effect = Exception("server closed the connection")
 
-        with pytest.raises(Exception, match="delete failed"):
-            store.delete_chunks_by_source_path("/x.md")
-
+        with pytest.raises(Exception, match="server closed"):
+            call(store)
         mock_conn.rollback.assert_called_once()
+
+    def test_delete_chunks_is_one_statement(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.rowcount = 2
+
+        assert store.delete_chunks(["4", "9"]) == 2
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "id = ANY(%s)" in sql
+        assert params == ([4, 9], "src1")
+        mock_conn.commit.assert_called_once()
+
+    def test_file_path_lookup_is_one_targeted_select(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchall.return_value = [(3,), (7,)]
+
+        assert store.chunk_ids_by_file_paths(["a.md", "b/c.md", "a.md"]) == ["3", "7"]
+        sql, params = mock_cursor.execute.call_args[0]
+        # file_path, else (an older ingest) key, else title: the name its tree entry got.
+        assert "COALESCE(NULLIF(metadata->>'file_path', ''), NULLIF(metadata->>'key', '')" in sql
+        assert "NULLIF(metadata->>'title', '')) = ANY(%s)" in sql and "source_id = %s" in sql
+        assert params == ("src1", ["a.md", "b/c.md"])
+
+    def test_the_mutation_scan_raises_while_get_chunks_stays_lenient(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.execute.side_effect = Exception("down")
+
+        assert store.get_chunks() == []
+        with pytest.raises(Exception, match="down"):
+            store._scan_chunks()
 
 
 @pytest.mark.unit
@@ -560,6 +613,36 @@ class TestPGVectorStoreUpdateChunk:
         with pytest.raises(RuntimeError):
             store.update_chunk("42", "new text", {})
         mock_conn.rollback.assert_called_once()
+
+
+@pytest.mark.unit
+class TestPGVectorStoreStripsNulBytes:
+    """Postgres refuses NUL in text and jsonb: one in a page's text or title would fail the whole write."""
+
+    _METADATA = {"title": "Ti\x00tle", "nested": {"k\x00ey": ["v\x00"]}}
+    _CLEAN = {"title": "Title", "nested": {"key": ["v"]}}
+
+    def _jsonb(self):
+        return patch("docsgpt.vectorstore.pgvector.Jsonb", side_effect=lambda v: ("jsonb", v))
+
+    @pytest.mark.parametrize("write, stored_extra", [
+        (lambda store, text, meta: store.add_texts([text], [meta]), {}),
+        (lambda store, text, meta: store.add_chunk(text, meta), {"source_id": "src1"}),
+        (lambda store, text, meta: store.update_chunk("42", text, meta), {"source_id": "src1"}),
+    ], ids=["add_texts", "add_chunk", "update_chunk"])
+    def test_a_write_strips_them(self, write, stored_extra):
+        store, _, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1]]
+        mock_cursor.fetchone.return_value = (1,)
+        mock_cursor.rowcount = 1
+
+        with self._jsonb():
+            write(store, "he\x00llo", dict(self._METADATA))
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[0] == "hello"
+        assert params[2] == ("jsonb", {**self._CLEAN, **stored_extra})
+        mock_emb.embed_documents.assert_called_once_with(["hello"])
 
 
 @pytest.mark.unit

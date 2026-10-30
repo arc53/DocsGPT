@@ -129,9 +129,16 @@ class TestAgentWorkflowSwap:
         assert _status(resp) == 200, resp.get_json()
 
     def test_owner_may_swap_workflow(self, app, pg_conn):
-        agent_a, _, wf_b = self._two_workflow_agents(pg_conn)
-        assert _status(_put(app, pg_conn, agent_a, OWNER, {"workflow": wf_b})) == 200
-        assert str(_row(pg_conn, agent_a)["workflow_id"]) == wf_b
+        agent_a, _, _ = self._two_workflow_agents(pg_conn)
+        wf_c = str(WorkflowsRepository(pg_conn).create(OWNER, "C")["id"])
+        assert _status(_put(app, pg_conn, agent_a, OWNER, {"workflow": wf_c})) == 200
+        assert str(_row(pg_conn, agent_a)["workflow_id"]) == wf_c
+
+    def test_owner_cannot_swap_in_another_agents_workflow(self, app, pg_conn):
+        # One workflow belongs to one agent (deleting either would delete it).
+        agent_a, wf_a, wf_b = self._two_workflow_agents(pg_conn)
+        assert _status(_put(app, pg_conn, agent_a, OWNER, {"workflow": wf_b})) == 409
+        assert str(_row(pg_conn, agent_a)["workflow_id"]) == wf_a
 
     def test_editor_cannot_detach_workflow(self, app, pg_conn):
         # Unpublishing in the same request makes the empty workflow allowed

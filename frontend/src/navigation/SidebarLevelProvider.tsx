@@ -1,10 +1,10 @@
 import {
   createContext,
-  startTransition,
   useCallback,
   useContext,
   useEffect,
   useState,
+  useTransition,
   type ReactNode,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -48,6 +48,7 @@ export function SidebarLevelProvider({ children }: { children: ReactNode }) {
   const location = useLocation();
   const resolve = useSectionResolver();
   const [pending, setPending] = useState<PendingLevel | null>(null);
+  const [isNavigating, startTransition] = useTransition();
 
   const goToLevel = useCallback(
     (to: string) => {
@@ -55,22 +56,20 @@ export function SidebarLevelProvider({ children }: { children: ReactNode }) {
       setPending({ pathname, section: resolve(pathname) });
       startTransition(() => navigate(to));
     },
-    [navigate, resolve],
+    [navigate, resolve, startTransition],
   );
 
-  // Hand back to the route once it catches up, and never hold the sidebar
-  // ahead of it for long: a navigation can be refused (an unsaved-changes
-  // guard) or land somewhere else entirely, and a level that never resolved
-  // would leave the sidebar showing a section the user is not in.
+  // Hand back to the route once it catches up, or once the navigation has
+  // finished without landing on the target (refused, or redirected
+  // elsewhere), so the sidebar never keeps showing a section the user is not
+  // in. Not on a timer: a page that takes longer than the timer to render
+  // would send the sidebar back to the old level and then forward again
+  // when the route finally commits.
   useEffect(() => {
     if (!pending) return;
-    if (pending.pathname === location.pathname) {
+    if (pending.pathname === location.pathname || !isNavigating)
       setPending(null);
-      return;
-    }
-    const timer = setTimeout(() => setPending(null), 600);
-    return () => clearTimeout(timer);
-  }, [pending, location.pathname]);
+  }, [pending, location.pathname, isNavigating]);
 
   return (
     <SidebarLevelContext.Provider value={{ pending, goToLevel }}>

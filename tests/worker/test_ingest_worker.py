@@ -160,6 +160,42 @@ class TestIngestWorker:
         # A fresh source UUID is minted for the backend /upload_index route.
         assert payload["id"]
 
+    def test_uploaded_folder_keeps_its_tree(
+        self, patch_worker_db, task_self, monkeypatch
+    ):
+        """A folder upload's nested files are read, and the tree is kept."""
+        import json
+
+        from docsgpt import worker
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+
+        captured: list[dict] = []
+        _patch_ingest_pipeline(monkeypatch, captured)
+        # The real reader, so the walk over the downloaded tree is exercised.
+        monkeypatch.setattr(worker, "SimpleDirectoryReader", SimpleDirectoryReader)
+        storage = worker.StorageCreator.get_storage()
+        storage.is_directory.side_effect = lambda path: path == "inputs/eve/job1"
+        storage.list_files.return_value = [
+            "inputs/eve/job1/docs/guide/a.txt",
+            "inputs/eve/job1/docs/b.txt",
+        ]
+        storage.get_file.side_effect = lambda path: BytesIO(b"hello")
+
+        worker.ingest_worker(
+            task_self,
+            directory="inputs",
+            formats=[".txt"],
+            job_name="job1",
+            file_path="inputs/eve/job1",
+            filename="job1",
+            user="eve",
+            file_name_map={"docs/guide/a.txt": "a.txt", "docs/b.txt": "b.txt"},
+        )
+
+        tree = json.loads(captured[0]["directory_structure"])
+        assert set(tree["docs"]) == {"guide", "b.txt"}
+        assert tree["docs"]["guide"]["a.txt"]["display_name"] == "a.txt"
+
 
 @pytest.mark.unit
 class TestIngestWorkerConfigThreading:
@@ -190,6 +226,7 @@ class TestIngestWorkerConfigThreading:
         assert calls[0]["chunking_strategy"] == "classic_chunk"
         assert calls[0]["max_tokens"] == 1250
         assert calls[0]["min_tokens"] == 150
+        assert calls[0]["chunk_overlap"] == 0
         assert calls[0]["duplicate_headers"] is False
 
     def test_non_default_config_is_threaded(
@@ -214,6 +251,7 @@ class TestIngestWorkerConfigThreading:
                     "strategy": "recursive",
                     "max_tokens": 800,
                     "min_tokens": 50,
+                    "chunk_overlap": 100,
                 }
             },
         )
@@ -223,6 +261,7 @@ class TestIngestWorkerConfigThreading:
         assert calls[0]["chunking_strategy"] == "recursive"
         assert calls[0]["max_tokens"] == 800
         assert calls[0]["min_tokens"] == 50
+        assert calls[0]["chunk_overlap"] == 100
 
 
 @pytest.mark.unit

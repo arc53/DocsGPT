@@ -70,3 +70,10 @@ logconfig_dict = {
 def on_starting(server):  # pragma: no cover — gunicorn hook
     """Ensure gunicorn's own loggers use the configured handlers."""
     logging.config.dictConfig(logconfig_dict)
+
+
+def post_worker_init(worker):  # pragma: no cover — gunicorn hook
+    """Warm the decision model in the background when a setting asks for it at start (it loads nothing by default)."""
+    from docsgpt import decisions
+
+    decisions.start()

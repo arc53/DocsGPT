@@ -20,6 +20,7 @@ import logging
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
 
+from docsgpt.api.agent_origins import origin_refusal
 from docsgpt.services.search_service import (
     InvalidAPIKey,
     SearchFailed,
@@ -52,6 +53,10 @@ async def search_docs(query: str, chunks: int = 5) -> list[dict]:
     api_key = _extract_bearer_token()
     if not api_key:
         raise PermissionError("Missing Bearer token")
+    refusal = await asyncio.to_thread(origin_refusal, [api_key], get_http_headers())
+    if refusal is not None:
+        message, status = refusal
+        raise PermissionError(message) if status == 403 else RuntimeError(message)
     try:
         return await asyncio.to_thread(search, api_key, query, chunks, source="mcp")
     except InvalidAPIKey as exc:

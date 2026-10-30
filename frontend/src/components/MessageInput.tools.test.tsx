@@ -18,6 +18,8 @@ vi.mock('../connectors/SignInAgainNotice', () => ({
 
 const mocks = vi.hoisted(() => ({
   tools: [] as unknown[],
+  // Responses handed out in request order, when a test controls them.
+  queued: [] as Promise<unknown>[],
   catalog: [] as unknown[],
   connections: [] as unknown[],
 }));
@@ -25,6 +27,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: () =>
+      mocks.queued.shift() ??
       Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ success: true, tools: mocks.tools }),
@@ -136,6 +139,43 @@ describe('MessageInput tools picker', () => {
         container.querySelectorAll<HTMLElement>('[data-testid="tool-item"]'),
       ).map((item) => [item.firstChild?.textContent, item.dataset.group]),
     );
+
+  // The list loads on mount and again when the picker opens; an older answer
+  // arriving last must not replace the newer one.
+  it('keeps the latest tool list when an older request answers last', async () => {
+    const tool = (id: string) => ({
+      id,
+      name: 'memory',
+      displayName: id,
+      default: true,
+      status: true,
+      config: {},
+    });
+    const deferred = () => {
+      let resolve: (tools: unknown[]) => void = () => {};
+      const promise = new Promise<unknown>((r) => {
+        resolve = (tools) =>
+          r({
+            ok: true,
+            json: () => Promise.resolve({ success: true, tools }),
+          });
+      });
+      return { promise, resolve };
+    };
+    const onMount = deferred();
+    const onOpen = deferred();
+    mocks.queued = [onMount.promise, onOpen.promise];
+    await openPicker();
+    await act(async () => onOpen.resolve([tool('Newer')]));
+    await act(async () => onMount.resolve([tool('Older')]));
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(Object.keys(groups())).toEqual(['Newer']);
+    mocks.queued = [];
+  });
 
   // A teammate's connection is never in the caller's list; the tool still
   // sits under its service rather than with the built-in or custom tools.

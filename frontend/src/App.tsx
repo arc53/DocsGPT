@@ -20,6 +20,10 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { LoadingState } from '@/components/ui/loading-state';
 import { Button } from './components/ui/button';
 import { ToastViewport } from './components/ui/toast';
+import {
+  createToastAvoidRegistry,
+  ToastAvoidContext,
+} from './components/ui/toast-layout';
 import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
@@ -40,6 +44,7 @@ import PageNotFound from './PageNotFound';
 const DesignSystem = import.meta.env.DEV
   ? lazy(() => import('./design/DesignSystem'))
   : null;
+import Activity from './activity';
 import Setting from './settings';
 import Teams from './settings/Teams';
 import Notification from './components/Notification';
@@ -107,42 +112,47 @@ function MainLayout() {
   // stack to the bottom-left while it's open so it stays visible without
   // covering the drawer's attach/send controls.
   const previewOpen = useSelector(selectWorkflowPreviewOpen);
+  // The composers the toast stack keeps clear of (see useAvoidToasts).
+  const [toastAvoid] = useState(createToastAvoidRegistry);
 
   return (
     <SidebarLevelProvider>
-      <div className="bg-background relative h-dvh overflow-hidden">
-        <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
-        <ActionButtons showShare={!inSection} />
-        <div
-          className={cn(
-            'h-[calc(100dvh-56px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-dvh',
-            !isMobile ? (navOpen ? 'lg:ml-72' : 'lg:ml-14') : 'ml-0 lg:ml-16',
-          )}
-        >
-          {/* Contain route render crashes so navigation stays usable;
-            any navigation clears a crash, and leaving a page remounts it. */}
-          <ErrorBoundary
-            key={outletBoundaryKey(location.pathname)}
-            resetKey={location.pathname}
+      <ToastAvoidContext.Provider value={toastAvoid}>
+        <div className="bg-background relative h-dvh overflow-hidden">
+          <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
+          <ActionButtons showShare={!inSection} />
+          <div
+            className={cn(
+              'h-[calc(100dvh-56px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-dvh',
+              !isMobile ? (navOpen ? 'lg:ml-72' : 'lg:ml-14') : 'ml-0 lg:ml-16',
+            )}
           >
-            <Outlet />
-          </ErrorBoundary>
-        </div>
-        {/* The one toast stack (and live region) for the app. Each toast
+            {/* Contain route render crashes so navigation stays usable;
+            any navigation clears a crash, and leaving a page remounts it. */}
+            <ErrorBoundary
+              key={outletBoundaryKey(location.pathname)}
+              resetKey={location.pathname}
+            >
+              <Outlet />
+            </ErrorBoundary>
+          </div>
+          {/* The one toast stack (and live region) for the app. Each toast
           renders only its cards, top to bottom: team notifications, tool
-          approvals, uploads, action results. */}
-        <ToastViewport
-          className={cn(previewOpen && 'right-auto left-4')}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <TeamNotificationToast />
-          <BackgroundNotifications />
-          <ConnectionHealthToast />
-          <ToolApprovalToast />
-          <UploadToast />
-          <ActionToast />
-        </ToastViewport>
-      </div>
+          approvals, uploads, action results. It rises above a composer it
+          would cover. */}
+          <ToastViewport
+            className={cn(previewOpen && 'right-auto left-2')}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <TeamNotificationToast />
+            <BackgroundNotifications />
+            <ConnectionHealthToast />
+            <ToolApprovalToast />
+            <UploadToast />
+            <ActionToast />
+          </ToastViewport>
+        </div>
+      </ToastAvoidContext.Provider>
     </SidebarLevelProvider>
   );
 }
@@ -197,6 +207,7 @@ export default function App() {
             path="/agents/:agentId/c/:conversationId"
             element={<Conversation />}
           />
+          <Route path="/activity/*" element={<Activity />} />
           <Route path="/settings/*" element={<Setting />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/agents/*" element={<Agents />} />

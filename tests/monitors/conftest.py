@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List
 
 import pytest
@@ -49,6 +50,28 @@ def wakes(monkeypatch) -> List[Dict[str, Any]]:
     return calls
 
 
+class _HeldClock:
+    """The ``time`` module with ``time()`` held at one instant."""
+
+    def __init__(self, now: float):
+        self._now = now
+
+    def time(self) -> float:
+        return self._now
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(time, name)
+
+
 @pytest.fixture()
-def fake_redis() -> FakeRedis:
+def fake_redis(monkeypatch) -> FakeRedis:
+    """A fake Redis, with the trigger code's clock held at the test's start.
+
+    The rate limits count per clock minute: a burst that ran across ``:00``
+    started a fresh count, and the request meant to be refused got through.
+    Only ``docsgpt.monitors.triggers`` sees the held clock.
+    """
+    from docsgpt.monitors import triggers
+
+    monkeypatch.setattr(triggers, "time", _HeldClock(time.time()))
     return FakeRedis()

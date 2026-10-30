@@ -49,6 +49,26 @@ describe('startWikiConversion', () => {
     expect(result).toEqual({ status: 'conflict', message: 'still ingesting' });
   });
 
+  it.each([400, 409])(
+    "maps a store that can't hold a wiki (%i) to unsupported, not its English",
+    async (status) => {
+      const convertToWiki = vi.fn().mockResolvedValue(
+        jsonResponse(status, {
+          success: false,
+          code: 'wiki_unsupported',
+          message:
+            "Wikis need a vector store that can change single pages; the elasticsearch store can't.",
+        }),
+      );
+      const result = await startWikiConversion(
+        { convertToWiki },
+        'src-1',
+        'tok',
+      );
+      expect(result).toEqual({ status: 'unsupported' });
+    },
+  );
+
   it('maps a network throw to a generic error', async () => {
     const convertToWiki = vi.fn().mockRejectedValue(new Error('offline'));
     const result = await startWikiConversion({ convertToWiki }, 'src-1', 'tok');

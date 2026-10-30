@@ -225,6 +225,117 @@ class TestExecuteJournaling:
         assert row["status"] == "failed"
         assert row["error"] == "boom"
 
+    def test_time_limit_mid_tool_marks_failed_and_reraises(
+        self, pg_conn, mock_tool_manager, monkeypatch
+    ):
+        """A call cut by the time limit may have had side effects; it must not read as never run."""
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        executor = ToolExecutor(user="u")
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(
+                parse_args=Mock(return_value=("t1", "test_action", {}))
+            ),
+        )
+        _patch_db(monkeypatch, pg_conn)
+        mock_tool_manager.load_tool.return_value.execute_action.side_effect = (
+            SoftTimeLimitExceeded()
+        )
+
+        gen = executor.execute(_TOOLS_DICT, _make_call(call_id="c3"), "MockLLM")
+        with pytest.raises(SoftTimeLimitExceeded):
+            _drain(gen)
+
+        row = _select_attempt(pg_conn, "c3")
+        assert row is not None
+        assert row["status"] == "failed"
+        assert row["error"] == "SoftTimeLimitExceeded()"
+
+    def test_time_limit_after_the_tool_ran_journals_it_executed(
+        self, pg_conn, mock_tool_manager, monkeypatch
+    ):
+        """Post-processing cut by the time limit: the side effect happened, so the row says so."""
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        executor = ToolExecutor(user="u")
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(
+                parse_args=Mock(return_value=("t1", "test_action", {}))
+            ),
+        )
+        _patch_db(monkeypatch, pg_conn)
+        mock_tool_manager.load_tool.return_value.get_artifact_id = Mock(
+            side_effect=SoftTimeLimitExceeded()
+        )
+
+        gen = executor.execute(_TOOLS_DICT, _make_call(call_id="c4"), "MockLLM")
+        with pytest.raises(SoftTimeLimitExceeded):
+            _drain(gen)
+
+        row = _select_attempt(pg_conn, "c4")
+        assert row is not None
+        assert row["status"] == "confirmed"
+        assert row["result"] == {"result": "Tool result"}
+        # The saved partial message keeps the call that ran.
+        assert [c["result"] for c in executor.get_truncated_tool_calls()] == ["Tool result"]
+
+    def test_time_limit_collecting_native_parts_keeps_the_call(
+        self, pg_conn, mock_tool_manager, monkeypatch
+    ):
+        """The tool returned; draining its images hit the limit: executed, kept, result withheld."""
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        executor = ToolExecutor(user="u")
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(
+                parse_args=Mock(return_value=("t1", "test_action", {}))
+            ),
+        )
+        _patch_db(monkeypatch, pg_conn)
+        mock_tool_manager.load_tool.return_value.drain_native_parts = Mock(
+            side_effect=SoftTimeLimitExceeded()
+        )
+
+        gen = executor.execute(_TOOLS_DICT, _make_call(call_id="c6"), "MockLLM")
+        with pytest.raises(SoftTimeLimitExceeded):
+            _drain(gen)
+
+        withheld = "[Output withheld: the time limit stopped its guardrail check.]"
+        row = _select_attempt(pg_conn, "c6")
+        assert row["status"] == "confirmed"
+        assert row["result"] == {"result": withheld}
+        assert [c["result"] for c in executor.get_truncated_tool_calls()] == [withheld]
+
+    def test_time_limit_in_the_result_guardrail_stores_no_unscreened_output(
+        self, pg_conn, mock_tool_manager, monkeypatch
+    ):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        executor = ToolExecutor(user="u")
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(
+                parse_args=Mock(return_value=("t1", "test_action", {}))
+            ),
+        )
+        monkeypatch.setattr(
+            ToolExecutor, "_guardrail_tool_result", Mock(side_effect=SoftTimeLimitExceeded())
+        )
+        _patch_db(monkeypatch, pg_conn)
+
+        gen = executor.execute(_TOOLS_DICT, _make_call(call_id="c5"), "MockLLM")
+        with pytest.raises(SoftTimeLimitExceeded):
+            _drain(gen)
+
+        row = _select_attempt(pg_conn, "c5")
+        assert row["status"] == "confirmed"
+        withheld = "[Output withheld: the time limit stopped its guardrail check.]"
+        assert row["result"] == {"result": withheld}
+        assert [c["result"] for c in executor.get_truncated_tool_calls()] == [withheld]
+
 
 @pytest.mark.unit
 class TestRepository:

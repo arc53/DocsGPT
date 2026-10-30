@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from docsgpt.connectors import catalog
 
@@ -58,6 +59,18 @@ class TestDefinitions:
         assert "required_settings" not in payload
         assert payload["capabilities"] == ["sync"]
 
+    def test_drive_offers_its_picker_client_id_with_per_file_access(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "client-123.apps.googleusercontent.com")
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_ACCESS", "file")
+        assert catalog.get_definition("google_drive").to_dict()["picker_client_id"] == (
+            "client-123.apps.googleusercontent.com"
+        )
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_ACCESS", "readonly")
+        assert catalog.get_definition("google_drive").to_dict()["picker_client_id"] is None
+        assert catalog.get_definition("share_point").to_dict()["picker_client_id"] is None
+
 
 class TestAvailability:
     def test_missing_settings_listed(self, monkeypatch):
@@ -112,6 +125,20 @@ class TestPresets:
         assert definition.capabilities == ("read",)
         assert definition.docs_url == "https://github.com/jgraph/drawio-mcp"
         assert definition.configured
+
+    def test_coingecko_preset_connects_without_oauth(self):
+        definition = catalog.get_definition("mcp:coingecko")
+
+        assert definition.name == "CoinGecko"
+        assert definition.publisher == "preset"
+        assert definition.icon == "coingecko"
+        assert definition.category == "business"
+        assert definition.auth_kind == "mcp"
+        assert definition.mcp_url == "https://mcp.api.coingecko.com/mcp"
+        assert definition.capabilities == ("read",)
+        assert definition.docs_url == "https://docs.coingecko.com/docs/mcp-server"
+        assert definition.configured
+
     def test_trello_preset(self):
         definition = catalog.get_definition("mcp:trello")
 
@@ -246,6 +273,15 @@ def test_zapier_preset_uses_remote_oauth_catalog_contract():
     assert zapier.capabilities == ("read", "write")
     assert zapier.docs_url == "https://docs.zapier.com/mcp/get-started/connect"
 
+def test_canva_preset_in_catalog():
+    canva_preset = catalog.get_definition("mcp:canva")
+    
+    assert canva_preset is not None
+    assert canva_preset.mcp_url == "https://mcp.canva.com/mcp"
+    assert canva_preset.auth_kind == "mcp_oauth"
+    assert canva_preset.icon == "canva"
+    assert "read" in canva_preset.capabilities
+    assert "write" in canva_preset.capabilities
 
 def test_calcom_preset_uses_remote_oauth_catalog_contract():
     calcom = catalog.get_definition("mcp:calcom")
@@ -257,3 +293,109 @@ def test_calcom_preset_uses_remote_oauth_catalog_contract():
     assert calcom.auth_kind == "mcp_oauth"
     assert calcom.capabilities == ("read", "write")
     assert calcom.docs_url == "https://cal.com/docs/mcp-server"
+
+
+def test_airtable_preset_uses_remote_oauth_catalog_contract():
+    airtable = catalog.get_definition("mcp:airtable")
+
+    assert airtable.name == "Airtable"
+    assert airtable.icon == "airtable"
+    assert airtable.category == "database"
+    assert airtable.mcp_url == "https://mcp.airtable.com/mcp"
+    assert airtable.auth_kind == "mcp_oauth"
+    assert airtable.capabilities == ("read", "write")
+    assert airtable.docs_url == "https://airtable.com/developers/agents/mcp/getting-started"
+def test_alphavantage_preset_uses_remote_oauth_catalog_contract():
+    alphavantage = catalog.get_definition("mcp:alphavantage")
+
+    assert alphavantage.name == "Alpha Vantage"
+    assert alphavantage.icon == "alphavantage"
+    assert alphavantage.category == "business"
+    assert alphavantage.mcp_url == "https://mcp.alphavantage.co/mcp"
+    assert alphavantage.auth_kind == "mcp_oauth"
+    assert alphavantage.capabilities == ("read",)
+    assert alphavantage.docs_url == "https://github.com/alphavantage/alpha_vantage_mcp"
+
+
+def test_alphavantage_starts_with_core_tools_under_the_openai_limit():
+    """133 tools exceed OpenAI's 128 per request; the core ones and the TOOL_CALL fallback start on."""
+    default_actions = catalog.get_definition("mcp:alphavantage").default_actions
+
+    assert 0 < len(default_actions) <= 32
+    assert len(set(default_actions)) == len(default_actions)
+    assert {"GLOBAL_QUOTE", "SYMBOL_SEARCH", "COMPANY_OVERVIEW", "EARNINGS", "CPI", "TOOL_CALL"} <= set(
+        default_actions
+    )
+
+
+def test_presets_without_default_actions_turn_every_action_on():
+    assert catalog.get_definition("mcp:notion").default_actions == ()
+
+
+def test_preset_default_actions_load_from_yaml(tmp_path, monkeypatch):
+    presets = tmp_path / "mcp.yaml"
+    presets.write_text(
+        "- key: mcp:example\n"
+        "  name: Example\n"
+        "  description: Example records.\n"
+        "  mcp_url: https://mcp.example.com/mcp\n"
+        "  default_actions: [search, fetch]\n"
+    )
+    monkeypatch.setattr(catalog, "_PRESETS_FILE", presets)
+
+    assert catalog.get_definition("mcp:example").default_actions == ("search", "fetch")
+def test_neon_preset_uses_remote_oauth_catalog_contract():
+    neon = catalog.get_definition("mcp:neon")
+
+    assert neon.name == "Neon"
+    assert neon.icon == "neon"
+    assert neon.category == "database"
+    assert neon.mcp_url == "https://mcp.neon.tech/mcp"
+    assert neon.auth_kind == "mcp_oauth"
+    assert neon.capabilities == ("read", "write")
+    assert neon.docs_url == "https://neon.com/docs/ai/neon-mcp-server"
+
+
+def test_context7_preset_uses_remote_oauth_catalog_contract() -> None:
+    context7 = catalog.get_definition("mcp:context7")
+
+    assert context7.name == "Context7"
+    assert context7.icon == "context7"
+    assert context7.category == "dev"
+    assert context7.mcp_url == "https://mcp.context7.com/mcp/oauth"
+    assert context7.auth_kind == "mcp_oauth"
+    assert context7.capabilities == ("read",)
+    assert context7.docs_url == "https://context7.com/docs/resources/all-clients"
+
+
+def test_twelvedata_preset_uses_remote_oauth_catalog_contract():
+    twelvedata = catalog.get_definition("mcp:twelvedata")
+
+    assert twelvedata is not None
+    assert twelvedata.name == "Twelve Data"
+    assert twelvedata.icon == "twelvedata"
+    assert twelvedata.category == "business"
+    assert twelvedata.mcp_url == "https://mcp.twelvedata.com/mcp"
+    assert twelvedata.mcp_base_url == "https://mcp.twelvedata.com"
+    assert twelvedata.auth_kind == "mcp_oauth"
+    assert twelvedata.capabilities == ("read",)
+    assert twelvedata.docs_url == "https://twelvedata.com/docs/mcp"
+
+
+def test_presets_have_unique_keys_and_servers():
+    """A repeated key overwrites a preset and a repeated host makes preset_for_url pick one."""
+    entries = yaml.safe_load(catalog._PRESETS_FILE.read_text(encoding="utf-8"))
+    keys = [entry["key"] for entry in entries]
+    hosts = [catalog.base_url(entry["mcp_url"]) for entry in entries]
+
+    assert len(keys) == len(set(keys))
+    assert len(hosts) == len(set(hosts))
+
+
+def test_cloudflare_preset_signs_in_with_mcp_oauth():
+    cloudflare = catalog.get_definition("mcp:cloudflare")
+    assert cloudflare.publisher == "preset"
+    assert cloudflare.mcp_url == "https://mcp.cloudflare.com/mcp"
+    assert cloudflare.auth_kind == "mcp_oauth"
+    assert cloudflare.capabilities == ("read",)
+    assert catalog.preset_for_url("https://mcp.cloudflare.com/mcp").key == "mcp:cloudflare"

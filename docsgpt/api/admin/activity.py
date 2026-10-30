@@ -28,6 +28,7 @@ from docsgpt.storage.db.repositories.activity import (
     ACTIVITY_COLUMNS,
     ActivityRepository,
 )
+from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,32 @@ def _serialize(row: dict) -> dict:
     }
 
 
+def _with_emails(rows: list[dict], conn) -> list[dict]:
+    """Add ``actor_email`` and ``target_email`` to each feed row.
+
+    One lookup for the page. An id with no stored email (or one that is not a
+    user at all) gets None, and the UI falls back to the id. The export keeps
+    :data:`ACTIVITY_COLUMNS` unchanged.
+
+    Args:
+        rows: Feed rows carrying ``actor_id`` and ``target_id``.
+        conn: Open database connection.
+
+    Returns:
+        The rows with both email fields set.
+    """
+    ids = {row.get(key) for row in rows for key in ("actor_id", "target_id")} - {None}
+    emails = UsersRepository(conn).emails_for(ids) if ids else {}
+    return [
+        {
+            **row,
+            "actor_email": emails.get(row.get("actor_id")),
+            "target_email": emails.get(row.get("target_id")),
+        }
+        for row in rows
+    ]
+
+
 @admin_ns.route("/admin/activity")
 class AdminActivityResource(Resource):
     @admin_required
@@ -151,7 +178,7 @@ class AdminActivityResource(Resource):
         with db_readonly() as conn:
             repo = ActivityRepository(conn)
             total = repo.count(**filters)
-            rows = repo.list(limit=page_size, offset=offset, **filters)
+            rows = _with_emails(repo.list(limit=page_size, offset=offset, **filters), conn)
         return make_response(
             jsonify(
                 {

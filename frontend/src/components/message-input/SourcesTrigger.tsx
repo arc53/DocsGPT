@@ -2,11 +2,13 @@ import { Database } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { Doc } from '../../models/misc';
+import { formatCount } from '../../utils/dateTimeUtils';
 import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
 } from '../MultiSelectPopover';
 import SourcesPopoverFooter from '../SourcesPopoverFooter';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 
 type SourcesTriggerProps = {
@@ -29,6 +31,8 @@ export default function SourcesTrigger({
   onUploadClick,
 }: SourcesTriggerProps) {
   const { t } = useTranslation();
+  const docs = selectedDocs ?? [];
+  const count = docs.length;
 
   return (
     <MultiSelectPopover
@@ -53,24 +57,31 @@ export default function SourcesTrigger({
           size="sm"
           shape="pill"
           className="max-w-[130px] justify-start sm:max-w-[150px]"
+          aria-label={
+            count > 1
+              ? t('conversation.sources.triggerLabel', {
+                  count,
+                  formatted: formatCount(count),
+                })
+              : undefined
+          }
         >
           <Database className="size-3.5 sm:size-4" />
           <span
             className="text-foreground truncate overflow-hidden text-xs sm:text-sm"
             title={
-              selectedDocs && selectedDocs.length > 0
-                ? selectedDocs.map((doc) => doc.name).join(', ')
-                : undefined
+              count > 0 ? docs.map((doc) => doc.name).join(', ') : undefined
             }
           >
-            {selectedDocs && selectedDocs.length > 0
-              ? selectedDocs.length === 1
-                ? selectedDocs[0].name
-                : t('conversation.sources.selectedCount', {
-                    count: selectedDocs.length,
-                  })
-              : t('conversation.sources.knowledge')}
+            {count === 1 ? docs[0].name : t('conversation.sources.knowledge')}
           </span>
+          {/* One source is named; several are counted, like the Tools pill.
+              The aria-label says it for screen readers. */}
+          {count > 1 && (
+            <Badge className="tabular-nums" aria-hidden="true">
+              {formatCount(count)}
+            </Badge>
+          )}
         </Button>
       }
     />

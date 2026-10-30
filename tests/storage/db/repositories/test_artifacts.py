@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from docsgpt.storage.db.repositories.agents import AgentsRepository
-from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.storage.db.repositories.artifacts import RUN_INPUT_SOURCE, ArtifactsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
 
@@ -306,6 +306,18 @@ class TestListArtifacts:
         repo.create_artifact("user-1", "document", workflow_run_id=run)
         repo.create_artifact("user-1", "document", conversation_id=_conversation_id())
         assert len(repo.list_artifacts(workflow_run_id=run)) == 1
+
+    def test_can_leave_out_run_inputs(self, pg_conn):
+        repo = _repo(pg_conn)
+        run = _conversation_id()
+        repo.create_artifact("user-1", "file", workflow_run_id=run, filename="in.docx",
+                             produced_by={"source": RUN_INPUT_SOURCE})
+        made = repo.create_artifact("user-1", "file", workflow_run_id=run, filename="out.xlsx",
+                                    produced_by={"source": "node", "node_id": "decide", "node_type": "code"})
+        bare = repo.create_artifact("user-1", "document", workflow_run_id=run)
+        assert len(repo.list_artifacts(workflow_run_id=run)) == 3
+        rows = repo.list_artifacts(workflow_run_id=run, include_run_inputs=False)
+        assert {r["id"] for r in rows} == {made["id"], bare["id"]}
 
     def test_filters_by_user(self, pg_conn):
         repo = _repo(pg_conn)

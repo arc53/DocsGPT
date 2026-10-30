@@ -22,7 +22,9 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { getToolDisplayName } from '../../../utils/toolUtils';
 import { withAttachedOptions } from '../../sponsorConsent';
+import type { RetryConfig } from '../../types/workflow';
 import NodeDocumentsControl from '../components/NodeDocumentsControl';
+import NodeRetryControl from '../components/NodeRetryControl';
 import PromptTextArea from '../components/PromptTextArea';
 import {
   DEFAULT_FILE_PASSING,
@@ -30,6 +32,7 @@ import {
   FilePassing,
   normalizeFilePassing,
 } from '../documentConfig';
+import { effectiveRetry } from '../retryConfig';
 import { NO_ESCAPE, schemaErrorText, type UserTool } from '../workflowHelpers';
 import { type NodePanelBodyProps } from './types';
 
@@ -57,6 +60,8 @@ interface AgentPanelProps extends NodePanelBodyProps {
   /** False when the picked model can't return structured output. */
   modelSupportsStructuredOutput: boolean;
   onJsonSchemaChange: (text: string) => void;
+  /** The workflow's retry defaults, which an unset retry field inherits. */
+  retryDefaults?: RetryConfig | null;
 }
 
 const SCHEMA_PLACEHOLDER = `{
@@ -68,8 +73,8 @@ const SCHEMA_PLACEHOLDER = `{
 }`;
 
 /**
- * Whether any advanced setting (documents, file passing, structured output)
- * differs from its default, so the disclosure opens on its own.
+ * Whether any advanced setting (documents, file passing, structured output,
+ * retries) differs from its default, so the disclosure opens on its own.
  *
  * Args:
  *   config: The agent node's config.
@@ -90,14 +95,15 @@ export function hasAdvancedAgentSettings(
     normalizeFilePassing(config?.file_passing) !== DEFAULT_FILE_PASSING ||
     (config?.json_schema !== undefined && config?.json_schema !== null) ||
     jsonSchemaText.trim() !== '' ||
-    Boolean(jsonSchemaError)
+    Boolean(jsonSchemaError) ||
+    (config?.retry !== undefined && config?.retry !== null)
   );
 }
 
 /**
  * Settings for an AI Agent node, grouped Model, Prompt, Knowledge and Output
- * like classic Overview, with documents, file passing and structured output
- * under an Advanced settings disclosure.
+ * like classic Overview, with documents, file passing, structured output and
+ * retries under an Advanced settings disclosure.
  */
 export default function AgentPanel({
   node,
@@ -114,6 +120,7 @@ export default function AgentPanel({
   jsonSchemaError,
   modelSupportsStructuredOutput,
   onJsonSchemaChange,
+  retryDefaults = null,
 }: AgentPanelProps) {
   const { t } = useTranslation();
   const streamId = useId();
@@ -409,6 +416,13 @@ export default function AgentPanel({
                 placeholder={SCHEMA_PLACEHOLDER}
               />
             </FormField>
+            <NodeRetryControl
+              key={node.id}
+              value={config.retry}
+              onChange={(retry) => updateConfig({ retry })}
+              inherited={effectiveRetry(undefined, retryDefaults)}
+              showOn
+            />
           </div>
         </Collapsible>
       </div>

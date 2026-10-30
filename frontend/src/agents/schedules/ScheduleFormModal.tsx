@@ -1,5 +1,5 @@
 import { CalendarIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -32,6 +32,8 @@ import {
   browserTimezone,
   buildCron,
   buildRunAtUtc,
+  describeCustomCron,
+  parseCron,
   parseScheduleToFormValues,
   supportedTimezones,
   todayDate,
@@ -53,6 +55,10 @@ export type ScheduleFormModalProps = {
   onClose: () => void;
   onSubmit: (payload: ScheduleCreatePayload) => Promise<void> | void;
   submitting?: boolean;
+  /** A field above the frequency (the agent picker on Activity › Schedules). */
+  agentField?: ReactNode;
+  /** Disables the save button (no agent picked yet). */
+  submitDisabled?: boolean;
 };
 
 const FREQUENCIES: ScheduleFrequency[] = [
@@ -112,6 +118,14 @@ const sameMinute = (a: string, b: string): boolean =>
   Math.floor(new Date(a).getTime() / 60000) ===
   Math.floor(new Date(b).getTime() / 60000);
 
+/** Whether two recurring timings are alike: the fields a cron is built from. */
+const sameTiming = (a: ScheduleFormValues, b: ScheduleFormValues): boolean =>
+  a.frequency === b.frequency &&
+  a.time === b.time &&
+  a.dayOfWeek === b.dayOfWeek &&
+  a.dayOfMonth === b.dayOfMonth &&
+  a.month === b.month;
+
 /** Create/edit a Schedule via a modal dialog. */
 export default function ScheduleFormModal({
   open,
@@ -120,6 +134,8 @@ export default function ScheduleFormModal({
   onClose,
   onSubmit,
   submitting,
+  agentField,
+  submitDisabled = false,
 }: ScheduleFormModalProps) {
   const { t } = useTranslation();
   // Edit mode pre-populates from the saved schedule; create mode uses the browser tz.
@@ -179,8 +195,27 @@ export default function ScheduleFormModal({
     setRunAtError(field === 'runAt' ? message : null);
   };
 
+  // Whether the user touched a timing field: compared by value, a timing
+  // the form can't show could never be replaced by the one it falls back to.
+  const [timingTouched, setTimingTouched] = useState(false);
+  const changeTiming = (next: ScheduleFormValues) => {
+    setValues(next);
+    setTimingTouched(true);
+  };
   const setFrequency = (frequency: ScheduleFrequency) =>
-    setValues((current) => ({ ...current, frequency }));
+    changeTiming({ ...values, frequency });
+
+  const isEdit = Boolean(initial?.id);
+  const editsRecurring = isEdit && initial?.trigger_type === 'recurring';
+  // A saved timing the form can't show (an API cron such as weekdays at 9)
+  // loads as the form's fallback; it is kept until a timing field changes.
+  const customCron =
+    editsRecurring && initial?.cron && !parseCron(initial.cron)
+      ? initial.cron
+      : null;
+  const timingUnchanged = customCron
+    ? !timingTouched
+    : sameTiming(values, defaults);
 
   const submit = async () => {
     if (!instruction.trim()) {
@@ -233,7 +268,9 @@ export default function ScheduleFormModal({
         return;
       }
       payload.trigger_type = 'recurring';
-      payload.cron = cron;
+      // An edit that keeps the timing leaves cron out, so the saved one stays:
+      // the form can't show every cron, and would replace it with its own.
+      if (!(editsRecurring && timingUnchanged)) payload.cron = cron;
     }
     setInstructionError(null);
     setRunAtError(null);
@@ -247,8 +284,6 @@ export default function ScheduleFormModal({
       setSaveError(typeof message === 'string' ? message : '');
     }
   };
-
-  const isEdit = Boolean(initial?.id);
 
   return (
     <Modal
@@ -266,6 +301,7 @@ export default function ScheduleFormModal({
           size="lg"
           shape="pill"
           loading={submitting}
+          disabled={submitDisabled}
           onClick={submit}
         >
           {isEdit
@@ -290,6 +326,8 @@ export default function ScheduleFormModal({
           />
         </div>
 
+        {agentField}
+
         <FrequencyTabs
           frequency={values.frequency}
           onChange={setFrequency}
@@ -310,9 +348,20 @@ export default function ScheduleFormModal({
           ariaLabel={t('agents.schedules.modal.frequencyLabel')}
         />
 
+        {customCron && timingUnchanged && (
+          <Alert variant="info" role="note">
+            <AlertDescription>
+              {t('agents.schedules.modal.customTiming', {
+                pattern: describeCustomCron(customCron, t),
+                interpolation: { escapeValue: false },
+              })}
+            </AlertDescription>
+          </Alert>
+        )}
+
         <OnPicker
           values={values}
-          onChange={setValues}
+          onChange={changeTiming}
           tDay={(key) => t(`agents.schedules.modal.days.${key}`)}
           tMonth={(key) => t(`agents.schedules.modal.months.${key}`)}
           labels={{

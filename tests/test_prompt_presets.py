@@ -140,6 +140,15 @@ class TestFormatDocsForPrompt:
         assert "<source>handbook</source>" in out
         assert "The refund window is 30 days." in out
 
+    def test_doc_with_url_names_it(self):
+        out = format_docs_for_prompt([
+            {"text": "q1", "filename": "q1.pdf", "url": "https://drive.google.com/file/d/f1/view"},
+        ])
+        assert "<source>q1.pdf</source>\n<url>https://drive.google.com/file/d/f1/view</url>" in out
+
+    def test_doc_without_url_omits_tag(self):
+        assert "<url>" not in format_docs_for_prompt(DOCS)
+
     def test_doc_without_source_omits_tag(self):
         out = format_docs_for_prompt([{"text": "anonymous chunk"}])
         assert "<source>" not in out

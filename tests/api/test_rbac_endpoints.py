@@ -77,6 +77,7 @@ class TestAdminUsersEndpoint:
         return [
             {
                 "user_id": f"u{i}",
+                "email": f"u{i}@example.com",
                 "active": True,
                 "created_at": "2026-01-01",
                 "last_seen": "2026-02-01",
@@ -94,6 +95,7 @@ class TestAdminUsersEndpoint:
         assert data["total"] == 1
         assert data["users"][0] == {
             "user_id": "u0",
+            "email": "u0@example.com",
             "active": True,
             "created_at": "2026-01-01",
             "last_seen": "2026-02-01",

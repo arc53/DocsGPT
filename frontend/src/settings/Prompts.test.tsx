@@ -416,6 +416,24 @@ describe('Prompts', () => {
       expect(lastModalProps().onDuplicate).toBeUndefined();
     });
 
+    it('closes the picker when Delete opens its confirmation', async () => {
+      renderPrompts({ prompts: all, selectedPrompt: own });
+      openPicker();
+      await act(async () => {
+        (
+          row('Own prompt').querySelector(
+            'button[aria-label="settings.general.promptActions.delete"]',
+          ) as HTMLElement
+        ).click();
+      });
+      expect(
+        document.body.querySelector('[data-testid="confirm"]'),
+      ).not.toBeNull();
+      expect(
+        document.body.querySelector('[data-slot="command-item"]'),
+      ).toBeNull();
+    });
+
     it('keeps the row and the error in the dialog when the delete fails', async () => {
       deletePrompt.mockReturnValue(json({ success: false }, false, 403));
       const setPrompts = vi.fn();

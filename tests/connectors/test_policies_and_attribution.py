@@ -449,14 +449,51 @@ class TestAttribution:
         )).scalar())
         with _db(pg_conn):
             labels = connector_labels([source, upload, "not-a-uuid"])
-        assert labels == {source: {"connector_key": "google_drive", "connector_name": "Google Drive"}}
+        assert labels == {
+            source: {"connector_key": "google_drive", "connector_name": "Google Drive", "show_links": True},
+        }
+
+    def test_citations_follow_the_sources_link_switch(self, pg_conn):
+        from docsgpt.connectors.attribution import connector_labels
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth")
+        source = str(pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name, connection_id, config) "
+            "VALUES ('alice', 'Handbook', CAST(:c AS uuid), CAST(:cfg AS jsonb)) RETURNING id"
+        ), {"c": cid, "cfg": json.dumps({"retrieval": {"show_links": False}})}).scalar())
+        with _db(pg_conn):
+            labels = connector_labels([source])
+        assert labels[source]["show_links"] is False
+
+    @pytest.mark.parametrize("show_links, url, expected", [
+        (True, "https://drive.google.com/file/d/1/view", "https://drive.google.com/file/d/1/view"),
+        (False, "https://drive.google.com/file/d/1/view", None),
+        (True, "javascript:alert(1)", None),
+        (True, None, None),
+    ])
+    def test_retrieved_chunk_carries_its_link_when_the_source_shows_links(self, show_links, url, expected):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        found = {"s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "show_links": show_links}}
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value=found):
+            labels = ConnectorLabelCache().for_source("s1", {"url": url} if url else {})
+        assert labels.get("url") == expected
+        assert labels["connector_key"] == "google_drive"
+        assert "show_links" not in labels
+
+    def test_uploaded_chunk_gets_no_link(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}):
+            assert ConnectorLabelCache().for_source("s1", {"url": "https://example.com/x"}) == {}
 
     def test_classic_retriever_stamps_connector(self, pg_conn):
         from docsgpt.retriever.classic_rag import ClassicRAG
 
         retriever = ClassicRAG.__new__(ClassicRAG)
         with patch("docsgpt.connectors.attribution.connector_labels",
-                   return_value={"s1": {"connector_key": "google_drive", "connector_name": "Google Drive"}}) as lookup:
+                   return_value={"s1": {"connector_key": "google_drive", "connector_name": "Google Drive",
+                                        "show_links": True}}) as lookup:
             first = retriever._connector_labels.for_source("s1")
             again = retriever._connector_labels.for_source("s1")
         assert first == again == {"connector_key": "google_drive", "connector_name": "Google Drive"}

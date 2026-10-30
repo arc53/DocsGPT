@@ -54,7 +54,7 @@ from docsgpt.sandbox.sandbox_creator import SandboxCreator
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.storage.storage_creator import StorageCreator
-from docsgpt.utils import safe_filename
+from docsgpt.utils import display_filename
 
 logger = logging.getLogger(__name__)
 
@@ -794,7 +794,7 @@ class CodeExecutorTool(Tool):
             if max_bytes and isinstance(declared_size, (int, float)) and declared_size > max_bytes:
                 return {"error": f"input artifact {artifact_id} exceeds the {max_bytes}-byte sandbox input limit."}
 
-            filename = safe_filename(version.get("filename") or artifact_id)
+            filename = display_filename(version.get("filename") or artifact_id)
             try:
                 file_obj = storage.get_file(version["storage_path"])
                 try:

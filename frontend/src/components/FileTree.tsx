@@ -29,6 +29,8 @@ interface FileTreeProps {
   onBackToDocuments: () => void;
   /** Extra header control, rendered left of "Add file". */
   headerAction?: React.ReactNode;
+  /** The source's ⋯, last in the title row; not drawn when embedded. */
+  headerMenu?: React.ReactNode;
   /**
    * Inside another source view (the graph source's Files tab): no Sources
    * crumb, badge or byline, and no headerAction; Add file stays.
@@ -54,6 +56,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   sourceName,
   onBackToDocuments,
   headerAction,
+  headerMenu,
   embedded = false,
   actionsTarget,
   initialPath,
@@ -84,7 +87,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   const [, setQueueLength] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const { waitForTerminal, mountedRef } = useReingestSseWaiter();
+  const { waitForChange, mountedRef } = useReingestSseWaiter();
 
   const manageSource = async (
     operation: 'add' | 'remove' | 'remove_directory',
@@ -136,7 +139,7 @@ const FileTree: React.FC<FileTreeProps> = ({
         const reingestSourceId: string | undefined = result.source_id;
         const opStartedAt = Date.now();
 
-        const terminal = await waitForTerminal(reingestSourceId, opStartedAt);
+        const { terminal } = await waitForChange(reingestSourceId, opStartedAt);
         if (!mountedRef.current) return false;
 
         if (terminal === 'completed') {
@@ -254,7 +257,6 @@ const FileTree: React.FC<FileTreeProps> = ({
     isFile,
     defaultViewOption,
   }: RowMenuContext): MenuOption[] => {
-    // Read-only: View only, so a one-file source draws no header menu.
     if (!canEdit) return [defaultViewOption];
     return [
       defaultViewOption,
@@ -263,6 +265,7 @@ const FileTree: React.FC<FileTreeProps> = ({
         label: t('settings.sources.delete'),
         onClick: () => confirmDeleteItem(name, isFile),
         variant: 'destructive',
+        separatorBefore: true,
       },
     ];
   };
@@ -321,6 +324,7 @@ const FileTree: React.FC<FileTreeProps> = ({
       sortEntries={false}
       controllerRef={controllerRef}
       topRightAction={topRightAction}
+      headerMenu={headerMenu}
       statusLabel={statusLabel}
       getRowMenuOptions={getRowMenuOptions}
       extraContent={extraContent}

@@ -1,11 +1,18 @@
 """Workflow management routes."""
 
+import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 from sqlalchemy import text as sql_text
 
+from docsgpt.agents.workflows.schemas import (
+    LOOP_BODY_NODE_TYPES,
+    LOOP_RESERVED_VARIABLES,
+    parent_id_of,
+)
+from docsgpt.agents.workflows.retry import validate_retry_config
 from docsgpt.agents.workflows.cel_evaluator import (
     CelEvaluationError,
     validate_cel_expression,
@@ -289,6 +296,7 @@ def serialize_workflow(w: Dict) -> Dict:
         "id": str(w["id"]),
         "name": w.get("name"),
         "description": w.get("description"),
+        "retry_defaults": w.get("retry_defaults"),
         "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
         "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
     }
@@ -369,6 +377,17 @@ def normalize_agent_node_json_schemas(nodes: List[Dict]) -> List[Dict]:
         normalized_nodes.append(normalized_node)
 
     return normalized_nodes
+
+
+def retry_config_error(raw: Any) -> Optional[str]:
+    """Why a node's ``retry`` or a workflow's ``retry_defaults`` is invalid, or None."""
+    from docsgpt.core.settings import settings
+
+    return validate_retry_config(
+        raw,
+        max_attempts=int(settings.WORKFLOW_RETRY_MAX_ATTEMPTS),
+        max_delay=float(settings.WORKFLOW_RETRY_MAX_DELAY_SECONDS),
+    )
 
 
 def validate_workflow_structure(
@@ -505,8 +524,11 @@ def validate_workflow_structure(
                         f"has an invalid expression: {exc}"
                     )
 
+        # Inside a loop body a branch ends the item where it stops; there is
+        # no end node to reach.
+        in_loop_body = parent_id_of(cnode.get("data")) is not None
         for handle, handle_edges in outgoing_by_handle.items():
-            if not handle:
+            if not handle or in_loop_body:
                 continue
             for out_edge in handle_edges:
                 target = out_edge.get("target")
@@ -580,12 +602,15 @@ def validate_workflow_structure(
         model_id = raw_config.get("model_id")
         if has_json_schema and isinstance(model_id, str) and model_id.strip():
             capabilities = get_model_capabilities(model_id.strip(), user_id=user_id)
-            if capabilities and not capabilities.get("supports_structured_output", False):
+            if capabilities and not capabilities.get("supports_structured_output", True):
                 errors.append(
                     f"Agent node '{agent_title}' selected model does not support structured output"
                 )
         if schema_error:
             errors.append(f"Agent node '{agent_title}' JSON schema {schema_error}")
+        retry_error = retry_config_error(raw_config.get("retry"))
+        if retry_error:
+            errors.append(f"Agent node '{agent_title}' retry {retry_error}")
 
     code_nodes = [n for n in nodes if n.get("type") == "code"]
     for code_node in code_nodes:
@@ -599,12 +624,107 @@ def validate_workflow_structure(
         _, schema_error = validate_json_schema_payload(raw_config.get("json_schema"))
         if schema_error:
             errors.append(f"Code node '{code_title}' JSON schema {schema_error}")
+        retry_error = retry_config_error(raw_config.get("retry"))
+        if retry_error:
+            errors.append(f"Code node '{code_title}' retry {retry_error}")
+
+    errors.extend(_loop_errors(nodes, edges))
 
     for node in nodes:
         if not node.get("id"):
             errors.append("All nodes must have an id")
         if not node.get("type"):
             errors.append(f"Node {node.get('id', 'unknown')} must have a type")
+
+    return errors
+
+
+_LOOP_ITEMS_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*$")
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _loop_errors(nodes: List[Dict], edges: List[Dict]) -> List[str]:
+    """Problems with the graph's loop nodes and the nodes inside them.
+
+    Args:
+        nodes: Nodes in builder shape; a body node names its loop in
+            ``data.parent_id``.
+        edges: The graph's edges.
+
+    Returns:
+        list: One message per problem.
+    """
+    errors: List[str] = []
+    node_map = {n.get("id"): n for n in nodes if isinstance(n, dict)}
+
+    def title(node: Dict) -> str:
+        return node.get("title") or node.get("id") or "unknown"
+
+    for node in node_map.values():
+        parent = parent_id_of(node.get("data"))
+        if parent is None:
+            continue
+        loop = node_map.get(parent)
+        if loop is None or loop.get("type") != "loop":
+            errors.append(f"Node '{title(node)}' is inside '{parent}', which is not a loop")
+        elif node.get("type") not in LOOP_BODY_NODE_TYPES:
+            errors.append(f"Loop '{title(loop)}' cannot contain {node.get('type')} nodes")
+
+    for edge in edges:
+        source, target = node_map.get(edge.get("source")), node_map.get(edge.get("target"))
+        if source is None or target is None:
+            continue
+        if parent_id_of(source.get("data")) != parent_id_of(target.get("data")):
+            errors.append(
+                f"The connection from '{title(source)}' to '{title(target)}' crosses a loop's boundary"
+            )
+
+    for loop in (n for n in node_map.values() if n.get("type") == "loop"):
+        loop_title = title(loop)
+        raw = loop.get("data") or {}
+        nested = raw.get("config") if isinstance(raw, dict) else None
+        config = nested if isinstance(nested, dict) else raw if isinstance(raw, dict) else {}
+
+        items = config.get("items")
+        if not isinstance(items, str) or not items.strip():
+            errors.append(f"Loop '{loop_title}' must name the state list to loop over")
+        elif not _LOOP_ITEMS_PATH_RE.match(items.strip()):
+            errors.append(f"Loop '{loop_title}' items must be a state path such as extracted.items")
+
+        item_variable = config.get("item_variable", "item")
+        if (
+            not isinstance(item_variable, str)
+            or not _IDENTIFIER_RE.match(item_variable.strip())
+            or item_variable.strip() in LOOP_RESERVED_VARIABLES
+        ):
+            errors.append(f"Loop '{loop_title}' cannot use '{item_variable}' as its item variable")
+
+        for key in ("concurrency", "max_items"):
+            if key not in config:
+                continue
+            value = config[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                errors.append(f"Loop '{loop_title}' {key} must be a whole number of at least 1")
+
+        if config.get("on_item_error", "fail") not in ("fail", "skip", "collect"):
+            errors.append(f"Loop '{loop_title}' on_item_error must be fail, skip or collect")
+
+        for key in ("output_variable", "result_variable"):
+            value = config.get(key)
+            if value not in (None, "") and not isinstance(value, str):
+                errors.append(f"Loop '{loop_title}' {key} must be text")
+
+        body_ids = {
+            n.get("id")
+            for n in node_map.values()
+            if parent_id_of(n.get("data")) == loop.get("id") and n.get("type") != "note"
+        }
+        if not body_ids:
+            errors.append(f"Loop '{loop_title}' needs at least one node inside it")
+            continue
+        targets = {e.get("target") for e in edges if e.get("source") in body_ids}
+        if len(body_ids - targets) != 1:
+            errors.append(f"Loop '{loop_title}' body must start at exactly one node")
 
     return errors
 
@@ -638,9 +758,14 @@ class WorkflowList(Resource):
         nodes_data = data.get("nodes", [])
         edges_data = data.get("edges", [])
 
+        retry_defaults = data.get("retry_defaults")
+
         validation_errors = validate_workflow_structure(
             nodes_data, edges_data, user_id=user_id
         )
+        retry_error = retry_config_error(retry_defaults)
+        if retry_error:
+            validation_errors.append(f"Workflow retry defaults {retry_error}")
         if validation_errors:
             return error_response(
                 "Workflow validation failed", errors=validation_errors
@@ -653,7 +778,9 @@ class WorkflowList(Resource):
                 if denied is not None:
                     return _denied(denied)
                 repo = WorkflowsRepository(conn)
-                workflow = repo.create(user_id, name, description=description)
+                workflow = repo.create(
+                    user_id, name, description=description, retry_defaults=retry_defaults
+                )
                 pg_workflow_id = str(workflow["id"])
                 _write_graph(conn, pg_workflow_id, 1, nodes_data, edges_data)
         except Exception as err:
@@ -748,6 +875,9 @@ class WorkflowDetail(Resource):
                 validation_errors = validate_workflow_structure(
                     nodes_data, edges_data, user_id=acting
                 )
+                retry_error = retry_config_error(data.get("retry_defaults"))
+                if retry_error:
+                    validation_errors.append(f"Workflow retry defaults {retry_error}")
                 if validation_errors:
                     return error_response(
                         "Workflow validation failed", errors=validation_errors
@@ -795,6 +925,9 @@ class WorkflowDetail(Resource):
                     "description": description,
                     "current_graph_version": next_graph_version,
                 }
+                # A client that doesn't send the key keeps the saved defaults.
+                if "retry_defaults" in data:
+                    workflow_fields["retry_defaults"] = data.get("retry_defaults")
                 if plan.sponsors != (workflow.get("resource_sponsors") or {}):
                     workflow_fields["resource_sponsors"] = plan.sponsors
                 repo.update(pg_workflow_id, acting, workflow_fields)

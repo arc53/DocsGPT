@@ -34,6 +34,12 @@ export const ATTACHMENT_QUEUE_CHECK_MS = 10 * 60_000;
  */
 export const ATTACHMENT_QUEUE_MAX_CHECKS = 6;
 
+/**
+ * How often the composer asks the task status about a file while the event
+ * stream that would report it is down.
+ */
+export const ATTACHMENT_STREAM_DOWN_POLL_MS = 5_000;
+
 /** What the server returns for a file it stored and queued for parsing. */
 export interface StoredAttachment {
   /** Celery task id. */
@@ -169,14 +175,22 @@ export function uploadAttachmentFile(
 /**
  * Where a stored file's parse task stands, from the task-status endpoint.
  *
- * ``queued``: no worker has taken it yet. ``started``: a worker has (or has
- * finished; the outcome follows as an ``attachment.*`` event). ``failed``:
- * the task failed, with the reason when the endpoint gives one.
- * ``unavailable``: no worker answers at all. ``unknown``: no usable answer.
+ * ``queued``: no worker has taken it yet. ``started``: a worker has (or a
+ * zip's task finished and its members are still parsing; the outcome follows
+ * as an ``attachment.*`` event). ``completed``: the file is stored, with what
+ * its ``attachment.completed`` event carries. ``failed``: the task failed,
+ * with the reason when the endpoint gives one. ``unavailable``: no worker
+ * answers at all. ``unknown``: no usable answer.
  */
 export type AttachmentTaskState =
   | { state: 'queued' }
   | { state: 'started' }
+  | {
+      state: 'completed';
+      tokenCount: number;
+      mimeType?: string;
+      extractionStatus?: string;
+    }
   | { state: 'failed'; message?: string }
   | { state: 'unavailable' }
   | { state: 'unknown' };
@@ -189,6 +203,34 @@ const STARTED_TASK_STATES = new Set([
   'SUCCESS',
 ]);
 const FAILED_TASK_STATES = new Set(['FAILURE', 'REVOKED']);
+
+/**
+ * Read a finished task's result as a stored file. A file's task returns its
+ * token count once stored; a zip's returns before its members are parsed,
+ * without one, and completes later by event only.
+ */
+function completedAttachment(
+  result: unknown,
+): Extract<AttachmentTaskState, { state: 'completed' }> | null {
+  if (!result || typeof result !== 'object') return null;
+  const { token_count, mime_type, metadata } = result as Record<
+    string,
+    unknown
+  >;
+  if (typeof token_count !== 'number' || !Number.isFinite(token_count)) {
+    return null;
+  }
+  const extraction = (metadata as { extraction?: { status?: unknown } } | null)
+    ?.extraction;
+  return {
+    state: 'completed',
+    tokenCount: token_count,
+    ...(typeof mime_type === 'string' ? { mimeType: mime_type } : {}),
+    ...(typeof extraction?.status === 'string'
+      ? { extractionStatus: extraction.status }
+      : {}),
+  };
+}
 
 /**
  * Ask the task-status endpoint where a file's parse task stands.
@@ -223,6 +265,10 @@ export async function checkAttachmentTask(
     result?: unknown;
   } | null;
   const status = typeof body?.status === 'string' ? body.status : '';
+  if (status === 'SUCCESS') {
+    const completed = completedAttachment(body?.result);
+    if (completed) return completed;
+  }
   if (QUEUED_TASK_STATES.has(status)) return { state: 'queued' };
   if (STARTED_TASK_STATES.has(status)) return { state: 'started' };
   if (FAILED_TASK_STATES.has(status)) {

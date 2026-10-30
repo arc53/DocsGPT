@@ -407,3 +407,23 @@ class TestDirectoryStructureAccumulatesChunks:
             structure, "", "text/plain", size_bytes=1, token_count=1,
         )
         assert structure == {}
+
+    def test_a_web_page_keeps_its_url_title_and_fetch_time(self):
+        # The Knowledge tree names a web page by its title and links its URL.
+        from docsgpt.worker import add_file_to_structure
+
+        structure: dict = {}
+        page = {"url": "https://x.io/guide", "title": "Guide", "fetched_at": "2026-10-22T10:00:00+00:00"}
+        for tokens in (900, 100):
+            add_file_to_structure(
+                structure, "guide.md", "text/markdown", size_bytes=10, token_count=tokens, page=page,
+            )
+
+        assert structure["guide.md"] == {
+            "type": "text/markdown",
+            "size_bytes": 20,
+            "token_count": 1000,
+            "url": "https://x.io/guide",
+            "title": "Guide",
+            "fetched_at": "2026-10-22T10:00:00+00:00",
+        }

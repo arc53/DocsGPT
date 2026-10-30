@@ -196,4 +196,29 @@ describe('RepoPicker', () => {
     await act(async () => reconnect.click());
     expect(onReconnect).toHaveBeenCalled();
   });
+
+  it('says until when GitHub rate-limited the account, and offers a retry', async () => {
+    service.repositories.mockResolvedValueOnce({
+      success: false,
+      code: 'rate_limited',
+      retry_at: '2026-10-26T12:55:00+00:00',
+    });
+    await render(null, vi.fn(), vi.fn());
+    expect(container.textContent).toContain(
+      'settings.connectors.github.rateLimited',
+    );
+    // A rate limit is not an expired sign-in.
+    expect(container.textContent).not.toContain(
+      'settings.connectors.status.reconnect',
+    );
+    service.repositories.mockResolvedValueOnce({
+      success: true,
+      repositories: [],
+    });
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(service.repositories).toHaveBeenCalledTimes(2);
+  });
 });

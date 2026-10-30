@@ -207,6 +207,25 @@ class TestHelpersThreadUserId:
             assert caps["supports_tools"] is True
             assert caps["context_window"] == 200_000
 
+    def test_byom_without_the_flag_supports_structured_output(self, pg_conn) -> None:
+        """A BYOM model saved without the flag supports structured output."""
+        row = UserCustomModelsRepository(pg_conn).create(
+            user_id="user-2",
+            upstream_model_id="mistral-small-latest",
+            display_name="No flag",
+            base_url="https://api.mistral.ai/v1",
+            api_key_plaintext="sk-mistral-test",
+            capabilities={"supports_tools": True},
+        )
+        s = _make_settings()
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
+            lambda: _yield(pg_conn),
+        ):
+            ModelRegistry()
+            caps = get_model_capabilities(row["id"], user_id="user-2")
+            assert caps["supports_structured_output"] is True
+
     def test_get_all_available_models_includes_byom_when_authenticated(
         self, pg_conn, byom_model
     ):
@@ -583,7 +602,7 @@ class TestSharedAgentResolvesOwnerBYOM:
         assert sp.model_id == owner_model["id"]
         assert sp.model_user_id == "owner"
 
-    def test_classic_rag_rephrase_resolves_owner_byom(self, pg_conn, monkeypatch):
+    def test_classic_rag_rephrase_resolves_owner_byom(self, pg_conn, monkeypatch, public_dns):
         """ClassicRAG must resolve a BYOM model_id through LLMCreator so
         the rephrase LLM gets the owner's api_key/base_url and dispatches
         the upstream model name (e.g. ``mistral-large-latest``) — not the
@@ -918,7 +937,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
 
         captured: dict = {}
 
-        def _fake_budget(model_id, user_id=None):
+        def _fake_budget(model_id, user_id=None, context_window_limit=None):
             captured["model_id"] = model_id
             captured["user_id"] = user_id
             return 6000
@@ -944,7 +963,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
 
         captured: dict = {}
 
-        def _fake_limit(history, model_id="docsgpt-local", user_id=None):
+        def _fake_limit(history, max_token_limit=None, model_id="docsgpt-local", user_id=None):
             captured["model_id"] = model_id
             captured["user_id"] = user_id
             return history
@@ -1204,7 +1223,7 @@ class TestNonAgentCallSitesUseUpstreamId:
 @pytest.mark.unit
 class TestAgentSendsUpstreamModelId:
     def test_llm_gen_passes_upstream_id_to_provider(
-        self, pg_conn, byom_model
+        self, pg_conn, byom_model, public_dns
     ):
         """End-to-end: ClassicAgent's _llm_gen must put the user's
         upstream model name (``mistral-large-latest``) in the call to

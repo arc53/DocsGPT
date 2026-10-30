@@ -3,9 +3,10 @@
 import json
 import math
 import uuid
-from typing import Optional
+from typing import Any, Callable, NamedTuple, Optional
+from urllib.parse import urlparse
 
-from flask import current_app, jsonify, make_response, redirect, request
+from flask import Response, current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError
 
@@ -16,6 +17,7 @@ from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.tasks import (
     convert_source_to_wiki,
     extract_graph,
+    ingest_connector_task,
     reembed_wiki_page,
     reingest_source_task,
     sync_source,
@@ -26,11 +28,25 @@ from docsgpt.api.user.resource_access import (
     payload_for,
     settings_many,
 )
-from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.sources.access import (
+    SOURCE_BUSY,
+    SYNC_FREQUENCIES,
+    denied_response,
+    edit_lock,
+    load_source,
+)
+from docsgpt.api.user.sources.upload import (
+    _claim_task_or_get_cached,
+    _read_idempotency_key,
+    _release_claim,
+    reingest_idempotency_key,
+)
 from docsgpt.api.user.team_sharing import visible_with_access
+from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.parser.remote.remote_creator import normalize_remote_data
+from docsgpt.parser.remote.website_tree import config_from_legacy, count_pages
 from docsgpt.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
@@ -41,10 +57,12 @@ from docsgpt.storage.db.repositories.wiki_pages import (
     _content_hash,
     rebuild_wiki_directory_structure,
 )
+from docsgpt.storage.db import source_defaults
 from docsgpt.storage.db.session import db_readonly, db_session
-from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.storage.db.source_config import SourceConfig, validation_message
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.utils import check_required_fields
+from docsgpt.vectorstore.index_lock import SourceBusy
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
 
@@ -59,25 +77,94 @@ sources_ns = Namespace(
 )
 
 
-def _get_provider_from_remote_data(remote_data):
-    if not remote_data:
-        return None
-    if isinstance(remote_data, dict):
-        return remote_data.get("provider")
-    if isinstance(remote_data, str):
-        try:
-            remote_data_obj = json.loads(remote_data)
-        except Exception:
-            return None
-        if isinstance(remote_data_obj, dict):
-            return remote_data_obj.get("provider")
-    return None
+def _get_provider_from_remote_data(remote_data) -> Optional[str]:
+    """The connector provider a source's ``remote_data`` names, or None."""
+    return connector_selection({"remote_data": remote_data}).get("provider")
 
 
 def _connection_id(row: dict) -> str | None:
     """The connection a source syncs from, as a string id, or None."""
     value = row.get("connection_id")
     return str(value) if value else None
+
+
+def _is_wiki(doc: dict) -> bool:
+    """Whether a source row is a wiki (a sync would replace its pages)."""
+    return SourceConfig.parse(doc.get("config")).kind == "wiki"
+
+
+_WIKI_NO_SYNC = "A wiki is edited in place and doesn't sync."
+
+
+def _sync_refusal(text: str, code: str, status: int = 400) -> Response:
+    """A refused sync request: ``error_response`` with the text under ``message`` too, which older callers read."""
+    return error_response(text, status, message=text, code=code)
+
+
+def _wiki_store_refusal():
+    """The 400 when the vector store can't re-embed single wiki pages (Elasticsearch), or ``None``.
+
+    A wiki page's edit re-embeds just that page; a store that can't list and
+    delete single chunks would keep the old chunks, so search would answer
+    from the page as it was. Refused before anything is written.
+
+    Returns:
+        Optional[Response]: The refusal (code ``wiki_unsupported``), or ``None``.
+    """
+    if VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        return None
+    return _sync_refusal(
+        f"Wikis need a vector store that can change single pages; the {settings.VECTOR_STORE} store can't.",
+        "wiki_unsupported",
+    )
+
+
+def _with_scheme(url: str) -> str:
+    """``url``, with ``https://`` in front when it was written without a scheme, so its host can be read.
+
+    Older Website sources may store an address as the user typed it
+    (``docs.x.io/a``), which ``urlparse`` reads as a path with no host.
+    """
+    return url if "://" in url else f"https://{url}"
+
+
+def _website_summary(row: dict) -> Optional[dict]:
+    """Where a web source comes from, for its Knowledge card.
+
+    Args:
+        row: A ``sources`` row.
+
+    Returns:
+        ``{"hosts": [...], "pages": n}`` for a Website source (or one made by
+        the url, crawler or sitemap loaders), else ``None``. Hosts come from
+        the source's entries, without ``www.``; pages are its tree's leaves.
+        A wiki (a web source converted to one) is edited in place, so it gets
+        ``None``; so does a row whose stored config can't be read, rather
+        than failing the whole listing.
+    """
+    try:
+        if _is_wiki(row):
+            return None
+        config = config_from_legacy(row.get("type"), row.get("remote_data"))
+        if config is None:
+            return None
+        hosts: list[str] = []
+        for entry in config["entries"]:
+            host = (urlparse(_with_scheme(entry["url"])).hostname or "").removeprefix("www.")
+            if host and host not in hosts:
+                hosts.append(host)
+        structure = row.get("directory_structure")
+        pages = count_pages(structure) if isinstance(structure, dict) else 0
+        return {"hosts": hosts, "pages": pages}
+    except Exception as err:  # noqa: BLE001 - one bad row must not fail the listing
+        current_app.logger.warning(f"Website summary of source {row.get('id')} unavailable: {err}")
+        return None
+
+
+def _file_count(row: dict) -> Optional[int]:
+    """How many files a source's tree holds (a synced source's card says it); ``None`` for a flat source."""
+    structure = row.get("directory_structure")
+    return count_pages(structure) if isinstance(structure, dict) and structure else None
 
 
 def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -> dict:
@@ -157,6 +244,10 @@ class CombinedJson(Resource):
                     "ownership": ownership,
                     "team_access": team_access,
                     "connectionId": _connection_id(index),
+                    # As in the paginated listing: citation links fall back
+                    # to this list, and a website source opens as one.
+                    "website": _website_summary(index),
+                    "files": _file_count(index),
                 }
                 return _with_access(
                     entry,
@@ -255,6 +346,8 @@ class PaginatedSources(Resource):
                         None if owned else team_shared.get(str(doc["id"]))
                     ),
                     "connectionId": _connection_id(doc),
+                    "website": _website_summary(doc),
+                    "files": _file_count(doc),
                 }
                 paginated_docs.append(
                     _with_access(
@@ -277,14 +370,46 @@ class PaginatedSources(Resource):
             return make_response(jsonify({"success": False}), 400)
 
 
-def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool:
-    """Delete a source's index, stored files and row. Returns whether it worked.
+def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None, raise_busy: bool = False) -> bool:
+    """Delete a source's index, stored files and row, holding its index lock. Returns whether it worked.
+
+    A sync or a Website page change loads the index and saves the whole of
+    it under the source's index lock; a delete made meanwhile would see its
+    index saved again afterwards, and kept in storage for good. So the delete
+    waits a few seconds for such a job, and the row goes before the lock is
+    released, so a job queued meanwhile finds no source.
 
     Args:
         owner: The source's owner; the row is deleted as them.
         doc: The source row, already authorised for the caller.
         actor: Who asked for the delete (a team editor, say), when not the
             owner. Recorded on the audit event.
+        raise_busy: Raise ``SourceBusy`` when another job holds the source
+            past the wait, instead of returning False.
+
+    Raises:
+        SourceBusy: With ``raise_busy``, when another job holds the source; nothing was deleted.
+    """
+    try:
+        with edit_lock(str(doc["id"])):
+            return _delete_source_unlocked(owner, doc, actor=actor)
+    except SourceBusy:
+        if raise_busy:
+            raise
+        current_app.logger.warning(f"Source {doc['id']} is busy; it was not deleted")
+        return False
+
+
+def _delete_source_unlocked(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool:
+    """``delete_source``'s work, run holding the source's index lock.
+
+    Args:
+        owner: The source's owner.
+        doc: The source row.
+        actor: Who asked for the delete, when not the owner.
+
+    Returns:
+        Whether it worked.
     """
     actor = actor or owner
     storage = StorageCreator.get_storage()
@@ -346,7 +471,10 @@ def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool
 @sources_ns.route("/delete_old")
 class DeleteOldIndexes(Resource):
     @api.doc(
-        description="Deletes old indexes and associated files",
+        description=(
+            "Deletes a source: its index, stored files and row. 409 (code source_busy) while a sync or "
+            "page change on the source runs; nothing is deleted."
+        ),
         params={"source_id": "The source ID to delete"},
     )
     def get(self):
@@ -369,7 +497,11 @@ class DeleteOldIndexes(Resource):
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        if not delete_source(ra.owner_id, doc, actor=user):
+        try:
+            deleted = delete_source(ra.owner_id, doc, actor=user, raise_busy=True)
+        except SourceBusy:
+            return _sync_refusal(SOURCE_BUSY, "source_busy", 409)
+        if not deleted:
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
@@ -411,14 +543,14 @@ class ManageSync(Resource):
         source_id = data["source_id"]
         sync_frequency = data["sync_frequency"]
 
-        if sync_frequency not in ["never", "daily", "weekly", "monthly"]:
-            return make_response(
-                jsonify({"success": False, "message": "Invalid frequency"}), 400
-            )
+        if sync_frequency not in SYNC_FREQUENCIES:
+            return _sync_refusal("Invalid frequency", "bad_sync_frequency")
         try:
             with db_session() as conn:
                 # Owner or team editor; the write lands as the owner.
                 doc, ra = load_source(conn, source_id, user, "edit")
+                if sync_frequency != "never" and _is_wiki(doc):
+                    return _sync_refusal(_WIKI_NO_SYNC, "wiki")
                 SourcesRepository(conn).update(
                     str(doc["id"]), ra.owner_id, {"sync_frequency": sync_frequency}
                 )
@@ -463,26 +595,16 @@ class SyncSource(Resource):
             return denied_response(err)
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
-            return make_response(
-                jsonify({"success": False, "message": "Invalid source ID"}), 400
-            )
+            return _sync_refusal("Invalid source ID", "invalid_source")
         owner = ra.owner_id
+        if _is_wiki(doc):
+            return _sync_refusal(_WIKI_NO_SYNC, "wiki")
         source_type = doc.get("type", "")
         if source_type and source_type.startswith("connector"):
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Connector sources must be synced via /api/connectors/sync",
-                    }
-                ),
-                400,
-            )
+            return _sync_refusal("Connector sources must be synced via /api/connectors/sync", "connector_source")
         source_data = normalize_remote_data(source_type, doc.get("remote_data"))
         if not source_data:
-            return make_response(
-                jsonify({"success": False, "message": "Source is not syncable"}), 400
-            )
+            return _sync_refusal("Source is not syncable", "not_syncable")
         try:
             task = sync_source.delay(
                 source_data=source_data,
@@ -494,6 +616,8 @@ class SyncSource(Resource):
                 doc_id=str(doc["id"]),
                 # S3 and GitHub sources made from a connection read with its keys.
                 connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
+                # The sync runs as the owner; its events also reach the caller.
+                actor_id=user,
             )
         except Exception as err:
             current_app.logger.error(
@@ -502,6 +626,156 @@ class SyncSource(Resource):
             )
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
+
+
+_RECONNECT_TO_SYNC = "The owner needs to reconnect this source's account before it can be synced."
+_CONNECTION_REMOVED = "This source's account connection was removed; connect the account again to sync it."
+_CONNECTION_REMOVED_EDITOR = (
+    "This source's account connection was removed; the owner needs to connect the account again to sync it."
+)
+
+
+def connector_selection(doc: dict) -> dict:
+    """A connector source's stored selection (``remote_data``: provider, file and folder ids) as a dict.
+
+    Args:
+        doc: The source row.
+
+    Returns:
+        The selection; ``{}`` when it isn't a JSON object.
+    """
+    remote_data = doc.get("remote_data")
+    if isinstance(remote_data, str):
+        try:
+            remote_data = json.loads(remote_data)
+        except ValueError:
+            return {}
+    return remote_data if isinstance(remote_data, dict) else {}
+
+
+def connector_sync_kwargs(doc: dict, owner: str, actor: str, selection: dict, connection_id: str) -> dict:
+    """The ``ingest_connector_task`` kwargs that sync a connector source with ``connection_id``.
+
+    Args:
+        doc: The source row.
+        owner: Its owner; the sync runs as them.
+        actor: The caller, who also receives the sync's events (a team editor isn't the owner).
+        selection: ``connector_selection(doc)``, naming its provider.
+        connection_id: The connection the sync reads with.
+
+    Returns:
+        The task's kwargs.
+    """
+    return {
+        "job_name": doc.get("name"),
+        "user": owner,
+        "source_type": selection["provider"],
+        "connection_id": connection_id,
+        "file_ids": selection.get("file_ids", []),
+        "folder_ids": selection.get("folder_ids", []),
+        "recursive": selection.get("recursive", True),
+        "retriever": doc.get("retriever") or "classic",
+        "operation_mode": "sync",
+        "doc_id": str(doc["id"]),
+        "sync_frequency": doc.get("sync_frequency") or "never",
+        "actor_id": actor,
+    }
+
+
+def owner_connector_sync(conn, doc: dict, owner: str, actor: str) -> dict | Response:
+    """A sync of a connector source with its own connection, queued without a browser naming one.
+
+    A team editor's Sync now and a Reingest run as the owner, with the
+    account the source names. A source that names none (its connection was
+    removed) is refused: another of the owner's accounts would read the
+    selection, and the sync would re-link the source to it.
+
+    Args:
+        conn: Open database connection.
+        doc: The source row, whose selection names its provider.
+        owner: Its owner.
+        actor: The caller; the refusal's wording depends on whether it is the owner.
+
+    Returns:
+        ``connector_sync_kwargs``, or a 409: ``connection_missing``, or
+        ``reconnect_needed`` when the owner must sign the connection in again.
+    """
+    from docsgpt.connectors import service as connector_service
+
+    connection_id = _connection_id(doc)
+    if not connection_id:
+        text = _CONNECTION_REMOVED if actor == owner else _CONNECTION_REMOVED_EDITOR
+        return _sync_refusal(text, "connection_missing", 409)
+    selection = connector_selection(doc)
+    session = connector_service.owner_sync_connection(conn, owner, selection["provider"], connection_id)
+    if session is None:
+        return _sync_refusal(_RECONNECT_TO_SYNC, "reconnect_needed", 409)
+    return connector_sync_kwargs(doc, owner, actor, selection, str(session["id"]))
+
+
+class _Rebuild(NamedTuple):
+    """How a source with no stored files is rebuilt: the task it queues, and a call that queues it.
+
+    ``queue(task_id, idempotency_key)`` queues the task under ``task_id``
+    (``None`` lets Celery pick one) and returns it. The key reaches a task
+    that guards on one (a connector sync); ``sync_source`` takes none, so a
+    repeated request is answered by the route's claim on it instead.
+    """
+
+    task_name: str
+    queue: Callable[[Optional[str], str], Any]
+
+
+def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[_Rebuild] | Response:
+    """How a source with no stored files is rebuilt instead of re-ingested: a sync of its stored config.
+
+    Reingest re-reads the files a source keeps in storage; a Website,
+    crawler or connector source keeps none, so its settings (a chunking
+    change, say) take effect when its content is fetched again. The sync
+    publishes ``source.ingest.*`` events (``operation: "sync"``) carrying its
+    own ``task_id``, which the route returns as the reingest's.
+
+    Args:
+        doc: The source row, already authorised for the caller.
+        owner: Its owner; the sync runs as them.
+        actor: The caller, who also receives the sync's events (a team editor isn't the owner).
+
+    Returns:
+        The sync to queue (``_Rebuild``); a refusal (a connector source
+        whose connection was removed, 409 ``connection_missing``, or whose
+        owner must reconnect, 409 ``reconnect_needed``); or ``None`` when the
+        source has nothing to sync, so the reingest task runs and reports that.
+    """
+    source_id = str(doc["id"])
+    source_type = doc.get("type") or ""
+    if source_type.startswith("connector"):
+        if not connector_selection(doc).get("provider"):
+            return None
+        with db_readonly() as conn:
+            connector_kwargs = owner_connector_sync(conn, doc, owner, actor)
+        if isinstance(connector_kwargs, Response):
+            return connector_kwargs
+        return _Rebuild(
+            "ingest_connector_task",
+            lambda task_id, key: ingest_connector_task.apply_async(
+                kwargs={**connector_kwargs, "idempotency_key": key}, task_id=task_id,
+            ),
+        )
+    source_data = normalize_remote_data(source_type, doc.get("remote_data"))
+    if not source_data:
+        return None
+    sync_kwargs = {
+        "source_data": source_data,
+        "job_name": doc.get("name", ""),
+        "user": owner,
+        "loader": source_type,
+        "sync_frequency": doc.get("sync_frequency") or "never",
+        "retriever": doc.get("retriever") or "classic",
+        "doc_id": source_id,
+        "connection_id": _connection_id(doc),
+        "actor_id": actor,
+    }
+    return _Rebuild("sync_source", lambda task_id, _key: sync_source.apply_async(kwargs=sync_kwargs, task_id=task_id))
 
 
 @sources_ns.route("/sources/reingest")
@@ -514,7 +788,15 @@ class ReingestSource(Resource):
     @api.expect(reingest_source_model)
     @api.doc(
         description="Re-run ingestion for a source — e.g. to recover a "
-        "stalled embed flagged by the reconciler."
+        "stalled embed flagged by the reconciler, or to apply a chunking "
+        "change. A source with no stored files (Website, crawler, connector) "
+        "is synced from its stored config instead; either way the answer is "
+        "``{success, task_id}`` and the task's source.ingest events carry that "
+        "task_id. A connector source can be refused with a 409: code "
+        "connection_missing when its connection was removed, reconnect_needed "
+        "when the owner must sign it in again. Honours an Idempotency-Key "
+        "header: a repeat with the same key runs nothing new, and a rebuild's "
+        "repeat answers with the first request's task_id."
     )
     def post(self):
         decoded_token = request.decoded_token
@@ -526,6 +808,9 @@ class ReingestSource(Resource):
         if missing_fields:
             return missing_fields
         source_id = data["source_id"]
+        client_key, key_error = _read_idempotency_key()
+        if key_error is not None:
+            return key_error
         # Run the reingest AS the owner: ``user`` when they own the source,
         # the real owner when ``user`` holds a team ``editor`` grant (reingest
         # is an editor-allowed write). Vector partitions are keyed by source_id
@@ -539,11 +824,30 @@ class ReingestSource(Resource):
             current_app.logger.error(
                 f"Error looking up source: {err}", exc_info=True
             )
-            return make_response(
-                jsonify({"success": False, "message": "Invalid source ID"}), 400
-            )
+            return _sync_refusal("Invalid source ID", "invalid_source")
         owner = ra.owner_id
         resolved_source_id = str(doc["id"])
+        # A wiki's pages are edited in place: neither a sync nor re-reading
+        # the files it was converted from may replace them.
+        if _is_wiki(doc):
+            return _sync_refusal("A wiki is edited in place and can't be re-ingested.", "wiki")
+        rebuild = None
+        if not doc.get("file_path"):
+            # Nothing stored to read back: a Website, crawler or connector
+            # source is rebuilt by syncing it with its stored config.
+            rebuild = _remote_rebuild(doc, owner, user)
+            if isinstance(rebuild, Response):
+                return rebuild
+        # One key per request (or per client Idempotency-Key): a key per
+        # source would replay the last completed reingest for 24h.
+        idempotency_key = reingest_idempotency_key(owner, resolved_source_id, client_key)
+        rebuild_task_id = None
+        if rebuild is not None and client_key:
+            # A client's repeat is answered with the first request's task,
+            # not a second sync: claimed here, before anything is queued.
+            rebuild_task_id, cached = _claim_task_or_get_cached(idempotency_key, rebuild.task_name)
+            if cached is not None:
+                return make_response(jsonify({"success": True, "task_id": cached["task_id"]}), 200)
         # Drop the stale chunk-progress row so the sources list stops
         # deriving a 'failed' status; reingest never rewrites it itself.
         try:
@@ -556,17 +860,23 @@ class ReingestSource(Resource):
                 exc_info=True,
             )
         try:
-            # Scoped key so repeated clicks collapse onto one reingest.
-            task = reingest_source_task.delay(
-                source_id=resolved_source_id,
-                user=owner,
-                idempotency_key=f"reingest-source:{owner}:{resolved_source_id}",
-            )
+            if rebuild is not None:
+                task = rebuild.queue(rebuild_task_id, idempotency_key)
+            else:
+                task = reingest_source_task.delay(
+                    source_id=resolved_source_id,
+                    user=owner,
+                    idempotency_key=idempotency_key,
+                    actor_id=user,
+                )
         except Exception as err:
             current_app.logger.error(
                 f"Error starting reingest for source {source_id}: {err}",
                 exc_info=True,
             )
+            if rebuild_task_id is not None:
+                # Nothing was queued: a retry with the same key runs.
+                _release_claim(idempotency_key)
             return make_response(jsonify({"success": False}), 400)
         try:
             with db_session() as conn:
@@ -659,7 +969,9 @@ class SourceConfigResource(Resource):
     @api.doc(
         description="Edit a source's behavior config. Retrieval-time fields "
         "take effect live; chunking changes require an explicit re-ingest "
-        "(surfaced as requires_reingest)."
+        "(surfaced as requires_reingest). A section the body leaves out "
+        "(chunking, retrieval, graph) keeps its saved value, so a body with "
+        "only `retrieval` saves just that."
     )
     def patch(self, source_id):
         decoded_token = request.decoded_token
@@ -677,16 +989,9 @@ class SourceConfigResource(Resource):
         # before submitting.
         try:
             new_config = SourceConfig.model_validate(body)
-        except ValidationError:
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Invalid config: one or more fields failed validation.",
-                    }
-                ),
-                400,
-            )
+        except ValidationError as err:
+            message = validation_message(err, "Invalid config: one or more fields failed validation.")
+            return make_response(jsonify({"success": False, "message": message}), 400)
 
         try:
             with db_session() as conn:
@@ -717,6 +1022,11 @@ class SourceConfigResource(Resource):
                         400,
                     )
                 new_config.kind = current_config.kind
+                # A section the body leaves out keeps its saved value (the
+                # retrieval test saves only ``retrieval``).
+                for section in ("chunking", "retrieval", "graph"):
+                    if section not in body:
+                        setattr(new_config, section, getattr(current_config, section))
                 requires_reingest = (
                     new_config.chunking.model_dump()
                     != current_config.chunking.model_dump()
@@ -724,6 +1034,10 @@ class SourceConfigResource(Resource):
                 repo.update(
                     str(doc["id"]), owner, {"config": new_config.model_dump()}
                 )
+                if requires_reingest and doc.get("file_path"):
+                    # A reingest of stored files re-embeds only edited ones;
+                    # this makes the next one re-chunk them all.
+                    repo.set_metadata_key(str(doc["id"]), owner, "rechunk_pending", True)
         except AccessDenied as err:
             return denied_response(err)
         except Exception as err:
@@ -743,6 +1057,22 @@ class SourceConfigResource(Resource):
             ),
             200,
         )
+
+
+@sources_ns.route("/sources/defaults")
+class SourceDefaultsResource(Resource):
+    @api.doc(
+        description="The retrieval settings a new source starts with (set by "
+        "an admin under Admin > Defaults), for prefilling create forms: "
+        "`{retrieval: {...}}`, the built-in defaults when none are set."
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        with db_readonly() as conn:
+            retrieval = source_defaults.load(conn)
+        return make_response(jsonify({"success": True, "retrieval": retrieval}), 200)
 
 
 def _unsupported_retrieval_warnings(config) -> list:
@@ -830,6 +1160,9 @@ class CreateWikiSource(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        refusal = _wiki_store_refusal()
+        if refusal:
+            return refusal
         data = request.get_json(silent=True) or {}
         missing_fields = check_required_fields(data, ["name"])
         if missing_fields:
@@ -850,8 +1183,9 @@ class CreateWikiSource(Resource):
                     user_id=user,
                     type="wiki",
                     # Same config as a converted wiki: browsed through the
-                    # tool (``agentic_tool``), not pre-fetched.
-                    config=SourceConfig().wiki_enabled(),
+                    # tool (``agentic_tool``), not pre-fetched, starting from
+                    # the admin's default retrieval settings.
+                    config=SourceConfig.parse(source_defaults.seed(conn, None)).wiki_enabled(),
                     directory_structure={},
                     tokens=0,
                     # Wiki pages are embedded like any other source, so record
@@ -991,6 +1325,9 @@ class WikiPage(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        refusal = _wiki_store_refusal()
+        if refusal:
+            return refusal
         data = request.get_json(silent=True) or {}
         missing_fields = check_required_fields(data, ["path", "content"])
         if missing_fields:
@@ -1156,10 +1493,14 @@ def _source_is_blank(doc):
 
 
 def _enable_wiki_inline(conn, doc, owner):
-    """Flip a blank source to wiki mode + agentic exposure with no task."""
+    """Flip a blank source to wiki mode + agentic exposure with no task.
+
+    The schedule goes too: a sync would replace the wiki's pages.
+    """
     cfg = SourceConfig.parse(doc.get("config"))
     SourcesRepository(conn).update(
-        str(doc["id"]), owner, {"config": cfg.wiki_enabled()}
+        str(doc["id"]), owner,
+        {"config": cfg.wiki_enabled(), "sync_frequency": "never"},
     )
 
 
@@ -1175,6 +1516,9 @@ class ConvertSourceToWiki(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        refusal = _wiki_store_refusal()
+        if refusal:
+            return refusal
         try:
             with db_session() as conn:
                 # Owner or team editor; writes and re-embeds run as the owner.

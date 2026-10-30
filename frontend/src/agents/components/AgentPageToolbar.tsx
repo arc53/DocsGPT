@@ -13,6 +13,8 @@ type AgentPageToolbarProps = {
   meta?: ReactNode;
   /** The tab's buttons, on the right of the row. */
   actions?: ReactNode;
+  /** The agent's ⋯ (an ActionMenu, size `toolbar`), after the actions. */
+  menu?: ReactNode;
   /** A line of its own in place of the name byline (the new-agent form). */
   intro?: ReactNode;
   /** Notices under the row, above the rule (a failed save). */
@@ -30,6 +32,8 @@ type AgentPageToolbarProps = {
  *   status: A Badge shown beside the name.
  *   meta: Tab context shown after the name, separated by a middle dot.
  *   actions: The tab's buttons.
+ *   menu: The agent's ⋯, last in the row; on a phone it stays beside the
+ *     byline when the tab has no buttons.
  *   intro: Replaces the name byline.
  *   children: Notices between the row and the rule.
  */
@@ -38,6 +42,7 @@ export default function AgentPageToolbar({
   status,
   meta,
   actions,
+  menu,
   intro,
   children,
 }: AgentPageToolbarProps) {
@@ -65,10 +70,25 @@ export default function AgentPageToolbar({
     </span>
   );
 
+  // The buttons fill the stacked row on a phone (the main one stretches),
+  // with the ⋯ at its end.
+  const action =
+    actions && menu ? (
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1 sm:flex-none">{actions}</div>
+        {menu}
+      </div>
+    ) : (
+      (actions ?? menu)
+    );
+
   return (
     <PageToolbar
       intro={byline}
-      action={actions ?? <div aria-hidden className="h-9.5" />}
+      // The spacer only matters beside the byline (sm up); stacked on a
+      // phone it would be an empty band.
+      action={action ?? <div aria-hidden className="hidden h-9.5 sm:block" />}
+      stack={Boolean(actions)}
       divider
     >
       {children}

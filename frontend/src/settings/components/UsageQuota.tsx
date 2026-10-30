@@ -99,8 +99,9 @@ export default function UsageQuota() {
   return (
     <Card variant="subtle" padding="lg" className="mb-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
+        {/* A panel straight under the page's h1, like the charts below. */}
         <SectionHeader
-          as="h3"
+          as="h2"
           size="xs"
           title={t('settings.analytics.quota.title')}
         />

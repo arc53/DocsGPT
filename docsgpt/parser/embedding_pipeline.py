@@ -10,6 +10,7 @@ from docsgpt.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
 from docsgpt.storage.db.session import db_session
+from docsgpt.utils import strip_null_bytes
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
 
@@ -96,8 +97,10 @@ def add_texts_to_store_with_retry(
         texts: List[str] = []
         metadatas: List[Any] = []
         for doc in docs:
-            # Sanitize content to remove NUL characters that cause ingestion failures
+            # Sanitize content to remove NUL characters that cause ingestion failures,
+            # and the metadata too: pgvector stores it as JSONB, which refuses a NUL.
             doc.page_content = sanitize_content(doc.page_content)
+            doc.metadata = strip_null_bytes(doc.metadata)
             doc.metadata["source_id"] = str(source_id)
             texts.append(doc.page_content)
             metadatas.append(doc.metadata)
@@ -248,6 +251,7 @@ def embed_and_store_documents(
     *,
     attempt_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    actor_id: Optional[str] = None,
     progress_start: int = 0,
     progress_end: int = 100,
 ) -> None:
@@ -272,6 +276,8 @@ def embed_and_store_documents(
             published to ``user:{user_id}`` for the in-app upload toast.
             ``None`` is the safe default — workers without a user
             context (e.g. background syncs) skip the publish.
+        actor_id: The team editor who asked for the job, also sent the
+            progress events when it isn't ``user_id``.
         progress_start: Percent the reported progress maps to at chunk 0.
             Lets a caller reserve the lower band for an earlier stage
             (e.g. parsing). Defaults to ``0`` (embed owns the whole bar).
@@ -377,6 +383,7 @@ def embed_and_store_documents(
     failed_idx: int | None = None
     last_published_pct = -1
     source_id_str = str(source_id)
+    recipients = [user_id] + ([str(actor_id)] if actor_id and str(actor_id) != str(user_id) else [])
     progress_span = progress_end - progress_start
     batch_size = _resolve_batch_size()
     batch_starts = list(range(loop_start, total_docs, batch_size))
@@ -401,17 +408,18 @@ def embed_and_store_documents(
             # not 10k. The Celery update_state above stays the source of
             # truth for the polling-fallback path.
             if user_id and progress > last_published_pct:
-                publish_user_event(
-                    user_id,
-                    "source.ingest.progress",
-                    {
-                        "current": progress,
-                        "total": total_docs,
-                        "embedded_chunks": batch_end,
-                        "stage": "embedding",
-                    },
-                    scope={"kind": "source", "id": source_id_str},
-                )
+                for recipient in recipients:
+                    publish_user_event(
+                        recipient,
+                        "source.ingest.progress",
+                        {
+                            "current": progress,
+                            "total": total_docs,
+                            "embedded_chunks": batch_end,
+                            "stage": "embedding",
+                        },
+                        scope={"kind": "source", "id": source_id_str},
+                    )
                 last_published_pct = progress
 
             # Add the batch to the vector store

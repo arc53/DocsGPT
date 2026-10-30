@@ -30,6 +30,10 @@ vi.mock('./webPush', async () => {
   };
 });
 
+import activityReducer, {
+  loadActivityNow,
+  selectFailedConversations,
+} from '../activity/activitySlice';
 import notificationsReducer from '../notifications/notificationsSlice';
 import BackgroundNotifications from './BackgroundNotifications';
 import backgroundReducer, {
@@ -51,6 +55,7 @@ describe('BackgroundNotifications', () => {
   const makeStore = () =>
     configureStore({
       reducer: {
+        activity: activityReducer,
         background: backgroundReducer,
         notifications: notificationsReducer,
         actionToast: (state = { current: null, nextId: 1 }) => state,
@@ -80,6 +85,7 @@ describe('BackgroundNotifications', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
     delete (navigator as unknown as Record<string, unknown>).serviceWorker;
   });
 
@@ -134,6 +140,44 @@ describe('BackgroundNotifications', () => {
     expect(selectIsUnread('c1')(store.getState())).toBe(false);
     expect(selectIsUnread('c2')(store.getState())).toBe(true);
     expect(service.markConversationRead).toHaveBeenCalledWith('c1', 'tok');
+  });
+
+  it('leaves the chat on screen unread while the window lacks focus, and reads it on focus', async () => {
+    const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const store = makeStore();
+    store.dispatch(markConversationUnread('c1'));
+    await renderAt('/c/c1', store);
+    expect(selectIsUnread('c1')(store.getState())).toBe(true);
+    expect(service.markConversationRead).not.toHaveBeenCalled();
+
+    focused.mockReturnValue(true);
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(selectIsUnread('c1')(store.getState())).toBe(false);
+    expect(service.markConversationRead).toHaveBeenCalledWith('c1', 'tok');
+  });
+
+  it('reads a chat on screen that Activity calls failed', async () => {
+    // A failed answer marks the chat unread on the server without an
+    // event, so only the Activity snapshot knows it.
+    const store = makeStore();
+    store.dispatch(
+      loadActivityNow.fulfilled(
+        {
+          running: [],
+          needs_you: [],
+          up_next: [],
+          approval_conversations: [],
+          failed_conversations: ['c1'],
+          stats: { next_24h: 0, failed_24h: 1 },
+        },
+        'req',
+      ),
+    );
+    await renderAt('/c/c1', store);
+    expect(service.markConversationRead).toHaveBeenCalledWith('c1', 'tok');
+    expect(selectFailedConversations(store.getState()).has('c1')).toBe(false);
   });
 
   it('routes in place when a clicked notification asks', async () => {

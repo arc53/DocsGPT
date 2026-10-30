@@ -8,15 +8,53 @@ stays instant and does not touch the database.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
+import time
+import uuid
 from typing import Optional, Sequence
 
 from docsgpt.version import __version__
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7091
+
+# How often ``docsgpt analytics backfill`` retries while a scheduled sweep holds the lock; tests replace _sleep.
+BACKFILL_POLL_SECONDS = 10
+_sleep = time.sleep
+
+# Where ``docsgpt worker`` defaults to Celery's solo pool: one task at a time, in the worker process itself.
+SOLO_POOL_PLATFORMS = ("darwin", "win32")
+
+
+def default_pool(platform: Optional[str] = None) -> Optional[str]:
+    """The pool ``docsgpt worker`` picks when ``--pool`` is not given: solo on macOS and Windows, else Celery's.
+
+    Args:
+        platform: A ``sys.platform`` value; this machine's when omitted.
+
+    Returns:
+        ``"solo"``, or ``None`` for Celery's default (prefork).
+    """
+    return "solo" if (platform or sys.platform) in SOLO_POOL_PLATFORMS else None
+
+
+def needs_analytics_worker(platform: Optional[str] = None) -> bool:
+    """Whether a default ``docsgpt worker`` here leaves the analytics queue to ``docsgpt worker --analytics``.
+
+    A solo pool runs one task at a time, and an analytics sweep holds it for minutes, so the query embeddings
+    behind it would time out. ``docsgpt up --native`` installs the analytics worker where this holds, and
+    ``docsgpt dev`` starts it there while ``DECISION_ANALYTICS_ENABLED`` is on.
+
+    Args:
+        platform: A ``sys.platform`` value; this machine's when omitted.
+
+    Returns:
+        True where the default pool is solo.
+    """
+    return default_pool(platform) == "solo"
 
 
 def _announce_home() -> None:
@@ -121,22 +159,52 @@ def _celery(argv: list[str]) -> int:
 
 
 def _worker(args: argparse.Namespace) -> int:
-    """Run the Celery worker, with the beat scheduler embedded unless ``--no-beat`` (or on Windows)."""
+    """Run the Celery worker, with the beat scheduler embedded unless ``--no-beat`` (or on Windows).
+
+    A solo-pool worker with no ``-Q`` consumes every queue but ``ANALYTICS_QUEUE``: a sweep would hold its one
+    slot for minutes. ``--analytics`` runs the worker that takes that queue instead, without the scheduler.
+
+    Args:
+        args: The parsed ``docsgpt worker`` options.
+
+    Returns:
+        Celery's exit code.
+    """
+    from docsgpt.core.settings import settings
+
     _announce_home()
     windows = sys.platform == "win32"
+    pool = args.pool or default_pool()
     argv = ["worker", "-l", args.loglevel]
-    if args.queues:
+    if args.analytics:
+        # Its own node name: next to the main worker on one host, a second celery@host clashes.
+        argv += ["-Q", settings.ANALYTICS_QUEUE, "-n", "analytics@%h"]
+    elif args.queues:
         argv += ["-Q", args.queues]
-    if args.concurrency:
-        argv += ["--concurrency", str(args.concurrency)]
-    if args.beat and windows:
+    elif pool == "solo" and settings.ANALYTICS_QUEUE not in _shared_queues(settings):
+        argv += ["-X", settings.ANALYTICS_QUEUE]
+        if settings.DECISION_ANALYTICS_ENABLED:
+            print(
+                "docsgpt: the solo pool leaves conversation analytics to `docsgpt worker --analytics`; run it "
+                "next to this one (docsgpt dev and docsgpt up --native do).",
+                file=sys.stderr,
+            )
+    concurrency = args.concurrency or (1 if args.analytics and pool != "solo" else None)
+    if concurrency:
+        argv += ["--concurrency", str(concurrency)]
+    beat = args.beat and not args.analytics  # One scheduler is enough; the main worker embeds it.
+    if beat and windows:
         print("docsgpt: the embedded scheduler is not available on Windows; run `docsgpt beat` separately.", file=sys.stderr)
-    elif args.beat:
+    elif beat:
         argv.append("-B")
-    pool = args.pool or ("solo" if sys.platform in ("darwin", "win32") else None)
     if pool:
         argv += ["--pool", pool]
     return _celery(argv)
+
+
+def _shared_queues(settings) -> set[str]:
+    """The queues other than analytics a worker consumes; excluding analytics must not drop one of them."""
+    return {"docsgpt", settings.DOCUMENT_PARSE_QUEUE, settings.EMBEDDINGS_QUEUE, settings.INGEST_QUEUE}
 
 
 def _beat(args: argparse.Namespace) -> int:
@@ -216,7 +284,12 @@ def _add_deploy_commands(commands) -> None:
                          help="run the image with the docling parser engine and OCR (several GB larger)")
     docling.add_argument("--no-docling", dest="docling", action="store_const", const=False,
                          help="go back to the default image")
-    up.set_defaults(docling=None)
+    decider = up.add_mutually_exclusive_group()
+    decider.add_argument("--decider", dest="decider", action="store_const", const=True,
+                         help="serve the decision model from a container of its own instead of the API process")
+    decider.add_argument("--no-decider", dest="decider", action="store_const", const=False,
+                         help="remove that container; the API process holds the model again")
+    up.set_defaults(docling=None, decider=None)
     up.add_argument("--image-tag", help="image tag to run instead of this package's version, e.g. develop")
     up.add_argument("--native", action="store_true",
                     help="run the API and worker as services on this machine instead of on Docker")
@@ -329,6 +402,150 @@ def _connectors(args: argparse.Namespace) -> int:
     return 0
 
 
+def _decisions_status() -> int:
+    """This machine's decision-model settings and files, without loading the model.
+
+    A running server's load state, speed and feature verdicts are in its
+    /api/admin/decisions; this command reports what that server would use.
+    In API mode it asks the decision server once, so the model, status and
+    speed are the server's.
+    """
+    from docsgpt import decisions
+    from docsgpt.decisions import files
+    from docsgpt.decisions.client import runtime
+    from docsgpt.decisions.models import lookup, select
+
+    answered = decisions.get_decider().probe()
+    report = decisions.status()
+    if answered is None:
+        for key in ("status", "reason", "speed"):  # this process never loads the model: they say nothing here
+            report.pop(key, None)
+    else:
+        report["server"] = "answered" if answered else "no answer"
+    spec = ((report.get("model") and lookup(report["model"])) or select(runtime())) if report["mode"] != "none" else None
+    if spec is not None:
+        # in API mode this process only needs the tokenizer; the server holds the model
+        folder = files.local_onnx_dir(spec) if report["mode"] == "local" else files.local_tokenizer(spec)
+        report["revision"] = files.revision(spec)
+        report["files"] = str(folder) if folder else None
+    print(json.dumps(report, indent=2))
+    return 0
+
+
+def _decisions(args: argparse.Namespace) -> int:
+    """``docsgpt decisions prefetch``: download the decision model's pinned files into DECISION_CACHE_DIR.
+
+    For offline and air-gapped installs, and to avoid the download the first
+    decision feature turned on would otherwise start. ``docsgpt decisions
+    status`` reports the settings and whether the files are here.
+    """
+    action = getattr(args, "decisions_action", None)
+    if action == "status":
+        return _decisions_status()
+    if action != "prefetch":
+        print("usage: docsgpt decisions prefetch|status", file=sys.stderr)
+        return 2
+    from docsgpt.decisions import files
+    from docsgpt.decisions.models import select
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    runtime = getattr(args, "runtime", "onnx")
+    spec = select(runtime)
+    if spec is None:
+        print("docsgpt: DECISION_MODEL names a model this version does not know", file=sys.stderr)
+        return 2
+    try:
+        folder = files.ensure_torch(spec) if runtime == "torch" else files.ensure_onnx(spec)
+    except files.FilesUnavailable as exc:
+        print(f"docsgpt: {exc}", file=sys.stderr)
+        return 1
+    print(f"docsgpt: decision model {spec.id} ({runtime}) at {files.revision(spec)} is in {folder}", file=sys.stderr)
+    return 0
+
+
+def _analytics(args: argparse.Namespace) -> int:
+    """``docsgpt analytics backfill``: label the last N days of conversations now, in the foreground.
+
+    The same sweep the worker runs every ANALYTICS_SWEEP_SECONDS, without its
+    time budget. Like a worker it calls the model where it runs (the decider,
+    the API process or the remote endpoint) at background priority and never
+    loads it here; it does nothing while DECISION_ANALYTICS_ENABLED is off.
+    ``--dry-run`` prints the unlabelled messages and a time estimate instead.
+    """
+    if getattr(args, "analytics_action", None) != "backfill":
+        print("usage: docsgpt analytics backfill --days N [--agent ID] [--dry-run] [--no-wait]", file=sys.stderr)
+        return 2
+    if args.agent:
+        try:
+            uuid.UUID(args.agent)
+        except ValueError:
+            print("docsgpt: --agent must be an agent id", file=sys.stderr)
+            return 2
+    from docsgpt.core.settings import settings
+
+    days = args.days if args.days is not None else settings.ANALYTICS_BACKFILL_DAYS
+    if not 1 <= days <= settings.ANALYTICS_RETENTION_DAYS:
+        # Older labels are purged by retention, so they would be labelled again and again.
+        print(f"docsgpt: --days must be 1 to ANALYTICS_RETENTION_DAYS ({settings.ANALYTICS_RETENTION_DAYS})",
+              file=sys.stderr)
+        return 2
+    import docsgpt.celery_init as celery_init
+    from docsgpt.analytics import tasks
+
+    # Calls go where a worker's go: in local mode, to the API process's model.
+    celery_init._mark_worker_process()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    if args.dry_run:
+        print(json.dumps(tasks.backfill_estimate(days, args.agent), indent=2))
+        return 0
+    if not tasks.enabled():
+        print("docsgpt: DECISION_ANALYTICS_ENABLED is off (or DECISION_MODE=none); nothing to label", file=sys.stderr)
+        return 1
+    report = _sweep_when_free(tasks, days, args.agent, wait=not args.no_wait)
+    print(json.dumps(report, indent=2))
+    return 0 if report.get("stopped") in (None, "budget") and "skipped" not in report else 1
+
+
+def _sweep_when_free(tasks, days: int, agent_id: Optional[str], wait: bool) -> dict:
+    """Run the backfill sweep, waiting while a scheduled sweep holds the lock.
+
+    The wait is bounded by one scheduled sweep's lease (its budget, one model call, and a minute), after which
+    a lock still held is reported rather than waited on.
+
+    Args:
+        tasks: ``docsgpt.analytics.tasks``.
+        days: Days back to label.
+        agent_id: Only this agent's conversations, or every agent's.
+        wait: Retry while the lock is held; ``False`` returns the first ``{"skipped": "locked"}``.
+
+    Returns:
+        The sweep's report.
+    """
+    from docsgpt.core.settings import settings
+
+    bound = settings.ANALYTICS_SWEEP_BUDGET_SECONDS + settings.DECISION_BACKGROUND_TIMEOUT + 60
+    waited = 0
+    while True:
+        report = tasks.sweep(budget_seconds=None, days=days, agent_id=agent_id)
+        if report.get("skipped") != "locked" or not wait:
+            return report
+        if waited >= bound:
+            print(f"docsgpt: a sweep is still running after {waited} s; try again later", file=sys.stderr)
+            return report
+        if not waited:
+            print("docsgpt: a scheduled sweep is running; waiting for it to finish", file=sys.stderr)
+        _sleep(BACKFILL_POLL_SECONDS)
+        waited += BACKFILL_POLL_SECONDS
+
+
+def _decide_server(args: argparse.Namespace) -> int:
+    """Serve the decision model over ``/v1/decide`` in this process; see ``docsgpt.decisions.server``."""
+    from docsgpt.decisions import server
+
+    _announce_home()
+    return server.serve(args.host, args.port, args.device)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docsgpt", description="DocsGPT: private AI for agents, assistants and search.")
     parser.add_argument("--version", action="version", version=f"docsgpt {__version__}")
@@ -344,7 +561,15 @@ def build_parser() -> argparse.ArgumentParser:
     api.set_defaults(func=_api)
 
     worker = commands.add_parser("worker", help="run the Celery worker (and the scheduler)")
-    worker.add_argument("-Q", "--queues", help="queues to consume (default: every configured queue)")
+    queues = worker.add_mutually_exclusive_group()
+    queues.add_argument(
+        "-Q", "--queues",
+        help="queues to consume (default: every configured queue; on the solo pool, all but ANALYTICS_QUEUE)",
+    )
+    queues.add_argument(
+        "--analytics", action="store_true",
+        help="consume only ANALYTICS_QUEUE, without the scheduler: the worker that runs next to a solo-pool one",
+    )
     worker.add_argument("--concurrency", type=int, help="worker processes (default: one per CPU)")
     worker.add_argument("--pool", help="celery pool (default: prefork; solo on macOS and Windows)")
     worker.add_argument("-l", "--loglevel", default="INFO")
@@ -371,6 +596,48 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     connectors.set_defaults(func=_connectors)
+
+    decisions = commands.add_parser("decisions", help="manage the decision model's files")
+    decision_actions = decisions.add_subparsers(dest="decisions_action", metavar="<action>")
+    prefetch = decision_actions.add_parser(
+        "prefetch", help="download the pinned decision model into DECISION_CACHE_DIR (for offline installs)"
+    )
+    prefetch.add_argument(
+        "--runtime", choices=("onnx", "torch"), default="onnx",
+        help="onnx (default: the API and the decider on CPU) or torch (decide-server --device mps|cuda)",
+    )
+    decision_actions.add_parser(
+        "status", help="show the decision model settings, feature modes and whether its files are downloaded"
+    )
+    decisions.set_defaults(func=_decisions)
+
+    analytics = commands.add_parser("analytics", help="conversation analytics: label past conversations now")
+    analytics_actions = analytics.add_subparsers(dest="analytics_action", metavar="<action>")
+    backfill = analytics_actions.add_parser(
+        "backfill", help="label the last N days of conversations in the foreground (the sweep without its budget)"
+    )
+    backfill.add_argument("--days", type=int, help="days back to label (default: ANALYTICS_BACKFILL_DAYS)")
+    backfill.add_argument("--agent", help="only this agent's conversations (its id)")
+    backfill.add_argument(
+        "--dry-run", action="store_true", help="print the unlabelled messages and a time estimate; label nothing"
+    )
+    backfill.add_argument(
+        "--no-wait", action="store_true", help="exit at once if a scheduled sweep is running, instead of waiting"
+    )
+    analytics.set_defaults(func=_analytics)
+
+    decide_server = commands.add_parser(
+        "decide-server", help="serve the decision model over HTTP (/v1/decide) for the API and the worker"
+    )
+    decide_server.add_argument(
+        "--host", default=DEFAULT_HOST, help="interface to listen on (default: localhost; others need DECISION_KEY)"
+    )
+    decide_server.add_argument("--port", type=int, default=7095)
+    decide_server.add_argument(
+        "--device", choices=("cpu", "mps", "cuda"),
+        help="cpu (ONNX), or mps / cuda with the decisions-torch extra (default: DECISION_DEVICE, else cpu)",
+    )
+    decide_server.set_defaults(func=_decide_server)
 
     for name, (module, help_text) in SCRIPTS.items():
         commands.add_parser(name, help=f"{help_text} (docsgpt.scripts.{module})", add_help=False)

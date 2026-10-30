@@ -191,6 +191,13 @@ class ReconciliationRepository:
                        tca.attempted_at, tca.updated_at
                 FROM tool_call_attempts tca
                 WHERE tca.status = 'executed'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM conversation_messages cm
+                      WHERE cm.id = tca.message_id
+                        AND cm.status IN ('pending', 'streaming')
+                        AND (cm.message_metadata->>'last_heartbeat_at')::timestamptz
+                            > now() - interval '2 minutes'
+                  )
                   AND tca.updated_at < now() - make_interval(mins => :age)
                   AND NOT EXISTS (
                       SELECT 1

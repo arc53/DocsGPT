@@ -8,6 +8,7 @@ import type {
   ScheduleRunResponse,
   ScheduleStats,
   ScheduleUpdatePayload,
+  UserScheduleListResponse,
 } from '../../agents/types/schedule';
 
 const json = async (response: Response | unknown) => {
@@ -26,12 +27,11 @@ const jsonOrUndefined = async (response: Response | unknown) => {
 };
 
 /**
- * The body of a create or update, or an Error carrying the server's
- * `message` when it refused the change (a bad run time, a finished task).
- * Without one (an error page, a body that is not JSON) the Error has no
- * message, so the form shows only its own "couldn't save" text.
+ * Return a schedule response body or reject with the server's message on
+ * HTTP errors. A non-JSON body leaves the Error message empty so callers
+ * can show their own fallback text instead of a JSON parse error.
  */
-const savedOrThrow = async (response: Response | unknown) => {
+const bodyOrThrow = async (response: Response | unknown) => {
   const r = response as Response;
   if (r && r.ok === false) {
     const body = await jsonOrUndefined(r);
@@ -43,6 +43,15 @@ const savedOrThrow = async (response: Response | unknown) => {
 };
 
 const schedulesService = {
+  /** The caller's own schedules across every agent, agentless ones included. */
+  listAll: async (token: string | null): Promise<UserScheduleListResponse> => {
+    const r = await apiClient.get(endpoints.USER.USER_SCHEDULES, token);
+    if (!(r as Response).ok) {
+      throw new Error(`Schedules failed: ${(r as Response).status}`);
+    }
+    return (await json(r)) as UserScheduleListResponse;
+  },
+
   listForAgent: async (
     agentId: string,
     token: string | null,
@@ -51,7 +60,7 @@ const schedulesService = {
       endpoints.USER.AGENT_SCHEDULES(agentId),
       token,
     );
-    return (await json(r)) as ScheduleListResponse;
+    return (await bodyOrThrow(r)) as ScheduleListResponse;
   },
 
   statsForAgent: async (
@@ -81,12 +90,12 @@ const schedulesService = {
       payload,
       token,
     );
-    return (await savedOrThrow(r)) as ScheduleResponse;
+    return (await bodyOrThrow(r)) as ScheduleResponse;
   },
 
   get: async (id: string, token: string | null): Promise<ScheduleResponse> => {
     const r = await apiClient.get(endpoints.USER.SCHEDULE(id), token);
-    return (await json(r)) as ScheduleResponse;
+    return (await bodyOrThrow(r)) as ScheduleResponse;
   },
 
   update: async (
@@ -95,7 +104,7 @@ const schedulesService = {
     token: string | null,
   ): Promise<ScheduleResponse> => {
     const r = await apiClient.put(endpoints.USER.SCHEDULE(id), payload, token);
-    return (await savedOrThrow(r)) as ScheduleResponse;
+    return (await bodyOrThrow(r)) as ScheduleResponse;
   },
 
   setPaused: async (
@@ -108,7 +117,7 @@ const schedulesService = {
       { action },
       token,
     );
-    return (await savedOrThrow(r)) as ScheduleResponse;
+    return (await bodyOrThrow(r)) as ScheduleResponse;
   },
 
   remove: async (
@@ -128,7 +137,7 @@ const schedulesService = {
       {},
       token,
     );
-    return (await savedOrThrow(r)) as ScheduleRunResponse;
+    return (await bodyOrThrow(r)) as ScheduleRunResponse;
   },
 
   listRuns: async (
@@ -141,7 +150,7 @@ const schedulesService = {
       endpoints.USER.SCHEDULE_RUNS(id, limit, offset),
       token,
     );
-    return (await json(r)) as ScheduleRunListResponse;
+    return (await bodyOrThrow(r)) as ScheduleRunListResponse;
   },
 
   getRun: async (
@@ -153,7 +162,7 @@ const schedulesService = {
       endpoints.USER.SCHEDULE_RUN(id, runId),
       token,
     );
-    return (await json(r)) as ScheduleRunResponse;
+    return (await bodyOrThrow(r)) as ScheduleRunResponse;
   },
 };
 

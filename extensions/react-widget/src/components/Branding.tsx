@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 
+import { useMessages } from '../locale/context';
 import type { PoweredBy as PoweredByProp } from '../types/index';
 import { DocsGPTMark } from './icons';
 import { focusRing, radii } from './tokens';
@@ -78,10 +79,7 @@ export const AgentAvatar = ({
   );
 };
 
-const DEFAULT_POWERED_BY = {
-  label: 'Powered by DocsGPT',
-  href: 'https://www.docsgpt.cloud/',
-};
+const DOCSGPT_URL = 'https://www.docsgpt.cloud/';
 
 const Credit = styled.div`
   box-sizing: border-box;
@@ -106,8 +104,9 @@ const CreditLink = styled.a`
 
 /**
  * The credit line under the chat and the search results: "Powered by
- * DocsGPT" by default, an embedder's own `{ label, href }`, or nothing for
- * `false`. A label that starts with "Powered by" links only the name after it.
+ * DocsGPT" by default (translated, with only the name linked), an embedder's
+ * own `{ label, href }`, or nothing for `false`. An embedder's label that
+ * starts with "Powered by" links only the name after it.
  */
 export const PoweredBy = ({
   value = true,
@@ -116,8 +115,29 @@ export const PoweredBy = ({
   value?: PoweredByProp;
   className?: string;
 }) => {
+  const { messages } = useMessages();
   if (value === false) return null;
-  const { label, href } = value === true ? DEFAULT_POWERED_BY : value;
+  if (value === true) {
+    // A host's own wording without the placeholder names no brand to link.
+    if (!messages.poweredBy.includes('{brand}'))
+      return <Credit className={className}>{messages.poweredBy}</Credit>;
+    // The brand sits wherever the language puts it.
+    const [before, after = ''] = messages.poweredBy.split('{brand}');
+    return (
+      <Credit className={className}>
+        {before}
+        <CreditLink
+          href={DOCSGPT_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          DocsGPT
+        </CreditLink>
+        {after}
+      </Credit>
+    );
+  }
+  const { label, href } = value;
   if (!href) return <Credit className={className}>{label}</Credit>;
   const prefix = /^powered by\s+/i.exec(label)?.[0] ?? '';
   return (

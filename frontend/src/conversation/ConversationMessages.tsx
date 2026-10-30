@@ -25,8 +25,14 @@ import AddToKnowledgeAction from './AddToKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
 import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
 import WakeEventRow from '../backgroundJobs/WakeEventRow';
+import type { OpenArtifactRequest } from './artifactCards';
 import ConversationBubble from './ConversationBubble';
-import { FEEDBACK, Query, Status } from './conversationModels';
+import {
+  FEEDBACK,
+  Query,
+  Status,
+  TERMINATED_RESPONSE_PLACEHOLDER,
+} from './conversationModels';
 import { curatedErrorText } from './curatedError';
 import StreamingStatusLine from './StreamingStatusLine';
 import { cn } from '@/lib/utils';
@@ -47,7 +53,7 @@ type ConversationMessagesProps = {
   status: Status;
   showHeroOnEmpty?: boolean;
   headerContent?: ReactNode;
-  onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+  onOpenArtifact?: (artifact: OpenArtifactRequest) => void;
   onToolAction?: (
     callId: string,
     decision: 'approved' | 'denied',
@@ -70,6 +76,16 @@ const CONTEXT_LENGTH_EXCEEDED = 'context_length_exceeded';
 
 const MS_VIEWPORT_SELECTOR = '[data-slot="message-scroller-viewport"]';
 const STICK_THRESHOLD_PX = 48;
+// The keys the message-scroller primitive treats as a user scroll.
+const SCROLL_KEYS = new Set([
+  'ArrowDown',
+  'ArrowUp',
+  'End',
+  'Home',
+  'PageDown',
+  'PageUp',
+  ' ',
+]);
 
 const DEFAULT_BUBBLE_MARGIN = 'mb-7';
 const FIRST_QUESTION_BUBBLE_MARGIN_TOP = 'mt-5';
@@ -123,6 +139,86 @@ export default function ConversationMessages({
     prevQueryCountRef.current = queries.length;
   }, [queries.length]);
 
+  // A scroll gesture (the primitive's own user-intent events) releases its pin
+  // on the latest question but leaves the spacer at its height; re-armed when
+  // the next question arrives. Before the follow effect, so it runs first.
+  const pinReleasedRef = useRef(false);
+  useLayoutEffect(() => {
+    pinReleasedRef.current = false;
+  }, [queries.length]);
+
+  useEffect(() => {
+    if (!hasMessages) return;
+    const vp = document.querySelector<HTMLElement>(MS_VIEWPORT_SELECTOR);
+    if (!vp) return;
+    const releasePin = () => {
+      pinReleasedRef.current = true;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(event.key)) releasePin();
+    };
+    // Opening or closing a step while the chat follows the answer's end
+    // resized the content and the follow scrolled it straight back to the
+    // bottom: the step just clicked jumped away from the pointer. A toggle is
+    // a gesture too, so it stops the follow the way a wheel does (the
+    // primitive only reads intent from wheel, touch and key events) and the
+    // step opens in place. While the pin holds the question at the top the
+    // step already stays put, so the pin is left alone; a released pin's
+    // leftover spacer holds nothing, as in the follow effect.
+    const onToggleClick = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.closest('[aria-expanded]')) return;
+      const spacer = vp.querySelector<HTMLElement>(
+        '[data-message-scroller-spacer]',
+      );
+      if (!pinReleasedRef.current && spacer && spacer.offsetHeight > 0) return;
+      const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
+      if (dist >= STICK_THRESHOLD_PX) return;
+      stickToBottomRef.current = false;
+      vp.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
+    };
+    vp.addEventListener('wheel', releasePin, { passive: true });
+    vp.addEventListener('touchmove', releasePin, { passive: true });
+    vp.addEventListener('keydown', onKeyDown);
+    vp.addEventListener('click', onToggleClick, true);
+    return () => {
+      vp.removeEventListener('wheel', releasePin);
+      vp.removeEventListener('touchmove', releasePin);
+      vp.removeEventListener('keydown', onKeyDown);
+      vp.removeEventListener('click', onToggleClick, true);
+    };
+  }, [hasMessages]);
+
+  // While an answer streams, its turn only grows. A row swapped for a shorter
+  // one (the status line handing over to a grouped tool step, a step group
+  // folding) shrank the content, and the browser clamps the scroll a frame
+  // before the scroller re-pins: the turn jumped and snapped back. Each growth
+  // raises the answer's min-height to match, so a shrink leaves blank space at
+  // its end instead; released when the stream ends.
+  const [streamingAnswer, setStreamingAnswer] = useState<HTMLElement | null>(
+    null,
+  );
+  const holdStreamingAnswer = status === 'loading';
+  useLayoutEffect(() => {
+    const el = streamingAnswer;
+    if (!el || !holdStreamingAnswer || typeof ResizeObserver === 'undefined')
+      return;
+    let tallest = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const height =
+        entry.borderBoxSize?.[0]?.blockSize ??
+        el.getBoundingClientRect().height;
+      if (height <= tallest) return;
+      tallest = height;
+      el.style.minHeight = `${height}px`;
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      el.style.minHeight = '';
+    };
+  }, [streamingAnswer, holdStreamingAnswer]);
+
   useEffect(() => {
     if (!hasMessages) return;
     const vp = document.querySelector<HTMLElement>(MS_VIEWPORT_SELECTOR);
@@ -153,6 +249,14 @@ export default function ConversationMessages({
     if (status !== 'loading' || !hasMessages) return;
     const vp = document.querySelector<HTMLElement>(MS_VIEWPORT_SELECTOR);
     if (!vp) return;
+    // While the pin spacer holds the latest question at the top, the primitive
+    // re-pins on resize a frame later; scrolling to the bottom here first made
+    // the turn jump up and back on every growth. Once a gesture has released
+    // the pin, its leftover spacer no longer holds anything: follow.
+    const spacer = vp.querySelector<HTMLElement>(
+      '[data-message-scroller-spacer]',
+    );
+    if (!pinReleasedRef.current && spacer && spacer.offsetHeight > 0) return;
     const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
     if (stickToBottomRef.current && dist > 0) vp.scrollTop = vp.scrollHeight;
   }, [status, lastTurnContentLength, hasMessages]);
@@ -203,29 +307,64 @@ export default function ConversationMessages({
         query.attachments?.length
           ? query.attachments
           : null;
+      const partialResponse =
+        query.response === TERMINATED_RESPONSE_PLACEHOLDER
+          ? ''
+          : query.response;
+      const hasPartialProgress =
+        partialResponse ||
+        query.thought ||
+        query.tool_calls?.length ||
+        query.research ||
+        query.workflow_run_id;
+      // A workflow that failed keeps its steps in view: which one failed,
+      // and why.
+      const showPartial =
+        (query.errorCode === 'time_limit' && hasPartialProgress) ||
+        Boolean(query.workflow?.steps.length);
       return (
-        <ConversationBubble
-          className={bubbleMargin}
-          key={`${index}-ERROR`}
-          message={curatedErrorText(
-            t,
-            query.error,
-            query.errorCode,
-            query.errorParams,
-            { offersKnowledge: Boolean(knowledgeFiles) },
-          )}
-          type="ERROR"
-          retryBtn={retryButton}
-          errorCode={query.errorCode}
-          errorAction={
-            knowledgeFiles ? (
-              <AddToKnowledgeAction
-                files={knowledgeFiles}
-                onAdded={() => onKnowledgeAdded?.(index)}
-              />
-            ) : undefined
-          }
-        />
+        <Fragment key={`${index}-ERROR`}>
+          {showPartial ? (
+            <ConversationBubble
+              className={bubbleMargin}
+              message={partialResponse}
+              type="ANSWER"
+              thought={query.thought}
+              sources={query.sources}
+              toolCalls={query.tool_calls}
+              segments={query.segments}
+              workflowRunId={query.workflow_run_id}
+              workflow={query.workflow}
+              research={query.research}
+              conversationArtifacts={conversationArtifacts}
+              onOpenArtifact={onOpenArtifact}
+              onToolAction={onToolAction}
+              agentId={agentId}
+              isStreaming={false}
+            />
+          ) : null}
+          <ConversationBubble
+            className={bubbleMargin}
+            message={curatedErrorText(
+              t,
+              query.error,
+              query.errorCode,
+              query.errorParams,
+              { offersKnowledge: Boolean(knowledgeFiles) },
+            )}
+            type="ERROR"
+            retryBtn={retryButton}
+            errorCode={query.errorCode}
+            errorAction={
+              knowledgeFiles ? (
+                <AddToKnowledgeAction
+                  files={knowledgeFiles}
+                  onAdded={() => onKnowledgeAdded?.(index)}
+                />
+              ) : undefined
+            }
+          />
+        </Fragment>
       );
     }
 
@@ -264,6 +403,7 @@ export default function ConversationMessages({
             toolCalls={query.tool_calls}
             segments={query.segments}
             workflowRunId={query.workflow_run_id}
+            workflow={query.workflow}
             research={query.research}
             conversationArtifacts={conversationArtifacts}
             onOpenArtifact={onOpenArtifact}
@@ -351,7 +491,14 @@ export default function ConversationMessages({
                     )}
                   </MessageScrollerItem>
                   {responseView && (
-                    <MessageScrollerItem messageId={`a-${index}`}>
+                    <MessageScrollerItem
+                      messageId={`a-${index}`}
+                      ref={
+                        index === queries.length - 1
+                          ? setStreamingAnswer
+                          : undefined
+                      }
+                    >
                       {responseView}
                     </MessageScrollerItem>
                   )}

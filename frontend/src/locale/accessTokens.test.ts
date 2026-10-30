@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import de from './de.json';
 import en from './en.json';
 import es from './es.json';
+import fr from './fr.json';
 import jp from './jp.json';
 import ru from './ru.json';
 import zhTW from './zh-TW.json';
@@ -26,7 +27,7 @@ const keysOf = (locale: { settings: object }): string[] => {
   return Array.from(new Set(flatten(block))).sort();
 };
 
-const LOCALES = { es, de, jp, ru, zh, zhTW };
+const LOCALES = { es, de, fr, jp, ru, zh, zhTW };
 
 describe('settings.accessTokens locale block', () => {
   it.each(Object.entries(LOCALES))(

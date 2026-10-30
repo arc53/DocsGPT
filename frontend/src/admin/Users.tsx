@@ -39,16 +39,19 @@ import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
   LoadError,
+  UserIdentity,
   eventLabel,
   fmtDateShort,
   fmtNumber,
   fmtRelative,
+  userName,
 } from './AdminUI';
 import UserQuotaModal from './UserQuotaModal';
 import UserUsageModal from './UserUsageModal';
 
 type AdminUser = {
   user_id: string;
+  email?: string | null;
   active: boolean;
   created_at?: string;
   last_seen?: string | null;
@@ -78,8 +81,8 @@ export default function Users() {
   const [busy, setBusy] = useState<string | null>(null);
   const [menuUserId, setMenuUserId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
-  const [usageFor, setUsageFor] = useState<string | null>(null);
-  const [quotaUserId, setQuotaUserId] = useState<string | null>(null);
+  const [usageFor, setUsageFor] = useState<AdminUser | null>(null);
+  const [quotaFor, setQuotaFor] = useState<AdminUser | null>(null);
   const [confirm, setConfirm] = useState<{
     message: string;
     description: string;
@@ -198,16 +201,20 @@ export default function Users() {
   };
 
   const buildActions = (
-    userId: string,
+    user: AdminUser,
     isAdmin: boolean,
     active: boolean,
   ): Action[] => {
+    const userId = user.user_id;
+    const name = userName(userId, user.email);
+    // Emails aren't unique, so a destructive confirm also names the id.
+    const confirmName = name === userId ? userId : `${name} (${userId})`;
     const acts: Action[] = [
       {
         key: 'quota',
         label: 'Quota',
         icon: Gauge,
-        perform: () => setQuotaUserId(userId),
+        perform: () => setQuotaFor(user),
       },
     ];
     if (isAdmin) {
@@ -218,7 +225,7 @@ export default function Users() {
         destructive: true,
         perform: () =>
           askConfirm(
-            `Revoke admin from "${userId}"?`,
+            `Revoke admin from "${confirmName}"?`,
             'They lose access to the admin console. You can make them an admin again at any time.',
             'Revoke',
             confirmed(() => adminService.revokeAdmin(userId, token), userId),
@@ -240,7 +247,7 @@ export default function Users() {
         destructive: true,
         perform: () =>
           askConfirm(
-            `Deactivate "${userId}"?`,
+            `Deactivate "${confirmName}"?`,
             'Their live sessions are revoked. You can activate them again at any time.',
             'Deactivate',
             confirmed(
@@ -267,7 +274,7 @@ export default function Users() {
       perform: run(
         () => adminService.revokeSessions(userId, token),
         userId,
-        `Sessions revoked for ${userId}`,
+        `Sessions revoked for ${name}`,
       ),
     });
     return acts;
@@ -283,7 +290,7 @@ export default function Users() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="w-full max-w-xs">
           <SearchInput
-            label="Filter by user id"
+            label="Filter by email or user id"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
@@ -338,12 +345,7 @@ export default function Users() {
                       onClick={() => openDetail(u.user_id)}
                     >
                       <TableCell className="max-w-[280px]">
-                        <span
-                          className="block truncate font-mono text-xs"
-                          title={u.user_id}
-                        >
-                          {u.user_id}
-                        </span>
+                        <UserIdentity userId={u.user_id} email={u.email} />
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
@@ -383,7 +385,7 @@ export default function Users() {
                                 icon: Eye,
                                 onClick: () => openDetail(u.user_id),
                               },
-                              ...buildActions(u.user_id, isAdmin, u.active).map(
+                              ...buildActions(u, isAdmin, u.active).map(
                                 (act): MenuOption => ({
                                   label: act.label,
                                   icon: act.icon,
@@ -428,10 +430,15 @@ export default function Users() {
         />
       ) : null}
 
-      <UserUsageModal userId={usageFor} onClose={() => setUsageFor(null)} />
+      <UserUsageModal
+        userId={usageFor?.user_id ?? null}
+        email={usageFor?.email}
+        onClose={() => setUsageFor(null)}
+      />
       <UserQuotaModal
-        userId={quotaUserId}
-        onClose={() => setQuotaUserId(null)}
+        userId={quotaFor?.user_id ?? null}
+        email={quotaFor?.email}
+        onClose={() => setQuotaFor(null)}
       />
 
       <Modal
@@ -439,7 +446,11 @@ export default function Users() {
         onOpenChange={(open) => {
           if (!open) setDetail(null);
         }}
-        title={detail?.user?.user_id ?? 'User'}
+        title={
+          detail?.user
+            ? userName(detail.user.user_id, detail.user.email)
+            : 'User'
+        }
         size="lg"
         footer={
           detail ? (
@@ -452,7 +463,7 @@ export default function Users() {
               }
               menuWidth="sm"
               options={buildActions(
-                detail.user.user_id,
+                detail.user,
                 (detail.roles ?? []).includes('admin'),
                 detail.user?.active ?? true,
               ).map((act): MenuOption => ({
@@ -472,6 +483,14 @@ export default function Users() {
       >
         {detail ? (
           <div className="flex flex-col gap-4 text-sm">
+            <DescriptionList size="sm">
+              <DescriptionItem label="Email">
+                {detail.user?.email?.trim() || 'Not on file'}
+              </DescriptionItem>
+              <DescriptionItem label="User ID" mono>
+                {detail.user?.user_id}
+              </DescriptionItem>
+            </DescriptionList>
             <div>
               <p className="text-muted-foreground mb-1 text-xs">
                 Roles & status
@@ -513,9 +532,9 @@ export default function Users() {
               onClick={() => {
                 // Close the detail dialog before the usage dialog opens, so
                 // the two never stack.
-                const userId = detail.user.user_id;
+                const user = detail.user;
                 setDetail(null);
-                setUsageFor(userId);
+                setUsageFor(user);
               }}
             >
               View spend breakdown

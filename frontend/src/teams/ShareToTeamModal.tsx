@@ -883,7 +883,11 @@ export default function ShareToTeamModal({
       </div>
 
       {teams.length === 0 ? (
-        <p className="text-sm">{t('settings.teams.share.noTeams')}</p>
+        <EmptyState
+          size="sm"
+          illustration="none"
+          title={t('settings.teams.share.noTeams')}
+        />
       ) : (
         <>
           {credentials && (

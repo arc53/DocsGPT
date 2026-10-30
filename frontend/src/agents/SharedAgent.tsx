@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
+import ArtifactPanel from '../components/ArtifactPanel';
 import MessageInput from '../components/MessageInput';
 import { Avatar } from '../components/ui/avatar';
+import { SidePanel } from '../components/ui/side-panel';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
+import ArtifactsPanel from '../conversation/ArtifactsPanel';
+import { ChatCompanionContext } from '../conversation/chatCompanion';
 import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
 import {
@@ -17,7 +21,12 @@ import {
   selectQueries,
   selectStatus,
 } from '../conversation/conversationSlice';
-import { selectToken, setSelectedAgent } from '../preferences/preferenceSlice';
+import { useArtifactDetail } from '../conversation/useArtifactDetail';
+import {
+  selectConversationId,
+  selectToken,
+  setSelectedAgent,
+} from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import SharedAgentCard from './SharedAgentCard';
 import { Agent } from './types';
@@ -30,6 +39,30 @@ export default function SharedAgent() {
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
+  const conversationId = useSelector(selectConversationId);
+  // The runner owns this chat and its runs, so its artifacts open here.
+  const {
+    detail,
+    setDetail,
+    reset,
+    openArtifact,
+    openArtifactList,
+    syncArtifactList,
+    shown,
+    listKey,
+  } = useArtifactDetail();
+  // Keeps the last content on screen while the panel slides out.
+  const [shownDetail, setShownDetail] = useState(detail);
+  if (detail && detail !== shownDetail) setShownDetail(detail);
+  const artifactCompanion = useMemo(
+    () => ({
+      openArtifact: shown,
+      openArtifactList,
+      openArtifactListKey: listKey,
+      syncArtifactList,
+    }),
+    [shown, openArtifactList, listKey, syncArtifactList],
+  );
 
   const [sharedAgent, setSharedAgent] = useState<Agent>();
   const [isLoading, setIsLoading] = useState(true);
@@ -164,18 +197,21 @@ export default function SharedAgent() {
       </div>
       <div className="flex h-full w-full flex-col items-center justify-between sm:pt-12">
         <div className="flex w-full flex-col items-center overflow-y-auto">
-          <ConversationMessages
-            handleQuestion={handleQuestion}
-            handleQuestionSubmission={handleQuestionSubmission}
-            queries={queries}
-            status={status}
-            showHeroOnEmpty={false}
-            headerContent={
-              <div className="flex w-full items-center justify-center py-4">
-                <SharedAgentCard agent={sharedAgent} />
-              </div>
-            }
-          />
+          <ChatCompanionContext.Provider value={artifactCompanion}>
+            <ConversationMessages
+              handleQuestion={handleQuestion}
+              handleQuestionSubmission={handleQuestionSubmission}
+              queries={queries}
+              status={status}
+              showHeroOnEmpty={false}
+              onOpenArtifact={openArtifact}
+              headerContent={
+                <div className="flex w-full items-center justify-center py-4">
+                  <SharedAgentCard agent={sharedAgent} />
+                </div>
+              }
+            />
+          </ChatCompanionContext.Provider>
         </div>
         <div className="flex w-[95%] max-w-290 flex-col items-center pb-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12">
           <div className="w-full px-2">
@@ -192,6 +228,35 @@ export default function SharedAgent() {
           </p>
         </div>
       </div>
+      <SidePanel
+        open={detail !== null}
+        onOpenChange={(open) => {
+          if (!open) reset();
+        }}
+      >
+        {shownDetail?.kind === 'artifact' ? (
+          <ArtifactPanel
+            key={`${shownDetail.open.id}:${shownDetail.open.version ?? ''}`}
+            artifactId={shownDetail.open.id}
+            toolName={shownDetail.open.toolName}
+            version={shownDetail.open.version}
+            conversationId={conversationId}
+          />
+        ) : shownDetail?.kind === 'artifacts' ? (
+          <ArtifactsPanel
+            items={shownDetail.items}
+            open={shownDetail.open}
+            onOpenChange={(next) =>
+              setDetail((current) =>
+                current?.kind === 'artifacts'
+                  ? { ...current, open: next }
+                  : current,
+              )
+            }
+            conversationId={conversationId}
+          />
+        ) : null}
+      </SidePanel>
     </div>
   );
 }

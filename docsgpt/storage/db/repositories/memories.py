@@ -14,7 +14,7 @@ from typing import Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, row_to_dict
 
 
 class MemoriesRepository:
@@ -51,9 +51,9 @@ class MemoriesRepository:
         result = self._conn.execute(
             text(
                 "SELECT * FROM memories WHERE user_id = :user_id "
-                "AND tool_id = CAST(:tool_id AS uuid) AND path LIKE :prefix"
+                "AND tool_id = CAST(:tool_id AS uuid) AND path LIKE :prefix ESCAPE '\\'"
             ),
-            {"user_id": user_id, "tool_id": tool_id, "prefix": prefix + "%"},
+            {"user_id": user_id, "tool_id": tool_id, "prefix": like_escape(prefix) + "%"},
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
@@ -71,9 +71,9 @@ class MemoriesRepository:
         result = self._conn.execute(
             text(
                 "DELETE FROM memories WHERE user_id = :user_id "
-                "AND tool_id = CAST(:tool_id AS uuid) AND path LIKE :prefix"
+                "AND tool_id = CAST(:tool_id AS uuid) AND path LIKE :prefix ESCAPE '\\'"
             ),
-            {"user_id": user_id, "tool_id": tool_id, "prefix": prefix + "%"},
+            {"user_id": user_id, "tool_id": tool_id, "prefix": like_escape(prefix) + "%"},
         )
         return result.rowcount
 

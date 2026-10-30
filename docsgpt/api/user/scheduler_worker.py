@@ -349,6 +349,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
     with engine.begin() as conn:
         if not ScheduleRunsRepository(conn).mark_running(run_id, celery_task_id):
             return {"status": "skipped", "reason": "lost race to mark_running"}
+    _publish_run_event("schedule.run.started", {**run, "status": "running"}, schedule)
 
     started = datetime.now(timezone.utc)
     instruction = schedule.get("instruction") or ""

@@ -26,6 +26,7 @@ def _run(
     sources: list,
     prompt_id: str = "default",
     prompt_text: str = "system prompt",
+    **run_kwargs,
 ) -> dict:
     """Run a headless agent over ``sources``; return what the run was built with."""
     from docsgpt.agents import headless_runner as hr
@@ -40,7 +41,9 @@ def _run(
     seen: dict = {"dispatchers": [], "prompts": []}
 
     def _dispatcher(_legacy, sources=None, **kwargs):
-        seen["dispatchers"].append({"sources": sources, "source": kwargs.get("source")})
+        seen["dispatchers"].append(
+            {"sources": sources, "source": kwargs.get("source"), "conversation_id": kwargs.get("conversation_id")}
+        )
         return retriever
 
     def _create_agent(cls, agent_type, **kwargs):
@@ -71,7 +74,7 @@ def _run(
          patch("docsgpt.core.model_utils.get_api_key_for_provider", return_value="k"), \
          patch("docsgpt.utils.calculate_doc_token_budget", return_value=1000), \
          patch("docsgpt.agents.headless_runner.QuotaService.check", return_value=None):
-        hr.run_agent_headless(config, QUERY, endpoint="webhook")
+        hr.run_agent_headless(config, QUERY, endpoint="webhook", **run_kwargs)
     seen["searches"] = [c.args[0] for c in retriever.search.call_args_list]
     return seen
 
@@ -131,6 +134,11 @@ class TestHeadlessClassicSources:
         assert seen["searches"] == [QUERY]
         assert _ids(seen["dispatchers"][-1]["sources"]) == ["s1"]
         assert _ids(seen["agent_kwargs"]["retriever_config"]["sources"]) == ["s2"]
+
+    def test_the_conversation_keys_the_rerank_arm(self, monkeypatch):
+        # Every turn of a conversation lands in the same rerank rollout arm, run headless or not.
+        seen = _run(monkeypatch, "classic", [_source("s1")], conversation_id="conv-1")
+        assert seen["dispatchers"][-1]["conversation_id"] == "conv-1"
 
 
 @pytest.mark.unit

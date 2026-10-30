@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Attachment } from '../../upload/uploadSlice';
 import reducer, {
   addQuery,
+  clearQueryRun,
   collectCompletedAttachmentIds,
   collectRunAttachmentIds,
   previewSendBlockReason,
@@ -10,6 +11,8 @@ import reducer, {
   setPreviewOpen,
   setWorkflowRunId,
   UNSAVED_DRAFT_ATTACHMENTS_MESSAGE,
+  updateExecutionStep,
+  updateLoopItem,
 } from './workflowPreviewSlice';
 
 const seedState = () => reducer(undefined, { type: '@@INIT' });
@@ -123,5 +126,107 @@ describe('setPreviewOpen', () => {
     state = reducer(state, resetWorkflowPreview());
     expect(state.queries).toEqual([]);
     expect(state.previewOpen).toBe(true);
+  });
+});
+
+describe('updateLoopItem', () => {
+  it('counts items on the loop step and keeps them when the step ends', () => {
+    let state = reducer(seedState(), addQuery({ prompt: 'q' }));
+    const loopStep = {
+      nodeId: 'each',
+      nodeType: 'loop',
+      nodeTitle: 'Each',
+    };
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...loopStep, status: 'running' },
+      }),
+    );
+    state = reducer(
+      state,
+      updateLoopItem({ index: 0, nodeId: 'each', total: 2, failed: false }),
+    );
+    state = reducer(
+      state,
+      updateLoopItem({ index: 0, nodeId: 'each', total: 2, failed: true }),
+    );
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...loopStep, status: 'completed' },
+      }),
+    );
+
+    const expected = { total: 2, done: 2, failed: 1 };
+    expect(state.queries[0].executionSteps?.[0].items).toEqual(expected);
+    expect(state.executionSteps[0].items).toEqual(expected);
+
+    // A retry of the same query starts its steps and counts over.
+    state = reducer(state, clearQueryRun({ index: 0 }));
+    expect(state.queries[0].executionSteps).toEqual([]);
+    expect(state.executionSteps).toEqual([]);
+  });
+});
+
+describe('step retries', () => {
+  const agentStep = { nodeId: 'a', nodeType: 'agent', nodeTitle: 'Agent' };
+
+  it('marks a retrying step, then counts its attempts when it ends', () => {
+    let state = reducer(seedState(), addQuery({ prompt: 'q' }));
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...agentStep, status: 'running' },
+      }),
+    );
+    const startedAt = state.executionSteps[0].startedAt;
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: {
+          ...agentStep,
+          status: 'running',
+          attempt: 2,
+          maxAttempts: 3,
+          retryError: 'upstream 503',
+        },
+      }),
+    );
+    expect(state.executionSteps[0]).toMatchObject({
+      status: 'running',
+      startedAt,
+      attempt: 2,
+      maxAttempts: 3,
+      retryError: 'upstream 503',
+    });
+
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...agentStep, status: 'completed', attempts: 2 },
+      }),
+    );
+    const ended = state.queries[0].executionSteps![0];
+    expect(ended.attempts).toBe(2);
+    expect(ended.attempt).toBeUndefined();
+    expect(ended.retryError).toBeUndefined();
+  });
+
+  it('says nothing of attempts for a step that ran once', () => {
+    let state = reducer(seedState(), addQuery({ prompt: 'q' }));
+    state = reducer(
+      state,
+      updateExecutionStep({
+        index: 0,
+        step: { ...agentStep, status: 'completed', attempts: 1 },
+      }),
+    );
+    expect(state.executionSteps[0].attempts).toBeUndefined();
   });
 });

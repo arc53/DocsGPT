@@ -68,6 +68,11 @@ export type ConnectorDefinition = {
    * with GitHub, once an admin sets up the GitHub App) before `api_key`.
    */
   sign_in_methods?: ConnectorAuthKind[];
+  /**
+   * The OAuth client id Google's own picker opens with. Set for Google
+   * Drive with per-file access, where only Google's picker can choose files.
+   */
+  picker_client_id?: string | null;
   available: boolean;
   disabled: boolean;
   needs_setup: boolean;
@@ -116,12 +121,20 @@ export type ActionParameter = {
   set_by?: 'tool' | 'account' | null;
 };
 
+/**
+ * An MCP action's prompt-injection score, stored when its server's actions
+ * were read while Admin › Guardrails warns on tool descriptions.
+ */
+export type ActionInjection = { p: number; scorer: string } | null;
+
 export type ConnectionToolAction = {
   name: string;
   description: string;
   access: ActionAccess;
   permission: ActionPermission;
   parameters?: ActionParameter[];
+  /** Its description's prompt-injection score, while Admin › Guardrails warns on them. */
+  injection?: ActionInjection;
 };
 
 export type ConnectionTool = {
@@ -140,6 +153,8 @@ export type ConnectionSource = {
   last_sync: string | null;
   sync_frequency: string;
   sync_state: 'active' | 'paused_reconnect';
+  /** Its behaviour: `classic`, `wiki` (converted, edited in place), `graphrag`. */
+  kind?: string;
 };
 
 /** A repository a GitHub connection can read, for the sync picker. */

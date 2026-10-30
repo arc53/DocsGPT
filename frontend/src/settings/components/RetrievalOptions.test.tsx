@@ -8,8 +8,15 @@ import {
   isPrescreenConfigValid,
   chunkingChanged,
   scoreThresholdHidden,
+  sourceHasFileLinks,
   DEFAULT_RETRIEVAL_OPTIONS,
+  MAX_CHUNK_TOKENS,
+  NO_DECISION_FEATURES,
   RetrievalOptionsValue,
+  decisionFeatures,
+  relevancePreset,
+  strictnessOf,
+  withStrictness,
 } from './RetrievalOptions';
 
 const clone = (v: RetrievalOptionsValue): RetrievalOptionsValue =>
@@ -45,6 +52,13 @@ describe('configToOptions (lenient read)', () => {
     expect(opts.retrieval.prescreen.enabled).toBe(false);
   });
 
+  it('clamps an over-limit stored chunk size', () => {
+    const opts = configToOptions({
+      chunking: { max_tokens: 100_000 },
+    } as SourceConfig);
+    expect(opts.chunking.max_tokens).toBe(MAX_CHUNK_TOKENS);
+  });
+
   it('marks prescreen enabled when the stored object is present', () => {
     const opts = configToOptions({
       retrieval: {
@@ -77,6 +91,12 @@ describe('optionsToConfig (write path)', () => {
     v.kind = 'classic';
     v.retrieval.retriever = 'graphrag';
     expect(optionsToConfig(v).kind).toBe('graphrag');
+  });
+
+  it('clamps an over-limit chunk size before serializing', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.chunking.max_tokens = 100_000;
+    expect(optionsToConfig(v).chunking?.max_tokens).toBe(MAX_CHUNK_TOKENS);
   });
 
   it('round-trips the graph config including model and max_chunks', () => {
@@ -146,6 +166,7 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
         chunks: 3,
         score_threshold: 0.25,
         rephrase_query: false,
+        show_links: false,
         prescreen: {
           enabled: true,
           candidate_k: 50,
@@ -153,6 +174,7 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
           batch_size: 5,
           max_keep: 10,
         },
+        reranker: { mode: 'off', min_relevance: 0.3, candidate_k: null },
         graph: {
           seed_strategy: 'relationships',
           passage_nodes: false,
@@ -164,6 +186,33 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
         max_chunks: null,
         gleanings: 0,
       },
+    };
+    expect(configToOptions(optionsToConfig(v))).toEqual(v);
+  });
+
+  it('shows file links unless the source turned them off', () => {
+    expect(configToOptions(undefined).retrieval.show_links).toBe(true);
+    const off = configToOptions({
+      retrieval: { show_links: false },
+    } as SourceConfig);
+    expect(off.retrieval.show_links).toBe(false);
+    expect(optionsToConfig(off).retrieval?.show_links).toBe(false);
+  });
+
+  it('offers file links only for services whose files have them', () => {
+    expect(sourceHasFileLinks('google_drive')).toBe(true);
+    expect(sourceHasFileLinks('share_point')).toBe(true);
+    expect(sourceHasFileLinks('confluence')).toBe(true);
+    expect(sourceHasFileLinks('github')).toBe(false);
+    expect(sourceHasFileLinks(undefined)).toBe(false);
+  });
+
+  it('round-trips a custom relevance filter', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.retrieval.reranker = {
+      mode: 'filter',
+      min_relevance: 0.25,
+      candidate_k: 30,
     };
     expect(configToOptions(optionsToConfig(v))).toEqual(v);
   });
@@ -239,6 +288,132 @@ describe('isPrescreenConfigValid', () => {
 
   it('accepts a consistent config', () => {
     expect(isPrescreenConfigValid(withPrescreen(2, 40, 8))).toBe(true);
+  });
+});
+
+describe('relevance settings', () => {
+  const withReranker = (
+    reranker: RetrievalOptionsValue['retrieval']['reranker'],
+  ): RetrievalOptionsValue => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.retrieval.reranker = reranker;
+    return v;
+  };
+
+  it.each([
+    [null, 'off'],
+    [{ type: 'decision' as const }, 'reorder'],
+    [{ type: 'decision' as const, min_relevance: 0 }, 'reorder'],
+    [{ type: 'decision' as const, min_relevance: 0.3 }, 'filter'],
+  ])('reads reranker %j as %s', (reranker, mode) => {
+    const opts = configToOptions({ retrieval: { reranker } });
+    expect(opts.retrieval.reranker.mode).toBe(mode);
+  });
+
+  it('writes each mode back as the backend stores it', () => {
+    const v = withReranker({ mode: 'off', min_relevance: 0.5, candidate_k: 9 });
+    expect(optionsToConfig(v).retrieval?.reranker).toBe(null);
+    v.retrieval.reranker.mode = 'reorder';
+    expect(optionsToConfig(v).retrieval?.reranker).toEqual({
+      type: 'decision',
+      min_relevance: null,
+      candidate_k: 9,
+    });
+    v.retrieval.reranker.mode = 'filter';
+    expect(optionsToConfig(v).retrieval?.reranker).toEqual({
+      type: 'decision',
+      min_relevance: 0.5,
+      candidate_k: 9,
+    });
+  });
+
+  it('keeps an unset candidate count unset, so the backend default applies', () => {
+    const stored = { type: 'decision' as const, min_relevance: 0.1 };
+    const reranker = optionsToConfig(
+      configToOptions({ retrieval: { reranker: stored } }),
+    ).retrieval?.reranker;
+    expect(reranker).toEqual({ ...stored, candidate_k: null });
+  });
+
+  it.each([
+    [0.1, 'loose'],
+    [0.3, 'balanced'],
+    [0.5, 'strict'],
+    [0.25, null],
+  ])('maps a minimum relevance of %s to the preset %s', (value, preset) => {
+    expect(relevancePreset(value)).toBe(preset);
+  });
+
+  it('shows a stored value that matches no preset as custom', () => {
+    const opts = configToOptions({
+      retrieval: { reranker: { type: 'decision', min_relevance: 0.25 } },
+    });
+    expect(strictnessOf(opts)).toBe('custom');
+    expect(opts.retrieval.reranker.min_relevance).toBe(0.25);
+    expect(
+      strictnessOf(withReranker({ ...opts.retrieval.reranker, mode: 'off' })),
+    ).toBe('off');
+    expect(
+      strictnessOf(
+        withReranker({ mode: 'filter', min_relevance: 0.5, candidate_k: null }),
+      ),
+    ).toBe('strict');
+  });
+
+  it('sets a strictness, and LLM screening goes off with any relevance', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.retrieval.prescreen.enabled = true;
+    expect(withStrictness(v, 'off').retrieval.prescreen.enabled).toBe(true);
+    const strict = withStrictness(v, 'strict');
+    expect(strict.retrieval.reranker).toMatchObject({
+      mode: 'filter',
+      min_relevance: 0.5,
+    });
+    expect(strict.retrieval.prescreen.enabled).toBe(false);
+    const reorder = withStrictness(strict, 'reorder');
+    expect(reorder.retrieval.reranker.mode).toBe('reorder');
+    // Back to a filter, the threshold it had is still there.
+    expect(reorder.retrieval.reranker.min_relevance).toBe(0.5);
+  });
+
+  it('drops a stored prescreen backend: LLM screening is the only one', () => {
+    const opts = configToOptions({
+      retrieval: {
+        prescreen: { candidate_k: 40, max_keep: 8, backend: 'llm' },
+      } as SourceConfig['retrieval'],
+    });
+    expect(optionsToConfig(opts).retrieval?.prescreen).toEqual({
+      candidate_k: 40,
+      model: null,
+      batch_size: 10,
+      max_keep: 8,
+    });
+  });
+
+  it('keeps a stored reranker through a save while the model is off', () => {
+    const stored: SourceConfig = {
+      retrieval: {
+        reranker: { type: 'decision', min_relevance: 0.2, candidate_k: 30 },
+      },
+    };
+    const retrieval = optionsToConfig(configToOptions(stored)).retrieval;
+    expect(retrieval?.reranker).toEqual(stored.retrieval?.reranker);
+  });
+
+  it('offers relevance only where the operator turned the model on', () => {
+    expect(decisionFeatures(undefined)).toEqual(NO_DECISION_FEATURES);
+    expect(
+      decisionFeatures({
+        decision_available: false,
+        decision_relevance_enabled: true,
+      }),
+    ).toEqual(NO_DECISION_FEATURES);
+    expect(
+      decisionFeatures({
+        decision_available: true,
+        decision_relevance_enabled: true,
+      }),
+    ).toEqual({ relevance: true });
   });
 });
 

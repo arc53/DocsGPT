@@ -373,6 +373,7 @@ export default function Prompts({
                   size="icon-xs"
                   onClick={(e) => {
                     e.stopPropagation();
+                    setOpen(false);
                     handleDeletePrompt(prompt.id);
                   }}
                   label={t('settings.general.promptActions.delete')}

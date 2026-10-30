@@ -1,4 +1,5 @@
 import types
+from unittest.mock import patch
 
 import pytest
 from docsgpt.llm.openai import OpenAILLM
@@ -155,6 +156,30 @@ def test_raw_gen_calls_openai_client_and_returns_content(openai_llm):
     assert passed["model"] == "gpt-4o"
     assert isinstance(passed["messages"], list)
     assert passed["stream"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "response",
+    [
+        types.SimpleNamespace(choices=[], usage=None),
+        types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=None)], usage=None
+        ),
+    ],
+    ids=["no choices", "null message"],
+)
+def test_raw_gen_rejects_an_empty_or_filtered_response(openai_llm, response):
+    # A provider can answer 200 with no choices, or with a null message when it
+    # filters the content. Reading .message.content then raised AttributeError,
+    # which the fallback handler read as the model failing.
+    with patch.object(
+        openai_llm, "_create_with_tool_fallback", return_value=response
+    ):
+        with pytest.raises(ValueError, match="empty or filtered"):
+            openai_llm._raw_gen(
+                openai_llm, model="gpt-4o", messages=[{"role": "user", "content": "x"}], stream=False
+            )
 
 
 @pytest.mark.unit

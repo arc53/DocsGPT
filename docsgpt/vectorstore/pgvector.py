@@ -1,11 +1,12 @@
 import logging
 import math
 import re
-from typing import List, Optional, Any, Dict
+from typing import Iterable, List, Optional, Any, Dict
 
 from psycopg.types.json import Jsonb
 
 from docsgpt.core.settings import settings
+from docsgpt.utils import strip_null_bytes
 from docsgpt.vectorstore import pgconn
 from docsgpt.vectorstore.base import BaseVectorStore
 from docsgpt.vectorstore.document_class import Document
@@ -570,12 +571,17 @@ class PGVectorStore(BaseVectorStore):
         *args,
         **kwargs,
     ) -> List[str]:
-        """Add texts with their embeddings to the vector store"""
+        """Add texts with their embeddings to the vector store.
+
+        NUL bytes are dropped from the texts and metadata first: Postgres
+        refuses them in text and jsonb, and one would fail the whole batch.
+        """
         if not texts:
             return []
 
+        texts = [strip_null_bytes(text) for text in texts]
         embeddings = self._embedding.embed_documents(texts)
-        metadatas = metadatas or [{}] * len(texts)
+        metadatas = [strip_null_bytes(metadata or {}) for metadata in (metadatas or [{}] * len(texts))]
 
         self._ensure_schema_once()
         conn = self._get_connection()
@@ -629,40 +635,33 @@ class PGVectorStore(BaseVectorStore):
         pass
 
     def get_chunks(self) -> List[Dict[str, Any]]:
-        """Get all chunks for this source_id"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
+        """Every chunk of this source, or ``[]`` (logged) when the database errors.
+
+        Lenient for display callers; a lookup that acts on the answer uses
+        :meth:`_scan_chunks`, which raises.
+        """
         try:
-            select_query = f"""
-            SELECT id, {self._text_column}, {self._metadata_column}
-            FROM {self._table_name}
-            WHERE source_id = %s ORDER BY id;
-            """
-            cursor.execute(select_query, (self._source_id,))
-            results = cursor.fetchall()
-            
-            chunks = []
-            for doc_id, text, metadata in results:
-                chunks.append({
-                    "doc_id": str(doc_id),
-                    "text": text,
-                    "metadata": metadata or {}
-                })
-
-            conn.commit()
-            return chunks
-
+            return self._scan_chunks()
         except Exception as e:
             logging.error(f"Error getting chunks: {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                # Connection already gone; nothing left to roll back.
-                pass
             return []
-        finally:
-            cursor.close()
+
+    def _scan_chunks(self) -> List[Dict[str, Any]]:
+        """Every chunk of this source, lowest id first; a database error is raised.
+
+        Returns:
+            ``{"doc_id", "text", "metadata"}`` per chunk.
+        """
+        rows = self._run_statement(
+            f"SELECT id, {self._text_column}, {self._metadata_column} "
+            f"FROM {self._table_name} WHERE source_id = %s ORDER BY id;",
+            (self._source_id,),
+            fetch=True,
+        )
+        return [
+            {"doc_id": str(doc_id), "text": text, "metadata": metadata or {}}
+            for doc_id, text, metadata in rows
+        ]
 
     def get_chunk_by_key(self, key: str, excerpt: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Find this source's chunk by its text's MD5 in one query.
@@ -724,11 +723,9 @@ class PGVectorStore(BaseVectorStore):
         return row
 
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Add a single chunk to the vector store"""
-        metadata = metadata or {}
-
-        final_metadata = metadata.copy()
-
+        """Add a single chunk to the vector store, NUL bytes dropped as :meth:`add_texts` does."""
+        text = strip_null_bytes(text)
+        final_metadata = strip_null_bytes(dict(metadata or {}))
         final_metadata["source_id"] = self._source_id
 
         embeddings = self._embedding.embed_documents([text])
@@ -768,7 +765,8 @@ class PGVectorStore(BaseVectorStore):
 
         One ``UPDATE`` scoped to this source. The embedding is computed first,
         so a failed embed writes nothing. ``get_chunks`` orders by id, so the
-        chunk also keeps its place in the list.
+        chunk also keeps its place in the list. NUL bytes are dropped from the
+        text and metadata as :meth:`add_texts` does.
 
         Args:
             chunk_id: Id of the chunk to replace.
@@ -783,7 +781,8 @@ class PGVectorStore(BaseVectorStore):
             KeyError: If this source has no chunk with that id.
             ValueError: If no embedding could be generated.
         """
-        final_metadata = dict(metadata or {})
+        text = strip_null_bytes(text)
+        final_metadata = strip_null_bytes(dict(metadata or {}))
         final_metadata["source_id"] = self._source_id
 
         embeddings = self._embedding.embed_documents([text])
@@ -836,29 +835,101 @@ class PGVectorStore(BaseVectorStore):
             cursor.close()
 
     def delete_chunks_by_source_path(self, path: str) -> int:
-        """Delete this source's chunks whose ``metadata.source`` equals ``path``.
+        """Delete this source's chunks whose ``metadata.source`` equals ``path``, in one statement.
 
-        One targeted statement instead of the base loop+scan. The path is bound
-        as a query parameter (never interpolated); only the internal table name
-        is f-string interpolated. Returns the number of rows deleted.
+        The path is a bound parameter; only internal names are interpolated.
+
+        Returns:
+            The number of rows deleted.
+
+        Raises:
+            Exception: Whatever the statement raised, after a rollback.
+        """
+        return self._run_statement(
+            f"DELETE FROM {self._table_name} WHERE source_id = %s AND {self._metadata_column}->>'source' = %s;",
+            (self._source_id, path),
+        )
+
+    def _ids_where(self, sql_expr: str, paths: Iterable[str]) -> List[str]:
+        """Ids of this source's chunks whose ``sql_expr`` is one of ``paths``, lowest first.
+
+        One targeted ``SELECT``; unlike :meth:`get_chunks`, an error is raised
+        rather than read as "no chunks" (a page removal reads "no chunks" as
+        safe to drop the page's tree entry).
+
+        Args:
+            sql_expr: The SQL expression over the metadata column to match.
+            paths: The values to match; none runs no query.
+
+        Returns:
+            The ids.
+        """
+        wanted = list(dict.fromkeys(paths))
+        if not wanted:
+            return []
+        rows = self._run_statement(
+            f"SELECT id FROM {self._table_name} WHERE source_id = %s AND {sql_expr} = ANY(%s) ORDER BY id;",
+            (self._source_id, wanted),
+            fetch=True,
+        )
+        return [str(row[0]) for row in rows]
+
+    def chunk_ids_by_source_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of this source's chunks whose ``metadata.source`` is one of ``paths``."""
+        return self._ids_where(f"{self._metadata_column}->>'source'", paths)
+
+    def chunk_ids_by_file_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of this source's chunks whose ``metadata.file_path`` (else ``key``, else ``title``) is in ``paths``.
+
+        The fallback is :func:`~docsgpt.vectorstore.base.legacy_path_key`'s, for chunks with no ``file_path``.
+        """
+        meta = self._metadata_column
+        return self._ids_where(
+            f"COALESCE(NULLIF({meta}->>'file_path', ''), NULLIF({meta}->>'key', ''), NULLIF({meta}->>'title', ''))",
+            paths,
+        )
+
+    def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
+        """Delete several of this source's chunks in one statement, raising on error.
+
+        Args:
+            chunk_ids: Ids to delete.
+
+        Returns:
+            The number of rows deleted.
+        """
+        ids = [int(chunk_id) for chunk_id in dict.fromkeys(chunk_ids)]
+        if not ids:
+            return 0
+        return self._run_statement(
+            f"DELETE FROM {self._table_name} WHERE id = ANY(%s) AND source_id = %s;",
+            (ids, self._source_id),
+        )
+
+    def _run_statement(self, sql: str, params: tuple, fetch: bool = False) -> Any:
+        """Run one statement and commit, rolling back and raising on error.
+
+        Args:
+            sql: The statement; only internal names are interpolated into it.
+            params: Its bound parameters.
+            fetch: Return the fetched rows instead of the row count.
+
+        Returns:
+            The rows when ``fetch``, else the affected row count.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
-
         try:
-            delete_query = (
-                f"DELETE FROM {self._table_name} "
-                f"WHERE source_id = %s AND {self._metadata_column}->>'source' = %s;"
-            )
-            cursor.execute(delete_query, (self._source_id, path))
-            deleted_count = cursor.rowcount
+            cursor.execute(sql, params)
+            result = cursor.fetchall() if fetch else cursor.rowcount
             conn.commit()
-
-            return deleted_count
-
-        except Exception as e:
-            conn.rollback()
-            logging.error(f"Error deleting chunks by source path: {e}")
+            return result
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
             raise
         finally:
             cursor.close()

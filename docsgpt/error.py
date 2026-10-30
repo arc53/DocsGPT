@@ -140,6 +140,10 @@ def user_facing_error(
         The code and message.
     """
     from docsgpt.agents.context_overflow import ContextOverflowError, is_context_length_error
+    from docsgpt.core.run_budget import is_budget_exhausted
+
+    if is_budget_exhausted(error):
+        return UserFacingError("time_limit", "Stopped: time limit.")
 
     if not is_context_length_error(error) and is_image_rejection_error(error):
         return _rejected_image_error(image_names or ())

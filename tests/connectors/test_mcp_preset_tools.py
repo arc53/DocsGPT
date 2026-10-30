@@ -15,6 +15,7 @@ from docsgpt.connectors import catalog, service
 from docsgpt.security.encryption import encrypt_json
 
 NOTION_MCP = "https://mcp.notion.com/mcp"
+COINGECKO_MCP = "https://mcp.api.coingecko.com/mcp"
 ACTIONS = [
     {"name": "notion-search", "description": "Search", "annotations": {"readOnlyHint": True},
      "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}},
@@ -60,6 +61,17 @@ def _connection(conn, status="connected") -> str:
     ).scalar())
 
 
+def _keyless_connection(conn) -> str:
+    """A CoinGecko connection, as the no-auth MCP server form stores it."""
+    return str(conn.execute(
+        text(
+            "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status, account_label, "
+            "server_url) VALUES ('alice', 'custom_mcp', 'custom_mcp', 'none', 'connected', "
+            "'mcp.api.coingecko.com', 'https://mcp.api.coingecko.com') RETURNING id"
+        ),
+    ).scalar())
+
+
 def _tools(conn, cid):
     return conn.execute(text(
         "SELECT name, config, actions, display_name, description, connection_id FROM user_tools "
@@ -89,6 +101,15 @@ class TestPresetConfig:
         assert service.connection_mcp_config(catalog.get_definition("custom_mcp")) is None
         # The built-in-only helpers still ignore presets.
         assert service.builtin_mcp_config(catalog.get_definition("mcp:notion")) is None
+
+    @pytest.mark.parametrize("key, url", [
+        ("mcp:coingecko", COINGECKO_MCP),
+        ("mcp:drawio", "https://mcp.draw.io/mcp"),
+    ])
+    def test_keyless_presets_connect_without_oauth(self, key, url):
+        config = service.connection_mcp_config(catalog.get_definition(key))
+        assert config["server_url"] == url
+        assert config["auth_type"] == "none"
 
 
 class TestRecreate:
@@ -129,6 +150,29 @@ class TestRecreate:
         assert by_name["notion-create-pages"]["require_approval"] is True
         assert by_name["notion-search"]["parameters"]["properties"]["query"]["filled_by_llm"] is True
         assert [t["name"] for t in resp.get_json()["tools"]] == ["mcp_tool"]
+
+    def test_setup_rebuilds_a_keyless_preset_tool_without_oauth(self, app, pg_conn):
+        cid = _keyless_connection(pg_conn)
+        with _db(pg_conn), patch("docsgpt.agents.tools.mcp_tool.MCPTool.discover_tools"), \
+                patch("docsgpt.agents.tools.mcp_tool.MCPTool.get_actions_metadata",
+                      side_effect=lambda: [dict(a) for a in ACTIONS]), \
+                patch("docsgpt.agents.tools.mcp_tool.MCPTool.__init__", return_value=None) as init, \
+                patch.object(service, "mark_reconnect_needed") as flag:
+            resp = _setup(app, cid)
+        assert resp.status_code == 200, resp.get_json()
+        flag.assert_not_called()
+        discovery = init.call_args_list[0].args[0]
+        assert discovery["server_url"] == COINGECKO_MCP
+        assert discovery["auth_type"] == "none"
+        assert discovery["connection_id"] == cid
+
+        rows = _tools(pg_conn, cid)
+        assert len(rows) == 1
+        name, config, _, display_name, _, _ = rows[0]
+        assert name == "mcp_tool"
+        assert config["server_url"] == COINGECKO_MCP
+        assert config["auth_type"] == "none"
+        assert display_name == "CoinGecko"
 
     def test_a_connection_that_still_has_its_tool_is_not_rescanned(self, app, pg_conn):
         cid = _connection(pg_conn)

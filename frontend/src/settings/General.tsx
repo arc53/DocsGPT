@@ -38,9 +38,10 @@ export default function General() {
     { label: 'English', value: 'en' },
     { label: 'Deutsch', value: 'de' },
     { label: 'Español', value: 'es' },
-    { label: '日本語', value: 'jp' },
+    { label: 'Français', value: 'fr' },
+    { label: '日本語', value: 'ja' },
     { label: '普通话', value: 'zh' },
-    { label: '繁體中文（臺灣）', value: 'zhTW' },
+    { label: '繁體中文（臺灣）', value: 'zh-TW' },
     { label: 'Русский', value: 'ru' },
   ];
   const prompts = useSelector(selectPrompts);
