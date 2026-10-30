@@ -100,3 +100,44 @@ def test_csv_parser_reads_utf_8(tmp_path: Path) -> None:
     path = tmp_path / "data.csv"
     path.write_text(f"name,note\nx,{TEXT}\n", encoding="utf-8")
     assert TEXT in _joined(CSVParser().parse_file(path))
+
+
+_MALFORMED_CASES = [
+    pytest.param(".md", b"# Title\n\ncaf\xe9 end\n", MarkdownParser, id="markdown"),
+    pytest.param(".rst", b"Title\n=====\n\ncaf\xe9 end\n", RstParser, id="rst"),
+    pytest.param(".csv", b"name,note\nx,caf\xe9 end\n", CSVParser, id="csv"),
+]
+
+
+@pytest.mark.parametrize(("suffix", "raw", "parser_cls"), _MALFORMED_CASES)
+def test_ignore_drops_malformed_utf_8(
+    tmp_path: Path, suffix: str, raw: bytes, parser_cls: type
+) -> None:
+    """errors="ignore" drops the bytes that are not valid UTF-8 and keeps the rest."""
+    path = tmp_path / f"doc{suffix}"
+    path.write_bytes(raw)
+    text = _joined(parser_cls().parse_file(path, errors="ignore"))
+    assert "caf end" in text
+    assert "�" not in text
+
+
+@pytest.mark.parametrize(("suffix", "raw", "parser_cls"), _MALFORMED_CASES)
+def test_replace_substitutes_malformed_utf_8(
+    tmp_path: Path, suffix: str, raw: bytes, parser_cls: type
+) -> None:
+    """errors="replace" swaps the bytes that are not valid UTF-8 for U+FFFD."""
+    path = tmp_path / f"doc{suffix}"
+    path.write_bytes(raw)
+    text = _joined(parser_cls().parse_file(path, errors="replace"))
+    assert "caf� end" in text
+
+
+@pytest.mark.parametrize(("suffix", "raw", "parser_cls"), _MALFORMED_CASES)
+def test_strict_raises_on_malformed_utf_8(
+    tmp_path: Path, suffix: str, raw: bytes, parser_cls: type
+) -> None:
+    """errors="strict" raises UnicodeDecodeError instead of reading the file."""
+    path = tmp_path / f"doc{suffix}"
+    path.write_bytes(raw)
+    with pytest.raises(UnicodeDecodeError):
+        parser_cls().parse_file(path, errors="strict")
