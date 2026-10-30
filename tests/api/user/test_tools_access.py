@@ -13,6 +13,7 @@ from docsgpt.api.user.resource_access import set_settings
 from docsgpt.security.encryption import (
     decrypt_tool_credentials,
     encrypt_credentials,
+    encrypt_json,
 )
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.team_resource_grants import (
@@ -293,6 +294,32 @@ class TestApiToolSecrets:
         action = _runtime_action(pg_conn, tool["id"])
         assert action["headers"]["properties"]["X-Key"]["value"] == "sk-2"
 
+    def test_unreadable_action_secrets_recover_when_every_value_is_reentered(self, app, pg_conn):
+        broken = encrypt_json({"get_users": {"headers": {"X-Key": "lost"}}}, "someone-else")
+        existing = self._masked(_api_config())
+        existing["encrypted_action_secrets"] = broken
+        tool = _tool(pg_conn, name="api_tool", config=existing)
+
+        assert self._save(app, pg_conn, OWNER, tool["id"], _api_config()).status_code == 200
+
+        stored = _row(pg_conn, tool["id"])["config"]
+        assert stored["encrypted_action_secrets"].startswith("v2:")
+        assert decrypt_tool_credentials(
+            stored["encrypted_action_secrets"], OWNER
+        )["get_users"]["headers"]["X-Key"] == "sk-secret"
+        assert _runtime_action(pg_conn, tool["id"])["headers"]["properties"]["X-Key"]["value"] == "sk-secret"
+
+    def test_unreadable_action_secrets_kept_when_a_value_is_still_needed(self, app, pg_conn):
+        broken = encrypt_json({"get_users": {"headers": {"X-Key": "lost"}}}, "someone-else")
+        existing = self._masked(_api_config())
+        existing["encrypted_action_secrets"] = broken
+        tool = _tool(pg_conn, name="api_tool", config=existing)
+
+        resp = self._save(app, pg_conn, OWNER, tool["id"], self._masked(_api_config()))
+
+        assert resp.status_code == 400
+        assert _row(pg_conn, tool["id"])["config"]["encrypted_action_secrets"] == broken
+
 
 # ---------------------------------------------------------------------------
 # 3. Write actions
@@ -363,6 +390,39 @@ class TestToolWrites:
         resp = _call(app, pg_conn, UpdateToolConfig, OWNER, json=body)
         assert resp.status_code == 400
         assert _row(pg_conn, tool["id"])["config"]["server_url"] == "https://mcp.example.com/x"
+
+    def test_update_tool_config_recovers_unreadable_secrets_when_reentered(self, app, pg_conn):
+        """Re-entering the secret is a way out of a lost encryption key."""
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
+
+        cfg = {"server_url": "https://mcp.example.com/x", "auth_type": "bearer",
+               "encrypted_credentials": encrypt_json({"bearer_token": "lost"}, "someone-else")}
+        tool = _tool(pg_conn, name="mcp_tool", config=cfg)
+        body = {"id": str(tool["id"]), "config": {"server_url": "https://mcp.example.com/x",
+                                                  "auth_type": "bearer",
+                                                  "bearer_token": "tok-2"}}
+        assert _call(app, pg_conn, UpdateToolConfig, OWNER, json=body).status_code == 200
+        stored = _row(pg_conn, tool["id"])["config"]
+        assert stored["encrypted_credentials"].startswith("v2:")
+        assert decrypt_tool_credentials(
+            stored["encrypted_credentials"], OWNER
+        ) == {"bearer_token": "tok-2"}
+
+    def test_update_tool_config_keeps_unreadable_secrets_without_a_new_one(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
+
+        broken = encrypt_json({"bearer_token": "lost"}, "someone-else")
+        tool = _tool(pg_conn, name="mcp_tool", config={
+            "server_url": "https://mcp.example.com/x",
+            "auth_type": "bearer",
+            "encrypted_credentials": broken,
+        })
+        body = {"id": str(tool["id"]), "config": {"server_url": "https://mcp.example.com/x",
+                                                  "auth_type": "bearer"}}
+        resp = _call(app, pg_conn, UpdateToolConfig, OWNER, json=body)
+        assert resp.status_code == 400
+        assert "credentials" in resp.json["message"].lower()
+        assert _row(pg_conn, tool["id"])["config"]["encrypted_credentials"] == broken
 
     def test_api_tool_description_edit_needs_only_edit(self, app, pg_conn):
         from docsgpt.api.user.tools.routes import UpdateTool, _seal_api_tool_secrets

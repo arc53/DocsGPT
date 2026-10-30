@@ -1,5 +1,6 @@
 """Unit tests for docsgpt.api.user.tools.routes."""
 
+import copy
 from contextlib import contextmanager, nullcontext
 from unittest.mock import Mock, patch
 
@@ -344,6 +345,86 @@ class TestMergeSecretsOnUpdate:
                 new_config, existing_config, config_requirements, "user1"
             )
 
+    def test_unreadable_blob_is_replaced_when_every_secret_is_reentered(self, monkeypatch):
+        from docsgpt.api.user.tools.routes import _merge_secrets_on_update
+        from docsgpt.security import encryption
+
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        new_config = {"api_key": "new-key", "base_url": "https://example.com"}
+        existing_config = {
+            "base_url": "https://old.com",
+            "encrypted_credentials": "v2:deadbeef:not-a-real-envelope",
+        }
+        config_requirements = {
+            "api_key": {"secret": True},
+            "base_url": {"secret": False},
+        }
+
+        result = _merge_secrets_on_update(
+            new_config, existing_config, config_requirements, "user1"
+        )
+
+        assert result["encrypted_credentials"].startswith("v2:")
+        assert encryption.decrypt_tool_credentials(
+            result["encrypted_credentials"], "user1"
+        ) == {"api_key": "new-key"}
+
+    def test_unreadable_blob_needs_only_the_secrets_in_scope(self, monkeypatch):
+        """Re-entering the secret for the chosen auth_type is enough."""
+        from docsgpt.api.user.tools.routes import _merge_secrets_on_update
+        from docsgpt.security import encryption
+
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        config_requirements = {
+            "server_url": {"secret": False},
+            "auth_type": {"secret": False},
+            "api_key": {"secret": True, "depends_on": {"auth_type": "api_key"}},
+            "bearer_token": {"secret": True, "depends_on": {"auth_type": "bearer"}},
+            "password": {"secret": True, "depends_on": {"auth_type": "basic"}},
+        }
+        existing_config = {
+            "server_url": "https://mcp.example.com",
+            "auth_type": "api_key",
+            "encrypted_credentials": "v2:deadbeef:not-a-real-envelope",
+        }
+        new_config = {
+            "server_url": "https://mcp.example.com",
+            "auth_type": "api_key",
+            "api_key": "k",
+        }
+
+        result = _merge_secrets_on_update(
+            new_config, existing_config, config_requirements, "user1"
+        )
+
+        assert encryption.decrypt_tool_credentials(
+            result["encrypted_credentials"], "user1"
+        ) == {"api_key": "k"}
+
+    def test_unreadable_blob_refuses_when_an_in_scope_secret_is_missing(self):
+        from docsgpt.api.user.tools.routes import (
+            StoredCredentialsUnreadable,
+            _merge_secrets_on_update,
+        )
+
+        config_requirements = {
+            "auth_type": {"secret": False},
+            "api_key": {"secret": True, "depends_on": {"auth_type": "api_key"}},
+            "bearer_token": {"secret": True, "depends_on": {"auth_type": "bearer"}},
+        }
+        existing_config = {
+            "auth_type": "bearer",
+            "encrypted_credentials": "v2:deadbeef:not-a-real-envelope",
+        }
+        new_config = {"auth_type": "bearer", "api_key": "k"}
+
+        with pytest.raises(StoredCredentialsUnreadable):
+            _merge_secrets_on_update(
+                new_config, existing_config, config_requirements, "user1"
+            )
+
     def test_unreadable_action_secrets_refuse_to_overwrite(self):
         from docsgpt.api.user.tools.routes import (
             API_TOOL_SECRETS_KEY,
@@ -351,13 +432,56 @@ class TestMergeSecretsOnUpdate:
             _seal_api_tool_secrets,
         )
 
+        actions = {
+            "get_users": {
+                "url": "https://api.example.com/users",
+                "headers": {
+                    "type": "object",
+                    "properties": {"X-Key": {"type": "string", "value": "", "has_value": True}},
+                },
+                "query_params": {"type": "object", "properties": {}},
+            }
+        }
         existing_config = {
             API_TOOL_SECRETS_KEY: "v2:deadbeef:not-a-real-envelope",
-            "actions": {},
+            "actions": copy.deepcopy(actions),
         }
 
         with pytest.raises(StoredCredentialsUnreadable):
-            _seal_api_tool_secrets({"actions": {}}, existing_config, "user1")
+            _seal_api_tool_secrets(
+                {"actions": copy.deepcopy(actions)}, existing_config, "user1"
+            )
+
+    def test_unreadable_action_secrets_are_replaced_when_every_value_is_reentered(
+        self, monkeypatch
+    ):
+        from docsgpt.api.user.tools.routes import API_TOOL_SECRETS_KEY, _seal_api_tool_secrets
+        from docsgpt.security import encryption
+
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        actions = {
+            "get_users": {
+                "url": "https://api.example.com/users",
+                "headers": {
+                    "type": "object",
+                    "properties": {"X-Key": {"type": "string", "value": "", "has_value": True}},
+                },
+                "query_params": {"type": "object", "properties": {}},
+            }
+        }
+        existing_config = {
+            API_TOOL_SECRETS_KEY: "v2:deadbeef:not-a-real-envelope",
+            "actions": copy.deepcopy(actions),
+        }
+        new_actions = copy.deepcopy(actions)
+        new_actions["get_users"]["headers"]["properties"]["X-Key"]["value"] = "sk-new"
+
+        result = _seal_api_tool_secrets({"actions": new_actions}, existing_config, "user1")
+
+        assert encryption.decrypt_tool_credentials(
+            result[API_TOOL_SECRETS_KEY], "user1"
+        ) == {"get_users": {"headers": {"X-Key": "sk-new"}}}
 
 
 # ---------------------------------------------------------------------------
