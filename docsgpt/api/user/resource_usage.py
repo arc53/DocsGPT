@@ -5,10 +5,9 @@ An agent uses a resource when running it would reach that resource:
 - A classic agent (any ``agent_type`` but ``workflow``) through its own
   columns: ``agents.tools`` (a JSON list of tool ids, synthetic uuid5 ids of
   default and builtin tools included), ``agents.prompt_id``,
-  ``agents.source_id`` and ``agents.extra_source_ids``. A NULL ``prompt_id``
-  is the ``default`` preset; ``creative`` and ``strict`` can't be stored on
-  an agent (the agent routes keep only a UUID ``prompt_id``), so they are
-  never in use.
+  ``agents.source_id`` and ``agents.extra_source_ids``. With no
+  ``prompt_id``, ``agents.prompt_preset`` names the preset it runs
+  (``creative`` or ``strict``), and NULL there too is ``default``.
 - A workflow agent through the agent nodes of its workflow's current graph
   version (``workflows.current_graph_version``): their ``tools`` and
   ``sources`` lists. Workflow nodes carry their prompt inline, so a workflow
@@ -30,14 +29,18 @@ from sqlalchemy import Connection, text
 
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
 
 UsageKind = Literal["tool", "prompt", "source"]
 
 #: The ``used_by`` of a resource no agent uses. Compare against it; never mutate it.
 EMPTY_USAGE: dict = {"agents": [], "others": 0}
 
-#: The prompt preset an agent with no ``prompt_id`` runs with.
+#: The prompt preset an agent with no ``prompt_id`` and no ``prompt_preset`` runs with.
 DEFAULT_PROMPT = "default"
+
+#: Every preset an agent can run: the default and the stored ones.
+PROMPT_PRESETS = frozenset({DEFAULT_PROMPT, *STORED_PROMPT_PRESETS})
 
 # A classic agent is anything but a workflow agent.
 _CLASSIC = "a.agent_type IS DISTINCT FROM 'workflow'"
@@ -62,11 +65,13 @@ _CLASSIC_SOURCES_SQL = f"""
 """
 
 _CLASSIC_PROMPTS_SQL = f"""
-    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, COALESCE(a.prompt_id::text, '{DEFAULT_PROMPT}') AS ref
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type,
+           COALESCE(a.prompt_id::text, a.prompt_preset, '{DEFAULT_PROMPT}') AS ref
     FROM agents a
     WHERE {_CLASSIC}
       AND (a.prompt_id = ANY(CAST(:ids AS uuid[]))
-           OR (:with_default AND a.prompt_id IS NULL
+           OR (a.prompt_id IS NULL
+               AND COALESCE(a.prompt_preset, '{DEFAULT_PROMPT}') = ANY(CAST(:presets AS text[]))
                AND (a.user_id = :user_id OR a.id = ANY(CAST(:visible AS uuid[])))))
 """
 
@@ -146,16 +151,17 @@ def _key(resource_id: str) -> str:
 
 
 def _usage_rows(
-    conn: Connection, kind: UsageKind, uuid_ids: list[str], user_id: str, team_agents: list[str], with_default: bool
+    conn: Connection, kind: UsageKind, uuid_ids: list[str], user_id: str, team_agents: list[str], presets: list[str]
 ) -> list:
     """Every ``(agent_id, name, user_id, agent_type, ref)`` naming one of the ids, whoever owns the agent."""
     rows: list = []
     if kind == "prompt":
-        if uuid_ids or with_default:
+        if uuid_ids or presets:
+            # A preset has no owner, so only agents the caller can open count.
             rows.extend(
                 conn.execute(
                     text(_CLASSIC_PROMPTS_SQL),
-                    {"ids": uuid_ids, "with_default": with_default, "user_id": user_id, "visible": team_agents},
+                    {"ids": uuid_ids, "presets": presets, "user_id": user_id, "visible": team_agents},
                 ).fetchall()
             )
         return rows
@@ -188,8 +194,8 @@ def _collect(
     hidden: dict[str, set[str]] = {k: set() for k in wanted}
     owned = {_key(rid) for rid in owned_ids}
     uuid_ids = sorted(k for k in wanted if looks_like_uuid(k))
-    with_default = kind == "prompt" and DEFAULT_PROMPT in wanted
-    if not uuid_ids and not with_default:
+    presets = sorted(wanted & PROMPT_PRESETS) if kind == "prompt" else []
+    if not uuid_ids and not presets:
         return keys, listed, hidden
 
     team_agents = sorted(visible_with_access(conn, user_id, "agent"))
@@ -200,7 +206,7 @@ def _collect(
             return False
         return owner == user_id or agent_id in visible
 
-    for agent_id, name, owner, agent_type, ref in _usage_rows(conn, kind, uuid_ids, user_id, team_agents, with_default):
+    for agent_id, name, owner, agent_type, ref in _usage_rows(conn, kind, uuid_ids, user_id, team_agents, presets):
         ref_key = _key(ref)
         if ref_key not in wanted:
             continue

@@ -409,6 +409,10 @@ agents_table = Table(
     Column("chunks", Integer),
     Column("retriever", Text),
     Column("prompt_id", UUID(as_uuid=True), ForeignKey("prompts.id", ondelete="SET NULL")),
+    # A built-in preset with no ``prompts`` row (migration 0060). NULL with a
+    # NULL ``prompt_id`` is the default preset; AgentsRepository reads it back
+    # as ``prompt_id``.
+    Column("prompt_preset", Text),
     Column("tools", JSONB, nullable=False, server_default="[]"),
     Column("json_schema", JSONB),
     Column("models", JSONB),
@@ -434,6 +438,8 @@ agents_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_used_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+    CheckConstraint("prompt_preset IN ('creative', 'strict')", name="agents_prompt_preset_chk"),
+    CheckConstraint("prompt_id IS NULL OR prompt_preset IS NULL", name="agents_prompt_preset_exclusive_chk"),
 )
 
 # Per-user uniqueness of the export/import slug. Mirrors the partial unique

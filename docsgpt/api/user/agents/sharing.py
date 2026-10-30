@@ -12,7 +12,7 @@ from docsgpt.core.settings import settings
 from docsgpt.api.user.base import resolve_tool_details
 from docsgpt.api.user.resource_access import AccessDenied, require, resolve
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import AgentsRepository, expose_prompt_preset
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
@@ -166,7 +166,7 @@ class SharedAgents(Resource):
                         ),
                         {"ids": uuid_ids},
                     )
-                    shared_agents = [dict(row._mapping) for row in result.fetchall()]
+                    shared_agents = [expose_prompt_preset(dict(row._mapping)) for row in result.fetchall()]
                 else:
                     shared_agents = []
 

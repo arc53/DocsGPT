@@ -162,15 +162,24 @@ class TestPrompts:
         pid = str(prompt["id"])
         _agent(pg_conn, ALICE, "custom", prompt_id=pid)
         _agent(pg_conn, ALICE, "plain")  # NULL prompt_id: the default preset
+        _agent(pg_conn, ALICE, "inventive", prompt_id="creative")
         _agent(pg_conn, BOB, "bob plain")  # not visible to alice
+        _agent(pg_conn, BOB, "bob inventive", prompt_id="creative")  # nor this one
         _workflow_agent(pg_conn, ALICE, "flow", {1: {"system_prompt": "inline"}}, current=1)
         ids = ["default", "creative", "strict", pid]
         usage = used_by_many(pg_conn, ALICE, "prompt", ids, owned_ids=[pid])
         assert _names(usage[pid]) == ["custom"]
+        # A creative agent runs creative, not default.
         assert _names(usage["default"]) == ["plain"]
         assert usage["default"]["others"] == 0
-        assert usage["creative"] == EMPTY_USAGE
+        assert _names(usage["creative"]) == ["inventive"]
+        assert usage["creative"]["others"] == 0
         assert usage["strict"] == EMPTY_USAGE
+
+    def test_presets_alone_are_counted(self, pg_conn):
+        _agent(pg_conn, ALICE, "careful", prompt_id="strict")
+        usage = used_by_many(pg_conn, ALICE, "prompt", ["strict"], owned_ids=[])
+        assert _names(usage["strict"]) == ["careful"]
 
     def test_shared_agent_with_default_prompt_is_listed(self, pg_conn):
         agent = _agent(pg_conn, BOB, "bob shared")

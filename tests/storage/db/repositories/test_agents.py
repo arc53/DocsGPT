@@ -385,3 +385,146 @@ class TestClearFolderForAll:
         repo.clear_folder_for_all(folder["id"], "user-1")
         assert repo.get(a1["id"], "user-1")["folder_id"] is None
         assert repo.get(a2["id"], "user-1")["folder_id"] is None
+
+
+class TestPromptPresets:
+    """``creative`` / ``strict`` have no ``prompts`` row: they live in ``prompt_preset``."""
+
+    def _raw(self, conn, agent_id):
+        from sqlalchemy import text
+
+        return conn.execute(
+            text("SELECT CAST(prompt_id AS text), prompt_preset FROM agents WHERE id = CAST(:id AS uuid)"),
+            {"id": str(agent_id)},
+        ).one()
+
+    @pytest.mark.parametrize("preset", ["creative", "strict"])
+    def test_create_stores_a_preset_and_reads_it_back_as_prompt_id(self, pg_conn, preset):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft", prompt_id=preset)
+        assert doc["prompt_id"] == preset
+        assert "prompt_preset" not in doc
+        assert tuple(self._raw(pg_conn, doc["id"])) == (None, preset)
+        assert repo.get(doc["id"], "u")["prompt_id"] == preset
+
+    @pytest.mark.parametrize("value", [None, "", "default"])
+    def test_create_with_the_default_stores_nothing(self, pg_conn, value):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft", prompt_id=value)
+        assert doc["prompt_id"] is None
+        assert tuple(self._raw(pg_conn, doc["id"])) == (None, None)
+
+    def test_create_with_a_prompt_row(self, pg_conn):
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
+
+        prompt = PromptsRepository(pg_conn).create("u", "p", "c")
+        doc = _repo(pg_conn).create("u", "a", "draft", prompt_id=str(prompt["id"]))
+        assert doc["prompt_id"] == str(prompt["id"])
+        assert tuple(self._raw(pg_conn, doc["id"])) == (str(prompt["id"]), None)
+
+    def test_update_switches_between_preset_row_and_default(self, pg_conn):
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
+
+        prompt = PromptsRepository(pg_conn).create("u", "p", "c")
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft", prompt_id="creative")
+        agent_id = str(doc["id"])
+
+        assert repo.update(agent_id, "u", {"prompt_id": "strict"})
+        assert repo.get(agent_id, "u")["prompt_id"] == "strict"
+
+        assert repo.update(agent_id, "u", {"prompt_id": str(prompt["id"])})
+        assert repo.get(agent_id, "u")["prompt_id"] == str(prompt["id"])
+        assert tuple(self._raw(pg_conn, agent_id)) == (str(prompt["id"]), None)
+
+        assert repo.update(agent_id, "u", {"prompt_id": "creative"})
+        assert tuple(self._raw(pg_conn, agent_id)) == (None, "creative")
+
+        assert repo.update(agent_id, "u", {"prompt_id": "default"})
+        assert repo.get(agent_id, "u")["prompt_id"] is None
+        assert tuple(self._raw(pg_conn, agent_id)) == (None, None)
+
+        assert repo.update(agent_id, "u", {"prompt_id": "strict"})
+        assert repo.update(agent_id, "u", {"prompt_id": None})
+        assert tuple(self._raw(pg_conn, agent_id)) == (None, None)
+
+    def test_update_by_id_stores_a_preset(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft")
+        assert repo.update_by_id(str(doc["id"]), {"prompt_id": "strict"})
+        assert repo.get_by_id(str(doc["id"]))["prompt_id"] == "strict"
+
+    def test_a_read_row_written_back_is_valid(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft", prompt_id="creative")
+        row = repo.get(doc["id"], "u")
+        assert repo.update(str(doc["id"]), "u", dict(row))
+        assert tuple(self._raw(pg_conn, doc["id"])) == (None, "creative")
+        clone = repo.create("u", "copy", "draft", prompt_id=row["prompt_id"])
+        assert clone["prompt_id"] == "creative"
+
+    def test_every_read_exposes_the_preset(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "u", "a", "published", prompt_id="creative", key="k-preset",
+            shared=True, shared_token="t-preset", incoming_webhook_token="w-preset", slug="s-preset",
+        )
+        agent_id = str(doc["id"])
+        reads = [
+            repo.get(agent_id, "u"),
+            repo.get_any(agent_id, "u"),
+            repo.get_by_id(agent_id),
+            repo.find_by_key("k-preset"),
+            repo.find_by_shared_token("t-preset"),
+            repo.find_by_webhook_token("w-preset"),
+            repo.find_by_slug("u", "s-preset"),
+            repo.list_for_user("u")[0],
+            repo.list_by_ids([agent_id])[0],
+        ]
+        for row in reads:
+            assert row["prompt_id"] == "creative"
+            assert "prompt_preset" not in row
+
+    def test_legacy_reads_and_templates_expose_the_preset(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("__system__", "tpl", "template", prompt_id="strict", legacy_mongo_id="507f1f77bcf86cd799439099")
+        assert repo.get_by_legacy_id("507f1f77bcf86cd799439099")["prompt_id"] == "strict"
+        assert next(t for t in repo.list_templates() if t["name"] == "tpl")["prompt_id"] == "strict"
+
+    def test_agent_row_to_dict_for_raw_selects(self, pg_conn):
+        from sqlalchemy import text
+
+        from docsgpt.storage.db.repositories.agents import agent_row_to_dict
+
+        doc = _repo(pg_conn).create("u", "a", "draft", prompt_id="strict")
+        row = pg_conn.execute(
+            text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"), {"id": str(doc["id"])}
+        ).fetchone()
+        out = agent_row_to_dict(row)
+        assert out["prompt_id"] == "strict"
+        assert "prompt_preset" not in out
+        assert agent_row_to_dict(None) is None
+
+    def test_the_database_rejects_a_preset_beside_a_prompt_row(self, pg_conn):
+        from sqlalchemy import text
+        from sqlalchemy.exc import IntegrityError
+
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
+
+        prompt = PromptsRepository(pg_conn).create("u", "p", "c")
+        doc = _repo(pg_conn).create("u", "a", "draft")
+        with pytest.raises(IntegrityError):
+            with pg_conn.begin_nested():
+                pg_conn.execute(
+                    text(
+                        "UPDATE agents SET prompt_id = CAST(:p AS uuid), prompt_preset = 'creative' "
+                        "WHERE id = CAST(:id AS uuid)"
+                    ),
+                    {"p": str(prompt["id"]), "id": str(doc["id"])},
+                )
+        with pytest.raises(IntegrityError):
+            with pg_conn.begin_nested():
+                pg_conn.execute(
+                    text("UPDATE agents SET prompt_preset = 'default' WHERE id = CAST(:id AS uuid)"),
+                    {"id": str(doc["id"])},
+                )

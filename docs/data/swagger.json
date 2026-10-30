@@ -318,7 +318,7 @@
           "type": "string"
         },
         "prompt_id": {
-          "description": "Prompt ID",
+          "description": "Prompt id, or a preset: default, creative or strict",
           "type": "string"
         },
         "request_limit": {
@@ -1483,7 +1483,7 @@
           "type": "string"
         },
         "prompt_id": {
-          "description": "Prompt ID",
+          "description": "Prompt id, or a preset: default, creative or strict",
           "type": "string"
         },
         "request_limit": {
