@@ -2965,8 +2965,6 @@
         "title": "选择知识",
         "searchPlaceholder": "搜索知识...",
         "noOptionsMessage": "还没有知识",
-        "groupOwn": "我的来源",
-        "groupTeam": "团队共享",
         "noSourceHint": "可选。没有知识时，智能体只用模型和它的工具回答。"
       },
       "toolsPopup": {

@@ -2967,8 +2967,6 @@
         "title": "選擇知識",
         "searchPlaceholder": "搜尋知識...",
         "noOptionsMessage": "還沒有知識",
-        "groupOwn": "我的來源",
-        "groupTeam": "團隊共享",
         "noSourceHint": "選填。沒有知識時，代理只用模型和它的工具回答。"
       },
       "toolsPopup": {

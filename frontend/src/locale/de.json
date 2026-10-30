@@ -2985,8 +2985,6 @@
         "title": "Wissen auswählen",
         "searchPlaceholder": "Wissen durchsuchen...",
         "noOptionsMessage": "Noch kein Wissen",
-        "groupOwn": "Deine Quellen",
-        "groupTeam": "Mit dem Team geteilt",
         "noSourceHint": "Optional. Ohne Wissen antwortet der Agent nur mit dem Modell und seinen Werkzeugen."
       },
       "toolsPopup": {

@@ -590,9 +590,9 @@ a 1px inset `primary` ring, so the chosen row never turns plain grey.
 `MultiSelectPopover` searches with the stock `CommandInput` strip, full
 bleed, over an unframed `CommandList`, and caps itself at the height Radix
 says is free (`--radix-popover-content-available-height`, at most 600px).
-A picker's footer (`MultiSelectPopover footer`) links to the page that manages
-the list, as a `link inline` Button with a 12px `ArrowRight` (Go to Sources, Go
-to Tools). A shortcut action (Upload new, Add tool; an `outline-primary pill`)
+A picker's footer (`MultiSelectPopover footer`, `Combobox footer`) links to the
+page that manages the list, as a `link inline` Button with a 12px `ArrowRight`
+(Go to Knowledge, Go to Tools). A shortcut action (Upload new, Add tool; an `outline-primary pill`)
 sits at the right end of the same row: `flex flex-wrap items-center
 justify-between gap-3`, so on a narrow sheet or in a long locale it wraps under
 the link rather than taking a row of its own everywhere. Every picker uses
@@ -700,6 +700,14 @@ labels and wires it (see FormField).
   the row's body.
 - `mode="add"` is a picker that adds something (Share's "Add people or
   teams"): the trigger always shows the placeholder and no row is marked.
+- `footer` pins a row under the list, the same `PickerFooter` row as the
+  other pickers (see Badge): a Go to … link and an Add … action. It sits in
+  its own `border-t px-4 py-4` strip outside the scrolling list, so it stays
+  put while the rows scroll, and outside cmdk, whose Enter picks the
+  highlighted row: Tab reaches its controls after the search box and Enter
+  presses them. Pass a function, `footer={({ close }) => …}`, and call
+  `close` from the link's `onNavigate` and before the action opens a modal,
+  as the other pickers do.
 
 A multi-pick is `MultiSelect` (see Badge).
 
@@ -786,6 +794,43 @@ toggle) are not SettingRows.
 Name it with a `Label htmlFor` or `aria-label`. For an on/off setting with a
 description use a Switch in a SettingRow instead.
 
+### RadioGroup (`ui/radio-group.tsx`)
+
+`<RadioGroup value onValueChange aria-label>` + `<RadioGroupItem value
+aria-label size>` (Radix) is one-of-N where each option is a card or row that
+carries its own content: the chat prompt on the Prompts cards, in the spot
+where a tool card has its "In my chats" Switch. The items can sit in
+different cards; the group still has one Tab stop and arrow keys. Name the
+group (`aria-label` or `aria-labelledby`) and each item (a `Label htmlFor` or
+`aria-label`, "Use strict in chats"). The group owns its spacing (`grid
+gap-3`, a list of rows); its `className` is layout only, never a gap. Cards
+in a grid or in sections go in a layout element inside the group
+(`<RadioGroup><div className="grid gap-4 …">`), and their radios still form
+one group. On a `Card interactive="within"`, put the
+item in a `relative z-10` element so it sits above the card's stretched
+button (see A clickable card that holds a link).
+
+`size` is the Checkbox's: `default` (16px, cards and option rows) or `sm`
+(14px, table cells). Empty it is a `border-muted-foreground` ring, not
+shadcn's `border-input`, which is about 1.3:1 on a filled card and
+disappears; muted-foreground is 4.67:1 or more on background, card and muted
+in both themes. Checked, the ring and its dot are `secondary-foreground`,
+the primary in light and the lighter purple in dark, because `primary` is
+only 2.65:1 on `bg-muted` in dark (this is 5.25:1). It has the shared focus
+ring, a 24px hit area (`after:-inset-1`) and fades while `disabled`.
+
+Which one-of-N control:
+
+- **RadioGroup**: each option is a card or row with its own content (a
+  title, a description, its own menu), and picking one is a setting that
+  lasts.
+- **ToggleGroup**: a short segmented choice of labels (a range, a kind
+  filter, a mode). Never radios in a row for this.
+- **Switch**: on/off for one thing, where several can be on at once (a
+  tool's In my chats).
+- **Select or Combobox**: one of a long list, or where only the picked
+  value needs the room.
+
 ### Switch, TimePicker and Calendar (`ui/switch.tsx`, `ui/time-picker.tsx`, `ui/calendar.tsx`)
 
 `Switch` (Radix) is an on/off setting, placed inside a `SettingRow` that names
@@ -871,6 +916,25 @@ ToggleGroup that hugs (`sm` on a page, beside a 38px `SearchInput`; `xs` in
 Share's dense list step), each item its label with the kind's `count`,
 beside a `SearchInput` (`w-full sm:w-56`); no match is `EmptyState size="xs"
 illustration="none"`.
+
+A state or usage filter on a list page (Connectors' All · Connected ·
+Disconnected) follows the same rules, plus these, all in
+`hooks/useUrlFilter.ts`:
+
+- **The address holds it.** `const [filter, setFilter] =
+  useUrlFilter(FILTERS)` reads and writes `?filter=`, leaves the default
+  (`all`, the first value) out, replaces the history entry and keeps the
+  other params, so Back and a reload keep the filter. `{ name }` picks
+  another param; `{ clears: ['page'] }` drops a paged list's page when the
+  filter changes.
+- **No item leads to an empty list.** `shownFilters(FILTERS, filter,
+  counts)` hides an item whose count is 0 unless it is the selected one, and
+  returns nothing when only All would remain: then the page draws no group
+  at all.
+- **One ToggleGroup per page.** A page that already filters by kind with a
+  ToggleGroup puts a second filter (usage: In chats, Unused) in a pill
+  `Select`, the page-filter pattern of Logs (see SelectTrigger), never a
+  second ToggleGroup.
 
 ### ToggleChip (`ui/toggle-chip.tsx`)
 

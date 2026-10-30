@@ -3075,8 +3075,6 @@
         "title": "Sélectionner des connaissances",
         "searchPlaceholder": "Rechercher des connaissances…",
         "noOptionsMessage": "Aucune connaissance pour l’instant",
-        "groupOwn": "Vos sources",
-        "groupTeam": "Partagées avec l’équipe",
         "noSourceHint": "Facultatif. Sans connaissances, l’agent répond uniquement à partir du modèle et de ses outils."
       },
       "toolsPopup": {

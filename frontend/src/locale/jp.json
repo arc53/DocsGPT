@@ -2967,8 +2967,6 @@
         "title": "ナレッジを選択",
         "searchPlaceholder": "ナレッジを検索...",
         "noOptionsMessage": "ナレッジはまだありません",
-        "groupOwn": "自分のソース",
-        "groupTeam": "チームと共有",
         "noSourceHint": "任意です。ナレッジがない場合、エージェントはモデルとツールだけで回答します。"
       },
       "toolsPopup": {

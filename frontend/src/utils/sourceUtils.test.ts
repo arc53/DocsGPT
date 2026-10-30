@@ -15,7 +15,7 @@ const doc = (overrides: Partial<Doc>): Doc => ({
   ...overrides,
 });
 
-const labels = { own: 'Your sources', team: 'Shared with team' };
+const labels = { own: 'Yours', team: 'Shared with team' };
 
 describe('sourceItemId', () => {
   it('uses the source id when present', () => {
@@ -60,8 +60,8 @@ describe('toSourcePickerItems', () => {
       labels,
     );
     expect(items.map((item) => [item.id, item.group])).toEqual([
-      ['o1', 'Your sources'],
-      ['o2', 'Your sources'],
+      ['o1', 'Yours'],
+      ['o2', 'Yours'],
       ['t1', 'Shared with team'],
       ['t2', 'Shared with team'],
     ]);

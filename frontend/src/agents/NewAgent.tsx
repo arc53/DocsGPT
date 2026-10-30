@@ -434,8 +434,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const items = toSourcePickerItems(
       sourceDocs,
       {
-        own: t('agents.form.sourcePopup.groupOwn'),
-        team: t('agents.form.sourcePopup.groupTeam'),
+        own: t('conversation.sources.groupOwn'),
+        team: t('conversation.sources.groupTeam'),
       },
       <Database />,
     );

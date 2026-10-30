@@ -3075,8 +3075,6 @@
         "title": "Seleccionar conocimiento",
         "searchPlaceholder": "Buscar conocimiento...",
         "noOptionsMessage": "Aún no hay conocimiento",
-        "groupOwn": "Tus fuentes",
-        "groupTeam": "Compartidas con el equipo",
         "noSourceHint": "Opcional. Sin conocimiento, el agente responde solo con el modelo y sus herramientas."
       },
       "toolsPopup": {

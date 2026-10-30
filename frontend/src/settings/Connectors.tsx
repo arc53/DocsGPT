@@ -33,6 +33,7 @@ import type { Connection, ConnectorDefinition } from '../connectors/types';
 import useConnectorLauncher, {
   type LaunchOptions,
 } from '../connectors/useConnectorLauncher';
+import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 
@@ -66,15 +67,8 @@ export default function Connectors() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const connections = useSelector(selectConnections);
-  const filterParam = searchParams.get('filter') as Filter | null;
   // The address holds the filter, so Back and a reload keep it.
-  const filter: Filter =
-    filterParam && FILTERS.includes(filterParam) ? filterParam : 'all';
-  const setFilter = (value: Filter) => {
-    if (value === 'all') searchParams.delete('filter');
-    else searchParams.set('filter', value);
-    setSearchParams(searchParams, { replace: true });
-  };
+  const [filter, setFilter] = useUrlFilter(FILTERS);
   const connectorParam = searchParams.get('connector');
   const [openKey, setOpenKey] = useState<string | null>(connectorParam);
   // A `?connector=` link followed while this page is already open (the
@@ -142,9 +136,7 @@ export default function Connectors() {
     ]),
   ) as Record<Filter, number>;
   // No pill leads to an empty list; with only All left there is no row.
-  const filters = FILTERS.filter(
-    (key) => key === 'all' || key === filter || counts[key] > 0,
-  );
+  const filters = shownFilters(FILTERS, filter, counts);
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -214,11 +206,11 @@ export default function Connectors() {
         }
         divider
       >
-        {filters.length > 1 ||
+        {filters.length > 0 ||
         capability === 'sync' ||
         capability === 'tools' ? (
           <div className="mb-6 flex flex-wrap items-center gap-3">
-            {filters.length > 1 ? (
+            {filters.length > 0 ? (
               <ToggleGroup
                 type="single"
                 value={filter}

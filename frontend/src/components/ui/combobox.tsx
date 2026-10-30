@@ -82,12 +82,21 @@ type ComboboxProps = {
   'aria-label'?: string;
   /** Layout only (width, flex). The trigger is full width by default. */
   className?: string;
+  /**
+   * A row pinned under the list (a `PickerFooter`: "Go to Prompts" + "Add
+   * prompt"). It doesn't scroll with the rows and sits outside cmdk, so Tab
+   * reaches its controls and Enter presses them. Pass a function to get
+   * `close`, and call it when a control navigates or opens something else.
+   */
+  footer?:
+    React.ReactNode | ((helpers: { close: () => void }) => React.ReactNode);
 };
 
 /**
  * A searchable single-select picker: a combobox Button (SelectTrigger's
  * rotating chevron) opening a Command list in a popover at least the
- * trigger's width (18rem by default). The picked row is `checked`.
+ * trigger's width (18rem by default). The picked row is `checked`. An
+ * optional `footer` is pinned under the list.
  */
 function Combobox({
   options,
@@ -112,6 +121,7 @@ function Combobox({
   disabled,
   'aria-label': ariaLabel,
   className,
+  footer,
 }: ComboboxProps) {
   const [openState, setOpenState] = React.useState(false);
   const open = openProp ?? openState;
@@ -142,6 +152,11 @@ function Combobox({
     setOpen(false);
     onSearchChange?.('');
   };
+
+  const footerNode =
+    typeof footer === 'function'
+      ? footer({ close: () => setOpen(false) })
+      : footer;
 
   return (
     <Popover open={open} onOpenChange={setOpen} modal={modal}>
@@ -233,6 +248,16 @@ function Combobox({
             )}
           </CommandList>
         </Command>
+        {footerNode ? (
+          // Outside Command: cmdk's root turns Enter into "pick the
+          // highlighted row", which would swallow a footer button's Enter.
+          <div
+            data-slot="combobox-footer"
+            className="border-border shrink-0 border-t px-4 py-4"
+          >
+            {footerNode}
+          </div>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

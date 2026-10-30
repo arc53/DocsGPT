@@ -1,7 +1,9 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import PickerFooter from '../PickerFooter';
 import { Combobox, type ComboboxOption } from './combobox';
 import { FormField } from './form-field';
 
@@ -407,5 +409,167 @@ describe('Combobox mode="add"', () => {
     expect(
       document.body.querySelector('[data-slot="popover-content"]'),
     ).toBeNull();
+  });
+});
+
+describe('Combobox footer', () => {
+  const footer = () =>
+    document.body.querySelector<HTMLElement>('[data-slot="combobox-footer"]');
+
+  it('pins the footer under the list, outside the scrolling list and cmdk', async () => {
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        placeholder="Pick"
+        footer={<button type="button">Add prompt</button>}
+      />,
+    );
+    await open();
+    const bar = footer()!;
+    expect(bar).not.toBeNull();
+    expect(bar.className.split(' ')).toEqual(
+      expect.arrayContaining([
+        'border-border',
+        'shrink-0',
+        'border-t',
+        'px-4',
+        'py-4',
+      ]),
+    );
+    // Not inside the list, so it doesn't scroll away with the rows ...
+    const list = document.body.querySelector('[data-slot="command-list"]')!;
+    expect(list.contains(bar)).toBe(false);
+    // ... and not inside cmdk's root, whose Enter handler would pick the
+    // highlighted row instead of pressing the footer's button.
+    expect(bar.closest('[cmdk-root]')).toBeNull();
+    // After the list in DOM order, so Tab reaches it from the search box.
+    const content = document.body.querySelector(
+      '[data-slot="popover-content"]',
+    )!;
+    expect(content.contains(bar)).toBe(true);
+    expect(
+      list.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(bar.querySelector('button')!.tabIndex).toBe(0);
+  });
+
+  it('has no footer unless one is passed', async () => {
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        placeholder="Pick"
+      />,
+    );
+    await open();
+    expect(footer()).toBeNull();
+  });
+
+  it('Enter on a footer button presses it and picks nothing', async () => {
+    const onValueChange = vi.fn();
+    const onAdd = vi.fn();
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={onValueChange}
+        placeholder="Pick"
+        footer={
+          <button type="button" onClick={onAdd}>
+            Add prompt
+          </button>
+        }
+      />,
+    );
+    await open();
+    const button = footer()!.querySelector('button')!;
+    await act(async () => {
+      button.focus();
+      const event = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      });
+      button.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    });
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it('a render-function footer gets close(), which closes the popover', async () => {
+    const onOpenChange = vi.fn();
+    const onAdd = vi.fn();
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        onOpenChange={onOpenChange}
+        placeholder="Pick"
+        footer={({ close }) => (
+          <button
+            type="button"
+            onClick={() => {
+              close();
+              onAdd();
+            }}
+          >
+            Add prompt
+          </button>
+        )}
+      />,
+    );
+    await open();
+    await act(async () => footer()!.querySelector('button')!.click());
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]'),
+    ).toBeNull();
+  });
+
+  it('takes PickerFooter: following its link navigates and closes the picker', async () => {
+    const onAdd = vi.fn();
+    await render(
+      <MemoryRouter initialEntries={['/agents/new']}>
+        <Routes>
+          <Route
+            path="/agents/new"
+            element={
+              <Combobox
+                options={options}
+                value={null}
+                onValueChange={() => undefined}
+                placeholder="Pick"
+                footer={({ close }) => (
+                  <PickerFooter
+                    to="/settings/prompts"
+                    linkLabel="Go to Prompts"
+                    onNavigate={close}
+                    actionLabel="Add prompt"
+                    onAction={() => {
+                      close();
+                      onAdd();
+                    }}
+                  />
+                )}
+              />
+            }
+          />
+          <Route path="/settings/prompts" element={<p>Prompts page</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await open();
+    const link = footer()!.querySelector('a')!;
+    expect(link.getAttribute('href')).toBe('/settings/prompts');
+    await act(async () => link.click());
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain('Prompts page');
   });
 });
