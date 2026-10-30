@@ -9,13 +9,19 @@ type PickerFooterProps = {
   linkLabel: string;
   /** Fires when the link is followed so the caller can close its popover. */
   onNavigate?: () => void;
-  actionLabel: string;
-  onAction: () => void;
+  /**
+   * The shortcut on the right (Upload new, Add tool). Left out where the
+   * host can't use it (the workflow agent node's Tools: the builder loads
+   * its tool list once), so the row is the link alone.
+   */
+  actionLabel?: string;
+  onAction?: () => void;
 };
 
 /**
- * Shared footer for the composer's pickers (knowledge, tools): a link to the
- * item's settings page on the left and a "new" action on the right.
+ * Shared footer for the pickers (knowledge, tools, prompts): a link to the
+ * item's settings page on the left and, when given, a "new" action on the
+ * right.
  */
 export default function PickerFooter({
   to,
@@ -34,14 +40,16 @@ export default function PickerFooter({
           <ArrowRight aria-hidden="true" />
         </Link>
       </Button>
-      <Button
-        type="button"
-        variant="outline-primary"
-        shape="pill"
-        onClick={onAction}
-      >
-        {actionLabel}
-      </Button>
+      {actionLabel && onAction ? (
+        <Button
+          type="button"
+          variant="outline-primary"
+          shape="pill"
+          onClick={onAction}
+        >
+          {actionLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }

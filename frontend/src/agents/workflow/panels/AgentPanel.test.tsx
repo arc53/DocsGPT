@@ -6,6 +6,17 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// The Knowledge and Tools pickers read the sources and connections from the
+// store (AgentPanel.pickers.test.tsx covers them).
+vi.mock('react-redux', () => ({
+  useSelector: (selector: (state: unknown) => unknown) =>
+    selector({
+      preference: { token: null, sourceDocs: [] },
+      connectors: { connections: [], catalog: [] },
+    }),
+  useDispatch: () => vi.fn(),
+}));
+
 import AgentPanel from './AgentPanel';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -55,7 +66,6 @@ describe('AgentPanel', () => {
           edges={[]}
           availableModels={[]}
           availableTools={[]}
-          sourceOptions={[]}
           documentOptions={[]}
           jsonSchemaText={jsonSchemaText}
           jsonSchemaError={null}

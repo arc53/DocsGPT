@@ -604,7 +604,10 @@ toolbar) that grows past 38px when the chips wrap, with the turning chevron.
 The chips have no X, since the trigger is a button: unselect in the list. Each
 row in its list shows a `Checkbox size="sm"`. An option's `description` is a muted `text-xs` line
 under its label in the list only ("Added by Lena"); the chips show the label. Inside a Modal
-or Sheet pass `modal` (see Modal, not Dialog).
+or Sheet pass `modal` (see Modal, not Dialog). The trigger is `MultiSelectTrigger`, exported from
+the same file: a picker that draws its own list (`MultiSelectPopover` in the
+workflow agent node) passes it as `trigger`, so a multi-pick field looks the
+same whichever list opens.
 
 In a picker list, mark the item that is currently chosen with
 `CommandItem checked` (a `secondary` brand tint through `data-checked`), not
@@ -625,8 +628,9 @@ page that manages the list, as a `link inline` Button with a 12px `ArrowRight`
 (Go to Knowledge, Go to Tools, Go to Prompts). A shortcut action (Upload new, Add tool, Add prompt; an `outline-primary pill`)
 sits at the right end of the same row: `flex flex-wrap items-center
 justify-between gap-3`, so on a narrow sheet or in a long locale it wraps under
-the link rather than taking a row of its own everywhere. Every picker uses
-`PickerFooter` for this row (`SourcesPopoverFooter` wraps it for sources); a
+the link rather than taking a row of its own everywhere. A picker whose host can't use the shortcut (the workflow agent node's Tools:
+the builder loads its tool list once) shows only the Go to … link. Every
+picker uses `PickerFooter` for this row (`SourcesPopoverFooter` wraps it for sources); a
 notice (connections to sign in again) goes above it. Both footers sit in their
 own `border-t px-4 py-4` strip after the `Command`, outside cmdk, whose Enter
 would toggle the highlighted row instead of pressing a footer button. The

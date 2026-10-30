@@ -3,7 +3,6 @@ import {
   NO_AUDIENCE,
   readSponsorRefusal,
   saveWithSponsorConsent,
-  withAttachedOptions,
   unlistedAttachedTools,
 } from './sponsorConsent';
 
@@ -146,34 +145,6 @@ describe('saveWithSponsorConsent', () => {
     const failure = json(400, { success: false, error: 'Workflow invalid' });
     const send = vi.fn(async () => failure);
     expect(await saveWithSponsorConsent(send, vi.fn())).toBe(failure);
-  });
-});
-
-describe('withAttachedOptions', () => {
-  // The chip shows the plain name; only the list row says who added it.
-  it('adds a plainly named option, marked in its description, for a selected id the caller cannot list', () => {
-    const options = withAttachedOptions(
-      [{ value: 'mine', label: 'Mine' }],
-      [
-        { id: 'owners', label: 'Owner tool' },
-        { id: 'unselected', label: 'Elsewhere' },
-      ],
-      ['mine', 'owners'],
-      'Added by someone else',
-    );
-    expect(options).toEqual([
-      { value: 'mine', label: 'Mine' },
-      {
-        value: 'owners',
-        label: 'Owner tool',
-        description: 'Added by someone else',
-      },
-    ]);
-  });
-
-  it('falls back to the id when no name is known', () => {
-    const options = withAttachedOptions([], [], ['x1'], 'd');
-    expect(options).toEqual([{ value: 'x1', label: 'x1', description: 'd' }]);
   });
 });
 

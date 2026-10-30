@@ -1,6 +1,5 @@
 import type { TFunction } from 'i18next';
 
-import type { MultiSelectOption } from '../components/ui/multi-select';
 import { intlLocale } from '../utils/dateTimeUtils';
 import type { ToolSummary } from './types';
 
@@ -120,33 +119,6 @@ export async function saveWithSponsorConsent(
     response = await send(keys);
   }
   return response;
-}
-
-/**
- * A MultiSelect's options plus one for each selected id the caller can't
- * list (the owner's private tool or source on a workflow node), so it can
- * be removed. Selecting only removes it; nothing opens. The option keeps the
- * plain name, so its chip reads like any other; `description` marks it in
- * the list only.
- *
- * Args:
- *   options: The caller's own options.
- *   attached: Known names of referenced resources, by id.
- *   selected: The ids selected now.
- *   description: The list row's muted line for an added option.
- */
-export function withAttachedOptions(
-  options: MultiSelectOption[],
-  attached: { id: string; label: string }[],
-  selected: string[],
-  description: string,
-): MultiSelectOption[] {
-  const listed = new Set(options.map((option) => option.value));
-  const names = new Map(attached.map((item) => [item.id, item.label]));
-  const extra = selected
-    .filter((id, index) => !listed.has(id) && selected.indexOf(id) === index)
-    .map((id) => ({ value: id, label: names.get(id) || id, description }));
-  return extra.length ? [...options, ...extra] : options;
 }
 
 /** The error for a save that attached resources the caller may not sponsor. */

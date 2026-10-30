@@ -1,11 +1,20 @@
-import { useId, useState } from 'react';
+import { Database, Wrench } from 'lucide-react';
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
 import { type Edge, type Node } from 'reactflow';
 
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
-import { MultiSelect } from '@/components/ui/multi-select';
+import { MultiSelectTrigger } from '@/components/ui/multi-select';
 import { SectionHeader } from '@/components/ui/section-header';
 import {
   Select,
@@ -20,8 +29,28 @@ import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 
+import {
+  MultiSelectPopover,
+  type MultiSelectPopoverItem,
+} from '../../../components/MultiSelectPopover';
+import PickerFooter from '../../../components/PickerFooter';
+import SourcesPopoverFooter from '../../../components/SourcesPopoverFooter';
+import { toSourcePickerItems } from '../../../components/sourcePickerItems';
+import { toolPickerItems } from '../../../components/toolPickerItems';
+import {
+  loadConnectors,
+  selectConnections,
+  selectConnectorCatalog,
+} from '../../../connectors/connectorsSlice';
+import {
+  selectSourceDocs,
+  selectToken,
+} from '../../../preferences/preferenceSlice';
+import { useSourceKindFilter } from '../../../settings/SourceKindFilter';
+import { useToolKindFilter } from '../../../settings/useToolKindFilter';
+import type { AppDispatch } from '../../../store';
+import Upload from '../../../upload/Upload';
 import { getToolDisplayName } from '../../../utils/toolUtils';
-import { withAttachedOptions } from '../../sponsorConsent';
 import type { RetryConfig } from '../../types/workflow';
 import NodeDocumentsControl from '../components/NodeDocumentsControl';
 import NodeRetryControl from '../components/NodeRetryControl';
@@ -43,7 +72,6 @@ interface AgentPanelProps extends NodePanelBodyProps {
   edges: Edge[];
   availableModels: Model[];
   availableTools: UserTool[];
-  sourceOptions: { value: string; label: string }[];
   /**
    * Names of the tools and sources the workflow's nodes reference, whoever
    * owns them: a selected one missing from the caller's own options (the
@@ -63,6 +91,39 @@ interface AgentPanelProps extends NodePanelBodyProps {
   /** The workflow's retry defaults, which an unset retry field inherits. */
   retryDefaults?: RetryConfig | null;
 }
+
+/**
+ * Rows for the ids picked on the node that the caller's list doesn't hold
+ * (the owner's private tools and sources on a shared workflow), each once,
+ * so they can still be taken off. Their kind is unknown, so they show only
+ * under All.
+ *
+ * Args:
+ *   selected: The ids picked on the node.
+ *   listed: The ids the caller's list holds.
+ *   attached: The names of what the workflow references.
+ *   description: The row's line ("Added by someone else").
+ *   icon: The row's icon.
+ *
+ * Returns:
+ *   The remove-only rows.
+ */
+function unlistedRows(
+  selected: string[],
+  listed: Set<string>,
+  attached: { id: string; label: string }[],
+  description: string,
+  icon: ReactNode,
+): MultiSelectPopoverItem[] {
+  const names = new Map(attached.map((item) => [item.id, item.label]));
+  return selected
+    .filter((id, index) => !listed.has(id) && selected.indexOf(id) === index)
+    .map((id) => ({ id, label: names.get(id) || id, description, icon }));
+}
+
+/** A picked id added when missing, removed when present. */
+const toggled = (ids: string[], id: string): string[] =>
+  ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
 
 const SCHEMA_PLACEHOLDER = `{
   "type": "object",
@@ -112,7 +173,6 @@ export default function AgentPanel({
   edges,
   availableModels,
   availableTools,
-  sourceOptions,
   attachedTools = [],
   attachedSources = [],
   documentOptions,
@@ -133,26 +193,106 @@ export default function AgentPanel({
   const updateConfig = (patch: Record<string, unknown>) =>
     onUpdate({ config: { ...(node.data.config || {}), ...patch } });
 
+  const dispatch = useDispatch<AppDispatch>();
+  const token = useSelector(selectToken);
+  const storedDocs = useSelector(selectSourceDocs);
+  const connections = useSelector(selectConnections);
+  const catalog = useSelector(selectConnectorCatalog);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  // A node saves its sources by id, so a source without one can't be picked.
+  const sourceDocs = useMemo(
+    () => (storedDocs ?? []).filter((doc) => Boolean(doc.id)),
+    [storedDocs],
+  );
+  const pickedSources: string[] = config.sources || [];
+  const pickedTools: string[] = config.tools || [];
+
+  // An upload finishes after its dialog closes, maybe after the node did:
+  // its source goes on this node only while the panel still shows it.
+  const latest = useRef({ node, onUpdate });
+  const mounted = useRef(false);
+  useEffect(() => {
+    latest.current = { node, onUpdate };
+  });
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const attachUploadedSource = (nodeId: string, sourceId?: string) => {
+    if (!sourceId || !mounted.current) return;
+    const { node: current, onUpdate: update } = latest.current;
+    if (current.id !== nodeId) return;
+    const currentConfig = current.data.config || {};
+    const sources: string[] = currentConfig.sources || [];
+    if (sources.includes(sourceId)) return;
+    update({ config: { ...currentConfig, sources: [...sources, sourceId] } });
+  };
+
+  // The rows name the caller's connections and the catalog's services.
+  const openPicker = (setOpen: (open: boolean) => void) => (next: boolean) => {
+    setOpen(next);
+    if (next) dispatch(loadConnectors({ token }));
+  };
+
   const builtinModels = availableModels.filter((m) => m.source !== 'user');
   const userModels = availableModels.filter((m) => m.source === 'user');
   const schemaInvalid = jsonSchemaText.trim() !== '' && jsonSchemaError;
-  // Marks an option only in the list; its chip keeps the plain name.
+  // Marks a row only in the list; its chip keeps the plain name.
   const attachedDescription = t('agents.form.sponsors.addedByOther');
-  const toolOptions = withAttachedOptions(
-    availableTools.map((tool) => ({
-      value: tool.id,
-      label: getToolDisplayName(tool),
-    })),
-    attachedTools,
-    config.tools || [],
-    attachedDescription,
-  );
-  const nodeSourceOptions = withAttachedOptions(
-    sourceOptions,
-    attachedSources,
-    config.sources || [],
-    attachedDescription,
-  );
+
+  // The pickers' kind tracks, back on All each time they open.
+  const sourceKinds = useSourceKindFilter(sourceDocs, sourcesOpen);
+  const toolKinds = useToolKindFilter(availableTools, toolsOpen);
+
+  const sourceItems = [
+    ...toSourcePickerItems(sourceKinds.docs, {
+      t,
+      labels: {
+        own: t('conversation.sources.groupOwn'),
+        team: t('conversation.sources.groupTeam'),
+      },
+      connections,
+    }),
+    ...(sourceKinds.kind === 'all'
+      ? unlistedRows(
+          pickedSources,
+          new Set(sourceDocs.map((doc) => doc.id as string)),
+          attachedSources,
+          attachedDescription,
+          <Database />,
+        )
+      : []),
+  ];
+  const toolItems = [
+    ...toolPickerItems(toolKinds.tools, { t, connections, catalog }),
+    ...(toolKinds.kind === 'all'
+      ? unlistedRows(
+          pickedTools,
+          new Set(availableTools.map((tool) => tool.id)),
+          attachedTools,
+          attachedDescription,
+          <Wrench />,
+        )
+      : []),
+  ];
+
+  // The trigger's chips, in the order they were picked.
+  const sourceName = (id: string) =>
+    sourceDocs.find((doc) => doc.id === id)?.name ||
+    attachedSources.find((item) => item.id === id)?.label ||
+    id;
+  const toolName = (id: string) => {
+    const tool = availableTools.find((item) => item.id === id);
+    return (
+      (tool && getToolDisplayName(tool)) ||
+      attachedTools.find((item) => item.id === id)?.label ||
+      id
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -280,26 +420,73 @@ export default function AgentPanel({
           label={t('agents.workflow.builder.sources')}
           labelSurface="background"
         >
-          <MultiSelect
-            options={nodeSourceOptions}
-            selected={config.sources || []}
-            onChange={(newSources) => updateConfig({ sources: newSources })}
-            placeholder={t('agents.form.placeholders.selectSources')}
+          {/* The panel is docked beside the canvas, not a dialog, so the
+              popover needs no modal (on a phone it is its own sheet). */}
+          <MultiSelectPopover
+            open={sourcesOpen}
+            onOpenChange={openPicker(setSourcesOpen)}
+            title={t('conversation.sources.knowledge')}
+            items={sourceItems}
+            // What is on the node when it opens comes first.
+            selectedFirst
+            loneGroupHeading={false}
+            filters={sourceKinds.filters}
+            selectedIds={pickedSources}
+            onToggle={(id) =>
+              updateConfig({ sources: toggled(pickedSources, id) })
+            }
             searchPlaceholder={t('agents.form.sourcePopup.searchPlaceholder')}
-            emptyText={t('agents.form.sourcePopup.noOptionsMessage')}
+            emptyMessage={t('settings.sources.noKnowledgeFound')}
+            footer={
+              <SourcesPopoverFooter
+                onNavigate={() => setSourcesOpen(false)}
+                onUploadClick={() => {
+                  setSourcesOpen(false);
+                  setUploadOpen(true);
+                }}
+              />
+            }
+            trigger={
+              <MultiSelectTrigger
+                labels={pickedSources.map(sourceName)}
+                placeholder={t('agents.form.placeholders.selectSources')}
+              />
+            }
           />
         </FormField>
         <FormField
           label={t('agents.form.sections.tools')}
           labelSurface="background"
         >
-          <MultiSelect
-            options={toolOptions}
-            selected={config.tools || []}
-            onChange={(newTools) => updateConfig({ tools: newTools })}
-            placeholder={t('agents.form.placeholders.selectTools')}
+          <MultiSelectPopover
+            open={toolsOpen}
+            onOpenChange={openPicker(setToolsOpen)}
+            title={t('settings.tools.label')}
+            items={toolItems}
+            // What is on the node when it opens comes first; a lone group
+            // needs no heading.
+            selectedFirst
+            loneGroupHeading={false}
+            filters={toolKinds.filters}
+            selectedIds={pickedTools}
+            onToggle={(id) => updateConfig({ tools: toggled(pickedTools, id) })}
             searchPlaceholder={t('settings.tools.searchPlaceholder')}
-            emptyText={t('agents.form.toolsPopup.noOptionsMessage')}
+            emptyMessage={t('settings.tools.noToolsFound')}
+            // Only the link: the builder loads the tool list once, so a tool
+            // added here would not show until the page reloads.
+            footer={
+              <PickerFooter
+                to="/settings/tools"
+                linkLabel={t('settings.tools.manageTools')}
+                onNavigate={() => setToolsOpen(false)}
+              />
+            }
+            trigger={
+              <MultiSelectTrigger
+                labels={pickedTools.map(toolName)}
+                placeholder={t('agents.form.placeholders.selectTools')}
+              />
+            }
           />
         </FormField>
       </section>
@@ -426,6 +613,20 @@ export default function AgentPanel({
           </div>
         </Collapsible>
       </div>
+      {uploadOpen && (
+        // No Browse connectors: leaving would drop the unsaved workflow.
+        <Upload
+          receivedFile={[]}
+          setModalState={(state) => setUploadOpen(state === 'ACTIVE')}
+          isOnboarding={false}
+          renderTab={null}
+          close={() => setUploadOpen(false)}
+          onSuccessfulUpload={(sourceId) =>
+            attachUploadedSource(node.id, sourceId)
+          }
+          selectUploadedDoc={false}
+        />
+      )}
     </div>
   );
 }

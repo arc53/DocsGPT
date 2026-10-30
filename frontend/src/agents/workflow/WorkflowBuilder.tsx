@@ -32,10 +32,7 @@ import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
 import { can } from '../../utils/accessUtils';
-import {
-  selectSourceDocs,
-  selectToken,
-} from '../../preferences/preferenceSlice';
+import { selectToken } from '../../preferences/preferenceSlice';
 import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
@@ -243,7 +240,6 @@ function WorkflowBuilderInner() {
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
-  const sourceDocs = useSelector(selectSourceDocs);
   const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
@@ -334,13 +330,6 @@ function WorkflowBuilderInner() {
     tools: { id: string; label: string }[];
     sources: { id: string; label: string }[];
   }>({ tools: [], sources: [] });
-  const sourceOptions = useMemo(
-    () =>
-      (sourceDocs ?? [])
-        .filter((doc) => Boolean(doc.id))
-        .map((doc) => ({ value: doc.id as string, label: doc.name })),
-    [sourceDocs],
-  );
   const [agentJsonSchemaDrafts, setAgentJsonSchemaDrafts] = useState<
     Record<string, string>
   >({});
@@ -2371,7 +2360,6 @@ function WorkflowBuilderInner() {
                   edges={edges}
                   availableModels={availableModels}
                   availableTools={availableTools}
-                  sourceOptions={sourceOptions}
                   attachedTools={nodeRefNames.tools}
                   attachedSources={nodeRefNames.sources}
                   documentOptions={selectedAgentDocumentOptions}
