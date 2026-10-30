@@ -1,7 +1,7 @@
 ---
 title: Add Knowledge
 description: Add files, web pages, whole websites, GitHub repositories and synced services to DocsGPT Knowledge, keep them up to date, and use them in chats and agents.
-lastUpdated: 2026-10-30
+lastUpdated: 2026-10-31
 ---
 
 import { Callout } from 'nextra/components'
@@ -165,7 +165,7 @@ The Knowledge page shows each source as a card: an icon for its kind, a line of 
 
 With no search or filter, page 1 opens with **Needs attention**: sources whose ingest failed and those whose connection needs **Reconnect**. **All knowledge** follows with the rest, led by any synced service still indexing its first copy.
 
-To delete several sources at once, choose **Select**, tick the cards (or **Select all on page**) and choose **Delete**. The confirmation says how many agents lose the knowledge. A source that can't be deleted, for example because a sync is running, stays ticked with the reason.
+Deleting many sources at once is API-only: `POST /api/sources/delete` with a list of `ids`. See the [REST API reference](/API/reference).
 
 Each source on the Knowledge page has a menu. Which items appear depends on the source type and on your access to it:
 

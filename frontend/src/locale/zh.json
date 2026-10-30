@@ -691,28 +691,8 @@
       "kindFilterLabel": "按类型筛选",
       "needsAttention": "需要处理",
       "allKnowledge": "全部知识",
-      "select": "选择",
-      "selectAllOnPage": "全选本页",
-      "selectSource": "选择 {{name}}",
-      "selectedCount_one": "已选 {{formatted}} 个",
-      "selectedCount_other": "已选 {{formatted}} 个",
       "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此来源。其文件和分块也会一并删除。此操作无法撤销。",
       "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此来源。其文件和分块也会一并删除。此操作无法撤销。",
-      "deleteSelectedWarning_one": "删除 {{formatted}} 个来源？",
-      "deleteSelectedWarning_other": "删除 {{formatted}} 个来源？",
-      "deleteSelectedConsequence_one": "其文件和分块也会一并删除。此操作无法撤销。",
-      "deleteSelectedConsequence_other": "其文件和分块也会一并删除。此操作无法撤销。",
-      "deleteSelectedUsedBy_one": "有 {{formatted}} 个智能体将失去这些知识。",
-      "deleteSelectedUsedBy_other": "有 {{formatted}} 个智能体将失去这些知识。",
-      "deleteSomeFailed_one": "有 {{formatted}} 个来源未能删除。",
-      "deleteSomeFailed_other": "有 {{formatted}} 个来源未能删除。",
-      "deleteFailedReasons": {
-        "busy": "同步或其他更改仍在进行。请在其完成后重试。",
-        "forbidden": "你没有删除权限。",
-        "notFound": "已被删除，或不再与你共享。",
-        "failed": "出了点问题。请重试。"
-      },
-      "deleteSelectedFailed": "无法删除这些来源。",
       "noKnowledgeFound": "未找到知识"
     },
     "analytics": {

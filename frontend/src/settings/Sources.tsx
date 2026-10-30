@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-import userService from '../api/services/userService';
 import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
 import RoleMeta from '../components/RoleMeta';
@@ -20,7 +19,6 @@ import {
 } from '../components/ui/card';
 import { MetaItem, MetaLine } from '../components/ui/meta-line';
 import { sourceIcon } from '../components/sourcePickerItems';
-import { Checkbox } from '../components/ui/checkbox';
 import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
@@ -35,7 +33,6 @@ import {
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import { usePageParam, usePageSize } from '../hooks/usePageState';
 import { useUrlFilter } from '../hooks/useUrlFilter';
-import ConfirmationModal from '../modals/ConfirmationModal';
 import {
   ActiveState,
   Doc,
@@ -59,9 +56,8 @@ import {
 } from './knowledgeLink';
 import { cn } from '../lib/utils';
 import { can, isOwner } from '../utils/accessUtils';
-import { formatCount, formatRelative } from '../utils/dateTimeUtils';
+import { formatRelative } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
-import type { ResourceUsage } from './types';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import WebsiteTree from '../components/WebsiteTree';
@@ -147,16 +143,6 @@ const USAGE_LABELS: Record<UsageFilter, string> = {
   all: 'settings.usage.filters.all',
   in_use: 'settings.usage.filters.inUse',
   unused: 'settings.usage.filters.unused',
-};
-
-/** The most ids `POST /api/sources/delete` takes at once. */
-const BULK_DELETE_MAX = 100;
-
-/** What a failed bulk delete's `code` says, as a reason key. */
-const DELETE_FAILURE_REASONS: Record<string, string> = {
-  source_busy: 'settings.sources.deleteFailedReasons.busy',
-  forbidden: 'settings.sources.deleteFailedReasons.forbidden',
-  not_found: 'settings.sources.deleteFailedReasons.notFound',
 };
 
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
@@ -655,147 +641,6 @@ export default function Sources({
   const showAttention =
     currentPage === 1 && unfiltered && attentionDocs.length > 0;
 
-  // Select mode: the cards the caller can delete get a checkbox, and the
-  // ticked ones go together. The selection keeps each source (its name and
-  // `used_by`), so it survives a page change.
-  const [selecting, setSelecting] = useState(false);
-  const [selected, setSelected] = useState<Map<string, Doc>>(new Map());
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const canTick = (doc: Doc) => !!doc.id && can(doc, 'delete');
-  const toggleSelected = (doc: Doc) =>
-    setSelected((current) => {
-      const next = new Map(current);
-      if (doc.id && next.has(doc.id)) next.delete(doc.id);
-      else if (doc.id) next.set(doc.id, doc);
-      return next;
-    });
-  const tickable = [
-    ...(showAttention ? attentionDocs : []),
-    ...gridDocuments,
-  ].filter(canTick);
-  const allTicked = tickable.every((doc) => selected.has(doc.id ?? ''));
-  const selectAllOnPage = () =>
-    setSelected((current) => {
-      const next = new Map(current);
-      tickable.forEach((doc) => next.set(doc.id ?? '', doc));
-      return next;
-    });
-  const leaveSelecting = () => {
-    setSelecting(false);
-    setSelected(new Map());
-  };
-  // Escape leaves the mode, unless it closes the confirm.
-  useEffect(() => {
-    if (!selecting || confirmingDelete) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) leaveSelecting();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [selecting, confirmingDelete]);
-
-  const selectedDocs = Array.from(selected.values());
-  // The agents that lose the selection. The cards can't tell whether two
-  // sources' teammate agents are the same, so the confirm asks the server,
-  // which counts each agent once; until it answers (or if it fails) the
-  // cards' own figures stand in.
-  const [selectionUsage, setSelectionUsage] = useState<ResourceUsage | null>(
-    null,
-  );
-  useEffect(() => {
-    if (!confirmingDelete) {
-      setSelectionUsage(null);
-      return;
-    }
-    const ids = Array.from(selected.keys());
-    if (ids.length === 0) return;
-    let cancelled = false;
-    userService
-      .getSourcesUsage(ids, token)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((usage: ResourceUsage | null) => {
-        if (!cancelled && usage) setSelectionUsage(usage);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-    // Only when the confirm opens: the selection can't change while it is open.
-  }, [confirmingDelete]);
-  const losingAgents = selectionUsage
-    ? agentUseCount(selectionUsage)
-    : new Set(
-        selectedDocs.flatMap((doc) =>
-          (doc.used_by?.agents ?? []).map((a) => a.id),
-        ),
-      ).size +
-      selectedDocs.reduce((sum, doc) => sum + (doc.used_by?.others ?? 0), 0);
-
-  /**
-   * Deletes the selection, at most BULK_DELETE_MAX ids per request. What
-   * went leaves the lists; what failed stays ticked, and the confirm stays
-   * open saying how many and why (rejecting keeps it open).
-   */
-  const deleteSelected = async () => {
-    const ids = selectedDocs.map((doc) => doc.id ?? '').filter(Boolean);
-    const deleted: string[] = [];
-    const failed: { id: string; code: string }[] = [];
-    let requestFailed = false;
-    for (let i = 0; i < ids.length; i += BULK_DELETE_MAX) {
-      const batch = ids.slice(i, i + BULK_DELETE_MAX);
-      try {
-        const response = await userService.deleteSources(batch, token);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const body = await response.json();
-        deleted.push(...(body.deleted ?? []));
-        failed.push(...(body.failed ?? []));
-      } catch (error) {
-        console.error(error);
-        requestFailed = true;
-        batch.forEach((id) => failed.push({ id, code: 'failed' }));
-      }
-    }
-    if (deleted.length > 0) {
-      const gone = new Set(deleted);
-      if (knowledge)
-        dispatch(setSourceDocs(knowledge.filter((d) => !gone.has(d.id ?? ''))));
-      dispatch(syncForgotten(deleted));
-      refreshDocs();
-    }
-    if (failed.length === 0) {
-      leaveSelecting();
-      return;
-    }
-    setSelected((current) => {
-      const next = new Map<string, Doc>();
-      failed.forEach(({ id }) => {
-        const doc = current.get(id);
-        if (doc) next.set(id, doc);
-      });
-      return next;
-    });
-    if (requestFailed && deleted.length === 0)
-      throw new Error(t('settings.sources.deleteSelectedFailed'));
-    const reasons = Array.from(
-      new Set(
-        failed.map(
-          ({ code }) =>
-            DELETE_FAILURE_REASONS[code] ??
-            'settings.sources.deleteFailedReasons.failed',
-        ),
-      ),
-    ).map((key) => t(key));
-    throw new Error(
-      [
-        t('settings.sources.deleteSomeFailed', {
-          count: failed.length,
-          formatted: formatCount(failed.length),
-        }),
-        ...reasons,
-      ].join(' '),
-    );
-  };
-
   // What every source view takes, and what a tree view adds.
   const viewProps = {
     docId: documentToView?.id || '',
@@ -895,8 +740,6 @@ export default function Sources({
     // Sync stops until the reader signs in again (the shared rule).
     const paused = connectionNeedsSignIn(connection);
     const ingest = ingestState(document);
-    const pickable = selecting && canTick(document);
-    const ticked = pickable && selected.has(docId);
     const line = sourceCardLine(t, document, connection);
     const tokens = Number(document.tokens) || 0;
     const graph = document.config?.kind === 'graphrag';
@@ -906,8 +749,8 @@ export default function Sources({
 
     return (
       // DESIGN "A clickable card that holds a link": a stretched button
-      // opens the source (in select mode, ticks it); the menu, the checkbox,
-      // the usage link and Reconnect are siblings above it, never nested.
+      // opens the source; the menu, the usage link and Reconnect are siblings
+      // above it, never nested.
       // The tile's parts are ConnectorTile's: icon and title, the detail
       // line, the state pills, then the meta line.
       <Card
@@ -915,8 +758,6 @@ export default function Sources({
         variant="filled"
         padding="lg"
         interactive="within"
-        // A ticked tile shows it in its checkbox (Card has no selected look;
-        // that belongs to OptionCard).
         className="h-full"
       >
         <div className="flex w-full min-w-0 items-center gap-3 pr-9">
@@ -926,12 +767,8 @@ export default function Sources({
           <button
             type="button"
             aria-label={document.name}
-            aria-pressed={pickable ? ticked : undefined}
-            disabled={selecting && !pickable}
-            onClick={() =>
-              selecting ? toggleSelected(document) : setDocumentToView(document)
-            }
-            className="flex min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-2xl disabled:cursor-default"
+            onClick={() => setDocumentToView(document)}
+            className="flex min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
           >
             <CardTitle
               className="line-clamp-2 w-full min-w-0 wrap-anywhere"
@@ -941,30 +778,15 @@ export default function Sources({
             </CardTitle>
           </button>
         </div>
-        {selecting ? (
-          pickable ? (
-            <div className="absolute top-5 right-6 z-10 flex size-8 items-center justify-center">
-              <Checkbox
-                checked={ticked}
-                onCheckedChange={() => toggleSelected(document)}
-                aria-label={t('settings.sources.selectSource', {
-                  name: document.name,
-                  interpolation: { escapeValue: false },
-                })}
-              />
-            </div>
-          ) : null
-        ) : (
-          <div className="absolute top-5 right-6 z-10">
-            <ActionMenu
-              options={actions.menuOptions(document, 'card')}
-              triggerLabel={t('settings.sources.menuAlt')}
-              triggerTestId={`menu-button-${docId}`}
-              open={actionMenuDocId === docId}
-              onOpenChange={(open) => setActionMenuDocId(open ? docId : null)}
-            />
-          </div>
-        )}
+        <div className="absolute top-5 right-6 z-10">
+          <ActionMenu
+            options={actions.menuOptions(document, 'card')}
+            triggerLabel={t('settings.sources.menuAlt')}
+            triggerTestId={`menu-button-${docId}`}
+            open={actionMenuDocId === docId}
+            onOpenChange={(open) => setActionMenuDocId(open ? docId : null)}
+          />
+        </div>
         {line ? (
           <CardDescription size="xs" className="line-clamp-2 wrap-break-word">
             {line}
@@ -1018,7 +840,7 @@ export default function Sources({
           </MetaLine>
           {/* The reader's own connection (only theirs are loaded): sign in
               again right here, without opening the source. */}
-          {connection && paused && !selecting ? (
+          {connection && paused ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -1048,68 +870,15 @@ export default function Sources({
   const GRID =
     'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
   const filtered = kind !== 'all' || usage !== 'all';
-  const selectedCount = selected.size;
-
-  const toolbarAction = selecting ? (
-    <div className="flex flex-wrap items-center gap-3">
-      <span aria-live="polite" className="text-sm">
-        {t('settings.sources.selectedCount', {
-          count: selectedCount,
-          formatted: formatCount(selectedCount),
-        })}
-      </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="field"
-        shape="pill"
-        disabled={tickable.length === 0 || allTicked}
-        onClick={selectAllOnPage}
-      >
-        {t('settings.sources.selectAllOnPage')}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="field"
-        shape="pill"
-        onClick={leaveSelecting}
-      >
-        {t('cancel')}
-      </Button>
-      <Button
-        type="button"
-        variant="destructive-outline"
-        size="field"
-        shape="pill"
-        disabled={selectedCount === 0}
-        onClick={() => setConfirmingDelete(true)}
-      >
-        {t('settings.sources.delete')}
-      </Button>
-    </div>
-  ) : (
-    <div className="flex flex-wrap items-center gap-3">
-      {currentDocuments.length > 0 && (
-        <Button
-          type="button"
-          variant="outline"
-          size="field"
-          shape="pill"
-          onClick={() => setSelecting(true)}
-        >
-          {t('settings.sources.select')}
-        </Button>
-      )}
-      <Button
-        type="button"
-        size="field"
-        shape="pill"
-        onClick={() => setModalState('ACTIVE')}
-      >
-        {t('settings.sources.addSource')}
-      </Button>
-    </div>
+  const toolbarAction = (
+    <Button
+      type="button"
+      size="field"
+      shape="pill"
+      onClick={() => setModalState('ACTIVE')}
+    >
+      {t('settings.sources.addSource')}
+    </Button>
   );
 
   return documentToView ? (
@@ -1345,36 +1114,6 @@ export default function Sources({
           }
         />
       )}
-
-      <ConfirmationModal
-        message={t('settings.sources.deleteSelectedWarning', {
-          count: selectedCount,
-          formatted: formatCount(selectedCount),
-        })}
-        description={[
-          losingAgents > 0
-            ? t('settings.sources.deleteSelectedUsedBy', {
-                count: losingAgents,
-                formatted: formatCount(losingAgents),
-              })
-            : null,
-          t('settings.sources.deleteSelectedConsequence', {
-            count: selectedCount,
-          }),
-        ]
-          .filter(Boolean)
-          .join(' ')}
-        modalState={confirmingDelete ? 'ACTIVE' : 'INACTIVE'}
-        setModalState={(state) => setConfirmingDelete(state === 'ACTIVE')}
-        handleSubmit={deleteSelected}
-        error={(reason) =>
-          reason instanceof Error && reason.message
-            ? reason.message
-            : t('settings.sources.deleteSelectedFailed')
-        }
-        submitLabel={t('settings.sources.delete')}
-        variant="destructive"
-      />
 
       {signInModals}
 

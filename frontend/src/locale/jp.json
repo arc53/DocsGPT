@@ -691,28 +691,8 @@
       "kindFilterLabel": "種類で絞り込む",
       "needsAttention": "要対応",
       "allKnowledge": "すべてのナレッジ",
-      "select": "選択",
-      "selectAllOnPage": "このページをすべて選択",
-      "selectSource": "{{name}} を選択",
-      "selectedCount_one": "{{formatted}} 件選択中",
-      "selectedCount_other": "{{formatted}} 件選択中",
       "deleteUsedBy_one": "{{formatted}}件のエージェントが使用しており、それらはこのソースを使えなくなります。ファイルとチャンクも削除されます。この操作は元に戻せません。",
       "deleteUsedBy_other": "{{formatted}}件のエージェントが使用しており、それらはこのソースを使えなくなります。ファイルとチャンクも削除されます。この操作は元に戻せません。",
-      "deleteSelectedWarning_one": "{{formatted}}件のソースを削除しますか？",
-      "deleteSelectedWarning_other": "{{formatted}}件のソースを削除しますか？",
-      "deleteSelectedConsequence_one": "ファイルとチャンクも削除されます。この操作は元に戻せません。",
-      "deleteSelectedConsequence_other": "ファイルとチャンクも削除されます。この操作は元に戻せません。",
-      "deleteSelectedUsedBy_one": "{{formatted}}件のエージェントがこのナレッジを使えなくなります。",
-      "deleteSelectedUsedBy_other": "{{formatted}}件のエージェントがこのナレッジを使えなくなります。",
-      "deleteSomeFailed_one": "{{formatted}}件のソースを削除できませんでした。",
-      "deleteSomeFailed_other": "{{formatted}}件のソースを削除できませんでした。",
-      "deleteFailedReasons": {
-        "busy": "同期または別の変更が実行中でした。完了してからもう一度お試しください。",
-        "forbidden": "削除する権限がありません。",
-        "notFound": "すでに削除されたか、共有が解除されています。",
-        "failed": "問題が発生しました。もう一度お試しください。"
-      },
-      "deleteSelectedFailed": "ソースを削除できませんでした。",
       "noKnowledgeFound": "ナレッジが見つかりません"
     },
     "analytics": {

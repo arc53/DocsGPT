@@ -90,8 +90,6 @@ const {
     syncConnector: vi.fn(),
     reingestSource: vi.fn(),
     getDirectoryStructure: vi.fn(),
-    deleteSources: vi.fn(),
-    getSourcesUsage: vi.fn(),
   },
 }));
 
@@ -1920,41 +1918,23 @@ describe('Sources needs attention', () => {
   });
 });
 
-describe('Sources select mode', () => {
+describe('Sources toolbar', () => {
   let container: HTMLDivElement;
   let root: Root;
   const fetchPage = vi.mocked(getDocsWithPagination);
-
-  const owned = (id: string, name: string, fields: Partial<Doc> = {}) =>
-    doc({
-      id,
-      name,
-      access: 'owner',
-      allowed_actions: [...OWNER, 'use'],
-      ...fields,
-    });
-  const a = owned('a', 'Alpha');
-  const b = owned('b', 'Beta');
-  const teamViewer = doc({
-    id: 'v',
-    name: 'Viewed',
-    access: 'viewer',
-    ownership: 'team',
-    allowed_actions: VIEWER,
+  const owned = doc({
+    id: 'a',
+    name: 'Alpha',
+    access: 'owner',
+    allowed_actions: [...OWNER, 'use'],
   });
 
   beforeEach(() => {
     dispatch.mockReset();
-    service.deleteSources.mockReset();
-    service.getSourcesUsage.mockReset();
-    service.getSourcesUsage.mockResolvedValue({
-      ok: true,
-      json: async () => ({ agents: [], others: 0 }),
-    });
     fetchPage.mockReset();
     fetchPage.mockResolvedValue({
-      docs: [a, b, teamViewer],
-      totalDocuments: 3,
+      docs: [owned],
+      totalDocuments: 1,
       totalPages: 1,
       currentPage: 1,
       nextCursor: '',
@@ -1971,193 +1951,17 @@ describe('Sources select mode', () => {
     document.body.innerHTML = '';
   });
 
-  const toolbarButton = (label: string) =>
-    Array.from(
+  it('offers Add knowledge alone: no Select mode, the card keeps its menu', async () => {
+    await mount(root, [owned]);
+    const labels = Array.from(
       container.querySelectorAll<HTMLButtonElement>(
         '[data-slot="page-toolbar"] button',
       ),
-    ).find((button) => button.textContent === label);
-  const checkboxes = () =>
-    Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]'));
-  const checkboxOf = (name: string) =>
-    container
-      .querySelector(`button[aria-label="${name}"]`)!
-      .closest('[data-slot="card"]')!
-      .querySelector<HTMLElement>('[role="checkbox"]');
-  const tick = (name: string) =>
-    act(async () =>
-      container
-        .querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!
-        .click(),
-    );
-  const startSelecting = async () => {
-    await mount(root, [a, b, teamViewer]);
-    await act(async () => toolbarButton('settings.sources.select')!.click());
-  };
-  const dialog = () => document.querySelector('[role="dialog"]');
-  const submit = () =>
-    Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
-    ).find((button) => button.textContent === 'settings.sources.delete')!;
-
-  it('ticks the cards the caller can delete instead of opening them', async () => {
-    await startSelecting();
-    // A checkbox where the ⋯ was, and none on a team viewer's card.
-    expect(checkboxes()).toHaveLength(2);
-    expect(container.querySelector('[data-testid="menu-button-a"]')).toBeNull();
-    expect(checkboxOf('Viewed')).toBeNull();
-    await tick('Alpha');
-    expect(checkboxOf('Alpha')!.getAttribute('aria-checked')).toBe('true');
-    expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
-    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
-    expect(toolbar.textContent).toContain('settings.sources.selectedCount');
-    expect(
-      toolbar.querySelector('[aria-live="polite"]')?.textContent,
-    ).toContain('settings.sources.selectedCount');
-    // Delete waits for a pick; Select all on page ticks the rest.
-    expect(toolbarButton('settings.sources.delete')!.disabled).toBe(false);
-    await act(async () =>
-      toolbarButton('settings.sources.selectAllOnPage')!.click(),
-    );
-    expect(checkboxOf('Beta')!.getAttribute('aria-checked')).toBe('true');
-  });
-
-  it('Cancel and Escape leave the mode and drop the selection', async () => {
-    await startSelecting();
-    expect(toolbarButton('settings.sources.delete')!.disabled).toBe(true);
-    await tick('Alpha');
-    await act(async () => toolbarButton('cancel')!.click());
-    expect(checkboxes()).toHaveLength(0);
+    ).map((button) => button.textContent);
+    expect(labels).toEqual(['settings.sources.addSource']);
+    expect(container.querySelector('[role="checkbox"]')).toBeNull();
     expect(
       container.querySelector('[data-testid="menu-button-a"]'),
     ).not.toBeNull();
-    await act(async () => toolbarButton('settings.sources.select')!.click());
-    expect(checkboxOf('Alpha')!.getAttribute('aria-checked')).toBe('false');
-    await act(async () =>
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-      ),
-    );
-    expect(checkboxes()).toHaveLength(0);
-  });
-
-  it('deletes the selection in one request after a confirm', async () => {
-    service.deleteSources.mockResolvedValue({
-      ok: true,
-      json: async () => ({ deleted: ['a', 'b'], failed: [] }),
-    });
-    await startSelecting();
-    await tick('Alpha');
-    await tick('Beta');
-    await act(async () => toolbarButton('settings.sources.delete')!.click());
-    expect(dialog()!.textContent).toContain(
-      'settings.sources.deleteSelectedWarning',
-    );
-    expect(
-      dialog()!.querySelector('[data-slot="dialog-description"]')?.textContent,
-    ).toBe('settings.sources.deleteSelectedConsequence');
-    expect(submit().getAttribute('data-variant')).toBe('destructive');
-    fetchPage.mockClear();
-    await act(async () => submit().click());
-    expect(service.deleteSources).toHaveBeenCalledWith(['a', 'b'], null);
-    expect(dialog()).toBeNull();
-    expect(fetchPage).toHaveBeenCalled();
-    expect(checkboxes()).toHaveLength(0);
-    expect(
-      dispatch.mock.calls.some(
-        ([action]) =>
-          action?.type === syncForgotten.type &&
-          JSON.stringify(action.payload) === '["a","b"]',
-      ),
-    ).toBe(true);
-  });
-
-  it('names the agents that lose the selection', async () => {
-    const usedA = owned('a', 'Alpha', {
-      used_by: { agents: [{ id: 'x', name: 'X' }], others: 0 },
-    });
-    const usedB = owned('b', 'Beta', {
-      used_by: { agents: [{ id: 'x', name: 'X' }], others: 2 },
-    });
-    service.getSourcesUsage.mockResolvedValue({
-      ok: true,
-      json: async () => ({ agents: [{ id: 'x', name: 'X' }], others: 2 }),
-    });
-    await mount(root, [usedA, usedB]);
-    await act(async () => toolbarButton('settings.sources.select')!.click());
-    await tick('Alpha');
-    await tick('Beta');
-    await act(async () => toolbarButton('settings.sources.delete')!.click());
-    expect(
-      dialog()!.querySelector('[data-slot="dialog-description"]')?.textContent,
-    ).toBe(
-      'settings.sources.deleteSelectedUsedBy settings.sources.deleteSelectedConsequence',
-    );
-  });
-
-  it('asks the server how many agents lose the selection, each counted once', async () => {
-    // Per card, X counts twice and the teammates' agents sum to 3; the server
-    // knows they are the same agents.
-    const usedA = owned('a', 'Alpha', {
-      used_by: { agents: [{ id: 'x', name: 'X' }], others: 1 },
-    });
-    const usedB = owned('b', 'Beta', {
-      used_by: { agents: [{ id: 'x', name: 'X' }], others: 2 },
-    });
-    service.getSourcesUsage.mockResolvedValue({
-      ok: true,
-      json: async () => ({ agents: [], others: 0 }),
-    });
-    await mount(root, [usedA, usedB]);
-    await act(async () => toolbarButton('settings.sources.select')!.click());
-    await tick('Alpha');
-    await tick('Beta');
-    await act(async () => toolbarButton('settings.sources.delete')!.click());
-    expect(service.getSourcesUsage).toHaveBeenCalledWith(['a', 'b'], null);
-    expect(
-      dialog()!.querySelector('[data-slot="dialog-description"]')?.textContent,
-    ).toBe('settings.sources.deleteSelectedConsequence');
-  });
-
-  it('keeps a partial failure in the dialog and the failed sources ticked', async () => {
-    service.deleteSources.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        deleted: ['a'],
-        failed: [{ id: 'b', error: 'busy', code: 'source_busy' }],
-      }),
-    });
-    await startSelecting();
-    await tick('Alpha');
-    await tick('Beta');
-    await act(async () => toolbarButton('settings.sources.delete')!.click());
-    fetchPage.mockClear();
-    await act(async () => submit().click());
-    expect(dialog()).not.toBeNull();
-    expect(dialog()!.textContent).toContain(
-      'settings.sources.deleteSomeFailed',
-    );
-    expect(dialog()!.textContent).toContain(
-      'settings.sources.deleteFailedReasons.busy',
-    );
-    // What went is gone from the lists.
-    expect(fetchPage).toHaveBeenCalled();
-    expect(checkboxOf('Alpha')!.getAttribute('aria-checked')).toBe('false');
-    expect(checkboxOf('Beta')!.getAttribute('aria-checked')).toBe('true');
-  });
-
-  it('keeps a failed request in the dialog', async () => {
-    service.deleteSources.mockResolvedValue({
-      ok: false,
-      json: async () => ({}),
-    });
-    await startSelecting();
-    await tick('Alpha');
-    await act(async () => toolbarButton('settings.sources.delete')!.click());
-    await act(async () => submit().click());
-    expect(dialog()!.textContent).toContain(
-      'settings.sources.deleteSelectedFailed',
-    );
-    expect(checkboxOf('Alpha')!.getAttribute('aria-checked')).toBe('true');
   });
 });

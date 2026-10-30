@@ -694,28 +694,8 @@
       "kindFilterLabel": "Filter by kind",
       "needsAttention": "Needs attention",
       "allKnowledge": "All knowledge",
-      "select": "Select",
-      "selectAllOnPage": "Select all on page",
-      "selectSource": "Select {{name}}",
-      "selectedCount_one": "{{formatted}} selected",
-      "selectedCount_other": "{{formatted}} selected",
       "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this source. Its files and chunks are deleted too. This can't be undone.",
       "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this source. Its files and chunks are deleted too. This can't be undone.",
-      "deleteSelectedWarning_one": "Delete {{formatted}} source?",
-      "deleteSelectedWarning_other": "Delete {{formatted}} sources?",
-      "deleteSelectedConsequence_one": "Its files and chunks are deleted too. This can't be undone.",
-      "deleteSelectedConsequence_other": "Their files and chunks are deleted too. This can't be undone.",
-      "deleteSelectedUsedBy_one": "Used by {{formatted}} agent, which loses this knowledge.",
-      "deleteSelectedUsedBy_other": "Used by {{formatted}} agents, which lose this knowledge.",
-      "deleteSomeFailed_one": "{{formatted}} source wasn’t deleted.",
-      "deleteSomeFailed_other": "{{formatted}} sources weren’t deleted.",
-      "deleteFailedReasons": {
-        "busy": "A sync or another change was still running. Try again once it’s done.",
-        "forbidden": "Deleting needs a permission you don’t have.",
-        "notFound": "Already deleted, or no longer shared with you.",
-        "failed": "Something went wrong. Try again."
-      },
-      "deleteSelectedFailed": "Couldn’t delete the sources.",
       "noKnowledgeFound": "No knowledge found"
     },
     "analytics": {
