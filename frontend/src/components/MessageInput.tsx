@@ -18,6 +18,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import endpoints from '../api/endpoints';
+import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
 import SendArrow from '../assets/send.svg?react';
 import {
@@ -45,20 +46,16 @@ import {
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
-import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
-import ToolIcon from './ToolIcon';
-import ConnectorIcon from '../connectors/ConnectorIcon';
+import { toolPickerItems } from './toolPickerItems';
 import {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
-import { toolServiceOf } from '../connectors/toolService';
-import { groupTools } from '../settings/toolGroups';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
@@ -96,6 +93,7 @@ import { sourceItemId, toSourcePickerItems } from '../utils/sourceUtils';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
+import { deviceOnlineMap } from '../utils/deviceUtils';
 import { isChatPickerToolVisible, toolInChat } from '../utils/toolUtils';
 
 const generateId = (): string =>
@@ -1439,55 +1437,36 @@ export default function MessageInput({
     }
   }, [isToolsPopupOpen, fetchUserTools]);
 
-  // Tools from a connected service sit under that service; the rest are
-  // built in. Groups only appear once some tool comes from a connection.
-  // A teammate's connection is never in the caller's list, so the tool's own
-  // connection id decides, and the service is named from the catalog.
-  const toolService = (tool: UserToolType) =>
-    toolServiceOf(tool, connections, catalog);
-  const anyConnectedTool = userTools.some((tool) => !!tool.connection_id);
-  // Same groups as the Tools page and the agent builder: built in, one per
-  // service, then custom tools (an API tool, an MCP server with no
-  // connection).
-  const toolItems: MultiSelectPopoverItem[] = groupTools(
-    userTools,
+  // Remote devices' online state, asked for when the picker opens with a
+  // device in the list; until it answers the rows show no status.
+  const hasRemoteDevice = userTools.some(
+    (tool) => tool.name === 'remote_device',
+  );
+  const [deviceOnline, setDeviceOnline] = useState<Map<string, boolean>>();
+  useEffect(() => {
+    if (!isToolsPopupOpen || !hasRemoteDevice) return;
+    let current = true;
+    devicesService
+      .list(token)
+      .then((result) => {
+        if (current) setDeviceOnline(deviceOnlineMap(result?.devices ?? []));
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [isToolsPopupOpen, hasRemoteDevice, token]);
+
+  // The groups the agent builder and the Tools page use: Included, Added,
+  // one per service, then Custom. A teammate's connection is never in the
+  // caller's list, so the tool's own connection id decides, and the
+  // service is named from the catalog.
+  const toolItems: MultiSelectPopoverItem[] = toolPickerItems(userTools, {
+    t,
     connections,
     catalog,
-  )
-    .flatMap((group) => group.tools.map((tool) => ({ tool, group })))
-    .map(({ tool, group }) => {
-      const service = toolService(tool);
-      const connection = service?.connection;
-      return {
-        id: tool.id,
-        label: tool.customName || tool.displayName,
-        icon: service?.icon ? (
-          <ConnectorIcon icon={service.icon} className="size-5" />
-        ) : (
-          <ToolIcon name={tool.name} className="size-5" />
-        ),
-        group: anyConnectedTool
-          ? group.kind === 'service'
-            ? group.service?.name
-            : group.kind === 'custom'
-              ? t('agents.form.toolsPopup.groupCustom')
-              : t('settings.tools.groupBuiltIn')
-          : undefined,
-        // Shared-by line; the sign-in warning below wins when both apply.
-        description:
-          !isOwner(tool) && tool.shared_via
-            ? t('settings.tools.sharedBy', {
-                interpolation: { escapeValue: false },
-                team: tool.shared_via,
-              })
-            : undefined,
-        descriptionNode: connectionNeedsSignIn(connection) ? (
-          <Badge variant="warning">
-            {t('settings.connectors.status.reconnect')}
-          </Badge>
-        ) : undefined,
-      };
-    });
+    deviceOnline,
+  });
   // Each broken connection once, with the tool it would re-sign (an MCP
   // preset keeps its tool rather than gaining a second one).
   const brokenConnections = connections

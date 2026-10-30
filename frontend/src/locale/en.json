@@ -1455,8 +1455,8 @@
     },
     "tools": {
       "label": "Tools",
-      "subtitle": "Actions your agents can take. Built-in tools live here. Tools from a connected service are grouped under that service.",
-      "searchPlaceholder": "Search tools...",
+      "subtitle": "Actions your agents can take. Included tools come with DocsGPT. Tools from a connected service are grouped under that service.",
+      "searchPlaceholder": "Search tools…",
       "addTool": "Add tool",
       "noToolsFound": "No tools found",
       "selectToolSetup": "Add a tool",
@@ -1596,13 +1596,22 @@
       "triggerLabel_one": "Tools, {{formatted}} selected",
       "triggerLabel_other": "Tools, {{formatted}} selected",
       "manageInConnectors": "Manage in Connectors",
-      "defaultBadge": "Default",
       "noToolsYet": "No tools yet",
       "connectService": "Connect a service",
       "filledBy": "Filled in by",
       "loadError": "Could not load your tools.",
       "deleteConsequence": "Its settings and actions are deleted too. This can't be undone.",
-      "deleteActionConsequence": "It's removed when you save the tool."
+      "deleteActionConsequence": "It's removed when you save the tool.",
+      "groupIncluded": "Included",
+      "groupAdded": "Added",
+      "filterLabel": "Filter tools",
+      "filters": {
+        "all": "All",
+        "inUse": "In use",
+        "unused": "Unused"
+      },
+      "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this tool. Its settings and actions are deleted too. This can't be undone.",
+      "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this tool. Its settings and actions are deleted too. This can't be undone."
     },
     "devices": {
       "label": "Devices",
@@ -2187,6 +2196,13 @@
     },
     "insights": {
       "label": "Insights"
+    },
+    "usage": {
+      "agents_one": "Used by {{formatted}} agent",
+      "agents_other": "Used by {{formatted}} agents",
+      "others_one": "and {{formatted}} other on your teams",
+      "others_other": "and {{formatted}} others on your teams",
+      "inChats": "In chats"
     }
   },
   "modals": {
@@ -2552,7 +2568,6 @@
     },
     "sources": {
       "title": "Sources",
-      "text": "Choose knowledge",
       "link": "Source link",
       "view_more_one": "{{count}} more source",
       "view_more_other": "{{count}} more sources",
@@ -2982,20 +2997,13 @@
         "historyLimitDefault": "Summarized near the context limit"
       },
       "sourcePopup": {
-        "title": "Select knowledge",
-        "searchPlaceholder": "Search knowledge...",
+        "searchPlaceholder": "Search knowledge…",
         "noOptionsMessage": "No knowledge yet",
         "noSourceHint": "Optional. Without knowledge the agent answers from the model and its tools only."
       },
       "toolsPopup": {
-        "title": "Select Tools",
-        "searchPlaceholder": "Search tools...",
         "noOptionsMessage": "No tools available",
-        "groupBuiltin": "Built-in",
-        "groupDefault": "Built-in",
         "groupCustom": "Custom",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "On this agent",
         "attachedHint": "Added by someone else. You can remove it."
       },
       "modelsPopup": {
@@ -3867,7 +3875,8 @@
     },
     "multiSelect": {
       "more_one": "+{{count}} more",
-      "more_other": "+{{count}} more"
+      "more_other": "+{{count}} more",
+      "selectedGroup": "Selected"
     }
   },
   "pageNotFound": {

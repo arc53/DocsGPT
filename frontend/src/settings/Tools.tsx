@@ -19,6 +19,7 @@ import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { SectionHeader } from '../components/ui/section-header';
 import { Switch } from '../components/ui/switch';
 import { EmptyState } from '../components/ui/empty-state';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import ConnectorTile from '../connectors/ConnectorTile';
 import {
@@ -31,6 +32,7 @@ import { accountLine, connectorDescription } from '../connectors/i18n';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import { toolServiceOf } from '../connectors/toolService';
 import { useLoaderState } from '../hooks';
+import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
 import type { AvailableToolType } from '../modals/types';
 import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -43,6 +45,8 @@ import ShareToTeamModal, {
   type ShareCredentials,
 } from '../teams/ShareToTeamModal';
 import { can, isOwner, roleOf } from '../utils/accessUtils';
+import { formatCount } from '../utils/dateTimeUtils';
+import { agentUseCount } from '../utils/resourceUsage';
 import {
   canAddToolToOwn,
   isChatToolVisible,
@@ -51,8 +55,17 @@ import {
 } from '../utils/toolUtils';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
-import { groupTools, type ToolGroup } from './toolGroups';
+import { toolGroupTitle } from './toolGroupTitle';
+import { groupTools } from './toolGroups';
 import { APIToolType, UserToolType } from './types';
+import UsedByAgents from './UsedByAgents';
+
+const FILTERS = ['all', 'inUse', 'unused'] as const;
+type Filter = (typeof FILTERS)[number];
+
+/** In use: an agent uses it, or it is on in the caller's own chats. */
+const isToolInUse = (tool: UserToolType): boolean =>
+  agentUseCount(tool.used_by) > 0 || toolInChat(tool);
 
 export default function Tools() {
   const { t } = useTranslation();
@@ -64,6 +77,8 @@ export default function Tools() {
   const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = React.useState('');
+  // The address holds the usage filter, so Back and a reload keep it.
+  const [filter, setFilter] = useUrlFilter(FILTERS);
   const [addToolModalState, setAddToolModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [userTools, setUserTools] = React.useState<UserToolType[]>([]);
@@ -453,13 +468,26 @@ export default function Tools() {
       .catch(() => undefined);
   }, [newApiTool]);
 
-  const filteredTools = userTools.filter((tool) =>
-    (tool.customName || tool.displayName)
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase()),
+  const matchesFilter = (tool: UserToolType, key: Filter) =>
+    key === 'all' || (key === 'inUse') === isToolInUse(tool);
+  const counts = Object.fromEntries(
+    FILTERS.map((key) => [
+      key,
+      userTools.filter((tool) => matchesFilter(tool, key)).length,
+    ]),
+  ) as Record<Filter, number>;
+  // No pill leads to an empty list; with only All left there is no row.
+  const filters = shownFilters(FILTERS, filter, counts);
+
+  const filteredTools = userTools.filter(
+    (tool) =>
+      matchesFilter(tool, filter) &&
+      (tool.customName || tool.displayName)
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()),
   );
-  // Grouped like the composer's picker. Paged in group order, so a group
-  // that runs past a page carries on (under its header) on the next one.
+  // Grouped like the pickers. Paged in group order, so a group that runs
+  // past a page carries on (under its header) on the next one.
   const orderedTools = groupTools(filteredTools, connections, catalog).flatMap(
     (group) => group.tools,
   );
@@ -467,25 +495,12 @@ export default function Tools() {
     page: toolsPage,
     setPage: setToolsPage,
     pageItems: pageTools,
-  } = useClientPage(orderedTools, SHORT_LIST_PAGE_SIZE, searchTerm);
+  } = useClientPage(
+    orderedTools,
+    SHORT_LIST_PAGE_SIZE,
+    `${filter}\n${searchTerm}`,
+  );
   const pageGroups = groupTools(pageTools, connections, catalog);
-
-  const groupTitle = (group: ToolGroup<UserToolType>) =>
-    group.kind === 'builtIn' ? (
-      t('settings.tools.groupBuiltIn')
-    ) : group.kind === 'custom' ? (
-      t('agents.form.toolsPopup.groupCustom')
-    ) : (
-      <span className="flex items-center gap-2">
-        {group.service?.icon ? (
-          <ConnectorIcon
-            icon={group.service.icon}
-            className="size-4 shrink-0"
-          />
-        ) : null}
-        {group.service?.name}
-      </span>
-    );
 
   // The state leads the badge row: the caller's own connection needing a
   // sign-in, or a custom MCP server's sign-in. "Configured" is not a
@@ -529,6 +544,27 @@ export default function Tools() {
         ? connectorDescription(t, connector)
         : tool.description;
     const account = connection ? accountLine(t, connection) : null;
+    // The meta line: the account, then where the tool is used.
+    const meta: { key: string; node: React.ReactNode }[] = [];
+    if (account)
+      meta.push({
+        key: 'account',
+        node: (
+          <span className="min-w-0 truncate" title={account}>
+            {account}
+          </span>
+        ),
+      });
+    if (agentUseCount(tool.used_by) > 0)
+      meta.push({
+        key: 'agents',
+        node: <UsedByAgents usage={tool.used_by} />,
+      });
+    if (toolInChat(tool))
+      meta.push({
+        key: 'chats',
+        node: <span>{t('settings.usage.inChats')}</span>,
+      });
     return (
       <ConnectorTile
         key={tool.id}
@@ -561,26 +597,25 @@ export default function Tools() {
         badges={
           <>
             {stateBadge(tool)}
-            {/* The default copy of a built-in tool (it has no menu), told
-                apart from one the user added. */}
-            {tool.default && (
-              <Badge variant="neutral">
-                {t('settings.tools.defaultBadge')}
-              </Badge>
-            )}
             <RoleBadge item={tool} />
           </>
         }
         // Which account this is (each account of a service is its own
-        // tool) and the caller's own "In my chats" switch, named for screen
-        // readers only. A shared tool without use_in_own can't be in the
-        // caller's chats at all, so it has no switch.
+        // tool), where it is used (agents, the caller's chats) and the
+        // caller's own "In my chats" switch, named for screen readers only.
+        // A shared tool without use_in_own can't be in the caller's chats
+        // at all, so it has no switch.
         footer={
-          account || canAddToolToOwn(tool) ? (
+          meta.length > 0 || canAddToolToOwn(tool) ? (
             <>
-              {account && (
-                <span className="min-w-0 truncate" title={account}>
-                  {account}
+              {meta.length > 0 && (
+                <span className="flex min-w-0 flex-wrap items-center gap-x-1">
+                  {meta.map((part, index) => (
+                    <React.Fragment key={part.key}>
+                      {index > 0 && <span aria-hidden="true">·</span>}
+                      {part.node}
+                    </React.Fragment>
+                  ))}
                 </span>
               )}
               {canAddToolToOwn(tool) && (
@@ -662,7 +697,30 @@ export default function Tools() {
                 </Button>
               }
               divider
-            />
+            >
+              {filters.length > 0 && !loading && !loadFailed ? (
+                <div className="mb-6 flex flex-wrap items-center gap-3">
+                  <ToggleGroup
+                    type="single"
+                    value={filter}
+                    onValueChange={(value) =>
+                      value && setFilter(value as Filter)
+                    }
+                    aria-label={t('settings.tools.filterLabel')}
+                  >
+                    {filters.map((key) => (
+                      <ToggleGroupItem
+                        key={key}
+                        value={key}
+                        count={counts[key]}
+                      >
+                        {t(`settings.tools.filters.${key}`)}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </div>
+              ) : null}
+            </PageToolbar>
             {loading ? (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 <SkeletonLoader component="toolCards" count={6} />
@@ -710,7 +768,10 @@ export default function Tools() {
                 <div className="flex flex-col gap-8">
                   {pageGroups.map((group) => (
                     <section key={group.key} className="flex flex-col gap-3">
-                      <SectionHeader size="sm" title={groupTitle(group)} />
+                      <SectionHeader
+                        size="sm"
+                        title={toolGroupTitle(t, group)}
+                      />
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {group.tools.map(renderTile)}
                       </div>
@@ -745,7 +806,14 @@ export default function Tools() {
           interpolation: { escapeValue: false },
           toolName: toolToDelete?.customName || toolToDelete?.displayName || '',
         })}
-        description={t('settings.tools.deleteConsequence')}
+        description={
+          agentUseCount(toolToDelete?.used_by) > 0
+            ? t('settings.tools.deleteUsedBy', {
+                count: agentUseCount(toolToDelete?.used_by),
+                formatted: formatCount(agentUseCount(toolToDelete?.used_by)),
+              })
+            : t('settings.tools.deleteConsequence')
+        }
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={confirmDeleteTool}

@@ -41,16 +41,16 @@ import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
 } from '../components/MultiSelectPopover';
+import PickerFooter from '../components/PickerFooter';
 import SourcesPopoverFooter from '../components/SourcesPopoverFooter';
-import ToolIcon from '../components/ToolIcon';
+import { toolPickerItems } from '../components/toolPickerItems';
 import connectorsService from '../api/services/connectorsService';
-import ConnectorIcon from '../connectors/ConnectorIcon';
 import { connectionNeedsSignIn } from '../connectors/connectorsSlice';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
-import { toolServiceOf } from '../connectors/toolService';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
+import AddToolModal from '../modals/AddToolModal';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import { ActiveState, Prompt } from '../models/misc';
 import {
@@ -67,6 +67,7 @@ import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
+import { deviceOnlineMap } from '../utils/deviceUtils';
 import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import Upload from '../upload/Upload';
 import {
@@ -109,7 +110,7 @@ import {
   readSponsorRefusal,
   saveWithSponsorConsent,
   sponsorNotAllowedMessage,
-  withAttachedToolRows,
+  unlistedAttachedTools,
 } from './sponsorConsent';
 import { useAgentMenu } from './hooks/useAgentMenu';
 import { useSponsorPrompt } from './useSponsorPrompt';
@@ -186,8 +187,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     default_model_id: '',
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [userTools, setUserTools] = useState<MultiSelectPopoverItem[]>([]);
   const [rawUserTools, setRawUserTools] = useState<UserToolType[]>([]);
+  // What the tool rows are drawn from beside the tools themselves.
+  const [toolContext, setToolContext] = useState<{
+    connections: Connection[];
+    catalog: ConnectorDefinition[];
+    deviceOnline: Map<string, boolean>;
+  }>({ connections: [], catalog: [], deviceOnline: new Map() });
+  const [addToolModalState, setAddToolModalState] =
+    useState<ActiveState>('INACTIVE');
+  // A tool added from the picker goes on the agent once the list has it.
+  const addedToolRef = useRef<{ toolId?: string; deviceId?: string } | null>(
+    null,
+  );
   // Connections behind the picker's tools that need signing in again.
   const [brokenToolConnections, setBrokenToolConnections] = useState<
     { connection: Connection; mcpToolId?: string }[]
@@ -408,24 +420,33 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       items.map((item) => {
         const addedBy = addedByLabel(type, item.id);
         if (!addedBy) return item;
-        // A rich description (a status badge) wins over a plain one, so the
-        // line goes above it.
-        return item.descriptionNode
-          ? {
-              ...item,
-              descriptionNode: (
-                <>
-                  <p
-                    className="text-muted-foreground truncate text-xs"
-                    title={addedBy}
-                  >
-                    {addedBy}
-                  </p>
-                  {item.descriptionNode}
-                </>
-              ),
-            }
-          : { ...item, description: addedBy };
+        // The row's own line (and any status badge) stays under it.
+        const line =
+          item.descriptionNode ??
+          (item.description ? (
+            <p
+              className="text-muted-foreground truncate text-xs"
+              title={item.description}
+            >
+              {item.description}
+            </p>
+          ) : null);
+        if (!line) return { ...item, description: addedBy };
+        return {
+          ...item,
+          description: undefined,
+          descriptionNode: (
+            <>
+              <p
+                className="text-muted-foreground truncate text-xs"
+                title={addedBy}
+              >
+                {addedBy}
+              </p>
+              {line}
+            </>
+          ),
+        };
       }),
     [addedByLabel],
   );
@@ -450,18 +471,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t, withAddedBy]);
 
   // The caller's tools, plus a remove-only row for each tool on the agent
-  // they can't list (the owner's private tools on a shared agent).
-  const toolItems = useMemo(
-    () =>
-      withAddedBy(
-        withAttachedToolRows(userTools, attachedTools, {
-          group: t('agents.form.toolsPopup.groupAttached'),
-          description: t('agents.form.toolsPopup.attachedHint'),
-        }),
-        'tool',
-      ),
-    [attachedTools, t, userTools, withAddedBy],
-  );
+  // they can't list (the owner's private tools on a shared agent), grouped
+  // as the chat picker and the Tools page group them.
+  const toolItems = useMemo(() => {
+    const unlisted = unlistedAttachedTools(rawUserTools, attachedTools);
+    const unlistedIds = new Set(unlisted.map((tool) => tool.id));
+    return withAddedBy(
+      toolPickerItems([...rawUserTools, ...unlisted], {
+        t,
+        ...toolContext,
+        lineFor: (tool) =>
+          unlistedIds.has(tool.id)
+            ? t('agents.form.toolsPopup.attachedHint')
+            : undefined,
+      }),
+      'tool',
+    );
+  }, [attachedTools, rawUserTools, t, toolContext, withAddedBy]);
 
   const selectedSourceNames = useMemo(
     () =>
@@ -910,84 +936,37 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const visibleTools = (data.tools as UserToolType[]).filter(
         isAgentPickerToolVisible,
       );
-      const devicesById = new Map<
-        string,
-        { online: boolean; last_seen_at: string | null | undefined }
-      >();
-      const onlineWindowMs = 30_000;
-      (devicesResult.devices || []).forEach((d) => {
-        const seen = d.last_seen_at ? Date.parse(d.last_seen_at) : NaN;
-        const online =
-          !Number.isNaN(seen) && Date.now() - seen < onlineWindowMs;
-        devicesById.set(d.id, { online, last_seen_at: d.last_seen_at });
-      });
-      // Group ordering: builtins -> defaults -> one group per connection
-      // (the service and its account; a teammate's, only the service) ->
-      // custom tools, via the MultiSelectPopover first-appearance grouping.
-      const serviceOf = (tool: UserToolType) =>
-        toolServiceOf(tool, ownConnections, catalog);
-      const connectionOf = (tool: UserToolType) => serviceOf(tool)?.connection;
-      const rank = (tool: UserToolType) =>
-        tool.builtin ? 0 : tool.default ? 1 : tool.connection_id ? 2 : 3;
-      const groupFor = (tool: UserToolType): string => {
-        if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
-        if (tool.default) return t('agents.form.toolsPopup.groupDefault');
-        const service = serviceOf(tool);
-        if (service?.connection)
-          return t('agents.form.toolsPopup.groupConnection', {
-            name: service.connection.name,
-            account: service.connection.account_label,
-            interpolation: { escapeValue: false },
-          });
-        if (service) return service.name;
-        return t('agents.form.toolsPopup.groupCustom');
-      };
-      const tools: MultiSelectPopoverItem[] = [...visibleTools]
-        .sort(
-          (a, b) =>
-            rank(a) - rank(b) ||
-            // Keeps each connection's tools together.
-            (rank(a) === 2 ? groupFor(a).localeCompare(groupFor(b)) : 0),
-        )
-        .map((tool: UserToolType) => {
-          const connection = connectionOf(tool);
-          const serviceIcon = serviceOf(tool)?.icon;
-          const base: MultiSelectPopoverItem = {
-            id: tool.id,
-            label: getToolDisplayName(tool),
-            icon: serviceIcon ? (
-              <ConnectorIcon icon={serviceIcon} className="size-5" />
-            ) : (
-              <ToolIcon name={tool.name} className="size-5" />
-            ),
-            group: groupFor(tool),
-          };
-          if (connectionNeedsSignIn(connection)) {
-            base.descriptionNode = (
-              <Badge variant="warning" className="mt-0.5">
-                {t('settings.connectors.status.reconnect')}
-              </Badge>
-            );
-          }
-          if (tool.name === 'remote_device') {
-            const deviceId = (tool.config?.device_id as string) || '';
-            const meta = devicesById.get(deviceId);
-            const online = meta?.online ?? false;
-            base.descriptionNode = (
-              <Badge
-                variant={online ? 'success' : 'neutral'}
-                className="mt-0.5"
-              >
-                {online
-                  ? t('settings.devices.online')
-                  : t('settings.devices.offline')}
-              </Badge>
-            );
-          }
-          return base;
-        });
-      setUserTools(tools);
       setRawUserTools(visibleTools);
+      setToolContext({
+        connections: ownConnections,
+        catalog,
+        deviceOnline: deviceOnlineMap(devicesResult.devices || []),
+      });
+      // The tool just added from the picker goes on the agent.
+      const added = addedToolRef.current;
+      const addedTool = added
+        ? visibleTools.find((tool) =>
+            added.toolId
+              ? tool.id === added.toolId
+              : tool.name === 'remote_device' &&
+                tool.config?.device_id === added.deviceId,
+          )
+        : undefined;
+      if (addedTool) {
+        addedToolRef.current = null;
+        setSelectedTools((prev) =>
+          prev.some((tool) => tool.id === addedTool.id)
+            ? prev
+            : [
+                ...prev,
+                {
+                  id: addedTool.id,
+                  name: addedTool.name,
+                  display_name: getToolDisplayName(addedTool),
+                },
+              ],
+        );
+      }
       setBrokenToolConnections(
         Array.from(connectionsById.values())
           .filter(connectionNeedsSignIn)
@@ -1311,6 +1290,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
     >
       {signInAgain.modals}
+      {/* Opened from the tool picker's footer; a tool added here goes on
+          the agent once the list reloads. */}
+      <AddToolModal
+        message={t('settings.tools.selectToolSetup')}
+        modalState={addToolModalState}
+        setModalState={setAddToolModalState}
+        getUserTools={() => setToolsReloadKey((key) => key + 1)}
+        onToolAdded={(toolId) => {
+          addedToolRef.current = { toolId };
+          setToolsReloadKey((key) => key + 1);
+        }}
+        onDevicePaired={(deviceId) => {
+          setAddToolModalState('INACTIVE');
+          addedToolRef.current = { deviceId };
+          setToolsReloadKey((key) => key + 1);
+        }}
+      />
       {agent.agent_type === 'workflow' && <WorkflowBuilder />}
       <AgentPageToolbar
         intro={agent.id ? undefined : t('agents.form.byline.new')}
@@ -1394,7 +1390,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <MultiSelectPopover
                 open={isSourcePopupOpen}
                 onOpenChange={setIsSourcePopupOpen}
-                title={t('agents.form.sourcePopup.title')}
+                title={t('conversation.sources.knowledge')}
                 items={sourceItems}
                 selectedIds={Array.from(selectedSourceIds)}
                 onToggle={(id) => {
@@ -1444,8 +1440,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <MultiSelectPopover
                 open={isToolsPopupOpen}
                 onOpenChange={setIsToolsPopupOpen}
-                title={t('agents.form.toolsPopup.title')}
+                title={t('settings.tools.label')}
                 items={toolItems}
+                // What is on the agent when it opens comes first (an
+                // attached tool the caller can't list included); a lone
+                // group needs no heading.
+                selectedFirst
+                loneGroupHeading={false}
                 selectedIds={selectedTools.map((tool) => tool.id)}
                 onToggle={(id) => {
                   const exists = selectedTools.find((t) => t.id === id);
@@ -1466,27 +1467,38 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     },
                   ]);
                 }}
-                searchPlaceholder={t(
-                  'agents.form.toolsPopup.searchPlaceholder',
-                )}
+                searchPlaceholder={t('settings.tools.searchPlaceholder')}
                 emptyMessage={t('agents.form.toolsPopup.noOptionsMessage')}
                 footer={
-                  brokenToolConnections.length > 0 ? (
-                    <SignInAgainNotice
-                      connections={brokenToolConnections.map(
-                        ({ connection }) => connection,
-                      )}
-                      onReconnect={(connection) => {
+                  // A sign-in notice goes above the Go to Tools row.
+                  <div className="flex flex-col gap-3">
+                    {brokenToolConnections.length > 0 ? (
+                      <SignInAgainNotice
+                        connections={brokenToolConnections.map(
+                          ({ connection }) => connection,
+                        )}
+                        onReconnect={(connection) => {
+                          setIsToolsPopupOpen(false);
+                          signInAgain.reconnect(
+                            connection,
+                            brokenToolConnections.find(
+                              (entry) => entry.connection.id === connection.id,
+                            )?.mcpToolId,
+                          );
+                        }}
+                      />
+                    ) : null}
+                    <PickerFooter
+                      to="/settings/tools"
+                      linkLabel={t('settings.tools.manageTools')}
+                      onNavigate={() => setIsToolsPopupOpen(false)}
+                      actionLabel={t('settings.tools.addTool')}
+                      onAction={() => {
                         setIsToolsPopupOpen(false);
-                        signInAgain.reconnect(
-                          connection,
-                          brokenToolConnections.find(
-                            (entry) => entry.connection.id === connection.id,
-                          )?.mcpToolId,
-                        );
+                        setAddToolModalState('ACTIVE');
                       }}
                     />
-                  ) : undefined
+                  </div>
                 }
                 trigger={
                   <Button

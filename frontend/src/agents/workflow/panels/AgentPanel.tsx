@@ -298,7 +298,7 @@ export default function AgentPanel({
             selected={config.tools || []}
             onChange={(newTools) => updateConfig({ tools: newTools })}
             placeholder={t('agents.form.placeholders.selectTools')}
-            searchPlaceholder={t('agents.form.toolsPopup.searchPlaceholder')}
+            searchPlaceholder={t('settings.tools.searchPlaceholder')}
             emptyText={t('agents.form.toolsPopup.noOptionsMessage')}
           />
         </FormField>

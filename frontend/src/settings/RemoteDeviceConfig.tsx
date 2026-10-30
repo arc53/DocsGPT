@@ -39,17 +39,8 @@ import {
   formatRelative,
   formatTimestamp,
 } from '../utils/dateTimeUtils';
+import { isDeviceOnline } from '../utils/deviceUtils';
 import { UserToolType } from './types';
-
-/** ms-since-last-seen threshold for the online pill. */
-const ONLINE_WINDOW_MS = 30_000;
-
-function isOnline(device: Device | null): boolean {
-  if (!device?.last_seen_at) return false;
-  const t = Date.parse(device.last_seen_at);
-  if (Number.isNaN(t)) return false;
-  return Date.now() - t < ONLINE_WINDOW_MS;
-}
 
 interface Props {
   tool: UserToolType;
@@ -138,7 +129,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
     handleGoBack();
   };
 
-  const online = isOnline(device);
+  const online = isDeviceOnline(device);
   const lastSeenAgo = formatRelative(device?.last_seen_at);
   const pillText =
     (online ? t('settings.devices.online') : t('settings.devices.offline')) +

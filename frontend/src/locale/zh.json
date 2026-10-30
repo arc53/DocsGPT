@@ -1451,8 +1451,8 @@
     },
     "tools": {
       "label": "工具",
-      "subtitle": "智能体可以执行的操作。内置工具在这里。已连接服务提供的工具归在该服务下。",
-      "searchPlaceholder": "搜索工具...",
+      "subtitle": "智能体可以执行的操作。自带工具随 DocsGPT 提供。已连接服务提供的工具归在该服务下。",
+      "searchPlaceholder": "搜索工具…",
       "addTool": "添加工具",
       "noToolsFound": "未找到工具",
       "selectToolSetup": "添加工具",
@@ -1592,13 +1592,22 @@
       "triggerLabel_one": "工具，已选 {{formatted}} 个",
       "triggerLabel_other": "工具，已选 {{formatted}} 个",
       "manageInConnectors": "在连接器中管理",
-      "defaultBadge": "默认",
       "noToolsYet": "还没有工具",
       "connectService": "连接服务",
       "filledBy": "填写方式",
       "loadError": "无法加载你的工具。",
       "deleteConsequence": "其设置和操作也会一并删除。此操作无法撤销。",
-      "deleteActionConsequence": "保存工具后即会移除。"
+      "deleteActionConsequence": "保存工具后即会移除。",
+      "groupIncluded": "自带",
+      "groupAdded": "已添加",
+      "filterLabel": "筛选工具",
+      "filters": {
+        "all": "全部",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
+      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。"
     },
     "devices": {
       "label": "设备",
@@ -2177,6 +2186,13 @@
     },
     "insights": {
       "label": "洞察"
+    },
+    "usage": {
+      "agents_one": "{{formatted}} 个智能体在使用",
+      "agents_other": "{{formatted}} 个智能体在使用",
+      "others_one": "以及你团队中的另外 {{formatted}} 个",
+      "others_other": "以及你团队中的另外 {{formatted}} 个",
+      "inChats": "用于聊天"
     }
   },
   "modals": {
@@ -2540,7 +2556,6 @@
     },
     "sources": {
       "title": "来源",
-      "text": "选择知识",
       "link": "来源链接",
       "view_more": "还有{{count}}个来源",
       "noSourcesAvailable": "还没有知识",
@@ -2962,20 +2977,13 @@
         "historyLimitDefault": "接近上下文上限时总结"
       },
       "sourcePopup": {
-        "title": "选择知识",
-        "searchPlaceholder": "搜索知识...",
+        "searchPlaceholder": "搜索知识…",
         "noOptionsMessage": "还没有知识",
         "noSourceHint": "可选。没有知识时，智能体只用模型和它的工具回答。"
       },
       "toolsPopup": {
-        "title": "选择工具",
-        "searchPlaceholder": "搜索工具...",
         "noOptionsMessage": "没有可用的工具",
-        "groupBuiltin": "内置",
-        "groupDefault": "内置",
         "groupCustom": "自定义",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "已在此智能体上",
         "attachedHint": "由其他人添加。你可以将其移除。"
       },
       "modelsPopup": {
@@ -3845,7 +3853,8 @@
     },
     "multiSelect": {
       "more_one": "另外 {{count}} 个",
-      "more_other": "另外 {{count}} 个"
+      "more_other": "另外 {{count}} 个",
+      "selectedGroup": "已选"
     }
   },
   "pageNotFound": {

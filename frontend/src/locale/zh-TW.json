@@ -1451,8 +1451,8 @@
     },
     "tools": {
       "label": "工具",
-      "subtitle": "代理可以執行的操作。內建工具在這裡。已連線服務提供的工具歸在該服務之下。",
-      "searchPlaceholder": "搜尋工具...",
+      "subtitle": "代理可以執行的操作。隨附工具隨 DocsGPT 提供。已連線服務提供的工具歸在該服務之下。",
+      "searchPlaceholder": "搜尋工具…",
       "addTool": "新增工具",
       "noToolsFound": "找不到工具",
       "selectToolSetup": "新增工具",
@@ -1592,13 +1592,22 @@
       "triggerLabel_one": "工具，已選 {{formatted}} 個",
       "triggerLabel_other": "工具，已選 {{formatted}} 個",
       "manageInConnectors": "在連接器中管理",
-      "defaultBadge": "預設",
       "noToolsYet": "還沒有工具",
       "connectService": "連接服務",
       "filledBy": "填寫方式",
       "loadError": "無法載入你的工具。",
       "deleteConsequence": "其設定與動作也會一併刪除。此操作無法復原。",
-      "deleteActionConsequence": "儲存工具後即會移除。"
+      "deleteActionConsequence": "儲存工具後即會移除。",
+      "groupIncluded": "隨附",
+      "groupAdded": "已新增",
+      "filterLabel": "篩選工具",
+      "filters": {
+        "all": "全部",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。",
+      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。"
     },
     "devices": {
       "label": "裝置",
@@ -2178,6 +2187,13 @@
     },
     "insights": {
       "label": "洞察"
+    },
+    "usage": {
+      "agents_one": "{{formatted}} 個代理正在使用",
+      "agents_other": "{{formatted}} 個代理正在使用",
+      "others_one": "以及你團隊中的另外 {{formatted}} 個",
+      "others_other": "以及你團隊中的另外 {{formatted}} 個",
+      "inChats": "用於聊天"
     }
   },
   "modals": {
@@ -2542,7 +2558,6 @@
     },
     "sources": {
       "title": "來源",
-      "text": "選擇知識",
       "link": "來源連結",
       "view_more": "查看更多 {{count}} 個來源",
       "noSourcesAvailable": "還沒有知識",
@@ -2964,20 +2979,13 @@
         "historyLimitDefault": "接近上下文上限時摘要"
       },
       "sourcePopup": {
-        "title": "選擇知識",
-        "searchPlaceholder": "搜尋知識...",
+        "searchPlaceholder": "搜尋知識…",
         "noOptionsMessage": "還沒有知識",
         "noSourceHint": "選填。沒有知識時，代理只用模型和它的工具回答。"
       },
       "toolsPopup": {
-        "title": "選擇工具",
-        "searchPlaceholder": "搜尋工具...",
         "noOptionsMessage": "沒有可用的工具",
-        "groupBuiltin": "內建",
-        "groupDefault": "內建",
         "groupCustom": "自訂",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "已在此智慧代理上",
         "attachedHint": "由其他人新增。你可以將其移除。"
       },
       "modelsPopup": {
@@ -3847,7 +3855,8 @@
     },
     "multiSelect": {
       "more_one": "另外 {{count}} 個",
-      "more_other": "另外 {{count}} 個"
+      "more_other": "另外 {{count}} 個",
+      "selectedGroup": "已選取"
     }
   },
   "pageNotFound": {

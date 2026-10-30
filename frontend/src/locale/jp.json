@@ -1451,8 +1451,8 @@
     },
     "tools": {
       "label": "ツール",
-      "subtitle": "エージェントが実行できる操作です。組み込みツールはここにあります。接続したサービスのツールは、そのサービスの下にまとめて表示されます。",
-      "searchPlaceholder": "検索...",
+      "subtitle": "エージェントが実行できる操作です。標準搭載のツールはDocsGPTに付属しています。接続したサービスのツールは、そのサービスの下にまとめて表示されます。",
+      "searchPlaceholder": "ツールを検索…",
       "addTool": "ツールを追加",
       "noToolsFound": "ツールが見つかりません",
       "selectToolSetup": "ツールを追加",
@@ -1592,13 +1592,22 @@
       "triggerLabel_one": "ツール、{{formatted}} 件選択中",
       "triggerLabel_other": "ツール、{{formatted}} 件選択中",
       "manageInConnectors": "コネクタで管理",
-      "defaultBadge": "デフォルト",
       "noToolsYet": "ツールはまだありません",
       "connectService": "サービスを接続",
       "filledBy": "入力元",
       "loadError": "ツールを読み込めませんでした。",
       "deleteConsequence": "設定とアクションも削除されます。この操作は元に戻せません。",
-      "deleteActionConsequence": "ツールを保存すると削除されます。"
+      "deleteActionConsequence": "ツールを保存すると削除されます。",
+      "groupIncluded": "標準搭載",
+      "groupAdded": "追加済み",
+      "filterLabel": "ツールを絞り込む",
+      "filters": {
+        "all": "すべて",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "deleteUsedBy_one": "{{formatted}}件のエージェントが使用しており、それらはこのツールを使えなくなります。設定とアクションも削除されます。この操作は元に戻せません。",
+      "deleteUsedBy_other": "{{formatted}}件のエージェントが使用しており、それらはこのツールを使えなくなります。設定とアクションも削除されます。この操作は元に戻せません。"
     },
     "devices": {
       "label": "デバイス",
@@ -2178,6 +2187,13 @@
     },
     "insights": {
       "label": "インサイト"
+    },
+    "usage": {
+      "agents_one": "{{formatted}}件のエージェントで使用",
+      "agents_other": "{{formatted}}件のエージェントで使用",
+      "others_one": "ほかにチームで{{formatted}}件",
+      "others_other": "ほかにチームで{{formatted}}件",
+      "inChats": "チャットで使用"
     }
   },
   "modals": {
@@ -2542,7 +2558,6 @@
     },
     "sources": {
       "title": "ソース",
-      "text": "ナレッジを選択",
       "link": "ソースリンク",
       "view_more": "さらに{{count}}個のソース",
       "noSourcesAvailable": "ナレッジはまだありません",
@@ -2964,20 +2979,13 @@
         "historyLimitDefault": "コンテキスト上限の近くで要約"
       },
       "sourcePopup": {
-        "title": "ナレッジを選択",
-        "searchPlaceholder": "ナレッジを検索...",
+        "searchPlaceholder": "ナレッジを検索…",
         "noOptionsMessage": "ナレッジはまだありません",
         "noSourceHint": "任意です。ナレッジがない場合、エージェントはモデルとツールだけで回答します。"
       },
       "toolsPopup": {
-        "title": "ツールを選択",
-        "searchPlaceholder": "ツールを検索...",
         "noOptionsMessage": "利用可能なツールがありません",
-        "groupBuiltin": "ビルトイン",
-        "groupDefault": "組み込み",
         "groupCustom": "カスタム",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "このエージェントに追加済み",
         "attachedHint": "他のユーザーが追加しました。削除できます。"
       },
       "modelsPopup": {
@@ -3847,7 +3855,8 @@
     },
     "multiSelect": {
       "more_one": "他{{count}}件",
-      "more_other": "他{{count}}件"
+      "more_other": "他{{count}}件",
+      "selectedGroup": "選択済み"
     }
   },
   "pageNotFound": {

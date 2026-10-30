@@ -597,7 +597,29 @@ sits at the right end of the same row: `flex flex-wrap items-center
 justify-between gap-3`, so on a narrow sheet or in a long locale it wraps under
 the link rather than taking a row of its own everywhere. Every picker uses
 `PickerFooter` for this row (`SourcesPopoverFooter` wraps it for sources); a
-notice (connections to sign in again) goes above it.
+notice (connections to sign in again) goes above it. Both footers sit in their
+own `border-t px-4 py-4` strip after the `Command`, outside cmdk, whose Enter
+would toggle the highlighted row instead of pressing a footer button. The
+pickers share one chrome: the title "Tools" or "Knowledge", a "Search …"
+placeholder and that footer.
+
+`MultiSelectPopover selectedFirst` lists what was chosen when the picker
+opened in a Selected group on top, and keeps that set until it closes, so a
+toggle only changes the tick and no row moves under the pointer; reopening
+sorts again. With nothing chosen there is no Selected group. An item's
+`groupHeading` draws a richer heading (an icon and a name) than its `group`
+key; `loneGroupHeading={false}` drops the heading of a group that is alone in
+the list (the tool pickers pass it).
+
+Tools group the same way in the chat picker, the agent builder's picker and
+the Tools page (`groupTools`, `settings/toolGroups.ts`; headings from
+`toolGroupTitle`): Included (default and builtin tools, so no "Default"
+badge), Added (catalog tools the user added), one group per connected service
+(its icon and name), then Custom (API and MCP tools the user made). A picker
+row (`components/toolPickerItems`) has one line that tells it apart: who
+shared it, else the account it uses, else the catalog text, with its status
+badges (Reconnect, a device's Online or Offline) above that line; the account
+is never in the heading.
 
 ### Input (`ui/input.tsx`)
 

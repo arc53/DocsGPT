@@ -1512,8 +1512,8 @@
     },
     "tools": {
       "label": "Herramientas",
-      "subtitle": "Acciones que pueden realizar tus agentes. Aquí están las herramientas integradas. Las herramientas de un servicio conectado se agrupan bajo ese servicio.",
-      "searchPlaceholder": "Buscar...",
+      "subtitle": "Acciones que pueden realizar tus agentes. Las herramientas incluidas vienen con DocsGPT. Las herramientas de un servicio conectado se agrupan bajo ese servicio.",
+      "searchPlaceholder": "Buscar herramientas…",
       "addTool": "Añadir herramienta",
       "noToolsFound": "No se encontraron herramientas",
       "selectToolSetup": "Añadir una herramienta",
@@ -1656,13 +1656,23 @@
       "triggerLabel_other": "Herramientas, {{formatted}} seleccionadas",
       "triggerLabel_many": "Herramientas, {{formatted}} seleccionadas",
       "manageInConnectors": "Gestionar en Conectores",
-      "defaultBadge": "Predeterminada",
       "noToolsYet": "Aún no hay herramientas",
       "connectService": "Conectar un servicio",
       "filledBy": "Completado por",
       "loadError": "No se pudieron cargar tus herramientas.",
       "deleteConsequence": "También se eliminan su configuración y sus acciones. No se puede deshacer.",
-      "deleteActionConsequence": "Se elimina cuando guardes la herramienta."
+      "deleteActionConsequence": "Se elimina cuando guardes la herramienta.",
+      "groupIncluded": "Incluidas",
+      "groupAdded": "Añadidas",
+      "filterLabel": "Filtrar herramientas",
+      "filters": {
+        "all": "Todas",
+        "inUse": "En uso",
+        "unused": "Sin usar"
+      },
+      "deleteUsedBy_one": "La usa {{formatted}} agente, que la perderá. También se eliminan su configuración y sus acciones. No se puede deshacer.",
+      "deleteUsedBy_other": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer.",
+      "deleteUsedBy_many": "La usan {{formatted}} agentes, que la perderán. También se eliminan su configuración y sus acciones. No se puede deshacer."
     },
     "devices": {
       "label": "Dispositivos",
@@ -2265,6 +2275,15 @@
     },
     "insights": {
       "label": "Información"
+    },
+    "usage": {
+      "agents_one": "En uso en {{formatted}} agente",
+      "agents_other": "En uso en {{formatted}} agentes",
+      "agents_many": "En uso en {{formatted}} agentes",
+      "others_one": "y {{formatted}} más en tus equipos",
+      "others_other": "y {{formatted}} más en tus equipos",
+      "others_many": "y {{formatted}} más en tus equipos",
+      "inChats": "En chats"
     }
   },
   "modals": {
@@ -2632,7 +2651,6 @@
     },
     "sources": {
       "title": "Fuentes",
-      "text": "Elegir conocimiento",
       "link": "Enlace fuente",
       "view_more_one": "Ver {{count}} fuente más",
       "view_more_other": "Ver {{count}} fuentes más",
@@ -3072,20 +3090,13 @@
         "historyLimitDefault": "Se resume cerca del límite de contexto"
       },
       "sourcePopup": {
-        "title": "Seleccionar conocimiento",
-        "searchPlaceholder": "Buscar conocimiento...",
+        "searchPlaceholder": "Buscar conocimiento…",
         "noOptionsMessage": "Aún no hay conocimiento",
         "noSourceHint": "Opcional. Sin conocimiento, el agente responde solo con el modelo y sus herramientas."
       },
       "toolsPopup": {
-        "title": "Seleccionar Herramientas",
-        "searchPlaceholder": "Buscar herramientas...",
         "noOptionsMessage": "No hay herramientas disponibles",
-        "groupBuiltin": "Integradas",
-        "groupDefault": "Integradas",
         "groupCustom": "Personalizadas",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "En este agente",
         "attachedHint": "Lo añadió otra persona. Puedes quitarlo."
       },
       "modelsPopup": {
@@ -3975,7 +3986,8 @@
     "multiSelect": {
       "more_one": "+{{count}} más",
       "more_other": "+{{count}} más",
-      "more_many": "+{{count}} más"
+      "more_many": "+{{count}} más",
+      "selectedGroup": "Seleccionados"
     }
   },
   "pageNotFound": {

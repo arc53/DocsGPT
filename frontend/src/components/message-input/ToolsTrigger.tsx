@@ -48,6 +48,9 @@ export default function ToolsTrigger({
       searchPlaceholder={t('settings.tools.searchPlaceholder')}
       emptyMessage={t('settings.tools.noToolsFound')}
       loading={loading}
+      // What is on when it opens comes first; a lone group needs no heading.
+      selectedFirst
+      loneGroupHeading={false}
       footer={
         <div className="flex flex-col gap-3">
           {notice}

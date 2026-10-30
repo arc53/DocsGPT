@@ -1512,7 +1512,7 @@
     },
     "tools": {
       "label": "Outils",
-      "subtitle": "Les actions que vos agents peuvent effectuer. Les outils intégrés se trouvent ici. Les outils d’un service connecté sont regroupés sous ce service.",
+      "subtitle": "Les actions que vos agents peuvent effectuer. Les outils inclus sont fournis avec DocsGPT. Les outils d’un service connecté sont regroupés sous ce service.",
       "searchPlaceholder": "Rechercher des outils…",
       "addTool": "Ajouter un outil",
       "noToolsFound": "Aucun outil trouvé",
@@ -1656,13 +1656,23 @@
       "triggerLabel_other": "Outils, {{formatted}} sélectionnés",
       "triggerLabel_many": "Outils, {{formatted}} sélectionnés",
       "manageInConnectors": "Gérer dans les connecteurs",
-      "defaultBadge": "Par défaut",
       "noToolsYet": "Aucun outil pour l’instant",
       "connectService": "Connecter un service",
       "filledBy": "Renseigné par",
       "loadError": "Impossible de charger vos outils.",
       "deleteConsequence": "Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
-      "deleteActionConsequence": "Elle sera supprimée lorsque vous enregistrerez l’outil."
+      "deleteActionConsequence": "Elle sera supprimée lorsque vous enregistrerez l’outil.",
+      "groupIncluded": "Inclus",
+      "groupAdded": "Ajoutés",
+      "filterLabel": "Filtrer les outils",
+      "filters": {
+        "all": "Tous",
+        "inUse": "Utilisés",
+        "unused": "Inutilisés"
+      },
+      "deleteUsedBy_one": "Utilisé par {{formatted}} agent, qui perd cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_other": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_many": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible."
     },
     "devices": {
       "label": "Appareils",
@@ -2265,6 +2275,15 @@
     },
     "insights": {
       "label": "Analyses"
+    },
+    "usage": {
+      "agents_one": "{{formatted}} agent l’utilise",
+      "agents_other": "{{formatted}} agents l’utilisent",
+      "agents_many": "{{formatted}} agents l’utilisent",
+      "others_one": "et {{formatted}} autre dans vos équipes",
+      "others_other": "et {{formatted}} autres dans vos équipes",
+      "others_many": "et {{formatted}} autres dans vos équipes",
+      "inChats": "Dans les conversations"
     }
   },
   "modals": {
@@ -2632,7 +2651,6 @@
     },
     "sources": {
       "title": "Sources",
-      "text": "Choisir des connaissances",
       "link": "Lien de la source",
       "view_more_one": "{{count}} autre source",
       "view_more_other": "{{count}} autres sources",
@@ -3072,20 +3090,13 @@
         "historyLimitDefault": "Résumé près de la limite de contexte"
       },
       "sourcePopup": {
-        "title": "Sélectionner des connaissances",
         "searchPlaceholder": "Rechercher des connaissances…",
         "noOptionsMessage": "Aucune connaissance pour l’instant",
         "noSourceHint": "Facultatif. Sans connaissances, l’agent répond uniquement à partir du modèle et de ses outils."
       },
       "toolsPopup": {
-        "title": "Sélectionner des outils",
-        "searchPlaceholder": "Rechercher des outils…",
         "noOptionsMessage": "Aucun outil disponible",
-        "groupBuiltin": "Intégrés",
-        "groupDefault": "Intégrés",
         "groupCustom": "Personnalisés",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "Sur cet agent",
         "attachedHint": "Ajouté par quelqu’un d’autre. Vous pouvez le retirer."
       },
       "modelsPopup": {
@@ -3975,7 +3986,8 @@
     "multiSelect": {
       "more_one": "+{{count}} autre",
       "more_other": "+{{count}} autres",
-      "more_many": "+{{count}} autres"
+      "more_many": "+{{count}} autres",
+      "selectedGroup": "Sélectionnés"
     }
   },
   "pageNotFound": {

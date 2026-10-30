@@ -38,11 +38,11 @@ export default function SourcesTrigger({
     <MultiSelectPopover
       open={open}
       onOpenChange={onOpenChange}
-      title={t('conversation.sources.text')}
+      title={t('conversation.sources.knowledge')}
       items={items}
       selectedIds={selectedIds}
       onToggle={onToggle}
-      searchPlaceholder={t('settings.sources.searchPlaceholder')}
+      searchPlaceholder={t('agents.form.sourcePopup.searchPlaceholder')}
       emptyMessage={t('conversation.sources.noSourcesAvailable')}
       footer={
         <SourcesPopoverFooter

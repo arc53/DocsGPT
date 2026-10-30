@@ -25,9 +25,15 @@ export type MultiSelectPopoverItem = {
   /** Rich variant of ``description`` — wins when both are set. */
   descriptionNode?: React.ReactNode;
   icon?: React.ReactNode | string;
+  /** The group's key; it is also its heading unless `groupHeading` is set. */
   group?: string;
+  /** The group's heading when it is more than its key (an icon and a name). */
+  groupHeading?: React.ReactNode;
   disabled?: boolean;
 };
+
+// The key of the Selected group; no caller's group key starts with a NUL.
+const SELECTED_GROUP = '\u0000selected';
 
 export type MultiSelectPopoverProps = {
   trigger: React.ReactNode;
@@ -45,7 +51,17 @@ export type MultiSelectPopoverProps = {
   /** Extra layout classes for the popup (the desktop popover or the mobile sheet). */
   className?: string;
   emptyMessage?: string;
+  /**
+   * Lists the rows chosen when the picker opens in a Selected group on top.
+   * The set is taken on open and kept until it closes, so toggling only
+   * changes a tick and no row moves under the pointer.
+   */
   selectedFirst?: boolean;
+  /**
+   * Off: a group that is the only one in the list draws no heading (the
+   * Selected group counts as one). On by default.
+   */
+  loneGroupHeading?: boolean;
   title?: string;
 };
 
@@ -79,37 +95,67 @@ export function MultiSelectPopover({
   className,
   emptyMessage,
   selectedFirst = false,
+  loneGroupHeading = true,
   title,
 }: MultiSelectPopoverProps) {
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
   const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
 
-  const orderedItems = React.useMemo(() => {
-    if (!selectedFirst) return items;
-    const selected: MultiSelectPopoverItem[] = [];
-    const unselected: MultiSelectPopoverItem[] = [];
-    for (const item of items) {
-      (selectedSet.has(item.id) ? selected : unselected).push(item);
-    }
-    return [...selected, ...unselected];
-  }, [items, selectedSet, selectedFirst]);
+  // Uncontrolled callers still need to know when it opens, for the snapshot.
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const isOpen = open ?? uncontrolledOpen;
+  const handleOpenChange = (next: boolean) => {
+    if (open === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
+
+  // What was chosen when the picker opened; kept until it closes.
+  const [snapshot, setSnapshot] = React.useState<Set<string> | null>(() =>
+    isOpen ? new Set(selectedIds) : null,
+  );
+  const [snapshotOpen, setSnapshotOpen] = React.useState(isOpen);
+  if (snapshotOpen !== isOpen) {
+    setSnapshotOpen(isOpen);
+    setSnapshot(isOpen ? new Set(selectedIds) : null);
+  }
+  const pinned = selectedFirst ? snapshot : null;
 
   const grouped = React.useMemo(() => {
     const groupOrder: string[] = [];
     const map = new Map<string, MultiSelectPopoverItem[]>();
-    orderedItems.forEach((item) => {
-      const key = item.group ?? '';
+    const headings = new Map<string, React.ReactNode>();
+    const add = (key: string, item: MultiSelectPopoverItem) => {
       if (!map.has(key)) {
         groupOrder.push(key);
         map.set(key, []);
       }
       map.get(key)!.push(item);
+    };
+    if (pinned && items.some((item) => pinned.has(item.id))) {
+      groupOrder.push(SELECTED_GROUP);
+      map.set(SELECTED_GROUP, []);
+    }
+    items.forEach((item) => {
+      const key = item.group ?? '';
+      if (item.groupHeading !== undefined && !headings.has(key)) {
+        headings.set(key, item.groupHeading);
+      }
+      add(pinned?.has(item.id) ? SELECTED_GROUP : key, item);
     });
-    return { groupOrder, map };
-  }, [orderedItems]);
+    return { groupOrder, map, headings };
+  }, [items, pinned]);
 
-  const hasGroups = grouped.groupOrder.some((g) => g !== '');
+  const nonEmptyGroups = grouped.groupOrder.filter(
+    (key) => (grouped.map.get(key)?.length ?? 0) > 0,
+  );
+  const hasGroups =
+    nonEmptyGroups.some((key) => key !== '') &&
+    (loneGroupHeading || nonEmptyGroups.length > 1);
+  const headingOf = (key: string): React.ReactNode =>
+    key === SELECTED_GROUP
+      ? t('components.multiSelect.selectedGroup', 'Selected')
+      : (grouped.headings.get(key) ?? (key || undefined));
   const effectivePlaceholder =
     searchPlaceholder || t('settings.tools.searchPlaceholder', 'Search...');
 
@@ -166,7 +212,7 @@ export function MultiSelectPopover({
   );
 
   const commandBody = (
-    <Command shouldFilter={searchable}>
+    <Command shouldFilter={searchable} className="min-h-0 flex-1">
       {title && (
         <div className="shrink-0 px-4 pt-4">
           <SectionHeader as="h3" size="xs" title={title} />
@@ -184,35 +230,45 @@ export function MultiSelectPopover({
         <CommandList className="max-h-none min-h-0 flex-1 overflow-y-auto">
           <CommandEmpty>{renderEmptyState()}</CommandEmpty>
           {hasGroups ? (
-            grouped.groupOrder.map((groupKey) => {
-              const groupItems = grouped.map.get(groupKey) || [];
-              if (groupItems.length === 0) return null;
-              return (
-                <CommandGroup
-                  key={`group-${groupKey || 'ungrouped'}`}
-                  heading={groupKey || undefined}
-                >
-                  {groupItems.map(renderItem)}
-                </CommandGroup>
-              );
-            })
+            nonEmptyGroups.map((groupKey) => (
+              <CommandGroup
+                key={`group-${groupKey || 'ungrouped'}`}
+                heading={headingOf(groupKey)}
+              >
+                {(grouped.map.get(groupKey) ?? []).map(renderItem)}
+              </CommandGroup>
+            ))
           ) : (
-            <CommandGroup>{orderedItems.map(renderItem)}</CommandGroup>
+            <CommandGroup>
+              {nonEmptyGroups.flatMap((key) =>
+                (grouped.map.get(key) ?? []).map(renderItem),
+              )}
+            </CommandGroup>
           )}
         </CommandList>
-      )}
-
-      {footer && (
-        <div className="border-border shrink-0 border-t px-4 py-4">
-          {footer}
-        </div>
       )}
     </Command>
   );
 
+  // The footer sits outside cmdk: its root turns Enter into "toggle the
+  // highlighted row", which would swallow a footer button's Enter.
+  const body = (
+    <>
+      {commandBody}
+      {footer && (
+        <div
+          data-slot="multi-select-footer"
+          className="border-border shrink-0 border-t px-4 py-4"
+        >
+          {footer}
+        </div>
+      )}
+    </>
+  );
+
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet open={isOpen} onOpenChange={handleOpenChange}>
         <SheetTrigger asChild>{trigger}</SheetTrigger>
         <SheetContent
           side="bottom"
@@ -223,14 +279,14 @@ export function MultiSelectPopover({
           <SheetTitle className="sr-only">
             {title || effectivePlaceholder}
           </SheetTitle>
-          {commandBody}
+          {body}
         </SheetContent>
       </Sheet>
     );
   }
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align={align}
@@ -240,7 +296,7 @@ export function MultiSelectPopover({
           className,
         )}
       >
-        {commandBody}
+        {body}
       </PopoverContent>
     </Popover>
   );

@@ -45,6 +45,11 @@ const mocks = vi.hoisted(() => {
     detailsProps: vi.fn(),
     shareProps: vi.fn(),
     reconnect: vi.fn(),
+    toolsCalls: [] as number[],
+    addToolProps: null as null | {
+      modalState: string;
+      onToolAdded: (id: string) => void;
+    },
   };
 });
 const { jsonResponse } = mocks;
@@ -61,6 +66,7 @@ vi.mock('react-redux', () => ({
 vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: () =>
+      mocks.toolsCalls.push(1) &&
       jsonResponse({
         tools: mocks.tools ?? [
           {
@@ -116,13 +122,27 @@ vi.mock('../components/MultiSelectPopover', () => ({
     trigger,
     items,
     onToggle,
+    title,
+    searchPlaceholder,
+    selectedFirst,
+    footer,
   }: {
     trigger: React.ReactNode;
     items: MultiSelectPopoverItem[];
     onToggle: (id: string) => void;
+    title?: string;
+    searchPlaceholder?: string;
+    selectedFirst?: boolean;
+    footer?: React.ReactNode;
   }) => (
-    <div data-testid="picker">
+    <div
+      data-testid="picker"
+      data-title={title}
+      data-search={searchPlaceholder}
+      data-selected-first={selectedFirst ? 'true' : undefined}
+    >
       {trigger}
+      <div data-testid="picker-footer">{footer}</div>
       {items.map((item) => (
         <div
           key={item.id}
@@ -153,6 +173,15 @@ vi.mock('./components/GuardrailsSection', () => ({
   guardrailsIncomplete: () => false,
 }));
 vi.mock('../upload/Upload', () => ({ default: () => null }));
+vi.mock('../modals/AddToolModal', () => ({
+  default: (props: {
+    modalState: string;
+    onToolAdded: (id: string) => void;
+  }) => {
+    mocks.addToolProps = props;
+    return null;
+  },
+}));
 vi.mock('../modals/AgentDetailsModal', () => ({
   default: (props: unknown) => {
     mocks.detailsProps(props);
@@ -389,9 +418,10 @@ describe('NewAgent form', () => {
     expect(description.className).toContain('sm:col-start-2');
   });
 
-  it('lists tool groups as built-in, default, one per connection, then custom', async () => {
+  it('groups tools like the chat and the Tools page: included, added, each service, custom', async () => {
     mocks.tools = [
       { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      { id: 'notes', name: 'notes', display_name: 'Notes' },
       {
         id: 'linear',
         name: 'mcp_tool',
@@ -422,11 +452,18 @@ describe('NewAgent form', () => {
     ).map((item) => item.getAttribute('data-group'));
     const order = groups.filter((g, i) => groups.indexOf(g) === i);
     expect(order).toEqual([
-      'agents.form.toolsPopup.groupBuiltin',
-      'agents.form.toolsPopup.groupDefault',
-      'agents.form.toolsPopup.groupConnection',
-      'agents.form.toolsPopup.groupCustom',
+      'included',
+      'added',
+      'service:Linear',
+      'service:Notion',
+      'custom',
     ]);
+    // The account is the row's line, not part of the heading.
+    expect(
+      container
+        .querySelector('[data-item="linear"]')
+        ?.getAttribute('data-description'),
+    ).toBe('a@x');
   });
 
   // A teammate's connection is never in the caller's list; its tool still
@@ -456,7 +493,7 @@ describe('NewAgent form', () => {
     const groups = Array.from(
       container.querySelectorAll('[data-testid="picker"] [data-group]'),
     ).map((item) => item.getAttribute('data-group'));
-    expect(groups).toEqual(['Telegram', 'agents.form.toolsPopup.groupCustom']);
+    expect(groups).toEqual(['service:Telegram', 'custom']);
   });
 
   const renderEdit = async (agent: Record<string, unknown>) => {
@@ -503,10 +540,14 @@ describe('NewAgent form', () => {
     const groups = Array.from(toolPicker.querySelectorAll('[data-group]')).map(
       (item) => item.getAttribute('data-group'),
     );
-    expect(groups).toEqual([
-      'agents.form.toolsPopup.groupCustom',
-      'agents.form.toolsPopup.groupAttached',
-    ]);
+    // No "On this agent" group: it is on the agent, so the picker's
+    // Selected group holds it when it opens.
+    expect(groups).toEqual(['added', 'custom']);
+    expect(
+      container
+        .querySelector('[data-item="owners"]')
+        ?.getAttribute('data-description'),
+    ).toBe('agents.form.toolsPopup.attachedHint');
   });
 
   // The sponsor confirmation asks before anything runs with an editor's
@@ -1120,6 +1161,51 @@ describe('NewAgent form', () => {
       expect(trigger.hasAttribute('data-placeholder')).toBe(true);
       expect(trigger.querySelector('span.truncate')).not.toBeNull();
     }
+  });
+
+  it("gives the tool and knowledge pickers the chat pickers' chrome", async () => {
+    await render();
+    const [sources, tools] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-testid="picker"]'),
+    );
+    expect(sources.dataset.title).toBe('conversation.sources.knowledge');
+    expect(sources.dataset.search).toBe(
+      'agents.form.sourcePopup.searchPlaceholder',
+    );
+    expect(tools.dataset.title).toBe('settings.tools.label');
+    expect(tools.dataset.search).toBe('settings.tools.searchPlaceholder');
+    expect(tools.dataset.selectedFirst).toBe('true');
+    // The Go to Tools footer every picker has.
+    const footer = tools.querySelector('[data-testid="picker-footer"]')!;
+    expect(footer.querySelector('a')?.getAttribute('href')).toBe(
+      '/settings/tools',
+    );
+    expect(footer.textContent).toContain('settings.tools.manageTools');
+    expect(footer.textContent).toContain('settings.tools.addTool');
+  });
+
+  it('adds a tool from the picker and puts it on the agent', async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await render();
+    const tools = container.querySelectorAll('[data-testid="picker"]')[1];
+    const add = Array.from(
+      tools.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="picker-footer"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.tools.addTool')!;
+    await act(async () => add.click());
+    expect(mocks.addToolProps?.modalState).toBe('ACTIVE');
+    const calls = mocks.toolsCalls.length;
+    mocks.tools = [
+      { id: 'mine', name: 'api_tool', display_name: 'My API' },
+      { id: 'fresh', name: 'notes', display_name: 'Fresh notes' },
+    ];
+    await act(async () => mocks.addToolProps!.onToolAdded('fresh'));
+    expect(mocks.toolsCalls.length).toBeGreaterThan(calls);
+    const trigger = container.querySelectorAll(
+      '[data-testid="picker"] > button',
+    )[1];
+    expect(trigger.textContent).toBe('Fresh notes');
   });
 
   it('shows the device status as a Badge', async () => {

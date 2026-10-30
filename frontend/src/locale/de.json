@@ -1455,8 +1455,8 @@
     },
     "tools": {
       "label": "Werkzeuge",
-      "subtitle": "Aktionen, die deine Agenten ausführen können. Integrierte Werkzeuge findest du hier. Werkzeuge eines verbundenen Dienstes sind unter diesem Dienst gruppiert.",
-      "searchPlaceholder": "Werkzeuge suchen...",
+      "subtitle": "Aktionen, die deine Agenten ausführen können. Enthaltene Werkzeuge gehören zu DocsGPT. Werkzeuge eines verbundenen Dienstes sind unter diesem Dienst gruppiert.",
+      "searchPlaceholder": "Werkzeuge suchen…",
       "addTool": "Werkzeug hinzufügen",
       "noToolsFound": "Keine Werkzeuge gefunden",
       "selectToolSetup": "Werkzeug hinzufügen",
@@ -1596,13 +1596,22 @@
       "triggerLabel_one": "Werkzeuge, {{formatted}} ausgewählt",
       "triggerLabel_other": "Werkzeuge, {{formatted}} ausgewählt",
       "manageInConnectors": "In Konnektoren verwalten",
-      "defaultBadge": "Standard",
       "noToolsYet": "Noch keine Werkzeuge",
       "connectService": "Dienst verbinden",
       "filledBy": "Ausgefüllt von",
       "loadError": "Deine Werkzeuge konnten nicht geladen werden.",
       "deleteConsequence": "Seine Einstellungen und Aktionen werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
-      "deleteActionConsequence": "Sie wird entfernt, wenn du das Tool speicherst."
+      "deleteActionConsequence": "Sie wird entfernt, wenn du das Tool speicherst.",
+      "groupIncluded": "Enthalten",
+      "groupAdded": "Hinzugefügt",
+      "filterLabel": "Werkzeuge filtern",
+      "filters": {
+        "all": "Alle",
+        "inUse": "In Verwendung",
+        "unused": "Unbenutzt"
+      },
+      "deleteUsedBy_one": "Von {{formatted}} Agenten verwendet, der es danach nicht mehr hat. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "deleteUsedBy_other": "Von {{formatted}} Agenten verwendet, die es danach nicht mehr haben. Einstellungen und Aktionen des Werkzeugs werden ebenfalls gelöscht. Dies kann nicht rückgängig gemacht werden."
     },
     "devices": {
       "label": "Geräte",
@@ -2187,6 +2196,13 @@
     },
     "insights": {
       "label": "Einblicke"
+    },
+    "usage": {
+      "agents_one": "Von {{formatted}} Agenten verwendet",
+      "agents_other": "Von {{formatted}} Agenten verwendet",
+      "others_one": "und {{formatted}} weiterer in deinen Teams",
+      "others_other": "und {{formatted}} weitere in deinen Teams",
+      "inChats": "In Chats"
     }
   },
   "modals": {
@@ -2552,7 +2568,6 @@
     },
     "sources": {
       "title": "Quellen",
-      "text": "Wissen auswählen",
       "link": "Quellen-Link",
       "view_more_one": "{{count}} weitere Quelle",
       "view_more_other": "{{count}} weitere Quellen",
@@ -2982,20 +2997,13 @@
         "historyLimitDefault": "Zusammenfassung nahe am Kontextlimit"
       },
       "sourcePopup": {
-        "title": "Wissen auswählen",
-        "searchPlaceholder": "Wissen durchsuchen...",
+        "searchPlaceholder": "Wissen durchsuchen…",
         "noOptionsMessage": "Noch kein Wissen",
         "noSourceHint": "Optional. Ohne Wissen antwortet der Agent nur mit dem Modell und seinen Werkzeugen."
       },
       "toolsPopup": {
-        "title": "Werkzeuge auswählen",
-        "searchPlaceholder": "Werkzeuge suchen...",
         "noOptionsMessage": "Keine Werkzeuge verfügbar",
-        "groupBuiltin": "Integriert",
-        "groupDefault": "Integriert",
         "groupCustom": "Benutzerdefiniert",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "An diesem Agenten",
         "attachedHint": "Von jemand anderem hinzugefügt. Du kannst es entfernen."
       },
       "modelsPopup": {
@@ -3867,7 +3875,8 @@
     },
     "multiSelect": {
       "more_one": "+{{count}} weitere",
-      "more_other": "+{{count}} weitere"
+      "more_other": "+{{count}} weitere",
+      "selectedGroup": "Ausgewählt"
     }
   },
   "pageNotFound": {

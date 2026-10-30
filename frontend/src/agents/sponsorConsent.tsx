@@ -1,10 +1,7 @@
 import type { TFunction } from 'i18next';
 
-import ToolIcon from '../components/ToolIcon';
 import type { MultiSelectOption } from '../components/ui/multi-select';
-import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
 import { intlLocale } from '../utils/dateTimeUtils';
-import { getToolDisplayName } from '../utils/toolUtils';
 import type { ToolSummary } from './types';
 
 /** A resource a save would have run with the caller's access. */
@@ -170,32 +167,32 @@ export function sponsorNotAllowedMessage(
 }
 
 /**
- * The tool picker's rows plus one per attached tool the caller can't list.
+ * The tools on an agent that the caller can't list, each once.
  *
  * An editor of someone else's agent doesn't see the owner's private tools in
  * their own list, so without a row of its own such a tool reads as selected
- * with nothing to switch it off. The row only removes it (and puts it back
+ * with nothing to switch it off. Its row only removes it (and puts it back
  * before saving); it offers nothing to open or configure.
+ *
+ * Args:
+ *   listed: The tools the caller's own list has.
+ *   attached: The tools on the agent.
+ *
+ * Returns:
+ *   The attached tools missing from the list.
  */
-export function withAttachedToolRows(
-  items: MultiSelectPopoverItem[],
+export function unlistedAttachedTools(
+  listed: { id: string }[],
   attached: ToolSummary[],
-  labels: { group: string; description: string },
-): MultiSelectPopoverItem[] {
-  const seen = new Set(items.map((item) => item.id));
-  const extra: MultiSelectPopoverItem[] = [];
+): ToolSummary[] {
+  const seen = new Set(listed.map((tool) => tool.id));
+  const extra: ToolSummary[] = [];
   for (const tool of attached) {
     if (!tool?.id || seen.has(tool.id)) continue;
     seen.add(tool.id);
-    extra.push({
-      id: tool.id,
-      label: getToolDisplayName(tool),
-      icon: <ToolIcon name={tool.name} className="size-5" />,
-      group: labels.group,
-      description: labels.description,
-    });
+    extra.push(tool);
   }
-  return extra.length ? [...items, ...extra] : items;
+  return extra;
 }
 
 /**

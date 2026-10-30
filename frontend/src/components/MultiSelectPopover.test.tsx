@@ -149,4 +149,209 @@ describe('MultiSelectPopover', () => {
     expect(list.parentElement?.className ?? '').not.toContain('rounded-md');
     expect(list.parentElement?.className ?? '').not.toMatch(/\bborder\b/);
   });
+
+  describe('footer', () => {
+    const footer = () =>
+      document.querySelector<HTMLElement>('[data-slot="multi-select-footer"]');
+
+    const renderWithFooter = (onToggle = vi.fn(), onAdd = vi.fn()) =>
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={items}
+            selectedIds={[]}
+            onToggle={onToggle}
+            footer={
+              <button type="button" onClick={onAdd}>
+                Add tool
+              </button>
+            }
+          />,
+        );
+      });
+
+    it.each([
+      ['the popover', false],
+      ['the phone sheet', true],
+    ])('pins it under the list in %s, outside cmdk', (_where, mobile) => {
+      media.isMobile = mobile;
+      renderWithFooter();
+      const bar = footer()!;
+      expect(bar.className.split(' ')).toEqual(
+        expect.arrayContaining([
+          'border-border',
+          'shrink-0',
+          'border-t',
+          'px-4',
+          'py-4',
+        ]),
+      );
+      // Not in cmdk's root, whose Enter handler toggles the highlighted row.
+      expect(bar.closest('[cmdk-root]')).toBeNull();
+      const list = document.querySelector('[data-slot="command-list"]')!;
+      expect(list.contains(bar)).toBe(false);
+      // After the list, so Tab reaches it from the search box.
+      expect(
+        list.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      const surface = document.querySelector(
+        mobile
+          ? '[data-slot="sheet-content"]'
+          : '[data-slot="popover-content"]',
+      )!;
+      expect(surface.contains(bar)).toBe(true);
+    });
+
+    it('Enter on a footer button presses it and toggles no row', () => {
+      const onToggle = vi.fn();
+      renderWithFooter(onToggle);
+      const button = footer()!.querySelector('button')!;
+      act(() => {
+        button.focus();
+        const event = new KeyboardEvent('keydown', {
+          key: 'Enter',
+          bubbles: true,
+          cancelable: true,
+        });
+        button.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      });
+      expect(onToggle).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('selectedFirst', () => {
+    const grouped = [
+      { id: 'a', label: 'Alpha', group: 'one' },
+      { id: 'b', label: 'Beta', group: 'one' },
+      { id: 'c', label: 'Gamma', group: 'two' },
+    ];
+
+    const renderPicker = (
+      open: boolean,
+      selectedIds: string[],
+      extra: Record<string, unknown> = {},
+    ) =>
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open={open}
+            trigger={<button type="button">Open</button>}
+            items={grouped}
+            selectedIds={selectedIds}
+            onToggle={() => undefined}
+            selectedFirst
+            {...extra}
+          />,
+        );
+      });
+
+    const layout = () =>
+      Array.from(document.querySelectorAll('[cmdk-group]')).map((group) => [
+        group.querySelector('[cmdk-group-heading]')?.textContent ?? null,
+        Array.from(group.querySelectorAll('[data-slot="command-item"]')).map(
+          (row) => row.textContent,
+        ),
+      ]);
+
+    it('lists what is chosen when it opens in a Selected group on top', () => {
+      renderPicker(true, ['c']);
+      expect(layout()).toEqual([
+        ['Selected', ['Gamma']],
+        ['one', ['Alpha', 'Beta']],
+      ]);
+    });
+
+    it('keeps the rows still while toggling, and re-sorts on the next open', () => {
+      renderPicker(true, ['c']);
+      // Unticking Gamma and ticking Beta moves nothing.
+      renderPicker(true, ['b']);
+      expect(layout()).toEqual([
+        ['Selected', ['Gamma']],
+        ['one', ['Alpha', 'Beta']],
+      ]);
+      const gamma = document.querySelectorAll('[data-slot="command-item"]')[0];
+      expect(gamma.hasAttribute('data-checked')).toBe(false);
+      renderPicker(false, ['b']);
+      renderPicker(true, ['b']);
+      expect(layout()).toEqual([
+        ['Selected', ['Beta']],
+        ['one', ['Alpha']],
+        ['two', ['Gamma']],
+      ]);
+    });
+
+    it('draws no Selected group while nothing is chosen', () => {
+      renderPicker(true, []);
+      expect(layout().map(([heading]) => heading)).toEqual(['one', 'two']);
+    });
+
+    it('draws a group heading node in place of the group key', () => {
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={[
+              {
+                id: 'a',
+                label: 'Alpha',
+                group: 'service:x',
+                groupHeading: <span data-testid="heading">X service</span>,
+              },
+              { id: 'b', label: 'Beta', group: 'other' },
+            ]}
+            selectedIds={[]}
+            onToggle={() => undefined}
+          />,
+        );
+      });
+      expect(document.querySelector('[data-testid="heading"]')).not.toBeNull();
+      expect(layout().map(([heading]) => heading)).toEqual([
+        'X service',
+        'other',
+      ]);
+    });
+
+    it('with loneGroupHeading off, heads a lone group only beside Selected', () => {
+      const lone = [
+        { id: 'a', label: 'Alpha', group: 'one' },
+        { id: 'b', label: 'Beta', group: 'one' },
+      ];
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={lone}
+            selectedIds={[]}
+            onToggle={() => undefined}
+            selectedFirst
+            loneGroupHeading={false}
+          />,
+        );
+      });
+      expect(layout()).toEqual([[null, ['Alpha', 'Beta']]]);
+      act(() => root.render(<></>));
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={lone}
+            selectedIds={['b']}
+            onToggle={() => undefined}
+            selectedFirst
+            loneGroupHeading={false}
+          />,
+        );
+      });
+      expect(layout()).toEqual([
+        ['Selected', ['Beta']],
+        ['one', ['Alpha']],
+      ]);
+    });
+  });
 });
