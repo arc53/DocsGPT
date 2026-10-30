@@ -1,7 +1,7 @@
 ---
 title: Tools Basics
 description: Understand what DocsGPT Tools are, how they work, and explore the built-in tools available to extend DocsGPT's functionality.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components';
@@ -132,6 +132,19 @@ DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler"]
 
 To change the defaults for the whole instance, set `DEFAULT_CHAT_TOOLS` to a JSON list of tool names, as above. Comma-separated names (`memory,read_webpage`) are accepted too. To turn the default tools off, set `DEFAULT_CHAT_TOOLS=none` (or `[]`); an empty value keeps the shipped defaults. See the [Settings Reference](/Deploying/Settings-Reference#default_chat_tools) for the full entry.
 
+## The Tools page
+
+**Settings → Tools** shows your tools as cards, grouped the same way as the tool pickers:
+
+- **Included**: tools that come with DocsGPT, such as the default chat tools. The agent builder's picker also lists Code Executor and Artifact here.
+- **Added**: tools you added from the catalog with **Add tool** and configured.
+- One group per connected service, headed by the service's icon and name. Each card names the account it uses. These tools are managed in **Settings → Connectors**.
+- **Custom**: API tools and MCP servers you made.
+
+A card's last line says where the tool is used: **Used by N agents**, which you can click for a list of links to those agents, and **In chats** while the tool is on in your chats without an agent. The switch on the card turns it on or off there. **All**, **In use** and **Unused** filter the page. Deleting a tool that agents use says how many lose it.
+
+In a chat, the composer's **Tools** menu uses the same groups, and so does the agent builder's **Tools** field (**Select tools**). Both list the tools already selected first, under **Selected**, and end with **Go to Tools**, which opens this page, and **Add tool**.
+
 ## Using Tools in DocsGPT (User Perspective)
 
 Interacting with tools in DocsGPT is designed to be intuitive:
@@ -140,7 +153,7 @@ Interacting with tools in DocsGPT is designed to be intuitive:
 
 2.  **Configuration in UI:**
     * Tools are generally managed and configured within the DocsGPT application's settings, found under a "Tools" section in the GUI.
-    * Tools for external services (Brave Search, Telegram, ntfy, PostgreSQL, MCP servers, GitHub, and preset MCP services for Notion, Linear, Jira & Confluence, Sentry, Stripe, Resend and Cloudflare) are set up from **Settings > Connectors**. You connect the service once; its credentials stay encrypted on the server and never reach the browser, and the tools it provides are grouped under that connection. Each action is marked **Read** or **Write** and can be set to **Always allow**, **Needs approval** or **Off**. See [Connectors](/Sources/Connectors).
+    * Tools for external services (Brave Search, Telegram, ntfy, PostgreSQL, MCP servers, GitHub, and preset MCP services for Notion, Linear, Jira & Confluence, Sentry, Stripe, Resend and Cloudflare) are set up from **Settings > Connectors**. You connect the service once; its credentials stay encrypted on the server and never reach the browser, and the tools it provides are grouped under that service, with the account on each tool. Each action is marked **Read** or **Write** and can be set to **Always allow**, **Needs approval** or **Off**. See [Connectors](/Sources/Connectors).
     * When a tool's connection is missing or expired, the chat shows a **Connect** prompt and continues once you connect.
 
 3.  **Prompt Engineering for Tools:** While the LLM aims to intelligently use tools, for more complex or reliable agent-like behaviors, you might need to customize the system prompts. Modifying the prompt can guide the LLM on when and how to prioritize or chain tools to achieve specific outcomes, especially if you're building an agent designed to perform a certain sequence of actions every time. For more on this, see [Prompts](/Agents/prompts).

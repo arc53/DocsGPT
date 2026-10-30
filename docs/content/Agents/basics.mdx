@@ -1,7 +1,7 @@
 ---
 title: Agent Basics
 description: Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components';
@@ -33,13 +33,13 @@ When you create or configure an agent, you'll work with these key components:
     * **Describe your agent:** A brief description for you or users to understand the agent's purpose.
 
 **Source:**
-    * **Select source:** The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know."
+    * **Knowledge** (**Select knowledge**): The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know." The picker shows each source's kind and details, lists the selected ones first, filters by kind, and ends with **Go to Knowledge** and **Upload new**; see [Use knowledge in chats and agents](/Sources/adding-knowledge#use-knowledge-in-chats-and-agents).
     * **Chunks:** How many relevant text chunks are sent to the LLM with each query, in total across the agent's sources (default 6). The agent form doesn't show it; set `chunks` when creating or updating the agent through the API, or in an imported agent YAML file (see [Agents API](/API/agent-api)).
 
 **Prompt:**
-The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond.
+The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond. The **Prompt** field lists **Included**, **Yours** and **Shared with team**, with **Go to Prompts** and **Add prompt** at the bottom.
 
-**Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information.
+**Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information. The picker groups them as the Tools page does (**Included**, **Added**, one group per connected service, **Custom**), lists the selected ones first, and ends with **Go to Tools** and **Add tool**; see [The Tools page](/Tools/basics#the-tools-page).
 
 **Agent type:** The underlying operational logic or architecture the agent uses. DocsGPT supports different types of agents, each suited for different kinds of tasks. The agent form offers **Classic** and **Research**; workflow agents are chosen when you create the agent, and the Agentic type is set through the API or an imported YAML file.
 

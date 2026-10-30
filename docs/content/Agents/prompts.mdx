@@ -1,18 +1,36 @@
 ---
 title: Customizing Prompts
-description: Write the prompts your chats and agents use - adding and editing them in Settings, the Jinja2 template variables (system, source, passthrough, tools, artifacts, attachments), how a prompt is assembled, and the built-in presets.
-lastUpdated: 2026-10-18
+description: Write the prompts your chats and agents use - the Prompts page in Settings, picking the prompt for chats without an agent, the Jinja2 template variables (system, source, passthrough, tools, artifacts, attachments), how a prompt is assembled, and the built-in presets.
+lastUpdated: 2026-10-30
 ---
 
 # Customizing Prompts
 
 Customizing prompts for DocsGPT gives you powerful control over the AI's behavior and responses. With the new template-based system, you can inject dynamic context through organized namespaces, making prompts flexible and maintainable without hardcoding values.
 
-## Quick Start
+## The Prompts page
 
-1. Open **Settings > General**. The **Active prompt** field is the prompt your chats use when no agent is selected; agents choose their own prompt in the agent form.
-2. To write a new prompt, choose **Add** next to **Active prompt**, enter a name and the prompt text, and choose **Save**. The new prompt becomes the active one.
-3. To change a prompt you own, choose the pencil button (**Edit prompt**) next to the field, or next to the prompt in the **Active prompt** list. The built-in default, creative and strict prompts can't be edited; they show an eye button (**View prompt**) instead, and **Duplicate prompt** makes an editable copy.
+Open **Settings > Prompts** (under **Workspace**). Each prompt is a card with its name, the first lines of its text and who uses it. The cards are in three groups:
+
+- **Included**: the built-in **default**, **creative** and **strict** prompts. Each card says what the prompt does.
+- **Yours**: prompts you wrote.
+- **Shared with team**: prompts teammates shared with you (see [Teams and sharing](/Using/teams-and-sharing)).
+
+**Search prompts…** filters by name, and **All**, **In use** and **Unused** filter by use. A prompt is in use when an agent uses it or your chats do.
+
+### Pick the prompt for your chats
+
+The radio button at the bottom of each card picks the prompt your chats use when no agent is selected; that card shows **In chats**. Agents choose their own prompt in the agent form. Your choice is saved to your account, so it follows you to every browser and device. Earlier versions kept it in the browser; a prompt picked that way moves to your account the first time you open the app.
+
+### Add, edit and delete prompts
+
+1. To write a new prompt, choose **Add prompt**, enter a name and the prompt text, and choose **Save**.
+2. To change a prompt you can edit, click its card, or choose **Edit** from its **⋯** menu. The included prompts, and shared prompts you can only view, open read-only (**View**); **Duplicate** makes an editable copy.
+3. The **⋯** menu also has **Share with team** and **Delete** when your access allows them; by default only the owner shares or deletes.
+
+**Used by N agents** on a card counts the agents that use the prompt; click it for a list with a link to each agent you can open, and a count of your teammates' agents. Deleting a prompt says which agents, and whether your chats, use it: they go back to the default prompt.
+
+In the agent form, the **Prompt** field lists the same three groups. Its footer has **Go to Prompts**, which opens this page, and **Add prompt**.
 
 ### Video Demo
 
@@ -31,7 +49,7 @@ Customizing prompts for DocsGPT gives you powerful control over the AI's behavio
   <source src="/customising-prompts.mp4" type="video/mp4" />
 </video>
 
-*The recording opens **Settings > General** and clicks **Add** next to **Active prompt**. It names the prompt "Espresso support", types a short support persona and clicks **Save**, and the new prompt becomes the active one. It then opens the prompt list, which shows it below the built-in default, creative and strict prompts, and clicks the pencil button to edit it. It adds a sentence and saves again.*
+*The recording shows an earlier version, where prompts lived under **Settings > General**. It clicks **Add** next to **Active prompt**, names the prompt "Espresso support", types a short support persona and clicks **Save**. It then opens the prompt list, which shows it below the built-in default, creative and strict prompts, and clicks the pencil button to edit it. It adds a sentence and saves again. Today you do the same from **Add prompt** and the prompt's card on **Settings > Prompts**.*
 
 ---
 

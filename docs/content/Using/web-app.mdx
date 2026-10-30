@@ -1,7 +1,7 @@
 ---
 title: Using the Web App
-description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme, language and the active prompt.
-lastUpdated: 2026-10-21
+description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language.
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components'
@@ -14,11 +14,11 @@ This page covers the everyday parts of the DocsGPT web app that aren't specific 
 
 The sidebar holds:
 
-- **New Chat**: start a conversation. A chat without an agent uses the model you pick in the chat box, your active prompt and the default chat tools.
+- **New Chat**: start a conversation. A chat without an agent uses the model you pick in the chat box, the prompt you picked for chats (see [Prompts](/Agents/prompts#pick-the-prompt-for-your-chats)) and the default chat tools.
 - **Activity**: what runs now, what waits for you and what runs next, with your schedules and monitors. The row counts what is running and shows a dot while something needs you. See [Activity](/Using/activity).
 - **Agents**: your pinned agents. With fewer than three pinned, your most recently used published agents fill the list up to three. Click one to chat with it. Hover over it to **Pin agent** or **Unpin agent**. The grid button next to the **Agents** heading opens **Manage Agents**, the agent library. With no pinned or published agents, a **Manage Agents** row takes the list's place.
 - **Chats**: your conversations, newest first. Each has a menu with **Rename**, **Share** (see [Sharing conversations](/Using/sharing)) and **Delete**, and can show one [status mark](/Using/activity#status-marks-on-sidebar-chats): working, waiting for your approval, failed, unread or watching.
-- **Settings**, grouped into **Personal** (**General**, **Access Tokens**), **Workspace** (**Knowledge**, **Connectors**, **Tools**, **Custom Models**, **Teams**) and **Monitoring** (**Analytics**, **Insights** while the operator has insights on, **Logs**). Admins also get **Admin**.
+- **Settings**, grouped into **Personal** (**General**, **Access Tokens**), **Workspace** (**Knowledge**, **Connectors**, **Tools**, **Prompts**, **Custom Models**, **Teams**) and **Monitoring** (**Analytics**, **Insights** while the operator has insights on, **Logs**). Admins also get **Admin**.
 
 ## Search your conversations
 
@@ -78,12 +78,11 @@ For the same import over the API, see [Agent portability](/API/agent-api#agent-p
 **Settings → General** has:
 
 - **Theme**: **Light** or **Dark**. Until you pick one, the app follows your system setting.
-- **Language**: the language of menus and labels: English, Deutsch, Español, 日本語, 普通话, 繁體中文（臺灣） or Русский.
-- **Active prompt**: the system prompt for chats without an agent. Agents use their own. From here you can also add, edit, duplicate and delete your prompts; see [Prompts](/Agents/prompts).
+- **Language**: the language of menus and labels: English, Deutsch, Español, Français, 日本語, 普通话, 繁體中文（臺灣） or Русский.
 - **Delete all conversations**: permanently deletes every conversation in your account.
 
-Theme, language and active prompt are saved in your browser, so set them again on another browser or device.
+Theme and language are saved in your browser, so set them again on another browser or device. The prompt for chats without an agent is picked on **Settings → Prompts** and saved to your account; see [Prompts](/Agents/prompts).
 
 ## Default tools in chats without an agent
 
-Chats without an agent get a few built-in tools by default, such as memory, reading a web page and scheduling (your operator sets the list with `DEFAULT_CHAT_TOOLS`). To stop one of them being used in your chats, open **Settings → Tools** and turn off its switch; it's marked **Built-in**. Tools you add yourself have the same switch.
+Chats without an agent get a few built-in tools by default, such as memory, reading a web page and scheduling (your operator sets the list with `DEFAULT_CHAT_TOOLS`). To stop one of them being used in your chats, open **Settings → Tools** and turn off its switch; it's under **Included**. Tools you add yourself have the same switch, and a card shows **In chats** while its tool is on in your chats. See [The Tools page](/Tools/basics#the-tools-page).
