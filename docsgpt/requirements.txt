@@ -107,7 +107,7 @@ cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.5.2
     # via requests
-click==8.1.8
+click==8.5.0
     # via
     #   celery
     #   click-didyoumean
@@ -402,7 +402,7 @@ numpy==2.5.4
     #   qdrant-client
 oauthlib==4.0.0
     # via requests-oauthlib
-obstore==0.11.1
+obstore==0.12.0
     # via daytona
 onnxruntime==1.31.1
     # via
@@ -785,7 +785,7 @@ starlette==1.10.0
     #   fastmcp-slim
     #   mcp
     #   sse-starlette
-tenacity==9.1.4
+tenacity==9.2.1
     # via
     #   celery-redbeat
     #   google-genai
