@@ -52,7 +52,7 @@ An agent that uses your custom model keeps using it for everyone who can run the
 
 The same goes for a workflow **AI Agent** node set to your custom model: whoever runs the workflow agent, the node calls your endpoint with your key, and the usage counts toward the agent. A model set on a node is looked up in the workflow owner's account, so:
 
-- If you delete or disable the model, the nodes set to it fail with *Model '…' is not available* until you pick another model for them. They don't fall back to the default model.
+- If you delete the model, or its key can no longer be decrypted, the nodes set to it fail with *Model '…' is not available* until you pick another model for them. They don't fall back to the default model. Disabling the model only hides it from the pickers; the nodes keep using it.
 - A team editor of your workflow can set a node to one of your custom models, but not to one of their own: the save is refused, because you don't have that model.
 - A node without a model of its own runs on the agent's model, looked up as for the agent itself.
 
