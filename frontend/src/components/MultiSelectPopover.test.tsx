@@ -97,17 +97,65 @@ describe('MultiSelectPopover', () => {
     expect(content.className).not.toContain('dark:bg-card');
   });
 
-  it('marks chosen rows with CommandItem checked and a primary tick', () => {
+  it('marks chosen rows with CommandItem checked and the shared Checkbox', () => {
     render();
     const rows = document.querySelectorAll('[data-slot="command-item"]');
     expect(rows).toHaveLength(2);
     expect(rows[0].hasAttribute('data-checked')).toBe(false);
     expect(rows[1].getAttribute('data-checked')).toBe('true');
     rows.forEach((row) => expect(row.querySelector('img')).toBeNull());
-    const tick = rows[1].querySelector('svg');
-    expect(tick).not.toBeNull();
-    expect(tick?.getAttribute('class')).toContain('text-primary');
-    expect(rows[0].querySelector('svg')).toBeNull();
+    const boxes = Array.from(rows).map((row) =>
+      row.querySelector<HTMLElement>('[data-slot="checkbox"]'),
+    );
+    expect(boxes[0]?.dataset.state).toBe('unchecked');
+    expect(boxes[1]?.dataset.state).toBe('checked');
+    // Visual only: the row is the control.
+    expect(boxes[1]?.getAttribute('tabindex')).toBe('-1');
+    expect(boxes[1]?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('searches the row line too, not only the label', () => {
+    act(() => {
+      root.render(
+        <MultiSelectPopover
+          open
+          trigger={<button type="button">Open</button>}
+          items={[
+            { id: 'a', label: 'Alpha', description: 'docs.example.com' },
+            { id: 'b', label: 'Beta', keywords: ['lena@acme'] },
+          ]}
+          selectedIds={[]}
+          onToggle={() => undefined}
+        />,
+      );
+    });
+    const rows = document.querySelectorAll('[data-slot="command-item"]');
+    expect(rows[0].getAttribute('data-value')).toBe('Alpha a');
+    // cmdk reads the keywords off the item when it filters.
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-slot="command-input"]',
+    )!;
+    const type = (text: string) =>
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        setter.call(input, text);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    type('example.com');
+    expect(
+      Array.from(document.querySelectorAll('[data-slot="command-item"]')).map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(['Alphadocs.example.com']);
+    type('lena@');
+    expect(
+      Array.from(document.querySelectorAll('[data-slot="command-item"]')).map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(['Beta']);
   });
 
   it("leaves aria-selected to cmdk's highlight, not the chosen state", () => {

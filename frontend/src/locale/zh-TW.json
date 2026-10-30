@@ -2262,7 +2262,9 @@
       "agents_other": "{{formatted}} 個代理正在使用",
       "others_one": "以及你團隊中的另外 {{formatted}} 個",
       "others_other": "以及你團隊中的另外 {{formatted}} 個",
-      "inChats": "用於聊天"
+      "inChats": "用於聊天",
+      "agentsShort_one": "{{formatted}} 個代理",
+      "agentsShort_other": "{{formatted}} 個代理"
     }
   },
   "modals": {

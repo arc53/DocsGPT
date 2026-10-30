@@ -35,24 +35,24 @@ through `@theme inline`, so `bg-`, `text-`, `border-`, `ring-`, `fill-` and
 `stroke-` all accept them, including opacity modifiers such as
 `bg-success/10`. One token class replaces a light + dark pair.
 
-| Token                                   | Use for                                                                           | Replaces                                                            |
-| --------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `background`, `foreground`              | page surface and primary text                                                     | `bg-white`, `text-gray-700/800/900`, `dark:text-gray-200/300`       |
-| `card`, `card-foreground`               | raised surfaces (cards, dialogs, dropdowns)                                       | `bg-white dark:bg-[#2b2c31]`                                        |
-| `popover`, `popover-foreground`         | floating menus and popovers                                                       | same as card                                                        |
-| `muted`, `muted-foreground`             | quiet fills and secondary text, icons, placeholders, timestamps                   | `bg-gray-100/200`, `text-gray-400/500/600`, `dark:text-gray-400`    |
-| `accent`, `accent-foreground`           | hover and selected fills                                                          | `hover:bg-gray-100`, `dark:hover:bg-gray-700`                       |
-| `border`, `input`, `ring`               | dividers, field borders (fields use `border-input`, `fieldFrame`), focus rings    | `border-gray-200/300`, `dark:border-gray-600/700`                   |
-| `primary`, `primary-foreground`         | brand purple: primary actions, selected states                                    | `bg-purple-*`, `text-purple-*`, `#7D54D1`, `#A076F6`                |
-| `link`                                  | text links: the Button `link` variant, `text-link`                                | `text-primary` on a link                                            |
-| `secondary`, `secondary-foreground`     | pressed and active toggles (a brand tint), secondary buttons, the question bubble | `bg-accent` on an active icon button                                |
-| `destructive`, `destructive-foreground` | errors, failed states, dangerous actions                                          | `text-red-*`, `bg-red-50/100`, `#B42318`, `#E60000`                 |
-| `success`, `success-foreground`         | completed, active, healthy                                                        | `text-green-*`, `text-emerald-*`, `bg-green-50/100`                 |
-| `warning`, `warning-foreground`         | paused, pending review, degraded                                                  | `text-amber-*`, `text-yellow-*`, `text-orange-*`, `bg-amber-50/100` |
-| `info`, `info-foreground`               | running, informational                                                            | `text-blue-*`, `bg-blue-50/100`                                     |
-| `sidebar`, `sidebar-accent`             | the navigation rail and its hover / current-row fill                              |                                                                     |
-| `chart-1` to `chart-5`                  | data series only, never UI chrome (see below)                                     |                                                                     |
-| `answer-surface`                        | every panel under an answer: source cards, View more, the wiki path chip, the code-block and Mermaid headers (`CodeFrame`), the attachment chip, `CodePanel` |                    |
+| Token                                   | Use for                                                                                                                                                      | Replaces                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `background`, `foreground`              | page surface and primary text                                                                                                                                | `bg-white`, `text-gray-700/800/900`, `dark:text-gray-200/300`       |
+| `card`, `card-foreground`               | raised surfaces (cards, dialogs, dropdowns)                                                                                                                  | `bg-white dark:bg-[#2b2c31]`                                        |
+| `popover`, `popover-foreground`         | floating menus and popovers                                                                                                                                  | same as card                                                        |
+| `muted`, `muted-foreground`             | quiet fills and secondary text, icons, placeholders, timestamps                                                                                              | `bg-gray-100/200`, `text-gray-400/500/600`, `dark:text-gray-400`    |
+| `accent`, `accent-foreground`           | hover and selected fills                                                                                                                                     | `hover:bg-gray-100`, `dark:hover:bg-gray-700`                       |
+| `border`, `input`, `ring`               | dividers, field borders (fields use `border-input`, `fieldFrame`), focus rings                                                                               | `border-gray-200/300`, `dark:border-gray-600/700`                   |
+| `primary`, `primary-foreground`         | brand purple: primary actions, selected states                                                                                                               | `bg-purple-*`, `text-purple-*`, `#7D54D1`, `#A076F6`                |
+| `link`                                  | text links: the Button `link` variant, `text-link`                                                                                                           | `text-primary` on a link                                            |
+| `secondary`, `secondary-foreground`     | pressed and active toggles (a brand tint), secondary buttons, the question bubble                                                                            | `bg-accent` on an active icon button                                |
+| `destructive`, `destructive-foreground` | errors, failed states, dangerous actions                                                                                                                     | `text-red-*`, `bg-red-50/100`, `#B42318`, `#E60000`                 |
+| `success`, `success-foreground`         | completed, active, healthy                                                                                                                                   | `text-green-*`, `text-emerald-*`, `bg-green-50/100`                 |
+| `warning`, `warning-foreground`         | paused, pending review, degraded                                                                                                                             | `text-amber-*`, `text-yellow-*`, `text-orange-*`, `bg-amber-50/100` |
+| `info`, `info-foreground`               | running, informational                                                                                                                                       | `text-blue-*`, `bg-blue-50/100`                                     |
+| `sidebar`, `sidebar-accent`             | the navigation rail and its hover / current-row fill                                                                                                         |                                                                     |
+| `chart-1` to `chart-5`                  | data series only, never UI chrome (see below)                                                                                                                |                                                                     |
+| `answer-surface`                        | every panel under an answer: source cards, View more, the wiki path chip, the code-block and Mermaid headers (`CodeFrame`), the attachment chip, `CodePanel` |                                                                     |
 
 The shadcn twins are aliases in `src/index.css`, not values of their own:
 `card-foreground`, `popover-foreground` and `accent-foreground` are
@@ -126,7 +126,7 @@ One tint scale, by purpose:
 - Quiet panel inside a page or card: `bg-muted`, not `bg-muted/40` or `/60`.
   It is a small well inside a panel that holds an asset (code, a file, a value
   to copy; see Code blocks), never a note (a static note is `Alert
-  variant="info" role="note"`, see Alert) and never a page-sized panel around
+variant="info" role="note"`, see Alert) and never a page-sized panel around
   cards (see Card surfaces). Other grey boxes are Cards: a grouped sub-panel
   inside a `subtle` panel is a `subtle` Card (`padding="sm"`), a search result
   or a summary with its field in a modal is an `outline` Card, and a token or
@@ -161,11 +161,11 @@ Patterns:
   fill under an open row; a trash on the header is
   `ghost-destructive-on-accent`. A chosen checkbox row (ImportSpec's endpoints) is
   `has-[[data-state=checked]]:border-primary
-  has-[[data-state=checked]]:bg-primary/5`; its wash beats the hover by
+has-[[data-state=checked]]:bg-primary/5`; its wash beats the hover by
   design, so a chosen row never turns grey under the pointer.
 - A brand chip, a small action that opens something an answer produced (a
   citation pill in its text), is also `variant="secondary" shape="pill"
-  size="xs"`. It is the same tint as a pressed toggle; the difference is that
+size="xs"`. It is the same tint as a pressed toggle; the difference is that
   a chip never toggles and always opens or scrolls to something. The citation
   pill keeps `h-5 min-w-5` (20px) so it sits in a line of text. An artifact an
   answer produced is a card, not a chip (`components/ArtifactCard`, see
@@ -329,7 +329,7 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   takes `forceMount` plus `data-[state=inactive]:hidden`.
 - A section panel's disclosure header (NewAgent's Advanced and Guardrails
   panels, `variant="section-toggle"`): use `CollapsibleTrigger
-  look="section"` (see Disclosure).
+look="section"` (see Disclosure).
 - Drop `text-white` on default and destructive buttons; the foreground token
   already provides it. Drop `disabled:cursor-not-allowed` on buttons; the
   base disables pointer events. Fields are the other way round (see Focus,
@@ -352,11 +352,11 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
 
 ### Card (`ui/card.tsx`)
 
-| Prop          | Values                                                                                                                                                          |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `variant`     | `outline` (border + card surface, the default), `filled` (muted fill, no border), `subtle` (border on the page background); which one is decided by role, below |
-| `tone`        | `default`, `destructive` (the status soft fill and border, `border-destructive/50 bg-destructive/10`, over any variant)                                         |
-| `padding`     | `none`, `sm` (p-3, row boxes; code wells are `CodeBlock` / `CopyField`, which draw it), `default` (p-4), `lg` (p-6, tiles, panels, stat tiles, a danger zone) |
+| Prop          | Values                                                                                                                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `variant`     | `outline` (border + card surface, the default), `filled` (muted fill, no border), `subtle` (border on the page background); which one is decided by role, below                                                                                        |
+| `tone`        | `default`, `destructive` (the status soft fill and border, `border-destructive/50 bg-destructive/10`, over any variant)                                                                                                                                |
+| `padding`     | `none`, `sm` (p-3, row boxes; code wells are `CodeBlock` / `CopyField`, which draw it), `default` (p-4), `lg` (p-6, tiles, panels, stat tiles, a danger zone)                                                                                          |
 | `interactive` | `true`: whole card is the target: hover and focus ring; pair with `asChild` around a `<button>` or `<Link>`. `within`: a stretched child `<button>` is the target and the card draws its hover and focus ring (see A clickable card that holds a link) |
 
 Parts: `CardHeader` (title left, `CardAction` top-right), `CardTitle`,
@@ -373,12 +373,12 @@ question: is it a **thing** you open, move, share or delete as a whole, or a
 **place** where you read or edit content? The fill marks objects; the border
 marks structure.
 
-| Role                 | Variant                                                                           | Examples                                                                             |
-| -------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Role                 | Variant                                                                           | Examples                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Thing (a tile)       | `filled`, on a page or in a modal                                                 | agents, folders, sources, tools, prompts, custom models, teams, chunks, the shared agent card |
-| Place (a panel)      | `subtle` on the page or a right drawer, `outline` on a card (modal, bottom sheet) | the agent form's sections, chart panels, stat tiles, log tables, schedule rows       |
-| Choice (picker tile) | `outline interactive`, or `OptionCard`                                            | the Add tool tiles; a chosen tile is an `OptionCard` `selected`, drawn by the border |
-| Well                 | `CodeBlock` / `CopyField` (a `filled sm` Card they draw)                          | code, a token to copy, run output, inside a panel (see Code blocks below)            |
+| Place (a panel)      | `subtle` on the page or a right drawer, `outline` on a card (modal, bottom sheet) | the agent form's sections, chart panels, stat tiles, log tables, schedule rows                |
+| Choice (picker tile) | `outline interactive`, or `OptionCard`                                            | the Add tool tiles; a chosen tile is an `OptionCard` `selected`, drawn by the border          |
+| Well                 | `CodeBlock` / `CopyField` (a `filled sm` Card they draw)                          | code, a token to copy, run output, inside a panel (see Code blocks below)                     |
 
 - Layers go page → panel (border) → well (fill), or page → tile (fill).
   `subtle` and `outline` are one role on two surfaces; in light mode they
@@ -422,7 +422,7 @@ Recipes by role:
   variant of the surface they sit on (`subtle` in a page panel, `outline` in
   a modal). A list of named items in one (the custom MCP modal's discovered
   tools) is a `SectionHeader size="xs"` over `Card padding="none"
-  overflow-hidden` holding `ListRows`.
+overflow-hidden` holding `ListRows`.
 - A schedule row: see PATTERNS.md › Agent pages.
 - **Danger zone** (Settings → General's Delete all; an object you can
   open, such as an agent, a source, a tool or a device, is deleted or revoked
@@ -457,6 +457,21 @@ clamps, see Typography roles › Truncation), the
 description `CardDescription size="xs"` (12px muted, `leading-relaxed`, no `title`), and
 meta lines (a date, a token count, a model id or host) go in `CardFooter` at
 regular weight. `font-medium` is for list rows (`ListRow`), not tiles.
+A tile's title wraps to two lines (`line-clamp-2 wrap-anywhere`) rather than
+cutting at one: the end of a name ("Remote device — Lena's laptop") is often
+what tells two tiles apart.
+
+A tile's facts are one `MetaLine` (`ui/meta-line.tsx`) in its `CardFooter`:
+`MetaItem`s (a 14px icon and a short text) joined by a hidden "·", wrapping
+as a row: tokens and agents on a source, the account and capabilities on a
+connector, the role on anything shared. The usage item is
+`settings/UsedByAgents` (`Bot` and "2 agents"): a `link` Button with
+`tone="current"`, so it keeps the line's colour, opening a popover headed
+"Used by 2 agents" whose agent names are links. The item's own control (a
+tool's in-chats Switch, a prompt's Radio, a source's Reconnect) ends the
+footer row (`ml-auto`), with no visible label: its tooltip says what it does.
+MetaLine drops null children, but an element that renders nothing still
+counts, so test (`isOwner`, `agentUseCount`) before passing one.
 
 ### Code blocks (`ui/code-block.tsx`)
 
@@ -553,9 +568,19 @@ token scope chips, "Disabled" and tool chips. A grey chip is `neutral`, never
 a `bg-muted` pill: `neutral` is `bg-muted-foreground/15 text-foreground`
 (muted text fails on its own tint; the same pair as Avatar `muted`). The admin role is `default` wherever it shows (Teams, Admin
 → Users); every other role is `neutral`. A shared asset's tile (agent,
-source, tool, prompt) shows the caller's role with `components/RoleBadge`: a
-`neutral` Badge with `Users` first (Editor, Viewer, from `roleOf()`); your own
-assets show none. Badge's contract allows `font-mono` (chips that show
+source, tool, prompt) shows the caller's role as a fact in its meta line,
+`components/RoleMeta` (`Users` and Editor or Viewer, from `roleOf()`), never a
+Badge; your own assets show none.
+
+**On a tile, a Badge is a state.** A pill says something that may need the
+reader: Reconnect, Indexing…, Indexing failed, Building graph, Disabled by
+admin, and Connected where a list mixes states (a section already titled
+Connected doesn't repeat it on every tile). Facts about the item (its role,
+what a connector can do, the account, tokens, the agents that use it, Graph)
+are `MetaItem`s in the tile's `MetaLine` (see Card › Tile text). The pills
+sit in one `flex flex-wrap gap-1` row after the description, state first,
+the card's `gap-3` above and below; never a column of pills inside the meta
+lines. Badge's contract allows `font-mono` (chips that show
 identifiers: token scopes, workflow state keys) and `tabular-nums` (stat
 chips: durations, counts); no disable needed. HTTP method pills take their variant from
 `getMethodBadgeVariant` (`utils/httpMethodColors.ts`): GET `success`, POST
@@ -586,7 +611,11 @@ In a picker list, mark the item that is currently chosen with
 with `bg-accent`: cmdk's own `data-selected` highlight is `bg-accent` and
 follows the pointer and arrow keys, so an accent fill would look like hover.
 While a checked item is also highlighted it keeps its tint and text and gains
-a 1px inset `primary` ring, so the chosen row never turns plain grey.
+a 1px inset `primary` ring, so the chosen row never turns plain grey. A
+multi-pick row ends in the shared `Checkbox`, visual only (`tabIndex={-1}`,
+`aria-hidden`, `pointer-events-none`; the row is the control). The search
+matches a row's line as well as its label (`description`, or `keywords` for
+a `descriptionNode`), so a host, an account or a sharer can be searched.
 
 `MultiSelectPopover` searches with the stock `CommandInput` strip, full
 bleed, over an unframed `CommandList`, and caps itself at the height Radix
@@ -921,7 +950,7 @@ An item's tally is its `count` prop (see Counts).
   actions, beside other controls) leave it off and the track hugs its items
   (`w-fit max-w-full`). A pill track never wraps: one that outgrows its row
   (a long kind filter on a phone) scrolls sideways (`overflow-x-auto
-  no-scrollbar`; the track's padding keeps the focus ring unclipped).
+no-scrollbar`; the track's padding keeps the focus ring unclipped).
 - **Size is density.** `sm` (the default: 32px items in a 38px track) is
   level with `field` controls: forms and page toolbars. `xs` (28px items in
   a 36px track) is for dense panels: the graph toolbar, workflow panels,
@@ -945,19 +974,31 @@ Disconnected) follows the same rules, plus these, all in
 `hooks/useUrlFilter.ts`:
 
 - **The address holds it.** `const [filter, setFilter] =
-  useUrlFilter(FILTERS)` reads and writes `?filter=`, leaves the default
+useUrlFilter(FILTERS)` reads and writes `?filter=`, leaves the default
   (`all`, the first value) out, replaces the history entry and keeps the
   other params, so Back and a reload keep the filter. `{ name }` picks
   another param; `{ clears: ['page'] }` drops a paged list's page when the
   filter changes.
 - **No item leads to an empty list.** `shownFilters(FILTERS, filter,
-  counts)` hides an item whose count is 0 unless it is the selected one, and
+counts)` hides an item whose count is 0 unless it is the selected one, and
   returns nothing when only All would remain: then the page draws no group
   at all.
-- **One ToggleGroup per page.** A page that already filters by kind with a
-  ToggleGroup puts a second filter (usage: In chats, Unused) in a pill
-  `Select`, the page-filter pattern of Logs (see SelectTrigger), never a
-  second ToggleGroup.
+- **One recipe per page.** A Workspace list page's ToggleGroup is the
+  _kind_, what the item is, the same split as its sections and its picker:
+  Tools (Included · Added · Services · Custom), Knowledge (Files · Websites
+  · Synced · Wikis · Shared), Prompts (Included · Yours · Shared),
+  Connectors (Knowledge · Tools, by capability). How the items are used or
+  their state is the one `components/FilterSelect` beside it, a pill Select
+  whose default reads "Any use" or "Any status" without a count (so it never
+  echoes the track's All), each option with its count, and with the same
+  `shownFilters` rules. Never a second ToggleGroup.
+
+A picker filters by the same kinds: `usePickerKindFilter`
+(`hooks/usePickerKindFilter.tsx`) gives the xs track to pass as the picker's
+`filters`. It opens on All each time the picker opens and shows only past
+`PICKER_FILTER_MIN_ITEMS` (10) rows, about one screen in a 600px picker, and
+only when a kind would narrow the list; below that the list fits and a
+track would only take room. A page keeps its track at any size.
 
 ### ToggleChip (`ui/toggle-chip.tsx`)
 
@@ -1229,7 +1270,7 @@ Schedules and Pin on a draft), never on `ownership`,
   the grant doesn't allow it in their chats) is hidden, not disabled.
 - A view-only form opens with the same fields and `ViewOnlyNotice`
   (`components/ViewOnlyNotice`: an info note, `Alert variant="info"
-  role="note"`, with `common.viewOnlyNotice`) as its first child. Where only part of an editable
+role="note"`, with `common.viewOnlyNotice`) as its first child. Where only part of an editable
   form is locked (a tool's credentials when the owner turned off "Editors can
   change credentials", or when the tool runs on the owner's connection, whose
   secret only the owner changes), the same notice passes its own `message`. There is no Save; Cancel becomes a lone Close.
@@ -1978,23 +2019,23 @@ Places where a rule is knowingly disabled. Each one carries the same reason
 as a comment at the call site; add a row here when you add a disable so the
 list stays reviewable.
 
-| Where                                                             | Rule                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `components/Notification.tsx`                                     | `shadcn/no-restyle`             | The promo banner's close X (`ghost icon-xs`) sits on the purple gradient. Any fill would be a grey square on it, so hover dims the icon instead (`hover:bg-transparent hover:opacity-70`, plus `dark:hover:bg-transparent` to beat ghost's dark hover), and `text-primary-foreground` keeps it white, because the button inherits the page colour. One user, so it isn't a variant.                                                                                                             |
-| `components/ui/calendar.tsx`                                      | `shadcn/require-static-classes` | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
-| `navigation/SidebarLevel.tsx`                                     | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
-| `components/MessageInput.tsx`                                     | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
-| `agents/AgentsList.tsx`                                           | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`) and passes `flex-wrap` (the primitive is `flex-nowrap`). It's the only breadcrumb that does either.                                                                                                                                                                                                                                                                                        |
-| `lib/markdown.tsx`                                                | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable, in `markdownCode`, which every markdown fence goes through.                                                                                                                                                                                                                                    |
-| `agents/workflow/WorkflowPreview.tsx`                             | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
-| `agents/schedules/ScheduleFormModal.tsx`                          | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle` (see Modal › Steps). One disable.                                                                                                                                                                                                                                                                                                                                    |
-| `components/MermaidRenderer.tsx`                                  | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
-| `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. Two disables: the demo cards and the connect card.                                                                                                                                                                            |
-| `Navigation.tsx`, `conversation/ConversationTile.tsx`             | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
-| `admin/Usage.tsx`                                                 | `shadcn/no-restyle`             | The Top users name is a `link inline` Button inside a table cell; it wraps like the cell's text (`font-normal whitespace-normal text-left`), and a user with no email on file keeps the id's mono type (`font-mono text-xs`). One disable.                                                                                                                                                                                                                                                                                                             |
-| `conversation/ConversationBubble.tsx`                             | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
-| `admin/Overview.tsx`                                              | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
-| `activity/AllSchedules.tsx`                                       | `shadcn/no-restyle`             | A chat-made schedule's "Open chat" is a `link text` Button in the row's meta line. It keeps the line's 4px icon gap (`gap-1`), like Next run and Last run beside it, and a long chat name wraps beside its icon (`min-w-0 shrink whitespace-normal`); a `truncate` span would clip the hover underline. One disable.                                                                                                                                                                             |
+| Where                                                 | Rule                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `components/Notification.tsx`                         | `shadcn/no-restyle`             | The promo banner's close X (`ghost icon-xs`) sits on the purple gradient. Any fill would be a grey square on it, so hover dims the icon instead (`hover:bg-transparent hover:opacity-70`, plus `dark:hover:bg-transparent` to beat ghost's dark hover), and `text-primary-foreground` keeps it white, because the button inherits the page colour. One user, so it isn't a variant.                                                                                                             |
+| `components/ui/calendar.tsx`                          | `shadcn/require-static-classes` | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
+| `navigation/SidebarLevel.tsx`                         | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
+| `components/MessageInput.tsx`                         | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
+| `agents/AgentsList.tsx`                               | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`) and passes `flex-wrap` (the primitive is `flex-nowrap`). It's the only breadcrumb that does either.                                                                                                                                                                                                                         |
+| `lib/markdown.tsx`                                    | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable, in `markdownCode`, which every markdown fence goes through.                                                                                                                                                                                                                                     |
+| `agents/workflow/WorkflowPreview.tsx`                 | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
+| `agents/schedules/ScheduleFormModal.tsx`              | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle` (see Modal › Steps). One disable.                                                                                                                                                                                                                                                                                                                |
+| `components/MermaidRenderer.tsx`                      | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
+| `Hero.tsx`                                            | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. Two disables: the demo cards and the connect card.                                                                                                                                      |
+| `Navigation.tsx`, `conversation/ConversationTile.tsx` | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
+| `admin/Usage.tsx`                                     | `shadcn/no-restyle`             | The Top users name is a `link inline` Button inside a table cell; it wraps like the cell's text (`font-normal whitespace-normal text-left`), and a user with no email on file keeps the id's mono type (`font-mono text-xs`). One disable.                                                                                                                                                                                                                                                      |
+| `conversation/ConversationBubble.tsx`                 | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
+| `admin/Overview.tsx`                                  | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
+| `activity/AllSchedules.tsx`                           | `shadcn/no-restyle`             | A chat-made schedule's "Open chat" is a `link text` Button in the row's meta line. It keeps the line's 4px icon gap (`gap-1`), like Next run and Last run beside it, and a long chat name wraps beside its icon (`min-w-0 shrink whitespace-normal`); a `truncate` span would clip the hover underline. One disable.                                                                                                                                                                            |
 
 Note that a multi-line reason has to be a `/* ... */` block comment;
 consecutive `//` lines only disable the next comment line, not the code.

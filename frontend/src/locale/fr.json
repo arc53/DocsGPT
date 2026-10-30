@@ -2108,7 +2108,7 @@
         "rename": "Renommer",
         "toolsHint": "« Demander d’abord » vous sollicite dans la conversation. Les modifications via l’API, le widget et les liens s’autorisent par agent dans les détails d’accès.",
         "toolsUnavailable": "Les outils de {{name}} sont injoignables. Réessayez.",
-        "noSourcesHint": "Choisissez du contenu dans {{name}} pour l\u2019ajouter aux connaissances.",
+        "noSourcesHint": "Choisissez du contenu dans {{name}} pour l’ajouter aux connaissances.",
         "indexing": "Indexation",
         "firstSyncStarted": "Première synchronisation lancée {{time}}",
         "dismissFailedSync": "Ignorer {{name}}",
@@ -2360,7 +2360,10 @@
       "others_one": "et {{formatted}} autre dans vos équipes",
       "others_other": "et {{formatted}} autres dans vos équipes",
       "others_many": "et {{formatted}} autres dans vos équipes",
-      "inChats": "Dans les conversations"
+      "inChats": "Dans les conversations",
+      "agentsShort_one": "{{formatted}} agent",
+      "agentsShort_other": "{{formatted}} agents",
+      "agentsShort_many": "{{formatted}} agents"
     }
   },
   "modals": {
@@ -3223,14 +3226,14 @@
           "label": "Origines autorisées",
           "description": "Seuls les sites listés, et les sites auxquels cette instance fait confiance, peuvent appeler cet agent avec sa clé API",
           "inputLabel": "Origine",
-          "hint": "Une adresse de site sans chemin, par exemple https://example.com. Appuyez sur Entrée pour l\u2019ajouter.",
+          "hint": "Une adresse de site sans chemin, par exemple https://example.com. Appuyez sur Entrée pour l’ajouter.",
           "placeholder": "https://example.com",
           "add": "Ajouter",
           "listLabel": "Origines autorisées",
           "remove": "Retirer {{origin}}",
           "errors": {
             "invalid": "Saisissez une adresse commençant par http:// ou https://, par exemple https://example.com",
-            "path": "N\u2019indiquez pas de chemin : une origine se limite au schéma, à l\u2019hôte et au port",
+            "path": "N’indiquez pas de chemin : une origine se limite au schéma, à l’hôte et au port",
             "duplicate": "{{origin}} est déjà dans la liste",
             "full": "Vous pouvez ajouter au maximum {{max}} origines",
             "required": "Ajoutez au moins une origine, ou désactivez cette option"
@@ -3465,7 +3468,7 @@
         },
         "removeTopic": {
           "title": "Retirer « {{name}} » ?",
-          "description": "Il peut chevaucher d’autres sujets, il a donc ses propres résultats. Ils disparaissent des analyses et des journaux, et l\u2019ajouter à nouveau repart de zéro.",
+          "description": "Il peut chevaucher d’autres sujets, il a donc ses propres résultats. Ils disparaissent des analyses et des journaux, et l’ajouter à nouveau repart de zéro.",
           "submit": "Retirer"
         }
       }

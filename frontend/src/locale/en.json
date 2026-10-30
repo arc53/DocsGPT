@@ -2271,7 +2271,9 @@
       "agents_other": "Used by {{formatted}} agents",
       "others_one": "and {{formatted}} other on your teams",
       "others_other": "and {{formatted}} others on your teams",
-      "inChats": "In chats"
+      "inChats": "In chats",
+      "agentsShort_one": "{{formatted}} agent",
+      "agentsShort_other": "{{formatted}} agents"
     }
   },
   "modals": {

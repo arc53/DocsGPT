@@ -2360,7 +2360,10 @@
       "others_one": "y {{formatted}} más en tus equipos",
       "others_other": "y {{formatted}} más en tus equipos",
       "others_many": "y {{formatted}} más en tus equipos",
-      "inChats": "En chats"
+      "inChats": "En chats",
+      "agentsShort_one": "{{formatted}} agente",
+      "agentsShort_other": "{{formatted}} agentes",
+      "agentsShort_many": "{{formatted}} agentes"
     }
   },
   "modals": {

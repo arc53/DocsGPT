@@ -2262,7 +2262,9 @@
       "agents_other": "{{formatted}}件のエージェントで使用",
       "others_one": "ほかにチームで{{formatted}}件",
       "others_other": "ほかにチームで{{formatted}}件",
-      "inChats": "チャットで使用"
+      "inChats": "チャットで使用",
+      "agentsShort_one": "{{formatted}}件のエージェント",
+      "agentsShort_other": "{{formatted}}件のエージェント"
     }
   },
   "modals": {

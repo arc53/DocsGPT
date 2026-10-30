@@ -251,7 +251,7 @@ describe('Prompts page', () => {
     store.dispatch(setPrompt({ id: 'p-own', name: 'x', type: 'private' }));
     await render();
     expect(card('Vendor checks').textContent).toContain(
-      'settings.usage.agents:{"count":2,"formatted":"2"}',
+      'settings.usage.agentsShort:{"count":2,"formatted":"2"}',
     );
     expect(card('Vendor checks').textContent).toContain(
       'settings.usage.inChats',

@@ -2261,7 +2261,9 @@
       "agents_other": "{{formatted}} 个智能体在使用",
       "others_one": "以及你团队中的另外 {{formatted}} 个",
       "others_other": "以及你团队中的另外 {{formatted}} 个",
-      "inChats": "用于聊天"
+      "inChats": "用于聊天",
+      "agentsShort_one": "{{formatted}} 个智能体",
+      "agentsShort_other": "{{formatted}} 个智能体"
     }
   },
   "modals": {

@@ -1,4 +1,3 @@
-import { Check } from 'lucide-react';
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,6 +5,7 @@ import { useMediaQuery } from '../hooks';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
+import { Checkbox } from './ui/checkbox';
 import {
   Command,
   CommandEmpty,
@@ -24,6 +24,11 @@ export type MultiSelectPopoverItem = {
   description?: string;
   /** Rich variant of ``description`` — wins when both are set. */
   descriptionNode?: React.ReactNode;
+  /**
+   * More text the search matches besides the label: the row's line when
+   * it is a `descriptionNode` (a plain `description` is matched already).
+   */
+  keywords?: string[];
   icon?: React.ReactNode | string;
   /** The group's key; it is also its heading unless `groupHeading` is set. */
   group?: string;
@@ -171,6 +176,11 @@ export function MultiSelectPopover({
       <CommandItem
         key={item.id}
         value={`${item.label} ${item.id}`}
+        // The row's line is searched too (a host, an account, a sharer).
+        keywords={[
+          ...(item.description ? [item.description] : []),
+          ...(item.keywords ?? []),
+        ]}
         disabled={item.disabled}
         onSelect={() => {
           if (!item.disabled) onToggle(item.id);
@@ -196,14 +206,14 @@ export function MultiSelectPopover({
             ) : null}
           </div>
         </div>
-        <div
-          className="border-border bg-card flex size-4 shrink-0 items-center justify-center rounded-xs border-2"
-          aria-hidden="true"
-        >
-          {isSelected && (
-            <Check className="text-primary size-2.5" aria-hidden="true" />
-          )}
-        </div>
+        {/* Visual only: the row is the control (cmdk handles the click and
+            Enter), so the box takes no focus or events. */}
+        <Checkbox
+          checked={isSelected}
+          tabIndex={-1}
+          aria-hidden
+          className="pointer-events-none"
+        />
       </CommandItem>
     );
   };

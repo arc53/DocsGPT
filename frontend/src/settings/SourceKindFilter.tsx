@@ -1,11 +1,11 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { shownFilters } from '../hooks/useUrlFilter';
 import type { Doc } from '../models/misc';
 import {
-  kindCounts,
   matchesKind,
   SOURCE_KINDS,
   type SourceKindFilter,
@@ -66,46 +66,33 @@ export function SourceKindToggle({
   );
 }
 
+const matchesSource = (kind: SourceKindFilter, doc: Doc): boolean =>
+  matchesKind(kind, doc);
+
 /**
- * A knowledge picker's kind filter. It opens on All every time the picker
- * opens, counts the picker's whole list, and narrows it to the picked kind
- * (the picker's search narrows that further).
+ * A knowledge picker's kind filter (`usePickerKindFilter` with the Knowledge
+ * kinds): the xs track past `PICKER_FILTER_MIN_ITEMS` sources, opening on
+ * All each time the picker opens.
  *
  * Args:
  *   docs: The picker's sources.
  *   open: Whether the picker is open.
  *
  * Returns:
- *   `kind`, the sources of that kind, and `filters`, the toggle to draw
- *   under the search (null when the list has one kind).
+ *   `kind`, the sources of that kind, and `filters`, the track to draw
+ *   under the search (null while hidden).
  */
 export function useSourceKindFilter(
   docs: Doc[] | null | undefined,
   open: boolean,
 ): { kind: SourceKindFilter; docs: Doc[]; filters: ReactNode } {
-  const [kind, setKind] = useState<SourceKindFilter>('all');
-  const [wasOpen, setWasOpen] = useState(open);
-  if (wasOpen !== open) {
-    setWasOpen(open);
-    if (open) setKind('all');
-  }
+  const { t } = useTranslation();
   const list = useMemo(() => docs ?? [], [docs]);
-  const counts = useMemo(() => kindCounts(list), [list]);
-  const shown = useMemo(
-    () => list.filter((doc) => matchesKind(kind, doc)),
-    [list, kind],
-  );
-  return {
-    kind,
-    docs: shown,
-    filters:
-      shownKinds(kind, counts).length > 0 ? (
-        <SourceKindToggle
-          size="xs"
-          value={kind}
-          onValueChange={setKind}
-          counts={counts}
-        />
-      ) : null,
-  };
+  const { kind, items, filters } = usePickerKindFilter(list, open, {
+    kinds: SOURCE_KINDS,
+    matches: matchesSource,
+    labelOf: (k) => t(`settings.sources.kinds.${k}`),
+    ariaLabel: t('settings.sources.kindFilterLabel'),
+  });
+  return { kind, docs: items, filters };
 }

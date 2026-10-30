@@ -1188,13 +1188,13 @@ describe('Tools usage', () => {
     const footer = (title: string) =>
       card(title).querySelector('[data-slot="card-footer"]')?.textContent ?? '';
     expect(footer('agented')).toContain(
-      'settings.usage.agents:{"count":5,"formatted":"5"}',
+      'settings.usage.agentsShort:{"count":5,"formatted":"5"}',
     );
     expect(footer('agented')).toContain('settings.usage.inChats');
     expect(footer('chatted')).not.toContain('settings.usage.agents');
     expect(footer('chatted')).toContain('settings.usage.inChats');
     expect(footer('elsewhere')).toContain(
-      'settings.usage.agents:{"count":1,"formatted":"1"}',
+      'settings.usage.agentsShort:{"count":1,"formatted":"1"}',
     );
     expect(footer('idle')).not.toContain('settings.usage.agents');
     expect(footer('idle')).not.toContain('settings.usage.inChats');

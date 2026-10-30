@@ -2449,7 +2449,11 @@
       "others_few": "и ещё {{formatted}} в ваших командах",
       "others_many": "и ещё {{formatted}} в ваших командах",
       "others_other": "и ещё {{formatted}} в ваших командах",
-      "inChats": "В чатах"
+      "inChats": "В чатах",
+      "agentsShort_one": "{{formatted}} агент",
+      "agentsShort_other": "{{formatted}} агентов",
+      "agentsShort_many": "{{formatted}} агентов",
+      "agentsShort_few": "{{formatted}} агента"
     }
   },
   "modals": {

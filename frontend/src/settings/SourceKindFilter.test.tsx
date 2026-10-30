@@ -19,8 +19,10 @@ const doc = (id: string, fields: Partial<Doc> = {}): Doc => ({
 });
 
 const website = { hosts: ['a.io'], pages: 1 };
+// Past the picker's 10-row threshold: 8 uploads and 4 others.
+const uploads = Array.from({ length: 8 }, (_, i) => doc(`upload${i}`));
 const library = [
-  doc('upload'),
+  ...uploads,
   doc('site', { website }),
   doc('team-site', { website, ownership: 'team' }),
   doc('wiki', { type: 'wiki' }),
@@ -82,8 +84,8 @@ describe('useSourceKindFilter', () => {
         b.querySelector('[data-slot="count"]')?.textContent,
       ]),
     ).toEqual([
-      ['settings.sources.kinds.all', '4'],
-      ['settings.sources.kinds.files', '1'],
+      ['settings.sources.kinds.all', '11'],
+      ['settings.sources.kinds.files', '8'],
       ['settings.sources.kinds.websites', '2'],
       ['settings.sources.kinds.wikis', '1'],
       ['settings.sources.kinds.shared', '1'],
@@ -107,11 +109,18 @@ describe('useSourceKindFilter', () => {
     expect(rows()).toEqual(['wiki']);
     render(library, false);
     render(library, true);
-    expect(rows()).toEqual(['upload', 'site', 'team-site', 'wiki']);
+    expect(rows()).toHaveLength(11);
+  });
+
+  it('draws nothing while the list fits on one screen', () => {
+    render(library.slice(4));
+    expect(container.querySelector('[data-testid="filters"]')!.innerHTML).toBe(
+      '',
+    );
   });
 
   it('draws nothing when the list has one kind', () => {
-    render([doc('a'), doc('b')]);
+    render(uploads.concat(uploads.map((d) => ({ ...d, id: `${d.id}b` }))));
     expect(container.querySelector('[data-testid="filters"]')!.innerHTML).toBe(
       '',
     );
