@@ -69,6 +69,18 @@ describe('usePickerKindFilter', () => {
     ).toEqual(['kind.all11', 'kind.a8', 'kind.b3']);
   });
 
+  it('spans the picker, and scrolls rather than squash when it outgrows it', () => {
+    render(rowsOf(8, 3));
+    const group = container.querySelector('[data-slot="toggle-group"]')!;
+    expect(group.className).toContain('w-full');
+    expect(group.className).toContain('overflow-x-auto');
+    const item = group.querySelector('[data-slot="toggle-group-item"]')!;
+    expect(item.className).toContain('flex-1');
+    // Each tab keeps its whole label and its padding.
+    expect(item.className.split(' ')).not.toContain('min-w-0');
+    expect(item.className.split(' ')).not.toContain('px-1');
+  });
+
   it('stays hidden when no kind would narrow the list', () => {
     render(rowsOf(12, 0));
     expect(filters()).toBe('');

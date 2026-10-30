@@ -27,7 +27,7 @@ export function toolGroupTitle(
   const label = toolGroupLabel(t, group);
   if (group.kind !== 'service' || !group.service?.icon) return label;
   return (
-    <span className="flex items-center gap-2">
+    <span className="inline-flex items-center gap-2 align-top">
       <ConnectorIcon
         icon={group.service.icon}
         className={cn('shrink-0', iconClassName)}

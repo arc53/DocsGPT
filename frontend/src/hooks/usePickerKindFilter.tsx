@@ -21,7 +21,8 @@ type PickerKindFilterOptions<T, K extends string> = {
 };
 
 /**
- * A picker's kind filter: the xs ToggleGroup under its search, with each
+ * A picker's kind filter: the xs ToggleGroup under its search, across the
+ * picker's width (`fill="grow"`), with each
  * kind's count. It opens on All every time the picker opens and narrows the
  * picker's list to the picked kind (the search narrows it further). The
  * track shows only past `PICKER_FILTER_MIN_ITEMS` rows, and, by the
@@ -70,6 +71,7 @@ export function usePickerKindFilter<T, K extends string>(
         <ToggleGroup
           type="single"
           size="xs"
+          fill="grow"
           value={kind}
           onValueChange={(next) => next && setKind(next as K)}
           aria-label={ariaLabel}

@@ -1241,6 +1241,12 @@ describe('Tools usage', () => {
       ['Renewals', '/agents/manage/edit/a2'],
       ['Support', '/agents/manage/edit/a3'],
     ]);
+    // A long name truncates in the popover's width, its full value in title.
+    const link = content.querySelector('a')!;
+    expect(link.className).toContain('min-w-0');
+    expect(link.className).toContain('shrink');
+    expect(link.getAttribute('title')).toBe('Rates desk');
+    expect(link.querySelector('.truncate')?.textContent).toBe('Rates desk');
     expect(content.textContent).toContain(
       'settings.usage.others:{"count":2,"formatted":"2"}',
     );

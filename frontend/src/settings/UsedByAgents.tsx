@@ -69,9 +69,10 @@ export default function UsedByAgents({ usage }: UsedByAgentsProps) {
               <Button variant="link" size="text" asChild>
                 <Link
                   to={agentEditPath(agent.id, agent.agent_type === 'workflow')}
-                  className="min-w-0 truncate"
+                  title={agent.name}
+                  className="min-w-0 shrink"
                 >
-                  {agent.name}
+                  <span className="truncate">{agent.name}</span>
                 </Link>
               </Button>
             </li>

@@ -468,7 +468,9 @@ as a row: tokens and agents on a source, the account and capabilities on a
 connector, the role on anything shared. The usage item is
 `settings/UsedByAgents` (`Bot` and "2 agents"): a `link` Button with
 `tone="current"`, so it keeps the line's colour, opening a popover headed
-"Used by 2 agents" whose agent names are links. The item's own control (a
+"Used by 2 agents" whose agent names are links, each truncating to the
+popover's width (`min-w-0 shrink`, the name in a `truncate` span, its `title`
+the full name). The item's own control (a
 tool's in-chats Switch, a prompt's Radio, a source's Reconnect) ends the
 footer row (`ml-auto`), with no visible label: its tooltip says what it does.
 MetaLine drops null children, but an element that renders nothing still
@@ -976,6 +978,9 @@ An item's tally is its `count` prop (see Counts).
   (`w-fit max-w-full`). A pill track never wraps: one that outgrows its row
   (a long kind filter on a phone) scrolls sideways (`overflow-x-auto
 no-scrollbar`; the track's padding keeps the focus ring unclipped).
+  `fill="grow"` is the two together, for a track alone on a row whose items
+  must keep their labels (a picker's kind track): the items share the row
+  while they fit and scroll sideways once they don't, never squeezed.
 - **Size is density.** `sm` (the default: 32px items in a 38px track) is
   level with `field` controls: forms and page toolbars. `xs` (28px items in
   a 36px track) is for dense panels: the graph toolbar, workflow panels,
@@ -1025,7 +1030,7 @@ filter, counts)` hides an item whose count is 0 unless it is the selected
 
 A picker filters by the same kinds: `usePickerKindFilter`
 (`hooks/usePickerKindFilter.tsx`) gives the xs track to pass as the picker's
-`filters`. It opens on All each time the picker opens and shows only past
+`filters`, spanning the picker (`fill="grow"`). It opens on All each time the picker opens and shows only past
 `PICKER_FILTER_MIN_ITEMS` (10) rows, about one screen in a 600px picker, and
 only when a kind would narrow the list; below that the list fits and a
 track would only take room. A page keeps its track at any size.
