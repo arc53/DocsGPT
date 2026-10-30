@@ -4,7 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { Badge } from '../components/ui/badge';
 import type { Connection } from '../connectors/types';
 import type { Doc } from '../models/misc';
-import { formatCount, formatDate } from '../utils/dateTimeUtils';
+import {
+  EMPTY_VALUE,
+  formatCount,
+  formatDate,
+  formatRelative,
+} from '../utils/dateTimeUtils';
 import { syncSchedule } from './sourceKinds';
 
 /**
@@ -91,6 +96,44 @@ export const sourceDetailLine = (
               })
             : null,
         ];
+  return parts.filter(Boolean).join(' · ');
+};
+
+/**
+ * A source's detail line on its Knowledge card: the picker's line
+ * (`sourceDetailLine`) with the last sync added to the schedule ("Weekly,
+ * synced 2 days ago"), and without the token count, which the card's meta
+ * line carries.
+ *
+ * Args:
+ *   t: The translator.
+ *   doc: The source.
+ *   connection: The caller's connection it syncs from, when they can see it.
+ *
+ * Returns:
+ *   The line, or "" when nothing is known.
+ */
+export const sourceCardLine = (
+  t: TFunction,
+  doc: Doc,
+  connection?: Pick<Connection, 'name'>,
+): string => {
+  const frequency = scheduleLabel(t, doc);
+  const schedule = frequency
+    ? t('settings.sources.website.synced', {
+        frequency,
+        when: formatRelative(doc.date) ?? EMPTY_VALUE,
+      })
+    : null;
+  const parts: (string | null | undefined)[] = doc.website
+    ? [
+        websiteHostsLabel(t, doc.website),
+        t('settings.sources.website.pageCount', { count: doc.website.pages }),
+        schedule,
+      ]
+    : connection
+      ? [connectionLabel(t, connection, doc.files), schedule]
+      : [schedule ?? (doc.date ? formatDate(doc.date) : null)];
   return parts.filter(Boolean).join(' · ');
 };
 

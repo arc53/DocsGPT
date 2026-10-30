@@ -1654,7 +1654,8 @@ describe('Sources citation link', () => {
     const back = viewOf('chunks')!.querySelector('button')!;
     await act(async () => back.click());
     const open = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="settings.sources.viewSource"], [data-slot="card"] > button',
+      // The card's stretched open button: the one plain button in it.
+      'button[aria-label="settings.sources.viewSource"], [data-slot="card"] button[aria-label]:not([data-slot])',
     );
     expect(open).not.toBeNull();
     await act(async () => open!.click());
@@ -1804,6 +1805,31 @@ describe('Sources filters and usage', () => {
         ?.textContent,
     ).toBe('settings.sources.deleteUsedBy');
   });
+
+  it('keeps facts in the meta line and states in pills', async () => {
+    const shared = doc({
+      id: 'g',
+      name: 'Graph',
+      access: 'viewer',
+      ownership: 'team',
+      tokens: '0',
+      config: { kind: 'graphrag' },
+      ingestStatus: 'failed',
+    } as Partial<Doc>);
+    await mount(root, [shared]);
+    const card = container.querySelector('[data-slot="card"]')!;
+    const meta = Array.from(card.querySelectorAll('[data-slot="meta-item"]'));
+    // No "0" tokens; Graph and the role are facts, not pills.
+    expect(meta.map((item) => item.textContent)).toEqual([
+      'settings.sources.graphrag.badge',
+      'teamAccess.viewer',
+    ]);
+    expect(
+      Array.from(card.querySelectorAll('[data-slot="badge"]')).map(
+        (b) => b.textContent,
+      ),
+    ).toEqual(['settings.sources.ingestFailed']);
+  });
 });
 
 describe('Sources needs attention', () => {
@@ -1847,7 +1873,8 @@ describe('Sources needs attention', () => {
       section.querySelector('h2')?.textContent ?? null,
       Array.from(
         section.querySelectorAll<HTMLButtonElement>(
-          '[data-slot="card"] > button[aria-label]',
+          // The card's stretched open button (the controls carry a slot).
+          '[data-slot="card"] button[aria-label]:not([data-slot])',
         ),
       ).map((b) => b.getAttribute('aria-label')),
     ]);

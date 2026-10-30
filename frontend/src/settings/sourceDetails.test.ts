@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { Connection } from '../connectors/types';
 import type { Doc } from '../models/misc';
-import { formatTokens, sourceDetailLine } from './sourceDetails';
+import {
+  formatTokens,
+  sourceCardLine,
+  sourceDetailLine,
+} from './sourceDetails';
 
 // Enough of the English copy to read the lines the way a user does.
 const COPY: Record<string, string> = {
@@ -16,6 +20,7 @@ const COPY: Record<string, string> = {
   'settings.sources.syncFrequency.daily': 'Daily',
   'settings.sources.syncFrequency.weekly': 'Weekly',
   'settings.sources.tokenCount': '{{tokens}} tokens',
+  'settings.sources.website.synced': '{{frequency}} · synced {{when}}',
 };
 const t = ((key: string, options: Record<string, unknown> = {}) => {
   const count = options.count as number | undefined;
@@ -99,5 +104,37 @@ describe('sourceDetailLine', () => {
 
   it('leaves out what it does not know', () => {
     expect(sourceDetailLine(t, doc({ date: '', tokens: '' }))).toBe('');
+  });
+});
+
+describe('sourceCardLine', () => {
+  const base: Doc = { id: 'd', name: 'd', date: '', model: 'm' };
+
+  it('says a website by its host and pages, with the last sync', () => {
+    const line = sourceCardLine(t, {
+      ...base,
+      website: { hosts: ['docs.docsgpt.cloud'], pages: 9 },
+      syncFrequency: 'weekly',
+      date: new Date().toISOString(),
+    });
+    expect(line).toMatch(/^docs\.docsgpt\.cloud · 9 pages · Weekly · synced /);
+  });
+
+  it('leaves the tokens to the meta line', () => {
+    const line = sourceCardLine(t, {
+      ...base,
+      date: '2026-10-23 13:36',
+      tokens: '224',
+    });
+    expect(line).toBe('23/10/2026, 13:36');
+  });
+
+  it('says where a synced source comes from', () => {
+    const line = sourceCardLine(
+      t,
+      { ...base, files: 1, syncFrequency: 'daily', date: '' },
+      { name: 'Amazon S3' } as Connection,
+    );
+    expect(line).toBe('via Amazon S3 · 1 file · Daily · synced —');
   });
 });

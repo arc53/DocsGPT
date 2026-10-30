@@ -1,12 +1,4 @@
-import {
-  CalendarIcon,
-  FileText,
-  Globe,
-  HardDrive,
-  Network,
-  RefreshCw,
-  X,
-} from 'lucide-react';
+import { Cloud, HardDrive, Network, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -15,12 +7,19 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import userService from '../api/services/userService';
 import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
-import RoleBadge from '../components/RoleBadge';
+import RoleMeta from '../components/RoleMeta';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card, CardFooter, CardTitle } from '../components/ui/card';
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardTitle,
+} from '../components/ui/card';
+import { MetaItem, MetaLine } from '../components/ui/meta-line';
+import { sourceIcon } from '../components/sourcePickerItems';
 import { Checkbox } from '../components/ui/checkbox';
 import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
@@ -59,13 +58,8 @@ import {
   readKnowledgeLink,
 } from './knowledgeLink';
 import { cn } from '../lib/utils';
-import { can } from '../utils/accessUtils';
-import {
-  EMPTY_VALUE,
-  formatCount,
-  formatDate,
-  formatRelative,
-} from '../utils/dateTimeUtils';
+import { can, isOwner } from '../utils/accessUtils';
+import { formatCount, formatRelative } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
 import type { ResourceUsage } from './types';
 import FileTree from '../components/FileTree';
@@ -88,7 +82,6 @@ import {
   startedSyncAge,
   syncIdsKey,
 } from '../connectors/startedSyncs';
-import type { Connection } from '../connectors/types';
 import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
@@ -97,12 +90,11 @@ import { buildPct } from '../components/graph/useGraphBuild';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import {
   connectionLabel,
+  sourceCardLine,
   connectionOf,
   formatTokens,
   IngestBadge,
   ingestState,
-  scheduleLabel,
-  websiteHostsLabel,
 } from './sourceDetails';
 import { SourceKindToggle } from './SourceKindFilter';
 import {
@@ -176,31 +168,6 @@ const defaultSourcePageSize = (): number =>
   window.matchMedia('(min-width: 1024px)').matches
     ? 24
     : 12;
-
-/**
- * Where a synced source comes from: the connection's icon and "via <name>"
- * (with its file count when known), the account on hover.
- */
-function ConnectionLine({
-  connection,
-  files,
-}: {
-  connection: Connection;
-  files?: number | null;
-}) {
-  const { t } = useTranslation();
-  return (
-    <span className="flex max-w-full min-w-0 items-center gap-2">
-      <ConnectorIcon
-        icon={connection.icon}
-        className="text-muted-foreground size-3.5 shrink-0"
-      />
-      <span className="truncate" title={connection.account_label}>
-        {connectionLabel(t, connection, files)}
-      </span>
-    </span>
-  );
-}
 
 export default function Sources({
   paginatedDocuments,
@@ -867,7 +834,7 @@ export default function Sources({
         key={`pending-${sync.id}`}
         variant="filled"
         padding="lg"
-        className="min-h-[130px] self-start"
+        className="h-full"
       >
         {failed && (
           <div className="absolute top-5 right-6 z-10">
@@ -883,12 +850,19 @@ export default function Sources({
             />
           </div>
         )}
+        {/* A source's tile parts: icon and title, the line, the state pill,
+            then the meta line. */}
         <div
           className={cn(
-            'flex w-full flex-1 flex-col items-start',
+            'flex w-full min-w-0 items-center gap-3',
             failed && 'pr-9',
           )}
         >
+          {connection ? (
+            <ConnectorIcon icon={connection.icon} className="size-6 shrink-0" />
+          ) : (
+            <Cloud className="text-foreground size-6 shrink-0" />
+          )}
           <CardTitle
             className="line-clamp-2 w-full min-w-0 wrap-anywhere"
             title={sync.name}
@@ -896,19 +870,24 @@ export default function Sources({
             {sync.name}
           </CardTitle>
         </div>
-        <div className="flex flex-col items-start justify-start gap-1">
+        {connection ? (
+          <CardDescription size="xs" className="line-clamp-2 wrap-break-word">
+            {connectionLabel(t, connection)}
+          </CardDescription>
+        ) : null}
+        <div className="flex flex-wrap gap-1">
           <IngestBadge status={failed ? 'failed' : 'processing'} />
-          <CardFooter className="w-full flex-col items-start gap-1">
-            {connection && <ConnectionLine connection={connection} />}
-            <span className="flex items-center gap-2">
-              <RefreshCw className="size-3.5 shrink-0" />
+        </div>
+        <CardFooter className="w-full">
+          <MetaLine>
+            <MetaItem icon={<RefreshCw />}>
               {t('settings.connectors.detail.firstSyncStarted', {
                 time: formatRelative(sync.startedAt) ?? '',
                 interpolation: { escapeValue: false },
               })}
-            </span>
-          </CardFooter>
-        </div>
+            </MetaItem>
+          </MetaLine>
+        </CardFooter>
       </Card>
     );
   };
@@ -919,41 +898,52 @@ export default function Sources({
     // Sync stops until the reader signs in again (the shared rule).
     const paused = connectionNeedsSignIn(connection);
     const ingest = ingestState(document);
-    const schedule = scheduleLabel(t, document);
     const pickable = selecting && canTick(document);
     const ticked = pickable && selected.has(docId);
+    const line = sourceCardLine(t, document, connection);
+    const tokens = Number(document.tokens) || 0;
+    const graph = document.config?.kind === 'graphrag';
+    const build = graph && document.id ? graphBuilds[document.id] : undefined;
+    const building = build?.status === 'building';
+    const buildingPct = building ? buildPct(build) : null;
 
     return (
       // DESIGN "A clickable card that holds a link": a stretched button
-      // opens the source (in select mode, ticks it); the menu, the checkbox
-      // and Reconnect are siblings above it, never nested in it.
+      // opens the source (in select mode, ticks it); the menu, the checkbox,
+      // the usage link and Reconnect are siblings above it, never nested.
+      // The tile's parts are ConnectorTile's: icon and title, the detail
+      // line, the state pills, then the meta line.
       <Card
         key={docId}
         variant="filled"
         padding="lg"
         interactive="within"
-        // Its own height, not the row's: the meta stays under the title.
         // A ticked tile shows it in its checkbox (Card has no selected look;
         // that belongs to OptionCard).
-        className="min-h-[130px] self-start"
+        className="h-full"
       >
-        <button
-          type="button"
-          aria-label={document.name}
-          aria-pressed={pickable ? ticked : undefined}
-          disabled={selecting && !pickable}
-          onClick={() =>
-            selecting ? toggleSelected(document) : setDocumentToView(document)
-          }
-          className="flex w-full flex-1 cursor-pointer flex-col items-start pr-9 text-left outline-none after:absolute after:inset-0 after:rounded-2xl disabled:cursor-default"
-        >
-          <CardTitle
-            className="line-clamp-2 w-full min-w-0 wrap-anywhere"
-            title={document.name}
+        <div className="flex w-full min-w-0 items-center gap-3 pr-9">
+          <span aria-hidden="true" className="flex shrink-0">
+            {sourceIcon(document, connection, 'size-6')}
+          </span>
+          <button
+            type="button"
+            aria-label={document.name}
+            aria-pressed={pickable ? ticked : undefined}
+            disabled={selecting && !pickable}
+            onClick={() =>
+              selecting ? toggleSelected(document) : setDocumentToView(document)
+            }
+            className="flex min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-2xl disabled:cursor-default"
           >
-            {document.name}
-          </CardTitle>
-        </button>
+            <CardTitle
+              className="line-clamp-2 w-full min-w-0 wrap-anywhere"
+              title={document.name}
+            >
+              {document.name}
+            </CardTitle>
+          </button>
+        </div>
         {selecting ? (
           pickable ? (
             <div className="absolute top-5 right-6 z-10 flex size-8 items-center justify-center">
@@ -978,109 +968,82 @@ export default function Sources({
             />
           </div>
         )}
-
-        <div className="flex flex-col items-start justify-start gap-1">
-          <RoleBadge item={document} />
-          {connection && paused && (
-            <div className="flex flex-wrap items-center gap-2">
+        {line ? (
+          <CardDescription size="xs" className="line-clamp-2 wrap-break-word">
+            {line}
+          </CardDescription>
+        ) : null}
+        {/* Pills are states only: the sign-in, the ingest, a graph build. */}
+        {(connection && paused) || ingest || building ? (
+          <div className="flex flex-wrap gap-1">
+            {connection && paused ? (
               <Badge variant="warning">
                 {t('settings.connectors.status.reconnect')}
               </Badge>
-              {/* The reader's own connection (only theirs are loaded): sign
-                  in again right here, without opening the source. */}
-              {!selecting && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      shape="pill"
-                      className="relative z-10"
-                      onClick={() => reconnect(connection)}
-                    >
-                      {t('settings.connectors.status.reconnect')}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {t('settings.sources.paused', {
-                      name: connection.name,
-                      interpolation: { escapeValue: false },
-                    })}
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-          )}
-          {ingest && <IngestBadge status={ingest} />}
-          {document.config?.kind === 'graphrag' &&
-            (() => {
-              const build = document.id ? graphBuilds[document.id] : undefined;
-              const isBuilding = build?.status === 'building';
-              const pct = buildPct(build);
-              return (
-                <Badge variant="neutral">
-                  <Network aria-hidden="true" />
-                  {isBuilding
-                    ? pct !== null
-                      ? t('settings.sources.graphrag.buildingPct', { pct })
-                      : t('settings.sources.graphrag.building')
-                    : t('settings.sources.graphrag.badge')}
-                </Badge>
-              );
-            })()}
-          {/* w-full: the column is items-start, so without it the footer
-              sizes to a long host line and never truncates. */}
-          <CardFooter className="w-full flex-col items-start gap-1">
-            {connection && (
-              <ConnectionLine connection={connection} files={document.files} />
-            )}
-            {document.website ? (
-              <>
-                {/* Where a website source comes from, and how it stays
-                    current, instead of its date. */}
-                <span className="flex max-w-full min-w-0 items-center gap-2">
-                  <Globe className="size-3.5 shrink-0" />
-                  <span className="min-w-0 truncate">
-                    {websiteHostsLabel(t, document.website)}
-                  </span>
-                </span>
-                <span className="flex items-center gap-2">
-                  <FileText className="size-3.5" />
-                  {t('settings.sources.website.pageCount', {
-                    count: document.website.pages,
-                  })}
-                </span>
-              </>
             ) : null}
-            {/* A scheduled source says how it stays current instead of its
-                date; a website without one shows neither. */}
-            {schedule ? (
-              <span className="flex items-center gap-2">
-                <RefreshCw className="size-3.5 shrink-0" />
-                {t('settings.sources.website.synced', {
-                  frequency: schedule,
-                  when: formatRelative(document.date) ?? EMPTY_VALUE,
+            {ingest ? <IngestBadge status={ingest} /> : null}
+            {building ? (
+              <Badge variant="neutral">
+                <Network aria-hidden="true" />
+                {buildingPct !== null
+                  ? t('settings.sources.graphrag.buildingPct', {
+                      pct: buildingPct,
+                    })
+                  : t('settings.sources.graphrag.building')}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
+        <CardFooter className="w-full">
+          <MetaLine>
+            {tokens > 0 ? (
+              <MetaItem
+                icon={<HardDrive />}
+                title={t('settings.sources.tokenCount', {
+                  tokens: formatTokens(tokens),
                 })}
-              </span>
-            ) : document.website ? null : (
-              <span className="flex items-center gap-2">
-                <CalendarIcon className="size-3.5" />
-                {document.date ? formatDate(document.date) : EMPTY_VALUE}
-              </span>
-            )}
-            <span className="flex items-center gap-2">
-              <HardDrive className="size-3.5" />
-              {document.tokens ? formatTokens(+document.tokens) : EMPTY_VALUE}
-            </span>
-            {agentUseCount(document.used_by) > 0 && (
+              >
+                {formatTokens(tokens)}
+              </MetaItem>
+            ) : null}
+            {graph && !building ? (
+              <MetaItem icon={<Network />}>
+                {t('settings.sources.graphrag.badge')}
+              </MetaItem>
+            ) : null}
+            {isOwner(document) ? null : <RoleMeta item={document} />}
+            {agentUseCount(document.used_by) > 0 ? (
               // A sibling above the stretched button, so its popover opens.
               <span className="relative z-10">
                 <UsedByAgents usage={document.used_by} />
               </span>
-            )}
-          </CardFooter>
-        </div>
+            ) : null}
+          </MetaLine>
+          {/* The reader's own connection (only theirs are loaded): sign in
+              again right here, without opening the source. */}
+          {connection && paused && !selecting ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  className="relative z-10 ml-auto"
+                  onClick={() => reconnect(connection)}
+                >
+                  {t('settings.connectors.status.reconnect')}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('settings.sources.paused', {
+                  name: connection.name,
+                  interpolation: { escapeValue: false },
+                })}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+        </CardFooter>
       </Card>
     );
   };
