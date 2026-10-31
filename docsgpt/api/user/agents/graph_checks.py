@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Optional
 
 from flask import jsonify, make_response
+from sqlalchemy import text
 
 from docsgpt.api.user.workflows.routes import stored_graph, validate_workflow_structure
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
@@ -70,6 +71,33 @@ def runs_outside_builder(conn, agent: dict) -> bool:
     ):
         return True
     return SchedulesRepository(conn).any_live_for_agent(str(agent["id"]))
+
+
+def workflow_runs_elsewhere(conn, workflow_id, agent_id: str) -> bool:
+    """Whether another agent linked to the workflow runs outside its builder.
+
+    Since 1.1.0 a workflow belongs to one agent, but older rows can link two
+    of an owner's agents to one; a graph saved through either is the graph
+    both run.
+
+    Args:
+        conn: Open database connection.
+        workflow_id: The workflow the save writes, or None.
+        agent_id: The agent being saved, left out.
+
+    Returns:
+        bool: True when any other agent on the workflow runs outside its builder.
+    """
+    if not workflow_id:
+        return False
+    rows = conn.execute(
+        text(
+            "SELECT id, status, key, incoming_webhook_token, shared FROM agents "
+            "WHERE workflow_id = CAST(:workflow_id AS uuid) AND id <> CAST(:agent_id AS uuid)"
+        ),
+        {"workflow_id": str(workflow_id), "agent_id": str(agent_id)},
+    ).mappings().all()
+    return any(runs_outside_builder(conn, dict(row)) for row in rows)
 
 
 def unfinished_graph_errors(conn, agent: dict) -> list:

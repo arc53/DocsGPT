@@ -81,6 +81,7 @@ from docsgpt.api.user.agents.graph_checks import (
     graph_validation_failed as _graph_validation_failed,
     runs_outside_builder as _runs_outside_builder,
     stored_graph_errors as _stored_graph_errors,
+    workflow_runs_elsewhere as _workflow_runs_elsewhere,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import (
@@ -1660,8 +1661,13 @@ class UpdateAgent(Resource):
                     was_live = _runs_outside_builder(conn, existing_agent)
                     runs_live = final_status == "published" or was_live
                     if inline_graph is not None:
+                        # The graph lands in the agent's workflow, which an
+                        # older agent may share and run (``_workflow_taken``).
+                        live_graph = runs_live or _workflow_runs_elsewhere(
+                            conn, existing_agent.get("workflow_id"), pg_agent_id,
+                        )
                         graph_errors = workflow_graph_errors(
-                            inline_graph, draft=not runs_live, user_id=owner_id,
+                            inline_graph, draft=not live_graph, user_id=owner_id,
                         )
                     elif runs_live:
                         existing_workflow_id = existing_agent.get("workflow_id")

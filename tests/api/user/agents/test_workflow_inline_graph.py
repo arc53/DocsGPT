@@ -793,3 +793,27 @@ class TestMalformedGraphs:
             "name": "Flow", "agent_type": "workflow", "status": "published", "workflow_graph": graph,
         })
         assert _status(resp) == 201, _json(resp)
+
+
+class TestSharedWorkflows:
+    """Legacy rows can link two of an owner's agents to one workflow; a save through one changes both."""
+
+    def _pair(self, app, pg_conn, *, status="published"):
+        published, wid = _workflow_agent(app, pg_conn, status=status)
+        draft = _json(_create(app, pg_conn, {"name": "Copy", "agent_type": "workflow", "status": "draft"}))["id"]
+        AgentsRepository(pg_conn).update_by_id(draft, {"workflow_id": wid})
+        return published, draft, wid
+
+    def test_a_draft_cannot_save_an_unfinished_graph_into_a_workflow_a_published_agent_runs(self, app, pg_conn):
+        _, draft, wid = self._pair(app, pg_conn)
+        resp = _update(app, pg_conn, draft, {"workflow_graph": _invalid_graph()})
+        assert _status(resp) == 400
+        assert _json(resp)["message"] == "Workflow validation failed" and _json(resp)["errors"]
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+        assert _status(_update(app, pg_conn, draft, {"workflow_graph": _graph()})) == 200
+
+    def test_drafts_sharing_a_workflow_still_save_an_unfinished_graph(self, app, pg_conn):
+        _, draft, wid = self._pair(app, pg_conn, status="draft")
+        resp = _update(app, pg_conn, draft, {"workflow_graph": _invalid_graph()})
+        assert _status(resp) == 200, _json(resp)
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 2
