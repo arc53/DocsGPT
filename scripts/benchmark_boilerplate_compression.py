@@ -127,17 +127,17 @@ def run_benchmark():
     print(f"- **Context Density Improvement:**      +{avg_savings_pct:.1f}% net token savings")
     print(f"- **Pruning Latency (Overhead):**       {avg_latency_ms:.2f} ms per retrieval")
 
-    cb_pct = (preserved_code_blocks / (expected_code_blocks * len(queries))) * 100
-    tb_pct = (preserved_tables / (expected_tables * len(queries))) * 100
-    ng_pct = (preserved_negations / (expected_negations * len(queries))) * 100
+    total_expected_cb = expected_code_blocks * len(queries)
+    total_expected_tb = expected_tables * len(queries)
+    total_expected_ng = expected_negations * len(queries)
 
-    print(f"- **Fenced Code Blocks Preserved:**     {preserved_code_blocks}/{expected_code_blocks} ({cb_pct:.1f}%)")
-    print(f"- **Markdown Tables Preserved:**        {preserved_tables}/{expected_tables} ({tb_pct:.1f}%)")
-    print(
-        f"- **Negations & Warnings Preserved:**   {preserved_negations}/{expected_negations * len(queries)} ({ng_pct:.1f}%)"
-    )
-    print("- **Navigation Lines Pruned:**          100% (Breadcrumbs, TOC, pagination, 'Edit on GitHub' removed)")
-    print("- **Duplicate Header Deduplication:**   Successfully deduplicated across chunks 2 & 3")
+    cb_pct = (preserved_code_blocks / total_expected_cb) * 100
+    tb_pct = (preserved_tables / total_expected_tb) * 100
+    ng_pct = (preserved_negations / total_expected_ng) * 100
+
+    print(f"- **Fenced Code Blocks Preserved:**     {preserved_code_blocks}/{total_expected_cb} ({cb_pct:.1f}%)")
+    print(f"- **Markdown Tables Preserved:**        {preserved_tables}/{total_expected_tb} ({tb_pct:.1f}%)")
+    print(f"- **Negations & Warnings Preserved:**   {preserved_negations}/{total_expected_ng} ({ng_pct:.1f}%)")
     print()
 
     # Markdown Table output for PR description
