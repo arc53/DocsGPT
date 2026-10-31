@@ -332,9 +332,8 @@ function WorkflowBuilderInner() {
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
   const folderId = searchParams.get('folder_id');
-  const [workflowId, setWorkflowId] = useState<string | null>(
-    searchParams.get('workflow_id'),
-  );
+  // A saved agent's workflow, known once the agent loads or a save creates it.
+  const [workflowId, setWorkflowId] = useState<string | null>(null);
   const reactFlowInstance = useReactFlow();
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(
     agentId || null,
@@ -481,9 +480,7 @@ function WorkflowBuilderInner() {
   );
   // A new workflow compares with what it opened with (its Start node); a
   // saved one with what was loaded, then with each save.
-  const [opensNew] = useState(
-    () => !agentId && !searchParams.get('workflow_id'),
-  );
+  const [opensNew] = useState(() => !agentId);
   // Nodes whose schema text holds an edit they don't: unsaved work that no
   // save can send yet.
   const pendingSchemaNodes = useMemo(

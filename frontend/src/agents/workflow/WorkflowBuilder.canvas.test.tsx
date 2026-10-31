@@ -974,6 +974,14 @@ describe('WorkflowBuilder canvas', () => {
       );
     });
 
+    // A save from a new builder creates an agent and a workflow, so a
+    // `?workflow_id=` it loaded would stay unchanged while a copy was made.
+    it('opens new, not the workflow a workflow_id query names', async () => {
+      await render('/agents/manage/workflow/new?workflow_id=w1');
+      expect(api.getWorkflow).not.toHaveBeenCalled();
+      expect(nodeButton('end')).toBeNull();
+    });
+
     // The graph just saved is the one on the canvas: reading it back would
     // drop the undo history and edits made while the save was out.
     it('does not read back the graph a first save just wrote', async () => {
