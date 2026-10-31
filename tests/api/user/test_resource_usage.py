@@ -100,6 +100,17 @@ class TestTools:
         assert usage[new_tool]["agents"][0]["agent_type"] == "workflow"
         assert usage[old_tool] == EMPTY_USAGE
 
+    def test_workflow_node_settings_under_config_count(self, pg_conn):
+        # Graphs saved through the API may nest a node's settings under ``config``,
+        # which the engine reads like the flat shape.
+        nested = str(_tool(pg_conn, name="nested")["id"])
+        scalar = str(_tool(pg_conn, name="scalar")["id"])
+        _workflow_agent(pg_conn, ALICE, "nested flow", {1: {"config": {"tools": [nested]}}}, current=1)
+        _workflow_agent(pg_conn, ALICE, "scalar flow", {1: {"config": {"tools": scalar}}}, current=1)
+        usage = used_by_many(pg_conn, ALICE, "tool", [nested, scalar], deletable_ids=[nested, scalar])
+        assert _names(usage[nested]) == ["nested flow"]
+        assert _names(usage[scalar]) == ["scalar flow"]
+
     def test_workflow_agent_classic_columns_are_ignored(self, pg_conn):
         tid = str(_tool(pg_conn)["id"])
         # Classic ``tools`` left over on a workflow agent do not run.
@@ -182,6 +193,12 @@ class TestSources:
         usage = used_by_many(pg_conn, ALICE, "source", [s1, s2], deletable_ids=[s1, s2])
         assert _names(usage[s1]) == ["both", "primary"]
         assert _names(usage[s2]) == ["both", "flow"]
+
+    def test_workflow_node_sources_under_config(self, pg_conn):
+        sid = str(_source(pg_conn)["id"])
+        _workflow_agent(pg_conn, ALICE, "nested flow", {1: {"config": {"sources": [sid]}}}, current=1)
+        usage = used_by_many(pg_conn, ALICE, "source", [sid], deletable_ids=[sid])
+        assert _names(usage[sid]) == ["nested flow"]
 
 
 class TestPrompts:
