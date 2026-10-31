@@ -453,6 +453,11 @@ Index(
     postgresql_where=agents_table.c.slug.isnot(None),
 )
 
+# The Workspace ``used_by`` lookups (``tools ?| ids``, ``extra_source_ids && ids``).
+# Mirrors migration 0060.
+Index("agents_tools_gin_idx", agents_table.c.tools, postgresql_using="gin")
+Index("agents_extra_source_ids_gin_idx", agents_table.c.extra_source_ids, postgresql_using="gin")
+
 user_custom_models_table = Table(
     "user_custom_models",
     metadata,

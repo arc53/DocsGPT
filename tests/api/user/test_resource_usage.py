@@ -235,6 +235,25 @@ class TestBounded:
             event.remove(pg_conn, "before_cursor_execute", _count)
         assert len(statements) <= 4
 
+    def test_agents_are_read_only_where_the_caller_needs_them(self, pg_conn):
+        from docsgpt.api.user.resource_usage import _usage_rows
+
+        memory_id = default_tool_id("memory")
+        tid = str(_tool(pg_conn)["id"])
+        _agent(pg_conn, ALICE, "mine", tools=[memory_id, tid])
+        _agent(pg_conn, BOB, "bob private", tools=[memory_id, tid])
+        shared = _agent(pg_conn, BOB, "bob shared", tools=[memory_id])
+        _workflow_agent(pg_conn, BOB, "bob flow", {1: {"tools": [memory_id]}}, current=1)
+
+        def _names_for(full, scoped):
+            rows = _usage_rows(pg_conn, "tool", full, scoped, ALICE, [str(shared["id"])], [])
+            return sorted({(row[1], row[4]) for row in rows})
+
+        # A tool nobody may delete (a default tool): only agents Alice can open are read.
+        assert _names_for([], [memory_id]) == [("bob shared", memory_id), ("mine", memory_id)]
+        # One she may delete: every agent, so the hidden ones can be counted.
+        assert ("bob private", tid) in _names_for([tid], [memory_id])
+
     def test_empty_ids_runs_no_query(self, pg_conn):
         assert used_by_many(pg_conn, ALICE, "tool", [], deletable_ids=[]) == {}
 

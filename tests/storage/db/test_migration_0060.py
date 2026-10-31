@@ -39,3 +39,48 @@ def test_round_trip_adds_and_drops_the_preset(pg_conn):
         migration.upgrade()
         assert "prompt_preset" in _columns(pg_conn)
         assert pg_conn.execute(text("SELECT count(*) FROM agents")).scalar() == 1
+
+
+def _indexes(conn) -> set:
+    return {
+        r[0]
+        for r in conn.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'agents'"))
+    }
+
+
+def test_round_trip_adds_and_drops_the_usage_indexes(pg_conn):
+    migration = importlib.import_module("docsgpt.alembic.versions.0060_agent_prompt_preset")
+    with patch.object(migration, "op", Operations(MigrationContext.configure(pg_conn))):
+        migration.upgrade()
+        migration.upgrade()
+        assert {"agents_tools_gin_idx", "agents_extra_source_ids_gin_idx"} <= _indexes(pg_conn)
+        migration.downgrade()
+        migration.downgrade()
+        assert not {"agents_tools_gin_idx", "agents_extra_source_ids_gin_idx"} & _indexes(pg_conn)
+        migration.upgrade()
+        assert {"agents_tools_gin_idx", "agents_extra_source_ids_gin_idx"} <= _indexes(pg_conn)
+
+
+def test_upgrade_lowercases_legacy_tool_ids(pg_conn):
+    migration = importlib.import_module("docsgpt.alembic.versions.0060_agent_prompt_preset")
+    upper = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+    other = "11111111-2222-4333-8444-555555555555"
+    pg_conn.execute(
+        text(
+            "INSERT INTO agents (user_id, name, status, tools) VALUES "
+            "('u', 'legacy', 'draft', CAST(:legacy AS jsonb)), ('u', 'clean', 'draft', CAST(:clean AS jsonb)), "
+            "('u', 'odd', 'draft', CAST('{}' AS jsonb))"
+        ),
+        {
+            # An upper-case id next to its lower-case twin, a non-UUID id and a non-string entry.
+            "legacy": f'["{upper}", "{other}", "{upper.lower()}", "Mongo507f1f77bcf86cd799439011", 7]',
+            "clean": f'["{other}"]',
+        },
+    )
+    with patch.object(migration, "op", Operations(MigrationContext.configure(pg_conn))):
+        migration.upgrade()
+        migration.upgrade()
+    tools = dict(pg_conn.execute(text("SELECT name, tools FROM agents")).fetchall())
+    assert tools["legacy"] == [upper.lower(), other, "Mongo507f1f77bcf86cd799439011", 7]
+    assert tools["clean"] == [other]
+    assert tools["odd"] == {}

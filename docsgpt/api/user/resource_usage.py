@@ -48,35 +48,46 @@ PROMPT_PRESETS = frozenset({DEFAULT_PROMPT, *STORED_PROMPT_PRESETS})
 # A classic agent is anything but a workflow agent.
 _CLASSIC = "a.agent_type IS DISTINCT FROM 'workflow'"
 
+# Agents the caller can open: their own and the ones a team shares with them.
+_VISIBLE = "(a.user_id = :user_id OR a.id = ANY(CAST(:visible AS uuid[])))"
+
+# Each query reads every agent that uses a resource the caller may delete
+# (``:full``: hidden ones are counted in ``others``), but only the agents the
+# caller can open for the rest (``:scoped``). ``{match}`` is the WHERE clause
+# built by :func:`_match`; ``:ids`` is both lists together.
 _CLASSIC_TOOLS_SQL = f"""
     SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, r.ref
     FROM agents a
     CROSS JOIN LATERAL jsonb_array_elements_text(
         CASE WHEN jsonb_typeof(a.tools) = 'array' THEN a.tools ELSE '[]'::jsonb END
     ) AS r(ref)
-    WHERE {_CLASSIC} AND a.tools ?| CAST(:ids AS text[])
+    WHERE {_CLASSIC} AND ({{match}})
       AND r.ref = ANY(CAST(:ids AS text[]))
 """
+# Uses the GIN index on ``agents.tools`` (migration 0060).
+_CLASSIC_TOOLS_MATCH = "a.tools ?| CAST({ids} AS text[])"
 
 _CLASSIC_SOURCES_SQL = f"""
     SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, s.sid::text AS ref
     FROM agents a
     CROSS JOIN LATERAL unnest(array_append(a.extra_source_ids, a.source_id)) AS s(sid)
-    WHERE {_CLASSIC}
-      AND (a.source_id = ANY(CAST(:ids AS uuid[])) OR a.extra_source_ids && CAST(:ids AS uuid[]))
+    WHERE {_CLASSIC} AND ({{match}})
       AND s.sid = ANY(CAST(:ids AS uuid[]))
 """
+# Uses ``agents_source_id_idx`` and the GIN index on ``agents.extra_source_ids`` (migration 0060).
+_CLASSIC_SOURCES_MATCH = "(a.source_id = ANY(CAST({ids} AS uuid[])) OR a.extra_source_ids && CAST({ids} AS uuid[]))"
 
 _CLASSIC_PROMPTS_SQL = f"""
     SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type,
            COALESCE(a.prompt_id::text, a.prompt_preset, '{DEFAULT_PROMPT}') AS ref
     FROM agents a
-    WHERE {_CLASSIC}
-      AND (a.prompt_id = ANY(CAST(:ids AS uuid[]))
-           OR (a.prompt_id IS NULL
-               AND COALESCE(a.prompt_preset, '{DEFAULT_PROMPT}') = ANY(CAST(:presets AS text[]))
-               AND (a.user_id = :user_id OR a.id = ANY(CAST(:visible AS uuid[])))))
+    WHERE {_CLASSIC} AND ({{match}})
 """
+_CLASSIC_PROMPTS_MATCH = "a.prompt_id = ANY(CAST({ids} AS uuid[]))"
+# A preset has no owner, so only agents the caller can open ever count.
+_PRESETS_MATCH = (
+    f"(a.prompt_id IS NULL AND COALESCE(a.prompt_preset, '{DEFAULT_PROMPT}') = ANY(CAST(:presets AS text[])))"
+)
 
 # Agent nodes of each workflow agent's current graph version.
 _WORKFLOW_SQL = """
@@ -88,9 +99,10 @@ _WORKFLOW_SQL = """
         CASE WHEN jsonb_typeof(n.config -> CAST(:key AS text)) = 'array'
              THEN n.config -> CAST(:key AS text) ELSE '[]'::jsonb END
     ) AS r(ref)
-    WHERE a.agent_type = 'workflow' AND n.node_type = 'agent'
+    WHERE a.agent_type = 'workflow' AND n.node_type = 'agent' AND ({match})
       AND lower(r.ref) = ANY(CAST(:ids AS text[]))
 """
+_WORKFLOW_MATCH = "lower(r.ref) = ANY(CAST({ids} AS text[]))"
 
 _WORKFLOW_KEY = {"tool": "tools", "source": "sources"}
 
@@ -194,26 +206,68 @@ def _key(resource_id: str) -> str:
     return value.lower() if looks_like_uuid(value) else value
 
 
+def _match(template: str, full_ids: list[str], scoped_ids: list[str], extra: Optional[str] = None) -> str:
+    """The WHERE clause of a usage query: any agent for ``:full``, visible agents for ``:scoped``.
+
+    Args:
+        template: The match on one id list, with ``{ids}`` for the parameter.
+        full_ids: Ids whose every agent is read (the caller may delete them).
+        scoped_ids: Ids whose agents are read only when the caller can open them.
+        extra: Another match that, like ``scoped_ids``, only reads visible agents.
+
+    Returns:
+        str: The clause, ``FALSE`` when there is nothing to match.
+    """
+    clauses = []
+    if full_ids:
+        clauses.append(template.format(ids=":full"))
+    scoped = [template.format(ids=":scoped")] if scoped_ids else []
+    if extra:
+        scoped.append(extra)
+    if scoped:
+        clauses.append(f"({_VISIBLE} AND ({' OR '.join(scoped)}))")
+    return " OR ".join(clauses) or "FALSE"
+
+
 def _usage_rows(
-    conn: Connection, kind: UsageKind, uuid_ids: list[str], user_id: str, team_agents: list[str], presets: list[str]
+    conn: Connection,
+    kind: UsageKind,
+    full_ids: list[str],
+    scoped_ids: list[str],
+    user_id: str,
+    team_agents: list[str],
+    presets: list[str],
 ) -> list:
-    """Every ``(agent_id, name, user_id, agent_type, ref)`` naming one of the ids, whoever owns the agent."""
-    rows: list = []
+    """Every ``(agent_id, name, user_id, agent_type, ref)`` naming one of the ids.
+
+    Any agent for ``full_ids``; only agents the caller can open for
+    ``scoped_ids`` and ``presets``.
+    """
+    params = {
+        "full": full_ids,
+        "scoped": scoped_ids,
+        "ids": full_ids + scoped_ids,
+        "presets": presets,
+        "user_id": user_id,
+        "visible": team_agents,
+    }
     if kind == "prompt":
-        if uuid_ids or presets:
-            # A preset has no owner, so only agents the caller can open count.
-            rows.extend(
-                conn.execute(
-                    text(_CLASSIC_PROMPTS_SQL),
-                    {"ids": uuid_ids, "presets": presets, "user_id": user_id, "visible": team_agents},
-                ).fetchall()
-            )
-        return rows
-    if not uuid_ids:
-        return rows
-    classic = _CLASSIC_TOOLS_SQL if kind == "tool" else _CLASSIC_SOURCES_SQL
-    rows.extend(conn.execute(text(classic), {"ids": uuid_ids}).fetchall())
-    rows.extend(conn.execute(text(_WORKFLOW_SQL), {"ids": uuid_ids, "key": _WORKFLOW_KEY[kind]}).fetchall())
+        if not (full_ids or scoped_ids or presets):
+            return []
+        where = _match(_CLASSIC_PROMPTS_MATCH, full_ids, scoped_ids, _PRESETS_MATCH if presets else None)
+        return conn.execute(text(_CLASSIC_PROMPTS_SQL.format(match=where)), params).fetchall()
+    if not (full_ids or scoped_ids):
+        return []
+    classic_sql, classic_match = (
+        (_CLASSIC_TOOLS_SQL, _CLASSIC_TOOLS_MATCH) if kind == "tool" else (_CLASSIC_SOURCES_SQL, _CLASSIC_SOURCES_MATCH)
+    )
+    rows = list(conn.execute(text(classic_sql.format(match=_match(classic_match, full_ids, scoped_ids))), params))
+    rows.extend(
+        conn.execute(
+            text(_WORKFLOW_SQL.format(match=_match(_WORKFLOW_MATCH, full_ids, scoped_ids))),
+            {**params, "key": _WORKFLOW_KEY[kind]},
+        ).fetchall()
+    )
     return rows
 
 
@@ -251,7 +305,10 @@ def _collect(
         return owner == user_id or agent_id in team_access
 
     shared_listed: set[str] = set()
-    for agent_id, name, owner, agent_type, ref in _usage_rows(conn, kind, uuid_ids, user_id, team_agents, presets):
+    full_ids = [k for k in uuid_ids if k in deletable]
+    scoped_ids = [k for k in uuid_ids if k not in deletable]
+    rows = _usage_rows(conn, kind, full_ids, scoped_ids, user_id, team_agents, presets)
+    for agent_id, name, owner, agent_type, ref in rows:
         ref_key = _key(ref)
         if ref_key not in wanted:
             continue
