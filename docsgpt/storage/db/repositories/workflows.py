@@ -59,10 +59,13 @@ class WorkflowsRepository:
         """Fetch a workflow by ID and lock its row until the transaction ends.
 
         Graph saves read ``current_graph_version`` through this, so two saves
-        of one workflow write one version after the other.
+        of one workflow write one version after the other. ``FOR NO KEY
+        UPDATE``, the lock an ``UPDATE`` of the row takes anyway, so a run
+        starting meanwhile (its ``workflow_runs`` foreign key takes ``FOR KEY
+        SHARE``) doesn't wait for the save.
         """
         row = self._conn.execute(
-            text("SELECT * FROM workflows WHERE id = CAST(:id AS uuid) FOR UPDATE"),
+            text("SELECT * FROM workflows WHERE id = CAST(:id AS uuid) FOR NO KEY UPDATE"),
             {"id": workflow_id},
         ).fetchone()
         return row_to_dict(row) if row is not None else None
