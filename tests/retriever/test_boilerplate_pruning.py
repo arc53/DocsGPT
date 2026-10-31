@@ -136,12 +136,33 @@ class TestBoilerplatePruningRules:
 
     def test_preserves_repeated_factual_prose_across_chunks(self):
         docs = [
-            {"id": "doc1", "text": "The primary service runs on port 8080.\nOther details."},
-            {"id": "doc2", "text": "The primary service runs on port 8080.\nMore information."},
+            {
+                "id": "doc1",
+                "text": (
+                    "The primary service runs on port 8080.\n"
+                    "API returns HTTP 401 for expired credentials.\n"
+                    "Default timeout 30 seconds\n"
+                    "Other details."
+                ),
+            },
+            {
+                "id": "doc2",
+                "text": (
+                    "The primary service runs on port 8080.\n"
+                    "API returns HTTP 401 for expired credentials.\n"
+                    "Default timeout 30 seconds\n"
+                    "More information."
+                ),
+            },
         ]
-        pruned = prune_boilerplate(docs, query="")
+        # Query does not contain keywords from those factual sentences
+        pruned = prune_boilerplate(docs, query="Why do logins fail?")
         assert "The primary service runs on port 8080." in pruned[0]["text"]
         assert "The primary service runs on port 8080." in pruned[1]["text"]
+        assert "API returns HTTP 401 for expired credentials." in pruned[0]["text"]
+        assert "API returns HTTP 401 for expired credentials." in pruned[1]["text"]
+        assert "Default timeout 30 seconds" in pruned[0]["text"]
+        assert "Default timeout 30 seconds" in pruned[1]["text"]
 
     def test_prune_boilerplate_preserves_document_identity(self):
         doc1 = {"id": "doc1", "text": "Home > API\nFactual chunk 1 content."}

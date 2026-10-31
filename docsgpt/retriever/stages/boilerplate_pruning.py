@@ -118,8 +118,19 @@ def _is_navigation_boilerplate(line: str) -> bool:
     return False
 
 
+_DOC_TITLE_RE = re.compile(
+    r"^(?:[\w.-]+(?:\s+[\w.-]+)*\s+)?(?:documentation|docs|user guide|reference manual|api reference)(?:\s+v?\d+(?:\.\d+)*)?$",
+    re.IGNORECASE,
+)
+
+_PAGE_METADATA_RE = re.compile(
+    r"^(?:page\s+\d+(?:\s+of\s+\d+)?|last\s+updated:?.*|version:?\s*v?\d+[\d.]*)$",
+    re.IGNORECASE,
+)
+
+
 def _is_boilerplate_candidate(line: str) -> bool:
-    """Classify whether a line represents boilerplate (headers, titles, banners) rather than factual prose."""
+    """Classify whether a line represents identifiable boilerplate or title banners rather than factual prose."""
     stripped = line.strip()
     if not stripped:
         return False
@@ -133,20 +144,15 @@ def _is_boilerplate_candidate(line: str) -> bool:
         return True
 
     # Copyright, license, or legal notices
-    if re.search(r"(?:©|\bcopyright\b|\ball rights reserved\b|\blicensed under\b)", stripped, re.IGNORECASE):
+    if re.search(r"(?:©|\bcopyright\b|\(c\)\b|\ball rights reserved\b|\blicensed under\b)", stripped, re.IGNORECASE):
         return True
 
     # Document titles, product headers, or version lines (e.g. "DocsGPT Documentation v2.4")
-    if re.search(
-        r"\b(?:documentation|docs|manual|guide|reference|sdk|api)\b|\bv?\d+\.\d+(?:\.\d+)*\b",
-        stripped,
-        re.IGNORECASE,
-    ):
+    if _DOC_TITLE_RE.match(stripped):
         return True
 
-    # Short non-sentence header-like lines without terminal punctuation
-    words = stripped.split()
-    if len(words) <= 8 and not stripped.endswith((".", "!", "?", ":", ";", ",", '"', "'")):
+    # Page indicators or metadata headers (e.g. "Page 1 of 5", "Last updated: October 2024")
+    if _PAGE_METADATA_RE.match(stripped):
         return True
 
     return False
