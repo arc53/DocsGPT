@@ -91,7 +91,7 @@ def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
         return True
 
     # 4b. Comparison expressions with a numeric operand (e.g. "Password length > 8")
-    if re.search(r"(?:<=?|>=?|≤|≥|!=)\s*\d", stripped):
+    if re.search(r"(?:<=?|>=?|≤|≥|!=)\s*[-+]?\d", stripped):
         return True
 
     # 5. URLs (unless a pagination link)
@@ -192,13 +192,10 @@ def prune_boilerplate(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[
         return docs
 
     seen_boilerplate: Set[str] = set()
-    pruned_docs: List[Dict[str, Any]] = []
 
     for doc in docs:
-        pruned_doc = dict(doc)
         text = doc.get("text")
         if isinstance(text, str) and text:
-            pruned_doc["text"] = prune_chunk_text(text, query=query, seen_boilerplate=seen_boilerplate)
-        pruned_docs.append(pruned_doc)
+            doc["text"] = prune_chunk_text(text, query=query, seen_boilerplate=seen_boilerplate)
 
-    return pruned_docs
+    return docs

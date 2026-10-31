@@ -56,12 +56,16 @@ class TestBoilerplatePruningRules:
         raw = (
             "Home > Security > Guidelines\n"
             "Password length > 8 characters\n"
-            "Timeout <= 300 ms\n"
+            "Operating temperature >= -20 C\n"
+            "Threshold offset <= +5 ms\n"
+            "Error code != -1\n"
             "Other text here."
         )
         cleaned = prune_chunk_text(raw, query="How long should my passphrase be?")
         assert "Password length > 8 characters" in cleaned
-        assert "Timeout <= 300 ms" in cleaned
+        assert "Operating temperature >= -20 C" in cleaned
+        assert "Threshold offset <= +5 ms" in cleaned
+        assert "Error code != -1" in cleaned
         assert "Other text here." in cleaned
         assert "Home > Security > Guidelines" not in cleaned
 
@@ -129,6 +133,17 @@ class TestBoilerplatePruningRules:
         assert "DocsGPT Documentation v2.4" in pruned[0]["text"]
         assert "DocsGPT Documentation v2.4" not in pruned[1]["text"]
         assert "Factual chunk 2 content." in pruned[1]["text"]
+
+    def test_prune_boilerplate_preserves_document_identity(self):
+        doc1 = {"id": "doc1", "text": "Home > API\nFactual chunk 1 content."}
+        doc2 = {"id": "doc2", "text": "Home > API\nFactual chunk 2 content."}
+        docs = [doc1, doc2]
+        pruned = prune_boilerplate(docs, query="content")
+        assert pruned is docs
+        assert pruned[0] is doc1
+        assert pruned[1] is doc2
+        assert "Home > API" not in doc1["text"]
+        assert "Factual chunk 1 content." in doc1["text"]
 
 
 @pytest.mark.unit
