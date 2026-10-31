@@ -14,6 +14,7 @@ DESIGN.md.
 - [Monitoring pages: Analytics, Insights, Logs](#monitoring-pages-analytics-insights-logs)
 - [App chrome: the phone top bar and New Chat](#app-chrome-the-phone-top-bar-and-new-chat)
 - [Chat composer](#chat-composer)
+- [Empty chat suggestions](#empty-chat-suggestions-hero)
 - [Chat answer column](#chat-answer-column)
 - [Source views](#source-views-componentstree-wikiviewer-componentsgraph-graphview)
 - [Workflow builder](#workflow-builder-agentsworkflow)
@@ -396,6 +397,31 @@ a chat".
   `bg-destructive` tile with `CircleAlert`, and the reason in a tooltip that
   opens on hover and on focus (the failed chip is a tab stop), also tied to
   the chip and its remove button with `aria-describedby`.
+
+## Empty chat suggestions (`hero/`)
+
+Under the model picker, a new chat with no agent shows up to four
+`ListRow size="md"` rows built in the browser from what the user already has
+(`hero/suggestions.ts`, no model call):
+
+- Content first, at most three: summarize the first selected source and
+  compare the first two (sources still processing or failed are skipped),
+  ask about up to two connected services, then continue the latest named chat
+  without an agent from the past week. A service counts only while its
+  connection is signed in, one of its tools is on in the user's chats (the
+  `chatTools` slice the Tools picker keeps) and it holds data (not a web
+  search or a send-only bot).
+- Then one setup action: Add knowledge while the user has no source, else
+  Connect while nothing is connected.
+- With no content at all, every setup step not done yet: Add knowledge,
+  Connect, Create an agent.
+- Nothing renders until sources, chats, connectors and tools have all
+  loaded, so a returning user never sees a fresh install's rows first.
+
+A question row (leading lucide icon or the service's `ConnectorIcon`) sends
+its text and shows `ArrowUp` on hover and focus; a row that opens something
+(Continue, the setup actions) ends in a `ChevronRight`. Each row is one
+`t()` template under `hero.suggestions` with the name filled in.
 
 ## Chat answer column
 

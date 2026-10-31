@@ -103,24 +103,28 @@
       "cancelled": "Tâche en arrière-plan annulée"
     }
   },
-  "demo": [
-    {
-      "header": "Découvrir DocsGPT",
-      "query": "Qu’est-ce que DocsGPT ?"
-    },
-    {
-      "header": "Résumer la documentation",
-      "query": "Résume le contexte actuel"
-    },
-    {
-      "header": "Écrire du code",
-      "query": "Écris le code d’une requête API vers /api/answer"
-    },
-    {
-      "header": "Aide à l’apprentissage",
-      "query": "Rédige des questions possibles sur le contexte"
+  "hero": {
+    "suggestions": {
+      "label": "Suggestions",
+      "summarize": "Résumer « {{name}} »",
+      "compare": "Comparer « {{first}} » avec « {{second}} »",
+      "service": {
+        "files": "Trouver mes fichiers les plus récents dans {{name}}",
+        "knowledge": "Qu’est-ce qui a changé dans {{name}} cette semaine ?",
+        "projects": "Qu’est-ce qui est en cours dans {{name}} cette semaine ?",
+        "dev": "Qu’est-ce qui a changé dans {{name}} cette semaine ?",
+        "business": "Quoi de neuf dans {{name}} cette semaine ?",
+        "messaging": "Résumer les messages de la semaine dans {{name}}",
+        "database": "Quelles données contient {{name}} ?",
+        "other": "Que pouvez-vous trouver dans {{name}} ?"
+      },
+      "continue": "Reprendre « {{name}} »",
+      "addKnowledge": "Ajouter des connaissances pour interroger vos propres documents",
+      "connect": "Connecter {{names}}",
+      "more": "autres",
+      "createAgent": "Créer un agent pour une tâche précise"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "Connectez-vous pour accéder à DocsGPT",
     "signInWithSSO": "Se connecter avec SSO",
@@ -4156,11 +4160,6 @@
   },
   "prompts": {
     "textAriaLabel": "Texte du prompt"
-  },
-  "connectHero": {
-    "title": "Connectez vos données",
-    "body": "Discutez avec {{names}}.",
-    "more": "autres"
   },
   "common": {
     "close": "Fermer",

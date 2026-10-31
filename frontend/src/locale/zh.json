@@ -101,24 +101,28 @@
       "cancelled": "后台任务已取消"
     }
   },
-  "demo": [
-    {
-      "header": "了解 DocsGPT",
-      "query": "DocsGPT 是什么"
-    },
-    {
-      "header": "总结文档",
-      "query": "总结当前情况"
-    },
-    {
-      "header": "编写代码",
-      "query": "为 /api/answer API 请求编写代码"
-    },
-    {
-      "header": "学习帮助",
-      "query": "为背景写出潜在问题"
+  "hero": {
+    "suggestions": {
+      "label": "建议",
+      "summarize": "总结“{{name}}”",
+      "compare": "比较“{{first}}”和“{{second}}”",
+      "service": {
+        "files": "查找我在 {{name}} 中的最新文件",
+        "knowledge": "{{name}} 本周有哪些变化？",
+        "projects": "{{name}} 本周有哪些进行中的工作？",
+        "dev": "{{name}} 本周有哪些变化？",
+        "business": "{{name}} 本周有什么新动态？",
+        "messaging": "总结 {{name}} 本周的消息",
+        "database": "{{name}} 中有哪些数据？",
+        "other": "能在 {{name}} 中找到什么？"
+      },
+      "continue": "继续“{{name}}”",
+      "addKnowledge": "添加知识，就能询问你自己的文档",
+      "connect": "连接 {{names}}",
+      "more": "更多服务",
+      "createAgent": "为特定任务创建智能体"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "登录以继续使用 DocsGPT",
     "signInWithSSO": "使用 SSO 登录",
@@ -4019,11 +4023,6 @@
   },
   "prompts": {
     "textAriaLabel": "提示文本"
-  },
-  "connectHero": {
-    "title": "连接你的数据",
-    "body": "与 {{names}} 进行对话。",
-    "more": "更多服务"
   },
   "common": {
     "close": "关闭",

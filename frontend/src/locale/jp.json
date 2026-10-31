@@ -101,24 +101,28 @@
       "cancelled": "バックグラウンドジョブをキャンセルしました"
     }
   },
-  "demo": [
-    {
-      "header": "DocsGPTについて学ぶ",
-      "query": "DocsGPTとは何ですか?"
-    },
-    {
-      "header": "ドキュメントを要約する",
-      "query": "現在のコンテキストを要約してください"
-    },
-    {
-      "header": "コードを書く",
-      "query": "APIリクエストのコードを/api/answerに書いてください。"
-    },
-    {
-      "header": "学習支援",
-      "query": "このコンテンツに対する可能な質問を書いてください"
+  "hero": {
+    "suggestions": {
+      "label": "おすすめ",
+      "summarize": "「{{name}}」を要約",
+      "compare": "「{{first}}」と「{{second}}」を比較",
+      "service": {
+        "files": "{{name}}の最近のファイルを検索",
+        "knowledge": "今週の{{name}}の変更点は？",
+        "projects": "今週{{name}}で進行中の作業は？",
+        "dev": "今週の{{name}}の変更点は？",
+        "business": "今週の{{name}}の新着情報は？",
+        "messaging": "今週の{{name}}のメッセージを要約",
+        "database": "{{name}}にはどんなデータがありますか？",
+        "other": "{{name}}で何が見つかりますか？"
+      },
+      "continue": "「{{name}}」の続き",
+      "addKnowledge": "ナレッジを追加して自分のドキュメントについて質問する",
+      "connect": "{{names}}を接続",
+      "more": "その他",
+      "createAgent": "特定の作業用のエージェントを作成"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "続行するにはDocsGPTにサインインしてください",
     "signInWithSSO": "SSOでサインイン",
@@ -4021,11 +4025,6 @@
   },
   "prompts": {
     "textAriaLabel": "プロンプトテキスト"
-  },
-  "connectHero": {
-    "title": "データを接続",
-    "body": "{{names}}とチャットできます。",
-    "more": "その他"
   },
   "common": {
     "close": "閉じる",

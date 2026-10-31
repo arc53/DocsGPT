@@ -6,7 +6,7 @@ import {
   buildHeroSuggestions,
   type HeroService,
   type HeroSuggestionInput,
-} from './heroSuggestions';
+} from './suggestions';
 
 const NOW = Date.parse('2026-11-01T12:00:00Z');
 const daysAgo = (days: number) =>
