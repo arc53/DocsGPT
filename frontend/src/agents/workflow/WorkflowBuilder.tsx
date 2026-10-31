@@ -157,6 +157,24 @@ function isLayerTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(LAYER_SELECTOR) !== null;
 }
 
+/**
+ * Whether a key comes from the canvas: the page itself (nothing focused) or
+ * the flow's nodes, edges and pane. A control in the node panel, the
+ * palette or a notice is not, so Delete there leaves the selection alone.
+ *
+ * Args:
+ *   target: The keydown's target.
+ *
+ * Returns:
+ *   True when a canvas shortcut such as Delete may act on the selection.
+ */
+function isCanvasTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return true;
+  if (target === document.body || target === document.documentElement)
+    return true;
+  return target.closest('.react-flow__renderer') !== null;
+}
+
 function createEmptyWorkflowAgent(): Agent {
   return {
     id: '',
@@ -1048,7 +1066,8 @@ function WorkflowBuilderInner() {
     // own inputs own the keys — a stray Delete there must not delete the node
     // behind it), when it comes from a dialog, popover or menu (Backspace on
     // an Add tool card), or once another handler has already consumed the
-    // event. Kept in one place so the branches can't drift apart.
+    // event. Kept in one place so the branches can't drift apart. Delete
+    // and Backspace act only from the canvas itself (`isCanvasTarget`).
     const shouldIgnoreShortcut = (e: KeyboardEvent): boolean =>
       e.defaultPrevented ||
       showPreview ||
@@ -1073,7 +1092,10 @@ function WorkflowBuilderInner() {
           return;
         }
       }
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        isCanvasTarget(e.target)
+      ) {
         e.preventDefault();
         deleteNodesAndEdges(
           nodes.filter((n) => n.selected || n.id === selectedNode?.id),

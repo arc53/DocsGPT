@@ -38,7 +38,11 @@ vi.mock('reactflow', () => {
       nodes: FlowNode[];
       onNodeClick: (event: unknown, node: FlowNode) => void;
     }) => (
-      <div data-testid="canvas">
+      // React Flow's own renderer class: the builder reads canvas keys by it.
+      <div
+        data-testid="canvas"
+        ref={(el) => el?.classList.add('react-flow__renderer')}
+      >
         {nodes.map((node) => (
           <button
             key={node.id}
@@ -111,21 +115,26 @@ vi.mock('./panels/NodePanel', () => ({
 const panel = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
 }));
-// The node's Tools picker footer, as its Go to Tools link.
+// The node's Tools picker, as its trigger and its footer's Go to Tools link.
 vi.mock('./panels/AgentPanel', () => ({
   default: (props: Record<string, unknown>) => {
     panel.props = props;
     return (
-      <a
-        href="/settings/tools"
-        data-testid="go-to-tools"
-        onClick={(event) => {
-          (props.onNavigateAway as (e: unknown) => void)?.(event);
-          if (!event.defaultPrevented) event.preventDefault();
-        }}
-      >
-        go
-      </a>
+      <>
+        <button type="button" role="combobox" data-testid="tools-picker">
+          tools
+        </button>
+        <a
+          href="/settings/tools"
+          data-testid="go-to-tools"
+          onClick={(event) => {
+            (props.onNavigateAway as (e: unknown) => void)?.(event);
+            if (!event.defaultPrevented) event.preventDefault();
+          }}
+        >
+          go
+        </a>
+      </>
     );
   },
 }));
@@ -306,6 +315,44 @@ describe('WorkflowBuilder canvas', () => {
         expect(nodeButton('end')).not.toBeNull();
       },
     );
+  });
+
+  describe('Delete and Backspace', () => {
+    // Focus on a control in the node panel (the Tools picker's trigger once
+    // a tool is picked, a link) or elsewhere off the canvas is not the
+    // canvas: the key must not delete the selected node.
+    it.each([['tools-picker'], ['go-to-tools']])(
+      'leave the selected node alone from the panel %s',
+      async (testId) => {
+        await render();
+        await select('agent');
+        const control = container.querySelector<HTMLElement>(
+          `[data-testid="${testId}"]`,
+        )!;
+        await press(control, { key: 'Backspace' });
+        await press(control, { key: 'Delete' });
+        expect(nodeButton('agent')).not.toBeNull();
+      },
+    );
+
+    it('leave the selected node alone from a button off the canvas', async () => {
+      await render();
+      await select('end');
+      await press(container.querySelector('[data-add="agent"]')!, {
+        key: 'Delete',
+      });
+      expect(nodeButton('end')).not.toBeNull();
+    });
+
+    it('delete the selected node from the canvas or the page', async () => {
+      await render();
+      await select('end');
+      await press(nodeButton('end')!, { key: 'Delete' });
+      expect(nodeButton('end')).toBeNull();
+      await select('agent');
+      await press(document.body, { key: 'Backspace' });
+      expect(nodeButton('agent')).toBeNull();
+    });
   });
 
   describe('a node without a model', () => {
