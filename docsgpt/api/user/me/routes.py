@@ -11,7 +11,9 @@ set for them, without naming the policies behind those limits.
 
 ``GET``/``PUT /api/user/preferences`` read and set the caller's settings that
 follow them across devices: today the prompt their chats use
-(``chat_prompt_id``), stored in ``users.tool_preferences``.
+(``chat_prompt_id``), stored in ``users.tool_preferences``. ``GET`` also says
+whether one was ever stored (``chat_prompt_set``), so a browser moves its
+pre-upgrade choice only to an account that holds none.
 """
 
 from __future__ import annotations
@@ -135,12 +137,14 @@ class PreferencesResource(Resource):
 
     @api.doc(
         description=(
-            "The caller's preferences: {success, chat_prompt_id}. chat_prompt_id is default when none "
-            "was set or the stored prompt was deleted or is no longer shared with the caller."
+            "The caller's preferences: {success, chat_prompt_id, chat_prompt_set}. chat_prompt_id is "
+            "default when none was set or the stored prompt was deleted or is no longer shared with the "
+            "caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even "
+            "when it now reads as default."
         )
     )
     def get(self):
-        """Return ``{success, chat_prompt_id}`` for the caller."""
+        """Return ``{success, chat_prompt_id, chat_prompt_set}`` for the caller."""
         decoded_token = getattr(request, "decoded_token", None)
         user_id = decoded_token.get("sub") if decoded_token else None
         if not user_id:
@@ -154,7 +158,13 @@ class PreferencesResource(Resource):
         except Exception as err:
             current_app.logger.error(f"Error reading preferences: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True, "chat_prompt_id": chat_prompt_id}), 200)
+        body = {
+            "success": True,
+            "chat_prompt_id": chat_prompt_id,
+            # A stored default, or a prompt since deleted or unshared, is still a choice.
+            "chat_prompt_set": isinstance(stored, str) and bool(stored),
+        }
+        return make_response(jsonify(body), 200)
 
     @api.expect(preferences_model)
     @api.doc(

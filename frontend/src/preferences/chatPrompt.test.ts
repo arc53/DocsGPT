@@ -46,6 +46,11 @@ const presets: Prompt[] = [
 const own: Prompt = { id: 'p-own', name: 'Vendor checks', type: 'private' };
 const listed = [...presets, own];
 
+/** The server's answer: a chat prompt the user stored. */
+const stored = (id: string) => ({ id, set: true });
+/** The server's answer for a user who never stored a chat prompt. */
+const neverSet = { id: 'default', set: false };
+
 /** An unsigned token for `sub`; `n` tells a renewed one apart. */
 const jwtFor = (sub: string, n: number) =>
   `e30.${btoa(JSON.stringify({ sub, iat: n })).replace(/=+$/, '')}.sig`;
@@ -65,10 +70,37 @@ describe('fetchChatPromptId', () => {
 
   it("returns the server's chat prompt", async () => {
     service.getPreferences.mockReturnValue(
-      response({ success: true, chat_prompt_id: 'p-own' }),
+      response({
+        success: true,
+        chat_prompt_id: 'p-own',
+        chat_prompt_set: true,
+      }),
     );
-    await expect(fetchChatPromptId('tok')).resolves.toBe('p-own');
+    await expect(fetchChatPromptId('tok')).resolves.toEqual(stored('p-own'));
     expect(service.getPreferences).toHaveBeenCalledWith('tok');
+  });
+
+  it('tells a stored default from one never set', async () => {
+    service.getPreferences.mockReturnValueOnce(
+      response({ chat_prompt_id: 'default', chat_prompt_set: true }),
+    );
+    await expect(fetchChatPromptId('tok')).resolves.toEqual(stored('default'));
+    service.getPreferences.mockReturnValueOnce(
+      response({ chat_prompt_id: 'default', chat_prompt_set: false }),
+    );
+    await expect(fetchChatPromptId('tok')).resolves.toEqual(neverSet);
+  });
+
+  // A server from before the flag: only a non-default value was stored.
+  it('reads a missing flag from the value', async () => {
+    service.getPreferences.mockReturnValueOnce(
+      response({ chat_prompt_id: 'default' }),
+    );
+    await expect(fetchChatPromptId('tok')).resolves.toEqual(neverSet);
+    service.getPreferences.mockReturnValueOnce(
+      response({ chat_prompt_id: 'strict' }),
+    );
+    await expect(fetchChatPromptId('tok')).resolves.toEqual(stored('strict'));
   });
 
   it('returns null when the server refuses or is unreachable', async () => {
@@ -91,7 +123,7 @@ describe('fetchChatPromptId', () => {
         .mockReturnValueOnce(response({ chat_prompt_id: 'strict' }));
       const id = fetchChatPromptId('tok', [100, 200]);
       await vi.advanceTimersByTimeAsync(300);
-      await expect(id).resolves.toBe('strict');
+      await expect(id).resolves.toEqual(stored('strict'));
       expect(service.getPreferences).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
@@ -115,7 +147,7 @@ describe('loadChatPrompt', () => {
   it("uses the server's prompt and forgets this browser's old one", async () => {
     localStorage.setItem(LEGACY_PROMPT_KEY, JSON.stringify(presets[1]));
     const store = makeStore();
-    await store.dispatch(loadChatPrompt('p-own', listed, 'tok'));
+    await store.dispatch(loadChatPrompt(stored('p-own'), listed, 'tok'));
     expect(chatPromptOf(store)).toEqual(own);
     expect(service.updatePreferences).not.toHaveBeenCalled();
     expect(localStorage.getItem(LEGACY_PROMPT_KEY)).toBeNull();
@@ -124,7 +156,7 @@ describe('loadChatPrompt', () => {
   it('moves a prompt picked in this browser to the server once', async () => {
     localStorage.setItem(LEGACY_PROMPT_KEY, JSON.stringify(own));
     const store = makeStore();
-    await store.dispatch(loadChatPrompt('default', listed, 'tok'));
+    await store.dispatch(loadChatPrompt(neverSet, listed, 'tok'));
     expect(service.updatePreferences).toHaveBeenCalledTimes(1);
     expect(service.updatePreferences).toHaveBeenCalledWith(
       { chat_prompt_id: 'p-own' },
@@ -134,11 +166,22 @@ describe('loadChatPrompt', () => {
     expect(localStorage.getItem(LEGACY_PROMPT_KEY)).toBeNull();
   });
 
+  // Another browser's deliberate default, or a shared browser's previous
+  // user: the old choice isn't this account's to move.
+  it('drops the old choice without moving it when the server holds one', async () => {
+    localStorage.setItem(LEGACY_PROMPT_KEY, JSON.stringify(own));
+    const store = makeStore();
+    await store.dispatch(loadChatPrompt(stored('default'), [], 'tok'));
+    expect(service.updatePreferences).not.toHaveBeenCalled();
+    expect(chatPromptOf(store)).toEqual(DEFAULT_CHAT_PROMPT);
+    expect(localStorage.getItem(LEGACY_PROMPT_KEY)).toBeNull();
+  });
+
   it('keeps the old choice for the next start when the move fails', async () => {
     localStorage.setItem(LEGACY_PROMPT_KEY, JSON.stringify(own));
     service.updatePreferences.mockReturnValue(response({}, false, 500));
     const store = makeStore();
-    await store.dispatch(loadChatPrompt('default', listed, 'tok'));
+    await store.dispatch(loadChatPrompt(neverSet, listed, 'tok'));
     expect(chatPromptOf(store)).toEqual(own);
     expect(localStorage.getItem(LEGACY_PROMPT_KEY)).not.toBeNull();
   });
@@ -149,7 +192,7 @@ describe('loadChatPrompt', () => {
       JSON.stringify({ id: 'gone', name: 'Gone', type: 'private' }),
     );
     const store = makeStore();
-    await store.dispatch(loadChatPrompt('default', listed, 'tok'));
+    await store.dispatch(loadChatPrompt(neverSet, listed, 'tok'));
     expect(service.updatePreferences).not.toHaveBeenCalled();
     expect(chatPromptOf(store)).toEqual(presets[0]);
     expect(localStorage.getItem(LEGACY_PROMPT_KEY)).toBeNull();
@@ -158,7 +201,7 @@ describe('loadChatPrompt', () => {
   it("keeps this browser's choice when the prompt list didn't load", async () => {
     localStorage.setItem(LEGACY_PROMPT_KEY, JSON.stringify(own));
     const store = makeStore();
-    await store.dispatch(loadChatPrompt('default', [], 'tok'));
+    await store.dispatch(loadChatPrompt(neverSet, [], 'tok'));
     expect(service.updatePreferences).not.toHaveBeenCalled();
     expect(localStorage.getItem(LEGACY_PROMPT_KEY)).not.toBeNull();
   });
@@ -252,7 +295,7 @@ describe('chat prompt saves', () => {
   it('switches back only to what the server confirmed', async () => {
     service.updatePreferences.mockReturnValue(response({}, false, 500));
     const store = makeStore();
-    await store.dispatch(loadChatPrompt('strict', listed, 'tok'));
+    await store.dispatch(loadChatPrompt(stored('strict'), listed, 'tok'));
     const picks = [presets[1], own].map((prompt) =>
       store.dispatch(chooseChatPrompt(prompt, 'tok')),
     );
@@ -264,7 +307,7 @@ describe('chat prompt saves', () => {
   it("compares a pick with the server's value, not the one shown", async () => {
     service.updatePreferences.mockReturnValue(response({ success: true }));
     const store = makeStore();
-    await store.dispatch(loadChatPrompt('strict', listed, 'tok'));
+    await store.dispatch(loadChatPrompt(stored('strict'), listed, 'tok'));
     store.dispatch(setPrompt(own));
     await store.dispatch(chooseChatPrompt(own, 'tok'));
     expect(sent()).toEqual(['p-own']);
@@ -277,7 +320,7 @@ describe('chat prompt saves', () => {
     service.updatePreferences.mockReturnValue(response({ success: true }));
     const store = makeStore();
     const pick = store.dispatch(chooseChatPrompt(own, 'tok'));
-    await store.dispatch(loadChatPrompt('strict', listed, 'tok'));
+    await store.dispatch(loadChatPrompt(stored('strict'), listed, 'tok'));
     await pick;
     expect(chatPromptOf(store)).toEqual(own);
   });
@@ -287,7 +330,7 @@ describe('chat prompt saves', () => {
     const store = makeStore();
     await store.dispatch(chooseChatPrompt(own, 'tok'));
     expect(chatPromptOf(store)).toEqual(DEFAULT_CHAT_PROMPT);
-    await store.dispatch(loadChatPrompt('strict', listed, 'tok'));
+    await store.dispatch(loadChatPrompt(stored('strict'), listed, 'tok'));
     expect(chatPromptOf(store)).toEqual(presets[2]);
   });
 
@@ -300,7 +343,7 @@ describe('chat prompt saves', () => {
       .mockReturnValueOnce(move.promise)
       .mockReturnValue(response({ success: true }));
     const store = makeStore();
-    const loading = store.dispatch(loadChatPrompt('default', listed, 'tok'));
+    const loading = store.dispatch(loadChatPrompt(neverSet, listed, 'tok'));
     const pick = store.dispatch(chooseChatPrompt(presets[2], 'tok'));
     expect(sent()).toEqual(['p-own']);
     move.resolve({ ok: true, json: async () => ({}) });
@@ -338,7 +381,7 @@ describe('chat prompt saves', () => {
       const first = jwtFor('alice', 1);
       const renewed = jwtFor('alice', 2);
       const waiting = store.dispatch(chooseChatPrompt(own, first, 500));
-      await store.dispatch(loadChatPrompt('strict', listed, renewed));
+      await store.dispatch(loadChatPrompt(stored('strict'), listed, renewed));
       await vi.advanceTimersByTimeAsync(600);
       await expect(waiting).resolves.toBe(true);
       expect(service.updatePreferences).toHaveBeenCalledWith(
@@ -361,7 +404,9 @@ describe('chat prompt saves', () => {
       response({ chat_prompt_id: 'strict' }),
     );
     const store = makeStore();
-    await store.dispatch(loadChatPrompt('strict', listed, jwtFor('alice', 1)));
+    await store.dispatch(
+      loadChatPrompt(stored('strict'), listed, jwtFor('alice', 1)),
+    );
     const pick = store.dispatch(chooseChatPrompt(own, jwtFor('alice', 1)));
     const reload = store.dispatch(
       initChatPrompt(jwtFor('alice', 2), {
@@ -383,7 +428,9 @@ describe('chat prompt saves', () => {
       const waiting = store.dispatch(
         chooseChatPrompt(own, jwtFor('alice', 1), 500),
       );
-      await store.dispatch(loadChatPrompt('strict', listed, jwtFor('bob', 1)));
+      await store.dispatch(
+        loadChatPrompt(stored('strict'), listed, jwtFor('bob', 1)),
+      );
       await vi.advanceTimersByTimeAsync(600);
       await expect(waiting).resolves.toBe(false);
       expect(sent()).toEqual([]);
@@ -401,7 +448,7 @@ describe('chat prompt saves', () => {
     const store = makeStore();
     store.dispatch(setPrompt(presets[2]));
     const pick = store.dispatch(chooseChatPrompt(own, 'tok'));
-    await store.dispatch(loadChatPrompt('p-own', listed, 'other'));
+    await store.dispatch(loadChatPrompt(stored('p-own'), listed, 'other'));
     save.resolve({ ok: false, status: 500, json: async () => ({}) });
     await expect(pick).resolves.toBe(false);
     expect(chatPromptOf(store)).toEqual(own);
@@ -470,6 +517,27 @@ describe('initChatPrompt', () => {
     list.resolve({ ok: true, json: async () => listed });
     await done;
     expect(chatPromptOf(store)).toEqual(own);
+  });
+
+  it('shows a stored default at once while this browser holds an old choice', async () => {
+    localStorage.setItem(LEGACY_PROMPT_KEY, JSON.stringify(own));
+    const list = deferred<unknown>();
+    service.getPrompts.mockReturnValue(list.promise);
+    service.getPreferences.mockReturnValue(
+      response({ chat_prompt_id: 'default', chat_prompt_set: true }),
+    );
+    const store = makeStore();
+    store.dispatch(setPrompt(presets[2]));
+    const done = store.dispatch(
+      initChatPrompt('tok', { signedOut: false, cancelled: () => false }),
+    );
+    await settle();
+    expect(chatPromptOf(store)).toEqual(DEFAULT_CHAT_PROMPT);
+    list.resolve({ ok: true, json: async () => listed });
+    await done;
+    expect(chatPromptOf(store)).toEqual(DEFAULT_CHAT_PROMPT);
+    expect(service.updatePreferences).not.toHaveBeenCalled();
+    expect(localStorage.getItem(LEGACY_PROMPT_KEY)).toBeNull();
   });
 
   it('asks the server nothing about the user while signed out', async () => {

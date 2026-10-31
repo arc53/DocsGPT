@@ -7275,14 +7275,14 @@
     },
     "/api/user/preferences": {
       "get": {
-        "description": "The caller's preferences: {success, chat_prompt_id}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller.",
+        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default.",
         "operationId": "get_preferences_resource",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Return ``{success, chat_prompt_id}`` for the caller",
+        "summary": "Return ``{success, chat_prompt_id, chat_prompt_set}`` for the caller",
         "tags": [
           "me"
         ],

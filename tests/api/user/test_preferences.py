@@ -113,6 +113,25 @@ class TestPreferences:
         TeamMembersRepository(pg_conn).remove_member(str(team["id"]), ALICE)
         assert _chat_prompt(app, pg_conn) == "default"
 
+    # A browser's pre-upgrade choice moves to the server only when nothing
+    # was ever stored; a deliberate default (or a gone prompt) is a choice.
+    def test_says_whether_a_chat_prompt_was_ever_stored(self, app, pg_conn):
+        assert _call(app, pg_conn, "get").json == {
+            "success": True,
+            "chat_prompt_id": "default",
+            "chat_prompt_set": False,
+        }
+        _call(app, pg_conn, "put", json={"chat_prompt_id": "default"})
+        assert _call(app, pg_conn, "get").json["chat_prompt_set"] is True
+
+    def test_a_gone_prompt_still_counts_as_stored(self, app, pg_conn):
+        pid = str(PromptsRepository(pg_conn).create(ALICE, "Gone", "x")["id"])
+        _call(app, pg_conn, "put", json={"chat_prompt_id": pid})
+        PromptsRepository(pg_conn).delete(pid, ALICE)
+        body = _call(app, pg_conn, "get").json
+        assert body["chat_prompt_id"] == "default"
+        assert body["chat_prompt_set"] is True
+
     def test_keeps_the_default_tool_switches(self, app, pg_conn):
         UsersRepository(pg_conn).set_default_tool_enabled(ALICE, "memory", False)
         _call(app, pg_conn, "put", json={"chat_prompt_id": "creative"})

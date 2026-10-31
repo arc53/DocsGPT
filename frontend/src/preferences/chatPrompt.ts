@@ -18,7 +18,7 @@ export const DEFAULT_CHAT_PROMPT: Prompt = {
 
 /**
  * Where this browser kept the chat prompt before the server did. Read once
- * to move the choice to the server, then removed.
+ * to move the choice to an account that holds none, then removed.
  */
 export const LEGACY_PROMPT_KEY = 'DocsGPTPrompt';
 
@@ -48,6 +48,13 @@ function forgetLegacyPrompt(): void {
 }
 
 /**
+ * The server's chat prompt. `set`: one was ever stored, a deliberate
+ * default or a prompt since deleted included; the old browser choice moves
+ * only when it is false.
+ */
+export type ServerChatPrompt = { id: string; set: boolean };
+
+/**
  * How long start-up waits before asking for the chat prompt again after the
  * server couldn't answer, per retry.
  */
@@ -63,22 +70,28 @@ export const CHAT_PROMPT_RETRY_MS = [2_000, 8_000];
  *   cancelled: Stops the retries (the session it was for has ended).
  *
  * Returns:
- *   A preset name or a prompt id; null when the server didn't answer.
+ *   A preset name or a prompt id, and whether one was ever stored; null
+ *   when the server didn't answer.
  */
 export async function fetchChatPromptId(
   token: string | null,
   retryDelays: readonly number[] = [],
   cancelled: () => boolean = () => false,
-): Promise<string | null> {
+): Promise<ServerChatPrompt | null> {
   for (let attempt = 0; ; attempt += 1) {
     let retry = true;
     try {
       const response = await userService.getPreferences(token);
       if (response.ok) {
         const data = await response.json();
-        return typeof data?.chat_prompt_id === 'string'
-          ? data.chat_prompt_id
-          : null;
+        const id = data?.chat_prompt_id;
+        if (typeof id !== 'string') return null;
+        // A server from before the flag stored only what isn't default.
+        const set =
+          typeof data.chat_prompt_set === 'boolean'
+            ? data.chat_prompt_set
+            : id !== DEFAULT_CHAT_PROMPT.id;
+        return { id, set };
       }
       retry = response.status >= 500;
     } catch {
@@ -202,29 +215,31 @@ function promptFor(id: string, prompts: Prompt[]): Prompt {
  * Sets the chat prompt at start from the server's answer and the prompt list.
  *
  * A prompt this browser picked before the server kept the choice moves to
- * the server once: when the server still says `default` and that prompt is
+ * the server once: when the account never stored one and that prompt is
  * listed, it is saved there and the browser's copy removed (kept for the
- * next start if the save fails). With no server answer (signed out, an
- * unreachable server) the browser's copy is used while it is listed, else
- * `default`, and nothing is sent. A pick the user made meanwhile stays.
+ * next start if the save fails). An account that stored one, even
+ * `default`, keeps it, and the browser's copy is dropped. With no server
+ * answer (signed out, an unreachable server) the browser's copy is used
+ * while it is listed, else `default`, and nothing is sent. A pick the user
+ * made meanwhile stays.
  *
  * Args:
- *   serverId: The server's `chat_prompt_id`, or null when there was none.
+ *   server: The server's chat prompt, or null when there was no answer.
  *   prompts: The prompts the user can pick from.
  *   token: The session token.
  */
 export const loadChatPrompt =
-  (serverId: string | null, prompts: Prompt[], token: string | null) =>
+  (server: ServerChatPrompt | null, prompts: Prompt[], token: string | null) =>
   async (dispatch: Dispatch, getState: GetState): Promise<void> => {
     const session = sessionOf(getState, token);
-    if (serverId !== null && !session.confirmed)
-      session.confirmed = promptFor(serverId, prompts);
+    if (server !== null && !session.confirmed)
+      session.confirmed = promptFor(server.id, prompts);
     if (pickStands(session)) return;
     const legacy = readLegacyPrompt();
     const listed = (id: string) => prompts.find((prompt) => prompt.id === id);
     const legacyListed = legacy ? listed(legacy.id) : undefined;
 
-    if (serverId === null) {
+    if (server === null) {
       dispatch(
         setPrompt(
           legacyListed ? asChatPrompt(legacyListed) : DEFAULT_CHAT_PROMPT,
@@ -232,11 +247,7 @@ export const loadChatPrompt =
       );
       return;
     }
-    if (
-      serverId === DEFAULT_CHAT_PROMPT.id &&
-      legacyListed &&
-      legacyListed.id !== serverId
-    ) {
+    if (!server.set && legacyListed && legacyListed.id !== server.id) {
       dispatch(setPrompt(asChatPrompt(legacyListed)));
       // Through the save queue, so a pick made meanwhile goes after it.
       const moved = queueSave(
@@ -250,25 +261,25 @@ export const loadChatPrompt =
       return;
     }
     // Without the list there is no telling whether the old choice still
-    // exists; it waits for the next start.
-    if (prompts.length > 0) forgetLegacyPrompt();
+    // exists; it waits for the next start, unless it won't move anyway.
+    if (server.set || prompts.length > 0) forgetLegacyPrompt();
     // The list didn't load: keep the id; a later list names it.
-    dispatch(setPrompt(promptFor(serverId, prompts)));
+    dispatch(setPrompt(promptFor(server.id, prompts)));
   };
 
 /**
  * Shows the server's chat prompt as soon as it is known, before the prompt
  * list: a chat started meanwhile uses it. Skipped when the user picked
- * already, or when a prompt this browser kept may still move to the server
- * (`loadChatPrompt` decides that with the list).
+ * already, or when a prompt this browser kept may still move to an account
+ * that holds none (`loadChatPrompt` decides that with the list).
  */
 const showServerChatPrompt =
-  (serverId: string, token: string | null) =>
+  (server: ServerChatPrompt, token: string | null) =>
   (dispatch: Dispatch, getState: GetState): void => {
     const session = sessionOf(getState, token);
     if (pickStands(session)) return;
-    if (serverId === DEFAULT_CHAT_PROMPT.id && readLegacyPrompt()) return;
-    dispatch(setPrompt(promptFor(serverId, getState().preference.prompts)));
+    if (!server.set && readLegacyPrompt()) return;
+    dispatch(setPrompt(promptFor(server.id, getState().preference.prompts)));
   };
 
 /**
@@ -296,16 +307,25 @@ export const initChatPrompt =
       if (!cancelled()) dispatch(setPrompts(prompts));
       return prompts;
     });
-    const serverId = signedOut
+    const fromServer = signedOut
       ? Promise.resolve(null)
-      : fetchChatPromptId(token, CHAT_PROMPT_RETRY_MS, cancelled).then((id) => {
-          if (id !== null && !cancelled())
-            showServerChatPrompt(id, token)(dispatch as Dispatch, getState);
-          return id;
-        });
-    const [prompts, id] = await Promise.all([list, serverId]);
+      : fetchChatPromptId(token, CHAT_PROMPT_RETRY_MS, cancelled).then(
+          (server) => {
+            if (server !== null && !cancelled())
+              showServerChatPrompt(server, token)(
+                dispatch as Dispatch,
+                getState,
+              );
+            return server;
+          },
+        );
+    const [prompts, server] = await Promise.all([list, fromServer]);
     if (cancelled()) return;
-    await loadChatPrompt(id, prompts, token)(dispatch as Dispatch, getState);
+    await loadChatPrompt(
+      server,
+      prompts,
+      token,
+    )(dispatch as Dispatch, getState);
   };
 
 /**
