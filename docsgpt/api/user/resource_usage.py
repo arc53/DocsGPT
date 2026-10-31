@@ -373,37 +373,3 @@ def used_by_many(
     """
     keys, listed, hidden = _collect(conn, user_id, kind, resource_ids, deletable_ids, agent_allowlist)
     return {rid: _usage(listed[key], hidden[key]) for rid, key in keys.items()}
-
-
-def combined_usage(
-    conn: Connection,
-    user_id: str,
-    kind: UsageKind,
-    resource_ids: Iterable[str],
-    *,
-    deletable_ids: Iterable[str],
-    agent_allowlist: Optional[set[str]] = None,
-) -> dict:
-    """One ``used_by`` for a set of resources: every agent that uses any of them, counted once.
-
-    Summing each resource's ``others`` would count a teammate's agent once per
-    resource it uses; this unions the agent ids first, so a bulk delete can
-    say how many agents lose something.
-
-    Args:
-        conn: An open connection.
-        user_id: The caller.
-        kind: ``tool``, ``prompt`` or ``source``.
-        resource_ids: The resources, as for :func:`used_by_many`.
-        deletable_ids: Which of them the caller may delete; only those add to ``others``.
-        agent_allowlist: A token's agent allowlist (canonical ids), or None.
-
-    Returns:
-        dict: ``{"agents": [{"id", "name", "agent_type", "can_edit"}], "others": n}``.
-    """
-    _, listed, hidden = _collect(conn, user_id, kind, resource_ids, deletable_ids, agent_allowlist)
-    all_listed: dict[str, tuple[str, str, bool]] = {}
-    for agents in listed.values():
-        all_listed.update(agents)
-    all_hidden: set[str] = set().union(*hidden.values()) if hidden else set()
-    return _usage(all_listed, all_hidden)

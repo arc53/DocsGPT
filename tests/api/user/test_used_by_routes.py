@@ -173,7 +173,7 @@ class TestTokenWithoutAgentsRead:
         assert [a["name"] for a in writer[tid]["used_by"]["agents"]] == ["Researcher"]
 
     def test_sources(self, app, pg_conn):
-        from docsgpt.api.user.sources.routes import CombinedJson, PaginatedSources, SourcesUsage
+        from docsgpt.api.user.sources.routes import CombinedJson, PaginatedSources
         from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         sid = str(SourcesRepository(pg_conn).create("src", user_id=ALICE)["id"])
@@ -185,10 +185,3 @@ class TestTokenWithoutAgentsRead:
         assert {r["id"]: r["used_by"] for r in listing}[sid] == {"agents": [], "others": 1}
         page = _get(app, pg_conn, PaginatedSources, module, ALICE, "/api/sources/paginated?usage=in_use", token).json
         assert [(r["id"], r["used_by"]) for r in page["paginated"]] == [(sid, {"agents": [], "others": 1})]
-        with _patch_db(pg_conn, module), app.test_request_context(
-            "/api/sources/usage", method="POST", json={"ids": [sid]}
-        ):
-            from flask import request
-
-            request.decoded_token = token
-            assert SourcesUsage().post().json == {"agents": [], "others": 1}
