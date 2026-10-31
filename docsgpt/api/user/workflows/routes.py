@@ -437,7 +437,9 @@ def plan_graph_save(
     """Check a graph save without writing anything: the node ref gate, then the sponsor plan.
 
     The one path for POST/PUT /api/workflows and an agent save with an
-    inline ``workflow_graph``.
+    inline ``workflow_graph``. A stored workflow is read again holding its
+    row lock, so a save that overlaps another builds on the version that
+    one wrote rather than writing into it.
 
     Args:
         conn: Open database connection.
@@ -450,6 +452,8 @@ def plan_graph_save(
     Returns:
         The :class:`GraphSave`, or the :class:`AccessDenied` to answer with.
     """
+    if workflow is not None:
+        workflow = WorkflowsRepository(conn).get_for_update(str(workflow["id"])) or workflow
     nodes = normalize_agent_node_json_schemas(graph["nodes"])
     previous_nodes = stored_graph(conn, workflow)[0] if workflow is not None else []
     # Every newly referenced node tool or source must be one the caller may

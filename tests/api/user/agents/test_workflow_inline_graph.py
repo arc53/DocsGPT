@@ -462,6 +462,27 @@ class TestPublishedAgentsRunValidatedGraphs:
         assert _status(resp) == 201, _json(resp)
 
 
+class TestOverlappingSaves:
+    def test_a_save_planned_from_an_older_row_writes_the_next_version_alone(self, app, pg_conn):
+        """A save that read the workflow before another save landed builds on the newer version, never into it."""
+        from docsgpt.api.user.workflows.routes import plan_graph_save, write_graph_save
+
+        _, wid = _workflow_agent(app, pg_conn)
+        stale = WorkflowsRepository(pg_conn).get_by_id(wid)
+        # Another save lands version 2 with an extra node meanwhile.
+        other = _graph()
+        other["nodes"].append({"id": "n-other", "type": "note", "position": {"x": 0, "y": 0}, "data": {}})
+        newer = plan_graph_save(pg_conn, stale, OWNER, OWNER, other, set())
+        write_graph_save(pg_conn, newer, OWNER, "Flow", None)
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 2
+
+        save = plan_graph_save(pg_conn, stale, OWNER, OWNER, _graph(), set())
+        write_graph_save(pg_conn, save, OWNER, "Flow", None)
+        wf, node_ids = _stored_graph(pg_conn, wid)
+        assert wf["current_graph_version"] == 3
+        assert "n-other" not in node_ids
+
+
 class TestGraphOnlySaves:
     def test_a_stale_graph_only_editor_save_is_refused(self, app, pg_conn):
         agent_id, wid = _workflow_agent(app, pg_conn)
