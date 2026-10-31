@@ -68,7 +68,6 @@ const endpoints = {
     UPDATE_PROMPT: '/api/update_prompt',
     SINGLE_PROMPT: (id: string) => `/api/get_single_prompt?id=${id}`,
     DELETE_PATH: (docPath: string) => `/api/delete_old?source_id=${docPath}`,
-    DELETE_SOURCES: '/api/sources/delete',
     MESSAGE_ANALYTICS: '/api/get_message_analytics',
     TOKEN_ANALYTICS: '/api/get_token_analytics',
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',

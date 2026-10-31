@@ -66,7 +66,6 @@ from docsgpt.storage.db.repositories.wiki_pages import (
     rebuild_wiki_directory_structure,
 )
 from docsgpt.storage.db import source_defaults
-from docsgpt.storage.db.base_repository import canonical_uuid
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig, validation_message
 from docsgpt.storage.storage_creator import StorageCreator
@@ -206,9 +205,6 @@ SOURCE_KINDS = ("all", "files", "websites", "synced", "wikis", "shared")
 
 #: The ``usage`` filter of the paginated listing.
 USAGE_FILTERS = ("all", "in_use", "unused")
-
-#: Most ids one bulk delete takes.
-BULK_DELETE_MAX = 100
 
 def source_kind(row: dict) -> str:
     """Which of the content kinds a source is: ``wikis``, ``websites``, ``synced`` or ``files``.
@@ -626,37 +622,6 @@ def _delete_source_unlocked(owner: str, doc: dict, *, actor: Optional[str] = Non
     return True
 
 
-class SourceDeleteFailed(Exception):
-    """A source's delete was authorised but did not go through (its lookup, index, files or row)."""
-
-
-def delete_source_for(user: str, source_id: str) -> None:
-    """Delete a source on a caller's behalf: the one path behind ``delete_old`` and the bulk delete.
-
-    Owner-only unless the owner turned ``editors_can_delete`` on; the row is
-    deleted as the owner either way, holding the source's index lock.
-
-    Args:
-        user: The caller's ``sub``.
-        source_id: The source to delete.
-
-    Raises:
-        AccessDenied: 404 when the caller can't see the source, 403 when their role can't delete it.
-        SourceBusy: A sync or page change holds the source; nothing was deleted.
-        SourceDeleteFailed: The lookup or the delete failed.
-    """
-    try:
-        with db_readonly() as conn:
-            doc, ra = load_source(conn, source_id, user, "delete")
-    except AccessDenied:
-        raise
-    except Exception as err:
-        current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
-        raise SourceDeleteFailed(str(source_id)) from err
-    if not delete_source(ra.owner_id, doc, actor=user, raise_busy=True):
-        raise SourceDeleteFailed(str(source_id))
-
-
 @sources_ns.route("/delete_old")
 class DeleteOldIndexes(Resource):
     @api.doc(
@@ -676,75 +641,23 @@ class DeleteOldIndexes(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
+        # Owner-only unless the owner turned ``editors_can_delete`` on; the
+        # row is deleted as the owner either way.
         try:
-            delete_source_for(user, source_id)
+            with db_readonly() as conn:
+                doc, ra = load_source(conn, source_id, user, "delete")
         except AccessDenied as err:
             return denied_response(err)
+        except Exception as err:
+            current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        try:
+            deleted = delete_source(ra.owner_id, doc, actor=user, raise_busy=True)
         except SourceBusy:
             return _sync_refusal(SOURCE_BUSY, "source_busy", 409)
-        except SourceDeleteFailed:
+        if not deleted:
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
-
-
-@sources_ns.route("/sources/delete")
-class BulkDeleteSources(Resource):
-    bulk_delete_model = api.model(
-        "BulkDeleteSourcesModel",
-        {
-            "ids": fields.List(
-                fields.String, required=True, description=f"Source ids to delete, at most {BULK_DELETE_MAX}"
-            ),
-        },
-    )
-
-    @api.expect(bulk_delete_model)
-    @api.doc(
-        description=(
-            "Deletes several sources, each as GET /api/delete_old would (the same access check, index lock "
-            "and cleanup). Answers 200 with {deleted: [ids], failed: [{id, error, code}]} even when some "
-            "fail; code is not_found, forbidden, source_busy or failed. A missing or malformed ids list "
-            f"(empty, not strings, more than {BULK_DELETE_MAX}) is 400."
-        )
-    )
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        body = request.get_json(silent=True)
-        ids = body.get("ids") if isinstance(body, dict) else None
-        if (
-            not isinstance(ids, list)
-            or not ids
-            or len(ids) > BULK_DELETE_MAX
-            or not all(isinstance(i, str) and i.strip() for i in ids)
-        ):
-            return error_response(
-                f"ids must be a list of 1 to {BULK_DELETE_MAX} source ids", 400, code="invalid_ids"
-            )
-        deleted: list[str] = []
-        failed: list[dict] = []
-        # One source per canonical id: the first spelling given answers for its twins.
-        unique: dict[str, str] = {}
-        for raw in ids:
-            unique.setdefault(canonical_uuid(raw.strip()), raw.strip())
-        for source_id in unique.values():
-            try:
-                delete_source_for(user, source_id)
-            except AccessDenied as err:
-                code = "forbidden" if err.status == 403 else "not_found"
-                failed.append({"id": source_id, "error": err.message, "code": code})
-                continue
-            except SourceBusy:
-                failed.append({"id": source_id, "error": SOURCE_BUSY, "code": "source_busy"})
-                continue
-            except Exception as err:  # noqa: BLE001 - one failure must not stop the rest
-                current_app.logger.error(f"Error deleting source {source_id}: {err}", exc_info=True)
-                failed.append({"id": source_id, "error": "The source could not be deleted", "code": "failed"})
-                continue
-            deleted.append(source_id)
-        return make_response(jsonify({"deleted": deleted, "failed": failed}), 200)
 
 
 @sources_ns.route("/combine")

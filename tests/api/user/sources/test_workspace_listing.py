@@ -1,10 +1,10 @@
-"""Workspace revamp on the source listings: ``used_by``, ``ingestStatus``, kind/usage filters, bulk delete."""
+"""Workspace revamp on the source listings: ``used_by``, ``ingestStatus``, kind/usage filters."""
 
 from __future__ import annotations
 
 import uuid
 from contextlib import contextmanager
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from flask import Flask
@@ -232,77 +232,3 @@ class TestEditorWhoMayDelete:
         self._allow_delete(pg_conn, bobs_source)
         resp = _get(app, pg_conn, PaginatedSources, "/api/sources/paginated?usage=in_use")
         assert [(r["id"], r["used_by"]["others"]) for r in resp.json["paginated"]] == [(bobs_source, 1)]
-
-
-class TestBulkDelete:
-    def _post(self, app, pg_conn, body, user=ALICE, lock=None):
-        from docsgpt.api.user.sources.routes import BulkDeleteSources
-
-        @contextmanager
-        def _free(*args, **kwargs):
-            yield
-
-        with _patch_db(pg_conn), patch(
-            "docsgpt.api.user.sources.access.source_index_lock", lock or _free
-        ), patch("docsgpt.api.user.sources.routes.settings.VECTOR_STORE", "faiss"), patch(
-            "docsgpt.api.user.sources.routes.StorageCreator.get_storage", return_value=MagicMock()
-        ), app.test_request_context("/api/sources/delete", method="POST", json=body):
-            from flask import request
-
-            request.decoded_token = {"sub": user}
-            return BulkDeleteSources().post()
-
-    def test_partial_failure_is_200(self, app, pg_conn):
-        mine = str(_source(pg_conn, "mine")["id"])
-        theirs = str(_source(pg_conn, "theirs", owner=BOB)["id"])
-        _share(pg_conn, "source", theirs, BOB, ALICE)
-        missing = str(uuid.uuid4())
-        resp = self._post(app, pg_conn, {"ids": [mine, theirs, missing, mine]})
-        assert resp.status_code == 200
-        assert resp.json["deleted"] == [mine]
-        failed = {f["id"]: f for f in resp.json["failed"]}
-        assert set(failed) == {theirs, missing}
-        assert failed[theirs]["code"] == "forbidden" and failed[theirs]["error"]
-        assert failed[missing]["code"] == "not_found"
-        assert SourcesRepository(pg_conn).get_any(mine, ALICE) is None
-        assert SourcesRepository(pg_conn).get_any(theirs, BOB) is not None
-
-    def test_one_id_in_two_letter_cases_is_one_source(self, app, pg_conn):
-        mine = str(_source(pg_conn, "mine")["id"])
-        resp = self._post(app, pg_conn, {"ids": [mine.upper(), f" {mine} "]})
-        assert resp.status_code == 200
-        # The first spelling given answers for both.
-        assert resp.json == {"deleted": [mine.upper()], "failed": []}
-        assert SourcesRepository(pg_conn).get_any(mine, ALICE) is None
-
-    def test_busy_source_fails_with_its_code(self, app, pg_conn):
-        from docsgpt.vectorstore.index_lock import SourceBusy
-
-        sid = str(_source(pg_conn, "busy")["id"])
-
-        @contextmanager
-        def busy(*args, **kwargs):
-            raise SourceBusy("busy")
-            yield
-
-        resp = self._post(app, pg_conn, {"ids": [sid]}, lock=busy)
-        assert resp.status_code == 200
-        assert resp.json == {"deleted": [], "failed": [{"id": sid, "error": resp.json["failed"][0]["error"],
-                                                         "code": "source_busy"}]}
-
-    @pytest.mark.parametrize(
-        "body",
-        [None, {}, {"ids": []}, {"ids": "abc"}, {"ids": [1]}, {"ids": [""]}, {"ids": ["x"] * 101}],
-    )
-    def test_bad_body_is_400(self, app, pg_conn, body):
-        resp = self._post(app, pg_conn, body)
-        assert resp.status_code == 400
-
-    def test_unauthenticated_is_401(self, app):
-        from docsgpt.api.user.sources.routes import BulkDeleteSources
-
-        with app.test_request_context("/api/sources/delete", method="POST", json={"ids": ["a"]}):
-            from flask import request
-
-            request.decoded_token = None
-            assert BulkDeleteSources().post().status_code == 401

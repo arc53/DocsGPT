@@ -215,13 +215,6 @@ class TestResourceRestrictions:
         assert _denied(ok) is None
         assert _denied(bad) == "resource_not_allowed"
 
-    def test_bulk_source_delete_checks_every_id(self, client):
-        claims = self._restricted(["sources:write"], sources=[SOURCE_A])
-        bad = _call(client, "POST", "/api/sources/delete", claims, json={"ids": [SOURCE_A, SOURCE_B]})
-        assert _denied(bad) == "resource_not_allowed"
-        reader = _call(client, "POST", "/api/sources/delete", _claims(["sources:read"]), json={"ids": [SOURCE_A]})
-        assert _denied(reader) == "insufficient_scope"
-
     def test_chat_prompt_preference_is_held_to_the_prompt_allowlist(self, client):
         claims = self._restricted(["prompts:write"], prompts=[SOURCE_A])
         bad = _call(client, "PUT", "/api/user/preferences", claims, json={"chat_prompt_id": SOURCE_B})

@@ -131,21 +131,6 @@
       ],
       "type": "object"
     },
-    "BulkDeleteSourcesModel": {
-      "properties": {
-        "ids": {
-          "description": "Source ids to delete, at most 100",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "ids"
-      ],
-      "type": "object"
-    },
     "BulkMoveAgents": {
       "properties": {
         "agent_ids": {
@@ -5750,33 +5735,6 @@
         ],
         "x-pat-scopes": [
           "sources:read"
-        ]
-      }
-    },
-    "/api/sources/delete": {
-      "post": {
-        "description": "Deletes several sources, each as GET /api/delete_old would (the same access check, index lock and cleanup). Answers 200 with {deleted: [ids], failed: [{id, error, code}]} even when some fail; code is not_found, forbidden, source_busy or failed. A missing or malformed ids list (empty, not strings, more than 100) is 400.",
-        "operationId": "post_bulk_delete_sources",
-        "parameters": [
-          {
-            "in": "body",
-            "name": "payload",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/BulkDeleteSourcesModel"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          }
-        },
-        "tags": [
-          "sources"
-        ],
-        "x-pat-scopes": [
-          "sources:write"
         ]
       }
     },

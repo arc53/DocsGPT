@@ -165,8 +165,6 @@ The Knowledge page shows each source as a card: an icon for its kind, a line of 
 
 With no search or filter, page 1 opens with **Needs attention**: sources whose ingest failed that you can reingest, and those whose connection of yours needs **Reconnect**. Later pages keep such sources in place in the list. **All knowledge** follows with the rest, led by any synced service still indexing its first copy.
 
-Deleting many sources at once is API-only: `POST /api/sources/delete` with a list of `ids`. See the [REST API reference](/API/reference).
-
 Each source on the Knowledge page has a menu. Which items appear depends on the source type and on your access to it:
 
 - **View** opens the source's files and chunks. If you can edit the source, you can edit, add and delete chunks. While a sync or a page change runs on the source, a chunk change waits a few seconds, then is refused with "Another change to this source is running. Try again once it’s done."
