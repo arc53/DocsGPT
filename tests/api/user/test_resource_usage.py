@@ -273,3 +273,23 @@ class TestBounded:
 
     def test_empty_ids_runs_no_query(self, pg_conn):
         assert used_by_many(pg_conn, ALICE, "tool", [], deletable_ids=[]) == {}
+
+
+class TestAttachUsedByFailure:
+    """A failed usage read leaves ``used_by`` unknown; the listing and its transaction carry on."""
+
+    def test_the_listing_keeps_its_rows_and_its_connection(self, pg_conn):
+        from unittest.mock import patch
+
+        from sqlalchemy import text
+
+        from docsgpt.api.user.resource_usage import attach_used_by
+
+        def broken(conn, *args, **kwargs):
+            conn.execute(text("SELECT 1 / 0"))
+
+        items = [{"id": str(_source(pg_conn)["id"])}]
+        with patch("docsgpt.api.user.resource_usage.used_by_many", side_effect=broken):
+            assert attach_used_by(pg_conn, ALICE, "source", items, deletable_ids=[]) is items
+        assert "used_by" not in items[0]
+        assert pg_conn.execute(text("SELECT 1")).scalar() == 1

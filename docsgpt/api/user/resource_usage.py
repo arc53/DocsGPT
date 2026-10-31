@@ -25,6 +25,7 @@ always 0, so nothing is revealed about agents outside the caller's reach.
 
 from __future__ import annotations
 
+import logging
 from typing import Iterable, Literal, Optional
 
 from sqlalchemy import Connection, text
@@ -33,6 +34,8 @@ from docsgpt.api.user.resource_access import allowed_actions, settings_many
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
+
+logger = logging.getLogger(__name__)
 
 UsageKind = Literal["tool", "prompt", "source"]
 
@@ -148,6 +151,10 @@ def attach_used_by(
 ) -> list[dict]:
     """Set ``used_by`` on every listed item, from one :func:`used_by_many` call.
 
+    ``used_by`` only informs the listing, so a failed read is logged and
+    leaves it unset (unknown) rather than failing the listing; it runs in a
+    savepoint, so the caller's transaction stays usable.
+
     Args:
         conn: An open connection.
         user_id: The caller.
@@ -159,10 +166,15 @@ def attach_used_by(
     Returns:
         list[dict]: ``items``.
     """
-    usage = used_by_many(
-        conn, user_id, kind, [str(item["id"]) for item in items],
-        deletable_ids=deletable_ids, agent_allowlist=agent_allowlist,
-    )
+    try:
+        with conn.begin_nested():
+            usage = used_by_many(
+                conn, user_id, kind, [str(item["id"]) for item in items],
+                deletable_ids=deletable_ids, agent_allowlist=agent_allowlist,
+            )
+    except Exception:  # noqa: BLE001 - the listing stands without it
+        logger.exception("Could not read which agents use the %s listing's items", kind)
+        return items
     for item in items:
         item["used_by"] = usage.get(str(item["id"])) or empty_usage()
     return items
