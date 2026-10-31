@@ -1820,6 +1820,13 @@ function WorkflowBuilderInner() {
     },
     [token, t],
   );
+  // What an Access details allowlist change saves onto: the server's copy,
+  // since the builder's may lack what the server added (a new agent's
+  // default guardrails) and the config replaces the stored one whole.
+  const getSavedConfig = useCallback(
+    () => readSavedConfig(effectiveAgentId),
+    [readSavedConfig, effectiveAgentId],
+  );
 
   // One save at a time: a second one beside it would race it to the server.
   const persistingRef = useRef(false);
@@ -2328,6 +2335,7 @@ function WorkflowBuilderInner() {
         onDeleted={navigateBackToAgents}
         onKeyRegenerated={handleKeyRegenerated}
         onConfigChange={handleConfigChange}
+        getSavedConfig={getSavedConfig}
       />
       <div className="bg-background fixed inset-0 z-50 hidden h-dvh w-full flex-col lg:flex">
         <div className="border-border bg-background flex items-center justify-between gap-4 border-b px-6 py-4">
@@ -2735,6 +2743,7 @@ function WorkflowBuilderInner() {
             openApiWrites={detailsOnApiWrites}
             onKeyRegenerated={handleKeyRegenerated}
             onConfigChange={handleConfigChange}
+            getSavedConfig={getSavedConfig}
           />
         )}
       </div>

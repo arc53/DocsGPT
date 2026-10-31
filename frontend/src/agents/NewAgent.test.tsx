@@ -891,6 +891,35 @@ describe('NewAgent form', () => {
     expect(updated.get('image')).toBeNull();
   });
 
+  // The server starts a new agent from the admin's default guardrails; when
+  // the form never got them (their read failed, or came after the save), an
+  // allowlist change must save onto the server's config, not drop them.
+  it("saves an allowlist change on a just-created agent onto the server's config", async () => {
+    mocks.getAgentDefaults.mockImplementationOnce(() =>
+      jsonResponse({}, false),
+    );
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9' }),
+    );
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      buttonByText('agents.form.buttons.saveDraft').click(),
+    );
+    expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+    const guardrails = { controls: [{ id: 'pii' }] };
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9', config: { guardrails } }),
+    );
+    const details = mocks.detailsProps.mock.calls.at(-1)![0] as {
+      getSavedConfig: () => unknown;
+    };
+    await expect(Promise.resolve(details.getSavedConfig())).resolves.toEqual({
+      guardrails,
+    });
+    expect(mocks.getAgent).toHaveBeenCalledWith('agent-9', null);
+  });
+
   it('keeps Publish on for a saved draft with no new changes', async () => {
     mocks.getAgent.mockImplementationOnce(() =>
       jsonResponse({

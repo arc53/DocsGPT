@@ -34,7 +34,7 @@ import actionToastReducer, {
   selectActionToast,
 } from '../notifications/actionToastSlice';
 import { prefSlice } from '../preferences/preferenceSlice';
-import ApiWriteAllowlist from './ApiWriteAllowlist';
+import ApiWriteAllowlist, { type GetSavedConfig } from './ApiWriteAllowlist';
 import type { Mock } from 'vitest';
 
 import type { Agent, AgentConfig, ResourceState } from './types';
@@ -175,7 +175,7 @@ describe('ApiWriteAllowlist', () => {
       defaultOpen,
     }: {
       onConfigChange?: Mock<(config: AgentConfig, updatedAt?: string) => void>;
-      getSavedConfig?: () => Agent['config'];
+      getSavedConfig?: GetSavedConfig;
       defaultOpen?: boolean;
     } = {},
   ) => {
@@ -458,6 +458,39 @@ describe('ApiWriteAllowlist', () => {
     };
     expect(savedConfig()).toEqual(expected);
     expect(onConfigChange).toHaveBeenCalledWith(expected, undefined);
+  });
+
+  // The builder reads the server's copy: a new agent's default guardrails
+  // are there and not on the page's agent.
+  it('saves on top of a config read from the server', async () => {
+    updateAgent.mockResolvedValue({ ok: true });
+    const guardrails = { controls: [{ id: 'pii' }] };
+    await render(agent(), {
+      getSavedConfig: () =>
+        Promise.resolve({ guardrails } as unknown as AgentConfig),
+    });
+    await expand();
+    await act(async () => choice('tg', 'always').click());
+    expect(savedConfig()).toEqual({
+      guardrails,
+      api_write_allowlist: [
+        'tg:telegram_send_message',
+        'tg:telegram_pin_message',
+      ],
+    });
+  });
+
+  it("saves nothing when the saved config can't be read", async () => {
+    await render(agent(), {
+      getSavedConfig: () => Promise.reject(new Error('offline')),
+    });
+    await expand();
+    await act(async () => choice('tg', 'always').click());
+    expect(updateAgent).not.toHaveBeenCalled();
+    expect(choice('tg', 'off').getAttribute('data-state')).toBe('on');
+    expect(selectActionToast(store.getState())?.message).toBe(
+      `${K}.saveFailed`,
+    );
   });
 
   it('sends the stamp the agent was opened at, and says a teammate saved first on a 409', async () => {

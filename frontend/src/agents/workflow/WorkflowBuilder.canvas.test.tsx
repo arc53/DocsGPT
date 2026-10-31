@@ -78,7 +78,15 @@ vi.mock('../../modals/ConfirmationModal', () => ({
   }) =>
     modalState === 'ACTIVE' ? <p data-testid="confirm">{message}</p> : null,
 }));
-vi.mock('../../modals/AgentDetailsModal', () => ({ default: () => null }));
+// Every Access details dialog drawn: the desktop builder's and the phone
+// stand-in's.
+const dialogs = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+vi.mock('../../modals/AgentDetailsModal', () => ({
+  default: (props: Record<string, unknown>) => {
+    dialogs.props.push(props);
+    return null;
+  },
+}));
 // The sponsor confirmation, as a button that agrees.
 vi.mock('../components/SponsorConfirmModal', () => ({
   default: ({
@@ -247,6 +255,7 @@ describe('WorkflowBuilder canvas', () => {
       .mockImplementation(() => ok({ success: true }));
     panel.props = null;
     sheet.props = null;
+    dialogs.props = [];
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -980,6 +989,47 @@ describe('WorkflowBuilder canvas', () => {
       await render('/agents/manage/workflow/new?workflow_id=w1');
       expect(api.getWorkflow).not.toHaveBeenCalled();
       expect(nodeButton('end')).toBeNull();
+    });
+
+    // The server starts a new agent from the admin's default guardrails,
+    // which the create response doesn't return: an allowlist change right
+    // after the first save must save onto the server's config, not drop them.
+    it("an allowlist change after a first save keeps the server's guardrails", async () => {
+      api.createAgent.mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              id: 'a9',
+              key: 'k',
+              image: '',
+              workflow_id: 'w9',
+            }),
+            { status: 201, headers: { 'Content-Type': 'application/json' } },
+          ),
+      );
+      await render('/agents/manage/workflow/new');
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[data-add="agent"]')!
+          .click(),
+      );
+      await act(async () => button('agents.form.buttons.saveDraft')!.click());
+      await act(async () => undefined);
+      expect(api.createAgent).toHaveBeenCalledTimes(1);
+      const guardrails = { controls: [{ id: 'pii', action: 'block' }] };
+      api.agentExtra = { id: 'a9', config: { guardrails } };
+      const opened = dialogs.props.filter(
+        (props) => (props.agent as { id?: string } | null)?.id === 'a9',
+      );
+      expect(opened.length).toBeGreaterThan(0);
+      for (const props of opened.slice(-2)) {
+        const getSavedConfig = props.getSavedConfig as
+          (() => unknown) | undefined;
+        expect(getSavedConfig).toBeTypeOf('function');
+        await expect(Promise.resolve(getSavedConfig!())).resolves.toEqual({
+          guardrails,
+        });
+      }
     });
 
     // The graph just saved is the one on the canvas: reading it back would

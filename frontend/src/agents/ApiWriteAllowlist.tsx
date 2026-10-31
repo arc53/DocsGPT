@@ -40,6 +40,14 @@ type UserTool = {
 const K = 'modals.agentDetails.apiWrites';
 
 /**
+ * The agent's last saved config, which an allowlist change saves onto: held
+ * by the page, or read from the server (a promise) when the page's copy may
+ * lack what the server added, such as a new agent's default guardrails.
+ */
+export type GetSavedConfig = () =>
+  AgentConfig | undefined | Promise<AgentConfig | undefined>;
+
+/**
  * One tool's writes on the connectors' skeleton: Allow / Off for all of
  * them at once, or Customize, which lists each write with its own choice.
  */
@@ -131,8 +139,9 @@ function ToolAllowlist({
  * with its writes one by one under Customize. Entries are `tool_id:action`.
  *
  * A change saves at once, on top of the agent's last saved config
- * (`getSavedConfig`), so edits still pending in the form are not saved with
- * it. The save sends the agent's `updated_at` as its stale-write stamp, so
+ * (`getSavedConfig`, awaited when it reads the server), so edits still
+ * pending in the form are not saved with it; a config it can't read saves
+ * nothing. The save sends the agent's `updated_at` as its stale-write stamp, so
  * a teammate's save since the agent was opened refuses it (409) rather than
  * the new stamp hiding their edit; `onConfigChange` receives the config as
  * saved and the new `updated_at`, which the builder's next save sends.
@@ -145,7 +154,7 @@ export default function ApiWriteAllowlist({
 }: {
   agent: Agent;
   onConfigChange?: (config: AgentConfig, updatedAt?: string) => void;
-  getSavedConfig?: () => AgentConfig | undefined;
+  getSavedConfig?: GetSavedConfig;
   /** Start open (Access details opened to allow changes). */
   defaultOpen?: boolean;
 }) {
@@ -244,15 +253,16 @@ export default function ApiWriteAllowlist({
       ? [...allowed, ...entries.filter((entry) => !allowed.includes(entry))]
       : allowed.filter((entry) => !entries.includes(entry));
     setAllowed(next);
-    const config: AgentConfig = {
-      ...((getSavedConfig ? getSavedConfig() : agent.config) ?? {}),
-      api_write_allowlist: next,
-    };
-    const form = new FormData();
-    form.append('config', JSON.stringify(config));
-    if (agent.updated_at) form.append('expected_updated_at', agent.updated_at);
     let stale = false;
     try {
+      const config: AgentConfig = {
+        ...((getSavedConfig ? await getSavedConfig() : agent.config) ?? {}),
+        api_write_allowlist: next,
+      };
+      const form = new FormData();
+      form.append('config', JSON.stringify(config));
+      if (agent.updated_at)
+        form.append('expected_updated_at', agent.updated_at);
       const response = await userService.updateAgent(
         agent.id ?? '',
         form,

@@ -18,6 +18,7 @@ import { selectAnalyticsEnabled } from '../../../preferences/preferenceSlice';
 import AgentPageToolbar, {
   LastUsedMeta,
 } from '../../components/AgentPageToolbar';
+import type { GetSavedConfig } from '../../ApiWriteAllowlist';
 import { useAgentMenu } from '../../hooks/useAgentMenu';
 import { AGENTS_MANAGE_ROOT } from '../../paths';
 import type { Agent, AgentConfig } from '../../types';
@@ -38,6 +39,7 @@ import type { Agent, AgentConfig } from '../../types';
  *   onDeleted: After a delete from the agent ⋯ (the builder's way back).
  *   onKeyRegenerated: A key regenerated in Access details, for the builder.
  *   onConfigChange: The config Access details saved, for the builder.
+ *   getSavedConfig: The agent's saved config its allowlist saves onto.
  */
 export default function MobileBlocker({
   agent,
@@ -45,12 +47,14 @@ export default function MobileBlocker({
   onDeleted,
   onKeyRegenerated,
   onConfigChange,
+  getSavedConfig,
 }: {
   agent: Agent | null;
   loading?: boolean;
   onDeleted?: () => void;
   onKeyRegenerated?: (key: string) => void;
   onConfigChange?: (config: AgentConfig, updatedAt?: string) => void;
+  getSavedConfig?: GetSavedConfig;
 }) {
   const { t } = useTranslation();
   const analyticsEnabled = useSelector(selectAnalyticsEnabled);
@@ -61,6 +65,7 @@ export default function MobileBlocker({
     onDeleted,
     onKeyRegenerated,
     onConfigChange,
+    getSavedConfig,
   });
   if (loading) {
     return (

@@ -13,6 +13,7 @@ import { selectToken } from '../../preferences/preferenceSlice';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
 import { can } from '../../utils/accessUtils';
 import { agentsListPath } from '../paths';
+import type { GetSavedConfig } from '../ApiWriteAllowlist';
 import type { Agent, AgentConfig } from '../types';
 
 type UseAgentMenuOptions = {
@@ -40,6 +41,8 @@ type UseAgentMenuOptions = {
    * The page puts it on `agent`, which the dialog reopens from.
    */
   onConfigChange?: (config: AgentConfig, updatedAt?: string) => void;
+  /** The agent's saved config its own Access details' allowlist saves onto. */
+  getSavedConfig?: GetSavedConfig;
 };
 
 /**
@@ -61,6 +64,7 @@ export function useAgentMenu({
   onDeleted,
   onKeyRegenerated,
   onConfigChange,
+  getSavedConfig,
 }: UseAgentMenuOptions): { menu: ReactNode; modals: ReactNode } {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -172,6 +176,7 @@ export function useAgentMenu({
             openApiWrites={detailsOnApiWrites}
             onKeyRegenerated={onKeyRegenerated}
             onConfigChange={onConfigChange}
+            getSavedConfig={getSavedConfig}
           />
         )}
         {shareOpen && agent.id && (

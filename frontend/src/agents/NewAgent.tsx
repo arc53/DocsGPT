@@ -1165,6 +1165,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Page-level actions live in the ⋯ at the end of the toolbar row. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
   // menu item then and a toolbar button after.
+  // An agent this form created: the server added the admin's default
+  // guardrails under what was sent, which the form may never have had (their
+  // read failed, or landed after the save). An allowlist change replaces the
+  // stored config whole, so it saves onto the server's copy.
+  const readCreatedConfig = useCallback(async () => {
+    const response = await userService.getAgent(agent.id ?? '', token);
+    if (!response.ok) throw new Error('Failed to fetch agent');
+    return ((await response.json()) as Agent).config;
+  }, [agent.id, token]);
+
   const agentMenu = useAgentMenu({
     agent,
     lead: isPublished
@@ -1889,7 +1899,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             },
           }));
         }}
-        getSavedConfig={() => initialAgentRef.current?.config ?? agent.config}
+        getSavedConfig={
+          mode === 'new'
+            ? readCreatedConfig
+            : () => initialAgentRef.current?.config ?? agent.config
+        }
       />
       <AddPromptModal
         prompts={prompts}
