@@ -1121,9 +1121,15 @@ describe('Tools usage', () => {
     usageTool('agented', {
       used_by: {
         agents: [
-          { id: 'a1', name: 'Rates desk' },
-          { id: 'a2', name: 'Renewals' },
-          { id: 'a3', name: 'Support' },
+          { id: 'a1', name: 'Rates desk', can_edit: true },
+          {
+            id: 'a2',
+            name: 'Renewals',
+            agent_type: 'workflow',
+            can_edit: true,
+          },
+          // A teammate's agent the reader only uses: no editor for them.
+          { id: 'a3', name: 'Support', can_edit: false },
         ],
         others: 2,
       },
@@ -1278,6 +1284,8 @@ describe('Tools usage', () => {
       expect(footer(title)).not.toContain('settings.usage.inChats');
   });
 
+  // The editor for an agent the reader may edit; otherwise its chat, so a
+  // viewer is never bounced back to the agent list.
   it('lists the agents in a popover, each a link to the agent', async () => {
     await renderAt();
     const trigger = Array.from(
@@ -1291,8 +1299,8 @@ describe('Tools usage', () => {
     ]);
     expect(links).toEqual([
       ['Rates desk', '/agents/manage/edit/a1'],
-      ['Renewals', '/agents/manage/edit/a2'],
-      ['Support', '/agents/manage/edit/a3'],
+      ['Renewals', '/agents/manage/workflow/edit/a2'],
+      ['Support', '/agents/a3/c/new'],
     ]);
     // A long name truncates in the popover's width, its full value in title.
     const link = content.querySelector('a')!;

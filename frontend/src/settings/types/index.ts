@@ -186,8 +186,16 @@ export type ParameterGroupType = {
  * lists). An agent uses it when running the agent would reach it.
  */
 export type ResourceUsage = {
-  /** The agents the caller can open. */
-  agents: { id: string; name: string; agent_type?: string }[];
+  /**
+   * The agents the caller can open. `can_edit`: they may open its editor
+   * (the agent action `view`); otherwise they can only use it.
+   */
+  agents: {
+    id: string;
+    name: string;
+    agent_type?: string;
+    can_edit?: boolean;
+  }[];
   /**
    * Agents the caller can't open that use it (a teammate's), counted only
    * for the caller's own resources; 0 otherwise.

@@ -2,7 +2,7 @@ import { Bot } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
-import { agentEditPath } from '../agents/paths';
+import { agentChatPath, agentEditPath } from '../agents/paths';
 import { Button } from '../components/ui/button';
 import { MetaItem } from '../components/ui/meta-line';
 import {
@@ -24,7 +24,9 @@ type UsedByAgentsProps = {
  * own colour (`link` with `tone="current"`): where an item is used is a fact, so it doesn't
  * take the link colour. When some of those agents are the caller's to open,
  * it opens a popover headed "Used by 2 agents" that lists them as links,
- * with the ones on teammates' agents counted under the list. Draws nothing
+ * with the ones on teammates' agents counted under the list. A link opens
+ * the agent's editor when the caller may edit it (`can_edit`), else its
+ * chat: the editor's route would send a viewer back to the agent list. Draws nothing
  * for a resource no agent uses; callers check `agentUseCount` first so a
  * `MetaLine` doesn't keep a dot for it.
  */
@@ -68,7 +70,11 @@ export default function UsedByAgents({ usage }: UsedByAgentsProps) {
               />
               <Button variant="link" size="text" asChild>
                 <Link
-                  to={agentEditPath(agent.id, agent.agent_type === 'workflow')}
+                  to={
+                    agent.can_edit
+                      ? agentEditPath(agent.id, agent.agent_type === 'workflow')
+                      : agentChatPath(agent.id)
+                  }
                   title={agent.name}
                   className="min-w-0 shrink"
                 >
