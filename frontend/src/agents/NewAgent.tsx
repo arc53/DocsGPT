@@ -123,7 +123,6 @@ import {
 import { useAgentMenu } from './hooks/useAgentMenu';
 import { useSponsorPrompt } from './useSponsorPrompt';
 import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
-import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
 
@@ -826,9 +825,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (agent.default_model_id) {
       formData.append('default_model_id', agent.default_model_id);
     }
-    if (agent.agent_type === 'workflow' && agent.workflow) {
-      formData.append('workflow', JSON.stringify(agent.workflow));
-    }
 
     if (effectiveMode === 'new' && validatedFolderId) {
       formData.append('folder_id', validatedFolderId);
@@ -917,9 +913,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
     if (agent.default_model_id) {
       formData.append('default_model_id', agent.default_model_id);
-    }
-    if (agent.agent_type === 'workflow' && agent.workflow) {
-      formData.append('workflow', JSON.stringify(agent.workflow));
     }
 
     if (effectiveMode === 'new' && validatedFolderId) {
@@ -1383,7 +1376,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setToolsReloadKey((key) => key + 1);
         }}
       />
-      {agent.agent_type === 'workflow' && <WorkflowBuilder />}
       <AgentPageToolbar
         intro={agent.id ? undefined : t('agents.form.byline.new')}
         name={agentDisplayName}

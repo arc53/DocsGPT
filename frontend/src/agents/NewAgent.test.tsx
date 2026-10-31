@@ -182,7 +182,6 @@ vi.mock('../components/MultiSelectPopover', () => ({
   ),
 }));
 
-vi.mock('./workflow/WorkflowBuilder', () => ({ default: () => null }));
 vi.mock('./AgentPreview', () => ({ default: () => null }));
 vi.mock('./components/GuardrailsSection', () => ({
   default: (props: { disabled?: boolean }) => {

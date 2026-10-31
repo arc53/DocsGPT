@@ -123,7 +123,10 @@ import {
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
 import { readerIdFromToken } from '../../utils/personLabel';
 import { useLeaveGuard } from '../../hooks/useLeaveGuard';
-import { canAddToolToOwn, getToolDisplayName } from '../../utils/toolUtils';
+import {
+  getToolDisplayName,
+  isWorkflowNodeToolVisible,
+} from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
 
@@ -145,6 +148,15 @@ function isEditableTarget(target: EventTarget | null): boolean {
   if (target.isContentEditable) return true;
   const tag = target.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+// A modal, popover or menu over the canvas (Add tool, a picker, a confirm):
+// its keys are its own.
+const LAYER_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]';
+
+function isLayerTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(LAYER_SELECTOR) !== null;
 }
 
 function createEmptyWorkflowAgent(): Agent {
@@ -222,6 +234,34 @@ function createWorkflowPayload(
       sourceHandle: edge.sourceHandle || undefined,
       targetHandle: edge.targetHandle || undefined,
     })),
+  };
+}
+
+/** A model put on a node that had none, and the provider it had before. */
+type AutoFilledModel = { modelId: string; llmName?: string };
+
+/**
+ * The payload as the user changed it: a model the builder filled in on a node
+ * that had none (on select) is taken back out while it is still that model,
+ * so it alone never reads as an unsaved change.
+ */
+function withoutAutoFilledModels(
+  payload: ReturnType<typeof createWorkflowPayload>,
+  filled: Record<string, AutoFilledModel>,
+): ReturnType<typeof createWorkflowPayload> {
+  if (Object.keys(filled).length === 0) return payload;
+  return {
+    ...payload,
+    nodes: payload.nodes.map((node) => {
+      const entry = filled[node.id];
+      const data = node.data as Record<string, unknown> | undefined;
+      if (!entry || !data || data.model_id !== entry.modelId) return node;
+      const rest = { ...data };
+      delete rest.model_id;
+      delete rest.llm_name;
+      if (entry.llmName !== undefined) rest.llm_name = entry.llmName;
+      return { ...node, data: rest } as WorkflowNode;
+    }),
   };
 }
 
@@ -323,6 +363,11 @@ function WorkflowBuilderInner() {
     [availableModels],
   );
   const [defaultAgentModelId, setDefaultAgentModelId] = useState('');
+  // Models filled in on nodes that had none, by node id, until a save
+  // stores them: not a change the user made.
+  const [autoFilledModels, setAutoFilledModels] = useState<
+    Record<string, AutoFilledModel>
+  >({});
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
   // Names of every tool and source the saved graph references, whoever owns
   // them, so node pickers keep a remove-only option for the owner's private
@@ -895,13 +940,15 @@ function WorkflowBuilderInner() {
     // remove the selection, Escape to close the config panel): ignore the
     // keystroke while typing in a field, while the Preview Sheet is open (its
     // own inputs own the keys — a stray Delete there must not delete the node
-    // behind it), or once another handler has already consumed the event. Kept
-    // in one place so the branches can't drift apart.
+    // behind it), when it comes from a dialog, popover or menu (Backspace on
+    // an Add tool card), or once another handler has already consumed the
+    // event. Kept in one place so the branches can't drift apart.
     const shouldIgnoreShortcut = (e: KeyboardEvent): boolean =>
       e.defaultPrevented ||
       showPreview ||
       showDetails ||
-      isEditableTarget(e.target);
+      isEditableTarget(e.target) ||
+      isLayerTarget(e.target);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (shouldIgnoreShortcut(e)) return;
@@ -952,12 +999,12 @@ function WorkflowBuilderInner() {
 
   // The tools a node can pick, loaded with the models and again when a node
   // adds one from its Tools picker. Shared tools the caller can't add to
-  // their own agents stay out.
+  // their own agents and tools the server attaches by itself stay out.
   const loadTools = useCallback(async (): Promise<UserTool[]> => {
     const response = await userService.getUserTools(token);
     if (!response.ok) throw new Error('Failed to load tools');
     const data = await response.json();
-    const tools = (data.tools as UserTool[]).filter(canAddToolToOwn);
+    const tools = (data.tools as UserTool[]).filter(isWorkflowNodeToolVisible);
     setAvailableTools(tools);
     return tools;
   }, [token]);
@@ -994,6 +1041,14 @@ function WorkflowBuilderInner() {
     if (!defaultAgentModelId) return;
     if (selectedNode.data.config?.model_id) return;
 
+    const previousLlm = selectedNode.data.config?.llm_name;
+    setAutoFilledModels((prev) => ({
+      ...prev,
+      [selectedNode.id]: {
+        modelId: defaultAgentModelId,
+        llmName: typeof previousLlm === 'string' ? previousLlm : undefined,
+      },
+    }));
     handleUpdateNodeData(
       {
         config: {
@@ -1213,6 +1268,7 @@ function WorkflowBuilderInner() {
         setAgentJsonSchemaErrors({});
         setNodes(mappedNodes);
         setEdges(mappedEdges);
+        setAutoFilledModels({});
         clearHistory();
         setSavedWorkflowSignature(
           JSON.stringify(
@@ -1589,8 +1645,11 @@ function WorkflowBuilderInner() {
   );
 
   const workflowPayloadSignature = useMemo(
-    () => JSON.stringify(buildWorkflowPayload()),
-    [buildWorkflowPayload],
+    () =>
+      JSON.stringify(
+        withoutAutoFilledModels(buildWorkflowPayload(), autoFilledModels),
+      ),
+    [buildWorkflowPayload, autoFilledModels],
   );
 
   const hasSavableChanges =
@@ -1684,10 +1743,10 @@ function WorkflowBuilderInner() {
           if (effectiveAgentId) {
             const agentFormData = new FormData();
             agentFormData.append('name', workflowName);
-            agentFormData.append(
-              'description',
-              workflowDescription || `Workflow agent: ${workflowName}`,
-            );
+            // What the user typed; the server refuses a blank one on update,
+            // so a blank one is left out.
+            if (workflowDescription.trim())
+              agentFormData.append('description', workflowDescription);
             agentFormData.append('status', 'published');
             agentFormData.append(
               'allow_system_prompt_override',
@@ -1725,8 +1784,7 @@ function WorkflowBuilderInner() {
               ...(updatedAgent || {}),
               id: effectiveAgentId,
               name: workflowName,
-              description:
-                workflowDescription || `Workflow agent: ${workflowName}`,
+              description: workflowDescription,
               image: updatedAgent?.image || prev.image || '',
               ...(savedConfig
                 ? { config: updatedAgent?.config ?? savedConfig }
@@ -1736,6 +1794,7 @@ function WorkflowBuilderInner() {
           }
           setImageFile(null);
           setSavedWorkflowSignature(JSON.stringify(workflowPayload));
+          setAutoFilledModels({});
           setTakeovers([]);
           void refreshResourceDetails(workflowId);
           if (navigateAfterSuccess) {
@@ -1769,10 +1828,7 @@ function WorkflowBuilderInner() {
 
         const agentFormData = new FormData();
         agentFormData.append('name', workflowName);
-        agentFormData.append(
-          'description',
-          workflowDescription || `Workflow agent: ${workflowName}`,
-        );
+        agentFormData.append('description', workflowDescription);
         agentFormData.append('agent_type', 'workflow');
         agentFormData.append('status', 'published');
         agentFormData.append('workflow', savedWorkflowId || '');
@@ -1809,8 +1865,7 @@ function WorkflowBuilderInner() {
             ...agentData,
             id: agentData.id,
             name: workflowName,
-            description:
-              workflowDescription || `Workflow agent: ${workflowName}`,
+            description: workflowDescription,
             image: agentData.image || '',
             workflow: savedWorkflowId || undefined,
             agent_type: 'workflow',
@@ -1824,6 +1879,7 @@ function WorkflowBuilderInner() {
 
         setImageFile(null);
         setSavedWorkflowSignature(JSON.stringify(workflowPayload));
+        setAutoFilledModels({});
         if (navigateAfterSuccess) {
           navigateBackToAgents();
         }
