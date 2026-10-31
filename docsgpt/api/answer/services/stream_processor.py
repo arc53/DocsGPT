@@ -48,8 +48,8 @@ from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
 from sqlalchemy import text as sql_text
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.agents import AgentsRepository, agent_row_to_dict
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -229,27 +229,14 @@ def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Option
     return "default"
 
 
-def _agent_source_doc(conn: Any, sources_repo: Any, agent: dict, source_id: Any) -> Optional[dict]:
-    """The source row an agent may retrieve from, or None.
-
-    Authorized as the owner (owned or team-shared to them), else as the
-    editor who attached it while they still qualify. Read unscoped once
-    authorized: an owner-scoped read misses a team-shared source.
-    """
-    from docsgpt.api.user.resource_access import log_stopped, ref_access
-
-    access = ref_access(conn, "agent", agent, "source", str(source_id))
-    if not access.principal:
-        log_stopped("agent", agent, "source", source_id, access.reason)
-        return None
-    return sources_repo.get_by_id(str(source_id))
-
-
 def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], List[dict]]:
     """The source rows an agent run retrieves from: primary first, then extras.
 
-    Each is authorized like :func:`_agent_source_doc` (the owner, else the
-    editor who attached it), and a source listed twice appears once.
+    Each is authorized by ``resource_access.authorized_holder_sources`` (the
+    owner, else the editor who attached it while they still qualify), the
+    check workflow nodes use too, and a source listed twice appears once.
+    Rows are read unscoped once authorized: an owner-scoped read misses a
+    team-shared source.
 
     Args:
         conn: An open database connection.
@@ -259,19 +246,19 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
         The primary source row (None when unset or not usable) and every
         usable row in run order.
     """
+    from docsgpt.api.user.resource_access import authorized_holder_sources
+
+    primary_id = agent.get("source_id")
+    refs = [primary_id, *(agent.get("extra_source_ids") or [])]
     sources_repo = SourcesRepository(conn)
     primary: Optional[dict] = None
     rows: List[dict] = []
     seen: set = set()
-    refs = [(True, agent.get("source_id"))]
-    refs.extend((False, sid) for sid in agent.get("extra_source_ids") or [])
-    for is_primary, sid_raw in refs:
-        if not sid_raw:
-            continue
-        source_doc = _agent_source_doc(conn, sources_repo, agent, sid_raw)
+    for sid in authorized_holder_sources(conn, "agent", agent, refs):
+        source_doc = sources_repo.get_by_id(str(sid))
         if not source_doc or str(source_doc["id"]) in seen:
             continue
-        if is_primary:
+        if primary_id and primary is None and str(sid).lower() == str(primary_id).lower():
             primary = source_doc
         seen.add(str(source_doc["id"]))
         rows.append(source_doc)
@@ -517,6 +504,22 @@ def _without_response_id(turn: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(metadata, dict) or "response_id" not in metadata:
         return turn
     return {**turn, "metadata": {k: v for k, v in metadata.items() if k != "response_id"}}
+
+
+class UnfinishedWorkflowError(Exception):
+    """A chat named a draft workflow agent whose stored graph isn't finished.
+
+    A draft's graph saves with its shape checked only, so the stored graph may
+    lack a start or end node or break another graph rule. Its builder's
+    Preview runs the graph it sends and stops on those rules; a chat with the
+    draft runs the stored one, so it stops here instead.
+    """
+
+    code = "workflow_unfinished"
+    message = "This workflow isn't finished yet, so it can't run. Finish it in the workflow builder first."
+
+    def __init__(self) -> None:
+        super().__init__(self.message)
 
 
 class StreamProcessor:
@@ -1306,9 +1309,7 @@ class StreamProcessor:
                         ),
                         {"id": str(agent_id)},
                     )
-                    row = result.fetchone()
-                    if row is not None:
-                        agent = row_to_dict(row)
+                    agent = agent_row_to_dict(result.fetchone())
                 if agent is None:
                     agent = repo.get_by_legacy_id(str(agent_id))
                 if agent is None:
@@ -1617,6 +1618,11 @@ class StreamProcessor:
                 self._agent_data = self._get_data_from_api_key(effective_key)
             else:
                 with db_readonly() as conn:
+                    if draft_row.get("agent_type") == "workflow":
+                        from docsgpt.api.user.agents.graph_checks import unfinished_graph_errors
+
+                        if unfinished_graph_errors(conn, draft_row):
+                            raise UnfinishedWorkflowError()
                     self._agent_data = self._agent_run_data(conn, draft_row)
             if self._agent_data.get("_id"):
                 self.agent_id = str(self._agent_data.get("_id"))

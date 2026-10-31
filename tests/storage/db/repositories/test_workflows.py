@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
@@ -178,3 +179,22 @@ class TestDelete:
 
         assert repo.delete(wf["id"], "intruder") is False
         assert artifacts.get_artifact(art["id"]) is not None
+
+
+class TestGetForUpdate:
+    @pytest.mark.fresh_db
+    def test_a_save_lock_serialises_saves_but_not_run_starts(self, pg_engine):
+        """Another save waits for the row; a run's foreign key (FOR KEY SHARE) doesn't."""
+        from sqlalchemy import text
+        from sqlalchemy.exc import OperationalError
+
+        with pg_engine.connect() as setup, setup.begin():
+            wid = str(_repo(setup).create("user-1", "wf")["id"])
+        lock = "SELECT 1 FROM workflows WHERE id = CAST(:id AS uuid) {} NOWAIT"
+        with pg_engine.connect() as saving, saving.begin():
+            assert _repo(saving).get_for_update(wid)["id"] == wid
+            with pg_engine.connect() as other, other.begin():
+                assert other.execute(text(lock.format("FOR KEY SHARE")), {"id": wid}).scalar() == 1
+            with pg_engine.connect() as other, other.begin():
+                with pytest.raises(OperationalError):
+                    other.execute(text(lock.format("FOR NO KEY UPDATE")), {"id": wid})

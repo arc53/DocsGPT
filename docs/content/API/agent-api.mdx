@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-10-31
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -72,7 +72,7 @@ Common request body fields:
 | `save_conversation` | `boolean` | No | `/api/answer`, `/stream` | Deprecated, no effect. Conversations are always persisted; use `visibility` to control sidebar listing. |
 | `visibility` | `string` | No | `/api/answer`, `/stream` | `"listed"` shows the conversation in the owner's sidebar. Any other value (or omitting it) persists it hidden. Default `hidden`. |
 | `passthrough` | `object` | No | `/api/answer`, `/stream` | Values for the prompt's `{{ passthrough.* }}` variables, such as the end user's id. Strings, numbers, booleans and `null` are kept with the conversation and on each turn's [Logs](/Using/analytics-and-logs) row. |
-| `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. |
+| `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. Without it, a chat without an agent uses `default`, not the prompt picked on **Settings → Prompts** (the web app sends that one itself). |
 | `active_docs` | `string` or `string[]` | No | `/api/answer`, `/stream` | Overrides active docs when not using key-owned source config. |
 | `retriever` | `string` | No | `/api/answer`, `/stream` | Retriever type (for example `classic`). Ignored when `api_key` or `agent_id` selects an agent: the agent's retriever is used. |
 | `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `6`: a total for the request, split across its sources. Clamped to `0`-`500`; `0` skips retrieval. Ignored when `api_key` or `agent_id` selects an agent (the agent's value is used), and when a source has its own chunk count configured (the source's value wins). |
@@ -109,7 +109,7 @@ Response fields:
 - `attachments`, the conversation's files with their `F` refs and attachment ids, when it has any
 - Optional structured output metadata (`structured`, `schema`) when enabled
 
-An error during the run returns HTTP `400` with `{"error": "..."}`.
+An error during the run returns HTTP `400` with `{"error": "..."}`. A chat with a draft workflow agent whose saved workflow isn't finished (see [Graph rules](/Agents/nodes#graph-rules)) returns `400` with `"code": "workflow_unfinished"` before anything runs; on `/stream` it is an `error` event with that code.
 
 ### Examples
 
@@ -393,6 +393,8 @@ requests.put(
 ).raise_for_status()
 ```
 
+To keep a read-modify-write like this from overwriting someone else's save, send the agent's `updated_at` from `GET /api/get_agent` back as `expected_updated_at`. If the agent changed in between, the update answers `409` with `"code": "stale_write"` and writes nothing; read it again and retry. The check applies to the owner and to team editors alike. `POST /api/create_agent` and `PUT /api/update_agent/<agent_id>` both return the new `updated_at`, so a script can chain saves without reading in between. Without `expected_updated_at`, the last save wins.
+
 Webhook runs are the owner's own automation and are not limited by this list; see [Agent webhooks](/API/webhooks#how-a-webhook-run-behaves).
 
 ## Restricting which websites can use the key
@@ -630,7 +632,7 @@ Ids you pass must belong to you; any other id is ignored with a warning. Prompts
 
 ### Workflow agents
 
-A workflow agent exports its graph under `spec.workflow`, and import validates it (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. Tools, sources and custom models used inside the nodes are resolved like the agent's own.
+A workflow agent exports its graph under `spec.workflow`, and import checks its shape (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. The full [graph rules](/Agents/nodes#graph-rules) apply when the agent it updates is published or can otherwise run, as for a builder save; a new agent lands as a draft, so an unfinished workflow exported from a draft imports again. Tools, sources and custom models used inside the nodes are resolved like the agent's own.
 
 Leaving `workflow` out of a file changes nothing. An explicit `workflow: null` imported over a draft workflow agent **deletes** its workflow, with its run history and artifacts; the plan's `workflow` block shows `"action": "delete"` first. A published workflow agent keeps its workflow.
 

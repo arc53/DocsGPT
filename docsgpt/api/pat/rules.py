@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Optional
 
 from docsgpt.api.pat.tokens import is_pat
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
 
 VIEW, QUERY, JSON, FORM, BODY = "view", "query", "json", "form", "body"
 
@@ -59,6 +60,9 @@ def _rule(scope: Optional[str] = None, *ids: Locator, any_of: tuple[str, ...] = 
 #: below and its ASGI sibling GET /api/messages/<id>/events (docsgpt/api/async_sse.py),
 #: which sits outside this table.
 MESSAGE_REPLAY_SCOPES = ("conversations:read", "chat:run")
+
+#: Chat prompt values with no row id: the default and the stored presets.
+CHAT_PROMPT_PRESETS = frozenset({"default", *STORED_PROMPT_PRESETS})
 
 _ALL_FAMILIES = ("agents", "sources", "prompts", "tools", "workflows")
 _WORKFLOW_CONTENT_FAMILIES = ("sources", "tools", "prompts")
@@ -138,12 +142,38 @@ def _agent_body_check(request, resource_filter: dict, user_id: Optional[str]) ->
 
     A token restricted on any of those may attach a workflow to an agent only
     when it is also restricted on workflows, so the workflow is one its owner
-    chose (``refs`` then verifies the id).
+    chose (``refs`` then verifies the id). An inline ``workflow_graph`` is
+    refused to a token restricted on any of them or on workflows.
     """
+    graph = _json_body(request).get("workflow_graph") if request.is_json else request.form.get("workflow_graph")
+    if graph not in (None, "") and set(resource_filter) & {*_WORKFLOW_CONTENT_FAMILIES, "workflows"}:
+        # An inline graph can name any source, tool or prompt and creates or rewrites a workflow
+        # no allowlist can prove; like POST /api/workflows, closed to tokens restricted on those.
+        return "A token restricted to specific sources, tools, prompts or workflows cannot save a workflow graph"
     if "workflows" in resource_filter or not set(resource_filter) & {"sources", "tools", "prompts"}:
         return None
     if _read(request, (BODY, "workflow")):
         return "A token restricted to specific sources, tools or prompts cannot attach a workflow to an agent"
+    return None
+
+
+def _chat_prompt_check(request, resource_filter: dict, user_id: Optional[str]) -> Optional[str]:
+    """A prompt-restricted token may pick a preset (no row id) or a prompt on its allowlist as its chat prompt.
+
+    It may not send ``only_if_unset``: with a chat prompt already stored, the route answers with
+    that one, which may lie outside the allowlist, and the read (GET) is closed to such a token.
+    """
+    if "prompts" not in resource_filter:
+        return None
+    body = _json_body(request)
+    if body.get("only_if_unset") is True:
+        return "This token is restricted to specific prompts and cannot read the stored chat prompt"
+    ids = _as_ids(body.get("chat_prompt_id"))
+    if not ids:
+        return "This token is restricted to specific prompts and cannot use this endpoint"
+    rows = [i for i in ids if i not in CHAT_PROMPT_PRESETS]
+    if rows and not _all_allowed(rows, resource_filter["prompts"]):
+        return "Token is not allowed to access this resource (prompts)"
     return None
 
 
@@ -277,6 +307,11 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_prompts", "GET"): _rule("prompts:read", listing=True),
     ("/api/get_single_prompt", "GET"): _rule("prompts:read", (QUERY, "id")),
     ("/api/create_prompt", "POST"): _rule("prompts:write"),
+    # The caller's chat prompt. Its stored id can't be proven from the request, so the read is
+    # closed to prompt-restricted tokens; a write names the prompt it picks (a preset always passes),
+    # and may not ask for only_if_unset, whose answer carries the stored id.
+    ("/api/user/preferences", "GET"): _rule("prompts:read"),
+    ("/api/user/preferences", "PUT"): _rule("prompts:write", in_route=True, check=_chat_prompt_check),
     ("/api/update_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     ("/api/delete_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     # Tools
@@ -593,6 +628,25 @@ def allowed_ids(request, family: str) -> Optional[set[str]]:
     return {_canonical(str(i)) for i in ids}
 
 
+def used_by_agent_allowlist(request) -> Optional[set[str]]:
+    """The agents a listing's ``used_by`` may name, or ``None`` for every agent the caller can open.
+
+    A token without ``agents:read`` may not learn agent names through another family's listing, so it
+    gets an empty allowlist: every agent then counts as one the caller can't open. Otherwise this is
+    the token's agent allowlist (:func:`allowed_ids`).
+
+    Args:
+        request: The current request.
+
+    Returns:
+        The allowed agent ids (empty for a token without ``agents:read``), or None when unrestricted.
+    """
+    decoded = getattr(request, "decoded_token", None)
+    if is_pat(decoded) and "agents:read" not in (decoded.get("scopes") or []):
+        return set()
+    return allowed_ids(request, "agents")
+
+
 def filter_listing(request, family: str, items: list, key: str = "id") -> list:
     """Drop rows outside the caller's allowlist. Rows without a UUID id (built-in presets) are kept."""
     allowed = allowed_ids(request, family)
@@ -612,6 +666,35 @@ def _is_uuid(value: str) -> bool:
     except (ValueError, AttributeError, TypeError):
         return False
     return True
+
+
+def missing_scope_response(request, scope: str) -> Optional[tuple[dict, int]]:
+    """``(body, 403)`` when the caller is a token without ``scope``, else None.
+
+    For a scope a route needs only for part of its body (an agent save that
+    also writes a workflow graph needs ``workflows:write``), which the rule
+    table, keyed on route and method, can't express. Same body as the table's
+    ``insufficient_scope`` refusal.
+
+    Args:
+        request: The current request (``decoded_token`` set).
+        scope: The scope required.
+
+    Returns:
+        The refusal, or None when the caller may go on.
+    """
+    decoded = getattr(request, "decoded_token", None)
+    if not is_pat(decoded) or scope in (decoded.get("scopes") or []):
+        return None
+    return (
+        {
+            "success": False,
+            "error": "insufficient_scope",
+            "message": f"Token lacks the required scope: {scope}",
+            "required_scope": scope,
+        },
+        403,
+    )
 
 
 def may_see_agent_keys(request) -> bool:

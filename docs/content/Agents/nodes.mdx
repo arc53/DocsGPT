@@ -1,7 +1,7 @@
 ---
 title: Workflow Nodes
 description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else, Code and Loop - and the shared state they read and write.
-lastUpdated: 2026-10-30
+lastUpdated: 2026-10-31
 ---
 
 import { Callout } from 'nextra/components';
@@ -19,13 +19,13 @@ DocsGPT workflows are composed of **Nodes** that are connected to form a process
   width={1440}
   height={900}
   poster="/workflow-builder-poster.png"
-  aria-label="Screen recording: building, publishing and running a workflow with an AI Agent and an If / Else node"
+  aria-label="Screen recording: building a workflow with an AI Agent and an If / Else node, saving it as a draft, publishing it and running it in Preview"
   style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
 >
   <source src="/workflow-builder.mp4" type="video/mp4" />
 </video>
 
-*The recording starts in a new workflow agent's builder and drags an **AI Agent** node, an **If / Else** node and two **End** nodes from the palette onto the canvas. It wires Start → AI Agent → If / Else, and the If / Else node's **If** and **Else** branches to one End node each. It gives the AI Agent node the "Espresso One handbook" knowledge source, then sets the If / Else node in **Simple** mode to a branch named "Refund" where `query` **contains** `refund`. It clicks **Publish**, opens **Preview** and asks for a refund: the run steps through Start, the AI Agent, If / Else and End, and the answer is quoted from the handbook.*
+*The recording starts in a new workflow agent's builder, adds an **AI Agent** node, an **If / Else** node and two **End** nodes from the palette, and moves them into place on the canvas. It wires Start → AI Agent → If / Else, and the If / Else node's **If** and **Else** branches to one End node each. It gives the AI Agent node the "Policies & Contracts Library" knowledge source, then sets the If / Else node in **Simple** mode to a branch named "Credit claim" where `query` **contains** `credit`. It clicks **Save Draft**, which saves the unfinished agent and adds the **Overview** and **Logs** tabs, then **Publish**. It opens **Preview** and asks what Meridian owes a customer for a late Assured Plus delivery: the run steps through Start, the AI Agent, If / Else and End, and the answer comes from the library's SLA schedule. The model's wait is sped up.*
 
 | Node | Palette group | What it does |
 | --- | --- | --- |
@@ -109,6 +109,13 @@ The **AI Agent Node** is the core processing unit. It uses a Large Language Mode
 
 - **Knowledge**: sources this node searches.
 - **Tools**: tools the node's model can call.
+
+Both are the same pickers as in the agent form: grouped, selected items first,
+with **Go to Knowledge** and **Upload new**, or **Go to Tools** and **Add tool**,
+at the bottom. A tool you add from the node's picker is selected on the node, and
+a [remote device](/Tools/remote-device) shows whether it is online. See
+[Use knowledge in chats and agents](/Sources/adding-knowledge#use-knowledge-in-chats-and-agents)
+and [The Tools page](/Tools/basics#the-tools-page).
 
 <Callout type="warning">
   A tool that requires approval fails the node, and with it the run: a
@@ -480,8 +487,14 @@ or what still needs doing. It has no effect on a run.
 
 ## Graph rules
 
-The builder checks these before a preview, save or publish, and lists every rule
-a workflow breaks:
+The builder checks these before a preview or publish, and before a save once the
+workflow is published, and lists every rule a workflow breaks. A draft saves
+without them: **Save draft**, beside **Publish** until the workflow is published,
+keeps an unfinished workflow and needs only a name. A chat with a draft whose
+workflow isn't finished, by you or a teammate it is shared with, answers with an
+error instead of running it. The workflow's graph and its
+name, description and image are saved together, so a save either stores all of
+them or none.
 
 - The workflow has a name, exactly one Start node, at least one End node and
   at least one AI Agent node.
@@ -559,3 +572,15 @@ deletes its workflow. Over the API, creating an agent (`POST /api/create_agent`)
 with a `workflow` that another agent already uses, or switching an agent to one
 with `PUT /api/update_agent/<agent_id>`, answers `409` with "This workflow
 belongs to another agent". Create a new workflow for the new agent instead.
+
+The builder saves through those same two endpoints: it sends the graph as a
+`workflow_graph` field (`{"nodes": [...], "edges": [...], "retry_defaults": ...}`,
+a JSON string in a multipart form) with the agent's other fields, in one request.
+With `"status": "draft"` only the graph's shape is checked; with `"published"` the
+full graph rules apply. They also apply to a draft that something can still run: an
+agent published before (its API key keeps working), one with a webhook URL, a public
+link or an active or paused schedule, and one whose workflow another such agent also
+runs. A draft holding an unfinished workflow gets no webhook URL, schedule or public
+link (`400` with the broken rules) until its graph passes them. A request can send `workflow_graph` or `workflow`, not
+both. `POST /api/workflows` and `PUT /api/workflows/<id>` keep working for scripts
+that manage the graph on its own.

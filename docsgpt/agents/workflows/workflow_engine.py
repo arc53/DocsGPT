@@ -931,7 +931,6 @@ class WorkflowEngine:
             "api_key": node_api_key,
             "tool_ids": node_config.tools,
             "tool_owner": self._workflow_owner_id(),
-            "tool_principals": self._node_tool_principals(node_config.tools),
             "tool_holder": getattr(self.agent, "workflow_row", None),
             "prompt": node_prompt,
             "chat_history": self.agent.chat_history,
@@ -2306,36 +2305,6 @@ class WorkflowEngine:
         resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
         return (resolve_owner() if callable(resolve_owner) else None) or self._resolve_user_id()
 
-    def _node_tool_principals(self, tool_ids) -> Dict[str, str]:
-        """Node tool id -> the editor to resolve it as, for sponsored tools.
-
-        Only tools with a live sponsor on the workflow appear; the executor
-        still tries the owner first.
-
-        Args:
-            tool_ids: The node's configured tool ids.
-
-        Returns:
-            dict: ``tool_id -> sponsor`` user id.
-        """
-        workflow_row = getattr(self.agent, "workflow_row", None)
-        if not tool_ids or not workflow_row or not workflow_row.get("resource_sponsors"):
-            return {}
-        from docsgpt.api.user.resource_access import active_sponsor
-        from docsgpt.storage.db.session import db_readonly
-
-        principals: Dict[str, str] = {}
-        try:
-            with db_readonly() as conn:
-                for tid in tool_ids:
-                    sponsor = active_sponsor(conn, "workflow", workflow_row, "tool", str(tid))
-                    if sponsor:
-                        principals[str(tid)] = sponsor
-        except Exception:
-            logger.exception("Workflow node tool sponsor lookup failed; using the owner only.")
-            return {}
-        return principals
-
     def _authorized_node_sources(self, sources) -> list:
         """Filter a node's configured source ids to those its owner may read.
 
@@ -2362,25 +2331,19 @@ class WorkflowEngine:
             logger.warning("Workflow node sources dropped: no owner to authorize.")
             return []
 
-        from docsgpt.api.user.resource_access import log_stopped, ref_access
+        from docsgpt.api.user.resource_access import authorized_holder_sources
         from docsgpt.storage.db.session import db_readonly
 
-        # The same check the workflow page's run state uses: the owner, else
-        # the editor who attached it while they still qualify.
+        # The same check the workflow page's run state uses, and an agent's
+        # own sources: the owner, else the editor who attached it while they
+        # still qualify.
         holder = {**(getattr(self.agent, "workflow_row", None) or {}), "user_id": owner}
-        allowed = []
         try:
             with db_readonly() as conn:
-                for sid in ids:
-                    access = ref_access(conn, "workflow", holder, "source", str(sid)) if sid else None
-                    if access is not None and access.principal:
-                        allowed.append(sid)
-                    else:
-                        log_stopped("workflow", holder, "source", sid, access.reason if access else None)
+                return authorized_holder_sources(conn, "workflow", holder, ids)
         except Exception:
             logger.exception("Workflow node source authorization failed; dropping all.")
             return []
-        return allowed
 
     def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> list:
         """Retrieve this node's source documents.

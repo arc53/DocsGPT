@@ -1,7 +1,7 @@
 ---
 title: Personal Access Tokens
 description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
-lastUpdated: 2026-10-29
+lastUpdated: 2026-10-31
 ---
 
 # Personal Access Tokens
@@ -211,6 +211,7 @@ For a restricted family the token:
   - **Workflow writes** are closed to tokens restricted on sources, tools or prompts, because a workflow graph names those inside its nodes. Such a token also cannot attach a workflow to an agent unless it is restricted on workflows too, in which case only the listed workflows can be attached.
   - **Workflow runs** belong to the agent that ran them. A token restricted to agents lists and reads only those agents' runs and downloads only their files; any other run, and a run started from the workflow builder's preview, answers `404`. Runs and their files are closed to tokens restricted on another family, and the `/api/artifacts` routes are closed to every restricted token.
   - `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
+  - **The chat prompt** (`/api/user/preferences`): a token restricted on prompts can't read it, since the stored pick may be outside its list. It can set it to a preset (`default`, `creative`, `strict`) or a prompt on its list. Sending `only_if_unset` is refused (`403`, `resource_not_allowed`), since the answer could carry a stored pick outside its list.
 
 A restriction covers what the token *asks for*, not what an allowed resource already contains: an agent on the list runs with its own sources, prompt and tools even when the token is also restricted on those families. List an agent only if you are happy for the token to use everything that agent uses.
 

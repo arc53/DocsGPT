@@ -1,4 +1,4 @@
-import { CircleCheck, CircleX, Database, Play, SquarePen } from 'lucide-react';
+import { CircleCheck, CircleX, Play, SquarePen } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -17,6 +17,7 @@ import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Combobox, type ComboboxGroup } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 
@@ -33,7 +34,6 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
-import devicesService from '../api/services/devicesService';
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import { FileUpload } from '../components/FileUpload';
@@ -41,15 +41,9 @@ import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
 } from '../components/MultiSelectPopover';
-import SourcesPopoverFooter from '../components/SourcesPopoverFooter';
-import ToolIcon from '../components/ToolIcon';
+import PickerFooter from '../components/PickerFooter';
 import connectorsService from '../api/services/connectorsService';
-import ConnectorIcon from '../connectors/ConnectorIcon';
-import { connectionNeedsSignIn } from '../connectors/connectorsSlice';
-import SignInAgainNotice, {
-  useSignInAgain,
-} from '../connectors/SignInAgainNotice';
-import { toolServiceOf } from '../connectors/toolService';
+import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import { ActiveState, Prompt } from '../models/misc';
@@ -64,28 +58,27 @@ import {
   setPrompts,
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
-import Prompts from '../settings/Prompts';
+import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
+import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
 import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
-import Upload from '../upload/Upload';
 import {
   selectedSourceIdsFromAgent,
   serializeAgentSources,
   sourceItemId,
-  toSourcePickerItems,
 } from '../utils/sourceUtils';
 import {
   getToolDisplayName,
   isAgentPickerToolVisible,
 } from '../utils/toolUtils';
-import { agentsListPath } from './paths';
+import { agentEditPath, agentsListPath, isWorkflowAgent } from './paths';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
 import AnalyticsSection from './components/AnalyticsSection';
 import ContextLimitRows from './components/ContextLimitRows';
-import { configToSave, sameAgent } from './analyticsConfig';
+import { analyticsOf, configToSave } from './analyticsConfig';
 import {
   isContextLimitInvalid,
   isHistoryLimitInvalid,
@@ -99,50 +92,76 @@ import AllowedOriginsSetting, {
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
+import KnowledgePicker from './components/KnowledgePicker';
+import ToolsPicker from './components/ToolsPicker';
 import SectionShell from '../navigation/SectionShell';
 import ResourceStatusNotice, {
   type NamedResource,
   unnamedResourceLabel,
 } from './components/ResourceStatusNotice';
-import {
-  confirmTakeOver,
-  readSponsorRefusal,
-  saveWithSponsorConsent,
-  sponsorNotAllowedMessage,
-  withAttachedToolRows,
-} from './sponsorConsent';
+
 import { useAgentMenu } from './hooks/useAgentMenu';
-import { useSponsorPrompt } from './useSponsorPrompt';
+import { useAttachAddedTools } from './hooks/useAttachAddedTools';
+import { useBuilderDirtyState } from './hooks/useBuilderDirtyState';
+import { useSponsoredSave } from './hooks/useSponsoredSave';
 import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
-import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
 
+/** The Prompt picker's kinds (the Prompts page's sections) and their `type`. */
+const PROMPT_KIND_TYPES = {
+  included: 'public',
+  yours: 'private',
+  shared: 'team',
+} as const;
+const PROMPT_KINDS = ['all', 'included', 'yours', 'shared'] as const;
+type PromptKind = (typeof PROMPT_KINDS)[number];
+const promptOfKind = (kind: PromptKind, prompt: Prompt): boolean =>
+  kind === 'all' || prompt.type === PROMPT_KIND_TYPES[kind];
+const PROMPT_PRESETS = ['default', 'creative', 'strict'];
+
 /**
- * Pull the backend's own explanation out of a failed response.
- *
- * The agent write endpoints answer a rejected save with
- * `{"success": false, "message": "<why>"}` — e.g. "Invalid chunks value: …"
- * or "Field 'description' cannot be empty". Callers used to test only
- * `response.ok` and throw a fixed string, so the one piece of information
- * that could tell the user what to change was dropped on the floor.
+ * What a save sends, in a shape two copies compare by: the unsaved-changes
+ * baseline. The schema counts as typed; the config reads a missing insights
+ * block or limit as its default, as `sameAgent` does.
  */
-const extractApiError = async (
-  response: Response,
-  fallback: string,
-): Promise<string> => {
-  try {
-    const body = await response.json();
-    if (typeof body?.message === 'string' && body.message.trim())
-      return body.message;
-  } catch {
-    // Non-JSON body (proxy HTML error page, empty 502) — use the fallback.
-  }
-  return fallback;
-};
+function agentSavePayload(agent: Agent, jsonSchemaText: string) {
+  return {
+    name: agent.name ?? '',
+    description: agent.description ?? '',
+    source: agent.source ?? '',
+    sources: agent.sources ?? [],
+    chunks: agent.chunks ?? '',
+    retriever: agent.retriever ?? '',
+    prompt_id: agent.prompt_id ?? '',
+    agent_type: agent.agent_type ?? '',
+    tools: agent.tools ?? [],
+    json_schema: jsonSchemaText,
+    limited_token_mode: Boolean(agent.limited_token_mode),
+    token_limit: agent.token_limit ?? null,
+    limited_request_mode: Boolean(agent.limited_request_mode),
+    request_limit: agent.request_limit ?? null,
+    allow_system_prompt_override: Boolean(agent.allow_system_prompt_override),
+    models: agent.models ?? [],
+    default_model_id: agent.default_model_id ?? '',
+    config: {
+      ...(agent.config ?? {}),
+      analytics: analyticsOf(agent.config?.analytics),
+      context_window_limit: agent.config?.context_window_limit ?? null,
+      history_token_limit: agent.config?.history_token_limit ?? null,
+    },
+  };
+}
+type AgentSavePayload = ReturnType<typeof agentSavePayload>;
+
+/** The ids of the picked tools, in their order: what a save sends. */
+const toolIdsOf = (tools: ToolSummary[]): string[] =>
+  tools
+    .map((tool) => tool?.id)
+    .filter((id): id is string => typeof id === 'string');
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { agentId } = useParams();
@@ -186,30 +205,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     default_model_id: '',
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [userTools, setUserTools] = useState<MultiSelectPopoverItem[]>([]);
   const [rawUserTools, setRawUserTools] = useState<UserToolType[]>([]);
-  // Connections behind the picker's tools that need signing in again.
-  const [brokenToolConnections, setBrokenToolConnections] = useState<
-    { connection: Connection; mcpToolId?: string }[]
-  >([]);
+  // What the tool rows are drawn from beside the tools themselves.
+  const [toolContext, setToolContext] = useState<{
+    connections: Connection[];
+    catalog: ConnectorDefinition[];
+  }>({ connections: [], catalog: [] });
   const [toolsReloadKey, setToolsReloadKey] = useState(0);
   // Bumped after a reconnect so the agent's run state is read again.
   const [detailsReloadKey, setDetailsReloadKey] = useState(0);
-  const signInAgain = useSignInAgain({
-    onConnected: () => {
-      setToolsReloadKey((key) => key + 1);
-      setDetailsReloadKey((key) => key + 1);
-    },
-  });
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   // The instance's default model: what an agent with no models of its own
   // answers with.
   const [systemDefaultModelId, setSystemDefaultModelId] = useState('');
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
+  const [isPromptPickerOpen, setIsPromptPickerOpen] = useState(false);
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
-  const [uploadModalState, setUploadModalState] =
-    useState<ActiveState>('INACTIVE');
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(
     new Set(),
   );
@@ -217,11 +229,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Tools on the agent when it loaded: the owner's private ones don't come
   // back in the caller's own tool list, so the picker adds a row for each.
   const [attachedTools, setAttachedTools] = useState<ToolSummary[]>([]);
-  // Asks before a save makes what the caller added run with their access.
-  const sponsorPrompt = useSponsorPrompt();
-  // Keys of stopped items the caller chose to keep running with their
-  // access; sent as ``confirm_sponsor`` with the next save.
-  const [takeovers, setTakeovers] = useState<string[]>([]);
+  // Saves ask before what the caller added runs with their access, and
+  // carry the stopped items the caller chose to keep running (takeovers).
+  // A new agent has no sponsors to read again.
+  const sponsoredSave = useSponsoredSave({
+    refresh: () => void refreshSponsors(agent.id),
+  });
+  const { takeovers } = sponsoredSave;
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
   );
@@ -229,17 +243,28 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Access details opened from Share to allow changes: its allowlist unfolds.
   const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
-  const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
+  // Unsaved changes: what a save would send against what was loaded or last
+  // saved (a draft save too); a new agent against what it opened with.
+  const savePayload = useMemo(
+    () => agentSavePayload(agent, jsonSchemaText),
+    [agent, jsonSchemaText],
+  );
+  const { dirty: hasChanges, markSaved } =
+    useBuilderDirtyState<AgentSavePayload>(savePayload, {
+      ready: mode === 'new',
+      extras: imageFile !== null || takeovers.length > 0,
+    });
   const tokenLimitSwitchId = useId();
   const requestLimitSwitchId = useId();
   const promptOverrideSwitchId = useId();
   const sourcesPickerId = useId();
   const toolsPickerId = useId();
+  const promptPickerId = useId();
   const modelsPickerId = useId();
   const [previewOpen, setPreviewOpen] = useState(false);
   const previewStatus = useSelector(selectPreviewStatus);
@@ -267,21 +292,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.publish'),
       showSaveDraft: true,
       showAccessDetails: false,
-      trackChanges: false,
     },
     edit: {
       heading: t('agents.form.headings.edit'),
       buttonText: t('agents.form.buttons.save'),
       showSaveDraft: false,
       showAccessDetails: true,
-      trackChanges: true,
     },
     draft: {
       heading: t('agents.form.headings.draft'),
       buttonText: t('agents.form.buttons.publish'),
       showSaveDraft: true,
       showAccessDetails: false,
-      trackChanges: false,
     },
   };
   const agentTypes = [
@@ -399,68 +421,62 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     ? addedByLabel('prompt', agent.prompt_id)
     : null;
 
-  /** Picker rows with their "Added by" line in the row's description. */
-  const withAddedBy = useCallback(
-    (
-      items: MultiSelectPopoverItem[],
-      type: ResourceSponsor['type'],
-    ): MultiSelectPopoverItem[] =>
-      items.map((item) => {
-        const addedBy = addedByLabel(type, item.id);
-        if (!addedBy) return item;
-        // A rich description (a status badge) wins over a plain one, so the
-        // line goes above it.
-        return item.descriptionNode
-          ? {
-              ...item,
-              descriptionNode: (
-                <>
-                  <p
-                    className="text-muted-foreground truncate text-xs"
-                    title={addedBy}
-                  >
-                    {addedBy}
-                  </p>
-                  {item.descriptionNode}
-                </>
-              ),
-            }
-          : { ...item, description: addedBy };
-      }),
+  // The prompt picker's kind filter, back on All each time it opens.
+  const promptKinds = usePickerKindFilter(prompts, isPromptPickerOpen, {
+    kinds: PROMPT_KINDS,
+    matches: promptOfKind,
+    labelOf: (kind) =>
+      kind === 'all'
+        ? t('settings.prompts.filters.all')
+        : kind === 'shared'
+          ? t('settings.prompts.kinds.shared')
+          : t(`settings.prompts.sections.${kind}`),
+    ariaLabel: t('settings.prompts.kindFilterLabel'),
+  });
+  // A row's line, as its Prompts page card says it: a preset's purpose, else
+  // the start of the prompt (the list names no sharer for a teammate's).
+  const promptLine = (prompt: Prompt): string | undefined =>
+    PROMPT_PRESETS.includes(prompt.id) && prompt.type === 'public'
+      ? t(`settings.prompts.presets.${prompt.id}`)
+      : prompt.preview || undefined;
+  // The prompt picker's groups, as the Prompts page has them.
+  const promptGroups: ComboboxGroup[] = PROMPT_KINDS.filter(
+    (kind) => kind !== 'all',
+  )
+    .map((kind) => ({
+      heading: t(`settings.prompts.sections.${kind}`),
+      options: promptKinds.items
+        .filter((prompt) => prompt.type === PROMPT_KIND_TYPES[kind])
+        .map((prompt) => ({
+          value: prompt.id,
+          label: prompt.name,
+          description: promptLine(prompt),
+        })),
+    }))
+    .filter((group) => group.options.length > 0);
+  // The picked prompt's name for the trigger, from the full list, so a kind
+  // filter that hides it never shows another; else, for the prompt the agent
+  // was loaded with, its name from the agent (a teammate's agent names the
+  // owner's prompt); a preset reads as its id before the list loads.
+  const pickedPromptId = agent.prompt_id || 'default';
+  const pickedPromptLabel =
+    prompts.find((prompt) => prompt.id === pickedPromptId)?.name ||
+    (pickedPromptId === initialAgentRef.current?.prompt_id
+      ? agent.prompt_name
+      : '') ||
+    (PROMPT_PRESETS.includes(pickedPromptId) ? pickedPromptId : '');
+  const promptValueOption = pickedPromptLabel
+    ? { value: pickedPromptId, label: pickedPromptLabel }
+    : undefined;
+
+  // Who added a source or tool, joined to its picker row's line.
+  const sourceAddedBy = useCallback(
+    (id: string) => addedByLabel('source', id),
     [addedByLabel],
   );
-
-  const sourceItems = useMemo(() => {
-    const items = toSourcePickerItems(
-      sourceDocs,
-      {
-        own: t('agents.form.sourcePopup.groupOwn'),
-        team: t('agents.form.sourcePopup.groupTeam'),
-      },
-      <Database />,
-    );
-    // An attached source the caller can't list — an owner's private source on
-    // a team-shared agent — still needs a row of its own, or it reads as
-    // selected with nothing to switch it off.
-    const listed = new Set(items.map((item) => item.id));
-    const unlisted = Array.from(selectedSourceIds)
-      .filter((id) => !listed.has(id))
-      .map((id) => ({ id, label: resolveSourceLabel(id), icon: <Database /> }));
-    return withAddedBy([...items, ...unlisted], 'source');
-  }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t, withAddedBy]);
-
-  // The caller's tools, plus a remove-only row for each tool on the agent
-  // they can't list (the owner's private tools on a shared agent).
-  const toolItems = useMemo(
-    () =>
-      withAddedBy(
-        withAttachedToolRows(userTools, attachedTools, {
-          group: t('agents.form.toolsPopup.groupAttached'),
-          description: t('agents.form.toolsPopup.attachedHint'),
-        }),
-        'tool',
-      ),
-    [attachedTools, t, userTools, withAddedBy],
+  const toolAddedBy = useCallback(
+    (id: string) => addedByLabel('tool', id),
+    [addedByLabel],
   );
 
   const selectedSourceNames = useMemo(
@@ -478,11 +494,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         : t('conversation.sources.selectedCount', {
             count: selectedSourceIds.size,
           });
-
-  const handleUploadClick = () => {
-    setIsSourcePopupOpen(false);
-    setUploadModalState('ACTIVE');
-  };
 
   // Select the source an upload started from this form created. The id comes
   // from the upload itself, so a source that appeared meanwhile for another
@@ -551,54 +562,28 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     // Only a reconnect asks for this; agent.id is read when it does.
   }, [detailsReloadKey, refreshSponsors]);
 
-  /** The message for a refused save. */
-  const saveFailureMessage = async (
-    response: Response,
-    fallback: string,
-  ): Promise<string> => {
-    const refusal = await readSponsorRefusal(response);
-    if (refusal?.kind === 'notAllowed')
-      return sponsorNotAllowedMessage(t, i18n.language, refusal.resources);
-    if (refusal?.kind === 'unexpected') {
-      // Someone changed the agent since the caller chose; show them now.
-      setTakeovers([]);
-      void refreshSponsors(agent.id);
-      return t('agents.form.sponsors.confirmationOutdated');
-    }
-    return extractApiError(response, fallback);
-  };
-
   /**
    * Create or update the agent, asking whenever the server wants the
    * caller's confirmation to run what they added with their access.
-   * Resolves to null when they decline.
    */
-  const sendAgent = (formData: FormData) =>
-    saveWithSponsorConsent(
-      (confirm) => {
-        if (confirm.length > 0)
-          formData.set('confirm_sponsor', JSON.stringify(confirm));
-        else formData.delete('confirm_sponsor');
-        return effectiveMode === 'new'
-          ? userService.createAgent(formData, token)
-          : userService.updateAgent(agent.id || '', formData, token);
-      },
-      sponsorPrompt.ask,
-      takeovers,
-    );
-
-  /** Bookkeeping after an update the server accepted. */
-  const afterSaved = (id?: string) => {
-    // What is on the agent now is what the tool picker keeps rows for.
-    setAttachedTools(selectedTools);
-    if (effectiveMode !== 'new') {
-      setTakeovers([]);
-      void refreshSponsors(id);
-    }
+  const sendAgent = (formData: FormData, fallback: string) => {
+    // A team editor's update is refused when someone saved in between.
+    if (effectiveMode !== 'new' && agent.updated_at)
+      formData.set('expected_updated_at', agent.updated_at);
+    return sponsoredSave.save((confirm) => {
+      if (confirm.length > 0)
+        formData.set('confirm_sponsor', JSON.stringify(confirm));
+      else formData.delete('confirm_sponsor');
+      return effectiveMode === 'new'
+        ? userService.createAgent(formData, token)
+        : userService.updateAgent(agent.id || '', formData, token);
+    }, fallback);
   };
+  // One save at a time: Save draft and Publish beside each other would both
+  // create a new agent.
+  const savingRef = useRef(false);
 
-  const undoTakeover = (key: string) =>
-    setTakeovers((prev) => prev.filter((k) => k !== key));
+  const undoTakeover = sponsoredSave.undoTakeover;
 
   // Stopped items still on the agent in the form: one removed here (not yet
   // saved) leaves the notice.
@@ -647,18 +632,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    * Ask before a stopped item runs with the caller's access, naming who
    * reaches it through the agent; on yes the next save confirms it.
    */
-  const takeOverResource = async (item: ResourceState) => {
-    const agreed = await confirmTakeOver(
-      sponsorPrompt.ask,
+  const takeOverResource = (item: ResourceState) =>
+    sponsoredSave.takeOver(
       item,
       resolveSponsoredName(item),
       agent.sponsor_audience,
     );
-    if (agreed)
-      setTakeovers((prev) =>
-        prev.includes(item.key) ? prev : [...prev, item.key],
-      );
-  };
 
   /** Sign a stopped tool's connection in again, in place where possible. */
   const reconnectResource = (item: ResourceState) => {
@@ -673,6 +652,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   const handleSaveDraft = async () => {
+    if (savingRef.current) return;
+    const saving = savePayload;
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -723,48 +704,54 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (agent.default_model_id) {
       formData.append('default_model_id', agent.default_model_id);
     }
-    if (agent.agent_type === 'workflow' && agent.workflow) {
-      formData.append('workflow', JSON.stringify(agent.workflow));
-    }
 
     if (effectiveMode === 'new' && validatedFolderId) {
       formData.append('folder_id', validatedFolderId);
     }
 
     try {
+      savingRef.current = true;
       setDraftLoading(true);
       setSubmitError(null);
-      const response = await sendAgent(formData);
-      if (!response) return;
-      if (!response.ok) {
-        setSubmitError(
-          await saveFailureMessage(
-            response,
-            t('agents.form.errors.saveDraftFailed'),
-          ),
-        );
+      const result = await sendAgent(
+        formData,
+        t('agents.form.errors.saveDraftFailed'),
+      );
+      if (result.status === 'cancelled') return;
+      if (result.status === 'failed') {
+        setSubmitError(result.message);
         return;
       }
-      const data = await response.json();
-      afterSaved(data.id || agent.id);
+      const data = await result.response.json();
+      // What is on the agent now is what the tool picker keeps rows for.
+      setAttachedTools(selectedTools);
 
-      const updatedAgent = {
-        ...agent,
+      const saved = {
         id: data.id || agent.id,
         image: data.image || agent.image,
+        // The stamp the next save sends.
+        updated_at: data.updated_at ?? agent.updated_at,
       };
-      setAgent(updatedAgent);
+      // Edits made while the save was out stay.
+      setAgent((prev) => ({ ...prev, ...saved }));
+      initialAgentRef.current = { ...agent, ...saved };
+      // What was sent is saved: the avatar went with it.
+      markSaved(saving);
+      setImageFile(null);
 
       if (effectiveMode === 'new') setEffectiveMode('draft');
     } catch (error) {
       console.error('Error saving draft:', error);
       setSubmitError(t('agents.form.errors.saveDraftFailed'));
     } finally {
+      savingRef.current = false;
       setDraftLoading(false);
     }
   };
 
   const handlePublish = async () => {
+    if (savingRef.current) return;
+    const saving = savePayload;
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -815,40 +802,38 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (agent.default_model_id) {
       formData.append('default_model_id', agent.default_model_id);
     }
-    if (agent.agent_type === 'workflow' && agent.workflow) {
-      formData.append('workflow', JSON.stringify(agent.workflow));
-    }
 
     if (effectiveMode === 'new' && validatedFolderId) {
       formData.append('folder_id', validatedFolderId);
     }
 
     try {
+      savingRef.current = true;
       setPublishLoading(true);
       setSubmitError(null);
-      const response = await sendAgent(formData);
-      if (!response) return;
-      if (!response.ok) {
-        setSubmitError(
-          await saveFailureMessage(
-            response,
-            t('agents.form.errors.publishFailed'),
-          ),
-        );
+      const result = await sendAgent(
+        formData,
+        t('agents.form.errors.publishFailed'),
+      );
+      if (result.status === 'cancelled') return;
+      if (result.status === 'failed') {
+        setSubmitError(result.message);
         return;
       }
-      const data = await response.json();
+      const data = await result.response.json();
 
-      const updatedAgent = {
-        ...agent,
+      const saved = {
         id: data.id || agent.id,
         key: data.key || agent.key,
         status: 'published',
         image: data.image || agent.image,
+        updated_at: data.updated_at ?? agent.updated_at,
       };
-      setAgent(updatedAgent);
+      setAgent((prev) => ({ ...prev, ...saved }));
+      const updatedAgent = { ...agent, ...saved };
       initialAgentRef.current = updatedAgent;
-      afterSaved(updatedAgent.id);
+      markSaved(saving);
+      setAttachedTools(selectedTools);
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());
 
@@ -861,6 +846,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       console.error('Error publishing agent:', error);
       setSubmitError(t('agents.form.errors.publishFailed'));
     } finally {
+      savingRef.current = false;
       setPublishLoading(false);
     }
   };
@@ -881,130 +867,56 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
+  // The caller's tools as the picker offers them, with what draws their rows;
+  // resolves to the tools.
+  const loadTools = useCallback(async (): Promise<UserToolType[]> => {
+    const [toolsResponse, connectionsResult, catalogResult] = await Promise.all(
+      [
+        userService.getUserTools(token),
+        connectorsService
+          .listConnections(token)
+          .catch(() => ({ connections: [] })),
+        // Names a teammate's connected tool, whose connection the caller
+        // never sees.
+        connectorsService.getCatalog(token).catch(() => ({ connectors: [] })),
+      ],
+    );
+    const ownConnections = (connectionsResult?.connections ??
+      []) as Connection[];
+    const catalog = (catalogResult?.connectors ?? []) as ConnectorDefinition[];
+    if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
+    const data = await toolsResponse.json();
+    // Hide workflow-only builtins (e.g. read_document) from the classic
+    // agent picker; they belong to the workflow-node picker only.
+    const visibleTools = (data.tools as UserToolType[]).filter(
+      isAgentPickerToolVisible,
+    );
+    setRawUserTools(visibleTools);
+    setToolContext({ connections: ownConnections, catalog });
+    return visibleTools;
+  }, [token]);
+
   useEffect(() => {
-    const getTools = async () => {
-      const [toolsResponse, devicesResult, connectionsResult, catalogResult] =
-        await Promise.all([
-          userService.getUserTools(token),
-          // Tolerate failures here: the picker should still render the
-          // tool list even if /api/devices returns an error or 401.
-          devicesService.list(token).catch(() => ({ devices: [] })),
-          connectorsService
-            .listConnections(token)
-            .catch(() => ({ connections: [] })),
-          // Names a teammate's connected tool, whose connection the caller
-          // never sees.
-          connectorsService.getCatalog(token).catch(() => ({ connectors: [] })),
-        ]);
-      const ownConnections = (connectionsResult?.connections ??
-        []) as Connection[];
-      const catalog = (catalogResult?.connectors ??
-        []) as ConnectorDefinition[];
-      const connectionsById = new Map<string, Connection>(
-        ownConnections.map((c) => [c.id, c]),
-      );
-      if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
-      const data = await toolsResponse.json();
-      // Hide workflow-only builtins (e.g. read_document) from the classic
-      // agent picker; they belong to the workflow-node picker only.
-      const visibleTools = (data.tools as UserToolType[]).filter(
-        isAgentPickerToolVisible,
-      );
-      const devicesById = new Map<
-        string,
-        { online: boolean; last_seen_at: string | null | undefined }
-      >();
-      const onlineWindowMs = 30_000;
-      (devicesResult.devices || []).forEach((d) => {
-        const seen = d.last_seen_at ? Date.parse(d.last_seen_at) : NaN;
-        const online =
-          !Number.isNaN(seen) && Date.now() - seen < onlineWindowMs;
-        devicesById.set(d.id, { online, last_seen_at: d.last_seen_at });
-      });
-      // Group ordering: builtins -> defaults -> one group per connection
-      // (the service and its account; a teammate's, only the service) ->
-      // custom tools, via the MultiSelectPopover first-appearance grouping.
-      const serviceOf = (tool: UserToolType) =>
-        toolServiceOf(tool, ownConnections, catalog);
-      const connectionOf = (tool: UserToolType) => serviceOf(tool)?.connection;
-      const rank = (tool: UserToolType) =>
-        tool.builtin ? 0 : tool.default ? 1 : tool.connection_id ? 2 : 3;
-      const groupFor = (tool: UserToolType): string => {
-        if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
-        if (tool.default) return t('agents.form.toolsPopup.groupDefault');
-        const service = serviceOf(tool);
-        if (service?.connection)
-          return t('agents.form.toolsPopup.groupConnection', {
-            name: service.connection.name,
-            account: service.connection.account_label,
-            interpolation: { escapeValue: false },
-          });
-        if (service) return service.name;
-        return t('agents.form.toolsPopup.groupCustom');
-      };
-      const tools: MultiSelectPopoverItem[] = [...visibleTools]
-        .sort(
-          (a, b) =>
-            rank(a) - rank(b) ||
-            // Keeps each connection's tools together.
-            (rank(a) === 2 ? groupFor(a).localeCompare(groupFor(b)) : 0),
-        )
-        .map((tool: UserToolType) => {
-          const connection = connectionOf(tool);
-          const serviceIcon = serviceOf(tool)?.icon;
-          const base: MultiSelectPopoverItem = {
+    loadTools().catch(() => undefined);
+  }, [loadTools, toolsReloadKey]);
+
+  // A tool made from the picker's Add tool goes on the agent.
+  const attachCreated = useAttachAddedTools(loadTools);
+  const handleToolsCreated = (toolIds: string[]) =>
+    attachCreated(toolIds, (created) =>
+      setSelectedTools((prev) => [
+        ...prev,
+        ...created
+          .filter((tool) => !prev.some((item) => item.id === tool.id))
+          .map((tool) => ({
             id: tool.id,
-            label: getToolDisplayName(tool),
-            icon: serviceIcon ? (
-              <ConnectorIcon icon={serviceIcon} className="size-5" />
-            ) : (
-              <ToolIcon name={tool.name} className="size-5" />
-            ),
-            group: groupFor(tool),
-          };
-          if (connectionNeedsSignIn(connection)) {
-            base.descriptionNode = (
-              <Badge variant="warning" className="mt-0.5">
-                {t('settings.connectors.status.reconnect')}
-              </Badge>
-            );
-          }
-          if (tool.name === 'remote_device') {
-            const deviceId = (tool.config?.device_id as string) || '';
-            const meta = devicesById.get(deviceId);
-            const online = meta?.online ?? false;
-            base.descriptionNode = (
-              <Badge
-                variant={online ? 'success' : 'neutral'}
-                className="mt-0.5"
-              >
-                {online
-                  ? t('settings.devices.online')
-                  : t('settings.devices.offline')}
-              </Badge>
-            );
-          }
-          return base;
-        });
-      setUserTools(tools);
-      setRawUserTools(visibleTools);
-      setBrokenToolConnections(
-        Array.from(connectionsById.values())
-          .filter(connectionNeedsSignIn)
-          .flatMap((connection) => {
-            const own = visibleTools.filter(
-              (tool) => tool.connection_id === connection.id,
-            );
-            if (own.length === 0) return [];
-            return [
-              {
-                connection,
-                mcpToolId: own.find((tool) => tool.name === 'mcp_tool')?.id,
-              },
-            ];
-          }),
-      );
-    };
+            name: tool.name,
+            display_name: getToolDisplayName(tool),
+          })),
+      ]),
+    );
+
+  useEffect(() => {
     const getModels = async () => {
       const response = await modelService.getModels(token);
       if (!response.ok) throw new Error('Failed to fetch models');
@@ -1024,12 +936,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               ? prevSelectedModelIds
               : new Set([preferredDefaultModelId]),
           );
+          // The instance's model is where a new agent starts, not an edit.
+          markSaved((base) =>
+            base.models.length > 0
+              ? base
+              : {
+                  ...base,
+                  models: [preferredDefaultModelId],
+                  default_model_id: preferredDefaultModelId,
+                },
+          );
         }
       }
     };
-    getTools();
     getModels();
-  }, [token, mode, toolsReloadKey]);
+  }, [token, mode, markSaved]);
 
   // Validate folder_id from URL against user's folders
   useEffect(() => {
@@ -1080,12 +1001,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 config: { ...(prev.config ?? {}), guardrails: data.guardrails },
               },
         );
+        // Where a new agent starts, not an edit.
+        markSaved((base) =>
+          base.config.guardrails
+            ? base
+            : {
+                ...base,
+                config: { ...base.config, guardrails: data.guardrails },
+              },
+        );
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [mode, token]);
+  }, [mode, token, markSaved]);
 
   useEffect(() => {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
@@ -1096,6 +1026,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           throw new Error('Failed to fetch agent');
         }
         const data = await response.json();
+        // A workflow belongs in its own editor: this form offers no workflow
+        // type, so saving here would turn it into a classic agent.
+        if (mode === 'edit' && isWorkflowAgent(data)) {
+          navigate(agentEditPath(agentId, true), { replace: true });
+          return;
+        }
 
         const agentSourceIds = selectedSourceIdsFromAgent(data);
         setSelectedSourceIds(new Set(agentSourceIds));
@@ -1123,7 +1059,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           prompt_id: data.prompt_id || 'default',
           retriever: agentSourceIds.length === 0 ? 'classic' : '',
           chunks: data.chunks || '6',
-          tools: data.tools || [],
+          // The picked tools, as the tools effect below writes them: the
+          // server's order, with deleted tools left out.
+          tools: data.tool_details
+            ? toolIdsOf(data.tool_details)
+            : data.tools || [],
           ...serializeAgentSources(agentSourceIds, sourceDocs),
           models: agentModels,
           default_model_id: agentModels.includes(data.default_model_id || '')
@@ -1133,6 +1073,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         };
         setAgent(normalized);
         initialAgentRef.current = normalized;
+        markSaved(
+          agentSavePayload(
+            normalized,
+            data.json_schema ? JSON.stringify(data.json_schema, null, 2) : '',
+          ),
+        );
       };
       getAgent();
     }
@@ -1182,12 +1128,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [selectedSourceIds]);
 
   useEffect(() => {
-    setAgent((prev) => ({
-      ...prev,
-      tools: Array.from(selectedTools)
-        .map((tool) => tool?.id)
-        .filter((id): id is string => typeof id === 'string'),
-    }));
+    setAgent((prev) => ({ ...prev, tools: toolIdsOf(selectedTools) }));
   }, [selectedTools]);
 
   useEffect(() => {
@@ -1196,27 +1137,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const saved = effectiveMode === 'edit' ? initialAgentRef.current : null;
     if (saved) dispatch(setSelectedAgent(saved));
     else if (isPublishable()) dispatch(setSelectedAgent(agent));
+  }, [agent, dispatch, effectiveMode, jsonSchemaText]);
 
-    if (!modeConfig[effectiveMode].trackChanges) {
-      setHasChanges(true);
-      return;
-    }
-    if (!initialAgentRef.current) {
-      setHasChanges(false);
-      return;
-    }
-
-    const initialJsonSchemaText = initialAgentRef.current.json_schema
-      ? JSON.stringify(initialAgentRef.current.json_schema, null, 2)
-      : '';
-
-    const isChanged =
-      !sameAgent(agent, initialAgentRef.current) ||
-      imageFile !== null ||
-      jsonSchemaText !== initialJsonSchemaText ||
-      takeovers.length > 0;
-    setHasChanges(isChanged);
-  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText, takeovers]);
+  // The builder's own exits (a picker's Go to link, Upload's Browse
+  // connectors) ask first while the form has unsaved changes.
+  const leaveGuard = useLeaveGuard(hasChanges);
+  // A broken connection signs in again in place, or on its connector page,
+  // which is an exit like any other.
+  const signInAgain = useSignInAgain({
+    onConnected: () => {
+      setToolsReloadKey((key) => key + 1);
+      setDetailsReloadKey((key) => key + 1);
+    },
+    onNavigate: leaveGuard.leaveTo,
+  });
 
   const isPublished = agent.status === 'published';
   // What the caller's role allows on this agent (`allowed_actions` from the
@@ -1231,6 +1165,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Page-level actions live in the ⋯ at the end of the toolbar row. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
   // menu item then and a toolbar button after.
+  // An agent this form created: the server added the admin's default
+  // guardrails under what was sent, which the form may never have had (their
+  // read failed, or landed after the save). An allowlist change replaces the
+  // stored config whole, so it saves onto the server's copy.
+  const readCreatedConfig = useCallback(async () => {
+    const response = await userService.getAgent(agent.id ?? '', token);
+    if (!response.ok) throw new Error('Failed to fetch agent');
+    return ((await response.json()) as Agent).config;
+  }, [agent.id, token]);
+
   const agentMenu = useAgentMenu({
     agent,
     lead: isPublished
@@ -1271,7 +1215,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           variant="outline"
           size="field"
           shape="pill"
-          disabled={isDraftBlocked()}
+          disabled={isDraftBlocked() || publishLoading}
           loading={draftLoading}
           onClick={handleSaveDraft}
         >
@@ -1295,7 +1239,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           type="button"
           size="field"
           shape="pill"
-          disabled={!isPublishable() || !hasChanges}
+          // Save on a published agent needs a change; Publish on a draft
+          // or a new agent doesn't.
+          disabled={
+            !isPublishable() ||
+            draftLoading ||
+            (effectiveMode === 'edit' && !hasChanges)
+          }
           loading={publishLoading}
           onClick={handlePublish}
           className="flex-1 sm:flex-none"
@@ -1311,7 +1261,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
     >
       {signInAgain.modals}
-      {agent.agent_type === 'workflow' && <WorkflowBuilder />}
+      {leaveGuard.dialog}
       <AgentPageToolbar
         intro={agent.id ? undefined : t('agents.form.byline.new')}
         name={agentDisplayName}
@@ -1391,11 +1341,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   : undefined
               }
             >
-              <MultiSelectPopover
+              <KnowledgePicker
                 open={isSourcePopupOpen}
                 onOpenChange={setIsSourcePopupOpen}
-                title={t('agents.form.sourcePopup.title')}
-                items={sourceItems}
+                docs={sourceDocs ?? []}
                 selectedIds={Array.from(selectedSourceIds)}
                 onToggle={(id) => {
                   const next = new Set(selectedSourceIds);
@@ -1403,16 +1352,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   else next.add(id);
                   setSelectedSourceIds(next);
                 }}
-                searchPlaceholder={t(
-                  'agents.form.sourcePopup.searchPlaceholder',
-                )}
-                emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
-                footer={
-                  <SourcesPopoverFooter
-                    onNavigate={() => setIsSourcePopupOpen(false)}
-                    onUploadClick={handleUploadClick}
-                  />
+                connections={toolContext.connections}
+                unlistedLabel={resolveSourceLabel}
+                unlistedLine={sourceAddedBy}
+                addedBy={sourceAddedBy}
+                onNavigate={leaveGuard.onNavigate()}
+                onUploaded={handleUploadedSource}
+                onBrowseConnectors={() =>
+                  leaveGuard.leaveTo('/settings/connectors?capability=sync')
                 }
+                onLeaveTo={leaveGuard.leaveTo}
                 trigger={
                   <Button
                     type="button"
@@ -1441,53 +1390,45 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               labelSurface="background"
               label={t('agents.form.sections.tools')}
             >
-              <MultiSelectPopover
+              <ToolsPicker
                 open={isToolsPopupOpen}
                 onOpenChange={setIsToolsPopupOpen}
-                title={t('agents.form.toolsPopup.title')}
-                items={toolItems}
+                tools={rawUserTools}
+                filter={isAgentPickerToolVisible}
+                // What was on the agent when it loaded or last saved: the
+                // owner's private tools don't come back in the caller's list.
+                attached={attachedTools}
+                attachedLine={t('agents.form.toolsPopup.attachedHint')}
                 selectedIds={selectedTools.map((tool) => tool.id)}
                 onToggle={(id) => {
-                  const exists = selectedTools.find((t) => t.id === id);
-                  if (exists) {
-                    setSelectedTools(selectedTools.filter((t) => t.id !== id));
+                  if (selectedTools.some((tool) => tool.id === id)) {
+                    setSelectedTools(
+                      selectedTools.filter((tool) => tool.id !== id),
+                    );
                     return;
                   }
-                  const item = toolItems.find((t) => t.id === id);
-                  const raw = rawUserTools.find((t) => t.id === id);
-                  const attached = attachedTools.find((t) => t.id === id);
-                  if (!item) return;
+                  const attached = attachedTools.find((tool) => tool.id === id);
+                  const raw = rawUserTools.find((tool) => tool.id === id);
+                  if (!attached && !raw) return;
                   setSelectedTools([
                     ...selectedTools,
                     attached ?? {
-                      id: item.id,
-                      name: raw?.name || item.label,
-                      display_name: item.label,
+                      id,
+                      name: raw!.name,
+                      display_name: getToolDisplayName(raw!),
                     },
                   ]);
                 }}
-                searchPlaceholder={t(
-                  'agents.form.toolsPopup.searchPlaceholder',
-                )}
-                emptyMessage={t('agents.form.toolsPopup.noOptionsMessage')}
-                footer={
-                  brokenToolConnections.length > 0 ? (
-                    <SignInAgainNotice
-                      connections={brokenToolConnections.map(
-                        ({ connection }) => connection,
-                      )}
-                      onReconnect={(connection) => {
-                        setIsToolsPopupOpen(false);
-                        signInAgain.reconnect(
-                          connection,
-                          brokenToolConnections.find(
-                            (entry) => entry.connection.id === connection.id,
-                          )?.mcpToolId,
-                        );
-                      }}
-                    />
-                  ) : undefined
+                connections={toolContext.connections}
+                catalog={toolContext.catalog}
+                addedBy={toolAddedBy}
+                onReconnect={(connection, mcpToolId) =>
+                  signInAgain.reconnect(connection, mcpToolId)
                 }
+                onNavigate={leaveGuard.onNavigate()}
+                onReloadTools={() => setToolsReloadKey((key) => key + 1)}
+                onToolsCreated={(toolIds) => void handleToolsCreated(toolIds)}
+                onLeaveTo={leaveGuard.leaveTo}
                 trigger={
                   <Button
                     type="button"
@@ -1512,51 +1453,42 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </FormField>
             <div className="flex flex-col sm:col-span-2">
-              <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <Prompts
-                    prompts={prompts}
-                    selectedPrompt={
-                      prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                      // Owner-resolved name from the agent payload: lets a team
-                      // member see the owner's prompt name (which isn't in their
-                      // own prompts list). 'public' hides owner-only edit/share
-                      // affordances on a prompt the viewer doesn't own.
-                      (agent.prompt_name
-                        ? {
-                            name: agent.prompt_name,
-                            id: agent.prompt_id || 'default',
-                            type: 'public',
-                          }
-                        : prompts[0]) || {
-                        name: 'default',
-                        id: 'default',
-                        type: 'public',
-                      }
-                    }
-                    onSelectPrompt={(name, id) =>
-                      setAgent({ ...agent, prompt_id: id })
-                    }
-                    setPrompts={(newPrompts) =>
-                      dispatch(setPrompts(newPrompts))
-                    }
-                    title={t('agents.form.sections.prompt')}
-                    titleAs="field"
-                    labelSurface="background"
-                    showAddButton={false}
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline-primary"
-                  size="field"
-                  onClick={() => setAddPromptModal('ACTIVE')}
-                >
-                  {t('agents.form.buttons.add')}
-                </Button>
-              </div>
-              {/* The prompt Select has no description slot, so the mark of a
-                  prompt that runs with an editor's access is a hint under it. */}
+              <FormField
+                id={promptPickerId}
+                label={t('agents.form.sections.prompt')}
+                labelSurface="background"
+              >
+                <Combobox
+                  open={isPromptPickerOpen}
+                  onOpenChange={setIsPromptPickerOpen}
+                  title={t('agents.form.sections.prompt')}
+                  mobileSheet
+                  filters={promptKinds.filters}
+                  groups={promptGroups}
+                  value={agent.prompt_id || 'default'}
+                  valueOption={promptValueOption}
+                  onValueChange={(id) =>
+                    setAgent((prev) => ({ ...prev, prompt_id: id }))
+                  }
+                  placeholder={t('settings.prompts.select')}
+                  searchPlaceholder={t('settings.prompts.searchPlaceholder')}
+                  emptyText={t('settings.prompts.noPromptsFound')}
+                  footer={({ close }) => (
+                    <PickerFooter
+                      to="/settings/prompts"
+                      linkLabel={t('settings.prompts.manage')}
+                      onNavigate={leaveGuard.onNavigate(close)}
+                      actionLabel={t('settings.prompts.addPrompt')}
+                      onAction={() => {
+                        close();
+                        setAddPromptModal('ACTIVE');
+                      }}
+                    />
+                  )}
+                />
+              </FormField>
+              {/* The mark of the picked prompt running with an editor's
+                  access is a hint under the picker, seen without opening it. */}
               {promptAddedBy && (
                 <p className="text-muted-foreground mt-1.5 text-xs">
                   {promptAddedBy}
@@ -1929,7 +1861,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           }
         />
       </div>
-      {sponsorPrompt.modal}
+      {sponsoredSave.modal}
       {agentMenu.modals}
       <AgentDetailsModal
         agent={agent}
@@ -1941,35 +1873,38 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }}
         openApiWrites={detailsOnApiWrites}
         onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
-        onConfigChange={(config) => {
+        onConfigChange={(config, updatedAt) => {
           // The allowlist is saved already: record it on the saved snapshot
           // too, and keep any unsaved form edits to the rest of the config.
+          // The save moved the stamp the next save sends.
           if (initialAgentRef.current)
-            initialAgentRef.current = { ...initialAgentRef.current, config };
+            initialAgentRef.current = {
+              ...initialAgentRef.current,
+              config,
+              updated_at: updatedAt ?? initialAgentRef.current.updated_at,
+            };
+          markSaved((base) => ({
+            ...base,
+            config: {
+              ...base.config,
+              api_write_allowlist: config.api_write_allowlist,
+            },
+          }));
           setAgent((prev) => ({
             ...prev,
+            updated_at: updatedAt ?? prev.updated_at,
             config: {
               ...(prev.config ?? {}),
               api_write_allowlist: config.api_write_allowlist,
             },
           }));
         }}
-        getSavedConfig={() => initialAgentRef.current?.config ?? agent.config}
+        getSavedConfig={
+          mode === 'new'
+            ? readCreatedConfig
+            : () => initialAgentRef.current?.config ?? agent.config
+        }
       />
-      {uploadModalState === 'ACTIVE' && (
-        <Upload
-          receivedFile={[]}
-          setModalState={setUploadModalState}
-          isOnboarding={false}
-          renderTab={null}
-          close={() => setUploadModalState('INACTIVE')}
-          onSuccessfulUpload={handleUploadedSource}
-          selectUploadedDoc={false}
-          onBrowseConnectors={() =>
-            navigate('/settings/connectors?capability=sync')
-          }
-        />
-      )}
       <AddPromptModal
         prompts={prompts}
         isOpen={addPromptModal}

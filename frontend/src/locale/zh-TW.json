@@ -132,10 +132,9 @@
     "label": "設定",
     "general": {
       "label": "一般",
-      "subtitle": "選擇 DocsGPT 的外觀、介面語言以及聊天使用的提示詞。",
+      "subtitle": "選擇 DocsGPT 的外觀和介面語言。",
       "sections": {
         "appearance": "外觀",
-        "chat": "聊天",
         "dangerZone": "危險操作"
       },
       "theme": "主題",
@@ -145,8 +144,6 @@
       "light": "淺色",
       "dark": "深色",
       "chunks": "每次查詢處理的區塊數",
-      "prompt": "使用中的提示",
-      "promptDescription": "不使用代理的聊天所用的系統提示詞。代理會使用各自的提示詞。",
       "deleteAllLabel": "刪除所有對話",
       "deleteAllDescription": "永久刪除您帳戶中的所有對話。此操作無法復原。",
       "addNew": "新增",
@@ -156,18 +153,7 @@
       "medium": "中",
       "high": "高",
       "unlimited": "無限制",
-      "default": "預設",
-      "add": "添加",
-      "promptActions": {
-        "select": "選擇提示詞",
-        "edit": "編輯提示詞",
-        "view": "檢視提示詞",
-        "duplicate": "複製提示詞",
-        "delete": "刪除提示詞",
-        "deleteFailed": "無法刪除此提示詞。",
-        "saveFailed": "無法儲存此提示詞。",
-        "editConflict": "其他人已變更此提示詞。請重新開啟以查看其版本。"
-      }
+      "default": "預設"
     },
     "sources": {
       "title": "在這裡您可以管理所有可用的來源檔案以及您上傳的檔案。",
@@ -178,7 +164,7 @@
       "type": "類型",
       "tokenUsage": "Token 使用量",
       "noData": "還沒有知識",
-      "searchPlaceholder": "搜尋...",
+      "searchPlaceholder": "搜尋知識…",
       "addNew": "新增文件",
       "addSource": "新增知識",
       "addChunk": "新增區塊",
@@ -692,7 +678,22 @@
       "viaConnectionFiles_other": "透過 {{name}} · {{files}} 個檔案",
       "item": {
         "tokens": "{{tokens}} Token"
-      }
+      },
+      "tokenCount": "{{tokens}} Token",
+      "kinds": {
+        "all": "全部",
+        "files": "檔案",
+        "websites": "網站",
+        "synced": "已同步",
+        "wikis": "Wiki",
+        "shared": "共享"
+      },
+      "kindFilterLabel": "依類型篩選",
+      "needsAttention": "需要處理",
+      "allKnowledge": "所有知識",
+      "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
+      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此來源。其檔案與區塊也會一併刪除。此操作無法復原。",
+      "noKnowledgeFound": "找不到知識"
     },
     "analytics": {
       "label": "分析",
@@ -1451,8 +1452,8 @@
     },
     "tools": {
       "label": "工具",
-      "subtitle": "代理可以執行的操作。內建工具在這裡。已連線服務提供的工具歸在該服務之下。",
-      "searchPlaceholder": "搜尋工具...",
+      "subtitle": "代理可以執行的操作。隨附工具隨 DocsGPT 提供。已連線服務提供的工具歸在該服務之下。",
+      "searchPlaceholder": "搜尋工具…",
       "addTool": "新增工具",
       "noToolsFound": "找不到工具",
       "selectToolSetup": "新增工具",
@@ -1592,13 +1593,67 @@
       "triggerLabel_one": "工具，已選 {{formatted}} 個",
       "triggerLabel_other": "工具，已選 {{formatted}} 個",
       "manageInConnectors": "在連接器中管理",
-      "defaultBadge": "預設",
       "noToolsYet": "還沒有工具",
       "connectService": "連接服務",
       "filledBy": "填寫方式",
       "loadError": "無法載入你的工具。",
       "deleteConsequence": "其設定與動作也會一併刪除。此操作無法復原。",
-      "deleteActionConsequence": "儲存工具後即會移除。"
+      "deleteActionConsequence": "儲存工具後即會移除。",
+      "groupIncluded": "隨附",
+      "groupAdded": "已新增",
+      "filters": {
+        "all": "全部"
+      },
+      "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。",
+      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將失去此工具。其設定與動作也會一併刪除。此操作無法復原。",
+      "groupServices": "服務",
+      "kindFilterLabel": "依類型篩選"
+    },
+    "prompts": {
+      "label": "提示詞",
+      "subtitle": "系統提示詞決定模型如何回答。你選擇的提示詞用於不使用代理的聊天；代理會使用各自的提示詞。",
+      "searchPlaceholder": "搜尋提示詞…",
+      "addPrompt": "新增提示詞",
+      "manage": "前往提示詞",
+      "select": "選擇提示詞",
+      "filters": {
+        "all": "全部"
+      },
+      "sections": {
+        "included": "隨附",
+        "yours": "你的",
+        "shared": "團隊共享"
+      },
+      "presets": {
+        "default": "根據你的文件回答並註明出處。文件無法回答時會說明，再以一般知識作答。",
+        "creative": "與 default 相同，另外提供想法、範例和富有想像力的角度，同時保持事實正確。",
+        "strict": "只根據你的文件、工具和聊天內容回答。缺少資訊時會說明，而不是猜測。"
+      },
+      "chatPromptLabel": "不使用代理的聊天所用的提示詞",
+      "useInChats": "在聊天中使用 {{name}}",
+      "chatPromptFailed": "無法變更聊天使用的提示詞。",
+      "actions": "{{name}} 的操作",
+      "edit": "編輯",
+      "view": "檢視",
+      "duplicate": "建立副本",
+      "shareWithTeam": "與團隊分享",
+      "delete": "刪除",
+      "deleteUsedBy_one": "有 {{formatted}} 個代理正在使用，刪除後它們將改用預設提示詞。此操作無法復原。",
+      "deleteUsedBy_other": "有 {{formatted}} 個代理正在使用，刪除後它們將改用預設提示詞。此操作無法復原。",
+      "deleteUsedByInChats_one": "有 {{formatted}} 個代理和你的聊天正在使用，刪除後它們將改用預設提示詞。此操作無法復原。",
+      "deleteUsedByInChats_other": "有 {{formatted}} 個代理和你的聊天正在使用，刪除後它們將改用預設提示詞。此操作無法復原。",
+      "deleteInChats": "你的聊天正在使用它，刪除後將改用預設提示詞。此操作無法復原。",
+      "deleteFailed": "無法刪除此提示詞。",
+      "saveFailed": "無法儲存此提示詞。",
+      "editConflict": "其他人已變更此提示詞。請重新開啟以查看其版本。",
+      "loadError": "無法載入你的提示詞。",
+      "noPromptsFound": "找不到提示詞",
+      "kinds": {
+        "shared": "共享"
+      },
+      "kindFilterLabel": "依類型篩選",
+      "chatPromptOn": "用於無代理的聊天",
+      "chatPromptOff": "在無代理的聊天中使用"
     },
     "devices": {
       "label": "裝置",
@@ -2098,9 +2153,6 @@
         "ownerWarningNoAccount": "團隊成員將以你的 {{name}} 帳號操作。"
       },
       "createFailed": "無法新增連接器。請再試一次。",
-      "capabilityFilter": {
-        "clear": "顯示所有連接器"
-      },
       "capabilityPlain": {
         "sync": "同步到知識庫",
         "read": "查詢資訊",
@@ -2159,26 +2211,56 @@
         "failed": "無法重新命名帳戶。請再試一次。"
       },
       "browseAll": "瀏覽所有連接器",
-      "filters": {
-        "all": "全部",
-        "connected": "已連線",
-        "disconnected": "已中斷"
-      },
-      "filterLabel": "篩選連接器",
-      "capabilityChip": {
-        "sync": "同步到知識庫",
-        "tools": "為代理提供工具"
-      },
       "injection": {
         "flagged": "疑似提示詞注入",
         "notice_one": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。",
         "notice_other": "有 {{formatted}} 個動作的描述看起來像是為 AI 植入的指令，可能是提示詞注入。允許之前，請在「自訂」中檢查。"
       },
       "syncContent": "同步內容",
-      "openInKnowledge": "在知識庫中開啟"
+      "openInKnowledge": "在知識庫中開啟",
+      "capabilityShort": {
+        "sync": "同步",
+        "read": "查詢",
+        "write": "執行操作"
+      },
+      "capabilityFilters": {
+        "all": "全部",
+        "sync": "知識",
+        "tools": "工具"
+      },
+      "capabilityFilterLabel": "依功能篩選",
+      "statusFilters": {
+        "all": "不限狀態",
+        "reconnect": "需要登入",
+        "connected": "已連線",
+        "available": "未連線"
+      },
+      "statusFilterLabel": "依狀態篩選",
+      "sections": {
+        "reconnect": "需要登入",
+        "connected": "已連線",
+        "available": "可用"
+      },
+      "addCustomDescription": "連接目錄中沒有的伺服器或 API。"
     },
     "insights": {
       "label": "洞察"
+    },
+    "usage": {
+      "agents_one": "{{formatted}} 個代理正在使用",
+      "agents_other": "{{formatted}} 個代理正在使用",
+      "others_one": "以及你團隊中的另外 {{formatted}} 個",
+      "others_other": "以及你團隊中的另外 {{formatted}} 個",
+      "agentsShort_one": "{{formatted}} 個代理",
+      "agentsShort_other": "{{formatted}} 個代理",
+      "filters": {
+        "all": "不限使用情況",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "filterLabel": "依使用情況篩選",
+      "inChatsOn": "已在我的聊天中啟用",
+      "inChatsOff": "未在我的聊天中啟用"
     }
   },
   "modals": {
@@ -2399,8 +2481,7 @@
       "learnAboutPrompts": "了解提示 →",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",
-      "promptTypePrivate": "私人",
-      "delete": "刪除"
+      "promptTypePrivate": "私人"
     },
     "chunk": {
       "add": "新增區塊",
@@ -2543,10 +2624,8 @@
     },
     "sources": {
       "title": "來源",
-      "text": "選擇知識",
       "link": "來源連結",
       "view_more": "查看更多 {{count}} 個來源",
-      "noSourcesAvailable": "還沒有知識",
       "selectedCount": "已選 {{count}} 個",
       "triggerLabel_one": "知識庫，已選 {{formatted}} 個",
       "triggerLabel_other": "知識庫，已選 {{formatted}} 個",
@@ -2965,22 +3044,11 @@
         "historyLimitDefault": "接近上下文上限時摘要"
       },
       "sourcePopup": {
-        "title": "選擇知識",
-        "searchPlaceholder": "搜尋知識...",
-        "noOptionsMessage": "還沒有知識",
-        "groupOwn": "我的來源",
-        "groupTeam": "團隊共享",
+        "searchPlaceholder": "搜尋知識…",
         "noSourceHint": "選填。沒有知識時，代理只用模型和它的工具回答。"
       },
       "toolsPopup": {
-        "title": "選擇工具",
-        "searchPlaceholder": "搜尋工具...",
-        "noOptionsMessage": "沒有可用的工具",
-        "groupBuiltin": "內建",
-        "groupDefault": "內建",
         "groupCustom": "自訂",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "已在此智慧代理上",
         "attachedHint": "由其他人新增。你可以將其移除。"
       },
       "modelsPopup": {
@@ -3054,7 +3122,8 @@
       "externalKb": "外部知識庫",
       "errors": {
         "publishFailed": "無法發布該助理，請重試。",
-        "saveDraftFailed": "無法儲存草稿，請重試。"
+        "saveDraftFailed": "無法儲存草稿，請重試。",
+        "staleWrite": "在你開啟此智慧代理後，其他人儲存了它。你的變更仍在這裡：複製所需內容，重新載入頁面後再次套用。"
       },
       "guardrails": {
         "enable": "啟用防護機制",
@@ -3270,6 +3339,11 @@
           "description": "它可重疊，因此有自己的結果。這些結果將從洞察和日誌中消失，重新新增後會從頭開始。",
           "submit": "移除"
         }
+      },
+      "leave": {
+        "title": "要不儲存就離開嗎？",
+        "description": "您在此處所做的變更將會遺失。",
+        "submit": "離開"
       }
     },
     "logs": {
@@ -3543,9 +3617,7 @@
       },
       "builder": {
         "deleteFailed": "無法刪除工作流程代理",
-        "updateWorkflowFailed": "無法更新工作流程",
         "updateAgentFailed": "無法更新代理",
-        "createWorkflowFailed": "無法建立工作流程",
         "createAgentFailed": "無法建立代理",
         "saveFailed": "無法儲存工作流程",
         "defaultDescription": "工作流程代理：{{name}}",
@@ -3651,7 +3723,9 @@
         "loopOnErrorCollect": "在原位置保留錯誤",
         "loopOutputHint": "結果清單，每個項目一個結果。",
         "loopResultVariable": "項目結果",
-        "loopResultVariableHint": "其值作為每個項目結果的變數。留空則使用最後執行之節點的輸出。"
+        "loopResultVariableHint": "其值作為每個項目結果的變數。留空則使用最後執行之節點的輸出。",
+        "loadFailedTitle": "無法載入工作流程",
+        "loadFailedDescription": "沒有任何變更。請重試，或稍後再來。"
       },
       "validation": {
         "nameRequired": "工作流程名稱為必填",
@@ -3862,7 +3936,8 @@
     },
     "multiSelect": {
       "more_one": "另外 {{count}} 個",
-      "more_other": "另外 {{count}} 個"
+      "more_other": "另外 {{count}} 個",
+      "selectedGroup": "已選取"
     }
   },
   "pageNotFound": {

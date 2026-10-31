@@ -124,3 +124,117 @@ class TestDraftAgentThroughAnswerRoute:
 
         assert response.status_code == 200, response.get_data(as_text=True)
         assert built["agent_type"] == "classic"
+
+
+TEAMMATE = "teammate-1"
+
+
+def _seed_workflow_draft(pg_engine, finished: bool) -> dict:
+    """A keyless draft workflow agent; its stored graph is Start → Agent → End, or one agent node."""
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
+    from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
+    from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+    with pg_engine.begin() as conn:
+        workflow = WorkflowsRepository(conn).create(OWNER, "flow")
+        wid = str(workflow["id"])
+        nodes_repo = WorkflowNodesRepository(conn)
+        if finished:
+            start = nodes_repo.create(wid, 1, "s", "start")
+            agent_node = nodes_repo.create(wid, 1, "a", "agent", config={})
+            end = nodes_repo.create(wid, 1, "e", "end")
+            edges_repo = WorkflowEdgesRepository(conn)
+            edges_repo.create(wid, 1, "e1", str(start["id"]), str(agent_node["id"]))
+            edges_repo.create(wid, 1, "e2", str(agent_node["id"]), str(end["id"]))
+        else:
+            nodes_repo.create(wid, 1, "a", "agent", config={})
+        agent = AgentsRepository(conn).create(
+            user_id=OWNER,
+            name="flow draft",
+            status="draft",
+            agent_type="workflow",
+            workflow_id=wid,
+            default_model_id=AGENT_MODEL,
+            tools=[],
+        )
+    assert agent.get("key") is None
+    return {"agent": agent}
+
+
+def _patch_run(monkeypatch) -> dict:
+    """Patch model lookups and the agent factory; return what create_agent was given."""
+    from docsgpt.api.answer.services import stream_processor as sp
+
+    built: dict = {}
+
+    def _create_agent(cls, agent_type, **kwargs):
+        built.update(kwargs, agent_type=agent_type)
+        return _fake_agent()
+
+    monkeypatch.setattr(sp.AgentCreator, "create_agent", classmethod(_create_agent))
+    monkeypatch.setattr(sp, "validate_model_id", lambda model_id, user_id=None: model_id == AGENT_MODEL)
+    monkeypatch.setattr(sp, "get_default_model_id", lambda: "default-model")
+    monkeypatch.setattr(sp, "get_provider_from_model_id", lambda *a, **kw: "openai")
+    monkeypatch.setattr(sp, "get_api_key_for_provider", lambda *a, **kw: "k")
+    monkeypatch.setattr(sp, "calculate_doc_token_budget", lambda **kw: 1000)
+    monkeypatch.setattr("docsgpt.llm.llm_creator.LLMCreator.create_llm", lambda *a, **kw: MagicMock())
+    return built
+
+
+@pytest.mark.unit
+class TestUnfinishedWorkflowDraft:
+    """A draft's graph saves unfinished; asking the draft in a chat must not run that graph."""
+
+    @staticmethod
+    def _ask(route: str, agent_id: str, user: str):
+        from flask import Flask, request
+
+        from docsgpt.api.answer.routes.answer import AnswerResource
+        from docsgpt.api.answer.routes.stream import StreamResource
+
+        app = Flask(__name__)
+        body = {"question": "hi", "agent_id": agent_id, "isNoneDoc": True}
+        resource = AnswerResource if route == "/api/answer" else StreamResource
+        with app.test_request_context(route, method="POST", json=body), \
+                patch("docsgpt.api.answer.routes.base.QuotaService.check", return_value=None):
+            request.decoded_token = {"sub": user}
+            response = resource().post()
+            return response.status_code, response.get_data(as_text=True)
+
+    @pytest.mark.parametrize("route", ["/api/answer", "/stream"])
+    def test_the_owner_is_told_it_is_unfinished(self, pg_engine, monkeypatch, route):
+        monkeypatch.setattr("docsgpt.storage.db.session.get_engine", lambda: pg_engine)
+        built = _patch_run(monkeypatch)
+        agent_id = str(_seed_workflow_draft(pg_engine, finished=False)["agent"]["id"])
+
+        status, body = self._ask(route, agent_id, OWNER)
+
+        assert status == 400, body
+        assert "workflow_unfinished" in body
+        assert built == {}
+
+    def test_a_team_viewer_is_told_it_is_unfinished(self, pg_engine, monkeypatch):
+        monkeypatch.setattr("docsgpt.storage.db.session.get_engine", lambda: pg_engine)
+        built = _patch_run(monkeypatch)
+        agent_id = str(_seed_workflow_draft(pg_engine, finished=False)["agent"]["id"])
+        monkeypatch.setattr(
+            "docsgpt.api.answer.services.stream_processor.TeamScopeRepository.can_read",
+            lambda self, user_id, resource_type, resource_id: user_id == TEAMMATE,
+        )
+
+        status, body = self._ask("/stream", agent_id, TEAMMATE)
+
+        assert status == 400, body
+        assert "workflow_unfinished" in body
+        assert built == {}
+
+    def test_a_finished_draft_still_runs(self, pg_engine, monkeypatch):
+        monkeypatch.setattr("docsgpt.storage.db.session.get_engine", lambda: pg_engine)
+        built = _patch_run(monkeypatch)
+        agent_id = str(_seed_workflow_draft(pg_engine, finished=True)["agent"]["id"])
+
+        status, body = self._ask("/api/answer", agent_id, OWNER)
+
+        assert status == 200, body
+        assert built["agent_type"] == "workflow"

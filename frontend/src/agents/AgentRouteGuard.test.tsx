@@ -110,6 +110,26 @@ describe('AgentRouteGuard', () => {
     expect(shows('page')).toBe(true);
   });
 
+  const draft = {
+    id: 'a1',
+    access: 'owner',
+    status: 'draft',
+    allowed_actions: ['view', 'view_logs'],
+  };
+
+  it("opens a draft's Logs, where its preview runs show", async () => {
+    mocks.getAgent.mockReturnValue(respond(draft));
+    await render('view_logs');
+    expect(shows('page')).toBe(true);
+  });
+
+  it("sends a draft's Analytics back to the list", async () => {
+    mocks.getAgent.mockReturnValue(respond(draft));
+    await render('view_analytics', '/agents/manage/analytics/a1');
+    expect(shows('page')).toBe(false);
+    expect(shows('list')).toBe(true);
+  });
+
   it('decides from the agent list without a fetch when it has the actions', async () => {
     state.preference.agents = [
       { id: 'a1', access: 'viewer', allowed_actions: ['pin', 'use'] },
