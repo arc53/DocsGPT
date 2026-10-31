@@ -9,6 +9,13 @@
 * ``agents_tools_gin_idx`` and ``agents_extra_source_ids_gin_idx``: GIN
   indexes for the Workspace ``used_by`` lookups (``agents.tools ?| ids``,
   ``agents.extra_source_ids && ids``).
+* ``workflow_node_refs(config, key)``: the lower-case tool (``key`` =
+  ``tools``) or source (``sources``) ids a workflow node's config names, read
+  from ``config.config`` when that is an object, else ``config``, like the
+  engine reads a node's settings; a lone id counts as one.
+  ``workflow_nodes_tool_refs_gin_idx`` and ``workflow_nodes_source_refs_gin_idx``
+  index it over agent nodes, so the ``used_by`` lookup of workflow agents
+  doesn't expand every node's config on the instance.
 * Tool ids in ``agents.tools`` are lowercased. Agent create and update store
   canonical ids since 2026-09-29; older rows may hold upper-case UUIDs, which
   the ``used_by`` lookup (an exact, lower-case match) would miss. A twin left
@@ -66,6 +73,31 @@ _LOWERCASE_TOOL_IDS = f"""
 """
 
 
+_NODE_REFS_FUNCTION = """
+    CREATE OR REPLACE FUNCTION workflow_node_refs(config jsonb, key text) RETURNS text[]
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+        SELECT COALESCE(array_agg(lower(r.ref)), '{}'::text[])
+        FROM (
+            SELECT CASE WHEN jsonb_typeof(config -> 'config') = 'object'
+                        THEN config -> 'config' ELSE config END -> key AS v
+        ) AS refs
+        CROSS JOIN LATERAL jsonb_array_elements_text(
+            CASE jsonb_typeof(refs.v)
+                WHEN 'array' THEN refs.v
+                WHEN 'string' THEN jsonb_build_array(refs.v)
+                WHEN 'number' THEN jsonb_build_array(refs.v)
+                ELSE '[]'::jsonb END
+        ) AS r(ref)
+    $$
+"""
+
+#: ``(index, key)`` of the node ref indexes; ``resource_usage`` queries the same expressions.
+_NODE_REF_INDEXES = (
+    ("workflow_nodes_tool_refs_gin_idx", "tools"),
+    ("workflow_nodes_source_refs_gin_idx", "sources"),
+)
+
+
 #: Agent columns whose change alone keeps ``updated_at`` (``AgentsRepository.BOOKKEEPING_COLUMNS``).
 _BOOKKEEPING = (
     "ARRAY['updated_at', 'last_used_at', 'key', 'incoming_webhook_token', "
@@ -86,7 +118,7 @@ _ANY_CHANGE_TRIGGER = (
 
 
 def upgrade() -> None:
-    """Add the agent prompt preset and its two checks, the usage indexes, lowercase tool ids, the content trigger."""
+    """Add the agent prompt preset and its checks, the usage indexes, lowercase tool ids, the content trigger."""
     op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS prompt_preset TEXT")
     op.execute("ALTER TABLE agents DROP CONSTRAINT IF EXISTS agents_prompt_preset_chk")
     op.execute(
@@ -101,6 +133,12 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS agents_tools_gin_idx ON agents USING gin (tools)")
     op.execute("CREATE INDEX IF NOT EXISTS agents_extra_source_ids_gin_idx ON agents USING gin (extra_source_ids)")
     op.execute(_LOWERCASE_TOOL_IDS)
+    op.execute(_NODE_REFS_FUNCTION)
+    for index, key in _NODE_REF_INDEXES:
+        op.execute(
+            f"CREATE INDEX IF NOT EXISTS {index} ON workflow_nodes "
+            f"USING gin (workflow_node_refs(config, '{key}')) WHERE node_type = 'agent'"
+        )
     op.execute("DROP TRIGGER IF EXISTS agents_set_updated_at ON agents")
     op.execute(_CONTENT_TRIGGER)
 
@@ -109,6 +147,9 @@ def downgrade() -> None:
     """Drop the agent prompt preset (its agents run the default prompt), the usage indexes, the content trigger."""
     op.execute("DROP TRIGGER IF EXISTS agents_set_updated_at ON agents")
     op.execute(_ANY_CHANGE_TRIGGER)
+    for index, _ in _NODE_REF_INDEXES:
+        op.execute(f"DROP INDEX IF EXISTS {index}")
+    op.execute("DROP FUNCTION IF EXISTS workflow_node_refs(jsonb, text)")
     op.execute("DROP INDEX IF EXISTS agents_extra_source_ids_gin_idx")
     op.execute("DROP INDEX IF EXISTS agents_tools_gin_idx")
     op.execute("ALTER TABLE agents DROP CONSTRAINT IF EXISTS agents_prompt_preset_exclusive_chk")

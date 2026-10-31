@@ -107,3 +107,61 @@ def test_round_trip_swaps_the_updated_at_trigger(pg_conn):
         assert "old.* IS DISTINCT FROM new.*" in _trigger_when(pg_conn)
         migration.upgrade()
         assert "last_used_at" in _trigger_when(pg_conn)
+
+
+def _node_indexes(conn) -> set:
+    return {
+        r[0]
+        for r in conn.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'workflow_nodes'"))
+    }
+
+
+_NODE_REF_INDEXES = {"workflow_nodes_tool_refs_gin_idx", "workflow_nodes_source_refs_gin_idx"}
+
+
+def test_round_trip_adds_and_drops_the_node_ref_indexes(pg_conn):
+    migration = importlib.import_module("docsgpt.alembic.versions.0060_agent_prompt_preset")
+    with patch.object(migration, "op", Operations(MigrationContext.configure(pg_conn))):
+        migration.upgrade()
+        migration.upgrade()
+        assert _NODE_REF_INDEXES <= _node_indexes(pg_conn)
+        migration.downgrade()
+        migration.downgrade()
+        assert not _NODE_REF_INDEXES & _node_indexes(pg_conn)
+        exists = "SELECT count(*) FROM pg_proc WHERE proname = 'workflow_node_refs'"
+        assert pg_conn.execute(text(exists)).scalar() == 0
+        migration.upgrade()
+        assert _NODE_REF_INDEXES <= _node_indexes(pg_conn)
+
+
+@pytest.mark.parametrize(
+    ("config", "refs"),
+    [
+        ({"tools": ["AB-1", "c"]}, ["ab-1", "c"]),
+        ({"config": {"tools": "One"}}, ["one"]),
+        ({"config": "x", "tools": [7]}, ["7"]),
+        ({"tools": {"a": 1}}, []),
+        ({}, []),
+    ],
+)
+def test_workflow_node_refs_reads_a_node_like_the_engine(pg_conn, config, refs):
+    import json
+
+    got = pg_conn.execute(
+        text("SELECT workflow_node_refs(CAST(:c AS jsonb), 'tools')"), {"c": json.dumps(config)},
+    ).scalar()
+    assert got == refs
+
+
+def test_the_used_by_workflow_lookup_can_use_the_node_ref_index(pg_conn):
+    """The query's expression must be the indexed one, or the lookup scans every node."""
+    from docsgpt.api.user import resource_usage
+
+    sql = resource_usage._WORKFLOW_SQL.format(key="tools").format(
+        match=resource_usage._WORKFLOW_MATCH.format(key="tools").format(ids=":full"),
+    )
+    pg_conn.execute(text("SET LOCAL enable_seqscan = off"))
+    plan = "\n".join(
+        r[0] for r in pg_conn.execute(text(f"EXPLAIN {sql}"), {"full": ["x"], "ids": ["x"]})
+    )
+    assert "workflow_nodes_tool_refs_gin_idx" in plan

@@ -92,29 +92,22 @@ _PRESETS_MATCH = (
     f"(a.prompt_id IS NULL AND COALESCE(a.prompt_preset, '{DEFAULT_PROMPT}') = ANY(CAST(:presets AS text[])))"
 )
 
-# Agent nodes of each workflow agent's current graph version. A node's settings
-# sit in ``config`` or, for graphs saved through the API, under ``config.config``,
-# like the engine reads them; a lone id is one ref (``_node_refs`` in the workflow routes).
+# Agent nodes of each workflow agent's current graph version. The SQL function
+# ``workflow_node_refs`` (migration 0060) reads a node's lower-case ids from
+# ``config`` or, for graphs saved through the API, ``config.config``, like the
+# engine reads them; a lone id is one ref (``_node_refs`` in the workflow routes).
+# The match is that function on a constant key, the expression the GIN indexes
+# ``workflow_nodes_tool_refs_gin_idx`` / ``workflow_nodes_source_refs_gin_idx`` hold.
 _WORKFLOW_SQL = """
-    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, lower(r.ref) AS ref
-    FROM agents a
-    JOIN workflows w ON w.id = a.workflow_id
-    JOIN workflow_nodes n ON n.workflow_id = w.id AND n.graph_version = w.current_graph_version
-    CROSS JOIN LATERAL (
-        SELECT CASE WHEN jsonb_typeof(n.config -> 'config') = 'object'
-                    THEN n.config -> 'config' ELSE n.config END -> CAST(:key AS text)
-    ) AS c(refs)
-    CROSS JOIN LATERAL jsonb_array_elements_text(
-        CASE jsonb_typeof(c.refs)
-            WHEN 'array' THEN c.refs
-            WHEN 'string' THEN jsonb_build_array(c.refs)
-            WHEN 'number' THEN jsonb_build_array(c.refs)
-            ELSE '[]'::jsonb END
-    ) AS r(ref)
-    WHERE a.agent_type = 'workflow' AND n.node_type = 'agent' AND ({match})
-      AND lower(r.ref) = ANY(CAST(:ids AS text[]))
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, r.ref
+    FROM workflow_nodes n
+    JOIN workflows w ON w.id = n.workflow_id AND n.graph_version = w.current_graph_version
+    JOIN agents a ON a.workflow_id = w.id
+    CROSS JOIN LATERAL unnest(workflow_node_refs(n.config, '{key}')) AS r(ref)
+    WHERE a.agent_type = 'workflow' AND n.node_type = 'agent' AND ({{match}})
+      AND r.ref = ANY(CAST(:ids AS text[]))
 """
-_WORKFLOW_MATCH = "lower(r.ref) = ANY(CAST({ids} AS text[]))"
+_WORKFLOW_MATCH = "workflow_node_refs(n.config, '{key}') && CAST({{ids}} AS text[])"
 
 _WORKFLOW_KEY = {"tool": "tools", "source": "sources"}
 
@@ -283,11 +276,10 @@ def _usage_rows(
         (_CLASSIC_TOOLS_SQL, _CLASSIC_TOOLS_MATCH) if kind == "tool" else (_CLASSIC_SOURCES_SQL, _CLASSIC_SOURCES_MATCH)
     )
     rows = list(conn.execute(text(classic_sql.format(match=_match(classic_match, full_ids, scoped_ids))), params))
+    key = _WORKFLOW_KEY[kind]
+    workflow_match = _match(_WORKFLOW_MATCH.format(key=key), full_ids, scoped_ids)
     rows.extend(
-        conn.execute(
-            text(_WORKFLOW_SQL.format(match=_match(_WORKFLOW_MATCH, full_ids, scoped_ids))),
-            {**params, "key": _WORKFLOW_KEY[kind]},
-        ).fetchall()
+        conn.execute(text(_WORKFLOW_SQL.format(key=key).format(match=workflow_match)), params).fetchall()
     )
     return rows
 

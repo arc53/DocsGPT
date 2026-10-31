@@ -1183,6 +1183,22 @@ workflow_nodes_table = Table(
     ),
 )
 
+# The Workspace ``used_by`` lookups of workflow agents, over the lower-case ids
+# the SQL function ``workflow_node_refs`` reads from an agent node's config.
+# Mirrors migration 0060.
+Index(
+    "workflow_nodes_tool_refs_gin_idx",
+    func.workflow_node_refs(workflow_nodes_table.c.config, text("'tools'")),
+    postgresql_using="gin",
+    postgresql_where=text("node_type = 'agent'"),
+)
+Index(
+    "workflow_nodes_source_refs_gin_idx",
+    func.workflow_node_refs(workflow_nodes_table.c.config, text("'sources'")),
+    postgresql_using="gin",
+    postgresql_where=text("node_type = 'agent'"),
+)
+
 workflow_edges_table = Table(
     "workflow_edges",
     metadata,
