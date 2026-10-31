@@ -219,7 +219,7 @@ class TestUpdate:
         assert _row(pg_conn, agent_id)["name"] == "Renamed"
 
     def test_save_as_draft_then_publish_validates_the_stored_graph(self, app, pg_conn):
-        agent_id, wid = _workflow_agent(app, pg_conn)
+        agent_id, wid = _workflow_agent(app, pg_conn, status="draft")
         resp = _update(app, pg_conn, agent_id, {"status": "draft", "workflow_graph": _invalid_graph()})
         assert _status(resp) == 200, _json(resp)
         assert _row(pg_conn, agent_id)["status"] == "draft"
@@ -382,6 +382,36 @@ class TestPublishedAgentsRunValidatedGraphs:
         assert _status(resp) == 400
         assert _json(resp)["errors"]
         assert str(_row(pg_conn, agent_id)["workflow_id"]) == old_wid
+
+    def test_a_published_agent_saved_back_to_draft_still_needs_a_valid_graph(self, app, pg_conn):
+        """Its key keeps working whatever its status, so the graph it runs must be a finished one."""
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        resp = _update(app, pg_conn, agent_id, {"status": "draft", "workflow_graph": _invalid_graph()})
+        assert _status(resp) == 400
+        assert _json(resp)["message"] == "Workflow validation failed" and _json(resp)["errors"]
+        assert _row(pg_conn, agent_id)["status"] == "published"
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+        valid = _update(app, pg_conn, agent_id, {"status": "draft", "workflow_graph": _graph()})
+        assert _status(valid) == 200, _json(valid)
+        assert _row(pg_conn, agent_id)["status"] == "draft"
+
+    def test_a_published_agent_switching_to_an_unvalidated_workflow_as_a_draft_is_400(self, app, pg_conn):
+        wid = self._draft_workflow(app, pg_conn)
+        agent_id, old_wid = _workflow_agent(app, pg_conn)
+        resp = _update(app, pg_conn, agent_id, {"status": "draft", "workflow": wid})
+        assert _status(resp) == 400
+        assert _json(resp)["errors"]
+        assert str(_row(pg_conn, agent_id)["workflow_id"]) == old_wid
+        assert _row(pg_conn, agent_id)["status"] == "published"
+
+    def test_a_published_classic_agent_turning_into_a_draft_workflow_needs_a_valid_graph(self, app, pg_conn):
+        agent_id, _ = _agent(pg_conn)
+        resp = _update(
+            app, pg_conn, agent_id,
+            {"agent_type": "workflow", "status": "draft", "workflow_graph": _invalid_graph()},
+        )
+        assert _status(resp) == 400
+        assert _row(pg_conn, agent_id)["agent_type"] != "workflow"
 
     def test_a_valid_stored_workflow_still_attaches(self, app, pg_conn):
         wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")

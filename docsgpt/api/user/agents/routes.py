@@ -1652,14 +1652,17 @@ class UpdateAgent(Resource):
                 # on a draft and in full to publish. Without one, a published
                 # agent that starts running a stored graph (it is published now,
                 # becomes a workflow agent, or switches workflow) validates that
-                # graph, which a draft save may have left unfinished.
+                # graph, which a draft save may have left unfinished. An agent
+                # published before counts as published whatever status the save
+                # asks for: its key keeps running it after it goes back to draft.
                 if final_agent_type == "workflow":
                     graph_errors: list = []
+                    runs_live = final_status == "published" or existing_agent.get("status") != "draft"
                     if inline_graph is not None:
                         graph_errors = workflow_graph_errors(
-                            inline_graph, draft=final_status != "published", user_id=owner_id,
+                            inline_graph, draft=not runs_live, user_id=owner_id,
                         )
-                    elif final_status == "published":
+                    elif runs_live:
                         existing_workflow_id = existing_agent.get("workflow_id")
                         final_workflow_id = update_fields.get("workflow_id", existing_workflow_id)
                         starts_running = (
