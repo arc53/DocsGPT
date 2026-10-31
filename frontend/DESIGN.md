@@ -1405,6 +1405,14 @@ In a narrow side panel (the graph node panel's relationships) rows are
 leading mark (a `GraphTypeDot` with `mt-1.5`) sits on the title line. They go
 in a plain `<ul className="-mx-2">`, not `ListRows` (no divide rules), and
 are `interactive asChild` around a `<button>` like the others.
+Rows that sit straight on the page with no box around them (the empty chat's
+suggestions, `HeroSuggestions`) are `size="md"`: `px-3 py-2.5`, `gap-3` and
+`rounded-xl`, so the hover fill reads as a rounded row rather than a strip. They
+go in a plain `<ul>` too, with no divide rules. A row that sends something
+ends in a muted `ArrowUp` (the composer's send glyph) shown on hover and focus
+(`group/row`, as StepGroup does); a row that opens a page ends in a muted
+`ChevronRight`, always shown. Both keep the foreground title: `text-link` is
+for text links, not for a row that navigates.
 
 Key/value rows are `DescriptionList` + `DescriptionItem`, never a hand-rolled
 `flex` of label and value. `layout="columns"` (default) is an 8rem label

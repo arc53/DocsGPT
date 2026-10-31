@@ -35,8 +35,11 @@ type ListRowProps = Omit<React.ComponentProps<'li'>, 'title'> & {
    * relationships): 6px / 8px padding, rounded, top-aligned so a small
    * leading mark sits on the title line. Use it in a plain list, not in
    * `ListRows` (no divide rules).
+   * `md` is a row with no box around it, straight on the page (the empty
+   * chat's suggestions): 10px / 12px padding and `rounded-xl`, so the hover
+   * fill reads as a rounded row. Also a plain list, not `ListRows`.
    */
-  size?: 'default' | 'sm';
+  size?: 'default' | 'sm' | 'md';
   /**
    * Render the row's content into its single child (a `<Link>` or
    * `<button>`), wrapped in the `<li>`.
@@ -73,7 +76,9 @@ function ListRow({
     'flex',
     size === 'sm'
       ? 'items-start gap-2.5 rounded-md px-2 py-1.5'
-      : 'items-center gap-3 px-4 py-3',
+      : size === 'md'
+        ? 'items-center gap-3 rounded-xl px-3 py-2.5'
+        : 'items-center gap-3 px-4 py-3',
     // Inset, because a row list usually sits in an overflow-hidden rounded
     // box that would clip an outer ring.
     interactive &&
