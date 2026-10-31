@@ -3615,9 +3615,7 @@
       },
       "builder": {
         "deleteFailed": "ワークフローエージェントを削除できませんでした",
-        "updateWorkflowFailed": "ワークフローを更新できませんでした",
         "updateAgentFailed": "エージェントを更新できませんでした",
-        "createWorkflowFailed": "ワークフローを作成できませんでした",
         "createAgentFailed": "エージェントを作成できませんでした",
         "saveFailed": "ワークフローを保存できませんでした",
         "defaultDescription": "ワークフローエージェント: {{name}}",

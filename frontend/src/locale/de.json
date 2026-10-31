@@ -3634,9 +3634,7 @@
       },
       "builder": {
         "deleteFailed": "Workflow-Agent konnte nicht gelöscht werden",
-        "updateWorkflowFailed": "Workflow konnte nicht aktualisiert werden",
         "updateAgentFailed": "Agent konnte nicht aktualisiert werden",
-        "createWorkflowFailed": "Workflow konnte nicht erstellt werden",
         "createAgentFailed": "Agent konnte nicht erstellt werden",
         "saveFailed": "Workflow konnte nicht gespeichert werden",
         "defaultDescription": "Workflow-Agent: {{name}}",

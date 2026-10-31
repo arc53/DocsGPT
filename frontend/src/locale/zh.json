@@ -3613,9 +3613,7 @@
       },
       "builder": {
         "deleteFailed": "无法删除工作流智能体",
-        "updateWorkflowFailed": "无法更新工作流",
         "updateAgentFailed": "无法更新智能体",
-        "createWorkflowFailed": "无法创建工作流",
         "createAgentFailed": "无法创建智能体",
         "saveFailed": "无法保存工作流",
         "defaultDescription": "工作流智能体：{{name}}",

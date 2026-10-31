@@ -3615,9 +3615,7 @@
       },
       "builder": {
         "deleteFailed": "無法刪除工作流程代理",
-        "updateWorkflowFailed": "無法更新工作流程",
         "updateAgentFailed": "無法更新代理",
-        "createWorkflowFailed": "無法建立工作流程",
         "createAgentFailed": "無法建立代理",
         "saveFailed": "無法儲存工作流程",
         "defaultDescription": "工作流程代理：{{name}}",

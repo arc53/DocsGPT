@@ -3639,9 +3639,7 @@
       },
       "builder": {
         "deleteFailed": "Failed to delete workflow agent",
-        "updateWorkflowFailed": "Failed to update workflow",
         "updateAgentFailed": "Failed to update agent",
-        "createWorkflowFailed": "Failed to create workflow",
         "createAgentFailed": "Failed to create agent",
         "saveFailed": "Failed to save workflow",
         "defaultDescription": "Workflow agent: {{name}}",

@@ -3848,9 +3848,7 @@
       },
       "builder": {
         "deleteFailed": "Не удалось удалить агента рабочего процесса",
-        "updateWorkflowFailed": "Не удалось обновить рабочий процесс",
         "updateAgentFailed": "Не удалось обновить агента",
-        "createWorkflowFailed": "Не удалось создать рабочий процесс",
         "createAgentFailed": "Не удалось создать агента",
         "saveFailed": "Не удалось сохранить рабочий процесс",
         "defaultDescription": "Агент рабочего процесса: {{name}}",

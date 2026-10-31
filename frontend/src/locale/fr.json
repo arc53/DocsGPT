@@ -3746,9 +3746,7 @@
       },
       "builder": {
         "deleteFailed": "Échec de la suppression de l’agent de workflow",
-        "updateWorkflowFailed": "Échec de la mise à jour du workflow",
         "updateAgentFailed": "Échec de la mise à jour de l’agent",
-        "createWorkflowFailed": "Échec de la création du workflow",
         "createAgentFailed": "Échec de la création de l’agent",
         "saveFailed": "Échec de l’enregistrement du workflow",
         "defaultDescription": "Agent de workflow : {{name}}",

@@ -3741,9 +3741,7 @@
       },
       "builder": {
         "deleteFailed": "No se pudo eliminar el agente de flujo de trabajo",
-        "updateWorkflowFailed": "No se pudo actualizar el flujo de trabajo",
         "updateAgentFailed": "No se pudo actualizar el agente",
-        "createWorkflowFailed": "No se pudo crear el flujo de trabajo",
         "createAgentFailed": "No se pudo crear el agente",
         "saveFailed": "No se pudo guardar el flujo de trabajo",
         "defaultDescription": "Agente de flujo de trabajo: {{name}}",
