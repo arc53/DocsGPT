@@ -334,6 +334,9 @@ export default function Sources({
   // badge survives closing the modal and reflects the real backend state.
   const graphBuilds = useSelector(selectGraphBuilds);
 
+  // Each page request's number: only the latest one's answer is shown, so a
+  // filter, search or page clicked while one loads isn't overwritten by it.
+  const latestRequest = useRef(0);
   const refreshDocs = useCallback(
     (field?: 'date' | 'tokens', pageNumber?: number, rows?: number) => {
       const page = pageNumber ?? currentPage;
@@ -356,6 +359,8 @@ export default function Sources({
         setSortOrder(newSortOrder);
       }
 
+      const request = ++latestRequest.current;
+      const isLatest = () => request === latestRequest.current;
       setLoading(true);
       getDocsWithPagination(
         newSortField,
@@ -367,6 +372,7 @@ export default function Sources({
         { kind, usage },
       )
         .then((data) => {
+          if (!isLatest()) return;
           setLoadFailed(data === null);
           if (data === null) return;
           dispatch(setPaginatedDocuments(data.docs));
@@ -379,7 +385,7 @@ export default function Sources({
         })
         .catch((error) => console.error(error))
         .finally(() => {
-          setLoading(false);
+          if (isLatest()) setLoading(false);
         });
     },
     [
@@ -422,9 +428,16 @@ export default function Sources({
       refreshDocs();
     },
     // An open source (one opened from a citation may be off this page)
-    // follows its own reingest, wiki conversion or graph enable.
-    onChanged: () =>
-      documentToView?.id ? refreshOpenSource(documentToView.id) : refreshDocs(),
+    // follows its own reingest, wiki conversion or graph enable. The
+    // knowledge list is read again too: Needs attention comes from it.
+    onChanged: () => {
+      if (documentToView?.id) {
+        refreshOpenSource(documentToView.id);
+        return;
+      }
+      refreshDocs();
+      void reloadKnowledge();
+    },
     onPatched: (id, patch) => {
       patchDoc(id, patch);
       // The open view reads what it keeps of the settings again.
@@ -609,37 +622,38 @@ export default function Sources({
           )
       : [];
 
-  // Needs attention: with no search or filter, the sources whose ingest
-  // failed or whose connection needs a sign-in (in that order), from the
-  // app's knowledge list so a source on any page counts. Indexing needs no
-  // one, so it stays in the list. They leave the paged grid, and page 1
-  // leads with them; a card on this page is the fresher copy of its source.
+  // Needs attention: with no search or filter, the sources the reader can
+  // fix: a failed ingest they may reingest (`edit`), then a source on their
+  // own connection that needs a sign-in (only theirs are loaded). They come
+  // from the app's knowledge list so a source on any page counts. Indexing
+  // needs no one, so it stays in the list. Page 1 leads with them and drops
+  // them from its grid; later pages, with no such section, keep their own
+  // cards. A card on this page is the fresher copy of its source.
   const unfiltered = !pendingTerm && kind === 'all' && usage === 'all';
   const attentionRank = (doc: Doc): number | null => {
-    const ingest = ingestState(doc);
-    if (ingest === 'failed') return 0;
+    if (ingestState(doc) === 'failed' && can(doc, 'edit')) return 0;
     return connectionNeedsSignIn(connectionOf(doc, connections)) ? 1 : null;
   };
-  const attentionDocs = unfiltered
-    ? (knowledge ?? [])
-        .map(
-          (listed) =>
-            currentDocuments.find((d) => d.id === listed.id) ??
-            asListedDoc(listed),
-        )
-        .map((doc) => ({ doc, rank: attentionRank(doc) }))
-        .filter(
-          (entry): entry is { doc: Doc; rank: number } => entry.rank !== null,
-        )
-        .sort((a, b) => a.rank - b.rank)
-        .map(({ doc }) => doc)
-    : [];
+  const attentionDocs =
+    unfiltered && currentPage === 1
+      ? (knowledge ?? [])
+          .map(
+            (listed) =>
+              currentDocuments.find((d) => d.id === listed.id) ??
+              asListedDoc(listed),
+          )
+          .map((doc) => ({ doc, rank: attentionRank(doc) }))
+          .filter(
+            (entry): entry is { doc: Doc; rank: number } => entry.rank !== null,
+          )
+          .sort((a, b) => a.rank - b.rank)
+          .map(({ doc }) => doc)
+      : [];
   const attentionIds = new Set(attentionDocs.map((doc) => doc.id));
   const gridDocuments = currentDocuments.filter(
     (doc) => !attentionIds.has(doc.id),
   );
-  const showAttention =
-    currentPage === 1 && unfiltered && attentionDocs.length > 0;
+  const showAttention = attentionDocs.length > 0;
 
   // What every source view takes, and what a tree view adds.
   const viewProps = {

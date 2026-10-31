@@ -1916,6 +1916,119 @@ describe('Sources needs attention', () => {
       container.querySelector('button[aria-label="Failed"]'),
     ).not.toBeNull();
   });
+
+  // Page 1 lifts them into Needs attention; a later page has no such
+  // section, so its own cards stay in its grid instead of leaving it blank.
+  it('keeps attention cards in the grid on a later page', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [failed],
+      totalDocuments: 30,
+      totalPages: 3,
+      currentPage: 2,
+      nextCursor: '',
+    });
+    await mount(root, [failed], { entry: '/settings/knowledge?page=2' });
+    expect(
+      container.querySelector('button[aria-label="Failed"]'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain('settings.sources.noData');
+  });
+
+  // A team source the reader only uses: they can't reingest it, so it
+  // stays in the list rather than asking them to act.
+  it('leaves out a failed source the reader cannot edit', async () => {
+    const shared = doc({
+      id: 'v',
+      name: 'Shared',
+      ingestStatus: 'failed',
+      access: 'viewer',
+      allowed_actions: VIEWER,
+    });
+    connectors.connections = [];
+    knowledge.docs = [fine, shared];
+    fetchPage.mockResolvedValue({
+      docs: [fine, shared],
+      totalDocuments: 2,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    await mount(root, [fine, shared]);
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+    expect(
+      container.querySelector('button[aria-label="Shared"]'),
+    ).not.toBeNull();
+  });
+
+  // Needs attention reads the app's knowledge list, so a reingest reads it
+  // again: the source leaves the section even when it is off this page.
+  it('reads the knowledge list again after a reingest', async () => {
+    service.reingestSource.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    });
+    await mount(root, [fine, failed]);
+    vi.mocked(getDocs).mockClear();
+    await openMenu('menu-button-f');
+    const item = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'settings.sources.reingest')!;
+    await act(async () => item.click());
+    expect(getDocs).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Sources list requests', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+  const page = (name: string) => ({
+    docs: [doc({ id: name, name })],
+    totalDocuments: 1,
+    totalPages: 1,
+    currentPage: 1,
+    nextCursor: '',
+  });
+
+  beforeEach(() => {
+    dispatch.mockReset();
+    fetchPage.mockReset();
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  // A filter or search clicked while the previous page is loading: the
+  // older answer, arriving last, does not replace the newer one.
+  it('ignores a late answer to an older request', async () => {
+    let answerFirst: (value: ReturnType<typeof page>) => void = () => {};
+    fetchPage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerFirst = resolve;
+        }),
+    );
+    fetchPage.mockResolvedValue(page('Newer'));
+    await mount(root, []);
+    await typeSearch('n');
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    await act(async () => answerFirst(page('Older')));
+    const pages = dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === 'preference/setPaginatedDocuments')
+      .map((action) => action.payload.map((d: Doc) => d.name));
+    expect(pages).toEqual([['Newer']]);
+  });
 });
 
 describe('Sources toolbar', () => {
