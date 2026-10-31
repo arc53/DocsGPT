@@ -17,25 +17,25 @@ import {
 } from '../sponsorConsent';
 import { useSponsorPrompt } from '../useSponsorPrompt';
 
+/** The JSON body of a failed response, or null (a proxy page, an empty 502). */
+async function readBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Pull the backend's own explanation out of a failed response.
+ * The backend's own explanation in a failed save's body, else the fallback.
  *
  * The agent and workflow write endpoints answer a rejected save with
  * `{"success": false, "message": "<why>"}` (e.g. "Invalid chunks value: …"),
  * the one piece of information that tells the user what to change.
  */
-export async function extractApiError(
-  response: Response,
-  fallback: string,
-): Promise<string> {
-  try {
-    const body = await response.json();
-    if (typeof body?.message === 'string' && body.message.trim())
-      return body.message;
-  } catch {
-    // Non-JSON body (proxy HTML error page, empty 502): use the fallback.
-  }
-  return fallback;
+function messageOf(body: unknown, fallback: string): string {
+  const message = (body as { message?: unknown } | null)?.message;
+  return typeof message === 'string' && message.trim() ? message : fallback;
 }
 
 /** How a sponsored save ended. */
@@ -43,8 +43,12 @@ export type SponsoredSaveResult =
   | { status: 'saved'; response: Response }
   /** The caller declined to run something with their access. */
   | { status: 'cancelled' }
-  /** Refused: `message` says why, in the UI's language where it can. */
-  | { status: 'failed'; message: string; response: Response };
+  /**
+   * Refused: `message` says why, in the UI's language where it can; `body`
+   * is the response's JSON for anything else it lists (a workflow's
+   * validation `errors`).
+   */
+  | { status: 'failed'; message: string; response: Response; body?: unknown };
 
 type SponsoredSaveOptions = {
   /**
@@ -142,10 +146,12 @@ export function useSponsoredSave({
           message: t('agents.form.sponsors.confirmationOutdated'),
         };
       }
+      const body = await readBody(response);
       return {
         status: 'failed',
         response,
-        message: await extractApiError(response, fallback),
+        body,
+        message: messageOf(body, fallback),
       };
     },
     [i18n.language, sponsorPrompt.ask, t],

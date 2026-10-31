@@ -1553,7 +1553,12 @@ class UpdateAgent(Resource):
                         )
                     else:
                         value = data[field]
-                        if field in ["name", "description", "agent_type"]:
+                        # A workflow agent's description is optional (publishing
+                        # doesn't need one), so it may be cleared.
+                        optional = field == "description" and (
+                            data.get("agent_type") or existing_agent.get("agent_type")
+                        ) == "workflow"
+                        if field in ["name", "description", "agent_type"] and not optional:
                             if not value or not str(value).strip():
                                 return _reject(
                                     f"Field '{field}' cannot be empty", user, field

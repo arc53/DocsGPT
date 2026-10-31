@@ -304,6 +304,10 @@ function WorkflowBuilderInner() {
   const [detailsSaving, setDetailsSaving] = useState(false);
   const [detailsSaveFailed, setDetailsSaveFailed] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  // Which save is out, so only its button spins.
+  const [savingStatus, setSavingStatus] = useState<'draft' | 'published'>(
+    'published',
+  );
   const [showPrimaryActionSpinner, setShowPrimaryActionSpinner] =
     useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
@@ -330,9 +334,10 @@ function WorkflowBuilderInner() {
       void loadTools().catch(() => undefined);
     },
   });
-  const [errorContext, setErrorContext] = useState<'preview' | 'publish'>(
-    'publish',
-  );
+  // What the error list is about: a preview, a save, or a first publish.
+  const [errorContext, setErrorContext] = useState<
+    'preview' | 'save' | 'publish'
+  >('publish');
   const [showNodeConfig, setShowNodeConfig] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] =
@@ -1161,11 +1166,26 @@ function WorkflowBuilderInner() {
           ...agent,
           agent_type: 'workflow',
         });
-        if (agent.agent_type === 'workflow' && agent.workflow) {
+        if (agent.agent_type !== 'workflow') return;
+        setCurrentAgentId(agent.id);
+        setWorkflowName(agent.name);
+        setWorkflowDescription(agent.description || '');
+        if (agent.workflow) {
           setWorkflowId(agent.workflow);
-          setCurrentAgentId(agent.id);
-          setWorkflowName(agent.name);
-          setWorkflowDescription(agent.description || '');
+        } else {
+          // A draft saved before it had a graph: the canvas starts as a new
+          // one does, and that is what is saved.
+          markSaved(
+            JSON.stringify(
+              createWorkflowPayload(
+                agent.name,
+                agent.description || '',
+                initialNodes,
+                [],
+                null,
+              ),
+            ),
+          );
         }
       } catch (error) {
         console.error('Failed to load agent:', error);
@@ -1174,7 +1194,7 @@ function WorkflowBuilderInner() {
       }
     };
     loadAgentDetails();
-  }, [agentId, token]);
+  }, [agentId, token, markSaved, initialNodes]);
 
   const applyResourceDetails = useCallback(
     (data: {
@@ -1682,201 +1702,131 @@ function WorkflowBuilderInner() {
 
   // One save at a time: a second one beside it would race it to the server.
   const persistingRef = useRef(false);
+  /**
+   * Save the workflow agent and its graph in one request: as a draft (an
+   * unfinished graph saves; only its shape is checked) or published (the
+   * whole graph must run). A first save creates the agent and its workflow.
+   */
   const persistWorkflow = useCallback(
-    async (navigateAfterSuccess: boolean): Promise<WorkflowSaveOutcome> => {
+    async (status: 'draft' | 'published'): Promise<WorkflowSaveOutcome> => {
       if (persistingRef.current) return 'cancelled';
       setPublishErrors([]);
-      setErrorContext('publish');
+      // Publishing a new or draft workflow, or saving one.
+      setErrorContext(
+        status === 'published' &&
+          !(effectiveAgentId && currentAgent.status !== 'draft')
+          ? 'publish'
+          : 'save',
+      );
 
-      const validationErrors = validateWorkflow();
+      const validationErrors =
+        status === 'published'
+          ? validateWorkflow()
+          : workflowName.trim()
+            ? []
+            : [t('agents.workflow.validation.nameRequired')];
       if (validationErrors.length > 0) {
         setPublishErrors(validationErrors);
         return 'failed';
       }
 
       persistingRef.current = true;
+      setSavingStatus(status);
       setIsPublishing(true);
-      let createdWorkflowId: string | null = null;
       try {
         const workflowPayload = buildWorkflowPayload();
-
-        let savedWorkflowId = workflowId;
-        if (workflowId) {
-          // A node tool or source the owner can't use would run with the
-          // caller's access: ask first, then save again with their answer.
-          const updated = await sponsoredSave.save(
-            (confirm) =>
-              userService.updateWorkflow(
-                workflowId,
-                confirm.length > 0
-                  ? { ...workflowPayload, confirm_sponsor: confirm }
-                  : workflowPayload,
-                token,
-              ),
-            t('agents.workflow.builder.updateWorkflowFailed'),
-          );
-          if (updated.status === 'cancelled') return 'cancelled';
-          if (updated.status === 'failed') throw new Error(updated.message);
-
-          if (effectiveAgentId) {
-            const agentFormData = new FormData();
-            agentFormData.append('name', workflowName);
-            // What the user typed; the server refuses a blank one on update,
-            // so a blank one is left out.
-            if (workflowDescription.trim())
-              agentFormData.append('description', workflowDescription);
-            agentFormData.append('status', 'published');
-            agentFormData.append(
-              'allow_system_prompt_override',
-              currentAgent.allow_system_prompt_override ? 'True' : 'False',
-            );
-            if (imageFile) {
-              agentFormData.append('image', imageFile);
-            }
-            // Only what Workflow details changed. The config replaces the
-            // stored one whole, so the rest comes from the server's copy as
-            // it is now, not as the builder loaded it: a guardrails or
-            // allowlist change saved meanwhile elsewhere stays. No fresh
-            // copy, no save.
-            const savedConfig = pendingConfig
-              ? {
-                  ...((await readSavedConfig(effectiveAgentId)) ?? {}),
-                  ...pendingConfig,
-                }
-              : null;
-            if (savedConfig)
-              agentFormData.append('config', JSON.stringify(savedConfig));
-            const agentUpdateResponse = await userService.updateAgent(
-              effectiveAgentId,
-              agentFormData,
-              token,
-            );
-            if (!agentUpdateResponse.ok) {
-              throw new Error(t('agents.workflow.builder.updateAgentFailed'));
-            }
-            const updatedAgent = await agentUpdateResponse
-              .json()
-              .catch(() => null);
-            setCurrentAgent((prev) => ({
-              ...prev,
-              ...(updatedAgent || {}),
-              id: effectiveAgentId,
-              name: workflowName,
-              description: workflowDescription,
-              image: updatedAgent?.image || prev.image || '',
-              ...(savedConfig
-                ? { config: updatedAgent?.config ?? savedConfig }
-                : {}),
-            }));
-            setPendingConfig(null);
-          }
-          setImageFile(null);
-          markSaved(JSON.stringify(workflowPayload));
-          setAutoFilledModels({});
-          if (navigateAfterSuccess) {
-            navigateBackToAgents();
-          }
-          return 'saved';
-        }
-
-        const createResponse = await userService.createWorkflow(
-          workflowPayload,
-          token,
-        );
-        if (!createResponse.ok) {
-          const errorData = await createResponse.json().catch(() => ({}));
-          const backendErrors = errorData.errors || [];
-          if (backendErrors.length > 0) {
-            setPublishErrors(backendErrors);
-            return 'failed';
-          }
-          throw new Error(
-            errorData.message ||
-              t('agents.workflow.builder.createWorkflowFailed'),
-          );
-        }
-        const responseData = await createResponse.json();
-        savedWorkflowId = responseData?.data?.id ?? responseData?.id;
-        createdWorkflowId = savedWorkflowId || null;
-        if (savedWorkflowId) {
-          setWorkflowId(savedWorkflowId);
-        }
-
-        const agentFormData = new FormData();
-        agentFormData.append('name', workflowName);
-        agentFormData.append('description', workflowDescription);
-        agentFormData.append('agent_type', 'workflow');
-        agentFormData.append('status', 'published');
-        agentFormData.append('workflow', savedWorkflowId || '');
-        agentFormData.append(
+        const creating = !effectiveAgentId;
+        const formData = new FormData();
+        formData.append('name', workflowName);
+        // As typed; a workflow agent's description may be blank.
+        formData.append('description', workflowDescription);
+        formData.append('status', status);
+        formData.append(
           'allow_system_prompt_override',
           currentAgent.allow_system_prompt_override ? 'True' : 'False',
         );
-        if (imageFile) {
-          agentFormData.append('image', imageFile);
-        }
-        if (folderId) agentFormData.append('folder_id', folderId);
-        // A new agent: there is no stored config to read again.
-        const createdConfig = pendingConfig
-          ? { ...(currentAgent.config ?? {}), ...pendingConfig }
-          : null;
-        if (createdConfig)
-          agentFormData.append('config', JSON.stringify(createdConfig));
-
-        const agentResponse = await userService.createAgent(
-          agentFormData,
-          token,
+        formData.append(
+          'workflow_graph',
+          JSON.stringify({
+            nodes: workflowPayload.nodes,
+            edges: workflowPayload.edges,
+            retry_defaults: workflowPayload.retry_defaults,
+          }),
         );
-        if (!agentResponse.ok) {
-          const errorData = await agentResponse.json().catch(() => ({}));
-          throw new Error(
-            errorData.message || t('agents.workflow.builder.createAgentFailed'),
-          );
+        if (imageFile) formData.append('image', imageFile);
+        if (creating) {
+          formData.append('agent_type', 'workflow');
+          if (folderId) formData.append('folder_id', folderId);
         }
-        const agentData = await agentResponse.json().catch(() => ({}));
-        if (agentData?.id) {
-          setCurrentAgentId(agentData.id);
-          setCurrentAgent({
-            ...createEmptyWorkflowAgent(),
-            ...agentData,
-            id: agentData.id,
-            name: workflowName,
-            description: workflowDescription,
-            image: agentData.image || '',
-            workflow: savedWorkflowId || undefined,
-            agent_type: 'workflow',
-            status: 'published',
-            ...(createdConfig
-              ? { config: agentData.config ?? createdConfig }
-              : {}),
-          });
-          setPendingConfig(null);
+        // Only what Workflow details changed. The config replaces the stored
+        // one whole, so on an update the rest comes from the server's copy as
+        // it is now, not as the builder loaded it: a guardrails or allowlist
+        // change saved meanwhile elsewhere stays. No fresh copy, no save.
+        const savedConfig = !pendingConfig
+          ? null
+          : creating
+            ? { ...(currentAgent.config ?? {}), ...pendingConfig }
+            : {
+                ...((await readSavedConfig(effectiveAgentId)) ?? {}),
+                ...pendingConfig,
+              };
+        if (savedConfig) formData.append('config', JSON.stringify(savedConfig));
+
+        // A node tool or source the owner can't use would run with the
+        // caller's access: ask first, then save again with their answer.
+        const result = await sponsoredSave.save(
+          (confirm) => {
+            if (confirm.length > 0)
+              formData.set('confirm_sponsor', JSON.stringify(confirm));
+            else formData.delete('confirm_sponsor');
+            return creating
+              ? userService.createAgent(formData, token)
+              : userService.updateAgent(effectiveAgentId, formData, token);
+          },
+          creating
+            ? t('agents.workflow.builder.createAgentFailed')
+            : t('agents.workflow.builder.updateAgentFailed'),
+        );
+        if (result.status === 'cancelled') return 'cancelled';
+        if (result.status === 'failed') {
+          // A graph the server can't run lists each problem.
+          const listed = (result.body as { errors?: unknown } | null)?.errors;
+          setPublishErrors(
+            Array.isArray(listed) && listed.length > 0
+              ? listed.map(String)
+              : [result.message],
+          );
+          return 'failed';
         }
 
+        const data = await result.response.json().catch(() => ({}));
+        const agentId: string = data?.id || effectiveAgentId;
+        const savedWorkflowId: string | null =
+          data?.workflow_id || workflowId || null;
+        setCurrentAgentId(agentId);
+        setCurrentAgent((prev) => ({
+          ...(creating ? createEmptyWorkflowAgent() : prev),
+          id: agentId,
+          name: workflowName,
+          description: workflowDescription,
+          image: data?.image || prev.image || '',
+          key: data?.key ?? prev.key,
+          agent_type: 'workflow',
+          status,
+          workflow: savedWorkflowId || undefined,
+          allow_system_prompt_override:
+            currentAgent.allow_system_prompt_override,
+          ...(savedConfig ? { config: savedConfig } : {}),
+        }));
+        if (savedWorkflowId && savedWorkflowId !== workflowId)
+          setWorkflowId(savedWorkflowId);
+        setPendingConfig(null);
         setImageFile(null);
+        // What was sent is saved, a draft too: the leave guard starts over.
         markSaved(JSON.stringify(workflowPayload));
         setAutoFilledModels({});
-        if (navigateAfterSuccess) {
-          navigateBackToAgents();
-        }
         return 'saved';
       } catch (error) {
-        if (createdWorkflowId) {
-          try {
-            const cleanupResponse = await userService.deleteWorkflow(
-              createdWorkflowId,
-              token,
-            );
-            if (cleanupResponse.ok) {
-              setWorkflowId(null);
-            }
-          } catch (cleanupError) {
-            console.error(
-              'Failed to clean up workflow after publish error:',
-              cleanupError,
-            );
-          }
-        }
         console.error('Failed to save workflow:', error);
         setPublishErrors([
           error instanceof Error
@@ -1900,12 +1850,13 @@ function WorkflowBuilderInner() {
       imageFile,
       currentAgent.allow_system_prompt_override,
       currentAgent.config,
+      currentAgent.status,
       readSavedConfig,
       pendingConfig,
       folderId,
-      navigateBackToAgents,
       t,
       sponsoredSave.save,
+      markSaved,
     ],
   );
 
@@ -1978,35 +1929,49 @@ function WorkflowBuilderInner() {
     ],
   );
 
+  // A saved, published workflow: Save edits it. A new or draft one: Save
+  // draft keeps it a draft and Publish publishes it.
+  const isPublished = canManageAgent && currentAgent.status !== 'draft';
+
   useEffect(() => {
     if (!detailsSaveRequested) return;
     setDetailsSaveRequested(false);
     setDetailsSaving(true);
     setDetailsSaveFailed(false);
     const session = detailsSessionRef.current;
-    void persistWorkflow(false).then((outcome) => {
-      setDetailsSaving(false);
-      if (session !== detailsSessionRef.current) return;
-      if (outcome === 'saved') setShowDetails(false);
-      // Declining the sponsor confirmation leaves the sheet open, no error.
-      else if (outcome === 'failed') setDetailsSaveFailed(true);
-    });
-  }, [detailsSaveRequested, persistWorkflow]);
+    // Details save the workflow as it is: a draft stays a draft (a new one
+    // becomes one), a published one stays published.
+    void persistWorkflow(isPublished ? 'published' : 'draft').then(
+      (outcome) => {
+        setDetailsSaving(false);
+        if (session !== detailsSessionRef.current) return;
+        if (outcome === 'saved') setShowDetails(false);
+        // Declining the sponsor confirmation leaves the sheet open, no error.
+        else if (outcome === 'failed') setDetailsSaveFailed(true);
+      },
+    );
+  }, [detailsSaveRequested, persistWorkflow, isPublished]);
 
-  // Save on a saved workflow is an edit; the first save publishes it. A new
-  // workflow has no access fields, so it reads as the owner's.
-  // Without it the Save/Publish button isn't rendered at all.
-  const canSubmit = can(currentAgent, canManageAgent ? 'edit' : 'publish');
+  // Save on a published workflow is an edit and needs a change; Publish on a
+  // new or draft one doesn't. A new workflow has no access fields, so it
+  // reads as the owner's. Without the right the button isn't rendered.
+  const canSubmit = can(currentAgent, isPublished ? 'edit' : 'publish');
   const isPrimaryActionDisabled =
-    isPublishing || (canManageAgent && !hasUnsavedWork);
-  const primaryActionLabel = canManageAgent
+    isPublishing || (isPublished && !hasUnsavedWork);
+  const primaryActionLabel = isPublished
     ? t('agents.form.buttons.save')
     : t('agents.form.buttons.publish');
+  // Save draft, like the agent builder's, until the workflow is published.
+  const canSaveDraft = !isPublished && can(currentAgent, 'edit');
 
   const handlePrimaryAction = useCallback(() => {
     if (isPrimaryActionDisabled) return;
-    void persistWorkflow(false);
+    void persistWorkflow('published');
   }, [isPrimaryActionDisabled, persistWorkflow]);
+  const handleSaveDraft = useCallback(() => {
+    if (isPublishing) return;
+    void persistWorkflow('draft');
+  }, [isPublishing, persistWorkflow]);
 
   // Stopped node resources still on the canvas.
   const stoppedResources = useMemo(
@@ -2206,7 +2171,7 @@ function WorkflowBuilderInner() {
             access={canManageAgent ? currentAgent : undefined}
             onNameClick={openDetails}
             status={
-              canManageAgent && currentAgent.status !== 'draft' ? (
+              isPublished ? (
                 <Badge variant="success">
                   {t('agents.form.status.published')}
                 </Badge>
@@ -2221,6 +2186,19 @@ function WorkflowBuilderInner() {
               <span className="text-muted-foreground mr-2 text-sm">
                 {t('agents.workflow.builder.unsavedChanges')}
               </span>
+            )}
+            {canSaveDraft && (
+              <Button
+                type="button"
+                variant="outline"
+                size="field"
+                shape="pill"
+                onClick={handleSaveDraft}
+                disabled={isPublishing}
+                loading={showPrimaryActionSpinner && savingStatus === 'draft'}
+              >
+                {t('agents.form.buttons.saveDraft')}
+              </Button>
             )}
             <Button
               type="button"
@@ -2245,7 +2223,9 @@ function WorkflowBuilderInner() {
                 type="button"
                 onClick={handlePrimaryAction}
                 disabled={isPrimaryActionDisabled}
-                loading={showPrimaryActionSpinner}
+                loading={
+                  showPrimaryActionSpinner && savingStatus === 'published'
+                }
                 size="field"
                 shape="pill"
               >
@@ -2302,7 +2282,7 @@ function WorkflowBuilderInner() {
                 <AlertTitle>
                   {errorContext === 'preview'
                     ? t('agents.workflow.builder.unablePreview')
-                    : canManageAgent
+                    : errorContext === 'save'
                       ? t('agents.workflow.builder.unableSave')
                       : t('agents.workflow.builder.unablePublish')}
                 </AlertTitle>

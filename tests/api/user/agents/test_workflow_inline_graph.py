@@ -291,6 +291,20 @@ class TestUpdate:
         assert _status(resp) == 409
         assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
 
+    def test_a_workflow_agents_description_can_be_cleared(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        _update(app, pg_conn, agent_id, {"description": "Answers renewals"})
+        resp = _update(app, pg_conn, agent_id, {"description": "", "workflow_graph": _graph()})
+        assert _status(resp) == 200, _json(resp)
+        assert _row(pg_conn, agent_id)["description"] == ""
+        assert WorkflowsRepository(pg_conn).get_by_id(wid)["description"] == ""
+
+    def test_a_classic_agents_description_still_cannot_be_cleared(self, app, pg_conn):
+        agent_id, _ = _agent(pg_conn)
+        resp = _update(app, pg_conn, agent_id, {"description": "  "})
+        assert _status(resp) == 400
+        assert "cannot be empty" in _json(resp)["message"]
+
     def test_inline_graph_with_workflow_field_is_400(self, app, pg_conn):
         agent_id, wid = _workflow_agent(app, pg_conn)
         resp = _update(app, pg_conn, agent_id, {"workflow": wid, "workflow_graph": _graph()})

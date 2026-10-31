@@ -75,6 +75,23 @@ vi.mock('../../modals/ConfirmationModal', () => ({
     modalState === 'ACTIVE' ? <p data-testid="confirm">{message}</p> : null,
 }));
 vi.mock('../../modals/AgentDetailsModal', () => ({ default: () => null }));
+// The sponsor confirmation, as a button that agrees.
+vi.mock('../components/SponsorConfirmModal', () => ({
+  default: ({
+    confirmation,
+    onConfirm,
+  }: {
+    confirmation: { resources: { key: string }[] } | null;
+    onConfirm: (keys: string[]) => void;
+  }) =>
+    confirmation ? (
+      <button
+        type="button"
+        data-testid="confirm-sponsor"
+        onClick={() => onConfirm(confirmation.resources.map((r) => r.key))}
+      />
+    ) : null,
+}));
 vi.mock('../../teams/ShareToTeamModal', () => ({ default: () => null }));
 vi.mock('../components/AgentPreviewSheet', () => ({ default: () => null }));
 vi.mock('./WorkflowPreview', () => ({ default: () => null }));
@@ -154,12 +171,16 @@ const workflowWith = (agentData: Record<string, unknown>) => ({
 const api = vi.hoisted(() => ({
   workflow: null as unknown,
   tools: [] as unknown[],
+  agentStatus: undefined as string | undefined,
+  createAgent: vi.fn(),
   updateAgent: vi.fn(),
   updateWorkflow: vi.fn(),
 }));
 vi.mock('../../api/services/userService', () => ({
   default: {
-    getAgent: () => ok(AGENT),
+    getAgent: () =>
+      ok(api.agentStatus ? { ...AGENT, status: api.agentStatus } : AGENT),
+    createAgent: (...a: unknown[]) => api.createAgent(...a),
     updateAgent: (...a: unknown[]) => api.updateAgent(...a),
     updateWorkflow: (...a: unknown[]) => api.updateWorkflow(...a),
     getUserTools: () => ok({ tools: api.tools }),
@@ -199,6 +220,8 @@ describe('WorkflowBuilder canvas', () => {
       prompt_template: 'Hi',
     });
     api.tools = [];
+    api.agentStatus = undefined;
+    api.createAgent.mockReset();
     api.updateAgent.mockReset().mockImplementation(() => ok({ id: 'a1' }));
     api.updateWorkflow
       .mockReset()
@@ -312,7 +335,8 @@ describe('WorkflowBuilder canvas', () => {
         }),
       );
       await act(async () => undefined);
-      const sent = api.updateWorkflow.mock.calls.at(-1)![1] as {
+      const form = api.updateAgent.mock.calls.at(-1)![1] as FormData;
+      const sent = JSON.parse(form.get('workflow_graph') as string) as {
         nodes: { id: string; data: Record<string, unknown> }[];
       };
       expect(sent.nodes.find((n) => n.id === 'agent')!.data.model_id).toBe(
@@ -345,17 +369,17 @@ describe('WorkflowBuilder canvas', () => {
       expect(form.get('description')).toBe('Answers renewals');
     });
 
-    // The server refuses an empty description on update, and a made-up
-    // English one is not what the user typed: a blank one is left out.
-    it('sends no made-up description when it is blank', async () => {
+    // A made-up English one is not what the user typed; a workflow
+    // agent's description may be blank, so clearing it saves.
+    it('sends a blank description as blank', async () => {
       const form = await saveWith('');
-      expect(form.get('description')).toBeNull();
+      expect(form.get('description')).toBe('');
     });
   });
 
   describe('a refused save', () => {
     const saveAndRead = async (status: number, body: unknown) => {
-      api.updateWorkflow.mockImplementation(
+      api.updateAgent.mockImplementation(
         async () =>
           new Response(JSON.stringify(body), {
             status,
@@ -384,7 +408,6 @@ describe('WorkflowBuilder canvas', () => {
         resources: [{ key: 'tool:t1', type: 'tool', id: 't1', name: 'Jira' }],
       });
       expect(errors).toEqual(['agents.form.sponsors.notAllowed']);
-      expect(api.updateAgent).not.toHaveBeenCalled();
     });
 
     it('says a confirmation is outdated', async () => {
@@ -489,6 +512,161 @@ describe('WorkflowBuilder canvas', () => {
       );
       await act(async () => undefined);
       expect(unsaved()).toBe(false);
+    });
+  });
+
+  describe('drafts and the one-request save', () => {
+    const NEW = '/agents/manage/workflow/new';
+    const json = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    const button = (label: string) =>
+      [...container.querySelectorAll('button')].find(
+        (b) => b.textContent === label,
+      );
+    const unsaved = () =>
+      container.textContent?.includes('agents.workflow.builder.unsavedChanges');
+    const graphOf = (form: FormData) =>
+      JSON.parse(form.get('workflow_graph') as string) as {
+        nodes: { id: string; type: string }[];
+        edges: unknown[];
+        retry_defaults: unknown;
+      };
+
+    it('saves a new, unfinished workflow as a draft in one request', async () => {
+      const sent: Record<string, unknown>[] = [];
+      api.createAgent.mockImplementation(async (form: FormData) => {
+        sent.push(Object.fromEntries(form.entries()));
+        return json(201, { id: 'a9', key: '', image: '', workflow_id: 'w9' });
+      });
+      await render(NEW);
+      // A draft: no Published badge, and Save draft beside Publish.
+      expect(container.textContent).toContain('agents.card.draft');
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[data-add="agent"]')!
+          .click(),
+      );
+      expect(unsaved()).toBe(true);
+      await act(async () => button('agents.form.buttons.saveDraft')!.click());
+      await act(async () => undefined);
+      expect(api.createAgent).toHaveBeenCalledTimes(1);
+      expect(api.updateWorkflow).not.toHaveBeenCalled();
+      expect(sent[0]).toMatchObject({
+        name: 'New Workflow',
+        description: '',
+        status: 'draft',
+        agent_type: 'workflow',
+      });
+      const graph = JSON.parse(sent[0].workflow_graph as string);
+      // No end node yet: a draft saves it anyway.
+      expect(graph.nodes.map((n: { type: string }) => n.type)).toEqual([
+        'start',
+        'agent',
+      ]);
+      expect(graph.retry_defaults).toBeNull();
+      // Saved: the leave guard starts over, and it is still a draft.
+      expect(unsaved()).toBe(false);
+      expect(container.textContent).toContain('agents.card.draft');
+      expect(button('agents.form.buttons.publish')).toBeDefined();
+    });
+
+    it('asks before a new workflow runs something with the caller access, then creates it', async () => {
+      const confirms: (string | null)[] = [];
+      api.createAgent.mockImplementation(async (form: FormData) => {
+        confirms.push(form.get('confirm_sponsor') as string | null);
+        return confirms.length === 1
+          ? json(409, {
+              code: 'sponsor_confirmation_required',
+              resources: [
+                { key: 'tool:t1', type: 'tool', id: 't1', name: 'Jira' },
+              ],
+              audience: {
+                teams: [],
+                api_key: false,
+                public_link: false,
+                webhook: false,
+              },
+            })
+          : json(201, { id: 'a9', key: '', image: '', workflow_id: 'w9' });
+      });
+      await render(NEW);
+      await act(async () => button('agents.form.buttons.saveDraft')!.click());
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[data-testid="confirm-sponsor"]')!
+          .click(),
+      );
+      await act(async () => undefined);
+      expect(confirms).toEqual([null, JSON.stringify(['tool:t1'])]);
+      expect(unsaved()).toBe(false);
+    });
+
+    it('publishes a draft without another change, in one request', async () => {
+      api.agentStatus = 'draft';
+      api.updateAgent.mockImplementation(async () =>
+        json(200, { success: true, id: 'a1', workflow_id: 'w1', key: 'k' }),
+      );
+      await render();
+      expect(container.textContent).toContain('agents.card.draft');
+      expect(button('agents.form.buttons.saveDraft')).toBeDefined();
+      const publish = button('agents.form.buttons.publish')!;
+      expect(publish.disabled).toBe(false);
+      await act(async () => publish.click());
+      await act(async () => undefined);
+      const form = api.updateAgent.mock.calls.at(-1)![1] as FormData;
+      expect(form.get('status')).toBe('published');
+      expect(graphOf(form).nodes.map((n) => n.id)).toEqual([
+        'start',
+        'agent',
+        'end',
+      ]);
+      expect(api.updateWorkflow).not.toHaveBeenCalled();
+      expect(container.textContent).toContain('agents.form.status.published');
+      expect(button('agents.form.buttons.saveDraft')).toBeUndefined();
+      expect(button('agents.form.buttons.save')!.disabled).toBe(true);
+    });
+
+    it('lists each problem the server finds in the graph', async () => {
+      api.agentStatus = 'draft';
+      api.updateAgent.mockImplementation(async () =>
+        json(400, {
+          success: false,
+          message: 'Workflow validation failed',
+          error: 'Workflow validation failed',
+          errors: ['Agent node needs a model', 'End is unreachable'],
+        }),
+      );
+      await render();
+      await act(async () => button('agents.form.buttons.publish')!.click());
+      await act(async () => undefined);
+      const alert = container.querySelector('[role="alert"]')!;
+      expect(alert.textContent).toContain(
+        'agents.workflow.builder.unablePublish',
+      );
+      expect(alert.textContent).toContain('Agent node needs a model');
+      expect(alert.textContent).toContain('End is unreachable');
+      expect(alert.textContent).not.toContain('Workflow validation failed');
+      expect(container.textContent).toContain('agents.card.draft');
+    });
+
+    it('keeps a draft a draft when its details are saved', async () => {
+      api.agentStatus = 'draft';
+      await render();
+      const onSave = sheet.props!.onSave as (values: object) => void;
+      await act(async () =>
+        onSave({
+          name: 'Renewal desk',
+          description: 'x',
+          allowPromptOverride: false,
+          imageFile: null,
+        }),
+      );
+      await act(async () => undefined);
+      const form = api.updateAgent.mock.calls.at(-1)![1] as FormData;
+      expect(form.get('status')).toBe('draft');
     });
   });
 });
