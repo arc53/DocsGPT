@@ -224,11 +224,11 @@ class TestResourceRestrictions:
     def test_chat_prompt_preference_accepts_a_preset_for_a_restricted_token(self, client):
         claims = self._restricted(["prompts:write"], prompts=[SOURCE_A])
         for preset in ("default", "creative", "strict"):
-            response = _call(client, "PUT", "/api/user/preferences", claims, json={"chat_prompt_id": preset})
+            response = self._put_preferences(client, claims, {"chat_prompt_id": preset})
             assert _denied(response) is None, preset
-        allowed = _call(client, "PUT", "/api/user/preferences", claims, json={"chat_prompt_id": SOURCE_A})
+        allowed = self._put_preferences(client, claims, {"chat_prompt_id": SOURCE_A})
         assert _denied(allowed) is None
-        missing = _call(client, "PUT", "/api/user/preferences", claims, json={})
+        missing = self._put_preferences(client, claims, {})
         assert _denied(missing) == "resource_not_allowed"
 
     @staticmethod
