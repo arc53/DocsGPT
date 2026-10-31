@@ -1711,6 +1711,7 @@
         "stepTwo": "2. Saisissez ce code lorsqu’il vous est demandé :",
         "start": "Générer un code",
         "waitingForCli": "En attente de l’utilisation du code par la CLI…",
+        "expired": "Ce code a expiré. Générez-en un nouveau pour associer l’appareil.",
         "cancel": "Annuler"
       },
       "auditDurationValue": "{{value}} ms",
@@ -1718,7 +1719,8 @@
       "auditShow": "Afficher les commandes récentes",
       "auditHide": "Masquer les commandes récentes",
       "seen": "vu {{time}}",
-      "revokeConsequence": "La CLI de cet appareil est déconnectée et l’association supprimée. Associez-le de nouveau pour le reconnecter."
+      "revokeConsequence": "La CLI de cet appareil est déconnectée et l’association supprimée. Associez-le de nouveau pour le reconnecter.",
+      "loadError": "Impossible de charger cet appareil."
     },
     "customModels": {
       "label": "Modèles personnalisés",

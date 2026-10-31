@@ -51,9 +51,36 @@ export interface AuditEntry {
   created_at: string;
 }
 
+/** A non-2xx device API response; `code` is the server's `error` field. */
+export class DevicesApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(status: number, code?: string) {
+    super(code || `Request failed (${status})`);
+    this.name = 'DevicesApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+// A non-2xx status rejects, so callers never read a `{success: false, error}`
+// body as a device, a pairing or a successful revoke.
 const json = async (response: Response | unknown) => {
   const r = response as Response;
   if (!('json' in r) || typeof r.json !== 'function') return r as unknown;
+  if (typeof r.ok === 'boolean' && !r.ok) {
+    let code: string | undefined;
+    try {
+      const body = await r.json();
+      if (body && typeof body.error === 'string' && body.error) {
+        code = body.error;
+      }
+    } catch {
+      // Not JSON (a proxy's error page): the status is all there is.
+    }
+    throw new DevicesApiError(r.status, code);
+  }
   return r.json();
 };
 

@@ -1647,6 +1647,7 @@
         "stepTwo": "2. 在提示时输入此代码：",
         "start": "生成代码",
         "waitingForCli": "等待 CLI 兑换代码…",
+        "expired": "此代码已过期。请生成新代码以配对设备。",
         "cancel": "取消"
       },
       "auditDurationValue": "{{value}} 毫秒",
@@ -1654,7 +1655,8 @@
       "auditShow": "显示最近的命令",
       "auditHide": "隐藏最近的命令",
       "seen": "{{time}}在线",
-      "revokeConsequence": "此设备上的 CLI 会断开连接，配对也会被移除。重新配对即可再次连接。"
+      "revokeConsequence": "此设备上的 CLI 会断开连接，配对也会被移除。重新配对即可再次连接。",
+      "loadError": "无法加载此设备。"
     },
     "customModels": {
       "label": "自定义模型",
