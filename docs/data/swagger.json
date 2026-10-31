@@ -358,6 +358,10 @@
         "workflow": {
           "description": "Workflow ID for workflow-type agents",
           "type": "string"
+        },
+        "workflow_graph": {
+          "description": "Workflow agents only, instead of workflow: the graph saved with the agent in the same transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft is checked for shape only, published runs the full validation. Needs workflows:write for a token.",
+          "type": "object"
         }
       },
       "required": [
@@ -1523,6 +1527,10 @@
         "workflow": {
           "description": "Workflow ID for workflow-type agents",
           "type": "string"
+        },
+        "workflow_graph": {
+          "description": "Workflow agents only, instead of workflow: the graph saved with the agent in the same transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft is checked for shape only, published runs the full validation. Needs workflows:write for a token.",
+          "type": "object"
         }
       },
       "required": [
@@ -3762,7 +3770,7 @@
     },
     "/api/create_agent": {
       "post": {
-        "description": "Create a new agent",
+        "description": "Create a new agent. JSON or multipart (multipart for an image). 201 {id, key, image, workflow_id (workflow agents)}. A workflow agent may send workflow_graph to create its workflow in the same request; a graph that fails validation is 400 {success: false, message, error, errors}.",
         "operationId": "post_create_agent",
         "parameters": [
           {
@@ -6920,7 +6928,7 @@
         }
       ],
       "put": {
-        "description": "Update an existing agent",
+        "description": "Update an existing agent. JSON or multipart (multipart for an image). 200 {success, id, message, image, key (when first published), workflow_id (workflow agents)}. A workflow agent may send workflow_graph to write its next graph version in the same transaction (or create its workflow); confirm_sponsor covers the agent's and the graph's resources. Publishing a draft without a graph validates the stored one.",
         "operationId": "put_update_agent",
         "parameters": [
           {

@@ -12,7 +12,7 @@ from pydantic import ValidationError as PydanticValidationError
 from docsgpt.analytics.config import STORED_CONTEXT, AnalyticsConfigError
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
-from docsgpt.api.pat.rules import filter_listing, mask_agent_key, may_see_agent_keys
+from docsgpt.api.pat.rules import filter_listing, mask_agent_key, may_see_agent_keys, missing_scope_response
 from docsgpt.guardrails.config import AgentConfig, GuardrailsConfig
 from docsgpt.api.user.base import (
     copy_agent_image_for_user,
@@ -39,6 +39,7 @@ from docsgpt.api.user.resource_access import (
     payload_for,
     plan_sponsors,
     ref_attachable,
+    refusal_plan,
     require,
     resolve,
     resource_states,
@@ -70,6 +71,14 @@ from docsgpt.storage.db.repositories.stack_logs import StackLogsRepository
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+from docsgpt.api.user.workflows.routes import (
+    parse_workflow_graph,
+    plan_graph_save,
+    stored_graph,
+    validate_workflow_structure,
+    workflow_graph_errors,
+    write_graph_save,
+)
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import (
     check_required_fields,
@@ -161,6 +170,7 @@ AGENT_TYPE_SCHEMAS = {
             "agent_type",
             "status",
             "key",
+            "image",
             "workflow_id",
             "folder_id",
             "limited_token_mode",
@@ -279,6 +289,48 @@ LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
 POLICY_FIELDS = (
     "config", "token_limit", "request_limit", "limited_token_mode", "limited_request_mode",
 )
+
+
+def _graph_validation_failed(errors: list):
+    """400 for a workflow graph that can't be saved, in both error shapes the clients read."""
+    message = "Workflow validation failed"
+    return make_response(jsonify({"success": False, "message": message, "error": message, "errors": errors}), 400)
+
+
+def _inline_graph(data: dict, agent_type: Optional[str]):
+    """The ``workflow_graph`` of an agent save, or the error response that refuses it.
+
+    Args:
+        data: The parsed request body.
+        agent_type: The agent's type after the save.
+
+    Returns:
+        ``(graph, error)``: ``graph`` None when none was sent.
+    """
+    raw = data.get("workflow_graph")
+    if raw is None or raw == "":
+        return None, None
+    refusal = missing_scope_response(request, "workflows:write")
+    if refusal is not None:
+        body, status = refusal
+        return None, make_response(jsonify(body), status)
+    if agent_type != "workflow":
+        return None, make_response(
+            jsonify({"success": False, "message": "workflow_graph is only for workflow agents"}), 400
+        )
+    if "workflow" in data:
+        return None, make_response(
+            jsonify({"success": False, "message": "Send workflow or workflow_graph, not both"}), 400
+        )
+    graph, error = parse_workflow_graph(raw)
+    if error:
+        return None, make_response(jsonify({"success": False, "message": error}), 400)
+    return graph, None
+
+
+def _image_output(image: Optional[str], agent_id: str, owner: Optional[str]) -> str:
+    """The agent image URL a save response carries, as ``get_agent`` shows it."""
+    return generate_image_url(image, agent_id, owner) if image else ""
 
 
 def _denied(err: AccessDenied):
@@ -786,6 +838,15 @@ class CreateAgent(Resource):
             "workflow": fields.String(
                 required=False, description="Workflow ID for workflow-type agents"
             ),
+            "workflow_graph": fields.Raw(
+                required=False,
+                description=(
+                    "Workflow agents only, instead of workflow: the graph saved with the agent in the same "
+                    "transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft "
+                    "is checked for shape only, published runs the full validation. Needs workflows:write for "
+                    "a token."
+                ),
+            ),
             "json_schema": fields.Raw(
                 required=False,
                 description="JSON schema for enforcing structured output format",
@@ -823,7 +884,13 @@ class CreateAgent(Resource):
     )
 
     @api.expect(create_agent_model)
-    @api.doc(description="Create a new agent")
+    @api.doc(
+        description=(
+            "Create a new agent. JSON or multipart (multipart for an image). 201 {id, key, image, "
+            "workflow_id (workflow agents)}. A workflow agent may send workflow_graph to create its workflow "
+            "in the same request; a graph that fails validation is 400 {success: false, message, error, errors}."
+        )
+    )
     def post(self):
         if not (decoded_token := request.decoded_token):
             return {"success": False}, 401
@@ -907,6 +974,17 @@ class CreateAgent(Resource):
         else:
             required_fields = schema["required_draft"]
             validate_fields = schema["validate_draft"]
+        # A workflow agent may bring its graph inline instead of a workflow id:
+        # a draft's graph is checked for shape only, a published one in full.
+        inline_graph, graph_error = _inline_graph(data, agent_type)
+        if graph_error is not None:
+            return graph_error
+        if inline_graph is not None:
+            required_fields = [f for f in required_fields if f != "workflow"]
+            validate_fields = [f for f in validate_fields if f != "workflow"]
+            graph_errors = workflow_graph_errors(inline_graph, draft=not is_published, user_id=user)
+            if graph_errors:
+                return _graph_validation_failed(graph_errors)
         missing_fields = check_required_fields(data, required_fields)
         invalid_fields = validate_required_fields(data, validate_fields)
         if missing_fields:
@@ -935,7 +1013,7 @@ class CreateAgent(Resource):
 
                 # Resolve workflow for workflow-type agents.
                 pg_workflow_id = None
-                if agent_type == "workflow":
+                if agent_type == "workflow" and inline_graph is None:
                     pg_workflow_id, err = _resolve_workflow_for_user(
                         conn, data.get("workflow"), user,
                     )
@@ -1023,6 +1101,17 @@ class CreateAgent(Resource):
                 if seeded_config is not requested_config:
                     build_data["config"] = normalize_agent_config(seeded_config)
 
+                # The inline graph is written last, after every check above, so
+                # a refused save leaves no workflow behind.
+                if inline_graph is not None:
+                    graph_save = plan_graph_save(conn, None, user, user, inline_graph, set())
+                    if isinstance(graph_save, AccessDenied):
+                        return _denied(graph_save)
+                    pg_workflow_id = write_graph_save(
+                        conn, graph_save, user, data["name"], data.get("description") or "",
+                    )
+                    build_data["workflow_id"] = pg_workflow_id
+
                 kwargs = _build_create_kwargs(
                     build_data, image_url=image_url, agent_type=agent_type,
                 )
@@ -1047,7 +1136,10 @@ class CreateAgent(Resource):
             return make_response(jsonify({"success": False}), 400)
         # A token without agents:keys never receives the plaintext agent key.
         visible_key = key if may_see_agent_keys(request) else mask_agent_key(key)
-        return make_response(jsonify({"id": new_id, "key": visible_key}), 201)
+        created = {"id": new_id, "key": visible_key, "image": _image_output(image_url, new_id, user)}
+        if agent_type == "workflow":
+            created["workflow_id"] = pg_workflow_id
+        return make_response(jsonify(created), 201)
 
 
 @agents_ns.route("/update_agent/<string:agent_id>")
@@ -1088,6 +1180,15 @@ class UpdateAgent(Resource):
             "workflow": fields.String(
                 required=False, description="Workflow ID for workflow-type agents"
             ),
+            "workflow_graph": fields.Raw(
+                required=False,
+                description=(
+                    "Workflow agents only, instead of workflow: the graph saved with the agent in the same "
+                    "transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft "
+                    "is checked for shape only, published runs the full validation. Needs workflows:write for "
+                    "a token."
+                ),
+            ),
             "json_schema": fields.Raw(
                 required=False,
                 description="JSON schema for enforcing structured output format",
@@ -1125,7 +1226,15 @@ class UpdateAgent(Resource):
     )
 
     @api.expect(update_agent_model)
-    @api.doc(description="Update an existing agent")
+    @api.doc(
+        description=(
+            "Update an existing agent. JSON or multipart (multipart for an image). 200 {success, id, message, "
+            "image, key (when first published), workflow_id (workflow agents)}. A workflow agent may send "
+            "workflow_graph to write its next graph version in the same transaction (or create its workflow); "
+            "confirm_sponsor covers the agent's and the graph's resources. Publishing a draft without a graph "
+            "validates the stored one."
+        )
+    )
     def put(self, agent_id):
         if not (decoded_token := request.decoded_token):
             return make_response(
@@ -1180,6 +1289,11 @@ class UpdateAgent(Resource):
                     )
                 pg_agent_id = str(existing_agent["id"])
                 existing_image = existing_agent.get("image", "") or ""
+                inline_graph, graph_error = _inline_graph(
+                    data, data.get("agent_type") or existing_agent.get("agent_type"),
+                )
+                if graph_error is not None:
+                    return graph_error
                 # The image is stored only once the save is known to go
                 # ahead, so a refused save (a sponsor confirmation round
                 # trip, a validation error) leaves no orphaned file.
@@ -1445,7 +1559,7 @@ class UpdateAgent(Resource):
                                     f"Field '{field}' cannot be empty", user, field
                                 )
                         update_fields[field] = value
-                if not update_fields and not has_new_image:
+                if not update_fields and not has_new_image and inline_graph is None:
                     return _reject("No valid update data provided", user)
 
                 newly_generated_key = None
@@ -1462,7 +1576,7 @@ class UpdateAgent(Resource):
                         workflow_final = update_fields.get(
                             "workflow_id", existing_agent.get("workflow_id"),
                         )
-                        if not workflow_final:
+                        if not workflow_final and inline_graph is None:
                             missing_published_fields.append("Workflow")
                         if missing_published_fields:
                             return _reject(
@@ -1502,6 +1616,29 @@ class UpdateAgent(Resource):
                     if not existing_agent.get("key"):
                         newly_generated_key = str(uuid.uuid4())
                         update_fields["key"] = newly_generated_key
+
+                # A workflow agent's graph: an inline one is checked for shape
+                # on a draft and in full to publish. Publishing a draft without
+                # sending one validates the stored graph, which a draft save may
+                # have left unfinished.
+                if final_agent_type == "workflow":
+                    graph_errors: list = []
+                    if inline_graph is not None:
+                        graph_errors = workflow_graph_errors(
+                            inline_graph, draft=final_status != "published", user_id=owner_id,
+                        )
+                    elif final_status == "published" and existing_agent.get("status") != "published":
+                        current_workflow_id = update_fields.get("workflow_id", existing_agent.get("workflow_id"))
+                        current_workflow = (
+                            WorkflowsRepository(conn).get(str(current_workflow_id), owner_id)
+                            if current_workflow_id
+                            else None
+                        )
+                        if current_workflow is not None:
+                            nodes, edges = stored_graph(conn, current_workflow)
+                            graph_errors = validate_workflow_structure(nodes, edges, user_id=owner_id)
+                    if graph_errors:
+                        return _graph_validation_failed(graph_errors)
 
                 # Re-validate referenced sources/prompt on write — a team editor
                 # must not ATTACH a source/prompt they can't access. References
@@ -1589,8 +1726,30 @@ class UpdateAgent(Resource):
                     previous_refs=agent_refs(existing_agent),
                     confirmed=parse_confirmations(data.get("confirm_sponsor")),
                 )
+                # The inline graph: the node ref gate and the workflow's own
+                # sponsor plan, as PUT /api/workflows/<id> runs them. Nothing
+                # is written until every check has passed.
+                graph_save = None
+                if inline_graph is not None:
+                    graph_workflow = None
+                    if existing_agent.get("workflow_id"):
+                        graph_workflow = WorkflowsRepository(conn).get(
+                            str(existing_agent["workflow_id"]), owner_id,
+                        )
+                        if graph_workflow is None:
+                            return _denied(AccessDenied(404, "Workflow not found"))
+                    graph_save = plan_graph_save(
+                        conn, graph_workflow, owner_id, user, inline_graph,
+                        parse_confirmations(data.get("confirm_sponsor")),
+                    )
+                    if isinstance(graph_save, AccessDenied):
+                        return _denied(graph_save)
                 refusal = sponsor_refusal(
-                    conn, "agent", existing_agent, plan, api_key=bool(update_fields.get("key")) or None
+                    conn,
+                    "agent",
+                    existing_agent,
+                    refusal_plan([plan, graph_save.plan]) if graph_save is not None else plan,
+                    api_key=bool(update_fields.get("key")) or None,
                 )
                 if refusal is not None:
                     body, status = refusal
@@ -1613,7 +1772,10 @@ class UpdateAgent(Resource):
                 # Apply update. Owner writes use the dual-key guard; team-editor
                 # writes go by-id (already authorized) with an optimistic-lock
                 # check when the client supplies the row's expected updated_at.
-                if is_team_editor:
+                if not update_fields:
+                    # Only the graph changes.
+                    updated = True
+                elif is_team_editor:
                     result = agents_repo.update_by_id(
                         pg_agent_id,
                         update_fields,
@@ -1633,15 +1795,29 @@ class UpdateAgent(Resource):
                     updated = bool(result)
                 else:
                     updated = agents_repo.update(pg_agent_id, user, update_fields)
+                # The graph last: a stale or failed agent write above returns
+                # before it, so the agent and its graph change together.
+                saved_workflow_id = None
+                if updated and graph_save is not None:
+                    saved_workflow_id = write_graph_save(
+                        conn,
+                        graph_save,
+                        owner_id,
+                        update_fields.get("name", existing_agent.get("name")),
+                        update_fields.get("description", existing_agent.get("description")),
+                    )
+                    if graph_save.workflow is None:
+                        agents_repo.update_by_id(pg_agent_id, {"workflow_id": saved_workflow_id})
                 # An update that changed no field is not an event.
-                if updated and update_fields:
+                event_fields = sorted([*update_fields, *(["workflow_graph"] if saved_workflow_id else [])])
+                if updated and event_fields:
                     record_event(
                         conn,
                         "agent.updated",
                         actor=user,
                         agent_id=pg_agent_id,
                         # Names only: values can hold prompts and credentials.
-                        fields=sorted(update_fields),
+                        fields=event_fields,
                     )
                 if not updated:
                     return make_response(
@@ -1666,7 +1842,15 @@ class UpdateAgent(Resource):
             "success": True,
             "id": pg_agent_id,
             "message": "Agent updated successfully",
+            "image": _image_output(
+                update_fields.get("image", existing_image), pg_agent_id, existing_agent.get("user_id"),
+            ),
         }
+        if final_agent_type == "workflow":
+            final_workflow_id = saved_workflow_id or update_fields.get(
+                "workflow_id", existing_agent.get("workflow_id"),
+            )
+            response_data["workflow_id"] = str(final_workflow_id) if final_workflow_id else None
         # A freshly minted key is an access detail: returned only to a caller
         # who may manage it (the key is still stored either way).
         if newly_generated_key and ra.can("manage_access_details"):

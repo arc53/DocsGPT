@@ -968,6 +968,30 @@ def plan_sponsors(
     return plan
 
 
+def refusal_plan(plans: Iterable[SponsorPlan]) -> SponsorPlan:
+    """One plan for :func:`sponsor_refusal` from several holders saved together.
+
+    An agent save that also writes its workflow graph plans both holders
+    against the same ``confirm_sponsor`` list: what either refuses refuses
+    the save, and a confirmed key is unexpected only when neither holder
+    could use it. ``sponsors`` stays empty; store each plan's own map.
+
+    Args:
+        plans: The plans of every holder the save writes.
+
+    Returns:
+        SponsorPlan: Lists merged for the refusal check.
+    """
+    plans = list(plans)
+    merged = SponsorPlan()
+    for plan in plans:
+        merged.not_allowed.extend(plan.not_allowed)
+        merged.needs_confirmation.extend(plan.needs_confirmation)
+    if plans:
+        merged.unexpected = sorted(set.intersection(*(set(plan.unexpected) for plan in plans)))
+    return merged
+
+
 def prune_sponsors(sponsors: Optional[dict], refs: Iterable[tuple[str, str]]) -> dict:
     """``sponsors`` without the keys of resources no longer referenced.
 

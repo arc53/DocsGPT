@@ -1,0 +1,342 @@
+"""A workflow agent saved in one request: the agent row and its graph, drafts included.
+
+POST /api/create_agent and PUT /api/update_agent/<id> take ``workflow_graph``
+(``{nodes, edges, retry_defaults?}``, an object in JSON or a JSON string in a
+multipart form) for ``agent_type=workflow``. A draft gets shape-only checks;
+publishing runs the full graph validation. The node ref gate and the sponsor
+plan are the ones PUT /api/workflows/<id> uses. Real repositories on ``pg_conn``.
+"""
+
+from __future__ import annotations
+
+import copy
+import io
+import json
+import uuid
+from unittest.mock import patch
+
+import pytest
+from flask import Flask
+
+from docsgpt.api.user.resource_access import (
+    CODE_CONFIRMATION_REQUIRED,
+    CODE_UNEXPECTED_CONFIRMATION,
+    sponsor_key,
+)
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
+from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+from tests.api.user.test_resource_sponsors import (
+    EDITOR,
+    OWNER,
+    _agent,
+    _editor_resources,
+    _patch_db,
+    _row,
+    _status,
+    _wf_body,
+)
+
+
+@pytest.fixture
+def app():
+    return Flask(__name__)
+
+
+def _graph(tool=None, source=None, tools=None):
+    body = _wf_body(tool, source, tools=tools)
+    return {"nodes": body["nodes"], "edges": body["edges"]}
+
+
+def _invalid_graph():
+    """Well-formed but not runnable: an agent node with no start or end."""
+    return {
+        "nodes": [{"id": "a1", "type": "agent", "position": {"x": 0, "y": 0}, "data": {"config": {}}}],
+        "edges": [],
+    }
+
+
+def _send(app, conn, method, path, user, *, json_body=None, form=None, args=()):
+    from docsgpt.api.user.agents.routes import CreateAgent, UpdateAgent
+
+    resource = CreateAgent if method == "post" else UpdateAgent
+    kwargs = {"method": method.upper()}
+    if json_body is not None:
+        kwargs["json"] = json_body
+    if form is not None:
+        kwargs["data"] = form
+        kwargs["content_type"] = "multipart/form-data"
+    with _patch_db(conn), app.test_request_context(path, **kwargs):
+        from flask import request
+
+        request.decoded_token = {"sub": user}
+        return getattr(resource(), method)(*args)
+
+
+def _create(app, conn, body, user=OWNER):
+    return _send(app, conn, "post", "/api/create_agent", user, json_body=body)
+
+
+def _update(app, conn, agent_id, body, user=OWNER):
+    return _send(app, conn, "put", f"/api/update_agent/{agent_id}", user, json_body=body, args=(agent_id,))
+
+
+def _json(resp):
+    return resp.get_json() if hasattr(resp, "get_json") else resp[0]
+
+
+def _workflow_count(conn, user=OWNER):
+    return len(WorkflowsRepository(conn).list_for_user(user))
+
+
+def _stored_graph(conn, workflow_id):
+    wf = WorkflowsRepository(conn).get_by_id(workflow_id)
+    nodes = WorkflowNodesRepository(conn).find_by_version(workflow_id, wf["current_graph_version"])
+    return wf, sorted(n["node_id"] for n in nodes)
+
+
+class TestCreate:
+    def test_draft_saves_a_graph_that_is_not_runnable_yet(self, app, pg_conn):
+        resp = _create(app, pg_conn, {
+            "name": "Flow", "agent_type": "workflow", "status": "draft", "workflow_graph": _invalid_graph(),
+        })
+        assert _status(resp) == 201, _json(resp)
+        body = _json(resp)
+        agent = AgentsRepository(pg_conn).get_by_id(body["id"])
+        assert agent["status"] == "draft" and agent["agent_type"] == "workflow"
+        assert body["workflow_id"] == str(agent["workflow_id"])
+        assert body["key"] == ""
+        wf, node_ids = _stored_graph(pg_conn, body["workflow_id"])
+        assert node_ids == ["a1"]
+        assert wf["name"] == "Flow" and wf["user_id"] == OWNER
+
+    def test_publish_runs_the_full_validation_and_writes_nothing_on_failure(self, app, pg_conn):
+        resp = _create(app, pg_conn, {
+            "name": "Flow", "agent_type": "workflow", "status": "published", "workflow_graph": _invalid_graph(),
+        })
+        assert _status(resp) == 400
+        body = _json(resp)
+        assert body["success"] is False and body["message"] == "Workflow validation failed"
+        assert body["errors"]
+        assert _workflow_count(pg_conn) == 0
+        assert AgentsRepository(pg_conn).list_for_user(OWNER) == []
+
+    @pytest.mark.parametrize(
+        "graph",
+        [
+            {"nodes": "x", "edges": []},
+            {"nodes": [{"type": "agent"}], "edges": []},
+            {"nodes": [{"id": "a", "type": "teleport"}], "edges": []},
+            {"nodes": [{"id": "a", "type": "start"}, {"id": "a", "type": "end"}], "edges": []},
+            {"nodes": [{"id": "a", "type": "start"}], "edges": [{"id": "e1", "source": "a"}]},
+            "not json",
+            ["a list"],
+        ],
+    )
+    def test_a_draft_still_needs_a_well_formed_graph(self, app, pg_conn, graph):
+        resp = _create(app, pg_conn, {
+            "name": "Flow", "agent_type": "workflow", "status": "draft", "workflow_graph": graph,
+        })
+        assert _status(resp) == 400
+        assert _workflow_count(pg_conn) == 0
+
+    def test_published_multipart_with_image(self, app, pg_conn):
+        form = {
+            "name": "Flow",
+            "description": "Routes tickets",
+            "agent_type": "workflow",
+            "status": "published",
+            "workflow_graph": json.dumps({**_graph(), "retry_defaults": None}),
+            "image": (io.BytesIO(b"png"), "logo.png"),
+        }
+        with patch("docsgpt.api.user.agents.routes.handle_image_upload", return_value=("https://cdn.example.com/logo.png", None)):
+            resp = _send(app, pg_conn, "post", "/api/create_agent", OWNER, form=form)
+        assert _status(resp) == 201, _json(resp)
+        body = _json(resp)
+        agent = AgentsRepository(pg_conn).get_by_id(body["id"])
+        assert agent["status"] == "published" and agent["key"]
+        assert agent["image"] == body["image"] == "https://cdn.example.com/logo.png"
+        wf, node_ids = _stored_graph(pg_conn, body["workflow_id"])
+        assert node_ids == ["a1", "end1", "start1"]
+        assert (wf["name"], wf["description"]) == ("Flow", "Routes tickets")
+
+    def test_inline_graph_and_workflow_id_together_is_400(self, app, pg_conn):
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        resp = _create(app, pg_conn, {
+            "name": "Flow", "agent_type": "workflow", "status": "draft",
+            "workflow": str(wf["id"]), "workflow_graph": _graph(),
+        })
+        assert _status(resp) == 400
+
+    def test_inline_graph_on_a_classic_agent_is_400(self, app, pg_conn):
+        resp = _create(app, pg_conn, {"name": "A", "status": "draft", "workflow_graph": _graph()})
+        assert _status(resp) == 400
+        assert _workflow_count(pg_conn) == 0
+
+    def test_node_ref_gate(self, app, pg_conn):
+        foreign = str(UserToolsRepository(pg_conn).create("someone-else", "api_tool")["id"])
+        resp = _create(app, pg_conn, {
+            "name": "Flow", "agent_type": "workflow", "status": "draft", "workflow_graph": _graph(foreign),
+        })
+        assert _status(resp) == 403
+        assert _json(resp)["message"] == "Tool not accessible"
+        assert _workflow_count(pg_conn) == 0
+        assert AgentsRepository(pg_conn).list_for_user(OWNER) == []
+
+
+def _workflow_agent(app, pg_conn, *, status="published", graph=None):
+    """The owner's workflow agent, shared with EDITOR as editor, saved through the inline path."""
+    resp = _create(app, pg_conn, {
+        "name": "Flow", "agent_type": "workflow", "status": status, "workflow_graph": graph or _graph(),
+    })
+    assert _status(resp) == 201, _json(resp)
+    agent_id = _json(resp)["id"]
+    from tests.api.user.test_resource_sponsors import _share_agent
+
+    _share_agent(pg_conn, agent_id)
+    return agent_id, _json(resp)["workflow_id"]
+
+
+class TestUpdate:
+    def test_graph_and_agent_fields_in_one_save(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        graph = _graph()
+        graph["nodes"][1]["id"] = "a2"
+        graph["edges"] = [
+            {"id": "e1", "source": "start1", "target": "a2"},
+            {"id": "e2", "source": "a2", "target": "end1"},
+        ]
+        resp = _update(app, pg_conn, agent_id, {"name": "Renamed", "workflow_graph": graph})
+        assert _status(resp) == 200, _json(resp)
+        assert _json(resp)["workflow_id"] == wid
+        wf, node_ids = _stored_graph(pg_conn, wid)
+        assert node_ids == ["a2", "end1", "start1"]
+        assert wf["current_graph_version"] == 2 and wf["name"] == "Renamed"
+        # Only the current version is kept.
+        assert WorkflowNodesRepository(pg_conn).find_by_version(wid, 1) == []
+        assert _row(pg_conn, agent_id)["name"] == "Renamed"
+
+    def test_save_as_draft_then_publish_validates_the_stored_graph(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        resp = _update(app, pg_conn, agent_id, {"status": "draft", "workflow_graph": _invalid_graph()})
+        assert _status(resp) == 200, _json(resp)
+        assert _row(pg_conn, agent_id)["status"] == "draft"
+
+        refused = _update(app, pg_conn, agent_id, {"status": "published"})
+        assert _status(refused) == 400
+        assert _json(refused)["message"] == "Workflow validation failed"
+        assert _row(pg_conn, agent_id)["status"] == "draft"
+
+        published = _update(app, pg_conn, agent_id, {"status": "published", "workflow_graph": _graph()})
+        assert _status(published) == 200, _json(published)
+        assert _row(pg_conn, agent_id)["status"] == "published"
+
+    def test_a_published_save_with_an_invalid_graph_changes_nothing(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        resp = _update(app, pg_conn, agent_id, {"name": "New", "workflow_graph": _invalid_graph()})
+        assert _status(resp) == 400
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+        assert _row(pg_conn, agent_id)["name"] == "Flow"
+
+    def test_a_draft_agent_without_a_workflow_gets_one(self, app, pg_conn):
+        resp = _create(app, pg_conn, {"name": "Empty", "agent_type": "workflow", "status": "draft"})
+        agent_id = _json(resp)["id"]
+        assert _row(pg_conn, agent_id)["workflow_id"] is None
+        saved = _update(app, pg_conn, agent_id, {"workflow_graph": _graph()})
+        assert _status(saved) == 200, _json(saved)
+        wid = str(_row(pg_conn, agent_id)["workflow_id"])
+        assert _json(saved)["workflow_id"] == wid
+        assert _stored_graph(pg_conn, wid)[1] == ["a1", "end1", "start1"]
+
+    def test_editor_sponsor_confirmation_round_trip(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        tool, _, _ = _editor_resources(pg_conn)
+        asked = _update(app, pg_conn, agent_id, {"workflow_graph": _graph(tool)}, user=EDITOR)
+        assert _status(asked) == 409
+        assert _json(asked)["code"] == CODE_CONFIRMATION_REQUIRED
+        assert [r["id"] for r in _json(asked)["resources"]] == [tool]
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+
+        key = sponsor_key("tool", tool)
+        saved = _update(
+            app, pg_conn, agent_id, {"workflow_graph": _graph(tool), "confirm_sponsor": [key]}, user=EDITOR,
+        )
+        assert _status(saved) == 200, _json(saved)
+        assert WorkflowsRepository(pg_conn).get_by_id(wid)["resource_sponsors"] == {key: EDITOR}
+
+        stray = _update(
+            app, pg_conn, agent_id,
+            {"workflow_graph": _graph(tool), "confirm_sponsor": [sponsor_key("tool", str(uuid.uuid4()))]},
+            user=EDITOR,
+        )
+        assert _status(stray) == 400
+        assert _json(stray)["code"] == CODE_UNEXPECTED_CONFIRMATION
+
+    def test_editor_cannot_add_the_owners_private_tool(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        private = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
+        resp = _update(app, pg_conn, agent_id, {"workflow_graph": _graph(private)}, user=EDITOR)
+        assert _status(resp) == 403
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+
+    def test_a_stale_editor_write_leaves_the_graph_alone(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        resp = _update(
+            app, pg_conn, agent_id,
+            {"name": "X", "workflow_graph": copy.deepcopy(_graph()), "expected_updated_at": "2001-01-01T00:00:00Z"},
+            user=EDITOR,
+        )
+        assert _status(resp) == 409
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+
+    def test_inline_graph_with_workflow_field_is_400(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        resp = _update(app, pg_conn, agent_id, {"workflow": wid, "workflow_graph": _graph()})
+        assert _status(resp) == 400
+
+    def test_inline_graph_on_a_classic_agent_is_400(self, app, pg_conn):
+        agent_id, _ = _agent(pg_conn)
+        resp = _update(app, pg_conn, agent_id, {"workflow_graph": _graph()})
+        assert _status(resp) == 400
+
+
+class TestTokens:
+    """A personal access token needs workflows:write to write a graph, and no content restriction."""
+
+    def _pat(self, scopes, resource_filter=None):
+        from docsgpt.api.pat.tokens import expand_scopes
+
+        return {
+            "sub": OWNER, "auth_method": "pat", "pat_id": "t", "pat_name": "ci",
+            "scopes": sorted(expand_scopes(scopes)), "resource_filter": resource_filter or {},
+        }
+
+    def test_agents_write_alone_cannot_write_a_graph(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import CreateAgent
+
+        body = {"name": "Flow", "agent_type": "workflow", "status": "draft", "workflow_graph": _graph()}
+        with _patch_db(pg_conn), app.test_request_context("/api/create_agent", method="POST", json=body):
+            from flask import request
+
+            request.decoded_token = self._pat(["agents:write"])
+            denied = CreateAgent().post()
+            request.decoded_token = self._pat(["agents:write", "workflows:write"])
+            allowed = CreateAgent().post()
+        assert _status(denied) == 403 and _json(denied)["error"] == "insufficient_scope"
+        assert _status(allowed) == 201
+
+    def test_a_content_restricted_token_cannot_send_an_inline_graph(self, app):
+        from docsgpt.api.pat import rules
+
+        class _Req:
+            is_json = True
+
+            def get_json(self, silent=True):
+                return {"workflow_graph": {"nodes": [], "edges": []}}
+
+        for family in ("sources", "tools", "prompts", "workflows"):
+            reason = rules._agent_body_check(_Req(), {family: [str(uuid.uuid4())]}, OWNER)
+            assert reason, family
+        assert rules._agent_body_check(_Req(), {"agents": [str(uuid.uuid4())]}, OWNER) is None

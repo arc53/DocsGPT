@@ -142,8 +142,14 @@ def _agent_body_check(request, resource_filter: dict, user_id: Optional[str]) ->
 
     A token restricted on any of those may attach a workflow to an agent only
     when it is also restricted on workflows, so the workflow is one its owner
-    chose (``refs`` then verifies the id).
+    chose (``refs`` then verifies the id). An inline ``workflow_graph`` is
+    refused to a token restricted on any of them or on workflows.
     """
+    graph = _json_body(request).get("workflow_graph") if request.is_json else request.form.get("workflow_graph")
+    if graph not in (None, "") and set(resource_filter) & {*_WORKFLOW_CONTENT_FAMILIES, "workflows"}:
+        # An inline graph can name any source, tool or prompt and creates or rewrites a workflow
+        # no allowlist can prove; like POST /api/workflows, closed to tokens restricted on those.
+        return "A token restricted to specific sources, tools, prompts or workflows cannot save a workflow graph"
     if "workflows" in resource_filter or not set(resource_filter) & {"sources", "tools", "prompts"}:
         return None
     if _read(request, (BODY, "workflow")):
@@ -652,6 +658,35 @@ def _is_uuid(value: str) -> bool:
     except (ValueError, AttributeError, TypeError):
         return False
     return True
+
+
+def missing_scope_response(request, scope: str) -> Optional[tuple[dict, int]]:
+    """``(body, 403)`` when the caller is a token without ``scope``, else None.
+
+    For a scope a route needs only for part of its body (an agent save that
+    also writes a workflow graph needs ``workflows:write``), which the rule
+    table, keyed on route and method, can't express. Same body as the table's
+    ``insufficient_scope`` refusal.
+
+    Args:
+        request: The current request (``decoded_token`` set).
+        scope: The scope required.
+
+    Returns:
+        The refusal, or None when the caller may go on.
+    """
+    decoded = getattr(request, "decoded_token", None)
+    if not is_pat(decoded) or scope in (decoded.get("scopes") or []):
+        return None
+    return (
+        {
+            "success": False,
+            "error": "insufficient_scope",
+            "message": f"Token lacks the required scope: {scope}",
+            "required_scope": scope,
+        },
+        403,
+    )
 
 
 def may_see_agent_keys(request) -> bool:
