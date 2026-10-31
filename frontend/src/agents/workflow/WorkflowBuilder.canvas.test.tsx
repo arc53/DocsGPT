@@ -332,6 +332,33 @@ describe('WorkflowBuilder canvas', () => {
       expect(saveButton?.disabled).toBe(true);
     });
 
+    // Older nodes carry a provider, or an empty model, before the prompt.
+    it.each([
+      [{ llm_name: 'openai', prompt_template: 'Hi' }],
+      [{ model_id: null, prompt_template: 'Hi' }],
+      [{ model_id: '', llm_name: '', prompt_template: 'Hi' }],
+    ])(
+      'reads an older node %j as unchanged once selected',
+      async (agentData) => {
+        api.workflow = workflowWith(agentData);
+        await render();
+        await select('agent');
+        const node = panel.props!.node as {
+          data: { config: Record<string, unknown> };
+        };
+        expect(node.data.config.model_id).toBe('m1');
+        expect(container.textContent).not.toContain(
+          'agents.workflow.builder.unsavedChanges',
+        );
+        await act(async () =>
+          container
+            .querySelector<HTMLAnchorElement>('[data-testid="go-to-tools"]')!
+            .click(),
+        );
+        expect(container.querySelector('[data-testid="confirm"]')).toBeNull();
+      },
+    );
+
     it('saves the filled model and stays saved afterwards', async () => {
       await render();
       await select('agent');

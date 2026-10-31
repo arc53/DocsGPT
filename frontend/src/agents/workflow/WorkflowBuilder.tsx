@@ -234,13 +234,23 @@ function createWorkflowPayload(
   };
 }
 
-/** A model put on a node that had none, and the provider it had before. */
-type AutoFilledModel = { modelId: string; llmName?: string };
+/** The keys the builder writes when it fills in a model. */
+const AUTO_FILLED_KEYS = ['model_id', 'llm_name'] as const;
+
+/**
+ * A model put on a node that had none, and the node's own `model_id` and
+ * `llm_name` before it (a key the node lacked is left out).
+ */
+type AutoFilledModel = {
+  modelId: string;
+  previous: Partial<Record<(typeof AUTO_FILLED_KEYS)[number], unknown>>;
+};
 
 /**
  * The payload as the user changed it: a model the builder filled in on a node
  * that had none (on select) is taken back out while it is still that model,
- * so it alone never reads as an unsaved change.
+ * so it alone never reads as an unsaved change. The node's own values go
+ * back where they were, null and empty ones included.
  */
 function withoutAutoFilledModels(
   payload: ReturnType<typeof createWorkflowPayload>,
@@ -253,10 +263,16 @@ function withoutAutoFilledModels(
       const entry = filled[node.id];
       const data = node.data as Record<string, unknown> | undefined;
       if (!entry || !data || data.model_id !== entry.modelId) return node;
-      const rest = { ...data };
-      delete rest.model_id;
-      delete rest.llm_name;
-      if (entry.llmName !== undefined) rest.llm_name = entry.llmName;
+      // Filling spreads the old config first, so a key the node had keeps
+      // its place and a new one comes last: walking the keys keeps the order.
+      const rest: Record<string, unknown> = {};
+      Object.entries(data).forEach(([key, value]) => {
+        if (!(AUTO_FILLED_KEYS as readonly string[]).includes(key)) {
+          rest[key] = value;
+        } else if (key in entry.previous) {
+          rest[key] = entry.previous[key as keyof typeof entry.previous];
+        }
+      });
       return { ...node, data: rest } as WorkflowNode;
     }),
   };
@@ -1100,12 +1116,17 @@ function WorkflowBuilderInner() {
     if (!defaultAgentModelId) return;
     if (selectedNode.data.config?.model_id) return;
 
-    const previousLlm = selectedNode.data.config?.llm_name;
+    const config = selectedNode.data.config || {};
     setAutoFilledModels((prev) => ({
       ...prev,
       [selectedNode.id]: {
         modelId: defaultAgentModelId,
-        llmName: typeof previousLlm === 'string' ? previousLlm : undefined,
+        previous: Object.fromEntries(
+          AUTO_FILLED_KEYS.filter((key) => key in config).map((key) => [
+            key,
+            config[key],
+          ]),
+        ),
       },
     }));
     handleUpdateNodeData(
