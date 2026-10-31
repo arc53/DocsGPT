@@ -111,6 +111,16 @@ _WORKFLOW_MATCH = "workflow_node_refs(n.config, '{key}') && CAST({{ids}} AS text
 
 _WORKFLOW_KEY = {"tool": "tools", "source": "sources"}
 
+# Installs migrated from Mongo (``scripts/db/backfill.py``) may still name a
+# tool in ``agents.tools``, or a tool or source in a workflow node, by its
+# ObjectId, which the runtime resolves through ``legacy_mongo_id``. The
+# classic source columns are uuid and were mapped by the backfill.
+_LEGACY_TABLE = {"tool": "user_tools", "source": "sources"}
+_LEGACY_SQL = """
+    SELECT id::text, legacy_mongo_id FROM {table}
+    WHERE id = ANY(CAST(:ids AS uuid[])) AND legacy_mongo_id IS NOT NULL
+"""
+
 
 def empty_usage() -> dict:
     """A fresh ``used_by`` for a resource no agent uses.
@@ -243,6 +253,29 @@ def _match(template: str, full_ids: list[str], scoped_ids: list[str], extra: Opt
     return " OR ".join(clauses) or "FALSE"
 
 
+def _legacy_keys(conn: Connection, kind: UsageKind, uuid_ids: list[str]) -> dict[str, str]:
+    """The Mongo ObjectIds the given tools or sources may still be named by.
+
+    Args:
+        conn: An open connection.
+        kind: ``tool``, ``prompt`` or ``source``; prompts have none.
+        uuid_ids: Lower-case resource UUIDs.
+
+    Returns:
+        dict[str, str]: ``legacy id -> UUID``, each ObjectId as stored and lower-cased
+        (workflow node refs are matched lower-case).
+    """
+    table = _LEGACY_TABLE.get(kind)
+    if table is None or not uuid_ids:
+        return {}
+    legacy: dict[str, str] = {}
+    for rid, legacy_id in conn.execute(text(_LEGACY_SQL.format(table=table)), {"ids": uuid_ids}):
+        value = str(legacy_id).strip()
+        if value:
+            legacy[value] = legacy[value.lower()] = rid.lower()
+    return legacy
+
+
 def _usage_rows(
     conn: Connection,
     kind: UsageKind,
@@ -251,11 +284,14 @@ def _usage_rows(
     user_id: str,
     team_agents: list[str],
     presets: list[str],
+    legacy: Optional[dict[str, str]] = None,
 ) -> list:
     """Every ``(agent_id, name, user_id, agent_type, ref)`` naming one of the ids.
 
     Any agent for ``full_ids``; only agents the caller can open for
-    ``scoped_ids`` and ``presets``.
+    ``scoped_ids`` and ``presets``. ``legacy`` (ObjectId -> UUID) adds the
+    ObjectIds of the ids to the text matches (tool lists and workflow node
+    refs), each read as widely as its UUID; the uuid source columns never hold one.
     """
     params = {
         "full": full_ids,
@@ -265,6 +301,11 @@ def _usage_rows(
         "user_id": user_id,
         "visible": team_agents,
     }
+    legacy = legacy or {}
+    full_set = set(full_ids)
+    full_text = full_ids + sorted(old for old, rid in legacy.items() if rid in full_set)
+    scoped_text = scoped_ids + sorted(old for old, rid in legacy.items() if rid not in full_set)
+    text_params = {**params, "full": full_text, "scoped": scoped_text, "ids": full_text + scoped_text}
     if kind == "prompt":
         if not (full_ids or scoped_ids or presets):
             return []
@@ -275,11 +316,15 @@ def _usage_rows(
     classic_sql, classic_match = (
         (_CLASSIC_TOOLS_SQL, _CLASSIC_TOOLS_MATCH) if kind == "tool" else (_CLASSIC_SOURCES_SQL, _CLASSIC_SOURCES_MATCH)
     )
-    rows = list(conn.execute(text(classic_sql.format(match=_match(classic_match, full_ids, scoped_ids))), params))
+    classic_params = text_params if kind == "tool" else params
+    rows = list(conn.execute(
+        text(classic_sql.format(match=_match(classic_match, classic_params["full"], classic_params["scoped"]))),
+        classic_params,
+    ))
     key = _WORKFLOW_KEY[kind]
-    workflow_match = _match(_WORKFLOW_MATCH.format(key=key), full_ids, scoped_ids)
+    workflow_match = _match(_WORKFLOW_MATCH.format(key=key), full_text, scoped_text)
     rows.extend(
-        conn.execute(text(_WORKFLOW_SQL.format(key=key).format(match=workflow_match)), params).fetchall()
+        conn.execute(text(_WORKFLOW_SQL.format(key=key).format(match=workflow_match)), text_params).fetchall()
     )
     return rows
 
@@ -320,9 +365,11 @@ def _collect(
     shared_listed: set[str] = set()
     full_ids = [k for k in uuid_ids if k in deletable]
     scoped_ids = [k for k in uuid_ids if k not in deletable]
-    rows = _usage_rows(conn, kind, full_ids, scoped_ids, user_id, team_agents, presets)
+    legacy = _legacy_keys(conn, kind, uuid_ids)
+    rows = _usage_rows(conn, kind, full_ids, scoped_ids, user_id, team_agents, presets, legacy)
     for agent_id, name, owner, agent_type, ref in rows:
         ref_key = _key(ref)
+        ref_key = legacy.get(ref_key, ref_key)
         if ref_key not in wanted:
             continue
         if _can_open(agent_id, owner):

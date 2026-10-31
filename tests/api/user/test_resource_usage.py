@@ -201,6 +201,49 @@ class TestSources:
         assert _names(usage[sid]) == ["nested flow"]
 
 
+class TestLegacyMongoIds:
+    """Installs migrated by ``scripts/db/backfill.py`` keep 24-hex ObjectIds in tool and node refs."""
+
+    TOOL_OID = "65a1b2c3d4e5f6a7b8c9d0e1"
+    SOURCE_OID = "65a1b2c3d4e5f6a7b8c9d0e2"
+
+    def test_tool_named_by_its_object_id(self, pg_conn):
+        tool = UserToolsRepository(pg_conn).create(
+            ALICE, "read_webpage", config={}, display_name="Web", legacy_mongo_id=self.TOOL_OID,
+        )
+        tid = str(tool["id"])
+        _agent(pg_conn, ALICE, "classic", tools=[self.TOOL_OID])
+        _workflow_agent(pg_conn, ALICE, "flow", {1: {"tools": [self.TOOL_OID]}}, current=1)
+        _agent(pg_conn, BOB, "Bob's", tools=[self.TOOL_OID])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
+        assert _names(usage[tid]) == ["classic", "flow"]
+        assert usage[tid]["others"] == 1
+
+    def test_tool_named_by_both_ids_is_listed_once(self, pg_conn):
+        tool = UserToolsRepository(pg_conn).create(
+            ALICE, "read_webpage", config={}, legacy_mongo_id=self.TOOL_OID,
+        )
+        tid = str(tool["id"])
+        _agent(pg_conn, ALICE, "twice", tools=[self.TOOL_OID, tid])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[])
+        assert _names(usage[tid]) == ["twice"]
+
+    def test_workflow_source_named_by_its_object_id(self, pg_conn):
+        source = SourcesRepository(pg_conn).create("src", user_id=ALICE, legacy_mongo_id=self.SOURCE_OID)
+        sid = str(source["id"])
+        _workflow_agent(pg_conn, ALICE, "flow", {1: {"config": {"sources": [self.SOURCE_OID]}}}, current=1)
+        _agent(pg_conn, ALICE, "classic", source_id=sid)
+        usage = used_by_many(pg_conn, ALICE, "source", [sid], deletable_ids=[sid])
+        assert _names(usage[sid]) == ["classic", "flow"]
+
+    def test_object_id_of_another_tool_does_not_match(self, pg_conn):
+        UserToolsRepository(pg_conn).create(ALICE, "read_webpage", config={}, legacy_mongo_id=self.TOOL_OID)
+        tid = str(_tool(pg_conn)["id"])
+        _agent(pg_conn, ALICE, "other", tools=[self.TOOL_OID])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
+        assert usage[tid] == EMPTY_USAGE
+
+
 class TestPrompts:
     def test_prompt_row_and_presets(self, pg_conn):
         prompt = PromptsRepository(pg_conn).create(ALICE, "P", "content")

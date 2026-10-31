@@ -66,6 +66,20 @@ class TestToolsUsedBy:
         assert resp.status_code == 200
         return {t["id"]: t for t in resp.json["tools"]}
 
+    def test_tool_named_by_its_legacy_object_id(self, app, pg_conn):
+        oid = "65a1b2c3d4e5f6a7b8c9d0e1"
+        tool = UserToolsRepository(pg_conn).create(
+            ALICE, "read_webpage", config={}, display_name="Web", legacy_mongo_id=oid,
+        )
+        tid = str(tool["id"])
+        agent = _agent(pg_conn, ALICE, "Migrated", tools=[oid])
+
+        tools = self._tools(app, pg_conn, ALICE)
+        assert tools[tid]["used_by"] == {
+            "agents": [{"id": str(agent["id"]), "name": "Migrated", "agent_type": "classic", "can_edit": True}],
+            "others": 0,
+        }
+
     def test_own_shared_and_default_tools(self, app, pg_conn):
         tool = UserToolsRepository(pg_conn).create(ALICE, "read_webpage", config={}, display_name="Web")
         tid = str(tool["id"])
