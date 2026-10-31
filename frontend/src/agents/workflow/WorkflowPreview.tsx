@@ -41,6 +41,7 @@ import MessageInput from '../../components/MessageInput';
 import { ChatCompanionContext } from '../../conversation/chatCompanion';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
+import AgentStarters from '../../hero/AgentStarters';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { AppDispatch } from '../../store';
 import { selectSendableAttachments } from '../../upload/uploadSlice';
@@ -76,6 +77,8 @@ interface WorkflowPreviewProps {
   // Saved workflow id (when the draft has been persisted); enables run-artifact
   // listing by persisting a ``workflow_runs`` row for the preview run.
   workflowId?: string | null;
+  /** The agent's starters as the builder has them, offered on an empty chat. */
+  starters?: string[] | null;
 }
 
 /**
@@ -573,6 +576,7 @@ export function WorkflowMiniMap({
 export default function WorkflowPreview({
   workflowData,
   workflowId,
+  starters,
 }: WorkflowPreviewProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -765,13 +769,21 @@ export default function WorkflowPreview({
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
             {queries.length === 0 ? (
-              <div className="flex h-full items-center justify-center px-4">
-                <EmptyState
-                  size="sm"
-                  illustration="none"
-                  title={t('agents.workflow.preview.emptyTitle')}
+              // The starters sit down by the composer, as in the agent preview.
+              <section className="flex h-full flex-col px-4">
+                <div className="flex grow items-center justify-center">
+                  <EmptyState
+                    size="sm"
+                    illustration="none"
+                    title={t('agents.workflow.preview.emptyTitle')}
+                  />
+                </div>
+                <AgentStarters
+                  className="mb-3"
+                  starters={starters}
+                  onAsk={(question) => handleQuestionSubmission(question)}
                 />
-              </div>
+              </section>
             ) : (
               <ChatCompanionContext.Provider value={artifactCompanion}>
                 <MessageScrollerProvider autoScroll>

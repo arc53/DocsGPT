@@ -5,12 +5,19 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('react-redux', () => ({
-  useSelector: () => null,
-  useDispatch: () => vi.fn(),
+// What every selector reads; the whole preview needs lists, not null.
+const redux = vi.hoisted(() => ({
+  selected: null as unknown,
+  dispatch: vi.fn(),
 }));
+vi.mock('react-redux', () => ({
+  useSelector: () => redux.selected,
+  useDispatch: () => redux.dispatch,
+}));
+vi.mock('../../components/MessageInput', () => ({ default: () => null }));
 
-import { ExecutionDetails } from './WorkflowPreview';
+import WorkflowPreview, { ExecutionDetails } from './WorkflowPreview';
+import { addQuery } from './workflowPreviewSlice';
 import type { WorkflowNode } from '../types/workflow';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -124,5 +131,59 @@ describe('WorkflowPreview execution sections', () => {
     expect(badges[0].className).toContain('font-mono');
     expect(badges[0].textContent).toContain('region');
     expect(badges[0].textContent).toContain('EU');
+  });
+});
+
+describe('WorkflowPreview starters', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    redux.selected = [];
+    redux.dispatch.mockReset();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    redux.selected = null;
+  });
+
+  const renderPreview = async (starters?: string[]) => {
+    await act(async () => {
+      root.render(
+        <WorkflowPreview
+          workflowData={{ name: 'Renewal desk', nodes, edges: [] }}
+          starters={starters}
+        />,
+      );
+    });
+  };
+
+  // As the agent preview: the starters under the empty chat, each sending
+  // itself.
+  it('offers the starters on an empty chat and sends one when picked', async () => {
+    await renderPreview(['Which carriers renew this month?']);
+    const rows = container.querySelector('[data-testid="hero-suggestions"]');
+    expect(rows?.textContent).toContain('Which carriers renew this month?');
+    await act(async () =>
+      rows!.querySelector<HTMLButtonElement>('button')!.click(),
+    );
+    expect(redux.dispatch).toHaveBeenCalledWith(
+      addQuery({ prompt: 'Which carriers renew this month?' }),
+    );
+  });
+
+  it('shows only the empty state without starters', async () => {
+    await renderPreview([]);
+    expect(
+      container.querySelector('[data-testid="hero-suggestions"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain(
+      'agents.workflow.preview.emptyTitle',
+    );
   });
 });

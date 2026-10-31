@@ -425,7 +425,8 @@ its text and shows `ArrowUp` on hover and focus; a row that opens something
 
 An agent's chat (its page, a shared link, the preview) shows the owner's
 starters instead, the same rows with `MessageSquare` (`hero/AgentStarters`),
-under the agent's card and down by the composer. The agent form's Starters
+under the agent's card and down by the composer (the workflow preview's
+empty chat too). The agent form's Starters
 section is four plain fields; an empty one is none, and a save trims them,
 drops repeats and keeps at most four (`agents/starters.ts`, as the server
 does). With no starters the agent's chat shows only its card.
@@ -725,7 +726,8 @@ The workflow details are a modal `SidePanel size="default"`
 (`components/WorkflowDetailsSheet.tsx`, see DESIGN.md › Side panels) with the classic
 Basics phone layout: a
 `subtle lg` Basics panel with `FileUpload size="tile" tileSize="fixed"` beside
-the Name pill and Description across the row, then an Advanced panel with the
+the Name pill and Description across the row, a Starters panel with the agent
+form's four starter fields, then an Advanced panel with the
 prompt-override `SettingRow`. Its `PanelFooter` is a `ghost lg pill` Cancel
 and a `default lg pill` Save. The panel edits a copy: Cancel,
 the X, Escape and the scrim drop the edits; Save is disabled until something
