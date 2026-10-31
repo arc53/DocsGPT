@@ -414,6 +414,20 @@ class TestPublishedAgentsRunValidatedGraphs:
         assert _status(resp) == 400
         assert str(_row(pg_conn, agent_id)["workflow_id"]) == old_wid
 
+    def test_publishing_a_keyed_draft_validates_its_stored_graph(self, app, pg_conn):
+        """A graph a draft save stored before drafts with a key were checked in full is checked on publish."""
+        from docsgpt.api.user.workflows.routes import _write_graph
+
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        assert _status(_update(app, pg_conn, agent_id, {"status": "draft"})) == 200
+        version = _stored_graph(pg_conn, wid)[0]["current_graph_version"] + 1
+        _write_graph(pg_conn, wid, version, _invalid_graph()["nodes"], [])
+        WorkflowsRepository(pg_conn).update(wid, OWNER, {"current_graph_version": version})
+        assert _status(_update(app, pg_conn, agent_id, {"name": "Renamed"})) == 200
+        resp = _update(app, pg_conn, agent_id, {"status": "published"})
+        assert _status(resp) == 400
+        assert _row(pg_conn, agent_id)["status"] == "draft"
+
     @pytest.mark.parametrize("trigger", ["webhook", "schedule"])
     def test_a_never_published_draft_that_runs_headless_needs_a_valid_graph(self, app, pg_conn, trigger):
         """A webhook token or a schedule runs a draft without its key, so its graph must be finished too."""

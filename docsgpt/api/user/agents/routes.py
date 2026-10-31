@@ -1711,8 +1711,12 @@ class UpdateAgent(Resource):
                     elif runs_live:
                         existing_workflow_id = existing_agent.get("workflow_id")
                         final_workflow_id = update_fields.get("workflow_id", existing_workflow_id)
+                        # Publishing checks the stored graph too: a draft that
+                        # already ran may hold one from before such drafts
+                        # were checked in full.
                         starts_running = (
                             not was_live
+                            or (final_status == "published" and existing_agent.get("status") != "published")
                             or existing_agent.get("agent_type") != "workflow"
                             or str(final_workflow_id or "") != str(existing_workflow_id or "")
                         )
