@@ -1698,6 +1698,10 @@
         "chat_prompt_id": {
           "description": "The prompt chats use: default, creative, strict, or the id of a prompt the caller can read",
           "type": "string"
+        },
+        "only_if_unset": {
+          "description": "Store it only when no chat prompt was ever stored (moving a browser's old choice); otherwise the stored one is kept and returned",
+          "type": "boolean"
         }
       },
       "required": [
@@ -7249,7 +7253,7 @@
         ]
       },
       "put": {
-        "description": "Set the prompt the caller's chats use. 400 for a value that is neither a preset nor a prompt id; 404 when the caller can't read the prompt.",
+        "description": "Set the prompt the caller's chats use: {success, chat_prompt_id, applied}. With only_if_unset and a chat prompt already stored, nothing is written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a value that is neither a preset nor a prompt id, or a non-boolean only_if_unset; 404 when the caller can't read the prompt.\nReturns:\n    Response: ``{success, chat_prompt_id, applied}``; ``applied`` is\n    false only when ``only_if_unset`` found a stored chat prompt, whose\n    readable value ``chat_prompt_id`` then carries.",
         "operationId": "put_preferences_resource",
         "parameters": [
           {
