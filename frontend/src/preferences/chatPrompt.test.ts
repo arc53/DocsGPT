@@ -435,6 +435,79 @@ describe('chat prompt saves', () => {
     expect(chatPromptOf(store)).toEqual(own);
   });
 
+  // Another device saved strict after this tab loaded its own prompt: the
+  // renewal's answer is what the server holds now, so picking the old one
+  // again is a change to send, and a failed pick goes back to strict.
+  it("follows another device's save that a renewal reads", async () => {
+    service.updatePreferences.mockReturnValue(response({ success: true }));
+    const store = makeStore();
+    await store.dispatch(
+      loadChatPrompt(stored('p-own'), listed, jwtFor('alice', 1)),
+    );
+    await store.dispatch(
+      loadChatPrompt(stored('strict'), listed, jwtFor('alice', 2)),
+    );
+    expect(chatPromptOf(store)).toEqual(presets[2]);
+    await expect(
+      store.dispatch(chooseChatPrompt(own, jwtFor('alice', 2))),
+    ).resolves.toBe(true);
+    expect(sent()).toEqual(['p-own']);
+  });
+
+  it("switches a failed pick back to another device's newer save", async () => {
+    service.updatePreferences.mockReturnValue(response({}, false, 500));
+    const store = makeStore();
+    await store.dispatch(
+      loadChatPrompt(stored('p-own'), listed, jwtFor('alice', 1)),
+    );
+    await store.dispatch(
+      loadChatPrompt(stored('strict'), listed, jwtFor('alice', 2)),
+    );
+    await store.dispatch(chooseChatPrompt(presets[1], jwtFor('alice', 2)));
+    expect(chatPromptOf(store)).toEqual(presets[2]);
+  });
+
+  // A read sent before a save landed answers with what the save replaced;
+  // it mustn't become the confirmed value, or picking that one again would
+  // send nothing.
+  it.each([
+    ['before the save is sent', false],
+    ['while the save is out', true],
+  ])("doesn't confirm a renewal's read sent %s", async (_when, saveFirst) => {
+    const save = deferred<unknown>();
+    const read = deferred<unknown>();
+    service.updatePreferences
+      .mockReturnValueOnce(save.promise)
+      .mockReturnValue(response({ success: true }));
+    service.getPrompts.mockReturnValue(response(listed));
+    service.getPreferences.mockReturnValue(read.promise);
+    const store = makeStore();
+    await store.dispatch(
+      loadChatPrompt(stored('strict'), listed, jwtFor('alice', 1)),
+    );
+    const reload = () =>
+      store.dispatch(
+        initChatPrompt(jwtFor('alice', 2), {
+          signedOut: false,
+          cancelled: () => false,
+        }),
+      );
+    let reloading: Promise<void> | undefined;
+    if (!saveFirst) reloading = reload();
+    const pick = store.dispatch(chooseChatPrompt(own, jwtFor('alice', 1)));
+    if (saveFirst) reloading = reload();
+    save.resolve({ ok: true, json: async () => ({}) });
+    await expect(pick).resolves.toBe(true);
+    read.resolve({
+      ok: true,
+      json: async () => ({ chat_prompt_id: 'strict', chat_prompt_set: true }),
+    });
+    await reloading;
+    expect(chatPromptOf(store)).toEqual(own);
+    await store.dispatch(chooseChatPrompt(presets[2], jwtFor('alice', 2)));
+    expect(sent()).toEqual(['p-own', 'strict']);
+  });
+
   it("drops a waiting pick when another user's token arrives", async () => {
     vi.useFakeTimers();
     try {

@@ -141,6 +141,10 @@ type ChatPromptSession = {
   token: string | null;
   /** The last value the server confirmed (loaded or saved); null unknown. */
   confirmed: Prompt | null;
+  /** Saves sent so far; a read stamped with an older count may predate one. */
+  writes: number;
+  /** A save is out and its answer not in. */
+  writing: boolean;
   /** What chats showed before the first pick, while nothing is confirmed. */
   shownBefore: Prompt | null;
   /** The user picked in this session. */
@@ -160,7 +164,7 @@ function sessionOf(
   token: string | null,
 ): ChatPromptSession {
   const current = sessions.get(getState);
-  const user = readerIdFromToken(token) ?? token;
+  const user = userOf(token);
   if (current && current.user === user) {
     // A renewed token for the same user keeps the session.
     current.token = token;
@@ -177,6 +181,8 @@ function sessionOf(
     user,
     token,
     confirmed: null,
+    writes: 0,
+    writing: false,
     shownBefore: null,
     picked: false,
     pickSaved: false,
@@ -186,6 +192,23 @@ function sessionOf(
   };
   sessions.set(getState, fresh);
   return fresh;
+}
+
+const userOf = (token: string | null): string | null =>
+  readerIdFromToken(token) ?? token;
+
+/** A read's stamp: the saves sent before it, or null with one out. */
+const stampOf = (session: ChatPromptSession): number | null =>
+  session.writing ? null : session.writes;
+
+/**
+ * The stamp for a read of the server's chat prompt sent now, so its answer
+ * can tell whether a save of this session may have landed after it. A token
+ * for another user starts a new session, which has sent nothing yet.
+ */
+function readStamp(getState: GetState, token: string | null): number | null {
+  const current = sessions.get(getState);
+  return current && current.user === userOf(token) ? stampOf(current) : 0;
 }
 
 /**
@@ -224,30 +247,43 @@ function promptFor(id: string, prompts: Prompt[]): Prompt {
  * listed, else `default`, and nothing is sent. A pick the user made
  * meanwhile stays.
  *
+ * An answer read after this session's last save becomes the confirmed value
+ * (another device may have saved since); one read before a save landed is
+ * older than what that save confirmed and is set aside like no answer.
+ *
  * Args:
  *   server: The server's chat prompt, or null when there was no answer.
  *   prompts: The prompts the user can pick from.
  *   token: The session token.
+ *   readAt: The read's stamp from `readStamp`, taken when it was sent;
+ *     omitted, the answer counts as read now.
  */
 export const loadChatPrompt =
-  (server: ServerChatPrompt | null, prompts: Prompt[], token: string | null) =>
+  (
+    server: ServerChatPrompt | null,
+    prompts: Prompt[],
+    token: string | null,
+    readAt?: number | null,
+  ) =>
   async (dispatch: Dispatch, getState: GetState): Promise<void> => {
     const session = sessionOf(getState, token);
-    if (server !== null && !session.confirmed)
-      session.confirmed = promptFor(server.id, prompts);
+    const stamp = readAt === undefined ? stampOf(session) : readAt;
+    const current = server !== null && stamp === session.writes;
+    if (current) session.confirmed = promptFor(server.id, prompts);
     if (pickStands(session)) return;
     const legacy = readLegacyPrompt();
     const listed = (id: string) => prompts.find((prompt) => prompt.id === id);
     const legacyListed = legacy ? listed(legacy.id) : undefined;
 
+    // No answer, or one older than a save of this session: keep what the
+    // session confirmed (a renewal's failed read finds the browser's copy
+    // gone since the first load).
+    if (!current && session.confirmed) {
+      const known = listed(session.confirmed.id);
+      dispatch(setPrompt(known ? asChatPrompt(known) : session.confirmed));
+      return;
+    }
     if (server === null) {
-      // A renewal whose read failed: the browser's copy went at the first
-      // load, so keep what this session already confirmed.
-      if (session.confirmed) {
-        const known = listed(session.confirmed.id);
-        dispatch(setPrompt(known ? asChatPrompt(known) : session.confirmed));
-        return;
-      }
       dispatch(
         setPrompt(
           legacyListed ? asChatPrompt(legacyListed) : DEFAULT_CHAT_PROMPT,
@@ -278,14 +314,16 @@ export const loadChatPrompt =
 /**
  * Shows the server's chat prompt as soon as it is known, before the prompt
  * list: a chat started meanwhile uses it. Skipped when the user picked
- * already, or when a prompt this browser kept may still move to an account
- * that holds none (`loadChatPrompt` decides that with the list).
+ * already, when a save of this session may have landed after the read, or
+ * when a prompt this browser kept may still move to an account that holds
+ * none (`loadChatPrompt` decides those with the list).
  */
 const showServerChatPrompt =
-  (server: ServerChatPrompt, token: string | null) =>
+  (server: ServerChatPrompt, token: string | null, readAt: number | null) =>
   (dispatch: Dispatch, getState: GetState): void => {
     const session = sessionOf(getState, token);
     if (pickStands(session)) return;
+    if (readAt !== session.writes && session.confirmed) return;
     if (!server.set && readLegacyPrompt()) return;
     dispatch(setPrompt(promptFor(server.id, getState().preference.prompts)));
   };
@@ -315,15 +353,17 @@ export const initChatPrompt =
       if (!cancelled()) dispatch(setPrompts(prompts));
       return prompts;
     });
+    const readAt = readStamp(getState, token);
     const fromServer = signedOut
       ? Promise.resolve(null)
       : fetchChatPromptId(token, CHAT_PROMPT_RETRY_MS, cancelled).then(
           (server) => {
             if (server !== null && !cancelled())
-              showServerChatPrompt(server, token)(
-                dispatch as Dispatch,
-                getState,
-              );
+              showServerChatPrompt(
+                server,
+                token,
+                readAt,
+              )(dispatch as Dispatch, getState);
             return server;
           },
         );
@@ -333,6 +373,7 @@ export const initChatPrompt =
       server,
       prompts,
       token,
+      readAt,
     )(dispatch as Dispatch, getState);
   };
 
@@ -352,9 +393,13 @@ async function drainPicks(
   while (session.next && !session.timer) {
     const { prompt, user, resolve } = session.next;
     session.next = null;
-    const saved =
-      session.confirmed?.id === prompt.id ||
-      (await saveChatPromptId(prompt.id, session.token));
+    let saved = session.confirmed?.id === prompt.id;
+    if (!saved) {
+      session.writes += 1;
+      session.writing = true;
+      saved = await saveChatPromptId(prompt.id, session.token);
+      session.writing = false;
+    }
     if (saved) {
       session.confirmed = asChatPrompt(prompt);
       if (user) session.pickSaved = true;
