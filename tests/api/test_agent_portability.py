@@ -609,7 +609,7 @@ def test_tool_skipped_when_encryption_fails(pg_conn, monkeypatch):
     )
     # Force credential encryption to fail (returns "").
     monkeypatch.setattr(
-        "docsgpt.api.user.tools.routes.encrypt_credentials",
+        "docsgpt.api.user.tools.routes.encrypt_tool_credentials",
         lambda creds, user_id: "",
     )
     doc = _doc(
