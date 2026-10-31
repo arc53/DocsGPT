@@ -94,7 +94,7 @@ import GuardrailsSection, {
 } from './components/GuardrailsSection';
 import AnalyticsSection from './components/AnalyticsSection';
 import ContextLimitRows from './components/ContextLimitRows';
-import { configToSave, sameAgent } from './analyticsConfig';
+import { analyticsOf, configToSave } from './analyticsConfig';
 import {
   isContextLimitInvalid,
   isHistoryLimitInvalid,
@@ -121,6 +121,7 @@ import {
   unlistedAttachedTools,
 } from './sponsorConsent';
 import { useAgentMenu } from './hooks/useAgentMenu';
+import { useBuilderDirtyState } from './hooks/useBuilderDirtyState';
 import { useSponsorPrompt } from './useSponsorPrompt';
 import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 
@@ -160,6 +161,40 @@ type PromptKind = (typeof PROMPT_KINDS)[number];
 const promptOfKind = (kind: PromptKind, prompt: Prompt): boolean =>
   kind === 'all' || prompt.type === PROMPT_KIND_TYPES[kind];
 const PROMPT_PRESETS = ['default', 'creative', 'strict'];
+
+/**
+ * What a save sends, in a shape two copies compare by: the unsaved-changes
+ * baseline. The schema counts as typed; the config reads a missing insights
+ * block or limit as its default, as `sameAgent` does.
+ */
+function agentSavePayload(agent: Agent, jsonSchemaText: string) {
+  return {
+    name: agent.name ?? '',
+    description: agent.description ?? '',
+    source: agent.source ?? '',
+    sources: agent.sources ?? [],
+    chunks: agent.chunks ?? '',
+    retriever: agent.retriever ?? '',
+    prompt_id: agent.prompt_id ?? '',
+    agent_type: agent.agent_type ?? '',
+    tools: agent.tools ?? [],
+    json_schema: jsonSchemaText,
+    limited_token_mode: Boolean(agent.limited_token_mode),
+    token_limit: agent.token_limit ?? null,
+    limited_request_mode: Boolean(agent.limited_request_mode),
+    request_limit: agent.request_limit ?? null,
+    allow_system_prompt_override: Boolean(agent.allow_system_prompt_override),
+    models: agent.models ?? [],
+    default_model_id: agent.default_model_id ?? '',
+    config: {
+      ...(agent.config ?? {}),
+      analytics: analyticsOf(agent.config?.analytics),
+      context_window_limit: agent.config?.context_window_limit ?? null,
+      history_token_limit: agent.config?.history_token_limit ?? null,
+    },
+  };
+}
+type AgentSavePayload = ReturnType<typeof agentSavePayload>;
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t, i18n } = useTranslation();
@@ -260,12 +295,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Access details opened from Share to allow changes: its allowlist unfolds.
   const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
-  const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
+  // Unsaved changes: what a save would send against what was loaded or last
+  // saved (a draft save too); a new agent against what it opened with.
+  const savePayload = useMemo(
+    () => agentSavePayload(agent, jsonSchemaText),
+    [agent, jsonSchemaText],
+  );
+  const { dirty: hasChanges, markSaved } =
+    useBuilderDirtyState<AgentSavePayload>(savePayload, {
+      ready: mode === 'new',
+      extras: imageFile !== null || takeovers.length > 0,
+    });
   const tokenLimitSwitchId = useId();
   const requestLimitSwitchId = useId();
   const promptOverrideSwitchId = useId();
@@ -299,21 +344,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.publish'),
       showSaveDraft: true,
       showAccessDetails: false,
-      trackChanges: false,
     },
     edit: {
       heading: t('agents.form.headings.edit'),
       buttonText: t('agents.form.buttons.save'),
       showSaveDraft: false,
       showAccessDetails: true,
-      trackChanges: true,
     },
     draft: {
       heading: t('agents.form.headings.draft'),
       buttonText: t('agents.form.buttons.publish'),
       showSaveDraft: true,
       showAccessDetails: false,
-      trackChanges: false,
     },
   };
   const agentTypes = [
@@ -775,6 +817,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   const handleSaveDraft = async () => {
+    const saving = savePayload;
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -853,6 +896,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         image: data.image || agent.image,
       };
       setAgent(updatedAgent);
+      initialAgentRef.current = updatedAgent;
+      // What was sent is saved: the avatar went with it.
+      markSaved(saving);
+      setImageFile(null);
 
       if (effectiveMode === 'new') setEffectiveMode('draft');
     } catch (error) {
@@ -864,6 +911,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   const handlePublish = async () => {
+    const saving = savePayload;
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -944,6 +992,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       };
       setAgent(updatedAgent);
       initialAgentRef.current = updatedAgent;
+      markSaved(saving);
       afterSaved(updatedAgent.id);
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());
@@ -1066,12 +1115,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               ? prevSelectedModelIds
               : new Set([preferredDefaultModelId]),
           );
+          // The instance's model is where a new agent starts, not an edit.
+          markSaved((base) =>
+            base.models.length > 0
+              ? base
+              : {
+                  ...base,
+                  models: [preferredDefaultModelId],
+                  default_model_id: preferredDefaultModelId,
+                },
+          );
         }
       }
     };
     getTools();
     getModels();
-  }, [token, mode, toolsReloadKey]);
+  }, [token, mode, toolsReloadKey, markSaved]);
 
   // Validate folder_id from URL against user's folders
   useEffect(() => {
@@ -1122,12 +1181,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 config: { ...(prev.config ?? {}), guardrails: data.guardrails },
               },
         );
+        // Where a new agent starts, not an edit.
+        markSaved((base) =>
+          base.config.guardrails
+            ? base
+            : {
+                ...base,
+                config: { ...base.config, guardrails: data.guardrails },
+              },
+        );
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [mode, token]);
+  }, [mode, token, markSaved]);
 
   useEffect(() => {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
@@ -1175,6 +1243,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         };
         setAgent(normalized);
         initialAgentRef.current = normalized;
+        markSaved(
+          agentSavePayload(
+            normalized,
+            data.json_schema ? JSON.stringify(data.json_schema, null, 2) : '',
+          ),
+        );
       };
       getAgent();
     }
@@ -1238,31 +1312,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const saved = effectiveMode === 'edit' ? initialAgentRef.current : null;
     if (saved) dispatch(setSelectedAgent(saved));
     else if (isPublishable()) dispatch(setSelectedAgent(agent));
-
-    if (!modeConfig[effectiveMode].trackChanges) {
-      setHasChanges(true);
-      return;
-    }
-    if (!initialAgentRef.current) {
-      setHasChanges(false);
-      return;
-    }
-
-    const initialJsonSchemaText = initialAgentRef.current.json_schema
-      ? JSON.stringify(initialAgentRef.current.json_schema, null, 2)
-      : '';
-
-    const isChanged =
-      !sameAgent(agent, initialAgentRef.current) ||
-      imageFile !== null ||
-      jsonSchemaText !== initialJsonSchemaText ||
-      takeovers.length > 0;
-    setHasChanges(isChanged);
-  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText, takeovers]);
+  }, [agent, dispatch, effectiveMode, jsonSchemaText]);
 
   // The builder's own exits (a picker's Go to link, Upload's Browse
-  // connectors) ask first while the form has changes; a new or draft agent
-  // always has them, since its changes since the last save aren't tracked.
+  // connectors) ask first while the form has unsaved changes.
   const leaveGuard = useLeaveGuard(hasChanges);
 
   const isPublished = agent.status === 'published';
@@ -1342,7 +1395,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           type="button"
           size="field"
           shape="pill"
-          disabled={!isPublishable() || !hasChanges}
+          // Save on a published agent needs a change; Publish on a draft
+          // or a new agent doesn't.
+          disabled={
+            !isPublishable() || (effectiveMode === 'edit' && !hasChanges)
+          }
           loading={publishLoading}
           onClick={handlePublish}
           className="flex-1 sm:flex-none"
@@ -2027,6 +2084,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           // too, and keep any unsaved form edits to the rest of the config.
           if (initialAgentRef.current)
             initialAgentRef.current = { ...initialAgentRef.current, config };
+          markSaved((base) => ({
+            ...base,
+            config: {
+              ...base.config,
+              api_write_allowlist: config.api_write_allowlist,
+            },
+          }));
           setAgent((prev) => ({
             ...prev,
             config: {

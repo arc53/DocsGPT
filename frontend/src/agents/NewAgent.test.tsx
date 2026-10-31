@@ -53,6 +53,7 @@ const mocks = vi.hoisted(() => {
     shareProps: vi.fn(),
     reconnect: vi.fn(),
     toolsCalls: [] as number[],
+    fileUploadProps: null as null | { onUpload: (files: File[]) => void },
     addToolProps: null as null | {
       modalState: string;
       onToolAdded: (id: string) => void;
@@ -266,7 +267,12 @@ vi.mock('../navigation/SectionPageHeader', () => ({
   CurrentSectionHeader: ({ title }: { title?: React.ReactNode }) =>
     title ? <h1>{title}</h1> : null,
 }));
-vi.mock('../components/FileUpload', () => ({ FileUpload: () => null }));
+vi.mock('../components/FileUpload', () => ({
+  FileUpload: (props: { onUpload: (files: File[]) => void }) => {
+    mocks.fileUploadProps = props;
+    return null;
+  },
+}));
 vi.mock('../components/SourcesPopoverFooter', () => ({ default: () => null }));
 vi.mock('../components/ToolIcon', () => ({ default: () => null }));
 
@@ -730,14 +736,103 @@ describe('NewAgent form', () => {
       '[data-title="settings.tools.label"] [data-testid="picker-footer"] a',
     )!;
 
-  it('asks before Go to Tools leaves unsaved changes', async () => {
-    // A new agent is all unsaved.
-    await render();
-    await act(async () => goToTools().click());
+  const asked = () =>
     // This file stubs ConfirmationModal as its confirm button.
-    expect(
-      container.querySelector('[data-testid="confirm-delete"]'),
-    ).not.toBeNull();
+    container.querySelector('[data-testid="confirm-delete"]') !== null;
+  const typeName = async (value: string) =>
+    act(async () =>
+      setNativeValue(
+        container.querySelector<HTMLInputElement>(
+          'input[placeholder="agents.form.placeholders.agentName"]',
+        )!,
+        value,
+      ),
+    );
+
+  it('asks before Go to Tools leaves unsaved changes', async () => {
+    await render();
+    await typeName('Support bot');
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(true);
+  });
+
+  // The defaults a new agent starts from (the instance's model, the admin's
+  // guardrails) are not changes of the user's.
+  it('lets Go to Tools go from an untouched new agent', async () => {
+    mocks.models = [{ id: 'm1', display_name: 'Model one', provider: 'x' }];
+    mocks.defaultModelId = 'm1';
+    mocks.getAgentDefaults.mockImplementationOnce(() =>
+      jsonResponse({ success: true, guardrails: { enabled: true } }),
+    );
+    await render();
+    await act(async () => undefined);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(false);
+  });
+
+  it('reads a new agent as saved once its draft is saved', async () => {
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9' }),
+    );
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      buttonByText('agents.form.buttons.saveDraft').click(),
+    );
+    expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(false);
+  });
+
+  it('uploads a picked avatar once, not again with the next draft save', async () => {
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9', image: '/img/a.png' }),
+    );
+    mocks.updateAgent.mockImplementation(() => jsonResponse({ id: 'agent-9' }));
+    await render();
+    await typeName('Support bot');
+    const file = new File(['x'], 'a.png', { type: 'image/png' });
+    await act(async () => mocks.fileUploadProps!.onUpload([file]));
+    const saveDraft = () =>
+      act(async () => buttonByText('agents.form.buttons.saveDraft').click());
+    await saveDraft();
+    const created = (
+      mocks.createAgent.mock.calls.at(-1) as unknown as [FormData]
+    )[0];
+    expect(created.get('image')).toBe(file);
+    await typeName('Support bot 2');
+    await saveDraft();
+    const updated = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(updated.get('image')).toBeNull();
+  });
+
+  it('keeps Publish on for a saved draft with no new changes', async () => {
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Draft bot',
+        description: 'd',
+        status: 'draft',
+        agent_type: 'classic',
+        prompt_id: 'default',
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="draft" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    expect(buttonByText('agents.form.buttons.publish').disabled).toBe(false);
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(false);
   });
 
   it('lets Go to Tools go when the agent is saved', async () => {

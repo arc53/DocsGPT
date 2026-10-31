@@ -63,12 +63,28 @@ vi.mock('reactflow', () => {
 });
 vi.mock('reactflow/dist/style.css', () => ({}));
 
-vi.mock('../../modals/ConfirmationModal', () => ({ default: () => null }));
+// The leave confirm, drawn as its message while it is open.
+vi.mock('../../modals/ConfirmationModal', () => ({
+  default: ({
+    message,
+    modalState,
+  }: {
+    message: string;
+    modalState: string;
+  }) =>
+    modalState === 'ACTIVE' ? <p data-testid="confirm">{message}</p> : null,
+}));
 vi.mock('../../modals/AgentDetailsModal', () => ({ default: () => null }));
 vi.mock('../../teams/ShareToTeamModal', () => ({ default: () => null }));
 vi.mock('../components/AgentPreviewSheet', () => ({ default: () => null }));
 vi.mock('./WorkflowPreview', () => ({ default: () => null }));
-vi.mock('./NodePalette', () => ({ default: () => null }));
+vi.mock('./NodePalette', () => ({
+  default: ({ onAdd }: { onAdd: (type: string) => void }) => (
+    <button type="button" data-add="agent" onClick={() => onAdd('agent')}>
+      add agent
+    </button>
+  ),
+}));
 vi.mock('./CanvasControls', () => ({ default: () => null }));
 vi.mock('./panels/NodePanel', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
@@ -78,10 +94,22 @@ vi.mock('./panels/NodePanel', () => ({
 const panel = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
 }));
+// The node's Tools picker footer, as its Go to Tools link.
 vi.mock('./panels/AgentPanel', () => ({
   default: (props: Record<string, unknown>) => {
     panel.props = props;
-    return null;
+    return (
+      <a
+        href="/settings/tools"
+        data-testid="go-to-tools"
+        onClick={(event) => {
+          (props.onNavigateAway as (e: unknown) => void)?.(event);
+          if (!event.defaultPrevented) event.preventDefault();
+        }}
+      >
+        go
+      </a>
+    );
   },
 }));
 const sheet = vi.hoisted(() => ({
@@ -188,13 +216,17 @@ describe('WorkflowBuilder canvas', () => {
     document.body.innerHTML = '';
   });
 
-  const render = async () => {
+  const render = async (path = '/agents/workflow/edit/a1') => {
     await act(async () => {
       root.render(
-        <MemoryRouter initialEntries={['/agents/workflow/edit/a1']}>
+        <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route
               path="/agents/workflow/edit/:agentId"
+              element={<WorkflowBuilder />}
+            />
+            <Route
+              path="/agents/manage/workflow/new"
               element={<WorkflowBuilder />}
             />
           </Routes>
@@ -343,6 +375,73 @@ describe('WorkflowBuilder canvas', () => {
       await select('agent');
       const tools = panel.props!.availableTools as { id: string }[];
       expect(tools.map((tool) => tool.id)).toEqual(['own', 'doc']);
+    });
+  });
+
+  describe('unsaved changes', () => {
+    const NEW = '/agents/manage/workflow/new';
+    const unsaved = () =>
+      container.textContent?.includes('agents.workflow.builder.unsavedChanges');
+    const goToTools = async () =>
+      act(async () =>
+        container
+          .querySelector<HTMLAnchorElement>('[data-testid="go-to-tools"]')!
+          .click(),
+      );
+    const asked = () =>
+      container.querySelector('[data-testid="confirm"]')?.textContent ===
+      'agents.form.leave.title';
+    const addAgent = async () =>
+      act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[data-add="agent"]')!
+          .click(),
+      );
+    const agentNodeId = () =>
+      [...container.querySelectorAll<HTMLElement>('[data-node]')]
+        .map((el) => el.dataset.node!)
+        .find((id) => id.startsWith('agent'))!;
+
+    it('reads an untouched new workflow as saved', async () => {
+      await render(NEW);
+      expect(unsaved()).toBe(false);
+    });
+
+    it('asks before a new workflow with work on it is left', async () => {
+      await render(NEW);
+      await addAgent();
+      expect(unsaved()).toBe(true);
+      await select(agentNodeId());
+      await goToTools();
+      expect(asked()).toBe(true);
+    });
+
+    it('asks while a saved workflow has an edit, and not after it is saved', async () => {
+      await render();
+      await select('agent');
+      await goToTools();
+      expect(asked()).toBe(false);
+
+      const onUpdate = panel.props!.onUpdate as (data: object) => void;
+      const node = panel.props!.node as { data: { config: object } };
+      await act(async () =>
+        onUpdate({ config: { ...node.data.config, prompt_template: 'Bye' } }),
+      );
+      await goToTools();
+      expect(asked()).toBe(true);
+
+      await render();
+      const onSave = sheet.props!.onSave as (values: object) => void;
+      await act(async () =>
+        onSave({
+          name: 'Renewal desk',
+          description: '',
+          allowPromptOverride: false,
+          imageFile: null,
+        }),
+      );
+      await act(async () => undefined);
+      expect(unsaved()).toBe(false);
     });
   });
 });

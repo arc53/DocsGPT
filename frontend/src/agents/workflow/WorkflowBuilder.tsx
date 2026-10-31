@@ -123,6 +123,7 @@ import {
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
 import { readerIdFromToken } from '../../utils/personLabel';
 import { useLeaveGuard } from '../../hooks/useLeaveGuard';
+import { useBuilderDirtyState } from '../hooks/useBuilderDirtyState';
 import {
   getToolDisplayName,
   isWorkflowNodeToolVisible,
@@ -351,9 +352,6 @@ function WorkflowBuilderInner() {
   // laid over the saved config with the next save; null when none changed.
   const [pendingConfig, setPendingConfig] = useState<AgentConfig | null>(null);
   const analyticsAvailability = useAnalyticsAvailability();
-  const [savedWorkflowSignature, setSavedWorkflowSignature] = useState<
-    string | null
-  >(null);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const modelNames = useMemo(
     () =>
@@ -399,6 +397,41 @@ function WorkflowBuilderInner() {
 
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>([]);
+
+  const buildWorkflowPayload = useCallback(
+    () =>
+      createWorkflowPayload(
+        workflowName,
+        workflowDescription,
+        nodes,
+        edges,
+        retryDefaults,
+      ),
+    [workflowName, workflowDescription, nodes, edges, retryDefaults],
+  );
+
+  const workflowPayloadSignature = useMemo(
+    () =>
+      JSON.stringify(
+        withoutAutoFilledModels(buildWorkflowPayload(), autoFilledModels),
+      ),
+    [buildWorkflowPayload, autoFilledModels],
+  );
+  // A new workflow compares with what it opened with (its Start node); a
+  // saved one with what was loaded, then with each save.
+  const [opensNew] = useState(
+    () => !agentId && !searchParams.get('workflow_id'),
+  );
+  const { dirty: hasUnsavedWork, markSaved } = useBuilderDirtyState(
+    workflowPayloadSignature,
+    {
+      ready: opensNew,
+      extras:
+        imageFile !== null || pendingConfig !== null || takeovers.length > 0,
+    },
+  );
+  // A node's Go to link asks first while there is unsaved work.
+  const leaveGuard = useLeaveGuard(hasUnsavedWork);
 
   const handleHistoryRestore = useCallback(
     (snapshot: WorkflowSnapshot) => {
@@ -1270,7 +1303,7 @@ function WorkflowBuilderInner() {
         setEdges(mappedEdges);
         setAutoFilledModels({});
         clearHistory();
-        setSavedWorkflowSignature(
+        markSaved(
           JSON.stringify(
             createWorkflowPayload(
               nextWorkflowName,
@@ -1299,6 +1332,7 @@ function WorkflowBuilderInner() {
     token,
     clearHistory,
     applyResourceDetails,
+    markSaved,
   ]);
 
   const validateWorkflow = useCallback((): string[] => {
@@ -1632,44 +1666,6 @@ function WorkflowBuilderInner() {
   const effectiveAgentId = currentAgentId || currentAgent.id || '';
   const currentAgentImage = currentAgent.image || '';
 
-  const buildWorkflowPayload = useCallback(
-    () =>
-      createWorkflowPayload(
-        workflowName,
-        workflowDescription,
-        nodes,
-        edges,
-        retryDefaults,
-      ),
-    [workflowName, workflowDescription, nodes, edges, retryDefaults],
-  );
-
-  const workflowPayloadSignature = useMemo(
-    () =>
-      JSON.stringify(
-        withoutAutoFilledModels(buildWorkflowPayload(), autoFilledModels),
-      ),
-    [buildWorkflowPayload, autoFilledModels],
-  );
-
-  const hasSavableChanges =
-    canManageAgent && savedWorkflowSignature !== null
-      ? workflowPayloadSignature !== savedWorkflowSignature ||
-        imageFile !== null ||
-        pendingConfig !== null ||
-        takeovers.length > 0
-      : false;
-  // A workflow never saved has no saved copy to compare: what was built since
-  // the page opened (beyond its Start node) is what leaving would lose.
-  const [openedSignature] = useState(workflowPayloadSignature);
-  const hasUnsavedWork =
-    hasSavableChanges ||
-    (canManageAgent &&
-      savedWorkflowSignature === null &&
-      workflowPayloadSignature !== openedSignature);
-  // A node's Go to link asks first while there is unsaved work.
-  const leaveGuard = useLeaveGuard(hasUnsavedWork);
-
   // The agent's config as the server has it now, read just before a save
   // that replaces it; throws when it can't be read.
   const readSavedConfig = useCallback(
@@ -1793,7 +1789,7 @@ function WorkflowBuilderInner() {
             setPendingConfig(null);
           }
           setImageFile(null);
-          setSavedWorkflowSignature(JSON.stringify(workflowPayload));
+          markSaved(JSON.stringify(workflowPayload));
           setAutoFilledModels({});
           setTakeovers([]);
           void refreshResourceDetails(workflowId);
@@ -1878,7 +1874,7 @@ function WorkflowBuilderInner() {
         }
 
         setImageFile(null);
-        setSavedWorkflowSignature(JSON.stringify(workflowPayload));
+        markSaved(JSON.stringify(workflowPayload));
         setAutoFilledModels({});
         if (navigateAfterSuccess) {
           navigateBackToAgents();
@@ -2025,7 +2021,7 @@ function WorkflowBuilderInner() {
   // Without it the Save/Publish button isn't rendered at all.
   const canSubmit = can(currentAgent, canManageAgent ? 'edit' : 'publish');
   const isPrimaryActionDisabled =
-    isPublishing || (canManageAgent && !hasSavableChanges);
+    isPublishing || (canManageAgent && !hasUnsavedWork);
   const primaryActionLabel = canManageAgent
     ? t('agents.form.buttons.save')
     : t('agents.form.buttons.publish');
@@ -2250,7 +2246,7 @@ function WorkflowBuilderInner() {
             inline
           />
           <div className="flex shrink-0 items-center gap-2">
-            {(!canManageAgent || hasSavableChanges) && (
+            {hasUnsavedWork && (
               <span className="text-muted-foreground mr-2 text-sm">
                 {t('agents.workflow.builder.unsavedChanges')}
               </span>

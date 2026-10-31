@@ -93,6 +93,34 @@ describe('useLeaveGuard', () => {
     expect(container.textContent).toContain('go');
   });
 
+  // A new tab leaves the builder where it is, so there is nothing to lose.
+  it.each([
+    ['Cmd', { metaKey: true }],
+    ['Ctrl', { ctrlKey: true }],
+    ['Shift', { shiftKey: true }],
+    ['middle', { button: 1 }],
+  ])('lets a %s click open its new tab without asking', async (_, init) => {
+    await render(true);
+    const click = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    let prevented: boolean | null = null;
+    const watch = (event: Event) => {
+      prevented = event.defaultPrevented;
+    };
+    // Read after React's handler, which runs at the root.
+    document.addEventListener('click', watch);
+    await act(async () => link().dispatchEvent(click));
+    document.removeEventListener('click', watch);
+    expect(dialog()).toBeNull();
+    expect(container.textContent).toContain('go');
+    // React Router's Link prevents a plain click itself; for a modified one
+    // the browser opens the tab, so nothing may prevent it.
+    expect(prevented).toBe(false);
+  });
+
   it('guards a programmatic exit too', async () => {
     await render(true);
     await act(async () =>

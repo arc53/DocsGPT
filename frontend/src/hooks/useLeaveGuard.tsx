@@ -8,7 +8,8 @@ import ConfirmationModal from '../modals/ConfirmationModal';
  * Asks before a builder's own exits leave unsaved work: a picker footer's
  * "Go to Tools / Knowledge / Prompts" link and Upload's Browse connectors.
  * With nothing unsaved they go at once; otherwise a confirm asks "Leave
- * without saving?" with Leave or Cancel. The app's router
+ * without saving?" with Leave or Cancel. A link opened in a new tab (Cmd,
+ * Ctrl, Shift or middle click) never asks. The app's router
  * can't block every navigation, so it covers the exits the builder draws.
  *
  * Args:
@@ -36,7 +37,11 @@ export function useLeaveGuard(dirty: boolean): {
   const onNavigate =
     (close?: () => void) => (event: MouseEvent<HTMLAnchorElement>) => {
       close?.();
-      if (!dirty) return;
+      // A Cmd, Ctrl, Shift or middle click opens a new tab or window and
+      // leaves the builder where it is: nothing to lose, nothing to ask.
+      const newTab =
+        event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0;
+      if (!dirty || newTab) return;
       event.preventDefault();
       setPending(event.currentTarget.getAttribute('href'));
     };
