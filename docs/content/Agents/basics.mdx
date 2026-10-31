@@ -1,7 +1,7 @@
 ---
 title: Agent Basics
 description: Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
-lastUpdated: 2026-10-30
+lastUpdated: 2026-10-31
 ---
 
 import { Callout } from 'nextra/components';
@@ -127,7 +127,9 @@ You can easily access and manage your agents through the DocsGPT user interface.
 />
 
 4.  Fill in the fields as described in the "Core Components of an Agent" section.
-5.  Once configured, you can **"Save Draft"** to continue editing later or **"Publish"** to make the agent active.
+5.  Once configured, you can **"Save Draft"** to continue editing later or **"Publish"** to make the agent active. Workflow agents work the same way: **Save draft** keeps an unfinished workflow, and **Publish** checks its [graph rules](/Agents/nodes#graph-rules) first.
+
+While the builder has changes you haven't saved, links that leave the builder (**Go to Knowledge**, **Go to Tools**, the prompt's link, and the connector links in **Add tool** and **Upload new**) ask before they discard them. Opening one in a new tab with Cmd/Ctrl-click doesn't ask.
 
 ## Interacting with and Editing Agents
 

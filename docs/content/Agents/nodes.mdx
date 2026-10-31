@@ -1,7 +1,7 @@
 ---
 title: Workflow Nodes
 description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else, Code and Loop - and the shared state they read and write.
-lastUpdated: 2026-10-29
+lastUpdated: 2026-10-31
 ---
 
 import { Callout } from 'nextra/components';
@@ -475,8 +475,12 @@ or what still needs doing. It has no effect on a run.
 
 ## Graph rules
 
-The builder checks these before a preview, save or publish, and lists every rule
-a workflow breaks:
+The builder checks these before a preview or publish, and before a save once the
+workflow is published, and lists every rule a workflow breaks. A draft saves
+without them: **Save draft**, beside **Publish** until the workflow is published,
+keeps an unfinished workflow and needs only a name. The workflow's graph and its
+name, description and image are saved together, so a save either stores all of
+them or none.
 
 - The workflow has a name, exactly one Start node, at least one End node and
   at least one AI Agent node.
@@ -507,3 +511,11 @@ deletes its workflow. Over the API, creating an agent (`POST /api/create_agent`)
 with a `workflow` that another agent already uses, or switching an agent to one
 with `PUT /api/update_agent/<agent_id>`, answers `409` with "This workflow
 belongs to another agent". Create a new workflow for the new agent instead.
+
+The builder saves through those same two endpoints: it sends the graph as a
+`workflow_graph` field (`{"nodes": [...], "edges": [...], "retry_defaults": ...}`,
+a JSON string in a multipart form) with the agent's other fields, in one request.
+With `"status": "draft"` only the graph's shape is checked; with `"published"` the
+full graph rules apply. A request can send `workflow_graph` or `workflow`, not
+both. `POST /api/workflows` and `PUT /api/workflows/<id>` keep working for scripts
+that manage the graph on its own.
