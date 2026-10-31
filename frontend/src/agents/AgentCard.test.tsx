@@ -261,13 +261,13 @@ describe('AgentCard menu', () => {
     expect(await menuLabels()).toHaveLength(7);
   });
 
-  it('hides Logs on an own draft (no runs to show) but keeps the rest', async () => {
+  it('offers Logs on an own draft (its preview runs) but not Pin', async () => {
     await render(
       { ...agentWith('owner', OWNER_ACTIONS), status: 'draft' },
       'user',
     );
     const labels = await menuLabels();
-    expect(labels).not.toContain('agents.form.buttons.logs');
+    expect(labels).toContain('agents.form.buttons.logs');
     expect(labels).not.toContain('agents.card.pin');
     expect(labels).toContain('agents.edit');
   });

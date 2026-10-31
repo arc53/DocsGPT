@@ -215,7 +215,7 @@ describe('buildAgentSection', () => {
 });
 
 describe('buildAgentSection tabs for a draft', () => {
-  it('shows only Overview until the agent is published', () => {
+  it('shows Overview and Logs until the agent is published', () => {
     const items = getSectionItems(
       buildAgentSection('a1', 'Bot', false, {
         access: 'owner',
@@ -223,7 +223,7 @@ describe('buildAgentSection tabs for a draft', () => {
         allowed_actions: ['view', 'view_logs', 'manage_schedules'],
       }),
     ).map((item) => item.key);
-    expect(items).toEqual(['overview']);
+    expect(items).toEqual(['overview', 'logs']);
   });
 });
 

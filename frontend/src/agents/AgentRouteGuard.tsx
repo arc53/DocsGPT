@@ -16,7 +16,10 @@ import { agentEditPath, agentsListPath, isWorkflowAgent } from './paths';
 import type { Agent } from './types';
 
 type AgentRouteGuardProps = {
-  /** The action the page needs (`view`, `view_logs`, `manage_schedules`). */
+  /**
+   * The action the page needs (`view`, `view_logs`, `view_analytics`,
+   * `manage_schedules`), as `canAgent` checks it.
+   */
   action: string;
   /**
    * The classic edit page: a workflow agent goes on to the workflow editor
