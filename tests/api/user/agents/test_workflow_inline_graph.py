@@ -423,6 +423,21 @@ class TestGraphOnlySaves:
         assert _row(pg_conn, agent_id)["updated_at"] == before
         assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 2
 
+    def test_the_update_answers_with_the_new_updated_at_for_the_next_save(self, app, pg_conn):
+        agent_id, _ = _workflow_agent(app, pg_conn)
+        stamp = _row(pg_conn, agent_id)["updated_at"]
+        first = _update(
+            app, pg_conn, agent_id,
+            {"name": "One", "workflow_graph": _graph(), "expected_updated_at": str(stamp)}, user=EDITOR,
+        )
+        assert _status(first) == 200, _json(first)
+        fresh = _json(first)["updated_at"]
+        assert fresh and fresh == _row(pg_conn, agent_id)["updated_at"]
+        # The answer's stamp is the one the next save sends.
+        second = _update(app, pg_conn, agent_id, {"name": "Two", "expected_updated_at": fresh}, user=EDITOR)
+        assert _status(second) == 200, _json(second)
+        assert _json(second)["updated_at"] == _row(pg_conn, agent_id)["updated_at"]
+
     def test_a_stale_editor_save_that_creates_the_workflow_is_refused(self, app, pg_conn):
         from tests.api.user.test_resource_sponsors import _share_agent
 

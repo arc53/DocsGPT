@@ -900,6 +900,82 @@ describe('NewAgent form', () => {
     expect(asked()).toBe(true);
   });
 
+  // Save draft and Publish both create a new agent: only one may be out.
+  it('runs one save at a time across Save draft and Publish', async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    mocks.createAgent.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }) as never,
+    );
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      setNativeValue(
+        container.querySelector<HTMLTextAreaElement>(
+          'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+        )!,
+        'Helps',
+      ),
+    );
+    await act(async () =>
+      buttonByText('agents.form.buttons.saveDraft').click(),
+    );
+    const publish = buttonByText('agents.form.buttons.publish');
+    expect(publish.disabled).toBe(true);
+    await act(async () => publish.click());
+    expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      finish({ ok: true, json: () => Promise.resolve({ id: 'agent-9' }) }),
+    );
+  });
+
+  // A team editor's save carries the stamp it loaded, so the server can
+  // refuse it when someone saved in between; the edits stay.
+  it('sends the loaded stamp and keeps the edits when the save is stale', async () => {
+    mocks.updateAgent.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: false,
+            message: 'Agent was modified by someone else',
+            code: 'stale_write',
+          }),
+          { status: 409, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    await renderEdit({ updated_at: '2026-10-30T10:00:00.123456+00:00' });
+    await typeName('Renamed');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const form = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(form.get('expected_updated_at')).toBe(
+      '2026-10-30T10:00:00.123456+00:00',
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'agents.form.errors.staleWrite',
+    );
+    expect(
+      container.querySelector<HTMLInputElement>(
+        'input[placeholder="agents.form.placeholders.agentName"]',
+      )!.value,
+    ).toBe('Renamed');
+  });
+
+  it('sends the stamp the last save answered with', async () => {
+    mocks.updateAgent.mockImplementation(() =>
+      jsonResponse({ success: true, id: 'agent-1', updated_at: 'stamp-2' }),
+    );
+    await renderEdit({ updated_at: 'stamp-1' });
+    await typeName('Once');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await typeName('Twice');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const form = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(form.get('expected_updated_at')).toBe('stamp-2');
+  });
+
   it('lets Go to Tools go when the agent is saved', async () => {
     await renderEdit({});
     await act(async () => goToTools().click());

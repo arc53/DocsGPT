@@ -199,6 +199,25 @@ describe('useSponsoredSave', () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  it('says when someone else saved in between', async () => {
+    let result: unknown;
+    await act(async () => {
+      result = await hook.save(
+        async () =>
+          json(409, {
+            success: false,
+            message: 'Agent was modified by someone else',
+            code: 'stale_write',
+          }),
+        'failed',
+      );
+    });
+    expect(result).toMatchObject({
+      status: 'failed',
+      message: 'agents.form.errors.staleWrite',
+    });
+  });
+
   it('takes back a takeover', async () => {
     await act(async () => {
       void hook.takeOver(RESOURCE, 'Jira', AUDIENCE);

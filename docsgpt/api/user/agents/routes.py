@@ -1865,6 +1865,9 @@ class UpdateAgent(Resource):
                         ),
                         404,
                     )
+                # The row's new stamp: a team editor's next save sends it as
+                # ``expected_updated_at``.
+                saved_row = agents_repo.get_by_id(pg_agent_id) or {}
         except Exception as err:
             current_app.logger.error(
                 f"Error updating agent {agent_id}: {err}", exc_info=True
@@ -1878,6 +1881,7 @@ class UpdateAgent(Resource):
             "success": True,
             "id": pg_agent_id,
             "message": "Agent updated successfully",
+            "updated_at": saved_row.get("updated_at"),
             "image": _image_output(
                 update_fields.get("image", existing_image), pg_agent_id, existing_agent.get("user_id"),
             ),

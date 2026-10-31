@@ -3139,7 +3139,8 @@
       "externalKb": "External KB",
       "errors": {
         "publishFailed": "Could not publish the agent. Please try again.",
-        "saveDraftFailed": "Could not save the draft. Please try again."
+        "saveDraftFailed": "Could not save the draft. Please try again.",
+        "staleWrite": "Someone else saved this agent after you opened it. Your changes are still here: copy what you need, reload the page, and apply them again."
       },
       "guardrails": {
         "enable": "Enable guardrails",

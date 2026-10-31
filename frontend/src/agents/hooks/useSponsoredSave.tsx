@@ -147,11 +147,18 @@ export function useSponsoredSave({
         };
       }
       const body = await readBody(response);
+      // Someone saved in between (a team editor's stale write): the edits
+      // stay in the form; the message says what happened.
+      const staleWrite =
+        response.status === 409 &&
+        (body as { code?: unknown } | null)?.code === 'stale_write';
       return {
         status: 'failed',
         response,
         body,
-        message: messageOf(body, fallback),
+        message: staleWrite
+          ? t('agents.form.errors.staleWrite')
+          : messageOf(body, fallback),
       };
     },
     [i18n.language, sponsorPrompt.ask, t],

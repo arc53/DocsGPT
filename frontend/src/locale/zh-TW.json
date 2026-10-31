@@ -3121,7 +3121,8 @@
       "externalKb": "外部知識庫",
       "errors": {
         "publishFailed": "無法發布該助理，請重試。",
-        "saveDraftFailed": "無法儲存草稿，請重試。"
+        "saveDraftFailed": "無法儲存草稿，請重試。",
+        "staleWrite": "在你開啟此智慧代理後，其他人儲存了它。你的變更仍在這裡：複製所需內容，重新載入頁面後再次套用。"
       },
       "guardrails": {
         "enable": "啟用防護機制",

@@ -3236,7 +3236,8 @@
       "externalKb": "Base de connaissances externe",
       "errors": {
         "publishFailed": "Impossible de publier l’agent. Veuillez réessayer.",
-        "saveDraftFailed": "Impossible d’enregistrer le brouillon. Veuillez réessayer."
+        "saveDraftFailed": "Impossible d’enregistrer le brouillon. Veuillez réessayer.",
+        "staleWrite": "Quelqu’un d’autre a enregistré cet agent après que vous l’avez ouvert. Vos modifications sont toujours là : copiez ce dont vous avez besoin, rechargez la page et appliquez-les de nouveau."
       },
       "guardrails": {
         "enable": "Activer les garde-fous",

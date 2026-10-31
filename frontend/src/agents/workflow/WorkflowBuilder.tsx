@@ -1805,6 +1805,9 @@ function WorkflowBuilderInner() {
         if (creating) {
           formData.append('agent_type', 'workflow');
           if (folderId) formData.append('folder_id', folderId);
+        } else if (currentAgent.updated_at) {
+          // A team editor's save is refused when someone saved in between.
+          formData.append('expected_updated_at', currentAgent.updated_at);
         }
         // Only what Workflow details changed. The config replaces the stored
         // one whole, so on an update the rest comes from the server's copy as
@@ -1859,6 +1862,8 @@ function WorkflowBuilderInner() {
           description: workflowDescription,
           image: data?.image || prev.image || '',
           key: data?.key ?? prev.key,
+          // The stamp the next save sends.
+          updated_at: data?.updated_at ?? prev.updated_at,
           agent_type: 'workflow',
           status,
           workflow: savedWorkflowId || undefined,
@@ -1906,6 +1911,7 @@ function WorkflowBuilderInner() {
       currentAgent.allow_system_prompt_override,
       currentAgent.config,
       currentAgent.status,
+      currentAgent.updated_at,
       readSavedConfig,
       pendingConfig,
       folderId,

@@ -795,4 +795,63 @@ describe('WorkflowBuilder canvas', () => {
       expect(nodeButton('end')).toBeNull();
     });
   });
+
+  describe("a team editor's stale save", () => {
+    const saveDetails = async () => {
+      const onSave = sheet.props!.onSave as (values: object) => void;
+      await act(async () =>
+        onSave({
+          name: 'Renewal desk',
+          description: 'x',
+          allowPromptOverride: false,
+          imageFile: null,
+        }),
+      );
+      await act(async () => undefined);
+    };
+
+    it('sends the stamp it loaded, then the one each save answered with', async () => {
+      api.agentExtra = { updated_at: 'stamp-1' };
+      api.updateAgent.mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({ success: true, id: 'a1', updated_at: 'stamp-2' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+      );
+      await render();
+      await saveDetails();
+      const first = api.updateAgent.mock.calls.at(-1)![1] as FormData;
+      expect(first.get('expected_updated_at')).toBe('stamp-1');
+      await saveDetails();
+      const second = api.updateAgent.mock.calls.at(-1)![1] as FormData;
+      expect(second.get('expected_updated_at')).toBe('stamp-2');
+    });
+
+    it('says someone else saved and keeps the canvas', async () => {
+      api.agentExtra = { updated_at: 'stamp-1' };
+      api.updateAgent.mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              success: false,
+              message: 'Agent was modified by someone else',
+              code: 'stale_write',
+            }),
+            { status: 409, headers: { 'Content-Type': 'application/json' } },
+          ),
+      );
+      await render();
+      const onOpenChange = sheet.props!.onOpenChange as (o: boolean) => void;
+      await act(async () => onOpenChange(true));
+      await saveDetails();
+      expect(sheet.props!.errors).toEqual(['agents.form.errors.staleWrite']);
+      expect(nodeButton('end')).not.toBeNull();
+      expect(
+        container.textContent?.includes(
+          'agents.workflow.builder.unsavedChanges',
+        ),
+      ).toBe(true);
+    });
+  });
 });

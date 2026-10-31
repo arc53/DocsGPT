@@ -3139,7 +3139,8 @@
       "externalKb": "Externe KB",
       "errors": {
         "publishFailed": "Der Agent konnte nicht veröffentlicht werden. Bitte erneut versuchen.",
-        "saveDraftFailed": "Der Entwurf konnte nicht gespeichert werden. Bitte erneut versuchen."
+        "saveDraftFailed": "Der Entwurf konnte nicht gespeichert werden. Bitte erneut versuchen.",
+        "staleWrite": "Jemand anderes hat diesen Agenten gespeichert, nachdem du ihn geöffnet hast. Deine Änderungen sind noch da: Kopiere, was du brauchst, lade die Seite neu und übernimm sie erneut."
       },
       "guardrails": {
         "enable": "Guardrails aktivieren",

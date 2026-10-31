@@ -3236,7 +3236,8 @@
       "externalKb": "KB Externa",
       "errors": {
         "publishFailed": "No se pudo publicar el agente. Inténtalo de nuevo.",
-        "saveDraftFailed": "No se pudo guardar el borrador. Inténtalo de nuevo."
+        "saveDraftFailed": "No se pudo guardar el borrador. Inténtalo de nuevo.",
+        "staleWrite": "Otra persona guardó este agente después de que lo abrieras. Tus cambios siguen aquí: copia lo que necesites, recarga la página y vuelve a aplicarlos."
       },
       "guardrails": {
         "enable": "Activar barreras de protección",

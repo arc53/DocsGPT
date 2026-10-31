@@ -3119,7 +3119,8 @@
       "externalKb": "外部知识库",
       "errors": {
         "publishFailed": "无法发布该助手，请重试。",
-        "saveDraftFailed": "无法保存草稿，请重试。"
+        "saveDraftFailed": "无法保存草稿，请重试。",
+        "staleWrite": "在你打开此智能体后，其他人保存了它。你的更改仍在这里：复制所需内容，重新加载页面后再次应用。"
       },
       "guardrails": {
         "enable": "启用防护栏",

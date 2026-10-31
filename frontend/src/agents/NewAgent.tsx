@@ -560,8 +560,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    * Create or update the agent, asking whenever the server wants the
    * caller's confirmation to run what they added with their access.
    */
-  const sendAgent = (formData: FormData, fallback: string) =>
-    sponsoredSave.save((confirm) => {
+  const sendAgent = (formData: FormData, fallback: string) => {
+    // A team editor's update is refused when someone saved in between.
+    if (effectiveMode !== 'new' && agent.updated_at)
+      formData.set('expected_updated_at', agent.updated_at);
+    return sponsoredSave.save((confirm) => {
       if (confirm.length > 0)
         formData.set('confirm_sponsor', JSON.stringify(confirm));
       else formData.delete('confirm_sponsor');
@@ -569,6 +572,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         ? userService.createAgent(formData, token)
         : userService.updateAgent(agent.id || '', formData, token);
     }, fallback);
+  };
+  // One save at a time: Save draft and Publish beside each other would both
+  // create a new agent.
+  const savingRef = useRef(false);
 
   const undoTakeover = sponsoredSave.undoTakeover;
 
@@ -639,6 +646,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   const handleSaveDraft = async () => {
+    if (savingRef.current) return;
     const saving = savePayload;
     const formData = new FormData();
     formData.append('name', agent.name);
@@ -696,6 +704,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
 
     try {
+      savingRef.current = true;
       setDraftLoading(true);
       setSubmitError(null);
       const result = await sendAgent(
@@ -711,13 +720,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       // What is on the agent now is what the tool picker keeps rows for.
       setAttachedTools(selectedTools);
 
-      const updatedAgent = {
-        ...agent,
+      const saved = {
         id: data.id || agent.id,
         image: data.image || agent.image,
+        // The stamp the next save sends.
+        updated_at: data.updated_at ?? agent.updated_at,
       };
-      setAgent(updatedAgent);
-      initialAgentRef.current = updatedAgent;
+      // Edits made while the save was out stay.
+      setAgent((prev) => ({ ...prev, ...saved }));
+      initialAgentRef.current = { ...agent, ...saved };
       // What was sent is saved: the avatar went with it.
       markSaved(saving);
       setImageFile(null);
@@ -727,11 +738,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       console.error('Error saving draft:', error);
       setSubmitError(t('agents.form.errors.saveDraftFailed'));
     } finally {
+      savingRef.current = false;
       setDraftLoading(false);
     }
   };
 
   const handlePublish = async () => {
+    if (savingRef.current) return;
     const saving = savePayload;
     const formData = new FormData();
     formData.append('name', agent.name);
@@ -789,6 +802,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
 
     try {
+      savingRef.current = true;
       setPublishLoading(true);
       setSubmitError(null);
       const result = await sendAgent(
@@ -802,14 +816,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       }
       const data = await result.response.json();
 
-      const updatedAgent = {
-        ...agent,
+      const saved = {
         id: data.id || agent.id,
         key: data.key || agent.key,
         status: 'published',
         image: data.image || agent.image,
+        updated_at: data.updated_at ?? agent.updated_at,
       };
-      setAgent(updatedAgent);
+      setAgent((prev) => ({ ...prev, ...saved }));
+      const updatedAgent = { ...agent, ...saved };
       initialAgentRef.current = updatedAgent;
       markSaved(saving);
       setAttachedTools(selectedTools);
@@ -825,6 +840,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       console.error('Error publishing agent:', error);
       setSubmitError(t('agents.form.errors.publishFailed'));
     } finally {
+      savingRef.current = false;
       setPublishLoading(false);
     }
   };
@@ -1178,7 +1194,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           variant="outline"
           size="field"
           shape="pill"
-          disabled={isDraftBlocked()}
+          disabled={isDraftBlocked() || publishLoading}
           loading={draftLoading}
           onClick={handleSaveDraft}
         >
@@ -1205,7 +1221,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           // Save on a published agent needs a change; Publish on a draft
           // or a new agent doesn't.
           disabled={
-            !isPublishable() || (effectiveMode === 'edit' && !hasChanges)
+            !isPublishable() ||
+            draftLoading ||
+            (effectiveMode === 'edit' && !hasChanges)
           }
           loading={publishLoading}
           onClick={handlePublish}
