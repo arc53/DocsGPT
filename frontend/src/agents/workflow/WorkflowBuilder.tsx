@@ -328,7 +328,11 @@ function WorkflowBuilderInner() {
   // Bumped after a reconnect so the run state is read again.
   const [resourcesReloadKey, setResourcesReloadKey] = useState(0);
   const signInAgain = useSignInAgain({
-    onConnected: () => setResourcesReloadKey((key) => key + 1),
+    onConnected: () => {
+      setResourcesReloadKey((key) => key + 1);
+      // The node pickers' Reconnect badges follow the connection.
+      void loadTools().catch(() => undefined);
+    },
   });
   const [errorContext, setErrorContext] = useState<'preview' | 'publish'>(
     'publish',
@@ -371,7 +375,7 @@ function WorkflowBuilderInner() {
   // them, so node pickers keep a remove-only option for the owner's private
   // ones (GET /api/workflows/<id> ``ref_details``).
   const [nodeRefNames, setNodeRefNames] = useState<{
-    tools: { id: string; label: string }[];
+    tools: { id: string; label: string; name?: string }[];
     sources: { id: string; label: string }[];
   }>({ tools: [], sources: [] });
   const [agentJsonSchemaDrafts, setAgentJsonSchemaDrafts] = useState<
@@ -1231,6 +1235,7 @@ function WorkflowBuilderInner() {
             (tool: { id: string; name?: string; display_name?: string }) => ({
               id: tool.id,
               label: getToolDisplayName(tool),
+              name: tool.name,
             }),
           ),
           sources: (refDetails?.sources ?? []).map(
@@ -2441,6 +2446,9 @@ function WorkflowBuilderInner() {
                   onReloadTools={loadTools}
                   onNavigateAway={leaveGuard.onNavigate()}
                   onLeaveTo={leaveGuard.leaveTo}
+                  onReconnect={(connection, mcpToolId) =>
+                    signInAgain.reconnect(connection, mcpToolId)
+                  }
                 />
               )}
               {selectedNode.type === 'note' && (

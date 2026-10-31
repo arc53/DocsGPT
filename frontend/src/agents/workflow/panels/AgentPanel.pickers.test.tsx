@@ -146,6 +146,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
       onReloadTools = vi.fn(async () => tools),
       onNavigateAway,
       onLeaveTo,
+      onReconnect,
     }: {
       tools?: UserTool[];
       attachedTools?: { id: string; label: string }[];
@@ -154,6 +155,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
       onReloadTools?: () => Promise<UserTool[]>;
       onNavigateAway?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
       onLeaveTo?: (to: string) => void;
+      onReconnect?: (connection: { id: string }, mcpToolId?: string) => void;
     } = {},
   ) => {
     await act(async () =>
@@ -176,6 +178,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
             onReloadTools={onReloadTools}
             onNavigateAway={onNavigateAway}
             onLeaveTo={onLeaveTo}
+            onReconnect={onReconnect}
           />
         </MemoryRouter>,
       ),
@@ -509,6 +512,68 @@ describe('AgentPanel knowledge and tool pickers', () => {
     expect(onUpdate).toHaveBeenLastCalledWith({
       config: expect.objectContaining({ sources: ['own-1', 'new-src'] }),
     });
+  });
+
+  // As in the agent builder: Browse connectors asks first while the
+  // workflow has unsaved changes.
+  it("sends Upload's Browse connectors through the builder", async () => {
+    const onLeaveTo = vi.fn();
+    await render(makeNode(), { onLeaveTo });
+    await open(sourcesTrigger());
+    const uploadButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="multi-select-footer"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.sources.uploadNew')!;
+    await act(async () => uploadButton.click());
+    upload.props!.onBrowseConnectors!();
+    expect(onLeaveTo).toHaveBeenCalledWith(
+      '/settings/connectors?capability=sync',
+    );
+  });
+
+  it('offers to sign a broken connection behind its tools in again', async () => {
+    store.state = {
+      ...store.state,
+      connectors: {
+        connections: [
+          {
+            id: 'conn-1',
+            connector_key: 'telegram',
+            name: 'Ops bot',
+            status: 'reconnect_needed',
+          },
+        ],
+        catalog: [],
+        loaded: true,
+        loading: false,
+      },
+    };
+    const onReconnect = vi.fn();
+    await render(makeNode(), {
+      tools: [
+        ...TOOLS,
+        {
+          id: 'tg',
+          name: 'telegram',
+          displayName: 'Telegram',
+          connection_id: 'conn-1',
+        } as UserTool,
+      ],
+      onReconnect,
+    });
+    await open(toolsTrigger());
+    const notice = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="multi-select-footer"] button',
+      ),
+    ).find((b) => b.textContent?.includes('settings.connectors'))!;
+    expect(notice).toBeDefined();
+    await act(async () => notice.click());
+    expect(onReconnect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conn-1' }),
+      undefined,
+    );
   });
 
   it('leaves the node alone when an upload finishes after the panel closed', async () => {

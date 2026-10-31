@@ -34,8 +34,9 @@ type ToolPickerOptions<T extends PickerTool> = {
   connections: Connection[];
   catalog: ConnectorDefinition[];
   /**
-   * Remote devices' online state by device id. Left out while unknown: the
-   * rows then show no status.
+   * Remote devices' online state by device id. Left out while unknown, and a
+   * device it doesn't hold (one the reader can't see): those rows show no
+   * status.
    */
   deviceOnline?: Map<string, boolean>;
   /** A row's line in place of the usual one (a tool the caller can't list). */
@@ -117,8 +118,13 @@ export function toolPickerItems<T extends PickerTool>(
       }
       const deviceId = (tool.config as { device_id?: string } | undefined)
         ?.device_id;
-      if (tool.name === 'remote_device' && deviceOnline) {
-        const online = deviceOnline.get(deviceId ?? '') ?? false;
+      // A device missing from the reader's device list (a teammate's) has
+      // no known state: no badge rather than Offline.
+      const online =
+        tool.name === 'remote_device'
+          ? deviceOnline?.get(deviceId ?? '')
+          : undefined;
+      if (online !== undefined) {
         badges.push(
           <Badge key="device" variant={online ? 'success' : 'neutral'}>
             {online

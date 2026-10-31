@@ -170,10 +170,31 @@ describe('toolPickerItems', () => {
     expect(text(online.descriptionNode)).toMatch(
       /settings\.devices\.online.*Spreadsheet clean-up/,
     );
-    const [offline] = build([device], { deviceOnline: new Map() });
+    const [offline] = build([device], {
+      deviceOnline: new Map([['d1', false]]),
+    });
     const html = renderToStaticMarkup(<>{offline.descriptionNode}</>);
     expect(html).toContain('settings.devices.offline');
     expect(html).toContain('data-variant="neutral"');
+  });
+
+  // A teammate's device is not in the reader's device list: its state is
+  // unknown, not Offline.
+  it('shows no status for a device the reader cannot see', () => {
+    const [row] = build(
+      [
+        {
+          id: 'dev',
+          name: 'remote_device',
+          displayName: 'Laptop',
+          description: 'Spreadsheet clean-up',
+          config: { device_id: 'theirs' },
+        },
+      ],
+      { deviceOnline: new Map([['mine', true]]) },
+    );
+    expect(row.descriptionNode).toBeUndefined();
+    expect(row.description).toBe('Spreadsheet clean-up');
   });
 
   it('takes a line from lineFor first', () => {

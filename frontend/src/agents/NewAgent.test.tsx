@@ -499,6 +499,44 @@ describe('NewAgent form', () => {
     }
   });
 
+  // A kind filter that hides the picked prompt must not bring back the name
+  // of the prompt the agent was saved with.
+  it('names the picked prompt from the full list while a kind hides it', async () => {
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'creative', name: 'creative', type: 'public' },
+      { id: 'strict', name: 'strict', type: 'public' },
+      ...Array.from({ length: 7 }, (_, i) => ({
+        id: `own-${i}`,
+        name: `Mine ${i}`,
+        type: 'private',
+        access: 'owner',
+      })),
+      { id: 'team-1', name: 'Theirs', type: 'team', access: 'viewer' },
+    ] as never[];
+    try {
+      await renderEdit({ prompt_id: 'own-0', prompt_name: 'Mine 0' });
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[data-slot="combobox-trigger"]',
+      )!;
+      await openPromptPicker();
+      await act(async () => promptRow('team-1')!.click());
+      expect(trigger.textContent).toContain('Theirs');
+      await openPromptPicker();
+      const kinds = Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="combobox-filters"] [data-slot="toggle-group-item"]',
+        ),
+      );
+      // Yours: the picked teammate's prompt is filtered out.
+      await act(async () => kinds[2].click());
+      expect(trigger.textContent).toContain('Theirs');
+      expect(trigger.textContent).not.toContain('Mine 0');
+    } finally {
+      mockState.preference.prompts = [];
+    }
+  });
+
   it('filters the prompt picker by kind past ten prompts', async () => {
     mockState.preference.prompts = [
       { id: 'default', name: 'default', type: 'public' },

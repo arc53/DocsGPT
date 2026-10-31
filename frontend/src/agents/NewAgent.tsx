@@ -1,4 +1,4 @@
-import { CircleCheck, CircleX, Database, Play, SquarePen } from 'lucide-react';
+import { CircleCheck, CircleX, Play, SquarePen } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -42,15 +42,9 @@ import {
   type MultiSelectPopoverItem,
 } from '../components/MultiSelectPopover';
 import PickerFooter from '../components/PickerFooter';
-import SourcesPopoverFooter from '../components/SourcesPopoverFooter';
-import { toolPickerItems } from '../components/toolPickerItems';
 import connectorsService from '../api/services/connectorsService';
-import { connectionNeedsSignIn } from '../connectors/connectorsSlice';
-import SignInAgainNotice, {
-  useSignInAgain,
-} from '../connectors/SignInAgainNotice';
+import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
-import AddToolModal from '../modals/AddToolModal';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import { ActiveState, Prompt } from '../models/misc';
 import {
@@ -65,25 +59,15 @@ import {
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
-import { useDeviceOnline } from '../hooks/useDeviceOnline';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
-import {
-  TOOL_KINDS,
-  toolKindLabel,
-  toolKindOf,
-  type ToolKindFilter,
-} from '../settings/toolGroups';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
 import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
-import Upload from '../upload/Upload';
 import {
   selectedSourceIdsFromAgent,
   serializeAgentSources,
   sourceItemId,
 } from '../utils/sourceUtils';
-import { toSourcePickerItems } from '../components/sourcePickerItems';
-import { useSourceKindFilter } from '../settings/SourceKindFilter';
 import {
   getToolDisplayName,
   isAgentPickerToolVisible,
@@ -108,6 +92,8 @@ import AllowedOriginsSetting, {
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
+import KnowledgePicker from './components/KnowledgePicker';
+import ToolsPicker from './components/ToolsPicker';
 import SectionShell from '../navigation/SectionShell';
 import ResourceStatusNotice, {
   type NamedResource,
@@ -118,7 +104,6 @@ import {
   readSponsorRefusal,
   saveWithSponsorConsent,
   sponsorNotAllowedMessage,
-  unlistedAttachedTools,
 } from './sponsorConsent';
 import { useAgentMenu } from './hooks/useAgentMenu';
 import { useAttachAddedTools } from './hooks/useAttachAddedTools';
@@ -248,12 +233,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     connections: Connection[];
     catalog: ConnectorDefinition[];
   }>({ connections: [], catalog: [] });
-  const [addToolModalState, setAddToolModalState] =
-    useState<ActiveState>('INACTIVE');
-  // Connections behind the picker's tools that need signing in again.
-  const [brokenToolConnections, setBrokenToolConnections] = useState<
-    { connection: Connection; mcpToolId?: string }[]
-  >([]);
   const [toolsReloadKey, setToolsReloadKey] = useState(0);
   // Bumped after a reconnect so the agent's run state is read again.
   const [detailsReloadKey, setDetailsReloadKey] = useState(0);
@@ -271,8 +250,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [isPromptPickerOpen, setIsPromptPickerOpen] = useState(false);
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
-  const [uploadModalState, setUploadModalState] =
-    useState<ActiveState>('INACTIVE');
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(
     new Set(),
   );
@@ -503,106 +480,30 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         })),
     }))
     .filter((group) => group.options.length > 0);
-  // The picked prompt when it isn't listed: a teammate's agent names the
-  // owner's prompt, and a preset reads as its id before the list loads.
+  // The picked prompt's name for the trigger, from the full list, so a kind
+  // filter that hides it never shows another; else, for the prompt the agent
+  // was loaded with, its name from the agent (a teammate's agent names the
+  // owner's prompt); a preset reads as its id before the list loads.
   const pickedPromptId = agent.prompt_id || 'default';
   const pickedPromptLabel =
-    agent.prompt_name ||
+    prompts.find((prompt) => prompt.id === pickedPromptId)?.name ||
+    (pickedPromptId === initialAgentRef.current?.prompt_id
+      ? agent.prompt_name
+      : '') ||
     (PROMPT_PRESETS.includes(pickedPromptId) ? pickedPromptId : '');
   const promptValueOption = pickedPromptLabel
     ? { value: pickedPromptId, label: pickedPromptLabel }
     : undefined;
 
-  /** Picker rows with their "Added by" line in the row's description. */
-  // The picker's kind filter, back on All each time it opens.
-  const sourceKinds = useSourceKindFilter(sourceDocs, isSourcePopupOpen);
-  const sourceItems = useMemo(() => {
-    const items = toSourcePickerItems(sourceKinds.docs, {
-      t,
-      labels: {
-        own: t('conversation.sources.groupOwn'),
-        team: t('conversation.sources.groupTeam'),
-      },
-      connections: toolContext.connections,
-      // Who added a source joins its line, so the row keeps one line.
-      lineSuffix: (doc) => addedByLabel('source', sourceItemId(doc)),
-    });
-    // An attached source the caller can't list — an owner's private source on
-    // a team-shared agent — still needs a row of its own, or it reads as
-    // selected with nothing to switch it off. Its kind is unknown, so a kind
-    // filter leaves it out.
-    const listed = new Set((sourceDocs ?? []).map((doc) => sourceItemId(doc)));
-    const unlisted =
-      sourceKinds.kind === 'all'
-        ? Array.from(selectedSourceIds)
-            .filter((id) => !listed.has(id))
-            .map((id) => ({
-              id,
-              label: resolveSourceLabel(id),
-              icon: <Database />,
-              description: addedByLabel('source', id) ?? undefined,
-            }))
-        : [];
-    return [...items, ...unlisted];
-  }, [
-    addedByLabel,
-    resolveSourceLabel,
-    selectedSourceIds,
-    sourceDocs,
-    sourceKinds.docs,
-    sourceKinds.kind,
-    t,
-    toolContext.connections,
-  ]);
-
-  // The caller's tools, plus a remove-only row for each tool on the agent
-  // they can't list (the owner's private tools on a shared agent), grouped
-  // as the chat picker and the Tools page group them.
-  const pickerTools = useMemo(
-    () => [
-      ...rawUserTools,
-      ...unlistedAttachedTools(rawUserTools, attachedTools),
-    ],
-    [attachedTools, rawUserTools],
+  // Who added a source or tool, joined to its picker row's line.
+  const sourceAddedBy = useCallback(
+    (id: string) => addedByLabel('source', id),
+    [addedByLabel],
   );
-  // The picker's kind filter, by the connections the rows are grouped by:
-  // the builder loads its own, so not useToolKindFilter's store copy.
-  const toolKindMatches = useCallback(
-    (kind: ToolKindFilter, tool: UserToolType | ToolSummary) =>
-      kind === 'all' ||
-      toolKindOf(tool, toolContext.connections, toolContext.catalog) === kind,
-    [toolContext.connections, toolContext.catalog],
+  const toolAddedBy = useCallback(
+    (id: string) => addedByLabel('tool', id),
+    [addedByLabel],
   );
-  const toolKinds = usePickerKindFilter(pickerTools, isToolsPopupOpen, {
-    kinds: TOOL_KINDS,
-    matches: toolKindMatches,
-    labelOf: (kind) => toolKindLabel(t, kind),
-    ariaLabel: t('settings.tools.kindFilterLabel'),
-  });
-  // Remote devices' online state, asked for each time the picker opens.
-  const deviceOnline = useDeviceOnline(isToolsPopupOpen, rawUserTools);
-  const toolItems = useMemo(() => {
-    const listed = new Set(rawUserTools.map((tool) => tool.id));
-    return toolPickerItems(toolKinds.items, {
-      t,
-      ...toolContext,
-      deviceOnline,
-      lineFor: (tool) =>
-        listed.has(tool.id)
-          ? undefined
-          : t('agents.form.toolsPopup.attachedHint'),
-      // Who added a tool joins its line ("a@x · Added by Bob"), so the row
-      // keeps one line.
-      lineSuffix: (tool) => addedByLabel('tool', tool.id),
-    });
-  }, [
-    addedByLabel,
-    deviceOnline,
-    rawUserTools,
-    t,
-    toolContext,
-    toolKinds.items,
-  ]);
 
   const selectedSourceNames = useMemo(
     () =>
@@ -619,11 +520,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         : t('conversation.sources.selectedCount', {
             count: selectedSourceIds.size,
           });
-
-  const handleUploadClick = () => {
-    setIsSourcePopupOpen(false);
-    setUploadModalState('ACTIVE');
-  };
 
   // Select the source an upload started from this form created. The id comes
   // from the upload itself, so a source that appeared meanwhile for another
@@ -1040,9 +936,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const ownConnections = (connectionsResult?.connections ??
       []) as Connection[];
     const catalog = (catalogResult?.connectors ?? []) as ConnectorDefinition[];
-    const connectionsById = new Map<string, Connection>(
-      ownConnections.map((c) => [c.id, c]),
-    );
     if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
     const data = await toolsResponse.json();
     // Hide workflow-only builtins (e.g. read_document) from the classic
@@ -1052,22 +945,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     );
     setRawUserTools(visibleTools);
     setToolContext({ connections: ownConnections, catalog });
-    setBrokenToolConnections(
-      Array.from(connectionsById.values())
-        .filter(connectionNeedsSignIn)
-        .flatMap((connection) => {
-          const own = visibleTools.filter(
-            (tool) => tool.connection_id === connection.id,
-          );
-          if (own.length === 0) return [];
-          return [
-            {
-              connection,
-              mcpToolId: own.find((tool) => tool.name === 'mcp_tool')?.id,
-            },
-          ];
-        }),
-    );
     return visibleTools;
   }, [token]);
 
@@ -1411,16 +1288,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     >
       {signInAgain.modals}
       {leaveGuard.dialog}
-      {/* Opened from the tool picker's footer; a tool added here goes on
-          the agent once the list reloads. */}
-      <AddToolModal
-        message={t('settings.tools.selectToolSetup')}
-        modalState={addToolModalState}
-        setModalState={setAddToolModalState}
-        getUserTools={() => setToolsReloadKey((key) => key + 1)}
-        onToolsCreated={(toolIds) => void handleToolsCreated(toolIds)}
-        onNavigate={leaveGuard.leaveTo}
-      />
       <AgentPageToolbar
         intro={agent.id ? undefined : t('agents.form.byline.new')}
         name={agentDisplayName}
@@ -1500,16 +1367,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   : undefined
               }
             >
-              <MultiSelectPopover
+              <KnowledgePicker
                 open={isSourcePopupOpen}
                 onOpenChange={setIsSourcePopupOpen}
-                title={t('conversation.sources.knowledge')}
-                items={sourceItems}
-                // What is on the agent when it opens comes first.
-                selectedFirst
-                // Knowledge is always grouped Yours / Shared with team.
-                loneGroupHeading={false}
-                filters={sourceKinds.filters}
+                docs={sourceDocs ?? []}
                 selectedIds={Array.from(selectedSourceIds)}
                 onToggle={(id) => {
                   const next = new Set(selectedSourceIds);
@@ -1517,17 +1378,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   else next.add(id);
                   setSelectedSourceIds(next);
                 }}
-                searchPlaceholder={t(
-                  'agents.form.sourcePopup.searchPlaceholder',
-                )}
-                emptyMessage={t('settings.sources.noKnowledgeFound')}
-                footer={
-                  <SourcesPopoverFooter
-                    onNavigate={leaveGuard.onNavigate(() =>
-                      setIsSourcePopupOpen(false),
-                    )}
-                    onUploadClick={handleUploadClick}
-                  />
+                connections={toolContext.connections}
+                unlistedLabel={resolveSourceLabel}
+                unlistedLine={sourceAddedBy}
+                addedBy={sourceAddedBy}
+                onNavigate={leaveGuard.onNavigate()}
+                onUploaded={handleUploadedSource}
+                onBrowseConnectors={() =>
+                  leaveGuard.leaveTo('/settings/connectors?capability=sync')
                 }
                 trigger={
                   <Button
@@ -1557,72 +1415,45 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               labelSurface="background"
               label={t('agents.form.sections.tools')}
             >
-              <MultiSelectPopover
+              <ToolsPicker
                 open={isToolsPopupOpen}
                 onOpenChange={setIsToolsPopupOpen}
-                title={t('settings.tools.label')}
-                items={toolItems}
-                // What is on the agent when it opens comes first (an
-                // attached tool the caller can't list included); a lone
-                // group needs no heading.
-                selectedFirst
-                loneGroupHeading={false}
-                filters={toolKinds.filters}
+                tools={rawUserTools}
+                filter={isAgentPickerToolVisible}
+                // What was on the agent when it loaded or last saved: the
+                // owner's private tools don't come back in the caller's list.
+                attached={attachedTools}
+                attachedLine={t('agents.form.toolsPopup.attachedHint')}
                 selectedIds={selectedTools.map((tool) => tool.id)}
                 onToggle={(id) => {
-                  const exists = selectedTools.find((t) => t.id === id);
-                  if (exists) {
-                    setSelectedTools(selectedTools.filter((t) => t.id !== id));
+                  if (selectedTools.some((tool) => tool.id === id)) {
+                    setSelectedTools(
+                      selectedTools.filter((tool) => tool.id !== id),
+                    );
                     return;
                   }
-                  const item = toolItems.find((t) => t.id === id);
-                  const raw = rawUserTools.find((t) => t.id === id);
-                  const attached = attachedTools.find((t) => t.id === id);
-                  if (!item) return;
+                  const attached = attachedTools.find((tool) => tool.id === id);
+                  const raw = rawUserTools.find((tool) => tool.id === id);
+                  if (!attached && !raw) return;
                   setSelectedTools([
                     ...selectedTools,
                     attached ?? {
-                      id: item.id,
-                      name: raw?.name || item.label,
-                      display_name: item.label,
+                      id,
+                      name: raw!.name,
+                      display_name: getToolDisplayName(raw!),
                     },
                   ]);
                 }}
-                searchPlaceholder={t('settings.tools.searchPlaceholder')}
-                emptyMessage={t('settings.tools.noToolsFound')}
-                footer={
-                  // A sign-in notice goes above the Go to Tools row.
-                  <div className="flex flex-col gap-3">
-                    {brokenToolConnections.length > 0 ? (
-                      <SignInAgainNotice
-                        connections={brokenToolConnections.map(
-                          ({ connection }) => connection,
-                        )}
-                        onReconnect={(connection) => {
-                          setIsToolsPopupOpen(false);
-                          signInAgain.reconnect(
-                            connection,
-                            brokenToolConnections.find(
-                              (entry) => entry.connection.id === connection.id,
-                            )?.mcpToolId,
-                          );
-                        }}
-                      />
-                    ) : null}
-                    <PickerFooter
-                      to="/settings/tools"
-                      linkLabel={t('settings.tools.manageTools')}
-                      onNavigate={leaveGuard.onNavigate(() =>
-                        setIsToolsPopupOpen(false),
-                      )}
-                      actionLabel={t('settings.tools.addTool')}
-                      onAction={() => {
-                        setIsToolsPopupOpen(false);
-                        setAddToolModalState('ACTIVE');
-                      }}
-                    />
-                  </div>
+                connections={toolContext.connections}
+                catalog={toolContext.catalog}
+                addedBy={toolAddedBy}
+                onReconnect={(connection, mcpToolId) =>
+                  signInAgain.reconnect(connection, mcpToolId)
                 }
+                onNavigate={leaveGuard.onNavigate()}
+                onReloadTools={() => setToolsReloadKey((key) => key + 1)}
+                onToolsCreated={(toolIds) => void handleToolsCreated(toolIds)}
+                onLeaveTo={leaveGuard.leaveTo}
                 trigger={
                   <Button
                     type="button"
@@ -2089,20 +1920,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }}
         getSavedConfig={() => initialAgentRef.current?.config ?? agent.config}
       />
-      {uploadModalState === 'ACTIVE' && (
-        <Upload
-          receivedFile={[]}
-          setModalState={setUploadModalState}
-          isOnboarding={false}
-          renderTab={null}
-          close={() => setUploadModalState('INACTIVE')}
-          onSuccessfulUpload={handleUploadedSource}
-          selectUploadedDoc={false}
-          onBrowseConnectors={() =>
-            leaveGuard.leaveTo('/settings/connectors?capability=sync')
-          }
-        />
-      )}
       <AddPromptModal
         prompts={prompts}
         isOpen={addPromptModal}
