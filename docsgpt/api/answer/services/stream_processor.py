@@ -229,27 +229,14 @@ def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Option
     return "default"
 
 
-def _agent_source_doc(conn: Any, sources_repo: Any, agent: dict, source_id: Any) -> Optional[dict]:
-    """The source row an agent may retrieve from, or None.
-
-    Authorized as the owner (owned or team-shared to them), else as the
-    editor who attached it while they still qualify. Read unscoped once
-    authorized: an owner-scoped read misses a team-shared source.
-    """
-    from docsgpt.api.user.resource_access import log_stopped, ref_access
-
-    access = ref_access(conn, "agent", agent, "source", str(source_id))
-    if not access.principal:
-        log_stopped("agent", agent, "source", source_id, access.reason)
-        return None
-    return sources_repo.get_by_id(str(source_id))
-
-
 def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], List[dict]]:
     """The source rows an agent run retrieves from: primary first, then extras.
 
-    Each is authorized like :func:`_agent_source_doc` (the owner, else the
-    editor who attached it), and a source listed twice appears once.
+    Each is authorized by ``resource_access.authorized_holder_sources`` (the
+    owner, else the editor who attached it while they still qualify), the
+    check workflow nodes use too, and a source listed twice appears once.
+    Rows are read unscoped once authorized: an owner-scoped read misses a
+    team-shared source.
 
     Args:
         conn: An open database connection.
@@ -259,19 +246,19 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
         The primary source row (None when unset or not usable) and every
         usable row in run order.
     """
+    from docsgpt.api.user.resource_access import authorized_holder_sources
+
+    primary_id = agent.get("source_id")
+    refs = [primary_id, *(agent.get("extra_source_ids") or [])]
     sources_repo = SourcesRepository(conn)
     primary: Optional[dict] = None
     rows: List[dict] = []
     seen: set = set()
-    refs = [(True, agent.get("source_id"))]
-    refs.extend((False, sid) for sid in agent.get("extra_source_ids") or [])
-    for is_primary, sid_raw in refs:
-        if not sid_raw:
-            continue
-        source_doc = _agent_source_doc(conn, sources_repo, agent, sid_raw)
+    for sid in authorized_holder_sources(conn, "agent", agent, refs):
+        source_doc = sources_repo.get_by_id(str(sid))
         if not source_doc or str(source_doc["id"]) in seen:
             continue
-        if is_primary:
+        if primary_id and primary is None and str(sid).lower() == str(primary_id).lower():
             primary = source_doc
         seen.add(str(source_doc["id"]))
         rows.append(source_doc)

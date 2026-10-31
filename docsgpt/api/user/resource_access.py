@@ -701,6 +701,98 @@ def resolve_holder_tool(
     return row, access
 
 
+def resolve_holder_tools(
+    conn: Connection,
+    holder_type: str,
+    holder: Optional[dict],
+    tool_ids: Iterable,
+    *,
+    headless: bool = False,
+    tools_repo=None,
+) -> dict[str, dict]:
+    """Exactly the tools a holder runs, keyed by id: the one runtime resolver for agents and workflow nodes.
+
+    Each id resolves through :func:`resolve_holder_tool` (the holder's owner,
+    else a live sponsor), and a tool that doesn't run is logged with why.
+    Left out as well: server-attached tools (``check_job``: the server adds
+    it, a saved id is not a choice), workflow-only builtins outside a
+    workflow (``read_document``), and chat-only tools on a headless run
+    (``scheduler``).
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` (an agent's ``tools``) or ``workflow`` (one
+            agent node's ``tools``).
+        holder: The holder row; its ``user_id`` is who the tools run as.
+        tool_ids: The configured tool ids.
+        headless: True for a scheduled or webhook run.
+        tools_repo: A ``UserToolsRepository`` on ``conn`` to reuse.
+
+    Returns:
+        dict: ``tool_id -> row``, in configured order.
+    """
+    # Lazy: default_tools imports this module lazily too.
+    from docsgpt.agents.default_tools import (
+        is_headless_excluded_tool,
+        is_server_attached_tool,
+        is_server_attached_tool_id,
+    )
+
+    repo = tools_repo or UserToolsRepository(conn)
+    tools: dict[str, dict] = {}
+    for tid in tool_ids or []:
+        if not tid or is_server_attached_tool_id(tid):
+            continue
+        row, access = resolve_holder_tool(conn, holder_type, holder, str(tid), tools_repo=repo)
+        if row is None:
+            log_stopped(holder_type, holder, "tool", tid, access.reason)
+            continue
+        name = row.get("name")
+        if is_server_attached_tool(name):
+            continue
+        if row.get("workflow_only") and holder_type != "workflow":
+            continue
+        if headless and is_headless_excluded_tool(name):
+            continue
+        tools[str(row["id"])] = row
+    return tools
+
+
+def authorized_holder_sources(
+    conn: Connection, holder_type: str, holder: Optional[dict], source_ids: Iterable
+) -> list:
+    """The source ids a holder may retrieve from: the one runtime check for agents and workflow nodes.
+
+    Each is authorized by :func:`ref_access` (the holder's owner, else a live
+    sponsor); one that doesn't run is logged with why. Empty refs are
+    skipped and an id listed twice (any casing) is kept once.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row; its ``user_id`` is who the sources run as.
+        source_ids: The configured ids, in run order.
+
+    Returns:
+        list: The usable ids as given, in order.
+    """
+    allowed: list = []
+    seen: set[str] = set()
+    for sid in source_ids or []:
+        if not sid:
+            continue
+        key = str(sid).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        access = ref_access(conn, holder_type, holder, "source", str(sid))
+        if access.principal:
+            allowed.append(sid)
+        else:
+            log_stopped(holder_type, holder, "source", sid, access.reason)
+    return allowed
+
+
 def log_stopped(
     holder_type: str, holder: Optional[dict], resource_type: str, resource_id, reason: Optional[str]
 ) -> None:
