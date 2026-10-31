@@ -40,7 +40,8 @@ export type ToolsPickerProps<T extends PickerTool> = {
   filter: (tool: T) => boolean;
   /**
    * Tools on the agent or node the reader can't list (the owner's private
-   * ones on a shared agent): each gets a row, so it can be taken off.
+   * ones on a shared agent): each gets a row, so it can be taken off. A
+   * picked id with no name anywhere gets one too, labelled with the id.
    */
   attached?: PickerTool[];
   /** The line of an attached row. */
@@ -77,7 +78,7 @@ export type ToolsPickerProps<T extends PickerTool> = {
  * The tools picker of the agent builder and a workflow agent node: the
  * reader's tools as this picker offers them, grouped as the Tools page
  * groups them with a kind track, a remote device's status, who added a tool,
- * a remove-only row for each attached tool the reader can't list, a notice
+ * a remove-only row for each picked tool the reader can't list, a notice
  * for a connection that needs signing in again, and a footer to Tools and to
  * Add tool.
  */
@@ -111,8 +112,25 @@ export default function ToolsPicker<T extends PickerTool>({
       seen.add(tool.id);
       return true;
     });
-    return [...offered, ...extra];
-  }, [attached, offered]);
+    // A picked tool that is neither (a deleted one, or one the filter
+    // hides) still gets a row so it can be taken off: the reader's own
+    // tool, else its id.
+    const unlisted = selectedIds
+      .filter((id) => {
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .map<PickerTool>(
+        (id) =>
+          tools.find((tool) => tool.id === id) ?? {
+            id,
+            name: '',
+            display_name: id,
+          },
+      );
+    return [...offered, ...extra, ...unlisted];
+  }, [attached, offered, selectedIds, tools]);
   const listed = useMemo(
     () => new Set(offered.map((tool) => tool.id)),
     [offered],

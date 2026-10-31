@@ -496,6 +496,21 @@ describe('AgentPanel knowledge and tool pickers', () => {
     });
   });
 
+  // A deleted tool, or one the server hides from ref_details, has no name
+  // anywhere: its row reads the id, and still takes it off.
+  it('keeps a remove-only row for a picked tool nothing names', async () => {
+    const onUpdate = await render(makeNode({ tools: ['jira', 'ghost-tool'] }));
+    expect(toolsTrigger().textContent).toContain('ghost-tool');
+    await open(toolsTrigger());
+    expect(row('ghost-tool').textContent).toContain(
+      'agents.form.sponsors.addedByOther',
+    );
+    await act(async () => row('ghost-tool').click());
+    expect(onUpdate).toHaveBeenLastCalledWith({
+      config: expect.objectContaining({ tools: ['jira'] }),
+    });
+  });
+
   it('attaches a source uploaded from the footer while the node is open', async () => {
     const onUpdate = await render(makeNode({ sources: ['own-1'] }));
     await open(sourcesTrigger());
