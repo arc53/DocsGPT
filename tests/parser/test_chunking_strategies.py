@@ -315,6 +315,19 @@ class TestMarkdown:
         out = chunker.chunk([Document(text="plain text no heading", doc_id="d")])
         assert len(out) == 1
 
+    def test_hash_lines_in_fenced_code_are_not_headings(self):
+        text = (
+            "# Install\nSet up a virtualenv first.\n\n"
+            "```bash\n# create the environment\npython -m venv .venv\n"
+            "# install the dependencies\npip install -r requirements.txt\n```\n\n"
+            "## Configure\n~~~yaml\n# the model to use\nmodel: gpt-4o\n~~~\n"
+        )
+        chunker = MarkdownChunker(max_tokens=2000, min_tokens=1)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        # Only the real heading starts a section, so both code blocks stay whole.
+        configure = text.index("## Configure")
+        assert [c.text for c in out] == [text[:configure], text[configure:]]
+
 
 @pytest.mark.unit
 class TestParentChild:
