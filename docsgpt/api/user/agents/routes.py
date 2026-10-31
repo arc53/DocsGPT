@@ -370,6 +370,20 @@ def _runs_outside_builder(conn, agent: dict) -> bool:
     return SchedulesRepository(conn).any_live_for_agent(str(agent["id"]))
 
 
+def _discard_image(path: Optional[str]) -> None:
+    """Delete an image stored for a save that didn't go through; a failure is logged, not raised.
+
+    Args:
+        path: The stored image's path, or None/empty when nothing was stored.
+    """
+    if not path:
+        return
+    try:
+        storage.delete_file(path)
+    except Exception as err:  # noqa: BLE001 - the save's own answer matters more
+        current_app.logger.warning(f"Could not delete unsaved agent image {path}: {err}")
+
+
 def _image_output(image: Optional[str], agent_id: str, owner: Optional[str]) -> str:
     """The agent image URL a save response carries, as ``get_agent`` shows it."""
     return generate_image_url(image, agent_id, owner) if image else ""
@@ -1035,12 +1049,7 @@ class CreateAgent(Resource):
             return invalid_fields
         if "prompt_id" in schema["fields"] and not is_agent_prompt_ref(data.get("prompt_id")):
             return _reject(f"Invalid prompt_id: {data.get('prompt_id')}", user, "prompt_id")
-        image_url, error = handle_image_upload(request, "", user, storage)
-        if error:
-            return make_response(
-                jsonify({"success": False, "message": "Image upload failed"}), 400
-            )
-
+        image_url = ""
         try:
             key = str(uuid.uuid4()) if is_published else ""
             with db_session() as conn:
@@ -1147,12 +1156,19 @@ class CreateAgent(Resource):
                 if seeded_config is not requested_config:
                     build_data["config"] = normalize_agent_config(seeded_config)
 
-                # The inline graph is written last, after every check above, so
-                # a refused save leaves no workflow behind.
+                # The image and the inline graph are written last, after every
+                # check above, so a refused save leaves no file or workflow behind.
+                graph_save = None
                 if inline_graph is not None:
                     graph_save = plan_graph_save(conn, None, user, user, inline_graph, set())
                     if isinstance(graph_save, AccessDenied):
                         return _denied(graph_save)
+                image_url, error = handle_image_upload(request, "", user, storage)
+                if error:
+                    return make_response(
+                        jsonify({"success": False, "message": "Image upload failed"}), 400
+                    )
+                if graph_save is not None:
                     pg_workflow_id = write_graph_save(
                         conn, graph_save, user, data["name"], data.get("description") or "",
                     )
@@ -1179,6 +1195,7 @@ class CreateAgent(Resource):
                 )
         except Exception as err:
             current_app.logger.error(f"Error creating agent: {err}", exc_info=True)
+            _discard_image(image_url)
             return make_response(jsonify({"success": False}), 400)
         # A token without agents:keys never receives the plaintext agent key.
         visible_key = key if may_see_agent_keys(request) else mask_agent_key(key)
@@ -1314,6 +1331,8 @@ class UpdateAgent(Resource):
                 jsonify({"success": False, "message": "Invalid request data"}), 400
             )
 
+        # An image stored for this save, deleted again when the save doesn't land.
+        stored_image: Optional[str] = None
         try:
             with db_session() as conn:
                 agents_repo = AgentsRepository(conn)
@@ -1824,6 +1843,7 @@ class UpdateAgent(Resource):
                         return image_error
                     if image_url and image_url != existing_image:
                         update_fields["image"] = image_url
+                        stored_image = image_url
 
                 # Apply update. Owner writes use the dual-key guard; team-editor
                 # writes go by-id (already authorized). Both take the
@@ -1846,6 +1866,7 @@ class UpdateAgent(Resource):
                         pg_agent_id, user, update_fields, expected_updated_at=expected_updated_at,
                     )
                 if result is None:
+                    _discard_image(stored_image)
                     return make_response(
                         jsonify(
                             {
@@ -1882,6 +1903,7 @@ class UpdateAgent(Resource):
                         fields=event_fields,
                     )
                 if not updated:
+                    _discard_image(stored_image)
                     return make_response(
                         jsonify(
                             {
@@ -1898,6 +1920,7 @@ class UpdateAgent(Resource):
             current_app.logger.error(
                 f"Error updating agent {agent_id}: {err}", exc_info=True
             )
+            _discard_image(stored_image)
             return make_response(
                 jsonify({"success": False, "message": "Database error during update"}),
                 500,

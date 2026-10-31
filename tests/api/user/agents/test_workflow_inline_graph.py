@@ -462,6 +462,69 @@ class TestPublishedAgentsRunValidatedGraphs:
         assert _status(resp) == 201, _json(resp)
 
 
+class TestRefusedSavesKeepNoImage:
+    """An image stored for a save that doesn't go through is deleted again."""
+
+    STORED = "uploads/owner/attachments/new_logo.png"
+
+    def _send_with_image(self, app, pg_conn, method, path, body, args=()):
+        from unittest.mock import MagicMock
+
+        form = {**body, "image": (io.BytesIO(b"png"), "logo.png")}
+        storage = MagicMock()
+        with patch(
+            "docsgpt.api.user.agents.routes.handle_image_upload", return_value=(self.STORED, None),
+        ) as upload, patch("docsgpt.api.user.agents.routes.storage", storage):
+            resp = _send(app, pg_conn, method, path, OWNER, form=form, args=args)
+        deleted = {c.args[0] for c in storage.delete_file.call_args_list}
+        orphans = ({self.STORED} if upload.called else set()) - deleted
+        return resp, orphans
+
+    def test_a_stale_update_deletes_its_image(self, app, pg_conn):
+        agent_id, _ = _workflow_agent(app, pg_conn)
+        resp, orphans = self._send_with_image(
+            app, pg_conn, "put", f"/api/update_agent/{agent_id}",
+            {"name": "Renamed", "expected_updated_at": "2000-01-01T00:00:00+00:00"}, args=(agent_id,),
+        )
+        assert _status(resp) == 409
+        assert orphans == set()
+
+    def test_an_update_whose_graph_write_fails_deletes_its_image(self, app, pg_conn):
+        agent_id, _ = _workflow_agent(app, pg_conn)
+        with patch("docsgpt.api.user.agents.routes.write_graph_save", side_effect=RuntimeError("boom")):
+            resp, orphans = self._send_with_image(
+                app, pg_conn, "put", f"/api/update_agent/{agent_id}",
+                {"workflow_graph": json.dumps(_graph())}, args=(agent_id,),
+            )
+        assert _status(resp) == 500
+        assert orphans == set()
+
+    def test_a_refused_create_keeps_no_image(self, app, pg_conn):
+        resp, orphans = self._send_with_image(
+            app, pg_conn, "post", "/api/create_agent",
+            {"name": "A", "description": "d", "status": "draft", "source": str(uuid.uuid4())},
+        )
+        assert 400 <= _status(resp) < 500
+        assert orphans == set()
+
+    def test_a_create_that_fails_to_write_deletes_its_image(self, app, pg_conn):
+        with patch.object(AgentsRepository, "create", side_effect=RuntimeError("boom")):
+            resp, orphans = self._send_with_image(
+                app, pg_conn, "post", "/api/create_agent", {"name": "A", "description": "d", "status": "draft"},
+            )
+        assert _status(resp) == 400
+        assert orphans == set()
+
+    def test_a_saved_update_keeps_its_image(self, app, pg_conn):
+        agent_id, _ = _workflow_agent(app, pg_conn)
+        resp, orphans = self._send_with_image(
+            app, pg_conn, "put", f"/api/update_agent/{agent_id}", {"name": "Renamed"}, args=(agent_id,),
+        )
+        assert _status(resp) == 200, _json(resp)
+        assert orphans == {self.STORED}
+        assert _row(pg_conn, agent_id)["image"] == self.STORED
+
+
 class TestOverlappingSaves:
     def test_a_save_planned_from_an_older_row_writes_the_next_version_alone(self, app, pg_conn):
         """A save that read the workflow before another save landed builds on the newer version, never into it."""
