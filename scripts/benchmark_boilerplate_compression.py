@@ -6,6 +6,7 @@ for DocsGPT Extractive Boilerplate Pruning (Issue #2578).
 
 import sys
 import time
+from copy import deepcopy
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -87,7 +88,7 @@ def run_benchmark():
 
     for query in queries:
         # Measure OFF (Baseline) with a fresh copy of corpus for each query
-        raw_docs = [dict(d) for d in REPRESENTATIVE_CORPUS]
+        raw_docs = deepcopy(REPRESENTATIVE_CORPUS)
         off_tokens = sum(len(enc.encode(d["text"])) for d in raw_docs)
 
         # Measure ON (Pruning enabled)
