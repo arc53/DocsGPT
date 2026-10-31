@@ -638,6 +638,46 @@ class TestEmptyToolIds:
         assert _status(updated) == 403
 
 
+
+class TestCreateListFields:
+    """``tools`` and ``sources`` are lists: a token's resource rules read only a list's ids."""
+
+    @staticmethod
+    def _own(pg_conn, field):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        if field == "tools":
+            return str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
+        return str(SourcesRepository(pg_conn).create("src", user_id=OWNER)["id"])
+
+    @pytest.mark.parametrize("field", ["tools", "sources"])
+    def test_an_object_is_400_and_creates_nothing(self, app, pg_conn, field):
+        own = self._own(pg_conn, field)
+        resp = _create(app, pg_conn, {"name": "A", "description": "d", "status": "draft", field: {own: 1}})
+        assert _status(resp) == 400
+        assert AgentsRepository(pg_conn).list_for_user(OWNER) == []
+
+    @pytest.mark.parametrize("field", ["tools", "sources"])
+    def test_an_object_in_a_form_is_400(self, app, pg_conn, field):
+        own = self._own(pg_conn, field)
+        form = {"name": "A", "description": "d", "status": "draft", field: json.dumps({own: 1})}
+        resp = _send(app, pg_conn, "post", "/api/create_agent", OWNER, form=form)
+        assert _status(resp) == 400
+        assert AgentsRepository(pg_conn).list_for_user(OWNER) == []
+
+    def test_lists_still_save(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
+        source = str(SourcesRepository(pg_conn).create("src", user_id=OWNER)["id"])
+        resp = _create(
+            app, pg_conn, {"name": "A", "description": "d", "status": "draft", "tools": [tool], "sources": [source]},
+        )
+        assert _status(resp) == 201, _json(resp)
+        row = _row(pg_conn, _json(resp)["id"])
+        assert [str(t) for t in row["tools"]] == [tool]
+        assert [str(s) for s in row["extra_source_ids"]] == [source]
+
 def _age(conn, agent_id):
     """Move the agent's ``updated_at`` an hour back, past its trigger, and return it.
 

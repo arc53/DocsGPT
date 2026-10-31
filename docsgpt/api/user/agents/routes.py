@@ -932,6 +932,12 @@ class CreateAgent(Resource):
                 except json.JSONDecodeError:
                     data["models"] = []
 
+        # A token's resource rules read the ids of a list only, so an object
+        # here would attach tools or sources the token may not name.
+        for field, label in (("tools", "Tools"), ("sources", "Sources")):
+            if data.get(field) not in (None, "") and not isinstance(data[field], list):
+                return _reject(f"{label} must be a list", user, field)
+
         if "json_schema" in data:
             try:
                 data["json_schema"] = normalize_json_schema_payload(
