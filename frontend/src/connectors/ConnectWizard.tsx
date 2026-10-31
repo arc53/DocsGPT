@@ -112,8 +112,9 @@ type CreatedSource = { id: string; name: string };
  * Args:
  *   onClose: Called as the wizard closes, with whether this run created or
  *     repaired a connection (a saved account, a reconnect, a sync set up);
- *     false on a plain cancel. Then the ids of the connection's tools this
- *     run set up or showed, for an opener that puts new tools on something.
+ *     false on a plain cancel. Then the ids of the tools this run created
+ *     (never ones it only showed or signed in again), for an opener that
+ *     puts new tools on something.
  *   onNavigate: Leaves for a page (Try it in chat, Open in Knowledge); an
  *     opener with unsaved work asks first. The router's navigate otherwise.
  */
@@ -172,6 +173,14 @@ export default function ConnectWizard({
   // Whether this run saved, repaired or set up a connection (onClose's
   // argument). A finished MCP save opens the wizard on the summary.
   const connectedRef = useRef(initialMode === 'done');
+  // Tools this run created (not ones it showed or signed in again), for an
+  // opener that puts new tools on something.
+  const createdToolIds = useRef<string[]>([]);
+  const noteCreated = (ids: (string | undefined)[]) => {
+    for (const id of ids)
+      if (id && !createdToolIds.current.includes(id))
+        createdToolIds.current.push(id);
+  };
   // The account as the sign-in reported it, before the connections reload.
   const [accountLabel, setAccountLabel] = useState('');
   // Bumped to remount the pickers after a reconnect or an account switch.
@@ -259,11 +268,7 @@ export default function ConnectWizard({
   const refresh = () => dispatch(loadConnectors({ token }));
 
   const close = () => {
-    if (connectedRef.current)
-      onClose(
-        true,
-        tools.map((tool) => tool.id),
-      );
+    if (connectedRef.current) onClose(true, [...createdToolIds.current]);
     else onClose(false);
   };
 
@@ -313,7 +318,10 @@ export default function ConnectWizard({
         { create_tools: true },
         token,
       );
-      if (setup?.success) setTools(setup.tools ?? []);
+      if (setup?.success) {
+        setTools(setup.tools ?? []);
+        noteCreated((setup.tools ?? []).map((tool: ConnectionTool) => tool.id));
+      }
     }
     setStep(canSync || offerTools ? 'setup' : 'done');
   };
@@ -351,6 +359,9 @@ export default function ConnectWizard({
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error);
       connectedRef.current = true;
+      // A reconnect updates the saved tool; only a new one is new.
+      if (!mcpReconnectToolId && typeof result.id === 'string')
+        noteCreated([result.id]);
       let savedConnectionId: string | null = null;
       try {
         const list = await connectorsService.listConnections(token);
@@ -565,7 +576,10 @@ export default function ConnectWizard({
         return;
       }
       connectedRef.current = true;
-      if (wantsTools) setTools(data.tools ?? []);
+      if (wantsTools) {
+        setTools(data.tools ?? []);
+        noteCreated((data.tools ?? []).map((tool: ConnectionTool) => tool.id));
+      }
       const created: CreatedSource[] = data.sources ?? [];
       setSources(created);
       if (created.length) {

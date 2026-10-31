@@ -269,4 +269,23 @@ describe('useConnectorLauncher', () => {
       state: { newApiTool: true },
     });
   });
+
+  it('hands its opener no tool after an MCP server signs in again', async () => {
+    const CUSTOM_MCP = {
+      key: 'custom_mcp',
+      name: 'MCP server',
+      auth_kind: 'mcp',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    await act(async () =>
+      launchRef!(CUSTOM_MCP, {
+        mode: 'reconnect',
+        mcpServer: { id: 'mcp-old' },
+      }),
+    );
+    await act(async () => mcpForm.onServerSaved!('mcp-old'));
+    expect(onConnected).toHaveBeenCalledWith([]);
+  });
 });

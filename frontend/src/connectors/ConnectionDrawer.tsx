@@ -1131,6 +1131,7 @@ export default function ConnectionDrawer({
   onClose,
   onConnect,
   onNavigate,
+  onToolsCreated,
 }: {
   connector: ConnectorDefinition | null;
   /** The same service offered another way, shown here (Jira & Confluence). */
@@ -1144,6 +1145,8 @@ export default function ConnectionDrawer({
    * asks first. The router's navigate otherwise.
    */
   onNavigate?: (to: string) => void;
+  /** The tools an account's Add tools created, for an opener that puts them on. */
+  onToolsCreated?: (toolIds: string[]) => void;
 }) {
   const { t } = useTranslation();
   const routerNavigate = useNavigate();
@@ -1377,7 +1380,14 @@ export default function ConnectionDrawer({
       .catch(() => null);
     // Reloaded either way: a rejected sign-in flags the account to reconnect.
     refresh();
-    if (data?.success) return null;
+    if (data?.success) {
+      onToolsCreated?.(
+        ((data.tools ?? []) as { id?: string }[])
+          .map((tool) => tool.id)
+          .filter((id): id is string => typeof id === 'string'),
+      );
+      return null;
+    }
     return data?.code === 'tools_unavailable'
       ? t('settings.connectors.detail.toolsUnavailable', {
           name: serviceName(detail),

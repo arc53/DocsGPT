@@ -184,7 +184,9 @@ export default function useConnectorLauncher({
     if (active?.kind !== 'mcp') return;
     const connector = active.connector;
     mcpSaved.current = true;
-    mcpToolId.current = toolId;
+    // Signing an existing server in again creates no tool.
+    mcpToolId.current =
+      typeof active.server?.id === 'string' ? undefined : toolId;
     const list = await connectorsService.listConnections(token);
     refresh();
     const connections = (list?.connections ?? []) as {

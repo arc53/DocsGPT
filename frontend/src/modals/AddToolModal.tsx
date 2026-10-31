@@ -82,6 +82,8 @@ export default function AddToolModal({
   const [loading, setLoading] = useLoaderState(false);
   // A connected service's drawer, opened over the Tools page.
   const [drawerKey, setDrawerKey] = React.useState<string | null>(null);
+  // Tools an account's Add tools made in the open drawer.
+  const drawerCreated = React.useRef<string[]>([]);
 
   const getAvailableTools = () => {
     setLoading(true);
@@ -351,7 +353,17 @@ export default function AddToolModal({
         parts={drawerConnector ? partsOf(catalog, drawerConnector.key) : []}
         onClose={() => {
           setDrawerKey(null);
-          getUserTools();
+          // Tools the drawer's Add tools made go on, like any new tool.
+          const created = drawerCreated.current;
+          drawerCreated.current = [];
+          if (created.length > 0) onToolsCreated(created);
+          else getUserTools();
+        }}
+        onToolsCreated={(toolIds) => {
+          drawerCreated.current = [
+            ...drawerCreated.current,
+            ...toolIds.filter((id) => !drawerCreated.current.includes(id)),
+          ];
         }}
         onConnect={(connector, options) => {
           setDrawerKey(null);

@@ -184,6 +184,7 @@ describe('ConnectionDrawer', () => {
     startedSyncs?: StartedSync[];
     onConnect?: (connector: ConnectorDefinition, options?: unknown) => void;
     onNavigate?: (to: string) => void;
+    onToolsCreated?: (toolIds: string[]) => void;
   };
   const draw = async (
     connector: ConnectorDefinition | null,
@@ -204,6 +205,7 @@ describe('ConnectionDrawer', () => {
                     onClose={vi.fn()}
                     onConnect={options.onConnect ?? vi.fn()}
                     onNavigate={options.onNavigate}
+                    onToolsCreated={options.onToolsCreated}
                   />
                 }
               />
@@ -1263,6 +1265,35 @@ describe('ConnectionDrawer', () => {
       { create_tools: true },
       null,
     );
+  });
+
+  // From a builder's Add tool, the new tool goes on the agent.
+  it('reports the tools Add tools created', async () => {
+    connectors.setup.mockReset();
+    connectors.setup.mockResolvedValue({
+      success: true,
+      tools: [{ id: 'tool-new', name: 'telegram' }],
+    });
+    const TELEGRAM = {
+      ...DRIVE,
+      key: 'google_drive',
+      name: 'Telegram',
+      auth_kind: 'api_key',
+      capabilities: ['write'],
+      setup: { tools: 'auto', sync: 'off' },
+      sync_ingestor: null,
+      tool_templates: ['telegram'],
+    } as unknown as ConnectorDefinition;
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: { ...DETAIL, sources: [], tools: [] },
+    });
+    const onToolsCreated = vi.fn();
+    await render(TELEGRAM, { onToolsCreated });
+    await act(async () =>
+      button('settings.connectors.detail.addTools').click(),
+    );
+    expect(onToolsCreated).toHaveBeenCalledWith(['tool-new']);
   });
 
   describe('MCP preset whose tool was deleted', () => {

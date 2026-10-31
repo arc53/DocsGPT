@@ -1197,6 +1197,65 @@ describe('ConnectWizard', () => {
     open.mockRestore();
   });
 
+  // Signing an MCP preset in again updates its tool: nothing new to put on
+  // an agent.
+  it('reports no new tool after signing an MCP preset in again', async () => {
+    const notion: ConnectorDefinition = {
+      ...base,
+      key: 'mcp:notion',
+      name: 'Notion',
+      icon: 'notion',
+      auth_kind: 'mcp_oauth',
+      credential_fields: [],
+      tool_templates: ['mcp_tool'],
+      mcp_url: 'https://mcp.notion.com/mcp',
+      oauth_scopes: [],
+      publisher: 'preset',
+    };
+    const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
+    mcpApi.testMCPConnection.mockResolvedValue({
+      json: async () => ({ requires_oauth: true, task_id: 'task-1' }),
+    });
+    mcpApi.saveMCPServer.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, id: 'tool-3' }),
+    });
+    service.listConnections.mockResolvedValue({
+      success: true,
+      connections: [
+        { id: 'conn-9', connector_key: 'mcp:notion', updated_at: '2026-09-28' },
+      ],
+    });
+    service.getConnection.mockResolvedValue({
+      success: true,
+      connection: { tools: [{ ...TELEGRAM_TOOL, id: 'tool-3' }] },
+    });
+    const onClose = vi.fn();
+    const store = await render(notion, onClose, {
+      mode: 'reconnect',
+      connectionId: 'conn-9',
+      mcpToolId: 'tool-3',
+    });
+    await click('settings.connectors.wizard.signIn');
+    await act(async () => {
+      store.dispatch(
+        sseEventReceived({
+          id: 'ev-2',
+          type: 'mcp.oauth.completed',
+          scope: { kind: 'mcp_oauth', id: 'task-1' },
+          payload: { tools: [] },
+        }),
+      );
+    });
+    expect(mcpApi.saveMCPServer.mock.calls[0][0]).toMatchObject({
+      id: 'tool-3',
+    });
+    await click('settings.connectors.wizard.done');
+    expect(onClose).toHaveBeenCalledWith(true, []);
+    open.mockRestore();
+  });
+
   it('connects a no-auth MCP preset with one Connect button', async () => {
     const open = vi.spyOn(window, 'open');
     mcpApi.saveMCPServer.mockResolvedValue({
@@ -1532,8 +1591,9 @@ describe('ConnectWizard', () => {
         'settings.connectors.wizard.toolsHeading:1',
       );
       await click('settings.connectors.wizard.done');
-      // The tools it set up, for an opener that puts them on (Add tool).
-      expect(onClose).toHaveBeenCalledWith(true, [TELEGRAM_TOOL.id]);
+      // The tool it created (the saved MCP server), for an opener that
+      // puts new tools on something (Add tool).
+      expect(onClose).toHaveBeenCalledWith(true, ['tool-9']);
     });
 
     it('ends on the summary when nothing is picked and Sync is off', async () => {

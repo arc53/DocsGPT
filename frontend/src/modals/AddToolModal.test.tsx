@@ -83,6 +83,7 @@ vi.mock('../connectors/ConnectionDrawer', () => ({
   default: (props: {
     connector: { key: string } | null;
     onClose: () => void;
+    onToolsCreated?: (ids: string[]) => void;
   }) => {
     drawerProps(props);
     return props.connector ? (
@@ -393,6 +394,29 @@ describe('AddToolModal', () => {
       await act(async () => link.click());
       expect(onNavigate).toHaveBeenCalledWith('/settings/connectors');
       expect(document.body.textContent).not.toContain('DRAWER');
+    });
+
+    it("reports the tools a connected service's drawer added, once it closes", async () => {
+      const onToolsCreated = vi.fn();
+      const getUserTools = vi.fn();
+      await render({ onToolsCreated, getUserTools });
+      await act(async () => service('telegram')!.click());
+      const props = drawerProps.mock.calls.at(-1)![0] as {
+        onClose: () => void;
+        onToolsCreated: (ids: string[]) => void;
+      };
+      act(() => props.onToolsCreated(['tool-a']));
+      expect(onToolsCreated).not.toHaveBeenCalled();
+      await act(async () => props.onClose());
+      expect(onToolsCreated).toHaveBeenCalledWith(['tool-a']);
+      expect(getUserTools).not.toHaveBeenCalled();
+      // Closed with nothing added: a plain reload.
+      await act(async () => service('telegram')!.click());
+      const again = drawerProps.mock.calls.at(-1)![0] as {
+        onClose: () => void;
+      };
+      await act(async () => again.onClose());
+      expect(getUserTools).toHaveBeenCalledTimes(1);
     });
   });
 });
