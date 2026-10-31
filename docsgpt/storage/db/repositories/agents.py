@@ -31,11 +31,13 @@ STORED_PROMPT_PRESETS = ("creative", "strict")
 
 #: Columns a write may change without moving ``updated_at``. The builders send
 #: ``updated_at`` back as their stale-write token, so it tracks content only:
-#: an owner's chat (``last_used_at``), a regenerated key, the webhook token and
-#: the share link don't make a builder's open copy stale. The
-#: ``agents_set_updated_at`` trigger (migration 0060) skips the same columns.
+#: an owner's chat (``last_used_at``), a regenerated key, the webhook token,
+#: the share link, the slug an export assigns and the owner's folder don't make
+#: a builder's open copy stale. The ``agents_set_updated_at`` trigger
+#: (migration 0060) skips the same columns.
 BOOKKEEPING_COLUMNS = frozenset({
     "last_used_at", "key", "incoming_webhook_token", "shared", "shared_token", "shared_metadata",
+    "slug", "folder_id",
 })
 
 
@@ -493,7 +495,7 @@ class AgentsRepository:
         self._conn.execute(
             text(
                 """
-                UPDATE agents SET folder_id = CAST(:folder_id AS uuid), updated_at = now()
+                UPDATE agents SET folder_id = CAST(:folder_id AS uuid)
                 WHERE id = CAST(:id AS uuid) AND user_id = :user_id
                 """
             ),
@@ -504,7 +506,7 @@ class AgentsRepository:
         """Remove folder assignment from all agents in a folder (used on folder delete)."""
         self._conn.execute(
             text(
-                "UPDATE agents SET folder_id = NULL, updated_at = now() "
+                "UPDATE agents SET folder_id = NULL "
                 "WHERE folder_id = CAST(:folder_id AS uuid) AND user_id = :user_id"
             ),
             {"folder_id": folder_id, "user_id": user_id},

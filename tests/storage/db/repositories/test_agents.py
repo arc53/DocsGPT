@@ -290,6 +290,7 @@ class TestUpdatedAtTracksContent:
             {"key": "regenerated-key"},
             {"incoming_webhook_token": "hook-token"},
             {"shared": True, "shared_token": "share-token", "shared_metadata": {"shared_by": "u"}},
+            {"slug": "first-export"},
         ],
     )
     def test_a_bookkeeping_write_keeps_the_stamp(self, pg_conn, fields):
@@ -325,6 +326,19 @@ class TestUpdatedAtTracksContent:
         assert _stamp(pg_conn, agent["id"]) == stamp
         pg_conn.execute(text("UPDATE agents SET chunks = 9 WHERE id = CAST(:id AS uuid)"), {"id": str(agent["id"])})
         assert _stamp(pg_conn, agent["id"]) > stamp
+
+    def test_a_folder_move_keeps_the_stamp(self, pg_conn):
+        """Folders are the owner's own filing: moving or unfiling an agent isn't an edit to it."""
+        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
+
+        repo = _repo(pg_conn)
+        agent = repo.create("u", "a", "draft")
+        folder = AgentFoldersRepository(pg_conn).create("u", "F")
+        stamp = _age(pg_conn, agent["id"])
+        repo.set_folder(str(agent["id"]), "u", str(folder["id"]))
+        assert _stamp(pg_conn, agent["id"]) == stamp
+        repo.clear_folder_for_all(str(folder["id"]), "u")
+        assert _stamp(pg_conn, agent["id"]) == stamp
 
     def test_touch_for_workflow_moves_only_the_linked_agents(self, pg_conn):
         from docsgpt.storage.db.repositories.workflows import WorkflowsRepository

@@ -17,7 +17,8 @@
 * ``agents_set_updated_at`` fires only when a content column changes. The
   builders send ``updated_at`` back as their stale-write token, so a write of
   bookkeeping alone (``last_used_at`` on every owner chat, a regenerated
-  ``key``, the ``incoming_webhook_token``, the share link) must not move it.
+  ``key``, the ``incoming_webhook_token``, the share link, the ``slug`` an
+  export assigns, the owner's ``folder_id``) must not move it.
 
 No preset backfill: no agent could store a preset before this revision.
 Idempotent both ways. Downgrade drops the column, so those agents fall back to
@@ -68,7 +69,7 @@ _LOWERCASE_TOOL_IDS = f"""
 #: Agent columns whose change alone keeps ``updated_at`` (``AgentsRepository.BOOKKEEPING_COLUMNS``).
 _BOOKKEEPING = (
     "ARRAY['updated_at', 'last_used_at', 'key', 'incoming_webhook_token', "
-    "'shared', 'shared_token', 'shared_metadata']"
+    "'shared', 'shared_token', 'shared_metadata', 'slug', 'folder_id']"
 )
 
 _CONTENT_TRIGGER = (
