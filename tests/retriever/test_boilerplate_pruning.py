@@ -134,6 +134,18 @@ class TestBoilerplatePruningRules:
         assert "DocsGPT Documentation v2.4" not in pruned[1]["text"]
         assert "Factual chunk 2 content." in pruned[1]["text"]
 
+    def test_preserves_repeated_subheadings_within_same_chunk(self):
+        text = (
+            "# Authentication\n"
+            "## Examples\n"
+            "Auth example code here.\n"
+            "# Authorization\n"
+            "## Examples\n"
+            "Rbac example code here."
+        )
+        cleaned = prune_chunk_text(text, query="")
+        assert cleaned.count("## Examples") == 2
+
     def test_preserves_repeated_factual_prose_across_chunks(self):
         docs = [
             {

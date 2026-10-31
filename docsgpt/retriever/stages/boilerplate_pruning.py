@@ -166,6 +166,7 @@ def prune_chunk_text(text: str, query: str = "", seen_boilerplate: Optional[Set[
     query_tokens = _tokenize_query(query)
     lines = text.split("\n")
     cleaned_lines: List[Tuple[str, bool]] = []  # (line_text, is_inside_fence)
+    chunk_boilerplate: Set[str] = set()
 
     # State tracking for code fences: (fence_char, fence_length)
     active_fence: Optional[Tuple[str, int]] = None
@@ -204,9 +205,12 @@ def prune_chunk_text(text: str, query: str = "", seen_boilerplate: Optional[Set[
             norm_line = stripped.lower()
             if len(norm_line) < 120 and norm_line in seen_boilerplate:
                 continue
-            seen_boilerplate.add(norm_line)
+            chunk_boilerplate.add(norm_line)
 
         cleaned_lines.append((line, False))
+
+    if seen_boilerplate is not None:
+        seen_boilerplate.update(chunk_boilerplate)
 
     # Collapse multiple consecutive empty lines OUTSIDE of fenced code blocks only
     result: List[str] = []

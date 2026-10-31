@@ -86,8 +86,8 @@ def run_benchmark():
     print(f"Query sample size: {len(queries)} realistic retrieval queries\n")
 
     for query in queries:
-        # Measure OFF (Baseline)
-        raw_docs = REPRESENTATIVE_CORPUS
+        # Measure OFF (Baseline) with a fresh copy of corpus for each query
+        raw_docs = [dict(d) for d in REPRESENTATIVE_CORPUS]
         off_tokens = sum(len(enc.encode(d["text"])) for d in raw_docs)
 
         # Measure ON (Pruning enabled)
