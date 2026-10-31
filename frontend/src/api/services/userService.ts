@@ -14,9 +14,13 @@ const userService = {
    */
   getPreferences: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.PREFERENCES, token),
-  /** 400 `invalid_prompt`; 403/404 for a prompt the caller can't read. */
+  /**
+   * 400 `invalid_prompt`; 403/404 for a prompt the caller can't read.
+   * `only_if_unset`: write only when no chat prompt was ever stored; the
+   * answer's `applied` is false and `chat_prompt_id` the stored one if not.
+   */
   updatePreferences: (
-    data: { chat_prompt_id: string },
+    data: { chat_prompt_id: string; only_if_unset?: boolean },
     token: string | null,
   ): Promise<any> => apiClient.put(endpoints.USER.PREFERENCES, data, token),
   getNewToken: (): Promise<any> =>

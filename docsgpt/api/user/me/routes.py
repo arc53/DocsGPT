@@ -13,7 +13,8 @@ set for them, without naming the policies behind those limits.
 follow them across devices: today the prompt their chats use
 (``chat_prompt_id``), stored in ``users.tool_preferences``. ``GET`` also says
 whether one was ever stored (``chat_prompt_set``), so a browser moves its
-pre-upgrade choice only to an account that holds none.
+pre-upgrade choice only to an account that holds none; the move's ``PUT``
+sends ``only_if_unset`` so a choice saved meanwhile elsewhere still wins.
 """
 
 from __future__ import annotations
@@ -132,6 +133,13 @@ class PreferencesResource(Resource):
                 required=True,
                 description="The prompt chats use: default, creative, strict, or the id of a prompt the caller can read",
             ),
+            "only_if_unset": fields.Boolean(
+                required=False,
+                description=(
+                    "Store it only when no chat prompt was ever stored (moving a browser's old choice); "
+                    "otherwise the stored one is kept and returned"
+                ),
+            ),
         },
     )
 
@@ -169,12 +177,20 @@ class PreferencesResource(Resource):
     @api.expect(preferences_model)
     @api.doc(
         description=(
-            "Set the prompt the caller's chats use. 400 for a value that is neither a preset nor a prompt "
-            "id; 404 when the caller can't read the prompt."
+            "Set the prompt the caller's chats use: {success, chat_prompt_id, applied}. With only_if_unset "
+            "and a chat prompt already stored, nothing is written, applied is false and chat_prompt_id is the "
+            "stored one as GET reads it. 400 for a value that is neither a preset nor a prompt id, or a "
+            "non-boolean only_if_unset; 404 when the caller can't read the prompt."
         )
     )
     def put(self):
-        """Store ``chat_prompt_id`` after checking the caller may use that prompt."""
+        """Store ``chat_prompt_id`` after checking the caller may use that prompt.
+
+        Returns:
+            Response: ``{success, chat_prompt_id, applied}``; ``applied`` is
+            false only when ``only_if_unset`` found a stored chat prompt, whose
+            readable value ``chat_prompt_id`` then carries.
+        """
         decoded_token = getattr(request, "decoded_token", None)
         user_id = decoded_token.get("sub") if decoded_token else None
         if not user_id:
@@ -185,14 +201,22 @@ class PreferencesResource(Resource):
             return error_response(
                 "chat_prompt_id must be default, creative, strict or a prompt id", 400, code="invalid_prompt"
             )
+        only_if_unset = body.get("only_if_unset", False)
+        if not isinstance(only_if_unset, bool):
+            return error_response("only_if_unset must be a boolean", 400, code="invalid_request")
         try:
             with db_session() as conn:
                 if value not in PRESET_PROMPTS:
                     value = require(conn, "prompt", value, user_id, "use").resource_id
-                UsersRepository(conn).set_chat_prompt_id(user_id, value)
+                users = UsersRepository(conn)
+                applied = users.set_chat_prompt_id(user_id, value, only_if_unset=only_if_unset)
+                if not applied:
+                    prefs = (users.get(user_id) or {}).get("tool_preferences") or {}
+                    stored = prefs.get("chat_prompt_id") if isinstance(prefs, dict) else None
+                    value = _readable_chat_prompt(conn, user_id, stored)
         except AccessDenied as err:
             return error_response(err.message, err.status)
         except Exception as err:
             current_app.logger.error(f"Error saving preferences: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True, "chat_prompt_id": value}), 200)
+        return make_response(jsonify({"success": True, "chat_prompt_id": value, "applied": applied}), 200)

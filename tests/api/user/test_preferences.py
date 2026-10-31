@@ -75,7 +75,7 @@ class TestPreferences:
     def test_presets_round_trip(self, app, pg_conn, preset):
         resp = _call(app, pg_conn, "put", json={"chat_prompt_id": preset})
         assert resp.status_code == 200
-        assert resp.json == {"success": True, "chat_prompt_id": preset}
+        assert resp.json == {"success": True, "chat_prompt_id": preset, "applied": True}
         assert _chat_prompt(app, pg_conn) == preset
 
     def test_own_and_team_prompts(self, app, pg_conn):
@@ -138,3 +138,54 @@ class TestPreferences:
         prefs = UsersRepository(pg_conn).get(ALICE)["tool_preferences"]
         assert prefs["disabled_default_tools"] == ["memory"]
         assert prefs["chat_prompt_id"] == "creative"
+
+
+class TestMoveOnlyIfUnset:
+    """``only_if_unset``: a browser's pre-upgrade choice never overwrites a stored one."""
+
+    def test_stores_when_nothing_was_stored(self, app, pg_conn):
+        resp = _call(app, pg_conn, "put", json={"chat_prompt_id": "creative", "only_if_unset": True})
+        assert resp.status_code == 200
+        assert resp.json == {"success": True, "chat_prompt_id": "creative", "applied": True}
+        assert _chat_prompt(app, pg_conn) == "creative"
+
+    # Another browser saved a pick after this one read chat_prompt_set=false.
+    @pytest.mark.parametrize("stored", ["strict", "default"])
+    def test_keeps_a_stored_choice_and_returns_it(self, app, pg_conn, stored):
+        _call(app, pg_conn, "put", json={"chat_prompt_id": stored})
+        resp = _call(app, pg_conn, "put", json={"chat_prompt_id": "creative", "only_if_unset": True})
+        assert resp.status_code == 200
+        assert resp.json == {"success": True, "chat_prompt_id": stored, "applied": False}
+        assert _chat_prompt(app, pg_conn) == stored
+
+    def test_returns_a_gone_stored_prompt_as_default(self, app, pg_conn):
+        pid = str(PromptsRepository(pg_conn).create(ALICE, "Gone", "x")["id"])
+        _call(app, pg_conn, "put", json={"chat_prompt_id": pid})
+        PromptsRepository(pg_conn).delete(pid, ALICE)
+        resp = _call(app, pg_conn, "put", json={"chat_prompt_id": "creative", "only_if_unset": True})
+        assert resp.json == {"success": True, "chat_prompt_id": "default", "applied": False}
+
+    def test_keeps_the_default_tool_switches(self, app, pg_conn):
+        UsersRepository(pg_conn).set_default_tool_enabled(ALICE, "memory", False)
+        _call(app, pg_conn, "put", json={"chat_prompt_id": "creative", "only_if_unset": True})
+        prefs = UsersRepository(pg_conn).get(ALICE)["tool_preferences"]
+        assert prefs == {"disabled_default_tools": ["memory"], "chat_prompt_id": "creative"}
+
+    @pytest.mark.parametrize("flag", ["yes", 1, None])
+    def test_a_non_boolean_flag_is_400(self, app, pg_conn, flag):
+        resp = _call(app, pg_conn, "put", json={"chat_prompt_id": "creative", "only_if_unset": flag})
+        assert resp.status_code == 400
+
+
+class TestSetChatPromptIdRepository:
+    def test_only_if_unset_reports_whether_it_wrote(self, pg_conn):
+        repo = UsersRepository(pg_conn)
+        assert repo.set_chat_prompt_id(ALICE, "strict", only_if_unset=True) is True
+        assert repo.set_chat_prompt_id(ALICE, "creative", only_if_unset=True) is False
+        assert repo.get(ALICE)["tool_preferences"]["chat_prompt_id"] == "strict"
+
+    def test_a_plain_write_always_replaces(self, pg_conn):
+        repo = UsersRepository(pg_conn)
+        assert repo.set_chat_prompt_id(ALICE, "strict") is True
+        assert repo.set_chat_prompt_id(ALICE, "creative") is True
+        assert repo.get(ALICE)["tool_preferences"]["chat_prompt_id"] == "creative"

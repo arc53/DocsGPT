@@ -158,12 +158,32 @@ describe('loadChatPrompt', () => {
     const store = makeStore();
     await store.dispatch(loadChatPrompt(neverSet, listed, 'tok'));
     expect(service.updatePreferences).toHaveBeenCalledTimes(1);
+    // Only into an account that still holds none when the save lands.
     expect(service.updatePreferences).toHaveBeenCalledWith(
-      { chat_prompt_id: 'p-own' },
+      { chat_prompt_id: 'p-own', only_if_unset: true },
       'tok',
     );
     expect(chatPromptOf(store)).toEqual(own);
     expect(localStorage.getItem(LEGACY_PROMPT_KEY)).toBeNull();
+  });
+
+  // Another browser saved strict after the read said nothing was stored:
+  // the server keeps it, and this browser takes it up and forgets its copy.
+  it('takes up a choice saved elsewhere before the move landed', async () => {
+    localStorage.setItem(LEGACY_PROMPT_KEY, JSON.stringify(own));
+    service.updatePreferences.mockReturnValue(
+      response({ success: true, chat_prompt_id: 'strict', applied: false }),
+    );
+    const store = makeStore();
+    await store.dispatch(loadChatPrompt(neverSet, listed, 'tok'));
+    expect(chatPromptOf(store)).toEqual(presets[2]);
+    expect(localStorage.getItem(LEGACY_PROMPT_KEY)).toBeNull();
+    // strict is what the server holds: picking own again is a change.
+    await store.dispatch(chooseChatPrompt(own, 'tok'));
+    expect(service.updatePreferences).toHaveBeenLastCalledWith(
+      { chat_prompt_id: 'p-own' },
+      'tok',
+    );
   });
 
   // Another browser's deliberate default, or a shared browser's previous

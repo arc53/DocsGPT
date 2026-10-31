@@ -104,29 +104,49 @@ export async function fetchChatPromptId(
   }
 }
 
+/**
+ * A save's outcome. `held`: the save asked to write only into an account
+ * holding no chat prompt, and the server kept the one it holds (this id).
+ */
+type SaveOutcome = { saved: boolean; held?: string };
+
 async function saveChatPromptId(
   id: string,
   token: string | null,
-): Promise<boolean> {
+  onlyIfUnset = false,
+): Promise<SaveOutcome> {
   try {
     const response = await userService.updatePreferences(
-      { chat_prompt_id: id },
+      onlyIfUnset
+        ? { chat_prompt_id: id, only_if_unset: true }
+        : { chat_prompt_id: id },
       token,
     );
-    return Boolean(response?.ok);
+    if (!response?.ok) return { saved: false };
+    if (!onlyIfUnset) return { saved: true };
+    // A server from before the flag wrote it anyway.
+    const data = await response.json().catch(() => null);
+    const held = data?.chat_prompt_id;
+    return data?.applied === false && typeof held === 'string'
+      ? { saved: false, held }
+      : { saved: true };
   } catch {
-    return false;
+    return { saved: false };
   }
 }
 
 /**
  * A save waiting to be sent, and its caller waiting for the outcome. `user`:
  * the user's pick; otherwise the move of an old browser choice, which
- * doesn't switch back when it fails and reports only its own save.
+ * doesn't switch back when it fails and reports only its own save, and
+ * which writes only into an account holding no chat prompt: when one was
+ * saved elsewhere meanwhile, that one is taken up (named from `prompts`)
+ * and the move counts as done.
  */
 type PendingPick = {
   prompt: Prompt;
   user: boolean;
+  prompts?: Prompt[];
   resolve: (saved: boolean) => void;
 };
 
@@ -240,7 +260,8 @@ function promptFor(id: string, prompts: Prompt[]): Prompt {
  * A prompt this browser picked before the server kept the choice moves to
  * the server once: when the account never stored one and that prompt is
  * listed, it is saved there and the browser's copy removed (kept for the
- * next start if the save fails). An account that stored one, even
+ * next start if the save fails). The save writes only into an account still
+ * holding none; one saved elsewhere meanwhile is taken up instead. An account that stored one, even
  * `default`, keeps it, and the browser's copy is dropped. With no server
  * answer (signed out, an unreachable server) the prompt this session
  * already confirmed stays; with none, the browser's copy is used while it is
@@ -296,7 +317,7 @@ export const loadChatPrompt =
       // Through the save queue, so a pick made meanwhile goes after it.
       const moved = queueSave(
         session,
-        { prompt: asChatPrompt(legacyListed), user: false },
+        { prompt: asChatPrompt(legacyListed), user: false, prompts },
         dispatch,
         getState,
         0,
@@ -391,13 +412,18 @@ async function drainPicks(
 ): Promise<void> {
   session.saving = true;
   while (session.next && !session.timer) {
-    const { prompt, user, resolve } = session.next;
+    const { prompt, user, prompts, resolve } = session.next;
     session.next = null;
     let saved = session.confirmed?.id === prompt.id;
+    let held: string | undefined;
     if (!saved) {
       session.writes += 1;
       session.writing = true;
-      saved = await saveChatPromptId(prompt.id, session.token);
+      ({ saved, held } = await saveChatPromptId(
+        prompt.id,
+        session.token,
+        !user,
+      ));
       session.writing = false;
     }
     if (saved) {
@@ -407,6 +433,17 @@ async function drainPicks(
     const superseded = session.next !== null;
     // The session ended while the save was out: the store is a newer one's.
     const ended = sessions.get(getState) !== session;
+    if (held !== undefined) {
+      // The account got a chat prompt after the move was decided: keep it.
+      session.confirmed = promptFor(held, prompts ?? []);
+      if (
+        !superseded &&
+        !ended &&
+        getState().preference.prompt.id === prompt.id
+      )
+        dispatch(setPrompt(session.confirmed));
+      saved = true;
+    }
     if (
       user &&
       !saved &&
