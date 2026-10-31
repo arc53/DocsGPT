@@ -1,7 +1,7 @@
 ---
 title: Workflow Nodes
 description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else, Code and Loop - and the shared state they read and write.
-lastUpdated: 2026-10-29
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components';
@@ -364,7 +364,8 @@ inside it connect only to each other.
 - **When an item fails**: **Stop and fail the loop** (the default) fails the
   node and writes nothing; items not yet started don't run and running ones stop
   at their next node. **Leave the item out** drops it from the results. **Keep
-  the error in its place** puts `{"error": "..."}` in that item's slot.
+  the error in its place** puts `{"error": "..."}` in that item's slot. An item
+  whose body is still going after 50 node steps counts as failed too.
 - **Output Variable**: an extra name for the results, which are always saved as
   `node_<node_id>_output`. The results are a list in the same order as the
   items.
@@ -501,8 +502,8 @@ a workflow breaks:
   holds at least one node with exactly one first node. No connection crosses a
   loop's edge.
 
-A run stops after 50 node steps, so a cycle in the graph needs an exit
-condition.
+A run that is still going after 50 node steps stops with an error and is recorded as failed,
+so a cycle in the graph needs an exit condition.
 
 ## Step details in the stream
 

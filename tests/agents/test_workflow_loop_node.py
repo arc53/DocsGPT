@@ -410,6 +410,51 @@ def test_a_body_node_reached_from_outside_its_loop_fails(node_agent):
     assert any("across a loop's boundary" in e.get("error", "") for e in events if e.get("type") == "error")
 
 
+def _never_ending_body() -> Dict[str, Any]:
+    """A body whose last two nodes route back to each other, so no item ever finishes."""
+    return {
+        "body": [_agent(name, parent="each") for name in ("first", "again", "back")],
+        "body_edges": [_edge("first", "again"), _edge("again", "back"), _edge("back", "again")],
+    }
+
+
+def test_an_item_that_hits_the_step_limit_fails_the_loop(node_agent):
+    engine = _engine(
+        {"items": "items", "concurrency": 1, "output_variable": "results"},
+        state={"items": ITEMS},
+        **_never_ending_body(),
+    )
+
+    events = _run(engine)
+
+    errors = [e for e in events if e.get("type") == "error"]
+    assert len(errors) == 1
+    assert "item 1 of 3 failed" in errors[0]["error"]
+    assert f"stopped after {engine.MAX_EXECUTION_STEPS} steps" in errors[0]["error"]
+    assert errors[0]["user_facing"] is True
+    assert "results" not in engine.state
+    loop_log = next(log for log in engine.execution_log if log["node_id"] == "each")
+    assert loop_log["status"] == "failed"
+    assert [item["status"] for item in loop_log["items"]] == ["failed", "pending", "pending"]
+
+
+def test_collect_records_an_item_that_hits_the_step_limit_as_failed(node_agent):
+    engine = _engine(
+        {"items": "items", "on_item_error": "collect", "output_variable": "results"},
+        state={"items": ITEMS[:2]},
+        **_never_ending_body(),
+    )
+
+    events = _run(engine)
+
+    assert len(engine.state["results"]) == 2
+    assert all(set(result) == {"error"} for result in engine.state["results"])
+    assert all("stopped after 50 steps" in result["error"] for result in engine.state["results"])
+    # Each item's cut-off belongs to the item, so no run-level error is raised for it.
+    assert not [e for e in events if e.get("type") == "error"]
+    assert engine.step_limit_reached is False
+
+
 def test_failed_items_stop_running_items_at_their_next_node(node_agent):
     first_started = threading.Event()
 
