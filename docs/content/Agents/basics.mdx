@@ -1,7 +1,7 @@
 ---
 title: Agent Basics
 description: Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-01
 ---
 
 import { Callout } from 'nextra/components';
@@ -40,6 +40,8 @@ When you create or configure an agent, you'll work with these key components:
 The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond. The **Prompt** field lists **Included**, **Yours** and **Shared with team**, each prompt with a line saying what it does (a built-in prompt's purpose, or the start of yours), and **Go to Prompts** and **Add prompt** at the bottom. With more than 10 prompts it can filter by section, and on a phone it opens as a sheet from the bottom of the screen.
 
 **Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information. The picker groups them as the Tools page does (**Included**, **Added**, one group per connected service, **Custom**), lists the selected ones first, and ends with **Go to Tools** and **Add tool**; see [The Tools page](/Tools/basics#the-tools-page).
+
+**Starters:** Up to four questions shown under the agent's card when someone starts a new chat with it: on the agent's page, through its public link and in **Preview**. Selecting one sends it. Leave a field empty for no starter; a save trims them and drops repeats, and each can be up to 200 characters. With no starters, a new chat shows only the agent's card. A workflow agent's starters are with its name and description in the builder's **Edit details**.
 
 **Agent type:** The underlying operational logic or architecture the agent uses. DocsGPT supports different types of agents, each suited for different kinds of tasks. The agent form offers **Classic** and **Research**; workflow agents are chosen when you create the agent, and the Agentic type is set through the API or an imported YAML file.
 
@@ -138,7 +140,7 @@ Once an agent is created, you can:
 * **Chat with it:** Select the agent to start an interaction.
 * **View Logs:** Access usage statistics, monitor token consumption per interaction, and review user message feedbacks. This is crucial for understanding how your agent is being used and performing. See [Analytics and Logs](/Using/analytics-and-logs).
 * **Edit an Agent:**
-    * Modify any of its configuration settings (name, description, source, prompt, tools, type).
+    * Modify any of its configuration settings (name, description, starters, source, prompt, tools, type).
     * **Open Access Details:** On a published agent, open the **⋯** menu beside the agent's name on the edit screen and choose **Access Details**. It holds the agent's **Public Link**, its API key (with **Reset key**) and its **Webhook URL**. A draft has none of these: publish the agent to create its API key. The public link and webhook URL don't exist until you click **Generate** next to each in that dialog.
     * **Public Link:** Anyone with the link can open the agent and chat with it; it then appears under **Discovered** on their Agents page. They use your agent as it is; they don't get a copy.
     * **Webhook URL:** Lets external applications or services trigger the agent and receive responses programmatically. See [Webhooks](/API/webhooks).

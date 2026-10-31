@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-01
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -591,7 +591,7 @@ An import is matched to one of your agents by `metadata.id`, then by `metadata.s
 - **No match:** a new agent is created as a **draft**.
 - **Match:** that agent is updated and keeps its status, so a published agent stays published with the same API key.
 
-On an update the file is authoritative: fields it sets are written even when that clears a value, such as removing all models, dropping `json_schema` or switching the prompt back to the default. Re-importing an edited file therefore syncs the agent to it. The response reports `agent_id`, `action` (`created` or `updated`), `status`, `agent_type`, `slug` and any `warnings`.
+On an update the file is authoritative: fields it sets are written even when that clears a value, such as removing all models, dropping `json_schema` or switching the prompt back to the default. The agent's starters are `spec.starters` (up to four questions); a file without them clears the agent's starters. Re-importing an edited file therefore syncs the agent to it. The response reports `agent_id`, `action` (`created` or `updated`), `status`, `agent_type`, `slug` and any `warnings`.
 
 ### The plan
 
