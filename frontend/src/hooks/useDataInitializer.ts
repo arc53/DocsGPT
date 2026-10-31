@@ -118,7 +118,8 @@ export default function useDataInitializer(
     }
 
     // The server's chat prompt applies as soon as it answers (asked again
-    // if it couldn't); the prompt list names it when it arrives.
+    // if it couldn't); the prompt list names it when it arrives. A renewed
+    // token runs this again; a pick the same user made meanwhile stands.
     let cancelled = false;
     dispatch(
       initChatPrompt(token, { signedOut, cancelled: () => cancelled }),

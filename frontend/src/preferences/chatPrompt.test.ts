@@ -46,6 +46,10 @@ const presets: Prompt[] = [
 const own: Prompt = { id: 'p-own', name: 'Vendor checks', type: 'private' };
 const listed = [...presets, own];
 
+/** An unsigned token for `sub`; `n` tells a renewed one apart. */
+const jwtFor = (sub: string, n: number) =>
+  `e30.${btoa(JSON.stringify({ sub, iat: n })).replace(/=+$/, '')}.sig`;
+
 const makeStore = () =>
   configureStore({
     reducer: { preference: reducer },
@@ -306,8 +310,8 @@ describe('chat prompt saves', () => {
     expect(chatPromptOf(store)).toEqual(presets[2]);
   });
 
-  // A new token is a new session: a pick still waiting is dropped, and its
-  // caller hears so instead of waiting forever.
+  // A token without a user to read is its own session: a pick still waiting
+  // is dropped, and its caller hears so instead of waiting forever.
   it('drops a waiting pick when the token changes', async () => {
     vi.useFakeTimers();
     try {
@@ -322,6 +326,85 @@ describe('chat prompt saves', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // A silent renewal (OIDC) hands the same user a new token: the session
+  // stays, and the save goes out with the newest token.
+  it("keeps a waiting pick through a renewal of the same user's token", async () => {
+    vi.useFakeTimers();
+    try {
+      service.updatePreferences.mockReturnValue(response({ success: true }));
+      const store = makeStore();
+      const first = jwtFor('alice', 1);
+      const renewed = jwtFor('alice', 2);
+      const waiting = store.dispatch(chooseChatPrompt(own, first, 500));
+      await store.dispatch(loadChatPrompt('strict', listed, renewed));
+      await vi.advanceTimersByTimeAsync(600);
+      await expect(waiting).resolves.toBe(true);
+      expect(service.updatePreferences).toHaveBeenCalledWith(
+        { chat_prompt_id: 'p-own' },
+        renewed,
+      );
+      expect(chatPromptOf(store)).toEqual(own);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The renewal's start-up load reads the server before the save landed;
+  // that older answer mustn't win over the pick.
+  it('keeps a pick in flight when a renewal reloads the old value', async () => {
+    const save = deferred<unknown>();
+    service.updatePreferences.mockReturnValueOnce(save.promise);
+    service.getPrompts.mockReturnValue(response(listed));
+    service.getPreferences.mockReturnValue(
+      response({ chat_prompt_id: 'strict' }),
+    );
+    const store = makeStore();
+    await store.dispatch(loadChatPrompt('strict', listed, jwtFor('alice', 1)));
+    const pick = store.dispatch(chooseChatPrompt(own, jwtFor('alice', 1)));
+    const reload = store.dispatch(
+      initChatPrompt(jwtFor('alice', 2), {
+        signedOut: false,
+        cancelled: () => false,
+      }),
+    );
+    save.resolve({ ok: true, json: async () => ({}) });
+    await reload;
+    await expect(pick).resolves.toBe(true);
+    expect(chatPromptOf(store)).toEqual(own);
+  });
+
+  it("drops a waiting pick when another user's token arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      service.updatePreferences.mockReturnValue(response({ success: true }));
+      const store = makeStore();
+      const waiting = store.dispatch(
+        chooseChatPrompt(own, jwtFor('alice', 1), 500),
+      );
+      await store.dispatch(loadChatPrompt('strict', listed, jwtFor('bob', 1)));
+      await vi.advanceTimersByTimeAsync(600);
+      await expect(waiting).resolves.toBe(false);
+      expect(sent()).toEqual([]);
+      expect(chatPromptOf(store)).toEqual(presets[2]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // An old session's request answering late leaves the new session alone,
+  // even when both show the same prompt.
+  it("doesn't let an ended session's failed save switch the prompt back", async () => {
+    const save = deferred<unknown>();
+    service.updatePreferences.mockReturnValueOnce(save.promise);
+    const store = makeStore();
+    store.dispatch(setPrompt(presets[2]));
+    const pick = store.dispatch(chooseChatPrompt(own, 'tok'));
+    await store.dispatch(loadChatPrompt('p-own', listed, 'other'));
+    save.resolve({ ok: false, status: 500, json: async () => ({}) });
+    await expect(pick).resolves.toBe(false);
+    expect(chatPromptOf(store)).toEqual(own);
   });
 
   // Arrow keys over the radios: each card shows at once, one save follows.

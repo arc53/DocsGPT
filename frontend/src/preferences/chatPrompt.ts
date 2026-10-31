@@ -3,6 +3,7 @@ import type { Dispatch } from '@reduxjs/toolkit';
 import userService from '../api/services/userService';
 import type { Prompt } from '../models/misc';
 import type { RootState } from '../store';
+import { readerIdFromToken } from '../utils/personLabel';
 import { getPrompts } from './preferenceApi';
 import { setPrompt, setPrompts } from './preferenceSlice';
 
@@ -117,10 +118,13 @@ type PendingPick = {
 };
 
 /**
- * One store's chat-prompt saves for one token: what the server last
+ * One store's chat-prompt saves for one user: what the server last
  * confirmed, the pick waiting to be sent, and whether one is in flight.
  */
 type ChatPromptSession = {
+  /** Who the session is for: the token's user, else the token itself. */
+  user: string | null;
+  /** The newest token for that user; saves go out with it. */
   token: string | null;
   /** The last value the server confirmed (loaded or saved); null unknown. */
   confirmed: Prompt | null;
@@ -143,15 +147,21 @@ function sessionOf(
   token: string | null,
 ): ChatPromptSession {
   const current = sessions.get(getState);
-  if (current && current.token === token) return current;
-  // A new token is a new user or sign-in: nothing carries over. A pick
-  // still waiting is dropped, and its caller hears it wasn't saved.
+  const user = readerIdFromToken(token) ?? token;
+  if (current && current.user === user) {
+    // A renewed token for the same user keeps the session.
+    current.token = token;
+    return current;
+  }
+  // A new user or sign-in: nothing carries over. A pick still waiting is
+  // dropped, and its caller hears it wasn't saved.
   if (current?.timer) clearTimeout(current.timer);
   if (current?.next) {
     current.next.resolve(false);
     current.next = null;
   }
   const fresh: ChatPromptSession = {
+    user,
     token,
     confirmed: null,
     shownBefore: null,
@@ -322,10 +332,13 @@ async function drainPicks(
       if (user) session.pickSaved = true;
     }
     const superseded = session.next !== null;
+    // The session ended while the save was out: the store is a newer one's.
+    const ended = sessions.get(getState) !== session;
     if (
       user &&
       !saved &&
       !superseded &&
+      !ended &&
       getState().preference.prompt.id === prompt.id
     )
       dispatch(
@@ -404,7 +417,7 @@ export const chatPromptDeleted =
  *
  * Returns:
  *   Whether the server saved it; true for a pick a newer one replaced,
- *   false for one dropped because the session (token) changed.
+ *   false for one dropped because the user signed out or another signed in.
  */
 export const chooseChatPrompt =
   (prompt: Prompt, token: string | null, delayMs = 0) =>
