@@ -105,8 +105,16 @@ async function saveChatPromptId(
   }
 }
 
-/** A pick waiting to be saved, and its caller waiting for the outcome. */
-type PendingPick = { prompt: Prompt; resolve: (saved: boolean) => void };
+/**
+ * A save waiting to be sent, and its caller waiting for the outcome. `user`:
+ * the user's pick; otherwise the move of an old browser choice, which
+ * doesn't switch back when it fails and reports only its own save.
+ */
+type PendingPick = {
+  prompt: Prompt;
+  user: boolean;
+  resolve: (saved: boolean) => void;
+};
 
 /**
  * One store's chat-prompt saves for one token: what the server last
@@ -136,8 +144,13 @@ function sessionOf(
 ): ChatPromptSession {
   const current = sessions.get(getState);
   if (current && current.token === token) return current;
-  // A new token is a new user or sign-in: nothing carries over.
+  // A new token is a new user or sign-in: nothing carries over. A pick
+  // still waiting is dropped, and its caller hears it wasn't saved.
   if (current?.timer) clearTimeout(current.timer);
+  if (current?.next) {
+    current.next.resolve(false);
+    current.next = null;
+  }
   const fresh: ChatPromptSession = {
     token,
     confirmed: null,
@@ -215,11 +228,15 @@ export const loadChatPrompt =
       legacyListed.id !== serverId
     ) {
       dispatch(setPrompt(asChatPrompt(legacyListed)));
-      if (await saveChatPromptId(legacyListed.id, token)) {
-        forgetLegacyPrompt();
-        if (!pickStands(session))
-          session.confirmed = asChatPrompt(legacyListed);
-      }
+      // Through the save queue, so a pick made meanwhile goes after it.
+      const moved = queueSave(
+        session,
+        { prompt: asChatPrompt(legacyListed), user: false },
+        dispatch,
+        getState,
+        0,
+      );
+      if (await moved) forgetLegacyPrompt();
       return;
     }
     // Without the list there is no telling whether the old choice still
@@ -295,27 +312,84 @@ async function drainPicks(
 ): Promise<void> {
   session.saving = true;
   while (session.next && !session.timer) {
-    const { prompt, resolve } = session.next;
+    const { prompt, user, resolve } = session.next;
     session.next = null;
     const saved =
       session.confirmed?.id === prompt.id ||
       (await saveChatPromptId(prompt.id, session.token));
     if (saved) {
       session.confirmed = asChatPrompt(prompt);
-      session.pickSaved = true;
+      if (user) session.pickSaved = true;
     }
     const superseded = session.next !== null;
-    if (!saved && !superseded && getState().preference.prompt.id === prompt.id)
+    if (
+      user &&
+      !saved &&
+      !superseded &&
+      getState().preference.prompt.id === prompt.id
+    )
       dispatch(
         setPrompt(
           session.confirmed ?? session.shownBefore ?? DEFAULT_CHAT_PROMPT,
         ),
       );
     // A failed pick with a newer one behind it has nothing to report.
-    resolve(saved || superseded);
+    resolve(saved || (user && superseded));
   }
   session.saving = false;
 }
+
+/**
+ * Puts a save in the queue, replacing the one waiting (whose caller hears
+ * it was replaced), and starts sending now or after `delayMs`.
+ *
+ * Returns:
+ *   The save's outcome, as `drainPicks` reports it.
+ */
+function queueSave(
+  session: ChatPromptSession,
+  pick: Omit<PendingPick, 'resolve'>,
+  dispatch: Dispatch,
+  getState: GetState,
+  delayMs: number,
+): Promise<boolean> {
+  // Replaced before it was sent: a user pick has nothing to report; the
+  // move of an old choice wasn't saved.
+  session.next?.resolve(session.next.user);
+  const outcome = new Promise<boolean>((resolve) => {
+    session.next = { ...pick, resolve };
+  });
+  if (session.timer) clearTimeout(session.timer);
+  session.timer = undefined;
+  if (delayMs > 0)
+    session.timer = setTimeout(() => {
+      session.timer = undefined;
+      if (!session.saving) void drainPicks(session, dispatch, getState);
+    }, delayMs);
+  else if (!session.saving) void drainPicks(session, dispatch, getState);
+  return outcome;
+}
+
+/**
+ * The prompt `deletedId` was deleted. The server reads a deleted chat
+ * prompt back as default, so default becomes the confirmed value (what a
+ * failed pick switches back to), and chats showing it switch to default.
+ *
+ * Args:
+ *   deletedId: The deleted prompt's id.
+ *   token: The session token.
+ */
+export const chatPromptDeleted =
+  (deletedId: string, token: string | null) =>
+  (dispatch: Dispatch, getState: GetState): void => {
+    const session = sessionOf(getState, token);
+    if (session.confirmed?.id === deletedId)
+      session.confirmed = DEFAULT_CHAT_PROMPT;
+    if (session.shownBefore?.id === deletedId)
+      session.shownBefore = DEFAULT_CHAT_PROMPT;
+    if (getState().preference.prompt.id === deletedId)
+      dispatch(setPrompt(DEFAULT_CHAT_PROMPT));
+  };
 
 /**
  * Makes `prompt` the chat prompt: it switches at once and switches back
@@ -329,7 +403,8 @@ async function drainPicks(
  *     the radios); 0 saves at once.
  *
  * Returns:
- *   Whether the server saved it; true for a pick a newer one replaced.
+ *   Whether the server saved it; true for a pick a newer one replaced,
+ *   false for one dropped because the session (token) changed.
  */
 export const chooseChatPrompt =
   (prompt: Prompt, token: string | null, delayMs = 0) =>
@@ -339,20 +414,13 @@ export const chooseChatPrompt =
       session.picked = true;
       session.shownBefore = getState().preference.prompt;
     }
-    // Replaced before it was sent: nothing to report.
-    session.next?.resolve(true);
-    const outcome = new Promise<boolean>((resolve) => {
-      session.next = { prompt, resolve };
-    });
     if (getState().preference.prompt.id !== prompt.id)
       dispatch(setPrompt(asChatPrompt(prompt)));
-    if (session.timer) clearTimeout(session.timer);
-    session.timer = undefined;
-    if (delayMs > 0)
-      session.timer = setTimeout(() => {
-        session.timer = undefined;
-        if (!session.saving) void drainPicks(session, dispatch, getState);
-      }, delayMs);
-    else if (!session.saving) void drainPicks(session, dispatch, getState);
-    return outcome;
+    return queueSave(
+      session,
+      { prompt: asChatPrompt(prompt), user: true },
+      dispatch,
+      getState,
+      delayMs,
+    );
   };

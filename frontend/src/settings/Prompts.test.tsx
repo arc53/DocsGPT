@@ -487,6 +487,52 @@ describe('Prompts page', () => {
     expect(confirm.props!.description).toBe('common.cantUndo');
   });
 
+  // The server reads a deleted chat prompt back as default, so a later
+  // failed pick switches back to default, not to the deleted prompt.
+  it('switches back to default after the saved chat prompt was deleted', async () => {
+    service.deletePrompt.mockImplementation(() => response({ success: true }));
+    await render();
+    await act(async () => radioOf('Escalation summary').click());
+    expect(chatPromptId()).toBe('p-idle');
+    await clickMenu('Escalation summary', 'settings.prompts.delete');
+    await act(async () => {
+      await confirm.props!.handleSubmit();
+    });
+    service.updatePreferences.mockImplementation(() =>
+      response({}, false, 500),
+    );
+    await act(async () => radioOf('creative').click());
+    expect(chatPromptId()).toBe('default');
+    expect(radioOf('default').getAttribute('aria-checked')).toBe('true');
+  });
+
+  // An arrow key in a card's ⋯ menu is no radio move: a click after it
+  // saves at once.
+  it('saves a click at once after an arrow key outside the radios', async () => {
+    await render();
+    vi.useFakeTimers();
+    try {
+      const menuButton = card('Vendor checks').querySelector<HTMLElement>(
+        '[data-testid="menu"] button',
+      )!;
+      await act(async () => {
+        menuButton.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+        );
+      });
+      await act(async () => {
+        radioOf('creative').click();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(service.updatePreferences).toHaveBeenCalledWith(
+        { chat_prompt_id: 'creative' },
+        'tok',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('falls back to default when the chat prompt is deleted', async () => {
     store.dispatch(setPrompt({ id: 'p-idle', name: 'x', type: 'private' }));
     service.deletePrompt.mockImplementation(() => response({ success: true }));

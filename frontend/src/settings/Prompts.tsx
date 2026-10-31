@@ -30,14 +30,10 @@ import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
 import type { Prompt } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
-import {
-  chooseChatPrompt,
-  DEFAULT_CHAT_PROMPT,
-} from '../preferences/chatPrompt';
+import { chatPromptDeleted, chooseChatPrompt } from '../preferences/chatPrompt';
 import {
   selectPrompt,
   selectToken,
-  setPrompt,
   setPrompts,
 } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
@@ -126,8 +122,7 @@ export default function Prompts() {
     onDeleted: (deleted) => {
       showList(prompts.filter((prompt) => prompt.id !== deleted.id));
       // The server reads a deleted chat prompt back as default.
-      if (deleted.id === chatPrompt.id)
-        dispatch(setPrompt(DEFAULT_CHAT_PROMPT));
+      dispatch(chatPromptDeleted(deleted.id, token));
     },
   });
 
@@ -347,8 +342,18 @@ export default function Prompts() {
         <RadioGroup
           value={chatPrompt.id}
           onValueChange={pickChatPrompt}
+          // Only an arrow key on one of the radios moves the pick; one in a
+          // card's ⋯ menu (portalled, outside this element) doesn't, and a
+          // pointer press never waits.
           onKeyDownCapture={(event) => {
-            arrowPick.current = ARROW_KEYS.has(event.key);
+            const target = event.target as HTMLElement;
+            arrowPick.current =
+              ARROW_KEYS.has(event.key) &&
+              event.currentTarget.contains(target) &&
+              target.getAttribute('role') === 'radio';
+          }}
+          onPointerDownCapture={() => {
+            arrowPick.current = false;
           }}
           aria-label={t('settings.prompts.chatPromptLabel')}
         >

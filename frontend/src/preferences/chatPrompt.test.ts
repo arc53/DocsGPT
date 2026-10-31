@@ -287,6 +287,43 @@ describe('chat prompt saves', () => {
     expect(chatPromptOf(store)).toEqual(presets[2]);
   });
 
+  // The move of an old browser choice is a save like any other: a pick
+  // made while it is in flight goes after it, and wins.
+  it('queues the move of an old browser choice before a later pick', async () => {
+    localStorage.setItem(LEGACY_PROMPT_KEY, JSON.stringify(own));
+    const move = deferred<unknown>();
+    service.updatePreferences
+      .mockReturnValueOnce(move.promise)
+      .mockReturnValue(response({ success: true }));
+    const store = makeStore();
+    const loading = store.dispatch(loadChatPrompt('default', listed, 'tok'));
+    const pick = store.dispatch(chooseChatPrompt(presets[2], 'tok'));
+    expect(sent()).toEqual(['p-own']);
+    move.resolve({ ok: true, json: async () => ({}) });
+    await loading;
+    await expect(pick).resolves.toBe(true);
+    expect(sent()).toEqual(['p-own', 'strict']);
+    expect(chatPromptOf(store)).toEqual(presets[2]);
+  });
+
+  // A new token is a new session: a pick still waiting is dropped, and its
+  // caller hears so instead of waiting forever.
+  it('drops a waiting pick when the token changes', async () => {
+    vi.useFakeTimers();
+    try {
+      service.updatePreferences.mockReturnValue(response({ success: true }));
+      const store = makeStore();
+      const waiting = store.dispatch(chooseChatPrompt(presets[1], 'tok', 500));
+      void store.dispatch(chooseChatPrompt(presets[2], 'other'));
+      await vi.advanceTimersByTimeAsync(1000);
+      const outcome = await Promise.race([waiting, Promise.resolve('hung')]);
+      expect(outcome).toBe(false);
+      expect(sent()).toEqual(['strict']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // Arrow keys over the radios: each card shows at once, one save follows.
   it('waits out a delayed pick, and a newer one restarts the wait', async () => {
     vi.useFakeTimers();
