@@ -97,6 +97,7 @@ vi.mock('./message-input', async (importOriginal) => ({
 }));
 
 import connectorsReducer from '../connectors/connectorsSlice';
+import chatToolsReducer from '../conversation/chatToolsSlice';
 import notificationsReducer from '../notifications/notificationsSlice';
 import { prefSlice } from '../preferences/preferenceSlice';
 import uploadReducer from '../upload/uploadSlice';
@@ -111,6 +112,7 @@ const makeStore = () =>
       upload: uploadReducer,
       notifications: notificationsReducer,
       connectors: connectorsReducer,
+      chatTools: chatToolsReducer,
     },
   });
 

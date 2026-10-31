@@ -24,6 +24,7 @@ vi.mock('../api/services/userService', async (importOriginal) => {
 });
 
 import connectorsReducer from '../connectors/connectorsSlice';
+import chatToolsReducer from '../conversation/chatToolsSlice';
 import type { Model } from '../models/types';
 import notificationsReducer from '../notifications/notificationsSlice';
 import {
@@ -46,6 +47,7 @@ const makeStore = () =>
       upload: uploadReducer,
       notifications: notificationsReducer,
       connectors: connectorsReducer,
+      chatTools: chatToolsReducer,
     },
   });
 
