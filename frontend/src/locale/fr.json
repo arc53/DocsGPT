@@ -3850,7 +3850,9 @@
         "loopOnErrorCollect": "Conserver l’erreur à sa place",
         "loopOutputHint": "La liste des résultats, un par élément.",
         "loopResultVariable": "Résultat de l’élément",
-        "loopResultVariableHint": "La variable dont la valeur est le résultat de chaque élément. Si elle est vide, la sortie du dernier nœud exécuté est utilisée."
+        "loopResultVariableHint": "La variable dont la valeur est le résultat de chaque élément. Si elle est vide, la sortie du dernier nœud exécuté est utilisée.",
+        "loadFailedTitle": "Impossible de charger le workflow",
+        "loadFailedDescription": "Rien n’a été modifié. Réessayez, ou revenez dans un instant."
       },
       "validation": {
         "nameRequired": "Le nom du workflow est obligatoire",

@@ -3719,7 +3719,9 @@
         "loopOnErrorCollect": "在原位置保留錯誤",
         "loopOutputHint": "結果清單，每個項目一個結果。",
         "loopResultVariable": "項目結果",
-        "loopResultVariableHint": "其值作為每個項目結果的變數。留空則使用最後執行之節點的輸出。"
+        "loopResultVariableHint": "其值作為每個項目結果的變數。留空則使用最後執行之節點的輸出。",
+        "loadFailedTitle": "無法載入工作流程",
+        "loadFailedDescription": "沒有任何變更。請重試，或稍後再來。"
       },
       "validation": {
         "nameRequired": "工作流程名稱為必填",

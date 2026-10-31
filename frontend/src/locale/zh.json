@@ -3717,7 +3717,9 @@
         "loopOnErrorCollect": "在原位置保留错误",
         "loopOutputHint": "结果列表，每项一个结果。",
         "loopResultVariable": "项结果",
-        "loopResultVariableHint": "其值作为每一项结果的变量。留空则使用最后运行的节点的输出。"
+        "loopResultVariableHint": "其值作为每一项结果的变量。留空则使用最后运行的节点的输出。",
+        "loadFailedTitle": "无法加载工作流",
+        "loadFailedDescription": "没有任何更改。请重试，或稍后再来。"
       },
       "validation": {
         "nameRequired": "工作流名称为必填项",

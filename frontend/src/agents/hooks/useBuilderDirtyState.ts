@@ -21,6 +21,11 @@ export type BuilderDirtyState<T> = {
   /** Whether saving now would store something, so leaving would lose it. */
   dirty: boolean;
   /**
+   * Whether the baseline exists: the item loaded (or a new one opened). A
+   * builder saves only then, or it would store what it shows while loading.
+   */
+  hasBaseline: boolean;
+  /**
    * Records what is saved: after a load or any successful save (a draft save
    * too). Pass the payload that was sent, or a function of the current
    * baseline for a part saved on its own (an allowlist, a loaded default).
@@ -39,7 +44,7 @@ export type BuilderDirtyState<T> = {
  *   options: `ready`, `equals` and `extras` (see BuilderDirtyOptions).
  *
  * Returns:
- *   `dirty` and `markSaved`.
+ *   `dirty`, `hasBaseline` and `markSaved`.
  */
 export function useBuilderDirtyState<T>(
   payload: T,
@@ -67,5 +72,5 @@ export function useBuilderDirtyState<T>(
 
   const dirty =
     baseline !== null && (extras || !equals(payload, baseline.value));
-  return { dirty, markSaved };
+  return { dirty, hasBaseline: baseline !== null, markSaved };
 }

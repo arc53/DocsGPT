@@ -50,7 +50,9 @@ describe('useBuilderDirtyState', () => {
   it('waits for a loading item, then compares with what was loaded', async () => {
     await render({ payload: { name: '', tools: [] } });
     expect(state.dirty).toBe(false);
+    expect(state.hasBaseline).toBe(false);
     await act(async () => state.markSaved({ name: 'Saved', tools: ['t'] }));
+    expect(state.hasBaseline).toBe(true);
     await render({ payload: { name: 'Saved', tools: ['t'] } });
     expect(state.dirty).toBe(false);
     await render({ payload: { name: 'Saved', tools: [] } });

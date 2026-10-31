@@ -24,6 +24,7 @@ import ReactFlow, {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
@@ -290,6 +291,19 @@ function WorkflowBuilderInner() {
   );
   // A saved workflow's agent is loading (the phone screen waits for it).
   const [agentLoading, setAgentLoading] = useState(Boolean(agentId));
+  // The agent or its graph failed to load: an error with Retry stands in for
+  // the canvas, and nothing saves. Bumping the attempt loads both again.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  // The name and description the agent was loaded with: the builder shows
+  // and saves the agent's own fields (its workflow's follow them).
+  const loadedAgentFields = useRef<{
+    name: string;
+    description: string;
+  } | null>(null);
+  // The workflow a first save just created: its graph is the one on the
+  // canvas, so it isn't read back.
+  const justSavedWorkflowId = useRef<string | null>(null);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
@@ -420,14 +434,18 @@ function WorkflowBuilderInner() {
   const [opensNew] = useState(
     () => !agentId && !searchParams.get('workflow_id'),
   );
-  const { dirty: hasUnsavedWork, markSaved } = useBuilderDirtyState(
-    workflowPayloadSignature,
-    {
-      ready: opensNew,
-      extras:
-        imageFile !== null || pendingConfig !== null || takeovers.length > 0,
-    },
-  );
+  const {
+    dirty: hasUnsavedWork,
+    hasBaseline,
+    markSaved,
+  } = useBuilderDirtyState(workflowPayloadSignature, {
+    ready: opensNew,
+    extras:
+      imageFile !== null || pendingConfig !== null || takeovers.length > 0,
+  });
+  // Saves wait for what they would replace: the graph (or, for a draft with
+  // none yet, the agent) has loaded, and no load failed.
+  const canSave = hasBaseline && !loadFailed;
   // A node's Go to link asks first while there is unsaved work.
   const leaveGuard = useLeaveGuard(hasUnsavedWork);
   // A broken connection signs in again in place, or on its connector page,
@@ -1157,6 +1175,9 @@ function WorkflowBuilderInner() {
   }, [selectedNode]);
 
   useEffect(() => {
+    // A load superseded by another (a token change, StrictMode's second
+    // run) sets nothing.
+    let cancelled = false;
     const loadAgentDetails = async () => {
       if (!agentId) return;
       setAgentLoading(true);
@@ -1164,6 +1185,7 @@ function WorkflowBuilderInner() {
         const response = await userService.getAgent(agentId, token);
         if (!response.ok) throw new Error('Failed to fetch agent');
         const agent = await response.json();
+        if (cancelled) return;
         setCurrentAgent({
           ...createEmptyWorkflowAgent(),
           ...agent,
@@ -1171,6 +1193,10 @@ function WorkflowBuilderInner() {
         });
         if (agent.agent_type !== 'workflow') return;
         setCurrentAgentId(agent.id);
+        loadedAgentFields.current = {
+          name: agent.name ?? '',
+          description: agent.description || '',
+        };
         setWorkflowName(agent.name);
         setWorkflowDescription(agent.description || '');
         if (agent.workflow) {
@@ -1192,12 +1218,16 @@ function WorkflowBuilderInner() {
         }
       } catch (error) {
         console.error('Failed to load agent:', error);
+        if (!cancelled) setLoadFailed(true);
       } finally {
-        setAgentLoading(false);
+        if (!cancelled) setAgentLoading(false);
       }
     };
     loadAgentDetails();
-  }, [agentId, token, markSaved, initialNodes]);
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId, token, markSaved, initialNodes, loadAttempt]);
 
   const applyResourceDetails = useCallback(
     (data: {
@@ -1236,12 +1266,18 @@ function WorkflowBuilderInner() {
   }, [resourcesReloadKey, refreshResourceDetails]);
 
   useEffect(() => {
+    let cancelled = false;
     const loadWorkflow = async () => {
       if (!workflowId) return;
+      if (justSavedWorkflowId.current === workflowId) {
+        justSavedWorkflowId.current = null;
+        return;
+      }
       try {
         const response = await userService.getWorkflow(workflowId, token);
         if (!response.ok) throw new Error('Failed to fetch workflow');
         const responseData = await response.json();
+        if (cancelled) return;
         const {
           workflow,
           nodes: apiNodes,
@@ -1264,8 +1300,12 @@ function WorkflowBuilderInner() {
             }),
           ),
         });
-        const nextWorkflowName = workflow.name;
-        const nextWorkflowDescription = workflow.description || '';
+        // The agent's own fields when there is one (an older agent's may
+        // differ from its workflow's), else the workflow's.
+        const nextWorkflowName =
+          loadedAgentFields.current?.name ?? workflow.name;
+        const nextWorkflowDescription =
+          loadedAgentFields.current?.description ?? workflow.description ?? '';
         const nextRetryDefaults =
           normalizeRetryConfig(workflow.retry_defaults) ?? null;
         const mappedNodes = parentsFirst<Node>(
@@ -1347,9 +1387,13 @@ function WorkflowBuilderInner() {
         }, 100);
       } catch (error) {
         console.error('Failed to load workflow:', error);
+        if (!cancelled) setLoadFailed(true);
       }
     };
     loadWorkflow();
+    return () => {
+      cancelled = true;
+    };
   }, [
     workflowId,
     reactFlowInstance,
@@ -1357,6 +1401,7 @@ function WorkflowBuilderInner() {
     clearHistory,
     applyResourceDetails,
     markSaved,
+    loadAttempt,
   ]);
 
   const validateWorkflow = useCallback((): string[] => {
@@ -1712,7 +1757,7 @@ function WorkflowBuilderInner() {
    */
   const persistWorkflow = useCallback(
     async (status: 'draft' | 'published'): Promise<WorkflowSaveOutcome> => {
-      if (persistingRef.current) return 'cancelled';
+      if (persistingRef.current || !canSave) return 'cancelled';
       setPublishErrors([]);
       // Publishing a new or draft workflow, or saving one.
       setErrorContext(
@@ -1821,8 +1866,15 @@ function WorkflowBuilderInner() {
             currentAgent.allow_system_prompt_override,
           ...(savedConfig ? { config: savedConfig } : {}),
         }));
-        if (savedWorkflowId && savedWorkflowId !== workflowId)
+        loadedAgentFields.current = {
+          name: workflowName,
+          description: workflowDescription,
+        };
+        if (savedWorkflowId && savedWorkflowId !== workflowId) {
+          // The canvas holds what was saved: no reading it back.
+          justSavedWorkflowId.current = savedWorkflowId;
           setWorkflowId(savedWorkflowId);
+        }
         setPendingConfig(null);
         setImageFile(null);
         // What was sent is saved, a draft too: the leave guard starts over.
@@ -1860,6 +1912,7 @@ function WorkflowBuilderInner() {
       t,
       sponsoredSave.save,
       markSaved,
+      canSave,
     ],
   );
 
@@ -1889,8 +1942,9 @@ function WorkflowBuilderInner() {
   // once they are in state (the effect below), so the request carries them.
   const handleDetailsSave = useCallback(
     (values: WorkflowDetailsSave) => {
-      // A save is already out: this one would race it.
-      if (persistingRef.current || detailsSaving) return;
+      // A save is already out: this one would race it. Nothing saves before
+      // the workflow has loaded.
+      if (persistingRef.current || detailsSaving || !canSave) return;
       setWorkflowName(values.name);
       setWorkflowDescription(values.description);
       setRetryDefaults(values.retryDefaults ?? null);
@@ -1929,6 +1983,7 @@ function WorkflowBuilderInner() {
       currentAgent.config?.context_window_limit,
       currentAgent.config?.history_token_limit,
       detailsSaving,
+      canSave,
     ],
   );
 
@@ -1960,7 +2015,7 @@ function WorkflowBuilderInner() {
   // reads as the owner's. Without the right the button isn't rendered.
   const canSubmit = can(currentAgent, isPublished ? 'edit' : 'publish');
   const isPrimaryActionDisabled =
-    isPublishing || (isPublished && !hasUnsavedWork);
+    isPublishing || !canSave || (isPublished && !hasUnsavedWork);
   const primaryActionLabel = isPublished
     ? t('agents.form.buttons.save')
     : t('agents.form.buttons.publish');
@@ -1972,9 +2027,9 @@ function WorkflowBuilderInner() {
     void persistWorkflow('published');
   }, [isPrimaryActionDisabled, persistWorkflow]);
   const handleSaveDraft = useCallback(() => {
-    if (isPublishing) return;
+    if (isPublishing || !canSave) return;
     void persistWorkflow('draft');
-  }, [isPublishing, persistWorkflow]);
+  }, [isPublishing, canSave, persistWorkflow]);
 
   // Stopped node resources still on the canvas.
   const stoppedResources = useMemo(
@@ -2197,7 +2252,7 @@ function WorkflowBuilderInner() {
                 size="field"
                 shape="pill"
                 onClick={handleSaveDraft}
-                disabled={isPublishing}
+                disabled={isPublishing || !canSave}
                 loading={showPrimaryActionSpinner && savingStatus === 'draft'}
               >
                 {t('agents.form.buttons.saveDraft')}
@@ -2333,35 +2388,54 @@ function WorkflowBuilderInner() {
                 )}
               </FloatingResourceNotice>
             )}
-            <WorkflowModelsContext.Provider value={modelNames}>
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onEdgeClick={onEdgeClick}
-                onDrop={onDrop}
-                onDragOver={onDragOver}
-                onNodeClick={handleNodeClick}
-                onPaneClick={handlePaneClick}
-                onNodeDragStart={snapshotBeforeCanvasChange}
-                onSelectionDragStart={snapshotBeforeCanvasChange}
-                nodeTypes={nodeTypes}
-                nodeDragThreshold={1}
-                deleteKeyCode={null}
-                proOptions={{ hideAttribution: true }}
-                fitView
-              >
-                <Background />
-                <CanvasControls
-                  onUndo={undo}
-                  onRedo={redo}
-                  canUndo={canUndo}
-                  canRedo={canRedo}
+            {loadFailed ? (
+              // Never an editable empty canvas: saving it would replace the
+              // graph that didn't load.
+              <div className="flex h-full items-center justify-center px-6">
+                <EmptyState
+                  tone="destructive"
+                  illustration="none"
+                  title={t('agents.workflow.builder.loadFailedTitle')}
+                  description={t(
+                    'agents.workflow.builder.loadFailedDescription',
+                  )}
+                  onRetry={() => {
+                    setLoadFailed(false);
+                    setLoadAttempt((attempt) => attempt + 1);
+                  }}
                 />
-              </ReactFlow>
-            </WorkflowModelsContext.Provider>
+              </div>
+            ) : (
+              <WorkflowModelsContext.Provider value={modelNames}>
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onEdgeClick={onEdgeClick}
+                  onDrop={onDrop}
+                  onDragOver={onDragOver}
+                  onNodeClick={handleNodeClick}
+                  onPaneClick={handlePaneClick}
+                  onNodeDragStart={snapshotBeforeCanvasChange}
+                  onSelectionDragStart={snapshotBeforeCanvasChange}
+                  nodeTypes={nodeTypes}
+                  nodeDragThreshold={1}
+                  deleteKeyCode={null}
+                  proOptions={{ hideAttribution: true }}
+                  fitView
+                >
+                  <Background />
+                  <CanvasControls
+                    onUndo={undo}
+                    onRedo={redo}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
+                  />
+                </ReactFlow>
+              </WorkflowModelsContext.Provider>
+            )}
           </div>
 
           {showNodeConfig && selectedNode && (

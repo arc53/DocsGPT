@@ -3738,7 +3738,9 @@
         "loopOnErrorCollect": "Fehler an seiner Stelle behalten",
         "loopOutputHint": "Die Liste der Ergebnisse, eines pro Element.",
         "loopResultVariable": "Elementergebnis",
-        "loopResultVariableHint": "Die Variable, deren Wert das Ergebnis jedes Elements ist. Leer verwendet die Ausgabe des zuletzt ausgeführten Knotens."
+        "loopResultVariableHint": "Die Variable, deren Wert das Ergebnis jedes Elements ist. Leer verwendet die Ausgabe des zuletzt ausgeführten Knotens.",
+        "loadFailedTitle": "Workflow kann nicht geladen werden",
+        "loadFailedDescription": "Es wurde nichts geändert. Versuche es erneut oder komm gleich wieder."
       },
       "validation": {
         "nameRequired": "Workflow-Name ist erforderlich",

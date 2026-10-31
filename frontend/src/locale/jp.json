@@ -3719,7 +3719,9 @@
         "loopOnErrorCollect": "エラーをその位置に残す",
         "loopOutputHint": "結果のリスト（項目ごとに 1 つ）。",
         "loopResultVariable": "項目の結果",
-        "loopResultVariableHint": "各項目の結果となる値を持つ変数。空の場合は最後に実行されたノードの出力を使用します。"
+        "loopResultVariableHint": "各項目の結果となる値を持つ変数。空の場合は最後に実行されたノードの出力を使用します。",
+        "loadFailedTitle": "ワークフローを読み込めません",
+        "loadFailedDescription": "何も変更されていません。再試行するか、しばらくしてからもう一度お試しください。"
       },
       "validation": {
         "nameRequired": "ワークフロー名は必須です",

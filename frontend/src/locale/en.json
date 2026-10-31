@@ -3743,7 +3743,9 @@
         "loopOnErrorCollect": "Keep the error in its place",
         "loopOutputHint": "The list of results, one per item.",
         "loopResultVariable": "Item result",
-        "loopResultVariableHint": "The variable whose value is each item's result. Empty uses the output of the last node that ran."
+        "loopResultVariableHint": "The variable whose value is each item's result. Empty uses the output of the last node that ran.",
+        "loadFailedTitle": "Unable to load workflow",
+        "loadFailedDescription": "Nothing was changed. Retry, or come back in a moment."
       },
       "validation": {
         "nameRequired": "Workflow name is required",

@@ -3845,7 +3845,9 @@
         "loopOnErrorCollect": "Conservar el error en su lugar",
         "loopOutputHint": "La lista de resultados, uno por elemento.",
         "loopResultVariable": "Resultado del elemento",
-        "loopResultVariableHint": "La variable cuyo valor es el resultado de cada elemento. Si se deja vacía, se usa la salida del último nodo ejecutado."
+        "loopResultVariableHint": "La variable cuyo valor es el resultado de cada elemento. Si se deja vacía, se usa la salida del último nodo ejecutado.",
+        "loadFailedTitle": "No se puede cargar el flujo de trabajo",
+        "loadFailedDescription": "No se cambió nada. Vuelve a intentarlo o regresa en un momento."
       },
       "validation": {
         "nameRequired": "El nombre del flujo de trabajo es obligatorio",

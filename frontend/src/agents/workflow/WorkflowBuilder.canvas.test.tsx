@@ -172,6 +172,8 @@ const api = vi.hoisted(() => ({
   workflow: null as unknown,
   tools: [] as unknown[],
   agentStatus: undefined as string | undefined,
+  agentExtra: {} as Record<string, unknown>,
+  getWorkflow: vi.fn(),
   createAgent: vi.fn(),
   updateAgent: vi.fn(),
   updateWorkflow: vi.fn(),
@@ -179,12 +181,16 @@ const api = vi.hoisted(() => ({
 vi.mock('../../api/services/userService', () => ({
   default: {
     getAgent: () =>
-      ok(api.agentStatus ? { ...AGENT, status: api.agentStatus } : AGENT),
+      ok({
+        ...AGENT,
+        ...(api.agentStatus ? { status: api.agentStatus } : {}),
+        ...api.agentExtra,
+      }),
     createAgent: (...a: unknown[]) => api.createAgent(...a),
     updateAgent: (...a: unknown[]) => api.updateAgent(...a),
     updateWorkflow: (...a: unknown[]) => api.updateWorkflow(...a),
     getUserTools: () => ok({ tools: api.tools }),
-    getWorkflow: () => ok({ success: true, data: api.workflow }),
+    getWorkflow: (...a: unknown[]) => api.getWorkflow(...a),
   },
 }));
 const MODEL = {
@@ -221,6 +227,10 @@ describe('WorkflowBuilder canvas', () => {
     });
     api.tools = [];
     api.agentStatus = undefined;
+    api.agentExtra = {};
+    api.getWorkflow
+      .mockReset()
+      .mockImplementation(() => ok({ success: true, data: api.workflow }));
     api.createAgent.mockReset();
     api.updateAgent.mockReset().mockImplementation(() => ok({ id: 'a1' }));
     api.updateWorkflow
@@ -667,6 +677,122 @@ describe('WorkflowBuilder canvas', () => {
       await act(async () => undefined);
       const form = api.updateAgent.mock.calls.at(-1)![1] as FormData;
       expect(form.get('status')).toBe('draft');
+    });
+  });
+
+  describe('while the saved graph loads', () => {
+    const button = (label: string) =>
+      [...container.querySelectorAll('button')].find(
+        (b) => b.textContent === label,
+      );
+    const saveDetails = async () => {
+      const onSave = sheet.props!.onSave as (values: object) => void;
+      await act(async () =>
+        onSave({
+          name: 'Renewal desk',
+          description: '',
+          allowPromptOverride: false,
+          imageFile: null,
+        }),
+      );
+      await act(async () => undefined);
+    };
+
+    // A save before the graph arrives would store an empty graph over it.
+    it('saves nothing until the graph has loaded', async () => {
+      api.agentStatus = 'draft';
+      let finish: (value: unknown) => void = () => undefined;
+      api.getWorkflow.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      await render();
+      expect(button('agents.form.buttons.saveDraft')!.disabled).toBe(true);
+      expect(button('agents.form.buttons.publish')!.disabled).toBe(true);
+      await act(async () => button('agents.form.buttons.saveDraft')!.click());
+      await saveDetails();
+      expect(api.updateAgent).not.toHaveBeenCalled();
+      await act(async () =>
+        finish({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: api.workflow }),
+        }),
+      );
+      await act(async () => undefined);
+      expect(button('agents.form.buttons.saveDraft')!.disabled).toBe(false);
+    });
+
+    it('shows a failed load with Retry instead of an empty canvas, and never saves it', async () => {
+      api.agentStatus = 'draft';
+      api.getWorkflow.mockImplementation(() =>
+        Promise.resolve({ ok: false, json: () => Promise.resolve({}) }),
+      );
+      await render();
+      const alert = container.querySelector('[role="alert"]');
+      expect(alert?.textContent).toContain(
+        'agents.workflow.builder.loadFailedTitle',
+      );
+      expect(container.querySelector('[data-testid="canvas"]')).toBeNull();
+      expect(button('agents.form.buttons.saveDraft')!.disabled).toBe(true);
+      await saveDetails();
+      expect(api.updateAgent).not.toHaveBeenCalled();
+
+      api.getWorkflow.mockImplementation(() =>
+        ok({ success: true, data: api.workflow }),
+      );
+      await act(async () => button('retry')!.click());
+      await act(async () => undefined);
+      expect(container.querySelector('[data-testid="canvas"]')).not.toBeNull();
+      expect(nodeButton('end')).not.toBeNull();
+      expect(button('agents.form.buttons.saveDraft')!.disabled).toBe(false);
+    });
+
+    // An older workflow agent kept a made-up description on the agent and
+    // none on its workflow: the agent's fields are what the builder shows
+    // and saves, so it opens clean.
+    it("opens clean on the agent's own name and description", async () => {
+      api.agentExtra = { description: 'Workflow agent: Renewal desk' };
+      api.workflow = {
+        ...workflowWith({ model_id: 'm1', llm_name: 'openai' }),
+        workflow: { name: 'Old name', description: '' },
+      };
+      await render();
+      expect(
+        container.textContent?.includes(
+          'agents.workflow.builder.unsavedChanges',
+        ),
+      ).toBe(false);
+      expect(
+        (sheet.props!.details as { description: string }).description,
+      ).toBe('Workflow agent: Renewal desk');
+      expect((sheet.props!.details as { name: string }).name).toBe(
+        'Renewal desk',
+      );
+    });
+
+    // The graph just saved is the one on the canvas: reading it back would
+    // drop the undo history and edits made while the save was out.
+    it('does not read back the graph a first save just wrote', async () => {
+      api.createAgent.mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({ id: 'a9', key: '', image: '', workflow_id: 'w9' }),
+            { status: 201, headers: { 'Content-Type': 'application/json' } },
+          ),
+      );
+      await render('/agents/manage/workflow/new');
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[data-add="agent"]')!
+          .click(),
+      );
+      await act(async () => button('agents.form.buttons.saveDraft')!.click());
+      await act(async () => undefined);
+      expect(api.createAgent).toHaveBeenCalledTimes(1);
+      // The canvas is what was built, not the fixture's saved graph.
+      expect(nodeButton('end')).toBeNull();
     });
   });
 });
