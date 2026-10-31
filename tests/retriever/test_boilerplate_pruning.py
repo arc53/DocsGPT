@@ -146,6 +146,15 @@ class TestBoilerplatePruningRules:
         cleaned = prune_chunk_text(text, query="")
         assert cleaned.count("## Examples") == 2
 
+    def test_preserves_repeated_section_headings_across_chunks(self):
+        docs = [
+            {"id": "doc1", "text": "## Examples\ncurl https://api.docsgpt.cloud"},
+            {"id": "doc2", "text": "## Examples\npython -m docsgpt"},
+        ]
+        pruned = prune_boilerplate(docs, query="")
+        assert "## Examples" in pruned[0]["text"]
+        assert "## Examples" in pruned[1]["text"]
+
     def test_preserves_repeated_factual_prose_across_chunks(self):
         docs = [
             {

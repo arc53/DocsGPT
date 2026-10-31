@@ -130,17 +130,18 @@ _PAGE_METADATA_RE = re.compile(
 
 
 def _is_boilerplate_candidate(line: str) -> bool:
-    """Classify whether a line represents identifiable boilerplate or title banners rather than factual prose."""
+    """Classify whether a line represents identifiable boilerplate or title banners rather than factual prose or section headings."""
     stripped = line.strip()
     if not stripped:
         return False
 
+    # Section headings (e.g. "# Authentication", "## Examples") must be preserved across chunks
+    if stripped.startswith("#"):
+        heading_text = stripped.lstrip("#").strip()
+        return bool(_DOC_TITLE_RE.match(heading_text) or _PAGE_METADATA_RE.match(heading_text))
+
     # Navigation controls, breadcrumbs, or pagination
     if _is_navigation_boilerplate(line):
-        return True
-
-    # Markdown headers (e.g. "# Overview", "## API Reference")
-    if stripped.startswith("#"):
         return True
 
     # Copyright, license, or legal notices
