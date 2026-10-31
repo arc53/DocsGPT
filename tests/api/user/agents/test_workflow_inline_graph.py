@@ -575,6 +575,16 @@ class TestGraphOnlySaves:
         assert _row(pg_conn, agent_id)["updated_at"] == before
         assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 2
 
+    def test_the_create_answers_with_the_updated_at_for_the_next_save(self, app, pg_conn):
+        """The builder doesn't read the new agent back, so its first save's answer carries the stamp."""
+        created = _create(app, pg_conn, {"name": "Flow", "agent_type": "workflow", "status": "draft",
+                                          "workflow_graph": _graph()})
+        assert _status(created) == 201, _json(created)
+        agent_id = _json(created)["id"]
+        stamp = _json(created)["updated_at"]
+        assert stamp and stamp == _row(pg_conn, agent_id)["updated_at"]
+        assert _status(_update(app, pg_conn, agent_id, {"name": "One", "expected_updated_at": stamp})) == 200
+
     def test_the_update_answers_with_the_new_updated_at_for_the_next_save(self, app, pg_conn):
         agent_id, _ = _workflow_agent(app, pg_conn)
         stamp = _row(pg_conn, agent_id)["updated_at"]

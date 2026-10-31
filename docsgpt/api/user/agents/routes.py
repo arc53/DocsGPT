@@ -1199,7 +1199,13 @@ class CreateAgent(Resource):
             return make_response(jsonify({"success": False}), 400)
         # A token without agents:keys never receives the plaintext agent key.
         visible_key = key if may_see_agent_keys(request) else mask_agent_key(key)
-        created = {"id": new_id, "key": visible_key, "image": _image_output(image_url, new_id, user)}
+        created = {
+            "id": new_id,
+            "key": visible_key,
+            "image": _image_output(image_url, new_id, user),
+            # The stamp the builder's next save sends as ``expected_updated_at``.
+            "updated_at": agent_row.get("updated_at"),
+        }
         if agent_type == "workflow":
             created["workflow_id"] = pg_workflow_id
         return make_response(jsonify(created), 201)
