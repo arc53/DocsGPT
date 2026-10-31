@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-01
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -439,7 +439,7 @@ Intra-op threads for the local ONNX runner; unset uses every core. It scales sub
 
 ### `EMBEDDINGS_CACHE_DIR`
 
-Type `str`, default `<DOCSGPT_HOME>\models`.
+Type `str`, default `<DOCSGPT_HOME>/models`.
 
 Where embedding models and their tokenizers are cached. Persistent by default: FastEmbed's own default is the temp dir.
 
@@ -522,7 +522,7 @@ A local copy of the model (a snapshot folder or its onnx folder). Nothing is dow
 
 ### `DECISION_CACHE_DIR`
 
-Type `str`, default `<DOCSGPT_HOME>\models\decision`.
+Type `str`, default `<DOCSGPT_HOME>/models/decision`.
 
 Where the decision model is downloaded, at its pinned revision, the first time it is needed or by `docsgpt decisions prefetch`.
 
@@ -987,7 +987,7 @@ Milvus collection name.
 
 ### `MILVUS_URI`
 
-Type `str`, default `<DOCSGPT_HOME>\milvus_local.db`.
+Type `str`, default `<DOCSGPT_HOME>/milvus_local.db`.
 
 Milvus server URI. The default is a milvus-lite (embedded) database file under the data home, like the other local stores.
 

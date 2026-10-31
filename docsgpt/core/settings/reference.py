@@ -77,7 +77,7 @@ def _default_text(field: FieldInfo) -> str:
     if isinstance(value, bool):
         return "`true`" if value else "`false`"
     if isinstance(value, str):
-        value = value.replace(str(home_dir()), HOME_PLACEHOLDER)
+        value = value.replace(str(home_dir()), HOME_PLACEHOLDER).replace("\\", "/")
         return "`\"\"`" if value == "" else f"`{value}`"
     if isinstance(value, (list, dict)):
         return f"`{json.dumps(value)}`"

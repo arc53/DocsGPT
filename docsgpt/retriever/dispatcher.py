@@ -536,6 +536,10 @@ class CompressingRetriever(BaseRetriever):
     def __init__(self, inner: BaseRetriever):
         self._inner = inner
 
+    @property
+    def __class__(self):
+        return self._inner.__class__
+
     def search(self, *args, **kwargs) -> List[Dict[str, Any]]:
         query = args[0] if args else kwargs.get("query", "")
         docs = self._inner.search(*args, **kwargs)
@@ -546,6 +550,15 @@ class CompressingRetriever(BaseRetriever):
         return getattr(self._inner, name)
 
 
+class CompressingDispatcher(CompressingRetriever, Dispatcher):
+    """Compressing retriever that is statically and dynamically a Dispatcher.
+
+    Preserves Dispatcher identity and capabilities for callers like InternalSearchTool
+    while applying post-retrieval boilerplate compression.
+    """
+    pass
+
+
 def build_dispatcher(create_classic: Callable[[], BaseRetriever], **kwargs):
     """Build a Dispatcher, or fall back to the legacy single retriever.
 
@@ -553,14 +566,15 @@ def build_dispatcher(create_classic: Callable[[], BaseRetriever], **kwargs):
     legacy single ClassicRAG built by ``create_classic`` (the kill-switch).
 
     When ``settings.CHUNK_COMPRESSION_ENABLED`` is True, wraps the retriever in
-    ``CompressingRetriever`` to prune boilerplate across the final returned documents.
+    ``CompressingDispatcher`` (or ``CompressingRetriever``) to prune boilerplate
+    across the final returned documents while preserving dispatcher capabilities.
 
     Args:
         create_classic: Zero-arg factory returning the legacy single retriever.
         **kwargs: Dispatcher constructor kwargs (including ``sources``).
 
     Returns:
-        A ``Dispatcher``, legacy retriever, or a ``CompressingRetriever``-wrapped instance.
+        A ``Dispatcher``, legacy retriever, or a compressed delegating retriever.
     """
     if not settings.PER_SOURCE_RETRIEVAL_ENABLED:
         retriever = create_classic()
@@ -568,5 +582,7 @@ def build_dispatcher(create_classic: Callable[[], BaseRetriever], **kwargs):
         retriever = Dispatcher(**kwargs)
 
     if getattr(settings, "CHUNK_COMPRESSION_ENABLED", False):
+        if isinstance(retriever, Dispatcher):
+            return CompressingDispatcher(retriever)
         return CompressingRetriever(retriever)
     return retriever

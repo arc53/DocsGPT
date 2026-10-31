@@ -20,10 +20,10 @@ _PROTECTED_QUALIFIERS = {
     "critical", "danger", "note", "important", "always"
 }
 
-# Regex for clearly identifiable breadcrumb patterns (e.g. Home > Docs > API)
-# Stricter than raw > or / to avoid matching endpoints like 'GET /users' or 'A | B'
+# Regex for clearly identifiable breadcrumb patterns:
+# Supports 'Home > API', 'Home / Guides / Setup', 'Docs » Reference', markdown link breadcrumbs
 _BREADCRUMB_RE = re.compile(
-    r"^(?:[\w\s\-]{2,}(?:\s*(?:›|»|>)\s*[\w\s\-]{2,}){2,}|(?:\*?\s*\[[^\]]+\]\([^\)]+\)\s*(?:›|»|>)\s*)+\[?[^\]]*\]?)$",
+    r"^(?:(?:\*?\s*\[[^\]]+\]\([^\)]+\)\s*|\b[\w\-]+(?:\s+[\w\-]+)*\s*)(?:[›»>]|/(?!\S))\s*)+(?:\[?[^\]]*\]?|\b[\w\-]+(?:\s+[\w\-]+)*)$",
     re.IGNORECASE
 )
 
@@ -111,7 +111,7 @@ def prune_chunk_text(
 
     query_tokens = _tokenize_query(query)
     lines = text.split("\n")
-    cleaned_lines: List[str] = []
+    cleaned_lines: List[Tuple[str, bool]] = []  # (line_text, is_inside_fence)
     
     # State tracking for code fences: (fence_char, fence_length)
     active_fence: Optional[Tuple[str, int]] = None
@@ -122,6 +122,7 @@ def prune_chunk_text(
         # Handle fenced code blocks per CommonMark rules
         fence_match = _FENCE_START_RE.match(stripped)
         if active_fence is not None:
+            cleaned_lines.append((line, True))
             char, length = active_fence
             # Closing fence must use the same character, have at least the opening length,
             # and have no trailing non-whitespace characters
@@ -129,16 +130,15 @@ def prune_chunk_text(
                 rest = stripped[len(fence_match.group(1)):].strip()
                 if not rest:
                     active_fence = None
-            cleaned_lines.append(line)
             continue
         elif fence_match:
             active_fence = (fence_match.group(1)[0], len(fence_match.group(1)))
-            cleaned_lines.append(line)
+            cleaned_lines.append((line, True))
             continue
 
         # Check for protected content BEFORE deduplication or navigation checks
         if _is_protected_line(line, query_tokens):
-            cleaned_lines.append(line)
+            cleaned_lines.append((line, False))
             continue
 
         # Check for navigation boilerplate
@@ -152,16 +152,21 @@ def prune_chunk_text(
                 continue
             seen_boilerplate.add(norm_line)
 
-        cleaned_lines.append(line)
+        cleaned_lines.append((line, False))
 
-    # Collapse multiple consecutive empty lines
+    # Collapse multiple consecutive empty lines OUTSIDE of fenced code blocks only
     result: List[str] = []
     prev_empty = False
-    for line in cleaned_lines:
-        is_empty = not line.strip()
+    for line_text, in_fence in cleaned_lines:
+        is_empty = not line_text.strip()
+        if in_fence:
+            result.append(line_text)
+            prev_empty = False
+            continue
+
         if is_empty and prev_empty:
             continue
-        result.append(line)
+        result.append(line_text)
         prev_empty = is_empty
 
     return "\n".join(result).strip()

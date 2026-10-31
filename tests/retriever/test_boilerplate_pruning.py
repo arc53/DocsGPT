@@ -3,7 +3,7 @@
 import sys
 from unittest.mock import Mock, MagicMock
 
-for mod in ["anthropic", "openai", "groq", "cohere", "pytest_postgresql", "httpx2", "redis", "google.genai", "google.generativeai"]:
+for mod in ["anthropic", "openai", "groq", "cohere", "pytest_postgresql", "httpx2", "redis", "google.genai", "google.generativeai", "celery", "celery.exceptions"]:
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
 
@@ -17,6 +17,8 @@ import pytest
 
 from docsgpt.retriever.dispatcher import (
     CompressingRetriever,
+    CompressingDispatcher,
+    Dispatcher,
     build_dispatcher,
 )
 from docsgpt.retriever.stages.boilerplate_pruning import (
@@ -39,6 +41,38 @@ class TestBoilerplatePruningRules:
         cleaned = prune_chunk_text(raw, query="payment")
         expected = "This service provides real-time transaction processing for payment requests."
         assert cleaned == expected
+
+    def test_preserves_blank_lines_inside_fenced_code(self):
+        raw = (
+            "Home > Guides\n"
+            "Here is the example code:\n"
+            "```python\n"
+            "def foo():\n"
+            "\n"
+            "\n"
+            "    return 42\n"
+            "```\n"
+            "\n"
+            "\n"
+            "Summary text after code block."
+        )
+        cleaned = prune_chunk_text(raw, query="example")
+        # Blank lines inside fence should be preserved
+        assert "def foo():\n\n\n    return 42" in cleaned
+        # Blank lines outside fence should be collapsed
+        assert "\n\n\nSummary" not in cleaned
+        assert "\n\nSummary text after code block." in cleaned
+
+    def test_breadcrumb_matching_variations_and_non_breadcrumbs(self):
+        # Breadcrumbs should be pruned when they are purely navigation boilerplate
+        assert prune_chunk_text("Home > API", query="database configuration") == ""
+        assert prune_chunk_text("Home / Guides / Setup", query="database configuration") == ""
+        assert prune_chunk_text("Docs » Reference", query="database configuration") == ""
+
+        # Non-breadcrumbs (HTTP methods and tables) must be preserved
+        assert "GET /api/v1/users" in prune_chunk_text("GET /api/v1/users", query="users")
+        assert "POST /v1/chat/completions" in prune_chunk_text("POST /v1/chat/completions", query="chat")
+        assert "| col1 | col2 |" in prune_chunk_text("| col1 | col2 |", query="col1")
 
     def test_preserves_code_blocks_and_inline_code(self):
         raw = (
@@ -135,6 +169,24 @@ class TestCompressingRetrieverIntegration:
         )
         retriever_disp = build_dispatcher(lambda: object(), source={"question": "q"})
         assert not isinstance(retriever_disp, CompressingRetriever)
+
+    def test_compressing_dispatcher_preserves_dispatcher_isinstance(self, monkeypatch):
+        monkeypatch.setattr(
+            "docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
+            True
+        )
+        monkeypatch.setattr(
+            "docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED",
+            True
+        )
+        retriever = build_dispatcher(
+            lambda: object(),
+            source={"question": "q", "active_docs": ["a"]},
+            sources=[],
+        )
+        assert isinstance(retriever, Dispatcher)
+        assert isinstance(retriever, CompressingDispatcher)
+        assert isinstance(retriever, CompressingRetriever)
 
     def test_build_dispatcher_enabled_wraps_in_compressing_retriever(self, monkeypatch):
         monkeypatch.setattr(
