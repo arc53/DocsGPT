@@ -72,7 +72,7 @@ import {
   getToolDisplayName,
   isAgentPickerToolVisible,
 } from '../utils/toolUtils';
-import { agentsListPath } from './paths';
+import { agentEditPath, agentsListPath, isWorkflowAgent } from './paths';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
@@ -1026,6 +1026,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           throw new Error('Failed to fetch agent');
         }
         const data = await response.json();
+        // A workflow belongs in its own editor: this form offers no workflow
+        // type, so saving here would turn it into a classic agent.
+        if (mode === 'edit' && isWorkflowAgent(data)) {
+          navigate(agentEditPath(agentId, true), { replace: true });
+          return;
+        }
 
         const agentSourceIds = selectedSourceIdsFromAgent(data);
         setSelectedSourceIds(new Set(agentSourceIds));

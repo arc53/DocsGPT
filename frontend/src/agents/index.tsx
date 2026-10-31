@@ -57,7 +57,7 @@ export default function Agents() {
       <Route
         path="manage/edit/:agentId"
         element={
-          <AgentRouteGuard key="edit" action="view">
+          <AgentRouteGuard key="edit" action="view" classicEditor>
             <NewAgent mode="edit" />
           </AgentRouteGuard>
         }

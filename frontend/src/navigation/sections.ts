@@ -421,8 +421,9 @@ export function buildAgentSection(
   access?: (AccessFields & { status?: string; agent_type?: string }) | null,
 ): Section {
   const isWorkflow = workflow || access?.agent_type === 'workflow';
-  // The classic edit path still renders a workflow (an old link, or a
-  // fallback before the agent loads), so it stays Overview's too.
+  // The classic edit path opens a workflow in its editor once the agent
+  // loads (an old link, or one built before the type was known); until
+  // then it is still this agent's Overview.
   const overviewAliases = isWorkflow ? [agentEditPath(agentId, false)] : [];
   const allows = (item: SectionItem) =>
     !access || canAgent(access, TAB_ACTIONS[item.key]);

@@ -198,8 +198,9 @@ describe('buildAgentSection', () => {
     );
   });
 
-  // The classic edit path still renders a workflow (an old link, a fallback
-  // when the agent isn't loaded): Overview stays the active tab there.
+  // A workflow on the classic edit path (an old link, a fallback built
+  // before its type was known) waits there for its editor: Overview stays
+  // the active tab meanwhile.
   it('keeps overview active on a workflow agent’s classic edit path', () => {
     const section = buildAgentSection('a1', 'Flow', false, {
       access: 'owner',

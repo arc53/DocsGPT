@@ -774,6 +774,47 @@ describe('NewAgent form', () => {
     });
   };
 
+  // The route guard sends a workflow on to its editor when its record says
+  // so; the form still never takes one it reads itself.
+  it('hands a workflow agent it loads on to the workflow editor', async () => {
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Flow',
+        description: 'd',
+        status: 'published',
+        agent_type: 'workflow',
+        workflow_id: 'wf-1',
+        allowed_actions: ['edit', 'view'],
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/manage/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+            <Route
+              path="/agents/manage/workflow/edit/:agentId"
+              element={<div data-testid="workflow-builder" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    await act(async () => undefined);
+    expect(
+      container.querySelector('[data-testid="workflow-builder"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        'input[placeholder="agents.form.placeholders.agentName"]',
+      ),
+    ).toBeNull();
+  });
+
   const goToTools = () =>
     container.querySelector<HTMLAnchorElement>(
       '[data-title="settings.tools.label"] [data-testid="picker-footer"] a',
