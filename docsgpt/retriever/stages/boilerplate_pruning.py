@@ -15,16 +15,33 @@ logger = logging.getLogger(__name__)
 
 # Factual qualifiers, negations, and cautionary markers that MUST NEVER be pruned
 _PROTECTED_QUALIFIERS = {
-    "not", "never", "cannot", "cant", "wont", "neither", "none", "must",
-    "required", "only", "except", "unless", "deprecated", "caution", "warning",
-    "critical", "danger", "note", "important", "always"
+    "not",
+    "never",
+    "cannot",
+    "cant",
+    "wont",
+    "neither",
+    "none",
+    "must",
+    "required",
+    "only",
+    "except",
+    "unless",
+    "deprecated",
+    "caution",
+    "warning",
+    "critical",
+    "danger",
+    "note",
+    "important",
+    "always",
 }
 
 # Regex for clearly identifiable breadcrumb patterns:
 # Supports 'Home > API', 'Home / Guides / Setup', 'Docs » Reference', markdown link breadcrumbs
 _BREADCRUMB_RE = re.compile(
     r"^(?:(?:\*?\s*\[[^\]]+\]\([^\)]+\)\s*|\b[\w\-]+(?:\s+[\w\-]+)*\s*)(?:[›»>]|/(?!\S))\s*)+(?:\[?[^\]]*\]?|\b[\w\-]+(?:\s+[\w\-]+)*)$",
-    re.IGNORECASE
+    re.IGNORECASE,
 )
 
 _NAV_CONTROL_RE = re.compile(
@@ -33,13 +50,10 @@ _NAV_CONTROL_RE = re.compile(
     r"previous page:?.*|next page:?.*|«\s*previous\s*|\s*next\s*»|"
     r"edit this page(?: on github)?|was this (?:page|article) helpful\??|"
     r"share this page|print this page)$",
-    re.IGNORECASE
+    re.IGNORECASE,
 )
 
-_PAGINATION_LINK_RE = re.compile(
-    r"^\[\s*(?:«?\s*previous|\s*next\s*»)\s*\]\([^\)]+\)$",
-    re.IGNORECASE
-)
+_PAGINATION_LINK_RE = re.compile(r"^\[\s*(?:«?\s*previous|\s*next\s*»)\s*\]\([^\)]+\)$", re.IGNORECASE)
 
 _FENCE_START_RE = re.compile(r"^(`{3,}|~{3,})")
 
@@ -100,11 +114,7 @@ def _is_navigation_boilerplate(line: str) -> bool:
     return False
 
 
-def prune_chunk_text(
-    text: str,
-    query: str = "",
-    seen_boilerplate: Optional[Set[str]] = None
-) -> str:
+def prune_chunk_text(text: str, query: str = "", seen_boilerplate: Optional[Set[str]] = None) -> str:
     """Extractive pruning of navigation boilerplate and duplicate lines from a single chunk."""
     if not text:
         return ""
@@ -112,7 +122,7 @@ def prune_chunk_text(
     query_tokens = _tokenize_query(query)
     lines = text.split("\n")
     cleaned_lines: List[Tuple[str, bool]] = []  # (line_text, is_inside_fence)
-    
+
     # State tracking for code fences: (fence_char, fence_length)
     active_fence: Optional[Tuple[str, int]] = None
 
@@ -127,7 +137,7 @@ def prune_chunk_text(
             # Closing fence must use the same character, have at least the opening length,
             # and have no trailing non-whitespace characters
             if fence_match and fence_match.group(1)[0] == char and len(fence_match.group(1)) >= length:
-                rest = stripped[len(fence_match.group(1)):].strip()
+                rest = stripped[len(fence_match.group(1)) :].strip()
                 if not rest:
                     active_fence = None
             continue
@@ -172,10 +182,7 @@ def prune_chunk_text(
     return "\n".join(result).strip()
 
 
-def prune_boilerplate(
-    docs: List[Dict[str, Any]],
-    query: str = ""
-) -> List[Dict[str, Any]]:
+def prune_boilerplate(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
     """Prunes navigation and duplicate boilerplate across the final retrieved documents."""
     if not docs:
         return docs
@@ -187,11 +194,7 @@ def prune_boilerplate(
         pruned_doc = dict(doc)
         text = doc.get("text")
         if isinstance(text, str) and text:
-            pruned_doc["text"] = prune_chunk_text(
-                text,
-                query=query,
-                seen_boilerplate=seen_boilerplate
-            )
+            pruned_doc["text"] = prune_chunk_text(text, query=query, seen_boilerplate=seen_boilerplate)
         pruned_docs.append(pruned_doc)
 
     return pruned_docs

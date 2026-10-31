@@ -1,13 +1,26 @@
+# ruff: noqa: E402
 """Unit tests for DocsGPT boilerplate pruning stage and CompressingRetriever."""
 
 import sys
-from unittest.mock import Mock, MagicMock
+import types
+from unittest.mock import MagicMock, Mock
 
-for mod in ["anthropic", "openai", "groq", "cohere", "pytest_postgresql", "httpx2", "redis", "google.genai", "google.generativeai", "celery", "celery.exceptions"]:
+for mod in [
+    "anthropic",
+    "openai",
+    "groq",
+    "cohere",
+    "pytest_postgresql",
+    "httpx2",
+    "redis",
+    "google.genai",
+    "google.generativeai",
+    "celery",
+    "celery.exceptions",
+]:
     if mod not in sys.modules:
         sys.modules[mod] = MagicMock()
 
-import types
 if "google" not in sys.modules or not hasattr(sys.modules["google"], "genai"):
     gmod = types.ModuleType("google")
     gmod.genai = sys.modules["google.genai"]
@@ -16,14 +29,14 @@ if "google" not in sys.modules or not hasattr(sys.modules["google"], "genai"):
 import pytest
 
 from docsgpt.retriever.dispatcher import (
-    CompressingRetriever,
     CompressingDispatcher,
+    CompressingRetriever,
     Dispatcher,
     build_dispatcher,
 )
 from docsgpt.retriever.stages.boilerplate_pruning import (
-    prune_chunk_text,
     prune_boilerplate,
+    prune_chunk_text,
 )
 
 
@@ -121,7 +134,7 @@ class TestBoilerplatePruningRules:
     def test_deduplicates_boilerplate_across_chunks(self):
         docs = [
             {"id": "doc1", "text": "DocsGPT Documentation v2.4\nFactual chunk 1 content."},
-            {"id": "doc2", "text": "DocsGPT Documentation v2.4\nFactual chunk 2 content."}
+            {"id": "doc2", "text": "DocsGPT Documentation v2.4\nFactual chunk 2 content."},
         ]
         pruned = prune_boilerplate(docs, query="content")
         assert "DocsGPT Documentation v2.4" in pruned[0]["text"]
@@ -133,9 +146,7 @@ class TestBoilerplatePruningRules:
 class TestCompressingRetrieverIntegration:
     def test_positional_and_keyword_query_handling(self):
         mock_inner = Mock()
-        mock_inner.search.return_value = [
-            {"id": "d1", "text": "Home > API\nThe primary endpoint is /v1/chat."}
-        ]
+        mock_inner.search.return_value = [{"id": "d1", "text": "Home > API\nThe primary endpoint is /v1/chat."}]
         retriever = CompressingRetriever(mock_inner)
 
         # Test positional query invocation (e.g. from headless_runner / internal_search)
@@ -148,37 +159,22 @@ class TestCompressingRetrieverIntegration:
         assert res_kw[0]["text"] == "The primary endpoint is /v1/chat."
 
     def test_build_dispatcher_disabled_returns_raw_retriever(self, monkeypatch):
-        monkeypatch.setattr(
-            "docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED",
-            False
-        )
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False)
         # Test ClassicRAG path
-        monkeypatch.setattr(
-            "docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
-            False
-        )
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
         sentinel = object()
         retriever_classic = build_dispatcher(lambda: sentinel)
         assert retriever_classic is sentinel
         assert not isinstance(retriever_classic, CompressingRetriever)
 
         # Test Dispatcher path
-        monkeypatch.setattr(
-            "docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
-            True
-        )
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
         retriever_disp = build_dispatcher(lambda: object(), source={"question": "q"})
         assert not isinstance(retriever_disp, CompressingRetriever)
 
     def test_compressing_dispatcher_preserves_dispatcher_isinstance(self, monkeypatch):
-        monkeypatch.setattr(
-            "docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
-            True
-        )
-        monkeypatch.setattr(
-            "docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED",
-            True
-        )
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", True)
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
         retriever = build_dispatcher(
             lambda: object(),
             source={"question": "q", "active_docs": ["a"]},
@@ -189,14 +185,8 @@ class TestCompressingRetrieverIntegration:
         assert isinstance(retriever, CompressingRetriever)
 
     def test_build_dispatcher_enabled_wraps_in_compressing_retriever(self, monkeypatch):
-        monkeypatch.setattr(
-            "docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
-            False
-        )
-        monkeypatch.setattr(
-            "docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED",
-            True
-        )
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED", False)
+        monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", True)
         inner = Mock()
         inner.search.return_value = [{"id": "d1", "text": "Home > Guides\nSetup guide."}]
         retriever = build_dispatcher(lambda: inner)
