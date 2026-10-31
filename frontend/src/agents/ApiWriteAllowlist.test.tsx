@@ -460,6 +460,19 @@ describe('ApiWriteAllowlist', () => {
     expect(onConfigChange).toHaveBeenCalledWith(expected, undefined);
   });
 
+  it('sends the stamp the agent was opened at, and says a teammate saved first on a 409', async () => {
+    updateAgent.mockResolvedValue({ ok: false, status: 409 });
+    await render(agent({ updated_at: 'stamp-1' } as Partial<Agent>));
+    await expand();
+    await act(async () => choice('tg', 'always').click());
+    const form = updateAgent.mock.calls.at(-1)![1] as FormData;
+    expect(form.get('expected_updated_at')).toBe('stamp-1');
+    expect(choice('tg', 'off').getAttribute('data-state')).toBe('on');
+    expect(selectActionToast(store.getState())?.message).toBe(
+      'agents.form.errors.staleWrite',
+    );
+  });
+
   it('puts the choice back and says so when saving fails', async () => {
     updateAgent.mockResolvedValue({ ok: false });
     await render(agent());

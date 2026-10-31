@@ -39,7 +39,7 @@ type UseAgentMenuOptions = {
    * The config the menu's own Access details saved (its write allowlist).
    * The page puts it on `agent`, which the dialog reopens from.
    */
-  onConfigChange?: (config: AgentConfig) => void;
+  onConfigChange?: (config: AgentConfig, updatedAt?: string) => void;
 };
 
 /**

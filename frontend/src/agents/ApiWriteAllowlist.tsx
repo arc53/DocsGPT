@@ -132,8 +132,10 @@ function ToolAllowlist({
  *
  * A change saves at once, on top of the agent's last saved config
  * (`getSavedConfig`), so edits still pending in the form are not saved with
- * it. `onConfigChange` receives the config as saved and the agent's new
- * `updated_at`, which the builder's next save sends as its stale-write stamp.
+ * it. The save sends the agent's `updated_at` as its stale-write stamp, so
+ * a teammate's save since the agent was opened refuses it (409) rather than
+ * the new stamp hiding their edit; `onConfigChange` receives the config as
+ * saved and the new `updated_at`, which the builder's next save sends.
  */
 export default function ApiWriteAllowlist({
   agent,
@@ -248,12 +250,15 @@ export default function ApiWriteAllowlist({
     };
     const form = new FormData();
     form.append('config', JSON.stringify(config));
+    if (agent.updated_at) form.append('expected_updated_at', agent.updated_at);
+    let stale = false;
     try {
       const response = await userService.updateAgent(
         agent.id ?? '',
         form,
         token,
       );
+      stale = response.status === 409;
       if (!response.ok) throw new Error('save failed');
       const saved = await Promise.resolve()
         .then(() => response.json())
@@ -264,7 +269,9 @@ export default function ApiWriteAllowlist({
       dispatch(
         showActionToast({
           variant: 'destructive',
-          message: t(`${K}.saveFailed`),
+          message: stale
+            ? t('agents.form.errors.staleWrite')
+            : t(`${K}.saveFailed`),
         }),
       );
     } finally {

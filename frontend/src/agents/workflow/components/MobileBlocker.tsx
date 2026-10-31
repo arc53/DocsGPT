@@ -50,7 +50,7 @@ export default function MobileBlocker({
   loading?: boolean;
   onDeleted?: () => void;
   onKeyRegenerated?: (key: string) => void;
-  onConfigChange?: (config: AgentConfig) => void;
+  onConfigChange?: (config: AgentConfig, updatedAt?: string) => void;
 }) {
   const { t } = useTranslation();
   const analyticsEnabled = useSelector(selectAnalyticsEnabled);
