@@ -222,6 +222,21 @@ describe('loadChatPrompt', () => {
     expect(service.updatePreferences).not.toHaveBeenCalled();
     expect(localStorage.getItem(LEGACY_PROMPT_KEY)).not.toBeNull();
   });
+
+  // The first load removed the browser's copy; a renewal whose read fails
+  // mustn't drop chats to default while the server still holds the prompt.
+  it('keeps the confirmed prompt when a renewal gets no server answer', async () => {
+    localStorage.setItem(LEGACY_PROMPT_KEY, JSON.stringify(presets[1]));
+    const store = makeStore();
+    await store.dispatch(
+      loadChatPrompt(stored('p-own'), listed, jwtFor('alice', 1)),
+    );
+    await store.dispatch(loadChatPrompt(null, listed, jwtFor('alice', 2)));
+    expect(chatPromptOf(store)).toEqual(own);
+    await store.dispatch(loadChatPrompt(null, [], jwtFor('alice', 3)));
+    expect(chatPromptOf(store)).toEqual(own);
+    expect(service.updatePreferences).not.toHaveBeenCalled();
+  });
 });
 
 describe('chooseChatPrompt', () => {

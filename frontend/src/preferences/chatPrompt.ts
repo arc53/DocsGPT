@@ -219,9 +219,10 @@ function promptFor(id: string, prompts: Prompt[]): Prompt {
  * listed, it is saved there and the browser's copy removed (kept for the
  * next start if the save fails). An account that stored one, even
  * `default`, keeps it, and the browser's copy is dropped. With no server
- * answer (signed out, an unreachable server) the browser's copy is used
- * while it is listed, else `default`, and nothing is sent. A pick the user
- * made meanwhile stays.
+ * answer (signed out, an unreachable server) the prompt this session
+ * already confirmed stays; with none, the browser's copy is used while it is
+ * listed, else `default`, and nothing is sent. A pick the user made
+ * meanwhile stays.
  *
  * Args:
  *   server: The server's chat prompt, or null when there was no answer.
@@ -240,6 +241,13 @@ export const loadChatPrompt =
     const legacyListed = legacy ? listed(legacy.id) : undefined;
 
     if (server === null) {
+      // A renewal whose read failed: the browser's copy went at the first
+      // load, so keep what this session already confirmed.
+      if (session.confirmed) {
+        const known = listed(session.confirmed.id);
+        dispatch(setPrompt(known ? asChatPrompt(known) : session.confirmed));
+        return;
+      }
       dispatch(
         setPrompt(
           legacyListed ? asChatPrompt(legacyListed) : DEFAULT_CHAT_PROMPT,
