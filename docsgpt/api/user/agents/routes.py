@@ -38,6 +38,7 @@ from docsgpt.api.user.resource_access import (
     parse_confirmations,
     payload_for,
     plan_sponsors,
+    ref_attachable,
     require,
     resolve,
     resource_states,
@@ -283,48 +284,6 @@ POLICY_FIELDS = (
 def _denied(err: AccessDenied):
     """The JSON error response for an :class:`AccessDenied`."""
     return make_response(jsonify({"success": False, "message": err.message}), err.status)
-
-
-def _tool_attachable(conn, tool_id: str, caller: str) -> bool:
-    """Whether ``caller`` may newly attach ``tool_id`` to an agent.
-
-    Builtin synthetic ids belong to no one. Otherwise the caller must own the
-    tool or reach it with ``use_in_own``. The agent owner owning it is not
-    enough: an editor could otherwise wire the owner's private tool (run with
-    the owner's credentials) into an agent the editor controls.
-
-    Args:
-        conn: Open database connection.
-        tool_id: The tool id being attached.
-        caller: The user making the change.
-
-    Returns:
-        True when the attachment is allowed.
-    """
-    tid = str(tool_id)
-    if is_synthesized_tool_id(tid):
-        return True
-    ra = resolve(conn, "tool", tid, caller)
-    return ra is not None and ra.can("use_in_own")
-
-
-def _ref_attachable(conn, resource_type: str, resource_id: str, caller: str) -> bool:
-    """Whether ``caller`` may newly reference a source/prompt from an agent.
-
-    Like tools, the caller's own access counts, not the agent owner's.
-
-    Args:
-        conn: Open database connection.
-        resource_type: ``source`` or ``prompt``.
-        resource_id: The referenced id.
-        caller: The user making the change.
-
-    Returns:
-        True when the caller owns it or a team grant reaches them.
-    """
-    if not resource_id:
-        return True
-    return can_access(conn, resource_type, str(resource_id), caller)
 
 
 def _policy_changed(existing: dict, update_fields: dict) -> bool:
@@ -1014,14 +973,14 @@ class CreateAgent(Resource):
                     [source_id_resolved] if source_id_resolved else []
                 ) + extra_source_ids
                 for sid in referenced_sources:
-                    if not can_access(conn, "source", sid, user):
+                    if not ref_attachable(conn, "source", sid, user):
                         return make_response(
                             jsonify({"success": False, "message": "Source not accessible"}),
                             403,
                         )
                 prompt_ref = data.get("prompt_id")
-                if prompt_ref and prompt_ref != "default" and looks_like_uuid(prompt_ref):
-                    if not can_access(conn, "prompt", prompt_ref, user):
+                if prompt_ref and looks_like_uuid(prompt_ref):
+                    if not ref_attachable(conn, "prompt", prompt_ref, user):
                         return make_response(
                             jsonify({"success": False, "message": "Prompt not accessible"}),
                             403,
@@ -1029,7 +988,7 @@ class CreateAgent(Resource):
                 # Tools run with the agent owner's credentials: attach only your
                 # own, or ones a team lets you use in your agents.
                 for tid in data.get("tools") or []:
-                    if not _tool_attachable(conn, tid, user):
+                    if not ref_attachable(conn, "tool", tid, user):
                         return make_response(
                             jsonify({"success": False, "message": "Tool not accessible"}),
                             403,
@@ -1549,7 +1508,7 @@ class UpdateAgent(Resource):
                 # already on the agent (set by the owner) are exempt: an editor
                 # may keep them even when they aren't independently shared, so a
                 # plain save of an owner-configured agent isn't rejected — only
-                # NEWLY added refs need a grant. Owners pass can_access for their
+                # NEWLY added refs need a grant. Owners pass ref_attachable for their
                 # own resources regardless, so this carve-out is a no-op for them
                 # and the gate stays effective against an editor adding new refs.
                 # Mirrors the unchanged-tool carve-out below.
@@ -1568,7 +1527,7 @@ class UpdateAgent(Resource):
                 for sid in referenced_sources:
                     if str(sid) in existing_source_refs:
                         continue
-                    if not _ref_attachable(conn, "source", sid, user):
+                    if not ref_attachable(conn, "source", sid, user):
                         return make_response(
                             jsonify({"success": False, "message": "Source not accessible"}), 403
                         )
@@ -1577,7 +1536,7 @@ class UpdateAgent(Resource):
                     new_prompt_id
                     and looks_like_uuid(str(new_prompt_id))
                     and str(new_prompt_id) != str(existing_agent.get("prompt_id") or "")
-                    and not _ref_attachable(conn, "prompt", new_prompt_id, user)
+                    and not ref_attachable(conn, "prompt", new_prompt_id, user)
                 ):
                     return make_response(
                         jsonify({"success": False, "message": "Prompt not accessible"}), 403
@@ -1595,7 +1554,7 @@ class UpdateAgent(Resource):
                     for tid in update_fields["tools"] or []:
                         if str(tid) in existing_tools:
                             continue
-                        if not _tool_attachable(conn, tid, user):
+                        if not ref_attachable(conn, "tool", tid, user):
                             return make_response(
                                 jsonify(
                                     {"success": False, "message": "Tool not accessible"}

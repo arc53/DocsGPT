@@ -31,7 +31,7 @@ from sqlalchemy import Connection, text
 
 from docsgpt.connectors.permissions import holds_owner_credentials, owner_credential_writes
 from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.team_resource_grants import (
@@ -433,6 +433,43 @@ def can_use_ref(conn: Connection, resource_type: str, resource_id: str, user_id:
         return False
     ra = resolve(conn, resource_type, str(resource_id), user_id)
     return ra is not None and ra.can(REF_USE_ACTION[resource_type])
+
+
+def ref_attachable(conn: Connection, resource_type: str, resource_id: Optional[str], caller: Optional[str]) -> bool:
+    """Whether ``caller`` may newly reference a resource from an agent or a workflow node.
+
+    The one gate for a save that adds a source, prompt or tool: agent create
+    and update and workflow node saves all ask it. The caller's own access
+    counts, not the holder owner's: an editor of a shared agent must not wire
+    in the owner's private tool (run with the owner's credentials), source or
+    prompt. Refs that belong to no one always pass: an empty ref, the
+    ``default`` source and prompt presets, and the synthetic ids of default
+    and builtin tools. A ref already on the holder is the caller's business
+    to skip; this only judges new ones.
+
+    Args:
+        conn: Open database connection.
+        resource_type: ``source``, ``prompt`` or ``tool``.
+        resource_id: The referenced id.
+        caller: The user saving, owner or editor.
+
+    Returns:
+        True when the caller may attach it (see :func:`can_use_ref`).
+    """
+    if not resource_id:
+        return True
+    rid = str(resource_id)
+    if resource_type == "source" and rid == "default":
+        return True
+    if resource_type == "prompt" and rid in ("default", *STORED_PROMPT_PRESETS):
+        return True
+    if resource_type == "tool":
+        # Lazy: default_tools imports this module lazily too.
+        from docsgpt.agents.default_tools import is_synthesized_tool_id
+
+        if is_synthesized_tool_id(rid):
+            return True
+    return can_use_ref(conn, resource_type, rid, caller)
 
 
 def can_sponsor_ref(conn: Connection, resource_type: str, resource_id: str, user_id: Optional[str]) -> bool:

@@ -22,10 +22,10 @@ from docsgpt.api.user.resource_access import (
     AccessDenied,
     best_effort,
     cached_resolves,
-    can_use_ref,
     named_ref_keys,
     parse_confirmations,
     plan_sponsors,
+    ref_attachable,
     resolve,
     resource_states,
     sponsor_audience,
@@ -200,17 +200,11 @@ def _new_node_ref_denied(
     Returns:
         An :class:`AccessDenied` to return, or None when every new ref is fine.
     """
-    from docsgpt.agents.default_tools import is_synthesized_tool_id
-
     existing = set(_node_refs(previous_nodes))
     for resource_type, resource_id in _node_refs(new_nodes):
         if (resource_type, resource_id) in existing:
             continue
-        if resource_type == "tool" and is_synthesized_tool_id(resource_id):
-            continue
-        if resource_type == "source" and resource_id == "default":
-            continue
-        if not can_use_ref(conn, resource_type, resource_id, caller):
+        if not ref_attachable(conn, resource_type, resource_id, caller):
             return AccessDenied(403, f"{resource_type.capitalize()} not accessible")
     return None
 
