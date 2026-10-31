@@ -506,6 +506,22 @@ def _without_response_id(turn: Dict[str, Any]) -> Dict[str, Any]:
     return {**turn, "metadata": {k: v for k, v in metadata.items() if k != "response_id"}}
 
 
+class UnfinishedWorkflowError(Exception):
+    """A chat named a draft workflow agent whose stored graph isn't finished.
+
+    A draft's graph saves with its shape checked only, so the stored graph may
+    lack a start or end node or break another graph rule. Its builder's
+    Preview runs the graph it sends and stops on those rules; a chat with the
+    draft runs the stored one, so it stops here instead.
+    """
+
+    code = "workflow_unfinished"
+    message = "This workflow isn't finished yet, so it can't run. Finish it in the workflow builder first."
+
+    def __init__(self) -> None:
+        super().__init__(self.message)
+
+
 class StreamProcessor:
     def __init__(
         self,
@@ -1602,6 +1618,11 @@ class StreamProcessor:
                 self._agent_data = self._get_data_from_api_key(effective_key)
             else:
                 with db_readonly() as conn:
+                    if draft_row.get("agent_type") == "workflow":
+                        from docsgpt.api.user.agents.graph_checks import unfinished_graph_errors
+
+                        if unfinished_graph_errors(conn, draft_row):
+                            raise UnfinishedWorkflowError()
                     self._agent_data = self._agent_run_data(conn, draft_row)
             if self._agent_data.get("_id"):
                 self.agent_id = str(self._agent_data.get("_id"))
