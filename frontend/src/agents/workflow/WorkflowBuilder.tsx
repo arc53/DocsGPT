@@ -1950,6 +1950,9 @@ function WorkflowBuilderInner() {
           // The canvas holds what was saved: no reading it back.
           justSavedWorkflowId.current = savedWorkflowId;
           setWorkflowId(savedWorkflowId);
+          // The save's own refresh ran before the workflow had an id here:
+          // read its sponsors and run states now.
+          void refreshResourceDetails(savedWorkflowId);
         }
         setPendingConfig(null);
         setImageFile(null);
@@ -1990,6 +1993,7 @@ function WorkflowBuilderInner() {
       folderId,
       t,
       sponsoredSave.save,
+      refreshResourceDetails,
       markSaved,
       canSave,
     ],

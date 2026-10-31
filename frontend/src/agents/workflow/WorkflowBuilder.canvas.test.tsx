@@ -639,6 +639,8 @@ describe('WorkflowBuilder canvas', () => {
       await act(async () => undefined);
       expect(confirms).toEqual([null, JSON.stringify(['tool:t1'])]);
       expect(unsaved()).toBe(false);
+      // The new workflow's sponsors and run states are read once it exists.
+      expect(api.getWorkflow).toHaveBeenCalledWith('w9', 'token');
     });
 
     it('publishes a draft without another change, in one request', async () => {
