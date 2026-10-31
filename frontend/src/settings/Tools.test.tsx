@@ -68,7 +68,15 @@ vi.mock('./ToolConfig', async () => {
   };
 });
 vi.mock('./RemoteDeviceConfig', () => ({ default: () => null }));
-vi.mock('../modals/AddToolModal', () => ({ default: () => null }));
+const addTool = vi.hoisted(() => ({
+  props: null as null | { onToolsCreated: (ids: string[]) => void },
+}));
+vi.mock('../modals/AddToolModal', () => ({
+  default: (props: { onToolsCreated: (ids: string[]) => void }) => {
+    addTool.props = props;
+    return null;
+  },
+}));
 const confirm = vi.hoisted(() => ({
   props: null as null | {
     modalState: string;
@@ -227,6 +235,33 @@ describe('Tools', () => {
     getUserTools.mockImplementation(() => jsonResponse({ tools }));
     await renderTools(root);
   };
+
+  describe('a tool made from Add tool', () => {
+    it('reloads the list and opens a lone new tool', async () => {
+      await render([ownTool]);
+      const fresh = { ...ownTool, id: 'fresh', displayName: 'Fresh' };
+      getUserTools.mockImplementation(() =>
+        jsonResponse({ tools: [ownTool, fresh] }),
+      );
+      const calls = getUserTools.mock.calls.length;
+      await act(async () => addTool.props!.onToolsCreated(['fresh']));
+      expect(getUserTools.mock.calls.length).toBeGreaterThan(calls);
+      expect(toolConfigProps).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          tool: expect.objectContaining({ id: 'fresh' }),
+        }),
+      );
+    });
+
+    it('only reloads after a run that made several, or none', async () => {
+      await render([ownTool]);
+      const calls = getUserTools.mock.calls.length;
+      await act(async () => addTool.props!.onToolsCreated(['a', 'b']));
+      await act(async () => addTool.props!.onToolsCreated([]));
+      expect(getUserTools.mock.calls.length).toBe(calls + 2);
+      expect(toolConfigProps).not.toHaveBeenCalled();
+    });
+  });
 
   const card = (name: string) =>
     Array.from(container.querySelectorAll<HTMLElement>('[data-slot="card"]'))

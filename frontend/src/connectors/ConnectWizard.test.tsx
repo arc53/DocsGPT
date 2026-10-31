@@ -959,11 +959,27 @@ describe('ConnectWizard', () => {
     });
     setupOk([], [TELEGRAM_TOOL]);
     const onNavigate = vi.fn();
-    await render(base, vi.fn(), { onNavigate });
+    const store = await render(
+      base,
+      vi.fn(),
+      { onNavigate },
+      [],
+      [{ id: 'old-chat-doc' }],
+    );
     await connectWithKey('t');
     await click('settings.connectors.wizard.tryInChat');
-    expect(onNavigate).toHaveBeenCalledWith('/c/new');
+    expect(onNavigate).toHaveBeenCalledWith('/c/new', {
+      beforeLeave: expect.any(Function),
+    });
     expect(document.body.textContent).not.toContain('NEW_CHAT');
+    const selected = () =>
+      (store.getState() as { preference: { selectedDocs: unknown[] } })
+        .preference.selectedDocs;
+    // The chat keeps its sources while the opener asks...
+    expect(selected()).toEqual([{ id: 'old-chat-doc' }]);
+    // ...and drops them once the reader leaves.
+    await act(async () => onNavigate.mock.calls[0][1].beforeLeave());
+    expect(selected()).toEqual([]);
   });
 
   it.each([

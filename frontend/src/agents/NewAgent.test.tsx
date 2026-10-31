@@ -52,6 +52,7 @@ const mocks = vi.hoisted(() => {
     detailsProps: vi.fn(),
     shareProps: vi.fn(),
     reconnect: vi.fn(),
+    signInOptions: null as null | { onNavigate?: (to: string) => void },
     toolsCalls: [] as number[],
     fileUploadProps: null as null | { onUpload: (files: File[]) => void },
     addToolProps: null as null | {
@@ -65,7 +66,10 @@ const { jsonResponse } = mocks;
 
 vi.mock('../connectors/SignInAgainNotice', () => ({
   default: () => null,
-  useSignInAgain: () => ({ reconnect: mocks.reconnect, modals: null }),
+  useSignInAgain: (options: { onNavigate?: (to: string) => void }) => {
+    mocks.signInOptions = options;
+    return { reconnect: mocks.reconnect, modals: null };
+  },
 }));
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) => selector(mockState),
@@ -881,6 +885,17 @@ describe('NewAgent form', () => {
     await typeName('Support bot');
     await act(async () =>
       mocks.addToolProps!.onNavigate!('/settings/connectors'),
+    );
+    expect(asked()).toBe(true);
+  });
+
+  // A connection that can't sign in again in place opens its connector
+  // page: an exit like any other.
+  it('asks before a reconnect leaves for the connector page', async () => {
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      mocks.signInOptions!.onNavigate!('/settings/connectors?connector=x'),
     );
     expect(asked()).toBe(true);
   });

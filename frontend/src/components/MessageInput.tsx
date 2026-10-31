@@ -1846,8 +1846,7 @@ export default function MessageInput({
           modalState={addToolModalState}
           setModalState={setAddToolModalState}
           getUserTools={fetchUserTools}
-          onToolAdded={fetchUserTools}
-          onDevicePaired={fetchUserTools}
+          onToolsCreated={() => fetchUserTools()}
         />
       )}
 

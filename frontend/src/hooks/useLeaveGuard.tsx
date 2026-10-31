@@ -5,6 +5,35 @@ import { type NavigateOptions, useNavigate } from 'react-router-dom';
 import ConfirmationModal from '../modals/ConfirmationModal';
 
 /**
+ * How a programmatic exit leaves: the router's options, plus `beforeLeave`,
+ * which runs only once leaving is allowed, right before the navigation (a
+ * "Try in chat" that clears the chat's selection must not clear it when the
+ * reader stays).
+ */
+export type LeaveOptions = NavigateOptions & { beforeLeave?: () => void };
+
+/** A programmatic exit, a builder's guarded one or the router's. */
+export type LeaveTo = (path: string, options?: LeaveOptions) => void;
+
+/**
+ * Leave now through the router, running `beforeLeave` first.
+ *
+ * Args:
+ *   navigate: The router's navigate.
+ *   path: Where to go.
+ *   options: The router's options and `beforeLeave`.
+ */
+export function leaveNow(
+  navigate: (path: string, options?: NavigateOptions) => void,
+  path: string,
+  options: LeaveOptions = {},
+): void {
+  const { beforeLeave, ...navigateOptions } = options;
+  beforeLeave?.();
+  navigate(path, navigateOptions);
+}
+
+/**
  * Asks before a builder's own exits leave unsaved work: a picker footer's
  * "Go to Tools / Knowledge / Prompts" link and Upload's Browse connectors.
  * With nothing unsaved they go at once; otherwise a confirm asks "Leave
@@ -24,19 +53,19 @@ export function useLeaveGuard(dirty: boolean): {
   onNavigate: (
     close?: () => void,
   ) => (event: MouseEvent<HTMLAnchorElement>) => void;
-  leaveTo: (path: string, options?: NavigateOptions) => void;
+  leaveTo: LeaveTo;
   dialog: ReactNode;
 } {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [pending, setPending] = useState<{
     path: string;
-    options?: NavigateOptions;
+    options?: LeaveOptions;
   } | null>(null);
 
-  const leaveTo = (path: string, options?: NavigateOptions) => {
+  const leaveTo: LeaveTo = (path, options) => {
     if (dirty) setPending({ path, options });
-    else navigate(path, options);
+    else leaveNow(navigate, path, options);
   };
   const onNavigate =
     (close?: () => void) => (event: MouseEvent<HTMLAnchorElement>) => {
@@ -64,7 +93,7 @@ export function useLeaveGuard(dirty: boolean): {
         variant="destructive"
         handleSubmit={() => {
           setPending(null);
-          navigate(pending.path, pending.options);
+          leaveNow(navigate, pending.path, pending.options);
         }}
       />
     ) : null,

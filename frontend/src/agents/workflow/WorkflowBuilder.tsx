@@ -327,13 +327,6 @@ function WorkflowBuilderInner() {
   }>({ sponsors: [], states: [] });
   // Bumped after a reconnect so the run state is read again.
   const [resourcesReloadKey, setResourcesReloadKey] = useState(0);
-  const signInAgain = useSignInAgain({
-    onConnected: () => {
-      setResourcesReloadKey((key) => key + 1);
-      // The node pickers' Reconnect badges follow the connection.
-      void loadTools().catch(() => undefined);
-    },
-  });
   // What the error list is about: a preview, a save, or a first publish.
   const [errorContext, setErrorContext] = useState<
     'preview' | 'save' | 'publish'
@@ -437,6 +430,16 @@ function WorkflowBuilderInner() {
   );
   // A node's Go to link asks first while there is unsaved work.
   const leaveGuard = useLeaveGuard(hasUnsavedWork);
+  // A broken connection signs in again in place, or on its connector page,
+  // which is an exit like any other.
+  const signInAgain = useSignInAgain({
+    onConnected: () => {
+      setResourcesReloadKey((key) => key + 1);
+      // The node pickers' Reconnect badges follow the connection.
+      void loadTools().catch(() => undefined);
+    },
+    onNavigate: leaveGuard.leaveTo,
+  });
 
   const handleHistoryRestore = useCallback(
     (snapshot: WorkflowSnapshot) => {

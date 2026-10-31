@@ -186,7 +186,7 @@ describe('AddToolModal', () => {
                     modalState="ACTIVE"
                     setModalState={setModalState}
                     getUserTools={vi.fn()}
-                    onToolAdded={vi.fn()}
+                    onToolsCreated={vi.fn()}
                     {...props}
                   />
                 }

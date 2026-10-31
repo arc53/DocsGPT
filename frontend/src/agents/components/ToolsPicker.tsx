@@ -6,7 +6,6 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { type NavigateOptions } from 'react-router-dom';
 
 import { MultiSelectPopover } from '../../components/MultiSelectPopover';
 import PickerFooter from '../../components/PickerFooter';
@@ -18,6 +17,7 @@ import { connectionNeedsSignIn } from '../../connectors/connectorsSlice';
 import SignInAgainNotice from '../../connectors/SignInAgainNotice';
 import type { Connection, ConnectorDefinition } from '../../connectors/types';
 import { useDeviceOnline } from '../../hooks/useDeviceOnline';
+import type { LeaveTo } from '../../hooks/useLeaveGuard';
 import { usePickerKindFilter } from '../../hooks/usePickerKindFilter';
 import AddToolModal from '../../modals/AddToolModal';
 import type { ActiveState } from '../../models/misc';
@@ -70,7 +70,7 @@ export type ToolsPickerProps<T extends PickerTool> = {
   /** The tools Add tool made, to put on (`useAttachAddedTools`). */
   onToolsCreated: (toolIds: string[]) => void;
   /** Add tool's ways out, through the builder's leave guard. */
-  onLeaveTo?: (to: string, options?: NavigateOptions) => void;
+  onLeaveTo?: LeaveTo;
 };
 
 /**

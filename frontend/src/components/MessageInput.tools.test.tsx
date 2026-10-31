@@ -10,7 +10,15 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock('../upload/Upload', () => ({ default: () => null }));
-vi.mock('../modals/AddToolModal', () => ({ default: () => null }));
+const addTool = vi.hoisted(() => ({
+  props: null as null | { onToolsCreated: (ids: string[]) => void },
+}));
+vi.mock('../modals/AddToolModal', () => ({
+  default: (props: { onToolsCreated: (ids: string[]) => void }) => {
+    addTool.props = props;
+    return null;
+  },
+}));
 vi.mock('../connectors/SignInAgainNotice', () => ({
   default: () => null,
   useSignInAgain: () => ({ reconnect: vi.fn(), modals: null }),
@@ -156,6 +164,33 @@ describe('MessageInput tools picker', () => {
         container.querySelectorAll<HTMLElement>('[data-testid="tool-item"]'),
       ).map((item) => [item.firstChild?.textContent, item.dataset.group]),
     );
+
+  // A new tool is created on, so it is in the chat once the list refreshes.
+  it('reloads its tools after Add tool made some', async () => {
+    mocks.tools = [];
+    await openPicker();
+    expect(
+      container.querySelectorAll('[data-testid="tool-item"]'),
+    ).toHaveLength(0);
+    mocks.tools = [
+      {
+        id: 'fresh',
+        name: 'memory',
+        displayName: 'Fresh',
+        default: true,
+        status: true,
+        config: {},
+      },
+    ];
+    await act(async () => addTool.props!.onToolsCreated(['fresh']));
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(Object.keys(groups())).toEqual(['Fresh']);
+    mocks.tools = [];
+  });
 
   // The list loads on mount and again when the picker opens; an older answer
   // arriving last must not replace the newer one.

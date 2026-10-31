@@ -6,6 +6,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import { envVar } from '@/env';
+import { type LeaveTo, leaveNow } from '../hooks/useLeaveGuard';
 import { baseURL } from '../api/client';
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
@@ -134,7 +135,7 @@ export default function ConnectWizard({
   mcpToolId?: string;
   purpose?: LaunchPurpose;
   onClose: (connected: boolean, toolIds?: string[]) => void;
-  onNavigate?: (to: string) => void;
+  onNavigate?: LeaveTo;
   onFinished?: () => void;
   /** The ids of the sources a sync just started, still ingesting. */
   onSynced?: (sourceIds: string[]) => void;
@@ -142,7 +143,8 @@ export default function ConnectWizard({
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const routerNavigate = useNavigate();
-  const navigate = onNavigate ?? routerNavigate;
+  const navigate: LeaveTo =
+    onNavigate ?? ((path, options) => leaveNow(routerNavigate, path, options));
   const token = useSelector(selectToken);
   const connections = useSelector(selectConnections);
   const name = connectorName(t, connector);
@@ -594,13 +596,18 @@ export default function ConnectWizard({
   // source opens in Knowledge instead), so the chat starts over no sources:
   // never the ones the last chat had picked.
   const tryInChat = () => {
-    dispatch(setConversation([]));
-    dispatch(updateConversationId({ query: { conversationId: null } }));
-    dispatch(setSelectedAgent(null));
-    dispatch(setSelectedDocs([]));
     onFinished?.();
     close();
-    navigate('/c/new');
+    // Cleared only once leaving is allowed: an opener with unsaved work
+    // asks first, and a reader who stays keeps the chat's selection.
+    navigate('/c/new', {
+      beforeLeave: () => {
+        dispatch(setConversation([]));
+        dispatch(updateConversationId({ query: { conversationId: null } }));
+        dispatch(setSelectedAgent(null));
+        dispatch(setSelectedDocs([]));
+      },
+    });
   };
 
   const finish = () => {

@@ -446,21 +446,11 @@ export default function Tools() {
       .catch((error) => console.error('Error fetching tools:', error));
   };
 
-  const handleDevicePaired = (deviceId: string) => {
-    setAddToolModalState('INACTIVE');
-    userService
-      .getUserTools(token)
-      .then((res) => res.json())
-      .then((data) => {
-        const newTool = data.tools.find(
-          (toolItem: UserToolType) =>
-            toolItem.name === 'remote_device' &&
-            toolItem.config?.device_id === deviceId,
-        );
-        if (newTool) setSelectedTool(newTool);
-        else console.error('Paired device tool not found');
-      })
-      .catch((error) => console.error('Error fetching tools:', error));
+  // New tools from Add tool, whatever made them: the list reloads, and a
+  // lone new tool opens so its actions can be set up.
+  const handleToolsCreated = (toolIds: string[]) => {
+    getUserTools();
+    if (toolIds.length === 1) handleToolAdded(toolIds[0]);
   };
 
   React.useEffect(() => {
@@ -862,8 +852,7 @@ export default function Tools() {
             modalState={addToolModalState}
             setModalState={setAddToolModalState}
             getUserTools={() => getUserTools()}
-            onToolAdded={handleToolAdded}
-            onDevicePaired={handleDevicePaired}
+            onToolsCreated={handleToolsCreated}
           />
         </div>
       )}

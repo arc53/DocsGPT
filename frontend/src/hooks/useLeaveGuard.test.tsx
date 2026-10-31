@@ -15,6 +15,7 @@ describe('useLeaveGuard', () => {
   let root: Root;
   const close = vi.fn();
 
+  const beforeLeave = vi.fn();
   function Builder({ dirty }: { dirty: boolean }) {
     const { onNavigate, leaveTo, dialog } = useLeaveGuard(dirty);
     return (
@@ -24,6 +25,12 @@ describe('useLeaveGuard', () => {
         </Link>
         <button type="button" onClick={() => leaveTo('/settings/connectors')}>
           browse
+        </button>
+        <button
+          type="button"
+          onClick={() => leaveTo('/settings/connectors', { beforeLeave })}
+        >
+          chat
         </button>
         {dialog}
       </>
@@ -119,6 +126,36 @@ describe('useLeaveGuard', () => {
     // React Router's Link prevents a plain click itself; for a modified one
     // the browser opens the tab, so nothing may prevent it.
     expect(prevented).toBe(false);
+  });
+
+  // "Try in chat" clears the chat's selection: only if the reader leaves.
+  it('runs beforeLeave only once leaving is allowed', async () => {
+    beforeLeave.mockClear();
+    const chat = () =>
+      Array.from(container.querySelectorAll('button')).find(
+        (b) => b.textContent === 'chat',
+      )!;
+    await render(true);
+    await act(async () => chat().click());
+    expect(beforeLeave).not.toHaveBeenCalled();
+    await act(async () => dialogButton('cancel').click());
+    expect(beforeLeave).not.toHaveBeenCalled();
+    await act(async () => chat().click());
+    await act(async () => dialogButton('agents.form.leave.submit').click());
+    expect(beforeLeave).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toBe('connectors page');
+  });
+
+  it('runs beforeLeave at once when nothing is unsaved', async () => {
+    beforeLeave.mockClear();
+    await render(false);
+    await act(async () =>
+      Array.from(container.querySelectorAll('button'))
+        .find((b) => b.textContent === 'chat')!
+        .click(),
+    );
+    expect(beforeLeave).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toBe('connectors page');
   });
 
   it('guards a programmatic exit too', async () => {

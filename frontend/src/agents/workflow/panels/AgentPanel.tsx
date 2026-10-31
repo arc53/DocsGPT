@@ -8,7 +8,6 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { type NavigateOptions } from 'react-router-dom';
 import { type Edge, type Node } from 'reactflow';
 
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -40,6 +39,7 @@ import {
 } from '../../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../../store';
 import type { Connection } from '../../../connectors/types';
+import type { LeaveTo } from '../../../hooks/useLeaveGuard';
 import KnowledgePicker from '../../components/KnowledgePicker';
 import ToolsPicker from '../../components/ToolsPicker';
 import { useAttachAddedTools } from '../../hooks/useAttachAddedTools';
@@ -101,7 +101,7 @@ interface AgentPanelProps extends NodePanelBodyProps {
    * API tool editor, Try it in chat): the builder asks first while the
    * workflow has unsaved changes.
    */
-  onLeaveTo?: (to: string, options?: NavigateOptions) => void;
+  onLeaveTo?: LeaveTo;
   /** Signs a broken connection behind the caller's tools in again. */
   onReconnect?: (connection: Connection, mcpToolId?: string) => void;
 }

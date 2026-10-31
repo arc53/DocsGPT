@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { type NavigateOptions, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import connectorsService from '../api/services/connectorsService';
+import { type LeaveTo, leaveNow } from '../hooks/useLeaveGuard';
 import MCPServerModal from '../modals/MCPServerModal';
 import type { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -64,7 +65,7 @@ type LauncherCallbacks = {
    * Knowledge); an opener with unsaved work asks first. The router's
    * navigate otherwise.
    */
-  onNavigate?: (to: string, options?: NavigateOptions) => void;
+  onNavigate?: LeaveTo;
 };
 
 /**
@@ -90,7 +91,8 @@ export default function useConnectorLauncher({
 }: LauncherCallbacks = {}) {
   const dispatch = useDispatch<AppDispatch>();
   const routerNavigate = useNavigate();
-  const navigate = onNavigate ?? routerNavigate;
+  const navigate: LeaveTo =
+    onNavigate ?? ((path, options) => leaveNow(routerNavigate, path, options));
   const token = useSelector(selectToken);
   const [active, setActive] = useState<Active>(null);
   // An MCP server saved in this run: its summary wizard closing is a connect.

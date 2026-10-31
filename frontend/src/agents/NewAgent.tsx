@@ -208,12 +208,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [toolsReloadKey, setToolsReloadKey] = useState(0);
   // Bumped after a reconnect so the agent's run state is read again.
   const [detailsReloadKey, setDetailsReloadKey] = useState(0);
-  const signInAgain = useSignInAgain({
-    onConnected: () => {
-      setToolsReloadKey((key) => key + 1);
-      setDetailsReloadKey((key) => key + 1);
-    },
-  });
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   // The instance's default model: what an agent with no models of its own
   // answers with.
@@ -1121,6 +1115,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // The builder's own exits (a picker's Go to link, Upload's Browse
   // connectors) ask first while the form has unsaved changes.
   const leaveGuard = useLeaveGuard(hasChanges);
+  // A broken connection signs in again in place, or on its connector page,
+  // which is an exit like any other.
+  const signInAgain = useSignInAgain({
+    onConnected: () => {
+      setToolsReloadKey((key) => key + 1);
+      setDetailsReloadKey((key) => key + 1);
+    },
+    onNavigate: leaveGuard.leaveTo,
+  });
 
   const isPublished = agent.status === 'published';
   // What the caller's role allows on this agent (`allowed_actions` from the
