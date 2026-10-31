@@ -1,7 +1,7 @@
 ---
 title: Triggering Agents with Webhooks
 description: "Trigger DocsGPT agents from other systems through a webhook URL: send a POST or GET, prevent duplicate runs with an Idempotency-Key, then poll for the result."
-lastUpdated: 2026-10-24
+lastUpdated: 2026-10-31
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -12,7 +12,7 @@ Agent Webhooks provide a powerful mechanism to trigger an agent's execution from
 
 This workflow is ideal for integrating with services that expect a quick initial response (e.g., form submissions) or for triggering long-running tasks without tying up a client connection.
 
-Each agent has its own unique webhook URL. Generate it in the agent's **Access Details** (the builder's **More actions** menu), or with `GET /api/agent_webhook?id=<agent_id>`. The URL contains a secret token, and anyone who has the URL can run the agent; see [Keep the URL secret](#keep-the-url-secret).
+Each agent has its own unique webhook URL. Generate it in the agent's **Access Details** (the builder's **More actions** menu), or with `GET /api/agent_webhook?id=<agent_id>`. The URL contains a secret token, and anyone who has the URL can run the agent; see [Keep the URL secret](#keep-the-url-secret). A workflow agent's webhook runs its saved graph, so a draft whose workflow isn't finished gets no URL: the request answers `400` with the [graph rules](/Agents/nodes#graph-rules) it breaks.
 
 ### API Endpoints
 

@@ -6,6 +6,7 @@ lastUpdated: 2026-10-31
 
 import { Callout } from 'nextra/components'
 import { Steps } from 'nextra/components'
+import Image from 'next/image'
 
 # Add Knowledge
 
@@ -162,6 +163,14 @@ The Knowledge page shows each source as a card: an icon for its kind, a line of 
 
 - **All**, **Files**, **Websites**, **Synced**, **Wikis** and **Shared** filter by kind. **Synced** is content from a connection or on a sync schedule; **Shared** is what teams shared with you, of any kind.
 - The **Any use** menu beside them shows only the sources an agent uses (**In use**) or none does (**Unused**).
+
+<Image
+  src="/knowledge-page.webp"
+  alt="The Knowledge page: Search knowledge, Add knowledge, the All, Files, Websites, Synced, Wikis and Shared filter with counts and the Any use menu, then source cards with a kind icon, a details line such as via SharePoint or a site, and a last line with size, role, GraphRAG and agent counts"
+  width={1440}
+  height={860}
+  style={{ width: '100%', height: 'auto', margin: '1em auto', display: 'block', borderRadius: '8px' }}
+/>
 
 With no search or filter, page 1 opens with **Needs attention**: sources whose ingest failed that you can reingest, and those whose connection of yours needs **Reconnect**. Later pages keep such sources in place in the list. **All knowledge** follows with the rest, led by any synced service still indexing its first copy.
 

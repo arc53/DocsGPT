@@ -1,11 +1,12 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-30
+lastUpdated: 2026-10-31
 ---
 
 import { Callout } from 'nextra/components'
 import { Steps } from 'nextra/components'
+import Image from 'next/image'
 
 # Connectors
 
@@ -33,6 +34,14 @@ Connections are the single place credentials live when a service requires them. 
 ## Using connectors
 
 Open **Settings > Connectors**. Services that need you to sign in again come first, then **Connected**, then **Available**. **All**, **Knowledge** and **Tools** narrow the list to services that sync content or give agents tools, and the **Any status** menu picks **Needs sign-in**, **Connected** or **Not connected**. Each card's last line names your account and what the service can do: **Syncs**, **Looks up**, **Acts**.
+
+<Image
+  src="/connectors-page.webp"
+  alt="The Connectors page: Search connectors, Add custom connector, the All, Knowledge and Tools filter with counts and the Any status menu, then Connected services (Google Drive, SharePoint, Amazon S3, Brave Search) with the account on each, and Available services, each card ending with Syncs, Looks up or Acts"
+  width={1440}
+  height={900}
+  style={{ width: '100%', height: 'auto', margin: '1em auto', display: 'block', borderRadius: '8px' }}
+/>
 
 1. Pick a connector. Services with OAuth open the provider's sign-in page in a pop-up; API-key services ask for the key.
 2. Choose what the connection sets up. Tool services create their tools right away. Services that only sync (Google Drive, SharePoint, Confluence, Amazon S3, Reddit) ask how to use them: **Sync content now** (picked) or **Just connect**. With **Just connect**, the account is connected and nothing is added yet; you can sync later with **Sync content** on the connection's page. GitHub and Linear, which also offer tools, ask with a **Sync into Knowledge** switch instead: off by default, on when you started from **Add knowledge**. To sync, pick files or folders, how often to sync (never, daily, weekly or monthly) and, under **Advanced retrieval settings**, the same chunking and retrieval options as an upload.

@@ -19,13 +19,13 @@ DocsGPT workflows are composed of **Nodes** that are connected to form a process
   width={1440}
   height={900}
   poster="/workflow-builder-poster.png"
-  aria-label="Screen recording: building, publishing and running a workflow with an AI Agent and an If / Else node"
+  aria-label="Screen recording: building a workflow with an AI Agent and an If / Else node, saving it as a draft, publishing it and running it in Preview"
   style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
 >
   <source src="/workflow-builder.mp4" type="video/mp4" />
 </video>
 
-*The recording starts in a new workflow agent's builder and drags an **AI Agent** node, an **If / Else** node and two **End** nodes from the palette onto the canvas. It wires Start → AI Agent → If / Else, and the If / Else node's **If** and **Else** branches to one End node each. It gives the AI Agent node the "Espresso One handbook" knowledge source, then sets the If / Else node in **Simple** mode to a branch named "Refund" where `query` **contains** `refund`. It clicks **Publish**, opens **Preview** and asks for a refund: the run steps through Start, the AI Agent, If / Else and End, and the answer is quoted from the handbook.*
+*The recording starts in a new workflow agent's builder, adds an **AI Agent** node, an **If / Else** node and two **End** nodes from the palette, and moves them into place on the canvas. It wires Start → AI Agent → If / Else, and the If / Else node's **If** and **Else** branches to one End node each. It gives the AI Agent node the "Policies & Contracts Library" knowledge source, then sets the If / Else node in **Simple** mode to a branch named "Credit claim" where `query` **contains** `credit`. It clicks **Save Draft**, which saves the unfinished agent and adds the **Overview** and **Logs** tabs, then **Publish**. It opens **Preview** and asks what Meridian owes a customer for a late Assured Plus delivery: the run steps through Start, the AI Agent, If / Else and End, and the answer comes from the library's SLA schedule. The model's wait is sped up.*
 
 | Node | Palette group | What it does |
 | --- | --- | --- |
@@ -109,6 +109,13 @@ The **AI Agent Node** is the core processing unit. It uses a Large Language Mode
 
 - **Knowledge**: sources this node searches.
 - **Tools**: tools the node's model can call.
+
+Both are the same pickers as in the agent form: grouped, selected items first,
+with **Go to Knowledge** and **Upload new**, or **Go to Tools** and **Add tool**,
+at the bottom. A tool you add from the node's picker is selected on the node, and
+a [remote device](/Tools/remote-device) shows whether it is online. See
+[Use knowledge in chats and agents](/Sources/adding-knowledge#use-knowledge-in-chats-and-agents)
+and [The Tools page](/Tools/basics#the-tools-page).
 
 <Callout type="warning">
   A tool that requires approval fails the node, and with it the run: a

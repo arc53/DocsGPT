@@ -141,9 +141,17 @@ To change the defaults for the whole instance, set `DEFAULT_CHAT_TOOLS` to a JSO
 - One group per connected service, headed by the service's icon and name. Each card names the account it uses. These tools are managed in **Settings → Connectors**.
 - **Custom**: API tools and MCP servers you made.
 
+<Image
+  src="/tools-page.webp"
+  alt="The Tools page: Search tools, Add tool, the All, Included, Added, Services and Custom filter with counts, then cards under Included (Memory, Read Webpage, Scheduling, Monitor), Added (DuckDuckGo Search, Todo List), a Telegram service group with a shared tool and Custom (Carrier tracking API), each with its switch"
+  width={1440}
+  height={1250}
+  style={{ width: '100%', height: 'auto', margin: '1em auto', display: 'block', borderRadius: '8px' }}
+/>
+
 A card's last line holds its facts: the account it uses, your role on a tool a team shared with you, and **N agents**, which you can click for a list of links to the agents that use it. The switch at the card's bottom right turns the tool on or off in your chats without an agent; hover it to see which.
 
-To narrow the page, **All**, **Included**, **Added**, **Services** and **Custom** filter by group, each with its count of the tools your search matches, and the **Any use** menu beside them shows only the tools that are **In use** (by an agent or your chats) or **Unused**. Deleting a tool that agents use says how many lose it.
+To narrow the page, **All**, **Included**, **Added**, **Services** and **Custom** filter by group, each with its count of the tools your search matches, and the **Any use** menu beside them shows only the tools that are **In use** (by an agent or your chats) or **Unused**. The menu appears only when it would narrow the list, so not while every tool is in use. Deleting a tool that agents use says how many lose it.
 
 In a chat, the composer's **Tools** menu uses the same groups, and so does the agent builder's **Tools** field (**Select tools**) and a workflow's agent node. They list the tools already selected first, under **Selected**, and end with **Go to Tools**, which opens this page, and **Add tool**. A tool you add from an agent's picker, or a workflow node's, is selected there once it is set up. In the agent and workflow builders, **Go to Tools** and the links that leave from **Add tool** ask first when you have unsaved changes. When you have more than 10 tools, the same group filter appears under the search.
 

@@ -4,6 +4,8 @@ description: Write the prompts your chats and agents use - the Prompts page in S
 lastUpdated: 2026-10-31
 ---
 
+import Image from 'next/image'
+
 # Customizing Prompts
 
 Customizing prompts for DocsGPT gives you powerful control over the AI's behavior and responses. With the new template-based system, you can inject dynamic context through organized namespaces, making prompts flexible and maintainable without hardcoding values.
@@ -18,9 +20,19 @@ Open **Settings > Prompts** (under **Workspace**). Each prompt is a card with it
 
 **Search prompts…** filters by name; **All**, **Included**, **Yours** and **Shared** filter by section, and the **Any use** menu shows only the prompts that are **In use** or **Unused**. A prompt is in use when an agent uses it or your chats do.
 
+<Image
+  src="/prompts-page.webp"
+  alt="The Prompts page: Search prompts, the All, Included and Yours filter with counts and the Any use menu, then cards under Included (default, creative, strict) and Yours, each with its first lines, an agent count and a radio button; default is picked for chats"
+  width={1440}
+  height={800}
+  style={{ width: '100%', height: 'auto', margin: '1em auto', display: 'block', borderRadius: '8px' }}
+/>
+
 ### Pick the prompt for your chats
 
 The radio button at the bottom of each card picks the prompt your chats use when no agent is selected; the filled radio marks it. Agents choose their own prompt in the agent form. Your choice is saved to your account, so it follows you to every browser and device. Earlier versions kept it in the browser; a prompt picked that way moves to your account the first time you open the app, unless your account already holds a choice (`default` included), which it keeps.
+
+Over the API, `GET /api/user/preferences` returns the pick as `chat_prompt_id` (`default` when none is set, or when the prompt was deleted or is no longer shared with you), and `PUT /api/user/preferences` with `{"chat_prompt_id": "<prompt id, or default, creative or strict>"}` sets it. The pick is what the web app sends with its chats; a request to `/api/answer` or `/stream` without an agent uses the `prompt_id` it sends, or `default` (see [Agents API](/API/agent-api)).
 
 ### Add, edit and delete prompts
 
@@ -43,13 +55,13 @@ In the agent form, the **Prompt** field lists the same three groups. Its footer 
   width={1440}
   height={900}
   poster="/customising-prompts-poster.png"
-  aria-label="Screen recording: adding and editing a custom prompt in DocsGPT settings"
+  aria-label="Screen recording: adding a prompt on the Prompts page, picking it for chats and editing it"
   style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
 >
   <source src="/customising-prompts.mp4" type="video/mp4" />
 </video>
 
-*The recording shows an earlier version, where prompts lived under **Settings > General**. It clicks **Add** next to **Active prompt**, names the prompt "Espresso support", types a short support persona and clicks **Save**. It then opens the prompt list, which shows it below the built-in default, creative and strict prompts, and clicks the pencil button to edit it. It adds a sentence and saves again. Today you do the same from **Add prompt** and the prompt's card on **Settings > Prompts**.*
+*The recording opens **Settings > Prompts** and clicks **Add prompt**. It names the prompt "Carrier escalations", types a short persona and clicks **Save**, and the prompt's card appears under **Yours**. It clicks the card's radio button, so chats without an agent now use the prompt, then clicks the card to edit it, adds a sentence and saves again.*
 
 ---
 
