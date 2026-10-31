@@ -177,6 +177,23 @@ class TestMoveOnlyIfUnset:
         assert resp.status_code == 400
 
 
+class TestUnexpectedErrors:
+    """A failure that isn't the request's fault is a 5xx, which the UI's start-up read retries."""
+
+    def test_a_failed_read_is_500(self, app, pg_conn):
+        with patch.object(UsersRepository, "get", side_effect=RuntimeError("connection reset")):
+            resp = _call(app, pg_conn, "get")
+        assert resp.status_code == 500
+        assert resp.json == {"success": False}
+
+    @pytest.mark.parametrize("only_if_unset", [False, True])
+    def test_a_failed_write_is_500(self, app, pg_conn, only_if_unset):
+        with patch.object(UsersRepository, "set_chat_prompt_id", side_effect=RuntimeError("connection reset")):
+            resp = _call(app, pg_conn, "put", json={"chat_prompt_id": "strict", "only_if_unset": only_if_unset})
+        assert resp.status_code == 500
+        assert resp.json == {"success": False}
+
+
 class TestSetChatPromptIdRepository:
     def test_only_if_unset_reports_whether_it_wrote(self, pg_conn):
         repo = UsersRepository(pg_conn)

@@ -165,7 +165,7 @@ class PreferencesResource(Resource):
                 chat_prompt_id = _readable_chat_prompt(conn, user_id, stored)
         except Exception as err:
             current_app.logger.error(f"Error reading preferences: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
+            return make_response(jsonify({"success": False}), 500)
         body = {
             "success": True,
             "chat_prompt_id": chat_prompt_id,
@@ -218,5 +218,5 @@ class PreferencesResource(Resource):
             return error_response(err.message, err.status)
         except Exception as err:
             current_app.logger.error(f"Error saving preferences: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
+            return make_response(jsonify({"success": False}), 500)
         return make_response(jsonify({"success": True, "chat_prompt_id": value, "applied": applied}), 200)
