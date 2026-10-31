@@ -1508,18 +1508,23 @@ def _apply_workflow(
 ):
     """Write the imported graph; returns the workflow id, None, or the sentinel.
 
-    The graph goes through the same validation gate as the workflow API
-    (``workflow_graph_shape_errors``, then ``validate_workflow_structure``)
-    so a hand-edited YAML can't install a graph the write path would have
-    rejected. When the matched agent already
-    owns a workflow the graph lands as a new version of it (mirroring
-    ``PUT /api/workflows/<id>``); otherwise a new workflow is created.
+    The graph goes through the same validation gate as an agent save with an
+    inline graph, so a hand-edited YAML can't install a graph the write path
+    would have rejected: the shape and the retry defaults always, and the full
+    ``validate_workflow_structure`` when the graph will run outside a builder.
+    A new agent lands as a draft and an update keeps the target's status, so
+    that is when the matched agent, or another agent on its workflow, already
+    runs outside its builder (``runs_outside_builder``). When the matched
+    agent already owns a workflow the graph lands as a new version of it,
+    read holding its row lock (mirroring ``PUT /api/workflows/<id>``);
+    otherwise a new workflow is created.
     """
     if "workflow" not in spec:
         return _WORKFLOW_UNCHANGED
     wf_spec = spec.get("workflow")
     if not isinstance(wf_spec, dict):
         return None
+    from docsgpt.api.user.agents.graph_checks import runs_outside_builder, workflow_runs_elsewhere
     from docsgpt.api.user.workflows.routes import (
         _write_graph,
         get_workflow_graph_version,
@@ -1567,9 +1572,23 @@ def _apply_workflow(
         for edge in wf_spec.get("edges") or []
     ]
 
-    errors = workflow_graph_shape_errors(nodes_data, edges_data) or validate_workflow_structure(
-        nodes_data, edges_data, user_id=user,
+    wf_repo = WorkflowsRepository(conn)
+    agent_row = None
+    existing = None
+    if target.get("action") == "update" and target.get("agent_id"):
+        agent_row = AgentsRepository(conn).get(str(target["agent_id"]), user)
+        existing_id = (agent_row or {}).get("workflow_id")
+        if existing_id:
+            locked = wf_repo.get_for_update(str(existing_id))
+            existing = locked if locked is not None and locked.get("user_id") == user else None
+    runs = agent_row is not None and (
+        runs_outside_builder(conn, agent_row)
+        or (existing is not None and workflow_runs_elsewhere(conn, existing["id"], str(agent_row["id"])))
     )
+
+    errors = workflow_graph_shape_errors(nodes_data, edges_data)
+    if not errors and runs:
+        errors = validate_workflow_structure(nodes_data, edges_data, user_id=user)
     retry_defaults = wf_spec.get("retry_defaults")
     retry_error = retry_config_error(retry_defaults)
     if retry_error:
@@ -1578,16 +1597,9 @@ def _apply_workflow(
         raise AgentImportError("Workflow validation failed: " + "; ".join(errors[:5]))
     nodes_data = normalize_agent_node_json_schemas(nodes_data)
 
-    wf_repo = WorkflowsRepository(conn)
     name = wf_spec.get("name") or spec.get("name") or "Imported workflow"
     description = wf_spec.get("description") or ""
 
-    existing = None
-    if target.get("action") == "update" and target.get("agent_id"):
-        agent_row = AgentsRepository(conn).get(str(target["agent_id"]), user)
-        existing_id = (agent_row or {}).get("workflow_id")
-        if existing_id:
-            existing = wf_repo.get(str(existing_id), user)
     if existing is not None:
         from docsgpt.api.user.resource_access import prune_sponsors
         from docsgpt.api.user.workflows.routes import _node_refs
