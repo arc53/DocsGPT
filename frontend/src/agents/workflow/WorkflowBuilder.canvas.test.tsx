@@ -353,6 +353,53 @@ describe('WorkflowBuilder canvas', () => {
     });
   });
 
+  describe('a refused save', () => {
+    const saveAndRead = async (status: number, body: unknown) => {
+      api.updateWorkflow.mockImplementation(
+        async () =>
+          new Response(JSON.stringify(body), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      );
+      await render();
+      const onOpenChange = sheet.props!.onOpenChange as (o: boolean) => void;
+      await act(async () => onOpenChange(true));
+      const onSave = sheet.props!.onSave as (values: object) => void;
+      await act(async () =>
+        onSave({
+          name: 'Renewal desk',
+          description: '',
+          allowPromptOverride: false,
+          imageFile: null,
+        }),
+      );
+      await act(async () => undefined);
+      return sheet.props!.errors as string[];
+    };
+
+    it('says what the caller may not run with their access', async () => {
+      const errors = await saveAndRead(403, {
+        code: 'sponsor_not_allowed',
+        resources: [{ key: 'tool:t1', type: 'tool', id: 't1', name: 'Jira' }],
+      });
+      expect(errors).toEqual(['agents.form.sponsors.notAllowed']);
+      expect(api.updateAgent).not.toHaveBeenCalled();
+    });
+
+    it('says a confirmation is outdated', async () => {
+      const errors = await saveAndRead(400, {
+        code: 'sponsor_confirmation_unexpected',
+      });
+      expect(errors).toEqual(['agents.form.sponsors.confirmationOutdated']);
+    });
+
+    it("gives the server's own message", async () => {
+      const errors = await saveAndRead(400, { message: 'Bad graph' });
+      expect(errors).toEqual(['Bad graph']);
+    });
+  });
+
   describe('the node Tools picker', () => {
     it('offers the tools a node can run, workflow-only ones included', async () => {
       api.tools = [

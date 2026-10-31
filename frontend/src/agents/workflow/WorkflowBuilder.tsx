@@ -37,13 +37,7 @@ import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
 import AgentPreviewSheet from '../components/AgentPreviewSheet';
-import {
-  confirmTakeOver,
-  readSponsorRefusal,
-  saveWithSponsorConsent,
-  sponsorNotAllowedMessage,
-} from '../sponsorConsent';
-import { useSponsorPrompt } from '../useSponsorPrompt';
+
 import ResourceStatusNotice, {
   type NamedResource,
   unnamedResourceLabel,
@@ -124,6 +118,7 @@ import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
 import { readerIdFromToken } from '../../utils/personLabel';
 import { useLeaveGuard } from '../../hooks/useLeaveGuard';
 import { useBuilderDirtyState } from '../hooks/useBuilderDirtyState';
+import { useSponsoredSave } from '../hooks/useSponsoredSave';
 import {
   getToolDisplayName,
   isWorkflowNodeToolVisible,
@@ -278,7 +273,7 @@ const NODE_TYPES: NodeTypes = {
 };
 
 function WorkflowBuilderInner() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
@@ -312,9 +307,13 @@ function WorkflowBuilderInner() {
   const [showPrimaryActionSpinner, setShowPrimaryActionSpinner] =
     useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
-  // Asks before a node resource the owner can't use runs with the
-  // caller's access; the save that asked gets the retried save's result.
-  const sponsorPrompt = useSponsorPrompt();
+  // Saves ask before a node resource the owner can't use runs with the
+  // caller's access, and carry the stopped node resources the caller agreed
+  // to run with theirs (takeovers, sent as ``confirm_sponsor``).
+  const sponsoredSave = useSponsoredSave({
+    refresh: () => void refreshResourceDetails(workflowId),
+  });
+  const { takeovers } = sponsoredSave;
   // What runs on the nodes with an editor's access and what stopped, from
   // the workflow read (people who may edit it).
   const [workflowResources, setWorkflowResources] = useState<{
@@ -322,9 +321,6 @@ function WorkflowBuilderInner() {
     states: ResourceState[];
     audience?: SponsorAudience;
   }>({ sponsors: [], states: [] });
-  // Keys of stopped node resources the caller agreed to run with their
-  // access; sent as ``confirm_sponsor`` with the next save.
-  const [takeovers, setTakeovers] = useState<string[]>([]);
   // Bumped after a reconnect so the run state is read again.
   const [resourcesReloadKey, setResourcesReloadKey] = useState(0);
   const signInAgain = useSignInAgain({
@@ -1708,7 +1704,7 @@ function WorkflowBuilderInner() {
         if (workflowId) {
           // A node tool or source the owner can't use would run with the
           // caller's access: ask first, then save again with their answer.
-          const updateResponse = await saveWithSponsorConsent(
+          const updated = await sponsoredSave.save(
             (confirm) =>
               userService.updateWorkflow(
                 workflowId,
@@ -1717,29 +1713,10 @@ function WorkflowBuilderInner() {
                   : workflowPayload,
                 token,
               ),
-            sponsorPrompt.ask,
-            takeovers,
+            t('agents.workflow.builder.updateWorkflowFailed'),
           );
-          if (!updateResponse) return 'cancelled';
-          if (!updateResponse.ok) {
-            const refusal = await readSponsorRefusal(updateResponse);
-            if (refusal?.kind === 'unexpected') {
-              // Someone changed the workflow since the caller chose.
-              setTakeovers([]);
-              void refreshResourceDetails(workflowId);
-              throw new Error(t('agents.form.sponsors.confirmationOutdated'));
-            }
-            if (refusal?.kind === 'notAllowed') {
-              throw new Error(
-                sponsorNotAllowedMessage(t, i18n.language, refusal.resources),
-              );
-            }
-            const errorData = await updateResponse.json().catch(() => ({}));
-            throw new Error(
-              errorData.message ||
-                t('agents.workflow.builder.updateWorkflowFailed'),
-            );
-          }
+          if (updated.status === 'cancelled') return 'cancelled';
+          if (updated.status === 'failed') throw new Error(updated.message);
 
           if (effectiveAgentId) {
             const agentFormData = new FormData();
@@ -1796,8 +1773,6 @@ function WorkflowBuilderInner() {
           setImageFile(null);
           markSaved(JSON.stringify(workflowPayload));
           setAutoFilledModels({});
-          setTakeovers([]);
-          void refreshResourceDetails(workflowId);
           if (navigateAfterSuccess) {
             navigateBackToAgents();
           }
@@ -1930,10 +1905,7 @@ function WorkflowBuilderInner() {
       folderId,
       navigateBackToAgents,
       t,
-      i18n.language,
-      sponsorPrompt.ask,
-      takeovers,
-      refreshResourceDetails,
+      sponsoredSave.save,
     ],
   );
 
@@ -2059,9 +2031,9 @@ function WorkflowBuilderInner() {
     (item: ResourceState) => {
       takeSnapshot();
       setNodes((prev) => withoutNodeResource(prev, item));
-      setTakeovers((prev) => prev.filter((k) => k !== item.key));
+      sponsoredSave.undoTakeover(item.key);
     },
-    [takeSnapshot],
+    [takeSnapshot, sponsoredSave.undoTakeover],
   );
 
   /**
@@ -2070,19 +2042,13 @@ function WorkflowBuilderInner() {
    * confirms it.
    */
   const takeOverResource = useCallback(
-    async (item: ResourceState) => {
-      const agreed = await confirmTakeOver(
-        sponsorPrompt.ask,
+    (item: ResourceState) =>
+      sponsoredSave.takeOver(
         item,
         resolveResourceName(item),
         workflowResources.audience,
-      );
-      if (agreed)
-        setTakeovers((prev) =>
-          prev.includes(item.key) ? prev : [...prev, item.key],
-        );
-    },
-    [resolveResourceName, sponsorPrompt.ask, workflowResources.audience],
+      ),
+    [resolveResourceName, sponsoredSave.takeOver, workflowResources.audience],
   );
 
   /** Sign a stopped node tool's connection in again, in place where possible. */
@@ -2376,9 +2342,7 @@ function WorkflowBuilderInner() {
                     readerId={readerId}
                     takeovers={takeovers}
                     onTakeOver={(item) => void takeOverResource(item)}
-                    onUndoTakeover={(key) =>
-                      setTakeovers((prev) => prev.filter((k) => k !== key))
-                    }
+                    onUndoTakeover={sponsoredSave.undoTakeover}
                     onRemove={removeResource}
                     onReconnect={reconnectResource}
                     onClose={close}
@@ -2554,7 +2518,7 @@ function WorkflowBuilderInner() {
             }}
           />
         </AgentPreviewSheet>
-        {sponsorPrompt.modal}
+        {sponsoredSave.modal}
         {signInAgain.modals}
         {leaveGuard.dialog}
         <ConfirmationModal

@@ -99,42 +99,14 @@ import ResourceStatusNotice, {
   type NamedResource,
   unnamedResourceLabel,
 } from './components/ResourceStatusNotice';
-import {
-  confirmTakeOver,
-  readSponsorRefusal,
-  saveWithSponsorConsent,
-  sponsorNotAllowedMessage,
-} from './sponsorConsent';
+
 import { useAgentMenu } from './hooks/useAgentMenu';
 import { useAttachAddedTools } from './hooks/useAttachAddedTools';
 import { useBuilderDirtyState } from './hooks/useBuilderDirtyState';
-import { useSponsorPrompt } from './useSponsorPrompt';
+import { useSponsoredSave } from './hooks/useSponsoredSave';
 import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 
 import type { Model } from '../models/types';
-
-/**
- * Pull the backend's own explanation out of a failed response.
- *
- * The agent write endpoints answer a rejected save with
- * `{"success": false, "message": "<why>"}` — e.g. "Invalid chunks value: …"
- * or "Field 'description' cannot be empty". Callers used to test only
- * `response.ok` and throw a fixed string, so the one piece of information
- * that could tell the user what to change was dropped on the floor.
- */
-const extractApiError = async (
-  response: Response,
-  fallback: string,
-): Promise<string> => {
-  try {
-    const body = await response.json();
-    if (typeof body?.message === 'string' && body.message.trim())
-      return body.message;
-  } catch {
-    // Non-JSON body (proxy HTML error page, empty 502) — use the fallback.
-  }
-  return fallback;
-};
 
 /** The Prompt picker's kinds (the Prompts page's sections) and their `type`. */
 const PROMPT_KIND_TYPES = {
@@ -183,7 +155,7 @@ function agentSavePayload(agent: Agent, jsonSchemaText: string) {
 type AgentSavePayload = ReturnType<typeof agentSavePayload>;
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { agentId } = useParams();
@@ -257,11 +229,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Tools on the agent when it loaded: the owner's private ones don't come
   // back in the caller's own tool list, so the picker adds a row for each.
   const [attachedTools, setAttachedTools] = useState<ToolSummary[]>([]);
-  // Asks before a save makes what the caller added run with their access.
-  const sponsorPrompt = useSponsorPrompt();
-  // Keys of stopped items the caller chose to keep running with their
-  // access; sent as ``confirm_sponsor`` with the next save.
-  const [takeovers, setTakeovers] = useState<string[]>([]);
+  // Saves ask before what the caller added runs with their access, and
+  // carry the stopped items the caller chose to keep running (takeovers).
+  // A new agent has no sponsors to read again.
+  const sponsoredSave = useSponsoredSave({
+    refresh: () => void refreshSponsors(agent.id),
+  });
+  const { takeovers } = sponsoredSave;
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
   );
@@ -588,54 +562,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     // Only a reconnect asks for this; agent.id is read when it does.
   }, [detailsReloadKey, refreshSponsors]);
 
-  /** The message for a refused save. */
-  const saveFailureMessage = async (
-    response: Response,
-    fallback: string,
-  ): Promise<string> => {
-    const refusal = await readSponsorRefusal(response);
-    if (refusal?.kind === 'notAllowed')
-      return sponsorNotAllowedMessage(t, i18n.language, refusal.resources);
-    if (refusal?.kind === 'unexpected') {
-      // Someone changed the agent since the caller chose; show them now.
-      setTakeovers([]);
-      void refreshSponsors(agent.id);
-      return t('agents.form.sponsors.confirmationOutdated');
-    }
-    return extractApiError(response, fallback);
-  };
-
   /**
    * Create or update the agent, asking whenever the server wants the
    * caller's confirmation to run what they added with their access.
-   * Resolves to null when they decline.
    */
-  const sendAgent = (formData: FormData) =>
-    saveWithSponsorConsent(
-      (confirm) => {
-        if (confirm.length > 0)
-          formData.set('confirm_sponsor', JSON.stringify(confirm));
-        else formData.delete('confirm_sponsor');
-        return effectiveMode === 'new'
-          ? userService.createAgent(formData, token)
-          : userService.updateAgent(agent.id || '', formData, token);
-      },
-      sponsorPrompt.ask,
-      takeovers,
-    );
+  const sendAgent = (formData: FormData, fallback: string) =>
+    sponsoredSave.save((confirm) => {
+      if (confirm.length > 0)
+        formData.set('confirm_sponsor', JSON.stringify(confirm));
+      else formData.delete('confirm_sponsor');
+      return effectiveMode === 'new'
+        ? userService.createAgent(formData, token)
+        : userService.updateAgent(agent.id || '', formData, token);
+    }, fallback);
 
-  /** Bookkeeping after an update the server accepted. */
-  const afterSaved = (id?: string) => {
-    // What is on the agent now is what the tool picker keeps rows for.
-    setAttachedTools(selectedTools);
-    if (effectiveMode !== 'new') {
-      setTakeovers([]);
-      void refreshSponsors(id);
-    }
-  };
-
-  const undoTakeover = (key: string) =>
-    setTakeovers((prev) => prev.filter((k) => k !== key));
+  const undoTakeover = sponsoredSave.undoTakeover;
 
   // Stopped items still on the agent in the form: one removed here (not yet
   // saved) leaves the notice.
@@ -684,18 +625,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    * Ask before a stopped item runs with the caller's access, naming who
    * reaches it through the agent; on yes the next save confirms it.
    */
-  const takeOverResource = async (item: ResourceState) => {
-    const agreed = await confirmTakeOver(
-      sponsorPrompt.ask,
+  const takeOverResource = (item: ResourceState) =>
+    sponsoredSave.takeOver(
       item,
       resolveSponsoredName(item),
       agent.sponsor_audience,
     );
-    if (agreed)
-      setTakeovers((prev) =>
-        prev.includes(item.key) ? prev : [...prev, item.key],
-      );
-  };
 
   /** Sign a stopped tool's connection in again, in place where possible. */
   const reconnectResource = (item: ResourceState) => {
@@ -769,19 +704,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     try {
       setDraftLoading(true);
       setSubmitError(null);
-      const response = await sendAgent(formData);
-      if (!response) return;
-      if (!response.ok) {
-        setSubmitError(
-          await saveFailureMessage(
-            response,
-            t('agents.form.errors.saveDraftFailed'),
-          ),
-        );
+      const result = await sendAgent(
+        formData,
+        t('agents.form.errors.saveDraftFailed'),
+      );
+      if (result.status === 'cancelled') return;
+      if (result.status === 'failed') {
+        setSubmitError(result.message);
         return;
       }
-      const data = await response.json();
-      afterSaved(data.id || agent.id);
+      const data = await result.response.json();
+      // What is on the agent now is what the tool picker keeps rows for.
+      setAttachedTools(selectedTools);
 
       const updatedAgent = {
         ...agent,
@@ -863,18 +797,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     try {
       setPublishLoading(true);
       setSubmitError(null);
-      const response = await sendAgent(formData);
-      if (!response) return;
-      if (!response.ok) {
-        setSubmitError(
-          await saveFailureMessage(
-            response,
-            t('agents.form.errors.publishFailed'),
-          ),
-        );
+      const result = await sendAgent(
+        formData,
+        t('agents.form.errors.publishFailed'),
+      );
+      if (result.status === 'cancelled') return;
+      if (result.status === 'failed') {
+        setSubmitError(result.message);
         return;
       }
-      const data = await response.json();
+      const data = await result.response.json();
 
       const updatedAgent = {
         ...agent,
@@ -886,7 +818,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       setAgent(updatedAgent);
       initialAgentRef.current = updatedAgent;
       markSaved(saving);
-      afterSaved(updatedAgent.id);
+      setAttachedTools(selectedTools);
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());
 
@@ -1886,7 +1818,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           }
         />
       </div>
-      {sponsorPrompt.modal}
+      {sponsoredSave.modal}
       {agentMenu.modals}
       <AgentDetailsModal
         agent={agent}
