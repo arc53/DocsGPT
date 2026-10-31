@@ -14,11 +14,15 @@
   the ``used_by`` lookup (an exact, lower-case match) would miss. A twin left
   by lowercasing is dropped, keeping the first position; anything that isn't
   a UUID string is kept as it is.
+* ``agents_set_updated_at`` fires only when a content column changes. The
+  builders send ``updated_at`` back as their stale-write token, so a write of
+  bookkeeping alone (``last_used_at`` on every owner chat, a regenerated
+  ``key``, the ``incoming_webhook_token``, the share link) must not move it.
 
 No preset backfill: no agent could store a preset before this revision.
 Idempotent both ways. Downgrade drops the column, so those agents fall back to
-the default prompt, and the indexes; the lowercased tool ids stay (they are
-the canonical form).
+the default prompt, and the indexes, and puts back the trigger that fires on
+any change; the lowercased tool ids stay (they are the canonical form).
 
 Revision ID: 0060_agent_prompt_preset
 Revises: 0059_workflow_retry_defaults
@@ -61,8 +65,27 @@ _LOWERCASE_TOOL_IDS = f"""
 """
 
 
+#: Agent columns whose change alone keeps ``updated_at`` (``AgentsRepository.BOOKKEEPING_COLUMNS``).
+_BOOKKEEPING = (
+    "ARRAY['updated_at', 'last_used_at', 'key', 'incoming_webhook_token', "
+    "'shared', 'shared_token', 'shared_metadata']"
+)
+
+_CONTENT_TRIGGER = (
+    "CREATE TRIGGER agents_set_updated_at BEFORE UPDATE ON agents FOR EACH ROW "
+    f"WHEN ((to_jsonb(OLD) - {_BOOKKEEPING}) IS DISTINCT FROM (to_jsonb(NEW) - {_BOOKKEEPING})) "
+    "EXECUTE FUNCTION set_updated_at()"
+)
+
+# 0001's trigger: any change moves updated_at.
+_ANY_CHANGE_TRIGGER = (
+    "CREATE TRIGGER agents_set_updated_at BEFORE UPDATE ON agents FOR EACH ROW "
+    "WHEN (OLD.* IS DISTINCT FROM NEW.*) EXECUTE FUNCTION set_updated_at()"
+)
+
+
 def upgrade() -> None:
-    """Add the agent prompt preset and its two checks, the usage indexes, and lowercase tool ids."""
+    """Add the agent prompt preset and its two checks, the usage indexes, lowercase tool ids, the content trigger."""
     op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS prompt_preset TEXT")
     op.execute("ALTER TABLE agents DROP CONSTRAINT IF EXISTS agents_prompt_preset_chk")
     op.execute(
@@ -77,10 +100,14 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS agents_tools_gin_idx ON agents USING gin (tools)")
     op.execute("CREATE INDEX IF NOT EXISTS agents_extra_source_ids_gin_idx ON agents USING gin (extra_source_ids)")
     op.execute(_LOWERCASE_TOOL_IDS)
+    op.execute("DROP TRIGGER IF EXISTS agents_set_updated_at ON agents")
+    op.execute(_CONTENT_TRIGGER)
 
 
 def downgrade() -> None:
-    """Drop the agent prompt preset (its agents run the default prompt) and the usage indexes."""
+    """Drop the agent prompt preset (its agents run the default prompt), the usage indexes, the content trigger."""
+    op.execute("DROP TRIGGER IF EXISTS agents_set_updated_at ON agents")
+    op.execute(_ANY_CHANGE_TRIGGER)
     op.execute("DROP INDEX IF EXISTS agents_extra_source_ids_gin_idx")
     op.execute("DROP INDEX IF EXISTS agents_tools_gin_idx")
     op.execute("ALTER TABLE agents DROP CONSTRAINT IF EXISTS agents_prompt_preset_exclusive_chk")

@@ -29,6 +29,15 @@ from docsgpt.storage.db.models import agents_table
 #: stored as NULL in both prompt columns.
 STORED_PROMPT_PRESETS = ("creative", "strict")
 
+#: Columns a write may change without moving ``updated_at``. The builders send
+#: ``updated_at`` back as their stale-write token, so it tracks content only:
+#: an owner's chat (``last_used_at``), a regenerated key, the webhook token and
+#: the share link don't make a builder's open copy stale. The
+#: ``agents_set_updated_at`` trigger (migration 0060) skips the same columns.
+BOOKKEEPING_COLUMNS = frozenset({
+    "last_used_at", "key", "incoming_webhook_token", "shared", "shared_token", "shared_metadata",
+})
+
 
 def split_prompt_ref(value: Any) -> tuple[Optional[str], Optional[str]]:
     """The ``(prompt_id, prompt_preset)`` columns for an agent's prompt.
@@ -252,6 +261,22 @@ class AgentsRepository:
         )
         return int(result.scalar() or 0)
 
+    def touch_for_workflow(self, workflow_id: str) -> None:
+        """Move ``updated_at`` on every agent linked to ``workflow_id``.
+
+        A graph saved through PUT /api/workflows/<id> is part of its agents'
+        content: an agent builder holding the old stamp must get a stale write.
+
+        Args:
+            workflow_id: The workflow whose graph was saved.
+        """
+        if not looks_like_uuid(workflow_id):
+            return
+        self._conn.execute(
+            text("UPDATE agents SET updated_at = now() WHERE workflow_id = CAST(:wf AS uuid)"),
+            {"wf": workflow_id},
+        )
+
     def get_by_id(self, agent_id: str) -> Optional[dict]:
         """Fetch an agent by id with NO ownership scoping.
 
@@ -342,7 +367,8 @@ class AgentsRepository:
                 values[col] = bool(val)
             else:
                 values[col] = self._normalize_unique_text(col, val)
-        values["updated_at"] = func.now()
+        if not filtered.keys() <= BOOKKEEPING_COLUMNS:
+            values["updated_at"] = func.now()
 
         t = agents_table
         stmt = t.update().where(t.c.id == agent_id)
@@ -371,7 +397,22 @@ class AgentsRepository:
         )
         return [agent_row_to_dict(r) for r in result.fetchall()]
 
-    def update(self, agent_id: str, user_id: str, fields: dict) -> bool:
+    def update(
+        self, agent_id: str, user_id: str, fields: dict, expected_updated_at=None
+    ) -> Optional[bool]:
+        """Update the owner's agent (the owner write path).
+
+        Args:
+            agent_id: The agent's id.
+            user_id: Its owner.
+            fields: Columns to write; unknown keys are ignored.
+            expected_updated_at: When given, the update is applied only if the
+                row's ``updated_at`` still matches (optimistic lock).
+
+        Returns:
+            True when written, None on a version mismatch (the route answers
+            409), False when nothing was written.
+        """
         allowed = {
             "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
@@ -407,17 +448,19 @@ class AgentsRepository:
                 values[col] = bool(val)
             else:
                 values[col] = self._normalize_unique_text(col, val)
-        values["updated_at"] = func.now()
+        if not filtered.keys() <= BOOKKEEPING_COLUMNS:
+            values["updated_at"] = func.now()
 
         t = agents_table
-        stmt = (
-            t.update()
-            .where(t.c.id == agent_id)
-            .where(t.c.user_id == user_id)
-            .values(**values)
-        )
-        result = self._conn.execute(stmt)
-        return result.rowcount > 0
+        stmt = t.update().where(t.c.id == agent_id).where(t.c.user_id == user_id)
+        if expected_updated_at is not None:
+            stmt = stmt.where(t.c.updated_at == cast(expected_updated_at, t.c.updated_at.type))
+        result = self._conn.execute(stmt.values(**values))
+        if result.rowcount > 0:
+            return True
+        if expected_updated_at is not None and self.get(str(agent_id), user_id) is not None:
+            return None
+        return False
 
     def update_by_legacy_id(self, legacy_mongo_id: str, user_id: str, fields: dict) -> bool:
         """Update an agent addressed by the Mongo ObjectId string."""

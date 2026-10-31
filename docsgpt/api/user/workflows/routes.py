@@ -37,6 +37,7 @@ from docsgpt.api.user.resource_access import (
     sponsor_refusal,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
@@ -1076,6 +1077,9 @@ class WorkflowDetail(Resource):
                     body.setdefault("error", body["message"])
                     return make_response(jsonify(body), status)
                 write_graph_save(conn, save, acting, name, description)
+                # The graph is its agents' content: a builder holding an
+                # agent's old stamp must get a stale write, not overwrite it.
+                AgentsRepository(conn).touch_for_workflow(str(workflow["id"]))
         except Exception as err:
             return _workflow_error_response("Failed to update workflow", err)
 

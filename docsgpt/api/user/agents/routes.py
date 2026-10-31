@@ -1802,35 +1802,37 @@ class UpdateAgent(Resource):
                         update_fields["image"] = image_url
 
                 # Apply update. Owner writes use the dual-key guard; team-editor
-                # writes go by-id (already authorized) with an optimistic-lock
-                # check when the client supplies the row's expected updated_at.
+                # writes go by-id (already authorized). Both take the
+                # optimistic-lock check when the client supplies the row's
+                # expected updated_at.
                 changed_fields = sorted(update_fields)
                 if graph_save is not None:
                     # The agent row is written with its graph even when only the
-                    # graph changes: the editor's stale-write check applies and
+                    # graph changes: the stale-write check applies and
                     # updated_at moves. ``workflow_id`` is re-sent as it is (a new
                     # workflow is linked below, after it is written).
                     update_fields.setdefault("workflow_id", existing_agent.get("workflow_id"))
+                expected_updated_at = data.get("expected_updated_at") or None
                 if is_team_editor:
                     result = agents_repo.update_by_id(
-                        pg_agent_id,
-                        update_fields,
-                        expected_updated_at=data.get("expected_updated_at"),
+                        pg_agent_id, update_fields, expected_updated_at=expected_updated_at,
                     )
-                    if result is None:
-                        return make_response(
-                            jsonify(
-                                {
-                                    "success": False,
-                                    "message": "Agent was modified by someone else",
-                                    "code": "stale_write",
-                                }
-                            ),
-                            409,
-                        )
-                    updated = bool(result)
                 else:
-                    updated = agents_repo.update(pg_agent_id, user, update_fields)
+                    result = agents_repo.update(
+                        pg_agent_id, user, update_fields, expected_updated_at=expected_updated_at,
+                    )
+                if result is None:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Agent was modified by someone else",
+                                "code": "stale_write",
+                            }
+                        ),
+                        409,
+                    )
+                updated = bool(result)
                 # The graph last: a stale or failed agent write above returns
                 # before it, so the agent and its graph change together.
                 saved_workflow_id = None
@@ -1865,7 +1867,7 @@ class UpdateAgent(Resource):
                         ),
                         404,
                     )
-                # The row's new stamp: a team editor's next save sends it as
+                # The row's new stamp: the builder's next save sends it as
                 # ``expected_updated_at``.
                 saved_row = agents_repo.get_by_id(pg_agent_id) or {}
         except Exception as err:

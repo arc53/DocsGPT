@@ -84,3 +84,26 @@ def test_upgrade_lowercases_legacy_tool_ids(pg_conn):
     assert tools["legacy"] == [upper.lower(), other, "Mongo507f1f77bcf86cd799439011", 7]
     assert tools["clean"] == [other]
     assert tools["odd"] == {}
+
+
+def _trigger_when(conn) -> str:
+    return conn.execute(
+        text(
+            "SELECT pg_get_triggerdef(oid) FROM pg_trigger "
+            "WHERE tgrelid = 'agents'::regclass AND tgname = 'agents_set_updated_at'"
+        )
+    ).scalar()
+
+
+def test_round_trip_swaps_the_updated_at_trigger(pg_conn):
+    migration = importlib.import_module("docsgpt.alembic.versions.0060_agent_prompt_preset")
+    with patch.object(migration, "op", Operations(MigrationContext.configure(pg_conn))):
+        migration.upgrade()
+        migration.upgrade()
+        assert "last_used_at" in _trigger_when(pg_conn)
+        migration.downgrade()
+        migration.downgrade()
+        assert "last_used_at" not in _trigger_when(pg_conn)
+        assert "old.* IS DISTINCT FROM new.*" in _trigger_when(pg_conn)
+        migration.upgrade()
+        assert "last_used_at" in _trigger_when(pg_conn)

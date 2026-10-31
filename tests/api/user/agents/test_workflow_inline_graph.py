@@ -460,3 +460,82 @@ class TestEmptyToolIds:
         agent_id, _ = _agent(pg_conn)
         updated = _update(app, pg_conn, agent_id, {"tools": tools})
         assert _status(updated) == 403
+
+
+def _age(conn, agent_id):
+    """Move the agent's ``updated_at`` an hour back, past its trigger, and return it.
+
+    ``now()`` is fixed inside the test's transaction, so a bump only shows
+    against an older stamp.
+    """
+    from sqlalchemy import text
+
+    conn.execute(text("ALTER TABLE agents DISABLE TRIGGER agents_set_updated_at"))
+    conn.execute(
+        text("UPDATE agents SET updated_at = updated_at - interval '1 hour' WHERE id = CAST(:id AS uuid)"),
+        {"id": agent_id},
+    )
+    conn.execute(text("ALTER TABLE agents ENABLE TRIGGER agents_set_updated_at"))
+    return _row(conn, agent_id)["updated_at"]
+
+
+class TestStaleWriteToken:
+    """``expected_updated_at`` refuses a save only after someone else edited the agent or its graph."""
+
+    def test_the_owner_chatting_does_not_make_an_editors_copy_stale(self, app, pg_conn):
+        agent_id, _ = _workflow_agent(app, pg_conn)
+        stamp = _age(pg_conn, agent_id)
+        # What the stream processor writes on each of the owner's chats.
+        AgentsRepository(pg_conn).update(agent_id, OWNER, {"last_used_at": "2026-10-31T12:00:00+00:00"})
+        resp = _update(app, pg_conn, agent_id, {"name": "Edited", "expected_updated_at": stamp}, user=EDITOR)
+        assert _status(resp) == 200, _json(resp)
+
+    def test_regenerating_the_key_does_not_make_an_editors_copy_stale(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import RegenerateAgentKey
+        from tests.api.user.test_resource_sponsors import _call
+
+        agent_id, _ = _workflow_agent(app, pg_conn)
+        stamp = _age(pg_conn, agent_id)
+        regenerated = _call(
+            app, pg_conn, RegenerateAgentKey, "post", f"/api/agent/{agent_id}/regenerate_key", OWNER,
+            args=(agent_id,),
+        )
+        assert _status(regenerated) == 200, _json(regenerated)
+        resp = _update(app, pg_conn, agent_id, {"name": "Edited", "expected_updated_at": stamp}, user=EDITOR)
+        assert _status(resp) == 200, _json(resp)
+
+    def test_a_stale_owner_save_is_refused(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        resp = _update(
+            app, pg_conn, agent_id,
+            {"name": "X", "workflow_graph": _graph(), "expected_updated_at": "2001-01-01T00:00:00Z"},
+        )
+        assert _status(resp) == 409
+        assert _json(resp)["code"] == "stale_write"
+        assert _row(pg_conn, agent_id)["name"] == "Flow"
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+
+    def test_an_owner_save_with_the_current_stamp_or_none_goes_through(self, app, pg_conn):
+        agent_id, _ = _workflow_agent(app, pg_conn)
+        stamp = _row(pg_conn, agent_id)["updated_at"]
+        assert _status(_update(app, pg_conn, agent_id, {"name": "One", "expected_updated_at": stamp})) == 200
+        assert _status(_update(app, pg_conn, agent_id, {"name": "Two"})) == 200
+        assert _row(pg_conn, agent_id)["name"] == "Two"
+
+    def test_a_graph_saved_on_the_workflow_makes_the_agents_copy_stale(self, app, pg_conn):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+        from tests.api.user.test_resource_sponsors import _call
+
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        stamp = _age(pg_conn, agent_id)
+        saved = _call(
+            app, pg_conn, WorkflowDetail, "put", f"/api/workflows/{wid}", OWNER,
+            json={"name": "Flow", **_graph()}, args=(wid,),
+        )
+        assert _status(saved) == 200, _json(saved)
+        assert _row(pg_conn, agent_id)["updated_at"] > stamp
+        resp = _update(
+            app, pg_conn, agent_id, {"workflow_graph": _graph(), "expected_updated_at": stamp}, user=EDITOR,
+        )
+        assert _status(resp) == 409
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 2

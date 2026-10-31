@@ -255,6 +255,91 @@ class TestUpdateLastUsedAt:
         assert datetime.datetime.fromisoformat(fetched["last_used_at"]) == when
 
 
+def _stamp(conn, agent_id):
+    from sqlalchemy import text
+
+    return conn.execute(
+        text("SELECT updated_at FROM agents WHERE id = CAST(:id AS uuid)"), {"id": str(agent_id)},
+    ).scalar()
+
+
+def _age(conn, agent_id):
+    """Move the agent's ``updated_at`` an hour back, past its trigger.
+
+    ``now()`` is fixed inside the test's transaction, so a bump only shows
+    against an older stamp.
+    """
+    from sqlalchemy import text
+
+    conn.execute(text("ALTER TABLE agents DISABLE TRIGGER agents_set_updated_at"))
+    conn.execute(
+        text("UPDATE agents SET updated_at = updated_at - interval '1 hour' WHERE id = CAST(:id AS uuid)"),
+        {"id": str(agent_id)},
+    )
+    conn.execute(text("ALTER TABLE agents ENABLE TRIGGER agents_set_updated_at"))
+    return _stamp(conn, agent_id)
+
+
+class TestUpdatedAtTracksContent:
+    """``updated_at`` is the builders' stale-write token: only a content edit moves it."""
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"last_used_at": "2026-04-01T12:00:00+00:00"},
+            {"key": "regenerated-key"},
+            {"incoming_webhook_token": "hook-token"},
+            {"shared": True, "shared_token": "share-token", "shared_metadata": {"shared_by": "u"}},
+        ],
+    )
+    def test_a_bookkeeping_write_keeps_the_stamp(self, pg_conn, fields):
+        repo = _repo(pg_conn)
+        agent = repo.create("u", "a", "draft")
+        stamp = _age(pg_conn, agent["id"])
+        assert repo.update(agent["id"], "u", fields) is True
+        assert _stamp(pg_conn, agent["id"]) == stamp
+        assert repo.update_by_id(agent["id"], fields, expected_updated_at=stamp) is True
+        assert _stamp(pg_conn, agent["id"]) == stamp
+
+    def test_a_content_write_moves_the_stamp(self, pg_conn):
+        repo = _repo(pg_conn)
+        agent = repo.create("u", "a", "draft")
+        stamp = _age(pg_conn, agent["id"])
+        assert repo.update(agent["id"], "u", {"name": "b", "last_used_at": None}) is True
+        moved = _stamp(pg_conn, agent["id"])
+        assert moved > stamp
+        stamp = _age(pg_conn, agent["id"])
+        assert repo.update_by_id(agent["id"], {"description": "d"}, expected_updated_at=stamp) is True
+        assert _stamp(pg_conn, agent["id"]) > stamp
+
+    def test_a_raw_bookkeeping_update_keeps_the_stamp(self, pg_conn):
+        """The trigger, not just the repository: any UPDATE of bookkeeping columns alone."""
+        from sqlalchemy import text
+
+        agent = _repo(pg_conn).create("u", "a", "draft")
+        stamp = _age(pg_conn, agent["id"])
+        pg_conn.execute(
+            text("UPDATE agents SET last_used_at = now(), key = 'k2' WHERE id = CAST(:id AS uuid)"),
+            {"id": str(agent["id"])},
+        )
+        assert _stamp(pg_conn, agent["id"]) == stamp
+        pg_conn.execute(text("UPDATE agents SET chunks = 9 WHERE id = CAST(:id AS uuid)"), {"id": str(agent["id"])})
+        assert _stamp(pg_conn, agent["id"]) > stamp
+
+    def test_touch_for_workflow_moves_only_the_linked_agents(self, pg_conn):
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+        repo = _repo(pg_conn)
+        wf = WorkflowsRepository(pg_conn).create("u", "wf")
+        linked = repo.create("u", "linked", "draft", workflow_id=wf["id"])
+        other = repo.create("u", "other", "draft")
+        linked_stamp = _age(pg_conn, linked["id"])
+        other_stamp = _age(pg_conn, other["id"])
+        repo.touch_for_workflow(str(wf["id"]))
+        assert _stamp(pg_conn, linked["id"]) > linked_stamp
+        assert _stamp(pg_conn, other["id"]) == other_stamp
+
+
 class TestListForUser:
     def test_lists_only_own_agents(self, pg_conn):
         repo = _repo(pg_conn)
