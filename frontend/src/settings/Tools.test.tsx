@@ -1209,6 +1209,59 @@ describe('Tools usage', () => {
     expect(titles()).toEqual(['elsewhere']);
   });
 
+  const search = (value: string) =>
+    act(async () => {
+      const input =
+        container.querySelector<HTMLInputElement>('#tool-search-input')!;
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  const usageTrigger = () =>
+    container.querySelector<HTMLElement>(
+      '[data-slot="select-trigger"][aria-label="settings.usage.filterLabel"]',
+    );
+
+  // The counts are what the list would show: with the search applied, a
+  // pill never promises tools the list then can't find.
+  it('counts the usage filter with the search applied', async () => {
+    await renderAt('/settings/tools?usage=inUse');
+    expect(usageTrigger()!.textContent).toBe('settings.usage.filters.inUse3');
+    await search('el');
+    expect(usageTrigger()!.textContent).toBe('settings.usage.filters.inUse1');
+  });
+
+  // Under a filter the active search empties, the select stays so the
+  // filter can still be seen and changed.
+  it('keeps a picked usage filter while the search matches nothing', async () => {
+    await renderAt('/settings/tools?usage=unused');
+    await search('nothing like it');
+    expect(usageTrigger()).not.toBeNull();
+  });
+
+  // Turning In my chats on makes an unused tool in use; the tile stays put
+  // under Unused until the filter changes, so it never vanishes mid-click.
+  it('keeps a switched tile under its usage filter until the filter changes', async () => {
+    updateToolStatus.mockImplementation(() => jsonResponse({ success: true }));
+    await renderAt('/settings/tools?usage=unused');
+    expect(titles()).toEqual(['idle', 'old']);
+    await act(async () =>
+      card('idle').querySelector<HTMLElement>('[role="switch"]')!.click(),
+    );
+    expect(titles()).toEqual(['idle', 'old']);
+    expect(
+      card('idle')
+        .querySelector('[role="switch"]')!
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(usageTrigger()!.textContent).toBe('settings.usage.filters.unused2');
+    // A new search is a new filter: the tile settles where it belongs.
+    await search('i');
+    expect(titles()).toEqual([]);
+  });
+
   it('says on each card which agents use it; the switch says chats', async () => {
     await renderAt();
     const footer = (title: string) =>

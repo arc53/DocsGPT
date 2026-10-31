@@ -133,6 +133,15 @@ export default function Tools() {
   const [mcpStatuses, setMcpStatuses] = React.useState<{
     [toolId: string]: string;
   }>({});
+  // Under a usage filter, a tool whose In my chats switch moved keeps the
+  // usage it had before (by id), so its tile doesn't vanish mid-click. It
+  // settles on the next search or filter change (`key`) or reload.
+  const filterKey = `${kind}\n${usage}\n${searchTerm}`;
+  const [heldUsage, setHeldUsage] = React.useState<{
+    key: string;
+    inUse: Record<string, boolean>;
+  }>({ key: '', inUse: {} });
+  const heldInUse = heldUsage.key === filterKey ? heldUsage.inUse : {};
 
   // A connection-backed tool shares its connection's account or asks each
   // member to connect their own; the share dialog shows that choice. Whose
@@ -347,6 +356,7 @@ export default function Tools() {
           isChatToolVisible(tool),
         );
         setUserTools(filtered);
+        setHeldUsage({ key: '', inUse: {} });
         const open = selectedToolRef.current;
         const reopened =
           reopenId && open && 'id' in open && open.id === reopenId
@@ -379,6 +389,12 @@ export default function Tools() {
 
   // The switch moves at once and flips back when the server refuses it.
   const updateToolStatus = (toolId: string, newStatus: boolean) => {
+    const tool = userTools.find((candidate) => candidate.id === toolId);
+    if (tool && usage !== 'all' && !(toolId in heldInUse))
+      setHeldUsage({
+        key: filterKey,
+        inUse: { ...heldInUse, [toolId]: isToolInUse(tool) },
+      });
     setToolInChat(toolId, newStatus);
     const fail = () => {
       setToolInChat(toolId, !newStatus);
@@ -492,14 +508,21 @@ export default function Tools() {
   }, [newApiTool]);
 
   const matchesUsage = (tool: UserToolType, key: UsageFilter) =>
-    key === 'all' || (key === 'inUse') === isToolInUse(tool);
+    key === 'all' ||
+    (key === 'inUse') === (heldInUse[tool.id] ?? isToolInUse(tool));
   const matchesKind = (tool: UserToolType, key: ToolKindFilter) =>
     key === 'all' || toolKindOf(tool, connections, catalog) === key;
-  // Each filter counts with the other one applied, as Knowledge's do.
+  const matchesSearch = (tool: UserToolType) =>
+    (tool.customName || tool.displayName)
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase());
+  const searchedTools = userTools.filter(matchesSearch);
+  // Each filter counts with the other one and the search applied, as
+  // Knowledge's do, so a pill never leads to "No tools found".
   const kindCounts = Object.fromEntries(
     TOOL_KINDS.map((key) => [
       key,
-      userTools.filter(
+      searchedTools.filter(
         (tool) => matchesUsage(tool, usage) && matchesKind(tool, key),
       ).length,
     ]),
@@ -507,7 +530,7 @@ export default function Tools() {
   const usageCounts = Object.fromEntries(
     USAGE_FILTERS.map((key) => [
       key,
-      userTools.filter(
+      searchedTools.filter(
         (tool) => matchesKind(tool, kind) && matchesUsage(tool, key),
       ).length,
     ]),
@@ -515,13 +538,8 @@ export default function Tools() {
   // No pill leads to an empty list; with only All left there is no track.
   const kinds = shownFilters(TOOL_KINDS, kind, kindCounts);
 
-  const filteredTools = userTools.filter(
-    (tool) =>
-      matchesKind(tool, kind) &&
-      matchesUsage(tool, usage) &&
-      (tool.customName || tool.displayName)
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()),
+  const filteredTools = searchedTools.filter(
+    (tool) => matchesKind(tool, kind) && matchesUsage(tool, usage),
   );
   // A section's count is its whole group, not the part on this page.
   const groupSizes = new Map(
@@ -539,11 +557,7 @@ export default function Tools() {
     page: toolsPage,
     setPage: setToolsPage,
     pageItems: pageTools,
-  } = useClientPage(
-    orderedTools,
-    SHORT_LIST_PAGE_SIZE,
-    `${kind}\n${usage}\n${searchTerm}`,
-  );
+  } = useClientPage(orderedTools, SHORT_LIST_PAGE_SIZE, filterKey);
   const pageGroups = groupTools(pageTools, connections, catalog);
 
   // The state leads the badge row: the caller's own connection needing a
@@ -738,9 +752,9 @@ export default function Tools() {
               }
               divider
             >
-              {!loading &&
-              !loadFailed &&
-              (kinds.length > 0 || usageCounts.all > 0) ? (
+              {/* A picked filter stays drawn while the search empties the
+                  list, so it can still be seen and changed. */}
+              {!loading && !loadFailed && userTools.length > 0 ? (
                 <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
                   {kinds.length > 0 ? (
                     <ToggleGroup
