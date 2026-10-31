@@ -202,8 +202,6 @@ def prune_boilerplate(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[
 
         text = doc.get("text")
         if isinstance(text, str) and text:
-            if "_raw_text" not in doc:
-                doc["_raw_text"] = text
             doc["text"] = prune_chunk_text(text, query=query, seen_boilerplate=seen_boilerplate)
 
     return docs

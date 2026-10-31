@@ -152,10 +152,10 @@ class TestBoilerplatePruningRules:
         assert pruned[0]["text"] == "Server uses TLS."
         assert pruned[1]["text"] == "Server uses TLS."
 
-    def test_prune_boilerplate_preserves_raw_text_snapshot(self):
+    def test_prune_boilerplate_does_not_leak_raw_text_attribute(self):
         doc = {"id": "doc1", "text": "Home > API\nFactual chunk."}
         prune_boilerplate([doc], query="Factual")
-        assert doc["_raw_text"] == "Home > API\nFactual chunk."
+        assert "_raw_text" not in doc
         assert doc["text"] == "Factual chunk."
 
 
