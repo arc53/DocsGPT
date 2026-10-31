@@ -328,6 +328,28 @@ def _inline_graph(data: dict, agent_type: Optional[str]):
     return graph, None
 
 
+def _stored_graph_errors(conn, workflow_id, owner_id: str) -> list:
+    """The full validation errors of a stored workflow graph, run as its owner.
+
+    A draft save checks a graph's shape only, so a stored graph may be
+    unfinished; a published agent must not start running one. A workflow the
+    owner doesn't have is left to the caller's own checks.
+
+    Args:
+        conn: Open database connection.
+        workflow_id: The workflow's id, or None.
+        owner_id: The agent's owner, whose models the nodes run with.
+
+    Returns:
+        list: The errors, empty when the graph may run.
+    """
+    workflow = WorkflowsRepository(conn).get(str(workflow_id), owner_id) if workflow_id else None
+    if workflow is None:
+        return []
+    nodes, edges = stored_graph(conn, workflow)
+    return validate_workflow_structure(nodes, edges, user_id=owner_id)
+
+
 def _image_output(image: Optional[str], agent_id: str, owner: Optional[str]) -> str:
     """The agent image URL a save response carries, as ``get_agent`` shows it."""
     return generate_image_url(image, agent_id, owner) if image else ""
@@ -1028,6 +1050,10 @@ class CreateAgent(Resource):
                         taken = _workflow_taken(conn, pg_workflow_id)
                         if taken is not None:
                             return taken
+                    if is_published:
+                        graph_errors = _stored_graph_errors(conn, pg_workflow_id, user)
+                        if graph_errors:
+                            return _graph_validation_failed(graph_errors)
 
                 # Resolve sources — only UUIDs accepted post-cutover.
                 source_id_resolved = None
@@ -1623,25 +1649,26 @@ class UpdateAgent(Resource):
                         update_fields["key"] = newly_generated_key
 
                 # A workflow agent's graph: an inline one is checked for shape
-                # on a draft and in full to publish. Publishing a draft without
-                # sending one validates the stored graph, which a draft save may
-                # have left unfinished.
+                # on a draft and in full to publish. Without one, a published
+                # agent that starts running a stored graph (it is published now,
+                # becomes a workflow agent, or switches workflow) validates that
+                # graph, which a draft save may have left unfinished.
                 if final_agent_type == "workflow":
                     graph_errors: list = []
                     if inline_graph is not None:
                         graph_errors = workflow_graph_errors(
                             inline_graph, draft=final_status != "published", user_id=owner_id,
                         )
-                    elif final_status == "published" and existing_agent.get("status") != "published":
-                        current_workflow_id = update_fields.get("workflow_id", existing_agent.get("workflow_id"))
-                        current_workflow = (
-                            WorkflowsRepository(conn).get(str(current_workflow_id), owner_id)
-                            if current_workflow_id
-                            else None
+                    elif final_status == "published":
+                        existing_workflow_id = existing_agent.get("workflow_id")
+                        final_workflow_id = update_fields.get("workflow_id", existing_workflow_id)
+                        starts_running = (
+                            existing_agent.get("status") != "published"
+                            or existing_agent.get("agent_type") != "workflow"
+                            or str(final_workflow_id or "") != str(existing_workflow_id or "")
                         )
-                        if current_workflow is not None:
-                            nodes, edges = stored_graph(conn, current_workflow)
-                            graph_errors = validate_workflow_structure(nodes, edges, user_id=owner_id)
+                        if starts_running:
+                            graph_errors = _stored_graph_errors(conn, final_workflow_id, owner_id)
                     if graph_errors:
                         return _graph_validation_failed(graph_errors)
 
@@ -1777,10 +1804,14 @@ class UpdateAgent(Resource):
                 # Apply update. Owner writes use the dual-key guard; team-editor
                 # writes go by-id (already authorized) with an optimistic-lock
                 # check when the client supplies the row's expected updated_at.
-                if not update_fields:
-                    # Only the graph changes.
-                    updated = True
-                elif is_team_editor:
+                changed_fields = sorted(update_fields)
+                if graph_save is not None:
+                    # The agent row is written with its graph even when only the
+                    # graph changes: the editor's stale-write check applies and
+                    # updated_at moves. ``workflow_id`` is re-sent as it is (a new
+                    # workflow is linked below, after it is written).
+                    update_fields.setdefault("workflow_id", existing_agent.get("workflow_id"))
+                if is_team_editor:
                     result = agents_repo.update_by_id(
                         pg_agent_id,
                         update_fields,
@@ -1814,7 +1845,7 @@ class UpdateAgent(Resource):
                     if graph_save.workflow is None:
                         agents_repo.update_by_id(pg_agent_id, {"workflow_id": saved_workflow_id})
                 # An update that changed no field is not an event.
-                event_fields = sorted([*update_fields, *(["workflow_graph"] if saved_workflow_id else [])])
+                event_fields = sorted([*changed_fields, *(["workflow_graph"] if saved_workflow_id else [])])
                 if updated and event_fields:
                     record_event(
                         conn,

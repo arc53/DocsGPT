@@ -131,6 +131,11 @@ class TestAgentWorkflowSwap:
     def test_owner_may_swap_workflow(self, app, pg_conn):
         agent_a, _, _ = self._two_workflow_agents(pg_conn)
         wf_c = str(WorkflowsRepository(pg_conn).create(OWNER, "C")["id"])
+        # A published agent switches only to a graph that passes the full validation.
+        from docsgpt.api.user.workflows.routes import _write_graph
+
+        body = _wf_body()
+        _write_graph(pg_conn, wf_c, 1, body["nodes"], body["edges"])
         assert _status(_put(app, pg_conn, agent_a, OWNER, {"workflow": wf_c})) == 200
         assert str(_row(pg_conn, agent_a)["workflow_id"]) == wf_c
 
@@ -288,3 +293,18 @@ class TestRefAttachable:
         assert "ref_attachable(" in inspect.getsource(workflow_routes._new_node_ref_denied)
         source = inspect.getsource(agent_routes)
         assert "_tool_attachable" not in source and "_ref_attachable" not in source
+
+
+class TestRefAttachableEmptyIds:
+    def test_an_empty_or_non_string_tool_id_is_refused(self, pg_conn):
+        from docsgpt.api.user.resource_access import ref_attachable
+
+        for bad in ("", "  ", None, 0, {"id": "x"}):
+            assert not ref_attachable(pg_conn, "tool", bad, OWNER), bad
+
+    def test_an_empty_source_or_prompt_is_no_reference(self, pg_conn):
+        from docsgpt.api.user.resource_access import ref_attachable
+
+        for resource_type in ("source", "prompt"):
+            assert ref_attachable(pg_conn, resource_type, "", OWNER)
+            assert ref_attachable(pg_conn, resource_type, None, OWNER)

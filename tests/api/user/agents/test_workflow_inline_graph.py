@@ -354,3 +354,94 @@ class TestTokens:
             reason = rules._agent_body_check(_Req(), {family: [str(uuid.uuid4())]}, OWNER)
             assert reason, family
         assert rules._agent_body_check(_Req(), {"agents": [str(uuid.uuid4())]}, OWNER) is None
+
+
+class TestPublishedAgentsRunValidatedGraphs:
+    """A published workflow agent never ends up on a graph that only passed the draft checks."""
+
+    def _draft_workflow(self, app, pg_conn):
+        """A draft agent's workflow, holding an unfinished graph, then detached and free to attach."""
+        agent_id, wid = _workflow_agent(app, pg_conn, status="draft", graph=_invalid_graph())
+        assert _status(_update(app, pg_conn, agent_id, {"agent_type": "classic", "workflow": ""})) == 200
+        return wid
+
+    def test_create_published_with_an_unvalidated_workflow_is_400(self, app, pg_conn):
+        wid = self._draft_workflow(app, pg_conn)
+        resp = _create(app, pg_conn, {"name": "Pub", "agent_type": "workflow", "status": "published", "workflow": wid})
+        assert _status(resp) == 400
+        assert _json(resp)["message"] == "Workflow validation failed" and _json(resp)["errors"]
+        assert [a["name"] for a in AgentsRepository(pg_conn).list_for_user(OWNER)] == ["Flow"]
+        # A draft may still take it.
+        draft = _create(app, pg_conn, {"name": "Draft", "agent_type": "workflow", "status": "draft", "workflow": wid})
+        assert _status(draft) == 201, _json(draft)
+
+    def test_a_published_agent_switching_to_an_unvalidated_workflow_is_400(self, app, pg_conn):
+        wid = self._draft_workflow(app, pg_conn)
+        agent_id, old_wid = _workflow_agent(app, pg_conn)
+        resp = _update(app, pg_conn, agent_id, {"workflow": wid})
+        assert _status(resp) == 400
+        assert _json(resp)["errors"]
+        assert str(_row(pg_conn, agent_id)["workflow_id"]) == old_wid
+
+    def test_a_valid_stored_workflow_still_attaches(self, app, pg_conn):
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        from docsgpt.api.user.workflows.routes import _write_graph
+
+        _write_graph(pg_conn, str(wf["id"]), 1, _graph()["nodes"], _graph()["edges"])
+        resp = _create(
+            app, pg_conn, {"name": "Pub", "agent_type": "workflow", "status": "published", "workflow": str(wf["id"])},
+        )
+        assert _status(resp) == 201, _json(resp)
+
+
+class TestGraphOnlySaves:
+    def test_a_stale_graph_only_editor_save_is_refused(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        resp = _update(
+            app, pg_conn, agent_id,
+            {"workflow_graph": _graph(), "expected_updated_at": "2001-01-01T00:00:00Z"}, user=EDITOR,
+        )
+        assert _status(resp) == 409
+        assert _json(resp)["code"] == "stale_write"
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+
+    def test_a_graph_only_save_bumps_the_agents_updated_at(self, app, pg_conn):
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        before = _row(pg_conn, agent_id)["updated_at"]
+        from sqlalchemy import text
+
+        # now() is the transaction's start time; move the stored stamp back so a bump shows.
+        pg_conn.execute(
+            text("UPDATE agents SET updated_at = updated_at - interval '1 hour' WHERE id = CAST(:id AS uuid)"),
+            {"id": agent_id},
+        )
+        stamp = _row(pg_conn, agent_id)["updated_at"]
+        resp = _update(
+            app, pg_conn, agent_id, {"workflow_graph": _graph(), "expected_updated_at": str(stamp)}, user=EDITOR,
+        )
+        assert _status(resp) == 200, _json(resp)
+        assert _row(pg_conn, agent_id)["updated_at"] == before
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 2
+
+    def test_a_stale_editor_save_that_creates_the_workflow_is_refused(self, app, pg_conn):
+        from tests.api.user.test_resource_sponsors import _share_agent
+
+        agent_id = _json(_create(app, pg_conn, {"name": "Empty", "agent_type": "workflow", "status": "draft"}))["id"]
+        _share_agent(pg_conn, agent_id)
+        resp = _update(
+            app, pg_conn, agent_id,
+            {"workflow_graph": _graph(), "expected_updated_at": "2001-01-01T00:00:00Z"}, user=EDITOR,
+        )
+        assert _status(resp) == 409
+        assert _row(pg_conn, agent_id)["workflow_id"] is None
+        assert _workflow_count(pg_conn) == 0
+
+
+class TestEmptyToolIds:
+    @pytest.mark.parametrize("tools", [[""], [None], ["  "]])
+    def test_create_and_update_refuse_an_empty_tool_id(self, app, pg_conn, tools):
+        created = _create(app, pg_conn, {"name": "A", "status": "draft", "tools": tools})
+        assert _status(created) == 403
+        agent_id, _ = _agent(pg_conn)
+        updated = _update(app, pg_conn, agent_id, {"tools": tools})
+        assert _status(updated) == 403

@@ -442,10 +442,11 @@ def ref_attachable(conn: Connection, resource_type: str, resource_id: Optional[s
     and update and workflow node saves all ask it. The caller's own access
     counts, not the holder owner's: an editor of a shared agent must not wire
     in the owner's private tool (run with the owner's credentials), source or
-    prompt. Refs that belong to no one always pass: an empty ref, the
-    ``default`` source and prompt presets, and the synthetic ids of default
-    and builtin tools. A ref already on the holder is the caller's business
-    to skip; this only judges new ones.
+    prompt. Refs that belong to no one always pass: an empty source or prompt
+    (no reference), the ``default`` source and prompt presets, and the
+    synthetic ids of default and builtin tools. A tool id must be a non-empty
+    string: an empty one names no tool and is refused. A ref already on the
+    holder is the caller's business to skip; this only judges new ones.
 
     Args:
         conn: Open database connection.
@@ -456,6 +457,8 @@ def ref_attachable(conn: Connection, resource_type: str, resource_id: Optional[s
     Returns:
         True when the caller may attach it (see :func:`can_use_ref`).
     """
+    if resource_type == "tool" and (not isinstance(resource_id, str) or not resource_id.strip()):
+        return False
     if not resource_id:
         return True
     rid = str(resource_id)
