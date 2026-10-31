@@ -204,6 +204,7 @@ export default function SharedAgent() {
               queries={queries}
               status={status}
               showHeroOnEmpty={false}
+              starters={sharedAgent.starters}
               onOpenArtifact={openArtifact}
               headerContent={
                 <div className="flex w-full items-center justify-center py-4">

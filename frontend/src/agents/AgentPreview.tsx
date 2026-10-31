@@ -5,6 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { EmptyState } from '@/components/ui/empty-state';
 
 import MessageInput from '../components/MessageInput';
+import AgentStarters from '../hero/AgentStarters';
 import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
 import { selectSelectedAgent } from '../preferences/preferenceSlice';
@@ -116,11 +117,18 @@ export default function AgentPreview() {
     <div className="relative h-full w-full">
       <div className="scrollbar-overlay absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:w-full! [&>div>div]:max-w-none!">
         {queries.length === 0 ? (
-          <section className="flex h-full items-center justify-center">
-            <EmptyState
-              size="sm"
-              illustration="none"
-              title={t('agents.preview.emptyTitle')}
+          <section className="flex h-full flex-col">
+            <div className="flex grow items-center justify-center">
+              <EmptyState
+                size="sm"
+                illustration="none"
+                title={t('agents.preview.emptyTitle')}
+              />
+            </div>
+            <AgentStarters
+              className="mb-3"
+              starters={selectedAgent?.starters}
+              onAsk={(question) => handleQuestion({ question })}
             />
           </section>
         ) : (

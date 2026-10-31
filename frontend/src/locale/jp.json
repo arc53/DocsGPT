@@ -3031,7 +3031,8 @@
         "basics": "基本情報",
         "knowledge": "ナレッジと動作",
         "model": "モデル",
-        "analytics": "インサイト"
+        "analytics": "インサイト",
+        "starters": "最初の質問"
       },
       "placeholders": {
         "agentName": "エージェント名",
@@ -3348,6 +3349,11 @@
         "title": "保存せずに離れますか?",
         "description": "ここで行った変更は失われます。",
         "submit": "離れる"
+      },
+      "starters": {
+        "description": "このエージェントと新しいチャットを始めたときに、カードの下に表示される質問（最大4つ）。",
+        "label": "質問 {{number}}",
+        "placeholder": "例：何を手伝ってもらえますか？"
       }
     },
     "logs": {

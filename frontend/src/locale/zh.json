@@ -3029,7 +3029,8 @@
         "basics": "基本信息",
         "knowledge": "知识与行为",
         "model": "模型",
-        "analytics": "洞察"
+        "analytics": "洞察",
+        "starters": "开场问题"
       },
       "placeholders": {
         "agentName": "智能体名称",
@@ -3346,6 +3347,11 @@
         "title": "不保存就离开？",
         "description": "您在此处所做的更改将会丢失。",
         "submit": "离开"
+      },
+      "starters": {
+        "description": "有人与该智能体开始新对话时，显示在其卡片下方的问题，最多四个。",
+        "label": "问题 {{number}}",
+        "placeholder": "例如：你能帮我做什么？"
       }
     },
     "logs": {

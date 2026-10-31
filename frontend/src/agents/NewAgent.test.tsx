@@ -1525,6 +1525,29 @@ describe('NewAgent form', () => {
     expect(limitSwitch('historyLimit').disabled).toBe(true);
   });
 
+  it('edits the starters and saves them cleaned', async () => {
+    await renderEdit({ starters: ['Run due diligence on a new vendor'] });
+    const fields = () =>
+      Array.from(
+        container.querySelectorAll<HTMLInputElement>('input[maxlength="200"]'),
+      );
+    // Four fields, the saved starter in the first.
+    expect(fields().map((f) => f.value)).toEqual([
+      'Run due diligence on a new vendor',
+      '',
+      '',
+      '',
+    ]);
+    const save = buttonByText('agents.form.buttons.save');
+    await act(async () => setNativeValue(fields()[2], '  Which DPAs?  '));
+    await act(async () => save.click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(JSON.parse(sent.get('starters') as string)).toEqual([
+      'Run due diligence on a new vendor',
+      'Which DPAs?',
+    ]);
+  });
+
   it('removes a stopped item from the agent', async () => {
     await renderEdit(withStoppedTool({ reason: 'deleted', sponsor: null }));
     expect(container.textContent).toContain(

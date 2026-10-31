@@ -3049,7 +3049,8 @@
         "basics": "Grundlagen",
         "knowledge": "Wissen und Verhalten",
         "model": "Modell",
-        "analytics": "Einblicke"
+        "analytics": "Einblicke",
+        "starters": "Einstiegsfragen"
       },
       "placeholders": {
         "agentName": "Agentenname",
@@ -3367,6 +3368,11 @@
         "title": "Ohne Speichern verlassen?",
         "description": "Deine Änderungen hier gehen verloren.",
         "submit": "Verlassen"
+      },
+      "starters": {
+        "description": "Bis zu vier Fragen, die unter der Karte des Agenten erscheinen, wenn jemand einen neuen Chat mit ihm beginnt.",
+        "label": "Einstiegsfrage {{number}}",
+        "placeholder": "Zum Beispiel: Wobei kannst du mir helfen?"
       }
     },
     "logs": {

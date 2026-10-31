@@ -113,8 +113,8 @@ field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
 Cards (the recipes by role in DESIGN.md › Card surfaces, applied here):
 
 - Form sections (the agent form's Basics, Knowledge and behaviour, Model,
-  Advanced, Guardrails, Insights) are `subtle lg` with `gap-5`; Basics, Knowledge and
-  behaviour and Model are titled by a `SectionHeader`, Advanced,
+  Starters, Advanced, Guardrails, Insights) are `subtle lg` with `gap-5`; Basics, Knowledge and
+  behaviour, Model and Starters are titled by a `SectionHeader`, Advanced,
   Guardrails and Insights by a `CollapsibleTrigger look="section"` in an `<h2>` (see
   DESIGN.md › Disclosure), its status badges beside the `<h2>` (Insights' `neutral`
   Off while the agent collects none). The toggle
@@ -422,6 +422,13 @@ A question row (leading lucide icon or the service's `ConnectorIcon`) sends
 its text and shows `ArrowUp` on hover and focus; a row that opens something
 (Continue, the setup actions) ends in a `ChevronRight`. Each row is one
 `t()` template under `hero.suggestions` with the name filled in.
+
+An agent's chat (its page, a shared link, the preview) shows the owner's
+starters instead, the same rows with `MessageSquare` (`hero/AgentStarters`),
+under the agent's card and down by the composer. The agent form's Starters
+section is four plain fields; an empty one is none, and a save trims them,
+drops repeats and keeps at most four (`agents/starters.ts`, as the server
+does). With no starters the agent's chat shows only its card.
 
 ## Chat answer column
 

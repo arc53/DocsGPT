@@ -1,21 +1,17 @@
 import {
-  ArrowUp,
   Bot,
-  ChevronRight,
   FileText,
   Files,
   History,
   Plug,
   Upload as UploadIcon,
 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import AgentTypeModal from '../agents/components/AgentTypeModal';
-import { ListRow } from '../components/ui/list-row';
-import { cn } from '../lib/utils';
 import { catalogCards } from '../connectors/catalogCards';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
@@ -45,6 +41,10 @@ import {
   holdsData,
   type HeroSuggestion,
 } from './suggestions';
+import SuggestionRows, {
+  suggestionIconClass as iconClass,
+  type SuggestionRow,
+} from './SuggestionRows';
 
 const SERVICE_TEMPLATES = new Set([
   'files',
@@ -57,8 +57,6 @@ const SERVICE_TEMPLATES = new Set([
 ]);
 /** How many services the Connect row names before "and more". */
 const NAMED_SERVICES = 2;
-
-const iconClass = 'text-muted-foreground size-4 shrink-0';
 
 /**
  * The empty chat's suggestions: questions about what the user has (the
@@ -138,16 +136,9 @@ export default function HeroSuggestions({
     : [];
 
   const names = { interpolation: { escapeValue: false } };
-  const row = (
-    suggestion: HeroSuggestion,
-  ): {
-    key: string;
-    icon: ReactNode;
-    text: string;
-    /** Sends `text`; otherwise the row opens something. */
-    asks: boolean;
-    open?: () => void;
-  } => {
+  // A question row sends its own text; the others open something.
+  type Row = Omit<SuggestionRow, 'onSelect'> & { onSelect?: () => void };
+  const row = (suggestion: HeroSuggestion): Row => {
     switch (suggestion.kind) {
       case 'summarize':
         return {
@@ -194,7 +185,7 @@ export default function HeroSuggestions({
             ...names,
           }),
           asks: false,
-          open: () => navigate(`/c/${suggestion.chat.id}`),
+          onSelect: () => navigate(`/c/${suggestion.chat.id}`),
         };
       case 'addKnowledge':
         return {
@@ -202,7 +193,7 @@ export default function HeroSuggestions({
           icon: <UploadIcon className={iconClass} />,
           text: t('hero.suggestions.addKnowledge'),
           asks: false,
-          open: () => setUploadState('ACTIVE'),
+          onSelect: () => setUploadState('ACTIVE'),
         };
       case 'connect':
         return {
@@ -213,7 +204,7 @@ export default function HeroSuggestions({
             ...names,
           }),
           asks: false,
-          open: () => navigate('/settings/connectors'),
+          onSelect: () => navigate('/settings/connectors'),
         };
       case 'createAgent':
         return {
@@ -221,50 +212,19 @@ export default function HeroSuggestions({
           icon: <Bot className={iconClass} />,
           text: t('hero.suggestions.createAgent'),
           asks: false,
-          open: () => setAgentTypeOpen(true),
+          onSelect: () => setAgentTypeOpen(true),
         };
     }
   };
 
   return (
     <>
-      {rows.length > 0 && (
-        <ul
-          aria-label={t('hero.suggestions.label')}
-          className="flex flex-col"
-          data-testid="hero-suggestions"
-        >
-          {rows.map(row).map(({ key, icon, text, asks, open }) => (
-            <ListRow
-              key={key}
-              size="md"
-              interactive
-              asChild
-              className="group/row"
-              leading={icon}
-              title={text}
-              trailing={
-                asks ? (
-                  <ArrowUp
-                    className={cn(
-                      iconClass,
-                      'opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100',
-                    )}
-                  />
-                ) : (
-                  <ChevronRight className={iconClass} />
-                )
-              }
-            >
-              <button
-                type="button"
-                data-suggestion={key}
-                onClick={asks ? () => onAsk(text) : open}
-              />
-            </ListRow>
-          ))}
-        </ul>
-      )}
+      <SuggestionRows
+        rows={rows.map(row).map((r) => ({
+          ...r,
+          onSelect: r.onSelect ?? (() => onAsk(r.text)),
+        }))}
+      />
       {uploadState === 'ACTIVE' && (
         <Upload
           receivedFile={[]}

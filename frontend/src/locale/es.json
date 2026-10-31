@@ -3146,7 +3146,8 @@
         "basics": "Básico",
         "knowledge": "Conocimiento y comportamiento",
         "model": "Modelo",
-        "analytics": "Información"
+        "analytics": "Información",
+        "starters": "Preguntas de inicio"
       },
       "placeholders": {
         "agentName": "Nombre del agente",
@@ -3469,6 +3470,11 @@
         "title": "¿Salir sin guardar?",
         "description": "Se perderán los cambios que hiciste aquí.",
         "submit": "Salir"
+      },
+      "starters": {
+        "description": "Hasta cuatro preguntas que aparecen bajo la tarjeta del agente cuando alguien empieza un chat nuevo con él.",
+        "label": "Pregunta {{number}}",
+        "placeholder": "Por ejemplo: ¿En qué me puedes ayudar?"
       }
     },
     "logs": {

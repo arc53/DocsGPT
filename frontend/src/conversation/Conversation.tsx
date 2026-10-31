@@ -516,6 +516,7 @@ export default function Conversation() {
                 queries={queries}
                 status={status}
                 showHeroOnEmpty={selectedAgent ? false : true}
+                starters={selectedAgent?.starters}
                 onOpenArtifact={handleOpenArtifact}
                 onToolAction={handleToolAction}
                 isSplitView={isCompanionDocked}

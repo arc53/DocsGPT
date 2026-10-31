@@ -3049,7 +3049,8 @@
         "basics": "Basics",
         "knowledge": "Knowledge and behaviour",
         "model": "Model",
-        "analytics": "Insights"
+        "analytics": "Insights",
+        "starters": "Starters"
       },
       "placeholders": {
         "agentName": "Agent name",
@@ -3367,6 +3368,11 @@
         "title": "Leave without saving?",
         "description": "The changes you made here will be lost.",
         "submit": "Leave"
+      },
+      "starters": {
+        "description": "Up to four questions shown under the agent's card when someone starts a new chat with it.",
+        "label": "Starter {{number}}",
+        "placeholder": "For example: What can you help me with?"
       }
     },
     "logs": {

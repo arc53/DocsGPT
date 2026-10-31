@@ -3146,7 +3146,8 @@
         "basics": "Informations de base",
         "knowledge": "Connaissances et comportement",
         "model": "Modèle",
-        "analytics": "Analyses"
+        "analytics": "Analyses",
+        "starters": "Questions de départ"
       },
       "placeholders": {
         "agentName": "Nom de l’agent",
@@ -3469,6 +3470,11 @@
         "title": "Quitter sans enregistrer ?",
         "description": "Les modifications apportées ici seront perdues.",
         "submit": "Quitter"
+      },
+      "starters": {
+        "description": "Jusqu’à quatre questions affichées sous la carte de l’agent quand quelqu’un démarre une nouvelle discussion avec lui.",
+        "label": "Question {{number}}",
+        "placeholder": "Par exemple : En quoi pouvez-vous m’aider ?"
       }
     },
     "logs": {

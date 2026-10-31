@@ -21,6 +21,7 @@ import {
   MessageScrollerViewport,
 } from '../components/ui/message-scroller';
 import Hero from '../Hero';
+import AgentStarters from '../hero/AgentStarters';
 import AddToKnowledgeAction from './AddToKnowledgeAction';
 import { deriveArtifactChips } from './artifactChips';
 import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
@@ -52,6 +53,8 @@ type ConversationMessagesProps = {
   queries: Query[];
   status: Status;
   showHeroOnEmpty?: boolean;
+  /** The agent's starters, under `headerContent` while the chat is empty. */
+  starters?: string[] | null;
   headerContent?: ReactNode;
   onOpenArtifact?: (artifact: OpenArtifactRequest) => void;
   onToolAction?: (
@@ -99,6 +102,7 @@ export default function ConversationMessages({
   status,
   handleFeedback,
   showHeroOnEmpty = true,
+  starters,
   headerContent,
   onOpenArtifact,
   onToolAction,
@@ -443,8 +447,23 @@ export default function ConversationMessages({
     return (
       <div className="flex h-full w-full justify-center overflow-y-auto will-change-scroll sm:pt-6 lg:pt-12">
         <div className={emptyStateColumnClass}>
-          {headerContent}
-          {showHeroOnEmpty ? <Hero handleQuestion={handleQuestion} /> : null}
+          {showHeroOnEmpty ? (
+            <>
+              {headerContent}
+              <Hero handleQuestion={handleQuestion} />
+            </>
+          ) : (
+            // The agent's card on top, its starters down by the composer,
+            // where the hero's suggestions sit.
+            <div className="flex h-full flex-col">
+              {headerContent}
+              <AgentStarters
+                className="mt-auto mb-3"
+                starters={starters}
+                onAsk={(question) => handleQuestion({ question })}
+              />
+            </div>
+          )}
         </div>
       </div>
     );

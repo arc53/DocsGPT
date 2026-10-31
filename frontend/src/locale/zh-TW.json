@@ -3031,7 +3031,8 @@
         "basics": "基本資訊",
         "knowledge": "知識與行為",
         "model": "模型",
-        "analytics": "洞察"
+        "analytics": "洞察",
+        "starters": "開場問題"
       },
       "placeholders": {
         "agentName": "代理名稱",
@@ -3348,6 +3349,11 @@
         "title": "要不儲存就離開嗎？",
         "description": "您在此處所做的變更將會遺失。",
         "submit": "離開"
+      },
+      "starters": {
+        "description": "有人與此代理開始新對話時，顯示在其卡片下方的問題，最多四個。",
+        "label": "問題 {{number}}",
+        "placeholder": "例如：你能幫我做什麼？"
       }
     },
     "logs": {
