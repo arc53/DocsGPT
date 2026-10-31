@@ -90,6 +90,10 @@ def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
     if words.intersection(_PROTECTED_QUALIFIERS):
         return True
 
+    # 4b. Comparison expressions with a numeric operand (e.g. "Password length > 8")
+    if re.search(r"(?:<=?|>=?|≤|≥|!=)\s*\d", stripped):
+        return True
+
     # 5. URLs (unless a pagination link)
     if "http://" in stripped or "https://" in stripped:
         if not _PAGINATION_LINK_RE.match(stripped):

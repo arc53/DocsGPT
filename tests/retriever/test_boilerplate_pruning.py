@@ -1,30 +1,6 @@
-# ruff: noqa: E402
-"""Unit tests for DocsGPT boilerplate pruning stage and CompressingRetriever."""
+from __future__ import annotations
 
-import sys
-import types
-from unittest.mock import MagicMock, Mock
-
-for mod in [
-    "anthropic",
-    "openai",
-    "groq",
-    "cohere",
-    "pytest_postgresql",
-    "httpx2",
-    "redis",
-    "google.genai",
-    "google.generativeai",
-    "celery",
-    "celery.exceptions",
-]:
-    if mod not in sys.modules:
-        sys.modules[mod] = MagicMock()
-
-if "google" not in sys.modules or not hasattr(sys.modules["google"], "genai"):
-    gmod = types.ModuleType("google")
-    gmod.genai = sys.modules["google.genai"]
-    sys.modules["google"] = gmod
+from unittest.mock import Mock
 
 import pytest
 
@@ -75,6 +51,19 @@ class TestBoilerplatePruningRules:
         # Blank lines outside fence should be collapsed
         assert "\n\n\nSummary" not in cleaned
         assert "\n\nSummary text after code block." in cleaned
+
+    def test_preserves_numeric_comparison_expressions(self):
+        raw = (
+            "Home > Security > Guidelines\n"
+            "Password length > 8 characters\n"
+            "Timeout <= 300 ms\n"
+            "Other text here."
+        )
+        cleaned = prune_chunk_text(raw, query="How long should my passphrase be?")
+        assert "Password length > 8 characters" in cleaned
+        assert "Timeout <= 300 ms" in cleaned
+        assert "Other text here." in cleaned
+        assert "Home > Security > Guidelines" not in cleaned
 
     def test_breadcrumb_matching_variations_and_non_breadcrumbs(self):
         # Breadcrumbs should be pruned when they are purely navigation boilerplate
