@@ -525,19 +525,48 @@ class Dispatcher(BaseRetriever):
         return merged
 
 
+class CompressingRetriever(BaseRetriever):
+    """Delegating retriever that applies post-retrieval boilerplate pruning.
+
+    Handles queries passed both positionally (e.g. from headless_runner and internal_search)
+    and by keyword argument, guaranteeing exact document ordering and identity while
+    stripping navigation and duplicate boilerplate.
+    """
+
+    def __init__(self, inner: BaseRetriever):
+        self._inner = inner
+
+    def search(self, *args, **kwargs) -> List[Dict[str, Any]]:
+        query = args[0] if args else kwargs.get("query", "")
+        docs = self._inner.search(*args, **kwargs)
+        from docsgpt.retriever.stages.boilerplate_pruning import prune_boilerplate
+        return prune_boilerplate(docs, query=query)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
 def build_dispatcher(create_classic: Callable[[], BaseRetriever], **kwargs):
     """Build a Dispatcher, or fall back to the legacy single retriever.
 
     Honours ``settings.PER_SOURCE_RETRIEVAL_ENABLED``: when False, returns the
     legacy single ClassicRAG built by ``create_classic`` (the kill-switch).
 
+    When ``settings.CHUNK_COMPRESSION_ENABLED`` is True, wraps the retriever in
+    ``CompressingRetriever`` to prune boilerplate across the final returned documents.
+
     Args:
         create_classic: Zero-arg factory returning the legacy single retriever.
         **kwargs: Dispatcher constructor kwargs (including ``sources``).
 
     Returns:
-        A ``Dispatcher`` or the legacy retriever from ``create_classic``.
+        A ``Dispatcher``, legacy retriever, or a ``CompressingRetriever``-wrapped instance.
     """
     if not settings.PER_SOURCE_RETRIEVAL_ENABLED:
-        return create_classic()
-    return Dispatcher(**kwargs)
+        retriever = create_classic()
+    else:
+        retriever = Dispatcher(**kwargs)
+
+    if getattr(settings, "CHUNK_COMPRESSION_ENABLED", False):
+        return CompressingRetriever(retriever)
+    return retriever

@@ -155,9 +155,12 @@ def run_benchmark():
     print()
     print("### 2. Semantic & Factual Integrity Verification")
     print(f"- **Document Order & Inclusion:**   {'100% Intact' if (all_docs_preserved and ids_unchanged) else 'MISMATCH'}")
-    print(f"- **Code Blocks Preserved:**        {preserved_code_blocks}/{expected_code_blocks} (100%)")
-    print(f"- **Markdown Tables Preserved:**    {preserved_tables}/{expected_tables} (100%)")
-    print(f"- **Negations & Warnings Preserved:** {preserved_negations}/{expected_negations} (100%)")
+    cb_pct = (preserved_code_blocks / expected_code_blocks * 100) if expected_code_blocks else 100.0
+    tb_pct = (preserved_tables / expected_tables * 100) if expected_tables else 100.0
+    ng_pct = (preserved_negations / expected_negations * 100) if expected_negations else 100.0
+    print(f"- **Code Blocks Preserved:**        {preserved_code_blocks}/{expected_code_blocks} ({cb_pct:.1f}%)")
+    print(f"- **Markdown Tables Preserved:**    {preserved_tables}/{expected_tables} ({tb_pct:.1f}%)")
+    print(f"- **Negations & Warnings Preserved:** {preserved_negations}/{expected_negations} ({ng_pct:.1f}%)")
     print(f"- **Navigation Lines Pruned:**      100% (Breadcrumbs, TOC, pagination, 'Edit on GitHub' removed)")
     print(f"- **Duplicate Header Deduplication:** Successfully deduplicated across chunks 2 & 3")
     print()

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,10 @@ _PROTECTED_QUALIFIERS = {
     "critical", "danger", "note", "important", "always"
 }
 
-# Regex for clearly identifiable navigation patterns
+# Regex for clearly identifiable breadcrumb patterns (e.g. Home > Docs > API)
+# Stricter than raw > or / to avoid matching endpoints like 'GET /users' or 'A | B'
 _BREADCRUMB_RE = re.compile(
-    r"^(?:[\w\s\-]+(?:\s*[›>»/|\\]\s*[\w\s\-]+)+|(?:\*?\s*\[[^\]]+\]\([^\)]+\)\s*[›>»/|\\]\s*)+\[?[^\]]*\]?)$",
+    r"^(?:[\w\s\-]{2,}(?:\s*(?:›|»|>)\s*[\w\s\-]{2,}){2,}|(?:\*?\s*\[[^\]]+\]\([^\)]+\)\s*(?:›|»|>)\s*)+\[?[^\]]*\]?)$",
     re.IGNORECASE
 )
 
@@ -40,6 +41,8 @@ _PAGINATION_LINK_RE = re.compile(
     re.IGNORECASE
 )
 
+_FENCE_START_RE = re.compile(r"^(`{3,}|~{3,})")
+
 
 def _tokenize_query(query: str) -> Set[str]:
     """Extract lowercase alphanumeric query keywords for term preservation."""
@@ -54,22 +57,26 @@ def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
     if not stripped:
         return True
 
-    # 1. Code blocks and tables
-    if stripped.startswith("```") or stripped.startswith("~~~") or stripped.startswith("|"):
+    # 1. Code blocks, markdown tables, and inline code
+    if stripped.startswith("```") or stripped.startswith("~~~") or stripped.startswith("|") or stripped.endswith("|"):
         return True
     if "`" in stripped:
         return True
 
-    # 2. Query term overlap
+    # 2. HTTP methods / endpoints (e.g. GET /users, POST /api/v1/...)
+    if re.match(r"^(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+/\S*", stripped, re.IGNORECASE):
+        return True
+
+    # 3. Query term overlap
     words = set(re.findall(r"\b\w+\b", stripped.lower()))
     if query_tokens and words.intersection(query_tokens):
         return True
 
-    # 3. Factual qualifiers, polarity, or negations
+    # 4. Factual qualifiers, polarity, or negations
     if words.intersection(_PROTECTED_QUALIFIERS):
         return True
 
-    # 4. URLs (unless a pagination link)
+    # 5. URLs (unless a pagination link)
     if "http://" in stripped or "https://" in stripped:
         if not _PAGINATION_LINK_RE.match(stripped):
             return True
@@ -105,36 +112,45 @@ def prune_chunk_text(
     query_tokens = _tokenize_query(query)
     lines = text.split("\n")
     cleaned_lines: List[str] = []
-    in_code_block = False
+    
+    # State tracking for code fences: (fence_char, fence_length)
+    active_fence: Optional[Tuple[str, int]] = None
 
     for line in lines:
         stripped = line.strip()
 
-        # Track fenced code block state
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            in_code_block = not in_code_block
+        # Handle fenced code blocks per CommonMark rules
+        fence_match = _FENCE_START_RE.match(stripped)
+        if active_fence is not None:
+            char, length = active_fence
+            # Closing fence must use the same character, have at least the opening length,
+            # and have no trailing non-whitespace characters
+            if fence_match and fence_match.group(1)[0] == char and len(fence_match.group(1)) >= length:
+                rest = stripped[len(fence_match.group(1)):].strip()
+                if not rest:
+                    active_fence = None
+            cleaned_lines.append(line)
+            continue
+        elif fence_match:
+            active_fence = (fence_match.group(1)[0], len(fence_match.group(1)))
             cleaned_lines.append(line)
             continue
 
-        if in_code_block:
+        # Check for protected content BEFORE deduplication or navigation checks
+        if _is_protected_line(line, query_tokens):
             cleaned_lines.append(line)
             continue
 
-        # Check for navigation boilerplate first
+        # Check for navigation boilerplate
         if _is_navigation_boilerplate(line):
             continue
 
-        # Check for exact duplicate boilerplate across chunks in same retrieval
-        if seen_boilerplate is not None and not stripped.startswith("|"):
+        # Check for duplicate boilerplate across chunks in same retrieval
+        if seen_boilerplate is not None:
             norm_line = stripped.lower()
             if len(norm_line) < 120 and norm_line in seen_boilerplate:
                 continue
             seen_boilerplate.add(norm_line)
-
-        # If line contains protected elements, preserve untouched
-        if _is_protected_line(line, query_tokens):
-            cleaned_lines.append(line)
-            continue
 
         cleaned_lines.append(line)
 
@@ -163,7 +179,6 @@ def prune_boilerplate(
     pruned_docs: List[Dict[str, Any]] = []
 
     for doc in docs:
-        # Create a shallow copy to preserve original dict references if needed
         pruned_doc = dict(doc)
         text = doc.get("text")
         if isinstance(text, str) and text:
