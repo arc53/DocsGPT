@@ -20,6 +20,7 @@ import {
   DescriptionItem,
   DescriptionList,
 } from '../components/ui/description-list';
+import { EmptyState } from '../components/ui/empty-state';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { LoadingState } from '../components/ui/loading-state';
@@ -70,7 +71,9 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const [description, setDescription] = React.useState<string>('');
   const [approvalMode, setApprovalMode] = React.useState<ApprovalMode>('ask');
   const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = React.useState(false);
+  const [saveFailed, setSaveFailed] = React.useState(false);
+  const loadRequestId = React.useRef(0);
 
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
   const [auditOpen, setAuditOpen] = React.useState(false);
@@ -86,19 +89,30 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
   const loadDevice = React.useCallback(() => {
     if (!deviceId) return;
+    const requestId = ++loadRequestId.current;
     setLoading(true);
+    setLoadFailed(false);
+    setSaveFailed(false);
     devicesService
       .get(deviceId, token)
-      .then((d) => applyDevice(d))
-      .catch((err) => {
-        console.error('load device failed', err);
-        setError(err instanceof Error ? err.message : 'load failed');
+      .then((d) => {
+        if (requestId === loadRequestId.current) applyDevice(d);
       })
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (requestId !== loadRequestId.current) return;
+        console.error('load device failed', err);
+        setLoadFailed(true);
+      })
+      .finally(() => {
+        if (requestId === loadRequestId.current) setLoading(false);
+      });
   }, [deviceId, token, applyDevice]);
 
   React.useEffect(() => {
     loadDevice();
+    return () => {
+      loadRequestId.current += 1;
+    };
   }, [loadDevice]);
 
   const hasUnsavedChanges =
@@ -120,12 +134,13 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       payload.approval_mode = approvalMode;
 
     setSaving(true);
-    setError(null);
+    setSaveFailed(false);
     try {
       const next = await devicesService.update(deviceId, payload, token);
       applyDevice(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'update failed');
+      console.error('update device failed', err);
+      setSaveFailed(true);
     } finally {
       setSaving(false);
     }
@@ -146,8 +161,28 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       ? ` · ${t('settings.devices.seen', { time: lastSeenAgo })}`
       : '');
 
-  if (loading && !device) {
+  if (loading) {
     return <LoadingState fill="block" size="lg" />;
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="mb-4 flex min-h-9.5 items-center">
+          <DetailBreadcrumb
+            parentLabel={t('settings.tools.label')}
+            currentLabel={tool.customName || tool.displayName || tool.name}
+            onParentClick={handleGoBack}
+          />
+        </div>
+        <EmptyState
+          tone="destructive"
+          illustration="none"
+          title={t('settings.devices.loadError')}
+          onRetry={loadDevice}
+        />
+      </div>
+    );
   }
 
   return (
@@ -187,9 +222,9 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
         </div>
       </div>
 
-      {error && (
+      {saveFailed && (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{t('common.actionFailed')}</AlertDescription>
         </Alert>
       )}
 
