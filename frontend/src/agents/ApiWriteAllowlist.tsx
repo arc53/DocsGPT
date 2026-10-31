@@ -132,7 +132,8 @@ function ToolAllowlist({
  *
  * A change saves at once, on top of the agent's last saved config
  * (`getSavedConfig`), so edits still pending in the form are not saved with
- * it. `onConfigChange` receives the config as saved.
+ * it. `onConfigChange` receives the config as saved and the agent's new
+ * `updated_at`, which the builder's next save sends as its stale-write stamp.
  */
 export default function ApiWriteAllowlist({
   agent,
@@ -141,7 +142,7 @@ export default function ApiWriteAllowlist({
   defaultOpen = false,
 }: {
   agent: Agent;
-  onConfigChange?: (config: AgentConfig) => void;
+  onConfigChange?: (config: AgentConfig, updatedAt?: string) => void;
   getSavedConfig?: () => AgentConfig | undefined;
   /** Start open (Access details opened to allow changes). */
   defaultOpen?: boolean;
@@ -254,7 +255,10 @@ export default function ApiWriteAllowlist({
         token,
       );
       if (!response.ok) throw new Error('save failed');
-      onConfigChange?.(config);
+      const saved = await Promise.resolve()
+        .then(() => response.json())
+        .catch(() => null);
+      onConfigChange?.(config, saved?.updated_at ?? undefined);
     } catch {
       setAllowed(previous);
       dispatch(

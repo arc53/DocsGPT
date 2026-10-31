@@ -976,6 +976,27 @@ describe('NewAgent form', () => {
     expect(form.get('expected_updated_at')).toBe('stamp-2');
   });
 
+  it('sends the stamp an allowlist save answered with', async () => {
+    mocks.updateAgent.mockImplementation(() =>
+      jsonResponse({ success: true, id: 'agent-1', updated_at: 'stamp-3' }),
+    );
+    await renderEdit({ updated_at: 'stamp-1' });
+    const details = () =>
+      mocks.detailsProps.mock.calls.at(-1)![0] as {
+        onConfigChange: (
+          config: Record<string, unknown>,
+          updatedAt?: string,
+        ) => void;
+      };
+    await act(async () =>
+      details().onConfigChange({ api_write_allowlist: ['t:a'] }, 'stamp-2'),
+    );
+    await typeName('Renamed');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const form = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(form.get('expected_updated_at')).toBe('stamp-2');
+  });
+
   it('lets Go to Tools go when the agent is saved', async () => {
     await renderEdit({});
     await act(async () => goToTools().click());

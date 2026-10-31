@@ -168,11 +168,13 @@ describe('ApiWriteAllowlist', () => {
   const render = async (
     a: Agent,
     {
-      onConfigChange = vi.fn<(config: AgentConfig) => void>(),
+      onConfigChange = vi.fn<
+        (config: AgentConfig, updatedAt?: string) => void
+      >(),
       getSavedConfig,
       defaultOpen,
     }: {
-      onConfigChange?: Mock<(config: AgentConfig) => void>;
+      onConfigChange?: Mock<(config: AgentConfig, updatedAt?: string) => void>;
       getSavedConfig?: () => Agent['config'];
       defaultOpen?: boolean;
     } = {},
@@ -331,6 +333,23 @@ describe('ApiWriteAllowlist', () => {
     );
   });
 
+  it("hands on the stamp the save answered with, for the builder's next save", async () => {
+    updateAgent.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        updated_at: '2026-10-31T10:00:00.123456+00:00',
+      }),
+    });
+    const onConfigChange = await render(agent());
+    await expand();
+    await act(async () => choice('tg', 'always').click());
+    expect(onConfigChange).toHaveBeenCalledWith(
+      expect.objectContaining({ api_write_allowlist: expect.any(Array) }),
+      '2026-10-31T10:00:00.123456+00:00',
+    );
+  });
+
   it("allows all of a tool's changes at once, without dropping the rest of the config", async () => {
     updateAgent.mockResolvedValue({ ok: true });
     const onConfigChange = await render(agent());
@@ -345,7 +364,7 @@ describe('ApiWriteAllowlist', () => {
     };
     expect(updateAgent).toHaveBeenCalledTimes(1);
     expect(savedConfig()).toEqual(expected);
-    expect(onConfigChange).toHaveBeenCalledWith(expected);
+    expect(onConfigChange).toHaveBeenCalledWith(expected, undefined);
     expect(choice('tg', 'always').getAttribute('data-state')).toBe('on');
     expect(summary()).toBe(
       `${K}.summaryTools(tools=Telegram) · ${K}.summaryCount(allowed=2,formatted=2)`,
@@ -438,7 +457,7 @@ describe('ApiWriteAllowlist', () => {
       ],
     };
     expect(savedConfig()).toEqual(expected);
-    expect(onConfigChange).toHaveBeenCalledWith(expected);
+    expect(onConfigChange).toHaveBeenCalledWith(expected, undefined);
   });
 
   it('puts the choice back and says so when saving fails', async () => {

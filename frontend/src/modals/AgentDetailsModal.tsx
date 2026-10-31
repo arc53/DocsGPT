@@ -40,8 +40,8 @@ type AgentDetailsModalProps = {
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   onKeyRegenerated?: (key: string) => void;
-  /** The agent's saved config after its API-key write allowlist changed. */
-  onConfigChange?: (config: AgentConfig) => void;
+  /** The agent's saved config and new `updated_at` after its API-key write allowlist changed. */
+  onConfigChange?: (config: AgentConfig, updatedAt?: string) => void;
   /** The agent's last saved config, which an allowlist change saves onto. */
   getSavedConfig?: () => AgentConfig | undefined;
   /** Open with the API write allowlist unfolded (sent here to allow changes). */

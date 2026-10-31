@@ -1010,9 +1010,11 @@ function WorkflowBuilderInner() {
     [],
   );
   const handleConfigChange = useCallback(
-    (config: AgentConfig) =>
+    (config: AgentConfig, updatedAt?: string) =>
       setCurrentAgent((prev) => ({
         ...prev,
+        // The allowlist save moved the stamp the next save sends.
+        updated_at: updatedAt ?? prev.updated_at,
         config: {
           ...(prev.config ?? {}),
           api_write_allowlist: config.api_write_allowlist,

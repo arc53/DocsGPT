@@ -1857,11 +1857,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }}
         openApiWrites={detailsOnApiWrites}
         onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
-        onConfigChange={(config) => {
+        onConfigChange={(config, updatedAt) => {
           // The allowlist is saved already: record it on the saved snapshot
           // too, and keep any unsaved form edits to the rest of the config.
+          // The save moved the stamp the next save sends.
           if (initialAgentRef.current)
-            initialAgentRef.current = { ...initialAgentRef.current, config };
+            initialAgentRef.current = {
+              ...initialAgentRef.current,
+              config,
+              updated_at: updatedAt ?? initialAgentRef.current.updated_at,
+            };
           markSaved((base) => ({
             ...base,
             config: {
@@ -1871,6 +1876,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           }));
           setAgent((prev) => ({
             ...prev,
+            updated_at: updatedAt ?? prev.updated_at,
             config: {
               ...(prev.config ?? {}),
               api_write_allowlist: config.api_write_allowlist,
