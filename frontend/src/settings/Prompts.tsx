@@ -62,6 +62,13 @@ type KindFilter = (typeof KINDS)[number];
 const PRESETS = ['default', 'creative', 'strict'];
 
 /**
+ * Arrow keys move the checked radio card by card; the save waits this long
+ * for the next move, so only where the user stops is sent.
+ */
+const ARROW_PICK_DELAY_MS = 600;
+const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
+/**
  * Settings › Prompts: the presets, the user's own prompts and the ones shared
  * with them, as cards. A radio on each card picks the prompt chats without an
  * agent use (kept on the server); the ⋯ opens, duplicates, shares or deletes.
@@ -124,10 +131,15 @@ export default function Prompts() {
     },
   });
 
+  // The radio's value changes on an arrow key too (Radix checks the radio it
+  // moves to); such a pick saves after a pause, a click or Space at once.
+  const arrowPick = React.useRef(false);
   const pickChatPrompt = (id: string) => {
+    const delay = arrowPick.current ? ARROW_PICK_DELAY_MS : 0;
+    arrowPick.current = false;
     const prompt = prompts.find((item) => item.id === id);
     if (!prompt) return;
-    dispatch(chooseChatPrompt(prompt, token)).then((saved) => {
+    dispatch(chooseChatPrompt(prompt, token, delay)).then((saved) => {
       if (!saved)
         dispatch(
           showActionToast({
@@ -335,6 +347,9 @@ export default function Prompts() {
         <RadioGroup
           value={chatPrompt.id}
           onValueChange={pickChatPrompt}
+          onKeyDownCapture={(event) => {
+            arrowPick.current = ARROW_KEYS.has(event.key);
+          }}
           aria-label={t('settings.prompts.chatPromptLabel')}
         >
           <div className="flex flex-col gap-8">

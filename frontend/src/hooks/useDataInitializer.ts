@@ -7,20 +7,15 @@ import {
   selectConnectorsEnabled,
   setConnectorsEnabled,
 } from '../connectors/connectorsSlice';
-import { fetchChatPromptId, loadChatPrompt } from '../preferences/chatPrompt';
+import { initChatPrompt } from '../preferences/chatPrompt';
 import { claimLegacySessionTokens } from '../utils/providerUtils';
-import {
-  getDocs,
-  getConversations,
-  getPrompts,
-} from '../preferences/preferenceApi';
+import { getDocs, getConversations } from '../preferences/preferenceApi';
 import {
   selectConversations,
   selectToken,
   receiveConversations,
   setConversations,
   setConversationsLoading,
-  setPrompts,
   setAnalyticsAvailability,
   setAttachmentBudgetShare,
   setAuthRequired,
@@ -122,22 +117,14 @@ export default function useDataInitializer(
       return;
     }
 
+    // The server's chat prompt applies as soon as it answers (asked again
+    // if it couldn't); the prompt list names it when it arrives.
     let cancelled = false;
-    const fetchPromptsData = async () => {
-      try {
-        const [data, chatPromptId] = await Promise.all([
-          getPrompts(token),
-          signedOut ? Promise.resolve(null) : fetchChatPromptId(token),
-        ]);
-        if (cancelled) return;
-        dispatch(setPrompts(data));
-        await dispatch(loadChatPrompt(chatPromptId, data, token));
-      } catch (error) {
-        console.error('Failed to fetch prompts:', error);
-      }
-    };
-
-    fetchPromptsData();
+    dispatch(
+      initChatPrompt(token, { signedOut, cancelled: () => cancelled }),
+    ).catch((error: unknown) =>
+      console.error('Failed to fetch prompts:', error),
+    );
     return () => {
       cancelled = true;
     };

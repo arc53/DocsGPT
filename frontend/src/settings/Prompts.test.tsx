@@ -302,6 +302,38 @@ describe('Prompts page', () => {
     );
   });
 
+  // Arrow keys check each card they pass; only where the user stops saves.
+  it('saves once after arrow keys stop, not per card', async () => {
+    await render();
+    vi.useFakeTimers();
+    try {
+      for (const key of ['ArrowDown', 'ArrowDown']) {
+        const focused = document.activeElement?.matches('[role="radio"]')
+          ? (document.activeElement as HTMLElement)
+          : radioOf('default');
+        await act(async () => {
+          focused.focus();
+          focused.dispatchEvent(
+            new KeyboardEvent('keydown', { key, bubbles: true }),
+          );
+          await vi.advanceTimersByTimeAsync(0);
+        });
+      }
+      expect(chatPromptId()).toBe('strict');
+      expect(service.updatePreferences).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(service.updatePreferences).toHaveBeenCalledTimes(1);
+      expect(service.updatePreferences).toHaveBeenCalledWith(
+        { chat_prompt_id: 'strict' },
+        'tok',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('switches the radio back and shows an error when the save fails', async () => {
     service.updatePreferences.mockImplementation(() =>
       response({}, false, 500),
