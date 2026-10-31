@@ -9,6 +9,7 @@ import {
 import SourcesPopoverFooter from '../../components/SourcesPopoverFooter';
 import { toSourcePickerItems } from '../../components/sourcePickerItems';
 import type { Connection } from '../../connectors/types';
+import type { LeaveTo } from '../../hooks/useLeaveGuard';
 import type { Doc } from '../../models/misc';
 import { useSourceKindFilter } from '../../settings/SourceKindFilter';
 import Upload from '../../upload/Upload';
@@ -47,6 +48,8 @@ export type KnowledgePickerProps = {
    * Upload offers none.
    */
   onBrowseConnectors?: () => void;
+  /** Upload's connect runs leave through the builder's leave guard. */
+  onLeaveTo?: LeaveTo;
 };
 
 /**
@@ -69,6 +72,7 @@ export default function KnowledgePicker({
   onNavigate,
   onUploaded,
   onBrowseConnectors,
+  onLeaveTo,
 }: KnowledgePickerProps) {
   const { t } = useTranslation();
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -156,6 +160,7 @@ export default function KnowledgePicker({
           onSuccessfulUpload={onUploaded}
           selectUploadedDoc={false}
           onBrowseConnectors={onBrowseConnectors}
+          onNavigate={onLeaveTo}
         />
       )}
     </>

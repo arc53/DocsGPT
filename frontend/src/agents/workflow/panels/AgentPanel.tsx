@@ -421,6 +421,7 @@ export default function AgentPanel({
                 ? () => onLeaveTo('/settings/connectors?capability=sync')
                 : undefined
             }
+            onLeaveTo={onLeaveTo}
             trigger={
               <MultiSelectTrigger
                 labels={pickedSources.map(sourceName)}

@@ -43,6 +43,7 @@ const upload = vi.hoisted(() => ({
     close: () => void;
     onSuccessfulUpload?: (sourceId?: string) => void;
     onBrowseConnectors?: () => void;
+    onNavigate?: unknown;
   },
 }));
 vi.mock('../../../upload/Upload', () => ({
@@ -530,6 +531,8 @@ describe('AgentPanel knowledge and tool pickers', () => {
     expect(onLeaveTo).toHaveBeenCalledWith(
       '/settings/connectors?capability=sync',
     );
+    // A connect run started from Upload leaves through it too.
+    expect(upload.props!.onNavigate).toBe(onLeaveTo);
   });
 
   it('offers to sign a broken connection behind its tools in again', async () => {

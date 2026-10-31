@@ -1322,6 +1322,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 onBrowseConnectors={() =>
                   leaveGuard.leaveTo('/settings/connectors?capability=sync')
                 }
+                onLeaveTo={leaveGuard.leaveTo}
                 trigger={
                   <Button
                     type="button"
