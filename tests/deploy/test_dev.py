@@ -13,8 +13,15 @@ from docsgpt.deploy.docker import DeployError
 
 
 def _args(**overrides):
-    values = {"host": "127.0.0.1", "port": 7091, "ui": False, "mock_llm": False,
-              "worker": True, "reload": True, "loglevel": "INFO"}
+    values = {
+        "host": "127.0.0.1",
+        "port": 7091,
+        "ui": False,
+        "mock_llm": False,
+        "worker": True,
+        "reload": True,
+        "loglevel": "INFO",
+    }
     values.update(overrides)
     return argparse.Namespace(**values)
 
@@ -62,9 +69,15 @@ class TestPlan:
     def test_the_worker_restarts_on_save_when_watchfiles_is_there(self, tmp_path):
         """Celery has no reloader of its own, so it is wrapped in one."""
         worker = dev.plan(_args(), tmp_path, watching=True)[1]
+
         assert "watchfiles" in worker.command
-        assert str(tmp_path / "docsgpt") in worker.command, "it watches the package, not the whole checkout"
-        assert "docsgpt worker" in " ".join(worker.command)
+        assert str(tmp_path / "docsgpt") in worker.command
+
+        if sys.platform == "win32":
+            assert "docsgpt.cli.main" in worker.command
+            assert worker.command[worker.command.index("--args") + 1] == "worker -l INFO"
+        else:
+            assert "docsgpt worker" in " ".join(worker.command)
 
     def test_without_watchfiles_the_worker_still_runs(self, tmp_path):
         worker = dev.plan(_args(), tmp_path, watching=False)[1]
@@ -97,8 +110,10 @@ class TestPlan:
 
     def test_the_analytics_worker_restarts_on_save_like_the_worker(self, tmp_path, analytics_on):
         analytics = dev.plan(_args(), tmp_path, watching=True, platform="win32")[2]
+
         assert "watchfiles" in analytics.command
-        assert "docsgpt worker --analytics" in " ".join(analytics.command)
+        assert "docsgpt.cli.main" in analytics.command
+        assert analytics.command[analytics.command.index("--args") + 1] == ("worker --analytics -l INFO")
 
     @pytest.mark.parametrize("platform", ["darwin", "win32"])
     def test_with_analytics_off_no_analytics_worker_idles(self, tmp_path, analytics_off, platform):
@@ -198,8 +213,9 @@ class TestRun:
     def test_output_is_prefixed_with_the_child_that_wrote_it(self, tmp_path):
         out = io.StringIO()
         children = [dev.Child(name="api", command=["true"], cwd=tmp_path)]
-        code = dev.run(children, out=out, spawn=self._spawn([FakeProcess(["hello\n"], code=0)]),
-                       sleep=lambda _: None, colour=False)
+        code = dev.run(
+            children, out=out, spawn=self._spawn([FakeProcess(["hello\n"], code=0)]), sleep=lambda _: None, colour=False
+        )
         assert f"{'api'.ljust(dev.WIDTH)} | hello" in out.getvalue()
         assert code == 1, "a child that ends by itself ends the session, however it exited"
 
@@ -208,8 +224,9 @@ class TestRun:
         out = io.StringIO()
         lines = [f"line {number}\n" for number in range(200)]
         children = [dev.Child(name="api", command=["x"], cwd=tmp_path)]
-        code = dev.run(children, out=out, spawn=self._spawn([FakeProcess(lines, code=0)]),
-                       sleep=lambda _: None, colour=False)
+        code = dev.run(
+            children, out=out, spawn=self._spawn([FakeProcess(lines, code=0)]), sleep=lambda _: None, colour=False
+        )
         assert code == 1
         printed = out.getvalue()
         assert "line 0" in printed and "line 199" in printed, "every line the child wrote is printed"
@@ -217,8 +234,7 @@ class TestRun:
     def test_a_failing_child_returns_its_code(self, tmp_path):
         out = io.StringIO()
         children = [dev.Child(name="api", command=["false"], cwd=tmp_path)]
-        code = dev.run(children, out=out, spawn=self._spawn([FakeProcess(code=2)]),
-                       sleep=lambda _: None, colour=False)
+        code = dev.run(children, out=out, spawn=self._spawn([FakeProcess(code=2)]), sleep=lambda _: None, colour=False)
         assert code == 2
         assert "exited with 2" in out.getvalue()
 
@@ -242,11 +258,13 @@ class TestRun:
             raise KeyboardInterrupt
 
         children = [dev.Child(name="api", command=["sleep"], cwd=tmp_path)]
-        code = dev.run(children, out=io.StringIO(), spawn=self._spawn([FakeProcess()]),
-                       sleep=sleep, colour=False, grace=5)
+        code = dev.run(
+            children, out=io.StringIO(), spawn=self._spawn([FakeProcess()]), sleep=sleep, colour=False, grace=5
+        )
         assert code == 0
         assert signal.SIGINT in sent
-        assert signal.SIGKILL in sent, "the second interrupt escalates instead of escaping"
+        expected = signal.SIGTERM if sys.platform == "win32" else signal.SIGKILL
+        assert expected in sent, "the second interrupt escalates instead of escaping"
 
     def test_children_get_the_checkout_environment(self, tmp_path, monkeypatch):
         seen = {}
@@ -265,7 +283,155 @@ class TestRun:
 
 
 class TestReloadingCommand:
-    def test_an_interpreter_path_with_spaces_survives(self):
-        command = dev._reloading_command(["/opt/my venv/bin/python", "-m", "docsgpt", "worker"], Path("/srv/pkg"))
-        assert "'/opt/my venv/bin/python' -m docsgpt worker" in command
-        assert command[-1] == "/srv/pkg"
+    def test_posix_interpreter_path_with_spaces_survives(self):
+        launcher = ["/opt/my venv/bin/python", "-m", "docsgpt"]
+        cli_args = ["worker", "-l", "INFO"]
+        watched = Path("src")
+
+        command = dev._reloading_command(launcher, cli_args, watched, platform="linux")
+
+        assert command[-2] == ("'/opt/my venv/bin/python' -m docsgpt worker -l INFO")
+        assert command[-1] == str(watched)
+
+    @pytest.mark.parametrize(
+        "python_path",
+        [
+            r"D:\DocsGPT\.venv\Scripts\python.exe",
+            r"D:\My Projects\DocsGPT\.venv\Scripts\python.exe",
+        ],
+    )
+    @pytest.mark.parametrize(
+        "cli_args, expected",
+        [
+            (["worker", "-l", "INFO"], "worker -l INFO"),
+            (
+                ["worker", "--analytics", "-l", "INFO"],
+                "worker --analytics -l INFO",
+            ),
+        ],
+    )
+    def test_windows_function_mode(self, python_path, cli_args, expected):
+        launcher = [python_path, "-m", "docsgpt"]
+        watched = Path("docsgpt")
+
+        command = dev._reloading_command(launcher, cli_args, watched, platform="win32")
+
+        assert command == [
+            sys.executable,
+            "-m",
+            "watchfiles",
+            "--filter",
+            "python",
+            "--target-type",
+            "function",
+            "--args",
+            expected,
+            "docsgpt.cli.main",
+            str(watched),
+        ]
+
+
+@pytest.mark.skipif(not dev.watchfiles_available(), reason="the reload commands run under the watchfiles CLI")
+class TestReloadingCommandExecution:
+    """The reload commands executed: what the real watchfiles CLI does with them, in-process.
+
+    On Windows ``docsgpt dev`` wraps the worker in
+    ``python -m watchfiles --filter python --target-type function --args <cli args> docsgpt.cli.main``.
+    These tests run that command through the real watchfiles argument parser, its ``sys.argv``
+    injection and its own function-target executor, so the arguments are proven to reach
+    ``docsgpt.cli.main`` and to parse as the intended ``docsgpt`` command. Nothing is watched and
+    nothing is spawned: the watching loop is intercepted and the target runs in-process, the way
+    the process watchfiles spawns would run it.
+    """
+
+    @pytest.fixture
+    def windows(self, monkeypatch):
+        monkeypatch.setattr(sys, "platform", "win32")
+
+    @pytest.fixture
+    def analytics_on(self, monkeypatch):
+        monkeypatch.setattr(dev, "analytics_enabled", lambda home: True)
+
+    @pytest.fixture
+    def analytics_off(self, monkeypatch):
+        monkeypatch.setattr(dev, "analytics_enabled", lambda home: False)
+
+    def _delivered(self, monkeypatch, command):
+        """The ``docsgpt.cli.main`` argv watchfiles delivers for ``command``, without watching or spawning.
+
+        Args:
+            monkeypatch: The test's patcher.
+            command: A full ``python -m watchfiles ...`` command list; ``command[3:]`` is what follows
+                ``-m watchfiles``, exactly what ``python -m watchfiles`` would hand the CLI.
+
+        Returns:
+            One entry per target call: the ``sys.argv[1:]`` the entry point saw.
+        """
+        from watchfiles import cli as watchfiles_cli
+        from watchfiles.run import run_function
+
+        delivered = []
+
+        def fake_main(argv=None):
+            # The entry point is called with nothing and reads sys.argv, which the CLI has injected.
+            delivered.append(list(sys.argv[1:] if argv is None else argv))
+            return 0
+
+        # import_string resolves the entry point through the module's attribute, so this is the spot.
+        monkeypatch.setattr("docsgpt.cli.main", fake_main)
+
+        def fake_run_process(*paths, target, target_type, **kwargs):
+            assert target_type == "function", f"watchfiles would run the target as a {target_type}"
+            # The body of the process watchfiles spawns for a function target; its Windows tty is None.
+            run_function(target, None, (), {})
+            return 0
+
+        monkeypatch.setattr("watchfiles.cli.run_process", fake_run_process)
+        # Restored after the test, even though the CLI reassigns sys.argv itself.
+        monkeypatch.setattr(sys, "argv", ["watchfiles", *command[3:]])
+        watchfiles_cli.cli(*command[3:])
+        return delivered
+
+    def _parsed(self, argv):
+        """What the real ``docsgpt`` parser makes of the delivered argv, without dispatching it."""
+        from docsgpt.cli import _worker, build_parser
+
+        parsed = build_parser().parse_args(argv)
+        assert parsed.command == "worker"
+        assert parsed.loglevel == "INFO"
+        assert parsed.func is _worker
+        return parsed
+
+    @pytest.mark.parametrize(
+        "python_path",
+        [
+            r"D:\DocsGPT\.venv\Scripts\python.exe",
+            r"D:\My Projects\DocsGPT\.venv\Scripts\python.exe",
+        ],
+    )
+    def test_the_worker_s_args_reach_the_cli_entry_intact(
+        self, tmp_path, monkeypatch, windows, analytics_off, python_path
+    ):
+        """A launcher path full of backslashes and spaces still hands the worker exactly its own arguments."""
+        (tmp_path / "docsgpt").mkdir()  # watchfiles resolves the watched path; a checkout has the package
+        worker = dev.plan(_args(), tmp_path, watching=True, launcher=[python_path, "-m", "docsgpt"])[1]
+
+        delivered = self._delivered(monkeypatch, worker.command)
+
+        assert delivered == [["worker", "-l", "INFO"]]
+        assert self._parsed(delivered[0]).analytics is False
+        # Auxiliary only: the fragile launcher path must not reach watchfiles in any form.
+        assert not any(python_path in part for part in worker.command)
+
+    def test_the_analytics_worker_s_args_reach_the_cli_entry_intact(self, tmp_path, monkeypatch, windows, analytics_on):
+        """The analytics worker travels the same path with its own flag, whatever the launcher looks like."""
+        (tmp_path / "docsgpt").mkdir()
+        launcher = [r"D:\My Projects\DocsGPT\.venv\Scripts\python.exe", "-m", "docsgpt"]
+        children = dev.plan(_args(), tmp_path, watching=True, launcher=launcher)
+
+        assert _named(children) == ["api", "worker", "analytics"]
+
+        delivered = self._delivered(monkeypatch, children[2].command)
+
+        assert delivered == [["worker", "--analytics", "-l", "INFO"]]
+        assert self._parsed(delivered[0]).analytics is True

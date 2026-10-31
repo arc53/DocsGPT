@@ -76,9 +76,52 @@ def analytics_enabled(home: Path) -> bool:
         return True
 
 
-def _reloading_command(command: list[str], watched: Path) -> list[str]:
-    """``command`` under watchfiles, restarted when a Python file under ``watched`` changes."""
-    return [sys.executable, "-m", "watchfiles", "--filter", "python", shlex.join(command), str(watched)]
+def _reloading_command(
+    launcher: list[str],
+    cli_args: list[str],
+    watched: Path,
+    *,
+    platform: Optional[str] = None,
+) -> list[str]:
+    """Build a watchfiles command that restarts the CLI when watched Python files change.
+
+    Args:
+        launcher: Command prefix used to start the DocsGPT CLI on non-Windows platforms.
+        cli_args: Arguments for the DocsGPT CLI, passed to the Windows function target or
+            appended to ``launcher`` on other platforms.
+        watched: Path passed to watchfiles as the watch root; Python file changes trigger reloads.
+        platform: Optional platform name used to select the target mode. ``win32`` selects
+            function mode; a missing or empty value falls back to ``sys.platform``.
+
+    Returns:
+        Arguments that start watchfiles with the Python filter and watch ``watched``.
+        On Windows, the function target is ``docsgpt.cli.main`` and receives ``cli_args``;
+        on other platforms, the command target is ``launcher`` followed by ``cli_args``.
+    """
+    if (platform or sys.platform) == "win32":
+        return [
+            sys.executable,
+            "-m",
+            "watchfiles",
+            "--filter",
+            "python",
+            "--target-type",
+            "function",
+            "--args",
+            shlex.join(cli_args),
+            "docsgpt.cli.main",
+            str(watched),
+        ]
+
+    return [
+        sys.executable,
+        "-m",
+        "watchfiles",
+        "--filter",
+        "python",
+        shlex.join([*launcher, *cli_args]),
+        str(watched),
+    ]
 
 
 def plan(
@@ -138,14 +181,16 @@ def plan(
     children.append(Child(name="api", command=api, cwd=checkout, env=dict(environment)))
 
     if getattr(args, "worker", True):
-        worker = [*launcher, "worker", "-l", getattr(args, "loglevel", "INFO")]
+        worker_args = ["worker", "-l", getattr(args, "loglevel", "INFO")]
+        worker = [*launcher, *worker_args]
         if getattr(args, "reload", True) and watching:
-            worker = _reloading_command(worker, package)
+            worker = _reloading_command(launcher, worker_args, package, platform=platform)
         children.append(Child(name="worker", command=worker, cwd=checkout, env=dict(environment)))
         if needs_analytics_worker(platform) and analytics_enabled(Path(environment["DOCSGPT_HOME"])):
-            analytics = [*launcher, "worker", "--analytics", "-l", getattr(args, "loglevel", "INFO")]
+            analytics_args = ["worker", "--analytics", "-l", getattr(args, "loglevel", "INFO")]
+            analytics = [*launcher, *analytics_args]
             if getattr(args, "reload", True) and watching:
-                analytics = _reloading_command(analytics, package)
+                analytics = _reloading_command(launcher, analytics_args, package, platform=platform)
             children.append(Child(name="analytics", command=analytics, cwd=checkout, env=dict(environment)))
 
     if getattr(args, "ui", False):
@@ -210,9 +255,10 @@ def _stop(running: list[tuple[Child, object]], grace: float, sleep: Callable[[fl
             sleep(0.1)
         except KeyboardInterrupt:
             break
+    force_signal = signal.SIGTERM if os.name == "nt" else signal.SIGKILL
     for _, process in running:
         if process.poll() is None:
-            _signal(process, signal.SIGKILL)
+            _signal(process, force_signal)
 
 
 def run(
