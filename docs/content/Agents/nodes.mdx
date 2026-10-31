@@ -517,7 +517,9 @@ The builder saves through those same two endpoints: it sends the graph as a
 a JSON string in a multipart form) with the agent's other fields, in one request.
 With `"status": "draft"` only the graph's shape is checked; with `"published"` the
 full graph rules apply. They also apply to a draft that something can still run: an
-agent published before (its API key keeps working), or one with a webhook URL or an
-active or paused schedule. A request can send `workflow_graph` or `workflow`, not
+agent published before (its API key keeps working), one with a webhook URL, a public
+link or an active or paused schedule, and one whose workflow another such agent also
+runs. A draft holding an unfinished workflow gets no webhook URL, schedule or public
+link (`400` with the broken rules) until its graph passes them. A request can send `workflow_graph` or `workflow`, not
 both. `POST /api/workflows` and `PUT /api/workflows/<id>` keep working for scripts
 that manage the graph on its own.

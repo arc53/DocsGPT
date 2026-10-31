@@ -345,7 +345,7 @@
           "type": "string"
         },
         "workflow_graph": {
-          "description": "Workflow agents only, instead of workflow: the graph saved with the agent in the same transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft is checked for shape only, published runs the full validation. Needs workflows:write for a token.",
+          "description": "Workflow agents only, instead of workflow: the graph saved with the agent in the same transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft only its builder runs is checked for shape only; a published agent, one a key, webhook, schedule or public link runs, or one sharing its workflow with such an agent gets the full validation. Needs workflows:write for a token.",
           "type": "object"
         }
       },
@@ -1499,7 +1499,7 @@
           "type": "string"
         },
         "workflow_graph": {
-          "description": "Workflow agents only, instead of workflow: the graph saved with the agent in the same transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft is checked for shape only, published runs the full validation. Needs workflows:write for a token.",
+          "description": "Workflow agents only, instead of workflow: the graph saved with the agent in the same transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft only its builder runs is checked for shape only; a published agent, one a key, webhook, schedule or public link runs, or one sharing its workflow with such an agent gets the full validation. Needs workflows:write for a token.",
           "type": "object"
         }
       },
@@ -1700,7 +1700,7 @@
           "type": "string"
         },
         "only_if_unset": {
-          "description": "Store it only when no chat prompt was ever stored (moving a browser's old choice); otherwise the stored one is kept and returned",
+          "description": "Store it only when no chat prompt was ever stored (moving a browser's old choice); otherwise the stored one is kept and returned. Refused to a token restricted to specific prompts",
           "type": "boolean"
         }
       },
@@ -7253,7 +7253,7 @@
         ]
       },
       "put": {
-        "description": "Set the prompt the caller's chats use: {success, chat_prompt_id, applied}. With only_if_unset and a chat prompt already stored, nothing is written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a value that is neither a preset nor a prompt id, or a non-boolean only_if_unset; 404 when the caller can't read the prompt.\nReturns:\n    Response: ``{success, chat_prompt_id, applied}``; ``applied`` is\n    false only when ``only_if_unset`` found a stored chat prompt, whose\n    readable value ``chat_prompt_id`` then carries.",
+        "description": "Set the prompt the caller's chats use: {success, chat_prompt_id, applied}. With only_if_unset and a chat prompt already stored, nothing is written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a value that is neither a preset nor a prompt id, or a non-boolean only_if_unset; 403 for only_if_unset from a token restricted to specific prompts; 404 when the caller can't read the prompt; 500 when the read or write fails.\nReturns:\n    Response: ``{success, chat_prompt_id, applied}``; ``applied`` is\n    false only when ``only_if_unset`` found a stored chat prompt, whose\n    readable value ``chat_prompt_id`` then carries.",
         "operationId": "put_preferences_resource",
         "parameters": [
           {

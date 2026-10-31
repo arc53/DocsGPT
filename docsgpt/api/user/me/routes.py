@@ -137,7 +137,8 @@ class PreferencesResource(Resource):
                 required=False,
                 description=(
                     "Store it only when no chat prompt was ever stored (moving a browser's old choice); "
-                    "otherwise the stored one is kept and returned"
+                    "otherwise the stored one is kept and returned. Refused to a token restricted to "
+                    "specific prompts"
                 ),
             ),
         },
@@ -180,7 +181,8 @@ class PreferencesResource(Resource):
             "Set the prompt the caller's chats use: {success, chat_prompt_id, applied}. With only_if_unset "
             "and a chat prompt already stored, nothing is written, applied is false and chat_prompt_id is the "
             "stored one as GET reads it. 400 for a value that is neither a preset nor a prompt id, or a "
-            "non-boolean only_if_unset; 404 when the caller can't read the prompt."
+            "non-boolean only_if_unset; 403 for only_if_unset from a token restricted to specific prompts; "
+            "404 when the caller can't read the prompt; 500 when the read or write fails."
         )
     )
     def put(self):

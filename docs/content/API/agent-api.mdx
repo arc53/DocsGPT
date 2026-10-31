@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-10-31
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -630,7 +630,7 @@ Ids you pass must belong to you; any other id is ignored with a warning. Prompts
 
 ### Workflow agents
 
-A workflow agent exports its graph under `spec.workflow`, and import validates it (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. Tools, sources and custom models used inside the nodes are resolved like the agent's own.
+A workflow agent exports its graph under `spec.workflow`, and import checks its shape (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. The full [graph rules](/Agents/nodes#graph-rules) apply when the agent it updates is published or can otherwise run, as for a builder save; a new agent lands as a draft, so an unfinished workflow exported from a draft imports again. Tools, sources and custom models used inside the nodes are resolved like the agent's own.
 
 Leaving `workflow` out of a file changes nothing. An explicit `workflow: null` imported over a draft workflow agent **deletes** its workflow, with its run history and artifacts; the plan's `workflow` block shows `"action": "delete"` first. A published workflow agent keeps its workflow.
 

@@ -855,8 +855,9 @@ class CreateAgent(Resource):
                 description=(
                     "Workflow agents only, instead of workflow: the graph saved with the agent in the same "
                     "transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft "
-                    "is checked for shape only, published runs the full validation. Needs workflows:write for "
-                    "a token."
+                    "only its builder runs is checked for shape only; a published agent, one a key, webhook, "
+                    "schedule or public link runs, or one sharing its workflow with such an agent gets the "
+                    "full validation. Needs workflows:write for a token."
                 ),
             ),
             "json_schema": fields.Raw(
@@ -1216,8 +1217,9 @@ class UpdateAgent(Resource):
                 description=(
                     "Workflow agents only, instead of workflow: the graph saved with the agent in the same "
                     "transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft "
-                    "is checked for shape only, published runs the full validation. Needs workflows:write for "
-                    "a token."
+                    "only its builder runs is checked for shape only; a published agent, one a key, webhook, "
+                    "schedule or public link runs, or one sharing its workflow with such an agent gets the "
+                    "full validation. Needs workflows:write for a token."
                 ),
             ),
             "json_schema": fields.Raw(
