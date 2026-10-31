@@ -16,7 +16,8 @@ An agent uses a resource when running it would reach that resource:
 Only agents the caller can open are listed: their own and the ones a team
 shares with them (narrowed further by a token's agent allowlist; a token
 without ``agents:read`` lists none). Each listed agent says whether the caller
-may open its editor (``can_edit``, the agent action ``view``). For a resource
+may open its editor (``can_edit``, the agent action ``view``) and its
+``status`` (``draft`` or ``published``). For a resource
 the caller may delete (the owner, or an editor the owner let delete), the
 agents they can't open (a teammate's) are counted in ``others`` instead, so
 they know a delete would break them; for any other resource ``others`` is
@@ -59,7 +60,7 @@ _VISIBLE = "(a.user_id = :user_id OR a.id = ANY(CAST(:visible AS uuid[])))"
 # caller can open for the rest (``:scoped``). ``{match}`` is the WHERE clause
 # built by :func:`_match`; ``:ids`` is both lists together.
 _CLASSIC_TOOLS_SQL = f"""
-    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, r.ref
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, r.ref
     FROM agents a
     CROSS JOIN LATERAL jsonb_array_elements_text(
         CASE WHEN jsonb_typeof(a.tools) = 'array' THEN a.tools ELSE '[]'::jsonb END
@@ -71,7 +72,7 @@ _CLASSIC_TOOLS_SQL = f"""
 _CLASSIC_TOOLS_MATCH = "a.tools ?| CAST({ids} AS text[])"
 
 _CLASSIC_SOURCES_SQL = f"""
-    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, s.sid::text AS ref
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, s.sid::text AS ref
     FROM agents a
     CROSS JOIN LATERAL unnest(array_append(a.extra_source_ids, a.source_id)) AS s(sid)
     WHERE {_CLASSIC} AND ({{match}})
@@ -81,7 +82,7 @@ _CLASSIC_SOURCES_SQL = f"""
 _CLASSIC_SOURCES_MATCH = "(a.source_id = ANY(CAST({ids} AS uuid[])) OR a.extra_source_ids && CAST({ids} AS uuid[]))"
 
 _CLASSIC_PROMPTS_SQL = f"""
-    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type,
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status,
            COALESCE(a.prompt_id::text, a.prompt_preset, '{DEFAULT_PROMPT}') AS ref
     FROM agents a
     WHERE {_CLASSIC} AND ({{match}})
@@ -99,7 +100,7 @@ _PRESETS_MATCH = (
 # The match is that function on a constant key, the expression the GIN indexes
 # ``workflow_nodes_tool_refs_gin_idx`` / ``workflow_nodes_source_refs_gin_idx`` hold.
 _WORKFLOW_SQL = """
-    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, r.ref
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, r.ref
     FROM workflow_nodes n
     JOIN workflows w ON w.id = n.workflow_id AND n.graph_version = w.current_graph_version
     JOIN agents a ON a.workflow_id = w.id
@@ -286,7 +287,7 @@ def _usage_rows(
     presets: list[str],
     legacy: Optional[dict[str, str]] = None,
 ) -> list:
-    """Every ``(agent_id, name, user_id, agent_type, ref)`` naming one of the ids.
+    """Every ``(agent_id, name, user_id, agent_type, status, ref)`` naming one of the ids.
 
     Any agent for ``full_ids``; only agents the caller can open for
     ``scoped_ids`` and ``presets``. ``legacy`` (ObjectId -> UUID) adds the
@@ -336,17 +337,17 @@ def _collect(
     resource_ids: Iterable[str],
     deletable_ids: Iterable[str],
     agent_allowlist: Optional[set[str]],
-) -> tuple[dict[str, str], dict[str, dict[str, tuple[str, str, bool]]], dict[str, set[str]]]:
+) -> tuple[dict[str, str], dict[str, dict[str, tuple[str, str, bool, str]]], dict[str, set[str]]]:
     """Who uses each resource: the agents the caller can open, and the hidden ones of what they may delete.
 
     Returns:
         tuple: ``keys`` (each id given → its match key), ``listed`` (key →
-        ``{agent_id: (name, agent_type, can_edit)}``) and ``hidden`` (key →
+        ``{agent_id: (name, agent_type, can_edit, status)}``) and ``hidden`` (key →
         agent ids the caller can't open, for deletable keys only).
     """
     keys = {str(rid): _key(rid) for rid in resource_ids}
     wanted = set(keys.values())
-    listed: dict[str, dict[str, tuple[str, str, bool]]] = {k: {} for k in wanted}
+    listed: dict[str, dict[str, tuple[str, str, bool, str]]] = {k: {} for k in wanted}
     hidden: dict[str, set[str]] = {k: set() for k in wanted}
     deletable = {_key(rid) for rid in deletable_ids}
     uuid_ids = sorted(k for k in wanted if looks_like_uuid(k))
@@ -367,13 +368,13 @@ def _collect(
     scoped_ids = [k for k in uuid_ids if k not in deletable]
     legacy = _legacy_keys(conn, kind, uuid_ids)
     rows = _usage_rows(conn, kind, full_ids, scoped_ids, user_id, team_agents, presets, legacy)
-    for agent_id, name, owner, agent_type, ref in rows:
+    for agent_id, name, owner, agent_type, status, ref in rows:
         ref_key = _key(ref)
         ref_key = legacy.get(ref_key, ref_key)
         if ref_key not in wanted:
             continue
         if _can_open(agent_id, owner):
-            listed[ref_key][agent_id] = (name, agent_type or "classic", owner == user_id)
+            listed[ref_key][agent_id] = (name, agent_type or "classic", owner == user_id, status)
             if owner != user_id:
                 shared_listed.add(agent_id)
         elif ref_key in deletable:
@@ -386,19 +387,19 @@ def _collect(
             if "view" in allowed_actions("agent", team_access.get(agent_id), switches.get(agent_id))
         }
         for agents in listed.values():
-            for agent_id, (name, agent_type, can_edit) in agents.items():
+            for agent_id, (name, agent_type, can_edit, status) in agents.items():
                 if agent_id in editable:
-                    agents[agent_id] = (name, agent_type, True)
+                    agents[agent_id] = (name, agent_type, True, status)
     return keys, listed, hidden
 
 
-def _usage(listed: dict[str, tuple[str, str, bool]], hidden: set[str]) -> dict:
+def _usage(listed: dict[str, tuple[str, str, bool, str]], hidden: set[str]) -> dict:
     """A ``used_by`` from the agents listed and the hidden agent ids, agents sorted by name."""
     agents = sorted(listed.items(), key=lambda item: ((item[1][0] or "").casefold(), item[0]))
     return {
         "agents": [
-            {"id": agent_id, "name": name, "agent_type": agent_type, "can_edit": can_edit}
-            for agent_id, (name, agent_type, can_edit) in agents
+            {"id": agent_id, "name": name, "agent_type": agent_type, "can_edit": can_edit, "status": status}
+            for agent_id, (name, agent_type, can_edit, status) in agents
         ],
         "others": len(hidden - listed.keys()),
     }
@@ -428,7 +429,8 @@ def used_by_many(
             Agents outside it are treated as ones the caller can't open.
 
     Returns:
-        dict[str, dict]: ``{resource_id: {"agents": [{"id", "name", "agent_type", "can_edit"}], "others": n}}``
+        dict[str, dict]: ``{resource_id: {"agents": [{"id", "name", "agent_type", "can_edit", "status"}],
+        "others": n}}``
         for every id given, agents sorted by name.
     """
     keys, listed, hidden = _collect(conn, user_id, kind, resource_ids, deletable_ids, agent_allowlist)

@@ -122,7 +122,7 @@ class TestFullList:
         assert resp.status_code == 200
         rows = {r["id"]: r for r in resp.json}
         assert rows[library["file"]]["used_by"] == {
-            "agents": [{"id": str(agent["id"]), "name": "Helper", "agent_type": "classic", "can_edit": True}],
+            "agents": [{"id": str(agent["id"]), "name": "Helper", "agent_type": "classic", "can_edit": True, "status": "published"}],
             "others": 0,
         }
         assert rows[library["web"]]["used_by"] == {"agents": [], "others": 1}

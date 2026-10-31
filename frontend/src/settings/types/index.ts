@@ -188,13 +188,15 @@ export type ParameterGroupType = {
 export type ResourceUsage = {
   /**
    * The agents the caller can open. `can_edit`: they may open its editor
-   * (the agent action `view`); otherwise they can only use it.
+   * (the agent action `view`); otherwise they can only use it. `status`:
+   * `draft` or `published` (missing from an older server).
    */
   agents: {
     id: string;
     name: string;
     agent_type?: string;
     can_edit?: boolean;
+    status?: string;
   }[];
   /**
    * Agents the caller can't open that use it (a teammate's), counted only

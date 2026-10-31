@@ -67,7 +67,7 @@ class TestTools:
         usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
         assert _names(usage[tid]) == ["Alpha", "zeta"]
         assert usage[tid]["agents"][0] == {
-            "id": str(a["id"]), "name": "Alpha", "agent_type": "classic", "can_edit": True,
+            "id": str(a["id"]), "name": "Alpha", "agent_type": "classic", "can_edit": True, "status": "published",
         }
         assert usage[tid]["others"] == 0
 
@@ -155,6 +155,19 @@ class TestVisibility:
         )[tid]
         assert _names(usage) == ["keep"]
         assert usage["others"] == 1
+
+
+class TestStatus:
+    def test_each_agent_says_whether_it_is_a_draft(self, pg_conn):
+        # A viewer's Used by link can't open a teammate's draft: its chat runs only finished work.
+        tid = str(_tool(pg_conn)["id"])
+        published = _agent(pg_conn, ALICE, "live", tools=[tid])
+        draft = AgentsRepository(pg_conn).create(ALICE, "wip", "draft", tools=[tid])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])[tid]
+        assert {a["id"]: a["status"] for a in usage["agents"]} == {
+            str(published["id"]): "published",
+            str(draft["id"]): "draft",
+        }
 
 
 class TestCanEdit:
@@ -307,7 +320,7 @@ class TestBounded:
 
         def _names_for(full, scoped):
             rows = _usage_rows(pg_conn, "tool", full, scoped, ALICE, [str(shared["id"])], [])
-            return sorted({(row[1], row[4]) for row in rows})
+            return sorted({(row.name, row.ref) for row in rows})
 
         # A tool nobody may delete (a default tool): only agents Alice can open are read.
         assert _names_for([], [memory_id]) == [("bob shared", memory_id), ("mine", memory_id)]

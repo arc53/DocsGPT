@@ -26,7 +26,9 @@ type UsedByAgentsProps = {
  * it opens a popover headed "Used by 2 agents" that lists them as links,
  * with the ones on teammates' agents counted under the list. A link opens
  * the agent's editor when the caller may edit it (`can_edit`), else its
- * chat: the editor's route would send a viewer back to the agent list. Draws nothing
+ * chat: the editor's route would send a viewer back to the agent list. A
+ * draft they can't edit is named without a link, as its card doesn't open
+ * either. Draws nothing
  * for a resource no agent uses; callers check `agentUseCount` first so a
  * `MetaLine` doesn't keep a dot for it.
  */
@@ -68,19 +70,28 @@ export default function UsedByAgents({ usage }: UsedByAgentsProps) {
                 className="text-muted-foreground size-4 shrink-0"
                 aria-hidden="true"
               />
-              <Button variant="link" size="text" asChild>
-                <Link
-                  to={
-                    agent.can_edit
-                      ? agentEditPath(agent.id, agent.agent_type === 'workflow')
-                      : agentChatPath(agent.id)
-                  }
-                  title={agent.name}
-                  className="min-w-0 shrink"
-                >
-                  <span className="truncate">{agent.name}</span>
-                </Link>
-              </Button>
+              {agent.can_edit || agent.status !== 'draft' ? (
+                <Button variant="link" size="text" asChild>
+                  <Link
+                    to={
+                      agent.can_edit
+                        ? agentEditPath(
+                            agent.id,
+                            agent.agent_type === 'workflow',
+                          )
+                        : agentChatPath(agent.id)
+                    }
+                    title={agent.name}
+                    className="min-w-0 shrink"
+                  >
+                    <span className="truncate">{agent.name}</span>
+                  </Link>
+                </Button>
+              ) : (
+                <span title={agent.name} className="truncate">
+                  {agent.name}
+                </span>
+              )}
             </li>
           ))}
         </ul>
