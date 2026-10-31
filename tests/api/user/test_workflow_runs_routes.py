@@ -459,11 +459,25 @@ class TestEdges:
             "legacy-agent"
         )
 
-    @pytest.mark.parametrize("path", ["/api/workflow_runs", "/api/workflow_runs/11111111-1111-1111-1111-111111111111"])
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/workflow_runs",
+            "/api/workflow_runs/11111111-1111-1111-1111-111111111111",
+            "/api/workflow_runs/11111111-1111-1111-1111-111111111111/steps/0",
+        ],
+    )
     def test_anonymous_callers_are_401(self, client, db, path):
         assert _get(client, path, None).status_code == 401
 
-    @pytest.mark.parametrize("path", ["/api/workflow_runs", "/api/workflow_runs/11111111-1111-1111-1111-111111111111"])
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/workflow_runs",
+            "/api/workflow_runs/11111111-1111-1111-1111-111111111111",
+            "/api/workflow_runs/11111111-1111-1111-1111-111111111111/steps/0",
+        ],
+    )
     def test_a_database_failure_is_a_500(self, client, monkeypatch, path):
         @contextmanager
         def _broken():
@@ -505,3 +519,78 @@ class TestEdges:
         response = _download(run_id, artifact_id, _pat(["artifacts:read"]))
         assert response.status_code == 400
         assert "storage down" not in response.text
+
+
+# ---------------------------------------------------------------------------
+# One step's full values
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestStep:
+    def _steps(self):
+        big = "x" * 100_000
+        return [
+            dict(_STEPS[0]),
+            {
+                "node_id": "extract",
+                "node_type": "agent",
+                "status": "completed",
+                "started_at": "2026-10-29T10:00:00+00:00",
+                "completed_at": "2026-10-29T10:00:12+00:00",
+                "duration_ms": 12000,
+                "error": None,
+                "state_delta": {"node_extract_output": big, "terms": big},
+                "tool_calls": [],
+            },
+        ]
+
+    def test_returns_a_steps_full_output_and_state_changes(self, client, db):
+        run_id = _run(db, steps=self._steps())
+
+        response = _get(client, f"/api/workflow_runs/{run_id}/steps/1", _pat(["runs:read"]))
+
+        assert response.status_code == 200
+        step = _body(response)["step"]
+        assert step["step_index"] == 1
+        assert step["node_id"] == "extract"
+        assert step["output"] == "x" * 100_000
+        assert step["state_delta"] == {"terms": "x" * 100_000}
+
+    def test_a_step_that_set_no_output_has_none(self, client, db):
+        run_id = _run(db, steps=self._steps())
+        step = _body(_get(client, f"/api/workflow_runs/{run_id}/steps/0", _pat(["runs:read"])))["step"]
+        assert step["output"] is None
+        assert step["state_delta"] == {"query": "Extract the terms"}
+
+    def test_a_step_not_saved_yet_is_409_while_the_run_runs(self, client, db):
+        wf = _workflow(db)
+        run_id = str(WorkflowRunsRepository(db).create(wf, OWNER, "running", inputs={"agent_id": AGENT_A})["id"])
+
+        response = _get(client, f"/api/workflow_runs/{run_id}/steps/0", _pat(["runs:read"]))
+
+        assert response.status_code == 409
+        assert _body(response)["code"] == "step_not_saved_yet"
+
+    def test_a_step_past_the_end_of_a_finished_run_is_404(self, client, db):
+        run_id = _run(db, steps=self._steps())
+        assert _get(client, f"/api/workflow_runs/{run_id}/steps/2", _pat(["runs:read"])).status_code == 404
+
+    def test_holds_to_the_same_access_as_the_run(self, client, db):
+        theirs = _run(db, user=OTHER, steps=self._steps())
+        b = _run(db, agent=AGENT_B, steps=self._steps())
+
+        assert _get(client, f"/api/workflow_runs/{theirs}/steps/1", _pat(["runs:read"])).status_code == 404
+        restricted = _pat(["runs:read"], {"agents": [AGENT_A]})
+        assert _get(client, f"/api/workflow_runs/{b}/steps/1", restricted).status_code == 404
+        assert _get(client, f"/api/workflow_runs/{b}/steps/1", _pat(["artifacts:read"])).status_code == 403
+
+    def test_a_session_caller_reads_its_step(self, client, db):
+        run_id = _run(db, steps=self._steps())
+        assert _get(client, f"/api/workflow_runs/{run_id}/steps/1", {"sub": OWNER}).status_code == 200
+
+    def test_a_step_saved_before_the_rename_reads_its_state_snapshot(self, client, db):
+        legacy = {"node_id": "n", "node_type": "agent", "status": "completed", "state_snapshot": {"node_n_output": "o", "k": 1}}
+        run_id = _run(db, steps=[legacy])
+        step = _body(_get(client, f"/api/workflow_runs/{run_id}/steps/0", _pat(["runs:read"])))["step"]
+        assert step["output"] == "o" and step["state_delta"] == {"k": 1}

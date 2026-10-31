@@ -1777,7 +1777,8 @@
       "auditShow": "Afficher les commandes récentes",
       "auditHide": "Masquer les commandes récentes",
       "seen": "vu {{time}}",
-      "revokeConsequence": "La CLI de cet appareil est déconnectée et l’association supprimée. Associez-le de nouveau pour le reconnecter."
+      "revokeConsequence": "La CLI de cet appareil est déconnectée et l’association supprimée. Associez-le de nouveau pour le reconnecter.",
+      "loadError": "Impossible de charger cet appareil."
     },
     "customModels": {
       "label": "Modèles personnalisés",
@@ -3801,6 +3802,8 @@
         "documentsHint": "Documents transmis à cet agent depuis les imports ou les nœuds en amont.",
         "filePassing": "Transmission des fichiers",
         "filePassingHint": "Auto : envoi natif si le modèle le prend en charge, sinon extraction du texte. Lignes numérotées : le texte entier, chaque ligne marquée [D#:L#] pour la citer.",
+        "streamOutput": "Détails des étapes dans le flux de la conversation",
+        "streamOutputHint": "Ce que contient l’événement d’une étape terminée dans le flux de la conversation. Résumé envoie un aperçu quand la sortie est volumineuse ; les valeurs complètes restent dans l’exécution. Statut seul retire la sortie de l’événement ; pour que la réponse du nœud n’apparaisse pas non plus dans la conversation, désactivez « Diffuser la sortie à l’utilisateur ».",
         "structuredOutput": "Sortie structurée (schéma JSON)",
         "modelNoStructuredOutput": "Le modèle sélectionné ne prend pas en charge la sortie structurée.",
         "validSchema": "Schéma JSON valide",
@@ -3900,6 +3903,11 @@
         "extract": "Extraire",
         "lines": "Lignes numérotées"
       },
+      "streamOutput": {
+        "summary": "Résumé si volumineux",
+        "full": "Toujours complet",
+        "none": "Statut seul"
+      },
       "mobileBlocker": {
         "title": "Ouvrez sur un écran plus grand",
         "body": "L’éditeur de workflows nécessite un écran plus large. Utilisez un ordinateur ou tournez votre tablette en mode paysage."
@@ -3940,6 +3948,11 @@
         "stepCount_other": "({{count}} étapes)",
         "stepCount_many": "({{count}} étapes)",
         "outputLabel": "Sortie :",
+        "showFullOutput": "Afficher la sortie complète",
+        "fullOutputPending": "La sortie complète sera disponible à la fin de l’exécution.",
+        "fullOutputFailed": "Impossible de charger la sortie complète.",
+        "fullOutputUnsaved": "Enregistrez le workflow et relancez-le pour charger la sortie complète d’une étape volumineuse.",
+        "outputNotStreamed": "La sortie de cette étape n’est pas diffusée.",
         "errorLabel": "Erreur :",
         "minimapHeading": "Workflow",
         "emptyTitle": "Tester le workflow",

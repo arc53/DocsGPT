@@ -148,6 +148,8 @@ and [The Tools page](/Tools/basics#the-tools-page).
 - **Structured Output (JSON Schema)**: makes the model return JSON matching the
   schema. The parsed, validated object is saved as the node's output instead
   of text. The model must support structured output.
+- **Step details in the chat stream**: how much of the finished step the chat
+  stream carries; see [Step details in the stream](#step-details-in-the-stream).
 
 ### Line-numbered documents
 
@@ -320,6 +322,8 @@ The **Code Node** runs a Python script in a sandboxed session bound to the workf
   saved as `node_<node_id>_output`.
 - **Timeout (seconds)**: optional. It can't exceed `SANDBOX_EXEC_TIMEOUT`, which
   is also the default.
+- **Step details in the chat stream**: see
+  [Step details in the stream](#step-details-in-the-stream).
 - **Structured Output (JSON Schema)**: optional; see the output rules below.
 
 What the node outputs:
@@ -367,7 +371,8 @@ inside it connect only to each other.
 - **When an item fails**: **Stop and fail the loop** (the default) fails the
   node and writes nothing; items not yet started don't run and running ones stop
   at their next node. **Leave the item out** drops it from the results. **Keep
-  the error in its place** puts `{"error": "..."}` in that item's slot.
+  the error in its place** puts `{"error": "..."}` in that item's slot. An item
+  whose body is still going after 50 node steps counts as failed too.
 - **Output Variable**: an extra name for the results, which are always saved as
   `node_<node_id>_output`. The results are a list in the same order as the
   items.
@@ -510,8 +515,55 @@ them or none.
   holds at least one node with exactly one first node. No connection crosses a
   loop's edge.
 
-A run stops after 50 node steps, so a cycle in the graph needs an exit
-condition.
+A run that is still going after 50 node steps stops with an error and is recorded as failed,
+so a cycle in the graph needs an exit condition.
+
+## Step details in the stream
+
+While a workflow runs, the chat stream sends a `workflow_step` event as each
+node starts and finishes. A finished step's event carries the node's output and
+the state it changed, so the chat and the builder's **Execution details** can
+show them. A node that reads documents can produce a lot of both, so the event
+is held to `WORKFLOW_STREAM_MAX_EVENT_BYTES` (32 KB by default):
+
+- When the output and state changes fit, the event carries them. The output is
+  sent once: the `node_<node_id>_output` copy is left out of `state_delta`.
+- When they don't, the event is a summary: `summarized: true`, the output
+  itself when it is small or else `output_preview` (its first 500 characters)
+  with `output_truncated: true`, `output_bytes`, and `state_keys_changed`
+  listing the keys the node set. A very long key list is cut to fit and marked
+  `state_keys_truncated`.
+
+Every finished step's event also carries `step_index`, its place in the run's
+saved steps (a loop item's steps, saved inside the loop's step, carry none). The
+run keeps every step's full output and state changes (except the text and table
+headers of [`documents`](#line-numbered-documents), which runs never store), so
+**Show full output** on a summarized step in **Execution details** loads them
+once the run ends. A preview of a workflow that was never saved stores no run:
+save the workflow and run it again to load a large step's full output. Over the API that is
+`GET /api/workflow_runs/<run_id>/steps/<step_index>` (a
+[personal access token](/API/personal-access-tokens#reading-workflow-runs)
+needs `runs:read`).
+
+Each node can change this with **Step details in the chat stream**
+(`stream_output` in an exported or API-saved workflow; any node type accepts it):
+
+| Setting | The finished step's event carries |
+| --- | --- |
+| **Summary when large** (`summary`, default) | The output and state changes, or a summary when they exceed the limit |
+| **Always full** (`full`) | The output and state changes, whatever their size |
+| **Status only** (`none`) | The status alone, with `output_omitted: true` |
+
+This setting covers the finished step's event only. An AI Agent node's answer
+streams into the chat while **Stream output to user** is on, whatever this
+setting says. To keep a node's output out of the chat stream, set **Status
+only** *and* turn **Stream output to user** off, and make sure no later node
+shows it: an End node's output template, or another node that streams to the
+user, can still put the node's values into the answer. Both settings limit what the
+stream carries, not who can read the output: the run still saves it, and the
+person who started a saved run can read every step through the step route above.
+Use **Always full** only when a client needs every value from the stream itself. An End node's output template is streamed in pieces under
+the same limit.
 
 ## One workflow per agent
 

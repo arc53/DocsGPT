@@ -147,6 +147,14 @@ describe('AgentPanel', () => {
     expect(advancedToggle().getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('opens advanced settings when the step streams other than a summary', () => {
+    render(makeNode({ stream_output: 'none' }));
+    expect(advancedToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain(
+      'agents.workflow.builder.streamOutput',
+    );
+  });
+
   it('opens advanced settings when a schema is present', () => {
     render(makeNode({ json_schema: { type: 'object' } }), '{"type":"object"}');
     expect(advancedToggle().getAttribute('aria-expanded')).toBe('true');

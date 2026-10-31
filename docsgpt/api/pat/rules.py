@@ -360,6 +360,9 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/workflow_runs/<string:run_id>", "GET"): _rule(
         "runs:read", family="agents", in_route=True, blocked_by=_NON_AGENT_FAMILIES
     ),
+    ("/api/workflow_runs/<string:run_id>/steps/<int:step_index>", "GET"): _rule(
+        "runs:read", family="agents", in_route=True, blocked_by=_NON_AGENT_FAMILIES
+    ),
     # Every artifact of the user (chats and runs alike), so no restricted token may list or read them.
     ("/api/artifacts", "GET"): _rule("artifacts:read", family=None, blocked_by=_ALL_FAMILIES),
     ("/api/artifacts/<artifact_id>", "GET"): _rule("artifacts:read", family=None, blocked_by=_ALL_FAMILIES),

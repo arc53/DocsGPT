@@ -1777,7 +1777,8 @@
       "auditShow": "Mostrar comandos recientes",
       "auditHide": "Ocultar comandos recientes",
       "seen": "visto {{time}}",
-      "revokeConsequence": "La CLI de este dispositivo se desconecta y se elimina el emparejamiento. Vuelve a emparejarlo para reconectarlo."
+      "revokeConsequence": "La CLI de este dispositivo se desconecta y se elimina el emparejamiento. Vuelve a emparejarlo para reconectarlo.",
+      "loadError": "No se pudo cargar este dispositivo."
     },
     "customModels": {
       "label": "Modelos personalizados",
@@ -3796,6 +3797,8 @@
         "documentsHint": "Documentos que se pasan a este agente desde cargas o nodos anteriores.",
         "filePassing": "Paso de archivos",
         "filePassingHint": "Auto: envía el archivo nativo si el modelo lo admite; si no, extrae el texto. Líneas numeradas: el texto completo, con cada línea marcada [D#:L#] para citarla.",
+        "streamOutput": "Detalles del paso en el flujo del chat",
+        "streamOutputHint": "Lo que lleva el evento de un paso terminado en el flujo del chat. Resumen envía una vista previa cuando la salida es grande; los valores completos quedan en la ejecución. Solo estado deja la salida fuera del evento; para que la respuesta del nodo tampoco llegue al chat, desactiva «Transmitir la salida al usuario».",
         "structuredOutput": "Salida estructurada (esquema JSON)",
         "modelNoStructuredOutput": "El modelo seleccionado no admite salida estructurada.",
         "validSchema": "Esquema JSON válido",
@@ -3895,6 +3898,11 @@
         "extract": "Extraer",
         "lines": "Líneas numeradas"
       },
+      "streamOutput": {
+        "summary": "Resumen si es grande",
+        "full": "Siempre completa",
+        "none": "Solo estado"
+      },
       "mobileBlocker": {
         "title": "Ábrelo en una pantalla más grande",
         "body": "El creador de flujos de trabajo necesita una pantalla más ancha. Usa un ordenador o gira la tableta en horizontal."
@@ -3935,6 +3943,11 @@
         "stepCount_other": "({{count}} pasos)",
         "stepCount_many": "({{count}} pasos)",
         "outputLabel": "Salida:",
+        "showFullOutput": "Mostrar la salida completa",
+        "fullOutputPending": "La salida completa estará disponible cuando termine la ejecución.",
+        "fullOutputFailed": "No se pudo cargar la salida completa.",
+        "fullOutputUnsaved": "Guarda el flujo de trabajo y vuelve a ejecutarlo para cargar la salida completa de un paso grande.",
+        "outputNotStreamed": "La salida de este paso no se transmite.",
         "errorLabel": "Error:",
         "minimapHeading": "Flujo de trabajo",
         "emptyTitle": "Prueba el flujo de trabajo",

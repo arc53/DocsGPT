@@ -1713,7 +1713,8 @@
       "auditShow": "Letzte Befehle anzeigen",
       "auditHide": "Letzte Befehle ausblenden",
       "seen": "zuletzt gesehen {{time}}",
-      "revokeConsequence": "Die CLI auf diesem Gerät wird getrennt und die Kopplung entfernt. Koppel es erneut, um es wieder zu verbinden."
+      "revokeConsequence": "Die CLI auf diesem Gerät wird getrennt und die Kopplung entfernt. Koppel es erneut, um es wieder zu verbinden.",
+      "loadError": "Das Gerät konnte nicht geladen werden."
     },
     "customModels": {
       "label": "Eigene Modelle",
@@ -3689,6 +3690,8 @@
         "documentsHint": "Dokumente, die diesem Agenten aus Uploads oder vorgelagerten Knoten übergeben werden.",
         "filePassing": "Dateiübergabe",
         "filePassingHint": "Auto: nativ senden, wenn das Modell es unterstützt, sonst Text extrahieren. Nummerierte Zeilen: der ganze Text, jede Zeile mit [D#:L#] zum Zitieren markiert.",
+        "streamOutput": "Schrittdetails im Chat-Stream",
+        "streamOutputHint": "Was das Ereignis eines abgeschlossenen Schritts im Chat-Stream enthält. Zusammenfassung sendet bei großer Ausgabe eine Vorschau; die vollständigen Werte bleiben im Lauf. Nur Status lässt die Ausgabe im Ereignis weg; damit auch die Antwort des Knotens nicht im Chat erscheint, schalte „Ausgabe an Nutzer streamen“ aus.",
         "structuredOutput": "Strukturierte Ausgabe (JSON-Schema)",
         "modelNoStructuredOutput": "Das ausgewählte Modell unterstützt keine strukturierte Ausgabe.",
         "validSchema": "Gültiges JSON-Schema",
@@ -3788,6 +3791,11 @@
         "extract": "Extrahieren",
         "lines": "Nummerierte Zeilen"
       },
+      "streamOutput": {
+        "summary": "Zusammenfassung bei großer Ausgabe",
+        "full": "Immer vollständig",
+        "none": "Nur Status"
+      },
       "mobileBlocker": {
         "title": "Auf einem größeren Bildschirm öffnen",
         "body": "Der Workflow-Builder braucht einen breiteren Bildschirm. Nutze einen Computer oder dreh dein Tablet ins Querformat."
@@ -3825,6 +3833,11 @@
         "stepCount_one": "({{count}} Schritt)",
         "stepCount_other": "({{count}} Schritte)",
         "outputLabel": "Ausgabe:",
+        "showFullOutput": "Vollständige Ausgabe anzeigen",
+        "fullOutputPending": "Die vollständige Ausgabe ist verfügbar, sobald der Lauf endet.",
+        "fullOutputFailed": "Die vollständige Ausgabe konnte nicht geladen werden.",
+        "fullOutputUnsaved": "Speichere den Workflow und führe ihn erneut aus, um die vollständige Ausgabe eines großen Schritts zu laden.",
+        "outputNotStreamed": "Die Ausgabe dieses Schritts wird nicht gestreamt.",
         "errorLabel": "Fehler:",
         "minimapHeading": "Workflow",
         "emptyTitle": "Workflow testen",

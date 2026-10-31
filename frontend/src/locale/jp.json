@@ -1709,7 +1709,8 @@
       "auditShow": "最近のコマンドを表示",
       "auditHide": "最近のコマンドを非表示",
       "seen": "{{time}}に確認",
-      "revokeConsequence": "このデバイスの CLI は切断され、ペアリングが解除されます。再接続するには、もう一度ペアリングしてください。"
+      "revokeConsequence": "このデバイスの CLI は切断され、ペアリングが解除されます。再接続するには、もう一度ペアリングしてください。",
+      "loadError": "このデバイスを読み込めませんでした。"
     },
     "customModels": {
       "label": "カスタムモデル",
@@ -3670,6 +3671,8 @@
         "documentsHint": "アップロードまたは上流ノードからこのエージェントに渡されるドキュメント。",
         "filePassing": "ファイルの受け渡し",
         "filePassingHint": "自動: モデルが対応していればネイティブで送信し、そうでなければテキストを抽出します。行番号付き: 全文を送り、各行に引用用の [D#:L#] を付けます。",
+        "streamOutput": "チャットストリームでのステップ詳細",
+        "streamOutputHint": "チャットストリームで、完了したステップのイベントに含める内容です。要約では出力が大きいときにプレビューを送信し、完全な値は実行に保存されます。ステータスのみではイベントから出力を除きます。ノードの回答もチャットに表示しない場合は「出力をユーザーにストリーミング」をオフにしてください。",
         "structuredOutput": "構造化出力（JSON スキーマ）",
         "modelNoStructuredOutput": "選択したモデルは構造化出力に対応していません。",
         "validSchema": "有効な JSON スキーマ",
@@ -3769,6 +3772,11 @@
         "extract": "抽出",
         "lines": "行番号付き"
       },
+      "streamOutput": {
+        "summary": "大きいときは要約",
+        "full": "常に完全",
+        "none": "ステータスのみ"
+      },
       "mobileBlocker": {
         "title": "より大きな画面で開いてください",
         "body": "ワークフロービルダーには、より幅の広い画面が必要です。パソコンを使うか、タブレットを横向きにしてください。"
@@ -3805,6 +3813,11 @@
         "executionDetails": "実行の詳細",
         "stepCount_other": "（{{count}} ステップ）",
         "outputLabel": "出力:",
+        "showFullOutput": "完全な出力を表示",
+        "fullOutputPending": "完全な出力は実行の終了後に表示できます。",
+        "fullOutputFailed": "完全な出力を読み込めませんでした。",
+        "fullOutputUnsaved": "大きなステップの完全な出力を読み込むには、ワークフローを保存してもう一度実行してください。",
+        "outputNotStreamed": "このステップの出力はストリーミングされません。",
         "errorLabel": "エラー:",
         "minimapHeading": "ワークフロー",
         "emptyTitle": "ワークフローをテスト",

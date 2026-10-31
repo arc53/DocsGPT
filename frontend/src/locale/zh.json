@@ -1709,7 +1709,8 @@
       "auditShow": "显示最近的命令",
       "auditHide": "隐藏最近的命令",
       "seen": "{{time}}在线",
-      "revokeConsequence": "此设备上的 CLI 会断开连接，配对也会被移除。重新配对即可再次连接。"
+      "revokeConsequence": "此设备上的 CLI 会断开连接，配对也会被移除。重新配对即可再次连接。",
+      "loadError": "无法加载此设备。"
     },
     "customModels": {
       "label": "自定义模型",
@@ -3668,6 +3669,8 @@
         "documentsHint": "从上传或上游节点传给此智能体的文档。",
         "filePassing": "文件传递",
         "filePassingHint": "自动：模型支持时以原生方式发送，否则提取文本。带编号的行：发送全文，每行标注 [D#:L#] 以便引用。",
+        "streamOutput": "聊天流中的步骤详情",
+        "streamOutputHint": "聊天流中已完成步骤的事件包含的内容。摘要模式在输出较大时发送预览，完整值保存在运行记录中。仅状态模式会从事件中去掉输出；若也不想让该节点的回答出现在聊天中，请关闭“将输出流式传输给用户”。",
         "structuredOutput": "结构化输出（JSON Schema）",
         "modelNoStructuredOutput": "所选模型不支持结构化输出。",
         "validSchema": "JSON Schema 有效",
@@ -3767,6 +3770,11 @@
         "extract": "提取",
         "lines": "带编号的行"
       },
+      "streamOutput": {
+        "summary": "较大时发送摘要",
+        "full": "始终完整",
+        "none": "仅状态"
+      },
       "mobileBlocker": {
         "title": "请在更大的屏幕上打开",
         "body": "工作流构建器需要更宽的屏幕。请使用电脑，或将平板电脑横屏。"
@@ -3803,6 +3811,11 @@
         "executionDetails": "执行详情",
         "stepCount_other": "（{{count}} 步）",
         "outputLabel": "输出：",
+        "showFullOutput": "显示完整输出",
+        "fullOutputPending": "运行结束后即可查看完整输出。",
+        "fullOutputFailed": "无法加载完整输出。",
+        "fullOutputUnsaved": "保存工作流并重新运行后，才能加载大型步骤的完整输出。",
+        "outputNotStreamed": "此步骤的输出不会通过流发送。",
         "errorLabel": "错误：",
         "minimapHeading": "工作流",
         "emptyTitle": "测试工作流",

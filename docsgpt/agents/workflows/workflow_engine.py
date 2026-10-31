@@ -40,6 +40,7 @@ from docsgpt.agents.workflows.run_documents import (
 )
 from docsgpt.agents.workflows.schemas import (
     LOOP_RESERVED_VARIABLES,
+    STREAM_OUTPUT_VALUES,
     AgentNodeConfig,
     AgentType,
     CodeNodeConfig,
@@ -87,6 +88,24 @@ _SESSION_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 # egress-open sandbox code (see ``_json_safe_state``).
 _CODE_STATE_EXCLUDED_KEYS = frozenset({"chat_history"})
 
+# How a finished step's output and state changes reach the stream (a node's
+# ``stream_output``): ``summary`` sends them while the event stays under
+# WORKFLOW_STREAM_MAX_EVENT_BYTES and a summary past that, ``full`` always
+# sends them, ``none`` sends the status only.
+_STREAM_OUTPUT_MODES = frozenset(STREAM_OUTPUT_VALUES)
+_DEFAULT_STREAM_OUTPUT = "summary"
+# Characters of a summarized step's output kept as its preview.
+_OUTPUT_PREVIEW_CHARS = 500
+# Characters of an over-long node title kept before its error is cut.
+_TITLE_KEEP_CHARS = 200
+# Free-text fields of a step event, cut before the title when it is too large.
+_FREE_TEXT_FIELDS = ("error", "retry_error")
+# Worst-case JSON bytes per character (a ``\u00XX`` escape), and room for the
+# rest of an ``answer`` event, when cutting a long answer into chunks.
+_JSON_BYTES_PER_CHAR = 6
+_ANSWER_EVENT_OVERHEAD = 64
+_NO_OUTPUT = object()
+
 # Sentinel id stamped on the synthetic text attachment that flags documents a
 # node skipped past the per-node blocking-extract cap (callers/tests match on it).
 _EXTRACT_TRUNCATION_ID = "workflow-extract-truncated"
@@ -126,6 +145,76 @@ class _LoopItemCancelled(Exception):
     """A loop item stopped between nodes because another item failed the loop."""
 
 
+def _event_bytes(value: Any) -> int:
+    """Bytes ``value`` takes as the JSON a stream line carries (the SSE serialization, as UTF-8)."""
+    from docsgpt.streaming.event_replay import sse_json
+
+    return len(sse_json(value).encode("utf-8"))
+
+
+def _stream_output_mode(node: WorkflowNode) -> str:
+    """A node's ``stream_output``; an unset or unknown value is ``summary``."""
+    config = node.config.get("config", node.config) if isinstance(node.config, dict) else {}
+    mode = config.get("stream_output") if isinstance(config, dict) else None
+    return mode if mode in _STREAM_OUTPUT_MODES else _DEFAULT_STREAM_OUTPUT
+
+
+def _answer_chunks(text: str) -> List[str]:
+    """``text`` cut into pieces whose ``answer`` events stay under the event limit."""
+    from docsgpt.core.settings import settings
+
+    size = max(1, (int(settings.WORKFLOW_STREAM_MAX_EVENT_BYTES) - _ANSWER_EVENT_OVERHEAD) // _JSON_BYTES_PER_CHAR)
+    if len(text) <= size:
+        return [text]
+    return [text[start : start + size] for start in range(0, len(text), size)]
+
+
+def _shorten_title(event: Dict[str, Any], limit: int) -> None:
+    """Cap an over-long node title, in place, when the event is over ``limit``.
+
+    Errors repeat the title ("Title: reason", 'Loop "Title" has …'): the
+    leading copy is dropped (the title has its own field) and every other
+    copy is capped with it, so the reason keeps its room.
+    """
+    title = event.get("node_title")
+    if _event_bytes(event) <= limit or not isinstance(title, str) or not title:
+        return
+    for field in _FREE_TEXT_FIELDS:
+        text = event.get(field)
+        if isinstance(text, str) and text.startswith(f"{title}: "):
+            event[field] = text[len(title) + 2 :]
+    if len(title) > _TITLE_KEEP_CHARS:
+        short = title[:_TITLE_KEEP_CHARS] + "…"
+        event["node_title"] = short
+        for field in _FREE_TEXT_FIELDS:
+            if isinstance(event.get(field), str):
+                event[field] = event[field].replace(title, short)
+
+
+def _shorten_free_text(event: Dict[str, Any], limit: int) -> None:
+    """Cut the free text of an event still over ``limit``, in place.
+
+    The errors go first, from their end (their start says what went wrong),
+    then the title. The node id identifies the step and is never shortened.
+    """
+    for field in (*_FREE_TEXT_FIELDS, "node_title"):
+        over = _event_bytes(event) - limit
+        text = event.get(field)
+        if over > 0 and isinstance(text, str) and text:
+            # Each dropped character frees at least a byte; "…" takes three.
+            event[field] = text[: max(0, len(text) - over - 3)] + "…"
+
+
+def _fit_text(event: Dict[str, Any]) -> Dict[str, Any]:
+    """An event with only text to cut, held to WORKFLOW_STREAM_MAX_EVENT_BYTES."""
+    from docsgpt.core.settings import settings
+
+    limit = int(settings.WORKFLOW_STREAM_MAX_EVENT_BYTES)
+    _shorten_title(event, limit)
+    _shorten_free_text(event, limit)
+    return event
+
+
 class WorkflowEngine:
     MAX_EXECUTION_STEPS = 50
 
@@ -145,6 +234,9 @@ class WorkflowEngine:
         # Per-node tool-call summary collected by the node executors and folded
         # into the step log; reset before each node runs.
         self._last_node_tool_calls: List[Dict[str, Any]] = []
+        # Set when the run was stopped by ``MAX_EXECUTION_STEPS`` with a node
+        # still queued; WorkflowAgent finalizes such a run as failed.
+        self.step_limit_reached: bool = False
         # False when no ``workflow_runs`` row backs ``workflow_run_id`` (unsaved /
         # embedded draft), so run-scoped artifacts must NOT be persisted as orphans.
         # Defaults True; WorkflowAgent flips it off on the draft path.
@@ -225,6 +317,9 @@ class WorkflowEngine:
             "type": "workflow_run",
             "workflow_run_id": self.workflow_run_id,
             "step_total": self.graph.linear_step_count(count_end=False),
+            # False for an unsaved draft: nothing is stored under this id, so
+            # a summarized step's full values can't be fetched later.
+            "run_saved": self.run_persisted,
         }
 
         start_node = self.graph.get_start_node()
@@ -263,6 +358,9 @@ class WorkflowEngine:
                 yield {"type": "error", "error": f"Node {current_node_id} not found."}
                 break
             log_entry = self._create_log_entry(node)
+            # The entry's place in the saved steps, so a client can fetch a
+            # summarized step's full values later.
+            step_index = len(self.execution_log)
             self._last_node_tool_calls = []
             self._last_loop_items = None
             self._last_node_attempts = []
@@ -288,10 +386,11 @@ class WorkflowEngine:
                 output_key = f"node_{node.id}_output"
                 node_output = self.state.get(output_key)
 
-                yield self._step_event(
+                yield self._finished_step_event(
                     node,
                     "completed",
-                    state_delta=log_entry["state_delta"],
+                    step_index,
+                    log_entry["state_delta"],
                     output=node_output,
                     **self._attempts_field(),
                 )
@@ -329,10 +428,11 @@ class WorkflowEngine:
                     curated = {"code": public.code}
                     if public.params:
                         curated["params"] = public.params
-                yield self._step_event(
+                yield self._finished_step_event(
                     node,
                     "failed",
-                    state_delta=log_entry["state_delta"],
+                    step_index,
+                    log_entry["state_delta"],
                     error=user_friendly_error,
                     **self._attempts_field(),
                 )
@@ -357,10 +457,32 @@ class WorkflowEngine:
                     f"Branch ended at node '{node.title}' ({node.id}) without reaching an end node"
                 )
             steps += 1
-        if steps >= self.MAX_EXECUTION_STEPS:
+        # Only a run that still has a node queued was cut off: a branch that
+        # ends on the last allowed step leaves ``current_node_id`` empty, and
+        # an error or end node breaks out before ``steps`` reaches the cap.
+        if current_node_id is not None and steps >= self.MAX_EXECUTION_STEPS:
             logger.warning(
                 f"Workflow reached max steps limit ({self.MAX_EXECUTION_STEPS})"
             )
+            if self._loop_item is not None:
+                # Like any failure in a loop body, this goes to the loop, which
+                # applies ``on_item_error``; the run's error event is not yielded.
+                raise _LoopItemFailed(
+                    f"The loop body stopped after {self.MAX_EXECUTION_STEPS} steps without finishing. "
+                    "A cycle in the body, such as a condition that keeps routing back, is the usual cause."
+                )
+            # A loop that never converges would otherwise be finalized as a
+            # completed run with a truncated (often empty) answer.
+            self.step_limit_reached = True
+            yield {
+                "type": "error",
+                "error": (
+                    f"The workflow stopped after {self.MAX_EXECUTION_STEPS} steps without "
+                    "reaching an end node. A loop in the graph, such as a condition that "
+                    "keeps routing back, is the usual cause."
+                ),
+                "user_facing": True,
+            }
 
     def _initialize_state(self, initial_inputs: WorkflowState, query: str) -> None:
         self.state.update(initial_inputs)
@@ -390,6 +512,90 @@ class WorkflowEngine:
         }
         if self._loop_item is not None:
             event.update(self._loop_item)
+        # A running (or retrying) step carries no values, only text a node's
+        # settings can make long; finished steps are sized by their mode.
+        if status == "running":
+            _fit_text(event)
+        return event
+
+    def _finished_step_event(
+        self,
+        node: WorkflowNode,
+        status: str,
+        step_index: int,
+        state_delta: Dict[str, Any],
+        *,
+        output: Any = _NO_OUTPUT,
+        error: Optional[str] = None,
+        **extra: Any,
+    ) -> Dict[str, Any]:
+        """A completed or failed step's event, sized by the node's ``stream_output``.
+
+        The node's output is sent once: its ``node_<id>_output`` copy is left
+        out of the delta. Under ``summary`` an event over
+        ``WORKFLOW_STREAM_MAX_EVENT_BYTES`` becomes a summary; the saved step
+        keeps the full values either way.
+
+        Args:
+            node: The node that ran.
+            status: ``completed`` or ``failed``.
+            step_index: The step's position in the saved steps.
+            state_delta: The keys the node set (as snapshots carry them).
+            output: The node's output, for a completed step.
+            error: The error, for a failed step.
+            extra: Small fields sent whatever the mode (``attempts``).
+        """
+        from docsgpt.core.settings import settings
+
+        fields: Dict[str, Any] = dict(extra)
+        # A loop item's steps are saved inside the loop's step, which the
+        # step route does not address, so they carry no index.
+        if self._loop_item is None:
+            fields["step_index"] = step_index
+        if error is not None:
+            fields["error"] = error
+        mode = _stream_output_mode(node)
+        if mode == "none":
+            return _fit_text(self._step_event(node, status, **fields, output_omitted=True))
+        has_output = output is not _NO_OUTPUT
+        delta = dict(state_delta)
+        if has_output:
+            delta.pop(f"node_{node.id}_output", None)
+            fields["output"] = output
+        event = self._step_event(node, status, **fields, state_delta=delta)
+        limit = int(settings.WORKFLOW_STREAM_MAX_EVENT_BYTES)
+        if mode == "full" or _event_bytes(event) <= limit:
+            return event
+        return self._summarized_step_event(node, status, fields, delta, limit)
+
+    def _summarized_step_event(
+        self, node: WorkflowNode, status: str, fields: Dict[str, Any], delta: Dict[str, Any], limit: int
+    ) -> Dict[str, Any]:
+        """A step event too large to send whole: an output preview and the changed keys, under ``limit``."""
+        summary = {key: value for key, value in fields.items() if key != "output"}
+        summary["summarized"] = True
+        summary["state_keys_changed"] = sorted(str(key) for key in delta)
+        if "output" in fields:
+            output = fields["output"]
+            output_bytes = _event_bytes(output)
+            summary["output_bytes"] = output_bytes
+            if output_bytes <= limit // 4:
+                summary["output"] = output
+            else:
+                text = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False, default=str)
+                summary["output_preview"] = text[: min(_OUTPUT_PREVIEW_CHARS, limit // 8)]
+                summary["output_truncated"] = True
+        event = self._step_event(node, status, **summary)
+        _shorten_title(event, limit)
+        # Many changed keys can outgrow the limit on their own: halve the list.
+        while _event_bytes(event) > limit and event["state_keys_changed"]:
+            event["state_keys_changed"] = event["state_keys_changed"][: len(event["state_keys_changed"]) // 2]
+            event["state_keys_truncated"] = True
+        if _event_bytes(event) > limit and ("output" in event or "output_preview" in event):
+            event.pop("output", None)
+            event["output_preview"] = ""
+            event["output_truncated"] = True
+        _shorten_free_text(event, limit)
         return event
 
     def _finalize_log_entry(self, log_entry: Dict[str, Any], pre_state: Dict[str, Any]) -> None:
@@ -1644,7 +1850,10 @@ class WorkflowEngine:
             # other so the segments stay readable.
             if getattr(self, "_has_streamed", False):
                 yield {"answer": "\n\n"}
-            yield {"answer": formatted_output}
+            # In pieces under the event limit: one event per template would
+            # put a whole rendered document on a single stream line.
+            for chunk in _answer_chunks(formatted_output):
+                yield {"answer": chunk}
             self._has_streamed = True
 
     def _execute_loop_node(

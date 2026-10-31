@@ -46,7 +46,7 @@ from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.activity.flags import clear_stop, stop_requested
 from docsgpt.events.publisher import publish_user_event
-from docsgpt.streaming.event_replay import format_sse_event
+from docsgpt.streaming.event_replay import format_sse_event, sse_json
 from docsgpt.streaming.message_journal import (
     BatchedJournalWriter,
     record_event,
@@ -1066,7 +1066,7 @@ class BaseAnswerResource:
                 if turn_files:
                     payload = {**payload, "attachments": turn_files}
             if not reserved_message_id or journal_writer is None:
-                return f"data: {json.dumps(payload)}\n\n"
+                return f"data: {sse_json(payload)}\n\n"
             sequence_no += 1
             seq = sequence_no
             event_type = (
@@ -2535,7 +2535,7 @@ class BaseAnswerResource:
         payload: Dict[str, Any] = {"type": "error", "error": err_response}
         if code:
             payload["code"] = code
-        yield f"data: {json.dumps(payload)}\n\n"
+        yield f"data: {sse_json(payload)}\n\n"
 
     def curated_error_stream_generate(self, error: BaseException):
         """One SSE ``error`` event with the curated message, code and params.
@@ -2550,4 +2550,4 @@ class BaseAnswerResource:
         payload: Dict[str, Any] = {"type": "error", "error": public.message, "code": public.code}
         if public.params:
             payload["params"] = public.params
-        yield f"data: {json.dumps(payload)}\n\n"
+        yield f"data: {sse_json(payload)}\n\n"

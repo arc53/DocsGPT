@@ -1709,7 +1709,8 @@
       "auditShow": "顯示最近的指令",
       "auditHide": "隱藏最近的指令",
       "seen": "{{time}}上線",
-      "revokeConsequence": "此裝置上的 CLI 會中斷連線，配對也會被移除。重新配對即可再次連線。"
+      "revokeConsequence": "此裝置上的 CLI 會中斷連線，配對也會被移除。重新配對即可再次連線。",
+      "loadError": "無法載入此裝置。"
     },
     "customModels": {
       "label": "自訂模型",
@@ -3670,6 +3671,8 @@
         "documentsHint": "從上傳或上游節點傳給此代理的文件。",
         "filePassing": "檔案傳遞",
         "filePassingHint": "自動：模型支援時以原生方式傳送，否則擷取文字。帶編號的行：傳送全文，每行標註 [D#:L#] 以便引用。",
+        "streamOutput": "聊天串流中的步驟詳情",
+        "streamOutputHint": "聊天串流中已完成步驟的事件包含的內容。摘要模式在輸出較大時傳送預覽，完整值保存在執行紀錄中。僅狀態模式會從事件中移除輸出；若也不想讓此節點的回答出現在聊天中，請關閉「將輸出串流給使用者」。",
         "structuredOutput": "結構化輸出（JSON Schema）",
         "modelNoStructuredOutput": "所選模型不支援結構化輸出。",
         "validSchema": "JSON Schema 有效",
@@ -3769,6 +3772,11 @@
         "extract": "擷取",
         "lines": "帶編號的行"
       },
+      "streamOutput": {
+        "summary": "較大時傳送摘要",
+        "full": "一律完整",
+        "none": "僅狀態"
+      },
       "mobileBlocker": {
         "title": "請在更大的螢幕上開啟",
         "body": "工作流程建構器需要更寬的螢幕。請使用電腦，或將平板電腦轉為橫向。"
@@ -3805,6 +3813,11 @@
         "executionDetails": "執行詳細資料",
         "stepCount_other": "（{{count}} 步）",
         "outputLabel": "輸出：",
+        "showFullOutput": "顯示完整輸出",
+        "fullOutputPending": "執行結束後即可查看完整輸出。",
+        "fullOutputFailed": "無法載入完整輸出。",
+        "fullOutputUnsaved": "儲存工作流程並重新執行後，才能載入大型步驟的完整輸出。",
+        "outputNotStreamed": "此步驟的輸出不會透過串流傳送。",
         "errorLabel": "錯誤：",
         "minimapHeading": "工作流程",
         "emptyTitle": "測試工作流程",
