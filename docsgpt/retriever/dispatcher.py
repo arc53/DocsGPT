@@ -463,12 +463,18 @@ class Dispatcher(BaseRetriever):
         context = self._context(query, retriever, group)
         context["selection_size"] = len(base_selection(docs))
         self.last_candidate_count += len(docs)
-        before = [(doc, doc.get("_base", True)) for doc in docs] if self._record_candidates else []
+        before = [(doc, dict(doc), doc.get("_base", True)) for doc in docs] if self._record_candidates else []
         docs = self._run_stages(docs, context, self._group_stages(group))
         if before:
             scored = {id(doc): p for doc, p in context.get("scored") or []}
             self.last_candidates.extend(
-                {"doc": doc, "base": bool(base), "relevance": scored.get(id(doc))} for doc, base in before
+                {
+                    "doc": doc,
+                    "snapshot": snapshot,
+                    "base": bool(base),
+                    "relevance": scored.get(id(doc)),
+                }
+                for doc, snapshot, base in before
             )
         top = context.get("top_relevance")
         if top is not None and (self.last_top_relevance is None or top > self.last_top_relevance):

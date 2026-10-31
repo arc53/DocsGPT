@@ -272,7 +272,7 @@ class SourceSearch(Resource):
             ranks = {id(d): idx for idx, d in enumerate(docs, start=1)}
             payload["candidates"] = [
                 {
-                    **_chunk(c["doc"], rank=ranks.get(id(c["doc"]))),
+                    **_chunk(c.get("snapshot", c["doc"]), rank=ranks.get(id(c["doc"]))),
                     "rank_before": idx,
                     "relevance": c["relevance"],
                     "kept": id(c["doc"]) in ranks,

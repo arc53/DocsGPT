@@ -192,10 +192,18 @@ def prune_boilerplate(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[
         return docs
 
     seen_boilerplate: Set[str] = set()
+    seen_doc_ids: Set[int] = set()
 
     for doc in docs:
+        doc_id = id(doc)
+        if doc_id in seen_doc_ids:
+            continue
+        seen_doc_ids.add(doc_id)
+
         text = doc.get("text")
         if isinstance(text, str) and text:
+            if "_raw_text" not in doc:
+                doc["_raw_text"] = text
             doc["text"] = prune_chunk_text(text, query=query, seen_boilerplate=seen_boilerplate)
 
     return docs

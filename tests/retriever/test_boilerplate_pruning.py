@@ -145,6 +145,19 @@ class TestBoilerplatePruningRules:
         assert "Home > API" not in doc1["text"]
         assert "Factual chunk 1 content." in doc1["text"]
 
+    def test_prune_boilerplate_skips_duplicate_document_references(self):
+        doc = {"id": "doc1", "text": "Server uses TLS."}
+        docs = [doc, doc]
+        pruned = prune_boilerplate(docs, query="TLS")
+        assert pruned[0]["text"] == "Server uses TLS."
+        assert pruned[1]["text"] == "Server uses TLS."
+
+    def test_prune_boilerplate_preserves_raw_text_snapshot(self):
+        doc = {"id": "doc1", "text": "Home > API\nFactual chunk."}
+        prune_boilerplate([doc], query="Factual")
+        assert doc["_raw_text"] == "Home > API\nFactual chunk."
+        assert doc["text"] == "Factual chunk."
+
 
 @pytest.mark.unit
 class TestCompressingRetrieverIntegration:
@@ -197,3 +210,17 @@ class TestCompressingRetrieverIntegration:
         assert isinstance(retriever, CompressingRetriever)
         res = retriever.search("setup")
         assert res[0]["text"] == "Setup guide."
+
+    def test_candidate_snapshot_preserves_pre_pruning_text_and_identity(self):
+        doc1 = {"id": "doc1", "text": "Home > API\nFactual chunk 1."}
+        mock_inner = Mock()
+        mock_inner.search.return_value = [doc1]
+        mock_inner.last_candidates = [
+            {"doc": doc1, "snapshot": dict(doc1), "base": True, "relevance": 0.9}
+        ]
+        retriever = CompressingRetriever(mock_inner)
+        res = retriever.search("chunk")
+        assert res[0] is doc1
+        assert res[0]["text"] == "Factual chunk 1."
+        assert retriever.last_candidates[0]["doc"] is doc1
+        assert retriever.last_candidates[0]["snapshot"]["text"] == "Home > API\nFactual chunk 1."
