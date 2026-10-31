@@ -984,6 +984,21 @@ describe('NewAgent form', () => {
     ).toBeNull();
   });
 
+  // The server lists tool_details in its own order and leaves out deleted
+  // tools: an untouched agent still reads as saved.
+  it('reads an agent as saved when its tool details come back reordered or short', async () => {
+    await renderEdit({
+      tools: ['t-a', 't-b', 't-gone'],
+      tool_details: [
+        { id: 't-b', name: 'jira', display_name: 'Jira' },
+        { id: 't-a', name: 'api_tool', display_name: 'My API' },
+      ],
+    });
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(false);
+  });
+
   // An editor doesn't list the owner's private tools, but must still be able
   // to take one off the agent.
   it("adds a remove-only row for an attached tool the editor can't list", async () => {

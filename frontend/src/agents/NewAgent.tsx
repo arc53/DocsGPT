@@ -154,6 +154,12 @@ function agentSavePayload(agent: Agent, jsonSchemaText: string) {
 }
 type AgentSavePayload = ReturnType<typeof agentSavePayload>;
 
+/** The ids of the picked tools, in their order: what a save sends. */
+const toolIdsOf = (tools: ToolSummary[]): string[] =>
+  tools
+    .map((tool) => tool?.id)
+    .filter((id): id is string => typeof id === 'string');
+
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -1047,7 +1053,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           prompt_id: data.prompt_id || 'default',
           retriever: agentSourceIds.length === 0 ? 'classic' : '',
           chunks: data.chunks || '6',
-          tools: data.tools || [],
+          // The picked tools, as the tools effect below writes them: the
+          // server's order, with deleted tools left out.
+          tools: data.tool_details
+            ? toolIdsOf(data.tool_details)
+            : data.tools || [],
           ...serializeAgentSources(agentSourceIds, sourceDocs),
           models: agentModels,
           default_model_id: agentModels.includes(data.default_model_id || '')
@@ -1112,12 +1122,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [selectedSourceIds]);
 
   useEffect(() => {
-    setAgent((prev) => ({
-      ...prev,
-      tools: Array.from(selectedTools)
-        .map((tool) => tool?.id)
-        .filter((id): id is string => typeof id === 'string'),
-    }));
+    setAgent((prev) => ({ ...prev, tools: toolIdsOf(selectedTools) }));
   }, [selectedTools]);
 
   useEffect(() => {
