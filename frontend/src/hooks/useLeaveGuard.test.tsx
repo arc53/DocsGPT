@@ -168,4 +168,35 @@ describe('useLeaveGuard', () => {
     await act(async () => dialogButton('agents.form.leave.submit').click());
     expect(container.textContent).toBe('connectors page');
   });
+  // A reload, a closed tab or a typed URL leaves too: the browser's own
+  // prompt asks while something is unsaved, and only then.
+  const unload = () => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+
+  it('asks the browser to confirm an unload while something is unsaved', async () => {
+    await render(true);
+    expect(unload()).toBe(true);
+  });
+
+  it('lets an unload go when nothing is unsaved', async () => {
+    await render(false);
+    expect(unload()).toBe(false);
+  });
+
+  it('stops asking on unload once the work is saved', async () => {
+    await render(true);
+    expect(unload()).toBe(true);
+    await render(false);
+    expect(unload()).toBe(false);
+  });
+
+  it('stops asking on unload once the builder unmounts', async () => {
+    await render(true);
+    await act(async () => root.unmount());
+    expect(unload()).toBe(false);
+    root = createRoot(container);
+  });
 });

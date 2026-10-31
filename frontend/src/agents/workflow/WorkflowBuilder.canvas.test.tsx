@@ -509,6 +509,34 @@ describe('WorkflowBuilder canvas', () => {
         .map((el) => el.dataset.node!)
         .find((id) => id.startsWith('agent'))!;
 
+    // The builder covers the sidebar: the header's crumb and tabs are its
+    // main exits, and they ask like every other one.
+    it("asks before the header's Agents crumb leaves an edit", async () => {
+      await render();
+      const headerLink = (href: string) =>
+        container.querySelector<HTMLAnchorElement>(`a[href="${href}"]`)!;
+      await select('agent');
+      const onUpdate = panel.props!.onUpdate as (data: object) => void;
+      const node = panel.props!.node as { data: { config: object } };
+      await act(async () =>
+        onUpdate({ config: { ...node.data.config, prompt_template: 'Bye' } }),
+      );
+      await act(async () => headerLink('/agents/manage').click());
+      expect(asked()).toBe(true);
+      expect(nodeButton('end')).not.toBeNull();
+    });
+
+    it("lets the header's Agents crumb leave a clean workflow at once", async () => {
+      await render();
+      await act(async () =>
+        container
+          .querySelector<HTMLAnchorElement>('a[href="/agents/manage"]')!
+          .click(),
+      );
+      expect(asked()).toBe(false);
+      expect(nodeButton('end')).toBeNull();
+    });
+
     it('reads an untouched new workflow as saved', async () => {
       await render(NEW);
       expect(unsaved()).toBe(false);

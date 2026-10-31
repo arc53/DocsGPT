@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { type NavigateOptions, useNavigate } from 'react-router-dom';
 
@@ -39,7 +39,9 @@ export function leaveNow(
  * With nothing unsaved they go at once; otherwise a confirm asks "Leave
  * without saving?" with Leave or Cancel. A link opened in a new tab (Cmd,
  * Ctrl, Shift or middle click) never asks. The app's router
- * can't block every navigation, so it covers the exits the builder draws.
+ * can't block every navigation, so it covers the exits the builder draws;
+ * a reload, a closed tab or a typed URL gets the browser's own prompt
+ * (`beforeunload`) while something is unsaved, and none once it's saved.
  *
  * Args:
  *   dirty: Whether leaving now would lose changes.
@@ -62,6 +64,17 @@ export function useLeaveGuard(dirty: boolean): {
     path: string;
     options?: LeaveOptions;
   } | null>(null);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Older browsers show the prompt only when returnValue is set.
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
 
   const leaveTo: LeaveTo = (path, options) => {
     if (dirty) setPending({ path, options });

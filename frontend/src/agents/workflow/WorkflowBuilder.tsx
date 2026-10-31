@@ -2311,6 +2311,7 @@ function WorkflowBuilderInner() {
             agentImage={currentAgentImage}
             access={canManageAgent ? currentAgent : undefined}
             onNameClick={openDetails}
+            onNavigate={leaveGuard.onNavigate()}
             status={
               isPublished ? (
                 <Badge variant="success">
