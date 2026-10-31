@@ -118,6 +118,40 @@ def _is_navigation_boilerplate(line: str) -> bool:
     return False
 
 
+def _is_boilerplate_candidate(line: str) -> bool:
+    """Classify whether a line represents boilerplate (headers, titles, banners) rather than factual prose."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+
+    # Navigation controls, breadcrumbs, or pagination
+    if _is_navigation_boilerplate(line):
+        return True
+
+    # Markdown headers (e.g. "# Overview", "## API Reference")
+    if stripped.startswith("#"):
+        return True
+
+    # Copyright, license, or legal notices
+    if re.search(r"(?:©|\bcopyright\b|\ball rights reserved\b|\blicensed under\b)", stripped, re.IGNORECASE):
+        return True
+
+    # Document titles, product headers, or version lines (e.g. "DocsGPT Documentation v2.4")
+    if re.search(
+        r"\b(?:documentation|docs|manual|guide|reference|sdk|api)\b|\bv?\d+\.\d+(?:\.\d+)*\b",
+        stripped,
+        re.IGNORECASE,
+    ):
+        return True
+
+    # Short non-sentence header-like lines without terminal punctuation
+    words = stripped.split()
+    if len(words) <= 8 and not stripped.endswith((".", "!", "?", ":", ";", ",", '"', "'")):
+        return True
+
+    return False
+
+
 def prune_chunk_text(text: str, query: str = "", seen_boilerplate: Optional[Set[str]] = None) -> str:
     """Extractive pruning of navigation boilerplate and duplicate lines from a single chunk."""
     if not text:
@@ -160,7 +194,7 @@ def prune_chunk_text(text: str, query: str = "", seen_boilerplate: Optional[Set[
             continue
 
         # Check for duplicate boilerplate across chunks in same retrieval
-        if seen_boilerplate is not None:
+        if seen_boilerplate is not None and _is_boilerplate_candidate(line):
             norm_line = stripped.lower()
             if len(norm_line) < 120 and norm_line in seen_boilerplate:
                 continue

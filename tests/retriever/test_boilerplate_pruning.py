@@ -134,6 +134,15 @@ class TestBoilerplatePruningRules:
         assert "DocsGPT Documentation v2.4" not in pruned[1]["text"]
         assert "Factual chunk 2 content." in pruned[1]["text"]
 
+    def test_preserves_repeated_factual_prose_across_chunks(self):
+        docs = [
+            {"id": "doc1", "text": "The primary service runs on port 8080.\nOther details."},
+            {"id": "doc2", "text": "The primary service runs on port 8080.\nMore information."},
+        ]
+        pruned = prune_boilerplate(docs, query="")
+        assert "The primary service runs on port 8080." in pruned[0]["text"]
+        assert "The primary service runs on port 8080." in pruned[1]["text"]
+
     def test_prune_boilerplate_preserves_document_identity(self):
         doc1 = {"id": "doc1", "text": "Home > API\nFactual chunk 1 content."}
         doc2 = {"id": "doc2", "text": "Home > API\nFactual chunk 2 content."}
