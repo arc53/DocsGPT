@@ -231,6 +231,29 @@ class TestResourceRestrictions:
         missing = _call(client, "PUT", "/api/user/preferences", claims, json={})
         assert _denied(missing) == "resource_not_allowed"
 
+    @staticmethod
+    def _put_preferences(client, claims, body):
+        """PUT /api/user/preferences; a request the rules let through reaches no database."""
+        with patch("docsgpt.api.user.me.routes.db_session", side_effect=RuntimeError("no database here")):
+            return _call(client, "PUT", "/api/user/preferences", claims, json=body)
+
+    def test_chat_prompt_only_if_unset_is_refused_to_a_prompt_restricted_token(self, client):
+        # With a prompt stored, only_if_unset answers with it, which GET keeps from such a token.
+        claims = self._restricted(["prompts:write"], prompts=[SOURCE_A])
+        for value in ("default", SOURCE_A):
+            response = self._put_preferences(client, claims, {"chat_prompt_id": value, "only_if_unset": True})
+            assert _denied(response) == "resource_not_allowed", value
+        plain = self._put_preferences(client, claims, {"chat_prompt_id": "default", "only_if_unset": False})
+        assert _denied(plain) is None
+
+    def test_chat_prompt_only_if_unset_stays_open_to_other_tokens(self, client):
+        for claims in (
+            _claims(["prompts:write"]),
+            self._restricted(["prompts:write", "agents:read"], agents=[AGENT_A]),
+        ):
+            response = self._put_preferences(client, claims, {"chat_prompt_id": "default", "only_if_unset": True})
+            assert _denied(response) is None
+
     def test_missing_id_is_refused_for_a_restricted_token(self, client):
         claims = self._restricted(["agents:read"], agents=[AGENT_A])
         assert _denied(_call(client, "GET", "/api/get_agent", claims)) == "resource_not_allowed"
