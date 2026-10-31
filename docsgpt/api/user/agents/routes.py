@@ -67,6 +67,7 @@ from docsgpt.storage.db.repositories.conversations import ConversationsRepositor
 from docsgpt.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
 )
+from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.repositories.stack_logs import StackLogsRepository
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
@@ -348,6 +349,25 @@ def _stored_graph_errors(conn, workflow_id, owner_id: str) -> list:
         return []
     nodes, edges = stored_graph(conn, workflow)
     return validate_workflow_structure(nodes, edges, user_id=owner_id)
+
+
+def _runs_outside_builder(conn, agent: dict) -> bool:
+    """Whether something other than its builder can run an agent, whatever its status.
+
+    Nothing on the run path checks ``status``: a key (kept when a published
+    agent goes back to draft), an incoming webhook token, or a live schedule
+    each run the agent's current graph.
+
+    Args:
+        conn: Open database connection.
+        agent: The stored agent row.
+
+    Returns:
+        bool: True when the agent is published or one of those can run it.
+    """
+    if agent.get("status") == "published" or agent.get("key") or agent.get("incoming_webhook_token"):
+        return True
+    return SchedulesRepository(conn).any_live_for_agent(str(agent["id"]))
 
 
 def _image_output(image: Optional[str], agent_id: str, owner: Optional[str]) -> str:
@@ -1649,15 +1669,16 @@ class UpdateAgent(Resource):
                         update_fields["key"] = newly_generated_key
 
                 # A workflow agent's graph: an inline one is checked for shape
-                # on a draft and in full to publish. Without one, a published
+                # on a draft and in full on an agent that runs. Without one, an
                 # agent that starts running a stored graph (it is published now,
                 # becomes a workflow agent, or switches workflow) validates that
-                # graph, which a draft save may have left unfinished. An agent
-                # published before counts as published whatever status the save
-                # asks for: its key keeps running it after it goes back to draft.
+                # graph, which a draft save may have left unfinished. A draft
+                # that its key, a webhook or a schedule runs counts as running
+                # (``_runs_outside_builder``).
                 if final_agent_type == "workflow":
                     graph_errors: list = []
-                    runs_live = final_status == "published" or existing_agent.get("status") != "draft"
+                    was_live = _runs_outside_builder(conn, existing_agent)
+                    runs_live = final_status == "published" or was_live
                     if inline_graph is not None:
                         graph_errors = workflow_graph_errors(
                             inline_graph, draft=not runs_live, user_id=owner_id,
@@ -1666,7 +1687,7 @@ class UpdateAgent(Resource):
                         existing_workflow_id = existing_agent.get("workflow_id")
                         final_workflow_id = update_fields.get("workflow_id", existing_workflow_id)
                         starts_running = (
-                            existing_agent.get("status") != "published"
+                            not was_live
                             or existing_agent.get("agent_type") != "workflow"
                             or str(final_workflow_id or "") != str(existing_workflow_id or "")
                         )

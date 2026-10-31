@@ -395,6 +395,44 @@ class TestPublishedAgentsRunValidatedGraphs:
         assert _status(valid) == 200, _json(valid)
         assert _row(pg_conn, agent_id)["status"] == "draft"
 
+    def test_a_keyed_draft_keeps_needing_a_valid_graph_on_later_saves(self, app, pg_conn):
+        """Back to draft once, the key still runs it: every later draft save validates in full."""
+        agent_id, wid = _workflow_agent(app, pg_conn)
+        assert _status(_update(app, pg_conn, agent_id, {"status": "draft"})) == 200
+        assert _row(pg_conn, agent_id)["status"] == "draft" and _row(pg_conn, agent_id)["key"]
+        version = _stored_graph(pg_conn, wid)[0]["current_graph_version"]
+        resp = _update(app, pg_conn, agent_id, {"workflow_graph": _invalid_graph()})
+        assert _status(resp) == 400
+        assert _json(resp)["errors"]
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == version
+
+    def test_a_keyed_draft_switching_to_an_unvalidated_workflow_is_400(self, app, pg_conn):
+        wid = self._draft_workflow(app, pg_conn)
+        agent_id, old_wid = _workflow_agent(app, pg_conn)
+        assert _status(_update(app, pg_conn, agent_id, {"status": "draft"})) == 200
+        resp = _update(app, pg_conn, agent_id, {"workflow": wid})
+        assert _status(resp) == 400
+        assert str(_row(pg_conn, agent_id)["workflow_id"]) == old_wid
+
+    @pytest.mark.parametrize("trigger", ["webhook", "schedule"])
+    def test_a_never_published_draft_that_runs_headless_needs_a_valid_graph(self, app, pg_conn, trigger):
+        """A webhook token or a schedule runs a draft without its key, so its graph must be finished too."""
+        agent_id, wid = _workflow_agent(app, pg_conn, status="draft")
+        if trigger == "webhook":
+            AgentsRepository(pg_conn).update(agent_id, OWNER, {"incoming_webhook_token": uuid.uuid4().hex})
+        else:
+            from docsgpt.storage.db.repositories.schedules import SchedulesRepository
+
+            SchedulesRepository(pg_conn).create(OWNER, agent_id, "recurring", "Run", cron="0 9 * * *")
+        resp = _update(app, pg_conn, agent_id, {"workflow_graph": _invalid_graph()})
+        assert _status(resp) == 400
+        assert _json(resp)["errors"]
+
+    def test_a_draft_nothing_runs_still_saves_an_unfinished_graph(self, app, pg_conn):
+        agent_id, _ = _workflow_agent(app, pg_conn, status="draft")
+        resp = _update(app, pg_conn, agent_id, {"workflow_graph": _invalid_graph()})
+        assert _status(resp) == 200, _json(resp)
+
     def test_a_published_agent_switching_to_an_unvalidated_workflow_as_a_draft_is_400(self, app, pg_conn):
         wid = self._draft_workflow(app, pg_conn)
         agent_id, old_wid = _workflow_agent(app, pg_conn)
