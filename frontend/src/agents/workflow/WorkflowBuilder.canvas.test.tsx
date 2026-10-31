@@ -485,6 +485,74 @@ describe('WorkflowBuilder canvas', () => {
     });
   });
 
+  // The notice's Remove for a stopped tool, with the node's panel open:
+  // the panel edits from the selected node, so it must not hand the tool
+  // back on the next edit.
+  describe("a stopped tool removed while its node's panel is open", () => {
+    beforeEach(() => {
+      api.workflow = {
+        ...workflowWith({
+          model_id: 'm1',
+          llm_name: 'openai',
+          prompt_template: 'Hi',
+          tools: ['t1', 't2'],
+        }),
+        resource_states: [
+          {
+            key: 'tool:t1',
+            type: 'tool',
+            id: 't1',
+            name: 'Jira',
+            state: 'stopped',
+            reason: 'connection_removed',
+          },
+        ],
+      };
+    });
+
+    const removeJira = async () =>
+      act(async () =>
+        [...container.querySelectorAll('button')]
+          .find((b) => b.textContent === 'agents.form.resourceStates.remove')!
+          .click(),
+      );
+    const panelTools = () =>
+      (panel.props!.node as { data: { config: { tools: string[] } } }).data
+        .config.tools;
+
+    it('leaves it off the panel and off the next save', async () => {
+      await render();
+      await select('agent');
+      expect(panelTools()).toEqual(['t1', 't2']);
+      await removeJira();
+      expect(panelTools()).toEqual(['t2']);
+
+      // The panel's next edit spreads the node it was handed.
+      const onUpdate = panel.props!.onUpdate as (data: object) => void;
+      const node = panel.props!.node as { data: { config: object } };
+      await act(async () =>
+        onUpdate({ config: { ...node.data.config, prompt_template: 'Bye' } }),
+      );
+      const onSave = sheet.props!.onSave as (values: object) => void;
+      await act(async () =>
+        onSave({
+          name: 'Renewal desk',
+          description: '',
+          allowPromptOverride: false,
+          imageFile: null,
+        }),
+      );
+      await act(async () => undefined);
+      const form = api.updateAgent.mock.calls.at(-1)![1] as FormData;
+      const sent = JSON.parse(form.get('workflow_graph') as string) as {
+        nodes: { id: string; data: Record<string, unknown> }[];
+      };
+      const agentData = sent.nodes.find((n) => n.id === 'agent')!.data;
+      expect(agentData.tools).toEqual(['t2']);
+      expect(agentData.prompt_template).toBe('Bye');
+    });
+  });
+
   describe('unsaved changes', () => {
     const NEW = '/agents/manage/workflow/new';
     const unsaved = () =>

@@ -2137,6 +2137,11 @@ function WorkflowBuilderInner() {
     (item: ResourceState) => {
       takeSnapshot();
       setNodes((prev) => withoutNodeResource(prev, item));
+      // The open node panel edits from the selected node: without this its
+      // picker keeps the tool, and its next edit puts it back.
+      setSelectedNode((prev) =>
+        prev ? withoutNodeResource([prev], item)[0] : prev,
+      );
       sponsoredSave.undoTakeover(item.key);
     },
     [takeSnapshot, sponsoredSave.undoTakeover],
