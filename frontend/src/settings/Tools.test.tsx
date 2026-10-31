@@ -1301,6 +1301,10 @@ describe('Tools usage', () => {
     // A new search is a new filter: the tile settles where it belongs.
     await search('i');
     expect(titles()).toEqual([]);
+    // Back on the first filter, the held usage is gone for good.
+    await search('');
+    expect(titles()).toEqual(['old']);
+    expect(usageTrigger()!.textContent).toBe('settings.usage.filters.unused1');
   });
 
   it('says on each card which agents use it; the switch says chats', async () => {

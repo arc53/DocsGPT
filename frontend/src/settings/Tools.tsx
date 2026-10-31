@@ -141,6 +141,10 @@ export default function Tools() {
     key: string;
     inUse: Record<string, boolean>;
   }>({ key: '', inUse: {} });
+  // A new search or filter drops what was held, so coming back to the
+  // first filter doesn't bring it back.
+  if (heldUsage.key !== '' && heldUsage.key !== filterKey)
+    setHeldUsage({ key: '', inUse: {} });
   const heldInUse = heldUsage.key === filterKey ? heldUsage.inUse : {};
 
   // A connection-backed tool shares its connection's account or asks each
