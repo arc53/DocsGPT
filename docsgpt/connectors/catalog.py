@@ -377,7 +377,17 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
         category="messaging",
         auth_kind="api_key",
         capabilities=("write",),
-        credential_fields=(CredentialField("token", "Access token"),),
+        credential_fields=(
+            CredentialField("token", "Access token"),
+            CredentialField(
+                "server_url",
+                "Server URL",
+                secret=False,
+                required=False,
+                parameter="server_url",
+                hint="The access token and messages go only to this server. Leave empty for ntfy.sh.",
+            ),
+        ),
         tool_templates=("ntfy",),
         setup={"tools": "auto", "sync": "off"},
     ),

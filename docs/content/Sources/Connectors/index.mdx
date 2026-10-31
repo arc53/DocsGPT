@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components'
@@ -53,6 +53,8 @@ You can connect the same service more than once, for example two Telegram bots. 
 Under **Customize**, each action lists its parameters. A parameter is either left to the AI (**Let AI decide**) or set to **Always use** a value. A fixed value is sent on every call; the AI never sees it and can't change it, even when a prompt asks it to. Only the tool's owner can change fixed values.
 
 A Telegram connection can hold a **Default chat ID**. When it's set, messages always go to that chat. To find a chat's id, add the bot to the chat, send it a message, and open `https://api.telegram.org/bot<token>/getUpdates`. The same bot with another default chat is a separate connection. When team members use their own accounts, each member's messages go to their own default chat.
+
+An ntfy connection can hold a **Server URL**. The access token and every message go only to that server, and the AI can't pick another one. Leave it empty to use `ntfy.sh`; the token is never sent to any other server, so a self-hosted server needs its URL here.
 
 ### When a connection needs attention
 

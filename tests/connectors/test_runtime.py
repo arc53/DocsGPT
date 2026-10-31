@@ -292,10 +292,10 @@ def _telegram_tool(connection_id, *, user="alice", mode="owner"):
     }
 
 
-def _run_send(executor, tool, arguments):
+def _run_send(executor, tool, arguments, action="telegram_send_message"):
     with patch("docsgpt.agents.tool_executor.ToolActionParser") as parser, \
             patch("docsgpt.agents.tool_executor.ToolManager") as manager:
-        parser.return_value.parse_args.return_value = ("t1", "telegram_send_message", arguments)
+        parser.return_value.parse_args.return_value = ("t1", action, arguments)
         gen = executor.execute({"t1": tool}, _call(), "OpenAILLM")
         while True:
             try:
@@ -345,6 +345,61 @@ class TestTelegramDefaultChat:
         with _service_db(pg_conn):
             call = _run_send(_executor(user="bob"), _telegram_tool(owner, mode="member"), {"text": "hi"})
         assert call.kwargs == {"text": "hi", "chat_id": "-2002"}
+
+
+def _ntfy_tool(connection_id, *, user="alice", mode="owner"):
+    from docsgpt.agents.tools.ntfy import NtfyTool
+    from docsgpt.connectors.service import _transform_actions
+
+    return {
+        **_tool(connection_id, user=user, name="ntfy", mode=mode),
+        "actions": _transform_actions(NtfyTool({}).get_actions_metadata()),
+    }
+
+
+_NTFY_SELF_HOSTED = {"token": "t", "server_url": "https://ntfy.example.com"}
+
+
+class TestNtfyServer:
+    """The ntfy token goes only to the server the connection names, never to one the model picks."""
+
+    def test_the_connection_offers_a_server_field(self):
+        from docsgpt.connectors import catalog
+
+        fields = {f.key: f for f in catalog.get_definition("ntfy").credential_fields}
+        server = fields["server_url"]
+        assert server.secret is False and server.required is False
+        assert server.parameter == "server_url"
+        assert server.hint
+
+    def test_the_model_is_not_asked_for_a_server_the_connection_sets(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": _NTFY_SELF_HOSTED})
+        with _service_db(pg_conn):
+            functions = _executor().prepare_tools_for_llm({"t1": _ntfy_tool(cid)})
+        by_name = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
+        assert "server_url" not in by_name["ntfy_send_message"]["properties"]
+
+    @pytest.mark.fresh_db
+    def test_the_connections_server_wins_over_what_the_model_sends(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": _NTFY_SELF_HOSTED})
+        sent = {"message": "hi", "topic": "alerts", "server_url": "https://attacker.example"}
+        with _service_db(pg_conn):
+            call = _run_send(_executor(), _ntfy_tool(cid), sent, action="ntfy_send_message")
+        assert call.kwargs == {"message": "hi", "topic": "alerts", "server_url": "https://ntfy.example.com"}
+
+    def test_the_tool_gets_the_server_with_the_token(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": _NTFY_SELF_HOSTED})
+        with _service_db(pg_conn), patch("docsgpt.agents.tool_executor.ToolManager") as manager:
+            _executor()._get_or_load_tool(_ntfy_tool(cid), "t1", "ntfy_send_message")
+        config = manager.return_value.load_tool.call_args.kwargs["tool_config"]
+        assert config["token"] == "t" and config["server_url"] == "https://ntfy.example.com"
+
+    def test_without_a_server_the_model_still_names_one(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": {"token": "t"}})
+        with _service_db(pg_conn):
+            functions = _executor().prepare_tools_for_llm({"t1": _ntfy_tool(cid)})
+        params = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
+        assert "server_url" in params["ntfy_send_message"]["properties"]
 
 
 class TestAccountsTellApartForTheModel:
