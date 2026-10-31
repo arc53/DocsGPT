@@ -121,6 +121,7 @@ import {
   unlistedAttachedTools,
 } from './sponsorConsent';
 import { useAgentMenu } from './hooks/useAgentMenu';
+import { useAttachAddedTools } from './hooks/useAttachAddedTools';
 import { useBuilderDirtyState } from './hooks/useBuilderDirtyState';
 import { useSponsorPrompt } from './useSponsorPrompt';
 import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
@@ -249,10 +250,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }>({ connections: [], catalog: [] });
   const [addToolModalState, setAddToolModalState] =
     useState<ActiveState>('INACTIVE');
-  // A tool added from the picker goes on the agent once the list has it.
-  const addedToolRef = useRef<{ toolId?: string; deviceId?: string } | null>(
-    null,
-  );
   // Connections behind the picker's tools that need signing in again.
   const [brokenToolConnections, setBrokenToolConnections] = useState<
     { connection: Connection; mcpToolId?: string }[]
@@ -1026,76 +1023,75 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
+  // The caller's tools as the picker offers them, with what draws their rows;
+  // resolves to the tools.
+  const loadTools = useCallback(async (): Promise<UserToolType[]> => {
+    const [toolsResponse, connectionsResult, catalogResult] = await Promise.all(
+      [
+        userService.getUserTools(token),
+        connectorsService
+          .listConnections(token)
+          .catch(() => ({ connections: [] })),
+        // Names a teammate's connected tool, whose connection the caller
+        // never sees.
+        connectorsService.getCatalog(token).catch(() => ({ connectors: [] })),
+      ],
+    );
+    const ownConnections = (connectionsResult?.connections ??
+      []) as Connection[];
+    const catalog = (catalogResult?.connectors ?? []) as ConnectorDefinition[];
+    const connectionsById = new Map<string, Connection>(
+      ownConnections.map((c) => [c.id, c]),
+    );
+    if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
+    const data = await toolsResponse.json();
+    // Hide workflow-only builtins (e.g. read_document) from the classic
+    // agent picker; they belong to the workflow-node picker only.
+    const visibleTools = (data.tools as UserToolType[]).filter(
+      isAgentPickerToolVisible,
+    );
+    setRawUserTools(visibleTools);
+    setToolContext({ connections: ownConnections, catalog });
+    setBrokenToolConnections(
+      Array.from(connectionsById.values())
+        .filter(connectionNeedsSignIn)
+        .flatMap((connection) => {
+          const own = visibleTools.filter(
+            (tool) => tool.connection_id === connection.id,
+          );
+          if (own.length === 0) return [];
+          return [
+            {
+              connection,
+              mcpToolId: own.find((tool) => tool.name === 'mcp_tool')?.id,
+            },
+          ];
+        }),
+    );
+    return visibleTools;
+  }, [token]);
+
   useEffect(() => {
-    const getTools = async () => {
-      const [toolsResponse, connectionsResult, catalogResult] =
-        await Promise.all([
-          userService.getUserTools(token),
-          connectorsService
-            .listConnections(token)
-            .catch(() => ({ connections: [] })),
-          // Names a teammate's connected tool, whose connection the caller
-          // never sees.
-          connectorsService.getCatalog(token).catch(() => ({ connectors: [] })),
-        ]);
-      const ownConnections = (connectionsResult?.connections ??
-        []) as Connection[];
-      const catalog = (catalogResult?.connectors ??
-        []) as ConnectorDefinition[];
-      const connectionsById = new Map<string, Connection>(
-        ownConnections.map((c) => [c.id, c]),
-      );
-      if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
-      const data = await toolsResponse.json();
-      // Hide workflow-only builtins (e.g. read_document) from the classic
-      // agent picker; they belong to the workflow-node picker only.
-      const visibleTools = (data.tools as UserToolType[]).filter(
-        isAgentPickerToolVisible,
-      );
-      setRawUserTools(visibleTools);
-      setToolContext({ connections: ownConnections, catalog });
-      // The tool just added from the picker goes on the agent.
-      const added = addedToolRef.current;
-      const addedTool = added
-        ? visibleTools.find((tool) =>
-            added.toolId
-              ? tool.id === added.toolId
-              : tool.name === 'remote_device' &&
-                tool.config?.device_id === added.deviceId,
-          )
-        : undefined;
-      if (addedTool) {
-        addedToolRef.current = null;
-        setSelectedTools((prev) =>
-          prev.some((tool) => tool.id === addedTool.id)
-            ? prev
-            : [
-                ...prev,
-                {
-                  id: addedTool.id,
-                  name: addedTool.name,
-                  display_name: getToolDisplayName(addedTool),
-                },
-              ],
-        );
-      }
-      setBrokenToolConnections(
-        Array.from(connectionsById.values())
-          .filter(connectionNeedsSignIn)
-          .flatMap((connection) => {
-            const own = visibleTools.filter(
-              (tool) => tool.connection_id === connection.id,
-            );
-            if (own.length === 0) return [];
-            return [
-              {
-                connection,
-                mcpToolId: own.find((tool) => tool.name === 'mcp_tool')?.id,
-              },
-            ];
-          }),
-      );
-    };
+    loadTools().catch(() => undefined);
+  }, [loadTools, toolsReloadKey]);
+
+  // A tool made from the picker's Add tool goes on the agent.
+  const attachCreated = useAttachAddedTools(loadTools);
+  const handleToolsCreated = (toolIds: string[]) =>
+    attachCreated(toolIds, (created) =>
+      setSelectedTools((prev) => [
+        ...prev,
+        ...created
+          .filter((tool) => !prev.some((item) => item.id === tool.id))
+          .map((tool) => ({
+            id: tool.id,
+            name: tool.name,
+            display_name: getToolDisplayName(tool),
+          })),
+      ]),
+    );
+
+  useEffect(() => {
     const getModels = async () => {
       const response = await modelService.getModels(token);
       if (!response.ok) throw new Error('Failed to fetch models');
@@ -1128,9 +1124,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }
       }
     };
-    getTools();
     getModels();
-  }, [token, mode, toolsReloadKey, markSaved]);
+  }, [token, mode, markSaved]);
 
   // Validate folder_id from URL against user's folders
   useEffect(() => {
@@ -1423,15 +1418,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         modalState={addToolModalState}
         setModalState={setAddToolModalState}
         getUserTools={() => setToolsReloadKey((key) => key + 1)}
-        onToolAdded={(toolId) => {
-          addedToolRef.current = { toolId };
-          setToolsReloadKey((key) => key + 1);
-        }}
-        onDevicePaired={(deviceId) => {
-          setAddToolModalState('INACTIVE');
-          addedToolRef.current = { deviceId };
-          setToolsReloadKey((key) => key + 1);
-        }}
+        onToolsCreated={(toolIds) => void handleToolsCreated(toolIds)}
+        onNavigate={leaveGuard.leaveTo}
       />
       <AgentPageToolbar
         intro={agent.id ? undefined : t('agents.form.byline.new')}

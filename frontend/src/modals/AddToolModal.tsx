@@ -2,7 +2,7 @@ import { ArrowRight } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link } from 'react-router-dom';
+import { Link, type NavigateOptions } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
@@ -30,27 +30,58 @@ import { selectToken } from '../preferences/preferenceSlice';
 import ConfigToolModal from './ConfigToolModal';
 import { AvailableToolType } from './types';
 
+/**
+ * Add a tool: a service to connect, a built-in tool, a custom MCP server or
+ * API. Opened from the Tools page, the chat, and the builders' Tools pickers.
+ *
+ * Args:
+ *   getUserTools: Reloads the opener's tool list (a drawer closed, a run
+ *     ended with nothing new).
+ *   onToolsCreated: The one way new tools come back to a builder: the ids of
+ *     the tools any path created (a built-in, a configured one, a connected
+ *     service or MCP server, a paired device). Given, it stands in for
+ *     `getUserTools` after those, since the opener reloads to put them on.
+ *   onToolAdded: Without `onToolsCreated`: a built-in created with no setup.
+ *   onDevicePaired: Without `onToolsCreated`: a device was paired.
+ *   onNavigate: Leaves for a page (Browse all, the API tool editor, Try it in
+ *     chat, a source in Knowledge); a builder asks first while it has unsaved
+ *     work. The router's navigate otherwise.
+ */
 export default function AddToolModal({
   message,
   modalState,
   setModalState,
   getUserTools,
+  onToolsCreated,
   onToolAdded,
   onDevicePaired,
+  onNavigate,
 }: {
   message: string;
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   getUserTools: () => void;
-  onToolAdded: (toolId: string) => void;
+  onToolsCreated?: (toolIds: string[]) => void;
+  onToolAdded?: (toolId: string) => void;
   onDevicePaired?: (deviceId: string) => void;
+  onNavigate?: (to: string, options?: NavigateOptions) => void;
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
   const dispatch = useDispatch<AppDispatch>();
   const catalog = useSelector(selectConnectorCatalog);
+  /** New tools to put on: to the builder, or a plain reload elsewhere. */
+  const toolsCreated = (toolIds: string[], legacy?: () => void) => {
+    if (onToolsCreated) {
+      onToolsCreated(toolIds);
+      return;
+    }
+    getUserTools();
+    legacy?.();
+  };
   const { launch, modals: connectModals } = useConnectorLauncher({
-    onConnected: getUserTools,
+    onConnected: (toolIds) => toolsCreated(toolIds),
+    onNavigate,
   });
   const [availableTools, setAvailableTools] = React.useState<
     AvailableToolType[]
@@ -159,9 +190,8 @@ export default function AddToolModal({
           }
         })
         .then((data) => {
-          getUserTools();
           setModalState('INACTIVE');
-          onToolAdded(data.id);
+          toolsCreated([data.id], () => onToolAdded?.(data.id));
         })
         .catch((error) => {
           console.error('Failed to create tool:', error);
@@ -170,6 +200,32 @@ export default function AddToolModal({
       setModalState('INACTIVE');
       setConfigModalState('ACTIVE');
     }
+  };
+
+  // A paired device's tool is made by the pairing: found by its device.
+  const reportPairedDevice = async (deviceId: string) => {
+    let toolIds: string[] = [];
+    try {
+      const response = await userService.getUserTools(token);
+      if (response.ok) {
+        const data = await response.json();
+        const tool = (
+          (data.tools ?? []) as {
+            id: string;
+            name: string;
+            config?: { device_id?: string };
+          }[]
+        ).find(
+          (item) =>
+            item.name === 'remote_device' &&
+            item.config?.device_id === deviceId,
+        );
+        if (tool) toolIds = [tool.id];
+      }
+    } catch {
+      // The opener still reloads its list.
+    }
+    onToolsCreated?.(toolIds);
   };
 
   React.useEffect(() => {
@@ -280,7 +336,23 @@ export default function AddToolModal({
             </>
           )}
           <Button variant="link" size="inline" className="self-start" asChild>
-            <Link to="/settings/connectors" onClick={close}>
+            <Link
+              to="/settings/connectors"
+              onClick={(event) => {
+                close();
+                // A new tab leaves the opener where it is.
+                if (
+                  !onNavigate ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.button !== 0
+                )
+                  return;
+                event.preventDefault();
+                onNavigate('/settings/connectors');
+              }}
+            >
               {t('settings.connectors.browseAll')}
               <ArrowRight />
             </Link>
@@ -298,12 +370,16 @@ export default function AddToolModal({
           setDrawerKey(null);
           launch(connector, options);
         }}
+        onNavigate={onNavigate}
       />
       <ConfigToolModal
         modalState={configModalState}
         setModalState={setConfigModalState}
         tool={selectedTool}
         getUserTools={getUserTools}
+        onCreated={
+          onToolsCreated ? (toolId) => onToolsCreated([toolId]) : undefined
+        }
       />
       {connectModals}
       <PairDeviceModal
@@ -312,7 +388,8 @@ export default function AddToolModal({
         onPaired={(deviceId) => {
           setPairModalState('INACTIVE');
           setModalState('INACTIVE');
-          onDevicePaired?.(deviceId);
+          if (onToolsCreated) void reportPairedDevice(deviceId);
+          else onDevicePaired?.(deviceId);
         }}
       />
     </>

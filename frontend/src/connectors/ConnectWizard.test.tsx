@@ -543,7 +543,7 @@ describe('ConnectWizard', () => {
     expect(title()).toBe('settings.connectors.wizard.doneTitle');
     expect(service.setup).not.toHaveBeenCalled();
     await click('settings.connectors.wizard.done');
-    expect(onClose).toHaveBeenCalledWith(true);
+    expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
   });
 
   it('syncs the picked folder named after it', async () => {
@@ -782,7 +782,7 @@ describe('ConnectWizard', () => {
         'settings.connectors.wizard.doneSummaryNone',
       );
       await click('settings.connectors.wizard.done');
-      expect(onClose).toHaveBeenCalledWith(true);
+      expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
     });
 
     it('never says who is connected before it knows', async () => {
@@ -819,7 +819,7 @@ describe('ConnectWizard', () => {
     await click('pick-folder');
     await click('modals.uploadDoc.train');
     await click('settings.connectors.wizard.done');
-    expect(onClose).toHaveBeenCalledWith(true);
+    expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
   });
 
   it("uses Google's picker with the client id the server offers", async () => {
@@ -904,7 +904,7 @@ describe('ConnectWizard', () => {
     expect(title()).toBe('settings.connectors.wizard.chooseWhatToSyncFrom');
     expect(document.body.textContent).toContain('pick-repo');
     await click('cancel');
-    expect(onClose).toHaveBeenCalledWith(true);
+    expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
   });
 
   it('starts a file picker over after a reconnect, with nothing picked', async () => {
@@ -950,6 +950,22 @@ describe('ConnectWizard', () => {
     ).toEqual([]);
   });
 
+  // A builder opens the wizard from Add tool: leaving goes through it, so
+  // unsaved work gets its question first.
+  it('leaves through the opener when it is given a way out', async () => {
+    service.createConnection.mockResolvedValue({
+      success: true,
+      connection: { id: 'conn-1' },
+    });
+    setupOk([], [TELEGRAM_TOOL]);
+    const onNavigate = vi.fn();
+    await render(base, vi.fn(), { onNavigate });
+    await connectWithKey('t');
+    await click('settings.connectors.wizard.tryInChat');
+    expect(onNavigate).toHaveBeenCalledWith('/c/new');
+    expect(document.body.textContent).not.toContain('NEW_CHAT');
+  });
+
   it.each([
     ['reconnect', 'settings.connectors.wizard.setupReconnect'],
     ['disabled', 'settings.connectors.wizard.setupDisabled'],
@@ -989,7 +1005,7 @@ describe('ConnectWizard', () => {
         'settings.connectors.wizard.syncLater',
       );
       await click('settings.connectors.openInKnowledge');
-      expect(onClose).toHaveBeenCalledWith(true);
+      expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
       expect(document.body.textContent).toContain('KNOWLEDGE?source=src-1');
     });
 
@@ -1223,7 +1239,7 @@ describe('ConnectWizard', () => {
       expect(button('settings.connectors.status.connect')).toBeUndefined();
       expect(mcpApi.saveMCPServer).toHaveBeenCalledTimes(1);
       await click('settings.connectors.wizard.done');
-      expect(onClose).toHaveBeenCalledWith(true);
+      expect(onClose).toHaveBeenCalledWith(true, expect.any(Array));
     },
   );
 
@@ -1500,7 +1516,8 @@ describe('ConnectWizard', () => {
         'settings.connectors.wizard.toolsHeading:1',
       );
       await click('settings.connectors.wizard.done');
-      expect(onClose).toHaveBeenCalledWith(true);
+      // The tools it set up, for an opener that puts them on (Add tool).
+      expect(onClose).toHaveBeenCalledWith(true, [TELEGRAM_TOOL.id]);
     });
 
     it('ends on the summary when nothing is picked and Sync is off', async () => {

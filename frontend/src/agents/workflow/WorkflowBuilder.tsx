@@ -2440,6 +2440,7 @@ function WorkflowBuilderInner() {
                   retryDefaults={retryDefaults}
                   onReloadTools={loadTools}
                   onNavigateAway={leaveGuard.onNavigate()}
+                  onLeaveTo={leaveGuard.leaveTo}
                 />
               )}
               {selectedNode.type === 'note' && (

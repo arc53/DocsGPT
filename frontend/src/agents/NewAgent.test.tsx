@@ -56,7 +56,8 @@ const mocks = vi.hoisted(() => {
     fileUploadProps: null as null | { onUpload: (files: File[]) => void },
     addToolProps: null as null | {
       modalState: string;
-      onToolAdded: (id: string) => void;
+      onToolsCreated: (ids: string[]) => void;
+      onNavigate?: (to: string) => void;
     },
   };
 });
@@ -195,7 +196,7 @@ vi.mock('../upload/Upload', () => ({ default: () => null }));
 vi.mock('../modals/AddToolModal', () => ({
   default: (props: {
     modalState: string;
-    onToolAdded: (id: string) => void;
+    onToolsCreated: (ids: string[]) => void;
   }) => {
     mocks.addToolProps = props;
     return null;
@@ -833,6 +834,17 @@ describe('NewAgent form', () => {
     expect(buttonByText('agents.form.buttons.publish').disabled).toBe(false);
     await act(async () => goToTools().click());
     expect(asked()).toBe(false);
+  });
+
+  // Add tool's ways out (Browse all, the API tool editor, Try it in chat)
+  // come back through the builder.
+  it("asks before Add tool's Browse all leaves unsaved changes", async () => {
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      mocks.addToolProps!.onNavigate!('/settings/connectors'),
+    );
+    expect(asked()).toBe(true);
   });
 
   it('lets Go to Tools go when the agent is saved', async () => {
@@ -1625,7 +1637,7 @@ describe('NewAgent form', () => {
       { id: 'mine', name: 'api_tool', display_name: 'My API' },
       { id: 'fresh', name: 'notes', display_name: 'Fresh notes' },
     ];
-    await act(async () => mocks.addToolProps!.onToolAdded('fresh'));
+    await act(async () => mocks.addToolProps!.onToolsCreated(['fresh']));
     expect(mocks.toolsCalls.length).toBeGreaterThan(calls);
     const trigger = container.querySelectorAll(
       '[data-testid="picker"] > button',

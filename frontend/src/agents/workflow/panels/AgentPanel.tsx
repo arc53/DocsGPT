@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { type NavigateOptions } from 'react-router-dom';
 import { type Edge, type Node } from 'reactflow';
 
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -52,6 +53,7 @@ import { useSourceKindFilter } from '../../../settings/SourceKindFilter';
 import { useToolKindFilter } from '../../../settings/useToolKindFilter';
 import type { AppDispatch } from '../../../store';
 import AddToolModal from '../../../modals/AddToolModal';
+import { useAttachAddedTools } from '../../hooks/useAttachAddedTools';
 import type { ActiveState } from '../../../models/misc';
 import Upload from '../../../upload/Upload';
 import { getToolDisplayName } from '../../../utils/toolUtils';
@@ -104,6 +106,12 @@ interface AgentPanelProps extends NodePanelBodyProps {
    * prevents it and asks first while the workflow has unsaved changes.
    */
   onNavigateAway?: (event: MouseEvent<HTMLAnchorElement>) => void;
+  /**
+   * Leaves for a page from a dialog opened here (Add tool's Browse all, the
+   * API tool editor, Try it in chat): the builder asks first while the
+   * workflow has unsaved changes.
+   */
+  onLeaveTo?: (to: string, options?: NavigateOptions) => void;
 }
 
 /**
@@ -197,6 +205,7 @@ export default function AgentPanel({
   retryDefaults = null,
   onReloadTools,
   onNavigateAway,
+  onLeaveTo,
 }: AgentPanelProps) {
   const { t } = useTranslation();
   const streamId = useId();
@@ -248,28 +257,21 @@ export default function AgentPanel({
     if (sources.includes(sourceId)) return;
     update({ config: { ...currentConfig, sources: [...sources, sourceId] } });
   };
-  // A tool added from the Tools footer goes on the node it was added from,
-  // once the reloaded list holds it: by its id, or a paired device's tool by
-  // the device.
-  const attachAddedTool = async (
-    nodeId: string,
-    added: { toolId?: string; deviceId?: string },
-  ) => {
-    const tools = await onReloadTools().catch(() => null);
-    const tool = tools?.find((item) =>
-      added.toolId
-        ? item.id === added.toolId
-        : item.name === 'remote_device' &&
-          item.config?.device_id === added.deviceId,
-    );
-    if (!tool || !mounted.current) return;
-    const { node: current, onUpdate: update } = latest.current;
-    if (current.id !== nodeId) return;
-    const currentConfig = current.data.config || {};
-    const nodeTools: string[] = currentConfig.tools || [];
-    if (nodeTools.includes(tool.id)) return;
-    update({ config: { ...currentConfig, tools: [...nodeTools, tool.id] } });
-  };
+  // A tool made from the Tools footer's Add tool goes on the node it was
+  // added from, once the reloaded list holds it, while the panel shows it.
+  const attachCreated = useAttachAddedTools(onReloadTools);
+  const attachToolsCreated = (nodeId: string, toolIds: string[]) =>
+    attachCreated(toolIds, (created) => {
+      const { node: current, onUpdate: update } = latest.current;
+      if (current.id !== nodeId) return;
+      const currentConfig = current.data.config || {};
+      const nodeTools: string[] = currentConfig.tools || [];
+      const added = created
+        .map((tool) => tool.id)
+        .filter((id) => !nodeTools.includes(id));
+      if (added.length === 0) return;
+      update({ config: { ...currentConfig, tools: [...nodeTools, ...added] } });
+    });
 
   // The rows name the caller's connections and the catalog's services.
   const openPicker = (setOpen: (open: boolean) => void) => (next: boolean) => {
@@ -688,11 +690,8 @@ export default function AgentPanel({
         modalState={addToolState}
         setModalState={setAddToolState}
         getUserTools={() => void onReloadTools().catch(() => undefined)}
-        onToolAdded={(toolId) => attachAddedTool(node.id, { toolId })}
-        onDevicePaired={(deviceId) => {
-          setAddToolState('INACTIVE');
-          void attachAddedTool(node.id, { deviceId });
-        }}
+        onToolsCreated={(toolIds) => void attachToolsCreated(node.id, toolIds)}
+        onNavigate={onLeaveTo}
       />
     </div>
   );

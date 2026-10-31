@@ -111,7 +111,10 @@ type CreatedSource = { id: string; name: string };
  * Args:
  *   onClose: Called as the wizard closes, with whether this run created or
  *     repaired a connection (a saved account, a reconnect, a sync set up);
- *     false on a plain cancel.
+ *     false on a plain cancel. Then the ids of the connection's tools this
+ *     run set up or showed, for an opener that puts new tools on something.
+ *   onNavigate: Leaves for a page (Try it in chat, Open in Knowledge); an
+ *     opener with unsaved work asks first. The router's navigate otherwise.
  */
 export default function ConnectWizard({
   connector,
@@ -120,6 +123,7 @@ export default function ConnectWizard({
   mcpToolId,
   purpose,
   onClose,
+  onNavigate,
   onFinished,
   onSynced,
 }: {
@@ -129,14 +133,16 @@ export default function ConnectWizard({
   /** Reconnecting an MCP preset: the tool to update rather than add. */
   mcpToolId?: string;
   purpose?: LaunchPurpose;
-  onClose: (connected: boolean) => void;
+  onClose: (connected: boolean, toolIds?: string[]) => void;
+  onNavigate?: (to: string) => void;
   onFinished?: () => void;
   /** The ids of the sources a sync just started, still ingesting. */
   onSynced?: (sourceIds: string[]) => void;
 }) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const navigate = onNavigate ?? routerNavigate;
   const token = useSelector(selectToken);
   const connections = useSelector(selectConnections);
   const name = connectorName(t, connector);
@@ -250,7 +256,14 @@ export default function ConnectWizard({
 
   const refresh = () => dispatch(loadConnectors({ token }));
 
-  const close = () => onClose(connectedRef.current);
+  const close = () => {
+    if (connectedRef.current)
+      onClose(
+        true,
+        tools.map((tool) => tool.id),
+      );
+    else onClose(false);
+  };
 
   /** After a reconnect started from a picker: back to what it was doing. */
   const resumeAfterReconnect = () => {

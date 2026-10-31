@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { type NavigateOptions, useNavigate } from 'react-router-dom';
 
 import connectorsService from '../api/services/connectorsService';
 import MCPServerModal from '../modals/MCPServerModal';
@@ -50,12 +50,21 @@ const isMcp = (connector: ConnectorDefinition) =>
   connector.auth_kind === 'mcp' || connector.auth_kind === 'mcp_oauth';
 
 type LauncherCallbacks = {
-  /** The run connected an account, or repaired one (a reconnect). */
-  onConnected?: () => void;
+  /**
+   * The run connected an account, or repaired one (a reconnect), with the
+   * ids of the tools it set up (the connection's tools, a saved MCP server).
+   */
+  onConnected?: (toolIds: string[]) => void;
   /** The run ended with nothing connected (cancelled, or closed early). */
   onCancel?: () => void;
   /** Sources a sync started from the wizard, still ingesting. */
   onSynced?: (sourceIds: string[]) => void;
+  /**
+   * Leaves for a page (the API tool editor, Try it in chat, Open in
+   * Knowledge); an opener with unsaved work asks first. The router's
+   * navigate otherwise.
+   */
+  onNavigate?: (to: string, options?: NavigateOptions) => void;
 };
 
 /**
@@ -65,23 +74,29 @@ type LauncherCallbacks = {
  *
  * Args:
  *   onConnected: Called when a run ends having connected or repaired an
- *     account.
+ *     account, with the ids of the tools it set up.
  *   onCancel: Called when a run ends with nothing connected, so an opener
  *     that stepped aside (Add knowledge) can come back.
  *   onSynced: Called with the sources a sync started from the wizard, still
  *     ingesting.
+ *   onNavigate: How a run leaves for a page; the router's navigate when
+ *     left out.
  */
 export default function useConnectorLauncher({
   onConnected,
   onCancel,
   onSynced,
+  onNavigate,
 }: LauncherCallbacks = {}) {
   const dispatch = useDispatch<AppDispatch>();
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const navigate = onNavigate ?? routerNavigate;
   const token = useSelector(selectToken);
   const [active, setActive] = useState<Active>(null);
   // An MCP server saved in this run: its summary wizard closing is a connect.
   const mcpSaved = useRef(false);
+  // The saved MCP server's tool, reported if no summary lists it.
+  const mcpToolId = useRef<string | undefined>(undefined);
 
   // Every close reads the connections again: a cancelled run may still have
   // signed in (the account exists, nothing was set up on it).
@@ -91,12 +106,18 @@ export default function useConnectorLauncher({
 
   /** End the run: tell the opener whether it connected anything. */
   const end = useCallback(
-    (connected: boolean) => {
+    (connected: boolean, toolIds: string[] = []) => {
       setActive(null);
       refresh();
       const saved = mcpSaved.current;
+      const savedTool = mcpToolId.current;
       mcpSaved.current = false;
-      if (connected || saved) onConnected?.();
+      mcpToolId.current = undefined;
+      const ids =
+        savedTool && !toolIds.includes(savedTool)
+          ? [...toolIds, savedTool]
+          : toolIds;
+      if (connected || saved) onConnected?.(ids);
       else onCancel?.();
     },
     [refresh, onConnected, onCancel],
@@ -105,6 +126,7 @@ export default function useConnectorLauncher({
   const launch = useCallback(
     async (connector: ConnectorDefinition, options: LaunchOptions = {}) => {
       mcpSaved.current = false;
+      mcpToolId.current = undefined;
       if (connectsInWizard(connector)) {
         setActive({
           kind: 'wizard',
@@ -156,10 +178,11 @@ export default function useConnectorLauncher({
     [navigate],
   );
 
-  const afterMcpSave = async () => {
+  const afterMcpSave = async (toolId?: string) => {
     if (active?.kind !== 'mcp') return;
     const connector = active.connector;
     mcpSaved.current = true;
+    mcpToolId.current = toolId;
     const list = await connectorsService.listConnections(token);
     refresh();
     const connections = (list?.connections ?? []) as {
@@ -202,8 +225,11 @@ export default function useConnectorLauncher({
           mcpToolId={active.mcpToolId}
           purpose={active.purpose}
           onSynced={onSynced}
+          onNavigate={onNavigate}
           // A wizard that does not say (an older run) connected nothing.
-          onClose={(connected?: boolean) => end(connected === true)}
+          onClose={(connected?: boolean, toolIds?: string[]) =>
+            end(connected === true, toolIds)
+          }
         />
       )}
       {active?.kind === 'mcp' && (

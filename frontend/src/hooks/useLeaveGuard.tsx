@@ -1,6 +1,6 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { type NavigateOptions, useNavigate } from 'react-router-dom';
 
 import ConfirmationModal from '../modals/ConfirmationModal';
 
@@ -17,22 +17,26 @@ import ConfirmationModal from '../modals/ConfirmationModal';
  *
  * Returns:
  *   `onNavigate(close)`, a link's click handler that closes the picker
- *   first; `leaveTo(path)` for a programmatic exit; and `dialog` to render.
+ *   first; `leaveTo(path, options)` for a programmatic exit (a dialog's
+ *   button, Browse connectors); and `dialog` to render.
  */
 export function useLeaveGuard(dirty: boolean): {
   onNavigate: (
     close?: () => void,
   ) => (event: MouseEvent<HTMLAnchorElement>) => void;
-  leaveTo: (path: string) => void;
+  leaveTo: (path: string, options?: NavigateOptions) => void;
   dialog: ReactNode;
 } {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [pending, setPending] = useState<string | null>(null);
+  const [pending, setPending] = useState<{
+    path: string;
+    options?: NavigateOptions;
+  } | null>(null);
 
-  const leaveTo = (path: string) => {
-    if (dirty) setPending(path);
-    else navigate(path);
+  const leaveTo = (path: string, options?: NavigateOptions) => {
+    if (dirty) setPending({ path, options });
+    else navigate(path, options);
   };
   const onNavigate =
     (close?: () => void) => (event: MouseEvent<HTMLAnchorElement>) => {
@@ -43,7 +47,8 @@ export function useLeaveGuard(dirty: boolean): {
         event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0;
       if (!dirty || newTab) return;
       event.preventDefault();
-      setPending(event.currentTarget.getAttribute('href'));
+      const href = event.currentTarget.getAttribute('href');
+      if (href) setPending({ path: href });
     };
 
   return {
@@ -59,7 +64,7 @@ export function useLeaveGuard(dirty: boolean): {
         variant="destructive"
         handleSubmit={() => {
           setPending(null);
-          navigate(pending);
+          navigate(pending.path, pending.options);
         }}
       />
     ) : null,

@@ -56,8 +56,8 @@ const addTool = vi.hoisted(() => ({
   props: null as null | {
     modalState: string;
     setModalState: (state: string) => void;
-    onToolAdded: (toolId: string) => void;
-    onDevicePaired?: (deviceId: string) => void;
+    onToolsCreated: (toolIds: string[]) => void;
+    onNavigate?: (to: string) => void;
   },
 }));
 vi.mock('../../../modals/AddToolModal', () => ({
@@ -145,6 +145,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
       onUpdate = vi.fn<UpdateFn>(),
       onReloadTools = vi.fn(async () => tools),
       onNavigateAway,
+      onLeaveTo,
     }: {
       tools?: UserTool[];
       attachedTools?: { id: string; label: string }[];
@@ -152,6 +153,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
       onUpdate?: Mock<UpdateFn>;
       onReloadTools?: () => Promise<UserTool[]>;
       onNavigateAway?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+      onLeaveTo?: (to: string) => void;
     } = {},
   ) => {
     await act(async () =>
@@ -173,6 +175,7 @@ describe('AgentPanel knowledge and tool pickers', () => {
             onJsonSchemaChange={vi.fn()}
             onReloadTools={onReloadTools}
             onNavigateAway={onNavigateAway}
+            onLeaveTo={onLeaveTo}
           />
         </MemoryRouter>,
       ),
@@ -343,30 +346,38 @@ describe('AgentPanel knowledge and tool pickers', () => {
     const onReloadTools = vi.fn(async () => [...TOOLS, added]);
     const onUpdate = vi.fn<UpdateFn>();
     await render(makeNode({ tools: ['brave'] }), { onUpdate, onReloadTools });
-    await act(async () => addTool.props!.onToolAdded('new'));
+    await act(async () => addTool.props!.onToolsCreated(['new']));
     expect(onReloadTools).toHaveBeenCalled();
     expect(onUpdate).toHaveBeenLastCalledWith({
       config: expect.objectContaining({ tools: ['brave', 'new'] }),
     });
   });
 
-  it('puts a device paired from the footer on the node', async () => {
-    const paired = {
-      id: 'tool-dev',
-      name: 'remote_device',
-      displayName: 'Laptop',
-      config: { device_id: 'dev-1' },
-    } as UserTool;
+  // A connected service sets up several tools; one the picker doesn't
+  // offer stays off.
+  it('puts every listed tool a connect set up on the node', async () => {
+    const made = [
+      { id: 'tool-a', name: 'telegram', displayName: 'Telegram' },
+      { id: 'tool-b', name: 'telegram', displayName: 'Telegram 2' },
+    ] as UserTool[];
     const onUpdate = vi.fn<UpdateFn>();
     await render(makeNode(), {
       onUpdate,
-      onReloadTools: vi.fn(async () => [...TOOLS, paired]),
+      onReloadTools: vi.fn(async () => [...TOOLS, ...made]),
     });
-    await act(async () => addTool.props!.onDevicePaired!('dev-1'));
-    expect(addTool.props?.modalState).toBe('INACTIVE');
+    await act(async () =>
+      addTool.props!.onToolsCreated(['tool-a', 'tool-b', 'unlisted']),
+    );
     expect(onUpdate).toHaveBeenLastCalledWith({
-      config: expect.objectContaining({ tools: ['tool-dev'] }),
+      config: expect.objectContaining({ tools: ['tool-a', 'tool-b'] }),
     });
+  });
+
+  it('leaves for a page from Add tool through the builder', async () => {
+    const onLeaveTo = vi.fn();
+    await render(makeNode(), { onLeaveTo });
+    addTool.props!.onNavigate!('/settings/connectors');
+    expect(onLeaveTo).toHaveBeenCalledWith('/settings/connectors');
   });
 
   it("shows a device's Online or Offline, as the other tool pickers do", async () => {

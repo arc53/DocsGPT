@@ -183,6 +183,7 @@ describe('ConnectionDrawer', () => {
     own?: boolean;
     startedSyncs?: StartedSync[];
     onConnect?: (connector: ConnectorDefinition, options?: unknown) => void;
+    onNavigate?: (to: string) => void;
   };
   const draw = async (
     connector: ConnectorDefinition | null,
@@ -202,6 +203,7 @@ describe('ConnectionDrawer', () => {
                     initialConnectionId={options.initialConnectionId}
                     onClose={vi.fn()}
                     onConnect={options.onConnect ?? vi.fn()}
+                    onNavigate={options.onNavigate}
                   />
                 }
               />
@@ -621,6 +623,19 @@ describe('ConnectionDrawer', () => {
     expect(open.title).toBe('Handbook');
     await act(async () => open.click());
     expect(text()).toContain('KNOWLEDGE?source=src-1');
+  });
+
+  // Opened from a builder's Add tool: leaving goes through the builder.
+  it('opens a source through its opener when given a way out', async () => {
+    const onNavigate = vi.fn();
+    await render(DRIVE, { onNavigate });
+    await act(async () =>
+      accountRow('Handbook')
+        .querySelector<HTMLButtonElement>('button[data-source-open]')!
+        .click(),
+    );
+    expect(onNavigate).toHaveBeenCalledWith('/settings/knowledge?source=src-1');
+    expect(text()).not.toContain('KNOWLEDGE');
   });
 
   it('opens a source in Knowledge from its menu', async () => {
