@@ -625,12 +625,18 @@ def _malformed(kind):
         first_edge["sourceHandle"] = {"id": "out"}
     elif kind == "number target handle":
         first_edge["targetHandle"] = 1
+    elif kind == "list type":
+        agent_node["type"] = []
+    elif kind == "object type":
+        agent_node["type"] = {}
+    elif kind == "text config":
+        agent_node["data"] = {"config": "x"}
     return graph
 
 
 _MALFORMED = [
     "duplicate edge id", "object title", "number title", "list description",
-    "object source handle", "number target handle",
+    "object source handle", "number target handle", "list type", "object type", "text config",
 ]
 
 

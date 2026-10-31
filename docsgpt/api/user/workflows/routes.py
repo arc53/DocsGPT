@@ -296,7 +296,8 @@ def workflow_graph_shape_errors(nodes: Any, edges: Any) -> List[str]:
 
     A draft may be unfinished (no end node, an unconnected agent), but it
     must be a graph the builder can load and the store can write: node
-    objects with a unique string ``id``, a known ``type`` and a text (or
+    objects with a unique string ``id``, a known ``type``, object (or
+    absent) ``position``, ``data`` and ``data.config``, and a text (or
     absent) ``title`` and ``description``; edge objects with a unique string
     ``id``, string ``source`` and ``target``, and text (or absent) handles.
 
@@ -324,11 +325,16 @@ def workflow_graph_shape_errors(nodes: Any, edges: Any) -> List[str]:
         if node_id in seen:
             errors.append(f"Duplicate node id: {node_id}")
         seen.add(node_id)
-        if node.get("type") not in GRAPH_NODE_TYPES:
-            errors.append(f"Node {node_id} has an unknown type: {node.get('type')}")
+        node_type = node.get("type")
+        if not isinstance(node_type, str) or node_type not in GRAPH_NODE_TYPES:
+            errors.append(f"Node {node_id} has an unknown type: {node_type}")
         for key in ("position", "data"):
             if node.get(key) is not None and not isinstance(node.get(key), dict):
                 errors.append(f"Node {node_id} {key} must be an object")
+        data = node.get("data")
+        if isinstance(data, dict) and data.get("config") is not None and not isinstance(data["config"], dict):
+            # The engine reads a node's settings from ``data.config`` when present.
+            errors.append(f"Node {node_id} config must be an object")
         for key in ("title", "description"):
             if node.get(key) is not None and not isinstance(node.get(key), str):
                 errors.append(f"Node {node_id} {key} must be text")
