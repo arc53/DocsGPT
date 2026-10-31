@@ -367,6 +367,11 @@ export default function AddToolModal({
         }}
         onConnect={(connector, options) => {
           setDrawerKey(null);
+          // A reconnect or Sync more leaves the drawer without closing it:
+          // what its Add tools made goes on now, not with a later close.
+          const created = drawerCreated.current;
+          drawerCreated.current = [];
+          if (created.length > 0) onToolsCreated(created);
           launch(connector, options);
         }}
         onNavigate={onNavigate}

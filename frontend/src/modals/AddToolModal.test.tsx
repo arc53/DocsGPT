@@ -418,5 +418,28 @@ describe('AddToolModal', () => {
       await act(async () => again.onClose());
       expect(getUserTools).toHaveBeenCalledTimes(1);
     });
+
+    // A reconnect or Sync more leaves the drawer without closing it: what
+    // its Add tools made goes on then, not with a later drawer's close.
+    it("reports the drawer's tools before a connect run it starts", async () => {
+      const onToolsCreated = vi.fn();
+      await render({ onToolsCreated });
+      await act(async () => service('telegram')!.click());
+      const props = drawerProps.mock.calls.at(-1)![0] as {
+        onToolsCreated: (ids: string[]) => void;
+        onConnect: (connector: { key: string }, options?: object) => void;
+      };
+      act(() => props.onToolsCreated(['tool-a']));
+      await act(async () => props.onConnect({ key: 'telegram' }));
+      expect(onToolsCreated).toHaveBeenCalledWith(['tool-a']);
+      expect(launch).toHaveBeenCalled();
+
+      await act(async () => service('telegram')!.click());
+      const again = drawerProps.mock.calls.at(-1)![0] as {
+        onClose: () => void;
+      };
+      await act(async () => again.onClose());
+      expect(onToolsCreated).toHaveBeenCalledTimes(1);
+    });
   });
 });
