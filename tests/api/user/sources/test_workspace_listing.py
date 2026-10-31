@@ -267,6 +267,14 @@ class TestBulkDelete:
         assert SourcesRepository(pg_conn).get_any(mine, ALICE) is None
         assert SourcesRepository(pg_conn).get_any(theirs, BOB) is not None
 
+    def test_one_id_in_two_letter_cases_is_one_source(self, app, pg_conn):
+        mine = str(_source(pg_conn, "mine")["id"])
+        resp = self._post(app, pg_conn, {"ids": [mine.upper(), f" {mine} "]})
+        assert resp.status_code == 200
+        # The first spelling given answers for both.
+        assert resp.json == {"deleted": [mine.upper()], "failed": []}
+        assert SourcesRepository(pg_conn).get_any(mine, ALICE) is None
+
     def test_busy_source_fails_with_its_code(self, app, pg_conn):
         from docsgpt.vectorstore.index_lock import SourceBusy
 

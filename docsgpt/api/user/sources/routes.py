@@ -66,6 +66,7 @@ from docsgpt.storage.db.repositories.wiki_pages import (
     rebuild_wiki_directory_structure,
 )
 from docsgpt.storage.db import source_defaults
+from docsgpt.storage.db.base_repository import canonical_uuid
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig, validation_message
 from docsgpt.storage.storage_creator import StorageCreator
@@ -724,7 +725,11 @@ class BulkDeleteSources(Resource):
             )
         deleted: list[str] = []
         failed: list[dict] = []
-        for source_id in dict.fromkeys(i.strip() for i in ids):
+        # One source per canonical id: the first spelling given answers for its twins.
+        unique: dict[str, str] = {}
+        for raw in ids:
+            unique.setdefault(canonical_uuid(raw.strip()), raw.strip())
+        for source_id in unique.values():
             try:
                 delete_source_for(user, source_id)
             except AccessDenied as err:
