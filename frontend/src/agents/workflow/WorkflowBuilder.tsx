@@ -1,5 +1,6 @@
 import 'reactflow/dist/style.css';
 
+import isEqual from 'lodash/isEqual';
 import { Link, Pencil, Play, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -278,6 +279,21 @@ function withoutAutoFilledModels(
   };
 }
 
+/**
+ * Whether a node's output schema text holds an edit the node doesn't: text
+ * that doesn't parse, or a schema other than the one it has. Only a valid
+ * schema reaches the node, so a save would send the old one.
+ */
+function schemaDraftPending(draft: string | undefined, held: unknown): boolean {
+  if (draft === undefined) return false;
+  if (draft.trim() === '') return held !== undefined && held !== null;
+  try {
+    return !isEqual(JSON.parse(draft), held);
+  } catch {
+    return true;
+  }
+}
+
 const NODE_TYPES: NodeTypes = {
   start: StartNode,
   agent: AgentNode,
@@ -450,6 +466,18 @@ function WorkflowBuilderInner() {
   const [opensNew] = useState(
     () => !agentId && !searchParams.get('workflow_id'),
   );
+  // Nodes whose schema text holds an edit they don't: unsaved work that no
+  // save can send yet.
+  const pendingSchemaNodes = useMemo(
+    () =>
+      nodes.filter((node) =>
+        schemaDraftPending(
+          agentJsonSchemaDrafts[node.id],
+          node.data?.config?.json_schema,
+        ),
+      ),
+    [nodes, agentJsonSchemaDrafts],
+  );
   const {
     dirty: hasUnsavedWork,
     hasBaseline,
@@ -457,7 +485,10 @@ function WorkflowBuilderInner() {
   } = useBuilderDirtyState(workflowPayloadSignature, {
     ready: opensNew,
     extras:
-      imageFile !== null || pendingConfig !== null || takeovers.length > 0,
+      imageFile !== null ||
+      pendingConfig !== null ||
+      takeovers.length > 0 ||
+      pendingSchemaNodes.length > 0,
   });
   // Saves wait for what they would replace: the graph (or, for a draft with
   // none yet, the agent) has loaded, and no load failed.
@@ -1791,9 +1822,28 @@ function WorkflowBuilderInner() {
       const validationErrors =
         status === 'published'
           ? validateWorkflow()
-          : workflowName.trim()
-            ? []
-            : [t('agents.workflow.validation.nameRequired')];
+          : [
+              ...(workflowName.trim()
+                ? []
+                : [t('agents.workflow.validation.nameRequired')]),
+              // A draft saves an unfinished graph, but not a schema edit it
+              // would drop.
+              ...pendingSchemaNodes.map((node) =>
+                t(
+                  node.type === 'code'
+                    ? 'agents.workflow.validation.codeSchema'
+                    : 'agents.workflow.validation.agentSchema',
+                  {
+                    ...NO_ESCAPE,
+                    name: node.data?.title || node.id,
+                    error: schemaErrorText(
+                      t,
+                      agentJsonSchemaErrors[node.id] ?? 'must be valid JSON',
+                    ),
+                  },
+                ),
+              ),
+            ];
       if (validationErrors.length > 0) {
         setPublishErrors(validationErrors);
         return 'failed';
@@ -1922,6 +1972,8 @@ function WorkflowBuilderInner() {
     },
     [
       validateWorkflow,
+      pendingSchemaNodes,
+      agentJsonSchemaErrors,
       buildWorkflowPayload,
       workflowId,
       token,

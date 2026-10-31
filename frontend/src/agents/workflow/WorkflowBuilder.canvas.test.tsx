@@ -689,6 +689,36 @@ describe('WorkflowBuilder canvas', () => {
       expect(container.textContent).toContain('agents.card.draft');
     });
 
+    // The schema text that doesn't parse lives only in the panel: a draft
+    // save would send the last valid one and lose the edit.
+    it('refuses a draft save while an output schema is unfinished, and counts it as unsaved', async () => {
+      api.agentStatus = 'draft';
+      await render();
+      await select('agent');
+      const onSchema = panel.props!.onJsonSchemaChange as (
+        text: string,
+      ) => void;
+      await act(async () => onSchema('{ "type": '));
+      expect(unsaved()).toBe(true);
+      await act(async () =>
+        container
+          .querySelector<HTMLAnchorElement>('[data-testid="go-to-tools"]')!
+          .click(),
+      );
+      expect(container.querySelector('[data-testid="confirm"]')).not.toBeNull();
+
+      await act(async () => button('agents.form.buttons.saveDraft')!.click());
+      await act(async () => undefined);
+      expect(api.updateAgent).not.toHaveBeenCalled();
+      expect(container.querySelector('[role="alert"]')!.textContent).toContain(
+        'agents.workflow.validation.agentSchema',
+      );
+
+      // Back to what the node holds: nothing unsaved.
+      await act(async () => onSchema(''));
+      expect(unsaved()).toBe(false);
+    });
+
     it('keeps a draft a draft when its details are saved', async () => {
       api.agentStatus = 'draft';
       await render();
