@@ -1509,8 +1509,9 @@ def _apply_workflow(
     """Write the imported graph; returns the workflow id, None, or the sentinel.
 
     The graph goes through the same validation gate as the workflow API
-    (``validate_workflow_structure``) so a hand-edited YAML can't install a
-    graph the write path would have rejected. When the matched agent already
+    (``workflow_graph_shape_errors``, then ``validate_workflow_structure``)
+    so a hand-edited YAML can't install a graph the write path would have
+    rejected. When the matched agent already
     owns a workflow the graph lands as a new version of it (mirroring
     ``PUT /api/workflows/<id>``); otherwise a new workflow is created.
     """
@@ -1525,6 +1526,7 @@ def _apply_workflow(
         normalize_agent_node_json_schemas,
         retry_config_error,
         validate_workflow_structure,
+        workflow_graph_shape_errors,
     )
 
     nodes_data = []
@@ -1565,7 +1567,9 @@ def _apply_workflow(
         for edge in wf_spec.get("edges") or []
     ]
 
-    errors = validate_workflow_structure(nodes_data, edges_data, user_id=user)
+    errors = workflow_graph_shape_errors(nodes_data, edges_data) or validate_workflow_structure(
+        nodes_data, edges_data, user_id=user,
+    )
     retry_defaults = wf_spec.get("retry_defaults")
     retry_error = retry_config_error(retry_defaults)
     if retry_error:

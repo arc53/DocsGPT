@@ -569,3 +569,75 @@ class TestStaleWriteToken:
         )
         assert _status(resp) == 409
         assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 2
+
+
+def _malformed(kind):
+    """A graph the store can't write, made from the valid one."""
+    graph = _graph()
+    agent_node, first_edge = graph["nodes"][1], graph["edges"][0]
+    if kind == "duplicate edge id":
+        graph["edges"][1]["id"] = first_edge["id"]
+    elif kind == "object title":
+        agent_node["title"] = {"text": "A"}
+    elif kind == "number title":
+        agent_node["title"] = 5
+    elif kind == "list description":
+        agent_node["description"] = ["d"]
+    elif kind == "object source handle":
+        first_edge["sourceHandle"] = {"id": "out"}
+    elif kind == "number target handle":
+        first_edge["targetHandle"] = 1
+    return graph
+
+
+_MALFORMED = [
+    "duplicate edge id", "object title", "number title", "list description",
+    "object source handle", "number target handle",
+]
+
+
+class TestMalformedGraphs:
+    """A graph the store can't write is a 400 with its errors on every save path, never a database error."""
+
+    @pytest.mark.parametrize("status", ["draft", "published"])
+    @pytest.mark.parametrize("kind", _MALFORMED)
+    def test_create(self, app, pg_conn, kind, status):
+        resp = _create(app, pg_conn, {
+            "name": "Flow", "description": "d", "agent_type": "workflow", "status": status,
+            "workflow_graph": _malformed(kind),
+        })
+        assert _status(resp) == 400, _json(resp)
+        assert _json(resp)["errors"]
+        assert _workflow_count(pg_conn) == 0
+
+    @pytest.mark.parametrize("kind", _MALFORMED)
+    def test_update(self, app, pg_conn, kind):
+        agent_id, wid = _workflow_agent(app, pg_conn, status="draft")
+        resp = _update(app, pg_conn, agent_id, {"workflow_graph": _malformed(kind)})
+        assert _status(resp) == 400, _json(resp)
+        assert _json(resp)["errors"]
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+
+    @pytest.mark.parametrize("kind", _MALFORMED)
+    def test_workflow_put(self, app, pg_conn, kind):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+        from tests.api.user.test_resource_sponsors import _call
+
+        _, wid = _workflow_agent(app, pg_conn)
+        resp = _call(
+            app, pg_conn, WorkflowDetail, "put", f"/api/workflows/{wid}", OWNER,
+            json={"name": "Flow", **_malformed(kind)}, args=(wid,),
+        )
+        assert _status(resp) == 400, _json(resp)
+        assert _json(resp)["errors"]
+        assert _stored_graph(pg_conn, wid)[0]["current_graph_version"] == 1
+
+    def test_a_string_or_missing_title_description_and_handles_still_save(self, app, pg_conn):
+        graph = _graph()
+        graph["nodes"][1].update({"title": "Agent", "description": "Answers"})
+        graph["nodes"][0].update({"title": None, "description": None})
+        graph["edges"][0].update({"sourceHandle": "out", "targetHandle": None})
+        resp = _create(app, pg_conn, {
+            "name": "Flow", "agent_type": "workflow", "status": "published", "workflow_graph": graph,
+        })
+        assert _status(resp) == 201, _json(resp)

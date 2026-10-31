@@ -296,8 +296,9 @@ def workflow_graph_shape_errors(nodes: Any, edges: Any) -> List[str]:
 
     A draft may be unfinished (no end node, an unconnected agent), but it
     must be a graph the builder can load and the store can write: node
-    objects with a unique string ``id`` and a known ``type``, edge objects
-    with string ``id``, ``source`` and ``target``.
+    objects with a unique string ``id``, a known ``type`` and a text (or
+    absent) ``title`` and ``description``; edge objects with a unique string
+    ``id``, string ``source`` and ``target``, and text (or absent) handles.
 
     Args:
         nodes: The ``nodes`` value as sent.
@@ -328,11 +329,23 @@ def workflow_graph_shape_errors(nodes: Any, edges: Any) -> List[str]:
         for key in ("position", "data"):
             if node.get(key) is not None and not isinstance(node.get(key), dict):
                 errors.append(f"Node {node_id} {key} must be an object")
+        for key in ("title", "description"):
+            if node.get(key) is not None and not isinstance(node.get(key), str):
+                errors.append(f"Node {node_id} {key} must be text")
+    seen_edges: Set[str] = set()
     for index, edge in enumerate(edges):
         if not isinstance(edge, dict) or not all(
             isinstance(edge.get(key), str) and edge.get(key) for key in ("id", "source", "target")
         ):
             errors.append(f"Edge {index + 1} needs an id, a source and a target")
+            continue
+        edge_id = edge["id"]
+        if edge_id in seen_edges:
+            errors.append(f"Duplicate edge id: {edge_id}")
+        seen_edges.add(edge_id)
+        for key in ("sourceHandle", "targetHandle"):
+            if edge.get(key) is not None and not isinstance(edge.get(key), str):
+                errors.append(f"Edge {edge_id} {key} must be text")
     return errors
 
 

@@ -269,6 +269,34 @@ def test_import_rejects_invalid_graph(pg_conn):
     assert WorkflowsRepository(pg_conn).list_for_user(user) == []
 
 
+@pytest.mark.parametrize("kind", ["duplicate edge id", "object title"])
+def test_import_rejects_a_graph_the_store_cannot_write(pg_conn, kind):
+    user = "u_wf_malformed"
+    nodes = [
+        {"id": "s", "type": "start"},
+        {"id": "a", "type": "agent", "title": "A", "config": {}},
+        {"id": "e", "type": "end"},
+    ]
+    edges = [{"id": "e1", "source": "s", "target": "a"}, {"id": "e2", "source": "a", "target": "e"}]
+    if kind == "duplicate edge id":
+        edges[1]["id"] = "e1"
+    else:
+        nodes[1]["title"] = {"text": "A"}
+    doc = {
+        "apiVersion": "docsgpt.arc53.com/v1",
+        "kind": "Agent",
+        "metadata": {"slug": "malformed-flow"},
+        "spec": {
+            "name": "Malformed Flow",
+            "agent_type": "workflow",
+            "workflow": {"name": "Malformed", "nodes": nodes, "edges": edges},
+        },
+    }
+    with pytest.raises(AgentImportError, match="Workflow validation failed"):
+        apply_import(pg_conn, user, doc)
+    assert WorkflowsRepository(pg_conn).list_for_user(user) == []
+
+
 def test_import_drops_foreign_raw_ids_from_node_config(pg_conn):
     """A hand-edited file carrying someone else's raw ids must not link them."""
     victim = "u_wf_victim"
