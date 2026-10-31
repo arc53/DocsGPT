@@ -325,6 +325,13 @@
           },
           "type": "array"
         },
+        "starters": {
+          "description": "Up to 4 questions a new chat with the agent offers, each at most 200 characters; trimmed, blanks and case-insensitive duplicates dropped. Multipart sends a JSON string",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "status": {
           "description": "Status of the agent (draft or published)",
           "type": "string"
@@ -1474,6 +1481,13 @@
         },
         "sources": {
           "description": "List of source identifiers for multiple sources",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "starters": {
+          "description": "Up to 4 questions a new chat with the agent offers, each at most 200 characters; trimmed, blanks and case-insensitive duplicates dropped. Multipart sends a JSON string",
           "items": {
             "type": "string"
           },

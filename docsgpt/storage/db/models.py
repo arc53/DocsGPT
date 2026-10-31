@@ -422,6 +422,8 @@ agents_table = Table(
     # ``"<type>:<id>" -> user_id`` of the editor vouching for a referenced
     # resource the owner can't use (migration 0039, see resource_access.py).
     Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # Up to four questions a new chat with the agent offers (migration 0061).
+    Column("starters", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     Column("default_model_id", Text),
     Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
