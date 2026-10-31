@@ -410,6 +410,84 @@ describe('Prompts page', () => {
     expect(titles()).toEqual(['creative', 'strict', 'Deal desk']);
   });
 
+  const search = (term: string) =>
+    act(async () => {
+      const input = container.querySelector<HTMLInputElement>(
+        '#prompt-search-input',
+      )!;
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, term);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+  // Picking a prompt makes it in use; under Unused its card stays until
+  // the search or filter changes, as a Tools tile does.
+  it('keeps a card picked under Unused until the search changes', async () => {
+    await render('/settings/prompts?usage=unused');
+    expect(titles()).toEqual([
+      'creative',
+      'strict',
+      'Escalation summary',
+      'Deal desk',
+    ]);
+    await act(async () => radioOf('creative').click());
+    expect(chatPromptId()).toBe('creative');
+    expect(titles()).toEqual([
+      'creative',
+      'strict',
+      'Escalation summary',
+      'Deal desk',
+    ]);
+    await search('e');
+    expect(titles()).toEqual(['Escalation summary', 'Deal desk']);
+    // Back on the first search, the held usage is gone for good.
+    await search('');
+    expect(titles()).toEqual(['strict', 'Escalation summary', 'Deal desk']);
+  });
+
+  // Each arrow key moves the check; the focused radio's card must stay.
+  it('keeps the focused card while arrow keys move the pick under Unused', async () => {
+    await render('/settings/prompts?usage=unused');
+    vi.useFakeTimers();
+    try {
+      const from = radioOf('creative');
+      await act(async () => {
+        from.focus();
+        from.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(chatPromptId()).toBe('strict');
+      expect(titles()).toEqual([
+        'creative',
+        'strict',
+        'Escalation summary',
+        'Deal desk',
+      ]);
+      expect(document.activeElement).toBe(radioOf('strict'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the card the pick left under In use', async () => {
+    store.dispatch(setPrompt({ id: 'p-idle', name: 'x', type: 'private' }));
+    await render('/settings/prompts?usage=inUse');
+    await act(async () => radioOf('default').click());
+    expect(chatPromptId()).toBe('default');
+    expect(titles()).toEqual([
+      'default',
+      'Vendor checks',
+      'Escalation summary',
+    ]);
+  });
+
   it('filters by kind with a track that keeps it in the address', async () => {
     await render();
     const items = Array.from(

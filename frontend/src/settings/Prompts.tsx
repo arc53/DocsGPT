@@ -84,6 +84,20 @@ export default function Prompts() {
   // keep them.
   const [kind, setKind] = useUrlFilter(KINDS, { name: 'kind' });
   const [usage, setUsage] = useUrlFilter(USAGE_FILTERS, { name: 'usage' });
+  // Under a usage filter, a prompt the chat pick moved to or from keeps the
+  // usage it had before (by id), so its card (and a focused radio) doesn't
+  // vanish mid-pick. It settles on the next search or filter change or
+  // reload, as a Tools tile does.
+  const filterKey = `${kind}\n${usage}\n${searchTerm}`;
+  const [heldUsage, setHeldUsage] = React.useState<{
+    key: string;
+    inUse: Record<string, boolean>;
+  }>({ key: '', inUse: {} });
+  // A new search or filter drops what was held, so coming back to the
+  // first filter doesn't bring it back.
+  if (heldUsage.key !== '' && heldUsage.key !== filterKey)
+    setHeldUsage({ key: '', inUse: {} });
+  const heldInUse = heldUsage.key === filterKey ? heldUsage.inUse : {};
 
   const showList = (list: Prompt[]) => {
     setPromptList(list);
@@ -103,6 +117,7 @@ export default function Prompts() {
       })
       .then((data: Prompt[]) => {
         showList(Array.isArray(data) ? data : []);
+        setHeldUsage({ key: '', inUse: {} });
         setLoadFailed(false);
       })
       .catch((error: unknown) => {
@@ -126,6 +141,10 @@ export default function Prompts() {
     },
   });
 
+  /** In use: an agent uses it, or chats without an agent do. */
+  const isInUse = (prompt: Prompt) =>
+    agentUseCount(prompt.used_by) > 0 || prompt.id === chatPrompt.id;
+
   // The radio's value changes on an arrow key too (Radix checks the radio it
   // moves to); such a pick saves after a pause, a click or Space at once.
   const arrowPick = React.useRef(false);
@@ -134,6 +153,12 @@ export default function Prompts() {
     arrowPick.current = false;
     const prompt = prompts.find((item) => item.id === id);
     if (!prompt) return;
+    if (usage !== 'all') {
+      const held = { ...heldInUse };
+      for (const moved of [prompt, chatPrompt])
+        if (!(moved.id in held)) held[moved.id] = isInUse(moved);
+      setHeldUsage({ key: filterKey, inUse: held });
+    }
     dispatch(chooseChatPrompt(prompt, token, delay)).then((saved) => {
       if (!saved)
         dispatch(
@@ -145,11 +170,9 @@ export default function Prompts() {
     });
   };
 
-  /** In use: an agent uses it, or chats without an agent do. */
-  const isInUse = (prompt: Prompt) =>
-    agentUseCount(prompt.used_by) > 0 || prompt.id === chatPrompt.id;
   const matchesUsage = (prompt: Prompt, key: UsageFilter) =>
-    key === 'all' || (key === 'inUse') === isInUse(prompt);
+    key === 'all' ||
+    (key === 'inUse') === (heldInUse[prompt.id] ?? isInUse(prompt));
   const matchesKind = (prompt: Prompt, key: KindFilter) =>
     key === 'all' ||
     SECTIONS.some((s) => s.key === key && s.type === prompt.type);
