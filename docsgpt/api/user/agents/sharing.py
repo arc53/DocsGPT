@@ -9,6 +9,7 @@ from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
 from docsgpt.core.settings import settings
+from docsgpt.api.user.agents.graph_checks import refuse_unfinished_graph
 from docsgpt.api.user.base import resolve_tool_details
 from docsgpt.api.user.resource_access import AccessDenied, require, resolve
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -292,6 +293,11 @@ class ShareAgent(Resource):
                         jsonify({"success": False, "message": "Agent not found"}), 404
                     )
                 if shared:
+                    # Anyone with the link runs the agent's graph: a workflow
+                    # agent's must be a finished one.
+                    refusal = refuse_unfinished_graph(conn, agent)
+                    if refusal is not None:
+                        return refusal
                     shared_metadata = {
                         "shared_by": username,
                         "shared_at": datetime.datetime.now(

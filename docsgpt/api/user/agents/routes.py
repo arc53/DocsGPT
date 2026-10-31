@@ -67,7 +67,6 @@ from docsgpt.storage.db.repositories.conversations import ConversationsRepositor
 from docsgpt.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
 )
-from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.repositories.stack_logs import StackLogsRepository
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
@@ -75,10 +74,13 @@ from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 from docsgpt.api.user.workflows.routes import (
     parse_workflow_graph,
     plan_graph_save,
-    stored_graph,
-    validate_workflow_structure,
     workflow_graph_errors,
     write_graph_save,
+)
+from docsgpt.api.user.agents.graph_checks import (
+    graph_validation_failed as _graph_validation_failed,
+    runs_outside_builder as _runs_outside_builder,
+    stored_graph_errors as _stored_graph_errors,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import (
@@ -292,12 +294,6 @@ POLICY_FIELDS = (
 )
 
 
-def _graph_validation_failed(errors: list):
-    """400 for a workflow graph that can't be saved, in both error shapes the clients read."""
-    message = "Workflow validation failed"
-    return make_response(jsonify({"success": False, "message": message, "error": message, "errors": errors}), 400)
-
-
 def _inline_graph(data: dict, agent_type: Optional[str]):
     """The ``workflow_graph`` of an agent save, or the error response that refuses it.
 
@@ -327,47 +323,6 @@ def _inline_graph(data: dict, agent_type: Optional[str]):
     if error:
         return None, make_response(jsonify({"success": False, "message": error}), 400)
     return graph, None
-
-
-def _stored_graph_errors(conn, workflow_id, owner_id: str) -> list:
-    """The full validation errors of a stored workflow graph, run as its owner.
-
-    A draft save checks a graph's shape only, so a stored graph may be
-    unfinished; a published agent must not start running one. A workflow the
-    owner doesn't have is left to the caller's own checks.
-
-    Args:
-        conn: Open database connection.
-        workflow_id: The workflow's id, or None.
-        owner_id: The agent's owner, whose models the nodes run with.
-
-    Returns:
-        list: The errors, empty when the graph may run.
-    """
-    workflow = WorkflowsRepository(conn).get(str(workflow_id), owner_id) if workflow_id else None
-    if workflow is None:
-        return []
-    nodes, edges = stored_graph(conn, workflow)
-    return validate_workflow_structure(nodes, edges, user_id=owner_id)
-
-
-def _runs_outside_builder(conn, agent: dict) -> bool:
-    """Whether something other than its builder can run an agent, whatever its status.
-
-    Nothing on the run path checks ``status``: a key (kept when a published
-    agent goes back to draft), an incoming webhook token, or a live schedule
-    each run the agent's current graph.
-
-    Args:
-        conn: Open database connection.
-        agent: The stored agent row.
-
-    Returns:
-        bool: True when the agent is published or one of those can run it.
-    """
-    if agent.get("status") == "published" or agent.get("key") or agent.get("incoming_webhook_token"):
-        return True
-    return SchedulesRepository(conn).any_live_for_agent(str(agent["id"]))
 
 
 def _discard_image(path: Optional[str]) -> None:
