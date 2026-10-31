@@ -1,5 +1,6 @@
 import 'reactflow/dist/style.css';
 
+import isEqual from 'lodash/isEqual';
 import { Link, Pencil, Play, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +25,7 @@ import ReactFlow, {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
@@ -32,21 +34,12 @@ import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
 import { can } from '../../utils/accessUtils';
-import {
-  selectSourceDocs,
-  selectToken,
-} from '../../preferences/preferenceSlice';
+import { selectToken } from '../../preferences/preferenceSlice';
 import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
 import AgentPreviewSheet from '../components/AgentPreviewSheet';
-import {
-  confirmTakeOver,
-  readSponsorRefusal,
-  saveWithSponsorConsent,
-  sponsorNotAllowedMessage,
-} from '../sponsorConsent';
-import { useSponsorPrompt } from '../useSponsorPrompt';
+
 import ResourceStatusNotice, {
   type NamedResource,
   unnamedResourceLabel,
@@ -61,7 +54,20 @@ import { Agent, AgentConfig, ResourceSponsor, ResourceState } from '../types';
 import { analyticsOf } from '../analyticsConfig';
 import { largestModelWindow } from '../contextLimit';
 import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
-import { ConditionCase, WorkflowNode } from '../types/workflow';
+import { ConditionCase, RetryConfig, WorkflowNode } from '../types/workflow';
+import {
+  containerData,
+  createDefaultLoopConfig,
+  findLoopAt,
+  LOOP_BODY_ORIGIN,
+  LOOP_BODY_TYPES,
+  LOOP_DEFAULT_SIZE,
+  loopProblems,
+  parentsFirst,
+  readContainerData,
+  sameContainer,
+  toLoopPosition,
+} from './loopNodeConfig';
 import {
   createDefaultCodeConfig,
   normalizeCodeConfig,
@@ -71,6 +77,7 @@ import {
 } from './codeNodeConfig';
 import MobileBlocker from './components/MobileBlocker';
 import { parseSimpleCel } from './simpleCel';
+import { isValidRetryConfig, normalizeRetryConfig } from './retryConfig';
 import { extractUpstreamVariables } from './components/PromptTextArea';
 import { toDocumentVariableOptions } from './documentConfig';
 import { useUndoRedo, WorkflowSnapshot } from './hooks/useUndoRedo';
@@ -79,6 +86,7 @@ import {
   CodeNode,
   ConditionNode,
   EndNode,
+  LoopNode,
   NoteNode,
   SetStateNode,
   StartNode,
@@ -90,6 +98,7 @@ import { WorkflowModelsContext } from './WorkflowModelsContext';
 import AgentPanel from './panels/AgentPanel';
 import CodePanel from './panels/CodePanel';
 import ConditionPanel from './panels/ConditionPanel';
+import LoopPanel from './panels/LoopPanel';
 import NotePanel from './panels/NotePanel';
 import StatePanel from './panels/StatePanel';
 import WorkflowPreview from './WorkflowPreview';
@@ -109,7 +118,13 @@ import {
 } from './workflowHelpers';
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
 import { readerIdFromToken } from '../../utils/personLabel';
-import { canAddToolToOwn, getToolDisplayName } from '../../utils/toolUtils';
+import { useLeaveGuard } from '../../hooks/useLeaveGuard';
+import { useBuilderDirtyState } from '../hooks/useBuilderDirtyState';
+import { useSponsoredSave } from '../hooks/useSponsoredSave';
+import {
+  getToolDisplayName,
+  isWorkflowNodeToolVisible,
+} from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
 
@@ -131,6 +146,33 @@ function isEditableTarget(target: EventTarget | null): boolean {
   if (target.isContentEditable) return true;
   const tag = target.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+// A modal, popover or menu over the canvas (Add tool, a picker, a confirm):
+// its keys are its own.
+const LAYER_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]';
+
+function isLayerTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(LAYER_SELECTOR) !== null;
+}
+
+/**
+ * Whether a key comes from the canvas: the page itself (nothing focused) or
+ * the flow's nodes, edges and pane. A control in the node panel, the
+ * palette or a notice is not, so Delete there leaves the selection alone.
+ *
+ * Args:
+ *   target: The keydown's target.
+ *
+ * Returns:
+ *   True when a canvas shortcut such as Delete may act on the selection.
+ */
+function isCanvasTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return true;
+  if (target === document.body || target === document.documentElement)
+    return true;
+  return target.closest('.react-flow__renderer') !== null;
 }
 
 function createEmptyWorkflowAgent(): Agent {
@@ -164,30 +206,43 @@ function canReachEnd(
     .some((e) => canReachEnd(e.target, edges, nodeIds, endIds, visited));
 }
 
+// Types whose saved ``data`` is the node's config rather than its canvas data.
+const CONFIG_DATA_TYPES = new Set(['agent', 'condition', 'state', 'loop']);
+
+/**
+ * A canvas node as the workflow API stores it: the type's config (or the
+ * node's data), plus the loop it sits in and a loop's canvas size.
+ */
+function serializeNode(node: Node): WorkflowNode {
+  const data =
+    node.type === 'code'
+      ? serializeCodeConfig(node.data.config)
+      : CONFIG_DATA_TYPES.has(node.type ?? '')
+        ? node.data.config
+        : node.data;
+  const extra = containerData(node);
+  return {
+    id: node.id,
+    type: node.type as WorkflowNode['type'],
+    title: node.data.title || node.data.label || node.type,
+    position: node.position,
+    data: Object.keys(extra).length > 0 ? { ...(data ?? {}), ...extra } : data,
+  };
+}
+
 function createWorkflowPayload(
   name: string,
   description: string,
   workflowNodes: Node[],
   workflowEdges: Edge[],
+  retryDefaults: RetryConfig | null,
 ) {
   return {
     name,
     description,
-    nodes: workflowNodes.map((node) => ({
-      id: node.id,
-      type: node.type as
-        'start' | 'end' | 'agent' | 'note' | 'state' | 'condition' | 'code',
-      title: node.data.title || node.data.label || node.type,
-      position: node.position,
-      data:
-        node.type === 'code'
-          ? serializeCodeConfig(node.data.config)
-          : node.type === 'agent' ||
-              node.type === 'condition' ||
-              node.type === 'state'
-            ? node.data.config
-            : node.data,
-    })),
+    // Always sent, so clearing the defaults saves too.
+    retry_defaults: normalizeRetryConfig(retryDefaults) ?? null,
+    nodes: workflowNodes.map(serializeNode),
     edges: workflowEdges.map((edge) => ({
       id: edge.id,
       source: edge.source,
@@ -198,6 +253,65 @@ function createWorkflowPayload(
   };
 }
 
+/** The keys the builder writes when it fills in a model. */
+const AUTO_FILLED_KEYS = ['model_id', 'llm_name'] as const;
+
+/**
+ * A model put on a node that had none, and the node's own `model_id` and
+ * `llm_name` before it (a key the node lacked is left out).
+ */
+type AutoFilledModel = {
+  modelId: string;
+  previous: Partial<Record<(typeof AUTO_FILLED_KEYS)[number], unknown>>;
+};
+
+/**
+ * The payload as the user changed it: a model the builder filled in on a node
+ * that had none (on select) is taken back out while it is still that model,
+ * so it alone never reads as an unsaved change. The node's own values go
+ * back where they were, null and empty ones included.
+ */
+function withoutAutoFilledModels(
+  payload: ReturnType<typeof createWorkflowPayload>,
+  filled: Record<string, AutoFilledModel>,
+): ReturnType<typeof createWorkflowPayload> {
+  if (Object.keys(filled).length === 0) return payload;
+  return {
+    ...payload,
+    nodes: payload.nodes.map((node) => {
+      const entry = filled[node.id];
+      const data = node.data as Record<string, unknown> | undefined;
+      if (!entry || !data || data.model_id !== entry.modelId) return node;
+      // Filling spreads the old config first, so a key the node had keeps
+      // its place and a new one comes last: walking the keys keeps the order.
+      const rest: Record<string, unknown> = {};
+      Object.entries(data).forEach(([key, value]) => {
+        if (!(AUTO_FILLED_KEYS as readonly string[]).includes(key)) {
+          rest[key] = value;
+        } else if (key in entry.previous) {
+          rest[key] = entry.previous[key as keyof typeof entry.previous];
+        }
+      });
+      return { ...node, data: rest } as WorkflowNode;
+    }),
+  };
+}
+
+/**
+ * Whether a node's output schema text holds an edit the node doesn't: text
+ * that doesn't parse, or a schema other than the one it has. Only a valid
+ * schema reaches the node, so a save would send the old one.
+ */
+function schemaDraftPending(draft: string | undefined, held: unknown): boolean {
+  if (draft === undefined) return false;
+  if (draft.trim() === '') return held !== undefined && held !== null;
+  try {
+    return !isEqual(JSON.parse(draft), held);
+  } catch {
+    return true;
+  }
+}
+
 const NODE_TYPES: NodeTypes = {
   start: StartNode,
   agent: AgentNode,
@@ -206,45 +320,67 @@ const NODE_TYPES: NodeTypes = {
   state: SetStateNode,
   condition: ConditionNode,
   code: CodeNode,
+  loop: LoopNode,
 };
 
 function WorkflowBuilderInner() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
-  const sourceDocs = useSelector(selectSourceDocs);
   const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
   const folderId = searchParams.get('folder_id');
-  const [workflowId, setWorkflowId] = useState<string | null>(
-    searchParams.get('workflow_id'),
-  );
+  // A saved agent's workflow, known once the agent loads or a save creates it.
+  const [workflowId, setWorkflowId] = useState<string | null>(null);
   const reactFlowInstance = useReactFlow();
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(
     agentId || null,
   );
   // A saved workflow's agent is loading (the phone screen waits for it).
   const [agentLoading, setAgentLoading] = useState(Boolean(agentId));
+  // The agent or its graph failed to load: an error with Retry stands in for
+  // the canvas, and nothing saves. Bumping the attempt loads both again.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  // The name and description the agent was loaded with: the builder shows
+  // and saves the agent's own fields (its workflow's follow them).
+  const loadedAgentFields = useRef<{
+    name: string;
+    description: string;
+  } | null>(null);
+  // The workflow a first save just created: its graph is the one on the
+  // canvas, so it isn't read back.
+  const justSavedWorkflowId = useRef<string | null>(null);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [workflowName, setWorkflowName] = useState('New Workflow');
   const [workflowDescription, setWorkflowDescription] = useState('');
+  // What a node's unset retry fields fall back to (``retry_defaults``).
+  const [retryDefaults, setRetryDefaults] = useState<RetryConfig | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   // A save asked for by the details sheet runs after its values reach state.
   const [detailsSaveRequested, setDetailsSaveRequested] = useState(false);
   const [detailsSaving, setDetailsSaving] = useState(false);
   const [detailsSaveFailed, setDetailsSaveFailed] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  // Which save is out, so only its button spins.
+  const [savingStatus, setSavingStatus] = useState<'draft' | 'published'>(
+    'published',
+  );
   const [showPrimaryActionSpinner, setShowPrimaryActionSpinner] =
     useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
-  // Asks before a node resource the owner can't use runs with the
-  // caller's access; the save that asked gets the retried save's result.
-  const sponsorPrompt = useSponsorPrompt();
+  // Saves ask before a node resource the owner can't use runs with the
+  // caller's access, and carry the stopped node resources the caller agreed
+  // to run with theirs (takeovers, sent as ``confirm_sponsor``).
+  const sponsoredSave = useSponsoredSave({
+    refresh: () => void refreshResourceDetails(workflowId),
+  });
+  const { takeovers } = sponsoredSave;
   // What runs on the nodes with an editor's access and what stopped, from
   // the workflow read (people who may edit it).
   const [workflowResources, setWorkflowResources] = useState<{
@@ -252,17 +388,12 @@ function WorkflowBuilderInner() {
     states: ResourceState[];
     audience?: SponsorAudience;
   }>({ sponsors: [], states: [] });
-  // Keys of stopped node resources the caller agreed to run with their
-  // access; sent as ``confirm_sponsor`` with the next save.
-  const [takeovers, setTakeovers] = useState<string[]>([]);
   // Bumped after a reconnect so the run state is read again.
   const [resourcesReloadKey, setResourcesReloadKey] = useState(0);
-  const signInAgain = useSignInAgain({
-    onConnected: () => setResourcesReloadKey((key) => key + 1),
-  });
-  const [errorContext, setErrorContext] = useState<'preview' | 'publish'>(
-    'publish',
-  );
+  // What the error list is about: a preview, a save, or a first publish.
+  const [errorContext, setErrorContext] = useState<
+    'preview' | 'save' | 'publish'
+  >('publish');
   const [showNodeConfig, setShowNodeConfig] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] =
@@ -282,9 +413,6 @@ function WorkflowBuilderInner() {
   // laid over the saved config with the next save; null when none changed.
   const [pendingConfig, setPendingConfig] = useState<AgentConfig | null>(null);
   const analyticsAvailability = useAnalyticsAvailability();
-  const [savedWorkflowSignature, setSavedWorkflowSignature] = useState<
-    string | null
-  >(null);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const modelNames = useMemo(
     () =>
@@ -294,21 +422,19 @@ function WorkflowBuilderInner() {
     [availableModels],
   );
   const [defaultAgentModelId, setDefaultAgentModelId] = useState('');
+  // Models filled in on nodes that had none, by node id, until a save
+  // stores them: not a change the user made.
+  const [autoFilledModels, setAutoFilledModels] = useState<
+    Record<string, AutoFilledModel>
+  >({});
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
   // Names of every tool and source the saved graph references, whoever owns
   // them, so node pickers keep a remove-only option for the owner's private
   // ones (GET /api/workflows/<id> ``ref_details``).
   const [nodeRefNames, setNodeRefNames] = useState<{
-    tools: { id: string; label: string }[];
+    tools: { id: string; label: string; name?: string }[];
     sources: { id: string; label: string }[];
   }>({ tools: [], sources: [] });
-  const sourceOptions = useMemo(
-    () =>
-      (sourceDocs ?? [])
-        .filter((doc) => Boolean(doc.id))
-        .map((doc) => ({ value: doc.id as string, label: doc.name })),
-    [sourceDocs],
-  );
   const [agentJsonSchemaDrafts, setAgentJsonSchemaDrafts] = useState<
     Record<string, string>
   >({});
@@ -332,6 +458,68 @@ function WorkflowBuilderInner() {
 
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>([]);
+
+  const buildWorkflowPayload = useCallback(
+    () =>
+      createWorkflowPayload(
+        workflowName,
+        workflowDescription,
+        nodes,
+        edges,
+        retryDefaults,
+      ),
+    [workflowName, workflowDescription, nodes, edges, retryDefaults],
+  );
+
+  const workflowPayloadSignature = useMemo(
+    () =>
+      JSON.stringify(
+        withoutAutoFilledModels(buildWorkflowPayload(), autoFilledModels),
+      ),
+    [buildWorkflowPayload, autoFilledModels],
+  );
+  // A new workflow compares with what it opened with (its Start node); a
+  // saved one with what was loaded, then with each save.
+  const [opensNew] = useState(() => !agentId);
+  // Nodes whose schema text holds an edit they don't: unsaved work that no
+  // save can send yet.
+  const pendingSchemaNodes = useMemo(
+    () =>
+      nodes.filter((node) =>
+        schemaDraftPending(
+          agentJsonSchemaDrafts[node.id],
+          node.data?.config?.json_schema,
+        ),
+      ),
+    [nodes, agentJsonSchemaDrafts],
+  );
+  const {
+    dirty: hasUnsavedWork,
+    hasBaseline,
+    markSaved,
+  } = useBuilderDirtyState(workflowPayloadSignature, {
+    ready: opensNew,
+    extras:
+      imageFile !== null ||
+      pendingConfig !== null ||
+      takeovers.length > 0 ||
+      pendingSchemaNodes.length > 0,
+  });
+  // Saves wait for what they would replace: the graph (or, for a draft with
+  // none yet, the agent) has loaded, and no load failed.
+  const canSave = hasBaseline && !loadFailed;
+  // A node's Go to link asks first while there is unsaved work.
+  const leaveGuard = useLeaveGuard(hasUnsavedWork);
+  // A broken connection signs in again in place, or on its connector page,
+  // which is an exit like any other.
+  const signInAgain = useSignInAgain({
+    onConnected: () => {
+      setResourcesReloadKey((key) => key + 1);
+      // The node pickers' Reconnect badges follow the connection.
+      void loadTools().catch(() => undefined);
+    },
+    onNavigate: leaveGuard.leaveTo,
+  });
 
   const handleHistoryRestore = useCallback(
     (snapshot: WorkflowSnapshot) => {
@@ -377,6 +565,8 @@ function WorkflowBuilderInner() {
 
   const onConnect = useCallback(
     (params: Connection) => {
+      // The nodes in a loop run per item: they connect only to each other.
+      if (!sameContainer(nodes, params.source, params.target)) return;
       const exists = edges.some(
         (e) =>
           e.source === params.source &&
@@ -448,10 +638,11 @@ function WorkflowBuilderInner() {
 
   /**
    * Add a node of a palette type at a flow position, with its default config.
-   * Takes an undo snapshot first; the selection is left as it was.
+   * Inside a loop the position is relative to the loop. Takes an undo
+   * snapshot first; the selection is left as it was.
    */
   const createNode = useCallback(
-    (type: string, position: XYPosition) => {
+    (type: string, position: XYPosition, loop?: Node) => {
       takeSnapshot();
 
       const baseNode: Node = {
@@ -497,6 +688,15 @@ function WorkflowBuilderInner() {
       } else if (type === 'note') {
         baseNode.data.title = 'Note';
         baseNode.data.label = 'Note';
+      } else if (type === 'loop') {
+        baseNode.data.title = 'Loop';
+        baseNode.data.label = 'Loop';
+        baseNode.data.config = createDefaultLoopConfig();
+        baseNode.style = { ...LOOP_DEFAULT_SIZE };
+      }
+      if (loop) {
+        baseNode.parentNode = loop.id;
+        baseNode.extent = 'parent';
       }
 
       setNodes((nds) => nds.concat(baseNode));
@@ -511,15 +711,17 @@ function WorkflowBuilderInner() {
       const type = event.dataTransfer.getData('application/reactflow');
       if (!type) return;
 
-      createNode(
-        type,
-        reactFlowInstance.screenToFlowPosition({
-          x: event.clientX,
-          y: event.clientY,
-        }),
-      );
+      const point = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      // Dropped on a loop: the node joins its body.
+      const loop = LOOP_BODY_TYPES.has(type)
+        ? findLoopAt(nodes, point)
+        : undefined;
+      createNode(type, loop ? toLoopPosition(loop, point) : point, loop);
     },
-    [reactFlowInstance, createNode],
+    [reactFlowInstance, createNode, nodes],
   );
 
   // Click or Enter on a palette pill: beside the selected node, else in the
@@ -529,13 +731,35 @@ function WorkflowBuilderInner() {
       const anchor = selectedNode
         ? nodes.find((n) => n.id === selectedNode.id)
         : undefined;
-      if (anchor) {
+      const fitsInLoop = LOOP_BODY_TYPES.has(type);
+      // A selected loop takes the new node into its body.
+      if (anchor?.type === 'loop' && fitsInLoop) {
         createNode(
           type,
-          findFreePosition(nodes, {
-            x: anchor.position.x + (anchor.width ?? 0) + ADD_BESIDE_GAP_X,
-            y: anchor.position.y,
-          }),
+          findFreePosition(
+            nodes.filter((n) => n.parentNode === anchor.id),
+            LOOP_BODY_ORIGIN,
+          ),
+          anchor,
+        );
+        return;
+      }
+      // Beside a node inside a loop stays inside it, when the type may.
+      const anchorLoop =
+        anchor?.parentNode && fitsInLoop
+          ? nodes.find((n) => n.id === anchor.parentNode)
+          : undefined;
+      if (anchor && (anchorLoop || !anchor.parentNode)) {
+        createNode(
+          type,
+          findFreePosition(
+            nodes.filter((n) => (n.parentNode || undefined) === anchorLoop?.id),
+            {
+              x: anchor.position.x + (anchor.width ?? 0) + ADD_BESIDE_GAP_X,
+              y: anchor.position.y,
+            },
+          ),
+          anchorLoop,
         );
         return;
       }
@@ -549,10 +773,13 @@ function WorkflowBuilderInner() {
       // Positions are a node's top-left corner; centre a typical node.
       createNode(
         type,
-        findFreePosition(nodes, {
-          x: center.x - NEW_NODE_HALF_WIDTH,
-          y: center.y - NEW_NODE_HALF_HEIGHT,
-        }),
+        findFreePosition(
+          nodes.filter((n) => !n.parentNode),
+          {
+            x: center.x - NEW_NODE_HALF_WIDTH,
+            y: center.y - NEW_NODE_HALF_HEIGHT,
+          },
+        ),
       );
     },
     [selectedNode, nodes, createNode, reactFlowInstance],
@@ -571,6 +798,12 @@ function WorkflowBuilderInner() {
       const removableIds = new Set(
         nodesToDelete.filter((n) => n.type !== 'start').map((n) => n.id),
       );
+      // A loop goes with the nodes inside it.
+      nodes.forEach((n) => {
+        if (n.parentNode && removableIds.has(n.parentNode)) {
+          removableIds.add(n.id);
+        }
+      });
       const edgeIdsToDelete = new Set(edgesToDelete.map((e) => e.id));
       if (removableIds.size === 0 && edgeIdsToDelete.size === 0) return;
 
@@ -602,7 +835,7 @@ function WorkflowBuilderInner() {
         setShowNodeConfig(false);
       }
     },
-    [selectedNode, takeSnapshot],
+    [nodes, selectedNode, takeSnapshot],
   );
 
   const handleDeleteNode = useCallback(() => {
@@ -616,8 +849,9 @@ function WorkflowBuilderInner() {
     const original = nodes.find((n) => n.id === selectedNode.id);
     if (!original) return;
     takeSnapshot();
+    const stamp = Date.now();
     const copy: Node = {
-      id: `${original.type}_${Date.now()}`,
+      id: `${original.type}_${stamp}`,
       type: original.type,
       position: {
         x: original.position.x + DUPLICATE_OFFSET,
@@ -625,13 +859,45 @@ function WorkflowBuilderInner() {
       },
       data: structuredClone(original.data),
       selected: true,
+      ...(original.parentNode
+        ? { parentNode: original.parentNode, extent: original.extent }
+        : {}),
+      ...(original.style ? { style: { ...original.style } } : {}),
     };
-    setNodes((nds) =>
-      nds.map((n) => (n.selected ? { ...n, selected: false } : n)).concat(copy),
+    // A loop's copy gets copies of the nodes inside it and their edges.
+    const children = nodes.filter((n) => n.parentNode === original.id);
+    const childIds = new Map(
+      children.map((child, index) => [
+        child.id,
+        `${child.type}_${stamp}_${index}`,
+      ]),
     );
+    const childCopies: Node[] = children.map((child) => ({
+      id: childIds.get(child.id) as string,
+      type: child.type,
+      position: { ...child.position },
+      data: structuredClone(child.data),
+      parentNode: copy.id,
+      extent: 'parent',
+    }));
+    const edgeCopies: Edge[] = edges
+      .filter((edge) => childIds.has(edge.source) && childIds.has(edge.target))
+      .map((edge) => ({
+        ...edge,
+        id: `${edge.id}_${stamp}`,
+        source: childIds.get(edge.source) as string,
+        target: childIds.get(edge.target) as string,
+        selected: false,
+      }));
+    setNodes((nds) =>
+      nds
+        .map((n) => (n.selected ? { ...n, selected: false } : n))
+        .concat(copy, childCopies),
+    );
+    if (edgeCopies.length > 0) setEdges((eds) => eds.concat(edgeCopies));
     setSelectedNode(copy);
     setShowNodeConfig(true);
-  }, [selectedNode, nodes, takeSnapshot]);
+  }, [selectedNode, nodes, edges, takeSnapshot]);
 
   const handleRemoveConditionBranch = useCallback(
     (sourceHandle: string) => {
@@ -741,9 +1007,11 @@ function WorkflowBuilderInner() {
     [],
   );
   const handleConfigChange = useCallback(
-    (config: AgentConfig) =>
+    (config: AgentConfig, updatedAt?: string) =>
       setCurrentAgent((prev) => ({
         ...prev,
+        // The allowlist save moved the stamp the next save sends.
+        updated_at: updatedAt ?? prev.updated_at,
         config: {
           ...(prev.config ?? {}),
           api_write_allowlist: config.api_write_allowlist,
@@ -795,13 +1063,16 @@ function WorkflowBuilderInner() {
     // remove the selection, Escape to close the config panel): ignore the
     // keystroke while typing in a field, while the Preview Sheet is open (its
     // own inputs own the keys — a stray Delete there must not delete the node
-    // behind it), or once another handler has already consumed the event. Kept
-    // in one place so the branches can't drift apart.
+    // behind it), when it comes from a dialog, popover or menu (Backspace on
+    // an Add tool card), or once another handler has already consumed the
+    // event. Kept in one place so the branches can't drift apart. Delete
+    // and Backspace act only from the canvas itself (`isCanvasTarget`).
     const shouldIgnoreShortcut = (e: KeyboardEvent): boolean =>
       e.defaultPrevented ||
       showPreview ||
       showDetails ||
-      isEditableTarget(e.target);
+      isEditableTarget(e.target) ||
+      isLayerTarget(e.target);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (shouldIgnoreShortcut(e)) return;
@@ -820,7 +1091,10 @@ function WorkflowBuilderInner() {
           return;
         }
       }
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        isCanvasTarget(e.target)
+      ) {
         e.preventDefault();
         deleteNodesAndEdges(
           nodes.filter((n) => n.selected || n.id === selectedNode?.id),
@@ -850,6 +1124,18 @@ function WorkflowBuilderInner() {
     setSelectedNode(null);
   }, []);
 
+  // The tools a node can pick, loaded with the models and again when a node
+  // adds one from its Tools picker. Shared tools the caller can't add to
+  // their own agents and tools the server attaches by itself stay out.
+  const loadTools = useCallback(async (): Promise<UserTool[]> => {
+    const response = await userService.getUserTools(token);
+    if (!response.ok) throw new Error('Failed to load tools');
+    const data = await response.json();
+    const tools = (data.tools as UserTool[]).filter(isWorkflowNodeToolVisible);
+    setAvailableTools(tools);
+    return tools;
+  }, [token]);
+
   useEffect(() => {
     const loadModelsAndTools = async () => {
       try {
@@ -869,26 +1155,32 @@ function WorkflowBuilderInner() {
           setDefaultAgentModelId(preferredDefaultModel);
         }
 
-        const toolsResponse = await userService.getUserTools(token);
-        if (toolsResponse.ok) {
-          const toolsData = await toolsResponse.json();
-          // Shared tools the caller can't add to their own agents stay out.
-          setAvailableTools(
-            (toolsData.tools as UserTool[]).filter(canAddToolToOwn),
-          );
-        }
+        await loadTools();
       } catch (error) {
         console.error('Failed to load models or tools:', error);
       }
     };
     loadModelsAndTools();
-  }, [token]);
+  }, [token, loadTools]);
 
   useEffect(() => {
     if (!selectedNode || selectedNode.type !== 'agent') return;
     if (!defaultAgentModelId) return;
     if (selectedNode.data.config?.model_id) return;
 
+    const config = selectedNode.data.config || {};
+    setAutoFilledModels((prev) => ({
+      ...prev,
+      [selectedNode.id]: {
+        modelId: defaultAgentModelId,
+        previous: Object.fromEntries(
+          AUTO_FILLED_KEYS.filter((key) => key in config).map((key) => [
+            key,
+            config[key],
+          ]),
+        ),
+      },
+    }));
     handleUpdateNodeData(
       {
         config: {
@@ -956,6 +1248,9 @@ function WorkflowBuilderInner() {
   }, [selectedNode]);
 
   useEffect(() => {
+    // A load superseded by another (a token change, StrictMode's second
+    // run) sets nothing.
+    let cancelled = false;
     const loadAgentDetails = async () => {
       if (!agentId) return;
       setAgentLoading(true);
@@ -963,25 +1258,49 @@ function WorkflowBuilderInner() {
         const response = await userService.getAgent(agentId, token);
         if (!response.ok) throw new Error('Failed to fetch agent');
         const agent = await response.json();
+        if (cancelled) return;
         setCurrentAgent({
           ...createEmptyWorkflowAgent(),
           ...agent,
           agent_type: 'workflow',
         });
-        if (agent.agent_type === 'workflow' && agent.workflow) {
+        if (agent.agent_type !== 'workflow') return;
+        setCurrentAgentId(agent.id);
+        loadedAgentFields.current = {
+          name: agent.name ?? '',
+          description: agent.description || '',
+        };
+        setWorkflowName(agent.name);
+        setWorkflowDescription(agent.description || '');
+        if (agent.workflow) {
           setWorkflowId(agent.workflow);
-          setCurrentAgentId(agent.id);
-          setWorkflowName(agent.name);
-          setWorkflowDescription(agent.description || '');
+        } else {
+          // A draft saved before it had a graph: the canvas starts as a new
+          // one does, and that is what is saved.
+          markSaved(
+            JSON.stringify(
+              createWorkflowPayload(
+                agent.name,
+                agent.description || '',
+                initialNodes,
+                [],
+                null,
+              ),
+            ),
+          );
         }
       } catch (error) {
         console.error('Failed to load agent:', error);
+        if (!cancelled) setLoadFailed(true);
       } finally {
-        setAgentLoading(false);
+        if (!cancelled) setAgentLoading(false);
       }
     };
     loadAgentDetails();
-  }, [agentId, token]);
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId, token, markSaved, initialNodes, loadAttempt]);
 
   const applyResourceDetails = useCallback(
     (data: {
@@ -1020,12 +1339,18 @@ function WorkflowBuilderInner() {
   }, [resourcesReloadKey, refreshResourceDetails]);
 
   useEffect(() => {
+    let cancelled = false;
     const loadWorkflow = async () => {
       if (!workflowId) return;
+      if (justSavedWorkflowId.current === workflowId) {
+        justSavedWorkflowId.current = null;
+        return;
+      }
       try {
         const response = await userService.getWorkflow(workflowId, token);
         if (!response.ok) throw new Error('Failed to fetch workflow');
         const responseData = await response.json();
+        if (cancelled) return;
         const {
           workflow,
           nodes: apiNodes,
@@ -1038,6 +1363,7 @@ function WorkflowBuilderInner() {
             (tool: { id: string; name?: string; display_name?: string }) => ({
               id: tool.id,
               label: getToolDisplayName(tool),
+              name: tool.name,
             }),
           ),
           sources: (refDetails?.sources ?? []).map(
@@ -1047,36 +1373,49 @@ function WorkflowBuilderInner() {
             }),
           ),
         });
-        const nextWorkflowName = workflow.name;
-        const nextWorkflowDescription = workflow.description || '';
-        const mappedNodes = apiNodes.map((n: WorkflowNode) => {
-          const nodeData: Record<string, unknown> = {
-            title: n.title,
-            label: n.title,
-          };
-          if (n.type === 'agent' && n.data) {
-            nodeData.config = n.data;
-          } else if (n.type === 'condition' && n.data) {
-            nodeData.config = {
-              ...n.data,
-              cases: normalizeConditionCases(n.data.cases || []),
+        // The agent's own fields when there is one (an older agent's may
+        // differ from its workflow's), else the workflow's.
+        const nextWorkflowName =
+          loadedAgentFields.current?.name ?? workflow.name;
+        const nextWorkflowDescription =
+          loadedAgentFields.current?.description ?? workflow.description ?? '';
+        const nextRetryDefaults =
+          normalizeRetryConfig(workflow.retry_defaults) ?? null;
+        const mappedNodes = parentsFirst<Node>(
+          apiNodes.map((n: WorkflowNode) => {
+            const { data: savedData, canvas } = readContainerData(n.data);
+            const nodeData: Record<string, unknown> = {
+              title: n.title,
+              label: n.title,
             };
-          } else if (n.type === 'state' && n.data) {
-            nodeData.config = n.data;
-          } else if (n.type === 'code') {
-            nodeData.config = normalizeCodeConfig(
-              n.data as Record<string, unknown> | undefined,
-            );
-          } else if (n.data) {
-            Object.assign(nodeData, n.data);
-          }
-          return {
-            id: n.id,
-            type: n.type,
-            position: n.position,
-            data: nodeData,
-          };
-        });
+            if (n.type === 'agent' && n.data) {
+              const retry = normalizeRetryConfig(savedData.retry);
+              nodeData.config = { ...savedData, retry };
+            } else if (n.type === 'loop' && n.data) {
+              nodeData.config = savedData;
+            } else if (n.type === 'condition' && n.data) {
+              nodeData.config = {
+                ...savedData,
+                cases: normalizeConditionCases(
+                  (savedData.cases as ConditionCase[]) || [],
+                ),
+              };
+            } else if (n.type === 'state' && n.data) {
+              nodeData.config = savedData;
+            } else if (n.type === 'code') {
+              nodeData.config = normalizeCodeConfig(savedData);
+            } else if (n.data) {
+              Object.assign(nodeData, savedData);
+            }
+            return {
+              id: n.id,
+              type: n.type,
+              position: n.position,
+              data: nodeData,
+              ...canvas,
+            };
+          }),
+        );
         const mappedEdges = apiEdges.map(
           (e: {
             id: string;
@@ -1094,18 +1433,21 @@ function WorkflowBuilderInner() {
         );
         setWorkflowName(nextWorkflowName);
         setWorkflowDescription(nextWorkflowDescription);
+        setRetryDefaults(nextRetryDefaults);
         setAgentJsonSchemaDrafts({});
         setAgentJsonSchemaErrors({});
         setNodes(mappedNodes);
         setEdges(mappedEdges);
+        setAutoFilledModels({});
         clearHistory();
-        setSavedWorkflowSignature(
+        markSaved(
           JSON.stringify(
             createWorkflowPayload(
               nextWorkflowName,
               nextWorkflowDescription,
               mappedNodes,
               mappedEdges,
+              nextRetryDefaults,
             ),
           ),
         );
@@ -1118,15 +1460,21 @@ function WorkflowBuilderInner() {
         }, 100);
       } catch (error) {
         console.error('Failed to load workflow:', error);
+        if (!cancelled) setLoadFailed(true);
       }
     };
     loadWorkflow();
+    return () => {
+      cancelled = true;
+    };
   }, [
     workflowId,
     reactFlowInstance,
     token,
     clearHistory,
     applyResourceDetails,
+    markSaved,
+    loadAttempt,
   ]);
 
   const validateWorkflow = useCallback((): string[] => {
@@ -1374,6 +1722,8 @@ function WorkflowBuilderInner() {
       });
 
       outgoing.forEach((edge) => {
+        // In a loop body a branch ends the item where it stops.
+        if (node.parentNode) return;
         if (!canReachEnd(edge.target, edges, nodeIds, endNodeIds)) {
           const handle = edge.sourceHandle || 'branch';
           errors.push(
@@ -1417,31 +1767,46 @@ function WorkflowBuilderInner() {
       }
     });
 
+    if (!isValidRetryConfig(retryDefaults)) {
+      errors.push(t('agents.workflow.validation.retryDefaults'));
+    }
+    nodes
+      .filter((n) => n.type === 'agent' || n.type === 'code')
+      .forEach((node) => {
+        if (!isValidRetryConfig(node.data?.config?.retry)) {
+          errors.push(
+            t('agents.workflow.validation.nodeRetry', {
+              ...NO_ESCAPE,
+              name: node.data?.title || node.id,
+            }),
+          );
+        }
+      });
+
+    nodes
+      .filter((n) => n.type === 'loop')
+      .forEach((loop) => {
+        loopProblems(loop, nodes, edges).forEach((key) =>
+          errors.push(
+            t(key, { ...NO_ESCAPE, name: loop.data?.title || loop.id }),
+          ),
+        );
+      });
+
     return errors;
-  }, [workflowName, nodes, edges, agentJsonSchemaErrors, availableModels, t]);
+  }, [
+    workflowName,
+    nodes,
+    edges,
+    agentJsonSchemaErrors,
+    availableModels,
+    retryDefaults,
+    t,
+  ]);
 
   const canManageAgent = Boolean(currentAgentId || currentAgent.id);
   const effectiveAgentId = currentAgentId || currentAgent.id || '';
   const currentAgentImage = currentAgent.image || '';
-
-  const buildWorkflowPayload = useCallback(
-    () =>
-      createWorkflowPayload(workflowName, workflowDescription, nodes, edges),
-    [workflowName, workflowDescription, nodes, edges],
-  );
-
-  const workflowPayloadSignature = useMemo(
-    () => JSON.stringify(buildWorkflowPayload()),
-    [buildWorkflowPayload],
-  );
-
-  const hasSavableChanges =
-    canManageAgent && savedWorkflowSignature !== null
-      ? workflowPayloadSignature !== savedWorkflowSignature ||
-        imageFile !== null ||
-        pendingConfig !== null ||
-        takeovers.length > 0
-      : false;
 
   // The agent's config as the server has it now, read just before a save
   // that replaces it; throws when it can't be read.
@@ -1455,228 +1820,175 @@ function WorkflowBuilderInner() {
     },
     [token, t],
   );
+  // What an Access details allowlist change saves onto: the server's copy,
+  // since the builder's may lack what the server added (a new agent's
+  // default guardrails) and the config replaces the stored one whole.
+  const getSavedConfig = useCallback(
+    () => readSavedConfig(effectiveAgentId),
+    [readSavedConfig, effectiveAgentId],
+  );
 
   // One save at a time: a second one beside it would race it to the server.
   const persistingRef = useRef(false);
+  /**
+   * Save the workflow agent and its graph in one request: as a draft (an
+   * unfinished graph saves; only its shape is checked) or published (the
+   * whole graph must run). A first save creates the agent and its workflow.
+   */
   const persistWorkflow = useCallback(
-    async (navigateAfterSuccess: boolean): Promise<WorkflowSaveOutcome> => {
-      if (persistingRef.current) return 'cancelled';
+    async (status: 'draft' | 'published'): Promise<WorkflowSaveOutcome> => {
+      if (persistingRef.current || !canSave) return 'cancelled';
       setPublishErrors([]);
-      setErrorContext('publish');
+      // Publishing a new or draft workflow, or saving one.
+      setErrorContext(
+        status === 'published' &&
+          !(effectiveAgentId && currentAgent.status !== 'draft')
+          ? 'publish'
+          : 'save',
+      );
 
-      const validationErrors = validateWorkflow();
+      const validationErrors =
+        status === 'published'
+          ? validateWorkflow()
+          : [
+              ...(workflowName.trim()
+                ? []
+                : [t('agents.workflow.validation.nameRequired')]),
+              // A draft saves an unfinished graph, but not a schema edit it
+              // would drop.
+              ...pendingSchemaNodes.map((node) =>
+                t(
+                  node.type === 'code'
+                    ? 'agents.workflow.validation.codeSchema'
+                    : 'agents.workflow.validation.agentSchema',
+                  {
+                    ...NO_ESCAPE,
+                    name: node.data?.title || node.id,
+                    error: schemaErrorText(
+                      t,
+                      agentJsonSchemaErrors[node.id] ?? 'must be valid JSON',
+                    ),
+                  },
+                ),
+              ),
+            ];
       if (validationErrors.length > 0) {
         setPublishErrors(validationErrors);
         return 'failed';
       }
 
       persistingRef.current = true;
+      setSavingStatus(status);
       setIsPublishing(true);
-      let createdWorkflowId: string | null = null;
       try {
         const workflowPayload = buildWorkflowPayload();
-
-        let savedWorkflowId = workflowId;
-        if (workflowId) {
-          // A node tool or source the owner can't use would run with the
-          // caller's access: ask first, then save again with their answer.
-          const updateResponse = await saveWithSponsorConsent(
-            (confirm) =>
-              userService.updateWorkflow(
-                workflowId,
-                confirm.length > 0
-                  ? { ...workflowPayload, confirm_sponsor: confirm }
-                  : workflowPayload,
-                token,
-              ),
-            sponsorPrompt.ask,
-            takeovers,
-          );
-          if (!updateResponse) return 'cancelled';
-          if (!updateResponse.ok) {
-            const refusal = await readSponsorRefusal(updateResponse);
-            if (refusal?.kind === 'unexpected') {
-              // Someone changed the workflow since the caller chose.
-              setTakeovers([]);
-              void refreshResourceDetails(workflowId);
-              throw new Error(t('agents.form.sponsors.confirmationOutdated'));
-            }
-            if (refusal?.kind === 'notAllowed') {
-              throw new Error(
-                sponsorNotAllowedMessage(t, i18n.language, refusal.resources),
-              );
-            }
-            const errorData = await updateResponse.json().catch(() => ({}));
-            throw new Error(
-              errorData.message ||
-                t('agents.workflow.builder.updateWorkflowFailed'),
-            );
-          }
-
-          if (effectiveAgentId) {
-            const agentFormData = new FormData();
-            agentFormData.append('name', workflowName);
-            agentFormData.append(
-              'description',
-              workflowDescription || `Workflow agent: ${workflowName}`,
-            );
-            agentFormData.append('status', 'published');
-            agentFormData.append(
-              'allow_system_prompt_override',
-              currentAgent.allow_system_prompt_override ? 'True' : 'False',
-            );
-            if (imageFile) {
-              agentFormData.append('image', imageFile);
-            }
-            // Only what Workflow details changed. The config replaces the
-            // stored one whole, so the rest comes from the server's copy as
-            // it is now, not as the builder loaded it: a guardrails or
-            // allowlist change saved meanwhile elsewhere stays. No fresh
-            // copy, no save.
-            const savedConfig = pendingConfig
-              ? {
-                  ...((await readSavedConfig(effectiveAgentId)) ?? {}),
-                  ...pendingConfig,
-                }
-              : null;
-            if (savedConfig)
-              agentFormData.append('config', JSON.stringify(savedConfig));
-            const agentUpdateResponse = await userService.updateAgent(
-              effectiveAgentId,
-              agentFormData,
-              token,
-            );
-            if (!agentUpdateResponse.ok) {
-              throw new Error(t('agents.workflow.builder.updateAgentFailed'));
-            }
-            const updatedAgent = await agentUpdateResponse
-              .json()
-              .catch(() => null);
-            setCurrentAgent((prev) => ({
-              ...prev,
-              ...(updatedAgent || {}),
-              id: effectiveAgentId,
-              name: workflowName,
-              description:
-                workflowDescription || `Workflow agent: ${workflowName}`,
-              image: updatedAgent?.image || prev.image || '',
-              ...(savedConfig
-                ? { config: updatedAgent?.config ?? savedConfig }
-                : {}),
-            }));
-            setPendingConfig(null);
-          }
-          setImageFile(null);
-          setSavedWorkflowSignature(JSON.stringify(workflowPayload));
-          setTakeovers([]);
-          void refreshResourceDetails(workflowId);
-          if (navigateAfterSuccess) {
-            navigateBackToAgents();
-          }
-          return 'saved';
-        }
-
-        const createResponse = await userService.createWorkflow(
-          workflowPayload,
-          token,
-        );
-        if (!createResponse.ok) {
-          const errorData = await createResponse.json().catch(() => ({}));
-          const backendErrors = errorData.errors || [];
-          if (backendErrors.length > 0) {
-            setPublishErrors(backendErrors);
-            return 'failed';
-          }
-          throw new Error(
-            errorData.message ||
-              t('agents.workflow.builder.createWorkflowFailed'),
-          );
-        }
-        const responseData = await createResponse.json();
-        savedWorkflowId = responseData?.data?.id ?? responseData?.id;
-        createdWorkflowId = savedWorkflowId || null;
-        if (savedWorkflowId) {
-          setWorkflowId(savedWorkflowId);
-        }
-
-        const agentFormData = new FormData();
-        agentFormData.append('name', workflowName);
-        agentFormData.append(
-          'description',
-          workflowDescription || `Workflow agent: ${workflowName}`,
-        );
-        agentFormData.append('agent_type', 'workflow');
-        agentFormData.append('status', 'published');
-        agentFormData.append('workflow', savedWorkflowId || '');
-        agentFormData.append(
+        const creating = !effectiveAgentId;
+        const formData = new FormData();
+        formData.append('name', workflowName);
+        // As typed; a workflow agent's description may be blank.
+        formData.append('description', workflowDescription);
+        formData.append('status', status);
+        formData.append(
           'allow_system_prompt_override',
           currentAgent.allow_system_prompt_override ? 'True' : 'False',
         );
-        if (imageFile) {
-          agentFormData.append('image', imageFile);
-        }
-        if (folderId) agentFormData.append('folder_id', folderId);
-        // A new agent: there is no stored config to read again.
-        const createdConfig = pendingConfig
-          ? { ...(currentAgent.config ?? {}), ...pendingConfig }
-          : null;
-        if (createdConfig)
-          agentFormData.append('config', JSON.stringify(createdConfig));
-
-        const agentResponse = await userService.createAgent(
-          agentFormData,
-          token,
+        formData.append(
+          'workflow_graph',
+          JSON.stringify({
+            nodes: workflowPayload.nodes,
+            edges: workflowPayload.edges,
+            retry_defaults: workflowPayload.retry_defaults,
+          }),
         );
-        if (!agentResponse.ok) {
-          const errorData = await agentResponse.json().catch(() => ({}));
-          throw new Error(
-            errorData.message || t('agents.workflow.builder.createAgentFailed'),
-          );
+        if (imageFile) formData.append('image', imageFile);
+        if (creating) {
+          formData.append('agent_type', 'workflow');
+          if (folderId) formData.append('folder_id', folderId);
+        } else if (currentAgent.updated_at) {
+          // A team editor's save is refused when someone saved in between.
+          formData.append('expected_updated_at', currentAgent.updated_at);
         }
-        const agentData = await agentResponse.json().catch(() => ({}));
-        if (agentData?.id) {
-          setCurrentAgentId(agentData.id);
-          setCurrentAgent({
-            ...createEmptyWorkflowAgent(),
-            ...agentData,
-            id: agentData.id,
-            name: workflowName,
-            description:
-              workflowDescription || `Workflow agent: ${workflowName}`,
-            image: agentData.image || '',
-            workflow: savedWorkflowId || undefined,
-            agent_type: 'workflow',
-            status: 'published',
-            ...(createdConfig
-              ? { config: agentData.config ?? createdConfig }
-              : {}),
-          });
-          setPendingConfig(null);
+        // Only what Workflow details changed. The config replaces the stored
+        // one whole, so on an update the rest comes from the server's copy as
+        // it is now, not as the builder loaded it: a guardrails or allowlist
+        // change saved meanwhile elsewhere stays. No fresh copy, no save.
+        const savedConfig = !pendingConfig
+          ? null
+          : creating
+            ? { ...(currentAgent.config ?? {}), ...pendingConfig }
+            : {
+                ...((await readSavedConfig(effectiveAgentId)) ?? {}),
+                ...pendingConfig,
+              };
+        if (savedConfig) formData.append('config', JSON.stringify(savedConfig));
+
+        // A node tool or source the owner can't use would run with the
+        // caller's access: ask first, then save again with their answer.
+        const result = await sponsoredSave.save(
+          (confirm) => {
+            if (confirm.length > 0)
+              formData.set('confirm_sponsor', JSON.stringify(confirm));
+            else formData.delete('confirm_sponsor');
+            return creating
+              ? userService.createAgent(formData, token)
+              : userService.updateAgent(effectiveAgentId, formData, token);
+          },
+          creating
+            ? t('agents.workflow.builder.createAgentFailed')
+            : t('agents.workflow.builder.updateAgentFailed'),
+        );
+        if (result.status === 'cancelled') return 'cancelled';
+        if (result.status === 'failed') {
+          // A graph the server can't run lists each problem.
+          const listed = (result.body as { errors?: unknown } | null)?.errors;
+          setPublishErrors(
+            Array.isArray(listed) && listed.length > 0
+              ? listed.map(String)
+              : [result.message],
+          );
+          return 'failed';
         }
 
-        setImageFile(null);
-        setSavedWorkflowSignature(JSON.stringify(workflowPayload));
-        if (navigateAfterSuccess) {
-          navigateBackToAgents();
+        const data = await result.response.json().catch(() => ({}));
+        const agentId: string = data?.id || effectiveAgentId;
+        const savedWorkflowId: string | null =
+          data?.workflow_id || workflowId || null;
+        setCurrentAgentId(agentId);
+        setCurrentAgent((prev) => ({
+          ...(creating ? createEmptyWorkflowAgent() : prev),
+          id: agentId,
+          name: workflowName,
+          description: workflowDescription,
+          image: data?.image || prev.image || '',
+          key: data?.key ?? prev.key,
+          // The stamp the next save sends.
+          updated_at: data?.updated_at ?? prev.updated_at,
+          agent_type: 'workflow',
+          status,
+          workflow: savedWorkflowId || undefined,
+          allow_system_prompt_override:
+            currentAgent.allow_system_prompt_override,
+          ...(savedConfig ? { config: savedConfig } : {}),
+        }));
+        loadedAgentFields.current = {
+          name: workflowName,
+          description: workflowDescription,
+        };
+        if (savedWorkflowId && savedWorkflowId !== workflowId) {
+          // The canvas holds what was saved: no reading it back.
+          justSavedWorkflowId.current = savedWorkflowId;
+          setWorkflowId(savedWorkflowId);
+          // The save's own refresh ran before the workflow had an id here:
+          // read its sponsors and run states now.
+          void refreshResourceDetails(savedWorkflowId);
         }
+        setPendingConfig(null);
+        setImageFile(null);
+        // What was sent is saved, a draft too: the leave guard starts over.
+        markSaved(JSON.stringify(workflowPayload));
+        setAutoFilledModels({});
         return 'saved';
       } catch (error) {
-        if (createdWorkflowId) {
-          try {
-            const cleanupResponse = await userService.deleteWorkflow(
-              createdWorkflowId,
-              token,
-            );
-            if (cleanupResponse.ok) {
-              setWorkflowId(null);
-            }
-          } catch (cleanupError) {
-            console.error(
-              'Failed to clean up workflow after publish error:',
-              cleanupError,
-            );
-          }
-        }
         console.error('Failed to save workflow:', error);
         setPublishErrors([
           error instanceof Error
@@ -1691,6 +2003,8 @@ function WorkflowBuilderInner() {
     },
     [
       validateWorkflow,
+      pendingSchemaNodes,
+      agentJsonSchemaErrors,
       buildWorkflowPayload,
       workflowId,
       token,
@@ -1700,15 +2014,16 @@ function WorkflowBuilderInner() {
       imageFile,
       currentAgent.allow_system_prompt_override,
       currentAgent.config,
+      currentAgent.status,
+      currentAgent.updated_at,
       readSavedConfig,
       pendingConfig,
       folderId,
-      navigateBackToAgents,
       t,
-      i18n.language,
-      sponsorPrompt.ask,
-      takeovers,
+      sponsoredSave.save,
       refreshResourceDetails,
+      markSaved,
+      canSave,
     ],
   );
 
@@ -1738,10 +2053,12 @@ function WorkflowBuilderInner() {
   // once they are in state (the effect below), so the request carries them.
   const handleDetailsSave = useCallback(
     (values: WorkflowDetailsSave) => {
-      // A save is already out: this one would race it.
-      if (persistingRef.current || detailsSaving) return;
+      // A save is already out: this one would race it. Nothing saves before
+      // the workflow has loaded.
+      if (persistingRef.current || detailsSaving || !canSave) return;
       setWorkflowName(values.name);
       setWorkflowDescription(values.description);
+      setRetryDefaults(values.retryDefaults ?? null);
       setCurrentAgent((prev) => ({
         ...prev,
         allow_system_prompt_override: values.allowPromptOverride,
@@ -1777,8 +2094,13 @@ function WorkflowBuilderInner() {
       currentAgent.config?.context_window_limit,
       currentAgent.config?.history_token_limit,
       detailsSaving,
+      canSave,
     ],
   );
+
+  // A saved, published workflow: Save edits it. A new or draft one: Save
+  // draft keeps it a draft and Publish publishes it.
+  const isPublished = canManageAgent && currentAgent.status !== 'draft';
 
   useEffect(() => {
     if (!detailsSaveRequested) return;
@@ -1786,29 +2108,39 @@ function WorkflowBuilderInner() {
     setDetailsSaving(true);
     setDetailsSaveFailed(false);
     const session = detailsSessionRef.current;
-    void persistWorkflow(false).then((outcome) => {
-      setDetailsSaving(false);
-      if (session !== detailsSessionRef.current) return;
-      if (outcome === 'saved') setShowDetails(false);
-      // Declining the sponsor confirmation leaves the sheet open, no error.
-      else if (outcome === 'failed') setDetailsSaveFailed(true);
-    });
-  }, [detailsSaveRequested, persistWorkflow]);
+    // Details save the workflow as it is: a draft stays a draft (a new one
+    // becomes one), a published one stays published.
+    void persistWorkflow(isPublished ? 'published' : 'draft').then(
+      (outcome) => {
+        setDetailsSaving(false);
+        if (session !== detailsSessionRef.current) return;
+        if (outcome === 'saved') setShowDetails(false);
+        // Declining the sponsor confirmation leaves the sheet open, no error.
+        else if (outcome === 'failed') setDetailsSaveFailed(true);
+      },
+    );
+  }, [detailsSaveRequested, persistWorkflow, isPublished]);
 
-  // Save on a saved workflow is an edit; the first save publishes it. A new
-  // workflow has no access fields, so it reads as the owner's.
-  // Without it the Save/Publish button isn't rendered at all.
-  const canSubmit = can(currentAgent, canManageAgent ? 'edit' : 'publish');
+  // Save on a published workflow is an edit and needs a change; Publish on a
+  // new or draft one doesn't. A new workflow has no access fields, so it
+  // reads as the owner's. Without the right the button isn't rendered.
+  const canSubmit = can(currentAgent, isPublished ? 'edit' : 'publish');
   const isPrimaryActionDisabled =
-    isPublishing || (canManageAgent && !hasSavableChanges);
-  const primaryActionLabel = canManageAgent
+    isPublishing || !canSave || (isPublished && !hasUnsavedWork);
+  const primaryActionLabel = isPublished
     ? t('agents.form.buttons.save')
     : t('agents.form.buttons.publish');
+  // Save draft, like the agent builder's, until the workflow is published.
+  const canSaveDraft = !isPublished && can(currentAgent, 'edit');
 
   const handlePrimaryAction = useCallback(() => {
     if (isPrimaryActionDisabled) return;
-    void persistWorkflow(false);
+    void persistWorkflow('published');
   }, [isPrimaryActionDisabled, persistWorkflow]);
+  const handleSaveDraft = useCallback(() => {
+    if (isPublishing || !canSave) return;
+    void persistWorkflow('draft');
+  }, [isPublishing, canSave, persistWorkflow]);
 
   // Stopped node resources still on the canvas.
   const stoppedResources = useMemo(
@@ -1833,9 +2165,14 @@ function WorkflowBuilderInner() {
     (item: ResourceState) => {
       takeSnapshot();
       setNodes((prev) => withoutNodeResource(prev, item));
-      setTakeovers((prev) => prev.filter((k) => k !== item.key));
+      // The open node panel edits from the selected node: without this its
+      // picker keeps the tool, and its next edit puts it back.
+      setSelectedNode((prev) =>
+        prev ? withoutNodeResource([prev], item)[0] : prev,
+      );
+      sponsoredSave.undoTakeover(item.key);
     },
-    [takeSnapshot],
+    [takeSnapshot, sponsoredSave.undoTakeover],
   );
 
   /**
@@ -1844,19 +2181,13 @@ function WorkflowBuilderInner() {
    * confirms it.
    */
   const takeOverResource = useCallback(
-    async (item: ResourceState) => {
-      const agreed = await confirmTakeOver(
-        sponsorPrompt.ask,
+    (item: ResourceState) =>
+      sponsoredSave.takeOver(
         item,
         resolveResourceName(item),
         workflowResources.audience,
-      );
-      if (agreed)
-        setTakeovers((prev) =>
-          prev.includes(item.key) ? prev : [...prev, item.key],
-        );
-    },
-    [resolveResourceName, sponsorPrompt.ask, workflowResources.audience],
+      ),
+    [resolveResourceName, sponsoredSave.takeOver, workflowResources.audience],
   );
 
   /** Sign a stopped node tool's connection in again, in place where possible. */
@@ -2004,6 +2335,7 @@ function WorkflowBuilderInner() {
         onDeleted={navigateBackToAgents}
         onKeyRegenerated={handleKeyRegenerated}
         onConfigChange={handleConfigChange}
+        getSavedConfig={getSavedConfig}
       />
       <div className="bg-background fixed inset-0 z-50 hidden h-dvh w-full flex-col lg:flex">
         <div className="border-border bg-background flex items-center justify-between gap-4 border-b px-6 py-4">
@@ -2013,8 +2345,9 @@ function WorkflowBuilderInner() {
             agentImage={currentAgentImage}
             access={canManageAgent ? currentAgent : undefined}
             onNameClick={openDetails}
+            onNavigate={leaveGuard.onNavigate()}
             status={
-              canManageAgent && currentAgent.status !== 'draft' ? (
+              isPublished ? (
                 <Badge variant="success">
                   {t('agents.form.status.published')}
                 </Badge>
@@ -2025,10 +2358,23 @@ function WorkflowBuilderInner() {
             inline
           />
           <div className="flex shrink-0 items-center gap-2">
-            {(!canManageAgent || hasSavableChanges) && (
+            {hasUnsavedWork && (
               <span className="text-muted-foreground mr-2 text-sm">
                 {t('agents.workflow.builder.unsavedChanges')}
               </span>
+            )}
+            {canSaveDraft && (
+              <Button
+                type="button"
+                variant="outline"
+                size="field"
+                shape="pill"
+                onClick={handleSaveDraft}
+                disabled={isPublishing || !canSave}
+                loading={showPrimaryActionSpinner && savingStatus === 'draft'}
+              >
+                {t('agents.form.buttons.saveDraft')}
+              </Button>
             )}
             <Button
               type="button"
@@ -2053,7 +2399,9 @@ function WorkflowBuilderInner() {
                 type="button"
                 onClick={handlePrimaryAction}
                 disabled={isPrimaryActionDisabled}
-                loading={showPrimaryActionSpinner}
+                loading={
+                  showPrimaryActionSpinner && savingStatus === 'published'
+                }
                 size="field"
                 shape="pill"
               >
@@ -2110,7 +2458,7 @@ function WorkflowBuilderInner() {
                 <AlertTitle>
                   {errorContext === 'preview'
                     ? t('agents.workflow.builder.unablePreview')
-                    : canManageAgent
+                    : errorContext === 'save'
                       ? t('agents.workflow.builder.unableSave')
                       : t('agents.workflow.builder.unablePublish')}
                 </AlertTitle>
@@ -2150,9 +2498,7 @@ function WorkflowBuilderInner() {
                     readerId={readerId}
                     takeovers={takeovers}
                     onTakeOver={(item) => void takeOverResource(item)}
-                    onUndoTakeover={(key) =>
-                      setTakeovers((prev) => prev.filter((k) => k !== key))
-                    }
+                    onUndoTakeover={sponsoredSave.undoTakeover}
                     onRemove={removeResource}
                     onReconnect={reconnectResource}
                     onClose={close}
@@ -2160,35 +2506,54 @@ function WorkflowBuilderInner() {
                 )}
               </FloatingResourceNotice>
             )}
-            <WorkflowModelsContext.Provider value={modelNames}>
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onEdgeClick={onEdgeClick}
-                onDrop={onDrop}
-                onDragOver={onDragOver}
-                onNodeClick={handleNodeClick}
-                onPaneClick={handlePaneClick}
-                onNodeDragStart={snapshotBeforeCanvasChange}
-                onSelectionDragStart={snapshotBeforeCanvasChange}
-                nodeTypes={nodeTypes}
-                nodeDragThreshold={1}
-                deleteKeyCode={null}
-                proOptions={{ hideAttribution: true }}
-                fitView
-              >
-                <Background />
-                <CanvasControls
-                  onUndo={undo}
-                  onRedo={redo}
-                  canUndo={canUndo}
-                  canRedo={canRedo}
+            {loadFailed ? (
+              // Never an editable empty canvas: saving it would replace the
+              // graph that didn't load.
+              <div className="flex h-full items-center justify-center px-6">
+                <EmptyState
+                  tone="destructive"
+                  illustration="none"
+                  title={t('agents.workflow.builder.loadFailedTitle')}
+                  description={t(
+                    'agents.workflow.builder.loadFailedDescription',
+                  )}
+                  onRetry={() => {
+                    setLoadFailed(false);
+                    setLoadAttempt((attempt) => attempt + 1);
+                  }}
                 />
-              </ReactFlow>
-            </WorkflowModelsContext.Provider>
+              </div>
+            ) : (
+              <WorkflowModelsContext.Provider value={modelNames}>
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onEdgeClick={onEdgeClick}
+                  onDrop={onDrop}
+                  onDragOver={onDragOver}
+                  onNodeClick={handleNodeClick}
+                  onPaneClick={handlePaneClick}
+                  onNodeDragStart={snapshotBeforeCanvasChange}
+                  onSelectionDragStart={snapshotBeforeCanvasChange}
+                  nodeTypes={nodeTypes}
+                  nodeDragThreshold={1}
+                  deleteKeyCode={null}
+                  proOptions={{ hideAttribution: true }}
+                  fitView
+                >
+                  <Background />
+                  <CanvasControls
+                    onUndo={undo}
+                    onRedo={redo}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
+                  />
+                </ReactFlow>
+              </WorkflowModelsContext.Provider>
+            )}
           </div>
 
           {showNodeConfig && selectedNode && (
@@ -2207,7 +2572,6 @@ function WorkflowBuilderInner() {
                   edges={edges}
                   availableModels={availableModels}
                   availableTools={availableTools}
-                  sourceOptions={sourceOptions}
                   attachedTools={nodeRefNames.tools}
                   attachedSources={nodeRefNames.sources}
                   documentOptions={selectedAgentDocumentOptions}
@@ -2217,6 +2581,13 @@ function WorkflowBuilderInner() {
                     selectedAgentModelSupportsStructuredOutput
                   }
                   onJsonSchemaChange={handleAgentJsonSchemaChange}
+                  retryDefaults={retryDefaults}
+                  onReloadTools={loadTools}
+                  onNavigateAway={leaveGuard.onNavigate()}
+                  onLeaveTo={leaveGuard.leaveTo}
+                  onReconnect={(connection, mcpToolId) =>
+                    signInAgain.reconnect(connection, mcpToolId)
+                  }
                 />
               )}
               {selectedNode.type === 'note' && (
@@ -2238,6 +2609,12 @@ function WorkflowBuilderInner() {
                   onRemoveBranch={handleRemoveConditionBranch}
                 />
               )}
+              {selectedNode.type === 'loop' && (
+                <LoopPanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                />
+              )}
               {selectedNode.type === 'code' && (
                 <CodePanel
                   node={selectedNode}
@@ -2246,6 +2623,7 @@ function WorkflowBuilderInner() {
                   jsonSchemaText={selectedCodeJsonSchemaText}
                   jsonSchemaError={selectedCodeJsonSchemaError}
                   onJsonSchemaChange={handleCodeJsonSchemaChange}
+                  retryDefaults={retryDefaults}
                 />
               )}
             </NodePanel>
@@ -2271,6 +2649,7 @@ function WorkflowBuilderInner() {
               pendingConfig && 'history_token_limit' in pendingConfig
                 ? (pendingConfig.history_token_limit ?? null)
                 : (currentAgent.config?.history_token_limit ?? null),
+            retryDefaults,
           }}
           modelWindow={workflowModelWindow}
           policyEditable={can(currentAgent, 'edit_policy')}
@@ -2302,20 +2681,8 @@ function WorkflowBuilderInner() {
             workflowData={{
               name: workflowName,
               description: workflowDescription,
-              nodes: nodes
-                .filter((n) => n.type !== 'note')
-                .map((n) => ({
-                  id: n.id,
-                  type: n.type as 'start' | 'end' | 'agent' | 'state' | 'code',
-                  title: n.data.title || n.data.label || n.type,
-                  position: n.position,
-                  data:
-                    n.type === 'code'
-                      ? serializeCodeConfig(n.data.config)
-                      : n.type === 'agent'
-                        ? n.data.config
-                        : n.data,
-                })),
+              retry_defaults: normalizeRetryConfig(retryDefaults) ?? null,
+              nodes: nodes.filter((n) => n.type !== 'note').map(serializeNode),
               edges: edges.map((e) => ({
                 id: e.id,
                 source: e.source,
@@ -2326,8 +2693,9 @@ function WorkflowBuilderInner() {
             }}
           />
         </AgentPreviewSheet>
-        {sponsorPrompt.modal}
+        {sponsoredSave.modal}
         {signInAgain.modals}
+        {leaveGuard.dialog}
         <ConfirmationModal
           message={
             workflowName
@@ -2375,6 +2743,7 @@ function WorkflowBuilderInner() {
             openApiWrites={detailsOnApiWrites}
             onKeyRegenerated={handleKeyRegenerated}
             onConfigChange={handleConfigChange}
+            getSavedConfig={getSavedConfig}
           />
         )}
       </div>

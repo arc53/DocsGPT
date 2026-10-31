@@ -44,6 +44,8 @@ SCOPES: dict[str, str] = {
     "models:write": "Create, update, test and delete custom models",
     "workflows:read": "View workflows",
     "workflows:write": "Create, update and delete workflows",
+    "runs:read": "View the workflow runs you started: status, steps, final state and the files they produced",
+    "artifacts:read": "Download files that your workflow runs produced, and view and download your artifacts",
     "schedules:read": "View agent schedules and their runs",
     "schedules:write": "Create, update, run and delete agent schedules",
     "conversations:read": "View conversations and messages",
@@ -121,6 +123,10 @@ def normalize_resource_filter(raw: Any, scopes: list[str]) -> dict[str, list[str
     # chat:run acts on agents and sources, so both may be restricted alongside it.
     if "chat" in families:
         families.update({"agents", "sources"})
+    # A workflow run belongs to the agent that ran it, so run and artifact reads
+    # can be held to an agent allowlist.
+    if families & {"runs", "artifacts"}:
+        families.add("agents")
     if "tools" in raw and "chat:run" in scopes:
         # Chat executes tools (an agent's own, or the user's defaults), which cannot be held to an allowlist.
         raise ValueError("resource_filter.tools cannot be combined with the chat:run scope")

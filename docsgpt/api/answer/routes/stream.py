@@ -19,6 +19,7 @@ from docsgpt.api.answer.services.continuation_service import (
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
 from docsgpt.api.answer.services.stream_processor import (
     StreamProcessor,
+    UnfinishedWorkflowError,
     flush_trace_after_request,
 )
 from docsgpt.error import bounded_error_text
@@ -206,6 +207,13 @@ class StreamResource(Resource, BaseAnswerResource):
             logger.info("/stream - turn does not fit the context window: %s", bounded_error_text(e))
             return Response(
                 self.curated_error_stream_generate(e),
+                status=400,
+                mimetype="text/event-stream",
+            )
+        except UnfinishedWorkflowError as e:
+            # A draft workflow agent whose stored graph isn't finished. Nothing ran.
+            return Response(
+                self.error_stream_generate(e.message, code=e.code),
                 status=400,
                 mimetype="text/event-stream",
             )

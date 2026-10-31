@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
@@ -64,6 +65,21 @@ class TestListForUser:
 
 
 class TestUpdate:
+    def test_updates_and_clears_retry_defaults(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "wf", retry_defaults={"max_attempts": 3})
+        assert repo.get(created["id"], "user-1")["retry_defaults"] == {"max_attempts": 3}
+        assert repo.update(created["id"], "user-1", {"retry_defaults": {"max_attempts": 2, "on": ["transient"]}})
+        assert repo.get(created["id"], "user-1")["retry_defaults"] == {"max_attempts": 2, "on": ["transient"]}
+        assert repo.update(created["id"], "user-1", {"retry_defaults": None})
+        assert repo.get(created["id"], "user-1")["retry_defaults"] is None
+
+    def test_clone_keeps_retry_defaults(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "wf", retry_defaults={"max_attempts": 4})
+        clone = repo.clone_to_user(str(created["id"]), "user-2", from_owner="user-1")
+        assert clone["retry_defaults"] == {"max_attempts": 4}
+
     def test_updates_name(self, pg_conn):
         repo = _repo(pg_conn)
         created = repo.create("user-1", "old")
@@ -163,3 +179,22 @@ class TestDelete:
 
         assert repo.delete(wf["id"], "intruder") is False
         assert artifacts.get_artifact(art["id"]) is not None
+
+
+class TestGetForUpdate:
+    @pytest.mark.fresh_db
+    def test_a_save_lock_serialises_saves_but_not_run_starts(self, pg_engine):
+        """Another save waits for the row; a run's foreign key (FOR KEY SHARE) doesn't."""
+        from sqlalchemy import text
+        from sqlalchemy.exc import OperationalError
+
+        with pg_engine.connect() as setup, setup.begin():
+            wid = str(_repo(setup).create("user-1", "wf")["id"])
+        lock = "SELECT 1 FROM workflows WHERE id = CAST(:id AS uuid) {} NOWAIT"
+        with pg_engine.connect() as saving, saving.begin():
+            assert _repo(saving).get_for_update(wid)["id"] == wid
+            with pg_engine.connect() as other, other.begin():
+                assert other.execute(text(lock.format("FOR KEY SHARE")), {"id": wid}).scalar() == 1
+            with pg_engine.connect() as other, other.begin():
+                with pytest.raises(OperationalError):
+                    other.execute(text(lock.format("FOR NO KEY UPDATE")), {"id": wid})

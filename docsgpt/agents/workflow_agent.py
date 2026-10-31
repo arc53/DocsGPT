@@ -167,7 +167,13 @@ class WorkflowAgent(BaseAgent):
         done = 0
         try:
             for event in events:
-                if record and event.get("type") == "workflow_step" and event.get("node_type") not in _NOT_STEPS:
+                # A loop item's own steps are progress within the loop's step.
+                if (
+                    record
+                    and event.get("type") == "workflow_step"
+                    and event.get("node_type") not in _NOT_STEPS
+                    and not event.get("parent_node_id")
+                ):
                     if event.get("status") == "running":
                         self._record_progress(
                             str(run_user_id),
@@ -179,6 +185,8 @@ class WorkflowAgent(BaseAgent):
                                     "title": event.get("node_title"),
                                     "type": event.get("node_type"),
                                     "started_at": datetime.now(timezone.utc).isoformat(),
+                                    # Set when the step is being retried.
+                                    **({"attempt": event["attempt"]} if event.get("attempt") else {}),
                                 },
                             },
                         )
@@ -224,9 +232,11 @@ class WorkflowAgent(BaseAgent):
             nodes_data = self._workflow_data.get("nodes", [])
             edges_data = self._workflow_data.get("edges", [])
 
+            retry_defaults = self._workflow_data.get("retry_defaults")
             workflow = Workflow(
                 name=self._workflow_data.get("name", "Embedded Workflow"),
                 description=self._workflow_data.get("description"),
+                retry_defaults=retry_defaults if isinstance(retry_defaults, dict) else None,
             )
 
             nodes = []
@@ -305,6 +315,7 @@ class WorkflowAgent(BaseAgent):
             workflow = Workflow(
                 name=workflow_row.get("name"),
                 description=workflow_row.get("description"),
+                retry_defaults=workflow_row.get("retry_defaults"),
             )
             nodes = [
                 WorkflowNode(
@@ -578,7 +589,7 @@ class WorkflowAgent(BaseAgent):
                 user=run_user_id,
                 status=status,
                 inputs=self._run_inputs(query),
-                outputs=self._serialize_state(self._engine.state),
+                outputs=self._serialize_state(self._engine.snapshot_state()),
                 steps=self._engine.get_execution_summary(),
                 created_at=datetime.now(timezone.utc),
                 completed_at=datetime.now(timezone.utc),
@@ -631,6 +642,9 @@ class WorkflowAgent(BaseAgent):
             return ExecutionStatus.FAILED
         if not self._engine or not self._engine.execution_log:
             return ExecutionStatus.COMPLETED
+        # A run cut off by the step cap has no failed node log, only this flag.
+        if self._engine.step_limit_reached:
+            return ExecutionStatus.FAILED
         for log in self._engine.execution_log:
             if log.get("status") == ExecutionStatus.FAILED.value:
                 return ExecutionStatus.FAILED

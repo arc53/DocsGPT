@@ -113,6 +113,49 @@ class AgentSettings(SettingsGroup):
             "could serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows on a web threadpool slot."
         ),
     )
+    WORKFLOW_STREAM_MAX_EVENT_BYTES: int = Field(
+        default=32 * 1024,
+        ge=1024,
+        description=(
+            "Largest workflow step event a run streams, in bytes of JSON. A finished step whose output and state "
+            "changes are larger is streamed as a summary (an output preview and the changed keys); the full values "
+            "stay in the run's saved steps. A node set to stream_output: full is exempt."
+        ),
+    )
+    WORKFLOW_DOCUMENT_LINES_CACHE_TTL: int = Field(
+        default=86400,
+        description=(
+            "Seconds the line-numbered text of a workflow input document (file_passing: lines) stays cached in "
+            "Redis, keyed by the file's content hash, so a later run over the same file skips the parse. 0 "
+            "disables the cache; a run still reads each document only once."
+        ),
+    )
+    WORKFLOW_LOOP_MAX_CONCURRENCY: int = Field(
+        default=4,
+        ge=1,
+        description=(
+            "Most items a loop node runs at once, whatever its own concurrency says. Each running item holds a "
+            "thread and usually an LLM call."
+        ),
+    )
+    WORKFLOW_LOOP_MAX_ITEMS: int = Field(
+        default=100,
+        ge=1,
+        description="Most items one loop node accepts, whatever its own max_items says; a longer list fails the node.",
+    )
+    WORKFLOW_RETRY_MAX_ATTEMPTS: int = Field(
+        default=5,
+        ge=1,
+        description="Most attempts a workflow node's retry policy may ask for; 1 turns node retries off.",
+    )
+    WORKFLOW_RETRY_MAX_DELAY_SECONDS: float = Field(
+        default=300,
+        ge=0,
+        description=(
+            "Longest wait before one retry of a workflow node. A Retry-After longer than this fails the node "
+            "instead of retrying early."
+        ),
+    )
     WORKFLOW_RUN_STALE_SECONDS: int = Field(
         default=3600,
         description=(

@@ -10,6 +10,7 @@ import { BaseNode } from './BaseNode';
 import OutputVariableLine from './OutputVariableLine';
 import CodeNode from './CodeNode';
 import ConditionNode from './ConditionNode';
+import LoopNode from './LoopNode';
 import SetStateNode from './SetStateNode';
 
 export const StartNode = memo(function StartNode({
@@ -159,3 +160,4 @@ export const NoteNode = memo(function NoteNode({
 export { SetStateNode };
 export { ConditionNode };
 export { CodeNode };
+export { LoopNode };

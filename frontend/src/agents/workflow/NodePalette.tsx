@@ -27,6 +27,7 @@ const PALETTE: PaletteEntry[] = [
     hintKey: 'agents.workflow.builder.conditionHint',
   },
   { type: 'code', group: 'logic', hintKey: 'agents.workflow.builder.codeHint' },
+  { type: 'loop', group: 'logic', hintKey: 'agents.workflow.builder.loopHint' },
 ];
 
 const GROUPS: { group: PaletteEntry['group']; titleKey: string }[] = [

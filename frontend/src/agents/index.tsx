@@ -57,7 +57,7 @@ export default function Agents() {
       <Route
         path="manage/edit/:agentId"
         element={
-          <AgentRouteGuard key="edit" action="view">
+          <AgentRouteGuard key="edit" action="view" classicEditor>
             <NewAgent mode="edit" />
           </AgentRouteGuard>
         }
@@ -73,7 +73,7 @@ export default function Agents() {
       <Route
         path="manage/analytics/:agentId"
         element={
-          <AgentRouteGuard key="analytics" action="view_logs">
+          <AgentRouteGuard key="analytics" action="view_analytics">
             <AgentAnalytics />
           </AgentRouteGuard>
         }
@@ -81,7 +81,7 @@ export default function Agents() {
       <Route
         path="manage/insights/:agentId"
         element={
-          <AgentRouteGuard key="insights" action="view_logs">
+          <AgentRouteGuard key="insights" action="view_analytics">
             <AgentInsights />
           </AgentRouteGuard>
         }

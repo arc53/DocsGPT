@@ -278,6 +278,35 @@ describe('WorkflowBuilder insights', () => {
     expect(sentConfig()).toBeNull();
   });
 
+  it('saves the retry defaults with the graph, not the agent config', async () => {
+    await render();
+    expect(
+      (sheet.props!.details as { retryDefaults: unknown }).retryDefaults,
+    ).toBeNull();
+    const onSave = sheet.props!.onSave as (values: object) => void;
+    await act(async () =>
+      onSave({
+        name: 'Renewal desk',
+        description: '',
+        allowPromptOverride: false,
+        imageFile: null,
+        analytics: details().analytics,
+        retryDefaults: { max_attempts: 3, backoff_seconds: [5] },
+      }),
+    );
+    await act(async () => undefined);
+    const form = updateAgent.mock.calls.at(-1)![1] as FormData;
+    expect(JSON.parse(form.get('workflow_graph') as string)).toMatchObject({
+      retry_defaults: { max_attempts: 3, backoff_seconds: [5] },
+    });
+    // One request: the graph goes with the agent.
+    expect(updateWorkflow).not.toHaveBeenCalled();
+    expect(sentConfig()).toBeNull();
+    expect(
+      (sheet.props!.details as { retryDefaults: unknown }).retryDefaults,
+    ).toEqual({ max_attempts: 3, backoff_seconds: [5] });
+  });
+
   it('sends no config when the insights are unchanged', async () => {
     await render();
     await save();
@@ -369,12 +398,12 @@ describe('WorkflowBuilder insights', () => {
       await openDetails();
       await save({ ...details().analytics, digest: true });
       await save({ ...details().analytics, digest: true });
-      expect(updateWorkflow).toHaveBeenCalledTimes(1);
+      expect(updateAgent).toHaveBeenCalledTimes(1);
       await act(async () =>
         finish({ ok: true, json: () => Promise.resolve({ id: 'a1' }) }),
       );
       await act(async () => undefined);
-      expect(updateWorkflow).toHaveBeenCalledTimes(1);
+      expect(updateAgent).toHaveBeenCalledTimes(1);
     });
   });
 });

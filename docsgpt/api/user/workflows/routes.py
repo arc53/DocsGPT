@@ -1,11 +1,22 @@
 """Workflow management routes."""
 
+import json
+import re
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 from sqlalchemy import text as sql_text
 
+from docsgpt.agents.workflows.schemas import (
+    LOOP_BODY_NODE_TYPES,
+    LOOP_RESERVED_VARIABLES,
+    NodeType,
+    STREAM_OUTPUT_VALUES,
+    parent_id_of,
+)
+from docsgpt.agents.workflows.retry import validate_retry_config
 from docsgpt.agents.workflows.cel_evaluator import (
     CelEvaluationError,
     validate_cel_expression,
@@ -13,12 +24,13 @@ from docsgpt.agents.workflows.cel_evaluator import (
 from docsgpt.api.user import resource_access
 from docsgpt.api.user.resource_access import (
     AccessDenied,
+    SponsorPlan,
     best_effort,
     cached_resolves,
-    can_use_ref,
     named_ref_keys,
     parse_confirmations,
     plan_sponsors,
+    ref_attachable,
     resolve,
     resource_states,
     sponsor_audience,
@@ -26,6 +38,7 @@ from docsgpt.api.user.resource_access import (
     sponsor_refusal,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
@@ -193,17 +206,11 @@ def _new_node_ref_denied(
     Returns:
         An :class:`AccessDenied` to return, or None when every new ref is fine.
     """
-    from docsgpt.agents.default_tools import is_synthesized_tool_id
-
     existing = set(_node_refs(previous_nodes))
     for resource_type, resource_id in _node_refs(new_nodes):
         if (resource_type, resource_id) in existing:
             continue
-        if resource_type == "tool" and is_synthesized_tool_id(resource_id):
-            continue
-        if resource_type == "source" and resource_id == "default":
-            continue
-        if not can_use_ref(conn, resource_type, resource_id, caller):
+        if not ref_attachable(conn, resource_type, resource_id, caller):
             return AccessDenied(403, f"{resource_type.capitalize()} not accessible")
     return None
 
@@ -281,6 +288,227 @@ def _write_graph(
     return created_nodes
 
 
+#: Node types a stored graph may hold (``schemas.NodeType``).
+GRAPH_NODE_TYPES = frozenset(t.value for t in NodeType)
+
+
+def workflow_graph_shape_errors(nodes: Any, edges: Any) -> List[str]:
+    """Why a graph can't be stored, or ``[]``: the checks a draft gets.
+
+    A draft may be unfinished (no end node, an unconnected agent), but it
+    must be a graph the builder can load and the store can write: node
+    objects with a unique string ``id``, a known ``type``, object (or
+    absent) ``position``, ``data`` and ``data.config``, and a text (or
+    absent) ``title`` and ``description``; edge objects with a unique string
+    ``id``, string ``source`` and ``target``, and text (or absent) handles.
+
+    Args:
+        nodes: The ``nodes`` value as sent.
+        edges: The ``edges`` value as sent.
+
+    Returns:
+        list[str]: The errors, empty when the shape is fine.
+    """
+    if not isinstance(nodes, list):
+        return ["Workflow nodes must be a list"]
+    if not isinstance(edges, list):
+        return ["Workflow edges must be a list"]
+    errors: List[str] = []
+    seen: Set[str] = set()
+    for index, node in enumerate(nodes):
+        if not isinstance(node, dict):
+            errors.append(f"Node {index + 1} must be an object")
+            continue
+        node_id = node.get("id")
+        if not isinstance(node_id, str) or not node_id.strip():
+            errors.append(f"Node {index + 1} needs an id")
+            continue
+        if node_id in seen:
+            errors.append(f"Duplicate node id: {node_id}")
+        seen.add(node_id)
+        node_type = node.get("type")
+        if not isinstance(node_type, str) or node_type not in GRAPH_NODE_TYPES:
+            errors.append(f"Node {node_id} has an unknown type: {node_type}")
+        for key in ("position", "data"):
+            if node.get(key) is not None and not isinstance(node.get(key), dict):
+                errors.append(f"Node {node_id} {key} must be an object")
+        data = node.get("data")
+        if isinstance(data, dict) and data.get("config") is not None and not isinstance(data["config"], dict):
+            # The engine reads a node's settings from ``data.config`` when present.
+            errors.append(f"Node {node_id} config must be an object")
+        for key in ("title", "description"):
+            if node.get(key) is not None and not isinstance(node.get(key), str):
+                errors.append(f"Node {node_id} {key} must be text")
+    seen_edges: Set[str] = set()
+    for index, edge in enumerate(edges):
+        if not isinstance(edge, dict) or not all(
+            isinstance(edge.get(key), str) and edge.get(key) for key in ("id", "source", "target")
+        ):
+            errors.append(f"Edge {index + 1} needs an id, a source and a target")
+            continue
+        edge_id = edge["id"]
+        if edge_id in seen_edges:
+            errors.append(f"Duplicate edge id: {edge_id}")
+        seen_edges.add(edge_id)
+        for key in ("sourceHandle", "targetHandle"):
+            if edge.get(key) is not None and not isinstance(edge.get(key), str):
+                errors.append(f"Edge {edge_id} {key} must be text")
+    return errors
+
+
+def parse_workflow_graph(raw: Any) -> Tuple[Optional[Dict], Optional[str]]:
+    """The ``workflow_graph`` of an agent save: an object, or its JSON text from a form.
+
+    Args:
+        raw: The request value.
+
+    Returns:
+        ``(graph, error)``: ``graph`` has ``nodes``, ``edges`` (default
+        ``[]``) and ``retry_defaults`` only when it was sent.
+    """
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None, "workflow_graph must be a JSON object"
+    if not isinstance(raw, dict):
+        return None, "workflow_graph must be a JSON object"
+    graph: Dict[str, Any] = {"nodes": raw.get("nodes"), "edges": raw.get("edges", [])}
+    if "retry_defaults" in raw:
+        graph["retry_defaults"] = raw.get("retry_defaults")
+    return graph, None
+
+
+def workflow_graph_errors(graph: Dict, *, draft: bool, user_id: Optional[str]) -> List[str]:
+    """Why a graph can't be saved: shape only for a draft, the full validation to publish.
+
+    Args:
+        graph: ``{nodes, edges, retry_defaults?}``.
+        draft: True to check the shape only.
+        user_id: Whose models the nodes run with (the owner).
+
+    Returns:
+        list[str]: The errors, empty when the graph may be saved.
+    """
+    errors = workflow_graph_shape_errors(graph.get("nodes"), graph.get("edges"))
+    if not errors and not draft:
+        errors = validate_workflow_structure(graph["nodes"], graph["edges"], user_id=user_id)
+    retry_error = retry_config_error(graph.get("retry_defaults"))
+    if retry_error:
+        errors.append(f"Workflow retry defaults {retry_error}")
+    return errors
+
+
+def stored_graph(conn, workflow: Dict) -> Tuple[List[Dict], List[Dict]]:
+    """The current graph version's nodes and edges in builder shape.
+
+    Args:
+        conn: Open database connection.
+        workflow: The workflow row.
+
+    Returns:
+        ``(nodes, edges)``.
+    """
+    wid = str(workflow["id"])
+    version = get_workflow_graph_version(workflow)
+    nodes = [serialize_node(n) for n in WorkflowNodesRepository(conn).find_by_version(wid, version)]
+    edges = [serialize_edge(e) for e in WorkflowEdgesRepository(conn).find_by_version(wid, version)]
+    return nodes, edges
+
+
+@dataclass
+class GraphSave:
+    """A graph save that passed the node ref gate, ready to write.
+
+    Attributes:
+        workflow: The workflow row before the save; None to create one.
+        graph: ``{nodes, edges, retry_defaults?}``, agent node schemas normalized.
+        plan: The workflow's sponsor plan; refuse the save when
+            ``sponsor_refusal`` says so.
+    """
+
+    workflow: Optional[Dict]
+    graph: Dict
+    plan: SponsorPlan
+
+
+def plan_graph_save(
+    conn, workflow: Optional[Dict], owner_id: str, caller: str, graph: Dict, confirmed: Set[str]
+) -> "GraphSave | AccessDenied":
+    """Check a graph save without writing anything: the node ref gate, then the sponsor plan.
+
+    The one path for POST/PUT /api/workflows and an agent save with an
+    inline ``workflow_graph``. A stored workflow is read again holding its
+    row lock, so a save that overlaps another builds on the version that
+    one wrote rather than writing into it.
+
+    Args:
+        conn: Open database connection.
+        workflow: The workflow row, or None when the save creates it.
+        owner_id: The workflow's owner (who it runs as).
+        caller: The user saving, owner or editor.
+        graph: A graph that passed :func:`workflow_graph_errors`.
+        confirmed: ``confirm_sponsor`` keys.
+
+    Returns:
+        The :class:`GraphSave`, or the :class:`AccessDenied` to answer with.
+    """
+    if workflow is not None:
+        workflow = WorkflowsRepository(conn).get_for_update(str(workflow["id"])) or workflow
+    nodes = normalize_agent_node_json_schemas(graph["nodes"])
+    previous_nodes = stored_graph(conn, workflow)[0] if workflow is not None else []
+    # Every newly referenced node tool or source must be one the caller may
+    # use, the owner included.
+    denied = _new_node_ref_denied(conn, previous_nodes, nodes, caller)
+    if denied is not None:
+        return denied
+    # A node tool/source the owner can't use runs as the editor who attached
+    # it (its sponsor): only someone who owns or edits it, and only once
+    # ``confirm_sponsor`` lists it.
+    plan = plan_sponsors(
+        conn, "workflow", workflow, owner_id, caller, _node_refs(nodes),
+        previous_refs=_node_refs(previous_nodes), confirmed=confirmed,
+    )
+    return GraphSave(workflow=workflow, graph={**graph, "nodes": nodes}, plan=plan)
+
+
+def write_graph_save(conn, save: GraphSave, owner_id: str, name: str, description: Optional[str]) -> str:
+    """Write a checked graph save: a new workflow at version 1, or the next version of the stored one.
+
+    Args:
+        conn: Open database connection (the caller's transaction).
+        save: The result of :func:`plan_graph_save`.
+        owner_id: The workflow's owner.
+        name: The workflow's name.
+        description: Its description.
+
+    Returns:
+        str: The workflow id.
+    """
+    graph = save.graph
+    repo = WorkflowsRepository(conn)
+    if save.workflow is None:
+        workflow = repo.create(owner_id, name, description=description, retry_defaults=graph.get("retry_defaults"))
+        workflow_id = str(workflow["id"])
+        _write_graph(conn, workflow_id, 1, graph["nodes"], graph["edges"])
+        if save.plan.sponsors:
+            repo.update(workflow_id, owner_id, {"resource_sponsors": save.plan.sponsors})
+        return workflow_id
+    workflow_id = str(save.workflow["id"])
+    next_version = get_workflow_graph_version(save.workflow) + 1
+    _write_graph(conn, workflow_id, next_version, graph["nodes"], graph["edges"])
+    fields: Dict[str, Any] = {"name": name, "description": description, "current_graph_version": next_version}
+    # A client that doesn't send the key keeps the saved defaults.
+    if "retry_defaults" in graph:
+        fields["retry_defaults"] = graph.get("retry_defaults")
+    if save.plan.sponsors != (save.workflow.get("resource_sponsors") or {}):
+        fields["resource_sponsors"] = save.plan.sponsors
+    repo.update(workflow_id, owner_id, fields)
+    WorkflowNodesRepository(conn).delete_other_versions(workflow_id, next_version)
+    WorkflowEdgesRepository(conn).delete_other_versions(workflow_id, next_version)
+    return workflow_id
+
+
 def serialize_workflow(w: Dict) -> Dict:
     """Serialize workflow row to API response format."""
     created_at = w.get("created_at")
@@ -289,6 +517,7 @@ def serialize_workflow(w: Dict) -> Dict:
         "id": str(w["id"]),
         "name": w.get("name"),
         "description": w.get("description"),
+        "retry_defaults": w.get("retry_defaults"),
         "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
         "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
     }
@@ -369,6 +598,17 @@ def normalize_agent_node_json_schemas(nodes: List[Dict]) -> List[Dict]:
         normalized_nodes.append(normalized_node)
 
     return normalized_nodes
+
+
+def retry_config_error(raw: Any) -> Optional[str]:
+    """Why a node's ``retry`` or a workflow's ``retry_defaults`` is invalid, or None."""
+    from docsgpt.core.settings import settings
+
+    return validate_retry_config(
+        raw,
+        max_attempts=int(settings.WORKFLOW_RETRY_MAX_ATTEMPTS),
+        max_delay=float(settings.WORKFLOW_RETRY_MAX_DELAY_SECONDS),
+    )
 
 
 def validate_workflow_structure(
@@ -505,8 +745,11 @@ def validate_workflow_structure(
                         f"has an invalid expression: {exc}"
                     )
 
+        # Inside a loop body a branch ends the item where it stops; there is
+        # no end node to reach.
+        in_loop_body = parent_id_of(cnode.get("data")) is not None
         for handle, handle_edges in outgoing_by_handle.items():
-            if not handle:
+            if not handle or in_loop_body:
                 continue
             for out_edge in handle_edges:
                 target = out_edge.get("target")
@@ -580,12 +823,15 @@ def validate_workflow_structure(
         model_id = raw_config.get("model_id")
         if has_json_schema and isinstance(model_id, str) and model_id.strip():
             capabilities = get_model_capabilities(model_id.strip(), user_id=user_id)
-            if capabilities and not capabilities.get("supports_structured_output", False):
+            if capabilities and not capabilities.get("supports_structured_output", True):
                 errors.append(
                     f"Agent node '{agent_title}' selected model does not support structured output"
                 )
         if schema_error:
             errors.append(f"Agent node '{agent_title}' JSON schema {schema_error}")
+        retry_error = retry_config_error(raw_config.get("retry"))
+        if retry_error:
+            errors.append(f"Agent node '{agent_title}' retry {retry_error}")
 
     code_nodes = [n for n in nodes if n.get("type") == "code"]
     for code_node in code_nodes:
@@ -599,12 +845,115 @@ def validate_workflow_structure(
         _, schema_error = validate_json_schema_payload(raw_config.get("json_schema"))
         if schema_error:
             errors.append(f"Code node '{code_title}' JSON schema {schema_error}")
+        retry_error = retry_config_error(raw_config.get("retry"))
+        if retry_error:
+            errors.append(f"Code node '{code_title}' retry {retry_error}")
+
+    errors.extend(_loop_errors(nodes, edges))
 
     for node in nodes:
         if not node.get("id"):
             errors.append("All nodes must have an id")
         if not node.get("type"):
             errors.append(f"Node {node.get('id', 'unknown')} must have a type")
+        data = node.get("data") or {}
+        config = data.get("config", data) if isinstance(data, dict) else {}
+        stream_output = config.get("stream_output") if isinstance(config, dict) else None
+        if stream_output is not None and stream_output not in STREAM_OUTPUT_VALUES:
+            errors.append(
+                f"Node '{node.get('title') or node.get('id')}' has an invalid stream_output; "
+                f"use one of: {', '.join(STREAM_OUTPUT_VALUES)}"
+            )
+
+    return errors
+
+
+_LOOP_ITEMS_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*$")
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _loop_errors(nodes: List[Dict], edges: List[Dict]) -> List[str]:
+    """Problems with the graph's loop nodes and the nodes inside them.
+
+    Args:
+        nodes: Nodes in builder shape; a body node names its loop in
+            ``data.parent_id``.
+        edges: The graph's edges.
+
+    Returns:
+        list: One message per problem.
+    """
+    errors: List[str] = []
+    node_map = {n.get("id"): n for n in nodes if isinstance(n, dict)}
+
+    def title(node: Dict) -> str:
+        return node.get("title") or node.get("id") or "unknown"
+
+    for node in node_map.values():
+        parent = parent_id_of(node.get("data"))
+        if parent is None:
+            continue
+        loop = node_map.get(parent)
+        if loop is None or loop.get("type") != "loop":
+            errors.append(f"Node '{title(node)}' is inside '{parent}', which is not a loop")
+        elif node.get("type") not in LOOP_BODY_NODE_TYPES:
+            errors.append(f"Loop '{title(loop)}' cannot contain {node.get('type')} nodes")
+
+    for edge in edges:
+        source, target = node_map.get(edge.get("source")), node_map.get(edge.get("target"))
+        if source is None or target is None:
+            continue
+        if parent_id_of(source.get("data")) != parent_id_of(target.get("data")):
+            errors.append(
+                f"The connection from '{title(source)}' to '{title(target)}' crosses a loop's boundary"
+            )
+
+    for loop in (n for n in node_map.values() if n.get("type") == "loop"):
+        loop_title = title(loop)
+        raw = loop.get("data") or {}
+        nested = raw.get("config") if isinstance(raw, dict) else None
+        config = nested if isinstance(nested, dict) else raw if isinstance(raw, dict) else {}
+
+        items = config.get("items")
+        if not isinstance(items, str) or not items.strip():
+            errors.append(f"Loop '{loop_title}' must name the state list to loop over")
+        elif not _LOOP_ITEMS_PATH_RE.match(items.strip()):
+            errors.append(f"Loop '{loop_title}' items must be a state path such as extracted.items")
+
+        item_variable = config.get("item_variable", "item")
+        if (
+            not isinstance(item_variable, str)
+            or not _IDENTIFIER_RE.match(item_variable.strip())
+            or item_variable.strip() in LOOP_RESERVED_VARIABLES
+        ):
+            errors.append(f"Loop '{loop_title}' cannot use '{item_variable}' as its item variable")
+
+        for key in ("concurrency", "max_items"):
+            if key not in config:
+                continue
+            value = config[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                errors.append(f"Loop '{loop_title}' {key} must be a whole number of at least 1")
+
+        if config.get("on_item_error", "fail") not in ("fail", "skip", "collect"):
+            errors.append(f"Loop '{loop_title}' on_item_error must be fail, skip or collect")
+
+        for key in ("output_variable", "result_variable"):
+            value = config.get(key)
+            if value not in (None, "") and not isinstance(value, str):
+                errors.append(f"Loop '{loop_title}' {key} must be text")
+
+        body_ids = {
+            n.get("id")
+            for n in node_map.values()
+            if parent_id_of(n.get("data")) == loop.get("id") and n.get("type") != "note"
+        }
+        if not body_ids:
+            errors.append(f"Loop '{loop_title}' needs at least one node inside it")
+            continue
+        targets = {e.get("target") for e in edges if e.get("source") in body_ids}
+        if len(body_ids - targets) != 1:
+            errors.append(f"Loop '{loop_title}' body must start at exactly one node")
 
     return errors
 
@@ -638,24 +987,21 @@ class WorkflowList(Resource):
         nodes_data = data.get("nodes", [])
         edges_data = data.get("edges", [])
 
-        validation_errors = validate_workflow_structure(
-            nodes_data, edges_data, user_id=user_id
-        )
+        retry_defaults = data.get("retry_defaults")
+
+        graph = {"nodes": nodes_data, "edges": edges_data, "retry_defaults": retry_defaults}
+        validation_errors = workflow_graph_errors(graph, draft=False, user_id=user_id)
         if validation_errors:
             return error_response(
                 "Workflow validation failed", errors=validation_errors
             )
-        nodes_data = normalize_agent_node_json_schemas(nodes_data)
 
         try:
             with db_session() as conn:
-                denied = _new_node_ref_denied(conn, [], nodes_data, user_id)
-                if denied is not None:
-                    return _denied(denied)
-                repo = WorkflowsRepository(conn)
-                workflow = repo.create(user_id, name, description=description)
-                pg_workflow_id = str(workflow["id"])
-                _write_graph(conn, pg_workflow_id, 1, nodes_data, edges_data)
+                save = plan_graph_save(conn, None, user_id, user_id, graph, set())
+                if isinstance(save, AccessDenied):
+                    return _denied(save)
+                pg_workflow_id = write_graph_save(conn, save, user_id, name, description)
         except Exception as err:
             return _workflow_error_response("Failed to create workflow", err)
 
@@ -738,72 +1084,34 @@ class WorkflowDetail(Resource):
 
         try:
             with db_session() as conn:
-                repo = WorkflowsRepository(conn)
                 try:
                     workflow, acting = _workflow_access(conn, workflow_id, user_id, "edit")
                 except AccessDenied as denied:
                     return _denied(denied)
                 # Validated as the owner: the workflow runs with the owner's
                 # models, so their BYOM ids are the ones that must resolve.
-                validation_errors = validate_workflow_structure(
-                    nodes_data, edges_data, user_id=acting
-                )
+                graph = {"nodes": nodes_data, "edges": edges_data}
+                if "retry_defaults" in data:
+                    graph["retry_defaults"] = data.get("retry_defaults")
+                validation_errors = workflow_graph_errors(graph, draft=False, user_id=acting)
                 if validation_errors:
                     return error_response(
                         "Workflow validation failed", errors=validation_errors
                     )
-                nodes_data = normalize_agent_node_json_schemas(nodes_data)
-                pg_workflow_id = str(workflow["id"])
-                current_graph_version = get_workflow_graph_version(workflow)
-                previous_nodes = [
-                    serialize_node(n)
-                    for n in WorkflowNodesRepository(conn).find_by_version(
-                        pg_workflow_id, current_graph_version,
-                    )
-                ]
-                # Every newly referenced node tool or source must be one the
-                # caller may use, the owner included.
-                denied = _new_node_ref_denied(conn, previous_nodes, nodes_data, user_id)
-                if denied is not None:
-                    return _denied(denied)
-                # A node tool/source the owner can't use runs as the editor
-                # who attached it (its sponsor): only someone who owns or
-                # edits it, and only once ``confirm_sponsor`` lists it.
-                plan = plan_sponsors(
-                    conn,
-                    "workflow",
-                    workflow,
-                    acting,
-                    user_id,
-                    _node_refs(nodes_data),
-                    previous_refs=_node_refs(previous_nodes),
-                    confirmed=parse_confirmations(data.get("confirm_sponsor")),
+                save = plan_graph_save(
+                    conn, workflow, acting, user_id, graph, parse_confirmations(data.get("confirm_sponsor")),
                 )
-                refusal = sponsor_refusal(conn, "workflow", workflow, plan)
+                if isinstance(save, AccessDenied):
+                    return _denied(save)
+                refusal = sponsor_refusal(conn, "workflow", workflow, save.plan)
                 if refusal is not None:
                     body, status = refusal
                     body.setdefault("error", body["message"])
                     return make_response(jsonify(body), status)
-                next_graph_version = current_graph_version + 1
-
-                _write_graph(
-                    conn, pg_workflow_id, next_graph_version,
-                    nodes_data, edges_data,
-                )
-                workflow_fields = {
-                    "name": name,
-                    "description": description,
-                    "current_graph_version": next_graph_version,
-                }
-                if plan.sponsors != (workflow.get("resource_sponsors") or {}):
-                    workflow_fields["resource_sponsors"] = plan.sponsors
-                repo.update(pg_workflow_id, acting, workflow_fields)
-                WorkflowNodesRepository(conn).delete_other_versions(
-                    pg_workflow_id, next_graph_version,
-                )
-                WorkflowEdgesRepository(conn).delete_other_versions(
-                    pg_workflow_id, next_graph_version,
-                )
+                write_graph_save(conn, save, acting, name, description)
+                # The graph is its agents' content: a builder holding an
+                # agent's old stamp must get a stale write, not overwrite it.
+                AgentsRepository(conn).touch_for_workflow(str(workflow["id"]))
         except Exception as err:
             return _workflow_error_response("Failed to update workflow", err)
 

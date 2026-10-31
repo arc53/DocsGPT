@@ -58,6 +58,9 @@ from docsgpt.api.answer.services.conversation_service import ConversationService
 from docsgpt.api.v1.routes import v1_bp
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------

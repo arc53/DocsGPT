@@ -26,7 +26,7 @@ aiofiles==25.1.0
     # via daytona
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.4
+aiohttp==3.14.5
     # via
     #   aiohttp-retry
     #   daytona
@@ -42,7 +42,7 @@ aiohttp-retry==2.9.1
     #   daytona-toolbox-api-client-async
 aiosignal==1.4.0
     # via aiohttp
-alembic==1.20.0
+alembic==1.20.1
     # via docsgpt
 amqp==5.4.1
     # via kombu
@@ -52,10 +52,8 @@ annotated-doc==0.0.5
     # via typer
 annotated-types==0.8.0
     # via pydantic
-anthropic==1.11.0
+anthropic==2.3.0
     # via docsgpt
-antlr4-python3-runtime==4.9.3
-    # via omegaconf
 anyio==4.15.1
     # via
     #   anthropic
@@ -69,7 +67,7 @@ anyio==4.15.1
     #   sse-starlette
     #   starlette
     #   watchfiles
-asgiref==3.12.1
+asgiref==3.13.0
     # via opentelemetry-instrumentation-asgi
 attrs==26.1.0
     # via
@@ -78,10 +76,12 @@ attrs==26.1.0
     #   jsonschema
     #   jsonschema-path
     #   referencing
-authlib==1.8.0
+authlib==1.9.1
     # via fastmcp-slim
-beartype==0.22.9
-    # via py-key-value-aio
+beartype==0.23.1
+    # via
+    #   fastmcp-slim
+    #   py-key-value-aio
 beautifulsoup4==4.15.0
     # via
     #   docling-slim
@@ -93,15 +93,15 @@ billiard==4.3.1
     # via celery
 blinker==1.9.0
     # via flask
-boto3==1.43.108
+boto3==1.43.120
     # via docsgpt
-botocore==1.43.108
+botocore==1.43.120
     # via
     #   boto3
     #   s3transfer
-cachetools==7.2.1
+cachetools==7.2.6
     # via py-key-value-aio
-caio==0.12.9
+caio==0.12.10
     # via aiofile
 cel-python==0.5.0
     # via docsgpt
@@ -111,9 +111,10 @@ celery==5.6.3
     #   docsgpt
 celery-redbeat==2.4.2
     # via docsgpt
-certifi==2026.10.19
+certifi==2026.10.23
     # via
     #   docling-slim
+    #   fastmcp-slim
     #   httpcore
     #   httpx
     #   requests
@@ -160,26 +161,25 @@ cryptography==50.0.2
     #   py-vapid
     #   pyjwt
     #   pywebpush
-    #   secretstorage
-cyclopts==5.2.0
+cyclopts==5.3.2
     # via fastmcp-slim
 dataclasses-json==0.6.7
     # via docsgpt
-daytona==0.222.0
+daytona==0.226.1
     # via docsgpt
-daytona-analytics-api-client==0.222.0
+daytona-analytics-api-client==0.226.1
     # via daytona
-daytona-analytics-api-client-async==0.222.0
+daytona-analytics-api-client-async==0.226.1
     # via daytona
-daytona-api-client==0.222.0
+daytona-api-client==0.226.1
     # via daytona
-daytona-api-client-async==0.222.0
+daytona-api-client-async==0.226.1
     # via daytona
-daytona-toolbox-api-client==0.222.0
+daytona-toolbox-api-client==0.226.1
     # via daytona
-daytona-toolbox-api-client-async==0.222.0
+daytona-toolbox-api-client-async==0.226.1
     # via daytona
-ddgs==9.16.0
+ddgs==9.16.1
     # via docsgpt
 decorator==5.3.1
     # via retry
@@ -195,21 +195,21 @@ dill==0.4.1
     # via multiprocess
 distro==1.9.0
     # via google-genai
-dnspython==2.8.0
+dnspython==2.9.0
     # via email-validator
 doclang==0.8.0
     # via docling-core
-docling==2.142.1
+docling==2.144.0
     # via docsgpt
-docling-core==2.104.0
+docling-core==2.105.0
     # via
     #   docling-parse
     #   docling-slim
 docling-ibm-models==4.0.4
     # via docling-slim
-docling-parse==7.23.0
+docling-parse==7.24.1
     # via docling-slim
-docling-slim==2.142.1
+docling-slim==2.144.0
     # via docling
 docstring-parser==0.18.0
     # via
@@ -217,7 +217,7 @@ docstring-parser==0.18.0
     #   cyclopts
 docx2txt==0.9
     # via docsgpt
-elevenlabs==2.71.0
+elevenlabs==2.75.0
     # via docsgpt
 email-validator==2.3.0
     # via pydantic
@@ -227,17 +227,17 @@ exceptiongroup==1.3.1
     # via fastmcp-slim
 faiss-cpu==1.15.1
     # via docsgpt
-faker==40.41.0
+faker==40.44.0
     # via polyfactory
 fast-ebook==0.2.0
     # via docsgpt
 fastembed==0.9.1
     # via docsgpt
-fastmcp==4.0.11
+fastmcp==4.1.4
     # via docsgpt
-fastmcp-slim==4.0.11
+fastmcp-slim==4.1.4
     # via fastmcp
-filelock==4.0.12
+filelock==4.2.4
     # via
     #   huggingface-hub
     #   tldextract
@@ -262,11 +262,11 @@ fsspec==2026.9.0
     # via
     #   huggingface-hub
     #   torch
-google-api-core==2.41.0
+google-api-core==2.43.0
     # via google-api-python-client
 google-api-python-client==2.201.0
     # via docsgpt
-google-auth==2.60.0
+google-auth==2.62.0
     # via
     #   google-api-core
     #   google-api-python-client
@@ -277,18 +277,18 @@ google-auth-httplib2==0.4.4
     # via google-api-python-client
 google-auth-oauthlib==1.5.0
     # via docsgpt
-google-genai==2.28.0
+google-genai==2.33.0
     # via docsgpt
 google-re2==1.1.20251105
     # via cel-python
-googleapis-common-protos==1.75.5
+googleapis-common-protos==1.76.0
     # via
     #   google-api-core
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-griffelib==2.3.2
+griffelib==2.4.1
     # via fastmcp-slim
-grpcio==1.84.0
+grpcio==1.85.0
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   qdrant-client
@@ -306,7 +306,7 @@ h11==0.16.0
     #   wsproto
 h2==4.4.1
     # via httpx
-hf-xet==1.7.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
+hf-xet==1.7.1 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
     # via huggingface-hub
 hpack==4.2.0
     # via h2
@@ -316,13 +316,13 @@ httpcore==1.0.9
     # via
     #   httpx
     #   httpx-ws
-httpcore2==2.13.1 ; sys_platform != 'emscripten'
+httpcore2==2.16.0 ; sys_platform != 'emscripten'
     # via httpx2
-httplib2==0.32.0
+httplib2==0.32.1
     # via
     #   google-api-python-client
     #   google-auth-httplib2
-httptools==0.8.0
+httptools==0.9.0
     # via uvicorn
 httpx==0.28.1
     # via
@@ -335,7 +335,7 @@ httpx==0.28.1
     #   qdrant-client
 httpx-ws==0.9.0
     # via daytona
-httpx2==2.13.1
+httpx2==2.16.0
     # via
     #   anthropic
     #   docsgpt
@@ -368,22 +368,12 @@ importlib-resources==7.1.0
     # via flask-restx
 itsdangerous==2.2.0
     # via flask
-jaraco-classes==3.4.0
-    # via keyring
-jaraco-context==6.1.2
-    # via keyring
-jaraco-functools==4.6.0
-    # via keyring
-jeepney==0.9.0 ; sys_platform == 'linux'
-    # via
-    #   keyring
-    #   secretstorage
 jinja2==3.1.6
     # via
     #   docsgpt
     #   flask
     #   torch
-jiter==0.17.0
+jiter==0.18.0
     # via
     #   anthropic
     #   openai
@@ -392,7 +382,7 @@ jmespath==1.1.0
     #   boto3
     #   botocore
     #   cel-python
-joserfc==1.7.5
+joserfc==1.7.7
     # via
     #   authlib
     #   fastmcp-slim
@@ -409,8 +399,6 @@ jsonschema-path==0.5.0
     # via fastmcp-slim
 jsonschema-specifications==2025.9.1
     # via jsonschema
-keyring==25.7.0
-    # via py-key-value-aio
 kombu==5.6.2
     # via
     #   celery
@@ -429,7 +417,7 @@ lxml==6.1.3
     #   doclang
     #   python-docx
     #   python-pptx
-mail-parser==4.8.0
+mail-parser==4.9.0
     # via docling-slim
 mako==1.4.3
     # via alembic
@@ -437,7 +425,7 @@ markdown-it-py==4.2.0
     # via rich
 markdownify==1.2.3
     # via docsgpt
-marko==2.2.4
+marko==2.2.5
     # via docling-slim
 markupsafe==3.0.4
     # via
@@ -457,17 +445,13 @@ mdurl==0.1.2
     # via markdown-it-py
 mmh3==5.3.1
     # via fastembed
-more-itertools==11.1.0
-    # via
-    #   jaraco-classes
-    #   jaraco-functools
 mpire==2.10.2
     # via semchunk
 mpmath==1.3.0
     # via sympy
 msal==1.39.0
     # via docsgpt
-multidict==6.9.1
+multidict==7.2.1
     # via
     #   aiohttp
     #   yarl
@@ -479,7 +463,7 @@ networkx==3.7
     # via
     #   docsgpt
     #   torch
-numpy==2.5.3
+numpy==2.5.4
     # via
     #   accelerate
     #   docling-ibm-models
@@ -488,7 +472,7 @@ numpy==2.5.3
     #   faiss-cpu
     #   fastembed
     #   onnxruntime
-    #   opencv-python
+    #   opencv-python-headless
     #   pandas
     #   qdrant-client
     #   rapidocr
@@ -503,19 +487,19 @@ obstore==0.11.1
     # via daytona
 olefile==0.47
     # via python-oxmsg
-omegaconf==2.3.1
+omegaconf==2.4.0
     # via rapidocr
-onnxruntime==1.30.0
+onnxruntime==1.31.1
     # via
     #   docsgpt
     #   fastembed
-openai==3.26.0
+openai==3.40.0
     # via docsgpt
 openapi-pydantic==0.6.0
     # via fastmcp-slim
 openapi3-parser==2.0.0
     # via docsgpt
-opencv-python==5.0.0.93
+opencv-python-headless==5.0.0.93
     # via rapidocr
 openpyxl==3.1.5
     # via
@@ -523,6 +507,7 @@ openpyxl==3.1.5
     #   docsgpt
 opentelemetry-api==1.45.1
     # via
+    #   anthropic
     #   daytona
     #   docsgpt
     #   fastmcp-slim
@@ -654,7 +639,7 @@ packaging==26.3
     #   opentelemetry-instrumentation-flask
     #   opentelemetry-instrumentation-sqlalchemy
     #   transformers
-pandas==3.0.6
+pandas==3.1.0
     # via
     #   docling-core
     #   docsgpt
@@ -662,9 +647,9 @@ pathable==0.6.0
     # via jsonschema-path
 pdf2image==1.17.0
     # via docsgpt
-pendulum==3.2.0
+pendulum==3.3.0
     # via cel-python
-pgvector==0.5.0
+pgvector==0.5.1
     # via docsgpt
 pillow==13.0.0
     # via
@@ -678,13 +663,13 @@ pillow==13.0.0
     #   python-pptx
     #   rapidocr
     #   torchvision
-platformdirs==4.12.3
+platformdirs==4.13.7
     # via fastmcp-slim
-pluggy==1.6.0
+pluggy==1.7.0
     # via docling-slim
-polyfactory==3.3.0
+polyfactory==3.5.0
     # via docling-slim
-portalocker==3.2.0
+portalocker==4.4.2
     # via qdrant-client
 praw==8.0.3
     # via docsgpt
@@ -722,17 +707,17 @@ py-key-value-aio==0.4.6
     # via fastmcp-slim
 py-rust-stemmers==0.1.8
     # via fastembed
-py-vapid==1.9.4
+py-vapid==1.9.6
     # via pywebpush
-pyasn1==0.6.4
+pyasn1==0.6.5
     # via pyasn1-modules
 pyasn1-modules==0.4.2
     # via google-auth
 pyclipper==1.4.0
     # via rapidocr
-pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+pycparser==3.12 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
-pydantic==2.13.5
+pydantic==2.14.1
     # via
     #   anthropic
     #   daytona
@@ -756,11 +741,11 @@ pydantic==2.13.5
     #   openapi3-parser
     #   pydantic-settings
     #   qdrant-client
-pydantic-core==2.46.5
+pydantic-core==2.50.1
     # via
     #   elevenlabs
     #   pydantic
-pydantic-settings==2.15.0
+pydantic-settings==2.16.2
     # via
     #   docling-core
     #   docling-slim
@@ -780,7 +765,7 @@ pylatexenc==2.11
     # via docling-slim
 pyparsing==3.3.3
     # via httplib2
-pypdf==6.21.2
+pypdf==6.21.4
     # via docsgpt
 pypdfium2==5.14.0
     # via
@@ -813,7 +798,7 @@ python-dotenv==1.2.4
     #   fastmcp-slim
     #   pydantic-settings
     #   uvicorn
-python-engineio==4.14.0
+python-engineio==4.15.0
     # via python-socketio
 python-multipart==0.0.32
     # via
@@ -835,9 +820,6 @@ pywin32==312 ; sys_platform == 'win32'
     #   docling-parse
     #   mcp
     #   mpire
-    #   portalocker
-pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
-    # via keyring
 pyyaml==6.0.3
     # via
     #   accelerate
@@ -852,9 +834,9 @@ pyyaml==6.0.3
     #   rapidocr
     #   transformers
     #   uvicorn
-qdrant-client==1.19.1
+qdrant-client==1.20.0
     # via docsgpt
-rapidocr==3.9.2
+rapidocr==3.10.0
     # via
     #   docling-slim
     #   docsgpt
@@ -917,7 +899,7 @@ rpds-py==2026.9.1
     #   referencing
 rtree==1.4.1
     # via docling-slim
-s3transfer==0.19.2
+s3transfer==0.19.3
     # via boto3
 safetensors==0.8.0
     # via
@@ -926,11 +908,9 @@ safetensors==0.8.0
     #   transformers
 scipy==1.18.1
     # via docling-slim
-secretstorage==3.5.0 ; sys_platform == 'linux'
-    # via keyring
 semchunk==3.2.5
     # via docling-core
-setuptools==84.0.0
+setuptools==84.2.1
     # via torch
 shapely==2.2.0
     # via rapidocr
@@ -948,15 +928,15 @@ sniffio==1.3.1
     #   anthropic
     #   google-genai
     #   openai
-soupsieve==2.10
+soupsieve==3.0.4
     # via beautifulsoup4
-sqlalchemy==2.1.3
+sqlalchemy==2.1.6
     # via
     #   alembic
     #   docsgpt
-sse-starlette==3.5.0
+sse-starlette==3.6.0
     # via mcp
-starlette==1.7.0
+starlette==1.10.0
     # via
     #   docsgpt
     #   fastmcp-slim
@@ -974,14 +954,14 @@ tiktoken==0.14.0
     # via docsgpt
 tldextract==5.4.0
     # via docsgpt
-tokenizers==0.23.2
+tokenizers==0.23.3
     # via
     #   docsgpt
     #   fastembed
     #   transformers
 toml==0.10.2
     # via daytona
-torch==2.14.1 ; sys_platform != 'linux'
+torch==2.15.0 ; sys_platform != 'linux'
     # via
     #   accelerate
     #   docling-ibm-models
@@ -989,7 +969,7 @@ torch==2.14.1 ; sys_platform != 'linux'
     #   docsgpt
     #   safetensors
     #   torchvision
-torch==2.14.1+cpu ; sys_platform == 'linux'
+torch==2.15.0+cpu ; sys_platform == 'linux'
     # via
     #   accelerate
     #   docling-ibm-models
@@ -997,12 +977,12 @@ torch==2.14.1+cpu ; sys_platform == 'linux'
     #   docsgpt
     #   safetensors
     #   torchvision
-torchvision==0.29.1 ; sys_platform != 'linux'
+torchvision==0.29.2 ; sys_platform != 'linux'
     # via
     #   docling-ibm-models
     #   docling-slim
     #   docsgpt
-torchvision==0.29.1+cpu ; sys_platform == 'linux'
+torchvision==0.29.2+cpu ; sys_platform == 'linux'
     # via
     #   docling-ibm-models
     #   docling-slim
@@ -1032,11 +1012,11 @@ tree-sitter-python==0.25.0
     # via docling-core
 tree-sitter-typescript==0.23.2
     # via docling-core
-truststore==0.10.4 ; sys_platform != 'emscripten'
+truststore==0.10.5 ; sys_platform != 'emscripten'
     # via
     #   httpcore2
     #   httpx2
-typer==0.26.8
+typer==0.27.3
     # via
     #   doclang
     #   docling-core
@@ -1082,6 +1062,7 @@ typing-extensions==4.16.0
     #   py-key-value-aio
     #   pydantic
     #   pydantic-core
+    #   pydantic-settings
     #   python-docx
     #   python-oxmsg
     #   python-pptx
@@ -1098,7 +1079,7 @@ typing-inspection==0.4.4
     #   mcp
     #   pydantic
     #   pydantic-settings
-tzdata==2026.5
+tzdata==2026.6
     # via
     #   faker
     #   kombu
@@ -1106,11 +1087,11 @@ tzdata==2026.5
     #   pendulum
     #   psycopg
     #   tzlocal
-tzlocal==5.4.4
+tzlocal==5.4.5
     # via celery
-uncalled-for==0.4.0
+uncalled-for==0.4.1
     # via fastmcp-slim
-update-checker==1.0.0
+update-checker==1.0.1
     # via praw
 uritemplate==4.2.0
     # via google-api-python-client
@@ -1142,14 +1123,14 @@ watchfiles==1.3.0
     # via
     #   fastmcp-slim
     #   uvicorn
-wcwidth==0.9.2
+wcwidth==0.9.4
     # via prompt-toolkit
 websocket-client==1.9.2
     # via
     #   docsgpt
     #   praw
     #   python-socketio
-websockets==16.1.1
+websockets==17.3
     # via
     #   docling-slim
     #   elevenlabs
@@ -1161,9 +1142,9 @@ werkzeug==3.1.9
     #   docsgpt
     #   flask
     #   flask-restx
-win32-setctime==1.2.0 ; sys_platform == 'win32'
+win32-setctime==1.2.1 ; sys_platform == 'win32'
     # via loguru
-wrapt==2.5.0
+wrapt==2.5.1
     # via
     #   deprecated
     #   opentelemetry-instrumentation
@@ -1176,7 +1157,7 @@ wsproto==1.3.2
     #   daytona
     #   httpx-ws
     #   simple-websocket
-xlsxwriter==3.2.9
+xlsxwriter==3.3.0
     # via python-pptx
 yarl==1.25.1
     # via aiohttp

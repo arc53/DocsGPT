@@ -65,6 +65,7 @@ from sqlalchemy import Connection, text  # noqa: E402
 from docsgpt.core.settings import settings  # noqa: E402
 from docsgpt.storage.db.bootstrap import ensure_database_ready  # noqa: E402
 from docsgpt.storage.db.engine import get_engine  # noqa: E402
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS  # noqa: E402
 
 
 # The backfill tool is the one remaining consumer of MongoDB in this repo.
@@ -1047,7 +1048,7 @@ def _backfill_agents(
             user_id, name, status, key, image, description, agent_type,
             source_id, extra_source_ids,
             chunks, retriever, default_model_id,
-            prompt_id, folder_id, workflow_id,
+            prompt_id, prompt_preset, folder_id, workflow_id,
             tools, json_schema, models,
             limited_token_mode, token_limit, limited_request_mode, request_limit,
             allow_system_prompt_override,
@@ -1059,7 +1060,7 @@ def _backfill_agents(
             :user_id, :name, :status, :key, :image, :description, :agent_type,
             CAST(:source_id AS uuid), CAST(:extra_source_ids AS uuid[]),
             :chunks, :retriever, :default_model_id,
-            CAST(:prompt_id AS uuid), CAST(:folder_id AS uuid), CAST(:workflow_id AS uuid),
+            CAST(:prompt_id AS uuid), :prompt_preset, CAST(:folder_id AS uuid), CAST(:workflow_id AS uuid),
             CAST(:tools AS jsonb), CAST(:json_schema AS jsonb), CAST(:models AS jsonb),
             :limited_token_mode, :token_limit, :limited_request_mode, :request_limit,
             :allow_system_prompt_override,
@@ -1082,7 +1083,10 @@ def _backfill_agents(
             chunks = EXCLUDED.chunks,
             retriever = EXCLUDED.retriever,
             default_model_id = EXCLUDED.default_model_id,
+            -- Both prompt columns in one SET: agents_prompt_preset_exclusive_chk
+            -- allows at most one of them, so they can't be moved one at a time.
             prompt_id = EXCLUDED.prompt_id,
+            prompt_preset = EXCLUDED.prompt_preset,
             folder_id = EXCLUDED.folder_id,
             workflow_id = EXCLUDED.workflow_id,
             tools = EXCLUDED.tools,
@@ -1112,10 +1116,14 @@ def _backfill_agents(
                 doc.get("source"), doc.get("sources"), sources_id_map,
             )
 
+            # A prompt ObjectId, or a preset name: ``creative`` / ``strict``
+            # go to ``prompt_preset`` (they have no prompts row), ``default``
+            # and nothing leave both columns NULL.
             prompt_oid = doc.get("prompt_id")
+            prompt_preset = str(prompt_oid) if str(prompt_oid) in STORED_PROMPT_PRESETS else None
             prompt_pg = (
                 prompts_id_map.get(str(prompt_oid))
-                if prompt_oid and str(prompt_oid) != "default"
+                if prompt_oid and str(prompt_oid) != "default" and prompt_preset is None
                 else None
             )
 
@@ -1147,6 +1155,7 @@ def _backfill_agents(
                 "retriever": doc.get("retriever"),
                 "default_model_id": doc.get("default_model_id"),
                 "prompt_id": prompt_pg,
+                "prompt_preset": prompt_preset,
                 "folder_id": folder_pg,
                 "workflow_id": workflow_pg,
                 "tools": json.dumps(doc.get("tools") or [], default=str),

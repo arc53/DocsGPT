@@ -27,6 +27,9 @@ import {
 import ContextLimitRows from '../../components/ContextLimitRows';
 import InsightsSettingsBody from '../../components/InsightsSettingsBody';
 import type { AnalyticsConfig } from '../../types';
+import type { RetryConfig } from '../../types/workflow';
+import { DEFAULT_RETRY, normalizeRetryConfig } from '../retryConfig';
+import NodeRetryControl from './NodeRetryControl';
 
 export interface WorkflowDetailsValues {
   name: string;
@@ -38,6 +41,8 @@ export interface WorkflowDetailsValues {
   contextWindowLimit: number | null;
   /** `config.history_token_limit`; null summarizes only near the window. */
   historyTokenLimit: number | null;
+  /** The workflow's `retry_defaults`; null leaves nodes on the built-in ones. */
+  retryDefaults: RetryConfig | null;
 }
 
 /** What the Insights card needs from the builder. */
@@ -76,7 +81,7 @@ interface WorkflowDetailsSheetProps {
 
 /**
  * The workflow's name, description, avatar, prompt-override and context-limit
- * settings and insights settings, in a modal side panel laid out like the classic agent's
+ * settings, retry defaults and insights settings, in a modal side panel laid out like the classic agent's
  * Basics on a phone. The Insights card hides while the server has insights
  * off, unless the workflow already has settings of its own (as on Overview).
  *
@@ -131,7 +136,9 @@ export default function WorkflowDetailsSheet({
     JSON.stringify(draft.analytics) !==
       JSON.stringify(analyticsOf(details.analytics)) ||
     !Object.is(draft.contextWindowLimit, details.contextWindowLimit) ||
-    !Object.is(draft.historyTokenLimit, details.historyTokenLimit);
+    !Object.is(draft.historyTokenLimit, details.historyTokenLimit) ||
+    JSON.stringify(normalizeRetryConfig(draft.retryDefaults) ?? null) !==
+      JSON.stringify(normalizeRetryConfig(details.retryDefaults) ?? null);
   const contextLimitInvalid =
     isContextLimitInvalid(draft.contextWindowLimit) ||
     isHistoryLimitInvalid(draft.historyTokenLimit, draft.contextWindowLimit);
@@ -270,6 +277,23 @@ export default function WorkflowDetailsSheet({
             />
           </Card>
         )}
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('agents.workflow.retry.title')}
+            description={t('agents.workflow.retry.defaultsDescription')}
+          />
+          <NodeRetryControl
+            key={String(open)}
+            value={draft.retryDefaults ?? undefined}
+            onChange={(retry) =>
+              setDraft((prev) => ({ ...prev, retryDefaults: retry ?? null }))
+            }
+            inherited={DEFAULT_RETRY}
+            showOn
+          />
+        </Card>
       </PanelBody>
       <PanelFooter>
         <Button

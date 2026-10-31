@@ -183,6 +183,8 @@ describe('ConnectionDrawer', () => {
     own?: boolean;
     startedSyncs?: StartedSync[];
     onConnect?: (connector: ConnectorDefinition, options?: unknown) => void;
+    onNavigate?: (to: string) => void;
+    onToolsCreated?: (toolIds: string[]) => void;
   };
   const draw = async (
     connector: ConnectorDefinition | null,
@@ -202,6 +204,8 @@ describe('ConnectionDrawer', () => {
                     initialConnectionId={options.initialConnectionId}
                     onClose={vi.fn()}
                     onConnect={options.onConnect ?? vi.fn()}
+                    onNavigate={options.onNavigate}
+                    onToolsCreated={options.onToolsCreated}
                   />
                 }
               />
@@ -621,6 +625,19 @@ describe('ConnectionDrawer', () => {
     expect(open.title).toBe('Handbook');
     await act(async () => open.click());
     expect(text()).toContain('KNOWLEDGE?source=src-1');
+  });
+
+  // Opened from a builder's Add tool: leaving goes through the builder.
+  it('opens a source through its opener when given a way out', async () => {
+    const onNavigate = vi.fn();
+    await render(DRIVE, { onNavigate });
+    await act(async () =>
+      accountRow('Handbook')
+        .querySelector<HTMLButtonElement>('button[data-source-open]')!
+        .click(),
+    );
+    expect(onNavigate).toHaveBeenCalledWith('/settings/knowledge?source=src-1');
+    expect(text()).not.toContain('KNOWLEDGE');
   });
 
   it('opens a source in Knowledge from its menu', async () => {
@@ -1248,6 +1265,35 @@ describe('ConnectionDrawer', () => {
       { create_tools: true },
       null,
     );
+  });
+
+  // From a builder's Add tool, the new tool goes on the agent.
+  it('reports the tools Add tools created', async () => {
+    connectors.setup.mockReset();
+    connectors.setup.mockResolvedValue({
+      success: true,
+      tools: [{ id: 'tool-new', name: 'telegram' }],
+    });
+    const TELEGRAM = {
+      ...DRIVE,
+      key: 'google_drive',
+      name: 'Telegram',
+      auth_kind: 'api_key',
+      capabilities: ['write'],
+      setup: { tools: 'auto', sync: 'off' },
+      sync_ingestor: null,
+      tool_templates: ['telegram'],
+    } as unknown as ConnectorDefinition;
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: { ...DETAIL, sources: [], tools: [] },
+    });
+    const onToolsCreated = vi.fn();
+    await render(TELEGRAM, { onToolsCreated });
+    await act(async () =>
+      button('settings.connectors.detail.addTools').click(),
+    );
+    expect(onToolsCreated).toHaveBeenCalledWith(['tool-new']);
   });
 
   describe('MCP preset whose tool was deleted', () => {

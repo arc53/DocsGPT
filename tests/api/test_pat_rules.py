@@ -137,6 +137,16 @@ class TestScopeEnforcement:
         response = _call(client, "GET", "/api/get_agents", _claims(["agents:write"]))
         assert _denied(response) is None
 
+    def test_artifacts_read_reads_artifacts_but_never_changes_them(self, client):
+        claims = _claims(["artifacts:read"])
+        assert _denied(_call(client, "GET", "/api/artifacts", claims)) is None
+        assert _denied(_call(client, "GET", "/api/artifacts", _claims(["runs:read"]))) == "insufficient_scope"
+        for method, path in (
+            ("DELETE", f"/api/artifacts/{AGENT_A}"),
+            ("POST", f"/api/artifacts/{AGENT_A}/restore"),
+        ):
+            assert _denied(_call(client, method, path, claims, json={})) == "not_available_to_tokens", path
+
     def test_agent_key_regeneration_needs_its_own_scope(self, client):
         response = _call(
             client, "POST", f"/api/regenerate_agent_key/{AGENT_A}", _claims(["agents:write"])
@@ -204,6 +214,45 @@ class TestResourceRestrictions:
         )
         assert _denied(ok) is None
         assert _denied(bad) == "resource_not_allowed"
+
+    def test_chat_prompt_preference_is_held_to_the_prompt_allowlist(self, client):
+        claims = self._restricted(["prompts:write"], prompts=[SOURCE_A])
+        bad = _call(client, "PUT", "/api/user/preferences", claims, json={"chat_prompt_id": SOURCE_B})
+        assert _denied(bad) == "resource_not_allowed"
+        assert _denied(_call(client, "GET", "/api/user/preferences", claims)) == "resource_not_allowed"
+
+    def test_chat_prompt_preference_accepts_a_preset_for_a_restricted_token(self, client):
+        claims = self._restricted(["prompts:write"], prompts=[SOURCE_A])
+        for preset in ("default", "creative", "strict"):
+            response = self._put_preferences(client, claims, {"chat_prompt_id": preset})
+            assert _denied(response) is None, preset
+        allowed = self._put_preferences(client, claims, {"chat_prompt_id": SOURCE_A})
+        assert _denied(allowed) is None
+        missing = self._put_preferences(client, claims, {})
+        assert _denied(missing) == "resource_not_allowed"
+
+    @staticmethod
+    def _put_preferences(client, claims, body):
+        """PUT /api/user/preferences; a request the rules let through reaches no database."""
+        with patch("docsgpt.api.user.me.routes.db_session", side_effect=RuntimeError("no database here")):
+            return _call(client, "PUT", "/api/user/preferences", claims, json=body)
+
+    def test_chat_prompt_only_if_unset_is_refused_to_a_prompt_restricted_token(self, client):
+        # With a prompt stored, only_if_unset answers with it, which GET keeps from such a token.
+        claims = self._restricted(["prompts:write"], prompts=[SOURCE_A])
+        for value in ("default", SOURCE_A):
+            response = self._put_preferences(client, claims, {"chat_prompt_id": value, "only_if_unset": True})
+            assert _denied(response) == "resource_not_allowed", value
+        plain = self._put_preferences(client, claims, {"chat_prompt_id": "default", "only_if_unset": False})
+        assert _denied(plain) is None
+
+    def test_chat_prompt_only_if_unset_stays_open_to_other_tokens(self, client):
+        for claims in (
+            _claims(["prompts:write"]),
+            self._restricted(["prompts:write", "agents:read"], agents=[AGENT_A]),
+        ):
+            response = self._put_preferences(client, claims, {"chat_prompt_id": "default", "only_if_unset": True})
+            assert _denied(response) is None
 
     def test_missing_id_is_refused_for_a_restricted_token(self, client):
         claims = self._restricted(["agents:read"], agents=[AGENT_A])
@@ -329,6 +378,24 @@ class TestRelationshipsBeyondIds:
             ("POST", "/api/get_user_logs"),
         ):
             assert _denied(_call(client, method, path, claims, json={})) == "resource_not_allowed", path
+
+    @pytest.mark.parametrize("family", ["sources", "prompts", "tools", "workflows"])
+    def test_workflow_runs_are_closed_to_tokens_restricted_on_anything_but_agents(self, client, family):
+        claims = _claims(["runs:read"], {family: [SOURCE_A]})
+        for path in ("/api/workflow_runs", f"/api/workflow_runs/{AGENT_A}"):
+            assert _denied(_call(client, "GET", path, claims)) == "resource_not_allowed", path
+
+    def test_workflow_run_listing_holds_the_agent_filter_to_the_allowlist(self, client):
+        claims = _claims(["runs:read"], {"agents": [AGENT_A]})
+        assert _denied(_call(client, "GET", f"/api/workflow_runs?agent_id={AGENT_B}", claims)) == (
+            "resource_not_allowed"
+        )
+
+    @pytest.mark.parametrize("family", ["agents", "sources", "prompts", "tools", "workflows"])
+    def test_artifact_reads_are_closed_to_every_restricted_token(self, client, family):
+        claims = _claims(["artifacts:read"], {family: [SOURCE_A]})
+        for path in ("/api/artifacts", f"/api/artifacts/{AGENT_A}", f"/api/artifacts/{AGENT_A}/versions/1"):
+            assert _denied(_call(client, "GET", path, claims)) == "resource_not_allowed", path
 
 
 @pytest.mark.unit

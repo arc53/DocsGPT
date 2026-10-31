@@ -25,6 +25,7 @@ import CustomModels from './CustomModels';
 import General from './General';
 import Logs from './Logs';
 import PersonalAccessTokens from './PersonalAccessTokens';
+import Prompts from './Prompts';
 import Sources from './Sources';
 import Tools from './Tools';
 
@@ -117,6 +118,7 @@ export default function Settings() {
           path="devices"
           element={<Navigate to="/settings/tools" replace />}
         />
+        <Route path="prompts" element={<Prompts />} />
         <Route path="custom-models" element={<CustomModels />} />
         <Route path="access-tokens" element={<PersonalAccessTokens />} />
         <Route path="*" element={<Navigate to="/settings" replace />} />

@@ -104,21 +104,19 @@ export default function PairDeviceModal({
     // closed dialog as expired (closing cancels the pairing, which then
     // answers 404), and a late redemption can't close the new code's dialog.
     let stopped = false;
+    const expiresAt = expiresAtRef.current;
     const expire = () => {
       setPairing(null);
       setStage('form');
       setExpired(true);
     };
-    const expiryTimer = setTimeout(
-      expire,
-      Math.max(0, expiresAtRef.current - Date.now()),
-    );
+    const expiryTimer = setTimeout(expire, Math.max(0, expiresAt - Date.now()));
     const pollIntervalMs = (pairing.interval > 0 ? pairing.interval : 3) * 1000;
     const pollTimer = setInterval(async () => {
-      if (Date.now() >= expiresAtRef.current) return;
+      if (Date.now() >= expiresAt) return;
       try {
         const s = await devicesService.pollPairing(pairing.device_code, token);
-        if (stopped) return;
+        if (stopped || Date.now() >= expiresAt) return;
         if (s.status === 'redeemed') {
           clearInterval(pollTimer);
           if (s.device_id && s.device_name) {
@@ -129,7 +127,7 @@ export default function PairDeviceModal({
           expire();
         }
       } catch (err) {
-        if (stopped) return;
+        if (stopped || Date.now() >= expiresAt) return;
         // The server drops a code once it expires or is cancelled.
         if (err instanceof DevicesApiError && err.status === 404) {
           expire();

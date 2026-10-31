@@ -1078,6 +1078,7 @@ class TestEventsSurviveAFailedSweep:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.fresh_db
 class TestPublishAfterCommit:
     """``run_reconciliation`` fans events out in a ``finally``; staging keeps
     that from publishing events whose writes Postgres rolled back.

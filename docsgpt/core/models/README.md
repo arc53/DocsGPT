@@ -104,7 +104,7 @@ base_url: <string>                    # endpoint URL
 
 defaults:                              # optional, applied to every model below
   supports_tools: bool                 # default false
-  supports_structured_output: bool     # default false
+  supports_structured_output: bool     # default true
   supports_streaming: bool             # default true
   attachments: [<alias-or-mime>, ...]  # default []
   context_window: int                  # default 128000

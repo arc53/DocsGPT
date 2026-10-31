@@ -44,6 +44,9 @@ class ExecResult:
     # The sandbox killed the process for using too much memory (an OOM kill), as
     # far as the backend can tell. Reported to the model instead of a timeout.
     out_of_memory: bool = False
+    # The sandbox itself failed (unreachable, gone, or dropped the channel) rather
+    # than the code: the same code may well succeed on another attempt.
+    sandbox_error: bool = False
 
     @property
     def ok(self) -> bool:

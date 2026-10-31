@@ -11,15 +11,16 @@ installed, not a running service.
 
 Alembic migrations run ONCE per session (per xdist worker) into the
 cluster's template database via the ``load=`` hook on ``postgresql_proc``.
-Every per-test database handed out by the ``postgresql`` fixture is then
-cloned from that template (``CREATE DATABASE .. TEMPLATE ..`` — a cheap
-file-level copy), so each test still starts from a pristine schema at
-head without replaying the migration chain.
+Each worker then clones that template once (``CREATE DATABASE .. TEMPLATE``)
+and every test shares the clone: ``pg_conn`` wraps the test in a
+transaction that rolls back, which is all the isolation most tests need.
+Cloning per test cost far more than the tests themselves.
 
-Tests under ``tests/storage/db/`` intentionally override ``pg_conn`` in
-their own conftest to point at a real, long-running Postgres instance
-(DBngin locally, a service container in CI). Those are integration/e2e
-tests and are marked with ``@pytest.mark.integration``.
+Tests that commit — background work on other threads, code that opens its
+own engine, migrations running DDL — are marked ``fresh_db`` and get a
+database cloned for them alone, as every test used to. A test that commits
+without the marker fails at teardown, naming the tables it left rows in,
+and the shared database is cloned again for the tests after it.
 
 No mongomock. The ``mock_mongo_db`` fixture that used to live here was
 removed as part of the Mongo→Postgres cutover. Tests that still
@@ -50,14 +51,21 @@ os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")
 os.environ.setdefault("TRACES_ENABLED", "false")
 # A dev .env often turns conversation insights on; tests that need them say so.
 os.environ.setdefault("DECISION_ANALYTICS_ENABLED", "false")
+# Importing ``docsgpt.app`` pins the embedding model in whatever database
+# ``POSTGRES_URI`` names, unless the environment names the model. Name the
+# settings default, so importing the app from a test writes to no database
+# and every worker embeds with the same model whichever test imported it first.
+os.environ.setdefault("EMBEDDINGS_NAME", "huggingface_sentence-transformers/all-mpnet-base-v2")
 
 import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import Mock
 
+import psycopg
 import pytest
 from pytest_postgresql import factories
+from pytest_postgresql.janitor import DatabaseJanitor
 from sqlalchemy import create_engine
 
 
@@ -93,10 +101,177 @@ def _migrate_template_db(host, port, user, dbname, password, **kwargs) -> None:
 
 # ``postgresql_proc`` starts a fresh ``pg_ctl`` cluster once per session and
 # migrates its template database (see ``_migrate_template_db``). ``postgresql``
-# hands out a per-test DB cloned from that template. We layer our own
-# SQLAlchemy engine + rolled-back transaction on top for test isolation.
+# hands out the worker's shared clone of that template, or a clone of its own
+# for a ``fresh_db`` test. We layer our own SQLAlchemy engine + rolled-back
+# transaction on top for test isolation.
 postgresql_proc = factories.postgresql_proc(load=[_migrate_template_db])
-postgresql = factories.postgresql("postgresql_proc")
+
+_TABLES_SQL = """
+    SELECT format('%I.%I', schemaname, tablename) FROM pg_tables
+    WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+    ORDER BY 1
+"""
+
+# What DDL could change and leave behind: the objects, and every column's
+# place, type, nullability and default.
+_SCHEMA_SQL = """
+    SELECT
+        (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname NOT LIKE 'pg\\_%' AND n.nspname <> 'information_schema'),
+        (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname NOT LIKE 'pg\\_%' AND n.nspname <> 'information_schema'),
+        (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal),
+        (SELECT count(*) FROM pg_constraint co JOIN pg_namespace n ON n.oid = co.connamespace
+         WHERE n.nspname NOT LIKE 'pg\\_%' AND n.nspname <> 'information_schema'),
+        (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+         WHERE n.nspname NOT LIKE 'pg\\_%' AND n.nspname <> 'information_schema'),
+        (SELECT md5(string_agg(
+             format('%s.%s:%s:%s:%s:%s', c.relname, a.attname, a.attnum,
+                    format_type(a.atttypid, a.atttypmod), a.attnotnull, pg_get_expr(d.adbin, d.adrelid)),
+             ',' ORDER BY c.relname, a.attnum))
+         FROM pg_attribute a
+         JOIN pg_class c ON c.oid = a.attrelid AND c.relkind IN ('r', 'p')
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+         WHERE a.attnum > 0 AND NOT a.attisdropped
+           AND n.nspname NOT LIKE 'pg\\_%' AND n.nspname <> 'information_schema')
+"""
+
+
+def _janitor(proc, dbname: str) -> DatabaseJanitor:
+    return DatabaseJanitor(
+        user=proc.user,
+        host=proc.host,
+        port=proc.port,
+        dbname=dbname,
+        template_dbname=proc.template_dbname,
+        maintenance_dbname=proc.maintenance_dbname,
+        password=proc.password,
+    )
+
+
+def _connect(proc, dbname: str, options: str = "", **kwargs) -> psycopg.Connection:
+    return psycopg.connect(
+        dbname=dbname,
+        user=proc.user,
+        password=proc.password,
+        host=proc.host,
+        port=proc.port,
+        options=f"{proc.options} {options}".strip(),
+        **kwargs,
+    )
+
+
+class _SharedDatabase:
+    """The worker's clone of the template, shared by every test without ``fresh_db``.
+
+    ``fingerprint`` is what a test must leave as it found: the row count of
+    every table, the content of the tables the migrations seed, and the shape
+    of the schema (see ``_SCHEMA_SQL``). Counting is cheap here because the
+    tables are empty between tests.
+    """
+
+    def __init__(self, proc) -> None:
+        self.proc = proc
+        self.dbname = proc.dbname
+        self.janitor = _janitor(proc, self.dbname)
+        self.janitor.init()
+        with self.connect() as conn:
+            tables = [row[0] for row in conn.execute(_TABLES_SQL)]
+            counts = self._counts(conn, tables)
+            self.seeded = [table for table in tables if counts[table]]
+            self.baseline = self.fingerprint(conn)
+
+    def connect(self, **kwargs) -> psycopg.Connection:
+        return _connect(self.proc, self.dbname, autocommit=True, **kwargs)
+
+    @staticmethod
+    def _counts(conn, tables) -> dict:
+        union = " UNION ALL ".join(f"SELECT '{table}', count(*) FROM {table}" for table in tables)
+        return dict(conn.execute(union).fetchall())
+
+    def fingerprint(self, conn) -> dict:
+        tables = [row[0] for row in conn.execute(_TABLES_SQL)]
+        state = {
+            "tables": tuple(tables),
+            "rows": self._counts(conn, tables),
+            "schema": conn.execute(_SCHEMA_SQL).fetchone(),
+        }
+        for table in self.seeded:
+            if table in state["rows"]:
+                state[table] = conn.execute(
+                    f"SELECT md5(coalesce(string_agg(t::text, ',' ORDER BY t::text), '')) FROM {table} t"
+                ).fetchone()[0]
+        return state
+
+    def leaks(self) -> list:
+        """What the last test left behind; empty when the database is as it started.
+
+        Also ends any connection the test left open, as dropping its database
+        used to, so they can't pile up across tests.
+        """
+        with self.connect(options="-c statement_timeout=10000") as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = current_database() AND pid <> pg_backend_pid()"
+            )
+            state = self.fingerprint(conn)
+        if state == self.baseline:
+            return []
+        if state["tables"] != self.baseline["tables"] or state["schema"] != self.baseline["schema"]:
+            return ["the schema"]
+        return sorted(
+            {table for table, n in state["rows"].items() if n != self.baseline["rows"].get(table)}
+            | {table for table in self.seeded if state.get(table) != self.baseline.get(table)}
+        )
+
+    def reclone(self) -> None:
+        from docsgpt.vectorstore import pgconn
+
+        self.janitor.drop()
+        self.janitor.init()
+        # Pools opened on the dropped database hold dead connections.
+        pgconn._POOLS.clear()
+
+
+def pytest_collection_modifyitems(items):
+    """Give every migration test a database of its own: they run DDL and commit through Alembic."""
+    for item in items:
+        if item.path.name.startswith("test_migration_"):
+            item.add_marker(pytest.mark.fresh_db)
+
+
+@pytest.fixture(scope="session")
+def _shared_database(postgresql_proc):
+    database = _SharedDatabase(postgresql_proc)
+    yield database
+    database.janitor.drop()
+
+
+@pytest.fixture()
+def postgresql(request, postgresql_proc, _shared_database):
+    """A psycopg connection to this test's database: the worker's shared one, or its own under ``fresh_db``."""
+    if request.node.get_closest_marker("fresh_db"):
+        with _janitor(postgresql_proc, f"{postgresql_proc.dbname}_fresh"):
+            conn = _connect(postgresql_proc, f"{postgresql_proc.dbname}_fresh")
+            yield conn
+            conn.close()
+        return
+
+    conn = _connect(postgresql_proc, _shared_database.dbname)
+    yield conn
+    conn.close()
+    try:
+        leaks = _shared_database.leaks()
+    except psycopg.Error as exc:
+        leaks = [f"a database the guard could not read ({exc.__class__.__name__})"]
+    if leaks:
+        _shared_database.reclone()
+        pytest.fail(
+            f"The test committed to the shared test database ({', '.join(leaks)}). "
+            "Mark it `@pytest.mark.fresh_db` to give it a database of its own.",
+            pytrace=False,
+        )
 
 
 def _sqlalchemy_url(pg_conn_info) -> str:
@@ -170,6 +345,24 @@ def _no_real_redis(monkeypatch):
     """
     monkeypatch.setattr("docsgpt.cache._redis_instance", None)
     monkeypatch.setattr("docsgpt.cache._redis_creation_failed", True)
+
+
+@pytest.fixture(autouse=True)
+def _no_cached_app_engine(monkeypatch):
+    """Start every test without the app's process-wide engine, and dispose the one it made.
+
+    ``get_engine()`` binds to ``POSTGRES_URI`` as it stood on first use and
+    keeps that engine for the process, so where a test's unpatched writes
+    (activity logs, audit events) landed used to depend on which test ran
+    first on the worker. Now a database test's writes reach its own database
+    every time, and the shared one's guard names the test.
+    """
+    from docsgpt.storage.db import engine as engine_module
+
+    monkeypatch.setattr(engine_module, "_engine", None)
+    yield
+    if engine_module._engine is not None:
+        engine_module._engine.dispose()
 
 
 @pytest.fixture(autouse=True)

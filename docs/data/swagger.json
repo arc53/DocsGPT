@@ -303,7 +303,7 @@
           "type": "string"
         },
         "prompt_id": {
-          "description": "Prompt ID",
+          "description": "Prompt id, or a preset: default, creative or strict",
           "type": "string"
         },
         "request_limit": {
@@ -343,6 +343,10 @@
         "workflow": {
           "description": "Workflow ID for workflow-type agents",
           "type": "string"
+        },
+        "workflow_graph": {
+          "description": "Workflow agents only, instead of workflow: the graph saved with the agent in the same transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft only its builder runs is checked for shape only; a published agent, one a key, webhook, schedule or public link runs, or one sharing its workflow with such an agent gets the full validation. Needs workflows:write for a token.",
+          "type": "object"
         }
       },
       "required": [
@@ -1453,7 +1457,7 @@
           "type": "string"
         },
         "prompt_id": {
-          "description": "Prompt ID",
+          "description": "Prompt id, or a preset: default, creative or strict",
           "type": "string"
         },
         "request_limit": {
@@ -1493,6 +1497,10 @@
         "workflow": {
           "description": "Workflow ID for workflow-type agents",
           "type": "string"
+        },
+        "workflow_graph": {
+          "description": "Workflow agents only, instead of workflow: the graph saved with the agent in the same transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft only its builder runs is checked for shape only; a published agent, one a key, webhook, schedule or public link runs, or one sharing its workflow with such an agent gets the full validation. Needs workflows:write for a token.",
+          "type": "object"
         }
       },
       "required": [
@@ -1682,6 +1690,22 @@
         "file",
         "name",
         "user"
+      ],
+      "type": "object"
+    },
+    "UserPreferencesModel": {
+      "properties": {
+        "chat_prompt_id": {
+          "description": "The prompt chats use: default, creative, strict, or the id of a prompt the caller can read",
+          "type": "string"
+        },
+        "only_if_unset": {
+          "description": "Store it only when no chat prompt was ever stored (moving a browser's old choice); otherwise the stored one is kept and returned. Refused to a token restricted to specific prompts",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "chat_prompt_id"
       ],
       "type": "object"
     },
@@ -2938,7 +2962,9 @@
         "tags": [
           "artifacts"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "artifacts:read"
+        ]
       }
     },
     "/api/artifacts/{artifact_id}": {
@@ -2966,7 +2992,9 @@
         "tags": [
           "artifacts"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "artifacts:read"
+        ]
       },
       "parameters": [
         {
@@ -3012,7 +3040,9 @@
         "tags": [
           "artifacts"
         ],
-        "x-pat-denied": true
+        "x-pat-scopes": [
+          "artifacts:read"
+        ]
       },
       "parameters": [
         {
@@ -3714,7 +3744,7 @@
     },
     "/api/create_agent": {
       "post": {
-        "description": "Create a new agent",
+        "description": "Create a new agent. JSON or multipart (multipart for an image). 201 {id, key, image, workflow_id (workflow agents)}. A workflow agent may send workflow_graph to create its workflow in the same request; a graph that fails validation is 400 {success: false, message, error, errors}.",
         "operationId": "post_create_agent",
         "parameters": [
           {
@@ -5741,8 +5771,52 @@
     },
     "/api/sources/paginated": {
       "get": {
-        "description": "Get document with pagination, sorting and filtering",
+        "description": "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` (the agents using it). ``kind_counts`` counts every kind with the search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search and kind filters applied.",
         "operationId": "get_paginated_sources",
+        "parameters": [
+          {
+            "description": "Page number, from 1",
+            "in": "query",
+            "name": "page",
+            "type": "string"
+          },
+          {
+            "description": "Rows per page",
+            "in": "query",
+            "name": "rows",
+            "type": "string"
+          },
+          {
+            "description": "date (default), name, tokens, type, created_at or updated_at",
+            "in": "query",
+            "name": "sort",
+            "type": "string"
+          },
+          {
+            "description": "asc or desc (default)",
+            "in": "query",
+            "name": "order",
+            "type": "string"
+          },
+          {
+            "description": "Substring of the name, case-insensitive",
+            "in": "query",
+            "name": "search",
+            "type": "string"
+          },
+          {
+            "description": "all (default), files, websites, synced, wikis, or shared (sources a team shares with the caller, of any kind)",
+            "in": "query",
+            "name": "kind",
+            "type": "string"
+          },
+          {
+            "description": "all (default), in_use (some agent uses it) or unused",
+            "in": "query",
+            "name": "usage",
+            "type": "string"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
@@ -6774,7 +6848,7 @@
         }
       ],
       "put": {
-        "description": "Update an existing agent",
+        "description": "Update an existing agent. JSON or multipart (multipart for an image). 200 {success, id, message, image, key (when first published), workflow_id (workflow agents)}. A workflow agent may send workflow_graph to write its next graph version in the same transaction (or create its workflow); confirm_sponsor covers the agent's and the graph's resources. Publishing a draft without a graph validates the stored one.",
         "operationId": "put_update_agent",
         "parameters": [
           {
@@ -7161,6 +7235,50 @@
         ]
       }
     },
+    "/api/user/preferences": {
+      "get": {
+        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default.",
+        "operationId": "get_preferences_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return ``{success, chat_prompt_id, chat_prompt_set}`` for the caller",
+        "tags": [
+          "me"
+        ],
+        "x-pat-scopes": [
+          "prompts:read"
+        ]
+      },
+      "put": {
+        "description": "Set the prompt the caller's chats use: {success, chat_prompt_id, applied}. With only_if_unset and a chat prompt already stored, nothing is written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a value that is neither a preset nor a prompt id, or a non-boolean only_if_unset; 403 for only_if_unset from a token restricted to specific prompts; 404 when the caller can't read the prompt; 500 when the read or write fails.\nReturns:\n    Response: ``{success, chat_prompt_id, applied}``; ``applied`` is\n    false only when ``only_if_unset`` found a stored chat prompt, whose\n    readable value ``chat_prompt_id`` then carries.",
+        "operationId": "put_preferences_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UserPreferencesModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store ``chat_prompt_id`` after checking the caller may use that prompt",
+        "tags": [
+          "me"
+        ],
+        "x-pat-scopes": [
+          "prompts:write"
+        ]
+      }
+    },
     "/api/user/quota": {
       "get": {
         "operationId": "get_my_quota_resource",
@@ -7444,6 +7562,119 @@
         ]
       }
     },
+    "/api/workflow_runs": {
+      "get": {
+        "description": "List the workflow runs you started, newest first",
+        "operationId": "get_workflow_run_list",
+        "parameters": [
+          {
+            "description": "Only runs of this agent",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          },
+          {
+            "description": "Only runs started at or after this ISO 8601 moment",
+            "in": "query",
+            "name": "since",
+            "type": "string"
+          },
+          {
+            "description": "Only runs in this status: pending, running, completed or failed",
+            "in": "query",
+            "name": "status",
+            "type": "string"
+          },
+          {
+            "description": "Most runs to return, 1 to 100 (default 20)",
+            "in": "query",
+            "name": "limit",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "workflow_runs"
+        ],
+        "x-pat-scopes": [
+          "runs:read"
+        ]
+      }
+    },
+    "/api/workflow_runs/{run_id}": {
+      "get": {
+        "description": "One workflow run you started: status and timing, plus its steps, final state and produced files on request",
+        "operationId": "get_workflow_run_detail",
+        "parameters": [
+          {
+            "description": "Comma-separated extras: steps, state, artifacts",
+            "in": "query",
+            "name": "include",
+            "type": "string"
+          },
+          {
+            "description": "Return only this key of the final state, in full",
+            "in": "query",
+            "name": "state_key",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "workflow_runs"
+        ],
+        "x-pat-scopes": [
+          "runs:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "run_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/workflow_runs/{run_id}/steps/{step_index}": {
+      "get": {
+        "description": "One step of a workflow run you started, with its full output and state changes: what a summarized workflow_step stream event (its step_index) left out",
+        "operationId": "get_workflow_run_step",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "workflow_runs"
+        ],
+        "x-pat-scopes": [
+          "runs:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "run_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "in": "path",
+          "name": "step_index",
+          "required": true,
+          "type": "integer"
+        }
+      ]
+    },
     "/api/workflows": {
       "post": {
         "operationId": "post_workflow_list",
@@ -7682,6 +7913,10 @@
     },
     {
       "name": "workflows"
+    },
+    {
+      "description": "Workflow run results",
+      "name": "workflow_runs"
     },
     {
       "description": "Connector operations",

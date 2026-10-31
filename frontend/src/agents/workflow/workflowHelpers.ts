@@ -2,6 +2,7 @@ import { type TFunction } from 'i18next';
 
 import { ConditionCase } from '../types/workflow';
 import { FilePassing } from './documentConfig';
+import { StreamOutput } from './streamOutputConfig';
 import type { AccessFields } from '../../utils/accessUtils';
 
 // Names and handles are the user's own text: React escapes on render, so
@@ -23,6 +24,7 @@ export interface AgentNodeConfig {
   json_schema?: Record<string, unknown>;
   input_documents?: string[];
   file_passing?: FilePassing;
+  stream_output?: StreamOutput;
 }
 
 export interface UserTool {
@@ -37,6 +39,8 @@ export interface UserTool {
   access?: AccessFields['access'];
   allowed_actions?: string[];
   ownership?: AccessFields['ownership'];
+  /** A paired device's tool names its device here. */
+  config?: { device_id?: string } & Record<string, unknown>;
 }
 
 /**

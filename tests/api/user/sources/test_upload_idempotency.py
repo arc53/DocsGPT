@@ -242,6 +242,7 @@ class TestUploadIdempotency:
         ).fetchall()
         assert {r[0] for r in rows} == {"alice:shared-key", "bob:shared-key"}
 
+    @pytest.mark.fresh_db
     def test_concurrent_same_key_only_one_apply_async(self, app, pg_engine):
         """Race test (M3): N parallel POSTs with same key → only ONE apply_async.
 
@@ -938,6 +939,7 @@ class TestManageSourceFilesIdempotency:
         assert second.json["source_id"] == first.json["source_id"]
         assert second.json["source_id"] == str(src["id"])
 
+    @pytest.mark.fresh_db
     def test_concurrent_same_key_only_one_apply_async(self, app, pg_engine):
         """N parallel same-key POSTs → exactly one apply_async."""
         from concurrent.futures import ThreadPoolExecutor

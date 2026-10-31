@@ -16,6 +16,9 @@ from docsgpt.monitors.spec import parse_iso
 from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 from docsgpt.storage.db.repositories.trigger_links import TriggerHitsRepository, TriggerLinksRepository
 
+
+pytestmark = pytest.mark.fresh_db
+
 THRESHOLD = {"type": "threshold", "value_path": "", "op": "<", "value": 90.0}
 
 

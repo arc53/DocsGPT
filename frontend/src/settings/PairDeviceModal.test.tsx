@@ -305,6 +305,48 @@ describe('PairDeviceModal', () => {
     expect(poll).toHaveBeenCalledTimes(pollsBefore + 1);
   });
 
+  it('ignores a redemption past the deadline even before the expiry timer runs', async () => {
+    const onPaired = vi.fn();
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ ...pairing, expires_in: 4 }),
+    );
+    let settle!: (value: Response) => void;
+    vi.spyOn(apiClient, 'get').mockReturnValue(
+      new Promise<Response>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <PairDeviceModal
+          modalState="ACTIVE"
+          setModalState={setModalState}
+          onPaired={onPaired}
+        />,
+      );
+    });
+    await clickButton('settings.devices.pairing.start');
+    await advance(3000);
+
+    // The deadline has passed, but the event loop hasn't run the timeout yet.
+    vi.setSystemTime(Date.now() + 2000);
+    await act(async () => {
+      settle(
+        response({
+          ...pairing,
+          status: 'redeemed',
+          device_id: 'dev_1',
+          device_name: 'Old laptop',
+        }),
+      );
+    });
+
+    expect(onPaired).not.toHaveBeenCalled();
+    expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
+    await advance(1000);
+    expectExpiredForm();
+  });
+
   it('ignores a poll that settles after the dialog closes', async () => {
     vi.spyOn(apiClient, 'post').mockResolvedValue(response(pairing));
     vi.spyOn(apiClient, 'delete').mockResolvedValue(

@@ -26,7 +26,7 @@ from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 from docsgpt.storage.local import LocalStorage
 from docsgpt.storage.storage_creator import StorageCreator
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.fresh_db]
 
 OWNER = "user-bridge"
 # A distinct caller for the shared-agent case (caller != workflow owner).

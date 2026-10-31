@@ -82,8 +82,9 @@ in `docsgpt/asgi.py`:
 - the `/mcp` FastMCP endpoint,
 - the chat reconnect reader `GET /api/messages/<id>/events`,
 - the notification stream `GET /api/events`,
-- the remote-device command stream `GET /api/devices/sessions/<id>/events`, and
-- artifact downloads `GET /api/artifacts/<id>/download`.
+- the remote-device command stream `GET /api/devices/sessions/<id>/events`,
+- artifact downloads `GET /api/artifacts/<id>/download`, and
+- a workflow run's file downloads `GET /api/workflow_runs/<run_id>/artifacts/<artifact_id>/download`.
 
 These are native-async Starlette routes because they hold a response open
 for a long time; on Flask each would pin a WSGI threadpool slot. Under
@@ -177,11 +178,15 @@ python -m pytest
 ```
 
 The suite needs the test dependencies (`uv sync` installs the `dev` group; pip users
-install `tests/requirements.txt`, and pytest-cov is mandatory because `pytest.ini`
-passes `--cov`). DB-backed tests start a throwaway cluster through
+install `tests/requirements.txt`). Coverage is off by default; CI passes `--cov=docsgpt`,
+and `python -m pytest --cov=docsgpt --cov-report=html` gives a local report. DB-backed tests start a throwaway cluster through
 `pytest-postgresql`, so the PostgreSQL server binaries (`pg_ctl`, `initdb`) must be
 on `PATH` or reachable through `pg_config`; a running Postgres is not required.
-See CONTRIBUTING.md "Running the tests".
+DB tests share one database per worker and roll back through `pg_conn`; a test that
+commits needs `@pytest.mark.fresh_db`, or it fails at teardown naming the tables it wrote.
+Mark only tests that must commit (each one clones a database); `test_migration_*` files get it
+automatically. Keep tests fast: patch sleeps and retry back-off and assert the attempt count,
+rather than waiting them out. See CONTRIBUTING.md "Running the tests".
 
 On **macOS**, run the suite with `KMP_DUPLICATE_LIB_OK=TRUE`:
 

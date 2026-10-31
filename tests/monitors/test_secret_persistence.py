@@ -25,6 +25,9 @@ from docsgpt.storage.db.repositories.conversations import ConversationsRepositor
 from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 def _run(gen):
     events = []
     while True:

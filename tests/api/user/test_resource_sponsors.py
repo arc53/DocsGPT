@@ -621,14 +621,23 @@ class TestWorkflows:
             user=OWNER,
             decoded_token={"sub": OWNER},
         )
+        def _node_tools():
+            from docsgpt.agents.tool_executor import ToolExecutor
+
+            executor = ToolExecutor(user=OWNER)
+            executor.allowed_tool_ids = [tool]
+            executor.tool_owner = OWNER
+            executor.tool_holder = engine.agent.workflow_row
+            return {tid: row["user_id"] for tid, row in executor.get_tools().items()}
+
         with _patch_db(pg_conn):
-            assert engine._node_tool_principals([tool]) == {tool: EDITOR}
+            assert _node_tools() == {tool: EDITOR}
             assert engine._authorized_node_sources([source]) == [source]
             agent_id = str(pg_conn.exec_driver_sql(
                 f"SELECT id FROM agents WHERE workflow_id = '{wid}'"
             ).scalar())
             TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", agent_id, target_user_id=EDITOR)
-            assert engine._node_tool_principals([tool]) == {}
+            assert _node_tools() == {}
             assert engine._authorized_node_sources([source]) == []
 
     def _node_executor(self, monkeypatch, pg_conn, wid, caller, tools):

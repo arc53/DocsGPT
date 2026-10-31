@@ -6,6 +6,7 @@ import {
   GitBranch,
   type LucideIcon,
   Play,
+  Repeat,
   StickyNote,
 } from 'lucide-react';
 
@@ -19,6 +20,7 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   state: Database,
   condition: GitBranch,
   code: CodeXml,
+  loop: Repeat,
 };
 
 export const NODE_COLORS: Record<string, string> = {
@@ -29,4 +31,5 @@ export const NODE_COLORS: Record<string, string> = {
   state: 'text-info',
   condition: 'text-warning',
   code: 'text-info',
+  loop: 'text-primary',
 };

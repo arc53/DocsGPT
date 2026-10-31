@@ -134,10 +134,9 @@
     "label": "Paramètres",
     "general": {
       "label": "Général",
-      "subtitle": "Choisissez l’apparence de DocsGPT, sa langue et le prompt utilisé par vos conversations.",
+      "subtitle": "Choisissez l’apparence de DocsGPT et sa langue.",
       "sections": {
         "appearance": "Apparence",
-        "chat": "Conversation",
         "dangerZone": "Zone de danger"
       },
       "theme": "Thème",
@@ -147,8 +146,6 @@
       "light": "Clair",
       "dark": "Sombre",
       "chunks": "Fragments traités par requête",
-      "prompt": "Prompt actif",
-      "promptDescription": "Le prompt système des conversations sans agent. Les agents utilisent le leur.",
       "deleteAllLabel": "Supprimer toutes les conversations",
       "deleteAllDescription": "Supprime définitivement toutes les conversations de votre compte. Cette action est irréversible.",
       "addNew": "Ajouter",
@@ -158,18 +155,7 @@
       "medium": "Moyen",
       "high": "Élevé",
       "unlimited": "Illimité",
-      "default": "Par défaut",
-      "add": "Ajouter",
-      "promptActions": {
-        "select": "Sélectionner un prompt",
-        "edit": "Modifier le prompt",
-        "view": "Afficher le prompt",
-        "duplicate": "Dupliquer le prompt",
-        "delete": "Supprimer le prompt",
-        "deleteFailed": "Impossible de supprimer ce prompt.",
-        "saveFailed": "Impossible d’enregistrer ce prompt.",
-        "editConflict": "Quelqu’un d’autre a modifié ce prompt. Rouvrez-le pour voir sa version."
-      }
+      "default": "Par défaut"
     },
     "sources": {
       "title": "Gérez ici tous les fichiers sources auxquels vous avez accès et ceux que vous avez importés.",
@@ -180,7 +166,7 @@
       "type": "Type",
       "tokenUsage": "Consommation de jetons",
       "noData": "Aucune connaissance pour l’instant",
-      "searchPlaceholder": "Rechercher…",
+      "searchPlaceholder": "Rechercher des connaissances…",
       "addNew": "Ajouter",
       "addSource": "Ajouter des connaissances",
       "addChunk": "Ajouter un fragment",
@@ -723,7 +709,23 @@
       "viaConnectionFiles_many": "via {{name}} · {{files}} fichiers",
       "item": {
         "tokens": "{{tokens}} jetons"
-      }
+      },
+      "tokenCount": "{{tokens}} jetons",
+      "kinds": {
+        "all": "Toutes",
+        "files": "Fichiers",
+        "websites": "Sites web",
+        "synced": "Synchronisées",
+        "wikis": "Wikis",
+        "shared": "Partagées"
+      },
+      "kindFilterLabel": "Filtrer par type",
+      "needsAttention": "À traiter",
+      "allKnowledge": "Toutes les connaissances",
+      "deleteUsedBy_one": "Utilisée par {{formatted}} agent, qui perd cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_other": "Utilisée par {{formatted}} agents, qui perdent cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_many": "Utilisée par {{formatted}} agents, qui perdent cette source. Ses fichiers et fragments sont également supprimés. Cette action est irréversible.",
+      "noKnowledgeFound": "Aucune connaissance trouvée"
     },
     "analytics": {
       "label": "Statistiques",
@@ -1037,7 +1039,8 @@
         "result": "Résultat",
         "source": "Source",
         "feedback": "Avis",
-        "passthrough": "Passthrough"
+        "passthrough": "Passthrough",
+        "retries": "Nouvelles tentatives"
       },
       "trace": {
         "view": "Voir la trace",
@@ -1182,7 +1185,10 @@
         "topics": "Sujets"
       },
       "levelFilter": "Niveau",
-      "typeFilter": "Type d’événement"
+      "typeFilter": "Type d’événement",
+      "retriedStep_one": "{{node}} : {{count}} tentative",
+      "retriedStep_many": "{{node}} : {{count}} tentatives",
+      "retriedStep_other": "{{node}} : {{count}} tentatives"
     },
     "teams": {
       "label": "Équipes",
@@ -1508,7 +1514,7 @@
     },
     "tools": {
       "label": "Outils",
-      "subtitle": "Les actions que vos agents peuvent effectuer. Les outils intégrés se trouvent ici. Les outils d’un service connecté sont regroupés sous ce service.",
+      "subtitle": "Les actions que vos agents peuvent effectuer. Les outils inclus sont fournis avec DocsGPT. Les outils d’un service connecté sont regroupés sous ce service.",
       "searchPlaceholder": "Rechercher des outils…",
       "addTool": "Ajouter un outil",
       "noToolsFound": "Aucun outil trouvé",
@@ -1652,13 +1658,70 @@
       "triggerLabel_other": "Outils, {{formatted}} sélectionnés",
       "triggerLabel_many": "Outils, {{formatted}} sélectionnés",
       "manageInConnectors": "Gérer dans les connecteurs",
-      "defaultBadge": "Par défaut",
       "noToolsYet": "Aucun outil pour l’instant",
       "connectService": "Connecter un service",
       "filledBy": "Renseigné par",
       "loadError": "Impossible de charger vos outils.",
       "deleteConsequence": "Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
-      "deleteActionConsequence": "Elle sera supprimée lorsque vous enregistrerez l’outil."
+      "deleteActionConsequence": "Elle sera supprimée lorsque vous enregistrerez l’outil.",
+      "groupIncluded": "Inclus",
+      "groupAdded": "Ajoutés",
+      "filters": {
+        "all": "Tous"
+      },
+      "deleteUsedBy_one": "Utilisé par {{formatted}} agent, qui perd cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_other": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
+      "deleteUsedBy_many": "Utilisé par {{formatted}} agents, qui perdent cet outil. Ses paramètres et actions sont également supprimés. Cette action est irréversible.",
+      "groupServices": "Services",
+      "kindFilterLabel": "Filtrer par type"
+    },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "Les prompts système indiquent au modèle comment répondre. Celui que vous choisissez sert aux conversations sans agent ; les agents choisissent le leur.",
+      "searchPlaceholder": "Rechercher des prompts…",
+      "addPrompt": "Ajouter un prompt",
+      "manage": "Accéder aux prompts",
+      "select": "Sélectionner un prompt",
+      "filters": {
+        "all": "Tous"
+      },
+      "sections": {
+        "included": "Inclus",
+        "yours": "Les vôtres",
+        "shared": "Partagés avec l’équipe"
+      },
+      "presets": {
+        "default": "Répond à partir de vos documents et les cite. S’ils ne couvrent pas la question, il le dit, puis répond avec des connaissances générales.",
+        "creative": "Comme default, avec en plus des idées, des exemples et des angles inventifs, sans rien perdre de l’exactitude des faits.",
+        "strict": "Répond uniquement à partir de vos documents, de vos outils et de la conversation. Signale ce qui manque au lieu de deviner."
+      },
+      "chatPromptLabel": "Prompt des conversations sans agent",
+      "useInChats": "Utiliser {{name}} dans les conversations",
+      "chatPromptFailed": "Impossible de changer le prompt de vos conversations.",
+      "actions": "Actions pour {{name}}",
+      "edit": "Modifier",
+      "view": "Afficher",
+      "duplicate": "Dupliquer",
+      "shareWithTeam": "Partager avec l’équipe",
+      "delete": "Supprimer",
+      "deleteUsedBy_one": "Utilisé par {{formatted}} agent, qui revient au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedBy_other": "Utilisé par {{formatted}} agents, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedBy_many": "Utilisé par {{formatted}} agents, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedByInChats_one": "Utilisé par {{formatted}} agent et vos conversations, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedByInChats_other": "Utilisé par {{formatted}} agents et vos conversations, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteUsedByInChats_many": "Utilisé par {{formatted}} agents et vos conversations, qui reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteInChats": "Vos conversations l’utilisent et reviennent au prompt par défaut. Cette action est irréversible.",
+      "deleteFailed": "Impossible de supprimer ce prompt.",
+      "saveFailed": "Impossible d’enregistrer ce prompt.",
+      "editConflict": "Quelqu’un d’autre a modifié ce prompt. Rouvrez-le pour voir sa version.",
+      "loadError": "Impossible de charger vos prompts.",
+      "noPromptsFound": "Aucun prompt trouvé",
+      "kinds": {
+        "shared": "Partagés"
+      },
+      "kindFilterLabel": "Filtrer par type",
+      "chatPromptOn": "Utilisé dans les conversations sans agent",
+      "chatPromptOff": "Utiliser dans les conversations sans agent"
     },
     "devices": {
       "label": "Appareils",
@@ -1856,6 +1919,8 @@
         "conversations": "Conversations",
         "analytics": "Statistiques",
         "teams": "Équipes",
+        "runs": "Exécutions de workflows",
+        "artifacts": "Artefacts",
         "chat": "Conversation"
       },
       "create": {
@@ -1875,7 +1940,7 @@
         "impliedByWrite": "Inclus avec l’accès en écriture",
         "restrict": "Limiter à des ressources précises",
         "restrictHint": "Facultatif. Limitez le jeton aux éléments sélectionnés. Laissez une liste vide pour tous les autoriser.",
-        "restrictNoFamilies": "Sélectionnez d’abord une portée pour les agents, sources, prompts, outils ou conversations afin d’en limiter les ressources.",
+        "restrictNoFamilies": "Sélectionnez d’abord une portée pour les agents, sources, prompts, outils, workflows, exécutions de workflows ou conversations afin d’en limiter les ressources.",
         "allSelected": "Tout (aucune restriction)",
         "noResources": "Aucun résultat.",
         "searchResources": "Rechercher…",
@@ -2177,9 +2242,6 @@
         "ownerWarningNoAccount": "Les membres de l’équipe agiront avec votre compte {{name}}."
       },
       "createFailed": "Impossible d’ajouter le connecteur. Réessayez.",
-      "capabilityFilter": {
-        "clear": "Afficher tous les connecteurs"
-      },
       "capabilityPlain": {
         "sync": "Se synchronise dans Connaissances",
         "read": "Consulte des informations",
@@ -2240,16 +2302,6 @@
         "failed": "Impossible de renommer le compte. Réessayez."
       },
       "browseAll": "Parcourir tous les connecteurs",
-      "filters": {
-        "all": "Tous",
-        "connected": "Connectés",
-        "disconnected": "Déconnectés"
-      },
-      "filterLabel": "Filtrer les connecteurs",
-      "capabilityChip": {
-        "sync": "Se synchronise dans Connaissances",
-        "tools": "Fournit des outils aux agents"
-      },
       "injection": {
         "flagged": "Injection de prompt possible",
         "notice_one": "La description de {{formatted}} action ressemble à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-la dans Personnaliser avant de l’autoriser.",
@@ -2257,10 +2309,53 @@
         "notice_other": "Les descriptions de {{formatted}} actions ressemblent à des instructions placées à l’intention de l’IA, une possible injection de prompt. Vérifiez-les dans Personnaliser avant de les autoriser."
       },
       "syncContent": "Synchroniser du contenu",
-      "openInKnowledge": "Ouvrir dans Connaissances"
+      "openInKnowledge": "Ouvrir dans Connaissances",
+      "capabilityShort": {
+        "sync": "Synchronise",
+        "read": "Consulte",
+        "write": "Agit"
+      },
+      "capabilityFilters": {
+        "all": "Tous",
+        "sync": "Connaissances",
+        "tools": "Outils"
+      },
+      "capabilityFilterLabel": "Filtrer par fonction",
+      "statusFilters": {
+        "all": "Tout statut",
+        "reconnect": "Connexion requise",
+        "connected": "Connectés",
+        "available": "Non connectés"
+      },
+      "statusFilterLabel": "Filtrer par statut",
+      "sections": {
+        "reconnect": "Connexion requise",
+        "connected": "Connectés",
+        "available": "Disponibles"
+      },
+      "addCustomDescription": "Connectez un serveur ou une API absent du catalogue."
     },
     "insights": {
       "label": "Analyses"
+    },
+    "usage": {
+      "agents_one": "{{formatted}} agent l’utilise",
+      "agents_other": "{{formatted}} agents l’utilisent",
+      "agents_many": "{{formatted}} agents l’utilisent",
+      "others_one": "et {{formatted}} autre dans vos équipes",
+      "others_other": "et {{formatted}} autres dans vos équipes",
+      "others_many": "et {{formatted}} autres dans vos équipes",
+      "agentsShort_one": "{{formatted}} agent",
+      "agentsShort_other": "{{formatted}} agents",
+      "agentsShort_many": "{{formatted}} agents",
+      "filters": {
+        "all": "Tout usage",
+        "inUse": "En usage",
+        "unused": "Sans usage"
+      },
+      "filterLabel": "Filtrer par utilisation",
+      "inChatsOn": "Activé dans mes conversations",
+      "inChatsOff": "Désactivé dans mes conversations"
     }
   },
   "modals": {
@@ -2481,8 +2576,7 @@
       "learnAboutPrompts": "En savoir plus sur les prompts →",
       "publicPromptEditDisabled": "Les prompts publics ne sont pas modifiables",
       "promptTypePublic": "public",
-      "promptTypePrivate": "privé",
-      "delete": "Supprimer"
+      "promptTypePrivate": "privé"
     },
     "chunk": {
       "add": "Ajouter un fragment",
@@ -2628,12 +2722,10 @@
     },
     "sources": {
       "title": "Sources",
-      "text": "Choisir des connaissances",
       "link": "Lien de la source",
       "view_more_one": "{{count}} autre source",
       "view_more_other": "{{count}} autres sources",
       "view_more_many": "{{count}} autres sources",
-      "noSourcesAvailable": "Aucune connaissance pour l’instant",
       "selectedCount": "{{count}} sélectionné(s)",
       "triggerLabel_one": "Connaissances, {{formatted}} sélectionnée",
       "triggerLabel_other": "Connaissances, {{formatted}} sélectionnées",
@@ -2947,7 +3039,14 @@
       "stepOf": "Étape {{step}} sur {{total}}",
       "stepCount_one": "{{count}} étape",
       "stepCount_other": "{{count}} étapes",
-      "stepCount_many": "{{count}} étapes"
+      "stepCount_many": "{{count}} étapes",
+      "loopItems": "{{done}} éléments sur {{total}}",
+      "loopItemsFailed": "{{count}} en échec",
+      "retrying": "Nouvelle tentative · tentative {{attempt}}",
+      "retryingOf": "Nouvelle tentative · tentative {{attempt}} sur {{total}}",
+      "attempts_one": "{{count}} tentative",
+      "attempts_many": "{{count}} tentatives",
+      "attempts_other": "{{count}} tentatives"
     }
   },
   "agents": {
@@ -3061,22 +3160,11 @@
         "historyLimitDefault": "Résumé près de la limite de contexte"
       },
       "sourcePopup": {
-        "title": "Sélectionner des connaissances",
         "searchPlaceholder": "Rechercher des connaissances…",
-        "noOptionsMessage": "Aucune connaissance pour l’instant",
-        "groupOwn": "Vos sources",
-        "groupTeam": "Partagées avec l’équipe",
         "noSourceHint": "Facultatif. Sans connaissances, l’agent répond uniquement à partir du modèle et de ses outils."
       },
       "toolsPopup": {
-        "title": "Sélectionner des outils",
-        "searchPlaceholder": "Rechercher des outils…",
-        "noOptionsMessage": "Aucun outil disponible",
-        "groupBuiltin": "Intégrés",
-        "groupDefault": "Intégrés",
         "groupCustom": "Personnalisés",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "Sur cet agent",
         "attachedHint": "Ajouté par quelqu’un d’autre. Vous pouvez le retirer."
       },
       "modelsPopup": {
@@ -3127,14 +3215,14 @@
           "label": "Origines autorisées",
           "description": "Seuls les sites listés, et les sites auxquels cette instance fait confiance, peuvent appeler cet agent avec sa clé API",
           "inputLabel": "Origine",
-          "hint": "Une adresse de site sans chemin, par exemple https://example.com. Appuyez sur Entrée pour l\u2019ajouter.",
+          "hint": "Une adresse de site sans chemin, par exemple https://example.com. Appuyez sur Entrée pour l’ajouter.",
           "placeholder": "https://example.com",
           "add": "Ajouter",
           "listLabel": "Origines autorisées",
           "remove": "Retirer {{origin}}",
           "errors": {
             "invalid": "Saisissez une adresse commençant par http:// ou https://, par exemple https://example.com",
-            "path": "N\u2019indiquez pas de chemin : une origine se limite au schéma, à l\u2019hôte et au port",
+            "path": "N’indiquez pas de chemin : une origine se limite au schéma, à l’hôte et au port",
             "duplicate": "{{origin}} est déjà dans la liste",
             "full": "Vous pouvez ajouter au maximum {{max}} origines",
             "required": "Ajoutez au moins une origine, ou désactivez cette option"
@@ -3150,7 +3238,8 @@
       "externalKb": "Base de connaissances externe",
       "errors": {
         "publishFailed": "Impossible de publier l’agent. Veuillez réessayer.",
-        "saveDraftFailed": "Impossible d’enregistrer le brouillon. Veuillez réessayer."
+        "saveDraftFailed": "Impossible d’enregistrer le brouillon. Veuillez réessayer.",
+        "staleWrite": "Quelqu’un d’autre a enregistré cet agent après que vous l’avez ouvert. Vos modifications sont toujours là : copiez ce dont vous avez besoin, rechargez la page et appliquez-les de nouveau."
       },
       "guardrails": {
         "enable": "Activer les garde-fous",
@@ -3372,6 +3461,11 @@
           "description": "Il peut chevaucher d’autres sujets, il a donc ses propres résultats. Ils disparaissent des analyses et des journaux, et l’ajouter à nouveau repart de zéro.",
           "submit": "Retirer"
         }
+      },
+      "leave": {
+        "title": "Quitter sans enregistrer ?",
+        "description": "Les modifications apportées ici seront perdues.",
+        "submit": "Quitter"
       }
     },
     "logs": {
@@ -3655,9 +3749,7 @@
       },
       "builder": {
         "deleteFailed": "Échec de la suppression de l’agent de workflow",
-        "updateWorkflowFailed": "Échec de la mise à jour du workflow",
         "updateAgentFailed": "Échec de la mise à jour de l’agent",
-        "createWorkflowFailed": "Échec de la création du workflow",
         "createAgentFailed": "Échec de la création de l’agent",
         "saveFailed": "Échec de l’enregistrement du workflow",
         "defaultDescription": "Agent de workflow : {{name}}",
@@ -3710,7 +3802,9 @@
         "documents": "Documents",
         "documentsHint": "Documents transmis à cet agent depuis les imports ou les nœuds en amont.",
         "filePassing": "Transmission des fichiers",
-        "filePassingHint": "Auto : envoi natif si le modèle le prend en charge, sinon extraction du texte.",
+        "filePassingHint": "Auto : envoi natif si le modèle le prend en charge, sinon extraction du texte. Lignes numérotées : le texte entier, chaque ligne marquée [D#:L#] pour la citer.",
+        "streamOutput": "Détails des étapes dans le flux de la conversation",
+        "streamOutputHint": "Ce que contient l’événement d’une étape terminée dans le flux de la conversation. Résumé envoie un aperçu quand la sortie est volumineuse ; les valeurs complètes restent dans l’exécution. Statut seul retire la sortie de l’événement ; pour que la réponse du nœud n’apparaisse pas non plus dans la conversation, désactivez « Diffuser la sortie à l’utilisateur ».",
         "structuredOutput": "Sortie structurée (schéma JSON)",
         "modelNoStructuredOutput": "Le modèle sélectionné ne prend pas en charge la sortie structurée.",
         "validSchema": "Schéma JSON valide",
@@ -3744,7 +3838,26 @@
         "detailsTitle": "Détails du workflow",
         "detailsDescription": "Nom, description et image affichés sur la carte de l’agent.",
         "unsavedChanges": "Modifications non enregistrées",
-        "editDetailsMenu": "Modifier les détails"
+        "editDetailsMenu": "Modifier les détails",
+        "loopHint": "Exécuter des nœuds pour chaque élément d’une liste",
+        "loopIntro": "Les nœuds de la boucle s’exécutent une fois pour chaque élément d’une liste de l’état du workflow. Chaque élément s’exécute sur sa propre copie de l’état, et la boucle enregistre un résultat par élément, dans l’ordre de la liste.",
+        "loopItems": "Éléments",
+        "loopItemsHint": "La variable d’état qui contient la liste, par exemple extracted.items.",
+        "loopItemsInvalid": "Utilisez un chemin d’état comme extracted.items.",
+        "loopItemVariable": "Variable d’élément",
+        "loopItemVariableHint": "Les nœuds de la boucle lisent l’élément courant sous la forme {{example}}.",
+        "loopItemVariableInvalid": "Utilisez des lettres, des chiffres et des traits de soulignement, pas un nom réservé comme query.",
+        "loopConcurrency": "Éléments simultanés",
+        "loopMaxItems": "Nombre maximal d’éléments",
+        "loopOnError": "En cas d’échec d’un élément",
+        "loopOnErrorFail": "Arrêter et faire échouer la boucle",
+        "loopOnErrorSkip": "Ignorer l’élément",
+        "loopOnErrorCollect": "Conserver l’erreur à sa place",
+        "loopOutputHint": "La liste des résultats, un par élément.",
+        "loopResultVariable": "Résultat de l’élément",
+        "loopResultVariableHint": "La variable dont la valeur est le résultat de chaque élément. Si elle est vide, la sortie du dernier nœud exécuté est utilisée.",
+        "loadFailedTitle": "Impossible de charger le workflow",
+        "loadFailedDescription": "Rien n’a été modifié. Réessayez, ou revenez dans un instant."
       },
       "validation": {
         "nameRequired": "Le nom du workflow est obligatoire",
@@ -3771,7 +3884,14 @@
         "caseNoVariable": "Le cas « {{handle}} » de la condition « {{name}} » doit indiquer une variable en mode Simple",
         "branchReachEnd": "La branche « {{handle}} » de la condition « {{name}} » doit finir par atteindre un nœud de fin",
         "codeRequired": "Le nœud de code « {{name}} » doit contenir du code à exécuter",
-        "codeSchema": "Nœud de code « {{name}} » : le schéma JSON {{error}}"
+        "codeSchema": "Nœud de code « {{name}} » : le schéma JSON {{error}}",
+        "loopItems": "La boucle « {{name}} » a besoin d’une liste à parcourir",
+        "loopItemsPath": "Les éléments de la boucle « {{name}} » doivent être un chemin d’état comme extracted.items",
+        "loopItemVariable": "La boucle « {{name}} » a une variable d’élément inutilisable",
+        "loopEmpty": "La boucle « {{name}} » doit contenir au moins un nœud",
+        "loopEntry": "La boucle « {{name}} » doit commencer par exactement un nœud",
+        "nodeRetry": "Le nœud « {{name}} » a des réglages de nouvelle tentative hors limites",
+        "retryDefaults": "Les nouvelles tentatives par défaut du workflow sont hors limites"
       },
       "schema": {
         "notObject": "doit être un objet JSON valide",
@@ -3781,7 +3901,13 @@
       "filePassing": {
         "auto": "Auto",
         "native": "Natif",
-        "extract": "Extraire"
+        "extract": "Extraire",
+        "lines": "Lignes numérotées"
+      },
+      "streamOutput": {
+        "summary": "Résumé si volumineux",
+        "full": "Toujours complet",
+        "none": "Statut seul"
       },
       "mobileBlocker": {
         "title": "Ouvrez sur un écran plus grand",
@@ -3811,7 +3937,11 @@
         "variableCount_other": "{{count}} variables",
         "variableCount_many": "{{count}} variables",
         "variableTitle": "Variable : {{name}}",
-        "valueTitle": "Valeur : {{value}}"
+        "valueTitle": "Valeur : {{value}}",
+        "loop": "Boucle",
+        "loopSummary": "Pour chaque {{variable}} dans {{items}}",
+        "loopNoItems": "Choisissez une liste à parcourir",
+        "loopEmpty": "Déposez des nœuds ici pour les exécuter une fois par élément"
       },
       "preview": {
         "executionDetails": "Détails de l’exécution",
@@ -3819,11 +3949,23 @@
         "stepCount_other": "({{count}} étapes)",
         "stepCount_many": "({{count}} étapes)",
         "outputLabel": "Sortie :",
+        "showFullOutput": "Afficher la sortie complète",
+        "fullOutputPending": "La sortie complète sera disponible à la fin de l’exécution.",
+        "fullOutputFailed": "Impossible de charger la sortie complète.",
+        "fullOutputUnsaved": "Enregistrez le workflow et relancez-le pour charger la sortie complète d’une étape volumineuse.",
+        "outputNotStreamed": "La sortie de cette étape n’est pas diffusée.",
         "errorLabel": "Erreur :",
         "minimapHeading": "Workflow",
         "emptyTitle": "Tester le workflow",
         "unsavedDraftAttachments": "Enregistrez le workflow avant de joindre des documents dans l’aperçu.",
-        "backToRun": "Retour à l’exécution"
+        "backToRun": "Retour à l’exécution",
+        "loopItems": "{{done}} éléments sur {{total}}",
+        "loopItemsFailed": "{{count}} en échec",
+        "retrying": "Nouvelle tentative · tentative {{attempt}}",
+        "retryingOf": "Nouvelle tentative · tentative {{attempt}} sur {{total}}",
+        "attempts_one": "{{count}} tentative",
+        "attempts_many": "{{count}} tentatives",
+        "attempts_other": "{{count}} tentatives"
       },
       "documents": {
         "modeAll": "Tous les documents d’entrée",
@@ -3840,6 +3982,27 @@
         "searchPlaceholder": "Rechercher des variables…",
         "empty": "Aucune variable trouvée",
         "addContext": "Ajouter du contexte"
+      },
+      "retry": {
+        "title": "Nouvelles tentatives",
+        "defaultsDescription": "Ce que font les nœuds agent et code quand une tentative échoue. Les réglages propres à un nœud ont la priorité.",
+        "attempts": "Tentatives max.",
+        "inherit": "Par défaut ({{value}})",
+        "noRetry": "1 (sans nouvelle tentative)",
+        "backoff": "Délais (s)",
+        "backoffInvalid": "Utilisez des nombres de 0 à 300, séparés par des virgules.",
+        "backoffTooMany": "Utilisez au plus 10 délais.",
+        "hint": "Attend {{backoff}} secondes avant chaque nouvelle tentative ; le dernier délai se répète.",
+        "hintOff": "S’exécute une fois. Augmentez les tentatives pour relancer en cas d’échec.",
+        "on": "Relancer en cas de",
+        "onChoice": {
+          "transient": "Erreurs et délais dépassés",
+          "invalid_output": "Sortie non valide"
+        },
+        "onHint": {
+          "transient": "Erreurs serveur, limites de débit, délais dépassés, connexions interrompues et réponses vides.",
+          "invalid_output": "Une réponse qui n’est pas du JSON valide ou ne correspond pas au schéma de sortie structurée."
+        }
       }
     },
     "typeModal": {
@@ -3909,7 +4072,8 @@
     "multiSelect": {
       "more_one": "+{{count}} autre",
       "more_other": "+{{count}} autres",
-      "more_many": "+{{count}} autres"
+      "more_many": "+{{count}} autres",
+      "selectedGroup": "Sélectionnés"
     }
   },
   "pageNotFound": {

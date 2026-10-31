@@ -11,6 +11,13 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+// The prompt picker turns into a bottom sheet on a phone.
+const media = vi.hoisted(() => ({ isMobile: false, isDesktop: true }));
+vi.mock('../hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../hooks')>()),
+  useMediaQuery: () => media,
+}));
+
 const mockState = {
   preference: {
     token: null,
@@ -45,13 +52,24 @@ const mocks = vi.hoisted(() => {
     detailsProps: vi.fn(),
     shareProps: vi.fn(),
     reconnect: vi.fn(),
+    signInOptions: null as null | { onNavigate?: (to: string) => void },
+    toolsCalls: [] as number[],
+    fileUploadProps: null as null | { onUpload: (files: File[]) => void },
+    addToolProps: null as null | {
+      modalState: string;
+      onToolsCreated: (ids: string[]) => void;
+      onNavigate?: (to: string) => void;
+    },
   };
 });
 const { jsonResponse } = mocks;
 
 vi.mock('../connectors/SignInAgainNotice', () => ({
   default: () => null,
-  useSignInAgain: () => ({ reconnect: mocks.reconnect, modals: null }),
+  useSignInAgain: (options: { onNavigate?: (to: string) => void }) => {
+    mocks.signInOptions = options;
+    return { reconnect: mocks.reconnect, modals: null };
+  },
 }));
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) => selector(mockState),
@@ -61,6 +79,7 @@ vi.mock('react-redux', () => ({
 vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: () =>
+      mocks.toolsCalls.push(1) &&
       jsonResponse({
         tools: mocks.tools ?? [
           {
@@ -116,13 +135,40 @@ vi.mock('../components/MultiSelectPopover', () => ({
     trigger,
     items,
     onToggle,
+    title,
+    searchPlaceholder,
+    selectedFirst,
+    footer,
+    filters,
+    emptyMessage,
+    loneGroupHeading,
+    onOpenChange,
   }: {
     trigger: React.ReactNode;
     items: MultiSelectPopoverItem[];
     onToggle: (id: string) => void;
+    title?: string;
+    searchPlaceholder?: string;
+    selectedFirst?: boolean;
+    footer?: React.ReactNode;
+    filters?: React.ReactNode;
+    emptyMessage?: string;
+    loneGroupHeading?: boolean;
+    onOpenChange?: (open: boolean) => void;
   }) => (
-    <div data-testid="picker">
+    <div
+      data-testid="picker"
+      data-title={title}
+      data-search={searchPlaceholder}
+      data-selected-first={selectedFirst ? 'true' : undefined}
+      data-empty={emptyMessage}
+      data-lone-group-heading={String(loneGroupHeading ?? true)}
+    >
       {trigger}
+      {/* A span, so the tests that count the picker's buttons skip it. */}
+      <span data-testid="picker-open" onClick={() => onOpenChange?.(true)} />
+      <div data-testid="picker-footer">{footer}</div>
+      <div data-testid="picker-filters">{filters}</div>
       {items.map((item) => (
         <div
           key={item.id}
@@ -142,9 +188,7 @@ vi.mock('../components/MultiSelectPopover', () => ({
   ),
 }));
 
-vi.mock('./workflow/WorkflowBuilder', () => ({ default: () => null }));
 vi.mock('./AgentPreview', () => ({ default: () => null }));
-vi.mock('../settings/Prompts', () => ({ default: () => null }));
 vi.mock('./components/GuardrailsSection', () => ({
   default: (props: { disabled?: boolean }) => {
     mocks.guardrailsProps(props);
@@ -153,6 +197,15 @@ vi.mock('./components/GuardrailsSection', () => ({
   guardrailsIncomplete: () => false,
 }));
 vi.mock('../upload/Upload', () => ({ default: () => null }));
+vi.mock('../modals/AddToolModal', () => ({
+  default: (props: {
+    modalState: string;
+    onToolsCreated: (ids: string[]) => void;
+  }) => {
+    mocks.addToolProps = props;
+    return null;
+  },
+}));
 vi.mock('../modals/AgentDetailsModal', () => ({
   default: (props: unknown) => {
     mocks.detailsProps(props);
@@ -219,7 +272,12 @@ vi.mock('../navigation/SectionPageHeader', () => ({
   CurrentSectionHeader: ({ title }: { title?: React.ReactNode }) =>
     title ? <h1>{title}</h1> : null,
 }));
-vi.mock('../components/FileUpload', () => ({ FileUpload: () => null }));
+vi.mock('../components/FileUpload', () => ({
+  FileUpload: (props: { onUpload: (files: File[]) => void }) => {
+    mocks.fileUploadProps = props;
+    return null;
+  },
+}));
 vi.mock('../components/SourcesPopoverFooter', () => ({ default: () => null }));
 vi.mock('../components/ToolIcon', () => ({ default: () => null }));
 
@@ -262,6 +320,8 @@ describe('NewAgent form', () => {
     mocks.defaultModelId = '';
     mocks.connections = [];
     mocks.catalog = [];
+    media.isMobile = false;
+    media.isDesktop = true;
   });
 
   const render = async () => {
@@ -330,12 +390,231 @@ describe('NewAgent form', () => {
     }
   });
 
-  it('renders the Add prompt button at the field height', async () => {
-    await render();
-    const add = buttonByText('agents.form.buttons.add');
-    expect(add.getAttribute('data-variant')).toBe('outline-primary');
-    expect(add.getAttribute('data-size')).toBe('field');
-    expect(add.getAttribute('data-shape')).toBe('default');
+  // The prompt is picked like a tool or a source: a plain picker whose
+  // footer goes to the Prompts page or adds one; no row actions, no Add
+  // button beside it.
+  it('picks the prompt from a plain Combobox with a Go to Prompts footer', async () => {
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'p1', name: 'Tone', type: 'private', access: 'owner' },
+    ] as never[];
+    try {
+      await render();
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[data-slot="combobox-trigger"]',
+      )!;
+      expect(trigger.textContent).toContain('default');
+      expect(
+        trigger.closest('[data-slot="form-field"]')?.querySelector('label')
+          ?.textContent,
+      ).toBe('agents.form.sections.prompt');
+      expect(buttonByText('agents.form.buttons.add')).toBeUndefined();
+      await act(async () => {
+        trigger.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+        );
+        trigger.click();
+      });
+      const list = document.body.querySelector('[cmdk-list]')!;
+      const rows = Array.from(list.querySelectorAll('[cmdk-item]'));
+      expect(rows.map((row) => row.getAttribute('data-value'))).toEqual([
+        'default',
+        'p1',
+      ]);
+      // No edit, duplicate, share or delete icons in a row.
+      expect(list.querySelector('button')).toBeNull();
+      const link = Array.from(document.body.querySelectorAll('a')).find(
+        (a) => a.textContent === 'settings.prompts.manage',
+      )!;
+      expect(link.getAttribute('href')).toBe('/settings/prompts');
+      const add = Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'settings.prompts.addPrompt',
+      )!;
+      expect(add.getAttribute('data-variant')).toBe('outline-primary');
+      await act(async () => (rows[1] as HTMLElement).click());
+      expect(trigger.textContent).toContain('Tone');
+    } finally {
+      mockState.preference.prompts = [];
+    }
+  });
+
+  const openPromptPicker = async () => {
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-slot="combobox-trigger"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+  };
+  const promptRow = (value: string) =>
+    document.body.querySelector<HTMLElement>(
+      `[cmdk-item][data-value="${value}"]`,
+    )!;
+  const promptLine = (value: string) =>
+    promptRow(value)?.querySelector('[data-slot="combobox-description"]')
+      ?.textContent;
+
+  // W10: the Prompt picker has the other pickers' chrome: a title, one line
+  // per row that says what the prompt is, and a check on the picked row.
+  it("gives the prompt picker the pickers' title and a line per row", async () => {
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'creative', name: 'creative', type: 'public' },
+      {
+        id: 'p1',
+        name: 'Tone',
+        type: 'private',
+        access: 'owner',
+        preview: 'You are terse.',
+      },
+      {
+        id: 'p2',
+        name: 'Escalations',
+        type: 'team',
+        access: 'viewer',
+        preview: 'Escalate politely.',
+      },
+    ] as never[];
+    try {
+      await render();
+      await openPromptPicker();
+      const content = document.body.querySelector(
+        '[data-slot="popover-content"]',
+      )!;
+      expect(content.querySelector('h3')?.textContent).toBe(
+        'agents.form.sections.prompt',
+      );
+      expect(promptLine('default')).toBe('settings.prompts.presets.default');
+      expect(promptLine('creative')).toBe('settings.prompts.presets.creative');
+      expect(promptLine('p1')).toBe('You are terse.');
+      expect(promptLine('p2')).toBe('Escalate politely.');
+      expect(promptRow('default').querySelector('svg.lucide-check')).not.toBe(
+        null,
+      );
+      // Four prompts fit: no kind track.
+      expect(content.querySelector('[data-slot="combobox-filters"]')).toBe(
+        null,
+      );
+    } finally {
+      mockState.preference.prompts = [];
+    }
+  });
+
+  // A kind filter that hides the picked prompt must not bring back the name
+  // of the prompt the agent was saved with.
+  it('names the picked prompt from the full list while a kind hides it', async () => {
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'creative', name: 'creative', type: 'public' },
+      { id: 'strict', name: 'strict', type: 'public' },
+      ...Array.from({ length: 7 }, (_, i) => ({
+        id: `own-${i}`,
+        name: `Mine ${i}`,
+        type: 'private',
+        access: 'owner',
+      })),
+      { id: 'team-1', name: 'Theirs', type: 'team', access: 'viewer' },
+    ] as never[];
+    try {
+      await renderEdit({ prompt_id: 'own-0', prompt_name: 'Mine 0' });
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[data-slot="combobox-trigger"]',
+      )!;
+      await openPromptPicker();
+      await act(async () => promptRow('team-1')!.click());
+      expect(trigger.textContent).toContain('Theirs');
+      await openPromptPicker();
+      const kinds = Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="combobox-filters"] [data-slot="toggle-group-item"]',
+        ),
+      );
+      // Yours: the picked teammate's prompt is filtered out.
+      await act(async () => kinds[2].click());
+      expect(trigger.textContent).toContain('Theirs');
+      expect(trigger.textContent).not.toContain('Mine 0');
+    } finally {
+      mockState.preference.prompts = [];
+    }
+  });
+
+  it('filters the prompt picker by kind past ten prompts', async () => {
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'creative', name: 'creative', type: 'public' },
+      { id: 'strict', name: 'strict', type: 'public' },
+      ...Array.from({ length: 7 }, (_, i) => ({
+        id: `own-${i}`,
+        name: `Mine ${i}`,
+        type: 'private',
+        access: 'owner',
+      })),
+      { id: 'team-1', name: 'Theirs', type: 'team', access: 'viewer' },
+    ] as never[];
+    try {
+      await render();
+      await openPromptPicker();
+      const track = document.body.querySelector(
+        '[data-slot="combobox-filters"]',
+      )!;
+      const kinds = Array.from(
+        track.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="toggle-group-item"]',
+        ),
+      );
+      expect(kinds.map((kind) => kind.firstChild?.textContent)).toEqual([
+        'settings.prompts.filters.all',
+        'settings.prompts.sections.included',
+        'settings.prompts.sections.yours',
+        // Short, as on the Prompts page's track.
+        'settings.prompts.kinds.shared',
+      ]);
+      await act(async () => kinds[2].click());
+      const rows = Array.from(
+        document.body.querySelectorAll('[cmdk-item]'),
+      ).map((row) => row.getAttribute('data-value'));
+      expect(rows).toHaveLength(7);
+      expect(rows.every((id) => id?.startsWith('own-'))).toBe(true);
+    } finally {
+      mockState.preference.prompts = [];
+    }
+  });
+
+  it('opens the prompt picker as a bottom sheet on a phone', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    mockState.preference.prompts = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'strict', name: 'strict', type: 'public' },
+    ] as never[];
+    try {
+      await render();
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[data-slot="combobox-trigger"]')!
+          .click(),
+      );
+      const sheet = document.body.querySelector<HTMLElement>(
+        '[data-slot="sheet-content"]',
+      )!;
+      expect(sheet.dataset.side).toBe('bottom');
+      expect(sheet.querySelector('[data-slot="sheet-handle"]')).not.toBe(null);
+      expect(sheet.querySelector('h3')?.textContent).toBe(
+        'agents.form.sections.prompt',
+      );
+      await act(async () => promptRow('strict').click());
+      expect(document.body.querySelector('[data-slot="sheet-content"]')).toBe(
+        null,
+      );
+      expect(
+        container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
+      ).toContain('strict');
+    } finally {
+      mockState.preference.prompts = [];
+    }
   });
 
   it('renders the token and request limits as default-size square Inputs', async () => {
@@ -389,9 +668,10 @@ describe('NewAgent form', () => {
     expect(description.className).toContain('sm:col-start-2');
   });
 
-  it('lists tool groups as built-in, default, one per connection, then custom', async () => {
+  it('groups tools like the chat and the Tools page: included, added, each service, custom', async () => {
     mocks.tools = [
       { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      { id: 'notes', name: 'notes', display_name: 'Notes' },
       {
         id: 'linear',
         name: 'mcp_tool',
@@ -422,11 +702,18 @@ describe('NewAgent form', () => {
     ).map((item) => item.getAttribute('data-group'));
     const order = groups.filter((g, i) => groups.indexOf(g) === i);
     expect(order).toEqual([
-      'agents.form.toolsPopup.groupBuiltin',
-      'agents.form.toolsPopup.groupDefault',
-      'agents.form.toolsPopup.groupConnection',
-      'agents.form.toolsPopup.groupCustom',
+      'included',
+      'added',
+      'service:Linear',
+      'service:Notion',
+      'custom',
     ]);
+    // The account is the row's line, not part of the heading.
+    expect(
+      container
+        .querySelector('[data-item="linear"]')
+        ?.getAttribute('data-description'),
+    ).toBe('a@x');
   });
 
   // A teammate's connection is never in the caller's list; its tool still
@@ -456,7 +743,7 @@ describe('NewAgent form', () => {
     const groups = Array.from(
       container.querySelectorAll('[data-testid="picker"] [data-group]'),
     ).map((item) => item.getAttribute('data-group'));
-    expect(groups).toEqual(['Telegram', 'agents.form.toolsPopup.groupCustom']);
+    expect(groups).toEqual(['service:Telegram', 'custom']);
   });
 
   const renderEdit = async (agent: Record<string, unknown>) => {
@@ -487,6 +774,322 @@ describe('NewAgent form', () => {
     });
   };
 
+  // The route guard sends a workflow on to its editor when its record says
+  // so; the form still never takes one it reads itself.
+  it('hands a workflow agent it loads on to the workflow editor', async () => {
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Flow',
+        description: 'd',
+        status: 'published',
+        agent_type: 'workflow',
+        workflow_id: 'wf-1',
+        allowed_actions: ['edit', 'view'],
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/manage/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+            <Route
+              path="/agents/manage/workflow/edit/:agentId"
+              element={<div data-testid="workflow-builder" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    await act(async () => undefined);
+    expect(
+      container.querySelector('[data-testid="workflow-builder"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        'input[placeholder="agents.form.placeholders.agentName"]',
+      ),
+    ).toBeNull();
+  });
+
+  const goToTools = () =>
+    container.querySelector<HTMLAnchorElement>(
+      '[data-title="settings.tools.label"] [data-testid="picker-footer"] a',
+    )!;
+
+  const asked = () =>
+    // This file stubs ConfirmationModal as its confirm button.
+    container.querySelector('[data-testid="confirm-delete"]') !== null;
+  const typeName = async (value: string) =>
+    act(async () =>
+      setNativeValue(
+        container.querySelector<HTMLInputElement>(
+          'input[placeholder="agents.form.placeholders.agentName"]',
+        )!,
+        value,
+      ),
+    );
+
+  it('asks before Go to Tools leaves unsaved changes', async () => {
+    await render();
+    await typeName('Support bot');
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(true);
+  });
+
+  // The defaults a new agent starts from (the instance's model, the admin's
+  // guardrails) are not changes of the user's.
+  it('lets Go to Tools go from an untouched new agent', async () => {
+    mocks.models = [{ id: 'm1', display_name: 'Model one', provider: 'x' }];
+    mocks.defaultModelId = 'm1';
+    mocks.getAgentDefaults.mockImplementationOnce(() =>
+      jsonResponse({ success: true, guardrails: { enabled: true } }),
+    );
+    await render();
+    await act(async () => undefined);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(false);
+  });
+
+  it('reads a new agent as saved once its draft is saved', async () => {
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9' }),
+    );
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      buttonByText('agents.form.buttons.saveDraft').click(),
+    );
+    expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(false);
+  });
+
+  it('uploads a picked avatar once, not again with the next draft save', async () => {
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9', image: '/img/a.png' }),
+    );
+    mocks.updateAgent.mockImplementation(() => jsonResponse({ id: 'agent-9' }));
+    await render();
+    await typeName('Support bot');
+    const file = new File(['x'], 'a.png', { type: 'image/png' });
+    await act(async () => mocks.fileUploadProps!.onUpload([file]));
+    const saveDraft = () =>
+      act(async () => buttonByText('agents.form.buttons.saveDraft').click());
+    await saveDraft();
+    const created = (
+      mocks.createAgent.mock.calls.at(-1) as unknown as [FormData]
+    )[0];
+    expect(created.get('image')).toBe(file);
+    await typeName('Support bot 2');
+    await saveDraft();
+    const updated = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(updated.get('image')).toBeNull();
+  });
+
+  // The server starts a new agent from the admin's default guardrails; when
+  // the form never got them (their read failed, or came after the save), an
+  // allowlist change must save onto the server's config, not drop them.
+  it("saves an allowlist change on a just-created agent onto the server's config", async () => {
+    mocks.getAgentDefaults.mockImplementationOnce(() =>
+      jsonResponse({}, false),
+    );
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9' }),
+    );
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      buttonByText('agents.form.buttons.saveDraft').click(),
+    );
+    expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+    const guardrails = { controls: [{ id: 'pii' }] };
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9', config: { guardrails } }),
+    );
+    const details = mocks.detailsProps.mock.calls.at(-1)![0] as {
+      getSavedConfig: () => unknown;
+    };
+    await expect(Promise.resolve(details.getSavedConfig())).resolves.toEqual({
+      guardrails,
+    });
+    expect(mocks.getAgent).toHaveBeenCalledWith('agent-9', null);
+  });
+
+  it('keeps Publish on for a saved draft with no new changes', async () => {
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Draft bot',
+        description: 'd',
+        status: 'draft',
+        agent_type: 'classic',
+        prompt_id: 'default',
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="draft" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    expect(buttonByText('agents.form.buttons.publish').disabled).toBe(false);
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(false);
+  });
+
+  // Add tool's ways out (Browse all, the API tool editor, Try it in chat)
+  // come back through the builder.
+  it("asks before Add tool's Browse all leaves unsaved changes", async () => {
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      mocks.addToolProps!.onNavigate!('/settings/connectors'),
+    );
+    expect(asked()).toBe(true);
+  });
+
+  // A connection that can't sign in again in place opens its connector
+  // page: an exit like any other.
+  it('asks before a reconnect leaves for the connector page', async () => {
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      mocks.signInOptions!.onNavigate!('/settings/connectors?connector=x'),
+    );
+    expect(asked()).toBe(true);
+  });
+
+  // Save draft and Publish both create a new agent: only one may be out.
+  it('runs one save at a time across Save draft and Publish', async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    mocks.createAgent.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }) as never,
+    );
+    await render();
+    await typeName('Support bot');
+    await act(async () =>
+      setNativeValue(
+        container.querySelector<HTMLTextAreaElement>(
+          'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+        )!,
+        'Helps',
+      ),
+    );
+    await act(async () =>
+      buttonByText('agents.form.buttons.saveDraft').click(),
+    );
+    const publish = buttonByText('agents.form.buttons.publish');
+    expect(publish.disabled).toBe(true);
+    await act(async () => publish.click());
+    expect(mocks.createAgent).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      finish({ ok: true, json: () => Promise.resolve({ id: 'agent-9' }) }),
+    );
+  });
+
+  // A team editor's save carries the stamp it loaded, so the server can
+  // refuse it when someone saved in between; the edits stay.
+  it('sends the loaded stamp and keeps the edits when the save is stale', async () => {
+    mocks.updateAgent.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: false,
+            message: 'Agent was modified by someone else',
+            code: 'stale_write',
+          }),
+          { status: 409, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    await renderEdit({ updated_at: '2026-10-30T10:00:00.123456+00:00' });
+    await typeName('Renamed');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const form = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(form.get('expected_updated_at')).toBe(
+      '2026-10-30T10:00:00.123456+00:00',
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'agents.form.errors.staleWrite',
+    );
+    expect(
+      container.querySelector<HTMLInputElement>(
+        'input[placeholder="agents.form.placeholders.agentName"]',
+      )!.value,
+    ).toBe('Renamed');
+  });
+
+  it('sends the stamp the last save answered with', async () => {
+    mocks.updateAgent.mockImplementation(() =>
+      jsonResponse({ success: true, id: 'agent-1', updated_at: 'stamp-2' }),
+    );
+    await renderEdit({ updated_at: 'stamp-1' });
+    await typeName('Once');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    await typeName('Twice');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const form = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(form.get('expected_updated_at')).toBe('stamp-2');
+  });
+
+  it('sends the stamp an allowlist save answered with', async () => {
+    mocks.updateAgent.mockImplementation(() =>
+      jsonResponse({ success: true, id: 'agent-1', updated_at: 'stamp-3' }),
+    );
+    await renderEdit({ updated_at: 'stamp-1' });
+    const details = () =>
+      mocks.detailsProps.mock.calls.at(-1)![0] as {
+        onConfigChange: (
+          config: Record<string, unknown>,
+          updatedAt?: string,
+        ) => void;
+      };
+    await act(async () =>
+      details().onConfigChange({ api_write_allowlist: ['t:a'] }, 'stamp-2'),
+    );
+    await typeName('Renamed');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const form = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(form.get('expected_updated_at')).toBe('stamp-2');
+  });
+
+  it('lets Go to Tools go when the agent is saved', async () => {
+    await renderEdit({});
+    await act(async () => goToTools().click());
+    expect(
+      container.querySelector('[data-testid="confirm-delete"]'),
+    ).toBeNull();
+  });
+
+  // The server lists tool_details in its own order and leaves out deleted
+  // tools: an untouched agent still reads as saved.
+  it('reads an agent as saved when its tool details come back reordered or short', async () => {
+    await renderEdit({
+      tools: ['t-a', 't-b', 't-gone'],
+      tool_details: [
+        { id: 't-b', name: 'jira', display_name: 'Jira' },
+        { id: 't-a', name: 'api_tool', display_name: 'My API' },
+      ],
+    });
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
+    await act(async () => goToTools().click());
+    expect(asked()).toBe(false);
+  });
+
   // An editor doesn't list the owner's private tools, but must still be able
   // to take one off the agent.
   it("adds a remove-only row for an attached tool the editor can't list", async () => {
@@ -503,10 +1106,14 @@ describe('NewAgent form', () => {
     const groups = Array.from(toolPicker.querySelectorAll('[data-group]')).map(
       (item) => item.getAttribute('data-group'),
     );
-    expect(groups).toEqual([
-      'agents.form.toolsPopup.groupCustom',
-      'agents.form.toolsPopup.groupAttached',
-    ]);
+    // No "On this agent" group: it is on the agent, so the picker's
+    // Selected group holds it when it opens.
+    expect(groups).toEqual(['added', 'custom']);
+    expect(
+      container
+        .querySelector('[data-item="owners"]')
+        ?.getAttribute('data-description'),
+    ).toBe('agents.form.toolsPopup.attachedHint');
   });
 
   // The sponsor confirmation asks before anything runs with an editor's
@@ -548,7 +1155,58 @@ describe('NewAgent form', () => {
     ).toBeNull();
   });
 
-  // The prompt Select has no description slot: the mark is a hint under it.
+  // A picker row has one line: who added a tool joins it, after the line.
+  it("folds who added a tool into the row's one line", async () => {
+    mocks.tools = [
+      {
+        id: 'crm',
+        name: 'api_tool',
+        display_name: 'CRM',
+        description: 'Calls the CRM',
+      },
+      {
+        id: 'linear',
+        name: 'mcp_tool',
+        display_name: 'Linear',
+        connection_id: 'c-lin',
+      },
+    ];
+    mocks.connections = [
+      {
+        id: 'c-lin',
+        name: 'Linear',
+        account_label: 'a@x',
+        icon: 'linear',
+        status: 'reconnect_needed',
+      },
+    ];
+    const sponsor = (id: string) => ({
+      type: 'tool',
+      id,
+      user_id: 'bob',
+      label: 'bob@example.com',
+      active: true,
+    });
+    await renderEdit({
+      tools: ['crm', 'linear'],
+      shared: true,
+      resource_sponsors: [sponsor('crm'), sponsor('linear')],
+    });
+    expect(
+      container
+        .querySelector('[data-item="crm"]')
+        ?.getAttribute('data-description'),
+    ).toBe('Calls the CRM · agents.form.sponsors.addedBy');
+    // A row with a status badge keeps the badge above its one line.
+    const linear = container.querySelector('[data-item="linear"]')!;
+    expect(linear.querySelector('[data-slot="badge"]')).not.toBe(null);
+    const lines = Array.from(linear.querySelectorAll('p')).map(
+      (p) => p.textContent,
+    );
+    expect(lines).toEqual(['a@x · agents.form.sponsors.addedBy']);
+  });
+
+  // The picked prompt's mark is a hint under its picker, seen while closed.
   it('marks a sponsored prompt under its picker', async () => {
     await renderEdit({
       prompt_id: 'p1',
@@ -1122,8 +1780,119 @@ describe('NewAgent form', () => {
     }
   });
 
-  it('shows the device status as a Badge', async () => {
+  it("gives the tool and knowledge pickers the chat pickers' chrome", async () => {
     await render();
+    const [sources, tools] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-testid="picker"]'),
+    );
+    expect(sources.dataset.title).toBe('conversation.sources.knowledge');
+    expect(sources.dataset.search).toBe(
+      'agents.form.sourcePopup.searchPlaceholder',
+    );
+    // The sources on the agent come first too.
+    expect(sources.dataset.selectedFirst).toBe('true');
+    expect(tools.dataset.title).toBe('settings.tools.label');
+    expect(tools.dataset.search).toBe('settings.tools.searchPlaceholder');
+    expect(tools.dataset.selectedFirst).toBe('true');
+    // The Go to Tools footer every picker has.
+    const footer = tools.querySelector('[data-testid="picker-footer"]')!;
+    expect(footer.querySelector('a')?.getAttribute('href')).toBe(
+      '/settings/tools',
+    );
+    expect(footer.textContent).toContain('settings.tools.manageTools');
+    expect(footer.textContent).toContain('settings.tools.addTool');
+  });
+
+  it('filters the tools picker by kind past ten tools', async () => {
+    mocks.tools = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        id: `api-${i}`,
+        name: 'api_tool',
+        display_name: `API ${i}`,
+      })),
+      { id: 'notes', name: 'notes', display_name: 'Notes' },
+    ];
+    await render();
+    const tools = container.querySelectorAll('[data-testid="picker"]')[1];
+    const kinds = Array.from(
+      tools.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="picker-filters"] [data-slot="toggle-group-item"]',
+      ),
+    );
+    expect(kinds.map((kind) => kind.firstChild?.textContent)).toEqual([
+      'settings.tools.filters.all',
+      'settings.tools.groupAdded',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
+    await act(async () => kinds[1].click());
+    expect(
+      Array.from(tools.querySelectorAll('[data-item]')).map((item) =>
+        item.getAttribute('data-item'),
+      ),
+    ).toEqual(['notes']);
+  });
+
+  it('draws no tool kind track for a short list', async () => {
+    mocks.tools = [
+      { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      { id: 'notes', name: 'notes', display_name: 'Notes' },
+    ];
+    await render();
+    const tools = container.querySelectorAll('[data-testid="picker"]')[1];
+    expect(
+      tools.querySelector('[data-testid="picker-filters"]')?.childElementCount,
+    ).toBe(0);
+  });
+
+  it("says what each builder picker didn't find, with no lone heading", async () => {
+    await render();
+    const [sources, tools] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-testid="picker"]'),
+    );
+    expect(sources.dataset.empty).toBe('settings.sources.noKnowledgeFound');
+    // Knowledge is always grouped Yours / Shared with team.
+    expect(sources.dataset.loneGroupHeading).toBe('false');
+    expect(tools.dataset.empty).toBe('settings.tools.noToolsFound');
+    expect(tools.dataset.loneGroupHeading).toBe('false');
+  });
+
+  it('adds a tool from the picker and puts it on the agent', async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await render();
+    const tools = container.querySelectorAll('[data-testid="picker"]')[1];
+    const add = Array.from(
+      tools.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="picker-footer"] button',
+      ),
+    ).find((b) => b.textContent === 'settings.tools.addTool')!;
+    await act(async () => add.click());
+    expect(mocks.addToolProps?.modalState).toBe('ACTIVE');
+    const calls = mocks.toolsCalls.length;
+    mocks.tools = [
+      { id: 'mine', name: 'api_tool', display_name: 'My API' },
+      { id: 'fresh', name: 'notes', display_name: 'Fresh notes' },
+    ];
+    await act(async () => mocks.addToolProps!.onToolsCreated(['fresh']));
+    expect(mocks.toolsCalls.length).toBeGreaterThan(calls);
+    const trigger = container.querySelectorAll(
+      '[data-testid="picker"] > button',
+    )[1];
+    expect(trigger.textContent).toBe('Fresh notes');
+  });
+
+  it('shows the device status as a Badge once the picker opens', async () => {
+    await render();
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull();
+    const tools = Array.from(
+      container.querySelectorAll('[data-testid="picker"]'),
+    ).find(
+      (picker) => picker.getAttribute('data-title') === 'settings.tools.label',
+    )!;
+    await act(async () =>
+      tools
+        .querySelector<HTMLButtonElement>('[data-testid="picker-open"]')!
+        .click(),
+    );
     const badge = container.querySelector('[data-slot="badge"]');
     expect(badge?.textContent).toBe('settings.devices.online');
     expect(badge?.getAttribute('data-variant')).toBe('success');

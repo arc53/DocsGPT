@@ -11,6 +11,9 @@ from docsgpt.notifications import notify, presence
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 from docsgpt.storage.db.repositories.push_subscriptions import PushSubscriptionsRepository
 
+
+pytestmark = pytest.mark.fresh_db
+
 P256DH = "BIzyXn-qzOUEO1_AJqEJdxVQ4LBymTq3lFS7btztj_VA-UWISfaIbQpPNPssV2rq5CDmYvbBa4xZYzzmgSeWyNM"
 
 

@@ -1,10 +1,11 @@
+import type { MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import PickerFooter from './PickerFooter';
 
 type SourcesPopoverFooterProps = {
   /** Fires when the sources link is followed so the caller can close its popover. */
-  onNavigate: () => void;
+  onNavigate: (event: MouseEvent<HTMLAnchorElement>) => void;
   onUploadClick: () => void;
 };
 
