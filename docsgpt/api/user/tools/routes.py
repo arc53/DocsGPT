@@ -23,7 +23,7 @@ from docsgpt.agents.tool_pins import iter_parameters, llm_fills, merge_submitted
 from docsgpt.agents.tools.spec_parser import parse_spec
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api import api
-from docsgpt.api.pat.rules import allowed_ids, filter_listing
+from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 from docsgpt.api.user.resource_access import (
     AccessDenied,
@@ -33,7 +33,7 @@ from docsgpt.api.user.resource_access import (
     ResourceAccess,
     settings_many,
 )
-from docsgpt.api.user.resource_usage import attach_used_by
+from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.connectors.catalog import base_url, definition_for_tool
 from docsgpt.connectors.resolve import carry_removed_connection
@@ -833,7 +833,7 @@ class GetTools(Resource):
             with db_readonly() as conn:
                 attach_used_by(
                     conn, user, "tool", user_tools,
-                    owned_ids=owned_ids, agent_allowlist=allowed_ids(request, "agents"),
+                    deletable_ids=deletable_ids_of(user_tools), agent_allowlist=used_by_agent_allowlist(request),
                 )
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)

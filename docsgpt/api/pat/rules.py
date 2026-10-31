@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Optional
 
 from docsgpt.api.pat.tokens import is_pat
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
 
 VIEW, QUERY, JSON, FORM, BODY = "view", "query", "json", "form", "body"
 
@@ -59,6 +60,9 @@ def _rule(scope: Optional[str] = None, *ids: Locator, any_of: tuple[str, ...] = 
 #: below and its ASGI sibling GET /api/messages/<id>/events (docsgpt/api/async_sse.py),
 #: which sits outside this table.
 MESSAGE_REPLAY_SCOPES = ("conversations:read", "chat:run")
+
+#: Chat prompt values with no row id: the default and the stored presets.
+CHAT_PROMPT_PRESETS = frozenset({"default", *STORED_PROMPT_PRESETS})
 
 _ALL_FAMILIES = ("agents", "sources", "prompts", "tools", "workflows")
 _WORKFLOW_CONTENT_FAMILIES = ("sources", "tools", "prompts")
@@ -144,6 +148,19 @@ def _agent_body_check(request, resource_filter: dict, user_id: Optional[str]) ->
         return None
     if _read(request, (BODY, "workflow")):
         return "A token restricted to specific sources, tools or prompts cannot attach a workflow to an agent"
+    return None
+
+
+def _chat_prompt_check(request, resource_filter: dict, user_id: Optional[str]) -> Optional[str]:
+    """A prompt-restricted token may pick a preset (no row id) or a prompt on its allowlist as its chat prompt."""
+    if "prompts" not in resource_filter:
+        return None
+    ids = _as_ids(_json_body(request).get("chat_prompt_id"))
+    if not ids:
+        return "This token is restricted to specific prompts and cannot use this endpoint"
+    rows = [i for i in ids if i not in CHAT_PROMPT_PRESETS]
+    if rows and not _all_allowed(rows, resource_filter["prompts"]):
+        return "Token is not allowed to access this resource (prompts)"
     return None
 
 
@@ -281,9 +298,9 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_single_prompt", "GET"): _rule("prompts:read", (QUERY, "id")),
     ("/api/create_prompt", "POST"): _rule("prompts:write"),
     # The caller's chat prompt. Its stored id can't be proven from the request, so the read is
-    # closed to prompt-restricted tokens; a write names the prompt it picks.
+    # closed to prompt-restricted tokens; a write names the prompt it picks (a preset always passes).
     ("/api/user/preferences", "GET"): _rule("prompts:read"),
-    ("/api/user/preferences", "PUT"): _rule("prompts:write", (JSON, "chat_prompt_id")),
+    ("/api/user/preferences", "PUT"): _rule("prompts:write", in_route=True, check=_chat_prompt_check),
     ("/api/update_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     ("/api/delete_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     # Tools
@@ -595,6 +612,25 @@ def allowed_ids(request, family: str) -> Optional[set[str]]:
     if ids is None:
         return None
     return {_canonical(str(i)) for i in ids}
+
+
+def used_by_agent_allowlist(request) -> Optional[set[str]]:
+    """The agents a listing's ``used_by`` may name, or ``None`` for every agent the caller can open.
+
+    A token without ``agents:read`` may not learn agent names through another family's listing, so it
+    gets an empty allowlist: every agent then counts as one the caller can't open. Otherwise this is
+    the token's agent allowlist (:func:`allowed_ids`).
+
+    Args:
+        request: The current request.
+
+    Returns:
+        The allowed agent ids (empty for a token without ``agents:read``), or None when unrestricted.
+    """
+    decoded = getattr(request, "decoded_token", None)
+    if is_pat(decoded) and "agents:read" not in (decoded.get("scopes") or []):
+        return set()
+    return allowed_ids(request, "agents")
 
 
 def filter_listing(request, family: str, items: list, key: str = "id") -> list:

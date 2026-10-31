@@ -121,7 +121,10 @@ class TestFullList:
         resp = _get(app, pg_conn, CombinedJson, "/api/sources")
         assert resp.status_code == 200
         rows = {r["id"]: r for r in resp.json}
-        assert rows[library["file"]]["used_by"] == {"agents": [{"id": str(agent["id"]), "name": "Helper", "agent_type": "classic"}], "others": 0}
+        assert rows[library["file"]]["used_by"] == {
+            "agents": [{"id": str(agent["id"]), "name": "Helper", "agent_type": "classic", "can_edit": True}],
+            "others": 0,
+        }
         assert rows[library["web"]]["used_by"] == {"agents": [], "others": 1}
         assert rows[library["shared"]]["used_by"]["agents"][0]["name"] == "Helper"
         assert rows[library["file"]]["ingestStatus"] == "processing"
@@ -195,6 +198,45 @@ class TestPaginatedFilters:
 
         resp = _get(app, pg_conn, PaginatedSources, f"/api/sources/paginated?{query}")
         assert resp.status_code == 400
+
+
+class TestEditorWhoMayDelete:
+    """An editor the owner let delete a source is told when teammates' agents use it."""
+
+    @pytest.fixture
+    def bobs_source(self, pg_conn):
+        sid = str(_source(pg_conn, "bob's", owner=BOB)["id"])
+        _share(pg_conn, "source", sid, BOB, ALICE, level="editor")
+        _agent(pg_conn, BOB, "bob private", source_id=sid)
+        return sid
+
+    def _allow_delete(self, pg_conn, sid):
+        from docsgpt.api.user.resource_access import set_settings
+
+        set_settings(pg_conn, "source", sid, {"editors_can_delete": True}, BOB)
+
+    def test_full_list(self, app, pg_conn, bobs_source):
+        from docsgpt.api.user.sources.routes import CombinedJson
+
+        def _used_by():
+            rows = {r["id"]: r for r in _get(app, pg_conn, CombinedJson, "/api/sources").json}
+            return rows[bobs_source]["used_by"]
+
+        assert _used_by() == {"agents": [], "others": 0}
+        self._allow_delete(pg_conn, bobs_source)
+        assert _used_by() == {"agents": [], "others": 1}
+
+    def test_paginated_and_usage_filter(self, app, pg_conn, bobs_source):
+        from docsgpt.api.user.sources.routes import PaginatedSources
+
+        self._allow_delete(pg_conn, bobs_source)
+        resp = _get(app, pg_conn, PaginatedSources, "/api/sources/paginated?usage=in_use")
+        assert [(r["id"], r["used_by"]["others"]) for r in resp.json["paginated"]] == [(bobs_source, 1)]
+
+    def test_selection_usage(self, app, pg_conn, bobs_source):
+        self._allow_delete(pg_conn, bobs_source)
+        resp = TestSelectionUsage()._post(app, pg_conn, {"ids": [bobs_source]})
+        assert resp.json == {"agents": [], "others": 1}
 
 
 class TestBulkDelete:
@@ -284,7 +326,7 @@ class TestSelectionUsage:
         resp = self._post(app, pg_conn, {"ids": [s1, s2]})
         assert resp.status_code == 200
         assert resp.json == {
-            "agents": [{"id": str(mine["id"]), "name": "Helper", "agent_type": "classic"}],
+            "agents": [{"id": str(mine["id"]), "name": "Helper", "agent_type": "classic", "can_edit": True}],
             "others": 1,
         }
 

@@ -57,6 +57,7 @@ def _run(sub, repo, team_shared, client):
         patch("docsgpt.api.user.sources.routes.settings_many", return_value={}),
         # No agent uses any source.
         patch("docsgpt.api.user.sources.routes.used_by_many", return_value={}),
+        patch("docsgpt.api.user.sources.routes.deletable_row_ids", return_value=[]),
     ]
     for p in patches:
         p.start()

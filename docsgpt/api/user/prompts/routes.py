@@ -7,7 +7,7 @@ from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
-from docsgpt.api.pat.rules import allowed_ids, filter_listing
+from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     delete_settings,
@@ -15,7 +15,7 @@ from docsgpt.api.user.resource_access import (
     require,
     settings_many,
 )
-from docsgpt.api.user.resource_usage import attach_used_by
+from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
@@ -140,7 +140,7 @@ class GetPrompts(Resource):
             with db_readonly() as conn:
                 attach_used_by(
                     conn, user, "prompt", list_prompts,
-                    owned_ids=owned_ids, agent_allowlist=allowed_ids(request, "agents"),
+                    deletable_ids=deletable_ids_of(list_prompts), agent_allowlist=used_by_agent_allowlist(request),
                 )
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompts: {err}", exc_info=True)

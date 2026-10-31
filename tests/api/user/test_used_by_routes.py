@@ -75,12 +75,14 @@ class TestToolsUsedBy:
 
         tools = self._tools(app, pg_conn, ALICE)
         assert tools[tid]["used_by"] == {
-            "agents": [{"id": str(agent["id"]), "name": "Researcher", "agent_type": "classic"}],
+            "agents": [{"id": str(agent["id"]), "name": "Researcher", "agent_type": "classic", "can_edit": True}],
             "others": 1,
         }
         memory = tools[default_tool_id("memory")]
         assert memory["default"] is True
-        assert memory["used_by"]["agents"] == [{"id": str(agent["id"]), "name": "Researcher", "agent_type": "classic"}]
+        assert memory["used_by"]["agents"] == [
+            {"id": str(agent["id"]), "name": "Researcher", "agent_type": "classic", "can_edit": True}
+        ]
         assert memory["used_by"]["others"] == 0
         # Every row carries the field, used or not.
         assert all("used_by" in t for t in tools.values())
@@ -91,10 +93,10 @@ class TestToolsUsedBy:
 
 
 class TestPromptsUsedByAndPreview:
-    def _prompts(self, app, conn, user):
+    def _prompts(self, app, conn, user, token=None):
         from docsgpt.api.user.prompts.routes import GetPrompts
 
-        resp = _get(app, conn, GetPrompts, "docsgpt.api.user.prompts.routes", user, "/api/get_prompts")
+        resp = _get(app, conn, GetPrompts, "docsgpt.api.user.prompts.routes", user, "/api/get_prompts", token)
         assert resp.status_code == 200
         return {p["id"]: p for p in resp.json}
 
@@ -130,3 +132,63 @@ class TestPromptsUsedByAndPreview:
         assert prompts[str(team["id"])]["preview"] == "Shared text"
         for preset in ("default", "creative", "strict"):
             assert "preview" not in prompts[preset]
+
+
+def _pat(scopes):
+    from docsgpt.api.pat.tokens import expand_scopes
+
+    return {
+        "sub": ALICE, "auth_method": "pat", "pat_id": "t1", "pat_name": "ci",
+        "scopes": sorted(expand_scopes(scopes)), "resource_filter": {},
+    }
+
+
+class TestTokenWithoutAgentsRead:
+    """A token that may not read agents learns no agent names from ``used_by``, only the count."""
+
+    def test_prompts(self, app, pg_conn):
+        own = PromptsRepository(pg_conn).create(ALICE, "Mine", "x")
+        _agent(pg_conn, ALICE, "Uses mine", prompt_id=str(own["id"]))
+        _agent(pg_conn, ALICE, "Default one")
+        helper = TestPromptsUsedByAndPreview()
+
+        prompts = helper._prompts(app, pg_conn, ALICE, token=_pat(["prompts:read"]))
+        assert prompts[str(own["id"])]["used_by"] == {"agents": [], "others": 1}
+        # A preset has no owner: nothing is counted.
+        assert prompts["default"]["used_by"] == {"agents": [], "others": 0}
+
+        allowed = helper._prompts(app, pg_conn, ALICE, token=_pat(["prompts:read", "agents:read"]))
+        assert [a["name"] for a in allowed[str(own["id"])]["used_by"]["agents"]] == ["Uses mine"]
+
+    def test_tools(self, app, pg_conn):
+        tid = str(UserToolsRepository(pg_conn).create(ALICE, "read_webpage", config={}, display_name="Web")["id"])
+        _agent(pg_conn, ALICE, "Researcher", tools=[tid, default_tool_id("memory")])
+        helper = TestToolsUsedBy()
+
+        tools = helper._tools(app, pg_conn, ALICE, token=_pat(["tools:read"]))
+        assert tools[tid]["used_by"] == {"agents": [], "others": 1}
+        assert tools[default_tool_id("memory")]["used_by"] == {"agents": [], "others": 0}
+
+        writer = helper._tools(app, pg_conn, ALICE, token=_pat(["tools:read", "agents:write"]))
+        assert [a["name"] for a in writer[tid]["used_by"]["agents"]] == ["Researcher"]
+
+    def test_sources(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import CombinedJson, PaginatedSources, SourcesUsage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        sid = str(SourcesRepository(pg_conn).create("src", user_id=ALICE)["id"])
+        _agent(pg_conn, ALICE, "Helper", source_id=sid)
+        module = "docsgpt.api.user.sources.routes"
+        token = _pat(["sources:read"])
+
+        listing = _get(app, pg_conn, CombinedJson, module, ALICE, "/api/sources", token).json
+        assert {r["id"]: r["used_by"] for r in listing}[sid] == {"agents": [], "others": 1}
+        page = _get(app, pg_conn, PaginatedSources, module, ALICE, "/api/sources/paginated?usage=in_use", token).json
+        assert [(r["id"], r["used_by"]) for r in page["paginated"]] == [(sid, {"agents": [], "others": 1})]
+        with _patch_db(pg_conn, module), app.test_request_context(
+            "/api/sources/usage", method="POST", json={"ids": [sid]}
+        ):
+            from flask import request
+
+            request.decoded_token = token
+            assert SourcesUsage().post().json == {"agents": [], "others": 1}

@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from docsgpt.agents.tools.path_utils import validate_tool_path
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
-from docsgpt.api.pat.rules import allowed_ids, filter_listing
+from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.user.tasks import (
     convert_source_to_wiki,
     extract_graph,
@@ -41,7 +41,15 @@ from docsgpt.api.user.sources.upload import (
     _release_claim,
     reingest_idempotency_key,
 )
-from docsgpt.api.user.resource_usage import attach_used_by, combined_usage, empty_usage, is_in_use, used_by_many
+from docsgpt.api.user.resource_usage import (
+    attach_used_by,
+    combined_usage,
+    deletable_ids_of,
+    deletable_row_ids,
+    empty_usage,
+    is_in_use,
+    used_by_many,
+)
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
@@ -360,7 +368,7 @@ class CombinedJson(Resource):
             with db_readonly() as conn:
                 attach_used_by(
                     conn, user, "source", data,
-                    owned_ids=owned_ids, agent_allowlist=allowed_ids(request, "agents"),
+                    deletable_ids=deletable_ids_of(data), agent_allowlist=used_by_agent_allowlist(request),
                 )
         except Exception as err:
             current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
@@ -424,8 +432,8 @@ class PaginatedSources(Resource):
                 ids = [str(row["id"]) for row in facets]
                 used_by = used_by_many(
                     conn, user, "source", ids,
-                    owned_ids=[str(row["id"]) for row in facets if str(row.get("user_id")) == str(user)],
-                    agent_allowlist=allowed_ids(request, "agents"),
+                    deletable_ids=deletable_row_ids(conn, user, "source", facets, team_shared),
+                    agent_allowlist=used_by_agent_allowlist(request),
                 )
                 kind_counts = dict.fromkeys(SOURCE_KINDS, 0)
                 usage_counts = dict.fromkeys(USAGE_FILTERS, 0)
@@ -755,8 +763,10 @@ class SourcesUsage(Resource):
     @api.doc(
         description=(
             "The agents that use any of the given sources, each counted once: {agents: [{id, name, "
-            "agent_type}], others: n}, as used_by on the listings but for the whole set, so a bulk delete "
-            "can say how many agents lose something. Ids the caller can't see are ignored. A missing or "
+            "agent_type, can_edit}], others: n}, as used_by on the listings but for the whole set, so a bulk "
+            "delete can say how many agents lose something. others counts the agents the caller can't open, "
+            "for the sources the caller may delete; a token without agents:read gets no agent names, only "
+            "that count. Ids the caller can't see are ignored. A missing or "
             f"malformed ids list (empty, not strings, more than {SELECTION_USAGE_MAX}) is 400."
         )
     )
@@ -784,8 +794,8 @@ class SourcesUsage(Resource):
                 visible = [row for row in rows if str(row["id"]).lower() in wanted]
                 usage = combined_usage(
                     conn, user, "source", [str(row["id"]) for row in visible],
-                    owned_ids=[str(row["id"]) for row in visible if str(row.get("user_id")) == str(user)],
-                    agent_allowlist=allowed_ids(request, "agents"),
+                    deletable_ids=deletable_row_ids(conn, user, "source", visible, team_shared),
+                    agent_allowlist=used_by_agent_allowlist(request),
                 )
         except Exception as err:
             current_app.logger.error(f"Error reading source usage: {err}", exc_info=True)

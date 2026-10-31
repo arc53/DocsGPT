@@ -34,11 +34,11 @@ def _source(conn, owner=ALICE, name="src"):
     return SourcesRepository(conn).create(name, user_id=owner)
 
 
-def _share(conn, resource_type, resource_id, owner, member):
+def _share(conn, resource_type, resource_id, owner, member, level="viewer"):
     team = TeamsRepository(conn).create("Acme", f"t-{uuid.uuid4().hex[:8]}", owner)
     TeamMembersRepository(conn).add_member(str(team["id"]), member)
     TeamResourceGrantsRepository(conn).grant(
-        str(team["id"]), resource_type, str(resource_id), owner, owner, access_level="viewer"
+        str(team["id"]), resource_type, str(resource_id), owner, owner, access_level=level
     )
 
 
@@ -64,14 +64,16 @@ class TestTools:
         _agent(pg_conn, ALICE, "zeta", tools=[tid])
         a = _agent(pg_conn, ALICE, "Alpha", tools=[tid, str(uuid.uuid4())])
         _agent(pg_conn, ALICE, "unrelated", tools=[])
-        usage = used_by_many(pg_conn, ALICE, "tool", [tid], owned_ids=[tid])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
         assert _names(usage[tid]) == ["Alpha", "zeta"]
-        assert usage[tid]["agents"][0] == {"id": str(a["id"]), "name": "Alpha", "agent_type": "classic"}
+        assert usage[tid]["agents"][0] == {
+            "id": str(a["id"]), "name": "Alpha", "agent_type": "classic", "can_edit": True,
+        }
         assert usage[tid]["others"] == 0
 
     def test_unused_resource_gets_empty_usage(self, pg_conn):
         tid = str(_tool(pg_conn)["id"])
-        usage = used_by_many(pg_conn, ALICE, "tool", [tid], owned_ids=[tid])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
         assert usage[tid] == EMPTY_USAGE
         assert not is_in_use(usage[tid])
 
@@ -79,7 +81,7 @@ class TestTools:
         memory_id = default_tool_id("memory")
         _agent(pg_conn, ALICE, "mem agent", tools=[memory_id])
         _agent(pg_conn, BOB, "bob's mem agent", tools=[memory_id])
-        usage = used_by_many(pg_conn, ALICE, "tool", [memory_id], owned_ids=[])
+        usage = used_by_many(pg_conn, ALICE, "tool", [memory_id], deletable_ids=[])
         # Nobody owns a default tool: other users' agents are neither listed nor counted.
         assert _names(usage[memory_id]) == ["mem agent"]
         assert usage[memory_id]["others"] == 0
@@ -92,7 +94,7 @@ class TestTools:
             {1: {"tools": [old_tool]}, 2: {"tools": [new_tool]}},
             current=2,
         )
-        usage = used_by_many(pg_conn, ALICE, "tool", [old_tool, new_tool], owned_ids=[old_tool, new_tool])
+        usage = used_by_many(pg_conn, ALICE, "tool", [old_tool, new_tool], deletable_ids=[old_tool, new_tool])
         assert _names(usage[new_tool]) == ["flow"]
         # The type picks the editor a link opens.
         assert usage[new_tool]["agents"][0]["agent_type"] == "workflow"
@@ -102,7 +104,7 @@ class TestTools:
         tid = str(_tool(pg_conn)["id"])
         # Classic ``tools`` left over on a workflow agent do not run.
         _agent(pg_conn, ALICE, "leftover", agent_type="workflow", tools=[tid])
-        usage = used_by_many(pg_conn, ALICE, "tool", [tid], owned_ids=[tid])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
         assert usage[tid] == EMPTY_USAGE
 
 
@@ -116,20 +118,20 @@ class TestVisibility:
         shared_agent = _agent(pg_conn, BOB, "bob shared", tools=[tid])
         _share(pg_conn, "agent", shared_agent["id"], BOB, ALICE)
 
-        mine = used_by_many(pg_conn, ALICE, "tool", [tid], owned_ids=[tid])[tid]
+        mine = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])[tid]
         assert _names(mine) == ["bob shared", "mine"]
         assert mine["others"] == 1
         assert is_in_use(mine)
 
         # Bob sees the tool through the team; he does not own it, so no others.
-        theirs = used_by_many(pg_conn, BOB, "tool", [tid], owned_ids=[])[tid]
+        theirs = used_by_many(pg_conn, BOB, "tool", [tid], deletable_ids=[])[tid]
         assert _names(theirs) == ["bob private", "bob shared"]
         assert theirs["others"] == 0
 
     def test_only_others_still_counts_as_in_use(self, pg_conn):
         tid = str(_tool(pg_conn)["id"])
         _agent(pg_conn, BOB, "bob private", tools=[tid])
-        usage = used_by_many(pg_conn, ALICE, "tool", [tid], owned_ids=[tid])[tid]
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])[tid]
         assert usage == {"agents": [], "others": 1}
         assert is_in_use(usage)
 
@@ -138,10 +140,36 @@ class TestVisibility:
         keep = _agent(pg_conn, ALICE, "keep", tools=[tid])
         _agent(pg_conn, ALICE, "hidden", tools=[tid])
         usage = used_by_many(
-            pg_conn, ALICE, "tool", [tid], owned_ids=[tid], agent_allowlist={str(keep["id"])}
+            pg_conn, ALICE, "tool", [tid], deletable_ids=[tid], agent_allowlist={str(keep["id"])}
         )[tid]
         assert _names(usage) == ["keep"]
         assert usage["others"] == 1
+
+
+class TestCanEdit:
+    def test_own_and_editor_shared_agents_open_their_editor_viewer_shared_do_not(self, pg_conn):
+        tid = str(_tool(pg_conn)["id"])
+        mine = _agent(pg_conn, ALICE, "mine", tools=[tid])
+        edited = _agent(pg_conn, BOB, "bob edited", tools=[tid])
+        viewed = _agent(pg_conn, BOB, "bob viewed", tools=[tid])
+        _share(pg_conn, "agent", edited["id"], BOB, ALICE, level="editor")
+        _share(pg_conn, "agent", viewed["id"], BOB, ALICE)
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])[tid]
+        assert {a["id"]: a["can_edit"] for a in usage["agents"]} == {
+            str(mine["id"]): True,
+            str(edited["id"]): True,
+            str(viewed["id"]): False,
+        }
+
+
+class TestDeletable:
+    def test_others_follow_the_delete_right_not_ownership(self, pg_conn):
+        sid = str(_source(pg_conn, owner=BOB, name="bob's")["id"])
+        _agent(pg_conn, BOB, "bob private", source_id=sid)
+        # Alice may delete Bob's source (an editor with editors_can_delete on): she is told it is used.
+        usage = used_by_many(pg_conn, ALICE, "source", [sid], deletable_ids=[sid])[sid]
+        assert usage == {"agents": [], "others": 1}
+        assert used_by_many(pg_conn, ALICE, "source", [sid], deletable_ids=[])[sid] == EMPTY_USAGE
 
 
 class TestSources:
@@ -151,7 +179,7 @@ class TestSources:
         _agent(pg_conn, ALICE, "primary", source_id=s1)
         _agent(pg_conn, ALICE, "both", source_id=s1, extra_source_ids=[s1, s2])
         _workflow_agent(pg_conn, ALICE, "flow", {3: {"sources": [s2]}}, current=3)
-        usage = used_by_many(pg_conn, ALICE, "source", [s1, s2], owned_ids=[s1, s2])
+        usage = used_by_many(pg_conn, ALICE, "source", [s1, s2], deletable_ids=[s1, s2])
         assert _names(usage[s1]) == ["both", "primary"]
         assert _names(usage[s2]) == ["both", "flow"]
 
@@ -167,7 +195,7 @@ class TestPrompts:
         _agent(pg_conn, BOB, "bob inventive", prompt_id="creative")  # nor this one
         _workflow_agent(pg_conn, ALICE, "flow", {1: {"system_prompt": "inline"}}, current=1)
         ids = ["default", "creative", "strict", pid]
-        usage = used_by_many(pg_conn, ALICE, "prompt", ids, owned_ids=[pid])
+        usage = used_by_many(pg_conn, ALICE, "prompt", ids, deletable_ids=[pid])
         assert _names(usage[pid]) == ["custom"]
         # A creative agent runs creative, not default.
         assert _names(usage["default"]) == ["plain"]
@@ -178,13 +206,13 @@ class TestPrompts:
 
     def test_presets_alone_are_counted(self, pg_conn):
         _agent(pg_conn, ALICE, "careful", prompt_id="strict")
-        usage = used_by_many(pg_conn, ALICE, "prompt", ["strict"], owned_ids=[])
+        usage = used_by_many(pg_conn, ALICE, "prompt", ["strict"], deletable_ids=[])
         assert _names(usage["strict"]) == ["careful"]
 
     def test_shared_agent_with_default_prompt_is_listed(self, pg_conn):
         agent = _agent(pg_conn, BOB, "bob shared")
         _share(pg_conn, "agent", agent["id"], BOB, ALICE)
-        usage = used_by_many(pg_conn, ALICE, "prompt", ["default"], owned_ids=[])
+        usage = used_by_many(pg_conn, ALICE, "prompt", ["default"], deletable_ids=[])
         assert _names(usage["default"]) == ["bob shared"]
 
 
@@ -202,13 +230,13 @@ class TestBounded:
 
         event.listen(pg_conn, "before_cursor_execute", _count)
         try:
-            used_by_many(pg_conn, ALICE, "tool", tools, owned_ids=tools)
+            used_by_many(pg_conn, ALICE, "tool", tools, deletable_ids=tools)
         finally:
             event.remove(pg_conn, "before_cursor_execute", _count)
         assert len(statements) <= 4
 
     def test_empty_ids_runs_no_query(self, pg_conn):
-        assert used_by_many(pg_conn, ALICE, "tool", [], owned_ids=[]) == {}
+        assert used_by_many(pg_conn, ALICE, "tool", [], deletable_ids=[]) == {}
 
 
 class TestCombinedUsage:
@@ -221,7 +249,7 @@ class TestCombinedUsage:
         _agent(pg_conn, BOB, "bob both", source_id=s1, extra_source_ids=[s2])
         _agent(pg_conn, BOB, "bob one", source_id=s2)
 
-        usage = combined_usage(pg_conn, ALICE, "source", [s1, s2], owned_ids=[s1, s2])
+        usage = combined_usage(pg_conn, ALICE, "source", [s1, s2], deletable_ids=[s1, s2])
         assert _names(usage) == ["mine"]
         # Per source these would sum to 3; Bob's two agents are two.
         assert usage["others"] == 2
@@ -230,8 +258,8 @@ class TestCombinedUsage:
         theirs = str(_source(pg_conn, owner=BOB, name="theirs")["id"])
         _share(pg_conn, "source", theirs, BOB, ALICE)
         _agent(pg_conn, BOB, "bob private", source_id=theirs)
-        usage = combined_usage(pg_conn, ALICE, "source", [theirs], owned_ids=[])
+        usage = combined_usage(pg_conn, ALICE, "source", [theirs], deletable_ids=[])
         assert usage == EMPTY_USAGE
 
     def test_no_ids(self, pg_conn):
-        assert combined_usage(pg_conn, ALICE, "source", [], owned_ids=[]) == EMPTY_USAGE
+        assert combined_usage(pg_conn, ALICE, "source", [], deletable_ids=[]) == EMPTY_USAGE

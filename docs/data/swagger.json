@@ -5904,7 +5904,7 @@
     },
     "/api/sources/usage": {
       "post": {
-        "description": "The agents that use any of the given sources, each counted once: {agents: [{id, name, agent_type}], others: n}, as used_by on the listings but for the whole set, so a bulk delete can say how many agents lose something. Ids the caller can't see are ignored. A missing or malformed ids list (empty, not strings, more than 1000) is 400.",
+        "description": "The agents that use any of the given sources, each counted once: {agents: [{id, name, agent_type, can_edit}], others: n}, as used_by on the listings but for the whole set, so a bulk delete can say how many agents lose something. others counts the agents the caller can't open, for the sources the caller may delete; a token without agents:read gets no agent names, only that count. Ids the caller can't see are ignored. A missing or malformed ids list (empty, not strings, more than 1000) is 400.",
         "operationId": "post_sources_usage",
         "parameters": [
           {
