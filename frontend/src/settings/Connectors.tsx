@@ -135,18 +135,31 @@ export default function Connectors() {
   };
   const matchesStatus = (connector: ConnectorDefinition, key: StatusFilter) =>
     key === 'all' || statusOf(connector) === key;
-  // Each filter counts with the other one applied.
+  const searched = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return cards;
+    return cards.filter((connector) =>
+      [connector, ...partsOf(connector.key)].some(
+        (c) =>
+          connectorName(t, c).toLowerCase().includes(query) ||
+          connectorDescription(t, c).toLowerCase().includes(query),
+      ),
+    );
+  }, [cards, search, t]);
+  // Each filter counts with the other one and the search applied, so a pill
+  // never leads to an empty list.
   const capabilityCounts = Object.fromEntries(
     CAPABILITIES.map((key) => [
       key,
-      cards.filter((c) => matchesStatus(c, status) && matchesCapability(c, key))
-        .length,
+      searched.filter(
+        (c) => matchesStatus(c, status) && matchesCapability(c, key),
+      ).length,
     ]),
   ) as Record<CapabilityFilter, number>;
   const statusCounts = Object.fromEntries(
     STATUSES.map((key) => [
       key,
-      cards.filter(
+      searched.filter(
         (c) => matchesCapability(c, capability) && matchesStatus(c, key),
       ).length,
     ]),
@@ -154,22 +167,14 @@ export default function Connectors() {
   // No pill leads to an empty list; with only All left there is no track.
   const capabilities = shownFilters(CAPABILITIES, capability, capabilityCounts);
 
-  const visible = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return cards
-      .filter((connector) => matchesCapability(connector, capability))
-      .filter((connector) => matchesStatus(connector, status))
-      .filter(
-        (connector) =>
-          !query ||
-          [connector, ...partsOf(connector.key)].some(
-            (c) =>
-              connectorName(t, c).toLowerCase().includes(query) ||
-              connectorDescription(t, c).toLowerCase().includes(query),
-          ),
-      )
-      .sort(byState);
-  }, [cards, capability, status, search, t, connections]);
+  const visible = useMemo(
+    () =>
+      searched
+        .filter((connector) => matchesCapability(connector, capability))
+        .filter((connector) => matchesStatus(connector, status))
+        .sort(byState),
+    [searched, capability, status, connections],
+  );
   const sections = SECTIONS.map((key) => ({
     key,
     connectors: visible.filter((connector) => statusOf(connector) === key),

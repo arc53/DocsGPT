@@ -350,6 +350,27 @@ describe('Connectors page', () => {
     ).toContain('h-8');
   });
 
+  // DESIGN "No item leads to an empty list": the counts follow the search.
+  it('counts each kind within the search', async () => {
+    await render();
+    const input = container.querySelector<HTMLInputElement>(
+      '#connector-search-input',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, 'e_');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    // Google Drive and SharePoint (this file's t() returns keys).
+    expect(pills().map(pillText)).toEqual([
+      'settings.connectors.capabilityFilters.all 2',
+      'settings.connectors.capabilityFilters.sync 1',
+      'settings.connectors.capabilityFilters.tools 1',
+    ]);
+  });
+
   it('puts the status in a pill Select that reads Any status', async () => {
     await render();
     const trigger = container.querySelector<HTMLElement>(

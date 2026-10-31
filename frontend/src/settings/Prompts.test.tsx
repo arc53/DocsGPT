@@ -508,6 +508,28 @@ describe('Prompts page', () => {
     expect(titles()).toEqual(['Vendor checks', 'Escalation summary']);
   });
 
+  // DESIGN "No item leads to an empty list": the counts follow the search.
+  it('counts each kind within the search, offering none it would empty', async () => {
+    await render();
+    // creative, strict, Vendor checks and Escalation summary; no shared one.
+    await search('c');
+    const items = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[aria-label="settings.prompts.kindFilterLabel"] [data-slot="toggle-group-item"]',
+      ),
+    );
+    expect(
+      items.map(
+        (b) =>
+          `${b.firstChild?.textContent} ${b.querySelector('[data-slot="count"]')?.textContent}`,
+      ),
+    ).toEqual([
+      'settings.prompts.filters.all 4',
+      'settings.prompts.sections.included 2',
+      'settings.prompts.sections.yours 2',
+    ]);
+  });
+
   it('puts usage in a pill Select that reads Any use', async () => {
     await render();
     const trigger = container.querySelector<HTMLElement>(

@@ -176,30 +176,31 @@ export default function Prompts() {
   const matchesKind = (prompt: Prompt, key: KindFilter) =>
     key === 'all' ||
     SECTIONS.some((s) => s.key === key && s.type === prompt.type);
-  // Each filter counts with the other one applied.
+  const query = searchTerm.trim().toLowerCase();
+  const searched = prompts.filter((prompt) =>
+    prompt.name.toLowerCase().includes(query),
+  );
+  // Each filter counts with the other one and the search applied, so a pill
+  // never leads to "No prompts found".
   const kindCounts = Object.fromEntries(
     KINDS.map((key) => [
       key,
-      prompts.filter((p) => matchesUsage(p, usage) && matchesKind(p, key))
+      searched.filter((p) => matchesUsage(p, usage) && matchesKind(p, key))
         .length,
     ]),
   ) as Record<KindFilter, number>;
   const usageCounts = Object.fromEntries(
     USAGE_FILTERS.map((key) => [
       key,
-      prompts.filter((p) => matchesKind(p, kind) && matchesUsage(p, key))
+      searched.filter((p) => matchesKind(p, kind) && matchesUsage(p, key))
         .length,
     ]),
   ) as Record<UsageFilter, number>;
   // No pill leads to an empty list; with only All left there is no track.
   const kinds = shownFilters(KINDS, kind, kindCounts);
 
-  const query = searchTerm.trim().toLowerCase();
-  const shown = prompts.filter(
-    (prompt) =>
-      matchesKind(prompt, kind) &&
-      matchesUsage(prompt, usage) &&
-      prompt.name.toLowerCase().includes(query),
+  const shown = searched.filter(
+    (prompt) => matchesKind(prompt, kind) && matchesUsage(prompt, usage),
   );
   const sections = SECTIONS.map((section) => ({
     ...section,
