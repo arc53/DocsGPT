@@ -372,3 +372,23 @@ class TestWorkerCap:
 
     def test_garbage_setting_falls_back_to_default(self, monkeypatch):
         assert self._cap(monkeypatch, 10, configured="lots") == 4
+
+
+@pytest.mark.unit
+class TestLabelsLookedUpOnce:
+    """Each source's connector and knowledge name come from one query each, not one per source."""
+
+    def test_three_sources_cost_one_labels_and_one_names_query(self, _patch_llm_creator):
+        embedder = _make_embedder()
+        stores = {
+            src: _make_store(embedder, [_make_doc(f"hit {src}", source=src)])
+            for src in ("a", "b", "c")
+        }
+
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}) as labels, \
+                patch("docsgpt.connectors.attribution.source_names", return_value={"b": "test-1"}) as names:
+            docs = _run(_make_rag(), stores)
+
+        assert labels.call_count == 1 and names.call_count == 1
+        assert sorted(labels.call_args.args[0]) == ["a", "b", "c"]
+        assert [doc.get("source_name") for doc in docs] == [None, "test-1", None]

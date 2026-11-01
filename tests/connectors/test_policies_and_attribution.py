@@ -515,6 +515,37 @@ class TestAttribution:
         assert first == again == {"source_name": "test-1"}
         assert lookup.call_count == 1
 
+    def test_prefetch_looks_up_every_source_in_one_query_each(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        found = {"s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "show_links": False}}
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value=found) as labels, \
+                patch("docsgpt.connectors.attribution.source_names",
+                      return_value={"s1": "Handbook", "s2": "test-1"}) as names:
+            cache = ConnectorLabelCache()
+            cache.prefetch(["s1", "s2", "s3", None, "s1"])
+            cache.prefetch(["s2"])
+            got = {sid: cache.for_source(sid) for sid in ("s1", "s2", "s3")}
+        labels.assert_called_once_with(["s1", "s2", "s3"])
+        names.assert_called_once_with(["s1", "s2", "s3"])
+        assert got == {
+            "s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "source_name": "Handbook"},
+            "s2": {"source_name": "test-1"},
+            "s3": {},
+        }
+
+    def test_prefetch_never_raises(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        with patch("docsgpt.connectors.attribution.connector_labels", side_effect=RuntimeError("db down")), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
+            cache = ConnectorLabelCache()
+            cache.prefetch(["s1"])
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={"s1": "test-1"}):
+            # A failed prefetch caches nothing, so the per-source lookup still runs.
+            assert cache.for_source("s1") == {"source_name": "test-1"}
+
     def test_client_sources_leave_out_the_knowledge_name(self):
         from docsgpt.connectors.attribution import client_sources
 

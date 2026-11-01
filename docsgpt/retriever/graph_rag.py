@@ -707,6 +707,8 @@ class GraphRAGRetriever(BaseRetriever):
                 )
                 fallback, graphed = list(graphed), []
 
+        # Every graph source's labels in one lookup, not one per source.
+        self._connector_labels.prefetch(graphed)
         for source_id in graphed:
             try:
                 docs = self._graph_docs_for_source(store, source_id, query_embedding)

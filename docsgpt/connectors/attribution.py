@@ -114,17 +114,41 @@ class ConnectorLabelCache:
     def __init__(self) -> None:
         self._labels: dict[str, dict] = {}
 
+    def _look_up(self, keys: list[str]) -> None:
+        """Fetch the labels and names of ``keys`` with one query each and cache them."""
+        labels = connector_labels(keys)
+        names = source_names(keys)
+        for key in keys:
+            found = dict(labels.get(key, {}))
+            if names.get(key):
+                found["source_name"] = names[key]
+            self._labels[key] = found
+
+    def prefetch(self, source_ids: list[Any]) -> None:
+        """Look up every source a retrieval is about to label, in one batch.
+
+        Without it each source costs two queries when its first chunk is
+        labelled. Sources already cached are skipped; :meth:`for_source`
+        remains the fallback for any this misses. Never raises.
+
+        Args:
+            source_ids: The sources whose chunks are about to be labelled.
+        """
+        keys = list(dict.fromkeys(str(i) for i in source_ids or () if i and str(i) not in self._labels))
+        if not keys:
+            return
+        try:
+            self._look_up(keys)
+        except Exception:
+            logger.warning("source label prefetch failed", exc_info=True)
+
     def for_source(self, source_id: Optional[str], metadata: Optional[dict] = None) -> dict:
         """The labels of a chunk from ``source_id``: its source's name, the connector, and its link when shown."""
         if not source_id:
             return {}
         key = str(source_id)
         if key not in self._labels:
-            found = dict(connector_labels([key]).get(key, {}))
-            name = source_names([key]).get(key)
-            if name:
-                found["source_name"] = name
-            self._labels[key] = found
+            self._look_up([key])
         found = self._labels[key]
         labels = {k: v for k, v in found.items() if k != "show_links"}
         url = _web_link((metadata or {}).get("url")) if found.get("show_links") else None

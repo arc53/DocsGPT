@@ -384,6 +384,8 @@ class ClassicRAG(BaseRetriever):
         planned = {plan["id"] for plan in plans}
         failed = [vs_id for vs_id in self.vectorstores if vs_id and vs_id not in planned]
         failed += [plan["id"] for plan, result in zip(plans, results) if result is None]
+        # Every searched source's labels in one lookup, not one per source.
+        self._connector_labels.prefetch([plan["id"] for plan, result in zip(plans, results) if result is not None])
 
         for plan, result in zip(plans, results):
             if result is None:
