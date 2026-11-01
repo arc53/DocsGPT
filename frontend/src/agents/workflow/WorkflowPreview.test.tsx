@@ -5,20 +5,43 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-// What every selector reads; the whole preview needs lists, not null.
+// What every selector reads, unless a test gives one its own value; the
+// whole preview needs lists, not null.
 const redux = vi.hoisted(() => ({
   selected: null as unknown,
+  values: new Map<unknown, unknown>(),
   dispatch: vi.fn(),
 }));
 vi.mock('react-redux', () => ({
-  useSelector: () => redux.selected,
+  useSelector: (selector: unknown) =>
+    redux.values.has(selector) ? redux.values.get(selector) : redux.selected,
   useDispatch: () => redux.dispatch,
 }));
-vi.mock('../../components/MessageInput', () => ({ default: () => null }));
+// The composer as the preview drives it: what it was handed, and its submit.
+type ComposerProps = {
+  onSubmit: (text: string) => void;
+  queuedQuestion?: string | null;
+  onQueuedQuestionConsumed?: () => void;
+};
+const composer = vi.hoisted(() => ({ props: null as unknown }));
+vi.mock('../../components/MessageInput', () => ({
+  default: (props: unknown) => {
+    composer.props = props;
+    return null;
+  },
+}));
 
 import WorkflowPreview, { ExecutionDetails } from './WorkflowPreview';
-import { addQuery } from './workflowPreviewSlice';
+import {
+  addQuery,
+  UNSAVED_DRAFT_ATTACHMENTS_MESSAGE,
+} from './workflowPreviewSlice';
 import type { WorkflowNode } from '../types/workflow';
+import {
+  selectAttachments,
+  selectSendableAttachments,
+  type Attachment,
+} from '../../upload/uploadSlice';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -140,7 +163,9 @@ describe('WorkflowPreview starters', () => {
 
   beforeEach(() => {
     redux.selected = [];
+    redux.values = new Map();
     redux.dispatch.mockReset();
+    composer.props = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -152,15 +177,42 @@ describe('WorkflowPreview starters', () => {
     redux.selected = null;
   });
 
-  const renderPreview = async (starters?: string[]) => {
+  const renderPreview = async (
+    starters?: string[],
+    workflowId: string | null = null,
+  ) => {
     await act(async () => {
       root.render(
         <WorkflowPreview
           workflowData={{ name: 'Renewal desk', nodes, edges: [] }}
+          workflowId={workflowId}
           starters={starters}
         />,
       );
     });
+  };
+  const props = () => composer.props as ComposerProps;
+  const clickStarter = () =>
+    act(async () =>
+      container
+        .querySelector('[data-testid="hero-suggestions"]')!
+        .querySelector<HTMLButtonElement>('button')!
+        .click(),
+    );
+  const file = (status: Attachment['status']): Attachment => ({
+    id: 'a1',
+    fileName: 'rates.pdf',
+    progress: status === 'completed' ? 100 : 40,
+    status,
+    taskId: 't1',
+    attachmentId: 'att-1',
+  });
+  const setFiles = (files: Attachment[]) => {
+    redux.values.set(selectAttachments, files);
+    redux.values.set(
+      selectSendableAttachments,
+      files.filter((f) => f.status === 'completed'),
+    );
   };
 
   // As the agent preview: the starters under the empty chat, each sending
@@ -185,5 +237,45 @@ describe('WorkflowPreview starters', () => {
     expect(container.textContent).toContain(
       'agents.workflow.preview.emptyTitle',
     );
+  });
+
+  // Sending now would run without the file still uploading; the composer's
+  // armed send waits for it instead.
+  it('queues a starter into the composer while a file uploads, then sends it', async () => {
+    setFiles([file('uploading')]);
+    await renderPreview(['Which carriers renew this month?'], 'wf-1');
+    await clickStarter();
+    expect(redux.dispatch).not.toHaveBeenCalledWith(
+      addQuery({ prompt: 'Which carriers renew this month?' }),
+    );
+    expect(props().queuedQuestion).toBe('Which carriers renew this month?');
+
+    await act(async () => props().onQueuedQuestionConsumed?.());
+    expect(props().queuedQuestion).toBeNull();
+
+    // The file is ready: the composer flushes the armed question.
+    setFiles([file('completed')]);
+    await renderPreview(['Which carriers renew this month?'], 'wf-1');
+    await act(async () => props().onSubmit('Which carriers renew this month?'));
+    expect(redux.dispatch).toHaveBeenCalledWith(
+      addQuery({ prompt: 'Which carriers renew this month?' }),
+    );
+  });
+
+  // The queued send still meets the unsaved-draft block once its file is in.
+  it('still blocks a queued starter on an unsaved draft once the file is ready', async () => {
+    setFiles([file('uploading')]);
+    await renderPreview(['Which carriers renew this month?']);
+    await clickStarter();
+    expect(props().queuedQuestion).toBe('Which carriers renew this month?');
+    await act(async () => props().onQueuedQuestionConsumed?.());
+
+    setFiles([file('completed')]);
+    await renderPreview(['Which carriers renew this month?']);
+    await act(async () => props().onSubmit('Which carriers renew this month?'));
+    expect(redux.dispatch).not.toHaveBeenCalledWith(
+      addQuery({ prompt: 'Which carriers renew this month?' }),
+    );
+    expect(container.textContent).toContain(UNSAVED_DRAFT_ATTACHMENTS_MESSAGE);
   });
 });

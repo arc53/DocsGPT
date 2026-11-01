@@ -5,11 +5,13 @@ import { useDispatch, useSelector } from 'react-redux';
 import { EmptyState } from '@/components/ui/empty-state';
 
 import MessageInput from '../components/MessageInput';
+import { getSendReadiness } from '../components/message-input/armedSend';
 import AgentStarters from '../hero/AgentStarters';
 import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
 import { selectSelectedAgent } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import { selectAttachments } from '../upload/uploadSlice';
 import {
   addQuery,
   fetchPreviewAnswer,
@@ -26,6 +28,10 @@ export default function AgentPreview() {
   const queries = useSelector(selectPreviewQueries);
   const status = useSelector(selectPreviewStatus);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const attachments = useSelector(selectAttachments);
+  // A starter that must wait for pending attachments is parked here;
+  // MessageInput consumes it into an armed composer send.
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
 
@@ -56,6 +62,11 @@ export default function AgentPreview() {
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
+      } else if (getSendReadiness(attachments).state !== 'ready') {
+        // A starter bypasses MessageInput's submit gate: with files still
+        // uploading/parsing, sending now would leave them behind. Route the
+        // question into the composer, where the armed-send banner takes over.
+        setQueuedQuestion(trimmedQuestion);
       } else {
         if (!isRetry) {
           const newQuery: Query = { prompt: trimmedQuestion };
@@ -64,7 +75,7 @@ export default function AgentPreview() {
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer],
+    [dispatch, handleFetchAnswer, attachments],
   );
 
   const handleQuestionSubmission = (
@@ -145,6 +156,8 @@ export default function AgentPreview() {
         <div className="w-full px-4">
           <MessageInput
             onSubmit={(text) => handleQuestionSubmission(text)}
+            queuedQuestion={queuedQuestion}
+            onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
             loading={status === 'loading'}
             showSourceButton={selectedAgent ? false : true}
             showToolButton={selectedAgent ? false : true}
