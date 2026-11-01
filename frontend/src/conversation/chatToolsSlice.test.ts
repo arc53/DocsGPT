@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { setToken } from '../preferences/preferenceSlice';
 import type { UserToolType } from '../settings/types';
 import reducer, {
   loadChatTools,
@@ -12,8 +13,8 @@ import reducer, {
 const tool = (id: string): UserToolType =>
   ({ id, name: id, status: false, in_chat: false }) as UserToolType;
 
-const pending = (requestId: string) =>
-  loadChatTools.pending(requestId, { token: null });
+const pending = (requestId: string, token: string | null = null) =>
+  loadChatTools.pending(requestId, { token });
 const fulfilled = (requestId: string, tools: UserToolType[]) =>
   loadChatTools.fulfilled(tools, requestId, { token: null });
 const rejected = (requestId: string) =>
@@ -97,6 +98,50 @@ describe('chatToolsSlice', () => {
     );
     expect(state.tools[0]).toMatchObject({ status: true, in_chat: true });
     expect(state.tools[1]).toMatchObject({ status: false, in_chat: true });
+  });
+
+  // Another account's tools must not show in the picker or the suggestions.
+  it('clears the list when the account changes', () => {
+    const signedIn = run(
+      pending('1', 'alice'),
+      fulfilled('1', [tool('a')]),
+      setToken('bob'),
+    );
+    expect(signedIn.tools).toEqual([]);
+    expect(signedIn.loaded).toBe(false);
+    // A load started under the old token answers into nothing.
+    const late = run(
+      pending('1', 'alice'),
+      setToken('bob'),
+      fulfilled('1', [tool('a')]),
+    );
+    expect(late.tools).toEqual([]);
+    expect(late.loaded).toBe(false);
+    const failed = run(pending('1', 'alice'), setToken('bob'), rejected('1'));
+    expect(failed.loaded).toBe(false);
+    // The new account's own load applies as usual.
+    expect(
+      run(
+        pending('1', 'alice'),
+        setToken('bob'),
+        pending('2', 'bob'),
+        fulfilled('1', [tool('a')]),
+        fulfilled('2', [tool('b')]),
+      ).tools,
+    ).toEqual([tool('b')]);
+  });
+
+  // Sign-in sets the token it already has; a load out then still answers.
+  it('keeps the list when the same token is set again', () => {
+    const state = run(
+      pending('1', 'alice'),
+      fulfilled('1', [tool('a')]),
+      pending('2', 'alice'),
+      setToken('alice'),
+      fulfilled('2', [tool('b')]),
+    );
+    expect(state.tools).toEqual([tool('b')]);
+    expect(state.loaded).toBe(true);
   });
 
   it('reads as empty in a store without the slice', () => {

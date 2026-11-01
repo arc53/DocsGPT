@@ -5,6 +5,7 @@ import {
 } from '@reduxjs/toolkit';
 
 import userService from '../api/services/userService';
+import { setToken } from '../preferences/preferenceSlice';
 import type { UserToolType } from '../settings/types';
 import { isChatPickerToolVisible } from '../utils/toolUtils';
 
@@ -28,6 +29,8 @@ export type ChatToolsState = {
   latestRequestId: string | null;
   /** A tool was toggled while the newest load was out; its list is stale. */
   toggledSinceRequest: boolean;
+  /** The token the list and the newest load belong to. */
+  token: string | null;
 };
 
 const initialState: ChatToolsState = {
@@ -36,6 +39,7 @@ const initialState: ChatToolsState = {
   loading: false,
   latestRequestId: null,
   toggledSinceRequest: false,
+  token: null,
 };
 
 export const loadChatTools = createAsyncThunk<
@@ -78,6 +82,7 @@ export const chatToolsSlice = createSlice({
         state.latestRequestId = action.meta.requestId;
         state.toggledSinceRequest = false;
         state.loading = true;
+        state.token = action.meta.arg.token;
       })
       .addCase(loadChatTools.fulfilled, (state, action) => {
         if (action.meta.requestId !== state.latestRequestId) return;
@@ -94,6 +99,13 @@ export const chatToolsSlice = createSlice({
         state.toggledSinceRequest = false;
         state.loading = false;
         state.loaded = true;
+      })
+      // Another account: its list starts over, and a load still out for the
+      // old token answers into nothing. Setting the same token again (sign-in
+      // does) keeps both.
+      .addCase(setToken, (state, action) => {
+        if (action.payload === state.token) return;
+        return { ...initialState, token: action.payload };
       });
   },
 });
