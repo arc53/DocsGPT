@@ -84,7 +84,7 @@ class Recipe:
 _RECIPES: dict[str, Recipe] = {}
 
 #: Modules that register the built-in recipes, imported on first lookup.
-_BUILTIN_MODULES: tuple[str, ...] = ()
+_BUILTIN_MODULES: tuple[str, ...] = ("docsgpt.drafter.agent_recipe",)
 _loaded = False
 
 
