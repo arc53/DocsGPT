@@ -26,6 +26,7 @@ import {
   normalizeExtensions,
   useAttachments,
 } from '../hooks/useAttachments';
+import { useAgentStarters } from '../hooks/useAgentStarters';
 import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useClientLayoutEffect } from '../hooks/useClientLayoutEffect';
 import { useDictation } from '../hooks/useDictation';
@@ -2939,12 +2940,18 @@ export const WidgetCore = ({
     await appendQuery(prompt, { source: 'composer' });
   };
 
+  // The site's own questions win, `[]` included; without them, the agent's.
+  const agentStarters = useAgentStarters(
+    apiKey,
+    apiHost,
+    suggestedQuestions === undefined,
+  );
   const heroQuestions = React.useMemo(
     () =>
-      (suggestedQuestions ?? [])
+      (suggestedQuestions ?? agentStarters)
         .map((question) => question.trim())
         .filter(Boolean),
-    [suggestedQuestions],
+    [suggestedQuestions, agentStarters],
   );
   // The composer's send gate, minus the typed-text check.
   const questionBlockedReason =
