@@ -2940,11 +2940,16 @@ export const WidgetCore = ({
     await appendQuery(prompt, { source: 'composer' });
   };
 
+  // Fetched once the hero is first on screen, so a page load that never opens
+  // the chat, or opens it on a restored conversation, sends no request.
+  // `mounted` lands a render after the open, with the restored turns in place.
+  const [heroSeen, setHeroSeen] = React.useState(false);
+  if (!heroSeen && isOpen && mounted && queries.length === 0) setHeroSeen(true);
   // The site's own questions win, `[]` included; without them, the agent's.
   const agentStarters = useAgentStarters(
     apiKey,
     apiHost,
-    suggestedQuestions === undefined,
+    heroSeen && suggestedQuestions === undefined,
   );
   const heroQuestions = React.useMemo(
     () =>

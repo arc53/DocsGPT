@@ -1066,6 +1066,8 @@ const SearchBarInner = ({
           avatar={avatar}
           poweredBy={poweredBy}
           prefilledQuery={input}
+          // It opens on the visitor's question, so no welcome card shows.
+          suggestedQuestions={[]}
           isOpen={isWidgetOpen}
           handleClose={handleClose}
           size={'large'}
