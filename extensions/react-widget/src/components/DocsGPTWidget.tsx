@@ -1006,6 +1006,18 @@ const Markdown = styled.div`
     z-index: 3;
   }
 
+  /* Set by alignCiteTooltip when centring would cross the answer's edge. */
+  .dgpt-cite[data-tip-align='end']::after {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+
+  .dgpt-cite[data-tip-align='start']::after {
+    left: 0;
+    transform: none;
+  }
+
   .dgpt-cite:hover::after,
   .dgpt-cite:focus-visible::after {
     content: attr(aria-label);
@@ -1719,6 +1731,24 @@ const SourceText = styled.span`
 `;
 
 /**
+ * Keeps a citation's tooltip inside the answer: centred on its pill unless
+ * that crosses an edge, then lined up with the pill's near side. Runs as the
+ * tooltip shows (hover or keyboard focus), when its width can be read.
+ */
+const alignCiteTooltip = (event: React.SyntheticEvent<HTMLDivElement>) => {
+  const cite = (event.target as HTMLElement).closest<HTMLElement>('.dgpt-cite');
+  if (!cite) return;
+  const width = parseFloat(getComputedStyle(cite, '::after').width);
+  if (!width) return;
+  const pill = cite.getBoundingClientRect();
+  const bounds = event.currentTarget.getBoundingClientRect();
+  const centre = pill.left + pill.width / 2;
+  if (centre + width / 2 > bounds.right) cite.dataset.tipAlign = 'end';
+  else if (centre - width / 2 < bounds.left) cite.dataset.tipAlign = 'start';
+  else delete cite.dataset.tipAlign;
+};
+
+/**
  * One answer's markdown, rendered and sanitised only when its text or source
  * count changes: a streamed token re-renders the live answer, not the whole
  * conversation.
@@ -1763,6 +1793,8 @@ const AnswerMarkdown = React.memo(function AnswerMarkdown({
     <>
       <Markdown
         onClick={(event) => onAnswerClick(turn, event)}
+        onMouseOver={alignCiteTooltip}
+        onFocus={alignCiteTooltip}
         dangerouslySetInnerHTML={{ __html: html }}
       />
       {html.includes('<a ') && (
