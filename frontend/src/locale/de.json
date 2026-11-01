@@ -3370,9 +3370,10 @@
         "submit": "Verlassen"
       },
       "starters": {
-        "description": "Bis zu vier Fragen, die unter der Karte des Agenten erscheinen, wenn jemand einen neuen Chat mit ihm beginnt.",
+        "description": "Optional. Fragen, die unter der Karte des Agenten erscheinen, wenn jemand einen neuen Chat mit ihm beginnt, etwa „Wobei kannst du mir helfen?“ Bis zu vier.",
         "label": "Einstiegsfrage {{number}}",
-        "placeholder": "Zum Beispiel: Wobei kannst du mir helfen?"
+        "add": "Einstiegsfrage hinzufügen",
+        "remove": "Einstiegsfrage {{number}} entfernen"
       }
     },
     "logs": {

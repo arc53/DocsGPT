@@ -3472,9 +3472,10 @@
         "submit": "Salir"
       },
       "starters": {
-        "description": "Hasta cuatro preguntas que aparecen bajo la tarjeta del agente cuando alguien empieza un chat nuevo con él.",
+        "description": "Opcional. Preguntas que aparecen bajo la tarjeta del agente cuando alguien empieza un chat nuevo con él, como «¿En qué me puedes ayudar?». Hasta cuatro.",
         "label": "Pregunta {{number}}",
-        "placeholder": "Por ejemplo: ¿En qué me puedes ayudar?"
+        "add": "Añadir una pregunta",
+        "remove": "Quitar la pregunta {{number}}"
       }
     },
     "logs": {

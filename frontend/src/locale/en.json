@@ -3370,9 +3370,10 @@
         "submit": "Leave"
       },
       "starters": {
-        "description": "Up to four questions shown under the agent's card when someone starts a new chat with it.",
+        "description": "Optional. Questions shown under the agent's card when someone starts a new chat with it, such as \"What can you help me with?\" Up to four.",
         "label": "Starter {{number}}",
-        "placeholder": "For example: What can you help me with?"
+        "add": "Add a starter",
+        "remove": "Remove starter {{number}}"
       }
     },
     "logs": {

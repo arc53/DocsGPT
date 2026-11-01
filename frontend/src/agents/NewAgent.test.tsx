@@ -1531,13 +1531,12 @@ describe('NewAgent form', () => {
       Array.from(
         container.querySelectorAll<HTMLInputElement>('input[maxlength="200"]'),
       );
-    // Four fields, the saved starter in the first.
+    // The saved starter, and a link for another (they are optional).
     expect(fields().map((f) => f.value)).toEqual([
       'Run due diligence on a new vendor',
-      '',
-      '',
-      '',
     ]);
+    await act(async () => buttonByText('agents.form.starters.add').click());
+    await act(async () => buttonByText('agents.form.starters.add').click());
     const save = buttonByText('agents.form.buttons.save');
     await act(async () => setNativeValue(fields()[2], '  Which DPAs?  '));
     await act(async () => save.click());
@@ -1546,6 +1545,14 @@ describe('NewAgent form', () => {
       'Run due diligence on a new vendor',
       'Which DPAs?',
     ]);
+  });
+
+  it('shows no starter fields until one is added', async () => {
+    await renderEdit({ starters: [] });
+    expect(container.querySelectorAll('input[maxlength="200"]')).toHaveLength(
+      0,
+    );
+    expect(buttonByText('agents.form.starters.add')).toBeTruthy();
   });
 
   it('removes a stopped item from the agent', async () => {

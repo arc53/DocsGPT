@@ -158,7 +158,7 @@ describe('WorkflowDetailsSheet', () => {
       document.querySelectorAll<HTMLInputElement>('input[maxlength="200"]'),
     );
 
-  it('shows the starters in four fields, as in the classic agent form', () => {
+  it('shows the saved starters, with a link to add more, as in the classic agent form', () => {
     render({ starters: ['How do I reset my VPN?', 'Who approves leave?'] });
     const card = Array.from(document.querySelectorAll('[data-slot="card"]'))[1];
     expect(card.querySelector('h3')?.textContent).toBe(
@@ -166,21 +166,19 @@ describe('WorkflowDetailsSheet', () => {
     );
     expect(card.textContent).toContain('agents.form.starters.description');
     const inputs = starterInputs();
-    expect(inputs).toHaveLength(4);
     expect(inputs.every((input) => card.contains(input))).toBe(true);
     expect(inputs.map((input) => input.value)).toEqual([
       'How do I reset my VPN?',
       'Who approves leave?',
-      '',
-      '',
     ]);
-    expect(inputs[0].placeholder).toBe('agents.form.starters.placeholder');
-    expect(inputs[1].placeholder).not.toBe('agents.form.starters.placeholder');
+    expect(card.textContent).toContain('agents.form.starters.add');
   });
 
   it('counts a starter edit as a change, but not a blank or a repeat', () => {
     const { onSave } = render();
     const save = button('agents.form.buttons.save');
+    act(() => button('agents.form.starters.add').click());
+    expect(save.disabled).toBe(true);
     type(starterInputs()[1], '   ');
     expect(save.disabled).toBe(true);
     type(starterInputs()[1], 'how do i reset my vpn?');
@@ -192,8 +190,6 @@ describe('WorkflowDetailsSheet', () => {
     expect(onSave.mock.calls[0][0].starters).toEqual([
       'How do I reset my VPN?',
       'Who approves leave?',
-      '',
-      '',
     ]);
   });
 

@@ -3472,9 +3472,10 @@
         "submit": "Quitter"
       },
       "starters": {
-        "description": "Jusqu’à quatre questions affichées sous la carte de l’agent quand quelqu’un démarre une nouvelle discussion avec lui.",
+        "description": "Facultatif. Questions affichées sous la carte de l’agent quand quelqu’un démarre une nouvelle discussion avec lui, comme « En quoi pouvez-vous m’aider ? ». Jusqu’à quatre.",
         "label": "Question {{number}}",
-        "placeholder": "Par exemple : En quoi pouvez-vous m’aider ?"
+        "add": "Ajouter une question",
+        "remove": "Retirer la question {{number}}"
       }
     },
     "logs": {

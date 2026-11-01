@@ -19,11 +19,8 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { FileUpload } from '../../../components/FileUpload';
 import { analyticsOf, isDefaultAnalytics } from '../../analyticsConfig';
-import {
-  cleanStarters,
-  MAX_STARTER_LENGTH,
-  MAX_STARTERS,
-} from '../../starters';
+import StartersFields from '../../components/StartersFields';
+import { cleanStarters } from '../../starters';
 import {
   type ModelWindow,
   isContextLimitInvalid,
@@ -230,40 +227,10 @@ export default function WorkflowDetailsSheet({
             title={t('agents.form.sections.starters')}
             description={t('agents.form.starters.description')}
           />
-          <div className="flex flex-col gap-5">
-            {Array.from(
-              { length: MAX_STARTERS },
-              (_, index) => draft.starters[index] ?? '',
-            ).map((starter, index) => (
-              <FormField
-                key={index}
-                labelSurface="background"
-                label={t('agents.form.starters.label', { number: index + 1 })}
-              >
-                <Input
-                  type="text"
-                  value={starter}
-                  maxLength={MAX_STARTER_LENGTH}
-                  placeholder={
-                    index === 0
-                      ? t('agents.form.starters.placeholder')
-                      : undefined
-                  }
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setDraft((prev) => {
-                      const next = Array.from(
-                        { length: MAX_STARTERS },
-                        (_, i) => prev.starters[i] ?? '',
-                      );
-                      next[index] = value;
-                      return { ...prev, starters: next };
-                    });
-                  }}
-                />
-              </FormField>
-            ))}
-          </div>
+          <StartersFields
+            starters={draft.starters}
+            onChange={(starters) => setDraft((prev) => ({ ...prev, starters }))}
+          />
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
           <SectionHeader

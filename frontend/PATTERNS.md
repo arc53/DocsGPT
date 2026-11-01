@@ -429,9 +429,10 @@ An agent's chat (its page, a shared link, the preview) shows the owner's
 starters instead, the same rows with `MessageSquare` (`hero/AgentStarters`),
 under the agent's card and down by the composer (the workflow preview's
 empty chat too). The agent form's Starters
-section is four plain fields; an empty one is none, and a save trims them,
-drops repeats and keeps at most four (`agents/starters.ts`, as the server
-does). With no starters the agent's chat shows only its card.
+section (and a workflow's details) is `agents/components/StartersFields`: no
+fields until "Add a starter", a remove button on each, the link gone at four;
+its description opens "Optional.", like other optional fields. A save trims
+them, drops blanks and repeats (`agents/starters.ts`, as the server does). With no starters the agent's chat shows only its card.
 
 ## Chat answer column
 

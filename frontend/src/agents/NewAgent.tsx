@@ -73,7 +73,8 @@ import {
   isAgentPickerToolVisible,
 } from '../utils/toolUtils';
 import { agentEditPath, agentsListPath, isWorkflowAgent } from './paths';
-import { cleanStarters, MAX_STARTER_LENGTH, MAX_STARTERS } from './starters';
+import { cleanStarters } from './starters';
+import StartersFields from './components/StartersFields';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
@@ -1333,6 +1334,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           </div>
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader
+            title={t('agents.form.sections.starters')}
+            description={t('agents.form.starters.description')}
+          />
+          <StartersFields
+            starters={agent.starters ?? []}
+            onChange={(starters) => setAgent({ ...agent, starters })}
+          />
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
           <SectionHeader title={t('agents.form.sections.knowledge')} />
           <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
             <FormField
@@ -1632,43 +1643,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 </Select>
               </FormField>
             )}
-          </div>
-        </Card>
-        <Card variant="subtle" padding="lg" className="gap-5">
-          <SectionHeader
-            title={t('agents.form.sections.starters')}
-            description={t('agents.form.starters.description')}
-          />
-          <div className="flex flex-col gap-5">
-            {Array.from(
-              { length: MAX_STARTERS },
-              (_, index) => agent.starters?.[index] ?? '',
-            ).map((starter, index) => (
-              <FormField
-                key={index}
-                labelSurface="background"
-                label={t('agents.form.starters.label', { number: index + 1 })}
-              >
-                <Input
-                  type="text"
-                  value={starter}
-                  maxLength={MAX_STARTER_LENGTH}
-                  placeholder={
-                    index === 0
-                      ? t('agents.form.starters.placeholder')
-                      : undefined
-                  }
-                  onChange={(e) => {
-                    const next = Array.from(
-                      { length: MAX_STARTERS },
-                      (_, i) => agent.starters?.[i] ?? '',
-                    );
-                    next[index] = e.target.value;
-                    setAgent({ ...agent, starters: next });
-                  }}
-                />
-              </FormField>
-            ))}
           </div>
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
