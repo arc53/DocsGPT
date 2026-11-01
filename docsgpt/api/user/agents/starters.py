@@ -8,6 +8,7 @@ JSON array of strings (migration 0061).
 from __future__ import annotations
 
 import json
+import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
@@ -15,6 +16,9 @@ from typing import Any
 MAX_STARTERS = 4
 #: The longest a single starter may be, in characters, after trimming.
 MAX_STARTER_LENGTH = 200
+#: Control characters a starter may hold inside it; the rest (NUL among them,
+#: which Postgres JSONB can't store) are refused.
+_ALLOWED_CONTROLS = frozenset("\t\n\r")
 
 
 class StartersError(ValueError):
@@ -37,7 +41,8 @@ def normalize_starters(raw: Any) -> list[str]:
     Raises:
         StartersError: When ``raw`` isn't a list (or its JSON), holds an entry
             that isn't a string, holds an entry longer than
-            :data:`MAX_STARTER_LENGTH`, or keeps more than :data:`MAX_STARTERS`
+            :data:`MAX_STARTER_LENGTH`, holds a control character other than
+            a tab or line break (NUL included), or keeps more than :data:`MAX_STARTERS`
             entries after cleaning.
     """
     if raw is None or raw == "":
@@ -59,6 +64,8 @@ def normalize_starters(raw: Any) -> list[str]:
             continue
         if len(text) > MAX_STARTER_LENGTH:
             raise StartersError(f"A starter can be at most {MAX_STARTER_LENGTH} characters")
+        if any(unicodedata.category(ch) == "Cc" and ch not in _ALLOWED_CONTROLS for ch in text):
+            raise StartersError("A starter can't contain control characters")
         folded = text.casefold()
         if folded in seen:
             continue

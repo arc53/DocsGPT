@@ -94,6 +94,7 @@ class TestNormalize:
             (["a", "b", "c", "d", "A", ""], ["a", "b", "c", "d"]),
             (["x" * MAX_STARTER_LENGTH], ["x" * MAX_STARTER_LENGTH]),
             ([" " + "x" * MAX_STARTER_LENGTH + " "], ["x" * MAX_STARTER_LENGTH]),
+            (["\tHi?\r\n", "Two\nlines\tand a tab"], ["Hi?", "Two\nlines\tand a tab"]),
         ],
     )
     def test_cleans(self, raw, expected):
@@ -110,6 +111,11 @@ class TestNormalize:
             (["ok", None], "must be text"),
             (["x" * (MAX_STARTER_LENGTH + 1)], "at most 200 characters"),
             (["a", "b", "c", "d", "e"], "at most 4 starters"),
+            (["\x00hi"], "control characters"),
+            (["hi\x00"], "control characters"),
+            (["ok", "a\x07b"], "control characters"),
+            (["a\x1bb"], "control characters"),
+            (["a\x7fb"], "control characters"),
         ],
     )
     def test_rejects(self, raw, message):
@@ -221,6 +227,7 @@ class TestUpdate:
             (["x" * 201], "A starter can be at most 200 characters"),
             ([["nested"]], "Each starter must be text"),
             ("a question", "Starters must be a list of questions"),
+            (["\u0000hi"], "A starter can't contain control characters"),
         ],
     )
     def test_rejects_and_keeps_the_stored_ones(self, app, pg_conn, starters, message):
@@ -389,6 +396,8 @@ class TestPortability:
             parse_agent_yaml(head + "".join(f"    - q{i}\n" for i in range(5)))
         with pytest.raises(AgentImportError, match="must be text"):
             parse_agent_yaml(head + "    - 7\n")
+        with pytest.raises(AgentImportError, match="control characters"):
+            parse_agent_yaml(head + '    - "\\0hi"\n')
 
     def test_export_route_writes_them(self, app, pg_conn):
         from docsgpt.api.user.agents.portability import ExportAgent
