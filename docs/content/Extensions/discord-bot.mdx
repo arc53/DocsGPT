@@ -1,0 +1,69 @@
+---
+title: Discord Bot Integration
+description: A step-by-step guide to connecting a Discord bot to DocsGPT.
+lastUpdated: 2026-10-16
+---
+
+# Discord Bot Integration
+
+This guide provides detailed steps to create a Discord bot and integrate it with DocsGPT using the independent Discord extension.
+
+## Step 1: Create a Discord Application
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Click on **New Application** in the top right corner, give it a name, and save.
+
+## Step 2: Configure Bot Tokens and Intents
+
+1. Navigate to the **Bot** tab in your application settings.
+2. Click **Reset Token** to generate a new bot token and copy it securely.
+3. Scroll down to the **Privileged Gateway Intents** section.
+4. Enable the **Message Content Intent**. This is mandatory for the extension to read thread follow-ups and respond to channel messages.
+
+## Step 3: Deploying the Discord Bot Extension
+
+To run the bot, you need to use the separate Discord DocsGPT Extension repository.
+
+1. **Clone the repository** to your local machine or server:
+   ```bash
+   git clone https://github.com/arc53/discord-docsgpt-extension
+   cd discord-docsgpt-extension
+   ```
+
+2. **Configure your environment**:
+   Create a .env file in the root of the discord-docsgpt-extension directory and add your keys:
+   ```dotenv
+   DISCORD_TOKEN=your_discord_bot_token
+   # Publish your agent first, then copy its key from More actions > Access Details
+   API_KEY=your_docsgpt_agent_key
+   API_BASE=https://gptcloud.arc53.com
+   ```
+
+3. **Start the application** using Docker Compose from within the repository folder:
+   ```bash
+   docker compose up -d
+   ```
+
+
+## Step 4: Inviting the Bot to Your Server
+
+Before the bot can read messages, you must invite it using the correct web browser settings.
+
+1. Go directly to the [Discord Developer Portal Applications Page](https://discord.com/developers/applications).
+2. Select your application and navigate to the **OAuth2** tab in the left sidebar, then click **URL Generator**.
+3. Under **Scopes**, select `bot` and `applications.commands`.
+4. Under **Bot Permissions**, select the following minimum requirements:
+   - View Channels
+   - Send Messages
+   - Send Messages in Threads
+   - Create Public Threads
+   - Read Message History
+5. Copy the generated URL at the bottom of the page, paste it into your browser tab, select your server, and click **Authorize**.
+
+## Step 5: Verifying the Connection
+
+1. Open your regular Discord application or website.
+2. Go into your server and click on any text channel your bot can see.
+3. Type the `@` symbol followed by your bot's name (for example: `@MyDocsGPTBot hello`) and press enter to send a message.
+4. If the channel allows threads, your bot creates a thread on your message and replies there. Otherwise, it replies inline.
+
