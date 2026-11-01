@@ -1526,7 +1526,7 @@
       "settingsIconAlt": "Icône des paramètres",
       "toolActions": "Actions de l’outil",
       "configureToolAria": "Configurer {{toolName}}",
-      "manageTools": "Accéder aux outils",
+      "manageTools": "Aller aux outils",
       "edit": "Modifier",
       "delete": "Supprimer",
       "reconnect": "Reconnecter",
@@ -1684,7 +1684,7 @@
       "subtitle": "Les prompts système indiquent au modèle comment répondre. Celui que vous choisissez sert aux conversations sans agent ; les agents choisissent le leur.",
       "searchPlaceholder": "Rechercher des prompts…",
       "addPrompt": "Ajouter un prompt",
-      "manage": "Accéder aux prompts",
+      "manage": "Aller aux prompts",
       "select": "Sélectionner un prompt",
       "filters": {
         "all": "Tous"
