@@ -288,6 +288,7 @@ class _Turn:
         return {"role": "assistant", "content": None, "tool_calls": tool_calls}
 
     def run(self, should_stop: Callable[[], bool]) -> Iterator[dict]:
+        problems: list[str] = []
         for step in range(MAX_LLM_CALLS):
             if should_stop():
                 return
@@ -310,6 +311,7 @@ class _Turn:
                     yield from self.finish(terminal.name, terminal.arguments)
                     return
                 except ProposalInvalid as invalid:
+                    problems = invalid.problems
                     if self.corrections >= MAX_CORRECTIONS:
                         break
                     self.corrections += 1
@@ -345,6 +347,8 @@ class _Turn:
                 break
             self.corrections += 1
             self._correct_text(text, problems)
+        logger.warning("drafter: %s output rejected after %d correction(s): %s", self.recipe.id, self.corrections,
+                       " ".join(problems)[:1000] or "no answer")
         yield _error("invalid_output", "The draft didn't come out right. Try again, or rephrase your request.")
 
 

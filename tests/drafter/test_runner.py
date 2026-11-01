@@ -96,6 +96,13 @@ class TestLoop:
         final_tools = [t["function"]["name"] for t in fake.calls[-1]["tools"]]
         assert final_tools == ["ask_user", "submit_proposal"]
 
+    def test_a_rejected_proposal_is_logged_with_its_problems(self, caplog):
+        bad = calls(tool_call("submit_proposal", {"message": "x", "fields": {"agent_type": "workflow"}}))
+        with caplog.at_level("WARNING", logger="docsgpt.drafter.runner"):
+            events = _run(FakeLLM(bad, bad))
+        assert events[-1]["code"] == "invalid_output"
+        assert "agent output rejected after 1 correction(s)" in caplog.text
+
     def test_after_two_question_rounds_it_must_propose(self):
         asked = json.dumps({"questions": [{"id": "q1"}]})
         history = [
