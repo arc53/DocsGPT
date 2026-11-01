@@ -27,8 +27,15 @@ export type ChatToolsState = {
    * kept here rather than per composer.
    */
   latestRequestId: string | null;
-  /** A tool was toggled while the newest load was out; its list is stale. */
-  toggledSinceRequest: boolean;
+  /**
+   * The switches set while the newest load was out, by tool id; its answer
+   * may predate them, so they win over it. A grantee's toggle sets only
+   * `in_chat`.
+   */
+  toggledSinceRequest: Record<
+    string,
+    Partial<Pick<UserToolType, 'in_chat' | 'status'>>
+  >;
   /** The token the list and the newest load belong to. */
   token: string | null;
 };
@@ -38,7 +45,7 @@ const initialState: ChatToolsState = {
   loaded: false,
   loading: false,
   latestRequestId: null,
-  toggledSinceRequest: false,
+  toggledSinceRequest: {},
   token: null,
 };
 
@@ -73,30 +80,37 @@ export const chatToolsSlice = createSlice({
       tool.in_chat = value;
       // The owner's switch is the tool's own status; a grantee's is theirs.
       if (owner) tool.status = value;
-      if (state.latestRequestId) state.toggledSinceRequest = true;
+      if (state.latestRequestId) {
+        state.toggledSinceRequest[id] = owner
+          ? { in_chat: value, status: value }
+          : { ...state.toggledSinceRequest[id], in_chat: value };
+      }
     },
   },
   extraReducers: (builder) => {
     builder
       .addCase(loadChatTools.pending, (state, action) => {
         state.latestRequestId = action.meta.requestId;
-        state.toggledSinceRequest = false;
+        state.toggledSinceRequest = {};
         state.loading = true;
         state.token = action.meta.arg.token;
       })
       .addCase(loadChatTools.fulfilled, (state, action) => {
         if (action.meta.requestId !== state.latestRequestId) return;
-        // The server may have answered before the toggle reached it.
-        if (!state.toggledSinceRequest) state.tools = action.payload;
+        // The server may have answered before a toggle reached it.
+        const toggled = state.toggledSinceRequest;
+        state.tools = action.payload.map((tool) =>
+          toggled[tool.id] ? { ...tool, ...toggled[tool.id] } : tool,
+        );
         state.latestRequestId = null;
-        state.toggledSinceRequest = false;
+        state.toggledSinceRequest = {};
         state.loading = false;
         state.loaded = true;
       })
       .addCase(loadChatTools.rejected, (state, action) => {
         if (action.meta.requestId !== state.latestRequestId) return;
         state.latestRequestId = null;
-        state.toggledSinceRequest = false;
+        state.toggledSinceRequest = {};
         state.loading = false;
         state.loaded = true;
       })

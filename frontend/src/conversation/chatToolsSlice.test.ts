@@ -86,6 +86,28 @@ describe('chatToolsSlice', () => {
     expect(next.tools).toEqual([tool('b')]);
   });
 
+  // A tool created just before the toggle (its reload is the one out)
+  // still shows; only the toggled tool keeps its local switch.
+  it('takes the rest of the list a load answers across a toggle', () => {
+    const state = run(
+      pending('1'),
+      fulfilled('1', [tool('a'), tool('b')]),
+      pending('2'),
+      setChatToolInChat({ id: 'a', value: true, owner: false }),
+      fulfilled('2', [
+        { ...tool('a'), name: 'renamed', status: true },
+        { ...tool('b'), in_chat: true },
+        tool('new'),
+      ]),
+    );
+    expect(state.tools).toEqual([
+      { ...tool('a'), name: 'renamed', status: true, in_chat: true },
+      { ...tool('b'), in_chat: true },
+      tool('new'),
+    ]);
+    expect(state.toggledSinceRequest).toEqual({});
+  });
+
   it("sets the owner's status, and only the grantee's own switch", () => {
     let state = run(pending('1'), fulfilled('1', [tool('a'), tool('b')]));
     state = reducer(
