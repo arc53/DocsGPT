@@ -166,6 +166,26 @@ describe('chatToolsSlice', () => {
     expect(state.loaded).toBe(true);
   });
 
+  // A session renewal hands the same user a new token every few minutes.
+  it('keeps the list when a new token names the same user', () => {
+    const jwt = (sub: string, exp: number) =>
+      `h.${btoa(JSON.stringify({ sub, exp }))}.s`;
+    const renewed = run(
+      pending('1', jwt('alice', 1)),
+      fulfilled('1', [tool('a')]),
+      setToken(jwt('alice', 2)),
+    );
+    expect(renewed.tools).toEqual([tool('a')]);
+    expect(renewed.loaded).toBe(true);
+    expect(
+      run(
+        pending('1', jwt('alice', 1)),
+        fulfilled('1', [tool('a')]),
+        setToken(jwt('bob', 2)),
+      ).tools,
+    ).toEqual([]);
+  });
+
   it('reads as empty in a store without the slice', () => {
     expect(selectChatTools({})).toEqual([]);
     expect(selectChatToolsLoaded({})).toBe(false);

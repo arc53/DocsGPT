@@ -7,6 +7,7 @@ import {
 import userService from '../api/services/userService';
 import { setToken } from '../preferences/preferenceSlice';
 import type { UserToolType } from '../settings/types';
+import { readerIdFromToken } from '../utils/personLabel';
 import { isChatPickerToolVisible } from '../utils/toolUtils';
 
 /**
@@ -36,8 +37,8 @@ export type ChatToolsState = {
     string,
     Partial<Pick<UserToolType, 'in_chat' | 'status'>>
   >;
-  /** The token the list and the newest load belong to. */
-  token: string | null;
+  /** Whose list it is: the token's user, or the token itself without one. */
+  principal: string | null;
 };
 
 const initialState: ChatToolsState = {
@@ -46,8 +47,12 @@ const initialState: ChatToolsState = {
   loading: false,
   latestRequestId: null,
   toggledSinceRequest: {},
-  token: null,
+  principal: null,
 };
+
+/** The user a token signs in as; a renewal keeps it, a sign-in as someone else doesn't. */
+const principalOf = (token: string | null): string | null =>
+  readerIdFromToken(token) ?? token;
 
 export const loadChatTools = createAsyncThunk<
   UserToolType[],
@@ -93,7 +98,7 @@ export const chatToolsSlice = createSlice({
         state.latestRequestId = action.meta.requestId;
         state.toggledSinceRequest = {};
         state.loading = true;
-        state.token = action.meta.arg.token;
+        state.principal = principalOf(action.meta.arg.token);
       })
       .addCase(loadChatTools.fulfilled, (state, action) => {
         if (action.meta.requestId !== state.latestRequestId) return;
@@ -115,11 +120,12 @@ export const chatToolsSlice = createSlice({
         state.loaded = true;
       })
       // Another account: its list starts over, and a load still out for the
-      // old token answers into nothing. Setting the same token again (sign-in
-      // does) keeps both.
+      // old token answers into nothing. The same user's token again (sign-in
+      // sets it, a session renewal replaces it) keeps both.
       .addCase(setToken, (state, action) => {
-        if (action.payload === state.token) return;
-        return { ...initialState, token: action.payload };
+        const principal = principalOf(action.payload);
+        if (principal === state.principal) return;
+        return { ...initialState, principal };
       });
   },
 });
