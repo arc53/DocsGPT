@@ -981,9 +981,10 @@ const Markdown = styled.div`
     box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
   }
 
-  /* The app's Tooltip: foreground box, background text, 12px. */
+  /* The app's Tooltip: foreground box, background text, 12px. Generated only
+     while shown: laid out at rest (even transparent), a pill near the end of a
+     line pushed it past the conversation's edge and scrolled it sideways. */
   .dgpt-cite::after {
-    content: attr(aria-label);
     position: absolute;
     bottom: calc(100% + 8px);
     left: 50%;
@@ -1004,8 +1005,13 @@ const Markdown = styled.div`
 
   .dgpt-cite:hover::after,
   .dgpt-cite:focus-visible::after {
+    content: attr(aria-label);
     opacity: 1;
     transition-delay: 0.4s;
+
+    @starting-style {
+      opacity: 0;
+    }
   }
 
   /* CodeFrame */
