@@ -62,6 +62,10 @@ type HeroState = {
   sourceDocs?: unknown[] | null;
   selectedDocs?: unknown[];
   conversations?: unknown[] | null;
+  /** The source list's fetch failed (`sourceDocs` stays null). */
+  sourceDocsFailed?: boolean;
+  /** The chat list's fetch failed (`conversations` stays null). */
+  conversationsFailed?: boolean;
   agents?: unknown[] | null;
   connections?: unknown[];
   tools?: unknown[];
@@ -73,6 +77,8 @@ const makeStore = ({
   sourceDocs = [],
   selectedDocs = [],
   conversations = [],
+  sourceDocsFailed = false,
+  conversationsFailed = false,
   agents = [],
   connections = [],
   tools = [],
@@ -90,8 +96,13 @@ const makeStore = ({
           availableModels,
           modelsLoading: false,
           sourceDocs,
+          sourceDocsFailed,
           selectedDocs,
-          conversations: { data: conversations, loading: false },
+          conversations: {
+            data: conversations,
+            loading: false,
+            failed: conversationsFailed,
+          },
           agents,
         },
       ) => state,
@@ -176,6 +187,21 @@ describe('Hero suggestions', () => {
     root = createRoot(container);
     await render({ toolsLoaded: false });
     expect(rows()).toHaveLength(0);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render({ sourceDocs: null });
+    expect(rows()).toHaveLength(0);
+  });
+
+  // A list that failed to load counts as empty, so the setup steps still
+  // show rather than an empty slot for good.
+  it('offers setup steps when the chats or sources failed to load', async () => {
+    await render({ conversations: null, conversationsFailed: true });
+    expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render({ sourceDocs: null, sourceDocsFailed: true });
+    expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
   });
 
   it('holds room for the most rows, so the logo stays put as they change', async () => {

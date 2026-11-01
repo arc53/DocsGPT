@@ -31,6 +31,7 @@ import {
   selectConversations,
   selectSelectedDocs,
   selectSourceDocs,
+  selectSourceDocsFailed,
 } from '../preferences/preferenceSlice';
 import type { ActiveState } from '../models/misc';
 import Upload from '../upload/Upload';
@@ -61,8 +62,9 @@ const NAMED_SERVICES = 2;
 /**
  * The empty chat's suggestions: questions about what the user has (the
  * selected sources, connected services), their latest chat, and setup steps
- * not done yet. Nothing shows until every list it reads has loaded, so a
- * returning user never sees a fresh install's rows first.
+ * not done yet. Nothing shows until every list it reads has loaded (or
+ * failed, then read as empty), so a returning user never sees a fresh
+ * install's rows first.
  */
 export default function HeroSuggestions({
   onAsk,
@@ -77,6 +79,7 @@ export default function HeroSuggestions({
 
   const selectedDocs = useSelector(selectSelectedDocs);
   const sourceDocs = useSelector(selectSourceDocs);
+  const sourceDocsFailed = useSelector(selectSourceDocsFailed);
   const conversations = useSelector(selectConversations);
   const agents = useSelector(selectAgents);
   const tools = useSelector(selectChatTools);
@@ -89,9 +92,11 @@ export default function HeroSuggestions({
 
   const connectorsSettled =
     !connectorsEnabled || connectorsLoaded || connectorsFailed;
+  // A list that failed to load counts as empty (the tools' failure sets
+  // their loaded flag too), so the setup steps still show.
   const ready =
-    sourceDocs !== null &&
-    conversations.data !== null &&
+    (sourceDocs !== null || sourceDocsFailed) &&
+    (conversations.data !== null || !!conversations.failed) &&
     toolsLoaded &&
     connectorsSettled;
 

@@ -80,6 +80,7 @@ const makeStore = (
     chunks: '2',
     selectedDocs: [],
     sourceDocs: null,
+    sourceDocsFailed: false,
     conversations: { data: null, loading: false },
     token: 'tok-1',
     modalState: 'INACTIVE',
