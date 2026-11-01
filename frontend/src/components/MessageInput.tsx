@@ -56,10 +56,10 @@ import {
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import {
-  chatToolsLoadFailed,
+  loadChatTools,
   selectChatTools,
+  selectChatToolsLoading,
   setChatToolInChat,
-  setChatTools,
 } from '../conversation/chatToolsSlice';
 import SignInAgainNotice, {
   useSignInAgain,
@@ -101,7 +101,7 @@ import { toSourcePickerItems } from './sourcePickerItems';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
-import { isChatPickerToolVisible, toolInChat } from '../utils/toolUtils';
+import { toolInChat } from '../utils/toolUtils';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
@@ -381,7 +381,7 @@ export default function MessageInput({
   const userTools = useSelector(selectChatTools);
   const connections = useSelector(selectConnections);
   const catalog = useSelector(selectConnectorCatalog);
-  const [toolsLoading, setToolsLoading] = useState(false);
+  const toolsLoading = useSelector(selectChatToolsLoading);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [addToolModalState, setAddToolModalState] =
@@ -1406,28 +1406,11 @@ export default function MessageInput({
     handlePostDocumentSelect(updated.length > 0 ? updated : null);
   };
 
-  // The list loads on mount and on each open; only the latest request's
-  // answer applies, so a slow older one can't undo a toggle.
-  const toolsRequestRef = useRef(0);
+  // The list loads on mount and on each open; the slice applies only the
+  // newest request's answer, from this composer or one a chat switch
+  // unmounted, so a slow older one can't undo a toggle.
   const fetchUserTools = useCallback(() => {
-    const request = ++toolsRequestRef.current;
-    const isLatest = () => request === toolsRequestRef.current;
-    setToolsLoading(true);
-    userService
-      .getUserTools(token)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!isLatest()) return;
-        const filtered = (data.tools || []).filter(isChatPickerToolVisible);
-        dispatch(setChatTools(filtered));
-      })
-      .catch((error) => {
-        console.error('Error fetching tools:', error);
-        if (isLatest()) dispatch(chatToolsLoadFailed());
-      })
-      .finally(() => {
-        if (isLatest()) setToolsLoading(false);
-      });
+    (dispatch as AppDispatch)(loadChatTools({ token }));
   }, [token, dispatch]);
 
   // Launched from the Tools picker; the modals live here because the picker
