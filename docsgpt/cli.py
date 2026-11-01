@@ -121,6 +121,10 @@ def _gunicorn_application(options: dict):
     return DocsGPTApplication()
 
 
+#: Seconds a reloading dev server waits for open connections before cutting them.
+RELOAD_SHUTDOWN_TIMEOUT = 3
+
+
 def _api(args: argparse.Namespace) -> int:
     """Serve the ASGI app: gunicorn with the bounded-drain uvicorn worker, or uvicorn when reloading."""
     _announce_home()
@@ -137,6 +141,9 @@ def _api(args: argparse.Namespace) -> int:
             port=args.port,
             reload=args.reload,
             reload_dirs=[str(package_dir())] if args.reload else None,
+            # An open tab holds the event and resume streams for minutes, and uvicorn waits for every
+            # connection before restarting: without a limit a reload hangs and the API stops answering.
+            timeout_graceful_shutdown=RELOAD_SHUTDOWN_TIMEOUT if args.reload else None,
         )
         return 0
 

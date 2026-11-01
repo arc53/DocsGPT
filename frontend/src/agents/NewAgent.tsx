@@ -73,6 +73,8 @@ import {
   isAgentPickerToolVisible,
 } from '../utils/toolUtils';
 import { agentEditPath, agentsListPath, isWorkflowAgent } from './paths';
+import { cleanStarters } from './starters';
+import StartersFields from './components/StartersFields';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
@@ -129,6 +131,7 @@ function agentSavePayload(agent: Agent, jsonSchemaText: string) {
   return {
     name: agent.name ?? '',
     description: agent.description ?? '',
+    starters: cleanStarters(agent.starters),
     source: agent.source ?? '',
     sources: agent.sources ?? [],
     chunks: agent.chunks ?? '',
@@ -657,6 +660,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
+    formData.append('starters', JSON.stringify(cleanStarters(agent.starters)));
 
     appendSourceFields(formData);
 
@@ -755,6 +759,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
+    formData.append('starters', JSON.stringify(cleanStarters(agent.starters)));
 
     appendSourceFields(formData);
 
@@ -1629,6 +1634,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </FormField>
             )}
           </div>
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader
+            title={t('agents.form.sections.starters')}
+            description={t('agents.form.starters.description')}
+          />
+          <StartersFields
+            starters={agent.starters ?? []}
+            onChange={(starters) => setAgent({ ...agent, starters })}
+          />
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
           {/* The heading wraps the toggle: a button's children are

@@ -2,6 +2,7 @@ import reducer, {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnectionsNeedAttention,
+  selectConnectorsSettled,
   selectStartedSyncs,
   syncForgotten,
   syncStarted,
@@ -60,6 +61,32 @@ describe('connectorsSlice loadConnectors', () => {
     );
     expect(state.failed).toBe(true);
     expect(state.loading).toBe(false);
+  });
+
+  // A reload clears `failed` while it runs; what reads the list once it has
+  // answered (the empty chat's suggestions) shouldn't blink meanwhile.
+  it('is settled once any load has answered, through later reloads', () => {
+    let state = pending(undefined, '1');
+    expect(selectConnectorsSettled({ connectors: state })).toBe(false);
+    state = reducer(
+      state,
+      loadConnectors.rejected(new Error('boom'), '1', arg),
+    );
+    state = pending(state, '2');
+    expect(state.failed).toBe(false);
+    expect(selectConnectorsSettled({ connectors: state })).toBe(true);
+    let listed = pending(undefined, '1');
+    listed = reducer(listed, loadConnectors.fulfilled(payload([]), '1', arg));
+    listed = pending(listed, '2');
+    expect(selectConnectorsSettled({ connectors: listed })).toBe(true);
+    // An older request's answer doesn't count.
+    let stale = pending(undefined, 'old');
+    stale = pending(stale, 'new');
+    stale = reducer(
+      stale,
+      loadConnectors.rejected(new Error('boom'), 'old', arg),
+    );
+    expect(selectConnectorsSettled({ connectors: stale })).toBe(false);
   });
 });
 

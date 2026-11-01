@@ -414,6 +414,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/answer", "POST"): _rule("chat:run", **_CHAT),
     ("/stream", "POST"): _rule("chat:run", **_CHAT),
     ("/api/search", "POST"): _rule("chat:run", **_CHAT),
+    ("/api/agent_starters", "POST"): _rule("chat:run", **_CHAT),
     ("/api/store_attachment", "POST"): _rule("chat:run", family=None),
     ("/api/sources/<string:source_id>/search", "POST"): _rule(
         "chat:run", family=None, refs=(("sources", (VIEW, "source_id")),)

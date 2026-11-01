@@ -2,6 +2,7 @@ import {
   MoreHorizontal,
   Pencil,
   Bot,
+  ArrowUp,
   ChevronRight,
   Calendar as CalendarIcon,
   Database,
@@ -521,6 +522,36 @@ export default function CardSection() {
               <button type="button" />
             </ListRow>
           ))}
+        </ul>
+      </Example>
+      <Example
+        title="Rows on the page (the empty chat's suggestions)"
+        code='<ul className="flex flex-col"><ListRow size="md" interactive asChild leading title trailing className="group/row">'
+      >
+        <ul className="flex max-w-120 flex-col">
+          <ListRow
+            size="md"
+            interactive
+            asChild
+            className="group/row"
+            leading={<FileText className="text-muted-foreground size-4" />}
+            title="Summarize Carrier Contracts 2026"
+            trailing={
+              <ArrowUp className="text-muted-foreground size-4 opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100" />
+            }
+          >
+            <button type="button" />
+          </ListRow>
+          <ListRow
+            size="md"
+            interactive
+            asChild
+            leading={<Database className="text-muted-foreground size-4" />}
+            title="Add knowledge"
+            trailing={<ChevronRight className="text-muted-foreground size-4" />}
+          >
+            <button type="button" />
+          </ListRow>
         </ul>
       </Example>
       <Example

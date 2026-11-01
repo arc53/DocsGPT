@@ -102,24 +102,28 @@
       "cancelled": "Hintergrundaufgabe abgebrochen"
     }
   },
-  "demo": [
-    {
-      "header": "Über DocsGPT lernen",
-      "query": "Was ist DocsGPT?"
-    },
-    {
-      "header": "Dokumentation zusammenfassen",
-      "query": "Fasse den aktuellen Kontext zusammen"
-    },
-    {
-      "header": "Code schreiben",
-      "query": "Schreibe Code für eine API-Anfrage an /api/answer"
-    },
-    {
-      "header": "Lernunterstützung",
-      "query": "Schreibe mögliche Fragen zum Kontext"
+  "hero": {
+    "suggestions": {
+      "label": "Vorschläge",
+      "summarize": "{{name}} zusammenfassen",
+      "compare": "{{first}} mit {{second}} vergleichen",
+      "service": {
+        "files": "Meine neuesten Dateien in {{name}} finden",
+        "knowledge": "Was hat sich diese Woche in {{name}} geändert?",
+        "projects": "Was ist diese Woche in {{name}} in Arbeit?",
+        "dev": "Was hat sich diese Woche in {{name}} geändert?",
+        "business": "Was gibt es diese Woche Neues in {{name}}?",
+        "messaging": "Die Nachrichten dieser Woche in {{name}} zusammenfassen",
+        "database": "Welche Daten enthält {{name}}?",
+        "other": "Was findest du in {{name}}?"
+      },
+      "continue": "„{{name}}“ fortsetzen",
+      "addKnowledge": "Wissen hinzufügen, um Fragen zu eigenen Dokumenten zu stellen",
+      "connect": "{{names}} verbinden",
+      "more": "mehr",
+      "createAgent": "Einen Agenten für eine bestimmte Aufgabe erstellen"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "Melde dich an, um mit DocsGPT fortzufahren",
     "signInWithSSO": "Mit SSO anmelden",
@@ -3045,7 +3049,8 @@
         "basics": "Grundlagen",
         "knowledge": "Wissen und Verhalten",
         "model": "Modell",
-        "analytics": "Einblicke"
+        "analytics": "Einblicke",
+        "starters": "Einstiegsfragen"
       },
       "placeholders": {
         "agentName": "Agentenname",
@@ -3363,6 +3368,12 @@
         "title": "Ohne Speichern verlassen?",
         "description": "Deine Änderungen hier gehen verloren.",
         "submit": "Verlassen"
+      },
+      "starters": {
+        "description": "Optional. Fragen, die unter der Karte des Agenten erscheinen, wenn jemand einen neuen Chat mit ihm beginnt, etwa „Wobei kannst du mir helfen?“ Bis zu vier.",
+        "label": "Einstiegsfrage {{number}}",
+        "add": "Einstiegsfrage hinzufügen",
+        "remove": "Einstiegsfrage {{number}} entfernen"
       }
     },
     "logs": {
@@ -3723,7 +3734,7 @@
         "deleteNode": "Knoten löschen",
         "deleteConfirmUnnamed": "Diesen Workflow-Agenten löschen?",
         "detailsTitle": "Workflow-Details",
-        "detailsDescription": "Name, Beschreibung und Bild, die auf der Agentenkarte angezeigt werden.",
+        "detailsDescription": "Die Karte des Agenten und seine Chat-Einstellungen.",
         "unsavedChanges": "Nicht gespeicherte Änderungen",
         "editDetailsMenu": "Details bearbeiten",
         "loopHint": "Knoten für jedes Element einer Liste ausführen",
@@ -4041,11 +4052,6 @@
   },
   "prompts": {
     "textAriaLabel": "Prompt-Text"
-  },
-  "connectHero": {
-    "title": "Daten verbinden",
-    "body": "Chatte mit {{names}}.",
-    "more": "mehr"
   },
   "common": {
     "close": "Schließen",

@@ -106,6 +106,8 @@ export type Agent = {
   name: string;
   slug?: string;
   description: string;
+  /** Up to four questions shown under the agent's card on a new chat. */
+  starters?: string[];
   image: string;
   source: string;
   sources?: string[];

@@ -7,6 +7,7 @@ import agentPreviewReducer from './agents/agentPreviewSlice';
 import { MAX_OVERLAPPING, MAX_TOPICS } from './agents/analyticsConfig';
 import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
 import backgroundReducer from './backgroundJobs/backgroundSlice';
+import chatToolsReducer from './conversation/chatToolsSlice';
 import connectorsReducer from './connectors/connectorsSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
@@ -50,6 +51,7 @@ const preloadedState: { preference: Preference } = {
       loading: false,
     },
     sourceDocs: null,
+    sourceDocsFailed: false,
     modalState: 'INACTIVE',
     paginatedDocuments: null,
     templateAgents: null,
@@ -86,6 +88,7 @@ const store = configureStore({
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
     connectors: connectorsReducer,
+    chatTools: chatToolsReducer,
     monitors: monitorsReducer,
     background: backgroundReducer,
     activity: activityReducer,

@@ -711,6 +711,23 @@ class TestGraphRAGBatching:
     @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
     @patch("docsgpt.retriever.graph_rag.GraphStore")
     @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_graph_sources_look_up_their_labels_in_one_query_each(
+        self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
+    ):
+        mock_store_cls.return_value = _single_node_store({"a": 3, "b": 3, "c": 3})
+        rag = _multi_source_retriever(["a", "b", "c"], chunks=6)
+
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}) as labels, \
+                patch("docsgpt.connectors.attribution.source_names", return_value={"c": "test-1"}) as names:
+            docs = rag._get_data()
+
+        labels.assert_called_once_with(["a", "b", "c"])
+        names.assert_called_once_with(["a", "b", "c"])
+        assert [doc.get("source_name") for doc in docs] == [None, None, "test-1"]
+
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_failed_graph_sources_land_in_one_batched_fallback(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
