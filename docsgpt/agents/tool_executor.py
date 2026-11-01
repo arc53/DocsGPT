@@ -50,6 +50,10 @@ API_TOOL_SECRETS_KEY = "encrypted_action_secrets"
 API_TOOL_SECRET_SECTIONS = ("headers", "query_params")
 # Tools that label their hits ``[n]`` from the answer's citation registry.
 CITING_TOOLS = frozenset({"internal_search", "graph_search"})
+# The actions whose result is made of hits the agent's ``retrieval_screen``
+# already scored one by one; any other action of those tools (file listings,
+# graph entities) never passed it.
+SCREENED_SEARCH_ACTIONS = frozenset({("internal_search", "search"), ("graph_search", "read_entity_pages")})
 
 
 def api_tool_action_with_secrets(tool_data: Dict, action_name: str, fallback_owner: Optional[str] = None) -> Dict:
@@ -1206,11 +1210,11 @@ class ToolExecutor:
         text = _scan_text(result)
         if not text:
             return result
-        # A search tool's hits were screened one by one as retrieved documents
+        # A search action's hits were screened one by one as retrieved documents
         # (``retrieval_screen``); its result, which joins them, then gets only
         # the whole-text controls, so the model check never scores them twice.
         screened = (
-            tool_name in CITING_TOOLS
+            (tool_name, action_name) in SCREENED_SEARCH_ACTIONS
             and self.retrieval_screen is not None
             and bool(engine.config.controls_for(GuardrailStage.RETRIEVAL, item_level=True))
         )

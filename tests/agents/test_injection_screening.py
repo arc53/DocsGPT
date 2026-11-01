@@ -251,6 +251,21 @@ class TestSearchTools:
         assert executor._guardrail_tool_result(PAYLOAD, "api_tool", "fetch") != PAYLOAD
         assert fake.calls[0].feature == "injection_tool_result"
 
+    @pytest.mark.parametrize("tool, action", [
+        ("internal_search", "list_files"),
+        ("graph_search", "search_entities"),
+        ("graph_search", "get_relationships"),
+    ])
+    def test_an_action_whose_result_is_not_screened_hits_keeps_the_item_check(self, fake, tool, action):
+        # File and folder names, and the graph's entities, never pass ``retrieval_screen``.
+        both = {"enabled": True, "mode": "scan_all", "controls": [
+            {"check": "injection_model", "stage": "retrieval", "action": "block"},
+            {"check": "injection_model", "stage": "tool_result", "action": "block"},
+        ]}
+        agent = self.screen_for(both)
+        assert agent.tool_executor._guardrail_tool_result(PAYLOAD, tool, action) != PAYLOAD
+        assert fake.calls[0].feature == "injection_tool_result"
+
     def test_without_a_retrieval_item_control_the_tool_result_check_still_runs(self, fake):
         agent = self.screen_for(rules(stage="tool_result"))
         assert agent.tool_executor._guardrail_tool_result(PAYLOAD, "internal_search", "search") != PAYLOAD
