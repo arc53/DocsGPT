@@ -3841,7 +3841,7 @@
         "deleteNode": "Eliminar nodo",
         "deleteConfirmUnnamed": "¿Eliminar este agente de flujo de trabajo?",
         "detailsTitle": "Detalles del flujo de trabajo",
-        "detailsDescription": "Nombre, descripción e imagen que se muestran en la tarjeta del agente.",
+        "detailsDescription": "La tarjeta del agente y sus ajustes de chat.",
         "unsavedChanges": "Cambios sin guardar",
         "editDetailsMenu": "Editar detalles",
         "loopHint": "Ejecuta nodos para cada elemento de una lista",

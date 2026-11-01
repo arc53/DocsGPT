@@ -3739,7 +3739,7 @@
         "deleteNode": "Delete node",
         "deleteConfirmUnnamed": "Delete this workflow agent?",
         "detailsTitle": "Workflow details",
-        "detailsDescription": "Name, description and image shown on the agent card.",
+        "detailsDescription": "The agent's card and its chat settings.",
         "unsavedChanges": "Unsaved changes",
         "editDetailsMenu": "Edit details",
         "loopHint": "Run nodes for each item in a list",

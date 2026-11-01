@@ -3846,7 +3846,7 @@
         "deleteNode": "Supprimer le nœud",
         "deleteConfirmUnnamed": "Supprimer cet agent de workflow ?",
         "detailsTitle": "Détails du workflow",
-        "detailsDescription": "Nom, description et image affichés sur la carte de l’agent.",
+        "detailsDescription": "La carte de l’agent et ses paramètres de discussion.",
         "unsavedChanges": "Modifications non enregistrées",
         "editDetailsMenu": "Modifier les détails",
         "loopHint": "Exécuter des nœuds pour chaque élément d’une liste",

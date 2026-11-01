@@ -3715,7 +3715,7 @@
         "deleteNode": "刪除節點",
         "deleteConfirmUnnamed": "要刪除此工作流程代理嗎？",
         "detailsTitle": "工作流程詳細資料",
-        "detailsDescription": "顯示在代理卡片上的名稱、說明和圖片。",
+        "detailsDescription": "代理的卡片和對話設定。",
         "unsavedChanges": "未儲存的變更",
         "editDetailsMenu": "編輯詳細資料",
         "loopHint": "為清單中的每個項目執行節點",

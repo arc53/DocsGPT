@@ -3713,7 +3713,7 @@
         "deleteNode": "删除节点",
         "deleteConfirmUnnamed": "删除此工作流智能体？",
         "detailsTitle": "工作流详情",
-        "detailsDescription": "显示在智能体卡片上的名称、描述和图片。",
+        "detailsDescription": "智能体的卡片和对话设置。",
         "unsavedChanges": "未保存的更改",
         "editDetailsMenu": "编辑详情",
         "loopHint": "为列表中的每一项运行节点",

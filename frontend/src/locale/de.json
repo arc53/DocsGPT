@@ -3734,7 +3734,7 @@
         "deleteNode": "Knoten löschen",
         "deleteConfirmUnnamed": "Diesen Workflow-Agenten löschen?",
         "detailsTitle": "Workflow-Details",
-        "detailsDescription": "Name, Beschreibung und Bild, die auf der Agentenkarte angezeigt werden.",
+        "detailsDescription": "Die Karte des Agenten und seine Chat-Einstellungen.",
         "unsavedChanges": "Nicht gespeicherte Änderungen",
         "editDetailsMenu": "Details bearbeiten",
         "loopHint": "Knoten für jedes Element einer Liste ausführen",

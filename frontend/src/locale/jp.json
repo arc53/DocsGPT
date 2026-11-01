@@ -3715,7 +3715,7 @@
         "deleteNode": "ノードを削除",
         "deleteConfirmUnnamed": "このワークフローエージェントを削除しますか？",
         "detailsTitle": "ワークフローの詳細",
-        "detailsDescription": "エージェントカードに表示される名前、説明、画像です。",
+        "detailsDescription": "エージェントのカードとチャットの設定です。",
         "unsavedChanges": "未保存の変更",
         "editDetailsMenu": "詳細を編集",
         "loopHint": "リストの各項目に対してノードを実行",
