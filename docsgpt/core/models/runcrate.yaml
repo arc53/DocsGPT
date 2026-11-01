@@ -1,0 +1,38 @@
+provider: openai_compatible
+display_provider: runcrate
+api_key_env: RUNCRATE_API_KEY
+base_url: https://api.runcrate.ai/v1
+
+defaults:
+  supports_tools: true
+  supports_structured_output: true
+  attachments: []
+
+models:
+  - id: deepseek-ai/DeepSeek-V4-Flash
+    display_name: DeepSeek V4 Flash
+    description: Open-weight 1M-context DeepSeek model with tool calling and hybrid reasoning
+    context_window: 1048576
+    input_cost_per_million: 0.0945
+    output_cost_per_million: 0.189
+
+  - id: moonshotai/Kimi-K2.6
+    display_name: Kimi K2.6
+    description: Open-weight 1T-parameter MoE for multi-step tool calling and long-horizon agent work
+    context_window: 262144
+    input_cost_per_million: 0.7875
+    output_cost_per_million: 3.675
+
+  - id: zai-org/GLM-5.3
+    display_name: GLM 5.3
+    description: Open-weight GLM model for agentic coding and reasoning
+    context_window: 1048576
+    input_cost_per_million: 0.590625
+    output_cost_per_million: 2.625
+
+  - id: Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo
+    display_name: Qwen3 Coder 480B
+    description: Open-weight Qwen coding model with 256K context and tool calling
+    context_window: 262144
+    input_cost_per_million: 0.315
+    output_cost_per_million: 1.05
