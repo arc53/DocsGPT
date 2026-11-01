@@ -2412,8 +2412,9 @@ class WorkflowEngine:
             if self._node_search_outcome is None:
                 # The search itself raised, which is not "nothing matched":
                 # the node agent is told the sources could not be searched.
-                searched = sources or [str(source_id) for source_id in node_config.sources or []]
-                self._node_search_outcome = SearchOutcome.of(searched, searched)
+                # Only the authorized ones: the raw configured ids may name
+                # another user's source, whose name would reach the model.
+                self._node_search_outcome = SearchOutcome.of(sources, sources)
             return []
 
     @staticmethod
