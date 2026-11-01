@@ -68,6 +68,8 @@ class Recipe:
             ``(arguments, request, workspace) -> dict``; raises :class:`ProposalInvalid` on a fixable problem.
         read_tools: Names of the read tools offered (``docsgpt/drafter/read_tools.py``).
         proposal_description: The ``submit_proposal`` tool description.
+        questions: Whether the model may ask questions (``ask_user``) before proposing; a screen
+            that takes one request and returns one result (a prompt) turns it off.
     """
 
     id: str
@@ -79,12 +81,16 @@ class Recipe:
     validate: Callable[[dict, DraftRequest, Workspace], dict]
     read_tools: tuple[str, ...] = field(default_factory=tuple)
     proposal_description: str = "Hand the finished draft to the user's form. Ends your turn."
+    questions: bool = True
 
 
 _RECIPES: dict[str, Recipe] = {}
 
 #: Modules that register the built-in recipes, imported on first lookup.
-_BUILTIN_MODULES: tuple[str, ...] = ("docsgpt.drafter.agent_recipe",)
+_BUILTIN_MODULES: tuple[str, ...] = (
+    "docsgpt.drafter.agent_recipe",
+    "docsgpt.drafter.prompt_recipe",
+)
 _loaded = False
 
 

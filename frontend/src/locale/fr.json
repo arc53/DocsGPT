@@ -4586,6 +4586,43 @@
     }
   },
   "drafter": {
+    "prompt": {
+      "write": "Rédiger",
+      "improvePrompt": "Améliorer le prompt",
+      "improveCopy": "Améliorer une copie",
+      "askLabel": "Que doit modifier ou rédiger DocsGPT ?",
+      "improvePlaceholder": "Dites ce qu’il faut changer, p. ex. ne plus citer de prix…",
+      "writePlaceholder": "Décrivez le prompt, p. ex. un assistant aimable pour notre manuel RH…",
+      "errors": {
+        "invalid_output": "La réponse du modèle n’a pas pu être utilisée. Le prompt n’a pas changé.",
+        "model_error": "Un problème est survenu pendant la rédaction. Le prompt n’a pas changé."
+      },
+      "warningsTitle": "À vérifier avant d’enregistrer",
+      "checks": {
+        "to_template": "Cela ajoute des variables de modèle : DocsGPT utilisera le prompt tel quel et n’ajoutera plus ses propres sections (date, règles de réponse, citations, mise en forme et limites).",
+        "to_persona": "Cela retire toutes les variables de modèle : DocsGPT traitera le prompt comme du texte brut et l’entourera de ses propres sections (date, règles de réponse, citations, mise en forme et limites).",
+        "boundaries_removed": "La section Boundaries a disparu. Sans elle, l’agent risque de suivre des instructions cachées dans des documents ou des résultats d’outils.",
+        "citations_removed": "La variable des règles de citation (source.citation_rules) a disparu, les réponses ne citeront donc plus leurs sources sous la forme [1], [2].",
+        "agentic_copy": "C’est une copie d’un prompt intégré classique. Sur un agent de recherche, elle remplace les consignes de recherche (chercher plusieurs fois avant de répondre), les réponses risquent donc d’être plus superficielles."
+      },
+      "reviewLabel": "Modifications proposées",
+      "removedText": "Supprimé : ",
+      "addedText": "Ajouté : ",
+      "accept": "Accepter",
+      "reject": "Refuser",
+      "acceptChange": "Accepter la modification {{number}}",
+      "rejectChange": "Refuser la modification {{number}}",
+      "accepted": "Acceptée",
+      "rejected": "Refusée",
+      "undoChoice": "Annuler",
+      "undoChoiceLabel": "Annuler votre choix sur la modification {{number}}",
+      "acceptAll": "Tout accepter",
+      "reviewOneByOne": "Examiner une par une",
+      "discard": "Abandonner",
+      "usedBy_one": "Utilisé par {{formatted}} agent. L’enregistrer le modifie aussi là-bas.",
+      "usedBy_many": "Utilisé par {{formatted}} agents. L’enregistrer le modifie pour tous.",
+      "usedBy_other": "Utilisé par {{formatted}} agents. L’enregistrer le modifie pour tous."
+    },
     "title": "Rédiger avec DocsGPT",
     "draft": "Rédiger",
     "improve": "Améliorer",

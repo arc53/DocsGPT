@@ -4458,6 +4458,42 @@
     }
   },
   "drafter": {
+    "prompt": {
+      "write": "Schreiben",
+      "improvePrompt": "Prompt verbessern",
+      "improveCopy": "Kopie verbessern",
+      "askLabel": "Was soll DocsGPT ändern oder schreiben?",
+      "improvePlaceholder": "Sagen Sie, was sich ändern soll, z. B. keine Preise nennen…",
+      "writePlaceholder": "Beschreiben Sie den Prompt, z. B. ein freundlicher Helfer für unser Personalhandbuch…",
+      "errors": {
+        "invalid_output": "Die Antwort des Modells war nicht verwendbar. Der Prompt hat sich nicht geändert.",
+        "model_error": "Beim Entwerfen ist etwas schiefgelaufen. Der Prompt hat sich nicht geändert."
+      },
+      "warningsTitle": "Vor dem Speichern prüfen",
+      "checks": {
+        "to_template": "Damit kommen Vorlagenvariablen hinzu: DocsGPT verwendet den Prompt dann genau wie geschrieben und fügt seine eigenen Abschnitte nicht mehr hinzu (Datum, Antwortregeln, Quellenangaben, Formatierung und Grenzen).",
+        "to_persona": "Damit fallen alle Vorlagenvariablen weg: DocsGPT behandelt den Prompt dann als reinen Text und fügt seine eigenen Abschnitte hinzu (Datum, Antwortregeln, Quellenangaben, Formatierung und Grenzen).",
+        "boundaries_removed": "Der Abschnitt „Boundaries“ fehlt. Ohne ihn folgt der Agent womöglich Anweisungen, die in Dokumenten oder Tool-Ergebnissen versteckt sind.",
+        "citations_removed": "Die Variable für die Zitierregeln (source.citation_rules) fehlt, daher nennen Antworten ihre Quellen nicht mehr als [1], [2].",
+        "agentic_copy": "Das ist eine Kopie eines klassischen integrierten Prompts. Bei einem Recherche-Agenten ersetzt sie die Recherche-Anweisungen (vor dem Antworten mehrmals suchen), daher können Antworten oberflächlicher ausfallen."
+      },
+      "reviewLabel": "Vorgeschlagene Änderungen",
+      "removedText": "Entfernt: ",
+      "addedText": "Hinzugefügt: ",
+      "accept": "Übernehmen",
+      "reject": "Ablehnen",
+      "acceptChange": "Änderung {{number}} übernehmen",
+      "rejectChange": "Änderung {{number}} ablehnen",
+      "accepted": "Übernommen",
+      "rejected": "Abgelehnt",
+      "undoChoice": "Rückgängig",
+      "undoChoiceLabel": "Ihre Wahl bei Änderung {{number}} rückgängig machen",
+      "acceptAll": "Alle übernehmen",
+      "reviewOneByOne": "Einzeln prüfen",
+      "discard": "Verwerfen",
+      "usedBy_one": "Wird von {{formatted}} Agenten verwendet. Das Speichern ändert ihn auch dort.",
+      "usedBy_other": "Wird von {{formatted}} Agenten verwendet. Das Speichern ändert ihn für alle."
+    },
     "title": "Mit DocsGPT entwerfen",
     "draft": "Entwerfen",
     "improve": "Verbessern",

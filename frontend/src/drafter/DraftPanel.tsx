@@ -32,7 +32,7 @@ export const TASK_MODEL_SETTINGS_PATH = '/settings/general';
 const COUNT_KEYS = ['sources', 'tools', 'prompts', 'models', 'agents'] as const;
 
 // Errors a second try can fix; the others need a setting changed first.
-const RETRYABLE: DrafterErrorCode[] = [
+export const RETRYABLE: DrafterErrorCode[] = [
   'rate_limited',
   'invalid_output',
   'model_error',

@@ -78,7 +78,16 @@ TOOL_PROTOCOL = f"""Finish every turn by calling exactly one of these tools:
 Use the read tools before that when a detail matters (a prompt's full text, a source's files, a tool's actions). \
 Don't answer in plain text."""
 
+PROPOSAL_ONLY_PROTOCOL = f"""This screen takes no questions: draft with what you have and say in your message what \
+you assumed. Finish the turn by calling {SUBMIT_PROPOSAL}. Use the read tools before that when a detail matters. \
+Don't answer in plain text."""
+
 NO_MORE_QUESTIONS = "You have asked enough questions in this conversation. Draft now with what you know."
+
+
+def _finish_hint(allow_questions: bool) -> str:
+    """How to end the turn, for the correction and last-call messages."""
+    return f"{ASK_USER} or {SUBMIT_PROPOSAL}" if allow_questions else SUBMIT_PROPOSAL
 
 
 def _json_protocol(recipe: Recipe, allow_questions: bool) -> str:
@@ -144,8 +153,9 @@ def build_messages(
     system = "\n\n".join(filter(None, [
         COMMON_RULES,
         recipe.instructions(req, ws),
-        TOOL_PROTOCOL if tool_mode else _json_protocol(recipe, allow_questions),
-        None if allow_questions else NO_MORE_QUESTIONS,
+        (TOOL_PROTOCOL if recipe.questions else PROPOSAL_ONLY_PROTOCOL) if tool_mode
+        else _json_protocol(recipe, allow_questions),
+        None if allow_questions or not recipe.questions else NO_MORE_QUESTIONS,
     ]))
     data = "\n\n".join([
         fence("Workspace", ws.summary()),
@@ -208,7 +218,7 @@ class _Turn:
         self.llm = llm
         self.model_id = model_id
         self.tool_mode = tool_mode
-        self.allow_questions = question_rounds(req.messages) < MAX_QUESTION_ROUNDS
+        self.allow_questions = recipe.questions and question_rounds(req.messages) < MAX_QUESTION_ROUNDS
         self.messages = build_messages(
             req, recipe, ws, tool_mode=tool_mode, allow_questions=self.allow_questions
         )
@@ -225,7 +235,8 @@ class _Turn:
             raise ProposalInvalid(["The arguments are not a JSON object."])
         if name == ASK_USER:
             if not self.allow_questions:
-                raise ProposalInvalid([NO_MORE_QUESTIONS])
+                raise ProposalInvalid([NO_MORE_QUESTIONS if self.recipe.questions
+                                       else "This screen takes no questions. Submit the proposal instead."])
             message, questions = normalize_questions(args)
             events = [{"type": "message", "text": message}] if message else []
             return events + [{"type": "questions", "questions": questions}]
@@ -258,7 +269,7 @@ class _Turn:
     def _correct_text(self, text: str, problems: list[str]) -> None:
         self.messages.append({"role": "assistant", "content": text or "(no answer)"})
         self.messages.append({"role": "user", "content": "Your answer was not accepted: " + " ".join(problems)
-                              + (" Finish by calling ask_user or submit_proposal." if self.tool_mode
+                              + (f" Finish by calling {_finish_hint(self.allow_questions)}." if self.tool_mode
                                  else " Answer again with one JSON object only.")})
 
     @staticmethod
@@ -283,7 +294,7 @@ class _Turn:
             final = step == MAX_LLM_CALLS - 1
             if final and self.tool_mode:
                 self.messages.append({"role": "user", "content": "Stop reading now and finish with "
-                                      "ask_user or submit_proposal."})
+                                      f"{_finish_hint(self.allow_questions)}."})
             try:
                 parsed = self.gen(final)
             except Exception as exc:

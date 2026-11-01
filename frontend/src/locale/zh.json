@@ -4436,6 +4436,41 @@
     }
   },
   "drafter": {
+    "prompt": {
+      "write": "撰写",
+      "improvePrompt": "改进提示词",
+      "improveCopy": "改进副本",
+      "askLabel": "要让 DocsGPT 修改或撰写什么？",
+      "improvePlaceholder": "说明要改什么，例如：不要报价…",
+      "writePlaceholder": "描述这个提示词，例如：我们员工手册的友好助手…",
+      "errors": {
+        "invalid_output": "无法使用模型的回答。提示词没有变化。",
+        "model_error": "起草时出了问题。提示词没有变化。"
+      },
+      "warningsTitle": "保存前请检查",
+      "checks": {
+        "to_template": "这会加入模板变量，DocsGPT 将完全按原文使用提示词，不再添加自己的部分：日期、回答规则、引用、格式和边界。",
+        "to_persona": "这会删除所有模板变量，DocsGPT 将把提示词当作纯文本，并在其外加上自己的部分：日期、回答规则、引用、格式和边界。",
+        "boundaries_removed": "Boundaries 部分已被删除。没有它，智能体可能会执行文档或工具结果中隐藏的指令。",
+        "citations_removed": "引用规则变量（source.citation_rules）已被删除，回答将不再以 [1]、[2] 的形式引用来源。",
+        "agentic_copy": "这是一个经典内置提示词的副本。在研究型智能体上，它会替换研究指令（回答前多次搜索），回答可能会变得更浅。"
+      },
+      "reviewLabel": "建议的修改",
+      "removedText": "已删除：",
+      "addedText": "已添加：",
+      "accept": "接受",
+      "reject": "拒绝",
+      "acceptChange": "接受修改 {{number}}",
+      "rejectChange": "拒绝修改 {{number}}",
+      "accepted": "已接受",
+      "rejected": "已拒绝",
+      "undoChoice": "撤销",
+      "undoChoiceLabel": "撤销对修改 {{number}} 的选择",
+      "acceptAll": "全部接受",
+      "reviewOneByOne": "逐条查看",
+      "discard": "放弃",
+      "usedBy_other": "有 {{formatted}} 个智能体在使用。保存后会对所有智能体生效。"
+    },
     "title": "用 DocsGPT 起草",
     "draft": "起草",
     "improve": "改进",

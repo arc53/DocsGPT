@@ -14,6 +14,7 @@ import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { can } from '../utils/accessUtils';
 import { formatCount } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
+import type { PromptDrafterAgent } from '../drafter/usePromptDrafter';
 
 // Presets (`public`) carry no access fields and are never edited in place.
 const canEditPrompt = (prompt: Prompt) =>
@@ -29,6 +30,10 @@ type PromptActionsOptions = {
   onSaved: () => void;
   /** A prompt was deleted on the server. */
   onDeleted: (prompt: Prompt) => void;
+  /** A prompt was created (Add or a copy): its id and name. */
+  onCreated?: (prompt: { id: string; name: string }) => void;
+  /** The agent form the modal is opened from, for the drafter. */
+  drafterAgent?: PromptDrafterAgent | null;
 };
 
 /**
@@ -40,14 +45,19 @@ type PromptActionsOptions = {
  *   prompts: The listed prompts (a copy's name must not repeat one).
  *   onSaved: Called after an add or a save.
  *   onDeleted: Called after a delete.
+ *   onCreated: Called with a created prompt's id and name.
+ *   drafterAgent: The agent the prompt is for, when opened from its form.
  *
  * Returns:
- *   `openPrompt`, `addPrompt`, `menuOptions(prompt)` and `modals`, to render.
+ *   `openPrompt`, `addPrompt`, `improvePrompt`, `improveCopy`,
+ *   `menuOptions(prompt)` and `modals`, to render.
  */
 export default function usePromptActions({
   prompts,
   onSaved,
   onDeleted,
+  onCreated,
+  drafterAgent = null,
 }: PromptActionsOptions) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -78,11 +88,14 @@ export default function usePromptActions({
     null,
   );
   const [promptToShare, setPromptToShare] = React.useState<Prompt | null>(null);
+  // Opened by an Improve entry: the cursor starts in the drafter's ask bar.
+  const [focusAsk, setFocusAsk] = React.useState(false);
 
   const showError = (message: string) =>
     dispatch(showActionToast({ variant: 'destructive', message }));
 
   const addPrompt = () => {
+    setFocusAsk(false);
     setModalType('ADD');
     setDuplicateSource(null);
     setNewPromptName('');
@@ -97,10 +110,14 @@ export default function usePromptActions({
         token,
       );
       if (!response.ok) throw new Error('Failed to add prompt');
+      const created = onCreated
+        ? ((await response.json()) as { id?: string } | null)
+        : null;
       setModalState('INACTIVE');
       setNewPromptName('');
       setNewPromptContent('');
       onSaved();
+      if (created?.id) onCreated?.({ id: created.id, name: newPromptName });
     } catch (error) {
       console.error(error);
     }
@@ -119,7 +136,8 @@ export default function usePromptActions({
   };
 
   /** Opens the prompt to edit, or to read when the role can't edit it. */
-  const openPrompt = (prompt: Prompt) => {
+  const openPrompt = (prompt: Prompt, askFirst = false) => {
+    setFocusAsk(askFirst);
     setModalType('EDIT');
     setEditReadOnly(!canEditPrompt(prompt));
     setEditPromptUpdatedAt(null);
@@ -140,7 +158,8 @@ export default function usePromptActions({
     return candidate;
   };
 
-  const duplicatePrompt = async (prompt: Prompt) => {
+  const duplicatePrompt = async (prompt: Prompt, askFirst = false) => {
+    setFocusAsk(askFirst);
     try {
       const response = await userService.getSinglePrompt(prompt.id, token);
       if (!response.ok) throw new Error('Failed to fetch prompt content');
@@ -154,6 +173,15 @@ export default function usePromptActions({
       console.error(error);
     }
   };
+
+  /** Opens the prompt with the drafter's ask bar ready; a copy when it can't be edited. */
+  const improvePrompt = (prompt: Prompt) => {
+    if (canEditPrompt(prompt)) openPrompt(prompt, true);
+    else void duplicatePrompt(prompt, true);
+  };
+
+  /** Duplicates the prompt and opens the copy with the ask bar ready. */
+  const improveCopy = (prompt: Prompt) => void duplicatePrompt(prompt, true);
 
   const duplicateFromModal = () => {
     setDuplicateSource(currentPromptEdit.name);
@@ -276,6 +304,8 @@ export default function usePromptActions({
         handleAddPrompt={handleAddPrompt}
         handleEditPrompt={handleSaveChanges}
         readOnly={editReadOnly}
+        drafterAgent={drafterAgent}
+        autoFocusAsk={focusAsk}
         onDuplicate={
           can(
             prompts.find((prompt) => prompt.id === currentPromptEdit.id) ??
@@ -317,5 +347,12 @@ export default function usePromptActions({
     </>
   );
 
-  return { openPrompt, addPrompt, menuOptions, modals };
+  return {
+    openPrompt,
+    addPrompt,
+    improvePrompt,
+    improveCopy,
+    menuOptions,
+    modals,
+  };
 }

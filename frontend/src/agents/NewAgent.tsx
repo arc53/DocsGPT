@@ -66,6 +66,8 @@ import {
   setPrompts,
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
+import usePromptActions from '../settings/usePromptActions';
+import type { PromptDrafterAgent } from '../drafter/usePromptDrafter';
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import { useMediaQuery } from '../hooks';
@@ -536,6 +538,45 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const promptValueOption = pickedPromptLabel
     ? { value: pickedPromptId, label: pickedPromptLabel }
     : undefined;
+
+  // The prompt modal's drafter knows this agent's knowledge, tools and type,
+  // saved or not.
+  const promptDrafterAgent = useMemo<PromptDrafterAgent>(
+    () => ({
+      sources: Array.from(selectedSourceIds),
+      tools: selectedTools.map((tool) => tool.id),
+      agent_type: agent.agent_type || 'classic',
+    }),
+    [selectedSourceIds, selectedTools, agent.agent_type],
+  );
+  // Improve on the picked prompt: in place when it can be edited, else (a
+  // built-in or a teammate's view-only prompt) as a copy the agent then uses.
+  const promptActions = usePromptActions({
+    prompts,
+    onSaved: () => {
+      userService
+        .getPrompts(token)
+        .then((response: Response) => (response.ok ? response.json() : null))
+        .then((list: Prompt[] | null) => {
+          if (Array.isArray(list)) dispatch(setPrompts(list));
+        })
+        .catch((error: unknown) => console.error(error));
+    },
+    onDeleted: () => undefined,
+    onCreated: ({ id }) => {
+      setPendingPrompt(null);
+      setAgent((prev) => ({ ...prev, prompt_id: id }));
+    },
+    drafterAgent: promptDrafterAgent,
+  });
+  const pickedPrompt: Prompt | undefined =
+    prompts.find((prompt) => prompt.id === pickedPromptId) ??
+    (PROMPT_PRESETS.includes(pickedPromptId)
+      ? { id: pickedPromptId, name: pickedPromptId, type: 'public' }
+      : undefined);
+  const improvesCopy =
+    !!pickedPrompt &&
+    (pickedPrompt.type === 'public' || !can(pickedPrompt, 'edit'));
 
   // Who added a source or tool, joined to its picker row's line.
   const sourceAddedBy = useCallback(
@@ -1936,12 +1977,35 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     </div>
                   )}
                   {/* The mark of the picked prompt running with an editor's
-                  access is a hint under the picker, seen without opening it. */}
-                  {!pendingPrompt && promptAddedBy && (
-                    <p className="text-muted-foreground mt-1.5 text-xs">
-                      {promptAddedBy}
-                    </p>
-                  )}
+                  access is a hint under the picker, seen without opening it;
+                  Improve opens the prompt with the drafter's ask bar. */}
+                  {!pendingPrompt &&
+                    (promptAddedBy || (drafterEnabled && pickedPrompt)) && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+                        {drafterEnabled && pickedPrompt && (
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="inline"
+                            onClick={() =>
+                              improvesCopy
+                                ? promptActions.improveCopy(pickedPrompt)
+                                : promptActions.improvePrompt(pickedPrompt)
+                            }
+                          >
+                            <WandSparkles className="size-4" />
+                            {improvesCopy
+                              ? t('drafter.prompt.improveCopy')
+                              : t('drafter.prompt.improvePrompt')}
+                          </Button>
+                        )}
+                        {promptAddedBy && (
+                          <p className="text-muted-foreground text-xs">
+                            {promptAddedBy}
+                          </p>
+                        )}
+                      </div>
+                    )}
                 </div>
                 <ResourceStatusNotice
                   agent={agent}
@@ -2382,6 +2446,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             prompts={prompts}
             isOpen={addPromptModal}
             initial={addPromptInitial}
+            drafterAgent={promptDrafterAgent}
+            // Editing the drafted prompt keeps it pending: the agent's save
+            // creates it.
+            onSavePending={
+              addPromptInitial
+                ? (pending) => setPendingPrompt(pending)
+                : undefined
+            }
             onClose={() => {
               setAddPromptModal('INACTIVE');
               setAddPromptInitial(null);
@@ -2392,6 +2464,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               setAgent((prev) => ({ ...prev, prompt_id: id }));
             }}
           />
+          {promptActions.modals}
           <AgentPreviewSheet
             open={previewOpen}
             onOpenChange={setPreviewOpen}
@@ -2496,6 +2569,8 @@ function AddPromptModal({
   initial,
   onClose,
   onSelect,
+  onSavePending,
+  drafterAgent,
 }: {
   prompts: Prompt[];
   isOpen: ActiveState;
@@ -2503,6 +2578,10 @@ function AddPromptModal({
   initial?: PendingPrompt | null;
   onClose: () => void;
   onSelect?: (name: string, id: string, type: string) => void;
+  /** Save hands the name and text back instead of creating a prompt. */
+  onSavePending?: (pending: PendingPrompt) => void;
+  /** The agent form's knowledge, tools and type, for the drafter. */
+  drafterAgent?: PromptDrafterAgent | null;
 }) {
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
@@ -2517,6 +2596,13 @@ function AddPromptModal({
   }, [isOpen, initial]);
 
   const handleAddPrompt = async () => {
+    if (onSavePending) {
+      onSavePending({ name: newPromptName, content: newPromptContent });
+      onClose();
+      setNewPromptName('');
+      setNewPromptContent('');
+      return;
+    }
     try {
       const response = await userService.createPrompt(
         {
@@ -2560,6 +2646,7 @@ function AddPromptModal({
       setEditPromptContent={() => undefined}
       currentPromptEdit={{ id: '', name: '', type: '' }}
       handleAddPrompt={handleAddPrompt}
+      drafterAgent={drafterAgent}
     />
   );
 }

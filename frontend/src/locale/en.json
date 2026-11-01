@@ -4479,6 +4479,42 @@
     }
   },
   "drafter": {
+    "prompt": {
+      "write": "Write",
+      "improvePrompt": "Improve prompt",
+      "improveCopy": "Improve a copy",
+      "askLabel": "What should DocsGPT change or write?",
+      "improvePlaceholder": "Say what to change, e.g. stop it from quoting prices…",
+      "writePlaceholder": "Describe the prompt, e.g. a friendly helper for our HR handbook…",
+      "errors": {
+        "invalid_output": "The model's answer couldn't be used. The prompt didn't change.",
+        "model_error": "Something went wrong while drafting. The prompt didn't change."
+      },
+      "warningsTitle": "Check before you save",
+      "checks": {
+        "to_template": "This adds template variables, so DocsGPT will use the prompt exactly as written and stop adding its own sections: the date, answering rules, citations, formatting and boundaries.",
+        "to_persona": "This removes every template variable, so DocsGPT will treat the prompt as plain text and add its own sections around it: the date, answering rules, citations, formatting and boundaries.",
+        "boundaries_removed": "The Boundaries section is gone. Without it, the agent may follow instructions hidden in documents or tool results.",
+        "citations_removed": "The citation rules variable (source.citation_rules) is gone, so answers will stop citing sources as [1], [2].",
+        "agentic_copy": "This is a copy of a classic built-in prompt. On a research agent it replaces the research instructions (search several times before answering), so answers may be shallower."
+      },
+      "reviewLabel": "Proposed changes",
+      "removedText": "Removed: ",
+      "addedText": "Added: ",
+      "accept": "Accept",
+      "reject": "Reject",
+      "acceptChange": "Accept change {{number}}",
+      "rejectChange": "Reject change {{number}}",
+      "accepted": "Accepted",
+      "rejected": "Rejected",
+      "undoChoice": "Undo",
+      "undoChoiceLabel": "Undo your choice on change {{number}}",
+      "acceptAll": "Accept all",
+      "reviewOneByOne": "Review one by one",
+      "discard": "Discard",
+      "usedBy_one": "Used by {{formatted}} agent. Saving changes it there too.",
+      "usedBy_other": "Used by {{formatted}} agents. Saving changes it for all of them."
+    },
     "title": "Draft with DocsGPT",
     "draft": "Draft",
     "improve": "Improve",

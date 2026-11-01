@@ -4438,6 +4438,41 @@
     }
   },
   "drafter": {
+    "prompt": {
+      "write": "作成",
+      "improvePrompt": "プロンプトを改善",
+      "improveCopy": "コピーを改善",
+      "askLabel": "DocsGPT に何を変更・作成させますか？",
+      "improvePlaceholder": "変更内容を入力（例: 価格を答えないようにする）…",
+      "writePlaceholder": "プロンプトの内容を説明（例: 人事ハンドブックの親切なアシスタント）…",
+      "errors": {
+        "invalid_output": "モデルの回答を使用できませんでした。プロンプトは変更されていません。",
+        "model_error": "下書き中に問題が発生しました。プロンプトは変更されていません。"
+      },
+      "warningsTitle": "保存前に確認してください",
+      "checks": {
+        "to_template": "テンプレート変数が追加されるため、DocsGPT はプロンプトを書かれたとおりに使用し、独自のセクション（日付、回答ルール、引用、書式、境界）を追加しなくなります。",
+        "to_persona": "テンプレート変数がすべて削除されるため、DocsGPT はプロンプトをプレーンテキストとして扱い、独自のセクション（日付、回答ルール、引用、書式、境界）を周りに追加します。",
+        "boundaries_removed": "Boundaries セクションがなくなりました。これがないと、エージェントがドキュメントやツールの結果に隠された指示に従うおそれがあります。",
+        "citations_removed": "引用ルールの変数（source.citation_rules）がなくなったため、回答は [1]、[2] の形で出典を示さなくなります。",
+        "agentic_copy": "これはクラシックな組み込みプロンプトのコピーです。リサーチエージェントでは、リサーチ用の指示（回答前に複数回検索する）を置き換えるため、回答が浅くなる可能性があります。"
+      },
+      "reviewLabel": "提案された変更",
+      "removedText": "削除: ",
+      "addedText": "追加: ",
+      "accept": "採用",
+      "reject": "却下",
+      "acceptChange": "変更 {{number}} を採用",
+      "rejectChange": "変更 {{number}} を却下",
+      "accepted": "採用済み",
+      "rejected": "却下済み",
+      "undoChoice": "元に戻す",
+      "undoChoiceLabel": "変更 {{number}} の選択を元に戻す",
+      "acceptAll": "すべて採用",
+      "reviewOneByOne": "1 件ずつ確認",
+      "discard": "破棄",
+      "usedBy_other": "{{formatted}} 件のエージェントが使用しています。保存するとすべてに反映されます。"
+    },
     "title": "DocsGPT で下書き",
     "draft": "下書き",
     "improve": "改善",

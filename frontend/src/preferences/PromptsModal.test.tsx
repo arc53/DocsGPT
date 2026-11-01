@@ -17,6 +17,11 @@ vi.mock('react-router-dom', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
 
+// The drafter is off here (its own tests: PromptsModal.drafter.test.tsx).
+vi.mock('../drafter/useDrafterConfig', () => ({
+  useDrafterConfig: () => null,
+}));
+
 vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: () =>

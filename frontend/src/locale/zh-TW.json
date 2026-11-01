@@ -4438,6 +4438,41 @@
     }
   },
   "drafter": {
+    "prompt": {
+      "write": "撰寫",
+      "improvePrompt": "改進提示詞",
+      "improveCopy": "改進副本",
+      "askLabel": "要讓 DocsGPT 修改或撰寫什麼？",
+      "improvePlaceholder": "說明要改什麼，例如：不要報價…",
+      "writePlaceholder": "描述這個提示詞，例如：我們員工手冊的友善助理…",
+      "errors": {
+        "invalid_output": "無法使用模型的回答。提示詞沒有變更。",
+        "model_error": "起草時發生問題。提示詞沒有變更。"
+      },
+      "warningsTitle": "儲存前請檢查",
+      "checks": {
+        "to_template": "這會加入範本變數，DocsGPT 將完全依原文使用提示詞，不再加入自己的段落：日期、回答規則、引用、格式和界線。",
+        "to_persona": "這會移除所有範本變數，DocsGPT 將把提示詞視為純文字，並在外面加上自己的段落：日期、回答規則、引用、格式和界線。",
+        "boundaries_removed": "Boundaries 段落已被移除。沒有它，代理可能會執行文件或工具結果中隱藏的指示。",
+        "citations_removed": "引用規則變數（source.citation_rules）已被移除，回答將不再以 [1]、[2] 的形式引用來源。",
+        "agentic_copy": "這是經典內建提示詞的副本。在研究型代理上，它會取代研究指示（回答前多次搜尋），回答可能會變得較淺。"
+      },
+      "reviewLabel": "建議的修改",
+      "removedText": "已移除：",
+      "addedText": "已新增：",
+      "accept": "接受",
+      "reject": "拒絕",
+      "acceptChange": "接受修改 {{number}}",
+      "rejectChange": "拒絕修改 {{number}}",
+      "accepted": "已接受",
+      "rejected": "已拒絕",
+      "undoChoice": "復原",
+      "undoChoiceLabel": "復原對修改 {{number}} 的選擇",
+      "acceptAll": "全部接受",
+      "reviewOneByOne": "逐項檢視",
+      "discard": "捨棄",
+      "usedBy_other": "有 {{formatted}} 個代理在使用。儲存後會套用到所有代理。"
+    },
     "title": "用 DocsGPT 起草",
     "draft": "起草",
     "improve": "改進",

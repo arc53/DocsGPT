@@ -40,6 +40,11 @@ const mocks = vi.hoisted(() => {
     getAgentDefaults: vi.fn(() => jsonResponse({ success: true })),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
     createPrompt: vi.fn(() => jsonResponse({})),
+    getSinglePrompt: vi.fn((id: string) =>
+      jsonResponse({ content: `Text of ${id}`, updated_at: 'v1' }),
+    ),
+    // Every PromptsModal render's props (the modal itself is stubbed).
+    promptsModalProps: [] as Record<string, unknown>[],
     tools: null as unknown[] | null,
     models: [] as unknown[],
     defaultModelId: '',
@@ -128,6 +133,8 @@ vi.mock('../api/services/userService', () => ({
     updateAgent: mocks.updateAgent,
     deleteAgent: mocks.deleteAgent,
     createPrompt: mocks.createPrompt,
+    getSinglePrompt: mocks.getSinglePrompt,
+    getPrompts: () => jsonResponse([]),
   },
 }));
 
@@ -277,7 +284,12 @@ vi.mock('../modals/ConfirmationModal', () => ({
       </>
     ) : null,
 }));
-vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
+vi.mock('../preferences/PromptsModal', () => ({
+  default: (props: Record<string, unknown>) => {
+    mocks.promptsModalProps.push(props);
+    return null;
+  },
+}));
 vi.mock('./components/SponsorConfirmModal', () => ({
   default: ({
     confirmation,
@@ -2680,4 +2692,165 @@ describe('NewAgent drafter', () => {
     expect(nameInput().value).toBe('');
     expect(container.querySelector('[data-slot="drafted-strip"]')).toBeNull();
   });
+
+  // Improving the prompt (`describe` is the describe box's helper here).
+  {
+    type ModalProps = Record<string, unknown> & {
+      type: 'ADD' | 'EDIT';
+      newPromptName: string;
+      newPromptContent: string;
+      setNewPromptContent: (content: string) => void;
+      currentPromptEdit: { id: string };
+      drafterAgent: unknown;
+      autoFocusAsk?: boolean;
+      handleAddPrompt: () => Promise<unknown>;
+    };
+    /** The open PromptsModal's latest props. */
+    const openModal = () =>
+      mocks.promptsModalProps
+        .filter((props) => props.modalState === 'ACTIVE')
+        .at(-1) as ModalProps | undefined;
+
+    const PROMPTS = [
+      { id: 'default', name: 'default', type: 'public' },
+      { id: 'p1', name: 'Tone', type: 'private', access: 'owner' },
+      { id: 'p2', name: 'Team tone', type: 'shared', access: 'viewer' },
+    ];
+    beforeEach(() => {
+      mockState.preference.prompts = PROMPTS as never[];
+    });
+    afterEach(() => {
+      mockState.preference.prompts = [];
+      mocks.promptsModalProps = [];
+      mocks.getSinglePrompt.mockClear();
+    });
+
+    const renderWithPrompt = async (promptId: string) => {
+      mocks.getAgent.mockImplementation(() =>
+        jsonResponse({
+          id: 'agent-1',
+          name: 'Deal Desk',
+          description: 'Researches deals',
+          status: 'draft',
+          agent_type: 'research',
+          prompt_id: promptId,
+          access: 'owner',
+        }),
+      );
+      await act(async () => {
+        root.render(
+          <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+            <Routes>
+              <Route
+                path="/agents/edit/:agentId"
+                element={<NewAgent mode="edit" />}
+              />
+            </Routes>
+          </MemoryRouter>,
+        );
+      });
+    };
+
+    it('opens a saved prompt to improve with the agent as context', async () => {
+      await renderWithPrompt('p1');
+      expect(buttonByText('drafter.prompt.improveCopy')).toBeUndefined();
+      await act(async () =>
+        buttonByText('drafter.prompt.improvePrompt')!.click(),
+      );
+      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('p1', null);
+      const modal = openModal()!;
+      expect(modal.type).toBe('EDIT');
+      expect(modal.currentPromptEdit.id).toBe('p1');
+      expect(modal.autoFocusAsk).toBe(true);
+      expect(modal.drafterAgent).toEqual({
+        sources: [],
+        tools: [],
+        agent_type: 'research',
+      });
+    });
+
+    it("improves a copy of a prompt the caller can't edit", async () => {
+      await renderWithPrompt('p2');
+      await act(async () =>
+        buttonByText('drafter.prompt.improveCopy')!.click(),
+      );
+      const modal = openModal()!;
+      expect(modal.type).toBe('ADD');
+      expect(modal.newPromptName).toBe('Team tone copy');
+      expect(modal.newPromptContent).toBe('Text of p2');
+    });
+
+    it('improves a copy of a built-in, and saving picks the copy', async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        { id: 'p-new', name: 'default copy', type: 'private', access: 'owner' },
+      ] as never[];
+      mocks.createPrompt.mockImplementation(() =>
+        jsonResponse({ id: 'p-new' }),
+      );
+      await render();
+      await act(async () =>
+        buttonByText('drafter.prompt.improveCopy')!.click(),
+      );
+      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('default', null);
+      const modal = openModal()!;
+      expect(modal.type).toBe('ADD');
+      expect(modal.autoFocusAsk).toBe(true);
+      expect(modal.drafterAgent).toEqual({
+        sources: [],
+        tools: [],
+        agent_type: 'classic',
+      });
+      await act(async () => {
+        await modal.handleAddPrompt();
+      });
+      expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
+      expect(
+        container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
+      ).toContain('default copy');
+      expect(buttonByText('drafter.prompt.improvePrompt')).toBeDefined();
+    });
+
+    it('edits a pending prompt in place instead of creating one', async () => {
+      drafter.scripts = [
+        [
+          proposal({
+            prompt: {
+              kind: 'new',
+              name: 'Shipping support',
+              content: PROMPT_TEXT,
+            },
+          }),
+          { type: 'end' },
+        ],
+      ];
+      await render();
+      await describe('Shipping agent');
+      expect(buttonByText('drafter.prompt.improvePrompt')).toBeUndefined();
+      await act(async () => buttonByText('drafter.agent.editPrompt')!.click());
+      const modal = openModal()!;
+      expect(modal.type).toBe('ADD');
+      expect(modal.newPromptContent).toBe(PROMPT_TEXT);
+      expect(modal.drafterAgent).toEqual({
+        sources: [],
+        tools: [],
+        agent_type: 'classic',
+      });
+      await act(async () => modal.setNewPromptContent('Friendlier text.'));
+      await act(async () => {
+        await openModal()!.handleAddPrompt();
+      });
+      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      expect(
+        container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
+      ).toContain('drafter.agent.pendingPrompt');
+      expect(container.textContent).toContain('Friendlier text.');
+    });
+
+    it('offers no Improve while the drafter is off', async () => {
+      drafter.config = { enabled: false, model: null, reason: null };
+      await render();
+      expect(buttonByText('drafter.prompt.improveCopy')).toBeUndefined();
+    });
+  }
 });

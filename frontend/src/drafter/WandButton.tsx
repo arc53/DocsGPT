@@ -6,13 +6,16 @@ import { IconButton } from '@/components/ui/icon-button';
 
 /**
  * The drafter's entry button: "Draft" on an empty form, "Improve" on a filled
- * one, with the WandSparkles icon, as a bordered brand pill in page chrome.
+ * one ("Write" for an empty prompt), with the WandSparkles icon, as a
+ * bordered brand pill in page chrome.
  * With `compactOnPhone` it is an icon-only button below `sm`, so a toolbar
  * row with three other buttons still fits a phone.
  *
  * Args:
- *   mode: `draft` (empty form) or `improve` (filled form).
- *   onClick: Opens the drafter.
+ *   mode: `draft` (empty form), `improve` (filled form) or `write` (an
+ *     empty prompt).
+ *   onClick: Opens the drafter (or sends the prompt modal's request).
+ *   disabled: Nothing to send yet.
  *   open: Whether the panel it opens is open (aria-expanded).
  *   size: `field` (38px, page toolbars, the default) or `sm` (a modal header).
  *   compactOnPhone: Icon only below `sm`.
@@ -23,15 +26,22 @@ export function WandButton({
   open,
   size = 'field',
   compactOnPhone = false,
+  disabled,
 }: {
-  mode: 'draft' | 'improve';
+  mode: 'draft' | 'improve' | 'write';
   onClick: () => void;
+  disabled?: boolean;
   open?: boolean;
   size?: 'field' | 'sm';
   compactOnPhone?: boolean;
 }) {
   const { t } = useTranslation();
-  const label = mode === 'draft' ? t('drafter.draft') : t('drafter.improve');
+  const label =
+    mode === 'draft'
+      ? t('drafter.draft')
+      : mode === 'write'
+        ? t('drafter.prompt.write')
+        : t('drafter.improve');
   return (
     <>
       {compactOnPhone && (
@@ -44,6 +54,7 @@ export function WandButton({
           icon={WandSparkles}
           aria-expanded={open}
           data-drafter-entry=""
+          disabled={disabled}
           onClick={onClick}
         />
       )}
@@ -55,6 +66,7 @@ export function WandButton({
         className={compactOnPhone ? 'hidden sm:inline-flex' : undefined}
         aria-expanded={open}
         data-drafter-entry=""
+        disabled={disabled}
         onClick={onClick}
       >
         <WandSparkles />
