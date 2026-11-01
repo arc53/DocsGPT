@@ -29,6 +29,7 @@ from docsgpt.api.answer.services.stream_processor import (
     source_for_docs,
     wiki_tool_config,
 )
+from docsgpt.connectors.attribution import client_sources
 from docsgpt.core.run_budget import StreamCancelled, is_budget_exhausted
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
@@ -464,6 +465,10 @@ def _run_agent_headless(
         for event in events:
             if not isinstance(event, dict):
                 continue
+            if "sources" in event:
+                # The observer streams them and the outcome is stored, so both
+                # get copies without the keys only the prompt may carry.
+                event = {**event, "sources": client_sources(event["sources"])}
             # ``Agent.gen`` reports a failed stream with an error event rather than
             # by raising. Dropping it here (as this loop used to) makes a broken run
             # indistinguishable from one that simply had nothing to say, and the

@@ -515,6 +515,21 @@ class TestAttribution:
         assert first == again == {"source_name": "test-1"}
         assert lookup.call_count == 1
 
+    def test_client_sources_leave_out_the_knowledge_name(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "x", "source_name": "test-1", "connector_name": "Google Drive"}, "not-a-dict"]
+        sent = client_sources(docs)
+        assert sent == [{"text": "x", "connector_name": "Google Drive"}, "not-a-dict"]
+        # The caller's chunks still carry the name for the prompt.
+        assert docs[0]["source_name"] == "test-1"
+
+    @pytest.mark.parametrize("docs", [None, [], "oops"])
+    def test_client_sources_pass_non_lists_through(self, docs):
+        from docsgpt.connectors.attribution import client_sources
+
+        assert client_sources(docs) == docs
+
     def test_classic_retriever_stamps_connector(self, pg_conn):
         from docsgpt.retriever.classic_rag import ClassicRAG
 

@@ -78,6 +78,29 @@ def source_names(source_ids: list[str]) -> dict[str, str]:
     return {str(row.id): row.name for row in rows if row.name}
 
 
+# Chunk keys only the model sees. ``source_name`` is what the owner called the
+# knowledge, which a widget or shared-link reader has no business learning.
+PROMPT_ONLY_KEYS = frozenset({"source_name"})
+
+
+def client_sources(docs: Any) -> Any:
+    """Retrieved chunks as they may leave the server: in a stream, a response or a stored turn.
+
+    Args:
+        docs: The chunks a retrieval or an agent produced.
+
+    Returns:
+        A new list of copies without :data:`PROMPT_ONLY_KEYS`, so the caller's
+        chunks keep them for the prompt. Anything but a list is returned as is.
+    """
+    if not isinstance(docs, list):
+        return docs
+    return [
+        {key: value for key, value in doc.items() if key not in PROMPT_ONLY_KEYS} if isinstance(doc, dict) else doc
+        for doc in docs
+    ]
+
+
 def _web_link(value: Any) -> Optional[str]:
     """``value`` when it is an http(s) address, else ``None``."""
     if isinstance(value, str) and value.startswith(("https://", "http://")):
