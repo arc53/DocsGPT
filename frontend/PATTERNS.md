@@ -420,7 +420,9 @@ Under the model picker, a new chat with no agent shows up to four
 
 A question row (leading lucide icon or the service's `ConnectorIcon`) sends
 its text and shows `ArrowUp` on hover and focus; a row that opens something
-(Continue, the setup actions) ends in a `ChevronRight`. Each row is one
+(Continue, the setup actions) shows `ArrowRight` the same way. Rows wrap
+rather than truncate, and the hero holds room for four, so the logo doesn't
+jump as sources are picked (see DESIGN.md › ListRow). Each row is one
 `t()` template under `hero.suggestions` with the name filled in.
 
 An agent's chat (its page, a shared link, the preview) shows the owner's

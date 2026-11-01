@@ -1408,11 +1408,16 @@ are `interactive asChild` around a `<button>` like the others.
 Rows that sit straight on the page with no box around them (the empty chat's
 suggestions, `HeroSuggestions`) are `size="md"`: `px-3 py-2.5`, `gap-3` and
 `rounded-xl`, so the hover fill reads as a rounded row rather than a strip. They
-go in a plain `<ul>` too, with no divide rules. A row that sends something
-ends in a muted `ArrowUp` (the composer's send glyph) shown on hover and focus
-(`group/row`, as StepGroup does); a row that opens a page ends in a muted
-`ChevronRight`, always shown. Both keep the foreground title: `text-link` is
-for text links, not for a row that navigates.
+go in a plain `<ul>` too, with no divide rules. Their text is the point of
+the row (a question to send), so they are `wrap`: the title wraps instead of
+truncating, top-aligned, with no `title` tooltip, and the icons take `mt-0.5`
+to sit on the first line. Each ends in a muted arrow shown on hover and focus
+(`group/row`, as StepGroup does) and always on a touch screen
+(`pointer-coarse:opacity-100`): `ArrowUp` (the composer's send glyph) on a row
+that sends, `ArrowRight` on one that opens a page. Both keep the foreground
+title: `text-link` is for text links, not for a row that navigates. The hero
+holds room for its most rows (`min-h-40`, four rows, filled from the bottom),
+so the logo and model picker above don't move as rows come and go.
 
 Key/value rows are `DescriptionList` + `DescriptionItem`, never a hand-rolled
 `flex` of label and value. `layout="columns"` (default) is an 8rem label

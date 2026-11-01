@@ -178,7 +178,12 @@ export default function Hero({
         </div>
       </div>
 
-      <div className="mb-3 w-full max-w-full">
+      {/* Room for the most rows there can be (four 40px rows), filled from
+          the bottom, so the logo above doesn't move as rows come and go. */}
+      <div
+        className="mb-3 flex min-h-40 w-full max-w-full flex-col justify-end"
+        data-testid="hero-suggestions-slot"
+      >
         <HeroSuggestions onAsk={(question) => handleQuestion({ question })} />
       </div>
     </div>

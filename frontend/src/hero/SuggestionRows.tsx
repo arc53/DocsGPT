@@ -1,11 +1,19 @@
-import { ArrowUp, ChevronRight } from 'lucide-react';
+import { ArrowRight, ArrowUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ListRow } from '../components/ui/list-row';
 import { cn } from '../lib/utils';
 
-export const suggestionIconClass = 'text-muted-foreground size-4 shrink-0';
+/** A row's icons; `mt-0.5` keeps them on the first line of a wrapped row. */
+export const suggestionIconClass =
+  'text-muted-foreground mt-0.5 size-4 shrink-0';
+
+/** The end icon waits for hover or focus, but a touch screen has no hover. */
+const trailingIconClass = cn(
+  suggestionIconClass,
+  'opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 pointer-coarse:opacity-100',
+);
 
 export type SuggestionRow = {
   key: string;
@@ -17,9 +25,9 @@ export type SuggestionRow = {
 };
 
 /**
- * The empty chat's suggestion rows (`ListRow size="md"`): a question row
- * shows the send arrow on hover and focus, a row that opens a page ends in
- * a chevron.
+ * The empty chat's suggestion rows (`ListRow size="md" wrap`): on hover and
+ * focus a question row shows the send arrow (up), a row that opens a page an
+ * arrow right. The text wraps rather than cuts, so it needs no tooltip.
  */
 export default function SuggestionRows({
   rows,
@@ -40,6 +48,7 @@ export default function SuggestionRows({
         <ListRow
           key={key}
           size="md"
+          wrap
           interactive
           asChild
           className="group/row"
@@ -47,14 +56,9 @@ export default function SuggestionRows({
           title={text}
           trailing={
             asks ? (
-              <ArrowUp
-                className={cn(
-                  suggestionIconClass,
-                  'opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100',
-                )}
-              />
+              <ArrowUp className={trailingIconClass} />
             ) : (
-              <ChevronRight className={suggestionIconClass} />
+              <ArrowRight className={trailingIconClass} />
             )
           }
         >

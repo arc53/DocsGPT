@@ -182,6 +182,17 @@ describe('Hero suggestions', () => {
     expect(rows()).toHaveLength(0);
   });
 
+  it('holds room for the most rows, so the logo stays put as they change', async () => {
+    await render({ conversations: null });
+    const slot = container.querySelector(
+      '[data-testid="hero-suggestions-slot"]',
+    );
+    // Four md rows (40px each) at the bottom of the slot.
+    expect(slot?.className.split(' ')).toEqual(
+      expect.arrayContaining(['min-h-40', 'justify-end']),
+    );
+  });
+
   it('sends a question about the selected sources and opens a recent chat', async () => {
     const contracts = { id: 's1', name: 'Carrier Contracts 2026' };
     await render({
@@ -201,11 +212,25 @@ describe('Hero suggestions', () => {
       ],
     });
     expect(rowKeys()).toEqual(['summarize-s1', 'continue-c-1']);
-    // The full text is the row's title for when it truncates.
+    // The text wraps rather than cuts, so no row carries a title tooltip.
+    expect(rowFor('summarize-s1').querySelector('[title]')).toBeNull();
     expect(rowFor('summarize-s1').getAttribute('title')).toBeNull();
-    expect(
-      rowFor('summarize-s1').querySelector('[title]')?.getAttribute('title'),
-    ).toBe('hero.suggestions.summarize:Carrier Contracts 2026');
+    // Both end icons wait for hover or focus (shown on touch): an arrow up
+    // sends, an arrow right opens.
+    const trailing = (key: string) =>
+      rowFor(key).querySelector('svg:last-of-type') as SVGElement;
+    expect(trailing('summarize-s1').getAttribute('class')).toContain(
+      'lucide-arrow-up',
+    );
+    expect(trailing('continue-c-1').getAttribute('class')).toContain(
+      'lucide-arrow-right',
+    );
+    for (const key of ['summarize-s1', 'continue-c-1']) {
+      expect(trailing(key).getAttribute('class')).toContain('opacity-0');
+      expect(trailing(key).getAttribute('class')).toContain(
+        'pointer-coarse:opacity-100',
+      );
+    }
     await act(async () => rowFor('summarize-s1').click());
     expect(handleQuestion).toHaveBeenCalledWith({
       question: 'hero.suggestions.summarize:Carrier Contracts 2026',
