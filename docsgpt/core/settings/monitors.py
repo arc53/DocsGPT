@@ -24,7 +24,7 @@ class MonitorSettings(SettingsGroup):
         default=None,
         description=(
             "Model that judges a monitor's natural-language condition, only after its deterministic check passed "
-            "(or on a change when it has none). Unset uses the deployment's default model."
+            "(or on a change when it has none). Unset uses the monitor owner's task model (TASK_MODEL_ID)."
         ),
     )
     MONITOR_DEFAULT_INTERVAL_SECONDS: int = Field(

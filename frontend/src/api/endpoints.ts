@@ -300,6 +300,7 @@ const endpoints = {
       `/api/admin/quotas/users/${encodeURIComponent(id)}`,
     SOURCE_DEFAULTS: '/api/admin/defaults/sources',
     AGENT_DEFAULTS: '/api/admin/defaults/agents',
+    MODEL_DEFAULTS: '/api/admin/defaults/models',
     GUARDRAILS: '/api/admin/guardrails',
   },
   CONVERSATION: {

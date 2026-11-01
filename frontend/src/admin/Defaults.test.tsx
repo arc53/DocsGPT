@@ -14,6 +14,8 @@ const admin = vi.hoisted(() => ({
   setSourceDefaults: vi.fn(),
   getAgentDefaults: vi.fn(),
   setAgentDefaults: vi.fn(),
+  getModelDefaults: vi.fn(),
+  setModelDefaults: vi.fn(),
 }));
 vi.mock('../api/services/adminService', () => ({ default: admin }));
 vi.mock('../api/services/userService', () => ({
@@ -95,6 +97,18 @@ const agentsBody = (guardrails = agentGuardrails, over = {}) => ({
   }),
 });
 
+const modelsBody = (taskModelId: string | null = null) => ({
+  json: async () => ({
+    success: true,
+    task_model_id: taskModelId,
+    fallback_model_id: 'gpt-b',
+    models: [
+      { id: 'gpt-a', display_name: 'GPT A', provider: 'openai' },
+      { id: 'gpt-b', display_name: 'GPT B', provider: 'openai' },
+    ],
+  }),
+});
+
 describe('Admin Defaults', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -105,6 +119,9 @@ describe('Admin Defaults', () => {
     admin.getAgentDefaults.mockReset();
     admin.setAgentDefaults.mockReset();
     admin.getAgentDefaults.mockResolvedValue(agentsBody());
+    admin.getModelDefaults.mockReset();
+    admin.setModelDefaults.mockReset();
+    admin.getModelDefaults.mockResolvedValue(modelsBody());
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -140,7 +157,7 @@ describe('Admin Defaults', () => {
     admin.getSourceDefaults.mockResolvedValue(body());
     await render();
     expect(text()).toContain(
-      'The settings new sources and new agents start with.',
+      "The settings new sources and new agents start with, and the model DocsGPT's own tasks run on.",
     );
     expect(text()).toContain(
       'Applies to sources created from now on. Existing sources keep their own settings.',
@@ -271,6 +288,43 @@ describe('Admin Defaults', () => {
     await act(async () => save().click());
     expect(admin.setSourceDefaults).not.toHaveBeenCalled();
     expect(admin.setAgentDefaults).toHaveBeenCalledWith(enabled, 'tok');
+    expect(save().disabled).toBe(true);
+  });
+
+  it('offers the built-in models as the instance task model and saves a pick', async () => {
+    admin.getSourceDefaults.mockResolvedValue(body());
+    admin.setModelDefaults.mockResolvedValue(modelsBody('gpt-a'));
+    await render();
+    expect(text()).toContain('Task model');
+    const trigger = container.querySelector<HTMLElement>(
+      '#defaults-task-model',
+    )!;
+    expect(trigger.textContent).toContain('Not set (GPT B)');
+    expect(save().disabled).toBe(true);
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          pointerType: 'mouse',
+        }),
+      );
+    });
+    const options = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    );
+    // Built-in models only, after "Not set".
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Not set (GPT B)',
+      'GPT A',
+      'GPT B',
+    ]);
+    await act(async () => options[1].click());
+    expect(save().disabled).toBe(false);
+    await act(async () => save().click());
+    expect(admin.setModelDefaults).toHaveBeenCalledWith('gpt-a', 'tok');
+    expect(admin.setSourceDefaults).not.toHaveBeenCalled();
+    expect(admin.setAgentDefaults).not.toHaveBeenCalled();
     expect(save().disabled).toBe(true);
   });
 

@@ -35,6 +35,12 @@ def _close_pools():
         pgconn._POOLS.pop(dsn, None)
 
 
+@pytest.fixture(autouse=True)
+def _task_model(monkeypatch):
+    """A build with no model configured runs on the owner's task model; never read it from a database here."""
+    monkeypatch.setattr(extraction_module, "get_task_model_id", lambda user: "task-model")
+
+
 def _ephemeral_dsn(info) -> str:
     """libpq DSN for the ephemeral pytest-postgresql database."""
     password = f":{info.password}" if info.password else ""
@@ -739,31 +745,48 @@ class TestModelResolution:
         monkeypatch.setattr(
             extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "setting-model"
         )
-        monkeypatch.setattr(extraction_module.settings, "LLM_NAME", "instance-model")
+        monkeypatch.setattr(extraction_module, "get_task_model_id", lambda user: "task-model")
         config = SourceConfig.model_validate(
             {"graph": {"extraction_model": "override-model"}}
         )
         assert (
-            extraction_module._resolve_extraction_model(config) == "override-model"
+            extraction_module._resolve_extraction_model(config, "owner")
+            == "override-model"
         )
 
-    def test_setting_then_instance_default(self, monkeypatch):
+    def test_setting_then_the_owners_task_model(self, monkeypatch):
         monkeypatch.setattr(
             extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "setting-model"
         )
-        monkeypatch.setattr(extraction_module.settings, "LLM_NAME", "instance-model")
+        seen = []
+
+        def task_model(user):
+            seen.append(user)
+            return f"task-model-of-{user}"
+
+        monkeypatch.setattr(extraction_module, "get_task_model_id", task_model)
         assert (
-            extraction_module._resolve_extraction_model(SourceConfig())
+            extraction_module._resolve_extraction_model(SourceConfig(), "owner")
             == "setting-model"
         )
+        assert seen == []
 
         monkeypatch.setattr(
             extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", None
         )
         assert (
-            extraction_module._resolve_extraction_model(SourceConfig())
-            == "instance-model"
+            extraction_module._resolve_extraction_model(SourceConfig(), "owner")
+            == "task-model-of-owner"
         )
+
+    def test_never_falls_back_to_the_raw_llm_name(self, monkeypatch):
+        """``LLM_NAME`` may be a comma-separated list or unset; the task model is a registry id."""
+        monkeypatch.setattr(
+            extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", None
+        )
+        monkeypatch.setattr(extraction_module.settings, "LLM_NAME", "model-a,model-b")
+        monkeypatch.setattr(extraction_module, "get_task_model_id", lambda user: "model-a")
+        assert extraction_module._resolve_extraction_model(SourceConfig(), None) == "model-a"
 
     def test_max_chunks_resolution(self, monkeypatch):
         monkeypatch.setattr(

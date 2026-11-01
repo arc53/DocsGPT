@@ -850,6 +850,9 @@ class TestJudgeCall:
         monkeypatch.setattr(PROVIDERS_BY_NAME["openai"], "llm_class", _LLM)
         monkeypatch.setattr("docsgpt.core.model_utils.get_provider_from_model_id", lambda m, user_id=None: "openai")
         monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda p: "provider-key")
+        # Nothing stored: the task model falls to the default model.
+        monkeypatch.setattr("docsgpt.core.model_utils._stored_task_models", lambda user_id: (None, None))
+        monkeypatch.setattr(settings, "TASK_MODEL_ID", None)
         for configured in (None, "gpt-5.6-sol-foundry", "not-in-the-catalog"):
             monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", configured)
             verdict = judge.judge(user_id="u1", monitor_id="m1", description="d", condition="c",
@@ -897,14 +900,16 @@ class TestJudgeCall:
                         content="x")
         assert caught.value.refused is True
 
-    def test_default_model_when_unset(self, monkeypatch):
+    def test_the_owners_task_model_when_unset(self, monkeypatch):
         monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", None)
-        from docsgpt.core.model_registry import ModelRegistry
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
+        assert judge.judge_model_id("u1") == "task-u1"
 
-        monkeypatch.setattr(
-            ModelRegistry, "get_instance", classmethod(lambda cls: SimpleNamespace(default_model_id="m"))
-        )
-        assert judge.judge_model_id("u1") == "m"
+    def test_the_owners_task_model_when_the_setting_is_unknown(self, monkeypatch):
+        monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "not-in-the-catalog")
+        monkeypatch.setattr("docsgpt.core.model_utils.validate_model_id", lambda m, user_id=None: False)
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
+        assert judge.judge_model_id("u1") == "task-u1"
 
     def test_build_llm_tags_token_usage(self, monkeypatch):
         captured = {}

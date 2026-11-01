@@ -1728,11 +1728,12 @@
         "only_if_unset": {
           "description": "Store it only when no chat prompt was ever stored (moving a browser's old choice); otherwise the stored one is kept and returned. Refused to a token restricted to specific prompts",
           "type": "boolean"
+        },
+        "task_model_id": {
+          "description": "The model the caller's DocsGPT jobs run on (drafting, graph extraction, monitor judging): a model the caller can use, their own custom models included; null uses the instance's. A token needs models:write to send it",
+          "type": "string"
         }
       },
-      "required": [
-        "chat_prompt_id"
-      ],
       "type": "object"
     },
     "WebsiteSettingsModel": {
@@ -2076,6 +2077,34 @@
           }
         },
         "summary": "Store the body's `guardrails` object as the default for new agents; existing agents keep their own",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/admin/defaults/models": {
+      "get": {
+        "operationId": "get_admin_model_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The instance task model, what runs when it is unset (TASK_MODEL_ID or the default), the built-ins",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_model_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store the body's `task_model_id` (a built-in model id, or null to clear) as the instance task model",
         "tags": [
           "admin"
         ],
@@ -7297,14 +7326,14 @@
     },
     "/api/user/preferences": {
       "get": {
-        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default.",
+        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default. task_model_id is the model the caller's DocsGPT jobs run on, null when they picked none or can no longer use it; instance_task_model_id is the one that runs then.",
         "operationId": "get_preferences_resource",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Return ``{success, chat_prompt_id, chat_prompt_set}`` for the caller",
+        "summary": "Return ``{success, chat_prompt_id, chat_prompt_set, task_model_id, instance_task_model_id}``",
         "tags": [
           "me"
         ],
@@ -7313,7 +7342,7 @@
         ]
       },
       "put": {
-        "description": "Set the prompt the caller's chats use: {success, chat_prompt_id, applied}. With only_if_unset and a chat prompt already stored, nothing is written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a value that is neither a preset nor a prompt id, or a non-boolean only_if_unset; 403 for only_if_unset from a token restricted to specific prompts; 404 when the caller can't read the prompt; 500 when the read or write fails.\nReturns:\n    Response: ``{success, chat_prompt_id, applied}``; ``applied`` is\n    false only when ``only_if_unset`` found a stored chat prompt, whose\n    readable value ``chat_prompt_id`` then carries.",
+        "description": "Set the prompt the caller's chats use, the model their DocsGPT jobs run on, or both; send at least one. Answers {success} with chat_prompt_id and applied when a chat prompt was sent, and task_model_id when one was. With only_if_unset and a chat prompt already stored, the chat prompt is not written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a chat_prompt_id that is neither a preset nor a prompt id, a non-boolean only_if_unset, or a task_model_id the caller can't use (code invalid_model), in which case nothing is written; 403 for only_if_unset from a token restricted to specific prompts, or a token without prompts:write (chat_prompt_id) or models:write (task_model_id); 404 when the caller can't read the prompt; 500 when the read or write fails.\nReturns:\n    Response: ``{success}`` plus, for a sent chat prompt,\n    ``chat_prompt_id`` and ``applied`` (false only when\n    ``only_if_unset`` found a stored chat prompt, whose readable value\n    ``chat_prompt_id`` then carries), and for a sent task model,\n    ``task_model_id`` as stored (``None``: the instance's applies).",
         "operationId": "put_preferences_resource",
         "parameters": [
           {
@@ -7330,11 +7359,12 @@
             "description": "Success"
           }
         },
-        "summary": "Store ``chat_prompt_id`` after checking the caller may use that prompt",
+        "summary": "Store ``chat_prompt_id`` and/or ``task_model_id`` after checking the caller may use them",
         "tags": [
           "me"
         ],
         "x-pat-scopes": [
+          "models:write",
           "prompts:write"
         ]
       }

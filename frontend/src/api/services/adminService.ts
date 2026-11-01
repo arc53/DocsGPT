@@ -136,6 +136,19 @@ const adminService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.put(endpoints.ADMIN.AGENT_DEFAULTS, { guardrails }, token),
+  /** `{success, task_model_id, fallback_model_id, models}`: built-in models only. */
+  getModelDefaults: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.MODEL_DEFAULTS, token),
+  /** Store the instance task model; null clears it. */
+  setModelDefaults: (
+    taskModelId: string | null,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.put(
+      endpoints.ADMIN.MODEL_DEFAULTS,
+      { task_model_id: taskModelId },
+      token,
+    ),
   getGuardrails: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.ADMIN.GUARDRAILS, token),
   /** Store `floor` (null for none) and/or `mcp_description_warnings`. */

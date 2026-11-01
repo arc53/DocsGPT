@@ -138,11 +138,17 @@
     "label": "Paramètres",
     "general": {
       "label": "Général",
-      "subtitle": "Choisissez l’apparence de DocsGPT et sa langue.",
+      "subtitle": "Choisissez l’apparence de DocsGPT, sa langue et le modèle qui exécute ses propres tâches.",
       "sections": {
         "appearance": "Apparence",
+        "models": "Modèles",
         "dangerZone": "Zone de danger"
       },
+      "taskModel": "Modèle de tâches",
+      "taskModelDescription": "Rédige des formulaires, construit des graphes de connaissances et vérifie les moniteurs. Les conversations utilisent le modèle de l’agent.",
+      "taskModelInstanceDefault": "Par défaut de l’instance ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Par défaut de l’instance",
+      "taskModelSaveFailed": "Impossible d’enregistrer le modèle de tâches. Réessayez.",
       "theme": "Thème",
       "themeDescription": "Interface claire ou sombre.",
       "language": "Langue",

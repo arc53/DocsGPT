@@ -246,6 +246,19 @@ class TestResourceRestrictions:
         plain = self._put_preferences(client, claims, {"chat_prompt_id": "default", "only_if_unset": False})
         assert _denied(plain) is None
 
+    def test_task_model_preference_needs_models_write(self, client):
+        # The rule admits either write scope; the route then asks for the one each field needs.
+        body = {"task_model_id": "gpt-a"}
+        assert _denied(self._put_preferences(client, _claims(["models:write"]), body)) is None
+        assert _denied(self._put_preferences(client, _claims(["agents:read"]), body)) == "insufficient_scope"
+
+    def test_task_model_preference_is_open_to_a_prompt_restricted_token(self, client):
+        # It names no prompt, so the prompt allowlist has nothing to hold it to.
+        claims = self._restricted(["models:write"], prompts=[SOURCE_A])
+        assert _denied(self._put_preferences(client, claims, {"task_model_id": "gpt-a"})) is None
+        both = self._put_preferences(client, claims, {"task_model_id": "gpt-a", "chat_prompt_id": SOURCE_B})
+        assert _denied(both) == "resource_not_allowed"
+
     def test_chat_prompt_only_if_unset_stays_open_to_other_tokens(self, client):
         for claims in (
             _claims(["prompts:write"]),

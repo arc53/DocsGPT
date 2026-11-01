@@ -139,11 +139,17 @@
     "label": "Настройки",
     "general": {
       "label": "Общие",
-      "subtitle": "Выберите оформление DocsGPT и язык интерфейса.",
+      "subtitle": "Выберите оформление DocsGPT, язык интерфейса и модель для его собственных задач.",
       "sections": {
         "appearance": "Оформление",
+        "models": "Модели",
         "dangerZone": "Опасная зона"
       },
+      "taskModel": "Модель для задач",
+      "taskModelDescription": "Составляет черновики форм, строит графы знаний и проверяет мониторы. Чаты используют модель агента.",
+      "taskModelInstanceDefault": "По умолчанию для инстанса ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "По умолчанию для инстанса",
+      "taskModelSaveFailed": "Не удалось сохранить модель для задач. Попробуйте ещё раз.",
       "theme": "Тема",
       "themeDescription": "Светлый или тёмный интерфейс.",
       "language": "Язык",

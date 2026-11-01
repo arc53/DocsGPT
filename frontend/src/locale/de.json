@@ -137,11 +137,17 @@
     "label": "Einstellungen",
     "general": {
       "label": "Allgemein",
-      "subtitle": "Legen Sie fest, wie DocsGPT aussieht und welche Sprache es verwendet.",
+      "subtitle": "Legen Sie fest, wie DocsGPT aussieht, welche Sprache es verwendet und welches Modell seine eigenen Aufgaben ausführt.",
       "sections": {
         "appearance": "Darstellung",
+        "models": "Modelle",
         "dangerZone": "Gefahrenzone"
       },
+      "taskModel": "Aufgabenmodell",
+      "taskModelDescription": "Entwirft Formulare, erstellt Wissensgraphen und prüft Monitore. Chats verwenden das Modell des Agenten.",
+      "taskModelInstanceDefault": "Instanz-Standard ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Instanz-Standard",
+      "taskModelSaveFailed": "Das Aufgabenmodell konnte nicht gespeichert werden. Versuchen Sie es erneut.",
       "theme": "Design",
       "themeDescription": "Helle oder dunkle Oberfläche.",
       "language": "Sprache",

@@ -162,12 +162,15 @@ def _chat_prompt_check(request, resource_filter: dict, user_id: Optional[str]) -
 
     It may not send ``only_if_unset``: with a chat prompt already stored, the route answers with
     that one, which may lie outside the allowlist, and the read (GET) is closed to such a token.
+    A body that sets only the task model names no prompt, so the allowlist doesn't hold it.
     """
     if "prompts" not in resource_filter:
         return None
     body = _json_body(request)
     if body.get("only_if_unset") is True:
         return "This token is restricted to specific prompts and cannot read the stored chat prompt"
+    if "task_model_id" in body and "chat_prompt_id" not in body:
+        return None
     ids = _as_ids(body.get("chat_prompt_id"))
     if not ids:
         return "This token is restricted to specific prompts and cannot use this endpoint"
@@ -307,11 +310,14 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_prompts", "GET"): _rule("prompts:read", listing=True),
     ("/api/get_single_prompt", "GET"): _rule("prompts:read", (QUERY, "id")),
     ("/api/create_prompt", "POST"): _rule("prompts:write"),
-    # The caller's chat prompt. Its stored id can't be proven from the request, so the read is
-    # closed to prompt-restricted tokens; a write names the prompt it picks (a preset always passes),
-    # and may not ask for only_if_unset, whose answer carries the stored id.
+    # The caller's chat prompt and task model. The stored prompt id can't be proven from the request,
+    # so the read is closed to prompt-restricted tokens; a write names the prompt it picks (a preset
+    # always passes), and may not ask for only_if_unset, whose answer carries the stored id. The route
+    # asks for prompts:write to set the chat prompt and models:write to set the task model.
     ("/api/user/preferences", "GET"): _rule("prompts:read"),
-    ("/api/user/preferences", "PUT"): _rule("prompts:write", in_route=True, check=_chat_prompt_check),
+    ("/api/user/preferences", "PUT"): _rule(
+        any_of=("prompts:write", "models:write"), family="prompts", in_route=True, check=_chat_prompt_check
+    ),
     ("/api/update_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     ("/api/delete_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     # Tools

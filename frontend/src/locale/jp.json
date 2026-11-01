@@ -136,11 +136,17 @@
     "label": "設定",
     "general": {
       "label": "一般",
-      "subtitle": "DocsGPTの外観と表示言語を選択します。",
+      "subtitle": "DocsGPTの外観、表示言語、独自のタスクを実行するモデルを選択します。",
       "sections": {
         "appearance": "外観",
+        "models": "モデル",
         "dangerZone": "危険な操作"
       },
+      "taskModel": "タスクモデル",
+      "taskModelDescription": "フォームの下書き、ナレッジグラフの構築、モニターのチェックを行います。チャットではエージェントのモデルを使用します。",
+      "taskModelInstanceDefault": "インスタンスのデフォルト（{{model}}）",
+      "taskModelInstanceDefaultUnnamed": "インスタンスのデフォルト",
+      "taskModelSaveFailed": "タスクモデルを保存できませんでした。もう一度お試しください。",
       "theme": "テーマ",
       "themeDescription": "ライトまたはダークのインターフェース。",
       "language": "言語",

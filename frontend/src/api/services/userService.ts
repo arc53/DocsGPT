@@ -9,8 +9,10 @@ const userService = {
   getQuota: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.QUOTA, token),
   /**
-   * `{success, chat_prompt_id, chat_prompt_set}`: the prompt chats without an
-   * agent use, and whether one was ever stored.
+   * `{success, chat_prompt_id, chat_prompt_set, task_model_id,
+   * instance_task_model_id}`: the prompt chats without an agent use, whether
+   * one was ever stored, the model DocsGPT's own jobs run on for the caller
+   * (null: none picked) and the one that runs without a pick.
    */
   getPreferences: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.PREFERENCES, token),
@@ -18,9 +20,13 @@ const userService = {
    * 400 `invalid_prompt`; 403/404 for a prompt the caller can't read.
    * `only_if_unset`: write only when no chat prompt was ever stored; the
    * answer's `applied` is false and `chat_prompt_id` the stored one if not.
+   * `task_model_id`: null goes back to the instance's; 400 `invalid_model`
+   * for a model the caller can't use.
    */
   updatePreferences: (
-    data: { chat_prompt_id: string; only_if_unset?: boolean },
+    data:
+      | { chat_prompt_id: string; only_if_unset?: boolean }
+      | { task_model_id: string | null },
     token: string | null,
   ): Promise<any> => apiClient.put(endpoints.USER.PREFERENCES, data, token),
   getNewToken: (): Promise<any> =>

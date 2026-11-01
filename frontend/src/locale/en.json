@@ -137,11 +137,17 @@
     "label": "Settings",
     "general": {
       "label": "General",
-      "subtitle": "Choose how DocsGPT looks and which language it uses.",
+      "subtitle": "Choose how DocsGPT looks, which language it uses and which model runs its own tasks.",
       "sections": {
         "appearance": "Appearance",
+        "models": "Models",
         "dangerZone": "Danger zone"
       },
+      "taskModel": "Task model",
+      "taskModelDescription": "Drafts forms, builds knowledge graphs and checks monitors. Chats use the agent's model.",
+      "taskModelInstanceDefault": "Instance default ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Instance default",
+      "taskModelSaveFailed": "Couldn't save the task model. Try again.",
       "theme": "Theme",
       "themeDescription": "Light or dark interface.",
       "language": "Language",

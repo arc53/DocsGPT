@@ -29,6 +29,7 @@ from docsgpt import tracing
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_provider_from_model_id,
+    get_task_model_id,
 )
 from docsgpt.graphrag.naming import normalize_entity_name
 from docsgpt.core.settings import settings
@@ -57,12 +58,22 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _resolve_extraction_model(config: SourceConfig) -> Optional[str]:
-    """Resolve the extraction model: per-source override → setting → instance default."""
+def _resolve_extraction_model(config: SourceConfig, user: Optional[str]) -> Optional[str]:
+    """Resolve the extraction model: per-source override → setting → the owner's task model.
+
+    The task model (``get_task_model_id``) is the owner's pick in Settings >
+    General, else the instance's, else ``TASK_MODEL_ID``, else the default
+    model: always a registry id, never the raw ``LLM_NAME`` (which may be
+    unset or a comma-separated list).
+
+    Args:
+        config: The source's parsed config.
+        user: The source owner the build runs as.
+    """
     return (
         config.graph.extraction_model
         or settings.GRAPHRAG_EXTRACTION_MODEL
-        or settings.LLM_NAME
+        or get_task_model_id(user)
     )
 
 
@@ -71,8 +82,9 @@ def extraction_fingerprint(config: SourceConfig) -> str:
 
     A sync keeps a chunk's graph only when this matches. It covers the
     source's own extraction settings, not the instance's default extraction
-    model: changing ``LLM_NAME`` must not rebuild every graph at its next sync
-    (an explicit rebuild does that). The embeddings model is included because
+    model: changing the task model or ``GRAPHRAG_EXTRACTION_MODEL`` must not
+    rebuild every graph at its next sync (an explicit rebuild does that). The
+    embeddings model is included because
     node and fact embeddings come from it, and a kept chunk would keep vectors
     retrieval no longer compares against.
     """
@@ -295,7 +307,7 @@ def extract_graph_for_source(
 
     embedding = get_embeddings()
 
-    model_id = _resolve_extraction_model(config)
+    model_id = _resolve_extraction_model(config, user)
     fingerprint = extraction_fingerprint(config)
     # Built here first so a misconfigured model fails the run before any
     # chunk is touched; this instance serves the calling thread.

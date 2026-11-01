@@ -93,19 +93,24 @@ class Verdict:
 
 
 def judge_model_id(user_id: Optional[str]) -> Optional[str]:
-    """The catalog id of the judge model: ``MONITOR_JUDGE_MODEL``, else the deployment's default model.
+    """The catalog id of the judge model: ``MONITOR_JUDGE_MODEL``, else the owner's task model.
 
-    Resolved as a chat turn resolves its model: an id the user's catalog
-    doesn't know falls back to the default (as ``run_agent_headless`` does).
+    ``MONITOR_JUDGE_MODEL`` is resolved as a chat turn resolves its model: an
+    id the user's catalog doesn't know falls back. The task model
+    (``get_task_model_id``) is the owner's pick in Settings > General, else
+    the instance's, else ``TASK_MODEL_ID``, else the default model.
+
+    Args:
+        user_id: The monitor's owner.
     """
-    from docsgpt.core.model_utils import get_default_model_id, validate_model_id
+    from docsgpt.core import model_utils
 
     configured = (settings.MONITOR_JUDGE_MODEL or "").strip()
     if configured:
-        if validate_model_id(configured, user_id=user_id):
+        if model_utils.validate_model_id(configured, user_id=user_id):
             return configured
-        logger.warning("MONITOR_JUDGE_MODEL %r is not in the model catalog; using the default model", configured)
-    return get_default_model_id()
+        logger.warning("MONITOR_JUDGE_MODEL %r is not in the model catalog; using the task model", configured)
+    return model_utils.get_task_model_id(user_id)
 
 
 def _fence(text: str) -> str:
