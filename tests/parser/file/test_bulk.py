@@ -248,6 +248,51 @@ class TestSimpleDirectoryReaderLoadData:
         with pytest.raises(NoTextLayerError, match="scanned PDF"):
             reader.load_data()
 
+    def test_malformed_json_is_skipped_not_fatal(self, tmp_path):
+        """One malformed .json must not cost the rest of the folder/zip upload.
+
+        ``JSONParser`` used to let the raw ``JSONDecodeError`` escape;
+        ``load_data`` catches only ``DocumentParseError``, so a single
+        truncated export aborted the whole multi-file ingest.
+        """
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.json_parser import JSONParser
+
+        (tmp_path / "good1.md").write_text("first")
+        (tmp_path / "data.json").write_text('{"key": "value", "list": [1, 2')
+        (tmp_path / "good2.md").write_text("second")
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(tmp_path),
+            file_extractor={".json": JSONParser()},
+            recursive=False,
+        )
+        docs = reader.load_data()
+
+        texts = sorted(doc.text for doc in docs)
+        assert texts == ["first", "second"]
+        # The skip is recorded, not silent.
+        assert [Path(p).name for p, _ in reader.failed_files] == ["data.json"]
+
+    def test_single_malformed_json_still_raises_document_parse_error(self, tmp_path):
+        """The attachment path fails loudly, as ``DocumentParseError``.
+
+        ``dont_autoretry_for`` exempts only that type, so a poison .json
+        attachment must fail once with it instead of burning every autoretry.
+        """
+        from docsgpt.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.json_parser import JSONParser
+
+        (tmp_path / "bad.json").write_text("{oops")
+
+        reader = SimpleDirectoryReader(
+            input_files=[str(tmp_path / "bad.json")],
+            file_extractor={".json": JSONParser()},
+        )
+        with pytest.raises(DocumentParseError, match="bad.json"):
+            reader.load_data()
+
     def test_all_files_unparseable_raises(self, tmp_path):
         """Nothing parsed is a failed ingest, not an empty success."""
         from docsgpt.parser.file.base_parser import DocumentParseError
