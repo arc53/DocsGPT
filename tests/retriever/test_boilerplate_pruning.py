@@ -111,6 +111,27 @@ class TestBoilerplatePruningRules:
         assert "The client raises a TimeoutException if no response arrives within 30 seconds." in cleaned
         assert "Docs > Tables" not in cleaned
 
+    def test_preserves_apostrophe_negations_before_nav_pruning(self):
+        """Apostrophe-form contractions (don't, won't, can't) must survive navigation pruning.
+
+        ``_NAV_CONTROL_RE`` matches ``"next page:?.*"``, so a line such as
+        ``"Next page: Don't disable TLS verification"`` would be discarded
+        unless the contraction is detected before the navigation check fires.
+        """
+        cases = [
+            # Exact case from CodeRabbit report
+            ("Next page: Don't disable TLS verification", "database"),
+            ("Don't use plain HTTP in production.", "security"),
+            ("Won't retry on 4xx errors.", "config"),
+            ("Can't authenticate without a token.", "auth"),
+        ]
+        for text, query in cases:
+            result = prune_chunk_text(text, query=query)
+            assert result == text, (
+                f"Apostrophe negation was incorrectly pruned.\n"
+                f"  Input: {text!r}\n  Query: {query!r}\n  Got: {result!r}"
+            )
+
     def test_preserves_negations_and_qualifiers(self):
         raw = (
             "Quick Links\n"

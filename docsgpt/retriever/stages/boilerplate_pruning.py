@@ -19,7 +19,10 @@ _PROTECTED_QUALIFIERS = {
     "never",
     "cannot",
     "cant",
+    "can't",
     "wont",
+    "won't",
+    "don't",
     "neither",
     "none",
     "must",
@@ -82,7 +85,7 @@ def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
         return True
 
     # 3. Query term overlap
-    words = set(re.findall(r"\b\w+\b", stripped.lower()))
+    words = set(re.findall(r"\b[\w']+\b", stripped.lower()))
     if query_tokens and words.intersection(query_tokens):
         return True
 
