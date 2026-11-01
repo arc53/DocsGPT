@@ -19,6 +19,7 @@ from .artifacts import artifacts_ns
 from .attachments import attachments_ns
 from .background_jobs import background_jobs_ns
 from .conversations import conversations_ns
+from .drafter import drafter_ns
 from .me import me_ns
 from .models import models_ns
 from .monitors import approvals_ns, monitors_ns, triggers_ns
@@ -57,6 +58,9 @@ api.add_namespace(background_jobs_ns)
 
 # Conversations
 api.add_namespace(conversations_ns)
+
+# Draft with DocsGPT (fills a form from a description; session-only)
+api.add_namespace(drafter_ns)
 
 # Current user (identity + roles)
 api.add_namespace(me_ns)

@@ -1989,6 +1989,18 @@ Type `int`, default `5368709120`.
 
 Cap on a user's total stored artifact bytes (0 disables).
 
+### `DRAFTER_ENABLED`
+
+Type `bool`, default `true`.
+
+Offer "Draft with DocsGPT", which fills the agent form from a description and never saves. It runs on the task model; with no model to run on it is hidden even while this is on.
+
+### `DRAFTER_RATE_LIMIT_PER_MINUTE`
+
+Type `int`, default `10`, must be `>= 0`.
+
+Drafts one user may start per minute (0 disables the limit). Counted in Redis; without Redis nothing is limited. Drafter calls also count against the user's usage quota.
+
 
 ## Guardrails
 

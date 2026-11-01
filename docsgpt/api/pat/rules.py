@@ -450,6 +450,9 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/activity/planned": ("*",),
     "/api/activity/history": ("*",),
     "/api/messages/<string:message_id>/cancel": ("*",),
+    # Draft with DocsGPT reads the whole workspace for the signed-in user and runs the model on it.
+    "/api/drafter/config": ("*",),
+    "/api/drafter/stream": ("*",),
     # Monitor links: public, the token in the path is the credential (no session or PAT).
     "/api/triggers/<string:token>": ("*",),
     "/api/approvals/<string:token>": ("*",),

@@ -484,6 +484,30 @@
       ],
       "type": "object"
     },
+    "DrafterStreamModel": {
+      "properties": {
+        "context": {
+          "description": "The recipe's screen state, e.g. the agent form's current values",
+          "type": "object"
+        },
+        "messages": {
+          "description": "The conversation so far, oldest first: {role: user | assistant, content}. An assistant message is the JSON of an earlier questions or proposal event. Ends with a user message.",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "recipe": {
+          "description": "What is drafted: agent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "messages",
+        "recipe"
+      ],
+      "type": "object"
+    },
     "FeedbackModel": {
       "properties": {
         "answer": {
@@ -4112,6 +4136,54 @@
         "x-pat-scopes": [
           "sources:read"
         ]
+      }
+    },
+    "/api/drafter/config": {
+      "get": {
+        "description": "Whether Draft with DocsGPT is offered to the caller, and the model it runs on (the task model). Returns {\"enabled\", \"model\": {\"id\", \"display_name\"} | null, \"reason\": \"disabled\" | \"no_model\" | null}.",
+        "operationId": "get_drafter_config",
+        "responses": {
+          "200": {
+            "description": "The drafter's config"
+          },
+          "401": {
+            "description": "Not signed in"
+          }
+        },
+        "summary": "Report whether the drafter is on for the caller, and its model",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/drafter/stream": {
+      "post": {
+        "description": "Run one draft turn and stream it as server-sent events (data: <json>). Events: status, message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an error event in a 200 stream. Nothing is saved.",
+        "operationId": "post_drafter_stream",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DrafterStreamModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "text/event-stream of draft events"
+          },
+          "401": {
+            "description": "Not signed in"
+          }
+        },
+        "summary": "Stream one draft turn",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
       }
     },
     "/api/export_agent": {
@@ -7912,6 +7984,10 @@
     {
       "description": "Conversation management operations",
       "name": "conversations"
+    },
+    {
+      "description": "Draft with DocsGPT",
+      "name": "drafter"
     },
     {
       "description": "Current user identity and roles",

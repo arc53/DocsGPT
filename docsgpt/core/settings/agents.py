@@ -172,3 +172,20 @@ class AgentSettings(SettingsGroup):
     ARTIFACT_MAX_TOTAL_BYTES_PER_USER: int = Field(
         default=5 * 1024 * 1024 * 1024, description="Cap on a user's total stored artifact bytes (0 disables)."
     )
+
+    # Draft with DocsGPT (the drafter): fills the agent form from a description, never saves.
+    DRAFTER_ENABLED: bool = Field(
+        default=True,
+        description=(
+            'Offer "Draft with DocsGPT", which fills the agent form from a description and never saves. It runs on '
+            "the task model; with no model to run on it is hidden even while this is on."
+        ),
+    )
+    DRAFTER_RATE_LIMIT_PER_MINUTE: int = Field(
+        default=10,
+        ge=0,
+        description=(
+            "Drafts one user may start per minute (0 disables the limit). Counted in Redis; without Redis nothing "
+            "is limited. Drafter calls also count against the user's usage quota."
+        ),
+    )
