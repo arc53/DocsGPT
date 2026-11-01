@@ -1,7 +1,7 @@
 ---
 title: Personal Access Tokens
 description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-01
 ---
 
 # Personal Access Tokens
@@ -167,7 +167,7 @@ A `write` scope includes the matching `read` scope.
 | `teams:read` | View teams, members and resource shares |
 | `runs:read` | View the workflow runs you started: status, steps, final state and the files they produced |
 | `artifacts:read` | Download files your workflow runs produced, and view and download your artifacts |
-| `chat:run` | Ask agents and search sources (`/api/answer`, `/stream`, `/api/search`); used for benchmarking |
+| `chat:run` | Ask agents, search sources and list an agent's starters (`/api/answer`, `/stream`, `/api/search`, `/api/agent_starters`); used for benchmarking |
 
 `agents:keys` is separate from `agents:write` on purpose. Creating, publishing or adopting an agent mints its API key; a token without `agents:keys` gets the key back masked (`1234...90ab`), because an agent key keeps working after the token that saw it is revoked. Put differently: a deployment token that updates agents does not need to be able to read or rotate the secrets other systems use to call them.
 
