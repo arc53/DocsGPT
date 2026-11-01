@@ -1555,6 +1555,18 @@ describe('NewAgent form', () => {
     expect(buttonByText('agents.form.starters.add')).toBeTruthy();
   });
 
+  it('places Starters between Model and Advanced', async () => {
+    await renderEdit({ starters: [] });
+    const text = container.textContent ?? '';
+    const at = (key: string) => text.indexOf(key);
+    expect(at('agents.form.sections.model')).toBeLessThan(
+      at('agents.form.sections.starters'),
+    );
+    expect(at('agents.form.sections.starters')).toBeLessThan(
+      at('agents.form.sections.advanced'),
+    );
+  });
+
   it('removes a stopped item from the agent', async () => {
     await renderEdit(withStoppedTool({ reason: 'deleted', sponsor: null }));
     expect(container.textContent).toContain(

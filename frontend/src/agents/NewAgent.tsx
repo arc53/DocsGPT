@@ -1334,16 +1334,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           </div>
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
-          <SectionHeader
-            title={t('agents.form.sections.starters')}
-            description={t('agents.form.starters.description')}
-          />
-          <StartersFields
-            starters={agent.starters ?? []}
-            onChange={(starters) => setAgent({ ...agent, starters })}
-          />
-        </Card>
-        <Card variant="subtle" padding="lg" className="gap-5">
           <SectionHeader title={t('agents.form.sections.knowledge')} />
           <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
             <FormField
@@ -1644,6 +1634,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </FormField>
             )}
           </div>
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader
+            title={t('agents.form.sections.starters')}
+            description={t('agents.form.starters.description')}
+          />
+          <StartersFields
+            starters={agent.starters ?? []}
+            onChange={(starters) => setAgent({ ...agent, starters })}
+          />
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
           {/* The heading wraps the toggle: a button's children are
