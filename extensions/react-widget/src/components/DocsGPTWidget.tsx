@@ -2480,7 +2480,9 @@ export const WidgetCore = ({
     setIsPinnedToLatest(distanceFromBottom(el) < STICK_THRESHOLD_PX);
   };
 
-  React.useEffect(() => {
+  // Before paint: after paint, a large chunk shows for a frame with the
+  // status line pushed below the fold.
+  useClientLayoutEffect(() => {
     const el = conversationRef.current;
     if (!el || !isPinnedToLatest) return;
     // Easing per token never catches up, so jump while streaming.
