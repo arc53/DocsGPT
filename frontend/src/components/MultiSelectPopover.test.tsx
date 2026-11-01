@@ -97,17 +97,65 @@ describe('MultiSelectPopover', () => {
     expect(content.className).not.toContain('dark:bg-card');
   });
 
-  it('marks chosen rows with CommandItem checked and a primary tick', () => {
+  it('marks chosen rows with CommandItem checked and the shared Checkbox', () => {
     render();
     const rows = document.querySelectorAll('[data-slot="command-item"]');
     expect(rows).toHaveLength(2);
     expect(rows[0].hasAttribute('data-checked')).toBe(false);
     expect(rows[1].getAttribute('data-checked')).toBe('true');
     rows.forEach((row) => expect(row.querySelector('img')).toBeNull());
-    const tick = rows[1].querySelector('svg');
-    expect(tick).not.toBeNull();
-    expect(tick?.getAttribute('class')).toContain('text-primary');
-    expect(rows[0].querySelector('svg')).toBeNull();
+    const boxes = Array.from(rows).map((row) =>
+      row.querySelector<HTMLElement>('[data-slot="checkbox"]'),
+    );
+    expect(boxes[0]?.dataset.state).toBe('unchecked');
+    expect(boxes[1]?.dataset.state).toBe('checked');
+    // Visual only: the row is the control.
+    expect(boxes[1]?.getAttribute('tabindex')).toBe('-1');
+    expect(boxes[1]?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('searches the row line too, not only the label', () => {
+    act(() => {
+      root.render(
+        <MultiSelectPopover
+          open
+          trigger={<button type="button">Open</button>}
+          items={[
+            { id: 'a', label: 'Alpha', description: 'docs.example.com' },
+            { id: 'b', label: 'Beta', keywords: ['lena@acme'] },
+          ]}
+          selectedIds={[]}
+          onToggle={() => undefined}
+        />,
+      );
+    });
+    const rows = document.querySelectorAll('[data-slot="command-item"]');
+    expect(rows[0].getAttribute('data-value')).toBe('Alpha a');
+    // cmdk reads the keywords off the item when it filters.
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-slot="command-input"]',
+    )!;
+    const type = (text: string) =>
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        setter.call(input, text);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    type('example.com');
+    expect(
+      Array.from(document.querySelectorAll('[data-slot="command-item"]')).map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(['Alphadocs.example.com']);
+    type('lena@');
+    expect(
+      Array.from(document.querySelectorAll('[data-slot="command-item"]')).map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(['Beta']);
   });
 
   it("leaves aria-selected to cmdk's highlight, not the chosen state", () => {
@@ -148,5 +196,267 @@ describe('MultiSelectPopover', () => {
     const list = document.querySelector('[data-slot="command-list"]')!;
     expect(list.parentElement?.className ?? '').not.toContain('rounded-md');
     expect(list.parentElement?.className ?? '').not.toMatch(/\bborder\b/);
+  });
+
+  describe('footer', () => {
+    const footer = () =>
+      document.querySelector<HTMLElement>('[data-slot="multi-select-footer"]');
+
+    const renderWithFooter = (onToggle = vi.fn(), onAdd = vi.fn()) =>
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={items}
+            selectedIds={[]}
+            onToggle={onToggle}
+            footer={
+              <button type="button" onClick={onAdd}>
+                Add tool
+              </button>
+            }
+          />,
+        );
+      });
+
+    it.each([
+      ['the popover', false],
+      ['the phone sheet', true],
+    ])('pins it under the list in %s, outside cmdk', (_where, mobile) => {
+      media.isMobile = mobile;
+      renderWithFooter();
+      const bar = footer()!;
+      expect(bar.className.split(' ')).toEqual(
+        expect.arrayContaining([
+          'border-border',
+          'shrink-0',
+          'border-t',
+          'px-4',
+          'py-4',
+        ]),
+      );
+      // Not in cmdk's root, whose Enter handler toggles the highlighted row.
+      expect(bar.closest('[cmdk-root]')).toBeNull();
+      const list = document.querySelector('[data-slot="command-list"]')!;
+      expect(list.contains(bar)).toBe(false);
+      // After the list, so Tab reaches it from the search box.
+      expect(
+        list.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      const surface = document.querySelector(
+        mobile
+          ? '[data-slot="sheet-content"]'
+          : '[data-slot="popover-content"]',
+      )!;
+      expect(surface.contains(bar)).toBe(true);
+    });
+
+    it('Enter on a footer button presses it and toggles no row', () => {
+      const onToggle = vi.fn();
+      renderWithFooter(onToggle);
+      const button = footer()!.querySelector('button')!;
+      act(() => {
+        button.focus();
+        const event = new KeyboardEvent('keydown', {
+          key: 'Enter',
+          bubbles: true,
+          cancelable: true,
+        });
+        button.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      });
+      expect(onToggle).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('filters', () => {
+    const renderWithFilters = (onToggle = vi.fn()) =>
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={items}
+            selectedIds={[]}
+            onToggle={onToggle}
+            filters={<button type="button">Websites</button>}
+          />,
+        );
+      });
+
+    const strip = () =>
+      document.querySelector<HTMLElement>('[data-slot="multi-select-filters"]');
+
+    it('draws the filter row between the search and the list', () => {
+      renderWithFilters();
+      const row = strip()!;
+      const input = document.querySelector('[data-slot="command-input"]')!;
+      const list = document.querySelector('[data-slot="command-list"]')!;
+      expect(
+        input.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        row.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(row.className.split(' ')).toEqual(
+        expect.arrayContaining(['px-3', 'pt-2', 'pb-1']),
+      );
+    });
+
+    it('keeps its keys from cmdk: Enter presses a filter, not the row', () => {
+      const onToggle = vi.fn();
+      renderWithFilters(onToggle);
+      const button = strip()!.querySelector('button')!;
+      act(() => {
+        button.focus();
+        const event = new KeyboardEvent('keydown', {
+          key: 'Enter',
+          bubbles: true,
+          cancelable: true,
+        });
+        button.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      });
+      expect(onToggle).not.toHaveBeenCalled();
+    });
+
+    it('draws no row without filters', () => {
+      render();
+      expect(strip()).toBeNull();
+    });
+  });
+
+  describe('selectedFirst', () => {
+    const grouped = [
+      { id: 'a', label: 'Alpha', group: 'one' },
+      { id: 'b', label: 'Beta', group: 'one' },
+      { id: 'c', label: 'Gamma', group: 'two' },
+    ];
+
+    const renderPicker = (
+      open: boolean,
+      selectedIds: string[],
+      extra: Record<string, unknown> = {},
+    ) =>
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open={open}
+            trigger={<button type="button">Open</button>}
+            items={grouped}
+            selectedIds={selectedIds}
+            onToggle={() => undefined}
+            selectedFirst
+            {...extra}
+          />,
+        );
+      });
+
+    const layout = () =>
+      Array.from(document.querySelectorAll('[cmdk-group]')).map((group) => [
+        group.querySelector('[cmdk-group-heading]')?.textContent ?? null,
+        Array.from(group.querySelectorAll('[data-slot="command-item"]')).map(
+          (row) => row.textContent,
+        ),
+      ]);
+
+    it('lists what is chosen when it opens in a Selected group on top', () => {
+      renderPicker(true, ['c']);
+      expect(layout()).toEqual([
+        ['Selected', ['Gamma']],
+        ['one', ['Alpha', 'Beta']],
+      ]);
+    });
+
+    it('keeps the rows still while toggling, and re-sorts on the next open', () => {
+      renderPicker(true, ['c']);
+      // Unticking Gamma and ticking Beta moves nothing.
+      renderPicker(true, ['b']);
+      expect(layout()).toEqual([
+        ['Selected', ['Gamma']],
+        ['one', ['Alpha', 'Beta']],
+      ]);
+      const gamma = document.querySelectorAll('[data-slot="command-item"]')[0];
+      expect(gamma.hasAttribute('data-checked')).toBe(false);
+      renderPicker(false, ['b']);
+      renderPicker(true, ['b']);
+      expect(layout()).toEqual([
+        ['Selected', ['Beta']],
+        ['one', ['Alpha']],
+        ['two', ['Gamma']],
+      ]);
+    });
+
+    it('draws no Selected group while nothing is chosen', () => {
+      renderPicker(true, []);
+      expect(layout().map(([heading]) => heading)).toEqual(['one', 'two']);
+    });
+
+    it('draws a group heading node in place of the group key', () => {
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={[
+              {
+                id: 'a',
+                label: 'Alpha',
+                group: 'service:x',
+                groupHeading: <span data-testid="heading">X service</span>,
+              },
+              { id: 'b', label: 'Beta', group: 'other' },
+            ]}
+            selectedIds={[]}
+            onToggle={() => undefined}
+          />,
+        );
+      });
+      expect(document.querySelector('[data-testid="heading"]')).not.toBeNull();
+      expect(layout().map(([heading]) => heading)).toEqual([
+        'X service',
+        'other',
+      ]);
+    });
+
+    it('with loneGroupHeading off, heads a lone group only beside Selected', () => {
+      const lone = [
+        { id: 'a', label: 'Alpha', group: 'one' },
+        { id: 'b', label: 'Beta', group: 'one' },
+      ];
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={lone}
+            selectedIds={[]}
+            onToggle={() => undefined}
+            selectedFirst
+            loneGroupHeading={false}
+          />,
+        );
+      });
+      expect(layout()).toEqual([[null, ['Alpha', 'Beta']]]);
+      act(() => root.render(<></>));
+      act(() => {
+        root.render(
+          <MultiSelectPopover
+            open
+            trigger={<button type="button">Open</button>}
+            items={lone}
+            selectedIds={['b']}
+            onToggle={() => undefined}
+            selectedFirst
+            loneGroupHeading={false}
+          />,
+        );
+      });
+      expect(layout()).toEqual([
+        ['Selected', ['Beta']],
+        ['one', ['Alpha']],
+      ]);
+    });
   });
 });

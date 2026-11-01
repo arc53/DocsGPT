@@ -409,6 +409,10 @@ agents_table = Table(
     Column("chunks", Integer),
     Column("retriever", Text),
     Column("prompt_id", UUID(as_uuid=True), ForeignKey("prompts.id", ondelete="SET NULL")),
+    # A built-in preset with no ``prompts`` row (migration 0060). NULL with a
+    # NULL ``prompt_id`` is the default preset; AgentsRepository reads it back
+    # as ``prompt_id``.
+    Column("prompt_preset", Text),
     Column("tools", JSONB, nullable=False, server_default="[]"),
     Column("json_schema", JSONB),
     Column("models", JSONB),
@@ -434,6 +438,8 @@ agents_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_used_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+    CheckConstraint("prompt_preset IN ('creative', 'strict')", name="agents_prompt_preset_chk"),
+    CheckConstraint("prompt_id IS NULL OR prompt_preset IS NULL", name="agents_prompt_preset_exclusive_chk"),
 )
 
 # Per-user uniqueness of the export/import slug. Mirrors the partial unique
@@ -446,6 +452,11 @@ Index(
     unique=True,
     postgresql_where=agents_table.c.slug.isnot(None),
 )
+
+# The Workspace ``used_by`` lookups (``tools ?| ids``, ``extra_source_ids && ids``).
+# Mirrors migration 0060.
+Index("agents_tools_gin_idx", agents_table.c.tools, postgresql_using="gin")
+Index("agents_extra_source_ids_gin_idx", agents_table.c.extra_source_ids, postgresql_using="gin")
 
 user_custom_models_table = Table(
     "user_custom_models",
@@ -1170,6 +1181,22 @@ workflow_nodes_table = Table(
         "id", "workflow_id", "graph_version",
         name="workflow_nodes_id_wf_ver_key",
     ),
+)
+
+# The Workspace ``used_by`` lookups of workflow agents, over the lower-case ids
+# the SQL function ``workflow_node_refs`` reads from an agent node's config.
+# Mirrors migration 0060.
+Index(
+    "workflow_nodes_tool_refs_gin_idx",
+    func.workflow_node_refs(workflow_nodes_table.c.config, text("'tools'")),
+    postgresql_using="gin",
+    postgresql_where=text("node_type = 'agent'"),
+)
+Index(
+    "workflow_nodes_source_refs_gin_idx",
+    func.workflow_node_refs(workflow_nodes_table.c.config, text("'sources'")),
+    postgresql_using="gin",
+    postgresql_where=text("node_type = 'agent'"),
 )
 
 workflow_edges_table = Table(

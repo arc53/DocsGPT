@@ -132,10 +132,9 @@
     "label": "设置",
     "general": {
       "label": "一般",
-      "subtitle": "选择 DocsGPT 的外观、界面语言以及聊天使用的提示词。",
+      "subtitle": "选择 DocsGPT 的外观和界面语言。",
       "sections": {
         "appearance": "外观",
-        "chat": "聊天",
         "dangerZone": "危险操作"
       },
       "theme": "主题",
@@ -145,8 +144,6 @@
       "light": "浅色",
       "dark": "暗色",
       "chunks": "每个查询处理的块",
-      "prompt": "提示",
-      "promptDescription": "不使用智能体的聊天所用的系统提示词。智能体使用各自的提示词。",
       "deleteAllLabel": "删除所有对话",
       "deleteAllDescription": "永久删除您账户中的所有对话。此操作无法撤销。",
       "addNew": "添加新的",
@@ -156,18 +153,7 @@
       "medium": "中",
       "high": "高",
       "unlimited": "无限",
-      "default": "默认",
-      "add": "添加",
-      "promptActions": {
-        "select": "选择提示词",
-        "edit": "编辑提示词",
-        "view": "查看提示词",
-        "duplicate": "复制提示词",
-        "delete": "删除提示词",
-        "deleteFailed": "无法删除此提示词。",
-        "saveFailed": "无法保存此提示词。",
-        "editConflict": "其他人已更改此提示词。请重新打开以查看其版本。"
-      }
+      "default": "默认"
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
@@ -178,7 +164,7 @@
       "type": "类型",
       "tokenUsage": "令牌使用",
       "noData": "还没有知识",
-      "searchPlaceholder": "搜索...",
+      "searchPlaceholder": "搜索知识…",
       "addNew": "添加新文档",
       "addSource": "添加知识",
       "addChunk": "添加块",
@@ -692,7 +678,22 @@
       "viaConnectionFiles_other": "通过 {{name}} · {{files}} 个文件",
       "item": {
         "tokens": "{{tokens}} 个令牌"
-      }
+      },
+      "tokenCount": "{{tokens}} 个令牌",
+      "kinds": {
+        "all": "全部",
+        "files": "文件",
+        "websites": "网站",
+        "synced": "已同步",
+        "wikis": "Wiki",
+        "shared": "共享"
+      },
+      "kindFilterLabel": "按类型筛选",
+      "needsAttention": "需要处理",
+      "allKnowledge": "全部知识",
+      "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此来源。其文件和分块也会一并删除。此操作无法撤销。",
+      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此来源。其文件和分块也会一并删除。此操作无法撤销。",
+      "noKnowledgeFound": "未找到知识"
     },
     "analytics": {
       "label": "分析",
@@ -1451,8 +1452,8 @@
     },
     "tools": {
       "label": "工具",
-      "subtitle": "智能体可以执行的操作。内置工具在这里。已连接服务提供的工具归在该服务下。",
-      "searchPlaceholder": "搜索工具...",
+      "subtitle": "智能体可以执行的操作。自带工具随 DocsGPT 提供。已连接服务提供的工具归在该服务下。",
+      "searchPlaceholder": "搜索工具…",
       "addTool": "添加工具",
       "noToolsFound": "未找到工具",
       "selectToolSetup": "添加工具",
@@ -1592,13 +1593,67 @@
       "triggerLabel_one": "工具，已选 {{formatted}} 个",
       "triggerLabel_other": "工具，已选 {{formatted}} 个",
       "manageInConnectors": "在连接器中管理",
-      "defaultBadge": "默认",
       "noToolsYet": "还没有工具",
       "connectService": "连接服务",
       "filledBy": "填写方式",
       "loadError": "无法加载你的工具。",
       "deleteConsequence": "其设置和操作也会一并删除。此操作无法撤销。",
-      "deleteActionConsequence": "保存工具后即会移除。"
+      "deleteActionConsequence": "保存工具后即会移除。",
+      "groupIncluded": "自带",
+      "groupAdded": "已添加",
+      "filters": {
+        "all": "全部"
+      },
+      "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
+      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将失去此工具。其设置和操作也会一并删除。此操作无法撤销。",
+      "groupServices": "服务",
+      "kindFilterLabel": "按类型筛选"
+    },
+    "prompts": {
+      "label": "提示词",
+      "subtitle": "系统提示词决定模型如何回答。你选择的提示词用于不使用智能体的聊天；智能体使用各自的提示词。",
+      "searchPlaceholder": "搜索提示词…",
+      "addPrompt": "添加提示词",
+      "manage": "前往提示词",
+      "select": "选择提示词",
+      "filters": {
+        "all": "全部"
+      },
+      "sections": {
+        "included": "自带",
+        "yours": "你的",
+        "shared": "团队共享"
+      },
+      "presets": {
+        "default": "根据你的文档回答并注明出处。文档无法回答时会说明，再用通用知识作答。",
+        "creative": "与 default 相同，另外提供想法、示例和富有想象力的角度，同时保持事实准确。",
+        "strict": "只根据你的文档、工具和聊天内容回答。缺少信息时会说明，而不是猜测。"
+      },
+      "chatPromptLabel": "不使用智能体的聊天所用的提示词",
+      "useInChats": "在聊天中使用 {{name}}",
+      "chatPromptFailed": "无法更改聊天使用的提示词。",
+      "actions": "{{name}} 的操作",
+      "edit": "编辑",
+      "view": "查看",
+      "duplicate": "创建副本",
+      "shareWithTeam": "与团队共享",
+      "delete": "删除",
+      "deleteUsedBy_one": "有 {{formatted}} 个智能体在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteUsedBy_other": "有 {{formatted}} 个智能体在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteUsedByInChats_one": "有 {{formatted}} 个智能体和你的聊天在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteUsedByInChats_other": "有 {{formatted}} 个智能体和你的聊天在使用，删除后它们将改用默认提示词。此操作无法撤销。",
+      "deleteInChats": "你的聊天正在使用它，删除后将改用默认提示词。此操作无法撤销。",
+      "deleteFailed": "无法删除此提示词。",
+      "saveFailed": "无法保存此提示词。",
+      "editConflict": "其他人已更改此提示词。请重新打开以查看其版本。",
+      "loadError": "无法加载你的提示词。",
+      "noPromptsFound": "未找到提示词",
+      "kinds": {
+        "shared": "共享"
+      },
+      "kindFilterLabel": "按类型筛选",
+      "chatPromptOn": "用于无智能体的聊天",
+      "chatPromptOff": "在无智能体的聊天中使用"
     },
     "devices": {
       "label": "设备",
@@ -1654,7 +1709,8 @@
       "auditShow": "显示最近的命令",
       "auditHide": "隐藏最近的命令",
       "seen": "{{time}}在线",
-      "revokeConsequence": "此设备上的 CLI 会断开连接，配对也会被移除。重新配对即可再次连接。"
+      "revokeConsequence": "此设备上的 CLI 会断开连接，配对也会被移除。重新配对即可再次连接。",
+      "loadError": "无法加载此设备。"
     },
     "customModels": {
       "label": "自定义模型",
@@ -2097,9 +2153,6 @@
         "ownerWarningNoAccount": "团队成员将以你的 {{name}} 账号操作。"
       },
       "createFailed": "无法添加连接器。请重试。",
-      "capabilityFilter": {
-        "clear": "显示所有连接器"
-      },
       "capabilityPlain": {
         "sync": "同步到知识库",
         "read": "查找信息",
@@ -2158,25 +2211,55 @@
         "failed": "无法重命名账户。请重试。"
       },
       "browseAll": "浏览所有连接器",
-      "filters": {
-        "all": "全部",
-        "connected": "已连接",
-        "disconnected": "已断开"
-      },
-      "filterLabel": "筛选连接器",
-      "capabilityChip": {
-        "sync": "同步到知识库",
-        "tools": "为智能体提供工具"
-      },
       "injection": {
         "flagged": "疑似提示词注入",
         "notice_other": "有 {{formatted}} 个操作的描述看起来像是为 AI 植入的指令，可能是提示词注入。允许之前，请在“自定义”中检查。"
       },
       "syncContent": "同步内容",
-      "openInKnowledge": "在知识库中打开"
+      "openInKnowledge": "在知识库中打开",
+      "capabilityShort": {
+        "sync": "同步",
+        "read": "查询",
+        "write": "执行操作"
+      },
+      "capabilityFilters": {
+        "all": "全部",
+        "sync": "知识",
+        "tools": "工具"
+      },
+      "capabilityFilterLabel": "按功能筛选",
+      "statusFilters": {
+        "all": "不限状态",
+        "reconnect": "需要登录",
+        "connected": "已连接",
+        "available": "未连接"
+      },
+      "statusFilterLabel": "按状态筛选",
+      "sections": {
+        "reconnect": "需要登录",
+        "connected": "已连接",
+        "available": "可用"
+      },
+      "addCustomDescription": "连接目录中没有的服务器或 API。"
     },
     "insights": {
       "label": "洞察"
+    },
+    "usage": {
+      "agents_one": "{{formatted}} 个智能体在使用",
+      "agents_other": "{{formatted}} 个智能体在使用",
+      "others_one": "以及你团队中的另外 {{formatted}} 个",
+      "others_other": "以及你团队中的另外 {{formatted}} 个",
+      "agentsShort_one": "{{formatted}} 个智能体",
+      "agentsShort_other": "{{formatted}} 个智能体",
+      "filters": {
+        "all": "不限使用情况",
+        "inUse": "使用中",
+        "unused": "未使用"
+      },
+      "filterLabel": "按使用情况筛选",
+      "inChatsOn": "已在我的聊天中启用",
+      "inChatsOff": "未在我的聊天中启用"
     }
   },
   "modals": {
@@ -2397,8 +2480,7 @@
       "learnAboutPrompts": "了解提示 →",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",
-      "promptTypePrivate": "私人",
-      "delete": "删除"
+      "promptTypePrivate": "私人"
     },
     "chunk": {
       "add": "添加块",
@@ -2540,10 +2622,8 @@
     },
     "sources": {
       "title": "来源",
-      "text": "选择知识",
       "link": "来源链接",
       "view_more": "还有{{count}}个来源",
-      "noSourcesAvailable": "还没有知识",
       "selectedCount": "已选 {{count}} 个",
       "triggerLabel_one": "知识库，已选 {{formatted}} 个",
       "triggerLabel_other": "知识库，已选 {{formatted}} 个",
@@ -2962,22 +3042,11 @@
         "historyLimitDefault": "接近上下文上限时总结"
       },
       "sourcePopup": {
-        "title": "选择知识",
-        "searchPlaceholder": "搜索知识...",
-        "noOptionsMessage": "还没有知识",
-        "groupOwn": "我的来源",
-        "groupTeam": "团队共享",
+        "searchPlaceholder": "搜索知识…",
         "noSourceHint": "可选。没有知识时，智能体只用模型和它的工具回答。"
       },
       "toolsPopup": {
-        "title": "选择工具",
-        "searchPlaceholder": "搜索工具...",
-        "noOptionsMessage": "没有可用的工具",
-        "groupBuiltin": "内置",
-        "groupDefault": "内置",
         "groupCustom": "自定义",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "已在此智能体上",
         "attachedHint": "由其他人添加。你可以将其移除。"
       },
       "modelsPopup": {
@@ -3051,7 +3120,8 @@
       "externalKb": "外部知识库",
       "errors": {
         "publishFailed": "无法发布该助手，请重试。",
-        "saveDraftFailed": "无法保存草稿，请重试。"
+        "saveDraftFailed": "无法保存草稿，请重试。",
+        "staleWrite": "在你打开此智能体后，其他人保存了它。你的更改仍在这里：复制所需内容，重新加载页面后再次应用。"
       },
       "guardrails": {
         "enable": "启用防护栏",
@@ -3267,6 +3337,11 @@
           "description": "它可重叠，因此有自己的结果。这些结果将从洞察和日志中消失，重新添加后会从头开始。",
           "submit": "移除"
         }
+      },
+      "leave": {
+        "title": "不保存就离开？",
+        "description": "您在此处所做的更改将会丢失。",
+        "submit": "离开"
       }
     },
     "logs": {
@@ -3540,9 +3615,7 @@
       },
       "builder": {
         "deleteFailed": "无法删除工作流智能体",
-        "updateWorkflowFailed": "无法更新工作流",
         "updateAgentFailed": "无法更新智能体",
-        "createWorkflowFailed": "无法创建工作流",
         "createAgentFailed": "无法创建智能体",
         "saveFailed": "无法保存工作流",
         "defaultDescription": "工作流智能体：{{name}}",
@@ -3648,7 +3721,9 @@
         "loopOnErrorCollect": "在原位置保留错误",
         "loopOutputHint": "结果列表，每项一个结果。",
         "loopResultVariable": "项结果",
-        "loopResultVariableHint": "其值作为每一项结果的变量。留空则使用最后运行的节点的输出。"
+        "loopResultVariableHint": "其值作为每一项结果的变量。留空则使用最后运行的节点的输出。",
+        "loadFailedTitle": "无法加载工作流",
+        "loadFailedDescription": "没有任何更改。请重试，或稍后再来。"
       },
       "validation": {
         "nameRequired": "工作流名称为必填项",
@@ -3859,7 +3934,8 @@
     },
     "multiSelect": {
       "more_one": "另外 {{count}} 个",
-      "more_other": "另外 {{count}} 个"
+      "more_other": "另外 {{count}} 个",
+      "selectedGroup": "已选"
     }
   },
   "pageNotFound": {

@@ -61,3 +61,61 @@ export const isSyncedSource = (doc: Doc): boolean =>
  */
 export const syncNowIsPrimary = (doc: Doc): boolean =>
   !isGraphSource(doc) && !doc.website && isSyncedSource(doc);
+
+/** The Knowledge filter's values: All, the four content kinds, and Shared. */
+export const SOURCE_KINDS = [
+  'all',
+  'files',
+  'websites',
+  'synced',
+  'wikis',
+  'shared',
+] as const;
+export type SourceKindFilter = (typeof SOURCE_KINDS)[number];
+
+/** The four content kinds; every source is exactly one of them. */
+export type SourceKind = Exclude<SourceKindFilter, 'all' | 'shared'>;
+
+/**
+ * Which content kind a source is, as the backend's `source_kind` decides it
+ * (`docsgpt/api/user/sources/routes.py`), so the counts the Knowledge page
+ * gets from the server match the ones a picker counts itself. A source that
+ * fits more than one takes the first:
+ *
+ * 1. `wikis`: `isWikiSource`; a wiki never syncs, whatever schedule it kept.
+ * 2. `websites`: the list sends a `website` summary (a Website source, or one
+ *    made by the url, crawler or sitemap loaders), scheduled or not.
+ * 3. `synced`: `isSyncedSource` (a connection, a connector type, a schedule).
+ * 4. `files`: the rest: uploads, a graph source, a loader that never syncs.
+ *
+ * Args:
+ *   doc: The source, from either list.
+ *
+ * Returns:
+ *   Its kind.
+ */
+export const sourceKindOf = (doc: Doc): SourceKind => {
+  if (isWikiSource(doc)) return 'wikis';
+  if (doc.website) return 'websites';
+  if (isSyncedSource(doc)) return 'synced';
+  return 'files';
+};
+
+/**
+ * Whether a source passes a Knowledge filter: All; Shared, a team's source of
+ * any kind (so the counts don't sum to All); otherwise its content kind.
+ */
+export const matchesKind = (kind: SourceKindFilter, doc: Doc): boolean => {
+  if (kind === 'all') return true;
+  if (kind === 'shared') return doc.ownership === 'team';
+  return sourceKindOf(doc) === kind;
+};
+
+/** How many sources each Knowledge filter keeps. */
+export const kindCounts = (docs: Doc[]): Record<SourceKindFilter, number> =>
+  Object.fromEntries(
+    SOURCE_KINDS.map((kind) => [
+      kind,
+      docs.filter((doc) => matchesKind(kind, doc)).length,
+    ]),
+  ) as Record<SourceKindFilter, number>;

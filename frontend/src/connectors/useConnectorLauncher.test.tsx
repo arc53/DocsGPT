@@ -20,7 +20,7 @@ vi.mock('./ConnectWizard', () => ({
     connectionId?: string;
     purpose?: string;
     onSynced?: (ids: string[]) => void;
-    onClose: (connected?: boolean) => void;
+    onClose: (connected?: boolean, toolIds?: string[]) => void;
   }) => {
     wizardProps.onSynced = onSynced;
     return (
@@ -36,13 +36,27 @@ vi.mock('./ConnectWizard', () => ({
           data-close="cancel"
           onClick={() => onClose(false)}
         />
+        <button
+          type="button"
+          data-close="tools"
+          onClick={() => onClose(true, ['tool-a', 'tool-b'])}
+        />
         {/* A wizard from before the `connected` argument. */}
         <button type="button" data-close="bare" onClick={() => onClose()} />
       </div>
     );
   },
 }));
-vi.mock('../modals/MCPServerModal', () => ({ default: () => null }));
+// The MCP server form, as a stub that saves on demand.
+const mcpForm = vi.hoisted(() => ({
+  onServerSaved: null as null | ((toolId?: string) => void),
+}));
+vi.mock('../modals/MCPServerModal', () => ({
+  default: (props: { onServerSaved: (toolId?: string) => void }) => {
+    mcpForm.onServerSaved = props.onServerSaved;
+    return <div data-testid="mcp-form" />;
+  },
+}));
 
 import connectorsService from '../api/services/connectorsService';
 import connectorsReducer from './connectorsSlice';
@@ -84,12 +98,14 @@ let launchRef: ((c: ConnectorDefinition, o?: LaunchOptions) => void) | null =
 const onConnected = vi.fn();
 const onCancel = vi.fn();
 const onSynced = vi.fn();
+const onNavigate = vi.fn();
 
 function Harness() {
   const { launch, modals } = useConnectorLauncher({
     onConnected,
     onCancel,
     onSynced,
+    onNavigate,
   });
   launchRef = launch;
   return <>{modals}</>;
@@ -184,7 +200,7 @@ describe('useConnectorLauncher', () => {
     expect(purpose()).toBe('');
   });
 
-  const closeWith = async (how: 'connected' | 'cancel' | 'bare') =>
+  const closeWith = async (how: 'connected' | 'cancel' | 'bare' | 'tools') =>
     act(async () =>
       container
         .querySelector<HTMLButtonElement>(`[data-close="${how}"]`)!
@@ -215,5 +231,61 @@ describe('useConnectorLauncher', () => {
     await closeWith('bare');
     expect(onConnected).not.toHaveBeenCalled();
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands its opener the tools the run set up', async () => {
+    await act(async () => launchRef!(DRIVE));
+    await closeWith('tools');
+    expect(onConnected).toHaveBeenCalledWith(['tool-a', 'tool-b']);
+  });
+
+  it("hands its opener a saved MCP server's tool", async () => {
+    const CUSTOM_MCP = {
+      key: 'custom_mcp',
+      name: 'MCP server',
+      auth_kind: 'mcp',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    await act(async () => launchRef!(CUSTOM_MCP));
+    expect(container.querySelector('[data-testid="mcp-form"]')).not.toBeNull();
+    // No connection to show a summary for: the run ends on the save.
+    await act(async () => mcpForm.onServerSaved!('mcp-1'));
+    expect(onConnected).toHaveBeenCalledWith(['mcp-1']);
+  });
+
+  it('opens the API tool editor through its opener', async () => {
+    const OPENAPI = {
+      key: 'custom_openapi',
+      name: 'OpenAPI',
+      auth_kind: 'none',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    await act(async () => launchRef!(OPENAPI));
+    expect(onNavigate).toHaveBeenCalledWith('/settings/tools', {
+      state: { newApiTool: true },
+    });
+  });
+
+  it('hands its opener no tool after an MCP server signs in again', async () => {
+    const CUSTOM_MCP = {
+      key: 'custom_mcp',
+      name: 'MCP server',
+      auth_kind: 'mcp',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    await act(async () =>
+      launchRef!(CUSTOM_MCP, {
+        mode: 'reconnect',
+        mcpServer: { id: 'mcp-old' },
+      }),
+    );
+    await act(async () => mcpForm.onServerSaved!('mcp-old'));
+    expect(onConnected).toHaveBeenCalledWith([]);
   });
 });

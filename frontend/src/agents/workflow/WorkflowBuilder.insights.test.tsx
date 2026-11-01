@@ -278,7 +278,7 @@ describe('WorkflowBuilder insights', () => {
     expect(sentConfig()).toBeNull();
   });
 
-  it('saves the retry defaults on the workflow, not the agent config', async () => {
+  it('saves the retry defaults with the graph, not the agent config', async () => {
     await render();
     expect(
       (sheet.props!.details as { retryDefaults: unknown }).retryDefaults,
@@ -295,9 +295,12 @@ describe('WorkflowBuilder insights', () => {
       }),
     );
     await act(async () => undefined);
-    expect(updateWorkflow.mock.calls.at(-1)![1]).toMatchObject({
+    const form = updateAgent.mock.calls.at(-1)![1] as FormData;
+    expect(JSON.parse(form.get('workflow_graph') as string)).toMatchObject({
       retry_defaults: { max_attempts: 3, backoff_seconds: [5] },
     });
+    // One request: the graph goes with the agent.
+    expect(updateWorkflow).not.toHaveBeenCalled();
     expect(sentConfig()).toBeNull();
     expect(
       (sheet.props!.details as { retryDefaults: unknown }).retryDefaults,
@@ -395,12 +398,12 @@ describe('WorkflowBuilder insights', () => {
       await openDetails();
       await save({ ...details().analytics, digest: true });
       await save({ ...details().analytics, digest: true });
-      expect(updateWorkflow).toHaveBeenCalledTimes(1);
+      expect(updateAgent).toHaveBeenCalledTimes(1);
       await act(async () =>
         finish({ ok: true, json: () => Promise.resolve({ id: 'a1' }) }),
       );
       await act(async () => undefined);
-      expect(updateWorkflow).toHaveBeenCalledTimes(1);
+      expect(updateAgent).toHaveBeenCalledTimes(1);
     });
   });
 });

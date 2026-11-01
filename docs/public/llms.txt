@@ -20,7 +20,7 @@ This file maps the DocsGPT documentation for LLMs and coding agents. It is gener
 
 ## Using DocsGPT
 
-- [Using the Web App](https://docs.docsgpt.cloud/Using/web-app): Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme, language and the active prompt.
+- [Using the Web App](https://docs.docsgpt.cloud/Using/web-app): Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language.
 - [Activity](https://docs.docsgpt.cloud/Using/activity): See what runs in DocsGPT right now, what waits for you and what runs next, browse planned and past runs on a calendar and in a history list, stop a running answer, and read the status marks on sidebar chats.
 - [Sharing Conversations](https://docs.docsgpt.cloud/Using/sharing): Share a conversation as a public, read-only page or as a page where anyone with the link can keep asking questions on your account, and how to stop a link.
 - [Teams and Sharing](https://docs.docsgpt.cloud/Using/teams-and-sharing): Create a team, add members, give them roles, and share agents, sources, prompts and tools with a team or one teammate as a viewer or an editor.
@@ -32,7 +32,7 @@ This file maps the DocsGPT documentation for LLMs and coding agents. It is gener
 - [Workflow Nodes](https://docs.docsgpt.cloud/Agents/nodes): The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else, Code and Loop - and the shared state they read and write.
 - [Schedules](https://docs.docsgpt.cloud/Agents/schedules): Run an agent on a timer - recurring schedules and one-time tasks from the Schedules tab, tasks set from chat with the Scheduling tool, the run log, auto-pause, the REST API, the operator limits, and the beat scheduler every schedule needs.
 - [Guardrails](https://docs.docsgpt.cloud/Agents/guardrails): Scan user input, attached files, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection (patterns, or a local model that withholds only the flagged document or file), groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, the rules every agent follows and the defaults for new agents (Admin), and the API reference.
-- [Customizing Prompts](https://docs.docsgpt.cloud/Agents/prompts): Write the prompts your chats and agents use - adding and editing them in Settings, the Jinja2 template variables (system, source, passthrough, tools, artifacts, attachments), how a prompt is assembled, and the built-in presets.
+- [Customizing Prompts](https://docs.docsgpt.cloud/Agents/prompts): Write the prompts your chats and agents use - the Prompts page in Settings, picking the prompt for chats without an agent, the Jinja2 template variables (system, source, passthrough, tools, artifacts, attachments), how a prompt is assembled, and the built-in presets.
 - [Context Compression](https://docs.docsgpt.cloud/Agents/context-compression): How DocsGPT summarizes long conversations to stay within the model's context window, and the settings that control it.
 - [Benchmarking Agents](https://docs.docsgpt.cloud/Agents/benchmarking): Run repeatable benchmarks and evals against your DocsGPT agents from the terminal with docsgpt-cli bench.
 

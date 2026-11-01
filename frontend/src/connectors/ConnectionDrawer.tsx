@@ -509,6 +509,8 @@ type AccountHandlers = {
   onAddTools: (detail: ConnectionDetail) => Promise<string | null>;
   /** Lets its tool make changes or only read (GitHub's). */
   onSwitchWrites: (detail: ConnectionDetail, allow: boolean) => Promise<void>;
+  /** Opens a synced source in Knowledge. */
+  onOpenSource: (source: ConnectionSource) => void;
 };
 
 const NO_EVENTS: SSEEvent[] = [];
@@ -646,6 +648,7 @@ function AccountContent({
   onSyncNow,
   onAddTools,
   onSwitchWrites,
+  onOpenSource: openSource,
 }: {
   connector: ConnectorDefinition;
   detail: ConnectionDetail;
@@ -659,7 +662,6 @@ function AccountContent({
 >) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-  const navigate = useNavigate();
   const [refreshing, setRefreshing] = useState(false);
   // Sources whose Sync now the server hasn't answered yet: one start each.
   const [syncingIds, setSyncingIds] = useState<string[]>([]);
@@ -674,9 +676,6 @@ function AccountContent({
   const hasSources =
     detail.sources.length + indexing.length + failedFirst.length > 0;
   const isMcp = detail.tools.some((tool) => tool.name === 'mcp_tool');
-
-  const openSource = (source: ConnectionSource) =>
-    navigate(knowledgeLink({ sourceId: source.id }));
 
   const syncNow = async (source: ConnectionSource) => {
     if (syncingIds.includes(source.id)) return;
@@ -1112,6 +1111,7 @@ function ServiceSection({
           onSyncNow={handlers.onSyncNow}
           onAddTools={handlers.onAddTools}
           onSwitchWrites={handlers.onSwitchWrites}
+          onOpenSource={handlers.onOpenSource}
         />
       )}
     </section>
@@ -1130,6 +1130,8 @@ export default function ConnectionDrawer({
   initialConnectionId,
   onClose,
   onConnect,
+  onNavigate,
+  onToolsCreated,
 }: {
   connector: ConnectorDefinition | null;
   /** The same service offered another way, shown here (Jira & Confluence). */
@@ -1138,8 +1140,16 @@ export default function ConnectionDrawer({
   initialConnectionId?: string;
   onClose: () => void;
   onConnect: (connector: ConnectorDefinition, options?: LaunchOptions) => void;
+  /**
+   * Leaves for a page (a source in Knowledge); an opener with unsaved work
+   * asks first. The router's navigate otherwise.
+   */
+  onNavigate?: (to: string) => void;
+  /** The tools an account's Add tools created, for an opener that puts them on. */
+  onToolsCreated?: (toolIds: string[]) => void;
 }) {
   const { t } = useTranslation();
+  const routerNavigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const connections = useSelector(selectConnections);
@@ -1370,7 +1380,14 @@ export default function ConnectionDrawer({
       .catch(() => null);
     // Reloaded either way: a rejected sign-in flags the account to reconnect.
     refresh();
-    if (data?.success) return null;
+    if (data?.success) {
+      onToolsCreated?.(
+        ((data.tools ?? []) as { id?: string }[])
+          .map((tool) => tool.id)
+          .filter((id): id is string => typeof id === 'string'),
+      );
+      return null;
+    }
     return data?.code === 'tools_unavailable'
       ? t('settings.connectors.detail.toolsUnavailable', {
           name: serviceName(detail),
@@ -1450,6 +1467,8 @@ export default function ConnectionDrawer({
     onSyncNow: syncNow,
     onAddTools: addTools,
     onSwitchWrites: switchWrites,
+    onOpenSource: (source) =>
+      (onNavigate ?? routerNavigate)(knowledgeLink({ sourceId: source.id })),
   };
 
   const sections = [connector, ...parts]

@@ -1,7 +1,7 @@
 ---
 title: Agent Schedules
 description: Run an agent on a timer - recurring schedules and one-time tasks from the Schedules tab, tasks set from chat with the Scheduling tool, the run log, auto-pause, the REST API, the operator limits, and the beat scheduler every schedule needs.
-lastUpdated: 2026-10-15
+lastUpdated: 2026-10-31
 ---
 
 import { Callout } from 'nextra/components';
@@ -21,7 +21,7 @@ Nothing fires unless a Celery **beat** scheduler is running. The Docker Compose 
 
 ## Create a schedule in the web app
 
-1. Open the agent and select the **Schedules** tab. The tab appears once the agent is saved, and only for its owner and team editors.
+1. Open the agent and select the **Schedules** tab. The tab appears once the agent is published, and only for its owner and team editors.
 2. Select **New schedule**.
 3. Give it a name (optional) and pick a **Frequency**: **Once**, **Daily**, **Weekly**, **Monthly** or **Yearly**. Set the day or date and the time (**At**), and pick a **Timezone**.
 4. In **Instructions**, write what the agent should do on each run, as you would type it in a chat. Include any delivery step, such as "post the summary to Slack".
@@ -110,6 +110,8 @@ A task set from chat pre-approves only the tools whose actions never need approv
 ## REST API
 
 Schedules have their own endpoints. Call them with a session token or a [personal access token](/API/personal-access-tokens) with the `schedules:read` or `schedules:write` scope. The [REST API reference](/API/reference) lists them all.
+
+A workflow agent's schedule runs its saved graph, so creating, resuming or running one now for a draft whose workflow isn't finished answers `400` with the [graph rules](/Agents/nodes#graph-rules) it breaks.
 
 | Method and path | Purpose |
 | --- | --- |

@@ -10,7 +10,6 @@ import { Agent, AgentFolder } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
 import {
-  getLocalPrompt,
   getLocalRecentDocs,
   setLocalApiKey,
   setLocalRecentDocs,
@@ -362,16 +361,6 @@ prefListenerMiddleware.startListening({
 });
 
 prefListenerMiddleware.startListening({
-  matcher: isAnyOf(setPrompt),
-  effect: (action, listenerApi) => {
-    localStorage.setItem(
-      'DocsGPTPrompt',
-      JSON.stringify((listenerApi.getState() as RootState).preference.prompt),
-    );
-  },
-});
-
-prefListenerMiddleware.startListening({
   matcher: isAnyOf(setChunks),
   effect: (action, listenerApi) => {
     localStorage.setItem(
@@ -395,24 +384,24 @@ prefListenerMiddleware.startListening({
   },
 });
 
+// The chat prompt follows the list: a rename shows, and a prompt deleted or
+// no longer shared falls back to default, as the server reads it back.
 prefListenerMiddleware.startListening({
   matcher: isAnyOf(setPrompts),
   effect: (_action, listenerApi) => {
-    const state = listenerApi.getState() as RootState;
-    const availablePrompts = state.preference.prompts;
-    if (availablePrompts && availablePrompts.length > 0) {
-      const validatedPrompt = getLocalPrompt(availablePrompts);
-      if (validatedPrompt !== null) {
-        listenerApi.dispatch(setPrompt(validatedPrompt));
-      } else {
-        const defaultPrompt =
-          availablePrompts.find((p) => p.id === 'default') ||
-          availablePrompts[0];
-        if (defaultPrompt) {
-          listenerApi.dispatch(setPrompt(defaultPrompt));
-        }
-      }
+    const { prompt, prompts } = (listenerApi.getState() as RootState)
+      .preference;
+    if (!prompts || prompts.length === 0) return;
+    const listed = prompts.find((p) => p.id === prompt.id);
+    if (listed) {
+      if (listed.name !== prompt.name)
+        listenerApi.dispatch(setPrompt({ ...prompt, name: listed.name }));
+      return;
     }
+    const fallback = prompts.find((p) => p.id === 'default') ?? prompts[0];
+    listenerApi.dispatch(
+      setPrompt({ id: fallback.id, name: fallback.name, type: fallback.type }),
+    );
   },
 });
 

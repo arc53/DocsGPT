@@ -1,7 +1,7 @@
 ---
 title: Analytics and Logs
 description: Read the Analytics charts, the Insights figures and docs gaps, filter the Logs list by label and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
-lastUpdated: 2026-10-24
+lastUpdated: 2026-10-31
 ---
 
 import { Callout } from 'nextra/components'
@@ -15,6 +15,8 @@ DocsGPT records every chat, API call, scheduled run and webhook run. You review 
 - **Logs**: every entry, newest first, with its execution trace. An agent's Logs also has its [guardrail activity](#guardrail-activity).
 
 For your account they are **Settings → Monitoring → Analytics**, **Insights** and **Logs**. For one agent, they are in the agent's sidebar under **Monitoring**, after **Overview** and **Schedules**. The workflow builder has no sidebar, so its toolbar lists the same pages as tabs: **Overview**, **Schedules**, **Analytics**, **Insights** and **Logs**.
+
+A draft agent has only **Logs** under **Monitoring**, so you can debug its Preview runs before you publish it. **Schedules**, **Analytics** and **Insights** appear once it is published. A workflow's Preview runs are logged once the draft has been saved.
 
 For a readable list of what your automations did (scheduled, webhook and workflow runs, background jobs and monitor wakes), use [Activity → History](/Using/activity#history); Logs stays the full technical record.
 

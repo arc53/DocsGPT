@@ -44,6 +44,7 @@ from docsgpt.background.live_turn import LiveTurn
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import context_window_limit_of
 from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.repositories.agents import agent_row_to_dict
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakesRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository, MessageUpdateOutcome
@@ -203,7 +204,7 @@ def _agent_config(conn: Connection, conversation: Dict[str, Any], model_id: Opti
         row = conn.execute(
             text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"), {"id": str(agent_id)}
         ).fetchone()
-        return row_to_dict(row) if row is not None else None
+        return agent_row_to_dict(row)
     return {
         "id": None,
         "user_id": conversation["user_id"],

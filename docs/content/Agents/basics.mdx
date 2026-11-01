@@ -1,7 +1,7 @@
 ---
 title: Agent Basics
 description: Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
-lastUpdated: 2026-10-25
+lastUpdated: 2026-10-31
 ---
 
 import { Callout } from 'nextra/components';
@@ -33,13 +33,13 @@ When you create or configure an agent, you'll work with these key components:
     * **Describe your agent:** A brief description for you or users to understand the agent's purpose.
 
 **Source:**
-    * **Select source:** The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know."
+    * **Knowledge** (**Select knowledge**): The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know." The picker shows each source's kind and details, lists the selected ones first, filters by kind, and ends with **Go to Knowledge** and **Upload new**; see [Use knowledge in chats and agents](/Sources/adding-knowledge#use-knowledge-in-chats-and-agents).
     * **Chunks:** How many relevant text chunks are sent to the LLM with each query, in total across the agent's sources (default 6). The agent form doesn't show it; set `chunks` when creating or updating the agent through the API, or in an imported agent YAML file (see [Agents API](/API/agent-api)).
 
 **Prompt:**
-The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond.
+The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond. The **Prompt** field lists **Included**, **Yours** and **Shared with team**, each prompt with a line saying what it does (a built-in prompt's purpose, or the start of yours), and **Go to Prompts** and **Add prompt** at the bottom. With more than 10 prompts it can filter by section, and on a phone it opens as a sheet from the bottom of the screen.
 
-**Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information.
+**Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information. The picker groups them as the Tools page does (**Included**, **Added**, one group per connected service, **Custom**), lists the selected ones first, and ends with **Go to Tools** and **Add tool**; see [The Tools page](/Tools/basics#the-tools-page).
 
 **Agent type:** The underlying operational logic or architecture the agent uses. DocsGPT supports different types of agents, each suited for different kinds of tasks. The agent form offers **Classic** and **Research**; workflow agents are chosen when you create the agent, and the Agentic type is set through the API or an imported YAML file.
 
@@ -110,7 +110,7 @@ You can easily access and manage your agents through the DocsGPT user interface.
   <source src="/create-agent.mp4" type="video/mp4" />
 </video>
 
-*The recording clicks **New Agent** on the Agents page and chooses **Classic Agent**. It names the agent "Espresso support", adds a description, picks the "Espresso One handbook" knowledge source, the **Read Webpage (browser)** tool and the "Espresso support" prompt, then clicks **Publish**. Publishing opens **Access Details** with the agent's new API key; the same dialog is under the **⋯** menu later. Finally it opens **Preview**, asks how often to descale the machine, and the agent answers from the handbook with the source listed.*
+*The recording clicks **New Agent** on the Agents page and chooses **Classic Agent**. It names the agent "Contract Terms Helper" and adds a description. In **Knowledge** it picks the "Policies & Contracts Library" source, in **Tools** the **Read Webpage (browser)** tool, and in **Prompt** the included **strict** prompt, each row with a line saying what it is. It then clicks **Publish**. Publishing opens **Access Details** with the agent's new API key; the same dialog is under the **⋯** menu later. Finally it opens **Preview** and asks what credit applies when an Assured Plus shipment is late, and the agent answers from the library's SLA schedule with its sources listed.*
 
 1.  Navigate to the "Agents" page.
 2.  Click the **"New Agent"** button. The **Create New Agent** dialog asks which kind of agent you want:
@@ -120,14 +120,16 @@ You can easily access and manage your agents through the DocsGPT user interface.
 
 <Image
   src="/new-agent.png"
-  alt="The New Agent configuration form"
+  alt="The New Agent form: Basics (avatar, name, description), Knowledge and behaviour (Knowledge, Tools, Prompt) and Model, with Save Draft and Publish at the top"
   width={800}
-  height={450}
+  height={500}
   style={{ margin: '1em auto', display: 'block', borderRadius: '8px' }}
 />
 
 4.  Fill in the fields as described in the "Core Components of an Agent" section.
-5.  Once configured, you can **"Save Draft"** to continue editing later or **"Publish"** to make the agent active.
+5.  Once configured, you can **"Save Draft"** to continue editing later or **"Publish"** to make the agent active. Workflow agents work the same way: **Save draft** keeps an unfinished workflow, and **Publish** checks its [graph rules](/Agents/nodes#graph-rules) first.
+
+While the builder has changes you haven't saved, links that leave the builder (**Go to Knowledge**, **Go to Tools**, the prompt's link, and the connector links in **Add tool** and **Upload new**) ask before they discard them. Opening one in a new tab with Cmd/Ctrl-click doesn't ask.
 
 ## Interacting with and Editing Agents
 

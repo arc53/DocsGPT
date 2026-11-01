@@ -234,6 +234,9 @@ class WorkflowEngine:
         # Per-node tool-call summary collected by the node executors and folded
         # into the step log; reset before each node runs.
         self._last_node_tool_calls: List[Dict[str, Any]] = []
+        # Set when the run was stopped by ``MAX_EXECUTION_STEPS`` with a node
+        # still queued; WorkflowAgent finalizes such a run as failed.
+        self.step_limit_reached: bool = False
         # False when no ``workflow_runs`` row backs ``workflow_run_id`` (unsaved /
         # embedded draft), so run-scoped artifacts must NOT be persisted as orphans.
         # Defaults True; WorkflowAgent flips it off on the draft path.
@@ -454,10 +457,32 @@ class WorkflowEngine:
                     f"Branch ended at node '{node.title}' ({node.id}) without reaching an end node"
                 )
             steps += 1
-        if steps >= self.MAX_EXECUTION_STEPS:
+        # Only a run that still has a node queued was cut off: a branch that
+        # ends on the last allowed step leaves ``current_node_id`` empty, and
+        # an error or end node breaks out before ``steps`` reaches the cap.
+        if current_node_id is not None and steps >= self.MAX_EXECUTION_STEPS:
             logger.warning(
                 f"Workflow reached max steps limit ({self.MAX_EXECUTION_STEPS})"
             )
+            if self._loop_item is not None:
+                # Like any failure in a loop body, this goes to the loop, which
+                # applies ``on_item_error``; the run's error event is not yielded.
+                raise _LoopItemFailed(
+                    f"The loop body stopped after {self.MAX_EXECUTION_STEPS} steps without finishing. "
+                    "A cycle in the body, such as a condition that keeps routing back, is the usual cause."
+                )
+            # A loop that never converges would otherwise be finalized as a
+            # completed run with a truncated (often empty) answer.
+            self.step_limit_reached = True
+            yield {
+                "type": "error",
+                "error": (
+                    f"The workflow stopped after {self.MAX_EXECUTION_STEPS} steps without "
+                    "reaching an end node. A loop in the graph, such as a condition that "
+                    "keeps routing back, is the usual cause."
+                ),
+                "user_facing": True,
+            }
 
     def _initialize_state(self, initial_inputs: WorkflowState, query: str) -> None:
         self.state.update(initial_inputs)
@@ -905,7 +930,6 @@ class WorkflowEngine:
             "api_key": node_api_key,
             "tool_ids": node_config.tools,
             "tool_owner": self._workflow_owner_id(),
-            "tool_principals": self._node_tool_principals(node_config.tools),
             "tool_holder": getattr(self.agent, "workflow_row", None),
             "prompt": node_prompt,
             "chat_history": self.agent.chat_history,
@@ -2300,36 +2324,6 @@ class WorkflowEngine:
         resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
         return (resolve_owner() if callable(resolve_owner) else None) or self._resolve_user_id()
 
-    def _node_tool_principals(self, tool_ids) -> Dict[str, str]:
-        """Node tool id -> the editor to resolve it as, for sponsored tools.
-
-        Only tools with a live sponsor on the workflow appear; the executor
-        still tries the owner first.
-
-        Args:
-            tool_ids: The node's configured tool ids.
-
-        Returns:
-            dict: ``tool_id -> sponsor`` user id.
-        """
-        workflow_row = getattr(self.agent, "workflow_row", None)
-        if not tool_ids or not workflow_row or not workflow_row.get("resource_sponsors"):
-            return {}
-        from docsgpt.api.user.resource_access import active_sponsor
-        from docsgpt.storage.db.session import db_readonly
-
-        principals: Dict[str, str] = {}
-        try:
-            with db_readonly() as conn:
-                for tid in tool_ids:
-                    sponsor = active_sponsor(conn, "workflow", workflow_row, "tool", str(tid))
-                    if sponsor:
-                        principals[str(tid)] = sponsor
-        except Exception:
-            logger.exception("Workflow node tool sponsor lookup failed; using the owner only.")
-            return {}
-        return principals
-
     def _authorized_node_sources(self, sources) -> list:
         """Filter a node's configured source ids to those its owner may read.
 
@@ -2356,25 +2350,19 @@ class WorkflowEngine:
             logger.warning("Workflow node sources dropped: no owner to authorize.")
             return []
 
-        from docsgpt.api.user.resource_access import log_stopped, ref_access
+        from docsgpt.api.user.resource_access import authorized_holder_sources
         from docsgpt.storage.db.session import db_readonly
 
-        # The same check the workflow page's run state uses: the owner, else
-        # the editor who attached it while they still qualify.
+        # The same check the workflow page's run state uses, and an agent's
+        # own sources: the owner, else the editor who attached it while they
+        # still qualify.
         holder = {**(getattr(self.agent, "workflow_row", None) or {}), "user_id": owner}
-        allowed = []
         try:
             with db_readonly() as conn:
-                for sid in ids:
-                    access = ref_access(conn, "workflow", holder, "source", str(sid)) if sid else None
-                    if access is not None and access.principal:
-                        allowed.append(sid)
-                    else:
-                        log_stopped("workflow", holder, "source", sid, access.reason if access else None)
+                return authorized_holder_sources(conn, "workflow", holder, ids)
         except Exception:
             logger.exception("Workflow node source authorization failed; dropping all.")
             return []
-        return allowed
 
     def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> list:
         """Retrieve this node's source documents.

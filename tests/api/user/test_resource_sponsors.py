@@ -631,6 +631,18 @@ class TestWorkflows:
         assert _status(resp) == 400
         assert any("which the workflow's owner doesn't have" in e for e in resp.get_json()["errors"])
 
+    def test_editor_cannot_set_their_own_custom_model_through_an_inline_graph(self, app, pg_conn, monkeypatch):
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        agent_id, _ = _agent(pg_conn, agent_type="workflow", workflow_id=str(wf["id"]))
+        self._custom_models(monkeypatch, {EDITOR: {"editors-model": object()}})
+        body = self._model_body("editors-model")
+        graph = {"nodes": body["nodes"], "edges": body["edges"]}
+
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"workflow_graph": graph})
+
+        assert _status(resp) == 400
+        assert any("which the workflow's owner doesn't have" in e for e in resp.get_json()["errors"])
+
     def test_editor_can_set_the_owners_custom_model_on_a_node(self, app, pg_conn, monkeypatch):
         wid, _ = self._setup(pg_conn)
         self._custom_models(monkeypatch, {OWNER: {"owners-model": object()}})
@@ -654,14 +666,23 @@ class TestWorkflows:
             user=OWNER,
             decoded_token={"sub": OWNER},
         )
+        def _node_tools():
+            from docsgpt.agents.tool_executor import ToolExecutor
+
+            executor = ToolExecutor(user=OWNER)
+            executor.allowed_tool_ids = [tool]
+            executor.tool_owner = OWNER
+            executor.tool_holder = engine.agent.workflow_row
+            return {tid: row["user_id"] for tid, row in executor.get_tools().items()}
+
         with _patch_db(pg_conn):
-            assert engine._node_tool_principals([tool]) == {tool: EDITOR}
+            assert _node_tools() == {tool: EDITOR}
             assert engine._authorized_node_sources([source]) == [source]
             agent_id = str(pg_conn.exec_driver_sql(
                 f"SELECT id FROM agents WHERE workflow_id = '{wid}'"
             ).scalar())
             TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", agent_id, target_user_id=EDITOR)
-            assert engine._node_tool_principals([tool]) == {}
+            assert _node_tools() == {}
             assert engine._authorized_node_sources([source]) == []
 
     def _node_executor(self, monkeypatch, pg_conn, wid, caller, tools):

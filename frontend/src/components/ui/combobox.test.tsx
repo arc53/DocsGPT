@@ -1,7 +1,15 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const media = vi.hoisted(() => ({ isMobile: false, isDesktop: true }));
+vi.mock('../../hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../hooks')>()),
+  useMediaQuery: () => media,
+}));
+
+import PickerFooter from '../PickerFooter';
 import { Combobox, type ComboboxOption } from './combobox';
 import { FormField } from './form-field';
 
@@ -20,6 +28,8 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   document.body.innerHTML = '';
+  media.isMobile = false;
+  media.isDesktop = true;
 });
 
 const options: ComboboxOption[] = [
@@ -406,6 +416,400 @@ describe('Combobox mode="add"', () => {
     expect(onValueChange).toHaveBeenCalledWith('cs', options[0]);
     expect(
       document.body.querySelector('[data-slot="popover-content"]'),
+    ).toBeNull();
+  });
+});
+
+describe('Combobox footer', () => {
+  const footer = () =>
+    document.body.querySelector<HTMLElement>('[data-slot="combobox-footer"]');
+
+  it('pins the footer under the list, outside the scrolling list and cmdk', async () => {
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        placeholder="Pick"
+        footer={<button type="button">Add prompt</button>}
+      />,
+    );
+    await open();
+    const bar = footer()!;
+    expect(bar).not.toBeNull();
+    expect(bar.className.split(' ')).toEqual(
+      expect.arrayContaining([
+        'border-border',
+        'shrink-0',
+        'border-t',
+        'px-4',
+        'py-4',
+      ]),
+    );
+    // Not inside the list, so it doesn't scroll away with the rows ...
+    const list = document.body.querySelector('[data-slot="command-list"]')!;
+    expect(list.contains(bar)).toBe(false);
+    // ... and not inside cmdk's root, whose Enter handler would pick the
+    // highlighted row instead of pressing the footer's button.
+    expect(bar.closest('[cmdk-root]')).toBeNull();
+    // After the list in DOM order, so Tab reaches it from the search box.
+    const content = document.body.querySelector(
+      '[data-slot="popover-content"]',
+    )!;
+    expect(content.contains(bar)).toBe(true);
+    expect(
+      list.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(bar.querySelector('button')!.tabIndex).toBe(0);
+  });
+
+  it('has no footer unless one is passed', async () => {
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        placeholder="Pick"
+      />,
+    );
+    await open();
+    expect(footer()).toBeNull();
+  });
+
+  it('Enter on a footer button presses it and picks nothing', async () => {
+    const onValueChange = vi.fn();
+    const onAdd = vi.fn();
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={onValueChange}
+        placeholder="Pick"
+        footer={
+          <button type="button" onClick={onAdd}>
+            Add prompt
+          </button>
+        }
+      />,
+    );
+    await open();
+    const button = footer()!.querySelector('button')!;
+    await act(async () => {
+      button.focus();
+      const event = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      });
+      button.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    });
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it('a render-function footer gets close(), which closes the popover', async () => {
+    const onOpenChange = vi.fn();
+    const onAdd = vi.fn();
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        onOpenChange={onOpenChange}
+        placeholder="Pick"
+        footer={({ close }) => (
+          <button
+            type="button"
+            onClick={() => {
+              close();
+              onAdd();
+            }}
+          >
+            Add prompt
+          </button>
+        )}
+      />,
+    );
+    await open();
+    await act(async () => footer()!.querySelector('button')!.click());
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]'),
+    ).toBeNull();
+  });
+
+  it('takes PickerFooter: following its link navigates and closes the picker', async () => {
+    const onAdd = vi.fn();
+    await render(
+      <MemoryRouter initialEntries={['/agents/new']}>
+        <Routes>
+          <Route
+            path="/agents/new"
+            element={
+              <Combobox
+                options={options}
+                value={null}
+                onValueChange={() => undefined}
+                placeholder="Pick"
+                footer={({ close }) => (
+                  <PickerFooter
+                    to="/settings/prompts"
+                    linkLabel="Go to Prompts"
+                    onNavigate={close}
+                    actionLabel="Add prompt"
+                    onAction={() => {
+                      close();
+                      onAdd();
+                    }}
+                  />
+                )}
+              />
+            }
+          />
+          <Route path="/settings/prompts" element={<p>Prompts page</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await open();
+    const link = footer()!.querySelector('a')!;
+    expect(link.getAttribute('href')).toBe('/settings/prompts');
+    await act(async () => link.click());
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain('Prompts page');
+  });
+});
+
+describe('Combobox picker chrome', () => {
+  const prompts: ComboboxOption[] = [
+    {
+      value: 'default',
+      label: 'default',
+      description: 'Answers from your documents and cites them.',
+    },
+    { value: 'strict', label: 'strict', description: 'Only your documents.' },
+    { value: 'empty', label: 'Empty prompt' },
+  ];
+
+  const typeSearch = async (text: string) => {
+    const input = document.body.querySelector<HTMLInputElement>(
+      '[data-slot="command-input"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, text);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+
+  it('has no title, filters or lines unless asked', async () => {
+    await render(
+      <Combobox
+        options={options}
+        value="po"
+        onValueChange={() => undefined}
+        placeholder="Pick"
+      />,
+    );
+    await open();
+    const content = document.body.querySelector<HTMLElement>(
+      '[data-slot="popover-content"]',
+    )!;
+    expect(content.querySelector('h3')).toBeNull();
+    expect(content.querySelector('[data-slot="combobox-filters"]')).toBeNull();
+    expect(
+      content.querySelector('[data-slot="combobox-description"]'),
+    ).toBeNull();
+    expect(content.className).not.toContain('flex-col');
+  });
+
+  it('draws a title over the search, as the multi-pick pickers do', async () => {
+    await render(
+      <Combobox
+        options={prompts}
+        value={null}
+        onValueChange={() => undefined}
+        placeholder="Pick"
+        title="Prompt"
+      />,
+    );
+    await open();
+    const content = document.body.querySelector<HTMLElement>(
+      '[data-slot="popover-content"]',
+    )!;
+    const heading = content.querySelector('h3')!;
+    expect(heading.textContent).toBe('Prompt');
+    expect(heading.closest('[data-slot="section-header"]')).not.toBeNull();
+    const input = content.querySelector('[data-slot="command-input"]')!;
+    expect(
+      heading.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // The pickers' height: up to 600px, the list scrolling inside.
+    expect(content.className.split(' ')).toEqual(
+      expect.arrayContaining([
+        'flex',
+        'flex-col',
+        'overflow-hidden',
+        'max-h-[min(600px,var(--radix-popover-content-available-height))]',
+      ]),
+    );
+    const list = content.querySelector('[data-slot="command-list"]')!;
+    expect(list.className).toContain('max-h-none');
+  });
+
+  it('draws filters under the search, whose keys never reach the list', async () => {
+    const onValueChange = vi.fn();
+    const onFilter = vi.fn();
+    await render(
+      <Combobox
+        options={prompts}
+        value={null}
+        onValueChange={onValueChange}
+        placeholder="Pick"
+        filters={
+          <button type="button" onClick={onFilter}>
+            Included
+          </button>
+        }
+      />,
+    );
+    await open();
+    const strip = document.body.querySelector<HTMLElement>(
+      '[data-slot="combobox-filters"]',
+    )!;
+    expect(strip).not.toBeNull();
+    const input = document.body.querySelector('[data-slot="command-input"]')!;
+    expect(
+      input.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      strip.compareDocumentPosition(
+        document.body.querySelector('[data-slot="command-list"]')!,
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const button = strip.querySelector('button')!;
+    await act(async () => {
+      button.focus();
+      button.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(onValueChange).not.toHaveBeenCalled();
+    await act(async () => button.click());
+    expect(onFilter).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an option's description as a muted line, and searches it", async () => {
+    await render(
+      <Combobox
+        options={prompts}
+        value="strict"
+        onValueChange={() => undefined}
+        placeholder="Pick"
+      />,
+    );
+    await open();
+    const line = item('default').querySelector<HTMLElement>(
+      '[data-slot="combobox-description"]',
+    )!;
+    expect(line.textContent).toBe(
+      'Answers from your documents and cites them.',
+    );
+    expect(line.className.split(' ')).toEqual(
+      expect.arrayContaining(['text-muted-foreground', 'text-xs', 'truncate']),
+    );
+    // The trigger shows the label only.
+    expect(trigger().textContent).toBe('strict');
+    await typeSearch('answers');
+    expect(items()).toHaveLength(1);
+    expect(items()[0].dataset.value).toBe('default');
+  });
+
+  it('ends the picked row of a list with lines in a Check', async () => {
+    await render(
+      <Combobox
+        options={prompts}
+        value="strict"
+        onValueChange={() => undefined}
+        placeholder="Pick"
+      />,
+    );
+    await open();
+    const picked = item('strict');
+    expect(picked.dataset.checked).toBe('true');
+    const check = picked.querySelector('svg.lucide-check')!;
+    expect(check).not.toBeNull();
+    expect(check.getAttribute('class')).toContain('size-4');
+    expect(picked.lastElementChild).toBe(check);
+    expect(item('default').querySelector('svg')).toBeNull();
+    // A row without a line keeps the list's label weight.
+    expect(
+      item('Empty prompt').querySelector('[title="Empty prompt"]')?.className,
+    ).toContain('font-medium');
+  });
+
+  it('opens a bottom sheet with a handle and the title on a phone', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    const onValueChange = vi.fn();
+    await render(
+      <Combobox
+        options={prompts}
+        value={null}
+        onValueChange={onValueChange}
+        placeholder="Pick"
+        title="Prompt"
+        mobileSheet
+        footer={<button type="button">Add prompt</button>}
+      />,
+    );
+    await act(async () => trigger().click());
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]'),
+    ).toBeNull();
+    const sheet = document.body.querySelector<HTMLElement>(
+      '[data-slot="sheet-content"]',
+    )!;
+    expect(sheet.dataset.side).toBe('bottom');
+    expect(sheet.querySelector('[data-slot="sheet-handle"]')).not.toBeNull();
+    expect(sheet.querySelector('h3')?.textContent).toBe('Prompt');
+    expect(sheet.querySelector('[data-slot="combobox-footer"]')).not.toBeNull();
+    // The search isn't focused, so the phone keyboard stays down.
+    expect(document.activeElement?.getAttribute('data-slot')).not.toBe(
+      'command-input',
+    );
+    await act(async () => item('strict').click());
+    expect(onValueChange).toHaveBeenCalledWith('strict', prompts[1]);
+    expect(
+      document.body.querySelector('[data-slot="sheet-content"]'),
+    ).toBeNull();
+  });
+
+  it('stays a popover on a phone without mobileSheet', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        placeholder="Pick"
+      />,
+    );
+    await open();
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]'),
+    ).not.toBeNull();
+    expect(
+      document.body.querySelector('[data-slot="sheet-content"]'),
     ).toBeNull();
   });
 });

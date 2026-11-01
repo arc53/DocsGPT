@@ -108,6 +108,7 @@ type LauncherOptions = {
   onConnected?: () => void;
   onCancel?: () => void;
   onSynced?: (sourceIds: string[]) => void;
+  onNavigate?: (to: string) => void;
 };
 const launcher = vi.hoisted(() => ({
   options: undefined as LauncherOptions | undefined,
@@ -489,6 +490,25 @@ describe('Upload source-type tiles', () => {
     await act(async () => serviceTile('Google Drive').click());
     await act(async () => launcher.options?.onConnected?.());
     expect(close).toHaveBeenCalled();
+  });
+
+  // In a builder, a connect run's ways out (Open in Knowledge, Try it in
+  // chat) go through its leave guard.
+  it("hands a connect run the opener's way out", async () => {
+    const onNavigate = vi.fn();
+    await act(async () => {
+      root.render(
+        <Upload
+          receivedFile={[]}
+          setModalState={vi.fn()}
+          isOnboarding={false}
+          renderTab={null}
+          close={close}
+          onNavigate={onNavigate}
+        />,
+      );
+    });
+    expect(launcher.options?.onNavigate).toBe(onNavigate);
   });
 
   // Two rows at most: services with an account always, then the rest.

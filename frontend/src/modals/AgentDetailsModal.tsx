@@ -5,7 +5,9 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import ApiWriteAllowlist from '../agents/ApiWriteAllowlist';
+import ApiWriteAllowlist, {
+  type GetSavedConfig,
+} from '../agents/ApiWriteAllowlist';
 import { Agent, type AgentConfig } from '../agents/types';
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
@@ -40,10 +42,10 @@ type AgentDetailsModalProps = {
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   onKeyRegenerated?: (key: string) => void;
-  /** The agent's saved config after its API-key write allowlist changed. */
-  onConfigChange?: (config: AgentConfig) => void;
+  /** The agent's saved config and new `updated_at` after its API-key write allowlist changed. */
+  onConfigChange?: (config: AgentConfig, updatedAt?: string) => void;
   /** The agent's last saved config, which an allowlist change saves onto. */
-  getSavedConfig?: () => AgentConfig | undefined;
+  getSavedConfig?: GetSavedConfig;
   /** Open with the API write allowlist unfolded (sent here to allow changes). */
   openApiWrites?: boolean;
 };

@@ -133,10 +133,9 @@
     "label": "Settings",
     "general": {
       "label": "General",
-      "subtitle": "Choose how DocsGPT looks, which language it uses, and the prompt your chats use.",
+      "subtitle": "Choose how DocsGPT looks and which language it uses.",
       "sections": {
         "appearance": "Appearance",
-        "chat": "Chat",
         "dangerZone": "Danger zone"
       },
       "theme": "Theme",
@@ -146,8 +145,6 @@
       "light": "Light",
       "dark": "Dark",
       "chunks": "Chunks processed per query",
-      "prompt": "Active prompt",
-      "promptDescription": "The system prompt for chats without an agent. Agents use their own.",
       "deleteAllLabel": "Delete all conversations",
       "deleteAllDescription": "Permanently deletes every conversation in your account. This can't be undone.",
       "addNew": "Add New",
@@ -157,18 +154,7 @@
       "medium": "Medium",
       "high": "High",
       "unlimited": "Unlimited",
-      "default": "Default",
-      "add": "Add",
-      "promptActions": {
-        "select": "Select a prompt",
-        "edit": "Edit prompt",
-        "view": "View prompt",
-        "duplicate": "Duplicate prompt",
-        "delete": "Delete prompt",
-        "deleteFailed": "Couldn't delete this prompt.",
-        "saveFailed": "Couldn't save this prompt.",
-        "editConflict": "Someone else changed this prompt. Reopen it to see their version."
-      }
+      "default": "Default"
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
@@ -179,7 +165,7 @@
       "type": "Type",
       "tokenUsage": "Token Usage",
       "noData": "No knowledge yet",
-      "searchPlaceholder": "Search...",
+      "searchPlaceholder": "Search knowledge…",
       "addNew": "Add New",
       "addSource": "Add knowledge",
       "addChunk": "Add chunk",
@@ -695,7 +681,22 @@
       "viaConnectionFiles_other": "via {{name}} · {{files}} files",
       "item": {
         "tokens": "{{tokens}} tokens"
-      }
+      },
+      "tokenCount": "{{tokens}} tokens",
+      "kinds": {
+        "all": "All",
+        "files": "Files",
+        "websites": "Websites",
+        "synced": "Synced",
+        "wikis": "Wikis",
+        "shared": "Shared"
+      },
+      "kindFilterLabel": "Filter by kind",
+      "needsAttention": "Needs attention",
+      "allKnowledge": "All knowledge",
+      "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this source. Its files and chunks are deleted too. This can't be undone.",
+      "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this source. Its files and chunks are deleted too. This can't be undone.",
+      "noKnowledgeFound": "No knowledge found"
     },
     "analytics": {
       "label": "Analytics",
@@ -1455,8 +1456,8 @@
     },
     "tools": {
       "label": "Tools",
-      "subtitle": "Actions your agents can take. Built-in tools live here. Tools from a connected service are grouped under that service.",
-      "searchPlaceholder": "Search tools...",
+      "subtitle": "Actions your agents can take. Included tools come with DocsGPT. Tools from a connected service are grouped under that service.",
+      "searchPlaceholder": "Search tools…",
       "addTool": "Add tool",
       "noToolsFound": "No tools found",
       "selectToolSetup": "Add a tool",
@@ -1596,13 +1597,67 @@
       "triggerLabel_one": "Tools, {{formatted}} selected",
       "triggerLabel_other": "Tools, {{formatted}} selected",
       "manageInConnectors": "Manage in Connectors",
-      "defaultBadge": "Default",
       "noToolsYet": "No tools yet",
       "connectService": "Connect a service",
       "filledBy": "Filled in by",
       "loadError": "Could not load your tools.",
       "deleteConsequence": "Its settings and actions are deleted too. This can't be undone.",
-      "deleteActionConsequence": "It's removed when you save the tool."
+      "deleteActionConsequence": "It's removed when you save the tool.",
+      "groupIncluded": "Included",
+      "groupAdded": "Added",
+      "filters": {
+        "all": "All"
+      },
+      "deleteUsedBy_one": "Used by {{formatted}} agent, which loses this tool. Its settings and actions are deleted too. This can't be undone.",
+      "deleteUsedBy_other": "Used by {{formatted}} agents, which lose this tool. Its settings and actions are deleted too. This can't be undone.",
+      "groupServices": "Services",
+      "kindFilterLabel": "Filter by kind"
+    },
+    "prompts": {
+      "label": "Prompts",
+      "subtitle": "System prompts tell the model how to answer. The one you pick is used in chats without an agent; agents choose their own.",
+      "searchPlaceholder": "Search prompts…",
+      "addPrompt": "Add prompt",
+      "manage": "Go to Prompts",
+      "select": "Select a prompt",
+      "filters": {
+        "all": "All"
+      },
+      "sections": {
+        "included": "Included",
+        "yours": "Yours",
+        "shared": "Shared with team"
+      },
+      "presets": {
+        "default": "Answers from your documents and cites them. When they don't cover the question, it says so, then answers from general knowledge.",
+        "creative": "Like default, plus ideas, examples and imaginative angles, with the facts kept accurate.",
+        "strict": "Answers only from your documents, tools and the chat. Says what is missing instead of guessing."
+      },
+      "chatPromptLabel": "Prompt for chats without an agent",
+      "useInChats": "Use {{name}} in chats",
+      "chatPromptFailed": "Couldn't change the prompt your chats use.",
+      "actions": "Actions for {{name}}",
+      "edit": "Edit",
+      "view": "View",
+      "duplicate": "Duplicate",
+      "shareWithTeam": "Share with team",
+      "delete": "Delete",
+      "deleteUsedBy_one": "Used by {{formatted}} agent, which goes back to the default prompt. This can't be undone.",
+      "deleteUsedBy_other": "Used by {{formatted}} agents, which go back to the default prompt. This can't be undone.",
+      "deleteUsedByInChats_one": "Used by {{formatted}} agent and your chats, which go back to the default prompt. This can't be undone.",
+      "deleteUsedByInChats_other": "Used by {{formatted}} agents and your chats, which go back to the default prompt. This can't be undone.",
+      "deleteInChats": "Your chats use it and go back to the default prompt. This can't be undone.",
+      "deleteFailed": "Couldn't delete this prompt.",
+      "saveFailed": "Couldn't save this prompt.",
+      "editConflict": "Someone else changed this prompt. Reopen it to see their version.",
+      "loadError": "Couldn't load your prompts.",
+      "noPromptsFound": "No prompts found",
+      "kinds": {
+        "shared": "Shared"
+      },
+      "kindFilterLabel": "Filter by kind",
+      "chatPromptOn": "Used in chats without an agent",
+      "chatPromptOff": "Use in chats without an agent"
     },
     "devices": {
       "label": "Devices",
@@ -1658,7 +1713,8 @@
       "auditShow": "Show recent commands",
       "auditHide": "Hide recent commands",
       "seen": "seen {{time}}",
-      "revokeConsequence": "The CLI on this device is disconnected and the pairing removed. Pair it again to reconnect."
+      "revokeConsequence": "The CLI on this device is disconnected and the pairing removed. Pair it again to reconnect.",
+      "loadError": "Couldn't load this device."
     },
     "customModels": {
       "label": "Custom Models",
@@ -2105,9 +2161,6 @@
         "ownerWarningNoAccount": "Team members will act as your {{name}} account."
       },
       "createFailed": "Could not add the connector. Try again.",
-      "capabilityFilter": {
-        "clear": "Show all connectors"
-      },
       "capabilityPlain": {
         "sync": "Syncs into Knowledge",
         "read": "Looks things up",
@@ -2167,26 +2220,56 @@
         "failed": "Could not rename the account. Try again."
       },
       "browseAll": "Browse all connectors",
-      "filters": {
-        "all": "All",
-        "connected": "Connected",
-        "disconnected": "Disconnected"
-      },
-      "filterLabel": "Filter connectors",
-      "capabilityChip": {
-        "sync": "Syncs into Knowledge",
-        "tools": "Gives agents tools"
-      },
       "injection": {
         "flagged": "Possible prompt injection",
         "notice_one": "The description of {{formatted}} action reads like instructions planted for the AI, a possible prompt injection. Check it under Customize before you allow it.",
         "notice_other": "The descriptions of {{formatted}} actions read like instructions planted for the AI, a possible prompt injection. Check them under Customize before you allow them."
       },
       "syncContent": "Sync content",
-      "openInKnowledge": "Open in Knowledge"
+      "openInKnowledge": "Open in Knowledge",
+      "capabilityShort": {
+        "sync": "Syncs",
+        "read": "Looks up",
+        "write": "Acts"
+      },
+      "capabilityFilters": {
+        "all": "All",
+        "sync": "Knowledge",
+        "tools": "Tools"
+      },
+      "capabilityFilterLabel": "Filter by what it does",
+      "statusFilters": {
+        "all": "Any status",
+        "reconnect": "Needs sign-in",
+        "connected": "Connected",
+        "available": "Not connected"
+      },
+      "statusFilterLabel": "Filter by status",
+      "sections": {
+        "reconnect": "Needs sign-in",
+        "connected": "Connected",
+        "available": "Available"
+      },
+      "addCustomDescription": "Connect a server or API that isn't in the catalog."
     },
     "insights": {
       "label": "Insights"
+    },
+    "usage": {
+      "agents_one": "Used by {{formatted}} agent",
+      "agents_other": "Used by {{formatted}} agents",
+      "others_one": "and {{formatted}} other on your teams",
+      "others_other": "and {{formatted}} others on your teams",
+      "agentsShort_one": "{{formatted}} agent",
+      "agentsShort_other": "{{formatted}} agents",
+      "filters": {
+        "all": "Any use",
+        "inUse": "In use",
+        "unused": "Unused"
+      },
+      "filterLabel": "Filter by use",
+      "inChatsOn": "On in my chats",
+      "inChatsOff": "Off in my chats"
     }
   },
   "modals": {
@@ -2407,8 +2490,7 @@
       "learnAboutPrompts": "Learn about Prompts →",
       "publicPromptEditDisabled": "Public prompts cannot be edited",
       "promptTypePublic": "public",
-      "promptTypePrivate": "private",
-      "delete": "Delete"
+      "promptTypePrivate": "private"
     },
     "chunk": {
       "add": "Add chunk",
@@ -2552,11 +2634,9 @@
     },
     "sources": {
       "title": "Sources",
-      "text": "Choose knowledge",
       "link": "Source link",
       "view_more_one": "{{count}} more source",
       "view_more_other": "{{count}} more sources",
-      "noSourcesAvailable": "No knowledge yet",
       "selectedCount": "{{count}} selected",
       "triggerLabel_one": "Knowledge, {{formatted}} selected",
       "triggerLabel_other": "Knowledge, {{formatted}} selected",
@@ -2982,22 +3062,11 @@
         "historyLimitDefault": "Summarized near the context limit"
       },
       "sourcePopup": {
-        "title": "Select knowledge",
-        "searchPlaceholder": "Search knowledge...",
-        "noOptionsMessage": "No knowledge yet",
-        "groupOwn": "Your sources",
-        "groupTeam": "Shared with team",
+        "searchPlaceholder": "Search knowledge…",
         "noSourceHint": "Optional. Without knowledge the agent answers from the model and its tools only."
       },
       "toolsPopup": {
-        "title": "Select Tools",
-        "searchPlaceholder": "Search tools...",
-        "noOptionsMessage": "No tools available",
-        "groupBuiltin": "Built-in",
-        "groupDefault": "Built-in",
         "groupCustom": "Custom",
-        "groupConnection": "{{name}} · {{account}}",
-        "groupAttached": "On this agent",
         "attachedHint": "Added by someone else. You can remove it."
       },
       "modelsPopup": {
@@ -3071,7 +3140,8 @@
       "externalKb": "External KB",
       "errors": {
         "publishFailed": "Could not publish the agent. Please try again.",
-        "saveDraftFailed": "Could not save the draft. Please try again."
+        "saveDraftFailed": "Could not save the draft. Please try again.",
+        "staleWrite": "Someone else saved this agent after you opened it. Your changes are still here: copy what you need, reload the page, and apply them again."
       },
       "guardrails": {
         "enable": "Enable guardrails",
@@ -3288,6 +3358,11 @@
           "description": "It can overlap, so it has results of its own. They disappear from Insights and Logs, and adding it again starts from scratch.",
           "submit": "Remove"
         }
+      },
+      "leave": {
+        "title": "Leave without saving?",
+        "description": "The changes you made here will be lost.",
+        "submit": "Leave"
       }
     },
     "logs": {
@@ -3566,9 +3641,7 @@
       },
       "builder": {
         "deleteFailed": "Failed to delete workflow agent",
-        "updateWorkflowFailed": "Failed to update workflow",
         "updateAgentFailed": "Failed to update agent",
-        "createWorkflowFailed": "Failed to create workflow",
         "createAgentFailed": "Failed to create agent",
         "saveFailed": "Failed to save workflow",
         "defaultDescription": "Workflow agent: {{name}}",
@@ -3674,7 +3747,9 @@
         "loopOnErrorCollect": "Keep the error in its place",
         "loopOutputHint": "The list of results, one per item.",
         "loopResultVariable": "Item result",
-        "loopResultVariableHint": "The variable whose value is each item's result. Empty uses the output of the last node that ran."
+        "loopResultVariableHint": "The variable whose value is each item's result. Empty uses the output of the last node that ran.",
+        "loadFailedTitle": "Unable to load workflow",
+        "loadFailedDescription": "Nothing was changed. Retry, or come back in a moment."
       },
       "validation": {
         "nameRequired": "Workflow name is required",
@@ -3881,7 +3956,8 @@
     },
     "multiSelect": {
       "more_one": "+{{count}} more",
-      "more_other": "+{{count}} more"
+      "more_other": "+{{count}} more",
+      "selectedGroup": "Selected"
     }
   },
   "pageNotFound": {

@@ -19,7 +19,6 @@ class _WorkflowNodeMixin:
         model_id: str,
         api_key: str,
         tool_ids: Optional[List[str]] = None,
-        tool_principals: Optional[Dict[str, str]] = None,
         tool_owner: Optional[str] = None,
         tool_holder: Optional[dict] = None,
         **kwargs,
@@ -38,10 +37,9 @@ class _WorkflowNodeMixin:
         # alike, and an empty list means the node's LLM gets no tools.
         self.tool_executor.allowed_tool_ids = [str(t) for t in (tool_ids or [])]
         # The node's tools are the workflow owner's whoever runs it; tools the
-        # owner can't use resolve as the editor who attached them.
+        # owner can't use resolve as the editor who attached them, checked
+        # live against the workflow row's sponsors.
         self.tool_executor.tool_owner = tool_owner
-        self.tool_executor.tool_principals = dict(tool_principals or {})
-        # The workflow row, so a dropped tool is logged with why.
         self.tool_executor.tool_holder = tool_holder
 
 

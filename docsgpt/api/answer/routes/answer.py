@@ -19,6 +19,7 @@ from docsgpt.api.answer.services.continuation_service import (
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
 from docsgpt.api.answer.services.stream_processor import (
     StreamProcessor,
+    UnfinishedWorkflowError,
     flush_trace_after_request,
 )
 from docsgpt.error import bounded_error_text, user_facing_error
@@ -207,6 +208,9 @@ class AnswerResource(Resource, BaseAnswerResource):
             if public.params:
                 body["params"] = public.params
             return make_response(body, 400)
+        except UnfinishedWorkflowError as e:
+            # A draft workflow agent whose stored graph isn't finished. Nothing ran.
+            return make_response({"error": e.message, "code": e.code}, 400)
         except ContinuationNotPendingError:
             # A decision for a pause that is over (decided, moved past by a new
             # turn, or expired). Nothing ran.
