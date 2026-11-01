@@ -118,9 +118,17 @@ class TestEverySourceFailed:
     def test_note_does_not_claim_nothing_was_found(self):
         note = ClassicAgent.SEARCH_FAILED_NOTE
 
-        assert "temporary" in note
         assert "could not be searched" in note
+        assert "Do not say that nothing relevant was found" in note
         assert "general knowledge" in note
+
+    @pytest.mark.parametrize("name", ["SEARCH_FAILED_NOTE", "PARTIAL_SEARCH_NOTE", "UNSEARCHED_SOURCES_NOTE"])
+    def test_no_note_promises_the_failure_is_temporary(self, name):
+        # A missing index or an embedding dimension mismatch fails every time.
+        note = getattr(ClassicAgent, name)
+
+        assert "temporary" not in note
+        assert "right now" not in note
 
 
 @pytest.mark.unit

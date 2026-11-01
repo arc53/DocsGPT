@@ -1442,31 +1442,32 @@ class BaseAgent(ABC):
 
     # The search itself failed (a store, the query embedding, a missing
     # worker), so the sources' content was never looked at. "Nothing was
-    # found" would be a false claim about the documents.
+    # found" would be a false claim about the documents. The failure is not
+    # called temporary: a missing index or an embedding dimension mismatch
+    # fails on every search until someone fixes it.
     SEARCH_FAILED_NOTE = (
-        "The attached sources could not be searched for this question because "
-        "of a temporary problem, so none of their content was looked at. Tell "
-        "the user the sources could not be searched right now. Do not say that "
-        "nothing relevant was found, and do not assume the sources are empty or "
-        "absent. Only answer from general knowledge if you make clear that is "
-        "what you are doing."
+        "The attached sources could not be searched for this question, so "
+        "none of their content was looked at. Tell the user the sources could "
+        "not be searched. Do not say that nothing relevant was found, and do "
+        "not assume the sources are empty or absent. Only answer from general "
+        "knowledge if you make clear that is what you are doing."
     )
 
     PARTIAL_SEARCH_NOTE = (
-        "Some of the attached sources could not be searched for this question "
-        "because of a temporary problem; the others were searched and returned "
-        "no matching passages. Tell the user which sources could not be "
-        "searched right now and that nothing relevant was found in the rest. "
-        "Do not assume any source is empty or absent, and only answer from "
-        "general knowledge if you make clear that is what you are doing."
+        "Some of the attached sources could not be searched for this question; "
+        "the others were searched and returned no matching passages. Tell the "
+        "user which sources could not be searched and that nothing relevant "
+        "was found in the rest. Do not assume any source is empty or absent, "
+        "and only answer from general knowledge if you make clear that is what "
+        "you are doing."
     )
 
     # Follows the documents' guard when some sources returned passages.
     UNSEARCHED_SOURCES_NOTE = (
-        "Some attached sources could not be searched for this question because "
-        "of a temporary problem, so the documents above come only from the "
-        "others. If the answer may be in the sources that were not searched, "
-        "tell the user they could not be searched right now."
+        "Some attached sources could not be searched for this question, so the "
+        "documents above come only from the others. If the answer may be in "
+        "the sources that were not searched, tell the user they could not be "
+        "searched."
     )
 
     DOCUMENT_GUARD = (

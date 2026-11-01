@@ -207,12 +207,12 @@ class InternalSearchTool(Tool):
             # Every source failed: nothing was looked at, so "no documents
             # found" would be a false claim about them.
             return (
-                "Search failed: the sources could not be searched right now (a temporary problem), "
+                "Search failed: the sources could not be searched, "
                 "so this is not a sign that nothing matches." + _named("Could not be searched", failed, names)
             )
         if not docs and failed:
             return (
-                "No documents found matching your query, but not every source could be searched right now."
+                "No documents found matching your query, but not every source could be searched."
                 + _named("Could not be searched", failed, names)
                 + _named("Searched with no match", outcome.answered, names)
             )
@@ -254,7 +254,7 @@ class InternalSearchTool(Tool):
         result = "\n\n---\n\n".join(formatted)
         if failed:
             result += (
-                "\n\n---\n\nSome sources could not be searched right now (a temporary problem); "
+                "\n\n---\n\nSome sources could not be searched; "
                 "these results come only from the others." + _named("Could not be searched", failed, names)
             )
         return result

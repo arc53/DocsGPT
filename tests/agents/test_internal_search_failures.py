@@ -56,3 +56,14 @@ class TestSearchToolFailures:
         result = _search([], SearchOutcome.of(["id-1"]))
 
         assert result == "No documents found matching your query."
+
+    @pytest.mark.parametrize(
+        "docs, failed",
+        [([], ["id-1", "id-2"]), ([], ["id-1"]), ([{"text": "the rebate is 4250", "source": "s"}], ["id-1"])],
+    )
+    def test_a_failure_is_not_promised_to_be_temporary(self, docs, failed):
+        # A missing index or an embedding dimension mismatch fails every time.
+        result = _search(docs, SearchOutcome.of(["id-1", "id-2"], failed))
+
+        assert "temporary" not in result
+        assert "right now" not in result
