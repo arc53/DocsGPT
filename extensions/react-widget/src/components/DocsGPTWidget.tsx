@@ -697,6 +697,9 @@ const Conversation = styled.div<{ $hidden?: boolean }>`
   padding: 16px;
   text-align: left;
   overflow-y: auto;
+  /* Tables and code scroll in their own frames; nothing else may scroll the
+     conversation sideways. */
+  overflow-x: hidden;
   /* Scrolling past either end doesn't carry on into the host page. */
   overscroll-behavior: contain;
   display: ${(props) => (props.$hidden ? 'none' : 'flex')};
