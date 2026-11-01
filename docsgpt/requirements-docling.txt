@@ -908,7 +908,7 @@ safetensors==0.8.0
     #   transformers
 scipy==1.18.1
     # via docling-slim
-semchunk==3.2.5
+semchunk==4.1.1
     # via docling-core
 setuptools==84.2.1
     # via torch
