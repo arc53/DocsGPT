@@ -144,8 +144,6 @@
       },
       "taskModel": "タスクモデル",
       "taskModelDescription": "フォームの下書き、ナレッジグラフの構築、モニターのチェックを行います。チャットではエージェントのモデルを使用します。",
-      "taskModelInstanceDefault": "インスタンスのデフォルト（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "インスタンスのデフォルト",
       "taskModelSaveFailed": "タスクモデルを保存できませんでした。もう一度お試しください。",
       "theme": "テーマ",
       "themeDescription": "ライトまたはダークのインターフェース。",

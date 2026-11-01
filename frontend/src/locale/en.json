@@ -145,8 +145,6 @@
       },
       "taskModel": "Task model",
       "taskModelDescription": "Drafts forms, builds knowledge graphs and checks monitors. Chats use the agent's model.",
-      "taskModelInstanceDefault": "Instance default ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Instance default",
       "taskModelSaveFailed": "Couldn't save the task model. Try again.",
       "theme": "Theme",
       "themeDescription": "Light or dark interface.",

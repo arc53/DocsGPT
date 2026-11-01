@@ -88,7 +88,7 @@ Theme and language are saved in your browser, so set them again on another brows
 
 The task model runs the work DocsGPT does for you outside a chat: drafting an agent, a prompt or Insights topics with [Draft with DocsGPT](/Agents/draft-with-docsgpt), extracting the knowledge graph of a [GraphRAG](/Sources/GraphRAG) source, and judging whether a [monitor](/Tools/monitors)'s condition is met. Chats keep the agent's model.
 
-The list offers **Instance default**, named after the model it stands for, then the built-in models and your own [custom models](/Models/custom-models). A custom model runs with your own key and endpoint. Your choice applies to your own drafts, to graph builds of the sources you own and to your monitors.
+The list holds the built-in models and your own [custom models](/Models/custom-models). Until you pick one, it shows the model that runs anyway (the order is below). A custom model runs with your own key and endpoint. Your choice applies to your own drafts, to graph builds of the sources you own and to your monitors.
 
 Without a choice of yours, DocsGPT uses, in order: the model an admin set under **Admin → Defaults**, **Models**; the `TASK_MODEL_ID` setting; the instance's default model. A choice that stops working (the model leaves the catalog, or you delete or turn off your custom model) is skipped the same way, with no error. A source's own extraction model and the `GRAPHRAG_EXTRACTION_MODEL` and `MONITOR_JUDGE_MODEL` settings still come first for their task.
 

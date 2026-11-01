@@ -20,14 +20,9 @@ import type { Model } from '../models/types';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 
-/** The Select value for "no pick: use the instance's task model". */
-export const INSTANCE_DEFAULT = '__instance__';
-
 type Loaded = {
-  /** The caller's pick, or INSTANCE_DEFAULT. */
+  /** The caller's pick, else what runs without one ('' when unknown). */
   value: string;
-  /** What runs without a pick: the admin's, TASK_MODEL_ID or the default. */
-  instanceModelId: string | null;
   models: Model[];
 };
 
@@ -44,7 +39,7 @@ export default function TaskModelSection() {
   const [loaded, setLoaded] = React.useState<Loaded | null>(null);
   // Only the latest save may roll the pick back, to the last one saved.
   const saveSeq = React.useRef(0);
-  const savedValue = React.useRef(INSTANCE_DEFAULT);
+  const savedValue = React.useRef('');
 
   React.useEffect(() => {
     let cancelled = false;
@@ -59,17 +54,17 @@ export default function TaskModelSection() {
         // A server from before the task model sends no such field.
         if (cancelled || !prefs || !('instance_task_model_id' in prefs)) return;
         const models = modelService.transformModels(data?.models || []);
-        const picked =
-          typeof prefs.task_model_id === 'string' &&
-          models.some((m) => m.id === prefs.task_model_id)
-            ? prefs.task_model_id
-            : INSTANCE_DEFAULT;
+        const known = (modelId: unknown): modelId is string =>
+          typeof modelId === 'string' && models.some((m) => m.id === modelId);
+        // With no pick, the model that runs anyway (the admin's,
+        // TASK_MODEL_ID or the default) shows as selected.
+        const picked = known(prefs.task_model_id)
+          ? prefs.task_model_id
+          : known(prefs.instance_task_model_id)
+            ? prefs.instance_task_model_id
+            : '';
         savedValue.current = picked;
-        setLoaded({
-          value: picked,
-          instanceModelId: prefs.instance_task_model_id ?? null,
-          models,
-        });
+        setLoaded({ value: picked, models });
       })
       .catch(() => undefined);
     return () => {
@@ -81,12 +76,6 @@ export default function TaskModelSection() {
 
   const builtin = loaded.models.filter((m) => m.source !== 'user');
   const own = loaded.models.filter((m) => m.source === 'user');
-  const instanceName = loaded.models.find(
-    (m) => m.id === loaded.instanceModelId,
-  )?.display_name;
-  const instanceLabel = instanceName
-    ? t('settings.general.taskModelInstanceDefault', { model: instanceName })
-    : t('settings.general.taskModelInstanceDefaultUnnamed');
 
   const change = async (next: string) => {
     if (next === loaded.value) return;
@@ -95,7 +84,7 @@ export default function TaskModelSection() {
     let saved = false;
     try {
       const response = await userService.updatePreferences(
-        { task_model_id: next === INSTANCE_DEFAULT ? null : next },
+        { task_model_id: next },
         token,
       );
       saved = !!response?.ok;
@@ -137,7 +126,6 @@ export default function TaskModelSection() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={INSTANCE_DEFAULT}>{instanceLabel}</SelectItem>
               {builtin.length > 0 && (
                 <SelectGroup>
                   <SelectLabel>

@@ -82,7 +82,7 @@ vi.mock('../components/ui/select', () => ({
   },
 }));
 
-import TaskModelSection, { INSTANCE_DEFAULT } from './TaskModelSection';
+import TaskModelSection from './TaskModelSection';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -127,7 +127,7 @@ afterEach(async () => {
 });
 
 describe('Task model row', () => {
-  it('offers the instance default by name, then built-in and own models', async () => {
+  it('lists built-in then own models, the default picked when none is stored', async () => {
     await render({ task_model_id: null, instance_task_model_id: 'gpt-b' });
     expect(container.querySelector('h2')?.textContent).toBe(
       'settings.general.sections.models',
@@ -136,16 +136,11 @@ describe('Task model row', () => {
     expect(container.textContent).toContain(
       'settings.general.taskModelDescription',
     );
-    expect(select()?.dataset.value).toBe(INSTANCE_DEFAULT);
+    expect(select()?.dataset.value).toBe('gpt-b');
     const items = Array.from(
       container.querySelectorAll<HTMLButtonElement>('[data-item]'),
     ).map((b) => b.textContent);
-    expect(items).toEqual([
-      'settings.general.taskModelInstanceDefault(GPT B)',
-      'GPT A',
-      'GPT B',
-      'My Llama',
-    ]);
+    expect(items).toEqual(['GPT A', 'GPT B', 'My Llama']);
     const labels = Array.from(
       container.querySelectorAll('[data-testid="group-label"]'),
     ).map((l) => l.textContent);
@@ -160,7 +155,7 @@ describe('Task model row', () => {
     expect(select()?.dataset.value).toBe('mine');
   });
 
-  it('saves a pick, and null for the instance default', async () => {
+  it('saves every pick, the default model included', async () => {
     updatePreferences.mockResolvedValue(json({ success: true }));
     await render({ task_model_id: null, instance_task_model_id: 'gpt-b' });
     await act(async () => item('gpt-a').click());
@@ -169,12 +164,12 @@ describe('Task model row', () => {
       'token',
     );
     expect(select()?.dataset.value).toBe('gpt-a');
-    await act(async () => item(INSTANCE_DEFAULT).click());
+    await act(async () => item('gpt-b').click());
     expect(updatePreferences).toHaveBeenLastCalledWith(
-      { task_model_id: null },
+      { task_model_id: 'gpt-b' },
       'token',
     );
-    expect(select()?.dataset.value).toBe(INSTANCE_DEFAULT);
+    expect(select()?.dataset.value).toBe('gpt-b');
     expect(dispatch).not.toHaveBeenCalled();
   });
 
@@ -193,11 +188,9 @@ describe('Task model row', () => {
     );
   });
 
-  it('names no model when the instance default is unknown', async () => {
+  it('picks nothing when no default model is known', async () => {
     await render({ task_model_id: null, instance_task_model_id: null });
-    expect(item(INSTANCE_DEFAULT).textContent).toBe(
-      'settings.general.taskModelInstanceDefaultUnnamed',
-    );
+    expect(select()?.dataset.value).toBe('');
   });
 
   it('stays hidden on a server without the setting', async () => {

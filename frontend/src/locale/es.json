@@ -146,8 +146,6 @@
       },
       "taskModel": "Modelo de tareas",
       "taskModelDescription": "Redacta formularios, crea grafos de conocimiento y revisa monitores. Los chats usan el modelo del agente.",
-      "taskModelInstanceDefault": "Predeterminado de la instancia ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Predeterminado de la instancia",
       "taskModelSaveFailed": "No se pudo guardar el modelo de tareas. Inténtalo de nuevo.",
       "theme": "Tema",
       "themeDescription": "Interfaz clara u oscura.",

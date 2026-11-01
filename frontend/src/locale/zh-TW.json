@@ -144,8 +144,6 @@
       },
       "taskModel": "任務模型",
       "taskModelDescription": "用於草擬表單、建立知識圖譜和檢查監控。對話使用代理的模型。",
-      "taskModelInstanceDefault": "執行個體預設（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "執行個體預設",
       "taskModelSaveFailed": "無法儲存任務模型，請再試一次。",
       "theme": "主題",
       "themeDescription": "淺色或深色介面。",

@@ -144,8 +144,6 @@
       },
       "taskModel": "任务模型",
       "taskModelDescription": "用于起草表单、构建知识图谱和检查监控。对话使用智能体的模型。",
-      "taskModelInstanceDefault": "实例默认（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "实例默认",
       "taskModelSaveFailed": "无法保存任务模型，请重试。",
       "theme": "主题",
       "themeDescription": "浅色或深色界面。",
