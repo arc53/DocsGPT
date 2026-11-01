@@ -4,6 +4,7 @@ from docsgpt.api import api
 from docsgpt.api.answer.routes.answer import AnswerResource
 from docsgpt.api.answer.routes.base import answer_ns
 from docsgpt.api.answer.routes.search import SearchResource
+from docsgpt.api.answer.routes.starters import AgentStartersResource
 from docsgpt.api.answer.routes.stream import StreamResource
 
 
@@ -16,6 +17,7 @@ def init_answer_routes():
     api.add_resource(StreamResource, "/stream")
     api.add_resource(AnswerResource, "/api/answer")
     api.add_resource(SearchResource, "/api/search")
+    api.add_resource(AgentStartersResource, "/api/agent_starters")
 
 
 init_answer_routes()

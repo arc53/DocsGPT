@@ -45,6 +45,18 @@
       ],
       "type": "object"
     },
+    "AgentStartersModel": {
+      "properties": {
+        "api_key": {
+          "description": "The agent's API key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_key"
+      ],
+      "type": "object"
+    },
     "AnswerModel": {
       "properties": {
         "active_docs": {
@@ -2536,6 +2548,40 @@
         ],
         "x-pat-scopes": [
           "agents:write"
+        ]
+      }
+    },
+    "/api/agent_starters": {
+      "post": {
+        "description": "List the starters (suggested first questions) of the agent an API key belongs to. Returns {\"starters\": [...]}, empty when the agent has none.\nReturns:\n    ``{\"starters\": [...]}`` with 200; 400 when ``api_key`` is missing\n    and 401 when it belongs to no agent.",
+        "operationId": "post_agent_starters_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AgentStartersModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's starters"
+          },
+          "400": {
+            "description": "api_key is missing"
+          },
+          "401": {
+            "description": "Invalid API key"
+          }
+        },
+        "summary": "Return the agent's starters",
+        "tags": [
+          "answer"
+        ],
+        "x-pat-scopes": [
+          "chat:run"
         ]
       }
     },
