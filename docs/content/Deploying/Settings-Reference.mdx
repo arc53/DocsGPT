@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-10-29
+lastUpdated: 2026-11-01
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -811,6 +811,12 @@ Concurrent per-source searches in one retrieval; the query is embedded once and 
 Type `bool`, default `true`.
 
 Kill-switch for per-source retrieval dispatch; False collapses to a single retriever.
+
+### `CHUNK_COMPRESSION_ENABLED`
+
+Type `bool`, default `false`.
+
+Enable post-retrieval extractive pruning of navigation and duplicate boilerplate from chunks.
 
 ### `GRAPHRAG_ENABLED`
 

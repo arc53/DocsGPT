@@ -463,12 +463,18 @@ class Dispatcher(BaseRetriever):
         context = self._context(query, retriever, group)
         context["selection_size"] = len(base_selection(docs))
         self.last_candidate_count += len(docs)
-        before = [(doc, doc.get("_base", True)) for doc in docs] if self._record_candidates else []
+        before = [(doc, dict(doc), doc.get("_base", True)) for doc in docs] if self._record_candidates else []
         docs = self._run_stages(docs, context, self._group_stages(group))
         if before:
             scored = {id(doc): p for doc, p in context.get("scored") or []}
             self.last_candidates.extend(
-                {"doc": doc, "base": bool(base), "relevance": scored.get(id(doc))} for doc, base in before
+                {
+                    "doc": doc,
+                    "snapshot": snapshot,
+                    "base": bool(base),
+                    "relevance": scored.get(id(doc)),
+                }
+                for doc, snapshot, base in before
             )
         top = context.get("top_relevance")
         if top is not None and (self.last_top_relevance is None or top > self.last_top_relevance):
@@ -525,19 +531,66 @@ class Dispatcher(BaseRetriever):
         return merged
 
 
+class CompressingRetriever(BaseRetriever):
+    """Delegating retriever that applies post-retrieval boilerplate pruning.
+
+    Handles queries passed both positionally (e.g. from headless_runner and internal_search)
+    and by keyword argument, guaranteeing exact document ordering and identity while
+    stripping navigation and duplicate boilerplate.
+    """
+
+    def __init__(self, inner: BaseRetriever):
+        self._inner = inner
+
+    @property
+    def __class__(self):
+        return self._inner.__class__
+
+    def search(self, *args, **kwargs) -> List[Dict[str, Any]]:
+        query = args[0] if args else kwargs.get("query", "")
+        docs = self._inner.search(*args, **kwargs)
+        from docsgpt.retriever.stages.boilerplate_pruning import prune_boilerplate
+
+        return prune_boilerplate(docs, query=query)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+class CompressingDispatcher(CompressingRetriever, Dispatcher):
+    """Compressing retriever that is statically and dynamically a Dispatcher.
+
+    Preserves Dispatcher identity and capabilities for callers like InternalSearchTool
+    while applying post-retrieval boilerplate compression.
+    """
+
+    pass
+
+
 def build_dispatcher(create_classic: Callable[[], BaseRetriever], **kwargs):
     """Build a Dispatcher, or fall back to the legacy single retriever.
 
     Honours ``settings.PER_SOURCE_RETRIEVAL_ENABLED``: when False, returns the
     legacy single ClassicRAG built by ``create_classic`` (the kill-switch).
 
+    When ``settings.CHUNK_COMPRESSION_ENABLED`` is True, wraps the retriever in
+    ``CompressingDispatcher`` (or ``CompressingRetriever``) to prune boilerplate
+    across the final returned documents while preserving dispatcher capabilities.
+
     Args:
         create_classic: Zero-arg factory returning the legacy single retriever.
         **kwargs: Dispatcher constructor kwargs (including ``sources``).
 
     Returns:
-        A ``Dispatcher`` or the legacy retriever from ``create_classic``.
+        A ``Dispatcher``, legacy retriever, or a compressed delegating retriever.
     """
     if not settings.PER_SOURCE_RETRIEVAL_ENABLED:
-        return create_classic()
-    return Dispatcher(**kwargs)
+        retriever = create_classic()
+    else:
+        retriever = Dispatcher(**kwargs)
+
+    if getattr(settings, "CHUNK_COMPRESSION_ENABLED", False):
+        if isinstance(retriever, Dispatcher):
+            return CompressingDispatcher(retriever)
+        return CompressingRetriever(retriever)
+    return retriever

@@ -2377,7 +2377,9 @@ class WorkflowEngine:
         Returns:
             list: Retrieved documents, empty when there was nothing to fetch.
         """
+        from docsgpt.core.settings import settings
         from docsgpt.retriever.retriever_creator import RetrieverCreator
+        from docsgpt.retriever.stages.boilerplate_pruning import prune_boilerplate
         from docsgpt.retriever.stages.relevance import apply_relevance
 
         query = self.state.get("query", "")
@@ -2409,6 +2411,8 @@ class WorkflowEngine:
                     rollout_key=getattr(self.agent, "conversation_id", None)
                     or getattr(self.agent, "request_id", None),
                 )
+                if docs and getattr(settings, "CHUNK_COMPRESSION_ENABLED", False):
+                    docs = prune_boilerplate(docs, query=query)
             if docs:
                 # The parent copy still backs ``{{ source.* }}`` template
                 # resolution; the return value is what reaches the node agent.
