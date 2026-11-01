@@ -333,6 +333,9 @@ class BaseAgent(ABC):
         # failed search is not reported as "nothing found" (see
         # ``_retrieval_outcome_note``). None when the caller did not record it.
         self.search_outcome = search_outcome
+        # Set once the context budget sheds a retrieved document; when it shed
+        # them all, the empty-search note must not say the sources matched nothing.
+        self.documents_shed = False
 
         if llm_handler is not None:
             self.llm_handler = llm_handler
@@ -1557,7 +1560,9 @@ class BaseAgent(ABC):
 
         Which note depends on ``search_outcome``: every source failed, some
         failed and the rest matched nothing, or none failed. Without an
-        outcome it is ``EMPTY_RETRIEVAL_NOTE`` as before.
+        outcome it is ``EMPTY_RETRIEVAL_NOTE`` as before. When the passages
+        were all shed for space (``documents_shed``) the sources did match, so
+        none is named as searched with no match; failed ones still are.
 
         Returns:
             str: The note, followed by a line per group of named sources.
@@ -1565,16 +1570,19 @@ class BaseAgent(ABC):
         outcome = getattr(self, "search_outcome", None)
         if outcome is None or not outcome.searched:
             return self.EMPTY_RETRIEVAL_NOTE
+        shed = getattr(self, "documents_shed", False)
         if not outcome.failed:
             lines = [self.EMPTY_RETRIEVAL_NOTE]
-            lines += self._source_list_line("Sources searched", outcome.searched)
+            if not shed:
+                lines += self._source_list_line("Sources searched", outcome.searched)
         elif not outcome.answered:
             lines = [self.SEARCH_FAILED_NOTE]
             lines += self._source_list_line("Could not be searched", outcome.failed)
         else:
             lines = [self.PARTIAL_SEARCH_NOTE]
             lines += self._source_list_line("Could not be searched", outcome.failed)
-            lines += self._source_list_line("Searched with no match", outcome.answered)
+            if not shed:
+                lines += self._source_list_line("Searched with no match", outcome.answered)
         return "\n".join(lines)
 
     def _source_list_line(self, label: str, source_ids: Tuple[str, ...]) -> List[str]:
@@ -2102,6 +2110,7 @@ class BaseAgent(ABC):
             > max_turn_tokens - reserved
         ):
             self.retrieved_docs = drop_least_relevant(self.retrieved_docs)
+            self.documents_shed = True
             document_block = self._build_document_block()
         if shed_from and not getattr(self, "retrieved_docs", None):
             logger.info(

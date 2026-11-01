@@ -179,6 +179,33 @@ class TestSomeFailedOthersFound:
 
 
 @pytest.mark.unit
+class TestEveryPassageShedForSpace:
+    """Passages dropped for space did match, so their sources are not named as searched with no match."""
+
+    BIG = {"filename": "a.pdf", "text": "the rebate is 4250. " * 3000, "source_name": "test-2"}
+
+    def _shed_turn(self, outcome):
+        agent = _agent(retrieved_docs=[dict(self.BIG)], sources_were_searched=True, search_outcome=outcome)
+        with patch("docsgpt.core.model_utils.get_token_limit", return_value=8000):
+            user, _ = _user_turn(agent)
+        assert agent.retrieved_docs == []
+        return user
+
+    def test_the_note_is_the_plain_one(self):
+        user = self._shed_turn(SearchOutcome.of(["id-1", "id-2"]))
+
+        assert user == f"{ClassicAgent.EMPTY_RETRIEVAL_NOTE}\n\nSummarize test-1"
+
+    def test_failed_sources_are_still_named(self):
+        user = self._shed_turn(SearchOutcome.of(["id-1", "id-2"], ["id-1"]))
+
+        assert ClassicAgent.PARTIAL_SEARCH_NOTE in user
+        assert named("Could not be searched", "test-1") in user
+        assert "Searched with no match" not in user
+        assert "test-2" not in user
+
+
+@pytest.mark.unit
 class TestNamesAreLookedUpOnce:
     def test_shedding_rebuilds_without_new_lookups(self):
         agent = _agent(
