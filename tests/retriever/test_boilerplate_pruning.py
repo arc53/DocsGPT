@@ -169,6 +169,7 @@ class TestBoilerplatePruningRules:
         """Terms containing compounds or symbols like C++, C#, F# must survive navigation pruning."""
         cases = [
             ("Next page: C++ memory model", "C++", "Next page: C++ memory model"),
+            ("Next page: C++20 memory model", "C++", "Next page: C++20 memory model"),
             ("Next page: C# async programming", "C#", "Next page: C# async programming"),
             ("Next page: F# pattern matching", "F#", "Next page: F# pattern matching"),
             ("Next page: Notepad++ configuration", "notepad++", "Next page: Notepad++ configuration"),

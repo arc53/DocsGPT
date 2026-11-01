@@ -62,10 +62,12 @@ _FENCE_START_RE = re.compile(r"^(`{3,}|~{3,})")
 
 
 _TERM_RE = re.compile(r"\b\w+(?:[+#]+(?=\W|$))?")
+_COMPOUND_STEM_RE = re.compile(r"\b\w+[+#]+(?=\d)")
 
 
 def _tokenize_terms(text: str) -> Set[str]:
-    return {term.lower() for term in _TERM_RE.findall(text)}
+    terms = _TERM_RE.findall(text) + _COMPOUND_STEM_RE.findall(text)
+    return {term.lower() for term in terms}
 
 
 def _tokenize_query(query: str) -> Set[str]:
