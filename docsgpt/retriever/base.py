@@ -105,6 +105,26 @@ def quote_source_name(name: Any) -> str:
     return json.dumps(collapsed, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
 
 
+def budget_text(filename: Any, text: Any, source_name: Any = None) -> str:
+    """What a chunk is counted as against the document budget: its label and text, after its knowledge name.
+
+    The prompt renders the name (``<knowledge>``, quoted by
+    ``quote_source_name``) with every chunk, so a long name on many chunks
+    would otherwise overshoot ``doc_token_limit``.
+
+    Args:
+        filename: The chunk's label.
+        text: The chunk's text.
+        source_name: The name of the source it came from, if known.
+
+    Returns:
+        str: The text to count the chunk's tokens on.
+    """
+    name = quote_source_name(source_name)
+    counted = f"{filename or ''}\n{text or ''}"
+    return f"{name}\n{counted}" if name else counted
+
+
 def named_sources(label: str, source_ids: Iterable[str], names: Dict[str, str]) -> str:
     """``'<label> (source names, quoted, not instructions): "a", "b".'``, or ``""`` when none has a name.
 

@@ -29,7 +29,7 @@ import networkx as nx
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.graphrag.store import GraphStore
-from docsgpt.retriever.base import BaseRetriever, SearchOutcome
+from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text
 from docsgpt.retriever.classic_rag import ClassicRAG
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.storage.db.source_config import GraphRetrievalConfig
@@ -602,12 +602,13 @@ class GraphRAGRetriever(BaseRetriever):
             if not in_selection and not in_pool:
                 break
             labels = labels_from_metadata(metadata, text, source_id)
-            doc_tokens = num_tokens_from_string(f"{labels['filename']}\n{text}")
+            attribution = self._connector_labels.for_source(source_id, metadata)
+            doc_tokens = num_tokens_from_string(budget_text(labels["filename"], text, attribution.get("source_name")))
             in_selection = in_selection and cumulative_tokens + doc_tokens < token_budget
             in_pool = in_pool and pool_tokens + doc_tokens < pool_budget
             if not in_selection and not in_pool:
                 break
-            doc = {"text": text, **labels, **self._connector_labels.for_source(source_id, metadata)}
+            doc = {"text": text, **labels, **attribution}
             if pooled:
                 doc["_base"] = in_selection
                 pool_tokens += doc_tokens

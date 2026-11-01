@@ -375,6 +375,36 @@ class TestClassicRAGGetData:
 
 
 @pytest.mark.unit
+class TestClassicRAGCountsTheKnowledgeName:
+    """Each chunk's ``<knowledge>`` line is part of the document block, so it is part of the budget."""
+
+    SOURCE = "00000000-0000-0000-0000-000000000001"
+
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", side_effect=len)
+    def test_a_long_name_takes_its_share(self, _tokens, mock_vc, _patch_llm_creator):
+        from docsgpt.retriever.base import quote_source_name
+
+        name = "n" * 40
+        docs_temp = []
+        for i in range(5):
+            doc = MagicMock()
+            doc.page_content = f"chunk {i} " + "w" * 10
+            doc.metadata = {"title": f"f{i}"}
+            docs_temp.append(doc)
+        mock_vc.create_vectorstore.return_value = MagicMock(search=MagicMock(return_value=docs_temp))
+
+        rag = _make_rag(source={"question": "q", "active_docs": [self.SOURCE]}, chunks=5, doc_token_limit=150)
+        with patch("docsgpt.connectors.attribution.source_names", return_value={self.SOURCE: name}), \
+                patch("docsgpt.connectors.attribution.connector_labels", return_value={}):
+            docs = rag._get_data()
+
+        counted = sum(len(f"{quote_source_name(d['source_name'])}\n{d['filename']}\n{d['text']}") for d in docs)
+        assert docs and counted < 135
+        assert len(docs) < 5
+
+
+@pytest.mark.unit
 class TestClassicRAGSearch:
     @patch("docsgpt.retriever.classic_rag.VectorCreator")
     @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)

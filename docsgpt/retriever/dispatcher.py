@@ -25,7 +25,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record
-from docsgpt.retriever.base import BaseRetriever, SearchOutcome, search_outcome_of
+from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text, search_outcome_of
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.retriever.stages import build_group_stages
 from docsgpt.retriever.stages.prescreen import max_candidate_k
@@ -427,7 +427,9 @@ class Dispatcher(BaseRetriever):
         for doc in docs:
             if cumulative_tokens >= cap:
                 break
-            doc_tokens = num_tokens_from_string(f"{doc.get('filename', '')}\n{doc.get('text', '')}")
+            doc_tokens = num_tokens_from_string(
+                budget_text(doc.get("filename", ""), doc.get("text", ""), doc.get("source_name"))
+            )
             if cumulative_tokens + doc_tokens < cap:
                 kept.append(doc)
                 cumulative_tokens += doc_tokens
@@ -531,8 +533,9 @@ class Dispatcher(BaseRetriever):
         for doc in concatenated:
             if cumulative_tokens >= cap:
                 break
-            header = f"{doc.get('filename', '')}\n{doc.get('text', '')}"
-            doc_tokens = num_tokens_from_string(header)
+            doc_tokens = num_tokens_from_string(
+                budget_text(doc.get("filename", ""), doc.get("text", ""), doc.get("source_name"))
+            )
             if cumulative_tokens + doc_tokens < cap:
                 merged.append(doc)
                 cumulative_tokens += doc_tokens

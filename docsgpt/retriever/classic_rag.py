@@ -8,7 +8,7 @@ from docsgpt.tracing.retrieval import (
     start_source_search_span,
 )
 from docsgpt.llm.llm_creator import LLMCreator
-from docsgpt.retriever.base import BaseRetriever, SearchOutcome
+from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text
 from docsgpt.retriever.fanout import fetch_per_source, max_parallel_sources
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.utils import num_tokens_from_string
@@ -421,16 +421,18 @@ class ClassicRAG(BaseRetriever):
                         metadata = doc.get("metadata", {})
 
                     labels = labels_from_metadata(metadata, page_content, vectorstore_id)
+                    attribution = self._connector_labels.for_source(vectorstore_id, metadata)
 
-                    doc_text_with_header = f"{labels['filename']}\n{page_content}"
-                    doc_tokens = num_tokens_from_string(doc_text_with_header)
+                    doc_tokens = num_tokens_from_string(
+                        budget_text(labels["filename"], page_content, attribution.get("source_name"))
+                    )
 
                     selected = in_selection and cumulative_tokens + doc_tokens < token_budget
                     if selected or (in_pool and pool_tokens + doc_tokens < pool_budget):
                         entry = {
                             "text": page_content,
                             **labels,
-                            **self._connector_labels.for_source(vectorstore_id, metadata),
+                            **attribution,
                         }
                         if self.include_scores:
                             entry["score"] = score
