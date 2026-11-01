@@ -26,6 +26,7 @@ import {
 } from '../analyticsConfig';
 import type { AnalyticsConfig, AnalyticsTopic, TopicFolder } from '../types';
 import TopicModal, { type TopicDraft } from './TopicModal';
+import { useTopicSuggestions } from './TopicSuggestions';
 
 const DOCS_URL =
   'https://docs.docsgpt.cloud/Using/analytics-and-logs#analytics-settings-for-an-agent';
@@ -198,6 +199,24 @@ export default function InsightsSettingsBody({
   const showHidden = () => patch({ hidden_folders: [] });
   const removeTopic = (topic: AnalyticsTopic) =>
     patch({ topics: own.filter((item) => item.id !== topic.id) });
+
+  // Draft with DocsGPT's suggestions, added the way Add topic adds one.
+  const suggestions = useTopicSuggestions({
+    agentId,
+    enabled: active && !disabled && config.enabled,
+    token,
+    config,
+    folders: fromSources ? (loaded?.folders ?? null) : [],
+    maxTopics,
+    maxOverlapping,
+    onAdd: (drafts) =>
+      patch({
+        topics: [
+          ...own,
+          ...drafts.map((draft) => ({ id: newTopicId(), ...draft })),
+        ],
+      }),
+  });
 
   const saveTopic = (draft: TopicDraft) => {
     if (!editing) return;
@@ -494,19 +513,32 @@ export default function InsightsSettingsBody({
               count={total > 0 ? total : undefined}
               description={k('topicsDescription')}
               actions={
-                canAdd ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditing({ index: null })}
-                  >
-                    <Plus />
-                    {k('addTopic')}
-                  </Button>
+                canAdd || suggestions.button ? (
+                  <>
+                    {canAdd && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditing({ index: null })}
+                      >
+                        <Plus />
+                        {k('addTopic')}
+                      </Button>
+                    )}
+                    {suggestions.button}
+                  </>
                 ) : undefined
               }
             />
+            {suggestions.panel}
+            {/* Suggestions wait for enough conversations, as Insights'
+                figures do; the line sits where the button would. */}
+            {suggestions.hold && (
+              <p className="text-muted-foreground text-xs">
+                {suggestions.hold}
+              </p>
+            )}
             <Card
               variant="subtle"
               padding="none"

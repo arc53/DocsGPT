@@ -4613,6 +4613,36 @@
         "invalid": "an item that isn't valid was left out",
         "other": "an item was left out"
       }
+    },
+    "topics": {
+      "suggest": "Suggest from conversations",
+      "request": "Suggest topics from this agent's recent conversations.",
+      "hold_one": "Suggestions from conversations show once this agent has {{needed}} recent conversation ({{formatted}} so far).",
+      "hold_other": "Suggestions from conversations show once this agent has {{needed}} recent conversations ({{formatted}} so far).",
+      "reading": "Reading recent questions…",
+      "read_one": "Read {{formatted}} question from the last {{days}} days",
+      "read_other": "Read {{formatted}} questions from the last {{days}} days",
+      "tried_one": "Tried the suggestions on {{formatted}} question: {{after}} fit no topic, down from {{before}}.",
+      "tried_other": "Tried the suggestions on {{formatted}} questions: {{after}} fit no topic, down from {{before}}.",
+      "triedAfter_one": "Tried the suggestions on {{formatted}} question: {{after}} fit no topic.",
+      "triedAfter_other": "Tried the suggestions on {{formatted}} questions: {{after}} fit no topic.",
+      "share": "{{share}} of questions",
+      "estimate": "Estimate",
+      "estimateHint": "The drafting model's guess: it couldn't be measured on the questions.",
+      "taken": "Already a topic",
+      "similar": "Similar to \"{{name}}\".",
+      "leftOut": "Not suggested: {{items}}",
+      "leftOutItem": "{{name}} ({{reason}})",
+      "pushesOut_one": "Adding these pushes out {{count}} folder, so its questions go to None of these: {{names}}",
+      "pushesOut_other": "Adding these pushes out {{count}} folders, so their questions go to None of these: {{names}}",
+      "tooManyOnePick_one": "Only {{formatted}} more topic that sorts questions fits. Untick some before adding.",
+      "tooManyOnePick_other": "Only {{formatted}} more topics that sort questions fit. Untick some before adding.",
+      "tooManyOverlap_one": "Only {{formatted}} more topic that can overlap fits. Untick some before adding.",
+      "tooManyOverlap_other": "Only {{formatted}} more topics that can overlap fit. Untick some before adding.",
+      "none": "Nothing to add: your topics and folders already cover the recent questions.",
+      "discard": "Discard",
+      "add_one": "Add {{formatted}} topic",
+      "add_other": "Add {{formatted}} topics"
     }
   }
 }

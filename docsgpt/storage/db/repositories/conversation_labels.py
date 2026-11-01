@@ -1317,3 +1317,96 @@ class ConversationLabelsRepository:
                 if isinstance(tag, dict) and tag.get("id") and tag.get("name"):
                     names[str(tag["id"])] = str(tag["name"])
         return names
+
+    # ---- an agent's recent questions (topic suggestions) ----------------------------------------------------------
+
+    @staticmethod
+    def _agent_traffic(params: Dict[str, Any], agent_id: str, agent_key: Optional[str]) -> str:
+        """SQL: the conversation ``c`` (joined to ``ag`` through ``_AGENT``) is the agent's, binding its parameters.
+
+        The conversation's own ``agent_id`` or, for API and widget traffic (no ``agent_id``), the agent's key; the
+        first clause narrows the scan, the ``ag`` test is the same resolution every analytics read uses.
+        """
+        params["agent_id"] = agent_id
+        params["agent_key"] = agent_key or ""
+        return ("(c.agent_id = CAST(:agent_id AS uuid) OR (c.agent_id IS NULL AND :agent_key <> ''"
+                " AND CAST(c.api_key AS citext) = CAST(:agent_key AS citext)))"
+                " AND ag.id = CAST(:agent_id AS uuid)")
+
+    def agent_question_counts(self, agent_id: str, agent_key: Optional[str], days: int) -> Dict[str, int]:
+        """How many finished user messages, and conversations holding them, an agent had in the last ``days``.
+
+        Args:
+            agent_id: The agent.
+            agent_key: Its API key, which links its API and widget conversations; ``None`` when it has none.
+            days: The window.
+
+        Returns:
+            ``questions`` and ``conversations``.
+        """
+        params: Dict[str, Any] = {"days": int(days)}
+        scope = self._agent_traffic(params, agent_id, agent_key)
+        row = self._conn.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS questions, COUNT(DISTINCT m.conversation_id) AS conversations
+                FROM conversation_messages m
+                JOIN conversations c ON c.id = m.conversation_id
+                {_AGENT}
+                WHERE m.timestamp >= NOW() - make_interval(days => :days) AND {_usable("m")} AND {scope}
+                """
+            ),
+            params,
+        ).one()
+        return {"questions": int(row.questions or 0), "conversations": int(row.conversations or 0)}
+
+    def agent_questions(
+        self, agent_id: str, agent_key: Optional[str], days: int, limit: int, schema_hash: str
+    ) -> List[dict]:
+        """An agent's most recent distinct user questions of the last ``days``, newest first.
+
+        A question asked again (same text, ignoring case and outer spaces) is listed once, at its newest. Each
+        carries how likely the topic question put it under "none of these" (the highest of its ``topic`` rows
+        under ``schema_hash``), ``None`` when it was never asked.
+
+        Args:
+            agent_id: The agent.
+            agent_key: Its API key (API and widget conversations); ``None`` when it has none.
+            days: The window.
+            limit: Most questions returned.
+            schema_hash: The running label schema.
+
+        Returns:
+            ``prompt``, ``conversation_id``, ``timestamp`` and ``p_none``.
+        """
+        from docsgpt.analytics.schema import NONE_OPTION
+
+        params: Dict[str, Any] = {"days": int(days), "limit": int(limit), "schema_hash": schema_hash,
+                                  "none_option": NONE_OPTION}
+        scope = self._agent_traffic(params, agent_id, agent_key)
+        result = self._conn.execute(
+            text(
+                f"""
+                WITH q AS (
+                    SELECT m.prompt, m.conversation_id, m.timestamp, lt.p_none,
+                           ROW_NUMBER() OVER (PARTITION BY md5(lower(btrim(m.prompt)))
+                                              ORDER BY m.timestamp DESC, m.id) AS seen
+                    FROM conversation_messages m
+                    JOIN conversations c ON c.id = m.conversation_id
+                    {_AGENT}
+                    LEFT JOIN LATERAL (
+                        SELECT MAX(CAST(l.probabilities->>:none_option AS float8)) AS p_none
+                        FROM conversation_labels l
+                        WHERE l.message_id = m.id AND l.label = 'topic' AND l.schema_hash = :schema_hash
+                    ) lt ON true
+                    WHERE m.timestamp >= NOW() - make_interval(days => :days) AND {_usable("m")} AND {scope}
+                )
+                SELECT prompt, CAST(conversation_id AS text) AS conversation_id, timestamp, p_none
+                FROM q WHERE seen = 1
+                ORDER BY timestamp DESC
+                LIMIT :limit
+                """
+            ),
+            params,
+        )
+        return [dict(row._mapping) for row in result.fetchall()]

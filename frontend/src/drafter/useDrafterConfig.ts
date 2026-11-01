@@ -13,6 +13,29 @@ export function resetDrafterConfigCache(): void {
 }
 
 /**
+ * The drafter's config for a session token, read once per token and shared
+ * with `useDrafterConfig`. For a component that has the token from its host
+ * rather than the store.
+ *
+ * Args:
+ *   token: The session token.
+ *
+ * Returns:
+ *   The config; `enabled: false` when it can't be read.
+ */
+export function loadDrafterConfig(
+  token: string | null,
+): Promise<DrafterConfig> {
+  const key = token ?? '';
+  let pending = cache.get(key);
+  if (!pending) {
+    pending = getDrafterConfig(token);
+    cache.set(key, pending);
+  }
+  return pending;
+}
+
+/**
  * The drafter's config for the signed-in user, read once per token. While it
  * loads, and whenever it can't be read, it is `null`, so every wand entry
  * point stays hidden until the server says the drafter is on.
@@ -30,12 +53,7 @@ export function useDrafterConfig(): DrafterConfig | null {
 
   useEffect(() => {
     let cancelled = false;
-    let pending = cache.get(key);
-    if (!pending) {
-      pending = getDrafterConfig(token);
-      cache.set(key, pending);
-    }
-    void pending.then((value) => {
+    void loadDrafterConfig(token).then((value) => {
       if (!cancelled) setConfig({ key, value });
     });
     return () => {

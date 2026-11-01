@@ -90,6 +90,7 @@ _RECIPES: dict[str, Recipe] = {}
 _BUILTIN_MODULES: tuple[str, ...] = (
     "docsgpt.drafter.agent_recipe",
     "docsgpt.drafter.prompt_recipe",
+    "docsgpt.drafter.topics_recipe",
 )
 _loaded = False
 

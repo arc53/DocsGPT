@@ -487,7 +487,7 @@
     "DrafterStreamModel": {
       "properties": {
         "context": {
-          "description": "The recipe's screen state, e.g. the agent form's current values",
+          "description": "The recipe's screen state: the agent form's current values (agent), the prompt being written or improved (prompt), or {agent_id} (topics)",
           "type": "object"
         },
         "messages": {
@@ -498,7 +498,7 @@
           "type": "array"
         },
         "recipe": {
-          "description": "What is drafted: agent",
+          "description": "What is drafted: agent (the agent form), prompt (a prompt), topics (Insights topics)",
           "type": "string"
         }
       },
@@ -4180,6 +4180,42 @@
           }
         },
         "summary": "Stream one draft turn",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/drafter/topics/status": {
+      "get": {
+        "description": "Whether an agent has had enough conversations in the last 30 days for Draft with DocsGPT to suggest Insights topics from them. Returns {\"available\", \"conversations\", \"needed\"}. Needs edit access to the agent: the suggestions read its users' questions.",
+        "operationId": "get_drafter_topics_status",
+        "parameters": [
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's status"
+          },
+          "400": {
+            "description": "No agent_id"
+          },
+          "401": {
+            "description": "Not signed in"
+          },
+          "403": {
+            "description": "No edit access"
+          },
+          "404": {
+            "description": "Agent not found"
+          }
+        },
+        "summary": "Report whether topic suggestions are available for an agent",
         "tags": [
           "drafter"
         ],

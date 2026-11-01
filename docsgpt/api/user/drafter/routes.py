@@ -2,8 +2,9 @@
 
 - ``GET /api/drafter/config`` -- whether the drafter is offered, and its model.
 - ``POST /api/drafter/stream`` -- one draft turn as server-sent events.
+- ``GET /api/drafter/topics/status`` -- whether an agent has enough conversations for topic suggestions.
 
-Both are session-only: ``docsgpt/api/pat/rules.py`` lists them in ``DENIED``,
+All are session-only: ``docsgpt/api/pat/rules.py`` lists them in ``DENIED``,
 so an access token gets 403. Nothing is stored: the client sends the whole
 conversation each turn, and the turn reads the caller's workspace and writes
 only its ``token_usage`` rows (source ``drafter``).
@@ -21,7 +22,7 @@ from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
 from docsgpt.drafter.catalog import Workspace
-from docsgpt.drafter.recipe import DraftRequest, Recipe
+from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, Recipe
 from docsgpt.drafter.runner import run_draft
 from docsgpt.drafter.service import drafter_config, prepare
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
@@ -71,7 +72,10 @@ class DrafterStream(Resource):
     stream_model = api.model(
         "DrafterStreamModel",
         {
-            "recipe": fields.String(required=True, description="What is drafted: agent"),
+            "recipe": fields.String(
+                required=True,
+                description="What is drafted: agent (the agent form), prompt (a prompt), topics (Insights topics)",
+            ),
             "messages": fields.List(
                 fields.Raw,
                 required=True,
@@ -80,7 +84,12 @@ class DrafterStream(Resource):
                     "message is the JSON of an earlier questions or proposal event. Ends with a user message."
                 ),
             ),
-            "context": fields.Raw(description="The recipe's screen state, e.g. the agent form's current values"),
+            "context": fields.Raw(
+                description=(
+                    "The recipe's screen state: the agent form's current values (agent), the prompt being "
+                    "written or improved (prompt), or {agent_id} (topics)"
+                )
+            ),
         },
     )
 
@@ -104,6 +113,12 @@ class DrafterStream(Resource):
         try:
             # Read now, in the request: the stream runs on a thread with no request context.
             workspace = recipe.load_workspace(user_id, draft.context)
+        except BadDraftRequest as err:
+            return Response(
+                _closed({"type": "error", "code": "bad_request", "message": str(err)}),
+                mimetype="text/event-stream",
+                headers=_SSE_HEADERS,
+            )
         except Exception:
             logger.exception("drafter: could not read the workspace")
             return Response(
@@ -118,6 +133,39 @@ class DrafterStream(Resource):
             mimetype="text/event-stream",
             headers=_SSE_HEADERS,
         )
+
+
+@drafter_ns.route("/drafter/topics/status")
+class DrafterTopicsStatus(Resource):
+    @api.doc(
+        description=(
+            "Whether an agent has had enough conversations in the last 30 days for Draft with DocsGPT to suggest "
+            "Insights topics from them. Returns {\"available\", \"conversations\", \"needed\"}. Needs edit "
+            "access to the agent: the suggestions read its users' questions."
+        ),
+        params={"agent_id": "Agent id"},
+        responses={200: "The agent's status", 400: "No agent_id", 401: "Not signed in",
+                   403: "No edit access", 404: "Agent not found"},
+    )
+    def get(self) -> Response:
+        """Report whether topic suggestions are available for an agent."""
+        from docsgpt.api.user.resource_access import AccessDenied
+        from docsgpt.drafter.topics_recipe import topics_status
+
+        user_id = _user_id()
+        if not user_id:
+            return make_response(jsonify({"success": False}), 401)
+        agent_id = (request.args.get("agent_id") or "").strip()
+        if not agent_id:
+            return make_response(jsonify({"success": False, "message": "agent_id is required"}), 400)
+        try:
+            status = topics_status(user_id, agent_id)
+        except AccessDenied as denied:
+            return make_response(jsonify({"success": False, "message": denied.message}), denied.status)
+        except Exception:
+            logger.exception("drafter: could not read the topics status")
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(status), 200)
 
 
 def _stream(draft: DraftRequest, recipe: Recipe, workspace: Workspace, model: dict,

@@ -4565,6 +4565,28 @@
         "invalid": "無効な項目を除外しました",
         "other": "項目を除外しました"
       }
+    },
+    "topics": {
+      "suggest": "会話から提案",
+      "request": "このエージェントの最近の会話からトピックを提案してください。",
+      "hold_other": "最近の会話が {{needed}} 件になると、会話からの提案を使えます（現在 {{formatted}} 件）。",
+      "reading": "最近の質問を読んでいます…",
+      "read_other": "過去 {{days}} 日間の質問 {{formatted}} 件を読みました",
+      "tried_other": "{{formatted}} 件の質問で提案を試しました：どのトピックにも該当しない質問は {{before}} から {{after}} になります。",
+      "triedAfter_other": "{{formatted}} 件の質問で提案を試しました：どのトピックにも該当しない質問は {{after}} です。",
+      "share": "質問の {{share}}",
+      "estimate": "推定",
+      "estimateHint": "下書きモデルによる推定です。実際の質問では測定できませんでした。",
+      "taken": "既存のトピック",
+      "similar": "「{{name}}」と似ています。",
+      "leftOut": "提案しなかったもの：{{items}}",
+      "leftOutItem": "{{name}}（{{reason}}）",
+      "pushesOut_other": "追加すると {{count}} 個のフォルダーが外れ、その質問は「どのトピックにも該当しない」になります：{{names}}",
+      "tooManyOnePick_other": "質問を分類するトピックはあと {{formatted}} 個しか追加できません。追加する前にいくつかのチェックを外してください。",
+      "tooManyOverlap_other": "重複可のトピックはあと {{formatted}} 個しか追加できません。追加する前にいくつかのチェックを外してください。",
+      "none": "追加するものはありません。今のトピックとフォルダーで最近の質問をカバーできています。",
+      "discard": "破棄",
+      "add_other": "{{formatted}} 件のトピックを追加"
     }
   }
 }

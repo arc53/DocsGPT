@@ -4592,6 +4592,36 @@
         "invalid": "ein ungültiges Element wurde weggelassen",
         "other": "ein Element wurde weggelassen"
       }
+    },
+    "topics": {
+      "suggest": "Aus Gesprächen vorschlagen",
+      "request": "Schlage Themen aus den letzten Gesprächen dieses Agenten vor.",
+      "hold_one": "Vorschläge aus Gesprächen gibt es, sobald dieser Agent {{needed}} aktuelles Gespräch hat (bisher {{formatted}}).",
+      "hold_other": "Vorschläge aus Gesprächen gibt es, sobald dieser Agent {{needed}} aktuelle Gespräche hat (bisher {{formatted}}).",
+      "reading": "Aktuelle Fragen werden gelesen…",
+      "read_one": "{{formatted}} Frage aus den letzten {{days}} Tagen gelesen",
+      "read_other": "{{formatted}} Fragen aus den letzten {{days}} Tagen gelesen",
+      "tried_one": "Vorschläge an {{formatted}} Frage getestet: {{after}} passen zu keinem Thema, vorher {{before}}.",
+      "tried_other": "Vorschläge an {{formatted}} Fragen getestet: {{after}} passen zu keinem Thema, vorher {{before}}.",
+      "triedAfter_one": "Vorschläge an {{formatted}} Frage getestet: {{after}} passen zu keinem Thema.",
+      "triedAfter_other": "Vorschläge an {{formatted}} Fragen getestet: {{after}} passen zu keinem Thema.",
+      "share": "{{share}} der Fragen",
+      "estimate": "Schätzung",
+      "estimateHint": "Eine Schätzung des Entwurfsmodells: An den Fragen ließ sie sich nicht messen.",
+      "taken": "Bereits ein Thema",
+      "similar": "Ähnlich wie „{{name}}“.",
+      "leftOut": "Nicht vorgeschlagen: {{items}}",
+      "leftOutItem": "{{name}} ({{reason}})",
+      "pushesOut_one": "Dadurch fällt {{count}} Ordner heraus, seine Fragen landen unter Keines dieser Themen: {{names}}",
+      "pushesOut_other": "Dadurch fallen {{count}} Ordner heraus, ihre Fragen landen unter Keines dieser Themen: {{names}}",
+      "tooManyOnePick_one": "Es passt nur noch {{formatted}} Thema, das Fragen einsortiert. Wählen Sie vor dem Hinzufügen einige ab.",
+      "tooManyOnePick_other": "Es passen nur noch {{formatted}} Themen, die Fragen einsortieren. Wählen Sie vor dem Hinzufügen einige ab.",
+      "tooManyOverlap_one": "Es passt nur noch {{formatted}} Thema, das sich überschneiden kann. Wählen Sie vor dem Hinzufügen einige ab.",
+      "tooManyOverlap_other": "Es passen nur noch {{formatted}} Themen, die sich überschneiden können. Wählen Sie vor dem Hinzufügen einige ab.",
+      "none": "Nichts hinzuzufügen: Ihre Themen und Ordner decken die aktuellen Fragen bereits ab.",
+      "discard": "Verwerfen",
+      "add_one": "{{formatted}} Thema hinzufügen",
+      "add_other": "{{formatted}} Themen hinzufügen"
     }
   }
 }

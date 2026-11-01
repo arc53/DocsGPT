@@ -4563,6 +4563,28 @@
         "invalid": "省略了一个无效的项目",
         "other": "省略了一个项目"
       }
+    },
+    "topics": {
+      "suggest": "根据对话建议",
+      "request": "根据此智能体最近的对话建议主题。",
+      "hold_other": "此智能体的近期对话达到 {{needed}} 个后，即可根据对话建议主题（目前 {{formatted}} 个）。",
+      "reading": "正在读取近期问题…",
+      "read_other": "已读取最近 {{days}} 天的 {{formatted}} 个问题",
+      "tried_other": "已用 {{formatted}} 个问题试用这些建议：不属于任何主题的问题从 {{before}} 降至 {{after}}。",
+      "triedAfter_other": "已用 {{formatted}} 个问题试用这些建议：{{after}} 的问题不属于任何主题。",
+      "share": "占问题的 {{share}}",
+      "estimate": "估计值",
+      "estimateHint": "起草模型的估计：无法在实际问题上测量。",
+      "taken": "已是主题",
+      "similar": "与“{{name}}”相似。",
+      "leftOut": "未建议：{{items}}",
+      "leftOutItem": "{{name}}（{{reason}}）",
+      "pushesOut_other": "添加后会挤出 {{count}} 个文件夹，其问题会归入“不属于这些主题”：{{names}}",
+      "tooManyOnePick_other": "只能再添加 {{formatted}} 个用于归类问题的主题。添加前请取消勾选一些。",
+      "tooManyOverlap_other": "只能再添加 {{formatted}} 个可重叠的主题。添加前请取消勾选一些。",
+      "none": "没有可添加的内容：你的主题和文件夹已覆盖近期问题。",
+      "discard": "放弃",
+      "add_other": "添加 {{formatted}} 个主题"
     }
   }
 }

@@ -4565,6 +4565,28 @@
         "invalid": "省略了一個無效的項目",
         "other": "省略了一個項目"
       }
+    },
+    "topics": {
+      "suggest": "根據對話建議",
+      "request": "根據此代理最近的對話建議主題。",
+      "hold_other": "此代理的近期對話達到 {{needed}} 則後，即可根據對話建議主題（目前 {{formatted}} 則）。",
+      "reading": "正在讀取近期問題…",
+      "read_other": "已讀取最近 {{days}} 天的 {{formatted}} 個問題",
+      "tried_other": "已用 {{formatted}} 個問題試用這些建議：不屬於任何主題的問題從 {{before}} 降至 {{after}}。",
+      "triedAfter_other": "已用 {{formatted}} 個問題試用這些建議：{{after}} 的問題不屬於任何主題。",
+      "share": "佔問題的 {{share}}",
+      "estimate": "估計值",
+      "estimateHint": "起草模型的估計：無法在實際問題上測量。",
+      "taken": "已是主題",
+      "similar": "與「{{name}}」相似。",
+      "leftOut": "未建議：{{items}}",
+      "leftOutItem": "{{name}}（{{reason}}）",
+      "pushesOut_other": "加入後會擠出 {{count}} 個資料夾，其問題會歸入「不屬於這些主題」：{{names}}",
+      "tooManyOnePick_other": "只能再加入 {{formatted}} 個用於歸類問題的主題。加入前請取消勾選一些。",
+      "tooManyOverlap_other": "只能再加入 {{formatted}} 個可重疊的主題。加入前請取消勾選一些。",
+      "none": "沒有可加入的內容：你的主題和資料夾已涵蓋近期問題。",
+      "discard": "捨棄",
+      "add_other": "加入 {{formatted}} 個主題"
     }
   }
 }
