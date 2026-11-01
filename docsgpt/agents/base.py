@@ -334,7 +334,8 @@ class BaseAgent(ABC):
         # ``_empty_retrieval_note``). None when the caller did not record it.
         self.search_outcome = search_outcome
         # Set once the context budget sheds a retrieved document; when it shed
-        # them all, the empty-search note must not say the sources matched nothing.
+        # them all, the note says the passages were left out, not that the
+        # sources matched nothing (``DOCUMENTS_SHED_NOTE``).
         self.documents_shed = False
 
         if llm_handler is not None:
@@ -1465,6 +1466,29 @@ class BaseAgent(ABC):
         "you are doing."
     )
 
+    # The search matched, but every passage was left out to fit the context
+    # window (``documents_shed``). "Nothing was found" would be a false claim
+    # about the documents, so the model is told they matched instead.
+    DOCUMENTS_SHED_NOTE = (
+        "The attached sources were searched for this question and returned "
+        "matching passages, but they were left out to fit the context window. "
+        "Do not say that nothing relevant was found, and do not assume the "
+        "sources are empty or absent. Tell the user the sources had relevant "
+        "passages that could not be included, and suggest a narrower question. "
+        "Only answer from general knowledge if you make clear that is what you "
+        "are doing."
+    )
+
+    PARTIAL_SHED_NOTE = (
+        "Some of the attached sources could not be searched for this question; "
+        "the others returned matching passages, but they were left out to fit "
+        "the context window. Tell the user which sources could not be searched "
+        "and that the rest had relevant passages that could not be included, "
+        "and suggest a narrower question. Do not say that nothing relevant was "
+        "found, do not assume any source is empty or absent, and only answer "
+        "from general knowledge if you make clear that is what you are doing."
+    )
+
     # Follows the documents' guard when some sources returned passages.
     UNSEARCHED_SOURCES_NOTE = (
         "Some attached sources could not be searched for this question, so the "
@@ -1525,9 +1549,11 @@ class BaseAgent(ABC):
             # answer from general knowledge — it once invented a gloss on a
             # term that only appeared in the attached document. Note this is a
             # different claim from "you have no documents": it tells the model
-            # the sources were searched.
+            # the sources were searched. Passages shed for space were
+            # retrieved, so that turn gets its note even without the flag.
             searched = getattr(self, "sources_were_searched", False)
-            return self._empty_retrieval_note() if searched else ""
+            shed = getattr(self, "documents_shed", False)
+            return self._empty_retrieval_note() if searched or shed else ""
 
         # Retrieved text is the indirect-injection surface: it is attacker-
         # influenceable and reaches the model with the user's authority. The
@@ -1561,25 +1587,28 @@ class BaseAgent(ABC):
         Which note depends on ``search_outcome``: every source failed, some
         failed and the rest matched nothing, or none failed. Without an
         outcome it is ``EMPTY_RETRIEVAL_NOTE`` as before. When the passages
-        were all shed for space (``documents_shed``) the sources did match, so
-        none is named as searched with no match; failed ones still are.
+        were all shed for space (``documents_shed``) the sources did match:
+        the note says they were left out (``DOCUMENTS_SHED_NOTE``, or
+        ``PARTIAL_SHED_NOTE`` when some failed) and names no source as
+        searched with no match; failed ones are still named.
 
         Returns:
             str: The note, followed by a line per group of named sources.
         """
         outcome = getattr(self, "search_outcome", None)
-        if outcome is None or not outcome.searched:
-            return self.EMPTY_RETRIEVAL_NOTE
         shed = getattr(self, "documents_shed", False)
+        if outcome is None or not outcome.searched:
+            return self.DOCUMENTS_SHED_NOTE if shed else self.EMPTY_RETRIEVAL_NOTE
         if not outcome.failed:
+            if shed:
+                return self.DOCUMENTS_SHED_NOTE
             lines = [self.EMPTY_RETRIEVAL_NOTE]
-            if not shed:
-                lines += self._source_list_line("Sources searched", outcome.searched)
+            lines += self._source_list_line("Sources searched", outcome.searched)
         elif not outcome.answered:
             lines = [self.SEARCH_FAILED_NOTE]
             lines += self._source_list_line("Could not be searched", outcome.failed)
         else:
-            lines = [self.PARTIAL_SEARCH_NOTE]
+            lines = [self.PARTIAL_SHED_NOTE if shed else self.PARTIAL_SEARCH_NOTE]
             lines += self._source_list_line("Could not be searched", outcome.failed)
             if not shed:
                 lines += self._source_list_line("Searched with no match", outcome.answered)
@@ -2100,8 +2129,9 @@ class BaseAgent(ABC):
         reserved = self.attachment_plan.reserved_tokens if self.attachment_plan else 0
         self._sync_attachments_tool()
 
-        # Stops once no document is left: a searched turn's "nothing matched"
-        # note stays whatever its size, so it cannot end the loop by itself.
+        # Stops once no document is left: the note that replaces them
+        # ("left out for space", or a failed search) stays whatever its size,
+        # so it cannot end the loop by itself.
         shed_from = len(getattr(self, "retrieved_docs", None) or [])
         while (
             document_block

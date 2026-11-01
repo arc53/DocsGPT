@@ -180,7 +180,7 @@ class TestSomeFailedOthersFound:
 
 @pytest.mark.unit
 class TestEveryPassageShedForSpace:
-    """Passages dropped for space did match, so their sources are not named as searched with no match."""
+    """Passages dropped for space did match, so the note must not say nothing relevant was found."""
 
     BIG = {"filename": "a.pdf", "text": "the rebate is 4250. " * 3000, "source_name": "test-2"}
 
@@ -191,18 +191,47 @@ class TestEveryPassageShedForSpace:
         assert agent.retrieved_docs == []
         return user
 
-    def test_the_note_is_the_plain_one(self):
+    def test_the_note_says_the_passages_were_left_out(self):
         user = self._shed_turn(SearchOutcome.of(["id-1", "id-2"]))
 
-        assert user == f"{ClassicAgent.EMPTY_RETRIEVAL_NOTE}\n\nSummarize test-1"
+        assert user == f"{ClassicAgent.DOCUMENTS_SHED_NOTE}\n\nSummarize test-1"
+        assert "no matching passages" not in user
+
+    def test_without_an_outcome_the_note_still_says_so(self):
+        user = self._shed_turn(None)
+
+        assert user == f"{ClassicAgent.DOCUMENTS_SHED_NOTE}\n\nSummarize test-1"
 
     def test_failed_sources_are_still_named(self):
         user = self._shed_turn(SearchOutcome.of(["id-1", "id-2"], ["id-1"]))
 
-        assert ClassicAgent.PARTIAL_SEARCH_NOTE in user
+        assert ClassicAgent.PARTIAL_SHED_NOTE in user
+        assert ClassicAgent.PARTIAL_SEARCH_NOTE not in user
+        assert "no matching passages" not in user
         assert named("Could not be searched", "test-1") in user
         assert "Searched with no match" not in user
         assert "test-2" not in user
+
+    @pytest.mark.parametrize("name", ["DOCUMENTS_SHED_NOTE", "PARTIAL_SHED_NOTE"])
+    def test_the_note_does_not_claim_nothing_was_found(self, name):
+        note = getattr(ClassicAgent, name)
+
+        assert "Do not say that nothing relevant was found" in note
+        assert "narrower question" in note
+        assert "general knowledge" in note
+
+    def test_a_turn_that_kept_its_passages_is_unchanged(self):
+        agent = _agent(
+            retrieved_docs=[dict(DOC)],
+            sources_were_searched=True,
+            search_outcome=SearchOutcome.of(["id-1", "id-2"]),
+        )
+
+        user, _ = _user_turn(agent)
+
+        assert agent.documents_shed is False
+        assert "the rebate is 4250" in user
+        assert ClassicAgent.DOCUMENTS_SHED_NOTE not in user
 
 
 @pytest.mark.unit
