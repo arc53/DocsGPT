@@ -132,9 +132,16 @@ class TestStreamResourcePost:
             data = resp.get_data(as_text=True)
             assert "Malformed request body" in data
 
-    def test_general_exception_returns_400_stream(
+    def test_general_exception_returns_500_stream(
         self, stream_client, mock_stream_processor
     ):
+        """An unhandled exception is a server fault, not a client error.
+
+        Mirrors ``test_exception_returns_500`` on ``/api/answer``: reporting
+        500 makes clients stop retrying a payload that was fine and lets
+        monitoring see the failure. The SSE body stays a sanitized
+        ``error`` frame so the UI renders it as before.
+        """
         mock_stream_processor.build_agent.side_effect = RuntimeError("crash")
         with patch(
             "docsgpt.api.answer.routes.stream.StreamResource.validate_request",
@@ -145,7 +152,7 @@ class TestStreamResourcePost:
                 data=json.dumps({"question": "test"}),
                 content_type="application/json",
             )
-            assert resp.status_code == 400
+            assert resp.status_code == 500
             assert "text/event-stream" in resp.content_type
             data = resp.get_data(as_text=True)
             assert "Unknown error occurred" in data
