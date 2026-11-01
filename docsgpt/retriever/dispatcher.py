@@ -25,7 +25,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record
-from docsgpt.retriever.base import BaseRetriever
+from docsgpt.retriever.base import BaseRetriever, SearchOutcome, search_outcome_of
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.retriever.stages import build_group_stages
 from docsgpt.retriever.stages.prescreen import max_candidate_k
@@ -137,6 +137,8 @@ class Dispatcher(BaseRetriever):
         self.last_top_relevance: Optional[float] = None
         self.last_candidate_count = 0
         self.last_candidates: List[Dict[str, Any]] = []
+        # Each group's outcome during ``search()``, merged into ``last_outcome``.
+        self._group_outcomes: List[SearchOutcome] = []
         self._ctor_kwargs = dict(
             include_scores=include_scores,
             chat_history=chat_history,
@@ -447,11 +449,19 @@ class Dispatcher(BaseRetriever):
             self.last_top_relevance = None
             self.last_candidate_count = 0
             self.last_candidates = []
+            self.last_outcome = None
+            self._group_outcomes = []
             if "control" in arms:
                 # The control arm asks the model nothing; its entry is what an
                 # A/B comparison counts the arm by.
                 record.add(RERANK, {"arm": "control"}, status="skipped", applied=False)
-            docs = self._search_groups(query)
+            try:
+                docs = self._search_groups(query)
+            except Exception:
+                # The caller catches this; it still learns no source was searched.
+                self.last_outcome = SearchOutcome.of(sources, sources)
+                raise
+            self.last_outcome = SearchOutcome.combine(self._group_outcomes)
             for doc in docs:
                 doc.pop("_base", None)
             describe_documents(span, docs)
@@ -486,6 +496,7 @@ class Dispatcher(BaseRetriever):
                 groups[0], self.doc_token_limit
             )
             docs = retriever.search(query) if query else retriever.search()
+            self._group_outcomes.append(search_outcome_of(retriever, groups[0]["doc_ids"]))
             return self._stage_group(query, retriever, groups[0], docs, self.doc_token_limit)
 
         outputs: List[List[Dict[str, Any]]] = []
@@ -499,11 +510,14 @@ class Dispatcher(BaseRetriever):
                 # carry the vector-store DSN (with credentials) on connection
                 # errors.
                 logger.error(
-                    "Group '%s' search failed: %s",
+                    "Group '%s' search failed for sources %s: %s",
                     group["retriever"],
+                    group["doc_ids"],
                     type(exc).__name__,
                 )
+                self._group_outcomes.append(SearchOutcome.of(group["doc_ids"], group["doc_ids"]))
                 continue
+            self._group_outcomes.append(search_outcome_of(retriever, group["doc_ids"]))
             outputs.append(self._stage_group(query, retriever, group, group_docs, budget))
 
         concatenated = [doc for group_docs in outputs for doc in group_docs]

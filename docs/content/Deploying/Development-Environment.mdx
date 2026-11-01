@@ -1,7 +1,7 @@
 ---
 title: Setting Up a Development Environment
 description: "Set up a DocsGPT development environment: Postgres and Redis, the backend API and Celery worker, the Vite frontend, the docsgpt dev loop and troubleshooting."
-lastUpdated: 2026-10-29
+lastUpdated: 2026-11-01
 ---
 
 import { Callout } from 'nextra/components'
@@ -213,7 +213,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
       Chat retrieval needs a running worker. The API sends each query embedding to it
       (`EMBEDDINGS_DELEGATE_TO_WORKER`, on by default). Without a worker, the first search waits up to
       `EMBEDDINGS_DELEGATE_TIMEOUT` (60 seconds), searches in the next 30 seconds fail at once, and every
-      answer comes back with no retrieved context, without an error. To run the API alone, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` to load the model in the API
+      answer says the attached sources could not be searched right now. To run the API alone, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` to load the model in the API
       process, or point `EMBEDDINGS_BASE_URL` at an embeddings service.
     </Callout>
 

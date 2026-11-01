@@ -35,6 +35,7 @@ from docsgpt.decisions import record as decision_record
 from docsgpt.llm.deadlines import interruptible
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
+from docsgpt.retriever.base import SearchOutcome, search_outcome_of
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.storage.db.session import db_readonly
@@ -310,6 +311,7 @@ def _run_agent_headless(
     # agents pre-fetch, and ``agentic_tool`` sources are searched either way.
     use = plan_source_use(agent_type, per_source_list(per_source, "agentic_tool"))
     retrieved_docs: List[Dict[str, Any]] = []
+    search_outcome: Optional[SearchOutcome] = None
     prefetch_sources = per_source_list(per_source, use.exposure)
     # A pre-fetch scoped to an exposure with no source in it searches nothing.
     if use.prefetch and (use.exposure is None or prefetch_sources):
@@ -332,12 +334,17 @@ def _run_agent_headless(
             conversation_id=conversation_id,
             **retriever_kwargs,
         )
+        source_ids = retriever_kwargs["source"].get("active_docs") or []
+        source_ids = [source_ids] if isinstance(source_ids, str) else list(source_ids)
         try:
             docs = retriever.search(retrieval_query or query)
+            search_outcome = search_outcome_of(retriever, source_ids)
             if docs:
                 retrieved_docs = docs
         except Exception as exc:
             logger.warning("Headless retrieve failed: %s", exc)
+            # Nothing was searched; the agent says so instead of "nothing found".
+            search_outcome = SearchOutcome.of(source_ids, source_ids)
 
     tool_executor = ToolExecutor(
         user_api_key=user_api_key,
@@ -390,6 +397,7 @@ def _run_agent_headless(
         "prompt_embeds_documents": prompt_embeds_documents(raw_prompt),
         "prompt_cites_sources": prompt_requests_citations(raw_prompt),
         "sources_were_searched": bool(source_active),
+        "search_outcome": search_outcome,
         "decoded_token": decoded_token,
         "attachments": [],
         "json_schema": json_schema,

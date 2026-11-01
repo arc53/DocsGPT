@@ -5,11 +5,19 @@ from typing import Dict, List, Optional
 from docsgpt.agents.citations import register_citation
 from docsgpt.agents.tools.base import Tool
 from docsgpt.core.settings import settings
+from docsgpt.retriever.base import SearchOutcome
 from docsgpt.retriever.dispatcher import Dispatcher, build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.retriever.stages.relevance import base_selection
 
 logger = logging.getLogger(__name__)
+
+
+def _named(label: str, source_ids, names: Dict[str, str]) -> str:
+    """``" <label>: name, name."``, or ``""`` when none of the sources has a known name."""
+    named = [" ".join(names[source_id].split()) for source_id in source_ids if names.get(source_id)]
+    named = [name for name in named if name]
+    return f" {label}: {', '.join(named)}." if named else ""
 
 
 def _in_path(docs: List[Dict], path_filter: str) -> List[Dict]:
@@ -182,9 +190,29 @@ class InternalSearchTool(Tool):
             self._path_filter = ""
 
         candidates = retriever.last_candidate_count if dispatched else len(docs)
+        outcome = getattr(retriever, "last_outcome", None)
+        failed = outcome.failed if isinstance(outcome, SearchOutcome) else ()
+        names: Dict[str, str] = {}
+        if failed:
+            from docsgpt.connectors.attribution import source_names
+
+            names = source_names(list(outcome.searched))
         if not dispatched and path_filter and docs:
             docs = _in_path(docs, path_filter)
             self._path_hits = len(docs)
+        if not docs and failed and not outcome.answered:
+            # Every source failed: nothing was looked at, so "no documents
+            # found" would be a false claim about them.
+            return (
+                "Search failed: the sources could not be searched right now (a temporary problem), "
+                "so this is not a sign that nothing matches." + _named("Could not be searched", failed, names)
+            )
+        if not docs and failed:
+            return (
+                "No documents found matching your query, but not every source could be searched right now."
+                + _named("Could not be searched", failed, names)
+                + _named("Searched with no match", outcome.answered, names)
+            )
         if not docs:
             if not candidates:
                 return "No documents found matching your query."
@@ -220,7 +248,13 @@ class InternalSearchTool(Tool):
             knowledge = f"knowledge: {doc['source_name']}, " if doc.get("source_name") else ""
             formatted.append(f"[{number}] {header} ({knowledge}source: {source}{link})\n{text}")
 
-        return "\n\n---\n\n".join(formatted)
+        result = "\n\n---\n\n".join(formatted)
+        if failed:
+            result += (
+                "\n\n---\n\nSome sources could not be searched right now (a temporary problem); "
+                "these results come only from the others." + _named("Could not be searched", failed, names)
+            )
+        return result
 
     def _execute_list_files(self, **kwargs) -> str:
         path = kwargs.get("path", "")

@@ -29,7 +29,7 @@ import networkx as nx
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.graphrag.store import GraphStore
-from docsgpt.retriever.base import BaseRetriever
+from docsgpt.retriever.base import BaseRetriever, SearchOutcome
 from docsgpt.retriever.classic_rag import ClassicRAG
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.storage.db.source_config import GraphRetrievalConfig
@@ -235,6 +235,9 @@ class GraphRAGRetriever(BaseRetriever):
         self.doc_token_limit = doc_token_limit
         self.vectorstores = self._classic.vectorstores
         self.per_source_retrieval = {}
+        # Sources whose classic search failed during the current ``_get_data``.
+        # A graph failure is not one: the source is searched classically next.
+        self._failed_sources: List[str] = []
 
     @property
     def search_query(self) -> str:
@@ -641,7 +644,11 @@ class GraphRAGRetriever(BaseRetriever):
             self._classic.base_chunks = self.base_chunks
             self._classic.candidate_k = self.candidate_k
             self._classic.candidate_tokens = self.candidate_tokens
-            return self._classic._get_data()
+            self._classic.last_outcome = None
+            docs = self._classic._get_data()
+            if self._classic.last_outcome is not None:
+                self._failed_sources.extend(self._classic.last_outcome.failed)
+            return docs
         finally:
             self._classic.vectorstores = original
             self._classic.per_source_retrieval = original_overrides
@@ -745,9 +752,14 @@ class GraphRAGRetriever(BaseRetriever):
 
     def _get_data(self) -> List[Dict[str, Any]]:
         sources = [source_id for source_id in self.vectorstores if source_id]
-        if not sources:
-            return []
+        self._failed_sources = []
+        self.last_outcome = None
+        docs = self._search_sources(sources) if sources else []
+        self.last_outcome = SearchOutcome.of(sources, self._failed_sources)
+        return docs
 
+    def _search_sources(self, sources: List[str]) -> List[Dict[str, Any]]:
+        """Search ``sources``: by graph where the store is up, classically otherwise."""
         store = None
         if graphrag_available():
             try:

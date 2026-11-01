@@ -1,7 +1,7 @@
 ---
 title: Upgrading DocsGPT
 description: "Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes: back up, run database migrations, roll back, and read each release's notes."
-lastUpdated: 2026-10-25
+lastUpdated: 2026-11-01
 ---
 
 import { Callout } from 'nextra/components'
@@ -419,7 +419,7 @@ DocsGPT now runs embeddings through [FastEmbed](https://github.com/qdrant/fastem
   + celery -A docsgpt.app.celery worker -B -l INFO -Q docsgpt,parsing,embeddings
   ```
 
-  The bundled Compose and Kubernetes manifests already do this — pull them along with the code. Without it, every search blocks for `EMBEDDINGS_DELEGATE_TIMEOUT` (60s) and then answers with no retrieved context rather than raising, so the symptom is bad answers, not an error. To keep the model out of the worker too, set `EMBEDDINGS_BASE_URL`; to run the API on its own, set `EMBEDDINGS_DELEGATE_TO_WORKER=false`.
+  The bundled Compose and Kubernetes manifests already do this — pull them along with the code. Without it, every search blocks for `EMBEDDINGS_DELEGATE_TIMEOUT` (60s), and the answer then says the attached sources could not be searched right now. To keep the model out of the worker too, set `EMBEDDINGS_BASE_URL`; to run the API on its own, set `EMBEDDINGS_DELEGATE_TO_WORKER=false`.
 </Callout>
 
 New installs default to `ibm-granite/granite-embedding-311m-multilingual-r2`: multilingual, a 32k-token context, and the same 768 dimensions.
