@@ -222,6 +222,7 @@ Restrictions and chat (`chat:run`):
 - A token restricted on **prompts** or **workflows** must also be restricted to agents to chat.
 - A token restricted on **tools** cannot use chat at all, and a tools restriction cannot be combined with `chat:run` when the token is created. Chat executes tools (an agent's own, or your default tools when there is no agent) and those cannot be held to a list.
 - A `conversation_id` must belong to the agent being run (or to no agent, for agent-less chat). Otherwise the server would continue, append to, or resume pending tool calls of another agent's conversation.
+- Listing an agent's starters (`/api/agent_starters`) takes only the agent's `api_key`, so a restricted token cannot call it. The endpoint needs no token at all: the agent key is its credential.
 
 `agents:write` and import: applying an agent definition can create the prompt and tools it references and rewrite the agent's workflow, all under `agents:write` alone. It does not need `prompts:write`, `tools:write` or `workflows:write`, so treat `agents:write` as able to create those through an import.
 
