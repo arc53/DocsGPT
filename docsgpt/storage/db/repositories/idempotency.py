@@ -305,6 +305,7 @@ class IdempotencyRepository:
         self,
         key: str,
         *,
+        task_id: Optional[str] = None,
         result_json: Optional[dict],
         status: str,
     ) -> bool:
@@ -313,12 +314,34 @@ class IdempotencyRepository:
         ``lease_expires_at`` doesn't show up in operator dashboards.
         No-op if the row is already terminal — preserves the first
         writer's outcome on a crash + retry.
+
+        When ``task_id`` is given, the update is scoped to the row claimed
+        under that owner token: a displaced claimant whose claim was taken
+        over (stale sweep) no-ops instead of finalizing its successor's
+        live row.
+
+        Args:
+            key: The idempotency key of the row to finalize.
+            task_id: Optional claim owner token the row must match.
+            result_json: The result payload to store.
+            status: ``completed`` or ``failed``.
+
+        Returns:
+            True when a pending row was updated.
         """
         if status not in ("completed", "failed"):
             raise ValueError(f"finalize_task: invalid status {status!r}")
+        params: dict = {
+            "key": key,
+            "status": status,
+            "result_json": _jsonb(result_json),
+        }
+        if task_id is not None:
+            params["task_id"] = task_id
+        owner_clause = "AND task_id = :task_id" if task_id is not None else ""
         result = self._conn.execute(
             text(
-                """
+                f"""
                 UPDATE task_dedup
                 SET status           = :status,
                     result_json      = CAST(:result_json AS jsonb),
@@ -326,13 +349,10 @@ class IdempotencyRepository:
                     lease_expires_at = NULL
                 WHERE idempotency_key = :key
                   AND status = 'pending'
+                  {owner_clause}
                 """
             ),
-            {
-                "key": key,
-                "status": status,
-                "result_json": _jsonb(result_json),
-            },
+            params,
         )
         return result.rowcount > 0
 

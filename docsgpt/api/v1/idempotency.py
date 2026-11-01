@@ -24,6 +24,11 @@ semantics:
   original request likely died) → release and re-claim.
 - **``failed`` / past-TTL** → ``claim_task`` re-claims automatically.
 
+``release``/``finalize`` are scoped to the claim's ``task_id``: a stale
+takeover can put two requests on one key, so only the current owner's
+write may touch the row (otherwise the displaced request deletes or
+completes its successor's live claim and a third retry re-runs).
+
 Only successful (2xx) responses are cached; a 4xx/5xx releases the claim so a
 genuine retry can still succeed (matches OpenAI).
 """
@@ -120,29 +125,36 @@ def _release_stale_pending(key: str) -> None:
         logger.exception("Failed to release stale v1 idempotency claim for key=%s", key)
 
 
-def claim_or_replay(key: str) -> Tuple[bool, Optional[Response]]:
+def claim_or_replay(key: str) -> Tuple[Optional[str], Optional[Response]]:
     """Claim ``key`` for this request, or return the prior outcome.
 
     Claim-before-process: atomically insert a ``pending`` row. The three
     outcomes map onto the existing ``task_dedup`` contract:
 
-    - **claimed** → ``(True, None)``: this caller runs the agent and must call
-      :func:`finalize` (success) or :func:`release` (error) afterwards.
-    - **``completed`` within TTL** → ``(False, <cached response>)``: replay the
+    - **claimed** → ``(task_id, None)``: this caller runs the agent and must
+      call :func:`finalize` (success) or :func:`release` (error) with that
+      ``task_id`` afterwards.
+    - **``completed`` within TTL** → ``(None, <cached response>)``: replay the
       stored body + status code without re-running.
-    - **fresh ``pending``** → ``(False, <409 response>)``: a same-key request is
+    - **fresh ``pending``** → ``(None, <409 response>)``: a same-key request is
       already in progress.
 
     A ``pending`` row older than :data:`STALE_PENDING_SECONDS` is released and
     re-claimed (the original request likely died). ``failed`` / past-TTL rows
     are re-claimed by ``claim_task`` itself.
 
+    The returned ``task_id`` is the claim's owner token. A stale takeover can
+    hand the key to a later request while the original is still running, so
+    every ``release``/``finalize`` must present it — only the current owner's
+    write matches the row.
+
     Args:
         key: The tenant-scoped idempotency key.
 
     Returns:
-        ``(claimed, response)``. When ``claimed`` is True the caller owns the
-        run; otherwise ``response`` is the replay/409 to return immediately.
+        ``(task_id, response)``. When ``task_id`` is not None the caller owns
+        the run; otherwise ``response`` is the replay/409 to return
+        immediately.
     """
     predetermined_id = str(uuid.uuid4())
     with db_session() as conn:
@@ -150,14 +162,14 @@ def claim_or_replay(key: str) -> Tuple[bool, Optional[Response]]:
             key=key, task_name=TASK_NAME, task_id=predetermined_id,
         )
     if claimed is not None:
-        return True, None
+        return predetermined_id, None
 
     # Lost the claim — resolve why against the within-TTL row.
     with db_readonly() as conn:
         existing = IdempotencyRepository(conn).get_task(key)
 
     if existing is not None and existing.get("status") == "completed":
-        return False, _replay_response(existing.get("result_json"))
+        return None, _replay_response(existing.get("result_json"))
 
     if existing is not None and existing.get("status") == "pending":
         # In-flight? Re-claim only if the prior claim is stale (dead request).
@@ -167,8 +179,8 @@ def claim_or_replay(key: str) -> Tuple[bool, Optional[Response]]:
                 key=key, task_name=TASK_NAME, task_id=predetermined_id,
             )
         if reclaimed is not None:
-            return True, None
-        return False, _conflict_response()
+            return predetermined_id, None
+        return None, _conflict_response()
 
     # Row vanished between claim and read (TTL cleanup / release race) — one
     # more claim attempt; treat a persistent loss as a conflict.
@@ -177,28 +189,33 @@ def claim_or_replay(key: str) -> Tuple[bool, Optional[Response]]:
             key=key, task_name=TASK_NAME, task_id=predetermined_id,
         )
     if reclaimed is not None:
-        return True, None
+        return predetermined_id, None
     with db_readonly() as conn:
         existing = IdempotencyRepository(conn).get_task(key)
     if existing is not None and existing.get("status") == "completed":
-        return False, _replay_response(existing.get("result_json"))
-    return False, _conflict_response()
+        return None, _replay_response(existing.get("result_json"))
+    return None, _conflict_response()
 
 
-def finalize(key: str, response: Response) -> None:
+def finalize(key: str, task_id: str, response: Response) -> None:
     """Cache a successful (2xx) response under ``key``; release otherwise.
 
     Stores ``{"status_code", "body"}`` in ``task_dedup.result_json`` so a
     retry replays byte-for-byte. Non-2xx responses are not cached — the claim
     is released so a genuine retry can still succeed (matches OpenAI).
 
+    Both writes are scoped to ``task_id``: if this request's claim was taken
+    over by the stale sweep, the write becomes a no-op instead of completing
+    or releasing the successor's live claim (#3109).
+
     Args:
         key: The tenant-scoped idempotency key claimed by :func:`claim_or_replay`.
+        task_id: The claim owner token returned by :func:`claim_or_replay`.
         response: The Flask response produced by running the request.
     """
     status_code = response.status_code
     if not (200 <= status_code < 300):
-        release(key)
+        release(key, task_id)
         return
     try:
         body = response.get_json(silent=True)
@@ -208,26 +225,37 @@ def finalize(key: str, response: Response) -> None:
     try:
         with db_session() as conn:
             IdempotencyRepository(conn).finalize_task(
-                key=key, result_json=result_json, status="completed",
+                key=key, task_id=task_id, result_json=result_json, status="completed",
             )
     except Exception:
         logger.exception("Failed to finalize v1 idempotency record for key=%s", key)
 
 
-def release(key: str) -> None:
+def release(key: str, task_id: str) -> None:
     """Drop this request's ``pending`` claim so a retry can re-claim it.
 
     Used on the error path (non-2xx or an exception before finalize) so a
     failed first attempt never blocks a legitimate retry for the full TTL.
+
+    Scoped to ``task_id`` so only the claimant that owns the row may delete
+    it: a request whose claim was taken over by :func:`_release_stale_pending`
+    cannot delete its successor's live claim, which would let a third retry
+    start a duplicate agent run instead of returning 409 (#3109).
+
+    Args:
+        key: The tenant-scoped idempotency key.
+        task_id: The claim owner token returned by :func:`claim_or_replay`.
     """
     try:
         with db_session() as conn:
             conn.execute(
                 sql_text(
                     "DELETE FROM task_dedup "
-                    "WHERE idempotency_key = :k AND status = 'pending'"
+                    "WHERE idempotency_key = :k "
+                    "AND status = 'pending' "
+                    "AND task_id = :tid"
                 ),
-                {"k": key},
+                {"k": key, "tid": task_id},
             )
     except Exception:
         logger.exception("Failed to release v1 idempotency claim for key=%s", key)
