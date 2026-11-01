@@ -117,7 +117,7 @@
         "database": "Welche Daten enthält {{name}}?",
         "other": "Was findest du in {{name}}?"
       },
-      "continue": "{{name}} fortsetzen",
+      "continue": "„{{name}}“ fortsetzen",
       "addKnowledge": "Wissen hinzufügen, um Fragen zu eigenen Dokumenten zu stellen",
       "connect": "{{names}} verbinden",
       "more": "mehr",

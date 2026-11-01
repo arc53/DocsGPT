@@ -117,7 +117,7 @@
         "database": "What data is in {{name}}?",
         "other": "What can you find in {{name}}?"
       },
-      "continue": "Continue {{name}}",
+      "continue": "Continue \"{{name}}\"",
       "addKnowledge": "Add knowledge to ask about your own documents",
       "connect": "Connect {{names}}",
       "more": "more",
