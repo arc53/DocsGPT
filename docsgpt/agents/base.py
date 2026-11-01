@@ -331,7 +331,7 @@ class BaseAgent(ABC):
         self.sources_were_searched = sources_were_searched
         # Which of those sources were searched and which failed to, so a
         # failed search is not reported as "nothing found" (see
-        # ``_retrieval_outcome_note``). None when the caller did not record it.
+        # ``_empty_retrieval_note``). None when the caller did not record it.
         self.search_outcome = search_outcome
         # Set once the context budget sheds a retrieved document; when it shed
         # them all, the empty-search note must not say the sources matched nothing.
