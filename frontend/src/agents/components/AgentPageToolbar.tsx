@@ -70,12 +70,12 @@ export default function AgentPageToolbar({
     </span>
   );
 
-  // The buttons fill the stacked row on a phone (the main one stretches),
+  // The buttons fill the stacked row on a narrow page (the main one stretches),
   // with the ⋯ at its end.
   const action =
     actions && menu ? (
       <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1 sm:flex-none">{actions}</div>
+        <div className="min-w-0 flex-1 @2xl:flex-none">{actions}</div>
         {menu}
       </div>
     ) : (

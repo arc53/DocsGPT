@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => {
     getAgent: vi.fn(() => jsonResponse({})),
     getAgentDefaults: vi.fn(() => jsonResponse({ success: true })),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
+    createPrompt: vi.fn(() => jsonResponse({})),
     tools: null as unknown[] | null,
     models: [] as unknown[],
     defaultModelId: '',
@@ -76,6 +77,36 @@ vi.mock('react-redux', () => ({
   useDispatch: () => mocks.dispatch,
 }));
 
+// The drafter: its config (off unless a test turns it on) and its stream,
+// which plays one script of events per turn.
+const drafter = vi.hoisted(() => ({
+  config: null as null | {
+    enabled: boolean;
+    model: { id: string; display_name: string } | null;
+    reason: null;
+  },
+  scripts: [] as unknown[][],
+  requests: [] as {
+    recipe: string;
+    messages: { role: string; content: string }[];
+    context: { agent_id: string | null; form: Record<string, unknown> };
+  }[],
+}));
+vi.mock('../drafter/useDrafterConfig', () => ({
+  useDrafterConfig: () => drafter.config,
+}));
+vi.mock('../drafter/drafterApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../drafter/drafterApi')>()),
+  streamDrafter: async (
+    request: (typeof drafter.requests)[number],
+    _token: string | null,
+    onEvent: (event: unknown) => void,
+  ) => {
+    drafter.requests.push(JSON.parse(JSON.stringify(request)));
+    (drafter.scripts.shift() ?? [{ type: 'end' }]).forEach(onEvent);
+  },
+}));
+
 vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: () =>
@@ -96,7 +127,7 @@ vi.mock('../api/services/userService', () => ({
     createAgent: mocks.createAgent,
     updateAgent: mocks.updateAgent,
     deleteAgent: mocks.deleteAgent,
-    createPrompt: () => jsonResponse({}),
+    createPrompt: mocks.createPrompt,
   },
 }));
 
@@ -663,7 +694,8 @@ describe('NewAgent form', () => {
       .querySelector(
         'textarea[placeholder="agents.form.placeholders.describeAgent"]',
       )!
-      .closest('[data-slot="form-field"]')!;
+      // The grid cell is the field's drafted-marker wrapper.
+      .closest('[data-slot="drafted-field"]')!;
     expect(description.className).toContain('col-span-2');
     expect(description.className).toContain('sm:col-start-2');
   });
@@ -2301,5 +2333,351 @@ describe('NewAgent gating by role', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'actionToast/showActionToast' }),
     );
+  });
+});
+
+describe('NewAgent drafter', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  const PROMPT_TEXT = 'You help customers with shipping.';
+  const proposal = (fields: Record<string, unknown>) => ({
+    type: 'proposal',
+    proposal: {
+      message: 'The draft is in the form.',
+      fields,
+      reasons: [{ field: 'name', summary: 'Shipping help' }],
+      notes: [],
+      dropped: [],
+    },
+  });
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    drafter.config = {
+      enabled: true,
+      model: { id: 'm1', display_name: 'Fast model' },
+      reason: null,
+    };
+    localStorage.removeItem('docsgpt-drafter:agent-describe-dismissed');
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    drafter.config = null;
+    drafter.scripts = [];
+    drafter.requests = [];
+    mocks.createAgent.mockReset();
+    mocks.createAgent.mockImplementation(() =>
+      jsonResponse({ message: 'Name is taken' }, false),
+    );
+    mocks.createPrompt.mockReset();
+    mocks.createPrompt.mockImplementation(() => jsonResponse({}));
+    mocks.getAgent.mockReset();
+    mocks.getAgent.mockImplementation(() => jsonResponse({}));
+    mocks.tools = null;
+    media.isMobile = false;
+    media.isDesktop = true;
+  });
+
+  const render = async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <NewAgent mode="new" />
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  const renderEdit = async (allowed: string[]) => {
+    mocks.getAgent.mockImplementation(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Deal Desk',
+        description: 'Researches deals',
+        status: 'published',
+        agent_type: 'classic',
+        prompt_id: 'default',
+        access: 'viewer',
+        allowed_actions: allowed,
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  const buttons = (root: ParentNode = container) =>
+    Array.from(root.querySelectorAll<HTMLButtonElement>('button'));
+  const buttonByText = (text: string, root: ParentNode = container) =>
+    buttons(root).find((b) => b.textContent?.includes(text));
+  const buttonByLabel = (label: string, root: ParentNode = container) =>
+    buttons(root).find((b) => b.getAttribute('aria-label') === label);
+  const wand = () =>
+    buttons().find(
+      (b) => b.hasAttribute('data-drafter-entry') && b.textContent !== '',
+    );
+  const describeBox = () =>
+    container.querySelector<HTMLTextAreaElement>(
+      'textarea[placeholder="drafter.agent.describePlaceholder"]',
+    );
+  const nameInput = () =>
+    container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+  const drafted = () =>
+    Array.from(container.querySelectorAll('[data-drafted]')).map(
+      (el) => el.querySelector('label')?.textContent,
+    );
+
+  /** Send a description from the describe box. */
+  const describe = async (text: string) => {
+    await act(async () => setNativeValue(describeBox()!, text));
+    await act(async () =>
+      buttonByText(
+        'drafter.draft',
+        describeBox()!.closest('[data-slot=card]')!,
+      )!.click(),
+    );
+  };
+
+  it('shows no wand and no describe box while the drafter is off', async () => {
+    drafter.config = { enabled: false, model: null, reason: null };
+    await render();
+    expect(wand()).toBeUndefined();
+    expect(describeBox()).toBeNull();
+    expect(container.querySelector('[data-slot="side-panel"]')).toBeNull();
+  });
+
+  it("hides the wand from someone who can't edit the agent", async () => {
+    await renderEdit(['use', 'view']);
+    expect(wand()).toBeUndefined();
+  });
+
+  it('offers Improve on a filled agent, left of Preview', async () => {
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    expect(wand()!.textContent).toContain('drafter.improve');
+    const row = buttons().filter(
+      (b) =>
+        b === wand() || b.textContent?.includes('agents.form.sections.preview'),
+    );
+    expect(row[0]).toBe(wand());
+    expect(describeBox()).toBeNull();
+  });
+
+  it('sends the description from the describe box and opens the panel', async () => {
+    await render();
+    expect(wand()!.textContent).toContain('drafter.draft');
+    await describe('An agent that answers shipping questions');
+    expect(drafter.requests).toHaveLength(1);
+    expect(drafter.requests[0]).toMatchObject({
+      recipe: 'agent',
+      messages: [
+        { role: 'user', content: 'An agent that answers shipping questions' },
+      ],
+      context: {
+        agent_id: null,
+        form: {
+          name: '',
+          description: '',
+          agent_type: 'classic',
+          sources: [],
+          tools: [],
+          prompt_id: 'default',
+          pending_prompt: null,
+          starters: [],
+        },
+      },
+    });
+    const panel = container.querySelector('[data-slot="side-panel"]')!;
+    expect(panel.textContent).toContain('drafter.title');
+    expect(panel.textContent).toContain(
+      'An agent that answers shipping questions',
+    );
+    expect(describeBox()).toBeNull();
+  });
+
+  it('remembers that the describe box was closed', async () => {
+    await render();
+    await act(async () =>
+      buttonByLabel('drafter.agent.describeDismiss')!.click(),
+    );
+    expect(describeBox()).toBeNull();
+    expect(
+      localStorage.getItem('docsgpt-drafter:agent-describe-dismissed'),
+    ).toBe('1');
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    expect(describeBox()).toBeNull();
+    expect(wand()).toBeDefined();
+  });
+
+  it('fills the form from a proposal, marks each field, and undoes one or all', async () => {
+    mocks.tools = [
+      { id: 'tool-1', name: 'api_tool', display_name: 'Tracking' },
+    ];
+    drafter.scripts = [
+      [
+        proposal({
+          name: 'Shipping help',
+          description: 'Answers shipping questions.',
+          agent_type: 'research',
+          tools: ['tool-1'],
+          starters: ['Where is my parcel?'],
+        }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await describe('Shipping agent');
+    expect(nameInput().value).toBe('Shipping help');
+    expect(drafted()).toEqual([
+      'agents.form.labels.name',
+      'agents.form.labels.description',
+      'agents.form.sections.tools',
+      'agents.form.sections.agentType',
+      'agents.form.starters.label',
+    ]);
+    expect(
+      container.querySelector('[data-drafted] [data-slot="drafted-badge"]'),
+    ).not.toBeNull();
+    const panel = container.querySelector('[data-slot="side-panel"]')!;
+    expect(panel.textContent).toContain('The draft is in the form.');
+    expect(wand()!.textContent).toContain('drafter.improve');
+
+    await act(async () => buttonByLabel('drafter.undoField')!.click());
+    expect(nameInput().value).toBe('');
+    expect(drafted()).not.toContain('agents.form.labels.name');
+
+    await act(async () => buttonByText('drafter.undoAll', panel)!.click());
+    expect(drafted()).toEqual([]);
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+      )!.value,
+    ).toBe('');
+    expect(
+      container.querySelector('[data-slot="select-trigger"]')?.textContent,
+    ).toContain('agents.form.agentTypes.classic');
+  });
+
+  it('drops the mark of a field edited by hand', async () => {
+    drafter.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
+    await render();
+    await describe('Shipping agent');
+    expect(drafted()).toEqual(['agents.form.labels.name']);
+    await act(async () => setNativeValue(nameInput(), 'My own name'));
+    expect(drafted()).toEqual([]);
+  });
+
+  it('holds a drafted prompt until save, then creates it once', async () => {
+    drafter.scripts = [
+      [
+        proposal({
+          name: 'Shipping help',
+          description: 'Answers shipping questions.',
+          prompt: {
+            kind: 'new',
+            name: 'Shipping support',
+            content: PROMPT_TEXT,
+          },
+        }),
+        { type: 'end' },
+      ],
+    ];
+    mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'np1' }));
+    await render();
+    await describe('Shipping agent');
+    expect(
+      container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
+    ).toContain('drafter.agent.pendingPrompt');
+    expect(container.textContent).toContain(PROMPT_TEXT);
+    // A pending prompt is unsaved work.
+    expect(buttonByText('agents.form.buttons.cancel')).toBeDefined();
+
+    const saveDraft = () =>
+      act(async () => buttonByText('agents.form.buttons.saveDraft')!.click());
+    // The first agent save fails: the prompt exists by then, so the retry
+    // reuses it.
+    await saveDraft();
+    expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
+    expect(mocks.createPrompt.mock.calls[0]).toEqual([
+      { name: 'Shipping support', content: PROMPT_TEXT },
+      null,
+    ]);
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9' }),
+    );
+    await saveDraft();
+    expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
+    const sent = mocks.createAgent.mock.calls.map((call) =>
+      (call as unknown as [FormData])[0].get('prompt_id'),
+    );
+    expect(sent).toEqual(['np1', 'np1']);
+    // Saved: the marks go and the form is clean.
+    expect(drafted()).toEqual([]);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
+    expect(container.textContent).not.toContain(PROMPT_TEXT);
+  });
+
+  it('sends the form, pending prompt and starters with every message', async () => {
+    drafter.scripts = [
+      [
+        proposal({
+          starters: ['Where is my parcel?'],
+          prompt: {
+            kind: 'new',
+            name: 'Shipping support',
+            content: PROMPT_TEXT,
+          },
+        }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await describe('Shipping agent');
+    const panel = container.querySelector('[data-slot="side-panel"]')!;
+    const ask = panel.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="drafter.askLabel"]',
+    )!;
+    await act(async () => setNativeValue(ask, 'Make it friendlier'));
+    await act(async () => buttonByLabel('drafter.send', panel)!.click());
+    expect(drafter.requests[1].messages.map((m) => m.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+    ]);
+    expect(drafter.requests[1].context.form).toMatchObject({
+      starters: ['Where is my parcel?'],
+      pending_prompt: { name: 'Shipping support', content: PROMPT_TEXT },
+    });
+  });
+
+  it('closes the sheet on a phone after a draft and shows what changed inline', async () => {
+    media.isMobile = true;
+    media.isDesktop = false;
+    drafter.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
+    await render();
+    await describe('Shipping agent');
+    expect(nameInput().value).toBe('Shipping help');
+    const strip = container.querySelector('[data-slot="drafted-strip"]')!;
+    expect(strip.textContent).toContain('drafter.agent.draftedCount');
+    await act(async () => buttonByText('drafter.undoAll', strip)!.click());
+    expect(nameInput().value).toBe('');
+    expect(container.querySelector('[data-slot="drafted-strip"]')).toBeNull();
   });
 });

@@ -65,11 +65,11 @@ describe('AgentPageToolbar', () => {
         menu={<button type="button">menu</button>}
       />,
     );
-    // The buttons stretch across a phone's stacked row, the ⋯ at its end.
+    // The buttons stretch across a narrow page's stacked row, the ⋯ at its end.
     expect(html).toContain(
-      '<div class="flex items-center gap-2"><div class="min-w-0 flex-1 sm:flex-none"><button type="button">Save</button></div><button type="button">menu</button></div>',
+      '<div class="flex items-center gap-2"><div class="min-w-0 flex-1 @2xl:flex-none"><button type="button">Save</button></div><button type="button">menu</button></div>',
     );
-    expect(html).toContain('sm:flex-row');
+    expect(html).toContain('@2xl:flex-row');
   });
 
   // A tab with no buttons keeps its ⋯ beside the byline on a phone rather
