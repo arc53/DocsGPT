@@ -750,6 +750,11 @@ class ToolExecutor:
         # handed to the search tools so each hit is screened as a retrieved
         # document before it is formatted into their result.
         self.retrieval_screen: Optional[Callable[[List[Dict]], List[Dict]]] = None
+        # The agent's per-name screen (``BaseAgent._screen_names_one_by_one``)
+        # for the source names a search tool's result lists that are not hits
+        # ("Could not be searched"); the tool-result stage skips its item-level
+        # controls for those tools, so nothing else would score them.
+        self.source_name_screen: Optional[Callable[[Dict[str, str]], Dict[str, str]]] = None
         # Images the last tool call returned for the model to see (references,
         # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
         # that call's tool message; ``images_shown`` counts them per turn.
@@ -2361,6 +2366,7 @@ class ToolExecutor:
             if isinstance(cached_config, dict) and tool_data["name"] in CITING_TOOLS:
                 cached_config["citation_registry"] = self.citation_registry
                 cached_config["retrieval_screen"] = self.retrieval_screen
+                cached_config["source_name_screen"] = self.source_name_screen
             return cached
 
         tm = ToolManager(config={})
@@ -2449,6 +2455,7 @@ class ToolExecutor:
             if tool_data["name"] in CITING_TOOLS:
                 tool_config["citation_registry"] = self.citation_registry
                 tool_config["retrieval_screen"] = self.retrieval_screen
+                tool_config["source_name_screen"] = self.source_name_screen
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's

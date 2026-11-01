@@ -998,9 +998,11 @@ class BaseAgent(ABC):
             if any(isinstance(t, dict) and eligible(self.tool_executor, t) for t in tools_dict.values()):
                 add_check_job_tool(tools_dict)
         # The executor gates tool calls itself, so it needs this run's engine,
-        # and the search tools screen their hits as retrieved documents.
+        # and the search tools screen their hits as retrieved documents and
+        # the source names their result lists as those documents' names.
         self.tool_executor.guardrail_engine = self.guardrails
         self.tool_executor.retrieval_screen = self._screen_docs
+        self.tool_executor.source_name_screen = self._screen_names_one_by_one
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
         self.turn_capabilities = self._compute_turn_capabilities(tools_dict)
         self._sync_attachments_tool()
@@ -1667,16 +1669,7 @@ class BaseAgent(ABC):
         Returns:
             dict: The names that may reach the model.
         """
-        from docsgpt.retriever.base import one_line
-
-        collapsed = {source_id: one_line(name) for source_id, name in names.items()}
-        collapsed = {source_id: name for source_id, name in collapsed.items() if name}
-        self._score_retrieval_items(self._source_name_items(collapsed))
-        collapsed = {
-            source_id: name
-            for source_id, name in collapsed.items()
-            if not self._source_name_blocked(source_id, name)
-        }
+        collapsed = self._screen_names_one_by_one(names)
         if not collapsed:
             return {}
         decision = self._guardrail_stage("\n".join(collapsed.values()), Stage.RETRIEVAL)
@@ -1689,6 +1682,32 @@ class BaseAgent(ABC):
             # A redaction spanned a line break, so the names no longer line up.
             return {}
         return dict(zip(collapsed, redacted))
+
+    def _screen_names_one_by_one(self, names: Dict[str, str]) -> Dict[str, str]:
+        """Drop the source names an item-level retrieval control blocks, each scored on its own.
+
+        The item-level half of ``_screen_source_names``. The search tools call
+        it on the names their result lists (``source_name_screen``): those are
+        not hits, so ``retrieval_screen`` never scored them, and the tool-result
+        stage skips its item-level controls for a search tool. Verdicts are
+        cached per name for the run.
+
+        Args:
+            names: ``{source_id: name}``.
+
+        Returns:
+            dict: The names collapsed onto one line, the blank and blocked ones left out.
+        """
+        from docsgpt.retriever.base import one_line
+
+        collapsed = {source_id: one_line(name) for source_id, name in names.items()}
+        collapsed = {source_id: name for source_id, name in collapsed.items() if name}
+        self._score_retrieval_items(self._source_name_items(collapsed))
+        return {
+            source_id: name
+            for source_id, name in collapsed.items()
+            if not self._source_name_blocked(source_id, name)
+        }
 
     def _guard_embedded_documents(self, system_prompt: str) -> str:
         """Scan documents that a custom prompt interpolates itself.
