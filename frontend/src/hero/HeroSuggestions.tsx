@@ -106,9 +106,12 @@ export default function HeroSuggestions({
   const named = (dataServices.length > 0 ? dataServices : connectable).map(
     (connector) => connectorName(t, connector),
   );
-  const connectNames = new Intl.ListFormat(intlLocale(i18n.language), {
-    type: 'conjunction',
-  }).format(
+  // The app's English is British, so no comma before "and more".
+  const listLocale = intlLocale(i18n.language);
+  const connectNames = new Intl.ListFormat(
+    listLocale === 'en' || listLocale.startsWith('en-') ? 'en-GB' : listLocale,
+    { type: 'conjunction' },
+  ).format(
     named.length > NAMED_SERVICES
       ? [...named.slice(0, NAMED_SERVICES), t('hero.suggestions.more')]
       : named,

@@ -161,13 +161,9 @@ describe('Hero suggestions', () => {
     await render();
     expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
     // Not a web search or a messaging bot.
-    const expected = new Intl.ListFormat('en', { type: 'conjunction' }).format([
-      'Google Drive',
-      'Notion',
-      'hero.suggestions.more',
-    ]);
+    // British English, like the rest of the app: no comma before "and".
     expect(rowFor('connect').textContent).toBe(
-      `hero.suggestions.connect:${expected}`,
+      'hero.suggestions.connect:Google Drive, Notion and hero.suggestions.more',
     );
     await act(async () => rowFor('connect').click());
     expect(container.textContent).toContain('CONNECTORS');
