@@ -1577,11 +1577,11 @@ class BaseAgent(ABC):
         return "\n".join(lines)
 
     def _source_list_line(self, label: str, source_ids: Tuple[str, ...]) -> List[str]:
-        """``["<label>: name, name."]``, or ``[]`` when none of the sources has a known name.
+        """``['<label> (...): "name", "name".']``, or ``[]`` when none of the sources has a known name.
 
         Names are user-provided text, so they stay in the user turn beside the
-        documents, never in the system prompt, and each is collapsed onto one
-        line so it cannot pose as a line of the note.
+        documents, never in the system prompt, and reach the model quoted as
+        data (``named_sources``) once the retrieval guardrail has screened them.
 
         Args:
             label: What the sources have in common ("Sources searched").
@@ -1590,16 +1590,16 @@ class BaseAgent(ABC):
         Returns:
             list: Zero or one line.
         """
-        names = self._source_names()
-        named = [" ".join(names[source_id].split()) for source_id in source_ids if names.get(source_id)]
-        named = [name for name in named if name]
-        return [f"{label}: {', '.join(named)}."] if named else []
+        from docsgpt.retriever.base import named_sources
+
+        line = named_sources(label, source_ids, self._source_names())
+        return [line] if line else []
 
     def _source_names(self) -> Dict[str, str]:
-        """``{source_id: name}`` for the outcome's sources, looked up once per turn.
+        """``{source_id: name}`` for the outcome's sources, screened, looked up once per turn.
 
-        The document block is rebuilt on every shedding pass, so the lookup is
-        memoised; ``source_names`` never raises.
+        The document block is rebuilt on every shedding pass, so the lookup and
+        the screen are memoised; ``source_names`` never raises.
         """
         cached = getattr(self, "_search_source_names", None)
         if cached is None:
@@ -1607,8 +1607,39 @@ class BaseAgent(ABC):
 
             outcome = getattr(self, "search_outcome", None)
             cached = source_names(list(outcome.searched)) if outcome is not None else {}
+            cached = self._screen_source_names(cached)
             self._search_source_names = cached
         return cached
+
+    def _screen_source_names(self, names: Dict[str, str]) -> Dict[str, str]:
+        """Run source names through the retrieval guardrail, as a document's text is.
+
+        A shared or sponsored source's owner may not be the asker, so a name is
+        as untrusted as the documents. The names are screened together, one
+        per line, by the stage's whole-text controls: a block drops every name
+        (the note then names none), a redaction keeps the redacted names. Only
+        the prompt changes; the documents the client shows are left alone.
+
+        Args:
+            names: ``{source_id: name}``.
+
+        Returns:
+            dict: The names that may reach the model.
+        """
+        collapsed = {source_id: " ".join(str(name).split()) for source_id, name in names.items() if name}
+        collapsed = {source_id: name for source_id, name in collapsed.items() if name}
+        if not collapsed:
+            return {}
+        decision = self._guardrail_stage("\n".join(collapsed.values()), Stage.RETRIEVAL)
+        if decision is None or not (decision.blocked or decision.redacted):
+            return collapsed
+        if decision.blocked:
+            return {}
+        redacted = decision.text.split("\n")
+        if len(redacted) != len(collapsed):
+            # A redaction spanned a line break, so the names no longer line up.
+            return {}
+        return dict(zip(collapsed, redacted))
 
     def _guard_embedded_documents(self, system_prompt: str) -> str:
         """Scan documents that a custom prompt interpolates itself.

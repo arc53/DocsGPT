@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from docsgpt.agents.citations import register_citation
 from docsgpt.agents.tools.base import Tool
 from docsgpt.core.settings import settings
-from docsgpt.retriever.base import SearchOutcome
+from docsgpt.retriever.base import SearchOutcome, named_sources
 from docsgpt.retriever.dispatcher import Dispatcher, build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.retriever.stages.relevance import base_selection
@@ -14,10 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 def _named(label: str, source_ids, names: Dict[str, str]) -> str:
-    """``" <label>: name, name."``, or ``""`` when none of the sources has a known name."""
-    named = [" ".join(names[source_id].split()) for source_id in source_ids if names.get(source_id)]
-    named = [name for name in named if name]
-    return f" {label}: {', '.join(named)}." if named else ""
+    """``" <label> (...): "name", "name"."`` (``named_sources``), or ``""`` when none has a known name.
+
+    The tool's result passes the tool-result guardrail stage like any tool
+    output, so the names are screened there with the rest of it.
+    """
+    line = named_sources(label, source_ids, names)
+    return f" {line}" if line else ""
 
 
 def _in_path(docs: List[Dict], path_filter: str) -> List[Dict]:
