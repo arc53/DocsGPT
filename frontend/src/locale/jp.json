@@ -161,7 +161,8 @@
       "medium": "中",
       "high": "高",
       "unlimited": "無制限",
-      "default": "デフォルト"
+      "default": "デフォルト",
+      "taskModelLoadError": "タスクモデルを読み込めませんでした。"
     },
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",
@@ -2486,10 +2487,11 @@
         "systemUserId": "現在のユーザー ID",
         "artifactsLookup": "IDによるアーティファクトメタデータ"
       },
-      "learnAboutPrompts": "プロンプトについて学ぶ →",
+      "learnAboutPrompts": "プロンプトについて学ぶ",
       "publicPromptEditDisabled": "公開プロンプトは編集できません",
       "promptTypePublic": "公開",
-      "promptTypePrivate": "非公開"
+      "promptTypePrivate": "非公開",
+      "pendingDescription": "エージェントを保存すると作成されます。"
     },
     "chunk": {
       "add": "チャンクを追加",
@@ -4481,7 +4483,7 @@
     "somethingElseLabel": "あなたの回答",
     "somethingElsePlaceholder": "回答を入力",
     "sendAnswers": "回答を送信",
-    "droppedTitle": "除外した項目:",
+    "droppedTitle": "除外した項目",
     "retry": "再試行",
     "steps": {
       "thinking": "考えています…",
@@ -4558,10 +4560,10 @@
       "promptCreateFailed": "下書きしたプロンプトを作成できなかったため、何も保存されていません。もう一度お試しください。",
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
-        "not_found": "存在しない項目を除外しました",
-        "no_access": "開けない項目を除外しました",
-        "invalid": "無効な項目を除外しました",
-        "other": "項目を除外しました"
+        "not_found": "存在しない項目",
+        "no_access": "開けない項目",
+        "invalid": "無効な項目",
+        "other": "使用できない項目"
       }
     },
     "topics": {
@@ -4584,7 +4586,12 @@
       "tooManyOverlap_other": "重複可のトピックはあと {{formatted}} 個しか追加できません。追加する前にいくつかのチェックを外してください。",
       "none": "追加するものはありません。今のトピックとフォルダーで最近の質問をカバーできています。",
       "discard": "破棄",
-      "add_other": "{{formatted}} 件のトピックを追加"
-    }
+      "add_other": "{{formatted}} 件のトピックを追加",
+      "errors": {
+        "invalid_output": "モデルの回答を使用できませんでした。トピックは追加されていません。",
+        "model_error": "トピックの提案中に問題が発生しました。トピックは追加されていません。"
+      }
+    },
+    "undone": "元に戻しました。"
   }
 }

@@ -22,7 +22,7 @@ import {
 import type { DrafterConfig } from '../../drafter/drafterApi';
 import { loadDrafterConfig } from '../../drafter/useDrafterConfig';
 import { useDrafterSession } from '../../drafter/useDrafterSession';
-import { formatShare } from '../../settings/insights/format';
+import { formatShare, joinList } from '../../settings/insights/format';
 import { formatCount } from '../../utils/dateTimeUtils';
 import {
   descriptionMax,
@@ -242,7 +242,10 @@ export function TopicSuggestionsCard({
   if (streaming) {
     body = (
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <p className="text-muted-foreground flex items-center gap-2 text-sm">
+        <p
+          className="text-muted-foreground flex items-center gap-2 text-sm"
+          aria-live="polite"
+        >
           <Spinner size="xs" label={t('drafter.topics.reading')} />
           {t('drafter.topics.reading')}
         </p>
@@ -262,7 +265,15 @@ export function TopicSuggestionsCard({
   } else if (error) {
     body = (
       <div className="flex flex-col gap-3 p-4">
-        <DrafterErrorAlert code={error.code} onRetry={session.retry} />
+        <DrafterErrorAlert
+          code={error.code}
+          onRetry={session.retry}
+          description={
+            error.code === 'invalid_output' || error.code === 'model_error'
+              ? t(`drafter.topics.errors.${error.code}`)
+              : undefined
+          }
+        />
         <div className="flex justify-end">{discard}</div>
       </div>
     );
@@ -297,7 +308,6 @@ export function TopicSuggestionsCard({
       padding="none"
       className="gap-0 overflow-hidden"
       data-testid="topic-suggestions"
-      aria-live="polite"
     >
       {body}
     </Card>
@@ -377,8 +387,8 @@ function Suggestions({
     notes.push({
       key: 'leftOut',
       text: t('drafter.topics.leftOut', {
-        items: proposal.left_out
-          .map((item) =>
+        items: joinList(
+          proposal.left_out.map((item) =>
             item.reason
               ? t('drafter.topics.leftOutItem', {
                   name: item.name,
@@ -386,8 +396,8 @@ function Suggestions({
                   interpolation: { escapeValue: false },
                 })
               : item.name,
-          )
-          .join('; '),
+          ),
+        ),
         interpolation: { escapeValue: false },
       }),
     });
@@ -396,7 +406,7 @@ function Suggestions({
       key: 'pushesOut',
       text: t('drafter.topics.pushesOut', {
         count: pushed.length,
-        names: pushed.join(', '),
+        names: joinList(pushed),
         interpolation: { escapeValue: false },
       }),
     });
@@ -447,7 +457,11 @@ function Suggestions({
   return (
     <>
       <div className="flex flex-col gap-2 px-4 py-3">
-        <div data-item="status" className="flex items-start gap-2 text-sm">
+        <div
+          data-item="status"
+          className="flex items-start gap-2 text-sm"
+          aria-live="polite"
+        >
           <CircleCheck
             className="text-success mt-0.5 size-4 shrink-0"
             aria-hidden="true"
@@ -457,7 +471,7 @@ function Suggestions({
               {t('drafter.topics.read', {
                 count: sample.questions,
                 formatted: formatCount(sample.questions),
-                days: sample.days,
+                days: formatCount(sample.days),
               })}
             </span>
             {tried && (
@@ -496,7 +510,7 @@ function Suggestions({
                   }
                 />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <Label htmlFor={id} className="wrap-anywhere">
+                  <Label htmlFor={id} className="wrap-break-word">
                     {topic.name}
                   </Label>
                   {topic.description && (

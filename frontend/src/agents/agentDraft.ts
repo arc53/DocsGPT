@@ -278,12 +278,15 @@ export const AGENT_FIELD_LABEL_KEYS: Record<AgentDraftField, string> = {
 const DROPPED_REASONS = ['not_found', 'no_access', 'invalid'];
 
 /**
- * The proposal summary's rows and lines: a reason per field, and what the
- * server left out.
+ * The proposal summary's rows and lines: a reason per changed field, and
+ * what the server left out.
  *
  * Args:
  *   proposal: The parsed proposal.
  *   t: The translator.
+ *   changed: The fields applying the draft changed; a reason for any other
+ *     field (one the form already held, as Classic on a Classic agent) is
+ *     left out. Omitted, every reason shows.
  *
  * Returns:
  *   `rows` for ProposalSummary and `dropped` lines.
@@ -291,12 +294,16 @@ const DROPPED_REASONS = ['not_found', 'no_access', 'invalid'];
 export function agentProposalSummary(
   proposal: AgentProposal,
   t: TFunction,
+  changed?: readonly string[],
 ): { rows: ProposalReasonRow[]; dropped: string[] } {
   const labelOf = (field: string) =>
     field in AGENT_FIELD_LABEL_KEYS
       ? t(AGENT_FIELD_LABEL_KEYS[field as AgentDraftField])
       : field;
-  const rows = proposal.reasons.map((reason, index) => ({
+  const reasons = changed
+    ? proposal.reasons.filter((reason) => changed.includes(reason.field))
+    : proposal.reasons;
+  const rows = reasons.map((reason, index) => ({
     key: `${reason.field}-${index}`,
     label: labelOf(reason.field),
     summary: reason.summary,

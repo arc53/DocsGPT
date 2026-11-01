@@ -286,6 +286,8 @@ describe('ModalActions', () => {
     });
     const start = document.querySelector('[data-slot="modal-footer-start"]')!;
     expect(start.className).toContain('sm:mr-auto');
+    // A link, shorter than the buttons, centres on their row.
+    expect(start.className).toContain('sm:justify-center');
     expect(start.textContent).toBe('Test connection');
   });
 

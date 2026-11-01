@@ -316,4 +316,26 @@ describe('topic suggestions in the Insights settings', () => {
     expect(mocks.requests).toHaveLength(2);
     expect(card()!.querySelector('[data-suggestion="t1"]')).not.toBeNull();
   });
+
+  it.each(['model_error', 'invalid_output'] as const)(
+    "says no topics were added when a turn fails with %s, not the form's copy",
+    async (code) => {
+      await render();
+      await run([{ type: 'error', code }, { type: 'end' }]);
+      const alert = card()!.querySelector('[role="alert"]')!;
+      expect(alert.textContent).toContain(`drafter.errors.${code}.title`);
+      expect(alert.textContent).toContain(`${T}.errors.${code}`);
+      expect(alert.textContent).not.toContain(
+        `drafter.errors.${code}.description`,
+      );
+    },
+  );
+
+  it('announces the status line, not the whole card', async () => {
+    await render();
+    await run(proposal());
+    expect(card()!.hasAttribute('aria-live')).toBe(false);
+    const status = card()!.querySelector('[data-item="status"]')!;
+    expect(status.getAttribute('aria-live')).toBe('polite');
+  });
 });

@@ -13,7 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { EmptyState } from '../components/ui/empty-state';
 import { SectionHeader } from '../components/ui/section-header';
+import { Skeleton } from '../components/ui/skeleton';
 import { resetDrafterConfigCache } from '../drafter/useDrafterConfig';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import type { Model } from '../models/types';
@@ -27,9 +29,11 @@ type Loaded = {
 };
 
 /**
- * Settings > General > Models: the task model, which runs DocsGPT's own jobs
+ * Settings › General › Models: the task model, which runs DocsGPT's own jobs
  * (the drafter, graph extraction, monitor checks) for this user. Saved to
- * the server on change; a failed save puts the previous pick back.
+ * the server on change; a failed save puts the previous pick back. A
+ * skeleton row stands in while it loads and a load error with Retry when the
+ * fetch fails; a server from before the task model hides the section.
  */
 export default function TaskModelSection() {
   const { t } = useTranslation();
@@ -37,6 +41,10 @@ export default function TaskModelSection() {
   const token = useSelector(selectToken);
   const id = React.useId();
   const [loaded, setLoaded] = React.useState<Loaded | null>(null);
+  const [failed, setFailed] = React.useState(false);
+  // An older server has no task model: the section stays hidden.
+  const [unsupported, setUnsupported] = React.useState(false);
+  const [attempt, setAttempt] = React.useState(0);
   // Only the latest save may roll the pick back, to the last one saved.
   const saveSeq = React.useRef(0);
   const savedValue = React.useRef('');
@@ -48,11 +56,15 @@ export default function TaskModelSection() {
       modelService.getModels(token),
     ])
       .then(async ([prefsRes, modelsRes]) => {
-        if (!prefsRes?.ok || !modelsRes?.ok) return;
+        if (!prefsRes?.ok || !modelsRes?.ok) throw new Error('load failed');
         const prefs = await prefsRes.json();
         const data = await modelsRes.json();
+        if (cancelled) return;
         // A server from before the task model sends no such field.
-        if (cancelled || !prefs || !('instance_task_model_id' in prefs)) return;
+        if (!prefs || !('instance_task_model_id' in prefs)) {
+          setUnsupported(true);
+          return;
+        }
         const models = modelService.transformModels(data?.models || []);
         const known = (modelId: unknown): modelId is string =>
           typeof modelId === 'string' && models.some((m) => m.id === modelId);
@@ -66,13 +78,40 @@ export default function TaskModelSection() {
         savedValue.current = picked;
         setLoaded({ value: picked, models });
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, attempt]);
 
-  if (!loaded) return null;
+  if (unsupported) return null;
+  if (!loaded) {
+    return (
+      <section className="flex flex-col gap-4">
+        <SectionHeader title={t('settings.general.sections.models')} />
+        {failed ? (
+          <EmptyState
+            size="sm"
+            tone="destructive"
+            illustration="none"
+            title={t('settings.general.taskModelLoadError')}
+            onRetry={() => {
+              setFailed(false);
+              setAttempt((n) => n + 1);
+            }}
+          />
+        ) : (
+          <div aria-busy="true" className="flex flex-col gap-2">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-3 w-72 max-w-full" />
+            <Skeleton className="mt-1 h-9.5 w-full rounded-full sm:w-56" />
+          </div>
+        )}
+      </section>
+    );
+  }
 
   const builtin = loaded.models.filter((m) => m.source !== 'user');
   const own = loaded.models.filter((m) => m.source === 'user');

@@ -163,7 +163,8 @@
       "medium": "Medio",
       "high": "Alto",
       "unlimited": "Ilimitado",
-      "default": "Predeterminado"
+      "default": "Predeterminado",
+      "taskModelLoadError": "No se pudo cargar el modelo de tareas."
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
@@ -2544,17 +2545,17 @@
       "maxTimeout": "El tiempo de espera máximo es de 300 segundos"
     },
     "prompts": {
-      "addPrompt": "Agregar Prompt",
+      "addPrompt": "Agregar prompt",
       "addDescription": "Agrega tu prompt personalizado y guárdalo en DocsGPT",
-      "editPrompt": "Editar Prompt",
+      "editPrompt": "Editar prompt",
       "editDescription": "Edita tu prompt personalizado y guárdalo en DocsGPT",
-      "viewPrompt": "Ver Prompt",
+      "viewPrompt": "Ver prompt",
       "viewDescription": "Los prompts integrados no se pueden editar. Duplícalo para crear tu propia copia editable.",
       "duplicate": "Duplicar",
-      "duplicatePrompt": "Duplicar Prompt",
+      "duplicatePrompt": "Duplicar prompt",
       "duplicateDescription": "Estás editando una copia de \"{{name}}\"; guárdala como tu propio prompt",
-      "promptName": "Nombre del Prompt",
-      "promptText": "Texto del Prompt",
+      "promptName": "Nombre del prompt",
+      "promptText": "Texto del prompt",
       "save": "Guardar",
       "cancel": "Cancelar",
       "nameExists": "El nombre ya existe",
@@ -2580,10 +2581,11 @@
         "systemUserId": "ID del usuario actual",
         "artifactsLookup": "Metadatos de artefactos por id"
       },
-      "learnAboutPrompts": "Aprende sobre los Prompts →",
+      "learnAboutPrompts": "Aprende sobre los prompts",
       "publicPromptEditDisabled": "Los prompts públicos no se pueden editar",
       "promptTypePublic": "público",
-      "promptTypePrivate": "privado"
+      "promptTypePrivate": "privado",
+      "pendingDescription": "Se crea al guardar el agente."
     },
     "chunk": {
       "add": "Agregar fragmento",
@@ -4631,7 +4633,7 @@
     "somethingElseLabel": "Tu respuesta",
     "somethingElsePlaceholder": "Escribe tu propia respuesta",
     "sendAnswers": "Enviar respuestas",
-    "droppedTitle": "Se dejó fuera:",
+    "droppedTitle": "Se dejó fuera",
     "retry": "Reintentar",
     "steps": {
       "thinking": "Pensando…",
@@ -4720,10 +4722,10 @@
       "promptCreateFailed": "No se pudo crear el prompt redactado, así que no se guardó nada. Vuelve a intentarlo.",
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
-        "not_found": "se dejó fuera un elemento que no existe",
-        "no_access": "se dejó fuera un elemento que no puedes abrir",
-        "invalid": "se dejó fuera un elemento no válido",
-        "other": "se dejó fuera un elemento"
+        "not_found": "un elemento que no existe",
+        "no_access": "un elemento que no puedes abrir",
+        "invalid": "un elemento no válido",
+        "other": "un elemento que no se pudo usar"
       }
     },
     "topics": {
@@ -4762,7 +4764,12 @@
       "discard": "Descartar",
       "add_one": "Añadir {{formatted}} tema",
       "add_many": "Añadir {{formatted}} temas",
-      "add_other": "Añadir {{formatted}} temas"
-    }
+      "add_other": "Añadir {{formatted}} temas",
+      "errors": {
+        "invalid_output": "No se pudo usar la respuesta del modelo. No se añadió ningún tema.",
+        "model_error": "Algo salió mal al sugerir temas. No se añadió ningún tema."
+      }
+    },
+    "undone": "Deshecho."
   }
 }

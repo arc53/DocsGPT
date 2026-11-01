@@ -23,24 +23,28 @@ import { WandButton } from './WandButton';
  *   mode: `improve` or `write` (the button's label and the placeholder).
  *   result: The latest result's message and warnings, or null.
  *   inputRef: The request field, for "Improve a copy" to focus.
+ *   reviewing: An improvement is under review: the request field is hidden
+ *     until it closes, and the result's message and warnings stay.
  */
 export function PromptAskBar({
   session,
   mode,
   result,
   inputRef,
+  reviewing = false,
 }: {
   session: DrafterSession;
   mode: 'improve' | 'write';
   result: PromptDraftResult | null;
   inputRef?: Ref<HTMLInputElement>;
+  reviewing?: boolean;
 }) {
   const { t } = useTranslation();
   const [text, setText] = useState('');
   const { items, step, streaming } = session;
 
   const send = () => {
-    if (streaming || !text.trim()) return;
+    if (streaming || reviewing || !text.trim()) return;
     // A prompt request is one turn on the text as it is now.
     session.reset();
     session.send(text);
@@ -58,46 +62,48 @@ export function PromptAskBar({
 
   return (
     <div data-slot="prompt-ask-bar" className="flex flex-col gap-3">
-      <form
-        className="flex flex-col gap-2 sm:flex-row sm:items-center"
-        onSubmit={(event) => {
-          event.preventDefault();
-          send();
-        }}
-      >
-        <div className="min-w-0 flex-1">
-          <Input
-            ref={inputRef}
-            shape="pill"
-            leftIcon={
-              <WandSparkles className="text-link size-4" aria-hidden="true" />
-            }
-            value={text}
-            readOnly={streaming}
-            aria-label={t('drafter.prompt.askLabel')}
-            placeholder={
-              mode === 'write'
-                ? t('drafter.prompt.writePlaceholder')
-                : t('drafter.prompt.improvePlaceholder')
-            }
-            onChange={(event) => setText(event.target.value)}
-          />
-        </div>
-        {streaming ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="field"
-            shape="pill"
-            onClick={session.stop}
-          >
-            <Square />
-            {t('drafter.stop')}
-          </Button>
-        ) : (
-          <WandButton mode={mode} onClick={send} disabled={!text.trim()} />
-        )}
-      </form>
+      {!reviewing && (
+        <form
+          className="flex flex-col gap-2 sm:flex-row sm:items-center"
+          onSubmit={(event) => {
+            event.preventDefault();
+            send();
+          }}
+        >
+          <div className="min-w-0 flex-1">
+            <Input
+              ref={inputRef}
+              shape="pill"
+              leftIcon={
+                <WandSparkles className="text-link size-4" aria-hidden="true" />
+              }
+              value={text}
+              readOnly={streaming}
+              aria-label={t('drafter.prompt.askLabel')}
+              placeholder={
+                mode === 'write'
+                  ? t('drafter.prompt.writePlaceholder')
+                  : t('drafter.prompt.improvePlaceholder')
+              }
+              onChange={(event) => setText(event.target.value)}
+            />
+          </div>
+          {streaming ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="field"
+              shape="pill"
+              onClick={session.stop}
+            >
+              <Square />
+              {t('drafter.stop')}
+            </Button>
+          ) : (
+            <WandButton mode={mode} onClick={send} disabled={!text.trim()} />
+          )}
+        </form>
+      )}
       <div aria-live="polite" className="contents">
         {step && (
           <p

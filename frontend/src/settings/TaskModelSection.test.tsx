@@ -197,4 +197,47 @@ describe('Task model row', () => {
     await render({ chat_prompt_id: 'default' });
     expect(container.innerHTML).toBe('');
   });
+
+  it('shows a skeleton row while it loads', async () => {
+    getPreferences.mockReturnValue(new Promise(() => undefined));
+    getModels.mockReturnValue(new Promise(() => undefined));
+    await act(async () => root.render(<TaskModelSection />));
+    expect(container.querySelector('h2')?.textContent).toBe(
+      'settings.general.sections.models',
+    );
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(select()).toBeNull();
+  });
+
+  it('shows a load error with Retry when the fetch fails, and Retry loads it', async () => {
+    getPreferences.mockResolvedValue(json({}, false));
+    getModels.mockResolvedValue(json({ models: MODELS }));
+    await act(async () => root.render(<TaskModelSection />));
+    const error = container.querySelector(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    );
+    expect(error?.textContent).toContain('settings.general.taskModelLoadError');
+    expect(select()).toBeNull();
+
+    getPreferences.mockResolvedValue(
+      json({ task_model_id: 'mine', instance_task_model_id: 'gpt-b' }),
+    );
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(select()?.dataset.value).toBe('mine');
+  });
+
+  it('shows the load error when a request throws', async () => {
+    getPreferences.mockRejectedValue(new Error('offline'));
+    getModels.mockResolvedValue(json({ models: MODELS }));
+    await act(async () => root.render(<TaskModelSection />));
+    expect(
+      container.querySelector(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      ),
+    ).not.toBeNull();
+  });
 });

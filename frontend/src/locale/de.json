@@ -162,7 +162,8 @@
       "medium": "Mittel",
       "high": "Hoch",
       "unlimited": "Unbegrenzt",
-      "default": "Standard"
+      "default": "Standard",
+      "taskModelLoadError": "Das Aufgabenmodell konnte nicht geladen werden."
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",
@@ -2495,10 +2496,11 @@
         "systemUserId": "Aktuelle Benutzer-ID",
         "artifactsLookup": "Artefakt-Metadaten nach ID"
       },
-      "learnAboutPrompts": "Mehr über Prompts erfahren →",
+      "learnAboutPrompts": "Mehr über Prompts erfahren",
       "publicPromptEditDisabled": "Öffentliche Prompts können nicht bearbeitet werden",
       "promptTypePublic": "öffentlich",
-      "promptTypePrivate": "privat"
+      "promptTypePrivate": "privat",
+      "pendingDescription": "Er wird erstellt, wenn du den Agenten speicherst."
     },
     "chunk": {
       "add": "Chunk hinzufügen",
@@ -4461,8 +4463,8 @@
       "improvePrompt": "Prompt verbessern",
       "improveCopy": "Kopie verbessern",
       "askLabel": "Was soll DocsGPT ändern oder schreiben?",
-      "improvePlaceholder": "Sagen Sie, was sich ändern soll, z. B. keine Preise nennen…",
-      "writePlaceholder": "Beschreiben Sie den Prompt, z. B. ein freundlicher Helfer für unser Personalhandbuch…",
+      "improvePlaceholder": "Sag, was sich ändern soll, z. B. keine Preise nennen…",
+      "writePlaceholder": "Beschreibe den Prompt, z. B. ein freundlicher Helfer für unser Personalhandbuch…",
       "errors": {
         "invalid_output": "Die Antwort des Modells war nicht verwendbar. Der Prompt hat sich nicht geändert.",
         "model_error": "Beim Entwerfen ist etwas schiefgelaufen. Der Prompt hat sich nicht geändert."
@@ -4485,7 +4487,7 @@
       "accepted": "Übernommen",
       "rejected": "Abgelehnt",
       "undoChoice": "Rückgängig",
-      "undoChoiceLabel": "Ihre Wahl bei Änderung {{number}} rückgängig machen",
+      "undoChoiceLabel": "Deine Wahl bei Änderung {{number}} rückgängig machen",
       "acceptAll": "Alle übernehmen",
       "reviewOneByOne": "Einzeln prüfen",
       "discard": "Verwerfen",
@@ -4499,25 +4501,25 @@
     "undoField": "{{field}} rückgängig machen",
     "undoAll": "Alles rückgängig",
     "somethingElse": "Etwas anderes…",
-    "somethingElseLabel": "Ihre Antwort",
+    "somethingElseLabel": "Deine Antwort",
     "somethingElsePlaceholder": "Eigene Antwort eingeben",
     "sendAnswers": "Antworten senden",
-    "droppedTitle": "Weggelassen:",
+    "droppedTitle": "Weggelassen",
     "retry": "Erneut versuchen",
     "steps": {
       "thinking": "Denkt nach…",
-      "reading": "Sieht sich Ihren Arbeitsbereich an…",
+      "reading": "Sieht sich deinen Arbeitsbereich an…",
       "drafting": "Entwirft…"
     },
     "askLabel": "Nachricht an DocsGPT",
-    "startPlaceholder": "Beschreiben Sie, was Sie möchten…",
+    "startPlaceholder": "Beschreibe, was du möchtest…",
     "askPlaceholder": "Um eine Änderung bitten…",
     "stop": "Stoppen",
     "send": "Senden",
-    "footer": "Verwendet {{model}} · kann Ihre Agenten, Wissensquellen, Tools und Prompts lesen.",
-    "footerNoModel": "Kann Ihre Agenten, Wissensquellen, Tools und Prompts lesen.",
+    "footer": "Verwendet {{model}} · kann deine Agenten, Wissensquellen, Tools und Prompts lesen.",
+    "footerNoModel": "Kann deine Agenten, Wissensquellen, Tools und Prompts lesen.",
     "changeModel": "Modell ändern",
-    "lookedAtWorkspace": "Ihren Arbeitsbereich angesehen",
+    "lookedAtWorkspace": "Deinen Arbeitsbereich angesehen",
     "counts": {
       "sources_one": "{{count}} Wissensquelle",
       "sources_other": "{{count}} Wissensquellen",
@@ -4537,15 +4539,15 @@
       },
       "no_model": {
         "title": "Kein Modell zum Entwerfen",
-        "description": "Wählen Sie unter Einstellungen › Allgemein ein Aufgabenmodell und versuchen Sie es erneut."
+        "description": "Wähle unter Einstellungen › Allgemein ein Aufgabenmodell und versuche es erneut."
       },
       "rate_limited": {
         "title": "Zu viele Anfragen",
-        "description": "Warten Sie einen Moment und versuchen Sie es dann erneut."
+        "description": "Warte einen Moment und versuche es dann erneut."
       },
       "quota": {
         "title": "Nutzungslimit erreicht",
-        "description": "Ihr Kontingent ist vorerst aufgebraucht. Nach dem Zurücksetzen funktioniert das Entwerfen wieder."
+        "description": "Dein Kontingent ist vorerst aufgebraucht. Nach dem Zurücksetzen funktioniert das Entwerfen wieder."
       },
       "invalid_output": {
         "title": "Der Entwurf ist nicht gelungen",
@@ -4557,12 +4559,12 @@
       },
       "bad_request": {
         "title": "Senden nicht möglich",
-        "description": "Die Anfrage konnte nicht gelesen werden. Laden Sie die Seite neu und versuchen Sie es erneut."
+        "description": "Die Anfrage konnte nicht gelesen werden. Lade die Seite neu und versuche es erneut."
       }
     },
     "agent": {
-      "introNew": "Sagen Sie mir, was dieser Agent tun soll und für wen er gedacht ist. Ich sehe mir Ihre Wissensquellen, Tools und Prompts an und fülle dann das Formular aus. Gespeichert wird erst, wenn Sie speichern.",
-      "introImprove": "Was möchten Sie ändern? Ich passe das Formular an; gespeichert wird erst, wenn Sie speichern.",
+      "introNew": "Sag mir, was dieser Agent tun soll und für wen er gedacht ist. Ich sehe mir deine Wissensquellen, Tools und Prompts an und fülle dann das Formular aus. Gespeichert wird erst, wenn du speicherst.",
+      "introImprove": "Was möchtest du ändern? Ich passe das Formular an; gespeichert wird erst, wenn du speicherst.",
       "examples": {
         "support": "Support-Agent für unser Hilfecenter",
         "research": "Rechercheassistent für unsere Verträge",
@@ -4571,24 +4573,24 @@
         "starters": "Gesprächseinstiege vorschlagen"
       },
       "describeTitle": "Mit einer Beschreibung beginnen",
-      "describeDescription": "Sagen Sie, was der Agent tun soll. DocsGPT wählt Wissensquellen und Tools aus Ihrem Bestand und schreibt den Prompt.",
+      "describeDescription": "Sag, was der Agent tun soll. DocsGPT wählt Wissensquellen und Tools aus deinem Bestand und schreibt den Prompt.",
       "describeDismiss": "Beschreibungsfeld ausblenden",
       "describeLabel": "Was soll der Agent tun?",
-      "describeHint": "Oder füllen Sie das Formular unten selbst aus.",
+      "describeHint": "Oder fülle das Formular unten selbst aus.",
       "describePlaceholder": "Ein Agent auf unserer Website, der Fragen zum Versand beantwortet…",
-      "draftedCount_one": "{{count}} Feld entworfen. Prüfen Sie es vor dem Speichern.",
-      "draftedCount_other": "{{count}} Felder entworfen. Prüfen Sie sie vor dem Speichern.",
-      "review": "Prüfen",
+      "draftedCount_one": "{{count}} Feld entworfen. Prüfe es vor dem Speichern.",
+      "draftedCount_other": "{{count}} Felder entworfen. Prüfe sie vor dem Speichern.",
+      "review": "Ansehen",
       "pendingPrompt": "{{name}} · neu, wird beim Speichern erstellt",
       "promptText": "Prompt-Text",
       "editPrompt": "Prompt bearbeiten",
-      "promptCreateFailed": "Der entworfene Prompt konnte nicht erstellt werden, daher wurde nichts gespeichert. Versuchen Sie es erneut.",
+      "promptCreateFailed": "Der entworfene Prompt konnte nicht erstellt werden, daher wurde nichts gespeichert. Versuche es erneut.",
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
-        "not_found": "ein Element, das nicht existiert, wurde weggelassen",
-        "no_access": "ein Element, das Sie nicht öffnen können, wurde weggelassen",
-        "invalid": "ein ungültiges Element wurde weggelassen",
-        "other": "ein Element wurde weggelassen"
+        "not_found": "ein Element, das nicht existiert",
+        "no_access": "ein Element, das du nicht öffnen kannst",
+        "invalid": "ein ungültiges Element",
+        "other": "ein Element, das nicht verwendet werden konnte"
       }
     },
     "topics": {
@@ -4612,14 +4614,19 @@
       "leftOutItem": "{{name}} ({{reason}})",
       "pushesOut_one": "Dadurch fällt {{count}} Ordner heraus, seine Fragen landen unter Keines dieser Themen: {{names}}",
       "pushesOut_other": "Dadurch fallen {{count}} Ordner heraus, ihre Fragen landen unter Keines dieser Themen: {{names}}",
-      "tooManyOnePick_one": "Es passt nur noch {{formatted}} Thema, das Fragen einsortiert. Wählen Sie vor dem Hinzufügen einige ab.",
-      "tooManyOnePick_other": "Es passen nur noch {{formatted}} Themen, die Fragen einsortieren. Wählen Sie vor dem Hinzufügen einige ab.",
-      "tooManyOverlap_one": "Es passt nur noch {{formatted}} Thema, das sich überschneiden kann. Wählen Sie vor dem Hinzufügen einige ab.",
-      "tooManyOverlap_other": "Es passen nur noch {{formatted}} Themen, die sich überschneiden können. Wählen Sie vor dem Hinzufügen einige ab.",
-      "none": "Nichts hinzuzufügen: Ihre Themen und Ordner decken die aktuellen Fragen bereits ab.",
+      "tooManyOnePick_one": "Es passt nur noch {{formatted}} Thema, das Fragen einsortiert. Wähle vor dem Hinzufügen einige ab.",
+      "tooManyOnePick_other": "Es passen nur noch {{formatted}} Themen, die Fragen einsortieren. Wähle vor dem Hinzufügen einige ab.",
+      "tooManyOverlap_one": "Es passt nur noch {{formatted}} Thema, das sich überschneiden kann. Wähle vor dem Hinzufügen einige ab.",
+      "tooManyOverlap_other": "Es passen nur noch {{formatted}} Themen, die sich überschneiden können. Wähle vor dem Hinzufügen einige ab.",
+      "none": "Nichts hinzuzufügen: Deine Themen und Ordner decken die aktuellen Fragen bereits ab.",
       "discard": "Verwerfen",
       "add_one": "{{formatted}} Thema hinzufügen",
-      "add_other": "{{formatted}} Themen hinzufügen"
-    }
+      "add_other": "{{formatted}} Themen hinzufügen",
+      "errors": {
+        "invalid_output": "Die Antwort des Modells war nicht verwendbar. Es wurden keine Themen hinzugefügt.",
+        "model_error": "Beim Vorschlagen von Themen ist etwas schiefgelaufen. Es wurden keine Themen hinzugefügt."
+      }
+    },
+    "undone": "Rückgängig gemacht."
   }
 }

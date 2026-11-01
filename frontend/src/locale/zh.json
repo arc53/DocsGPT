@@ -161,7 +161,8 @@
       "medium": "中",
       "high": "高",
       "unlimited": "无限",
-      "default": "默认"
+      "default": "默认",
+      "taskModelLoadError": "无法加载任务模型。"
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
@@ -2464,14 +2465,14 @@
       "cancel": "取消",
       "nameExists": "名称已存在",
       "deleteConfirmation": "删除“{{name}}”？",
-      "placeholderText": "在此輸入提示內容...",
+      "placeholderText": "在此输入提示内容...",
       "addExamplePlaceholder": "請總結此文本：",
       "variablesLabel": "變數",
-      "variablesSubtext": "點擊以插入提示中",
+      "variablesSubtext": "点击以插入提示中",
       "variablesDescription": "點擊以插入到提示中",
       "systemVariables": "點擊以插入提示中",
-      "toolVariables": "工具變數",
-      "systemVariablesDropdownLabel": "系統變數",
+      "toolVariables": "工具变量",
+      "systemVariablesDropdownLabel": "系统变量",
       "systemVariableOptions": {
         "sourceContent": "來源內容",
         "sourceSummaries": "內容別名（向後相容）",
@@ -2485,10 +2486,11 @@
         "systemUserId": "目前使用者 ID",
         "artifactsLookup": "按 ID 查询工件元数据"
       },
-      "learnAboutPrompts": "了解提示 →",
+      "learnAboutPrompts": "了解提示",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",
-      "promptTypePrivate": "私人"
+      "promptTypePrivate": "私人",
+      "pendingDescription": "保存智能体时会创建它。"
     },
     "chunk": {
       "add": "添加块",
@@ -4479,7 +4481,7 @@
     "somethingElseLabel": "你的回答",
     "somethingElsePlaceholder": "输入你自己的回答",
     "sendAnswers": "发送回答",
-    "droppedTitle": "已省略：",
+    "droppedTitle": "已省略",
     "retry": "重试",
     "steps": {
       "thinking": "正在思考…",
@@ -4556,10 +4558,10 @@
       "promptCreateFailed": "无法创建起草的提示词，因此没有保存任何内容。请重试。",
       "droppedLine": "{{field}}：{{reason}}",
       "droppedReasons": {
-        "not_found": "省略了一个不存在的项目",
-        "no_access": "省略了一个你无法打开的项目",
-        "invalid": "省略了一个无效的项目",
-        "other": "省略了一个项目"
+        "not_found": "一个不存在的项目",
+        "no_access": "一个你无法打开的项目",
+        "invalid": "一个无效的项目",
+        "other": "一个无法使用的项目"
       }
     },
     "topics": {
@@ -4582,7 +4584,12 @@
       "tooManyOverlap_other": "只能再添加 {{formatted}} 个可重叠的主题。添加前请取消勾选一些。",
       "none": "没有可添加的内容：你的主题和文件夹已覆盖近期问题。",
       "discard": "放弃",
-      "add_other": "添加 {{formatted}} 个主题"
-    }
+      "add_other": "添加 {{formatted}} 个主题",
+      "errors": {
+        "invalid_output": "无法使用模型的回答。没有添加任何主题。",
+        "model_error": "建议主题时出了问题。没有添加任何主题。"
+      }
+    },
+    "undone": "已撤销。"
   }
 }

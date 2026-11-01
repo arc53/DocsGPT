@@ -162,7 +162,8 @@
       "medium": "Medium",
       "high": "High",
       "unlimited": "Unlimited",
-      "default": "Default"
+      "default": "Default",
+      "taskModelLoadError": "Could not load the task model."
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
@@ -2459,17 +2460,17 @@
       "maxTimeout": "Maximum timeout is 300 seconds"
     },
     "prompts": {
-      "addPrompt": "Add Prompt",
+      "addPrompt": "Add prompt",
       "addDescription": "Add your custom prompt and save it to DocsGPT",
-      "editPrompt": "Edit Prompt",
+      "editPrompt": "Edit prompt",
       "editDescription": "Edit your custom prompt and save it to DocsGPT",
-      "viewPrompt": "View Prompt",
+      "viewPrompt": "View prompt",
       "viewDescription": "Built-in prompts can't be edited. Duplicate to create your own editable copy.",
       "duplicate": "Duplicate",
-      "duplicatePrompt": "Duplicate Prompt",
+      "duplicatePrompt": "Duplicate prompt",
       "duplicateDescription": "You're editing a copy of \"{{name}}\" — save it as your own prompt",
-      "promptName": "Prompt Name",
-      "promptText": "Prompt Text",
+      "promptName": "Prompt name",
+      "promptText": "Prompt text",
       "save": "Save",
       "cancel": "Cancel",
       "nameExists": "Name already exists",
@@ -2477,11 +2478,11 @@
       "placeholderText": "Type your prompt text here...",
       "addExamplePlaceholder": "Please summarize this text:",
       "variablesLabel": "Variables",
-      "variablesSubtext": "Click To Insert Into Prompt",
+      "variablesSubtext": "Click to insert into prompt",
       "variablesDescription": "Click to insert into prompt",
       "systemVariables": "Click to insert into prompt",
-      "toolVariables": "Tool Variables",
-      "systemVariablesDropdownLabel": "System Variables",
+      "toolVariables": "Tool variables",
+      "systemVariablesDropdownLabel": "System variables",
       "systemVariableOptions": {
         "sourceContent": "Sources content",
         "sourceSummaries": "Alias for content (backward compatible)",
@@ -2495,10 +2496,11 @@
         "systemUserId": "Current user ID",
         "artifactsLookup": "Artifact metadata by id"
       },
-      "learnAboutPrompts": "Learn about Prompts →",
+      "learnAboutPrompts": "Learn about prompts",
       "publicPromptEditDisabled": "Public prompts cannot be edited",
       "promptTypePublic": "public",
-      "promptTypePrivate": "private"
+      "promptTypePrivate": "private",
+      "pendingDescription": "It's created when you save the agent."
     },
     "chunk": {
       "add": "Add chunk",
@@ -4523,7 +4525,7 @@
     "somethingElseLabel": "Your answer",
     "somethingElsePlaceholder": "Type your own answer",
     "sendAnswers": "Send answers",
-    "droppedTitle": "Left out:",
+    "droppedTitle": "Left out",
     "retry": "Try again",
     "steps": {
       "thinking": "Thinking…",
@@ -4606,10 +4608,10 @@
       "promptCreateFailed": "Couldn't create the drafted prompt, so nothing was saved. Try again.",
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
-        "not_found": "an item that doesn't exist was left out",
-        "no_access": "an item you can't open was left out",
-        "invalid": "an item that isn't valid was left out",
-        "other": "an item was left out"
+        "not_found": "an item that doesn't exist",
+        "no_access": "an item you can't open",
+        "invalid": "an item that isn't valid",
+        "other": "an item it couldn't use"
       }
     },
     "topics": {
@@ -4640,7 +4642,12 @@
       "none": "Nothing to add: your topics and folders already cover the recent questions.",
       "discard": "Discard",
       "add_one": "Add {{formatted}} topic",
-      "add_other": "Add {{formatted}} topics"
-    }
+      "add_other": "Add {{formatted}} topics",
+      "errors": {
+        "invalid_output": "The model's answer couldn't be used. No topics were added.",
+        "model_error": "Something went wrong while suggesting topics. No topics were added."
+      }
+    },
+    "undone": "Undone."
   }
 }

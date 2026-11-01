@@ -21,6 +21,8 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 
+import { useMediaQuery } from '../hooks';
+
 import type { DrafterCounts, DrafterErrorCode } from './drafterApi';
 import { DrafterQuestions } from './DrafterQuestions';
 import type { DrafterItem, DrafterSession } from './useDrafterSession';
@@ -46,10 +48,20 @@ export type DraftPanelProps = {
   modelName: string | null;
   /** The first message before anything is sent. */
   intro: string;
+  /**
+   * `draft` (the default) on an empty form, `improve` on a filled one: the
+   * ask bar then asks for a change from the first message on.
+   */
+  mode?: 'draft' | 'improve';
   /** Example requests under the intro; a click puts one in the ask bar. */
   examples?: string[];
   /** Renders a proposal item (the recipe's summary). */
   renderProposal: (proposal: unknown, latest: boolean) => ReactNode;
+  /**
+   * What a screen reader hears once the latest proposal is applied ("Drafted
+   * 3 fields…"); null announces nothing.
+   */
+  announceProposal?: (proposal: unknown) => string | null;
   /**
    * The footer link's click handler, so a builder can ask before leaving
    * unsaved work (useLeaveGuard's `onNavigate()`).
@@ -70,20 +82,31 @@ export function DraftPanel({
   session,
   modelName,
   intro,
+  mode = 'draft',
   examples = [],
   renderProposal,
+  announceProposal,
   onNavigate,
 }: DraftPanelProps) {
   const { t } = useTranslation();
+  const { isDesktop } = useMediaQuery();
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(false);
   const { items, step, streaming } = session;
 
-  // Follow the conversation as it grows.
+  // Follow the conversation as it grows, and land on its end on reopening.
   useEffect(() => {
-    endRef.current?.scrollIntoView?.({ block: 'end' });
-  }, [items.length, step]);
+    if (open) endRef.current?.scrollIntoView?.({ block: 'end' });
+  }, [items.length, step, open]);
+
+  // Opening the docked panel beside the form puts the cursor in its ask bar;
+  // not on a phone or tablet, where a keyboard would cover the sheet.
+  useEffect(() => {
+    if (open && !wasOpen.current && isDesktop) inputRef.current?.focus();
+    wasOpen.current = open;
+  }, [open, isDesktop]);
 
   const send = () => {
     if (streaming || !draft.trim()) return;
@@ -95,6 +118,11 @@ export function DraftPanel({
   // followed by a user message can still be answered.
   const lastProposal = items.findLastIndex((item) => item.kind === 'proposal');
   const lastUser = items.findLastIndex((item) => item.kind === 'user');
+  const latestProposal = items[lastProposal];
+  const announcement =
+    latestProposal?.kind === 'proposal' && announceProposal
+      ? announceProposal(latestProposal.proposal)
+      : null;
 
   const renderItem = (item: DrafterItem, index: number) => {
     switch (item.kind) {
@@ -171,7 +199,7 @@ export function DraftPanel({
         }
       />
       <PanelBody>
-        <div className="flex flex-col gap-4" aria-live="polite">
+        <div className="flex flex-col gap-4">
           {items.length === 0 && (
             <div className="flex flex-col gap-3">
               <p className="text-sm">{intro}</p>
@@ -197,16 +225,24 @@ export function DraftPanel({
             </div>
           )}
           {items.map(renderItem)}
-          {step && (
-            <p
-              className="text-muted-foreground flex items-center gap-2 text-sm"
-              data-slot="drafter-step"
-            >
-              <Spinner size="xs" label={t(`drafter.steps.${step}`)} />
-              {t(`drafter.steps.${step}`)}
-            </p>
-          )}
-          <div ref={endRef} />
+          {/* Only the step and the applied draft are announced, not the
+              whole conversation as it grows. */}
+          <div ref={endRef} aria-live="polite" data-slot="drafter-live">
+            {step && (
+              <p
+                className="text-muted-foreground flex items-center gap-2 text-sm"
+                data-slot="drafter-step"
+              >
+                <Spinner size="xs" label={t(`drafter.steps.${step}`)} />
+                {t(`drafter.steps.${step}`)}
+              </p>
+            )}
+            {announcement && latestProposal && (
+              <p key={latestProposal.id} className="sr-only">
+                {announcement}
+              </p>
+            )}
+          </div>
         </div>
       </PanelBody>
       <PanelFooter>
@@ -220,7 +256,7 @@ export function DraftPanel({
               value={draft}
               aria-label={t('drafter.askLabel')}
               placeholder={
-                items.length === 0
+                items.length === 0 && mode === 'draft'
                   ? t('drafter.startPlaceholder')
                   : t('drafter.askPlaceholder')
               }

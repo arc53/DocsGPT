@@ -42,7 +42,7 @@ When the description leaves out something that changes the draft, such as whethe
 A draft fills the form in one go. Each field it changed is marked **Drafted**:
 
 - **Undo** on a field's marker puts back what the field held before the draft. Editing the field yourself removes the marker and keeps your edit.
-- Under its message, the panel lists each changed field with a short reason ("Picked the Help Center source: it covers shipping and returns"), notes on anything you should do yourself (for example, that no tool can open tickets, so the prompt hands those requests to an email address), and **Left out:** for anything it chose that it isn't allowed to use, such as a source you can't open. **Undo all** undoes the whole draft.
+- Under its message, the panel lists each changed field with a short reason ("Picked the Help Center source: it covers shipping and returns"), notes on anything you should do yourself (for example, that no tool can open tickets, so the prompt hands those requests to an email address), and **Left out** for anything it chose that it isn't allowed to use, such as a source you can't open. **Undo all** undoes the whole draft and leaves **Undone.** in its place.
 - With the panel closed, a line above the form says **Drafted 3 fields. Check them before you save.**, and **Review** opens the panel again.
 
 To change something, write in the panel's message box (**Ask for a change…**), for example "make the description shorter". On a form that already has values, DocsGPT changes only what you asked and leaves the other fields as they are.
@@ -68,7 +68,7 @@ A draft can set only these fields:
 | Prompt | An existing prompt, or a [new one created on save](#a-drafted-prompt). |
 | Starters | Up to four example first questions, each up to 200 characters. |
 
-It never changes the agent's models, guardrails, token and request limits, allowed origins, API write permissions, JSON response schema, insights settings or sharing. A list it sends (knowledge, tools, starters) replaces the whole list, and it checks every item: an item that doesn't exist or that you can't open is left out and listed under **Left out:**.
+It never changes the agent's models, guardrails, token and request limits, allowed origins, API write permissions, JSON response schema, insights settings or sharing. A list it sends (knowledge, tools, starters) replaces the whole list, and it checks every item: an item that doesn't exist or that you can't open is left out and listed under **Left out**.
 
 ### What it reads
 
@@ -76,10 +76,10 @@ To pick knowledge, tools and prompts, DocsGPT reads your workspace as the form's
 
 ## Prompts
 
-The prompt editor (on **Settings → Prompts**, from **Add prompt** in the agent form, or from **Improve prompt**) has a box at the top: **What should DocsGPT change or write?**
+The prompt editor (on **Settings → Prompts**, from **Add prompt** in the agent form, or from the agent form's **Improve prompt** link) has a box at the top for your request, with a button beside it that says **Improve** or **Write**.
 
-- **Improve prompt**, on a prompt with text: describe the change, such as "stop it from quoting prices". DocsGPT answers with a list of **Proposed changes**, each showing the removed and added text and its reason. **Accept** or **Reject** each one (**Undo** reverses your choice), choose **Accept all**, step through them with **Review one by one**, or **Discard** them all. Accepted changes go into the text; nothing is saved until you choose **Save**.
-- **Write**, on a new, empty prompt: describe the prompt, such as "a friendly helper for our HR handbook". DocsGPT fills in the name and the text, each marked **Drafted** with an undo.
+- **Improve**, on a prompt with text: in the box (**Say what to change…**), describe the change, such as "stop it from quoting prices". DocsGPT answers with a list of **Proposed changes**, each showing the removed and added text and its reason. **Accept** or **Reject** each one (**Undo** reverses your choice), choose **Accept all**, step through them with **Review one by one**, or **Discard** them all. Accepted changes go into the text; nothing is saved until you choose **Save**.
+- **Write**, on a new, empty prompt: in the box (**Describe the prompt…**), describe the prompt, such as "a friendly helper for our HR handbook". DocsGPT fills in the name and the text, each marked **Drafted** with an undo.
 - **Improve a copy**, on a prompt you can't edit (a built-in **default**, **creative** or **strict** prompt, or a shared prompt you can only view): opens an editable copy with the box ready.
 
 When the prompt is used by more than one agent, the editor says so (**Used by 3 agents. Saving changes it for all of them.**).
@@ -116,7 +116,7 @@ DocsGPT reads up to 300 recent questions, putting first those the agent's curren
 
 - its name and description, within the limits a topic has;
 - its kind, **One per question** or **Can overlap**. It suggests the second only for things that cut across subjects, such as "Bug report" or "Asks for a human";
-- its share of the questions, such as **18% of questions**. With the [decision model](/Models/decision-model) running, the share is measured: DocsGPT asks the model the same topic question the insights sweep asks, on up to 100 recent questions, and reports how many fit no topic before and after, such as **Tried the suggestions on 100 questions: 12 fit no topic, down from 41.** When it can't measure, the share is the drafting model's guess, marked **Estimate**;
+- its share of the questions, such as **18% of questions**. With the [decision model](/Models/decision-model) running, the share is measured: DocsGPT asks the model the same topic question the insights sweep asks, on up to 100 recent questions, and reports how many fit no topic before and after, such as **Tried the suggestions on 100 questions: 12% fit no topic, down from 41%.** When it can't measure, the share is the drafting model's guess, marked **Estimate**;
 - **Similar to "Shipping".** when it overlaps a topic you have, with a note on how they differ.
 
 Below the list, **Not suggested** names what it left out and why, for example a subject a folder already covers. If adding the ticked topics would push folders out of the 15 places topics that sort questions have, it names them: **Adding these pushes out 2 folders, so their questions go to None of these: …**. If the ticked topics don't fit the room left, it asks you to untick some.

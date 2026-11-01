@@ -66,8 +66,8 @@ export type PromptDrafter = {
  * The prompt modal's drafter: it sends the prompt (and the agent it is used
  * on) with each request, turns an improve proposal into a review whose
  * accepted changes write into the modal's text as they are chosen, and fills
- * a written prompt's name and text, each marked Drafted with undo. Nothing is
- * saved: the modal's Save still does that.
+ * a written prompt's text (and its name when empty), each marked Drafted with
+ * undo. Nothing is saved: the modal's Save still does that.
  *
  * Args:
  *   options: The mode, the prompt's current values and setters, the agent.
@@ -124,9 +124,12 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     });
     if (proposal.mode === 'write') {
       const { name, content, setName, setContent } = latest.current;
-      setName(proposal.name);
+      // A name the user typed stays; only an empty one is filled.
+      if (!name.trim()) {
+        setName(proposal.name);
+        draftedRef.current.mark('name', name, proposal.name);
+      }
       setContent(proposal.content);
-      draftedRef.current.mark('name', name, proposal.name);
       draftedRef.current.mark('content', content, proposal.content);
       return;
     }

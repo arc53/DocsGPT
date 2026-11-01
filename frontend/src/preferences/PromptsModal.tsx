@@ -1,11 +1,11 @@
-import { Book, WandSparkles } from 'lucide-react';
+import { ExternalLink, WandSparkles } from 'lucide-react';
 import { ActiveState } from '../models/misc';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { FormField } from '../components/ui/form-field';
+import { SectionHeader } from '../components/ui/section-header';
 import ViewOnlyNotice from '../components/ViewOnlyNotice';
-import { Link } from 'react-router-dom';
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -323,8 +323,8 @@ type DraftedSlot = {
  * A prompt's name and text with the variable menus, for Add (`new`) and
  * Edit (`edit`). The drafter's slots: `top` (the ask bar or "Improve a
  * copy"), `review` (an improve proposal shown in place of the text and the
- * menus), the Drafted marks, and `locked` (the text is read-only while a
- * draft runs).
+ * menus), the Drafted marks, and `locked` (the name and text are read-only
+ * while a draft runs).
  */
 function PromptFields({
   idPrefix,
@@ -380,6 +380,7 @@ function PromptFields({
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={isReadOnly}
+              readOnly={locked}
             />
           </FormField>
         </DraftedField>
@@ -407,14 +408,12 @@ function PromptFields({
 
       {!isReadOnly && !review && (
         <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
-          <p className="text-foreground flex flex-col text-sm font-medium">
-            <span className="font-bold">
-              {t('modals.prompts.variablesLabel')}
-            </span>
-            <span className="text-muted-foreground text-xs font-medium">
-              {t('modals.prompts.variablesDescription')}
-            </span>
-          </p>
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('modals.prompts.variablesLabel')}
+            description={t('modals.prompts.variablesDescription')}
+          />
 
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
             <VariableMenu
@@ -460,6 +459,7 @@ export default function PromptsModal({
   readOnly = false,
   drafterAgent = null,
   autoFocusAsk = false,
+  pendingEdit = false,
 }: {
   existingPrompts: { name: string; id: string; type: string }[];
   modalState: ActiveState;
@@ -492,6 +492,11 @@ export default function PromptsModal({
   drafterAgent?: PromptDrafterAgent | null;
   /** Put the cursor in the drafter's ask bar when it opens (an Improve entry). */
   autoFocusAsk?: boolean;
+  /**
+   * An ADD that edits a drafted prompt the agent form holds: titled Edit,
+   * since the agent's save creates it.
+   */
+  pendingEdit?: boolean;
 }) {
   const disableSave = React.useMemo(() => {
     if (type === 'EDIT') {
@@ -590,6 +595,9 @@ export default function PromptsModal({
       )}
       result={drafter.result}
       inputRef={askRef}
+      // A request mid-review would send the half-applied text and drop the
+      // changes not chosen yet.
+      reviewing={drafter.review !== null}
     />
   );
   const review = drafter.review ? (
@@ -613,14 +621,18 @@ export default function PromptsModal({
   let description: string | undefined;
 
   if (type === 'ADD') {
-    title = duplicateSourceName
-      ? t('modals.prompts.duplicatePrompt')
-      : t('modals.prompts.addPrompt');
-    description = duplicateSourceName
-      ? t('modals.prompts.duplicateDescription', {
-          name: duplicateSourceName,
-        })
-      : t('modals.prompts.addDescription');
+    title = pendingEdit
+      ? t('modals.prompts.editPrompt')
+      : duplicateSourceName
+        ? t('modals.prompts.duplicatePrompt')
+        : t('modals.prompts.addPrompt');
+    description = pendingEdit
+      ? t('modals.prompts.pendingDescription')
+      : duplicateSourceName
+        ? t('modals.prompts.duplicateDescription', {
+            name: duplicateSourceName,
+          })
+        : t('modals.prompts.addDescription');
     view = (
       <PromptFields
         idPrefix="new"
@@ -672,16 +684,14 @@ export default function PromptsModal({
 
   const learnLink = (
     <Button variant="link" size="inline" asChild>
-      <Link
-        to="https://docs.docsgpt.cloud/Agents/prompts"
+      <a
+        href="https://docs.docsgpt.cloud/Agents/prompts"
         target="_blank"
         rel="noopener noreferrer"
       >
-        <Book className="size-4" />
-        <span className="font-bold">
-          {t('modals.prompts.learnAboutPrompts')}
-        </span>
-      </Link>
+        {t('modals.prompts.learnAboutPrompts')}
+        <ExternalLink />
+      </a>
     </Button>
   );
 

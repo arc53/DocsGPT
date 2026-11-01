@@ -2,6 +2,7 @@ import {
   type AgentDraftForm,
   agentDraftContext,
   agentDraftValues,
+  agentProposalSummary,
   isAgentFormEmpty,
   parseAgentProposal,
   planAgentPatch,
@@ -165,5 +166,24 @@ describe('agentDraft', () => {
         starters: ['Hi'],
       },
     });
+  });
+
+  it('gives a reason row only for the fields the draft changed', () => {
+    const t = ((key: string) => key) as never;
+    const proposal = parseAgentProposal({
+      fields: { name: 'Shipping help', agent_type: 'classic' },
+      reasons: [
+        { field: 'name', summary: 'Says what it does' },
+        { field: 'agent_type', summary: 'Classic suits Q&A' },
+        { field: 'model', summary: 'Not a draft field' },
+      ],
+      dropped: [{ field: 'tools', reason: 'no_access' }],
+    })!;
+    const { rows, dropped } = agentProposalSummary(proposal, t, ['name']);
+    expect(rows.map((row) => row.summary)).toEqual(['Says what it does']);
+    // What the server left out is listed whatever changed.
+    expect(dropped).toEqual(['drafter.agent.droppedLine']);
+    // Without a record of the changes, every reason shows.
+    expect(agentProposalSummary(proposal, t).rows).toHaveLength(3);
   });
 });

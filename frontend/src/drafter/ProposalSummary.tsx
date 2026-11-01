@@ -1,8 +1,8 @@
 import { Undo2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -21,7 +21,8 @@ export type ProposalReasonRow = {
 /**
  * What a draft did, as the panel shows it under the model's message: a row
  * per changed field with its reason, the model's notes, what the server left
- * out, and Undo all. Recipes map their proposal into these props.
+ * out, and Undo all, which leaves "Undone." in its place once used. Recipes
+ * map their proposal into these props.
  *
  * Args:
  *   message: The draft's short summary.
@@ -47,6 +48,13 @@ export function ProposalSummary({
   footer?: ReactNode;
 }) {
   const { t } = useTranslation();
+  const [undone, setUndone] = useState(false);
+  const undoAll = onUndoAll
+    ? () => {
+        onUndoAll();
+        setUndone(true);
+      }
+    : undefined;
   return (
     <div className="flex flex-col gap-3" data-slot="proposal-summary">
       {message && (
@@ -81,8 +89,8 @@ export function ProposalSummary({
       )}
       {dropped.length > 0 && (
         <Alert variant="warning" role="status">
+          <AlertTitle>{t('drafter.droppedTitle')}</AlertTitle>
           <AlertDescription>
-            <p>{t('drafter.droppedTitle')}</p>
             <ul className="flex flex-col gap-1">
               {dropped.map((line, index) => (
                 <li key={index}>{line}</li>
@@ -91,19 +99,29 @@ export function ProposalSummary({
           </AlertDescription>
         </Alert>
       )}
-      {(onUndoAll || footer) && (
-        <div className="flex flex-wrap gap-2">
-          {onUndoAll && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={onUndoAll}
+      {(undoAll || undone || footer) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {undone ? (
+            <p
+              role="status"
+              className="text-muted-foreground text-sm"
+              data-slot="proposal-undone"
             >
-              <Undo2 />
-              {t('drafter.undoAll')}
-            </Button>
+              {t('drafter.undone')}
+            </p>
+          ) : (
+            undoAll && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                shape="pill"
+                onClick={undoAll}
+              >
+                <Undo2 />
+                {t('drafter.undoAll')}
+              </Button>
+            )
           )}
           {footer}
         </div>

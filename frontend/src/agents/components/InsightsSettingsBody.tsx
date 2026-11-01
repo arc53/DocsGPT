@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import userService from '../../api/services/userService';
 import { ActiveState } from '../../models/misc';
 import ConfirmationModal from '../../modals/ConfirmationModal';
+import { joinList } from '../../settings/insights/format';
 import { formatCount } from '../../utils/dateTimeUtils';
 import {
   analyticsOf,
@@ -354,7 +355,7 @@ export default function InsightsSettingsBody({
     </Button>
   );
   const names = (list: TopicFolder[]) =>
-    list.map((folder) => folder.name).join(', ');
+    joinList(list.map((folder) => folder.name));
   if (foldersFailed)
     note(
       'failed',

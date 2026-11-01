@@ -383,7 +383,7 @@ export default function Defaults() {
           <SectionHeader
             as="h2"
             title="Models"
-            description="Takes effect at once: the next draft, graph build or monitor check uses it. Users can pick their own task model in Settings > General; this one is for everyone who hasn't."
+            description="Takes effect at once: the next draft, graph build or monitor check uses it. Users can pick their own task model in Settings › General; this one is for everyone who hasn't."
           />
           <SettingRows>
             <SettingRow

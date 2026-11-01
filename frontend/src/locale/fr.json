@@ -163,7 +163,8 @@
       "medium": "Moyen",
       "high": "Élevé",
       "unlimited": "Illimité",
-      "default": "Par défaut"
+      "default": "Par défaut",
+      "taskModelLoadError": "Impossible de charger le modèle de tâches."
     },
     "sources": {
       "title": "Gérez ici tous les fichiers sources auxquels vous avez accès et ceux que vous avez importés.",
@@ -2580,10 +2581,11 @@
         "systemUserId": "ID de l’utilisateur actuel",
         "artifactsLookup": "Métadonnées de l’artefact par ID"
       },
-      "learnAboutPrompts": "En savoir plus sur les prompts →",
+      "learnAboutPrompts": "En savoir plus sur les prompts",
       "publicPromptEditDisabled": "Les prompts publics ne sont pas modifiables",
       "promptTypePublic": "public",
-      "promptTypePrivate": "privé"
+      "promptTypePrivate": "privé",
+      "pendingDescription": "Il est créé lorsque vous enregistrez l’agent."
     },
     "chunk": {
       "add": "Ajouter un fragment",
@@ -4631,7 +4633,7 @@
     "somethingElseLabel": "Votre réponse",
     "somethingElsePlaceholder": "Saisissez votre propre réponse",
     "sendAnswers": "Envoyer les réponses",
-    "droppedTitle": "Laissé de côté :",
+    "droppedTitle": "Laissé de côté",
     "retry": "Réessayer",
     "steps": {
       "thinking": "Réflexion…",
@@ -4720,10 +4722,10 @@
       "promptCreateFailed": "Le prompt rédigé n’a pas pu être créé, donc rien n’a été enregistré. Réessayez.",
       "droppedLine": "{{field}} : {{reason}}",
       "droppedReasons": {
-        "not_found": "un élément qui n’existe pas a été laissé de côté",
-        "no_access": "un élément que vous ne pouvez pas ouvrir a été laissé de côté",
-        "invalid": "un élément non valide a été laissé de côté",
-        "other": "un élément a été laissé de côté"
+        "not_found": "un élément qui n’existe pas",
+        "no_access": "un élément que vous ne pouvez pas ouvrir",
+        "invalid": "un élément non valide",
+        "other": "un élément inutilisable"
       }
     },
     "topics": {
@@ -4762,7 +4764,12 @@
       "discard": "Ignorer",
       "add_one": "Ajouter {{formatted}} sujet",
       "add_many": "Ajouter {{formatted}} sujets",
-      "add_other": "Ajouter {{formatted}} sujets"
-    }
+      "add_other": "Ajouter {{formatted}} sujets",
+      "errors": {
+        "invalid_output": "La réponse du modèle n’a pas pu être utilisée. Aucun sujet n’a été ajouté.",
+        "model_error": "Un problème est survenu pendant la suggestion de sujets. Aucun sujet n’a été ajouté."
+      }
+    },
+    "undone": "Annulé."
   }
 }

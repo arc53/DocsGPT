@@ -19,9 +19,10 @@ vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) =>
     selector({ preference: { token: 'tok' } }),
 }));
+const media = vi.hoisted(() => ({ isMobile: false, isDesktop: true }));
 vi.mock('../hooks', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../hooks')>()),
-  useMediaQuery: () => ({ isMobile: false, isDesktop: true }),
+  useMediaQuery: () => ({ ...media }),
 }));
 
 // Each turn plays the next script of events; `hold` keeps a turn open.
@@ -54,7 +55,17 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const onProposal = vi.fn();
 
-function Host() {
+const onUndoAll = vi.fn();
+
+function Host({
+  open = true,
+  mode,
+  announceProposal,
+}: {
+  open?: boolean;
+  mode?: 'draft' | 'improve';
+  announceProposal?: (proposal: unknown) => string | null;
+}) {
   const session = useDrafterSession({
     recipe: 'agent',
     getContext: () => ({ form: { name: 'Now' } }),
@@ -63,17 +74,19 @@ function Host() {
   return (
     <MemoryRouter>
       <DraftPanel
-        open
+        open={open}
         onOpenChange={() => undefined}
         session={session}
         modelName="Fast model"
         intro="Tell me"
+        mode={mode}
         examples={['Support agent']}
+        announceProposal={announceProposal}
         renderProposal={(proposal, latest) => (
           <ProposalSummary
             message={(proposal as { message: string }).message}
             rows={[{ key: 'n', label: 'Name', summary: 'Shipping help' }]}
-            onUndoAll={latest ? () => undefined : undefined}
+            onUndoAll={latest ? onUndoAll : undefined}
           />
         )}
       />
@@ -111,6 +124,9 @@ describe('DraftPanel', () => {
     stream.signals = [];
     stream.hold = false;
     onProposal.mockReset();
+    onUndoAll.mockReset();
+    media.isMobile = false;
+    media.isDesktop = true;
   });
 
   const button = (name: string) =>
@@ -252,5 +268,99 @@ describe('DraftPanel', () => {
     expect(stream.signals[0].aborted).toBe(true);
     expect(container.textContent).not.toContain('drafter.steps.thinking');
     expect(button('drafter.send')).toBeDefined();
+  });
+  it('asks for a change, not a description, when improving a filled form', async () => {
+    expect(askBar().placeholder).toBe('drafter.startPlaceholder');
+    await act(async () => root.render(<Host mode="improve" />));
+    expect(askBar().placeholder).toBe('drafter.askPlaceholder');
+  });
+
+  it('scrolls to the latest item again when the panel reopens', async () => {
+    stream.scripts = [
+      [
+        { type: 'proposal', proposal: { message: 'Done.', fields: {} } },
+        { type: 'end' },
+      ],
+    ];
+    await ask('Draft it');
+    await act(async () => root.render(<Host open={false} />));
+    const scroll = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      await act(async () => root.render(<Host open />));
+      expect(scroll).toHaveBeenCalled();
+      expect(container.textContent).toContain('Done.');
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('announces the step and each applied draft, not the whole conversation', async () => {
+    await act(async () =>
+      root.render(
+        <Host announceProposal={(p) => (p as { note: string }).note} />,
+      ),
+    );
+    stream.hold = true;
+    await ask('Draft it');
+    const live = Array.from(container.querySelectorAll('[aria-live]'));
+    expect(live).toHaveLength(1);
+    expect(live[0].getAttribute('aria-live')).toBe('polite');
+    expect(live[0].textContent).toContain('drafter.steps.thinking');
+    expect(
+      live[0].contains(container.querySelector('[data-item="user"]')),
+    ).toBe(false);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    stream.hold = false;
+    stream.scripts = [
+      [
+        {
+          type: 'proposal',
+          proposal: { message: 'Done.', note: 'Drafted 2 fields' },
+        },
+        { type: 'end' },
+      ],
+    ];
+    await act(async () =>
+      root.render(
+        <Host announceProposal={(p) => (p as { note: string }).note} />,
+      ),
+    );
+    await ask('Draft it');
+    const region = container.querySelector('[aria-live="polite"]')!;
+    const line = region.querySelector('.sr-only');
+    expect(line?.textContent).toBe('Drafted 2 fields');
+  });
+
+  it('focuses the ask bar when the panel opens on a desktop', async () => {
+    await act(async () => root.render(<Host open={false} />));
+    (document.activeElement as HTMLElement | null)?.blur();
+    await act(async () => root.render(<Host open />));
+    expect(document.activeElement).toBe(askBar());
+  });
+
+  it('leaves focus alone when the panel opens below desktop width', async () => {
+    media.isDesktop = false;
+    await act(async () => root.render(<Host open={false} />));
+    (document.activeElement as HTMLElement | null)?.blur();
+    await act(async () => root.render(<Host open />));
+    expect(document.activeElement).not.toBe(askBar());
+  });
+
+  it('says Undone. in place of Undo all once it is used', async () => {
+    stream.scripts = [
+      [
+        { type: 'proposal', proposal: { message: 'Done.', fields: {} } },
+        { type: 'end' },
+      ],
+    ];
+    await ask('Draft it');
+    await act(async () => button('drafter.undoAll')!.click());
+    expect(onUndoAll).toHaveBeenCalledTimes(1);
+    expect(button('drafter.undoAll')).toBeUndefined();
+    const undone = container.querySelector('[data-slot="proposal-undone"]');
+    expect(undone?.textContent).toBe('drafter.undone');
   });
 });

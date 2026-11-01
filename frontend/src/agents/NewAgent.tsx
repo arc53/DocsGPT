@@ -847,6 +847,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [rawUserTools, attachedTools],
   );
 
+  // The fields each proposal changed when it was applied, so its summary
+  // gives reasons only for those (keyed by the session's proposal object).
+  const appliedFieldsRef = useRef(new WeakMap<object, AgentDraftField[]>());
+
   /** Fill the form from a proposal, marking every field it changed. */
   const applyDraft = (raw: unknown) => {
     const proposal = parseAgentProposal(raw);
@@ -855,6 +859,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       proposal.fields,
       draftFormRef.current,
       draftToolOptions,
+    );
+    appliedFieldsRef.current.set(
+      raw as object,
+      changes.map((change) => change.field),
     );
     changes.forEach((change) => {
       writeDraftField(change.field, change.next);
@@ -902,7 +910,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const renderAgentProposal = (raw: unknown, latest: boolean) => {
     const proposal = parseAgentProposal(raw);
     if (!proposal) return null;
-    const { rows, dropped } = agentProposalSummary(proposal, t);
+    const { rows, dropped } = agentProposalSummary(
+      proposal,
+      t,
+      appliedFieldsRef.current.get(raw as object),
+    );
     return (
       <ProposalSummary
         message={proposal.message}
@@ -914,6 +926,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }
       />
     );
+  };
+
+  /** "Drafted 3 fields…" for a screen reader once a draft is applied. */
+  const announceAgentProposal = (raw: unknown) => {
+    const count =
+      raw && typeof raw === 'object'
+        ? (appliedFieldsRef.current.get(raw)?.length ?? 0)
+        : 0;
+    return count > 0 ? t('drafter.agent.draftedCount', { count }) : null;
   };
 
   /**
@@ -2538,6 +2559,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           onOpenChange={setDrafterOpen}
           session={drafterSession}
           modelName={drafterConfig?.model?.display_name ?? null}
+          mode={formEmpty ? 'draft' : 'improve'}
+          announceProposal={announceAgentProposal}
           intro={
             formEmpty
               ? t('drafter.agent.introNew')
@@ -2647,6 +2670,8 @@ function AddPromptModal({
       currentPromptEdit={{ id: '', name: '', type: '' }}
       handleAddPrompt={handleAddPrompt}
       drafterAgent={drafterAgent}
+      // A drafted prompt's Edit: titled Edit, created by the agent's save.
+      pendingEdit={!!onSavePending}
     />
   );
 }

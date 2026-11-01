@@ -15,20 +15,24 @@ import { RETRYABLE } from './DraftPanel';
  * Args:
  *   code: The error event's code.
  *   onRetry: Runs the turn again; left out where it can't (an older error).
+ *   description: The recipe's own text in place of the code's description,
+ *     which speaks of the agent form ("Nothing in the form changed").
  */
 export function DrafterErrorAlert({
   code,
   onRetry,
+  description,
 }: {
   code: DrafterErrorCode;
   onRetry?: () => void;
+  description?: string;
 }) {
   const { t } = useTranslation();
   return (
     <Alert variant="destructive" data-item="error">
       <AlertTitle>{t(`drafter.errors.${code}.title`)}</AlertTitle>
       <AlertDescription>
-        <p>{t(`drafter.errors.${code}.description`)}</p>
+        <p>{description ?? t(`drafter.errors.${code}.description`)}</p>
         {onRetry && RETRYABLE.includes(code) && (
           <Button
             type="button"

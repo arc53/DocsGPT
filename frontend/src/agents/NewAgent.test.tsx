@@ -2587,6 +2587,48 @@ describe('NewAgent drafter', () => {
     ).toContain('agents.form.agentTypes.classic');
   });
 
+  it('gives reasons only for the fields the draft changed, and announces them', async () => {
+    drafter.scripts = [
+      [
+        {
+          type: 'proposal',
+          proposal: {
+            message: 'The draft is in the form.',
+            // The form is already Classic: that field doesn't change.
+            fields: { name: 'Shipping help', agent_type: 'classic' },
+            reasons: [
+              { field: 'name', summary: 'Says what it does' },
+              { field: 'agent_type', summary: 'Classic suits Q&A' },
+            ],
+            notes: [],
+            dropped: [],
+          },
+        },
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await describe('Shipping agent');
+    const panel = container.querySelector('[data-slot="side-panel"]')!;
+    const summary = panel.querySelector('[data-slot="proposal-summary"]')!;
+    expect(summary.textContent).toContain('Says what it does');
+    expect(summary.textContent).not.toContain('Classic suits Q&A');
+    expect(
+      panel.querySelector('[data-slot="drafter-live"] .sr-only')?.textContent,
+    ).toBe('drafter.agent.draftedCount');
+  });
+
+  it('asks for a change in the panel on a filled agent', async () => {
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    await act(async () => wand()!.click());
+    const panel = container.querySelector('[data-slot="side-panel"]')!;
+    expect(
+      panel
+        .querySelector('textarea[aria-label="drafter.askLabel"]')
+        ?.getAttribute('placeholder'),
+    ).toBe('drafter.askPlaceholder');
+  });
+
   it('drops the mark of a field edited by hand', async () => {
     drafter.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
     await render();
@@ -2795,6 +2837,7 @@ describe('NewAgent drafter', () => {
       expect(mocks.getSinglePrompt).toHaveBeenCalledWith('default', null);
       const modal = openModal()!;
       expect(modal.type).toBe('ADD');
+      expect(modal.pendingEdit).toBeFalsy();
       expect(modal.autoFocusAsk).toBe(true);
       expect(modal.drafterAgent).toEqual({
         sources: [],
@@ -2830,6 +2873,8 @@ describe('NewAgent drafter', () => {
       await act(async () => buttonByText('drafter.agent.editPrompt')!.click());
       const modal = openModal()!;
       expect(modal.type).toBe('ADD');
+      // Titled Edit: the agent's save creates it.
+      expect(modal.pendingEdit).toBe(true);
       expect(modal.newPromptContent).toBe(PROMPT_TEXT);
       expect(modal.drafterAgent).toEqual({
         sources: [],

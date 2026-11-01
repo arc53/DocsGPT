@@ -161,7 +161,8 @@
       "medium": "中",
       "high": "高",
       "unlimited": "無限制",
-      "default": "預設"
+      "default": "預設",
+      "taskModelLoadError": "無法載入任務模型。"
     },
     "sources": {
       "title": "在這裡您可以管理所有可用的來源檔案以及您上傳的檔案。",
@@ -2486,10 +2487,11 @@
         "systemUserId": "目前使用者 ID",
         "artifactsLookup": "依 ID 查詢 Artifact 中繼資料"
       },
-      "learnAboutPrompts": "了解提示 →",
+      "learnAboutPrompts": "了解提示",
       "publicPromptEditDisabled": "公共提示無法編輯",
       "promptTypePublic": "公共",
-      "promptTypePrivate": "私人"
+      "promptTypePrivate": "私人",
+      "pendingDescription": "儲存代理時會建立它。"
     },
     "chunk": {
       "add": "新增區塊",
@@ -4481,7 +4483,7 @@
     "somethingElseLabel": "你的回答",
     "somethingElsePlaceholder": "輸入你自己的回答",
     "sendAnswers": "送出回答",
-    "droppedTitle": "已省略：",
+    "droppedTitle": "已省略",
     "retry": "重試",
     "steps": {
       "thinking": "正在思考…",
@@ -4558,10 +4560,10 @@
       "promptCreateFailed": "無法建立起草的提示詞，因此沒有儲存任何內容。請重試。",
       "droppedLine": "{{field}}：{{reason}}",
       "droppedReasons": {
-        "not_found": "省略了一個不存在的項目",
-        "no_access": "省略了一個你無法開啟的項目",
-        "invalid": "省略了一個無效的項目",
-        "other": "省略了一個項目"
+        "not_found": "一個不存在的項目",
+        "no_access": "一個你無法開啟的項目",
+        "invalid": "一個無效的項目",
+        "other": "一個無法使用的項目"
       }
     },
     "topics": {
@@ -4584,7 +4586,12 @@
       "tooManyOverlap_other": "只能再加入 {{formatted}} 個可重疊的主題。加入前請取消勾選一些。",
       "none": "沒有可加入的內容：你的主題和資料夾已涵蓋近期問題。",
       "discard": "捨棄",
-      "add_other": "加入 {{formatted}} 個主題"
-    }
+      "add_other": "加入 {{formatted}} 個主題",
+      "errors": {
+        "invalid_output": "無法使用模型的回答。沒有加入任何主題。",
+        "model_error": "建議主題時發生問題。沒有加入任何主題。"
+      }
+    },
+    "undone": "已復原。"
   }
 }

@@ -33,6 +33,8 @@ const drafter = vi.hoisted(() => ({
   config: null as null | { enabled: boolean },
   scripts: [] as DrafterEvent[][],
   requests: [] as DrafterRequest[],
+  /** Holds a turn open (streaming) until it resolves. */
+  gate: null as Promise<void> | null,
 }));
 vi.mock('../drafter/useDrafterConfig', () => ({
   useDrafterConfig: () => drafter.config,
@@ -45,7 +47,12 @@ vi.mock('../drafter/drafterApi', async (importOriginal) => ({
     onEvent: (event: DrafterEvent) => void,
   ) => {
     drafter.requests.push(JSON.parse(JSON.stringify(request)));
-    (drafter.scripts.shift() ?? [{ type: 'end' }]).forEach(onEvent);
+    const script = drafter.scripts.shift() ?? [{ type: 'end' }];
+    if (drafter.gate) {
+      onEvent({ type: 'status', step: 'drafting' });
+      await drafter.gate;
+    }
+    script.forEach(onEvent);
   },
 }));
 
@@ -87,6 +94,8 @@ const proposal = (payload: object): DrafterEvent[] => [
 
 type HostProps = {
   type?: 'ADD' | 'EDIT';
+  name?: string;
+  pendingEdit?: boolean;
   content?: string;
   promptType?: string;
   readOnly?: boolean;
@@ -99,6 +108,8 @@ const state = { name: '', content: '' };
 
 function Host({
   type = 'EDIT',
+  name: initialName,
+  pendingEdit,
   content = ORIGINAL,
   promptType = 'private',
   readOnly = false,
@@ -106,7 +117,9 @@ function Host({
   usedBy = 0,
   agent,
 }: HostProps) {
-  const [name, setName] = useState(type === 'EDIT' ? 'Support' : '');
+  const [name, setName] = useState(
+    initialName ?? (type === 'EDIT' ? 'Support' : ''),
+  );
   const [text, setText] = useState(content);
   state.name = name;
   state.content = text;
@@ -133,6 +146,7 @@ function Host({
       readOnly={readOnly}
       onDuplicate={onDuplicate}
       drafterAgent={agent}
+      pendingEdit={pendingEdit}
     />
   );
 }
@@ -145,6 +159,7 @@ describe('PromptsModal drafter', () => {
     drafter.config = { enabled: true };
     drafter.scripts = [];
     drafter.requests = [];
+    drafter.gate = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -183,6 +198,8 @@ describe('PromptsModal drafter', () => {
     });
     await click(label);
   };
+  const nameInput = () =>
+    document.body.querySelector<HTMLInputElement>('input[type="text"]');
   const textarea = () =>
     document.body.querySelector<HTMLTextAreaElement>(
       '#edit-prompt-content, #new-prompt-content',
@@ -246,6 +263,23 @@ describe('PromptsModal drafter', () => {
       expect(document.body.textContent).toContain('drafter.prompt.usedBy:3');
     });
 
+    it('locks the name and the text while a draft runs', async () => {
+      let release = () => undefined as void;
+      drafter.gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      drafter.scripts = [proposal(IMPROVE)];
+      await render();
+      await ask('Stop quoting prices');
+      expect(nameInput()?.readOnly).toBe(true);
+      expect(textarea()?.readOnly).toBe(true);
+      await act(async () => release());
+      // The review is open now; leaving it gives both back.
+      await click('drafter.prompt.discard');
+      expect(nameInput()?.readOnly).toBe(false);
+      expect(textarea()?.readOnly).toBe(false);
+    });
+
     it('shows a failed draft with Try again', async () => {
       drafter.scripts = [
         [{ type: 'error', code: 'invalid_output' }, { type: 'end' }],
@@ -277,6 +311,20 @@ describe('PromptsModal drafter', () => {
       );
       expect(button('modals.prompts.save')).toBeUndefined();
       expect(button('drafter.prompt.acceptAll')).toBeTruthy();
+    });
+
+    it('hides the ask while a review is open, keeping its warnings', async () => {
+      drafter.scripts = [proposal(IMPROVE)];
+      await render();
+      await ask('Stop quoting prices');
+      // A new request would send the half-applied text and drop the
+      // changes not chosen yet.
+      expect(askInput()).toBeNull();
+      expect(document.body.textContent).toContain(
+        'drafter.prompt.checks.to_persona',
+      );
+      await click('drafter.prompt.acceptAll');
+      expect(askInput()).toBeTruthy();
     });
 
     it('accepts one change and rejects the other', async () => {
@@ -381,6 +429,39 @@ describe('PromptsModal drafter', () => {
       await act(async () => undoName.click());
       expect(state.name).toBe('');
       expect(state.content).toBe('You help employees with the HR handbook.');
+    });
+
+    it('keeps a name the user typed and fills only the text', async () => {
+      drafter.scripts = [
+        proposal({
+          mode: 'write',
+          message: 'Wrote an HR helper.',
+          name: 'HR handbook assistant',
+          content: 'You help employees with the HR handbook.',
+          reason: '',
+          warnings: [],
+          checks: [],
+        }),
+      ];
+      await render({ type: 'ADD', content: '', name: 'People team' });
+      await ask('An HR handbook helper', 'drafter.prompt.write');
+      expect(state.name).toBe('People team');
+      expect(state.content).toBe('You help employees with the HR handbook.');
+      expect(
+        document.body.querySelectorAll('[data-slot="drafted-badge"]'),
+      ).toHaveLength(1);
+    });
+  });
+
+  describe('a pending prompt', () => {
+    it('opens as Edit, saved with the agent', async () => {
+      await render({ type: 'ADD', name: 'Shipping', pendingEdit: true });
+      const heading = document.body.querySelector('[role="dialog"]');
+      expect(heading?.textContent).toContain('modals.prompts.editPrompt');
+      expect(heading?.textContent).toContain(
+        'modals.prompts.pendingDescription',
+      );
+      expect(heading?.textContent).not.toContain('modals.prompts.addPrompt');
     });
   });
 });
