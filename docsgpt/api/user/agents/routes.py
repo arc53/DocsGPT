@@ -1675,7 +1675,7 @@ class UpdateAgent(Resource):
                             conn, existing_agent.get("workflow_id"), pg_agent_id,
                         )
                         graph_errors = workflow_graph_errors(
-                            inline_graph, draft=not live_graph, user_id=owner_id,
+                            inline_graph, draft=not live_graph, user_id=owner_id, editor_id=user,
                         )
                     elif runs_live:
                         existing_workflow_id = existing_agent.get("workflow_id")

@@ -379,20 +379,25 @@ def parse_workflow_graph(raw: Any) -> Tuple[Optional[Dict], Optional[str]]:
     return graph, None
 
 
-def workflow_graph_errors(graph: Dict, *, draft: bool, user_id: Optional[str]) -> List[str]:
+def workflow_graph_errors(
+    graph: Dict, *, draft: bool, user_id: Optional[str], editor_id: Optional[str] = None
+) -> List[str]:
     """Why a graph can't be saved: shape only for a draft, the full validation to publish.
 
     Args:
         graph: ``{nodes, edges, retry_defaults?}``.
         draft: True to check the shape only.
         user_id: Whose models the nodes run with (the owner).
+        editor_id: A team editor saving the owner's graph, if any.
 
     Returns:
         list[str]: The errors, empty when the graph may be saved.
     """
     errors = workflow_graph_shape_errors(graph.get("nodes"), graph.get("edges"))
     if not errors and not draft:
-        errors = validate_workflow_structure(graph["nodes"], graph["edges"], user_id=user_id)
+        errors = validate_workflow_structure(
+            graph["nodes"], graph["edges"], user_id=user_id, editor_id=editor_id
+        )
     retry_error = retry_config_error(graph.get("retry_defaults"))
     if retry_error:
         errors.append(f"Workflow retry defaults {retry_error}")
@@ -611,13 +616,51 @@ def retry_config_error(raw: Any) -> Optional[str]:
     )
 
 
+def _editor_only_model(model_id: Any, owner_id: str | None, editor_id: str | None) -> bool:
+    """Whether ``model_id`` is a custom model of the editor that the owner lacks.
+
+    A node's model resolves in the workflow owner's account whoever runs it,
+    so an editor's own custom model on the owner's workflow can never run.
+
+    Args:
+        model_id: The node's ``model_id``.
+        owner_id: The workflow's owner.
+        editor_id: The team editor saving it, or None for the owner's own save.
+
+    Returns:
+        True when the editor has the model and the owner doesn't.
+    """
+    if not editor_id or not owner_id or editor_id == owner_id:
+        return False
+    if not isinstance(model_id, str) or not model_id.strip():
+        return False
+    from docsgpt.core.model_registry import ModelRegistry
+
+    registry = ModelRegistry.get_instance()
+    model_id = model_id.strip()
+    return registry.model_exists(model_id, user_id=editor_id) and not registry.model_exists(
+        model_id, user_id=owner_id
+    )
+
+
 def validate_workflow_structure(
-    nodes: List[Dict], edges: List[Dict], user_id: str | None = None
+    nodes: List[Dict], edges: List[Dict], user_id: str | None = None, editor_id: str | None = None
 ) -> List[str]:
     """Validate workflow graph structure.
 
     ``user_id`` is required so per-user BYOM custom-model UUIDs resolve
     when checking each agent node's structured-output capability.
+
+    Args:
+        nodes: The graph's nodes.
+        edges: The graph's edges.
+        user_id: The workflow's owner, whose account a node's model resolves in.
+        editor_id: A team editor saving the owner's workflow, if any. A node
+            set to one of the editor's own custom models is refused: the owner
+            has no copy of it, so the node would fail for everyone.
+
+    Returns:
+        The errors found; empty when the graph is valid.
     """
     errors = []
 
@@ -815,12 +858,20 @@ def validate_workflow_structure(
         if not isinstance(raw_config, dict):
             errors.append(f"Agent node '{agent_title}' has invalid configuration")
             continue
+        # The engine reads a node's settings from ``data.config`` when present.
+        if isinstance(raw_config.get("config"), dict):
+            raw_config = raw_config["config"]
         normalized_schema, schema_error = validate_json_schema_payload(
             raw_config.get("json_schema")
         )
         has_json_schema = normalized_schema is not None
 
         model_id = raw_config.get("model_id")
+        if _editor_only_model(model_id, user_id, editor_id):
+            errors.append(
+                f"Agent node '{agent_title}' uses your custom model, which the workflow's owner "
+                "doesn't have. Pick a model the owner can use."
+            )
         if has_json_schema and isinstance(model_id, str) and model_id.strip():
             capabilities = get_model_capabilities(model_id.strip(), user_id=user_id)
             if capabilities and not capabilities.get("supports_structured_output", True):
@@ -1093,7 +1144,9 @@ class WorkflowDetail(Resource):
                 graph = {"nodes": nodes_data, "edges": edges_data}
                 if "retry_defaults" in data:
                     graph["retry_defaults"] = data.get("retry_defaults")
-                validation_errors = workflow_graph_errors(graph, draft=False, user_id=acting)
+                validation_errors = workflow_graph_errors(
+                    graph, draft=False, user_id=acting, editor_id=user_id
+                )
                 if validation_errors:
                     return error_response(
                         "Workflow validation failed", errors=validation_errors

@@ -606,6 +606,51 @@ class TestWorkflows:
         assert _status(self._put(app, pg_conn, wid, EDITOR, _wf_body())) == 200
         assert WorkflowsRepository(pg_conn).get_by_id(wid)["resource_sponsors"] == {}
 
+    @staticmethod
+    def _model_body(model_id, nested=False):
+        body = _wf_body()
+        config = {"agent_type": "classic", "system_prompt": "s", "model_id": model_id}
+        body["nodes"][1]["data"] = {"config": config} if nested else config
+        return body
+
+    @staticmethod
+    def _custom_models(monkeypatch, layers):
+        from docsgpt.core.model_registry import ModelRegistry
+
+        monkeypatch.setattr(ModelRegistry, "_user_models_for", lambda self, user_id: layers.get(user_id, {}))
+
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_editor_cannot_set_their_own_custom_model_on_a_node(self, app, pg_conn, monkeypatch, nested):
+        # A node's model resolves in the owner's account, where the editor's
+        # custom model doesn't exist: the node would fail for everyone.
+        wid, _ = self._setup(pg_conn)
+        self._custom_models(monkeypatch, {EDITOR: {"editors-model": object()}})
+
+        resp = self._put(app, pg_conn, wid, EDITOR, self._model_body("editors-model", nested))
+
+        assert _status(resp) == 400
+        assert any("which the workflow's owner doesn't have" in e for e in resp.get_json()["errors"])
+
+    def test_editor_cannot_set_their_own_custom_model_through_an_inline_graph(self, app, pg_conn, monkeypatch):
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        agent_id, _ = _agent(pg_conn, agent_type="workflow", workflow_id=str(wf["id"]))
+        self._custom_models(monkeypatch, {EDITOR: {"editors-model": object()}})
+        body = self._model_body("editors-model")
+        graph = {"nodes": body["nodes"], "edges": body["edges"]}
+
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"workflow_graph": graph})
+
+        assert _status(resp) == 400
+        assert any("which the workflow's owner doesn't have" in e for e in resp.get_json()["errors"])
+
+    def test_editor_can_set_the_owners_custom_model_on_a_node(self, app, pg_conn, monkeypatch):
+        wid, _ = self._setup(pg_conn)
+        self._custom_models(monkeypatch, {OWNER: {"owners-model": object()}})
+
+        resp = self._put(app, pg_conn, wid, EDITOR, self._model_body("owners-model"))
+
+        assert _status(resp) == 200, resp.get_json()
+
     def test_engine_resolves_sponsored_node_refs(self, app, pg_conn):
         from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
