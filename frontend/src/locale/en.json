@@ -4477,5 +4477,106 @@
       "period_other": "Last {{formatted}} days",
       "periodFilter": "Period"
     }
+  },
+  "drafter": {
+    "title": "Draft with DocsGPT",
+    "draft": "Draft",
+    "improve": "Improve",
+    "drafted": "Drafted",
+    "undoField": "Undo {{field}}",
+    "undoAll": "Undo all",
+    "somethingElse": "Something else…",
+    "somethingElseLabel": "Your answer",
+    "somethingElsePlaceholder": "Type your own answer",
+    "sendAnswers": "Send answers",
+    "droppedTitle": "Left out:",
+    "retry": "Try again",
+    "steps": {
+      "thinking": "Thinking…",
+      "reading": "Looking at your workspace…",
+      "drafting": "Drafting…"
+    },
+    "askLabel": "Message to DocsGPT",
+    "startPlaceholder": "Describe what you want…",
+    "askPlaceholder": "Ask for a change…",
+    "stop": "Stop",
+    "send": "Send",
+    "footer": "Uses {{model}} · can read your agents, knowledge, tools and prompts.",
+    "footerNoModel": "Can read your agents, knowledge, tools and prompts.",
+    "changeModel": "Change model",
+    "lookedAtWorkspace": "Looked at your workspace",
+    "counts": {
+      "sources_one": "{{count}} knowledge source",
+      "sources_other": "{{count}} knowledge sources",
+      "tools_one": "{{count}} tool",
+      "tools_other": "{{count}} tools",
+      "prompts_one": "{{count}} prompt",
+      "prompts_other": "{{count}} prompts",
+      "models_one": "{{count}} model",
+      "models_other": "{{count}} models",
+      "agents_one": "{{count}} agent",
+      "agents_other": "{{count}} agents"
+    },
+    "errors": {
+      "disabled": {
+        "title": "Drafting is off",
+        "description": "An admin turned off drafting with DocsGPT on this instance."
+      },
+      "no_model": {
+        "title": "No model for drafting",
+        "description": "Pick a task model in Settings › General, then try again."
+      },
+      "rate_limited": {
+        "title": "Too many requests",
+        "description": "Wait a moment, then try again."
+      },
+      "quota": {
+        "title": "Usage limit reached",
+        "description": "You've used up your allowance for now. Drafting works again once it resets."
+      },
+      "invalid_output": {
+        "title": "The draft didn't come out right",
+        "description": "The model's answer couldn't be used. Nothing in the form changed."
+      },
+      "model_error": {
+        "title": "The model didn't answer",
+        "description": "Something went wrong while drafting. Nothing in the form changed."
+      },
+      "bad_request": {
+        "title": "Couldn't send that",
+        "description": "The request couldn't be read. Reload the page and try again."
+      }
+    },
+    "agent": {
+      "introNew": "Tell me what this agent should do and who it's for. I'll look at your knowledge, tools and prompts, then fill in the form. Nothing is saved until you save.",
+      "introImprove": "What do you want to change? I'll update the form, and nothing is saved until you save.",
+      "examples": {
+        "support": "Support agent for our help center",
+        "research": "Research assistant over our contracts",
+        "helpdesk": "Internal IT helpdesk",
+        "shorter": "Make the description shorter",
+        "starters": "Suggest conversation starters"
+      },
+      "describeTitle": "Start from a description",
+      "describeDescription": "Say what the agent should do. DocsGPT picks knowledge and tools from what you have and writes the prompt.",
+      "describeDismiss": "Hide the description box",
+      "describeLabel": "What should the agent do?",
+      "describeHint": "Or fill in the form yourself below.",
+      "describePlaceholder": "An agent on our website that answers shipping questions…",
+      "draftedCount_one": "Drafted {{count}} field. Check it before you save.",
+      "draftedCount_other": "Drafted {{count}} fields. Check them before you save.",
+      "review": "Review",
+      "pendingPrompt": "{{name}} · new, created on save",
+      "promptText": "Prompt text",
+      "editPrompt": "Edit prompt",
+      "promptCreateFailed": "Couldn't create the drafted prompt, so nothing was saved. Try again.",
+      "droppedLine": "{{field}}: {{reason}}",
+      "droppedReasons": {
+        "not_found": "an item that doesn't exist was left out",
+        "no_access": "an item you can't open was left out",
+        "invalid": "an item that isn't valid was left out",
+        "other": "an item was left out"
+      }
+    }
   }
 }

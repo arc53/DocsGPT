@@ -4434,5 +4434,100 @@
       "period_other": "最近 {{formatted}} 天",
       "periodFilter": "时间段"
     }
+  },
+  "drafter": {
+    "title": "用 DocsGPT 起草",
+    "draft": "起草",
+    "improve": "改进",
+    "drafted": "已起草",
+    "undoField": "撤销{{field}}",
+    "undoAll": "全部撤销",
+    "somethingElse": "其他…",
+    "somethingElseLabel": "你的回答",
+    "somethingElsePlaceholder": "输入你自己的回答",
+    "sendAnswers": "发送回答",
+    "droppedTitle": "已省略：",
+    "retry": "重试",
+    "steps": {
+      "thinking": "正在思考…",
+      "reading": "正在查看你的工作区…",
+      "drafting": "正在起草…"
+    },
+    "askLabel": "发给 DocsGPT 的消息",
+    "startPlaceholder": "描述你想要的内容…",
+    "askPlaceholder": "提出修改…",
+    "stop": "停止",
+    "send": "发送",
+    "footer": "使用 {{model}} · 可读取你的智能体、知识、工具和提示词。",
+    "footerNoModel": "可读取你的智能体、知识、工具和提示词。",
+    "changeModel": "更换模型",
+    "lookedAtWorkspace": "已查看你的工作区",
+    "counts": {
+      "sources_other": "{{count}} 个知识源",
+      "tools_other": "{{count}} 个工具",
+      "prompts_other": "{{count}} 个提示词",
+      "models_other": "{{count}} 个模型",
+      "agents_other": "{{count}} 个智能体"
+    },
+    "errors": {
+      "disabled": {
+        "title": "起草已关闭",
+        "description": "管理员已在此实例上关闭 DocsGPT 起草功能。"
+      },
+      "no_model": {
+        "title": "没有用于起草的模型",
+        "description": "请在设置 › 通用中选择任务模型，然后重试。"
+      },
+      "rate_limited": {
+        "title": "请求过多",
+        "description": "请稍等片刻再试。"
+      },
+      "quota": {
+        "title": "已达到使用上限",
+        "description": "你暂时用完了额度。额度重置后即可再次起草。"
+      },
+      "invalid_output": {
+        "title": "草稿生成失败",
+        "description": "无法使用模型的回答。表单没有变化。"
+      },
+      "model_error": {
+        "title": "模型没有回应",
+        "description": "起草时出了问题。表单没有变化。"
+      },
+      "bad_request": {
+        "title": "无法发送",
+        "description": "无法读取该请求。请刷新页面后重试。"
+      }
+    },
+    "agent": {
+      "introNew": "告诉我这个智能体要做什么、面向谁。我会查看你的知识、工具和提示词，然后填写表单。在你保存之前不会保存任何内容。",
+      "introImprove": "你想改什么？我会更新表单，在你保存之前不会保存任何内容。",
+      "examples": {
+        "support": "帮助中心的客服智能体",
+        "research": "研究我们合同的助手",
+        "helpdesk": "内部 IT 服务台",
+        "shorter": "把描述写短一些",
+        "starters": "建议开场问题"
+      },
+      "describeTitle": "从描述开始",
+      "describeDescription": "说说这个智能体要做什么。DocsGPT 会从你已有的知识和工具中挑选，并撰写提示词。",
+      "describeDismiss": "隐藏描述框",
+      "describeLabel": "这个智能体要做什么？",
+      "describeHint": "也可以自己填写下面的表单。",
+      "describePlaceholder": "我们网站上回答物流问题的智能体…",
+      "draftedCount_other": "已起草 {{count}} 个字段。保存前请检查。",
+      "review": "查看",
+      "pendingPrompt": "{{name}} · 新建，保存时创建",
+      "promptText": "提示词内容",
+      "editPrompt": "编辑提示词",
+      "promptCreateFailed": "无法创建起草的提示词，因此没有保存任何内容。请重试。",
+      "droppedLine": "{{field}}：{{reason}}",
+      "droppedReasons": {
+        "not_found": "省略了一个不存在的项目",
+        "no_access": "省略了一个你无法打开的项目",
+        "invalid": "省略了一个无效的项目",
+        "other": "省略了一个项目"
+      }
+    }
   }
 }

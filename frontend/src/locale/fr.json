@@ -4584,5 +4584,112 @@
       "period_many": "{{formatted}} derniers jours",
       "periodFilter": "Période"
     }
+  },
+  "drafter": {
+    "title": "Rédiger avec DocsGPT",
+    "draft": "Rédiger",
+    "improve": "Améliorer",
+    "drafted": "Rédigé",
+    "undoField": "Annuler {{field}}",
+    "undoAll": "Tout annuler",
+    "somethingElse": "Autre chose…",
+    "somethingElseLabel": "Votre réponse",
+    "somethingElsePlaceholder": "Saisissez votre propre réponse",
+    "sendAnswers": "Envoyer les réponses",
+    "droppedTitle": "Laissé de côté :",
+    "retry": "Réessayer",
+    "steps": {
+      "thinking": "Réflexion…",
+      "reading": "Examen de votre espace de travail…",
+      "drafting": "Rédaction…"
+    },
+    "askLabel": "Message à DocsGPT",
+    "startPlaceholder": "Décrivez ce que vous voulez…",
+    "askPlaceholder": "Demandez une modification…",
+    "stop": "Arrêter",
+    "send": "Envoyer",
+    "footer": "Utilise {{model}} · peut lire vos agents, connaissances, outils et prompts.",
+    "footerNoModel": "Peut lire vos agents, connaissances, outils et prompts.",
+    "changeModel": "Changer de modèle",
+    "lookedAtWorkspace": "Votre espace de travail a été examiné",
+    "counts": {
+      "sources_one": "{{count}} source de connaissances",
+      "sources_many": "{{count}} sources de connaissances",
+      "sources_other": "{{count}} sources de connaissances",
+      "tools_one": "{{count}} outil",
+      "tools_many": "{{count}} outils",
+      "tools_other": "{{count}} outils",
+      "prompts_one": "{{count}} prompt",
+      "prompts_many": "{{count}} prompts",
+      "prompts_other": "{{count}} prompts",
+      "models_one": "{{count}} modèle",
+      "models_many": "{{count}} modèles",
+      "models_other": "{{count}} modèles",
+      "agents_one": "{{count}} agent",
+      "agents_many": "{{count}} agents",
+      "agents_other": "{{count}} agents"
+    },
+    "errors": {
+      "disabled": {
+        "title": "La rédaction est désactivée",
+        "description": "Un administrateur a désactivé la rédaction avec DocsGPT sur cette instance."
+      },
+      "no_model": {
+        "title": "Aucun modèle pour rédiger",
+        "description": "Choisissez un modèle de tâches dans Paramètres › Général, puis réessayez."
+      },
+      "rate_limited": {
+        "title": "Trop de requêtes",
+        "description": "Patientez un instant, puis réessayez."
+      },
+      "quota": {
+        "title": "Limite d’utilisation atteinte",
+        "description": "Vous avez épuisé votre quota pour l’instant. La rédaction fonctionnera de nouveau après sa réinitialisation."
+      },
+      "invalid_output": {
+        "title": "Le brouillon n’a pas abouti",
+        "description": "La réponse du modèle n’était pas exploitable. Le formulaire n’a pas changé."
+      },
+      "model_error": {
+        "title": "Le modèle n’a pas répondu",
+        "description": "Un problème est survenu pendant la rédaction. Le formulaire n’a pas changé."
+      },
+      "bad_request": {
+        "title": "Envoi impossible",
+        "description": "La requête n’a pas pu être lue. Rechargez la page et réessayez."
+      }
+    },
+    "agent": {
+      "introNew": "Dites-moi ce que cet agent doit faire et à qui il s’adresse. J’examinerai vos connaissances, outils et prompts, puis je remplirai le formulaire. Rien n’est enregistré tant que vous n’enregistrez pas.",
+      "introImprove": "Que voulez-vous changer ? Je mettrai à jour le formulaire, et rien n’est enregistré tant que vous n’enregistrez pas.",
+      "examples": {
+        "support": "Agent d’assistance pour notre centre d’aide",
+        "research": "Assistant de recherche sur nos contrats",
+        "helpdesk": "Support informatique interne",
+        "shorter": "Raccourcir la description",
+        "starters": "Suggérer des amorces de conversation"
+      },
+      "describeTitle": "Partir d’une description",
+      "describeDescription": "Dites ce que l’agent doit faire. DocsGPT choisit les connaissances et les outils parmi les vôtres et rédige le prompt.",
+      "describeDismiss": "Masquer le champ de description",
+      "describeLabel": "Que doit faire l’agent ?",
+      "describeHint": "Ou remplissez vous-même le formulaire ci-dessous.",
+      "describePlaceholder": "Un agent sur notre site qui répond aux questions sur les expéditions…",
+      "draftedCount_one": "{{count}} champ rédigé. Vérifiez-le avant d’enregistrer.",
+      "draftedCount_many": "{{count}} champs rédigés. Vérifiez-les avant d’enregistrer.",
+      "draftedCount_other": "{{count}} champs rédigés. Vérifiez-les avant d’enregistrer.",
+      "review": "Vérifier",
+      "pendingPrompt": "{{name}} · nouveau, créé à l’enregistrement",
+      "promptText": "Texte du prompt",
+      "editPrompt": "Modifier le prompt",
+      "promptCreateFailed": "Le prompt rédigé n’a pas pu être créé, donc rien n’a été enregistré. Réessayez.",
+      "droppedLine": "{{field}} : {{reason}}",
+      "droppedReasons": {
+        "not_found": "un élément qui n’existe pas a été laissé de côté",
+        "no_access": "un élément que vous ne pouvez pas ouvrir a été laissé de côté",
+        "invalid": "un élément non valide a été laissé de côté",
+        "other": "un élément a été laissé de côté"
+      }
+    }
   }
 }

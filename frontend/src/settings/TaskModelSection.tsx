@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { SectionHeader } from '../components/ui/section-header';
+import { resetDrafterConfigCache } from '../drafter/useDrafterConfig';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import type { Model } from '../models/types';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -101,7 +102,10 @@ export default function TaskModelSection() {
     } catch {
       saved = false;
     }
-    if (saved) savedValue.current = next;
+    if (saved) {
+      savedValue.current = next;
+      resetDrafterConfigCache();
+    }
     if (saved || seq !== saveSeq.current) return;
     const previous = savedValue.current;
     setLoaded((current) => (current ? { ...current, value: previous } : null));

@@ -4456,5 +4456,106 @@
       "period_other": "Letzte {{formatted}} Tage",
       "periodFilter": "Zeitraum"
     }
+  },
+  "drafter": {
+    "title": "Mit DocsGPT entwerfen",
+    "draft": "Entwerfen",
+    "improve": "Verbessern",
+    "drafted": "Entworfen",
+    "undoField": "{{field}} rückgängig machen",
+    "undoAll": "Alles rückgängig",
+    "somethingElse": "Etwas anderes…",
+    "somethingElseLabel": "Ihre Antwort",
+    "somethingElsePlaceholder": "Eigene Antwort eingeben",
+    "sendAnswers": "Antworten senden",
+    "droppedTitle": "Weggelassen:",
+    "retry": "Erneut versuchen",
+    "steps": {
+      "thinking": "Denkt nach…",
+      "reading": "Sieht sich Ihren Arbeitsbereich an…",
+      "drafting": "Entwirft…"
+    },
+    "askLabel": "Nachricht an DocsGPT",
+    "startPlaceholder": "Beschreiben Sie, was Sie möchten…",
+    "askPlaceholder": "Um eine Änderung bitten…",
+    "stop": "Stoppen",
+    "send": "Senden",
+    "footer": "Verwendet {{model}} · kann Ihre Agenten, Wissensquellen, Tools und Prompts lesen.",
+    "footerNoModel": "Kann Ihre Agenten, Wissensquellen, Tools und Prompts lesen.",
+    "changeModel": "Modell ändern",
+    "lookedAtWorkspace": "Ihren Arbeitsbereich angesehen",
+    "counts": {
+      "sources_one": "{{count}} Wissensquelle",
+      "sources_other": "{{count}} Wissensquellen",
+      "tools_one": "{{count}} Tool",
+      "tools_other": "{{count}} Tools",
+      "prompts_one": "{{count}} Prompt",
+      "prompts_other": "{{count}} Prompts",
+      "models_one": "{{count}} Modell",
+      "models_other": "{{count}} Modelle",
+      "agents_one": "{{count}} Agent",
+      "agents_other": "{{count}} Agenten"
+    },
+    "errors": {
+      "disabled": {
+        "title": "Entwerfen ist aus",
+        "description": "Ein Admin hat das Entwerfen mit DocsGPT auf dieser Instanz ausgeschaltet."
+      },
+      "no_model": {
+        "title": "Kein Modell zum Entwerfen",
+        "description": "Wählen Sie unter Einstellungen › Allgemein ein Aufgabenmodell und versuchen Sie es erneut."
+      },
+      "rate_limited": {
+        "title": "Zu viele Anfragen",
+        "description": "Warten Sie einen Moment und versuchen Sie es dann erneut."
+      },
+      "quota": {
+        "title": "Nutzungslimit erreicht",
+        "description": "Ihr Kontingent ist vorerst aufgebraucht. Nach dem Zurücksetzen funktioniert das Entwerfen wieder."
+      },
+      "invalid_output": {
+        "title": "Der Entwurf ist nicht gelungen",
+        "description": "Die Antwort des Modells war nicht verwendbar. Im Formular hat sich nichts geändert."
+      },
+      "model_error": {
+        "title": "Das Modell hat nicht geantwortet",
+        "description": "Beim Entwerfen ist etwas schiefgelaufen. Im Formular hat sich nichts geändert."
+      },
+      "bad_request": {
+        "title": "Senden nicht möglich",
+        "description": "Die Anfrage konnte nicht gelesen werden. Laden Sie die Seite neu und versuchen Sie es erneut."
+      }
+    },
+    "agent": {
+      "introNew": "Sagen Sie mir, was dieser Agent tun soll und für wen er gedacht ist. Ich sehe mir Ihre Wissensquellen, Tools und Prompts an und fülle dann das Formular aus. Gespeichert wird erst, wenn Sie speichern.",
+      "introImprove": "Was möchten Sie ändern? Ich passe das Formular an; gespeichert wird erst, wenn Sie speichern.",
+      "examples": {
+        "support": "Support-Agent für unser Hilfecenter",
+        "research": "Rechercheassistent für unsere Verträge",
+        "helpdesk": "Interner IT-Helpdesk",
+        "shorter": "Die Beschreibung kürzen",
+        "starters": "Gesprächseinstiege vorschlagen"
+      },
+      "describeTitle": "Mit einer Beschreibung beginnen",
+      "describeDescription": "Sagen Sie, was der Agent tun soll. DocsGPT wählt Wissensquellen und Tools aus Ihrem Bestand und schreibt den Prompt.",
+      "describeDismiss": "Beschreibungsfeld ausblenden",
+      "describeLabel": "Was soll der Agent tun?",
+      "describeHint": "Oder füllen Sie das Formular unten selbst aus.",
+      "describePlaceholder": "Ein Agent auf unserer Website, der Fragen zum Versand beantwortet…",
+      "draftedCount_one": "{{count}} Feld entworfen. Prüfen Sie es vor dem Speichern.",
+      "draftedCount_other": "{{count}} Felder entworfen. Prüfen Sie sie vor dem Speichern.",
+      "review": "Prüfen",
+      "pendingPrompt": "{{name}} · neu, wird beim Speichern erstellt",
+      "promptText": "Prompt-Text",
+      "editPrompt": "Prompt bearbeiten",
+      "promptCreateFailed": "Der entworfene Prompt konnte nicht erstellt werden, daher wurde nichts gespeichert. Versuchen Sie es erneut.",
+      "droppedLine": "{{field}}: {{reason}}",
+      "droppedReasons": {
+        "not_found": "ein Element, das nicht existiert, wurde weggelassen",
+        "no_access": "ein Element, das Sie nicht öffnen können, wurde weggelassen",
+        "invalid": "ein ungültiges Element wurde weggelassen",
+        "other": "ein Element wurde weggelassen"
+      }
+    }
   }
 }

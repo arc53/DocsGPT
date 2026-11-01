@@ -4436,5 +4436,100 @@
       "period_other": "最近 {{formatted}} 天",
       "periodFilter": "時間範圍"
     }
+  },
+  "drafter": {
+    "title": "用 DocsGPT 起草",
+    "draft": "起草",
+    "improve": "改進",
+    "drafted": "已起草",
+    "undoField": "復原{{field}}",
+    "undoAll": "全部復原",
+    "somethingElse": "其他…",
+    "somethingElseLabel": "你的回答",
+    "somethingElsePlaceholder": "輸入你自己的回答",
+    "sendAnswers": "送出回答",
+    "droppedTitle": "已省略：",
+    "retry": "重試",
+    "steps": {
+      "thinking": "正在思考…",
+      "reading": "正在查看你的工作區…",
+      "drafting": "正在起草…"
+    },
+    "askLabel": "給 DocsGPT 的訊息",
+    "startPlaceholder": "描述你想要的內容…",
+    "askPlaceholder": "提出修改…",
+    "stop": "停止",
+    "send": "送出",
+    "footer": "使用 {{model}} · 可讀取你的代理、知識、工具和提示詞。",
+    "footerNoModel": "可讀取你的代理、知識、工具和提示詞。",
+    "changeModel": "更換模型",
+    "lookedAtWorkspace": "已查看你的工作區",
+    "counts": {
+      "sources_other": "{{count}} 個知識來源",
+      "tools_other": "{{count}} 個工具",
+      "prompts_other": "{{count}} 個提示詞",
+      "models_other": "{{count}} 個模型",
+      "agents_other": "{{count}} 個代理"
+    },
+    "errors": {
+      "disabled": {
+        "title": "起草已關閉",
+        "description": "管理員已在此執行個體上關閉 DocsGPT 起草功能。"
+      },
+      "no_model": {
+        "title": "沒有用於起草的模型",
+        "description": "請在設定 › 一般中選擇任務模型，然後重試。"
+      },
+      "rate_limited": {
+        "title": "請求過多",
+        "description": "請稍候片刻再試。"
+      },
+      "quota": {
+        "title": "已達使用上限",
+        "description": "你暫時用完了額度。額度重設後即可再次起草。"
+      },
+      "invalid_output": {
+        "title": "草稿產生失敗",
+        "description": "無法使用模型的回答。表單沒有變更。"
+      },
+      "model_error": {
+        "title": "模型沒有回應",
+        "description": "起草時發生問題。表單沒有變更。"
+      },
+      "bad_request": {
+        "title": "無法送出",
+        "description": "無法讀取該請求。請重新整理頁面後重試。"
+      }
+    },
+    "agent": {
+      "introNew": "告訴我這個代理要做什麼、面向誰。我會查看你的知識、工具和提示詞，然後填寫表單。在你儲存之前不會儲存任何內容。",
+      "introImprove": "你想改什麼？我會更新表單，在你儲存之前不會儲存任何內容。",
+      "examples": {
+        "support": "說明中心的客服代理",
+        "research": "研究我們合約的助理",
+        "helpdesk": "內部 IT 服務台",
+        "shorter": "把描述寫短一點",
+        "starters": "建議開場問題"
+      },
+      "describeTitle": "從描述開始",
+      "describeDescription": "說說這個代理要做什麼。DocsGPT 會從你已有的知識和工具中挑選，並撰寫提示詞。",
+      "describeDismiss": "隱藏描述框",
+      "describeLabel": "這個代理要做什麼？",
+      "describeHint": "也可以自己填寫下方的表單。",
+      "describePlaceholder": "我們網站上回答物流問題的代理…",
+      "draftedCount_other": "已起草 {{count}} 個欄位。儲存前請檢查。",
+      "review": "檢視",
+      "pendingPrompt": "{{name}} · 新增，儲存時建立",
+      "promptText": "提示詞內容",
+      "editPrompt": "編輯提示詞",
+      "promptCreateFailed": "無法建立起草的提示詞，因此沒有儲存任何內容。請重試。",
+      "droppedLine": "{{field}}：{{reason}}",
+      "droppedReasons": {
+        "not_found": "省略了一個不存在的項目",
+        "no_access": "省略了一個你無法開啟的項目",
+        "invalid": "省略了一個無效的項目",
+        "other": "省略了一個項目"
+      }
+    }
   }
 }

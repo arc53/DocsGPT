@@ -4436,5 +4436,100 @@
       "period_other": "過去 {{formatted}} 日",
       "periodFilter": "期間"
     }
+  },
+  "drafter": {
+    "title": "DocsGPT で下書き",
+    "draft": "下書き",
+    "improve": "改善",
+    "drafted": "下書き済み",
+    "undoField": "{{field}} を元に戻す",
+    "undoAll": "すべて元に戻す",
+    "somethingElse": "その他…",
+    "somethingElseLabel": "あなたの回答",
+    "somethingElsePlaceholder": "回答を入力",
+    "sendAnswers": "回答を送信",
+    "droppedTitle": "除外した項目:",
+    "retry": "再試行",
+    "steps": {
+      "thinking": "考えています…",
+      "reading": "ワークスペースを確認しています…",
+      "drafting": "下書きしています…"
+    },
+    "askLabel": "DocsGPT へのメッセージ",
+    "startPlaceholder": "作りたいものを説明してください…",
+    "askPlaceholder": "変更を依頼…",
+    "stop": "停止",
+    "send": "送信",
+    "footer": "{{model}} を使用 · エージェント、ナレッジ、ツール、プロンプトを読み取れます。",
+    "footerNoModel": "エージェント、ナレッジ、ツール、プロンプトを読み取れます。",
+    "changeModel": "モデルを変更",
+    "lookedAtWorkspace": "ワークスペースを確認しました",
+    "counts": {
+      "sources_other": "ナレッジ {{count}} 件",
+      "tools_other": "ツール {{count}} 件",
+      "prompts_other": "プロンプト {{count}} 件",
+      "models_other": "モデル {{count}} 件",
+      "agents_other": "エージェント {{count}} 件"
+    },
+    "errors": {
+      "disabled": {
+        "title": "下書き機能はオフです",
+        "description": "このインスタンスでは管理者が DocsGPT による下書きをオフにしています。"
+      },
+      "no_model": {
+        "title": "下書き用のモデルがありません",
+        "description": "設定 › 一般 でタスクモデルを選んでから、もう一度お試しください。"
+      },
+      "rate_limited": {
+        "title": "リクエストが多すぎます",
+        "description": "少し待ってから、もう一度お試しください。"
+      },
+      "quota": {
+        "title": "利用上限に達しました",
+        "description": "現在の利用枠を使い切りました。リセット後に再び下書きできます。"
+      },
+      "invalid_output": {
+        "title": "下書きをうまく作れませんでした",
+        "description": "モデルの回答を使えませんでした。フォームは変更されていません。"
+      },
+      "model_error": {
+        "title": "モデルが応答しませんでした",
+        "description": "下書き中に問題が発生しました。フォームは変更されていません。"
+      },
+      "bad_request": {
+        "title": "送信できませんでした",
+        "description": "リクエストを読み取れませんでした。ページを再読み込みして、もう一度お試しください。"
+      }
+    },
+    "agent": {
+      "introNew": "このエージェントに何をさせたいか、誰向けかを教えてください。ナレッジ、ツール、プロンプトを確認してからフォームに入力します。保存するまで何も保存されません。",
+      "introImprove": "何を変更しますか？フォームを更新しますが、保存するまで何も保存されません。",
+      "examples": {
+        "support": "ヘルプセンター向けのサポートエージェント",
+        "research": "契約書を調べるリサーチアシスタント",
+        "helpdesk": "社内 IT ヘルプデスク",
+        "shorter": "説明を短くして",
+        "starters": "会話のきっかけを提案して"
+      },
+      "describeTitle": "説明から始める",
+      "describeDescription": "エージェントにさせたいことを書いてください。DocsGPT が手持ちのナレッジとツールを選び、プロンプトを書きます。",
+      "describeDismiss": "説明欄を隠す",
+      "describeLabel": "エージェントは何をしますか？",
+      "describeHint": "または下のフォームに自分で入力してください。",
+      "describePlaceholder": "配送に関する質問に答える、Web サイト上のエージェント…",
+      "draftedCount_other": "{{count}} 個のフィールドを下書きしました。保存する前に確認してください。",
+      "review": "確認",
+      "pendingPrompt": "{{name}} · 新規、保存時に作成",
+      "promptText": "プロンプトの本文",
+      "editPrompt": "プロンプトを編集",
+      "promptCreateFailed": "下書きしたプロンプトを作成できなかったため、何も保存されていません。もう一度お試しください。",
+      "droppedLine": "{{field}}: {{reason}}",
+      "droppedReasons": {
+        "not_found": "存在しない項目を除外しました",
+        "no_access": "開けない項目を除外しました",
+        "invalid": "無効な項目を除外しました",
+        "other": "項目を除外しました"
+      }
+    }
   }
 }
