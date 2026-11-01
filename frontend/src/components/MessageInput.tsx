@@ -60,6 +60,7 @@ import {
   selectChatTools,
   selectChatToolsLoading,
   setChatToolInChat,
+  settleChatToolToggle,
 } from '../conversation/chatToolsSlice';
 import SignInAgainNotice, {
   useSignInAgain,
@@ -1463,19 +1464,19 @@ export default function MessageInput({
     .filter((tool) => toolInChat(tool))
     .map((tool) => tool.id);
 
-  // Ticks at once and unticks again when the server refuses it.
-  const setToolInChat = (id: string, value: boolean) => {
-    const tool = userTools.find((t) => t.id === id);
-    if (tool) dispatch(setChatToolInChat({ id, value, owner: isOwner(tool) }));
-  };
-
+  // Ticks at once and unticks again when the server refuses it; the slice
+  // holds the tick over any reload until the update answers.
   const handleToggleTool = (id: string) => {
     const tool = userTools.find((t) => t.id === id);
     if (!tool) return;
     const newStatus = !toolInChat(tool);
-    setToolInChat(id, newStatus);
+    const owner = isOwner(tool);
+    dispatch(setChatToolInChat({ id, value: newStatus, owner }));
+    const settle = () => dispatch(settleChatToolToggle({ id }));
     const fail = () => {
-      setToolInChat(id, !newStatus);
+      dispatch(
+        settleChatToolToggle({ id, rollback: { value: !newStatus, owner } }),
+      );
       dispatch(
         showActionToast({
           variant: 'destructive',
@@ -1486,7 +1487,8 @@ export default function MessageInput({
     userService
       .updateToolStatus({ id, status: newStatus }, token)
       .then((response: Response) => {
-        if (!response.ok) fail();
+        if (response.ok) settle();
+        else fail();
       })
       .catch((error: unknown) => {
         console.error('Failed to update tool status:', error);

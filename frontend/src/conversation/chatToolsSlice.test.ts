@@ -8,6 +8,7 @@ import reducer, {
   selectChatToolsLoaded,
   selectChatToolsLoading,
   setChatToolInChat,
+  settleChatToolToggle,
 } from './chatToolsSlice';
 
 const tool = (id: string): UserToolType =>
@@ -78,12 +79,13 @@ describe('chatToolsSlice', () => {
     );
     expect(state.tools[0]).toMatchObject({ status: true, in_chat: true });
     expect(state.loading).toBe(false);
-    // A load started after the toggle applies as usual.
-    const next = reducer(
-      reducer(state, pending('3')),
-      fulfilled('3', [tool('b')]),
-    );
-    expect(next.tools).toEqual([tool('b')]);
+    // Once its update settles, a later load applies as usual.
+    const next = [
+      settleChatToolToggle({ id: 'a' }),
+      pending('3'),
+      fulfilled('3', [tool('a')]),
+    ].reduce<State>(reducer, state);
+    expect(next.tools).toEqual([tool('a')]);
   });
 
   // A tool created just before the toggle (its reload is the one out)
@@ -105,7 +107,127 @@ describe('chatToolsSlice', () => {
       { ...tool('b'), in_chat: true },
       tool('new'),
     ]);
-    expect(state.toggledSinceRequest).toEqual({});
+  });
+
+  // Closing and reopening the picker reloads it before the switch has
+  // reached the server; the toggle holds until its update settles.
+  it('keeps a toggle made with no load out across a later load', () => {
+    const state = run(
+      pending('1'),
+      fulfilled('1', [tool('a')]),
+      setChatToolInChat({ id: 'a', value: true, owner: true }),
+      pending('2'),
+      fulfilled('2', [tool('a')]),
+    );
+    expect(state.tools[0]).toMatchObject({ status: true, in_chat: true });
+  });
+
+  it('keeps a toggle across a newer load started after it', () => {
+    const state = run(
+      pending('1'),
+      fulfilled('1', [tool('a')]),
+      pending('2'),
+      setChatToolInChat({ id: 'a', value: true, owner: false }),
+      pending('3'),
+      fulfilled('3', [tool('a')]),
+    );
+    expect(state.tools[0]).toMatchObject({ status: false, in_chat: true });
+  });
+
+  it("applies a load's value once the toggle has settled", () => {
+    const settled = run(
+      pending('1'),
+      fulfilled('1', [tool('a')]),
+      setChatToolInChat({ id: 'a', value: true, owner: true }),
+      settleChatToolToggle({ id: 'a' }),
+      pending('2'),
+      fulfilled('2', [tool('a')]),
+    );
+    expect(settled.tools).toEqual([tool('a')]);
+    // A load still out when the update settles answers as usual too.
+    const during = run(
+      pending('1'),
+      fulfilled('1', [tool('a')]),
+      setChatToolInChat({ id: 'a', value: true, owner: true }),
+      pending('2'),
+      settleChatToolToggle({ id: 'a' }),
+      fulfilled('2', [{ ...tool('a'), status: true }]),
+    );
+    expect(during.tools).toEqual([{ ...tool('a'), status: true }]);
+  });
+
+  // Tick then untick before either update lands: the first settling must
+  // not let a load undo the second.
+  it('holds a tool while any of its updates is out', () => {
+    const state = run(
+      pending('1'),
+      fulfilled('1', [tool('a')]),
+      setChatToolInChat({ id: 'a', value: true, owner: true }),
+      setChatToolInChat({ id: 'a', value: false, owner: true }),
+      settleChatToolToggle({ id: 'a' }),
+      pending('2'),
+      fulfilled('2', [{ ...tool('a'), status: true }]),
+    );
+    expect(state.tools[0]).toMatchObject({ status: false, in_chat: false });
+    const next = run(
+      pending('1'),
+      fulfilled('1', [tool('a')]),
+      setChatToolInChat({ id: 'a', value: true, owner: true }),
+      setChatToolInChat({ id: 'a', value: false, owner: true }),
+      settleChatToolToggle({ id: 'a' }),
+      settleChatToolToggle({ id: 'a' }),
+      pending('2'),
+      fulfilled('2', [{ ...tool('a'), status: true }]),
+    );
+    expect(next.tools[0]).toMatchObject({ status: true });
+  });
+
+  // A refused update puts the switch back and stops holding it.
+  it('rolls a refused toggle back as it settles', () => {
+    const state = run(
+      pending('1'),
+      fulfilled('1', [tool('a')]),
+      setChatToolInChat({ id: 'a', value: true, owner: true }),
+      pending('2'),
+      settleChatToolToggle({
+        id: 'a',
+        rollback: { value: false, owner: true },
+      }),
+    );
+    expect(state.tools[0]).toMatchObject({ status: false, in_chat: false });
+    expect(
+      reducer(state, fulfilled('2', [{ ...tool('a'), in_chat: true }])).tools,
+    ).toEqual([{ ...tool('a'), in_chat: true }]);
+    // Rolled back while a later toggle is still out, it stays held.
+    const held = run(
+      pending('1'),
+      fulfilled('1', [tool('a')]),
+      setChatToolInChat({ id: 'a', value: true, owner: true }),
+      setChatToolInChat({ id: 'a', value: false, owner: true }),
+      settleChatToolToggle({
+        id: 'a',
+        rollback: { value: false, owner: true },
+      }),
+      pending('2'),
+      fulfilled('2', [{ ...tool('a'), status: true }]),
+    );
+    expect(held.tools[0]).toMatchObject({ status: false, in_chat: false });
+  });
+
+  // The update may settle for another account's tool after a switch.
+  it('drops pending toggles when the account changes', () => {
+    const state = run(
+      pending('1', 'alice'),
+      fulfilled('1', [tool('a')]),
+      setChatToolInChat({ id: 'a', value: true, owner: true }),
+      setToken('bob'),
+      pending('2', 'bob'),
+      fulfilled('2', [tool('a')]),
+    );
+    expect(state.tools).toEqual([tool('a')]);
+    expect(reducer(state, settleChatToolToggle({ id: 'a' })).tools).toEqual([
+      tool('a'),
+    ]);
   });
 
   it("sets the owner's status, and only the grantee's own switch", () => {
