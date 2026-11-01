@@ -129,8 +129,16 @@ class TestApi:
         assert cli.main(["api", "--reload", "--host", "127.0.0.1"]) == 0
         uvicorn.run.assert_called_once_with(
             "docsgpt.asgi:asgi_app", host="127.0.0.1", port=7091, reload=True,
-            reload_dirs=[str(package_dir())],
+            reload_dirs=[str(package_dir())], timeout_graceful_shutdown=cli.RELOAD_SHUTDOWN_TIMEOUT,
         )
+
+    def test_reload_does_not_wait_out_open_streams(self, monkeypatch):
+        """An open tab holds /api/events for minutes; without a limit uvicorn waits for it to close,
+        so a reload never finishes and the API stops answering."""
+        uvicorn = types.SimpleNamespace(run=MagicMock())
+        monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
+        assert cli.main(["api", "--reload"]) == 0
+        assert 0 < uvicorn.run.call_args.kwargs["timeout_graceful_shutdown"] <= 5
 
     def test_reload_watches_the_package_not_the_working_directory(self, monkeypatch, tmp_path):
         """A checkout also holds .venv, node_modules and the indexes and inputs the app writes to,

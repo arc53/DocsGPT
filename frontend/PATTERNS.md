@@ -14,6 +14,7 @@ DESIGN.md.
 - [Monitoring pages: Analytics, Insights, Logs](#monitoring-pages-analytics-insights-logs)
 - [App chrome: the phone top bar and New Chat](#app-chrome-the-phone-top-bar-and-new-chat)
 - [Chat composer](#chat-composer)
+- [Empty chat suggestions](#empty-chat-suggestions-hero)
 - [Chat answer column](#chat-answer-column)
 - [Source views](#source-views-componentstree-wikiviewer-componentsgraph-graphview)
 - [Workflow builder](#workflow-builder-agentsworkflow)
@@ -112,8 +113,8 @@ field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
 Cards (the recipes by role in DESIGN.md › Card surfaces, applied here):
 
 - Form sections (the agent form's Basics, Knowledge and behaviour, Model,
-  Advanced, Guardrails, Insights) are `subtle lg` with `gap-5`; Basics, Knowledge and
-  behaviour and Model are titled by a `SectionHeader`, Advanced,
+  Starters, Advanced, Guardrails, Insights) are `subtle lg` with `gap-5`; Basics, Knowledge and
+  behaviour, Model and Starters are titled by a `SectionHeader`, Advanced,
   Guardrails and Insights by a `CollapsibleTrigger look="section"` in an `<h2>` (see
   DESIGN.md › Disclosure), its status badges beside the `<h2>` (Insights' `neutral`
   Off while the agent collects none). The toggle
@@ -396,6 +397,42 @@ a chat".
   `bg-destructive` tile with `CircleAlert`, and the reason in a tooltip that
   opens on hover and on focus (the failed chip is a tab stop), also tied to
   the chip and its remove button with `aria-describedby`.
+
+## Empty chat suggestions (`hero/`)
+
+Under the model picker, a new chat with no agent shows up to four
+`ListRow size="md"` rows built in the browser from what the user already has
+(`hero/suggestions.ts`, no model call):
+
+- Content first, at most three: summarize the first selected source and
+  compare the first two (sources still processing or failed are skipped),
+  ask about up to two connected services, then continue the latest named chat
+  without an agent from the past week. A service counts only while its
+  connection is signed in, one of its tools is on in the user's chats (the
+  `chatTools` slice the Tools picker keeps) and it holds data (not a web
+  search or a send-only bot).
+- Then one setup action: Add knowledge while the user has no source, else
+  Connect while nothing is connected.
+- With no content at all, every setup step not done yet: Add knowledge,
+  Connect, Create an agent.
+- Nothing renders until sources, chats, connectors and tools have all
+  loaded, so a returning user never sees a fresh install's rows first.
+
+A question row (leading lucide icon or the service's `ConnectorIcon`) sends
+its text and shows `ArrowUp` on hover and focus; a row that opens something
+(Continue, the setup actions) shows `ArrowRight` the same way. Rows wrap
+rather than truncate, and the hero holds room for four, so the logo doesn't
+jump as sources are picked (see DESIGN.md › ListRow). Each row is one
+`t()` template under `hero.suggestions` with the name filled in.
+
+An agent's chat (its page, a shared link, the preview) shows the owner's
+starters instead, the same rows with `MessageSquare` (`hero/AgentStarters`),
+under the agent's card and down by the composer (the workflow preview's
+empty chat too). The agent form's Starters
+section (and a workflow's details) is `agents/components/StartersFields`: no
+fields until "Add a starter", a remove button on each, the link gone at four;
+its description opens "Optional.", like other optional fields. A save trims
+them, drops blanks and repeats (`agents/starters.ts`, as the server does). With no starters the agent's chat shows only its card.
 
 ## Chat answer column
 
@@ -692,7 +729,8 @@ The workflow details are a modal `SidePanel size="default"`
 (`components/WorkflowDetailsSheet.tsx`, see DESIGN.md › Side panels) with the classic
 Basics phone layout: a
 `subtle lg` Basics panel with `FileUpload size="tile" tileSize="fixed"` beside
-the Name pill and Description across the row, then an Advanced panel with the
+the Name pill and Description across the row, a Starters panel with the agent
+form's four starter fields, then an Advanced panel with the
 prompt-override `SettingRow`. Its `PanelFooter` is a `ghost lg pill` Cancel
 and a `default lg pill` Save. The panel edits a copy: Cancel,
 the X, Escape and the scrim drop the edits; Save is disabled until something

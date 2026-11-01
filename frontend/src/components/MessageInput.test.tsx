@@ -16,6 +16,7 @@ vi.mock('../connectors/SignInAgainNotice', () => ({
 }));
 
 import connectorsReducer from '../connectors/connectorsSlice';
+import chatToolsReducer from '../conversation/chatToolsSlice';
 import notificationsReducer, {
   sseEventReceived,
   sseHealthChanged,
@@ -42,6 +43,7 @@ const makeStore = () =>
       upload: uploadReducer,
       notifications: notificationsReducer,
       connectors: connectorsReducer,
+      chatTools: chatToolsReducer,
     },
   });
 

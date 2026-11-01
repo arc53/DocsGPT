@@ -5,11 +5,23 @@ from typing import Dict, List, Optional
 from docsgpt.agents.citations import register_citation
 from docsgpt.agents.tools.base import Tool
 from docsgpt.core.settings import settings
+from docsgpt.retriever.base import SearchOutcome, named_sources, quote_source_name
 from docsgpt.retriever.dispatcher import Dispatcher, build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.retriever.stages.relevance import base_selection
 
 logger = logging.getLogger(__name__)
+
+
+def _named(label: str, source_ids, names: Dict[str, str]) -> str:
+    """``" <label> (...): "name", "name"."`` (``named_sources``), or ``""`` when none has a known name.
+
+    ``names`` comes from ``InternalSearchTool._source_names``, already
+    screened one by one inside an agent; the whole result then passes the
+    tool-result stage's whole-text controls like any tool output.
+    """
+    line = named_sources(label, source_ids, names)
+    return f" {line}" if line else ""
 
 
 def _in_path(docs: List[Dict], path_filter: str) -> List[Dict]:
@@ -182,9 +194,27 @@ class InternalSearchTool(Tool):
             self._path_filter = ""
 
         candidates = retriever.last_candidate_count if dispatched else len(docs)
+        outcome = getattr(retriever, "last_outcome", None)
+        failed = outcome.failed if isinstance(outcome, SearchOutcome) else ()
         if not dispatched and path_filter and docs:
             docs = _in_path(docs, path_filter)
             self._path_hits = len(docs)
+        # Only the names the result lists: the failed sources, plus the ones
+        # searched with no match when nothing came back.
+        names = self._source_names(failed if docs else outcome.searched) if failed else {}
+        if not docs and failed and not outcome.answered:
+            # Every source failed: nothing was looked at, so "no documents
+            # found" would be a false claim about them.
+            return (
+                "Search failed: the sources could not be searched, "
+                "so this is not a sign that nothing matches." + _named("Could not be searched", failed, names)
+            )
+        if not docs and failed:
+            return (
+                "No documents found matching your query, but not every source could be searched."
+                + _named("Could not be searched", failed, names)
+                + _named("Searched with no match", outcome.answered, names)
+            )
         if not docs:
             if not candidates:
                 return "No documents found matching your query."
@@ -217,9 +247,39 @@ class InternalSearchTool(Tool):
             header = filename or title
             number = register_citation(registry, doc) or i
             link = f", url: {doc['url']}" if doc.get("url") else ""
-            formatted.append(f"[{number}] {header} (source: {source}{link})\n{text}")
+            knowledge = quote_source_name(doc.get("source_name"))
+            knowledge = f"knowledge: {knowledge}, " if knowledge else ""
+            formatted.append(f"[{number}] {header} ({knowledge}source: {source}{link})\n{text}")
 
-        return "\n\n---\n\n".join(formatted)
+        result = "\n\n---\n\n".join(formatted)
+        if failed:
+            result += (
+                "\n\n---\n\nSome sources could not be searched; "
+                "these results come only from the others." + _named("Could not be searched", failed, names)
+            )
+        return result
+
+    def _source_names(self, source_ids) -> Dict[str, str]:
+        """``{source_id: name}`` for the sources the result names, screened inside an agent.
+
+        A source's name is any owner's text. Inside an agent the tool-result
+        stage skips its item-level controls for this tool, whose hits were
+        screened as retrieved documents (``retrieval_screen``); these names
+        are not hits, so the agent's name screen (``source_name_screen``)
+        scores them and drops a blocked one. Used on its own, the tool lists
+        them unscreened.
+
+        Args:
+            source_ids: The sources to name.
+
+        Returns:
+            dict: The names that may be listed.
+        """
+        from docsgpt.connectors.attribution import source_names
+
+        names = source_names(list(source_ids))
+        screen = self.config.get("source_name_screen")
+        return screen(names) if callable(screen) and names else names
 
     def _execute_list_files(self, **kwargs) -> str:
         path = kwargs.get("path", "")

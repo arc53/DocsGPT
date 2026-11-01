@@ -46,6 +46,37 @@ describe('ListRow', () => {
     expect(html).toContain('focus-visible:ring-inset');
   });
 
+  it('is a rounded, divider-free row at size md', () => {
+    const html = renderToStaticMarkup(
+      <ListRow
+        size="md"
+        interactive
+        asChild
+        title="Summarize Carrier Contracts"
+      >
+        <button type="button" />
+      </ListRow>,
+    );
+    expect(html).toContain('items-center gap-3 rounded-xl px-3 py-2.5');
+    expect(html).not.toContain('px-4 py-3');
+    expect(html).toContain('hover:bg-accent');
+    expect(html).toContain('focus-visible:ring-inset');
+  });
+
+  it('wraps a wrap row title instead of cutting it, with no title tooltip', () => {
+    const html = renderToStaticMarkup(
+      <ListRow
+        size="md"
+        wrap
+        title="Compare Customs rules 2026 with Meridian"
+      />,
+    );
+    expect(html).toContain('items-start gap-3 rounded-xl px-3 py-2.5');
+    expect(html).not.toContain('truncate');
+    expect(html).not.toContain('title=');
+    expect(html).toContain('text-pretty');
+  });
+
   it('keeps the brand tint on a selected row, hover included', () => {
     const html = renderToStaticMarkup(
       <ListRow interactive selected asChild title="Carrier Rates MCP">

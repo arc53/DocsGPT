@@ -1405,6 +1405,19 @@ In a narrow side panel (the graph node panel's relationships) rows are
 leading mark (a `GraphTypeDot` with `mt-1.5`) sits on the title line. They go
 in a plain `<ul className="-mx-2">`, not `ListRows` (no divide rules), and
 are `interactive asChild` around a `<button>` like the others.
+Rows that sit straight on the page with no box around them (the empty chat's
+suggestions, `HeroSuggestions`) are `size="md"`: `px-3 py-2.5`, `gap-3` and
+`rounded-xl`, so the hover fill reads as a rounded row rather than a strip. They
+go in a plain `<ul>` too, with no divide rules. Their text is the point of
+the row (a question to send), so they are `wrap`: the title wraps instead of
+truncating, top-aligned, with no `title` tooltip, and the icons take `mt-0.5`
+to sit on the first line. Each ends in a muted arrow shown on hover and focus
+(`group/row`, as StepGroup does) and always on a touch screen
+(`pointer-coarse:opacity-100`): `ArrowUp` (the composer's send glyph) on a row
+that sends, `ArrowRight` on one that opens a page. Both keep the foreground
+title: `text-link` is for text links, not for a row that navigates. The hero
+holds room for its most rows (`min-h-40`, four rows, filled from the bottom),
+so the logo and model picker above don't move as rows come and go.
 
 Key/value rows are `DescriptionList` + `DescriptionItem`, never a hand-rolled
 `flex` of label and value. `layout="columns"` (default) is an 8rem label
@@ -2073,7 +2086,6 @@ list stays reviewable.
 | `agents/workflow/WorkflowPreview.tsx`                 | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
 | `agents/schedules/ScheduleFormModal.tsx`              | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle` (see Modal › Steps). One disable.                                                                                                                                                                                                                                                                                                                |
 | `components/MermaidRenderer.tsx`                      | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
-| `Hero.tsx`                                            | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. Two disables: the demo cards and the connect card.                                                                                                                                      |
 | `Navigation.tsx`, `conversation/ConversationTile.tsx` | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
 | `admin/Usage.tsx`                                     | `shadcn/no-restyle`             | The Top users name is a `link inline` Button inside a table cell; it wraps like the cell's text (`font-normal whitespace-normal text-left`), and a user with no email on file keeps the id's mono type (`font-mono text-xs`). One disable.                                                                                                                                                                                                                                                      |
 | `conversation/ConversationBubble.tsx`                 | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |

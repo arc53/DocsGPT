@@ -35,8 +35,18 @@ type ListRowProps = Omit<React.ComponentProps<'li'>, 'title'> & {
    * relationships): 6px / 8px padding, rounded, top-aligned so a small
    * leading mark sits on the title line. Use it in a plain list, not in
    * `ListRows` (no divide rules).
+   * `md` is a row with no box around it, straight on the page (the empty
+   * chat's suggestions): 10px / 12px padding and `rounded-xl`, so the hover
+   * fill reads as a rounded row. Also a plain list, not `ListRows`.
    */
-  size?: 'default' | 'sm';
+  size?: 'default' | 'sm' | 'md';
+  /**
+   * The title wraps instead of truncating, top-aligned, with no `title`
+   * tooltip: for text that is the whole point of the row (a suggested
+   * question), not a name a tooltip can complete. Give `leading` and
+   * `trailing` icons `mt-0.5` so they sit on the first line.
+   */
+  wrap?: boolean;
   /**
    * Render the row's content into its single child (a `<Link>` or
    * `<button>`), wrapped in the `<li>`.
@@ -64,16 +74,21 @@ function ListRow({
   interactive = false,
   selected = false,
   size = 'default',
+  wrap = false,
   asChild = false,
   className,
   children,
   ...props
 }: ListRowProps) {
+  const align = size === 'sm' || wrap ? 'items-start' : 'items-center';
   const rowClass = cn(
     'flex',
+    align,
     size === 'sm'
-      ? 'items-start gap-2.5 rounded-md px-2 py-1.5'
-      : 'items-center gap-3 px-4 py-3',
+      ? 'gap-2.5 rounded-md px-2 py-1.5'
+      : size === 'md'
+        ? 'gap-3 rounded-xl px-3 py-2.5'
+        : 'gap-3 px-4 py-3',
     // Inset, because a row list usually sits in an overflow-hidden rounded
     // box that would clip an outer ring.
     interactive &&
@@ -87,8 +102,12 @@ function ListRow({
       {leading}
       <div className="min-w-0 flex-1">
         <p
-          className="text-foreground truncate text-sm font-medium"
-          title={plainText(title)}
+          className={cn(
+            'text-foreground',
+            wrap ? 'text-pretty wrap-anywhere' : 'truncate',
+            'text-sm font-medium',
+          )}
+          title={wrap ? undefined : plainText(title)}
         >
           {title}
         </p>

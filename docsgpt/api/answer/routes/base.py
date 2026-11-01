@@ -23,6 +23,7 @@ from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
+from docsgpt.connectors.attribution import client_sources
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
@@ -1204,8 +1205,10 @@ class BaseAnswerResource:
                 elif "sources" in line:
                     _mark_streaming_once()
                     truncated_sources = []
-                    source_log_docs = line["sources"]
-                    for source in line["sources"]:
+                    # Copies without the prompt-only keys: these go to the
+                    # client and the stored turn; the agent keeps its own.
+                    source_log_docs = client_sources(line["sources"])
+                    for source in source_log_docs:
                         truncated_source = source.copy()
                         if "text" in truncated_source:
                             truncated_source["text"] = (

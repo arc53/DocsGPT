@@ -103,24 +103,28 @@
       "cancelled": "Tarea en segundo plano cancelada"
     }
   },
-  "demo": [
-    {
-      "header": "Aprende sobre DocsGPT",
-      "query": "¿Qué es DocsGPT?"
-    },
-    {
-      "header": "Resumir documentación",
-      "query": "Resumir contexto actual"
-    },
-    {
-      "header": "Escribir Código",
-      "query": "Escribir código para solicitud de API a /api/answer"
-    },
-    {
-      "header": "Asistencia de Aprendizaje",
-      "query": "Escribe posibles preguntas para el contexto"
+  "hero": {
+    "suggestions": {
+      "label": "Sugerencias",
+      "summarize": "Resume {{name}}",
+      "compare": "Compara {{first}} con {{second}}",
+      "service": {
+        "files": "Busca mis archivos más recientes en {{name}}",
+        "knowledge": "¿Qué cambió en {{name}} esta semana?",
+        "projects": "¿Qué está en curso en {{name}} esta semana?",
+        "dev": "¿Qué cambió en {{name}} esta semana?",
+        "business": "¿Qué hay de nuevo en {{name}} esta semana?",
+        "messaging": "Resume los mensajes de esta semana en {{name}}",
+        "database": "¿Qué datos hay en {{name}}?",
+        "other": "¿Qué puedes encontrar en {{name}}?"
+      },
+      "continue": "Continúa con «{{name}}»",
+      "addKnowledge": "Añade conocimiento para preguntar por tus propios documentos",
+      "connect": "Conecta {{names}}",
+      "more": "más",
+      "createAgent": "Crea un agente para una tarea concreta"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "Inicia sesión para continuar en DocsGPT",
     "signInWithSSO": "Iniciar sesión con SSO",
@@ -3142,7 +3146,8 @@
         "basics": "Básico",
         "knowledge": "Conocimiento y comportamiento",
         "model": "Modelo",
-        "analytics": "Información"
+        "analytics": "Información",
+        "starters": "Preguntas de inicio"
       },
       "placeholders": {
         "agentName": "Nombre del agente",
@@ -3465,6 +3470,12 @@
         "title": "¿Salir sin guardar?",
         "description": "Se perderán los cambios que hiciste aquí.",
         "submit": "Salir"
+      },
+      "starters": {
+        "description": "Opcional. Preguntas que aparecen bajo la tarjeta del agente cuando alguien empieza un chat nuevo con él, como «¿En qué me puedes ayudar?». Hasta cuatro.",
+        "label": "Pregunta {{number}}",
+        "add": "Añadir una pregunta",
+        "remove": "Quitar la pregunta {{number}}"
       }
     },
     "logs": {
@@ -3830,7 +3841,7 @@
         "deleteNode": "Eliminar nodo",
         "deleteConfirmUnnamed": "¿Eliminar este agente de flujo de trabajo?",
         "detailsTitle": "Detalles del flujo de trabajo",
-        "detailsDescription": "Nombre, descripción e imagen que se muestran en la tarjeta del agente.",
+        "detailsDescription": "La tarjeta del agente y sus ajustes de chat.",
         "unsavedChanges": "Cambios sin guardar",
         "editDetailsMenu": "Editar detalles",
         "loopHint": "Ejecuta nodos para cada elemento de una lista",
@@ -4156,11 +4167,6 @@
   },
   "prompts": {
     "textAriaLabel": "Texto del prompt"
-  },
-  "connectHero": {
-    "title": "Conecta tus datos",
-    "body": "Chatea con {{names}}.",
-    "more": "más"
   },
   "common": {
     "close": "Cerrar",

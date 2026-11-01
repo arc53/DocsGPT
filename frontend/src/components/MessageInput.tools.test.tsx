@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   queued: [] as Promise<unknown>[],
   catalog: [] as unknown[],
   connections: [] as unknown[],
+  updateStatus: vi.fn(() => Promise.resolve({ ok: true })),
   devices: vi.fn(() =>
     Promise.resolve({
       devices: [{ id: 'd1', last_seen_at: new Date().toISOString() }],
@@ -49,6 +50,7 @@ vi.mock('../api/services/userService', () => ({
         ok: true,
         json: () => Promise.resolve({ success: true, tools: mocks.tools }),
       }),
+    updateToolStatus: () => mocks.updateStatus(),
   },
 }));
 vi.mock('../api/services/connectorsService', () => ({
@@ -66,10 +68,12 @@ vi.mock('./message-input', async (importOriginal) => ({
   ToolsTrigger: ({
     items,
     onOpenChange,
+    onToggle,
     filters,
   }: {
     items: MultiSelectPopoverItem[];
     onOpenChange: (open: boolean) => void;
+    onToggle: (id: string) => void;
     filters?: React.ReactNode;
   }) => (
     <div>
@@ -90,6 +94,11 @@ vi.mock('./message-input', async (importOriginal) => ({
           {item.descriptionNode && (
             <div data-testid="tool-note">{item.descriptionNode}</div>
           )}
+          <button
+            type="button"
+            data-testid="toggle-tool"
+            onClick={() => onToggle(item.id)}
+          />
         </div>
       ))}
     </div>
@@ -97,6 +106,10 @@ vi.mock('./message-input', async (importOriginal) => ({
 }));
 
 import connectorsReducer from '../connectors/connectorsSlice';
+import chatToolsReducer, {
+  loadChatTools,
+  setChatToolInChat,
+} from '../conversation/chatToolsSlice';
 import notificationsReducer from '../notifications/notificationsSlice';
 import { prefSlice } from '../preferences/preferenceSlice';
 import uploadReducer from '../upload/uploadSlice';
@@ -111,6 +124,7 @@ const makeStore = () =>
       upload: uploadReducer,
       notifications: notificationsReducer,
       connectors: connectorsReducer,
+      chatTools: chatToolsReducer,
     },
   });
 
@@ -227,6 +241,167 @@ describe('MessageInput tools picker', () => {
     }
     expect(Object.keys(groups())).toEqual(['Newer']);
     mocks.queued = [];
+  });
+
+  // A chat switch remounts the composer while the old one's load is still
+  // out; that answer must not overwrite the list the new composer loaded
+  // and the user has since toggled.
+  it("ignores an unmounted composer's late tool list", async () => {
+    const tool = (id: string, status: boolean) => ({
+      id,
+      name: 'memory',
+      displayName: id,
+      status,
+      config: {},
+    });
+    const deferred = () => {
+      let resolve: (tools: unknown[]) => void = () => {};
+      const promise = new Promise<unknown>((r) => {
+        resolve = (tools) =>
+          r({
+            ok: true,
+            json: () => Promise.resolve({ success: true, tools }),
+          });
+      });
+      return { promise, resolve };
+    };
+    const flush = async () => {
+      for (let i = 0; i < 4; i += 1) {
+        await act(async () => {
+          await Promise.resolve();
+        });
+      }
+    };
+    const store = makeStore();
+    const composer = (key: string) => (
+      <MemoryRouter>
+        <Provider store={store}>
+          <MessageInput
+            key={key}
+            onSubmit={() => undefined}
+            loading={false}
+            showSourceButton={false}
+            showToolButton
+            autoFocus={false}
+          />
+        </Provider>
+      </MemoryRouter>
+    );
+    const fromA = deferred();
+    const fromB = deferred();
+    mocks.queued = [fromA.promise, fromB.promise];
+    await act(async () => root.render(composer('chat-a')));
+    await act(async () => root.render(composer('chat-b')));
+    await act(async () => fromB.resolve([tool('notes', false)]));
+    await flush();
+    await act(async () => {
+      store.dispatch(
+        setChatToolInChat({ id: 'notes', value: true, owner: true }),
+      );
+    });
+    await act(async () => fromA.resolve([tool('notes', false)]));
+    await flush();
+    expect(store.getState().chatTools.tools).toEqual([
+      expect.objectContaining({ id: 'notes', status: true, in_chat: true }),
+    ]);
+    expect(store.getState().chatTools.loading).toBe(false);
+    mocks.queued = [];
+  });
+
+  // Closing and reopening the picker reloads it before the switch has
+  // reached the server; the tick holds until the update answers.
+  describe('a toggled tool', () => {
+    const notes = (status: boolean) => ({
+      id: 'notes',
+      name: 'memory',
+      displayName: 'Notes',
+      status,
+      config: {},
+    });
+    const flush = async () => {
+      for (let i = 0; i < 4; i += 1) {
+        await act(async () => {
+          await Promise.resolve();
+        });
+      }
+    };
+    const toggleWithUpdateOut = async () => {
+      let answer: (outcome: Promise<{ ok: boolean }>) => void = () => {};
+      mocks.updateStatus.mockReturnValueOnce(
+        new Promise<{ ok: boolean }>((resolve) => {
+          answer = resolve;
+        }),
+      );
+      mocks.tools = [notes(false)];
+      const store = makeStore();
+      await act(async () => {
+        root.render(
+          <MemoryRouter>
+            <Provider store={store}>
+              <MessageInput
+                onSubmit={() => undefined}
+                loading={false}
+                showSourceButton={false}
+                showToolButton
+                autoFocus={false}
+              />
+            </Provider>
+          </MemoryRouter>,
+        );
+      });
+      await flush();
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>('[data-testid="toggle-tool"]')!
+          .click();
+      });
+      // The reload reads the list before the switch reached the server.
+      await act(async () => {
+        await store.dispatch(loadChatTools({ token: null }));
+      });
+      expect(store.getState().chatTools.tools[0]).toMatchObject({
+        status: true,
+        in_chat: true,
+      });
+      return { store, answer };
+    };
+
+    afterEach(() => {
+      mocks.tools = [];
+    });
+
+    it('holds until its update answers, then takes the reloaded list', async () => {
+      const { store, answer } = await toggleWithUpdateOut();
+      await act(async () => answer(Promise.resolve({ ok: true })));
+      await flush();
+      expect(store.getState().chatTools.pendingToggles).toEqual({});
+      mocks.tools = [notes(false)];
+      await act(async () => {
+        await store.dispatch(loadChatTools({ token: null }));
+      });
+      expect(store.getState().chatTools.tools[0]).toMatchObject({
+        status: false,
+      });
+    });
+
+    it.each([
+      ['refused', () => Promise.resolve({ ok: false })],
+      ['unreachable', () => Promise.reject<{ ok: boolean }>(new Error('down'))],
+    ])(
+      'unticks and stops holding when the update is %s',
+      async (_, outcome) => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { store, answer } = await toggleWithUpdateOut();
+        await act(async () => answer(outcome()));
+        await flush();
+        expect(store.getState().chatTools.tools[0]).toMatchObject({
+          status: false,
+          in_chat: false,
+        });
+        expect(store.getState().chatTools.pendingToggles).toEqual({});
+        vi.mocked(console.error).mockRestore();
+      },
+    );
   });
 
   // A teammate's connection is never in the caller's list; the tool still

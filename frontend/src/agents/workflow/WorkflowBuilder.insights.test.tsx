@@ -62,8 +62,19 @@ vi.mock('../../modals/ConfirmationModal', () => ({
 }));
 vi.mock('../../modals/AgentDetailsModal', () => ({ default: () => null }));
 vi.mock('../../teams/ShareToTeamModal', () => ({ default: () => null }));
-vi.mock('../components/AgentPreviewSheet', () => ({ default: () => null }));
-vi.mock('./WorkflowPreview', () => ({ default: () => null }));
+vi.mock('../components/AgentPreviewSheet', () => ({
+  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+// The preview's props, to check what the builder hands it.
+const preview = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+}));
+vi.mock('./WorkflowPreview', () => ({
+  default: (props: Record<string, unknown>) => {
+    preview.props = props;
+    return null;
+  },
+}));
 vi.mock('./NodePalette', () => ({ default: () => null }));
 vi.mock('./CanvasControls', () => ({ default: () => null }));
 
@@ -75,6 +86,7 @@ const AGENT = {
   name: 'Renewal desk',
   agent_type: 'workflow',
   workflow: 'w1',
+  starters: ['How do I renew a carrier?'],
   allowed_actions: ['view', 'edit', 'publish', 'delete'],
   config: {
     api_write_allowlist: ['t1:write'],
@@ -147,6 +159,7 @@ describe('WorkflowBuilder insights', () => {
     updateWorkflow.mockReset().mockImplementation(() => ok({ success: true }));
     getAgent.mockReset().mockImplementation(() => ok(AGENT));
     sheet.props = null;
+    preview.props = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -361,6 +374,87 @@ describe('WorkflowBuilder insights', () => {
     expect(sheet.props!.open).toBe(true);
     expect((sheet.props!.errors as string[]).length).toBeGreaterThan(0);
     expect(details().analytics).toEqual(next);
+  });
+
+  // Starters are the agent's, edited in Workflow details beside its
+  // description and sent with every save, as the classic form does.
+  describe('starters', () => {
+    const saveStarters = async (starters: string[]) => {
+      const onSave = sheet.props!.onSave as (values: object) => void;
+      await act(async () =>
+        onSave({
+          name: 'Renewal desk',
+          description: '',
+          starters,
+          allowPromptOverride: false,
+          imageFile: null,
+          analytics: details().analytics,
+        }),
+      );
+      await act(async () => undefined);
+    };
+    const sentStarters = () => {
+      const form = updateAgent.mock.calls.at(-1)![1] as FormData;
+      const raw = form.get('starters');
+      return raw === null ? null : JSON.parse(raw as string);
+    };
+    const detailsStarters = () =>
+      (sheet.props!.details as { starters: string[] }).starters;
+
+    it('hands the loaded starters to the details panel and the preview', async () => {
+      await render();
+      expect(detailsStarters()).toEqual(['How do I renew a carrier?']);
+      expect(preview.props!.starters).toEqual(['How do I renew a carrier?']);
+    });
+
+    it('sends the starters cleaned, and shows them so afterwards', async () => {
+      await render();
+      await saveStarters([
+        '  Which carriers renew this month? ',
+        '',
+        'which carriers renew this month?',
+        'Draft a renewal email',
+      ]);
+      expect(updateAgent).toHaveBeenCalledTimes(1);
+      const cleaned = [
+        'Which carriers renew this month?',
+        'Draft a renewal email',
+      ];
+      expect(sentStarters()).toEqual(cleaned);
+      expect(detailsStarters()).toEqual(cleaned);
+      expect(preview.props!.starters).toEqual(cleaned);
+    });
+
+    it('sends an empty list once every starter is cleared', async () => {
+      await render();
+      await saveStarters(['', '', '', '']);
+      expect(sentStarters()).toEqual([]);
+    });
+
+    it('sends the stored starters with an unrelated save', async () => {
+      await render();
+      await save({ ...details().analytics, digest: true });
+      expect(sentStarters()).toEqual(['How do I renew a carrier?']);
+    });
+
+    it('keeps toolbar Save on for a starters edit left by a failed save', async () => {
+      await render();
+      updateAgent
+        .mockReset()
+        .mockImplementation(() =>
+          Promise.resolve({ ok: false, json: () => Promise.resolve({}) }),
+        );
+      await saveStarters(['Draft a renewal email']);
+      const onOpenChange = sheet.props!.onOpenChange as (o: boolean) => void;
+      await act(async () => onOpenChange(false));
+      const saveButton = [...container.querySelectorAll('button')].find(
+        (button) => button.textContent === 'agents.form.buttons.save',
+      );
+      expect(container.textContent).toContain(
+        'agents.workflow.builder.unsavedChanges',
+      );
+      expect(saveButton?.disabled).toBe(false);
+    });
   });
 
   describe('while a details save is out', () => {
