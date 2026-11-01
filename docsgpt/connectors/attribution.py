@@ -78,8 +78,9 @@ def source_names(source_ids: list[str]) -> dict[str, str]:
     return {str(row.id): row.name for row in rows if row.name}
 
 
-# Chunk keys only the model sees. ``source_name`` is what the owner called the
-# knowledge, which a widget or shared-link reader has no business learning.
+# Chunk keys only the model sees. ``source_name`` (what the owner called the
+# knowledge) is not secret; it is prompt-only metadata the client does not
+# use, so it is left out of what leaves the server.
 PROMPT_ONLY_KEYS = frozenset({"source_name"})
 
 

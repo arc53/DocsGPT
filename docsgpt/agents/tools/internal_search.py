@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from docsgpt.agents.citations import register_citation
 from docsgpt.agents.tools.base import Tool
 from docsgpt.core.settings import settings
-from docsgpt.retriever.base import SearchOutcome, named_sources
+from docsgpt.retriever.base import SearchOutcome, named_sources, quote_source_name
 from docsgpt.retriever.dispatcher import Dispatcher, build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.retriever.stages.relevance import base_selection
@@ -248,7 +248,8 @@ class InternalSearchTool(Tool):
             header = filename or title
             number = register_citation(registry, doc) or i
             link = f", url: {doc['url']}" if doc.get("url") else ""
-            knowledge = f"knowledge: {doc['source_name']}, " if doc.get("source_name") else ""
+            knowledge = quote_source_name(doc.get("source_name"))
+            knowledge = f"knowledge: {knowledge}, " if knowledge else ""
             formatted.append(f"[{number}] {header} ({knowledge}source: {source}{link})\n{text}")
 
         result = "\n\n---\n\n".join(formatted)

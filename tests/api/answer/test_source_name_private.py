@@ -2,8 +2,8 @@
 
 ``source_name`` is the name of the knowledge a chunk came from in its owner's
 library. The prompt names it so a question like "Summarize test-1" finds its
-chunks, but a widget or shared-link reader must not learn what the owner's
-knowledge is called, so the chat stream and the stored sources leave it out.
+chunks. The name is not secret, but it is prompt-only metadata no client
+uses, so the chat stream and the stored sources leave it out.
 The connector attribution next to it ("From Google Drive") is meant to be shown
 and stays.
 """
@@ -85,7 +85,7 @@ class TestSourceNameStaysInThePrompt:
             _run(BaseAnswerResource(), _agent(docs))
 
         assert docs[0]["source_name"] == "test-1"
-        assert "<knowledge>test-1</knowledge>" in format_docs_for_prompt(docs)
+        assert '<knowledge>"test-1"</knowledge>' in format_docs_for_prompt(docs)
 
     def test_stored_turn_sources_leave_out_the_knowledge_name(self, pg_conn, flask_app):
         from docsgpt.api.answer.routes.base import BaseAnswerResource

@@ -1616,10 +1616,13 @@ class BaseAgent(ABC):
         """Run source names through the retrieval guardrail, as a document's text is.
 
         A shared or sponsored source's owner may not be the asker, so a name is
-        as untrusted as the documents. The names are screened together, one
-        per line, by the stage's whole-text controls: a block drops every name
-        (the note then names none), a redaction keeps the redacted names. Only
-        the prompt changes; the documents the client shows are left alone.
+        as untrusted as the documents. Each name is first scored on its own by
+        the stage's item-level controls (the injection model), as a passage's
+        ``<knowledge>`` name is (``_screen_docs``), and a blocked one is
+        dropped. The rest are then screened together, one per line, by the
+        stage's whole-text controls: a block drops every name (the note then
+        names none), a redaction keeps the redacted names. Only the prompt
+        changes; the documents the client shows are left alone.
 
         Args:
             names: ``{source_id: name}``.
@@ -1627,8 +1630,16 @@ class BaseAgent(ABC):
         Returns:
             dict: The names that may reach the model.
         """
-        collapsed = {source_id: " ".join(str(name).split()) for source_id, name in names.items() if name}
+        from docsgpt.retriever.base import one_line
+
+        collapsed = {source_id: one_line(name) for source_id, name in names.items()}
         collapsed = {source_id: name for source_id, name in collapsed.items() if name}
+        self._score_retrieval_items(self._source_name_items(collapsed))
+        collapsed = {
+            source_id: name
+            for source_id, name in collapsed.items()
+            if not self._source_name_blocked(source_id, name)
+        }
         if not collapsed:
             return {}
         decision = self._guardrail_stage("\n".join(collapsed.values()), Stage.RETRIEVAL)
@@ -1734,12 +1745,20 @@ class BaseAgent(ABC):
         and a search tool returning the same chunk never score it twice. The
         search tools call this on their hits (``retrieval_screen``).
 
+        The name of the source a document came from (``source_name``) is any
+        owner's text and reaches the prompt as ``<knowledge>``, so it is scored
+        too, in the same batch: a blocked name is dropped from the document,
+        which itself stays unless its text is blocked. The client never sees
+        the name (``client_sources``), so dropping it changes only the prompt.
+
         Args:
             docs: Retrieved documents.
 
         Returns:
-            The documents, the withheld ones replaced.
+            The documents, the withheld ones replaced and the blocked names dropped.
         """
+        from docsgpt.retriever.base import one_line
+
         engine = self.guardrails
         if engine is None or not engine.config.controls_for(Stage.RETRIEVAL, item_level=True):
             return docs
@@ -1750,28 +1769,75 @@ class BaseAgent(ABC):
             return (Stage.RETRIEVAL, "item", str(doc.get("source_id") or ""), doc.get("text"))
 
         first: Dict[tuple, Dict] = {}
+        names: Dict[str, str] = {}
         for doc in docs:
-            text = doc.get("text") if isinstance(doc, dict) and not doc.get("withheld") else None
+            if not isinstance(doc, dict):
+                continue
+            text = doc.get("text") if not doc.get("withheld") else None
             if isinstance(text, str) and key(doc) not in cache:
                 first.setdefault(key(doc), doc)
-        if first:
-            todo = list(first.values())
-            decisions = engine.evaluate_items(
-                [d["text"] for d in todo], Stage.RETRIEVAL, [_chunk_ref(d) for d in todo], _retrieval_hints(todo)
-            )
-            for doc, decision in zip(todo, decisions):
-                cache[key(doc)] = decision
+            name = one_line(doc.get("source_name"))
+            if name:
+                names.setdefault(str(doc.get("source_id") or ""), name)
+        todo = list(first.values())
+        hints = (_retrieval_hints(todo) if todo else None) or [None] * len(todo)
+        self._score_retrieval_items(
+            [(key(d), d["text"], _chunk_ref(d), hint) for d, hint in zip(todo, hints)]
+            + self._source_name_items(names)
+        )
         screened = []
         for doc in docs:
             text = doc.get("text") if isinstance(doc, dict) else None
             decision = cache.get(key(doc)) if isinstance(text, str) else None
             if decision is not None and decision.blocked and not doc.get("withheld"):
                 doc = {**doc, "text": self.RETRIEVAL_WITHHELD_TEXT, "withheld": "policy"}
+            name = one_line(doc.get("source_name")) if isinstance(doc, dict) else ""
+            if name and self._source_name_blocked(str(doc.get("source_id") or ""), name):
+                doc = {k: v for k, v in doc.items() if k != "source_name"}
             screened.append(doc)
         return screened
 
+    @staticmethod
+    def _source_name_key(source_id: str, name: str) -> tuple:
+        """The run cache's key for the item-level verdict on a source's name."""
+        return (Stage.RETRIEVAL, "name", source_id, name)
+
+    def _source_name_items(self, names: Dict[str, str]) -> List[tuple]:
+        """``names`` (``{source_id: one-line name}``) as items for ``_score_retrieval_items``."""
+        return [
+            (self._source_name_key(source_id, name), name, f"source:{source_id}", None)
+            for source_id, name in names.items()
+        ]
+
+    def _source_name_blocked(self, source_id: str, name: str) -> bool:
+        """True when an item-level retrieval control blocked this name (scored by ``_score_retrieval_items``)."""
+        decision = self._guardrail_cache.get(self._source_name_key(source_id, name))
+        return decision is not None and decision.blocked
+
+    def _score_retrieval_items(self, items: List[tuple]) -> None:
+        """Score with the retrieval stage's item-level controls, in one batch, the items not yet cached for the run.
+
+        Args:
+            items: ``(cache_key, text, ref, hint)`` per item; ``ref`` is what
+                its verdicts and journal rows carry, ``hint`` what the caller
+                knows about it (``ScanContext.item_hints``) or None.
+        """
+        engine = self.guardrails
+        if engine is None or not engine.config.controls_for(Stage.RETRIEVAL, item_level=True):
+            return
+        cache = self._guardrail_cache
+        todo = list({item[0]: item for item in items if item[0] not in cache}.values())
+        if not todo:
+            return
+        decisions = engine.evaluate_items(
+            [text for _, text, _, _ in todo], Stage.RETRIEVAL, [ref for _, _, ref, _ in todo],
+            [hint for _, _, _, hint in todo],
+        )
+        for (cache_key, _, _, _), decision in zip(todo, decisions):
+            cache[cache_key] = decision
+
     def _screen_retrieved_docs(self) -> int:
-        """Screen this turn's documents (``_screen_docs``) in place; returns how many were newly withheld."""
+        """Screen this turn's documents (``_screen_docs``) in place; returns how many changed (withheld or renamed)."""
         docs = list(getattr(self, "retrieved_docs", None) or [])
         if not docs:
             return 0
