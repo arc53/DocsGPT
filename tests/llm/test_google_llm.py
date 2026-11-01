@@ -250,3 +250,63 @@ def test_prepare_messages_with_attachments_appends_files(monkeypatch):
     pdf_part = next(f for f in files if f["mime_type"] == "application/pdf")
     assert image_part == {"file_bytes": b"png-bytes", "mime_type": "image/png"}
     assert pdf_part == {"file_uri": "gs://file_uri", "mime_type": "application/pdf"}
+
+
+def _usage(**kw):
+    base = dict(
+        prompt_token_count=0,
+        candidates_token_count=0,
+        thoughts_token_count=None,
+        cached_content_token_count=None,
+        tool_use_prompt_token_count=None,
+    )
+    base.update(kw)
+    return types.SimpleNamespace(**base)
+
+
+def test_raw_gen_records_provider_usage(monkeypatch):
+    def fake_generate(self, *args, **kwargs):
+        resp = FakeModels._Resp(text="ok")
+        resp.usage_metadata = _usage(
+            prompt_token_count=100,
+            candidates_token_count=20,
+            thoughts_token_count=30,
+            cached_content_token_count=40,
+        )
+        return resp
+
+    monkeypatch.setattr(FakeModels, "generate_content", fake_generate)
+    llm = GoogleLLM(api_key="key")
+    llm._raw_gen(llm, model="gemini", messages=[{"role": "user", "content": "hi"}])
+    assert llm._last_usage == {
+        "prompt_tokens": 100,
+        "completion_tokens": 50,
+        "total_tokens": 150,
+        "prompt_tokens_details": {"cached_tokens": 40},
+    }
+    assert llm._last_usage_claimed is False
+
+
+def test_raw_gen_stream_records_last_chunk_usage(monkeypatch):
+    def fake_stream(self, *args, **kwargs):
+        first = types.SimpleNamespace(
+            text="a", candidates=None, usage_metadata=_usage(prompt_token_count=10, candidates_token_count=1)
+        )
+        last = types.SimpleNamespace(
+            text="b", candidates=None, usage_metadata=_usage(prompt_token_count=10, candidates_token_count=7)
+        )
+        return [first, last]
+
+    monkeypatch.setattr(FakeModels, "generate_content_stream", fake_stream)
+    llm = GoogleLLM(api_key="key")
+    out = list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}]))
+    assert out == ["a", "b"]
+    assert llm._last_usage["prompt_tokens"] == 10
+    assert llm._last_usage["completion_tokens"] == 7
+    assert "prompt_tokens_details" not in llm._last_usage
+
+
+def test_raw_gen_without_usage_metadata_leaves_no_usage():
+    llm = GoogleLLM(api_key="key")
+    llm._raw_gen(llm, model="gemini", messages=[{"role": "user", "content": "hi"}])
+    assert llm._last_usage is None
