@@ -859,6 +859,12 @@ const Markdown = styled.div`
     box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
   }
 
+  /* The conversation clips sideways, so an image never runs wider than it. */
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
   h1,
   h2,
   h3,
