@@ -124,7 +124,10 @@ export default function HeroSuggestions({
 
   const rows = ready
     ? buildHeroSuggestions({
-        selectedSources: selectedDocs,
+        // The selection restored from the browser is checked against the
+        // source list; without that list it may name a deleted source or
+        // another account's, so it isn't offered.
+        selectedSources: sourceDocsFailed ? [] : selectedDocs,
         hasSources: (sourceDocs?.length ?? 0) > 0,
         services: connectorsEnabled
           ? answerableServices({

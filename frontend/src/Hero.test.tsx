@@ -204,6 +204,21 @@ describe('Hero suggestions', () => {
     expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
   });
 
+  // The saved selection is checked against the source list; without it the
+  // source may be deleted, or another account's on this browser.
+  it('names no saved source when the source list failed to load', async () => {
+    const saved = [
+      { id: 's1', name: 'Carrier Contracts 2026' },
+      { id: 's2', name: 'Rate Cards' },
+    ];
+    await render({
+      sourceDocs: null,
+      sourceDocsFailed: true,
+      selectedDocs: saved,
+    });
+    expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
+  });
+
   it('holds room for the most rows, so the logo stays put as they change', async () => {
     await render({ conversations: null });
     const slot = container.querySelector(
