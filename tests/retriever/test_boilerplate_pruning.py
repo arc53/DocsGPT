@@ -112,25 +112,58 @@ class TestBoilerplatePruningRules:
         assert "Docs > Tables" not in cleaned
 
     def test_preserves_apostrophe_negations_before_nav_pruning(self):
-        """Apostrophe-form contractions (don't, won't, can't) must survive navigation pruning.
+        """Straight and typographic apostrophe contractions must survive navigation pruning.
 
         ``_NAV_CONTROL_RE`` matches ``"next page:?.*"``, so a line such as
         ``"Next page: Don't disable TLS verification"`` would be discarded
         unless the contraction is detected before the navigation check fires.
+        Both straight apostrophe (U+0027) and typographic/curly (U+2019) forms
+        are covered because the tokenizer normalizes before matching.
         """
-        cases = [
-            # Exact case from CodeRabbit report
+        # Straight apostrophe form
+        straight_cases = [
             ("Next page: Don't disable TLS verification", "database"),
             ("Don't use plain HTTP in production.", "security"),
             ("Won't retry on 4xx errors.", "config"),
             ("Can't authenticate without a token.", "auth"),
         ]
-        for text, query in cases:
+        for text, query in straight_cases:
             result = prune_chunk_text(text, query=query)
             assert result == text, (
-                f"Apostrophe negation was incorrectly pruned.\n"
+                f"Straight-apostrophe negation incorrectly pruned.\n"
                 f"  Input: {text!r}\n  Query: {query!r}\n  Got: {result!r}"
             )
+
+        # Typographic / curly apostrophe (U+2019) — same words, different codepoint
+        typographic_cases = [
+            ("Next page: Don\u2019t disable TLS verification", "database"),
+            ("Don\u2019t use plain HTTP in production.", "security"),
+            ("Won\u2019t retry on 4xx errors.", "config"),
+        ]
+        for text, query in typographic_cases:
+            result = prune_chunk_text(text, query=query)
+            assert result == text, (
+                f"Typographic-apostrophe negation incorrectly pruned.\n"
+                f"  Input: {text!r}\n  Query: {query!r}\n  Got: {result!r}"
+            )
+
+    def test_preserves_possessives_matching_query_terms(self):
+        """Possessives such as "user's" must still match a query token "user".
+
+        ``_tokenize_query`` uses ``\\b\\w+\\b`` which splits ``user's`` into
+        ``user`` (the ``s`` fragment is discarded as < 2 chars).  The line
+        tokenizer must use the same splitting so ``user's`` in a line matches
+        the ``user`` query token and the line is preserved.
+        """
+        # Nav regex matches "next page:?.*", but "user" in query should protect
+        # the line via query-term overlap on the possessive stem.
+        result = prune_chunk_text(
+            "Next page: user's credentials expired", query="user login"
+        )
+        assert result == "Next page: user's credentials expired", (
+            f"Possessive 'user's' did not match query token 'user'; line removed.\n"
+            f"  Got: {result!r}"
+        )
 
     def test_preserves_negations_and_qualifiers(self):
         raw = (

@@ -84,13 +84,20 @@ def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
     if re.match(r"^(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+/\S*", stripped, re.IGNORECASE):
         return True
 
-    # 3. Query term overlap
-    words = set(re.findall(r"\b[\w']+\b", stripped.lower()))
+    # Normalize typographic/curly apostrophes (U+2018, U+2019) to straight apostrophe
+    # so contractions like "Don't" tokenize identically to "Don't".
+    normalized = stripped.lower().replace("\u2019", "'").replace("\u2018", "'")
+
+    # 3. Query term overlap — use the same plain \w+ tokenizer as _tokenize_query so
+    # possessives like "user's" split into "user" and match a "user" query token.
+    words = set(re.findall(r"\b\w+\b", normalized))
     if query_tokens and words.intersection(query_tokens):
         return True
 
-    # 4. Factual qualifiers, polarity, or negations
-    if words.intersection(_PROTECTED_QUALIFIERS):
+    # 4. Factual qualifiers, polarity, or negations — use apostrophe-aware tokens so
+    # contractions like "don't" / "won't" match entries in _PROTECTED_QUALIFIERS.
+    words_with_apostrophe = set(re.findall(r"\b[\w']+\b", normalized))
+    if words_with_apostrophe.intersection(_PROTECTED_QUALIFIERS):
         return True
 
     # 4b. Comparison expressions with a numeric operand (e.g. "Password length > 8")
