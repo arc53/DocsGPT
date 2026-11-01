@@ -84,7 +84,9 @@ describe('PairDeviceModal', () => {
     );
     const poll = vi
       .spyOn(apiClient, 'get')
-      .mockResolvedValue(response({ ...pairing, status: 'pending' }));
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
 
     await startPairing();
     await act(async () => {
@@ -108,5 +110,276 @@ describe('PairDeviceModal', () => {
     );
     expect(document.body.textContent).toContain('ABCD-1234');
     expect(alertText()).toBe('');
+  });
+
+  const advance = async (ms: number) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+
+  const expectExpiredForm = () => {
+    expect(alertText()).toContain('settings.devices.pairing.expired');
+    expect(document.body.textContent).not.toContain(
+      'settings.devices.pairing.waitingForCli',
+    );
+    expect(document.body.textContent).not.toContain('ABCD-1234');
+  };
+
+  it('stops polling and asks for a new code once the code expires', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ ...pairing, expires_in: 30 }),
+    );
+    const poll = vi
+      .spyOn(apiClient, 'get')
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
+
+    await startPairing();
+    await advance(27_000);
+    expect(alertText()).toBe('');
+    expect(poll).toHaveBeenCalledTimes(9);
+
+    await advance(3000);
+    expectExpiredForm();
+    const pollsAtExpiry = poll.mock.calls.length;
+    await advance(15_000);
+    expect(poll).toHaveBeenCalledTimes(pollsAtExpiry);
+  });
+
+  it.each([
+    [
+      'no longer has the code',
+      response({ success: false, error: 'pairing_not_found' }, 404),
+    ],
+    ['reports it expired', response({ ...pairing, status: 'expired' })],
+    ['reports it cancelled', response({ ...pairing, status: 'cancelled' })],
+  ])('treats the code as expired when the server %s', async (_case, reply) => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(response(pairing));
+    const poll = vi.spyOn(apiClient, 'get').mockResolvedValue(reply);
+
+    await startPairing();
+    await advance(3000);
+
+    expectExpiredForm();
+    await advance(15_000);
+    expect(poll).toHaveBeenCalledTimes(1);
+  });
+
+  it('expires the code on time even when the next poll is later', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ ...pairing, expires_in: 2, interval: 5 }),
+    );
+    const poll = vi
+      .spyOn(apiClient, 'get')
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
+
+    await startPairing();
+    await advance(1999);
+    expect(alertText()).toBe('');
+    await advance(1);
+    expectExpiredForm();
+    await advance(10_000);
+    expect(poll).not.toHaveBeenCalled();
+  });
+
+  it('polls at the interval the server asks for', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ ...pairing, interval: 5 }),
+    );
+    const poll = vi
+      .spyOn(apiClient, 'get')
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
+
+    await startPairing();
+    await advance(4999);
+    expect(poll).not.toHaveBeenCalled();
+    await advance(1);
+    expect(poll).toHaveBeenCalledTimes(1);
+    await advance(5000);
+    expect(poll).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps waiting through a poll that fails for another reason', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(response(pairing));
+    const poll = vi
+      .spyOn(apiClient, 'get')
+      .mockResolvedValueOnce(
+        response({ success: false, error: 'internal_error' }, 500),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await startPairing();
+    await advance(6000);
+
+    expect(poll).toHaveBeenCalledTimes(2);
+    expect(alertText()).toBe('');
+    expect(document.body.textContent).toContain('ABCD-1234');
+  });
+
+  it('generates a new code from the expired notice with the same details', async () => {
+    const create = vi
+      .spyOn(apiClient, 'post')
+      .mockResolvedValueOnce(response(pairing))
+      .mockResolvedValueOnce(
+        response({ ...pairing, device_code: 'dc_2', user_code: 'WXYZ-9876' }),
+      );
+    vi.spyOn(apiClient, 'get').mockImplementation(() =>
+      Promise.resolve(
+        response({ success: false, error: 'pairing_not_found' }, 404),
+      ),
+    );
+
+    await startPairing();
+    await advance(3000);
+    expectExpiredForm();
+    await clickButton('settings.devices.pairing.start');
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][1]).toEqual(create.mock.calls[0][1]);
+    expect(alertText()).toBe('');
+    expect(document.body.textContent).toContain('WXYZ-9876');
+  });
+
+  it('ignores a redemption for a code that expired before a new one started', async () => {
+    const onPaired = vi.fn();
+    vi.spyOn(apiClient, 'post')
+      .mockResolvedValueOnce(response(pairing))
+      .mockResolvedValueOnce(
+        response({ ...pairing, device_code: 'dc_2', user_code: 'WXYZ-9876' }),
+      );
+    let settleFirst!: (value: Response) => void;
+    const poll = vi
+      .spyOn(apiClient, 'get')
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          settleFirst = resolve;
+        }),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          response({ success: false, error: 'pairing_not_found' }, 404),
+        ),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(response({ ...pairing, status: 'pending' })),
+      );
+
+    await act(async () => {
+      root.render(
+        <PairDeviceModal
+          modalState="ACTIVE"
+          setModalState={setModalState}
+          onPaired={onPaired}
+        />,
+      );
+    });
+    await clickButton('settings.devices.pairing.start');
+    await advance(6000);
+    expectExpiredForm();
+    await clickButton('settings.devices.pairing.start');
+    await act(async () => {
+      settleFirst(
+        response({
+          ...pairing,
+          status: 'redeemed',
+          device_id: 'dev_1',
+          device_name: 'Old laptop',
+        }),
+      );
+    });
+
+    expect(onPaired).not.toHaveBeenCalled();
+    expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
+    expect(document.body.textContent).toContain('WXYZ-9876');
+    const pollsBefore = poll.mock.calls.length;
+    await advance(3000);
+    expect(poll).toHaveBeenCalledTimes(pollsBefore + 1);
+  });
+
+  it('ignores a redemption past the deadline even before the expiry timer runs', async () => {
+    const onPaired = vi.fn();
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ ...pairing, expires_in: 4 }),
+    );
+    let settle!: (value: Response) => void;
+    vi.spyOn(apiClient, 'get').mockReturnValue(
+      new Promise<Response>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <PairDeviceModal
+          modalState="ACTIVE"
+          setModalState={setModalState}
+          onPaired={onPaired}
+        />,
+      );
+    });
+    await clickButton('settings.devices.pairing.start');
+    await advance(3000);
+
+    // The deadline has passed, but the event loop hasn't run the timeout yet.
+    vi.setSystemTime(Date.now() + 2000);
+    await act(async () => {
+      settle(
+        response({
+          ...pairing,
+          status: 'redeemed',
+          device_id: 'dev_1',
+          device_name: 'Old laptop',
+        }),
+      );
+    });
+
+    expect(onPaired).not.toHaveBeenCalled();
+    expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
+    await advance(1000);
+    expectExpiredForm();
+  });
+
+  it('ignores a poll that settles after the dialog closes', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(response(pairing));
+    vi.spyOn(apiClient, 'delete').mockResolvedValue(
+      response({ success: true }),
+    );
+    let settle!: (value: Response) => void;
+    vi.spyOn(apiClient, 'get').mockReturnValue(
+      new Promise<Response>((resolve) => {
+        settle = resolve;
+      }),
+    );
+
+    await startPairing();
+    await advance(3000);
+    await act(async () => {
+      root.render(
+        <PairDeviceModal modalState="INACTIVE" setModalState={setModalState} />,
+      );
+    });
+    await act(async () => {
+      settle(response({ success: false, error: 'pairing_not_found' }, 404));
+    });
+    await act(async () => {
+      root.render(
+        <PairDeviceModal modalState="ACTIVE" setModalState={setModalState} />,
+      );
+    });
+
+    expect(alertText()).toBe('');
+    expect(
+      Array.from(document.querySelectorAll('button')).some(
+        (el) => el.textContent === 'settings.devices.pairing.start',
+      ),
+    ).toBe(true);
   });
 });
