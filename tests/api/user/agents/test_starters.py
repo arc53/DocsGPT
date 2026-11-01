@@ -116,6 +116,8 @@ class TestNormalize:
             (["ok", "a\x07b"], "control characters"),
             (["a\x1bb"], "control characters"),
             (["a\x7fb"], "control characters"),
+            (["a\ud800b"], "unpaired surrogate"),
+            ('["\\udfff"]', "unpaired surrogate"),
         ],
     )
     def test_rejects(self, raw, message):

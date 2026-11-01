@@ -42,8 +42,8 @@ def normalize_starters(raw: Any) -> list[str]:
         StartersError: When ``raw`` isn't a list (or its JSON), holds an entry
             that isn't a string, holds an entry longer than
             :data:`MAX_STARTER_LENGTH`, holds a control character other than
-            a tab or line break (NUL included), or keeps more than :data:`MAX_STARTERS`
-            entries after cleaning.
+            a tab or line break (NUL included) or an unpaired surrogate, or keeps
+            more than :data:`MAX_STARTERS` entries after cleaning.
     """
     if raw is None or raw == "":
         return []
@@ -66,6 +66,9 @@ def normalize_starters(raw: Any) -> list[str]:
             raise StartersError(f"A starter can be at most {MAX_STARTER_LENGTH} characters")
         if any(unicodedata.category(ch) == "Cc" and ch not in _ALLOWED_CONTROLS for ch in text):
             raise StartersError("A starter can't contain control characters")
+        # JSON lets a lone ``\ud800`` through; it has no UTF-8 form, so the write would fail.
+        if any(unicodedata.category(ch) == "Cs" for ch in text):
+            raise StartersError("A starter can't contain an unpaired surrogate")
         folded = text.casefold()
         if folded in seen:
             continue
