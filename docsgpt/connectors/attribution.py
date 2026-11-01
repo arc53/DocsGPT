@@ -56,6 +56,28 @@ def connector_labels(source_ids: list[str]) -> dict[str, dict]:
     return labels
 
 
+def source_names(source_ids: list[str]) -> dict[str, str]:
+    """``{source_id: name}`` for every source, uploaded or synced.
+
+    The model is told which knowledge a chunk came from, so a question that
+    names a source ("Summarize test-1") can be matched to its chunks, whose
+    own labels are file names. Never raises, like :func:`connector_labels`.
+    """
+    ids = [str(i) for i in source_ids if i and looks_like_uuid(str(i))]
+    if not ids:
+        return {}
+    try:
+        with db_readonly() as conn:
+            rows = conn.execute(
+                text("SELECT id, name FROM sources WHERE id = ANY(CAST(:ids AS uuid[]))"),
+                {"ids": ids},
+            ).fetchall()
+    except Exception:
+        logger.warning("source name lookup failed", exc_info=True)
+        return {}
+    return {str(row.id): row.name for row in rows if row.name}
+
+
 def _web_link(value: Any) -> Optional[str]:
     """``value`` when it is an http(s) address, else ``None``."""
     if isinstance(value, str) and value.startswith(("https://", "http://")):
@@ -70,12 +92,16 @@ class ConnectorLabelCache:
         self._labels: dict[str, dict] = {}
 
     def for_source(self, source_id: Optional[str], metadata: Optional[dict] = None) -> dict:
-        """The connector labels of a chunk from ``source_id``, plus its ``metadata`` link when shown."""
+        """The labels of a chunk from ``source_id``: its source's name, the connector, and its link when shown."""
         if not source_id:
             return {}
         key = str(source_id)
         if key not in self._labels:
-            self._labels[key] = connector_labels([key]).get(key, {})
+            found = dict(connector_labels([key]).get(key, {}))
+            name = source_names([key]).get(key)
+            if name:
+                found["source_name"] = name
+            self._labels[key] = found
         found = self._labels[key]
         labels = {k: v for k, v in found.items() if k != "show_links"}
         url = _web_link((metadata or {}).get("url")) if found.get("show_links") else None

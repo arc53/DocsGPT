@@ -475,7 +475,8 @@ class TestAttribution:
         from docsgpt.connectors.attribution import ConnectorLabelCache
 
         found = {"s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "show_links": show_links}}
-        with patch("docsgpt.connectors.attribution.connector_labels", return_value=found):
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value=found), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
             labels = ConnectorLabelCache().for_source("s1", {"url": url} if url else {})
         assert labels.get("url") == expected
         assert labels["connector_key"] == "google_drive"
@@ -484,8 +485,35 @@ class TestAttribution:
     def test_uploaded_chunk_gets_no_link(self):
         from docsgpt.connectors.attribution import ConnectorLabelCache
 
-        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}):
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
             assert ConnectorLabelCache().for_source("s1", {"url": "https://example.com/x"}) == {}
+
+    def test_source_names_cover_uploads_and_synced_sources(self, pg_conn):
+        from docsgpt.connectors.attribution import source_names
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth")
+        synced = str(pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name, connection_id) VALUES ('alice', 'Handbook', CAST(:c AS uuid)) "
+            "RETURNING id"
+        ), {"c": cid}).scalar())
+        upload = str(pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name) VALUES ('alice', 'test-1') RETURNING id"
+        )).scalar())
+        with _db(pg_conn):
+            names = source_names([synced, upload, "not-a-uuid"])
+        assert names == {synced: "Handbook", upload: "test-1"}
+
+    def test_retrieved_chunk_carries_its_source_name(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={"s1": "test-1"}) as lookup:
+            cache = ConnectorLabelCache()
+            first = cache.for_source("s1")
+            again = cache.for_source("s1")
+        assert first == again == {"source_name": "test-1"}
+        assert lookup.call_count == 1
 
     def test_classic_retriever_stamps_connector(self, pg_conn):
         from docsgpt.retriever.classic_rag import ClassicRAG
@@ -493,7 +521,8 @@ class TestAttribution:
         retriever = ClassicRAG.__new__(ClassicRAG)
         with patch("docsgpt.connectors.attribution.connector_labels",
                    return_value={"s1": {"connector_key": "google_drive", "connector_name": "Google Drive",
-                                        "show_links": True}}) as lookup:
+                                        "show_links": True}}) as lookup, \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
             first = retriever._connector_labels.for_source("s1")
             again = retriever._connector_labels.for_source("s1")
         assert first == again == {"connector_key": "google_drive", "connector_name": "Google Drive"}

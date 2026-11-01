@@ -65,9 +65,11 @@ def format_docs_for_prompt(docs: Optional[list]) -> Optional[str]:
     """Format retrieved chunks as XML-tagged documents for prompt injection.
 
     Each chunk is wrapped in a ``<document index="n">`` block with a
-    ``<source>`` subtag (when a filename/title is known) so the model can
-    tell chunks apart and cite them by name, and a ``<url>`` subtag when the
-    chunk's file has a link in the service it was synced from.
+    ``<knowledge>`` subtag naming the source it belongs to (so a question
+    that names a source can be matched to its chunks), a ``<source>`` subtag
+    (when a filename/title is known) so the model can tell chunks apart and
+    cite them by name, and a ``<url>`` subtag when the chunk's file has a
+    link in the service it was synced from.
     """
     if not docs:
         return None
@@ -75,6 +77,8 @@ def format_docs_for_prompt(docs: Optional[list]) -> Optional[str]:
     for i, doc in enumerate(docs, start=1):
         source = doc.get("filename") or doc.get("title") or doc.get("source")
         lines = [f'<document index="{i}">']
+        if doc.get("source_name"):
+            lines.append(f"<knowledge>{doc['source_name']}</knowledge>")
         if source:
             lines.append(f"<source>{source}</source>")
         if doc.get("url"):

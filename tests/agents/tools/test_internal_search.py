@@ -172,6 +172,18 @@ class TestInternalSearchToolSearch:
         assert "[1] q1.pdf (source: Reports/q1.pdf, url: https://drive.google.com/file/d/f1/view)" in result
         assert "[2] b.md (source: docs/b.md)\n" in result
 
+    def test_search_names_the_knowledge_a_hit_came_from(self):
+        tool = _make_tool()
+        mock_retriever = Mock()
+        mock_retriever.search.return_value = [
+            {"text": "Install", "title": "01-quickstart.md", "source": "docs/01-quickstart.md",
+             "filename": "01-quickstart.md", "source_name": "test-1"},
+        ]
+        tool._retriever = mock_retriever
+
+        result = tool.execute_action("search", query="q")
+        assert "[1] 01-quickstart.md (knowledge: test-1, source: docs/01-quickstart.md)\n" in result
+
     def test_search_uses_title_when_no_filename(self):
         tool = _make_tool()
         mock_retriever = Mock()

@@ -217,7 +217,8 @@ class InternalSearchTool(Tool):
             header = filename or title
             number = register_citation(registry, doc) or i
             link = f", url: {doc['url']}" if doc.get("url") else ""
-            formatted.append(f"[{number}] {header} (source: {source}{link})\n{text}")
+            knowledge = f"knowledge: {doc['source_name']}, " if doc.get("source_name") else ""
+            formatted.append(f"[{number}] {header} ({knowledge}source: {source}{link})\n{text}")
 
         return "\n\n---\n\n".join(formatted)
 

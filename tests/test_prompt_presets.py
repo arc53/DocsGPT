@@ -146,6 +146,17 @@ class TestFormatDocsForPrompt:
         ])
         assert "<source>q1.pdf</source>\n<url>https://drive.google.com/file/d/f1/view</url>" in out
 
+    def test_doc_names_the_knowledge_it_came_from(self):
+        # "Summarize test-1" names the source, not its files: without the name
+        # the model can't tell the chunks are test-1's.
+        out = format_docs_for_prompt([
+            {"text": "Install", "filename": "01-quickstart.md", "source_name": "test-1"},
+        ])
+        assert "<knowledge>test-1</knowledge>\n<source>01-quickstart.md</source>" in out
+
+    def test_doc_without_knowledge_name_omits_tag(self):
+        assert "<knowledge>" not in format_docs_for_prompt(DOCS)
+
     def test_doc_without_url_omits_tag(self):
         assert "<url>" not in format_docs_for_prompt(DOCS)
 
