@@ -27,7 +27,9 @@ vi.mock('./hooks', async (importOriginal) => ({
   useDarkTheme: () => [false],
 }));
 
-import connectorsReducer from './connectors/connectorsSlice';
+import connectorsReducer, {
+  loadConnectors,
+} from './connectors/connectorsSlice';
 import chatToolsReducer from './conversation/chatToolsSlice';
 import Hero from './Hero';
 
@@ -71,6 +73,8 @@ type HeroState = {
   tools?: unknown[];
   toolsLoaded?: boolean;
   availableModels?: unknown[];
+  /** The first connectors load has answered (`false`: none has yet). */
+  connectorsLoaded?: boolean;
 };
 
 const makeStore = ({
@@ -84,6 +88,7 @@ const makeStore = ({
   tools = [],
   toolsLoaded = true,
   availableModels = [],
+  connectorsLoaded = true,
 }: HeroState = {}) =>
   configureStore({
     reducer: {
@@ -111,8 +116,9 @@ const makeStore = ({
       connectors: {
         enabled: true,
         loading: false,
-        loaded: true,
+        loaded: connectorsLoaded,
         failed: false,
+        settled: connectorsLoaded,
         catalog: CATALOG,
         connections,
       },
@@ -139,9 +145,10 @@ describe('Hero suggestions', () => {
   });
 
   const render = async (state: HeroState = {}) => {
+    const store = makeStore(state);
     await act(async () => {
       root.render(
-        <Provider store={makeStore(state)}>
+        <Provider store={store}>
           <MemoryRouter initialEntries={['/']}>
             <Routes>
               <Route
@@ -158,6 +165,7 @@ describe('Hero suggestions', () => {
         </Provider>,
       );
     });
+    return store;
   };
 
   const rows = () =>
@@ -217,6 +225,23 @@ describe('Hero suggestions', () => {
       selectedDocs: saved,
     });
     expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
+  });
+
+  // Opening the composer's Tools picker reloads the connectors, and the
+  // reload clears the first load's failure while it runs.
+  it('keeps its rows while the connectors reload after a failed load', async () => {
+    const store = await render({ connectorsLoaded: false });
+    expect(rows()).toHaveLength(0);
+    const arg = { token: null };
+    await act(async () => {
+      store.dispatch(loadConnectors.pending('1', arg));
+      store.dispatch(loadConnectors.rejected(new Error('down'), '1', arg));
+    });
+    expect(rowKeys()).toEqual(['add-knowledge', 'create-agent']);
+    await act(async () => {
+      store.dispatch(loadConnectors.pending('2', arg));
+    });
+    expect(rowKeys()).toEqual(['add-knowledge', 'create-agent']);
   });
 
   it('holds room for the most rows, so the logo stays put as they change', async () => {

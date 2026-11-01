@@ -18,8 +18,8 @@ import {
   selectConnections,
   selectConnectorCatalog,
   selectConnectorsEnabled,
-  selectConnectorsFailed,
   selectConnectorsLoaded,
+  selectConnectorsSettled,
 } from '../connectors/connectorsSlice';
 import { connectorName } from '../connectors/i18n';
 import {
@@ -86,19 +86,19 @@ export default function HeroSuggestions({
   const toolsLoaded = useSelector(selectChatToolsLoaded);
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
-  const connectorsFailed = useSelector(selectConnectorsFailed);
+  const connectorsSettled = useSelector(selectConnectorsSettled);
   const connections = useSelector(selectConnections);
   const catalog = useSelector(selectConnectorCatalog);
 
-  const connectorsSettled =
-    !connectorsEnabled || connectorsLoaded || connectorsFailed;
   // A list that failed to load counts as empty (the tools' failure sets
-  // their loaded flag too), so the setup steps still show.
+  // their loaded flag too), so the setup steps still show. The connectors
+  // count once any load has answered: a reload (opening the Tools picker)
+  // clears their failure while it runs, and the rows shouldn't blink.
   const ready =
     (sourceDocs !== null || sourceDocsFailed) &&
     (conversations.data !== null || !!conversations.failed) &&
     toolsLoaded &&
-    connectorsSettled;
+    (!connectorsEnabled || connectorsSettled);
 
   // Offer connecting a service only while nothing is connected, named
   // after services whose data you chat with (files, docs, issues).

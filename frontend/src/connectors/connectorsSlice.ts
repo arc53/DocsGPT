@@ -29,6 +29,11 @@ export type ConnectorsState = {
   loaded: boolean;
   failed: boolean;
   /**
+   * A load has answered, listed or failed. Unlike `failed`, a reload
+   * doesn't clear it, so what waits for the first answer stays put.
+   */
+  settled?: boolean;
+  /**
    * The `loadConnectors` call started last. Loads overlap (several screens
    * refresh at once), and only its answer is applied: an older one could
    * hold connections from before a connect.
@@ -45,6 +50,7 @@ const initialState: ConnectorsState = {
   loading: false,
   loaded: false,
   failed: false,
+  settled: false,
   latestRequestId: null,
   startedSyncs: [],
 };
@@ -109,6 +115,7 @@ const connectorsSlice = createSlice({
         state.latestRequestId = null;
         state.loading = false;
         state.loaded = true;
+        state.settled = true;
         state.catalog = action.payload.catalog;
         state.connections = action.payload.connections;
       })
@@ -117,6 +124,7 @@ const connectorsSlice = createSlice({
         state.latestRequestId = null;
         state.loading = false;
         state.failed = true;
+        state.settled = true;
       });
   },
 });
@@ -158,6 +166,9 @@ export const selectConnectorsLoaded = (state: RootLike) =>
   state.connectors.loaded;
 export const selectConnectorsFailed = (state: RootLike) =>
   state.connectors.failed;
+/** A load has answered, listed or failed (see `settled`). */
+export const selectConnectorsSettled = (state: RootLike) =>
+  state.connectors?.settled ?? false;
 
 const NO_STARTED_SYNCS: StartedSync[] = [];
 /** The syncs started this session (see `StartedSync`). */
