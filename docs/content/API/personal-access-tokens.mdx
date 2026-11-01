@@ -181,6 +181,7 @@ Some parts of the API are never available to a token, whatever its scopes:
 - conversation sharing and shared links, and file download;
 - the OpenAI-compatible `/v1` API (use an [agent API key](/API/agent-keys)) and the live event stream `/api/events`;
 - [Activity](/Using/activity#over-the-api) (`/api/activity/now`, `/api/activity/planned`, `/api/activity/history`) and stopping a running answer (`POST /api/messages/<message_id>/cancel`), because they span every chat and agent of the account;
+- [Draft with DocsGPT](/Agents/draft-with-docsgpt#over-the-api) (`/api/drafter/config`, `/api/drafter/stream`, `/api/drafter/topics/status`), because a draft reads the whole workspace and runs the model on it;
 - the agent webhook trigger, whose URL is its own credential.
 
 The [REST API reference](/API/reference) shows, for each endpoint, the scope a token needs or that tokens can't call it. A token also never carries the `admin` role, even when its owner is an admin.

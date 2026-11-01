@@ -128,7 +128,7 @@ You can easily access and manage your agents through the DocsGPT user interface.
   style={{ margin: '1em auto', display: 'block', borderRadius: '8px' }}
 />
 
-4.  Fill in the fields as described in the "Core Components of an Agent" section.
+4.  Fill in the fields as described in the "Core Components of an Agent" section. Or describe the agent in **Start from a description** at the top of the form, or open **Draft** in the toolbar, and DocsGPT fills them in for you to review before you save; see [Draft with DocsGPT](/Agents/draft-with-docsgpt).
 5.  Once configured, you can **"Save Draft"** to continue editing later or **"Publish"** to make the agent active. Workflow agents work the same way: **Save draft** keeps an unfinished workflow, and **Publish** checks its [graph rules](/Agents/nodes#graph-rules) first.
 
 While the builder has changes you haven't saved, links that leave the builder (**Go to Knowledge**, **Go to Tools**, the prompt's link, and the connector links in **Add tool** and **Upload new**) ask before they discard them. Opening one in a new tab with Cmd/Ctrl-click doesn't ask.
@@ -140,7 +140,7 @@ Once an agent is created, you can:
 * **Chat with it:** Select the agent to start an interaction.
 * **View Logs:** Access usage statistics, monitor token consumption per interaction, and review user message feedbacks. This is crucial for understanding how your agent is being used and performing. See [Analytics and Logs](/Using/analytics-and-logs).
 * **Edit an Agent:**
-    * Modify any of its configuration settings (name, description, starters, source, prompt, tools, type).
+    * Modify any of its configuration settings (name, description, starters, source, prompt, tools, type). **Improve** in the toolbar asks [Draft with DocsGPT](/Agents/draft-with-docsgpt) to make a change you describe.
     * **Open Access Details:** On a published agent, open the **⋯** menu beside the agent's name on the edit screen and choose **Access Details**. It holds the agent's **Public Link**, its API key (with **Reset key**) and its **Webhook URL**. A draft has none of these: publish the agent to create its API key. The public link and webhook URL don't exist until you click **Generate** next to each in that dialog.
     * **Public Link:** Anyone with the link can open the agent and chat with it; it then appears under **Discovered** on their Agents page. They use your agent as it is; they don't get a copy.
     * **Webhook URL:** Lets external applications or services trigger the agent and receive responses programmatically. See [Webhooks](/API/webhooks).
