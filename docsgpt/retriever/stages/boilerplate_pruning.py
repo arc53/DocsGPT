@@ -61,11 +61,22 @@ _PAGINATION_LINK_RE = re.compile(r"^\[\s*(?:«?\s*previous|\s*next\s*»)\s*\]\([
 _FENCE_START_RE = re.compile(r"^(`{3,}|~{3,})")
 
 
+_TERM_RE = re.compile(r"\b\w+(?:[+#]+(?=\W|$))?")
+
+
+def _tokenize_terms(text: str) -> Set[str]:
+    return {term.lower() for term in _TERM_RE.findall(text)}
+
+
 def _tokenize_query(query: str) -> Set[str]:
     """Extract lowercase alphanumeric query keywords for term preservation."""
     if not query:
         return set()
-    return {w.lower() for w in re.findall(r"\b\w{2,}\b", query)}
+    return {
+        term
+        for term in _tokenize_terms(query)
+        if len(term.rstrip("+#")) >= 2 or term.endswith(("+", "#"))
+    }
 
 
 def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
@@ -88,9 +99,9 @@ def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
     # so contractions like "Don't" tokenize identically to "Don't".
     normalized = stripped.lower().replace("\u2019", "'").replace("\u2018", "'")
 
-    # 3. Query term overlap — use the same plain \w+ tokenizer as _tokenize_query so
-    # possessives like "user's" split into "user" and match a "user" query token.
-    words = set(re.findall(r"\b\w+\b", normalized))
+    # 3. Query term overlap — use shared term tokenizer so compounds such as "C++"
+    # and possessives like "user's" match query terms.
+    words = _tokenize_terms(normalized)
     if query_tokens and words.intersection(query_tokens):
         return True
 

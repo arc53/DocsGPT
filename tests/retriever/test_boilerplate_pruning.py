@@ -150,10 +150,10 @@ class TestBoilerplatePruningRules:
     def test_preserves_possessives_matching_query_terms(self):
         """Possessives such as "user's" must still match a query token "user".
 
-        ``_tokenize_query`` uses ``\\b\\w+\\b`` which splits ``user's`` into
-        ``user`` (the ``s`` fragment is discarded as < 2 chars).  The line
-        tokenizer must use the same splitting so ``user's`` in a line matches
-        the ``user`` query token and the line is preserved.
+        The shared term tokenizer splits ``user's`` into ``user`` (the ``s``
+        fragment is discarded as < 2 chars).  The line tokenizer emits the
+        same tokens so ``user's`` in a line matches the ``user`` query token
+        and the line is preserved.
         """
         # Nav regex matches "next page:?.*", but "user" in query should protect
         # the line via query-term overlap on the possessive stem.
@@ -164,6 +164,18 @@ class TestBoilerplatePruningRules:
             f"Possessive 'user's' did not match query token 'user'; line removed.\n"
             f"  Got: {result!r}"
         )
+
+    def test_preserves_punctuation_bearing_query_terms(self):
+        """Terms containing compounds or symbols like C++, C#, F# must survive navigation pruning."""
+        cases = [
+            ("Next page: C++ memory model", "C++", "Next page: C++ memory model"),
+            ("Next page: C# async programming", "C#", "Next page: C# async programming"),
+            ("Next page: F# pattern matching", "F#", "Next page: F# pattern matching"),
+            ("Next page: Notepad++ configuration", "notepad++", "Next page: Notepad++ configuration"),
+        ]
+        for line, query, expected in cases:
+            cleaned = prune_chunk_text(line, query=query)
+            assert cleaned == expected, f"Failed for query {query!r}: got {cleaned!r}, expected {expected!r}"
 
     def test_preserves_negations_and_qualifiers(self):
         raw = (
@@ -329,3 +341,41 @@ class TestCompressingRetrieverIntegration:
         assert res[0]["text"] == "Factual chunk 1."
         assert retriever.last_candidates[0]["doc"] is doc1
         assert retriever.last_candidates[0]["snapshot"]["text"] == "Home > API\nFactual chunk 1."
+
+    def test_workflow_node_sources_compression(self, monkeypatch):
+        pytest.importorskip("celpy")
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+
+        engine = object.__new__(WorkflowEngine)
+        engine.state = {"query": "authentication"}
+        engine._loop_item = None
+        engine.agent = Mock()
+        engine.agent.decoded_token = {}
+
+        mock_doc = {"id": "d1", "text": "Home > API\nFactual chunk."}
+        mock_retriever = Mock()
+        mock_retriever.search.return_value = [mock_doc]
+
+        monkeypatch.setattr(
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            lambda *a, **k: mock_retriever,
+        )
+        monkeypatch.setattr(
+            type(engine), "_authorized_node_sources", lambda self, s: list(s or [])
+        )
+        monkeypatch.setattr(type(engine), "_node_rerankers", lambda self, s: {})
+
+        mock_config = Mock()
+        mock_config.sources = ["s1"]
+        mock_config.retriever = "classic"
+        mock_config.chunks = 6
+
+        # When CHUNK_COMPRESSION_ENABLED is False: unpruned
+        monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", False)
+        docs_raw = engine._retrieve_node_sources(mock_config)
+        assert docs_raw[0]["text"] == "Home > API\nFactual chunk."
+
+        # When CHUNK_COMPRESSION_ENABLED is True: pruned
+        monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
+        docs_pruned = engine._retrieve_node_sources(mock_config)
+        assert docs_pruned[0]["text"] == "Factual chunk."
