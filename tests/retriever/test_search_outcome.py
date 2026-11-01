@@ -198,11 +198,13 @@ class TestGraphRecordsFailures:
 
         assert rag.last_outcome == SearchOutcome(("a", "b"), ("b",))
 
-    @patch("docsgpt.retriever.graph_rag.GraphStore")
-    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
-    def test_a_graph_failure_rescued_by_the_fallback_is_not_failed(
-        self, _avail, mock_store_cls, _patch_llm_creator
-    ):
+    @staticmethod
+    def _graph_embed_fails(mock_store_cls, fallback_fails: bool):
+        """Search "a" (a graph source whose query embed raises) and "b" (no graph).
+
+        Returns:
+            tuple: The retriever after its search, and each classic batch it ran.
+        """
         store = MagicMock()
         store.count_nodes_many.return_value = {"a": 3, "b": 0}
         mock_store_cls.return_value = store
@@ -212,18 +214,31 @@ class TestGraphRecordsFailures:
 
         def classic():
             batches.append(list(rag._classic.vectorstores))
-            # The graphless batch ("b") searched fine; the fallback batch
-            # ("a", after its graph embed failed) failed too.
-            failed = ["a"] if rag._classic.vectorstores == ["a"] else []
+            # The graphless batch ("b") searches fine; the fallback batch
+            # ("a", after its graph embed failed) fails only when told to.
+            failed = ["a"] if fallback_fails and rag._classic.vectorstores == ["a"] else []
             rag._classic.last_outcome = SearchOutcome.of(rag._classic.vectorstores, failed)
             return []
 
         rag._classic._get_data = Mock(side_effect=classic)
-
         rag.search()
+        return rag, batches
+
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_a_graph_failure_whose_fallback_fails_too_is_failed(self, _avail, mock_store_cls, _patch_llm_creator):
+        rag, batches = self._graph_embed_fails(mock_store_cls, fallback_fails=True)
 
         assert sorted(batches) == [["a"], ["b"]]
         assert rag.last_outcome == SearchOutcome(("a", "b"), ("a",))
+
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_a_graph_failure_rescued_by_the_fallback_is_not_failed(self, _avail, mock_store_cls, _patch_llm_creator):
+        rag, batches = self._graph_embed_fails(mock_store_cls, fallback_fails=False)
+
+        assert sorted(batches) == [["a"], ["b"]]
+        assert rag.last_outcome == SearchOutcome(("a", "b"), ())
 
 
 @pytest.mark.unit
