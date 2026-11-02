@@ -252,7 +252,10 @@ def _without_url_credentials(value: str) -> str:
 
 
 def _without_credentials(value):
-    """``value`` with every credential-named field, URL user info and token parameter dropped, recursively."""
+    """``value`` with every credential-named field, URL user info and token parameter dropped, recursively.
+
+    Addresses in it are normalised as :func:`_normalized_address` does.
+    """
     if isinstance(value, dict):
         return {
             str(key): _without_credentials(item) for key, item in value.items()
@@ -261,7 +264,7 @@ def _without_credentials(value):
     if isinstance(value, (list, tuple)):
         return [_without_credentials(item) for item in value]
     if isinstance(value, str):
-        return _without_url_credentials(value)
+        return _normalized_address(value)
     return value
 
 

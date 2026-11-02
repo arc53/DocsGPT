@@ -1406,3 +1406,13 @@ class TestRemoteSourceIdentity:
         assert _remote_in_flight_key("u", "crawler", "https://user:pw@docs.example.com/a?token=x", None) == (
             _remote_in_flight_key("u", "crawler", "https://docs.example.com/a", None)
         )
+
+    def test_website_entry_addresses_are_compared_normalised(self):
+        from docsgpt.api.user.sources.upload import _remote_in_flight_key
+
+        def site(url):
+            return {"entries": [{"url": url, "mode": "site"}], "skip": []}
+
+        assert _remote_in_flight_key("u", "website", site("https://EXAMPLE.com/docs/"), None) == (
+            _remote_in_flight_key("u", "website", site("https://example.com/docs#top"), None)
+        )

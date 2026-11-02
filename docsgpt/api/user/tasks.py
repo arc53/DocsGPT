@@ -282,7 +282,7 @@ def schedule_syncs(self, frequency):
 
 
 @celery.task(bind=True, acks_late=True, autoretry_for=(Exception,), max_retries=3, retry_backoff=60,
-             dont_autoretry_for=(_connection_unavailable(),))
+             dont_autoretry_for=(IngestTooLarge, _connection_unavailable()))
 def sync_connector_source(self, source_id):
     """Re-sync one connector source from its connection, with no browser involved."""
     from docsgpt.worker import sync_connector_source as run

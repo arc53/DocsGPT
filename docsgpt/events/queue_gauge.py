@@ -99,11 +99,17 @@ def _queue_keys(queue: str) -> list:
 
 
 def _head_identity(raw) -> str:
-    """The task id of a queued payload, or a digest of it when it cannot be parsed."""
+    """The task id (and eta) of a queued payload, or a digest of it when it cannot be parsed.
+
+    A task deferred by the per-user ingest cap is published again under its
+    own id with a new eta, so the eta tells the new message from the old one.
+    """
     try:
-        task_id = json.loads(raw)["headers"]["id"]
+        headers = json.loads(raw)["headers"]
+        task_id = headers["id"]
         if task_id:
-            return str(task_id)
+            eta = headers.get("eta")
+            return f"{task_id}@{eta}" if eta else str(task_id)
     except (ValueError, TypeError, KeyError, UnicodeDecodeError):
         # Not a kombu JSON envelope; fall back to identifying it by its bytes.
         pass

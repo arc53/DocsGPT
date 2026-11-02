@@ -219,8 +219,9 @@ class IngestionSettings(SettingsGroup):
         description=(
             "Most files one source ingest or sync may hold. Checked once the files are listed (a GitHub repo's "
             "tree, an S3 prefix, a connector's download, an upload's extracted files) and again after loading, "
-            "before anything is embedded; a source over it fails with reason too_many_files. The default is "
-            "UPLOAD_MAX_ARCHIVE_FILES's, so a zip that unpacks passes it. 0 disables."
+            "before anything is embedded; a source over it fails with reason too_many_files. The default is the "
+            "same number as UPLOAD_MAX_ARCHIVE_FILES's, but the two are separate: raise both to let a bigger zip "
+            "through. 0 disables."
         ),
     )
     INGEST_MAX_TOKENS: int = Field(

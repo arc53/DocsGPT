@@ -184,5 +184,6 @@ class TestCappedIngestIsNotRetried:
 
         for task in (
             tasks.ingest, tasks.ingest_remote, tasks.ingest_connector_task, tasks.reingest_source_task,
+            tasks.sync_connector_source,
         ):
             assert IngestTooLarge in task.dont_autoretry_for, task.name

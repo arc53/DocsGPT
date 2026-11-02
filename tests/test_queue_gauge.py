@@ -120,12 +120,12 @@ class _Pipeline:
         return results
 
 
-def _message(task_id: str, queue: str = "ingest") -> str:
+def _message(task_id: str, queue: str = "ingest", eta: str = None) -> str:
     """A kombu Redis-transport payload carrying a Celery protocol-2 task."""
     return json.dumps(
         {
             "body": "W10=",
-            "headers": {"id": task_id, "task": "docsgpt.api.user.tasks.ingest"},
+            "headers": {"id": task_id, "task": "docsgpt.api.user.tasks.ingest", "eta": eta},
             "properties": {"delivery_info": {"exchange": queue, "routing_key": queue}},
         }
     )
@@ -164,6 +164,14 @@ class TestMeasureCeleryQueues:
         client.rpop("ingest")  # a worker took "oldest"
         assert measure_celery_queues(client, ["ingest"], now=1060.0)["ingest"]["wait_s"] == 0
         assert measure_celery_queues(client, ["ingest"], now=1180.0)["ingest"]["wait_s"] == 120
+
+    def test_a_task_published_again_under_its_id_waits_from_zero(self, client):
+        # A task over its user's ingest cap is published again with the same id and a new eta.
+        client.lpush("ingest", _message("deferred"))
+        measure_celery_queues(client, ["ingest"], now=1000.0)
+        client.rpop("ingest")
+        client.lpush("ingest", _message("deferred", eta="2026-11-02T13:00:45+00:00"))
+        assert measure_celery_queues(client, ["ingest"], now=1600.0)["ingest"]["wait_s"] == 0
 
     def test_the_default_priority_list_heads_the_queue(self, client):
         # kombu consumes the plain list before the priority-suffixed ones.
