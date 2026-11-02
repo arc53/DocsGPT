@@ -656,22 +656,25 @@ def sse_connections_gauge_task(self):
 
     The same event carries the Celery queue gauge
     (``queue_<name>_depth`` / ``_wait_s`` / ``_in_flight`` for every
-    declared queue, see ``docsgpt/events/queue_gauge.py``). A broker
-    error drops only those fields, never the event.
+    declared queue, see ``docsgpt/events/queue_gauge.py``). The two are
+    read independently: a cache Redis error drops only the connection
+    counts, a broker error only the queue fields, and the event is
+    skipped only when neither could be read.
     """
     from docsgpt.cache import get_redis_instance
     from docsgpt.events.gauge import measure_sse_connections
     from docsgpt.events import queue_gauge
 
+    snapshot = None
+    skipped = "redis unavailable"
     redis_client = get_redis_instance()
-    if redis_client is None:
-        return {"skipped": "redis unavailable"}
-    try:
-        snapshot = measure_sse_connections(redis_client)
-    except Exception:
-        # Transient Redis hiccup — the next minute's sweep will cover it.
-        logging.warning("sse_gauge sweep failed", exc_info=True)
-        return {"skipped": "redis error"}
+    if redis_client is not None:
+        try:
+            snapshot = measure_sse_connections(redis_client)
+        except Exception:
+            # Transient Redis hiccup — the next minute's sweep will cover it.
+            logging.warning("sse_gauge sweep failed", exc_info=True)
+            skipped = "redis error"
     queues = None
     try:
         broker = queue_gauge.broker_redis()
@@ -682,16 +685,17 @@ def sse_connections_gauge_task(self):
     except Exception:
         logging.warning("queue gauge sweep failed", exc_info=True)
         queues = None
+    if snapshot is None and not queues:
+        return {"skipped": skipped}
     logging.info(
         "sse_gauge",
         extra={
-            "connected_users": snapshot["connected_users"],
-            "connections": snapshot["connections"],
+            **(snapshot or {}),
             **(queue_gauge.queue_log_fields(queues) if queues else {}),
         },
     )
     if queues:
-        return {**snapshot, "queues": queues}
+        return {**(snapshot or {}), "queues": queues}
     return snapshot
 
 

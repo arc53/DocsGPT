@@ -292,19 +292,28 @@ describe the live-update connections and every Celery queue the worker declares 
 
 | Attribute | Meaning |
 | --- | --- |
-| `connected_users` | Users with at least one open live-update (SSE) connection. Counted only while `SSE_MAX_CONCURRENT_PER_USER` is above 0. |
+| `connected_users` | Users with at least one open live-update (SSE) connection. |
 | `connections` | Open live-update connections in total. |
 | `queue_<name>_depth` | Messages waiting in the queue, across all priorities. |
-| `queue_<name>_wait_s` | How long the task at the head of the queue has been waiting there, in seconds. It is measured between gauge runs, so it lags by up to a minute, and it starts again from 0 whenever the head task changes. |
+| `queue_<name>_wait_s` | How long the task at the head of the queue has been waiting at the head, in seconds. It is a lower bound: the timer starts when a task reaches the head, so the time it spent queued behind other tasks isn't counted, and it is measured between gauge runs, so it also lags by up to a minute. |
 | `queue_<name>_in_flight` | Tasks from the queue that a worker is running now. |
 
 `<name>` is the queue name in lower case, with any character other than a letter or digit replaced by `_`,
 such as `queue_ingest_wait_s`.
 
+Both connection counts come from the leases that streams hold for the per-user cap, so they're only accurate while
+`SSE_MAX_CONCURRENT_PER_USER` is above 0. With the cap at 0, streams take no leases and both counts read 0 even while
+streams are open.
+
 Workers report their running tasks themselves, every 30 seconds, so `in_flight` keeps counting an ingest that
 runs for hours, past the broker's visibility timeout (`CELERY_VISIBILITY_TIMEOUT`). A task whose worker was killed
 stops counting about 90 seconds later. The queue numbers need a Redis broker: with another broker, the line carries
-only the two connection counts. If the broker can't be read, the line is still logged without the queue fields.
+only the two connection counts.
+
+The connection counts are read from the cache Redis (`CACHE_REDIS_URL`) and the queue numbers from the broker
+(`CELERY_BROKER_URL`), each on its own. If the cache can't be read, the line is logged without `connected_users` and
+`connections`; if the broker can't be read, it's logged without the queue fields. The line is skipped only when
+neither can be read, as when the cache and the broker share one Redis that is down.
 
 The attributes reach your backend when [OTLP log export](#enabling) is on (`OTEL_LOGS_EXPORTER=otlp`). On stdout,
 the worker's `Task ...sse_connections_gauge_task[...] succeeded` line prints the same numbers.
@@ -312,7 +321,7 @@ the worker's `Task ...sse_connections_gauge_task[...] succeeded` line prints the
 ### Example alert: a stuck lane
 
 A lane that has stopped draining shows a growing `wait_s` while `in_flight` stays at the number of worker slots.
-To be told when the ingest lane's head task has waited more than 30 minutes, alert on the largest
+To be told when the ingest lane's head task has waited at the head for more than 30 minutes, alert on the largest
 `queue_ingest_wait_s` over the last 10 minutes of `sse_gauge` lines:
 
 ```kusto
@@ -324,10 +333,13 @@ To be told when the ingest lane's head task has waited more than 30 minutes, ale
 
 The query is in Axiom's APL, for logs exported over OTLP into a dataset named `docsgpt`; any backend that can filter
 on a log attribute and compare its maximum to a threshold works the same way. Set the threshold above your longest
-normal wait: with one `-Q ingest` slot, a new source waits for the one ahead of it to finish. The other queues carry
+normal wait: with one `-Q ingest` slot, a new source waits for the one ahead of it to finish. Because `wait_s` counts
+only the time at the head, a task queued behind others has usually waited longer than the alert says by the time
+it fires; a rising `depth` with a flat `in_flight` shows the same backlog sooner. The other queues carry
 short tasks, so a lower threshold, such as 5 minutes on `queue_docsgpt_wait_s`, `queue_parsing_wait_s` and
 `queue_embeddings_wait_s`, catches a backed-up control lane. Also alert when no `sse_gauge` line arrives for 10
-minutes, which means beat or the worker that runs it has stopped.
+minutes, which means beat or the worker that runs it has stopped, or that neither the cache Redis nor the broker
+can be read.
 
 ## Backend examples
 

@@ -365,3 +365,35 @@ class TestGaugeTaskQueueAttributes:
             result = sse_connections_gauge_task()
 
         assert result == {"connected_users": 0, "connections": 0}
+
+    @patch("docsgpt.events.queue_gauge.broker_redis")
+    @patch("docsgpt.cache.get_redis_instance", return_value=None)
+    def test_no_cache_redis_still_logs_the_queues(self, _mock_cache, mock_broker, caplog):
+        broker = FakeRedis()
+        _publish(broker, "ingest", "a")
+        mock_broker.return_value = broker
+        from docsgpt.api.user.tasks import sse_connections_gauge_task
+
+        with caplog.at_level(logging.INFO):
+            result = sse_connections_gauge_task()
+
+        record = next(r for r in caplog.records if r.msg == "sse_gauge")
+        assert record.queue_ingest_depth == 1
+        assert not hasattr(record, "connections")
+        assert result["queues"]["ingest"]["depth"] == 1
+        assert "connections" not in result
+
+    @patch("docsgpt.events.queue_gauge.broker_redis")
+    @patch("docsgpt.cache.get_redis_instance")
+    def test_a_failed_connection_sweep_still_logs_the_queues(self, mock_cache, mock_broker, caplog):
+        mock_cache.return_value.scan_iter.side_effect = ConnectionError("cache down")
+        mock_broker.return_value = FakeRedis()
+        from docsgpt.api.user.tasks import sse_connections_gauge_task
+
+        with caplog.at_level(logging.INFO):
+            result = sse_connections_gauge_task()
+
+        record = next(r for r in caplog.records if r.msg == "sse_gauge")
+        assert record.queue_ingest_depth == 0
+        assert not hasattr(record, "connected_users")
+        assert "connected_users" not in result

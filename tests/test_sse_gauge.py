@@ -117,8 +117,9 @@ class TestMeasureSseConnections:
 
 @pytest.mark.unit
 class TestSseGaugeTask:
+    @patch("docsgpt.events.queue_gauge.broker_redis", return_value=None)
     @patch("docsgpt.cache.get_redis_instance")
-    def test_logs_structured_gauge_event(self, mock_get_redis, caplog):
+    def test_logs_structured_gauge_event(self, mock_get_redis, _mock_broker, caplog):
         client, _ = _client([b"user:alice:sse_leases"], [[2]])
         mock_get_redis.return_value = client
         from docsgpt.api.user.tasks import sse_connections_gauge_task
@@ -132,8 +133,9 @@ class TestSseGaugeTask:
         assert gauge_records[0].connected_users == 1
         assert gauge_records[0].connections == 2
 
+    @patch("docsgpt.events.queue_gauge.broker_redis", return_value=None)
     @patch("docsgpt.cache.get_redis_instance")
-    def test_zero_connections_still_logs(self, mock_get_redis, caplog):
+    def test_zero_connections_still_logs(self, mock_get_redis, _mock_broker, caplog):
         # The chart needs continuous data; an idle fleet is a data point,
         # not a skip.
         client, _ = _client([], [])
@@ -146,8 +148,9 @@ class TestSseGaugeTask:
         assert result == {"connected_users": 0, "connections": 0}
         assert any(r.msg == "sse_gauge" for r in caplog.records)
 
+    @patch("docsgpt.events.queue_gauge.broker_redis", return_value=None)
     @patch("docsgpt.cache.get_redis_instance")
-    def test_redis_unavailable_skips_quietly(self, mock_get_redis, caplog):
+    def test_redis_unavailable_skips_quietly(self, mock_get_redis, _mock_broker, caplog):
         mock_get_redis.return_value = None
         from docsgpt.api.user.tasks import sse_connections_gauge_task
 
@@ -157,8 +160,9 @@ class TestSseGaugeTask:
         assert result == {"skipped": "redis unavailable"}
         assert not any(r.msg == "sse_gauge" for r in caplog.records)
 
+    @patch("docsgpt.events.queue_gauge.broker_redis", return_value=None)
     @patch("docsgpt.cache.get_redis_instance")
-    def test_redis_error_does_not_raise(self, mock_get_redis, caplog):
+    def test_redis_error_does_not_raise(self, mock_get_redis, _mock_broker, caplog):
         client = MagicMock()
         client.scan_iter.side_effect = RuntimeError("connection reset")
         mock_get_redis.return_value = client
