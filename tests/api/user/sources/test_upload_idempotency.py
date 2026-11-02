@@ -1368,3 +1368,41 @@ class TestRemoteInFlightDedup:
         assert pg_conn.execute(
             text("SELECT count(*) FROM task_dedup WHERE idempotency_key = 'u:click-2'"),
         ).scalar() == 0
+
+
+class TestRemoteSourceIdentity:
+    """A remote source's duplicate-submit key never depends on, or digests, its secrets."""
+
+    S3 = {
+        "bucket": "docs", "prefix": "guides/", "region": "eu-west-1",
+        "aws_access_key_id": "AKIAEXAMPLE", "aws_secret_access_key": "hunter2-secret",
+    }
+
+    def test_configs_differing_only_in_credentials_share_a_key(self):
+        from docsgpt.api.user.sources.upload import _remote_in_flight_key
+
+        other = {**self.S3, "aws_secret_access_key": "another-password", "aws_access_key_id": "AKIAOTHER"}
+        assert _remote_in_flight_key("u", "s3", self.S3, None) == _remote_in_flight_key("u", "s3", other, None)
+        assert _remote_in_flight_key("u", "s3", self.S3, None) != _remote_in_flight_key(
+            "u", "s3", {**self.S3, "bucket": "other"}, None,
+        )
+
+    def test_no_secret_reaches_the_digest(self):
+        from docsgpt.api.user.sources import upload
+
+        nested = {
+            "subreddit": "python", "client_id": "cid", "client_secret": "s3cr3t-value",
+            "auth": {"password": "pw-value", "SessionToken": "tok-value"}, "api_key": "key-value",
+            "entries": [{"url": "https://user:url-pass@docs.example.com/?token=url-token&page=2"}],
+        }
+        identity = upload._remote_source_identity("reddit", nested, None)
+        for secret in ("s3cr3t-value", "pw-value", "tok-value", "key-value", "url-pass", "url-token"):
+            assert secret not in identity
+        assert "python" in identity and "page=2" in identity
+
+    def test_an_address_with_credentials_in_it_shares_a_key_without_them(self):
+        from docsgpt.api.user.sources.upload import _remote_in_flight_key
+
+        assert _remote_in_flight_key("u", "crawler", "https://user:pw@docs.example.com/a?token=x", None) == (
+            _remote_in_flight_key("u", "crawler", "https://docs.example.com/a", None)
+        )

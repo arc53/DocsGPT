@@ -1,14 +1,16 @@
 """Source document management upload functionality."""
 
 import hashlib
+import hmac
 import json
 import os
 import posixpath
+import re
 import tempfile
 import uuid
 import zipfile
 from typing import Container, Optional
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -224,9 +226,48 @@ def _release_claim(key):
             "Failed to release task_dedup claim for key=%s", key,
         )
 
+# Config fields that hold credentials. A source's identity never depends on
+# them, so its duplicate-submit key holds no digest of a secret.
+_CREDENTIAL_FIELD = re.compile(
+    r"password|passwd|secret|token|api_?key|credential|auth|session|(^|[_-])key($|[_-])", re.IGNORECASE,
+)
+
+
+def _without_url_credentials(value: str) -> str:
+    """``value`` with a URL's user info and credential-named query parameters dropped."""
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+        port = parts.port
+    except ValueError:
+        return value
+    if not parts.scheme or not host:
+        return value
+    netloc = f"{host}:{port}" if port else host
+    query = urlencode(
+        [(name, item) for name, item in parse_qsl(parts.query, keep_blank_values=True)
+         if not _CREDENTIAL_FIELD.search(name)]
+    )
+    return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+
+
+def _without_credentials(value):
+    """``value`` with every credential-named field, URL user info and token parameter dropped, recursively."""
+    if isinstance(value, dict):
+        return {
+            str(key): _without_credentials(item) for key, item in value.items()
+            if not _CREDENTIAL_FIELD.search(str(key))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_without_credentials(item) for item in value]
+    if isinstance(value, str):
+        return _without_url_credentials(value)
+    return value
+
+
 def _normalized_address(value: str) -> str:
     """A remote address as compared for duplicates: case-folded host, no fragment, sorted query, no trailing slash."""
-    value = value.strip()
+    value = _without_url_credentials(value.strip())
     try:
         parts = urlsplit(normalize_page_url(value))
     except ValueError:
@@ -236,28 +277,53 @@ def _normalized_address(value: str) -> str:
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query, ""))
 
 
-def _remote_in_flight_key(user: str, loader: str, source_data, connection_id: Optional[str]) -> Optional[str]:
-    """The marker key naming ``user``'s remote source, or ``None`` when there is no address to compare.
+def _remote_source_identity(loader: str, source_data, connection_id: Optional[str]) -> Optional[str]:
+    """What names a remote source for duplicate submits, with no credential in it.
 
     Args:
-        user: The submitting user.
         loader: The remote loader (``github``, ``crawler``, ``website``, ...).
         source_data: What the loader is given: an address, or a config dict.
-        connection_id: The connection whose credentials it reads, if any.
+        connection_id: The connection whose credentials it reads, if any;
+            it stands for those credentials.
 
     Returns:
-        ``{user}:ingest-in-flight:{digest}``, or ``None``.
+        The loader, the connection id and the address, one per line; ``None`` when there is no address.
     """
     if isinstance(source_data, str):
         address = (GitHubLoader.normalize_repo(source_data).lower() if loader == "github" else "")
         address = address or _normalized_address(source_data)
     elif isinstance(source_data, (dict, list)):
-        address = json.dumps(source_data, sort_keys=True, default=str)
+        address = json.dumps(_without_credentials(source_data), sort_keys=True, default=str)
     else:
         return None
     if not address:
         return None
-    digest = hashlib.sha256(f"{loader}\n{connection_id or ''}\n{address}".encode("utf-8")).hexdigest()
+    return f"{loader}\n{connection_id or ''}\n{address}"
+
+
+def _remote_in_flight_key(user: str, loader: str, source_data, connection_id: Optional[str]) -> Optional[str]:
+    """The marker key naming ``user``'s remote source, or ``None`` when there is no address to compare.
+
+    The identity is keyed with ``JWT_SECRET_KEY`` when there is one, so the
+    stored key can't be matched against guessed addresses offline.
+
+    Args:
+        user: The submitting user.
+        loader: The remote loader.
+        source_data: What the loader is given.
+        connection_id: The connection whose credentials it reads, if any.
+
+    Returns:
+        ``{user}:ingest-in-flight:{digest}``, or ``None``.
+    """
+    identity = _remote_source_identity(loader, source_data, connection_id)
+    if identity is None:
+        return None
+    secret = settings.JWT_SECRET_KEY
+    if isinstance(secret, str) and secret:
+        digest = hmac.new(secret.encode("utf-8"), identity.encode("utf-8"), hashlib.sha256).hexdigest()
+    else:
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
     return f"{user}:ingest-in-flight:{digest}"
 
 
