@@ -1,7 +1,7 @@
 ---
 title: MCP Tool Integration
 description: Connect any MCP (Model Context Protocol) server to DocsGPT agents as a tool, with bearer, API key, basic or OAuth sign-in, a worked example and troubleshooting.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-11-02
 ---
 
 import { Callout } from 'nextra/components'
@@ -55,6 +55,31 @@ A server's tool descriptions reach the model verbatim, so a hostile server can p
 <Callout type="warning">
 Once enabled, the agent can call these tools during conversations. Queries, requested URLs, and any supplied objectives or context are sent to Parallel. Only enable the connection for agents whose data may be shared with this service.
 </Callout>
+
+## Example: self-hosted code lookup with Sem
+
+[Sem](https://github.com/Ataraxy-Labs/sem) exposes repository lookup over authenticated Streamable HTTP. This example is for a self-hosted DocsGPT backend and Sem running in the **same network namespace**, with a Git checkout accessible to Sem. It was checked with Sem 0.29.0.
+
+1. Install Sem on the backend host. Generate a secret token and start its loopback HTTP server:
+
+   ```bash
+   export SEM_REPO="/absolute/path/to/checkout"
+   export SEM_MCP_HTTP_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+   export SEM_LOCAL=1 SEM_NO_NETWORK=1 SEM_NO_TELEMETRY=1
+   sem mcp --http 127.0.0.1:8787
+   ```
+
+2. DocsGPT blocks local MCP URLs by default. An operator must explicitly add `127.0.0.1` to the backend's `SAFE_URL_ALLOWED_HOSTS` and restart it. Preserve any existing entries. This opens access to loopback addresses for all users of that instance, not just this connector; only do it on an appropriately trusted deployment. See [Allowing private hosts](/Deploying/Security#allowing-private-hosts).
+3. Follow **Step 2** above to add a custom MCP server named **Sem**. Enter `http://127.0.0.1:8787/mcp`, choose **Bearer**, and supply the generated token through the credential field. Keep it out of URLs, source control and shared screenshots.
+4. Click **Test Connection**, save, and enable the connector for the intended agent. Ask it to use `sem_find` to locate a known function in the selected checkout and report its source location.
+
+Sem's HTTP transport exposes read-only discovery tools, not its stdio command-running tools. It can still create local index/cache data. Source returned by the tools enters the agent context and can reach the model provider; select only repositories that provider is allowed to process.
+
+<Callout type="warning">
+`127.0.0.1` refers to the DocsGPT backend, not the browser or another container. This recipe does not work unchanged with DocsGPT Cloud or separate Docker containers. Those deployments need an operator-managed reachable endpoint and appropriate HTTPS, authentication and URL policy. Sem's HTTP listener is loopback-only; do not assume it binds publicly. The environment flags above disable Sem's cloud client and set CLI controls, not OS-level network isolation.
+</Callout>
+
+To disconnect, disable the connector for the agent and stop the Sem process. Remove the URL allowlist entry only if no other connector needs it.
 
 ## Authentication Types
 
