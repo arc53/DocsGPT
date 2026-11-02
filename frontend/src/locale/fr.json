@@ -4770,6 +4770,11 @@
         "model_error": "Un problème est survenu pendant la suggestion de sujets. Aucun sujet n’a été ajouté."
       }
     },
-    "undone": "Annulé."
+    "lookedAtWorkspaceCounts": "Votre espace de travail a été examiné : {{counts}}",
+    "filled_one": "{{count}} champ rempli",
+    "filled_many": "{{count}} champs remplis",
+    "filled_other": "{{count}} champs remplis",
+    "notAnswered": "Sans réponse",
+    "suggestionsLabel": "Pour commencer"
   }
 }

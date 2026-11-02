@@ -4592,6 +4592,10 @@
         "model_error": "トピックの提案中に問題が発生しました。トピックは追加されていません。"
       }
     },
-    "undone": "元に戻しました。"
+    "lookedAtWorkspaceCounts": "ワークスペースを確認しました: {{counts}}",
+    "filled_one": "{{count}} 個のフィールドを入力しました",
+    "filled_other": "{{count}} 個のフィールドを入力しました",
+    "notAnswered": "未回答",
+    "suggestionsLabel": "始め方の例"
   }
 }

@@ -4590,6 +4590,10 @@
         "model_error": "建议主题时出了问题。没有添加任何主题。"
       }
     },
-    "undone": "已撤销。"
+    "lookedAtWorkspaceCounts": "已查看你的工作区：{{counts}}",
+    "filled_one": "已填写 {{count}} 个字段",
+    "filled_other": "已填写 {{count}} 个字段",
+    "notAnswered": "未回答",
+    "suggestionsLabel": "开始方式"
   }
 }

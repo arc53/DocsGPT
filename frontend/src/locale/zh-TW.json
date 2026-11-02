@@ -4592,6 +4592,10 @@
         "model_error": "建議主題時發生問題。沒有加入任何主題。"
       }
     },
-    "undone": "已復原。"
+    "lookedAtWorkspaceCounts": "已查看你的工作區：{{counts}}",
+    "filled_one": "已填寫 {{count}} 個欄位",
+    "filled_other": "已填寫 {{count}} 個欄位",
+    "notAnswered": "未回答",
+    "suggestionsLabel": "開始方式"
   }
 }

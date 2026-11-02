@@ -44,8 +44,17 @@ export type DrafterSession = {
   /** The running turn's step; null while idle. */
   step: DrafterStep | null;
   streaming: boolean;
-  /** Send a user message (a description, a change, composed answers). */
-  send: (text: string) => void;
+  /**
+   * Send a user message (a description, a change, composed answers).
+   * `hidden` sends one the client composed ("Continue with Knowledge and
+   * tools."): it runs the turn but draws no bubble and is not in
+   * `userTexts`.
+   */
+  send: (text: string, options?: { hidden?: boolean }) => void;
+  /** Add an assistant message the client wrote; the server never sees it. */
+  addMessage: (text: string) => void;
+  /** What the user wrote in this conversation, in order. */
+  userTexts: () => string[];
   /** Stop the running turn; what arrived so far stays. */
   stop: () => void;
   /** Run the last turn again after an error. */
@@ -75,6 +84,7 @@ export function useDrafterSession({
   const [items, setItems] = useState<DrafterItem[]>([]);
   const [step, setStep] = useState<DrafterStep | null>(null);
   const history = useRef<DrafterMessage[]>([]);
+  const userWords = useRef<string[]>([]);
   const controller = useRef<AbortController | null>(null);
   const nextId = useRef(0);
   // The latest callbacks, so a running turn never calls a stale one.
@@ -150,15 +160,25 @@ export function useDrafterSession({
   }, [handle, recipe]);
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, options?: { hidden?: boolean }) => {
       const message = text.trim();
       if (!message) return;
       history.current.push({ role: 'user', content: message });
-      push({ kind: 'user', text: message });
+      if (!options?.hidden) {
+        userWords.current.push(message);
+        push({ kind: 'user', text: message });
+      }
       run();
     },
     [push, run],
   );
+
+  const addMessage = useCallback(
+    (text: string) => push({ kind: 'message', text }),
+    [push],
+  );
+
+  const userTexts = useCallback(() => [...userWords.current], []);
 
   const stop = useCallback(() => {
     controller.current?.abort();
@@ -178,6 +198,7 @@ export function useDrafterSession({
     controller.current?.abort();
     controller.current = null;
     history.current = [];
+    userWords.current = [];
     setItems([]);
     setStep(null);
   }, []);
@@ -190,6 +211,8 @@ export function useDrafterSession({
     step,
     streaming: step !== null,
     send,
+    addMessage,
+    userTexts,
     stop,
     retry,
     reset,

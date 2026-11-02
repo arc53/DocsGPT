@@ -2538,7 +2538,7 @@ describe('NewAgent drafter', () => {
     expect(wand()).toBeDefined();
   });
 
-  it('fills the form from a proposal, marks each field, and undoes one or all', async () => {
+  it('fills the form from a proposal, marks each field, and undoes one', async () => {
     mocks.tools = [
       { id: 'tool-1', name: 'api_tool', display_name: 'Tracking' },
     ];
@@ -2574,17 +2574,6 @@ describe('NewAgent drafter', () => {
     await act(async () => buttonByLabel('drafter.undoField')!.click());
     expect(nameInput().value).toBe('');
     expect(drafted()).not.toContain('agents.form.labels.name');
-
-    await act(async () => buttonByText('drafter.undoAll', panel)!.click());
-    expect(drafted()).toEqual([]);
-    expect(
-      container.querySelector<HTMLTextAreaElement>(
-        'textarea[placeholder="agents.form.placeholders.describeAgent"]',
-      )!.value,
-    ).toBe('');
-    expect(
-      container.querySelector('[data-slot="select-trigger"]')?.textContent,
-    ).toContain('agents.form.agentTypes.classic');
   });
 
   it('gives reasons only for the fields the draft changed, and announces them', async () => {

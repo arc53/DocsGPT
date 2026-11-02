@@ -31,16 +31,19 @@ export type SuggestionRow = {
  */
 export default function SuggestionRows({
   rows,
+  label,
   className,
 }: {
   rows: SuggestionRow[];
+  /** The list's accessible name; the chat's "Suggestions" when left out. */
+  label?: string;
   className?: string;
 }) {
   const { t } = useTranslation();
   if (rows.length === 0) return null;
   return (
     <ul
-      aria-label={t('hero.suggestions.label')}
+      aria-label={label ?? t('hero.suggestions.label')}
       className={cn('flex flex-col', className)}
       data-testid="hero-suggestions"
     >

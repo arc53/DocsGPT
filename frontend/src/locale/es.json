@@ -4770,6 +4770,11 @@
         "model_error": "Algo salió mal al sugerir temas. No se añadió ningún tema."
       }
     },
-    "undone": "Deshecho."
+    "lookedAtWorkspaceCounts": "Revisó tu espacio de trabajo: {{counts}}",
+    "filled_one": "Se rellenó {{count}} campo",
+    "filled_many": "Se rellenaron {{count}} campos",
+    "filled_other": "Se rellenaron {{count}} campos",
+    "notAnswered": "Sin responder",
+    "suggestionsLabel": "Formas de empezar"
   }
 }

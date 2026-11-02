@@ -4913,6 +4913,12 @@
         "model_error": "При подборе тем что-то пошло не так. Темы не добавлены."
       }
     },
-    "undone": "Отменено."
+    "lookedAtWorkspaceCounts": "Просмотрел ваше рабочее пространство: {{counts}}",
+    "filled_one": "Заполнено {{count}} поле",
+    "filled_few": "Заполнено {{count}} поля",
+    "filled_many": "Заполнено {{count}} полей",
+    "filled_other": "Заполнено {{count}} поля",
+    "notAnswered": "Без ответа",
+    "suggestionsLabel": "С чего начать"
   }
 }

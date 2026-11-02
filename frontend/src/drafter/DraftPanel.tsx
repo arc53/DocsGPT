@@ -1,8 +1,10 @@
-import { ArrowUp, CircleCheck, Square, WandSparkles } from 'lucide-react';
+import { ArrowUp, ScanSearch, WandSparkles } from 'lucide-react';
 import {
   type MouseEvent,
   type ReactNode,
+  type RefObject,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -12,15 +14,17 @@ import { Link } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
+import { Progress } from '@/components/ui/progress';
 import {
   PanelBody,
   PanelFooter,
   PanelHeader,
   SidePanel,
 } from '@/components/ui/side-panel';
-import { Spinner } from '@/components/ui/spinner';
-import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
+import StreamingStatusLine from '../conversation/StreamingStatusLine';
+import SuggestionRows from '../hero/SuggestionRows';
 import { useMediaQuery } from '../hooks';
 
 import type { DrafterCounts, DrafterErrorCode } from './drafterApi';
@@ -40,21 +44,33 @@ export const RETRYABLE: DrafterErrorCode[] = [
   'model_error',
 ];
 
+/** A first-screen suggestion: a click sends its text. */
+export type DraftSuggestion = { key: string; icon: ReactNode; text: string };
+
 export type DraftPanelProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   session: DrafterSession;
   /** The task model's name for the footer; null hides the model part. */
   modelName: string | null;
-  /** The first message before anything is sent. */
-  intro: string;
   /**
-   * `draft` (the default) on an empty form, `improve` on a filled one: the
-   * ask bar then asks for a change from the first message on.
+   * The footer link's click handler, so a builder can ask before leaving
+   * unsaved work (useLeaveGuard's `onNavigate()`).
    */
-  mode?: 'draft' | 'improve';
-  /** Example requests under the intro; a click puts one in the ask bar. */
-  examples?: string[];
+  onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
+  /** The greeting before anything is sent. */
+  intro: string;
+  /** Suggestion rows under the greeting; a click sends the row's text. */
+  suggestions?: DraftSuggestion[];
+  /**
+   * Where a guided build stands: the header's description is `label` and a
+   * small bar under it shows `value` (0 to 100).
+   */
+  progress?: { label: string; value: number } | null;
+  /** Above the conversation: the finished steps, folded. */
+  before?: ReactNode;
+  /** The ask bar's placeholder; "Ask for a change…" when left out. */
+  placeholder?: string;
   /** Renders a proposal item (the recipe's summary). */
   renderProposal: (proposal: unknown, latest: boolean) => ReactNode;
   /**
@@ -62,37 +78,36 @@ export type DraftPanelProps = {
    * 3 fields…"); null announces nothing.
    */
   announceProposal?: (proposal: unknown) => string | null;
-  /**
-   * The footer link's click handler, so a builder can ask before leaving
-   * unsaved work (useLeaveGuard's `onNavigate()`).
-   */
-  onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
 };
 
 /**
  * The drafter's docked side panel ("Draft with DocsGPT"), the same for every
- * recipe: the intro and examples, the conversation (the user's messages, the
- * workspace line, the model's messages, its questions, each proposal through
- * `renderProposal`), errors with Retry, and an ask bar with Send or Stop. On
- * a phone the docked panel is a sheet.
+ * recipe, drawn in the chat's shapes: the greeting and suggestion rows, the
+ * conversation (the user's bubbles, the workspace line, the model's
+ * messages, its questions, each proposal through `renderProposal`), the
+ * running step on the chat's status line, errors with Retry, and the chat
+ * composer's frame with Send or Stop. A guided build adds its progress to the
+ * header and its finished steps above the conversation. On a phone the
+ * docked panel is a sheet.
  */
 export function DraftPanel({
   open,
   onOpenChange,
   session,
   modelName,
+  onNavigate,
   intro,
-  mode = 'draft',
-  examples = [],
+  suggestions = [],
+  progress,
+  before,
+  placeholder,
   renderProposal,
   announceProposal,
-  onNavigate,
 }: DraftPanelProps) {
   const { t } = useTranslation();
   const { isDesktop } = useMediaQuery();
-  const [draft, setDraft] = useState('');
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const wasOpen = useRef(false);
   const { items, step, streaming } = session;
 
@@ -108,14 +123,7 @@ export function DraftPanel({
     wasOpen.current = open;
   }, [open, isDesktop]);
 
-  const send = () => {
-    if (streaming || !draft.trim()) return;
-    session.send(draft);
-    setDraft('');
-  };
-
-  // The last proposal is the one Undo all applies to, and only questions not
-  // followed by a user message can still be answered.
+  // Only questions not followed by a user message can still be answered.
   const lastProposal = items.findLastIndex((item) => item.kind === 'proposal');
   const lastUser = items.findLastIndex((item) => item.kind === 'user');
   const latestProposal = items[lastProposal];
@@ -131,7 +139,7 @@ export function DraftPanel({
           <p
             key={item.id}
             data-item="user"
-            className="bg-secondary text-foreground ml-8 self-end rounded-2xl px-4 py-2.5 text-sm wrap-break-word whitespace-pre-wrap"
+            className="bg-secondary text-foreground ml-8 self-end rounded-3xl px-5 py-4 text-sm leading-normal wrap-break-word whitespace-pre-wrap"
           >
             {item.text}
           </p>
@@ -191,52 +199,47 @@ export function DraftPanel({
     <SidePanel variant="docked" open={open} onOpenChange={onOpenChange}>
       <PanelHeader
         title={t('drafter.title')}
+        description={progress?.label}
         leading={
           <WandSparkles
             className="text-link mt-0.5 size-5 shrink-0"
             aria-hidden="true"
           />
         }
-      />
+      >
+        {progress && (
+          <Progress
+            size="sm"
+            value={progress.value}
+            aria-label={t('drafter.title')}
+            getValueLabel={() => progress.label}
+          />
+        )}
+      </PanelHeader>
       <PanelBody>
         <div className="flex flex-col gap-4">
-          {items.length === 0 && (
+          {before}
+          {items.length === 0 && !streaming && (
             <div className="flex flex-col gap-3">
-              <p className="text-sm">{intro}</p>
-              {examples.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {examples.map((example) => (
-                    <Button
-                      key={example}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      shape="pill"
-                      onClick={() => {
-                        setDraft(example);
-                        inputRef.current?.focus();
-                      }}
-                    >
-                      {example}
-                    </Button>
-                  ))}
-                </div>
-              )}
+              <p className="text-sm wrap-break-word whitespace-pre-wrap">
+                {intro}
+              </p>
+              <SuggestionRows
+                label={t('drafter.suggestionsLabel')}
+                className="-mx-3"
+                rows={suggestions.map((suggestion) => ({
+                  ...suggestion,
+                  asks: true,
+                  onSelect: () => session.send(suggestion.text),
+                }))}
+              />
             </div>
           )}
           {items.map(renderItem)}
-          {/* Only the step and the applied draft are announced, not the
-              whole conversation as it grows. */}
+          {step && <StreamingStatusLine label={t(`drafter.steps.${step}`)} />}
+          {/* The status line announces the step; this announces each
+              applied draft, not the whole conversation as it grows. */}
           <div ref={endRef} aria-live="polite" data-slot="drafter-live">
-            {step && (
-              <p
-                className="text-muted-foreground flex items-center gap-2 text-sm"
-                data-slot="drafter-step"
-              >
-                <Spinner size="xs" label={t(`drafter.steps.${step}`)} />
-                {t(`drafter.steps.${step}`)}
-              </p>
-            )}
             {announcement && latestProposal && (
               <p key={latestProposal.id} className="sr-only">
                 {announcement}
@@ -247,49 +250,13 @@ export function DraftPanel({
       </PanelBody>
       <PanelFooter>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <div className="flex items-end gap-2">
-            <Textarea
-              ref={inputRef}
-              rows={2}
-              resize="none"
-              className="min-h-16"
-              value={draft}
-              aria-label={t('drafter.askLabel')}
-              placeholder={
-                items.length === 0 && mode === 'draft'
-                  ? t('drafter.startPlaceholder')
-                  : t('drafter.askPlaceholder')
-              }
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (
-                  event.key === 'Enter' &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  send();
-                }
-              }}
-            />
-            {streaming ? (
-              <IconButton
-                variant="outline"
-                shape="pill"
-                label={t('drafter.stop')}
-                icon={Square}
-                onClick={session.stop}
-              />
-            ) : (
-              <IconButton
-                shape="pill"
-                label={t('drafter.send')}
-                icon={ArrowUp}
-                disabled={!draft.trim()}
-                onClick={send}
-              />
-            )}
-          </div>
+          <Composer
+            inputRef={inputRef}
+            streaming={streaming}
+            placeholder={placeholder ?? t('drafter.askPlaceholder')}
+            onSend={(text) => session.send(text)}
+            onStop={session.stop}
+          />
           <p className="text-muted-foreground text-xs">
             {modelName
               ? t('drafter.footer', {
@@ -309,26 +276,118 @@ export function DraftPanel({
   );
 }
 
-/** "Looked at your workspace", with what it counted. */
+/**
+ * The ask bar in the chat composer's frame (MessageInput's): a borderless
+ * textarea that grows from one line to six, and the composer's round button
+ * in the corner, grey while empty, Send with text, Stop (a filled square)
+ * while a turn runs. Enter sends, Shift+Enter breaks the line. Kept here
+ * rather than shared: MessageInput's frame also carries attachments, voice
+ * and the source and tool pickers.
+ */
+function Composer({
+  inputRef,
+  streaming,
+  placeholder,
+  onSend,
+  onStop,
+}: {
+  inputRef: RefObject<HTMLTextAreaElement | null>;
+  streaming: boolean;
+  placeholder: string;
+  onSend: (text: string) => void;
+  onStop: () => void;
+}) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState('');
+  const empty = !draft.trim();
+
+  // Grow with the text; max-h-36 (six lines) caps it, then it scrolls.
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${input.scrollHeight}px`;
+  }, [draft, inputRef]);
+
+  const send = () => {
+    if (streaming || empty) return;
+    onSend(draft);
+    setDraft('');
+  };
+
+  return (
+    <div className="border-border bg-card focus-within:border-ring focus-within:ring-ring/50 relative flex w-full flex-col rounded-3xl border transition-shadow focus-within:ring-3">
+      <textarea
+        ref={inputRef}
+        rows={1}
+        value={draft}
+        aria-label={t('drafter.askLabel')}
+        placeholder={placeholder}
+        className="text-foreground placeholder:text-muted-foreground max-h-36 w-full resize-none overflow-y-auto rounded-t-3xl bg-transparent px-4 pt-3 text-sm leading-6 outline-none"
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (
+            event.key === 'Enter' &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing
+          ) {
+            event.preventDefault();
+            send();
+          }
+        }}
+      />
+      <div className="flex items-center justify-end px-2 pb-2">
+        {streaming ? (
+          <IconButton
+            size="icon-sm"
+            shape="pill"
+            label={t('drafter.stop')}
+            onClick={onStop}
+          >
+            <span className="bg-primary-foreground size-3 rounded-sm" />
+          </IconButton>
+        ) : (
+          <IconButton
+            size="icon-sm"
+            shape="pill"
+            label={t('drafter.send')}
+            icon={ArrowUp}
+            disabled={empty}
+            onClick={send}
+            className={cn(
+              empty &&
+                /* eslint-disable-next-line shadcn/no-restyle --
+                   The empty composer's send button is a grey circle, as in
+                   the chat composer: no variant is neutral while disabled. */
+                'bg-muted text-muted-foreground dark:bg-accent',
+            )}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** "Looked at your workspace: 6 knowledge sources · 11 tools", one muted line. */
 function WorkspaceLine({ counts }: { counts: DrafterCounts }) {
   const { t } = useTranslation();
   const parts = COUNT_KEYS.filter((key) => typeof counts[key] === 'number').map(
     (key) => t(`drafter.counts.${key}`, { count: counts[key] }),
   );
   return (
-    <div data-item="status" className="flex items-start gap-2 text-sm">
-      <CircleCheck
-        className="text-success mt-0.5 size-4 shrink-0"
-        aria-hidden="true"
-      />
-      <div className="flex min-w-0 flex-col">
-        <span>{t('drafter.lookedAtWorkspace')}</span>
-        {parts.length > 0 && (
-          <span className="text-muted-foreground text-xs">
-            {parts.join(' · ')}
-          </span>
-        )}
-      </div>
+    <div
+      data-item="status"
+      className="text-muted-foreground flex items-start gap-2 text-sm"
+    >
+      <ScanSearch className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <p className="min-w-0 wrap-break-word">
+        {parts.length > 0
+          ? t('drafter.lookedAtWorkspaceCounts', {
+              counts: parts.join(' · '),
+              interpolation: { escapeValue: false },
+            })
+          : t('drafter.lookedAtWorkspace')}
+      </p>
     </div>
   );
 }

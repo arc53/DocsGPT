@@ -4627,6 +4627,10 @@
         "model_error": "Beim Vorschlagen von Themen ist etwas schiefgelaufen. Es wurden keine Themen hinzugefügt."
       }
     },
-    "undone": "Rückgängig gemacht."
+    "lookedAtWorkspaceCounts": "Deinen Arbeitsbereich angesehen: {{counts}}",
+    "filled_one": "{{count}} Feld ausgefüllt",
+    "filled_other": "{{count}} Felder ausgefüllt",
+    "notAnswered": "Nicht beantwortet",
+    "suggestionsLabel": "Möglichkeiten zum Einstieg"
   }
 }

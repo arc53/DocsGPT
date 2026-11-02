@@ -1,15 +1,29 @@
-import { Check, Info, Pencil } from 'lucide-react';
-import { useId, useState } from 'react';
+import { Info } from 'lucide-react';
+import { type ReactNode, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { ToggleChip } from '@/components/ui/toggle-chip';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 import type { DrafterQuestion } from './drafterApi';
 
 type Answer = { picked: string[]; other: string | null };
+
+const NO_ANSWER: Answer = { picked: [], other: null };
+
+/** A question's answer as text: the picked labels, then the free text. */
+function answerParts(question: DrafterQuestion, answer: Answer): string[] {
+  const parts = question.options
+    .filter((option) => answer.picked.includes(option.id))
+    .map((option) => option.label);
+  const other = answer.other?.trim();
+  if (other) parts.push(other);
+  return parts;
+}
 
 /**
  * Turn the picked options into the one user message the server expects:
@@ -30,11 +44,7 @@ export function composeAnswers(
     .map((question) => {
       const answer = answers[question.id];
       if (!answer) return null;
-      const parts = question.options
-        .filter((option) => answer.picked.includes(option.id))
-        .map((option) => option.label);
-      const other = answer.other?.trim();
-      if (other) parts.push(other);
+      const parts = answerParts(question, answer);
       return parts.length > 0 ? `${question.text} → ${parts.join(', ')}` : null;
     })
     .filter((line): line is string => line !== null)
@@ -42,10 +52,11 @@ export function composeAnswers(
 }
 
 /**
- * The drafter's questions as cards: each option a chip (one pick, or several
- * when `multi`), plus "Something else…" with a free-text field, then one
- * Send answers button that sends every answer as one message. Answered (or
- * passed-over) questions show read-only.
+ * The drafter's questions as cards of option rows: radios for a one-pick
+ * question, checkboxes for a pick-any one (`multi`), and "Something else…"
+ * last, which opens a free-text field under it. One Send answers button sends
+ * every answer as one message. An answered (or passed-over) card shows only
+ * the question and what was picked.
  *
  * Args:
  *   questions: At most three questions, two to five options each.
@@ -65,35 +76,28 @@ export function DrafterQuestions({
   const baseId = useId();
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
 
-  const answerOf = (id: string): Answer =>
-    answers[id] ?? { picked: [], other: null };
+  const answerOf = (id: string): Answer => answers[id] ?? NO_ANSWER;
   const update = (id: string, next: Answer) =>
     setAnswers((prev) => ({ ...prev, [id]: next }));
 
-  const toggle = (question: DrafterQuestion, optionId: string) => {
-    const answer = answerOf(question.id);
-    const on = answer.picked.includes(optionId);
-    if (question.multi) {
-      update(question.id, {
-        ...answer,
-        picked: on
-          ? answer.picked.filter((id) => id !== optionId)
-          : [...answer.picked, optionId],
-      });
-    } else {
-      // One pick: a chip replaces the other choice and closes "Something else".
-      update(question.id, { picked: on ? [] : [optionId], other: null });
-    }
-  };
+  // One pick: an option replaces the other choice and closes "Something
+  // else"; `optionId` null is "Something else" itself.
+  const pickOne = (question: DrafterQuestion, optionId: string | null) =>
+    update(
+      question.id,
+      optionId === null
+        ? { picked: [], other: answerOf(question.id).other ?? '' }
+        : { picked: [optionId], other: null },
+    );
 
-  const toggleOther = (question: DrafterQuestion) => {
+  const toggle = (question: DrafterQuestion, optionId: string, on: boolean) => {
     const answer = answerOf(question.id);
-    if (answer.other !== null) update(question.id, { ...answer, other: null });
-    else
-      update(question.id, {
-        picked: question.multi ? answer.picked : [],
-        other: '',
-      });
+    update(question.id, {
+      ...answer,
+      picked: on
+        ? [...answer.picked, optionId]
+        : answer.picked.filter((id) => id !== optionId),
+    });
   };
 
   const message = composeAnswers(questions, answers);
@@ -102,7 +106,56 @@ export function DrafterQuestions({
     <div className="flex flex-col gap-3" data-slot="drafter-questions">
       {questions.map((question, index) => {
         const answer = answerOf(question.id);
-        const otherId = `${baseId}-${question.id}-other`;
+        // Rows go by position (the radio values too): the option ids are
+        // the model's own and could be anything.
+        const rowId = (row: number) => `${baseId}-${question.id}-${row}`;
+        const title = (
+          <p className="text-sm font-medium wrap-break-word">
+            {questions.length > 1 ? `${index + 1}. ` : ''}
+            {question.text}
+          </p>
+        );
+
+        if (!active) {
+          const parts = answerParts(question, answer);
+          return (
+            <Card
+              key={question.id}
+              variant="subtle"
+              padding="sm"
+              className="gap-1"
+              data-question={question.id}
+            >
+              {title}
+              {parts.length > 0 ? (
+                <p className="text-sm wrap-break-word">{parts.join(', ')}</p>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  {t('drafter.notAnswered')}
+                </p>
+              )}
+            </Card>
+          );
+        }
+
+        // Each option, then "Something else" (id null) last.
+        const rows = [
+          ...question.options.map(({ id, label }) => ({ id, label })),
+          { id: null, label: t('drafter.somethingElse') },
+        ];
+        const otherRow = question.options.length;
+        const row = (index: number, label: string, control: ReactNode) => (
+          <div key={index} className="flex items-start gap-3">
+            {control}
+            <Label
+              htmlFor={rowId(index)}
+              className="leading-normal font-normal wrap-break-word"
+            >
+              {label}
+            </Label>
+          </div>
+        );
+
         return (
           <Card
             key={question.id}
@@ -111,63 +164,91 @@ export function DrafterQuestions({
             className="gap-2"
             data-question={question.id}
           >
-            <p className="text-sm font-medium">
-              {questions.length > 1 ? `${index + 1}. ` : ''}
-              {question.text}
-            </p>
-            <div
-              role="group"
-              aria-label={question.text}
-              className="flex flex-wrap gap-1.5"
-            >
-              {question.options.map((option) => {
-                const on = answer.picked.includes(option.id);
-                return (
-                  <ToggleChip
-                    key={option.id}
-                    size="sm"
-                    pressed={on}
-                    disabled={!active}
-                    onPressedChange={() => toggle(question, option.id)}
-                    // A long option wraps inside the pill instead of
-                    // running past the panel.
-                    className="h-auto min-h-8 max-w-full"
-                  >
-                    {on && question.multi ? <Check /> : null}
-                    <span className="min-w-0 py-1 text-left whitespace-normal">
-                      {option.label}
-                    </span>
-                  </ToggleChip>
-                );
-              })}
-              <ToggleChip
-                size="sm"
-                pressed={answer.other !== null}
-                disabled={!active}
-                onPressedChange={() => toggleOther(question)}
+            {title}
+            {question.multi ? (
+              <div
+                role="group"
+                aria-label={question.text}
+                className="grid gap-3"
               >
-                <Pencil />
-                {t('drafter.somethingElse')}
-              </ToggleChip>
-            </div>
-            {answer.other !== null && active && (
-              <Input
-                id={otherId}
-                size="sm"
-                autoFocus
-                value={answer.other}
-                aria-label={t('drafter.somethingElseLabel')}
-                placeholder={t('drafter.somethingElsePlaceholder')}
-                onChange={(event) =>
-                  update(question.id, { ...answer, other: event.target.value })
+                {rows.map(({ id, label }, rowIndex) =>
+                  row(
+                    rowIndex,
+                    label,
+                    <Checkbox
+                      id={rowId(rowIndex)}
+                      className="mt-0.5"
+                      checked={
+                        id === null
+                          ? answer.other !== null
+                          : answer.picked.includes(id)
+                      }
+                      onCheckedChange={(checked) =>
+                        id === null
+                          ? update(question.id, {
+                              ...answer,
+                              other: checked === true ? '' : null,
+                            })
+                          : toggle(question, id, checked === true)
+                      }
+                    />,
+                  ),
+                )}
+              </div>
+            ) : (
+              <RadioGroup
+                aria-label={question.text}
+                value={
+                  answer.other !== null
+                    ? String(otherRow)
+                    : answer.picked.length > 0
+                      ? String(
+                          question.options.findIndex(
+                            (option) => option.id === answer.picked[0],
+                          ),
+                        )
+                      : ''
                 }
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && message) {
-                    event.preventDefault();
-                    onAnswer(message);
+                onValueChange={(value) =>
+                  pickOne(question, rows[Number(value)].id)
+                }
+              >
+                {rows.map(({ label }, rowIndex) =>
+                  row(
+                    rowIndex,
+                    label,
+                    <RadioGroupItem
+                      id={rowId(rowIndex)}
+                      value={String(rowIndex)}
+                      className="mt-0.5"
+                    />,
+                  ),
+                )}
+              </RadioGroup>
+            )}
+            {answer.other !== null && (
+              // In line with the row labels: the 16px control and its gap-3.
+              <div className="pl-7">
+                <Input
+                  size="sm"
+                  autoFocus
+                  value={answer.other}
+                  aria-label={t('drafter.somethingElseLabel')}
+                  placeholder={t('drafter.somethingElsePlaceholder')}
+                  onChange={(event) =>
+                    update(question.id, {
+                      ...answer,
+                      other: event.target.value,
+                    })
                   }
-                }}
-              />
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && message) {
+                      event.preventDefault();
+                      onAnswer(message);
+                    }
+                  }}
+                />
+              </div>
             )}
             {question.note && (
               <p className="text-muted-foreground flex items-start gap-1.5 text-xs">

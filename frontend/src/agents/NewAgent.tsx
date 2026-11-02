@@ -1,6 +1,11 @@
 import {
   CircleCheck,
   CircleX,
+  FileSearch,
+  Headset,
+  MessageSquare,
+  MonitorCog,
+  PencilLine,
   Play,
   SquarePen,
   WandSparkles,
@@ -72,6 +77,7 @@ import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import { useMediaQuery } from '../hooks';
 import { DraftPanel } from '../drafter/DraftPanel';
+import { suggestionIconClass } from '../hero/SuggestionRows';
 import { DraftedField } from '../drafter/DraftedBadge';
 import { ProposalSummary } from '../drafter/ProposalSummary';
 import { useDraftedFields } from '../drafter/useDraftedFields';
@@ -907,7 +913,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     fieldLabel: t(AGENT_FIELD_LABEL_KEYS[field]),
   });
 
-  const renderAgentProposal = (raw: unknown, latest: boolean) => {
+  const renderAgentProposal = (raw: unknown) => {
     const proposal = parseAgentProposal(raw);
     if (!proposal) return null;
     const { rows, dropped } = agentProposalSummary(
@@ -921,9 +927,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         rows={rows}
         notes={proposal.notes}
         dropped={dropped}
-        onUndoAll={
-          latest && drafted.fields.length > 0 ? drafted.undoAll : undefined
-        }
       />
     );
   };
@@ -2559,25 +2562,47 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           onOpenChange={setDrafterOpen}
           session={drafterSession}
           modelName={drafterConfig?.model?.display_name ?? null}
-          mode={formEmpty ? 'draft' : 'improve'}
           announceProposal={announceAgentProposal}
           intro={
             formEmpty
               ? t('drafter.agent.introNew')
               : t('drafter.agent.introImprove')
           }
-          examples={
-            formEmpty
-              ? [
-                  t('drafter.agent.examples.support'),
-                  t('drafter.agent.examples.research'),
-                  t('drafter.agent.examples.helpdesk'),
-                ]
-              : [
-                  t('drafter.agent.examples.shorter'),
-                  t('drafter.agent.examples.starters'),
-                ]
-          }
+          placeholder={formEmpty ? t('drafter.startPlaceholder') : undefined}
+          suggestions={(formEmpty
+            ? [
+                {
+                  key: 'support',
+                  Icon: Headset,
+                  text: t('drafter.agent.examples.support'),
+                },
+                {
+                  key: 'research',
+                  Icon: FileSearch,
+                  text: t('drafter.agent.examples.research'),
+                },
+                {
+                  key: 'helpdesk',
+                  Icon: MonitorCog,
+                  text: t('drafter.agent.examples.helpdesk'),
+                },
+              ]
+            : [
+                {
+                  key: 'shorter',
+                  Icon: PencilLine,
+                  text: t('drafter.agent.examples.shorter'),
+                },
+                {
+                  key: 'starters',
+                  Icon: MessageSquare,
+                  text: t('drafter.agent.examples.starters'),
+                },
+              ]
+          ).map(({ Icon, ...suggestion }) => ({
+            ...suggestion,
+            icon: <Icon className={suggestionIconClass} aria-hidden="true" />,
+          }))}
           renderProposal={renderAgentProposal}
           onNavigate={leaveGuard.onNavigate()}
         />

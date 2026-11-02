@@ -4648,6 +4648,10 @@
         "model_error": "Something went wrong while suggesting topics. No topics were added."
       }
     },
-    "undone": "Undone."
+    "lookedAtWorkspaceCounts": "Looked at your workspace: {{counts}}",
+    "filled_one": "Filled {{count}} field",
+    "filled_other": "Filled {{count}} fields",
+    "notAnswered": "Not answered",
+    "suggestionsLabel": "Ways to start"
   }
 }
