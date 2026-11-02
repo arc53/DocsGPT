@@ -307,6 +307,7 @@ def website_pages(
 
 
 @celery.task(bind=True)
+@with_idempotency(task_name="sync_source")
 def sync_source(
     self,
     source_data,
@@ -318,8 +319,15 @@ def sync_source(
     doc_id,
     connection_id=None,
     actor_id=None,
+    idempotency_key=None,
+    lock_wait_seconds=None,
+    notify_skip=True,
 ):
-    """Sync one source; ``actor_id`` (a team editor who asked) hears its events too."""
+    """Sync one source; ``actor_id`` (a team editor who asked) hears its events too.
+
+    A scheduled sync passes ``lock_wait_seconds=0`` and ``notify_skip=False``:
+    a source busy with another job is left to the next schedule, quietly.
+    """
     resp = sync(
         self,
         source_data,
@@ -331,6 +339,8 @@ def sync_source(
         doc_id,
         connection_id=connection_id,
         actor_id=actor_id,
+        notify_skip=notify_skip,
+        **({"lock_wait_seconds": lock_wait_seconds} if lock_wait_seconds is not None else {}),
     )
     return resp
 

@@ -2147,6 +2147,47 @@ def sync(
 _CONNECTION_ONLY_LOADERS = frozenset({"linear"})
 
 
+def _scheduled_sync_key(task: Any, doc_id: str) -> str:
+    """The idempotency key of one source's sync in this beat tick.
+
+    A redelivered ``schedule_syncs`` keeps its task id, so it maps each source
+    to the key it was already queued under.
+    """
+    request = getattr(task, "request", None)
+    tick = getattr(request, "id", None) if request is not None else None
+    if not isinstance(tick, str) or not tick:
+        tick = str(uuid.uuid4())
+    return f"scheduled-sync:{tick}:{doc_id}"
+
+
+def _dispatch_scheduled_sync(key: str, **sync_kwargs: Any) -> bool:
+    """Queue one scheduled ``sync_source`` on the ingest queue, once per ``key``.
+
+    A source busy with another change is skipped without a notice
+    (``lock_wait_seconds=0``) and left to the next schedule.
+
+    Returns:
+        False when ``key`` was already claimed, so nothing was queued.
+    """
+    from docsgpt.api.user.tasks import sync_source
+    from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+
+    task_id = str(uuid.uuid4())
+    try:
+        with db_session() as conn:
+            claimed = IdempotencyRepository(conn).claim_task(key=key, task_name="sync_source", task_id=task_id)
+        if claimed is None:
+            logging.info("Scheduled sync %s is already queued; not queuing it again", key)
+            return False
+    except Exception:  # noqa: BLE001 - the task's own lease still keeps one run per key
+        logging.exception("Could not claim scheduled sync %s; queuing it anyway", key)
+    sync_source.apply_async(
+        kwargs={**sync_kwargs, "idempotency_key": key, "lock_wait_seconds": 0, "notify_skip": False},
+        task_id=task_id,
+    )
+    return True
+
+
 def sync_worker(self, frequency):
     from sqlalchemy import text as sql_text
 
@@ -2218,16 +2259,18 @@ def sync_worker(self, frequency):
             sync_counts["sync_skipped"] += 1
             continue
 
-        # A source busy with another change is left to the next schedule
-        # rather than holding up every sync after it.
-        resp = sync(
-            self, source_data, name, user, source_type, frequency, retriever, doc_id,
+        queued = _dispatch_scheduled_sync(
+            _scheduled_sync_key(self, doc_id),
+            source_data=source_data,
+            job_name=name,
+            user=user,
+            loader=source_type,
+            sync_frequency=frequency,
+            retriever=retriever,
+            doc_id=doc_id,
             connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
-            lock_wait_seconds=0,
-            notify_skip=False,
         )
-        outcome = {"success": "sync_success", "skipped": "sync_skipped"}.get(resp["status"], "sync_failure")
-        sync_counts[outcome] += 1
+        sync_counts["sync_dispatched" if queued else "sync_skipped"] += 1
     return {
         key: sync_counts[key]
         for key in [

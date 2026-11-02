@@ -202,7 +202,7 @@ class TestSyncSourceTask:
 
         mock_sync.assert_called_once_with(
             ANY, {"data": 1}, "job1", "user1", "web", "daily", "classic", "doc1",
-            connection_id=None, actor_id=None,
+            connection_id=None, actor_id=None, notify_skip=True,
         )
         assert result == {"status": "ok"}
 
