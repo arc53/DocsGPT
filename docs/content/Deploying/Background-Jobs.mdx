@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Data Retention
 description: The periodic tasks the Celery beat scheduler runs in DocsGPT - source syncs, scheduled agent runs, reconciliation, conversation analytics and cleanups - what each one trims and when, what is kept until someone deletes it, and how to make sure beat is running.
-lastUpdated: 2026-10-23
+lastUpdated: 2026-11-02
 ---
 
 import { Callout } from 'nextra/components'
@@ -43,7 +43,7 @@ Beat schedules these tasks. Each runs on the worker, so the worker must also be 
 | `cleanup-schedule-runs` | day | Deletes scheduled-run records and their output older than the retention window, keeping the 50 most recent runs of each schedule. | `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS` (`90`). |
 | `reconciliation` | 30 s | Marks stuck work as failed and logs an alert: answers that stopped streaming, tool calls left mid-way, stalled ingests, stuck idempotency claims and scheduled runs. | None. |
 | `cleanup-pending-tool-state` | 60 s | Deletes paused conversations waiting for a tool approval or a client-side tool result once they expire (30 minutes), and clears their approval prompts. | None. |
-| `cleanup-idempotency-dedup` | hour | Deletes idempotency keys for uploads, tasks and webhooks older than 24 hours. | None. |
+| `cleanup-idempotency-dedup` | hour | Deletes idempotency keys for uploads, tasks and webhooks older than 24 hours. A task's key is kept while the task is still running, and for 24 hours after its last heartbeat. | None. |
 | `cleanup-message-events` | day | Deletes the per-chunk stream journal that lets a client reconnect to an answer, and the markers left by regenerated answers. Conversations themselves are kept. | `MESSAGE_EVENTS_RETENTION_DAYS` (`14`). |
 | `cleanup-guardrail-events` | day | Deletes [guardrail](/Agents/guardrails) events. | `GUARDRAILS_EVENTS_RETENTION_DAYS` (`30`). |
 | `cleanup-content-scores` | day | Deletes cached [prompt-injection scores](/Agents/guardrails#where-a-documents-score-comes-from) whose text was not scored or seen within the retention window. | `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS` (`180`). |
