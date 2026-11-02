@@ -22,10 +22,8 @@ import {
  *     prompt) or `resume` (a build left halfway).
  *   label: The accessible name and tooltip when they say more than the
  *     button's word ("Resume drafting: step 3 of 4").
- *   onClick: Opens the drafter (or sends the prompt modal's request).
- *   disabled: Nothing to send yet.
+ *   onClick: Opens the drafter.
  *   open: Whether the panel it opens is open (aria-expanded).
- *   size: `field` (38px, page toolbars, the default) or `sm` (a modal header).
  *   compactOnPhone: Icon only below `sm`.
  */
 export function WandButton({
@@ -33,16 +31,12 @@ export function WandButton({
   label,
   onClick,
   open,
-  size = 'field',
   compactOnPhone = false,
-  disabled,
 }: {
   mode: 'draft' | 'improve' | 'write' | 'resume';
   label?: string;
   onClick: () => void;
-  disabled?: boolean;
   open?: boolean;
-  size?: 'field' | 'sm';
   compactOnPhone?: boolean;
 }) {
   const { t } = useTranslation();
@@ -58,13 +52,12 @@ export function WandButton({
     <Button
       type="button"
       variant="outline-primary"
-      size={size}
+      size="field"
       shape="pill"
       className={compactOnPhone ? 'hidden sm:inline-flex' : undefined}
       aria-label={label}
       aria-expanded={open}
       data-drafter-entry=""
-      disabled={disabled}
       onClick={onClick}
     >
       <WandSparkles />
@@ -83,7 +76,6 @@ export function WandButton({
           icon={WandSparkles}
           aria-expanded={open}
           data-drafter-entry=""
-          disabled={disabled}
           onClick={onClick}
         />
       )}

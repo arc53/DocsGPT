@@ -2455,10 +2455,6 @@
     },
     "prompts": {
       "addPrompt": "添加提示",
-      "addDescription": "添加自定义提示并保存到 DocsGPT",
-      "editPrompt": "编辑提示",
-      "editDescription": "编辑自定义提示并保存到 DocsGPT",
-      "viewPrompt": "查看提示",
       "viewDescription": "内置提示无法编辑。复制后可创建您自己的可编辑副本。",
       "duplicate": "创建副本",
       "duplicatePrompt": "创建提示副本",
@@ -2466,7 +2462,6 @@
       "promptName": "提示名称",
       "promptText": "提示文本",
       "save": "保存",
-      "cancel": "取消",
       "nameExists": "名称已存在",
       "deleteConfirmation": "删除“{{name}}”？",
       "variablesLabel": "變數",
@@ -2485,9 +2480,7 @@
         "systemRequestId": "唯一請求識別碼",
         "systemUserId": "目前使用者 ID",
         "artifactsLookup": "按 ID 查询工件元数据"
-      },
-      "learnAboutPrompts": "了解提示",
-      "pendingDescription": "保存智能体时会创建它。"
+      }
     },
     "chunk": {
       "add": "添加块",
@@ -4437,13 +4430,8 @@
       "write": "撰写",
       "improvePrompt": "改进提示词",
       "improveCopy": "改进副本",
-      "askLabel": "要让 DocsGPT 修改或撰写什么？",
       "improvePlaceholder": "说明要改什么，例如：不要报价…",
       "writePlaceholder": "描述这个提示词，例如：我们员工手册的友好助手…",
-      "errors": {
-        "invalid_output": "无法使用模型的回答。提示词没有变化。",
-        "model_error": "起草时出了问题。提示词没有变化。"
-      },
       "warningsTitle": "保存前请检查",
       "checks": {
         "to_template": "这会加入模板变量，DocsGPT 将完全按原文使用提示词，不再添加自己的部分：日期、回答规则、引用、格式和边界。",
@@ -4466,7 +4454,6 @@
       "acceptAll": "全部接受",
       "reviewOneByOne": "逐条查看",
       "discard": "放弃",
-      "usedBy_other": "有 {{formatted}} 个智能体在使用。保存后会对所有智能体生效。",
       "introImprove": "我可以检查这个提示词，或修改某个具体的地方。在你保存之前不会保存任何内容。",
       "introImproveUsedBy_one": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改也会作用于它。",
       "introImproveUsedBy_other": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改会作用于所有这些智能体。",
@@ -4542,10 +4529,6 @@
     },
     "agent": {
       "draftedCount_other": "已起草 {{count}} 个字段。保存前请检查。",
-      "pendingPrompt": "{{name}} · 新建，保存时创建",
-      "promptText": "提示词内容",
-      "editPrompt": "编辑提示词",
-      "promptCreateFailed": "无法创建起草的提示词，因此没有保存任何内容。请重试。",
       "droppedLine": "{{field}}：{{reason}}",
       "droppedReasons": {
         "not_found": "一个不存在的项目",
@@ -4597,7 +4580,8 @@
           "checks_other": "{{count}} 项检查（{{mode}}）",
           "topics_one": "{{count}} 个洞察主题",
           "topics_other": "{{count}} 个洞察主题"
-        }
+        },
+        "continueStep": "继续：{{step}}"
       },
       "improve": {
         "intro": "{{name}} 需要改什么？",
@@ -4610,7 +4594,22 @@
       },
       "fields": {
         "limits": "使用限制"
-      }
+      },
+      "prompt": {
+        "wrote_one": "写了一个新提示词 · {{count}} 个词",
+        "wrote_other": "写了一个新提示词 · {{count}} 个词",
+        "viewHint": "在提示词视图中查看：在那里修改，或在这里告诉我，然后点击“使用此提示词”。点击后它会保存到你的提示词中。",
+        "newPrompt": "新提示词",
+        "use": "使用此提示词",
+        "saved_one": "提示词已保存并设置。我据此写了 {{count}} 个开场问题：请在“开场问题”中查看。",
+        "saved_other": "提示词已保存并设置。我据此写了 {{count}} 个开场问题：请在“开场问题”中查看。",
+        "savedOnly": "提示词已保存并设置。",
+        "parked": "我写的提示词仍处于打开状态，尚未保存。",
+        "open": "打开提示词",
+        "keep": "改为保留 {{name}}",
+        "changePlaceholder": "或告诉我提示词要改什么…"
+      },
+      "formEdited": "你在表单中更改了 {{fields}}。"
     },
     "topics": {
       "suggest": "根据对话建议",

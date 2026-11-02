@@ -2465,10 +2465,6 @@
     },
     "prompts": {
       "addPrompt": "Prompt hinzufügen",
-      "addDescription": "Füge deinen benutzerdefinierten Prompt hinzu und speichere ihn in DocsGPT",
-      "editPrompt": "Prompt bearbeiten",
-      "editDescription": "Bearbeite deinen benutzerdefinierten Prompt und speichere ihn in DocsGPT",
-      "viewPrompt": "Prompt ansehen",
       "viewDescription": "Integrierte Prompts können nicht bearbeitet werden. Dupliziere ihn, um eine eigene bearbeitbare Kopie zu erstellen.",
       "duplicate": "Duplizieren",
       "duplicatePrompt": "Prompt duplizieren",
@@ -2476,7 +2472,6 @@
       "promptName": "Prompt-Name",
       "promptText": "Prompt-Text",
       "save": "Speichern",
-      "cancel": "Abbrechen",
       "nameExists": "Name existiert bereits",
       "deleteConfirmation": "\"{{name}}\" löschen?",
       "variablesLabel": "Variablen",
@@ -2495,9 +2490,7 @@
         "systemRequestId": "Eindeutige Anfrage-ID",
         "systemUserId": "Aktuelle Benutzer-ID",
         "artifactsLookup": "Artefakt-Metadaten nach ID"
-      },
-      "learnAboutPrompts": "Mehr über Prompts erfahren",
-      "pendingDescription": "Er wird erstellt, wenn du den Agenten speicherst."
+      }
     },
     "chunk": {
       "add": "Chunk hinzufügen",
@@ -4459,13 +4452,8 @@
       "write": "Schreiben",
       "improvePrompt": "Prompt verbessern",
       "improveCopy": "Kopie verbessern",
-      "askLabel": "Was soll DocsGPT ändern oder schreiben?",
       "improvePlaceholder": "Sag, was sich ändern soll, z. B. keine Preise nennen…",
       "writePlaceholder": "Beschreibe den Prompt, z. B. ein freundlicher Helfer für unser Personalhandbuch…",
-      "errors": {
-        "invalid_output": "Die Antwort des Modells war nicht verwendbar. Der Prompt hat sich nicht geändert.",
-        "model_error": "Beim Entwerfen ist etwas schiefgelaufen. Der Prompt hat sich nicht geändert."
-      },
       "warningsTitle": "Vor dem Speichern prüfen",
       "checks": {
         "to_template": "Damit kommen Vorlagenvariablen hinzu: DocsGPT verwendet den Prompt dann genau wie geschrieben und fügt seine eigenen Abschnitte nicht mehr hinzu (Datum, Antwortregeln, Quellenangaben, Formatierung und Grenzen).",
@@ -4488,8 +4476,6 @@
       "acceptAll": "Alle übernehmen",
       "reviewOneByOne": "Einzeln prüfen",
       "discard": "Verwerfen",
-      "usedBy_one": "Wird von {{formatted}} Agenten verwendet. Das Speichern ändert ihn auch dort.",
-      "usedBy_other": "Wird von {{formatted}} Agenten verwendet. Das Speichern ändert ihn für alle.",
       "introImprove": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. Gespeichert wird erst, wenn du speicherst.",
       "introImproveUsedBy_one": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agent nutzt ihn, eine gespeicherte Änderung gilt also auch dort.",
       "introImproveUsedBy_other": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agenten nutzen ihn, eine gespeicherte Änderung gilt also für alle.",
@@ -4571,10 +4557,6 @@
     "agent": {
       "draftedCount_one": "{{count}} Feld entworfen. Prüfe es vor dem Speichern.",
       "draftedCount_other": "{{count}} Felder entworfen. Prüfe sie vor dem Speichern.",
-      "pendingPrompt": "{{name}} · neu, wird beim Speichern erstellt",
-      "promptText": "Prompt-Text",
-      "editPrompt": "Prompt bearbeiten",
-      "promptCreateFailed": "Der entworfene Prompt konnte nicht erstellt werden, daher wurde nichts gespeichert. Versuche es erneut.",
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
         "not_found": "ein Element, das nicht existiert",
@@ -4626,7 +4608,8 @@
           "checks_other": "{{count}} Prüfungen im Modus {{mode}}",
           "topics_one": "{{count}} Thema für Einblicke",
           "topics_other": "{{count}} Themen für Einblicke"
-        }
+        },
+        "continueStep": "Fortsetzen: {{step}}"
       },
       "improve": {
         "intro": "Was soll sich an {{name}} ändern?",
@@ -4639,7 +4622,22 @@
       },
       "fields": {
         "limits": "Nutzungslimit"
-      }
+      },
+      "prompt": {
+        "wrote_one": "Neuen Prompt geschrieben · {{count}} Wort",
+        "wrote_other": "Neuen Prompt geschrieben · {{count}} Wörter",
+        "viewHint": "Prüfe ihn in der Prompt-Ansicht: Ändere ihn dort oder sag es mir hier, dann klick auf Diesen Prompt verwenden. Erst dann wird er bei deinen Prompts gespeichert.",
+        "newPrompt": "Neuer Prompt",
+        "use": "Diesen Prompt verwenden",
+        "saved_one": "Prompt gespeichert und gesetzt. Ich habe daraus {{count}} Einstiegsfrage geschrieben: Prüfe sie unter Einstiegsfragen.",
+        "saved_other": "Prompt gespeichert und gesetzt. Ich habe daraus {{count}} Einstiegsfragen geschrieben: Prüfe sie unter Einstiegsfragen.",
+        "savedOnly": "Prompt gespeichert und gesetzt.",
+        "parked": "Der Prompt, den ich geschrieben habe, ist noch offen und nicht gespeichert.",
+        "open": "Prompt öffnen",
+        "keep": "Stattdessen {{name}} behalten",
+        "changePlaceholder": "Oder sag mir, was ich am Prompt ändern soll…"
+      },
+      "formEdited": "Du hast {{fields}} im Formular geändert."
     },
     "topics": {
       "suggest": "Aus Gesprächen vorschlagen",

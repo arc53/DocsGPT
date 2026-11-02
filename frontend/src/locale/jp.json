@@ -2456,10 +2456,6 @@
     },
     "prompts": {
       "addPrompt": "プロンプトを追加",
-      "addDescription": "カスタムプロンプトを追加して DocsGPT に保存します",
-      "editPrompt": "プロンプトを編集",
-      "editDescription": "カスタムプロンプトを編集して DocsGPT に保存します",
-      "viewPrompt": "プロンプトを表示",
       "viewDescription": "組み込みプロンプトは編集できません。複製して編集可能なコピーを作成してください。",
       "duplicate": "複製",
       "duplicatePrompt": "プロンプトを複製",
@@ -2467,7 +2463,6 @@
       "promptName": "プロンプト名",
       "promptText": "プロンプトのテキスト",
       "save": "保存",
-      "cancel": "キャンセル",
       "nameExists": "この名前はすでに存在します",
       "deleteConfirmation": "「{{name}}」を削除しますか？",
       "variablesLabel": "変数",
@@ -2486,9 +2481,7 @@
         "systemRequestId": "一意のリクエスト ID",
         "systemUserId": "現在のユーザー ID",
         "artifactsLookup": "IDによるアーティファクトメタデータ"
-      },
-      "learnAboutPrompts": "プロンプトについて学ぶ",
-      "pendingDescription": "エージェントを保存すると作成されます。"
+      }
     },
     "chunk": {
       "add": "チャンクを追加",
@@ -4439,13 +4432,8 @@
       "write": "作成",
       "improvePrompt": "プロンプトを改善",
       "improveCopy": "コピーを改善",
-      "askLabel": "DocsGPT に何を変更・作成させますか？",
       "improvePlaceholder": "変更内容を入力（例: 価格を答えないようにする）…",
       "writePlaceholder": "プロンプトの内容を説明（例: 人事ハンドブックの親切なアシスタント）…",
-      "errors": {
-        "invalid_output": "モデルの回答を使用できませんでした。プロンプトは変更されていません。",
-        "model_error": "下書き中に問題が発生しました。プロンプトは変更されていません。"
-      },
       "warningsTitle": "保存前に確認してください",
       "checks": {
         "to_template": "テンプレート変数が追加されるため、DocsGPT はプロンプトを書かれたとおりに使用し、独自のセクション（日付、回答ルール、引用、書式、境界）を追加しなくなります。",
@@ -4468,7 +4456,6 @@
       "acceptAll": "すべて採用",
       "reviewOneByOne": "1 件ずつ確認",
       "discard": "破棄",
-      "usedBy_other": "{{formatted}} 件のエージェントが使用しています。保存するとすべてに反映されます。",
       "introImprove": "このプロンプトを見直したり、特定の箇所を変更したりできます。保存するまで何も保存されません。",
       "introImproveUsedBy_one": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はそちらにも反映されます。",
       "introImproveUsedBy_other": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はすべてに反映されます。",
@@ -4544,10 +4531,6 @@
     },
     "agent": {
       "draftedCount_other": "{{count}} 個のフィールドを下書きしました。保存する前に確認してください。",
-      "pendingPrompt": "{{name}} · 新規、保存時に作成",
-      "promptText": "プロンプトの本文",
-      "editPrompt": "プロンプトを編集",
-      "promptCreateFailed": "下書きしたプロンプトを作成できなかったため、何も保存されていません。もう一度お試しください。",
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
         "not_found": "存在しない項目",
@@ -4599,7 +4582,8 @@
           "checks_other": "{{count}} 件のチェック（{{mode}}）",
           "topics_one": "インサイトのトピック {{count}} 件",
           "topics_other": "インサイトのトピック {{count}} 件"
-        }
+        },
+        "continueStep": "続ける: {{step}}"
       },
       "improve": {
         "intro": "{{name}} の何を変更しますか？",
@@ -4612,7 +4596,22 @@
       },
       "fields": {
         "limits": "利用制限"
-      }
+      },
+      "prompt": {
+        "wrote_one": "新しいプロンプトを作成しました · {{count}} 語",
+        "wrote_other": "新しいプロンプトを作成しました · {{count}} 語",
+        "viewHint": "プロンプトビューで確認してください。そこで変更するか、ここで教えてください。その後「このプロンプトを使用」を押すと、プロンプトに保存されます。",
+        "newPrompt": "新しいプロンプト",
+        "use": "このプロンプトを使用",
+        "saved_one": "プロンプトを保存して設定しました。ここから最初の質問を {{count}} 件作成しました。「最初の質問」で確認してください。",
+        "saved_other": "プロンプトを保存して設定しました。ここから最初の質問を {{count}} 件作成しました。「最初の質問」で確認してください。",
+        "savedOnly": "プロンプトを保存して設定しました。",
+        "parked": "作成したプロンプトはまだ開いたままで、保存されていません。",
+        "open": "プロンプトを開く",
+        "keep": "代わりに {{name}} のままにする",
+        "changePlaceholder": "またはプロンプトの変更点を教えてください…"
+      },
+      "formEdited": "フォームで {{fields}} を変更しました。"
     },
     "topics": {
       "suggest": "会話から提案",

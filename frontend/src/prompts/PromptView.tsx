@@ -6,7 +6,7 @@ import { Skeleton } from '../components/ui/skeleton';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import { PromptEditor, type PromptEditorProps } from './PromptEditor';
 
-export type PromptViewProps = Omit<PromptEditorProps, 'surface'> & {
+export type PromptViewProps = PromptEditorProps & {
   /** The crumb back to where the prompt was opened from. */
   parent: { label: string; onClick: () => void };
   /** The crumb's last part: the prompt's name, or "Add prompt". */
@@ -71,7 +71,7 @@ export function PromptView({
           <Skeleton className="h-48 rounded-2xl md:h-64 lg:h-80" />
         </div>
       ) : (
-        <PromptEditor {...editor} surface="background" />
+        <PromptEditor {...editor} />
       )}
     </div>
   );

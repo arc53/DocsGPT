@@ -38,9 +38,9 @@ type PromptDetailOptions = {
  *
  * Returns:
  *   The open `target` (null for none) and a `key` that changes with every
- *   opening; `open`, `add`, `duplicate` and `close`; the fields and their
- *   setters; `status` of the text's load with `retry`; `readOnly`, `dirty`,
- *   `nameExists`, `canSave`, `saving`; and `save`.
+ *   opening; `open`, `add`, `duplicate`, `openWith` and `close`; the
+ *   fields and their setters; `status` of the text's load with `retry`;
+ *   `readOnly`, `dirty`, `nameExists`, `canSave`, `saving`; and `save`.
  */
 export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
   const { t } = useTranslation();
@@ -146,6 +146,25 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     setStatus('ready');
   };
 
+  /**
+   * Opens a prompt holding text the drafter wrote, with nothing to load: a
+   * new prompt, or `prompt` (one the host created earlier from a draft), so
+   * Save updates it instead of creating another.
+   */
+  const openWith = (
+    fields: { name: string; content: string },
+    prompt?: Prompt,
+  ) => {
+    show(
+      prompt
+        ? { kind: 'edit', prompt }
+        : { kind: 'new', copyOf: null, draft: false },
+      fields,
+    );
+    setUpdatedAt(null);
+    setStatus('ready');
+  };
+
   const close = () => {
     opening.current += 1;
     setTarget(null);
@@ -235,6 +254,7 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     open,
     add,
     duplicate,
+    openWith,
     close,
     name,
     setName,

@@ -78,6 +78,17 @@ export type DraftPanelProps = {
    * 3 fields…"); null announces nothing.
    */
   announceProposal?: (proposal: unknown) => string | null;
+  /**
+   * The way on after a turn was stopped or failed (a build's "Continue:
+   * Basics"): beside Retry in the latest error, and on its own row after
+   * Stop.
+   */
+  continueAction?: ReactNode;
+  /**
+   * After the conversation while no turn runs: what the host adds at the
+   * end of a turn of its own (the saved prompt's Filled rows and Next).
+   */
+  after?: ReactNode;
 };
 
 /**
@@ -87,8 +98,9 @@ export type DraftPanelProps = {
  * messages, its questions, each proposal through `renderProposal`), the
  * running step on the chat's status line, errors with Retry, and the chat
  * composer's frame with Send or Stop. A guided build adds its progress to the
- * header and its finished steps above the conversation. On a phone the
- * docked panel is a sheet.
+ * header, its finished steps above the conversation, its way on after a Stop
+ * or an error, and its own turn ends after it. On a phone the docked panel
+ * is a sheet.
  */
 export function DraftPanel({
   open,
@@ -103,6 +115,8 @@ export function DraftPanel({
   placeholder,
   renderProposal,
   announceProposal,
+  continueAction,
+  after,
 }: DraftPanelProps) {
   const { t } = useTranslation();
   const { isDesktop } = useMediaQuery();
@@ -110,6 +124,11 @@ export function DraftPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const wasOpen = useRef(false);
   const { items, step, streaming } = session;
+  // The latest turn was stopped here: the way on shows until the next one.
+  const [stopped, setStopped] = useState(false);
+  useEffect(() => {
+    if (streaming || items.length === 0) setStopped(false);
+  }, [streaming, items.length]);
 
   // Follow the conversation as it grows, and land on its end on reopening.
   useEffect(() => {
@@ -177,18 +196,23 @@ export function DraftPanel({
             <AlertTitle>{t(`drafter.errors.${item.code}.title`)}</AlertTitle>
             <AlertDescription>
               <p>{t(`drafter.errors.${item.code}.description`)}</p>
-              {RETRYABLE.includes(item.code) && index === items.length - 1 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  shape="pill"
-                  className="mt-2"
-                  onClick={session.retry}
-                >
-                  {t('drafter.retry')}
-                </Button>
-              )}
+              {index === items.length - 1 &&
+                (RETRYABLE.includes(item.code) || continueAction) && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {RETRYABLE.includes(item.code) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        shape="pill"
+                        onClick={session.retry}
+                      >
+                        {t('drafter.retry')}
+                      </Button>
+                    )}
+                    {continueAction}
+                  </div>
+                )}
             </AlertDescription>
           </Alert>
         );
@@ -236,6 +260,12 @@ export function DraftPanel({
             </div>
           )}
           {items.map(renderItem)}
+          {stopped && !streaming && continueAction && (
+            <div className="flex flex-wrap gap-2" data-slot="drafter-stopped">
+              {continueAction}
+            </div>
+          )}
+          {!streaming && after}
           {step && <StreamingStatusLine label={t(`drafter.steps.${step}`)} />}
           {/* The status line announces the step; this announces each
               applied draft, not the whole conversation as it grows. */}
@@ -255,7 +285,10 @@ export function DraftPanel({
             streaming={streaming}
             placeholder={placeholder ?? t('drafter.askPlaceholder')}
             onSend={(text) => session.send(text)}
-            onStop={session.stop}
+            onStop={() => {
+              setStopped(true);
+              session.stop();
+            }}
           />
           <p className="text-muted-foreground text-xs">
             {modelName

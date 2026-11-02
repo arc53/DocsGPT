@@ -16,8 +16,8 @@ export type ProposalReasonRow = {
 /**
  * What a draft did, as the panel shows it for the turn: the model's message
  * and notes as paragraphs, a "Filled N fields" step row that opens a line per
- * field, what the server left out, and the turn's actions (the step's Next)
- * last. Undo lives on each field's Drafted badge. Recipes map their proposal
+ * field, what the server left out, a muted footnote, and the turn's actions
+ * (the step's Next) last. Undo lives on each field's Drafted badge. Recipes map their proposal
  * into these props.
  *
  * Args:
@@ -25,6 +25,8 @@ export type ProposalReasonRow = {
  *   rows: A row per filled field.
  *   notes: Things the user should know ("No ticketing tool is connected…").
  *   dropped: Lines naming what was left out and why.
+ *   footnote: One muted line since the turn ("You changed Name in the
+ *     form.").
  *   actions: Buttons for the latest turn, such as the step's Next.
  */
 export function ProposalSummary({
@@ -32,12 +34,14 @@ export function ProposalSummary({
   rows,
   notes = [],
   dropped = [],
+  footnote,
   actions,
 }: {
   message?: string;
   rows: ProposalReasonRow[];
   notes?: string[];
   dropped?: string[];
+  footnote?: string;
   actions?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -72,6 +76,11 @@ export function ProposalSummary({
             </ul>
           </AlertDescription>
         </Alert>
+      )}
+      {footnote && (
+        <p className="text-muted-foreground text-xs wrap-break-word">
+          {footnote}
+        </p>
       )}
       {actions && <div className="flex flex-wrap gap-2 pt-1">{actions}</div>}
     </div>

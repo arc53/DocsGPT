@@ -1,6 +1,12 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 
 import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
 
@@ -39,12 +45,17 @@ const mocks = vi.hoisted(() => {
     getAgent: vi.fn(() => jsonResponse({})),
     getAgentDefaults: vi.fn(() => jsonResponse({ success: true })),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
-    createPrompt: vi.fn(() => jsonResponse({})),
+    createPrompt: vi.fn(
+      (_data: Record<string, unknown>, _token: string | null) =>
+        jsonResponse({}),
+    ),
     getSinglePrompt: vi.fn((id: string) =>
       jsonResponse({ content: `Text of ${id}`, updated_at: 'v1' }),
     ),
-    // Every PromptsModal render's props (the modal itself is stubbed).
-    promptsModalProps: [] as Record<string, unknown>[],
+    updatePrompt: vi.fn(
+      (_data: Record<string, unknown>, _token: string | null) =>
+        jsonResponse({}),
+    ),
     tools: null as unknown[] | null,
     models: [] as unknown[],
     defaultModelId: '',
@@ -138,6 +149,7 @@ vi.mock('../api/services/userService', () => ({
     updateAgent: mocks.updateAgent,
     deleteAgent: mocks.deleteAgent,
     createPrompt: mocks.createPrompt,
+    updatePrompt: mocks.updatePrompt,
     getSinglePrompt: mocks.getSinglePrompt,
     getPrompts: () => jsonResponse([]),
   },
@@ -290,12 +302,6 @@ vi.mock('../modals/ConfirmationModal', () => ({
       </>
     ) : null,
 }));
-vi.mock('../preferences/PromptsModal', () => ({
-  default: (props: Record<string, unknown>) => {
-    mocks.promptsModalProps.push(props);
-    return null;
-  },
-}));
 vi.mock('./components/SponsorConfirmModal', () => ({
   default: ({
     confirmation,
@@ -331,6 +337,17 @@ vi.mock('../components/SourcesPopoverFooter', () => ({ default: () => null }));
 vi.mock('../components/ToolIcon', () => ({ default: () => null }));
 
 import NewAgent from './NewAgent';
+
+// The router's navigate and the location's state, for browser Back.
+const probe = {
+  navigate: null as null | ((delta: number) => void),
+  state: null as unknown,
+};
+function RouterProbe() {
+  probe.navigate = useNavigate();
+  probe.state = useLocation().state;
+  return null;
+}
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -2411,6 +2428,7 @@ describe('NewAgent drafter', () => {
       root.render(
         <MemoryRouter>
           <NewAgent mode="new" />
+          <RouterProbe />
         </MemoryRouter>,
       );
     });
@@ -2857,83 +2875,221 @@ describe('NewAgent drafter', () => {
     expect(drafted()).toEqual([]);
   });
 
-  it('holds a drafted prompt until save, then creates it once', async () => {
-    drafter.scripts = [
-      [
-        proposal({
-          name: 'Shipping help',
-          description: 'Answers shipping questions.',
-          prompt: {
-            kind: 'new',
-            name: 'Shipping support',
-            content: PROMPT_TEXT,
-          },
-        }),
-        { type: 'end' },
-      ],
+  // Decision 64: a prompt it writes opens in the prompt view beside the
+  // drawer; Use this prompt saves it and sets it on the agent.
+  describe('the prompt step', () => {
+    const WRITTEN = {
+      kind: 'new',
+      name: 'Shipping support',
+      content: PROMPT_TEXT,
+    };
+    const writes = (content = PROMPT_TEXT) => [
+      proposal(
+        {
+          prompt: { ...WRITTEN, content },
+          starters: ['Where is my parcel?'],
+        },
+        { steps: ['basics', 'knowledge', 'prompt'], next_step: 'safety' },
+      ),
+      { type: 'end' },
     ];
-    mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'np1' }));
-    await render();
-    await ask('Shipping agent');
-    expect(
-      container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
-    ).toContain('drafter.agent.pendingPrompt');
-    expect(container.textContent).toContain(PROMPT_TEXT);
-    // A pending prompt is unsaved work.
-    expect(buttonByText('agents.form.buttons.cancel')).toBeDefined();
+    beforeEach(() => {
+      mockState.preference.prompts = [
+        { id: 'default', name: 'default', type: 'public' },
+      ] as never[];
+    });
+    afterEach(() => {
+      mockState.preference.prompts = [];
+      mocks.updatePrompt.mockClear();
+    });
 
-    const saveDraft = () =>
-      act(async () => buttonByText('agents.form.buttons.saveDraft')!.click());
-    // The first agent save fails: the prompt exists by then, so the retry
-    // reuses it.
-    await saveDraft();
-    expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
-    expect(mocks.createPrompt.mock.calls[0]).toEqual([
-      { name: 'Shipping support', content: PROMPT_TEXT },
-      null,
-    ]);
-    mocks.createAgent.mockImplementationOnce(() =>
-      jsonResponse({ id: 'agent-9' }),
-    );
-    await saveDraft();
-    expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
-    const sent = mocks.createAgent.mock.calls.map((call) =>
-      (call as unknown as [FormData])[0].get('prompt_id'),
-    );
-    expect(sent).toEqual(['np1', 'np1']);
-    // Saved: the marks go and the form is clean.
-    expect(drafted()).toEqual([]);
-    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
-    expect(container.textContent).not.toContain(PROMPT_TEXT);
+    const view = () =>
+      container.querySelector<HTMLElement>('[data-slot="prompt-view"]');
+    const viewName = () =>
+      view()!.querySelector<HTMLInputElement>('input[type="text"]')!;
+    const viewText = () => view()!.querySelector('textarea')!;
+    const crumb = () => view()!.querySelector<HTMLButtonElement>('nav button')!;
+    const viewDrafted = () =>
+      Array.from(view()!.querySelectorAll('[data-drafted]')).map(
+        (el) => el.querySelector('label')?.textContent,
+      );
+    const use = () => buttonByText('drafter.agent.prompt.use', view()!)!;
+
+    it('opens the prompt it wrote in the view, and Use this prompt saves and sets it', async () => {
+      mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'np1' }));
+      drafter.scripts = [writes()];
+      await render();
+      await ask('A shipping agent for our website');
+      // The view takes the main column; the form stays, hidden.
+      expect(view()).not.toBeNull();
+      expect(nameInput().closest('.hidden')).not.toBeNull();
+      expect(view()!.textContent).toContain('agents.newAgent');
+      expect(view()!.textContent).toContain('drafter.agent.prompt.newPrompt');
+      expect(viewName().value).toBe('Shipping support');
+      expect(viewText().value).toBe(PROMPT_TEXT);
+      expect(viewDrafted()).toEqual([
+        'modals.prompts.promptName',
+        'modals.prompts.promptText',
+      ]);
+      // Nothing is created yet, and Next waits for the prompt.
+      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.wrote');
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.viewHint');
+      expect(next()).toBeUndefined();
+      expect(
+        panel()!
+          .querySelector('textarea[aria-label="drafter.askLabel"]')
+          ?.getAttribute('placeholder'),
+      ).toBe('drafter.agent.prompt.changePlaceholder');
+
+      // The view's unsaved text goes with the next message, edits included.
+      await act(async () => setNativeValue(viewText(), 'My own text.'));
+      drafter.scripts = [writes('Friendlier text.')];
+      await ask('Make it friendlier');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        name: 'Shipping support',
+        content: 'My own text.',
+      });
+      // A further prompt replaces the view's text, marked again.
+      expect(viewText().value).toBe('Friendlier text.');
+      expect(viewDrafted()).toContain('modals.prompts.promptText');
+
+      await act(async () => use().click());
+      expect(mocks.createPrompt.mock.calls).toEqual([
+        [{ name: 'Shipping support', content: 'Friendlier text.' }, null],
+      ]);
+      // The list the pickers read now has it (the store is stubbed here).
+      mockState.preference.prompts = [
+        { id: 'default', name: 'default', type: 'public' },
+        { id: 'np1', name: 'Shipping support', type: 'private' },
+      ] as never[];
+      // Back on the form with the prompt set and marked.
+      expect(view()).toBeNull();
+      expect(nameInput().closest('.hidden')).toBeNull();
+      expect(drafted()).toContain('agents.form.sections.prompt');
+      // The drawer says so and ends the turn with what it set and Next.
+      const message = Array.from(
+        panel()!.querySelectorAll('[data-item="message"]'),
+      ).at(-1)!;
+      expect(message.textContent).toBe('drafter.agent.prompt.saved');
+      expect(
+        message.compareDocumentPosition(next()!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+
+      // A change asked for afterwards updates the same prompt.
+      drafter.scripts = [writes('Shorter text.')];
+      await ask('Shorter');
+      expect(view()!.textContent).toContain('Shipping support');
+      expect(viewText().value).toBe('Shorter text.');
+      await act(async () => use().click());
+      expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
+      expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
+        id: 'np1',
+        name: 'Shipping support',
+        content: 'Shorter text.',
+      });
+      expect(
+        container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
+      ).toContain('Shipping support');
+      await act(async () => next()!.click());
+      expect(lastRequest().context.step).toBe('safety');
+      expect(lastRequest().context.form).toMatchObject({
+        prompt_id: 'np1',
+        prompt_draft: null,
+      });
+    });
+
+    it('keeps the prompt in the step on Back, then opens it again or keeps the old one', async () => {
+      drafter.scripts = [writes()];
+      await render();
+      await ask('A shipping agent');
+      await act(async () => crumb().click());
+      expect(view()).toBeNull();
+      const parked = () =>
+        Array.from(
+          panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
+        ).find((el) => el.textContent?.includes('drafter.agent.prompt.parked'));
+      expect(parked()).toBeDefined();
+      expect(next()).toBeUndefined();
+      // An approval now isn't the step's Next: the prompt still waits.
+      drafter.scripts = [
+        [
+          proposal({}, { steps: ['prompt'], next_step: 'safety' }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('ok, next');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        name: 'Shipping support',
+        content: PROMPT_TEXT,
+      });
+      expect(drafter.requests).toHaveLength(2);
+      expect(parked()).toBeDefined();
+
+      await act(async () =>
+        buttonByText('drafter.agent.prompt.open', parked()!)!.click(),
+      );
+      expect(viewText().value).toBe(PROMPT_TEXT);
+      expect(viewDrafted()).toContain('modals.prompts.promptText');
+      await act(async () => crumb().click());
+      await act(async () =>
+        buttonByText('drafter.agent.prompt.keep', parked()!)!.click(),
+      );
+      expect(parked()).toBeUndefined();
+      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      await act(async () => next()!.click());
+      expect(lastRequest().context.form).toMatchObject({
+        prompt_id: 'default',
+        prompt_draft: null,
+      });
+    });
+
+    it('returns to the form on browser Back', async () => {
+      drafter.scripts = [writes()];
+      await render();
+      await ask('A shipping agent');
+      expect(probe.state).toMatchObject({ promptView: true });
+      await act(async () => probe.navigate!(-1));
+      expect(view()).toBeNull();
+      expect(nameInput().closest('.hidden')).toBeNull();
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.parked');
+    });
   });
 
-  it('sends the picked prompt and starters with every message, not the pending one', async () => {
+  it('offers Continue on the step after an error', async () => {
+    drafter.scripts = [
+      [{ type: 'error', code: 'model_error' }, { type: 'end' }],
+    ];
+    await render();
+    await ask('A shipping agent');
+    const alert = panel()!.querySelector('[data-item="error"]')!;
+    await act(async () =>
+      buttonByText('drafter.agent.build.continueStep', alert)!.click(),
+    );
+    expect(lastRequest().messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'drafter.agent.build.continue',
+    });
+    expect(lastRequest().context.step).toBe('basics');
+  });
+
+  it('notes a field edited in the form since the turn', async () => {
     drafter.scripts = [
       [
-        proposal({
-          starters: ['Where is my parcel?'],
-          prompt: {
-            kind: 'new',
-            name: 'Shipping support',
-            content: PROMPT_TEXT,
-          },
-        }),
+        proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
         { type: 'end' },
       ],
     ];
     await render();
     await ask('Shipping agent');
-    await ask('Make it friendlier');
-    expect(drafter.requests[1].messages.map((m) => m.role)).toEqual([
-      'user',
-      'assistant',
-      'user',
-    ]);
-    expect(drafter.requests[1].context.form).toMatchObject({
-      starters: ['Where is my parcel?'],
-      prompt_id: 'default',
-      prompt_draft: null,
-    });
+    expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
+    await act(async () => setNativeValue(nameInput(), 'My own name'));
+    expect(panel()!.textContent).toContain('drafter.agent.formEdited');
+    // Undo is no edit by hand.
+    await act(async () => setNativeValue(nameInput(), 'Shipping help'));
+    await act(async () => setNativeValue(nameInput(), ''));
+    expect(panel()!.textContent).not.toContain('drafter.agent.formEdited');
   });
 
   it('steps the sheet aside on a phone and keeps the step in a strip', async () => {
@@ -2966,24 +3122,8 @@ describe('NewAgent drafter', () => {
     expect(lastRequest().context.step).toBe('knowledge');
   });
 
-  // Improving the prompt.
+  // The picker's Edit, View, Add and Improve open the same prompt view.
   {
-    type ModalProps = Record<string, unknown> & {
-      type: 'ADD' | 'EDIT';
-      newPromptName: string;
-      newPromptContent: string;
-      setNewPromptContent: (content: string) => void;
-      currentPromptEdit: { id: string };
-      drafterAgent: unknown;
-      autoFocusAsk?: boolean;
-      handleAddPrompt: () => Promise<unknown>;
-    };
-    /** The open PromptsModal's latest props. */
-    const openModal = () =>
-      mocks.promptsModalProps
-        .filter((props) => props.modalState === 'ACTIVE')
-        .at(-1) as ModalProps | undefined;
-
     const PROMPTS = [
       { id: 'default', name: 'default', type: 'public' },
       { id: 'p1', name: 'Tone', type: 'private', access: 'owner' },
@@ -2994,9 +3134,14 @@ describe('NewAgent drafter', () => {
     });
     afterEach(() => {
       mockState.preference.prompts = [];
-      mocks.promptsModalProps = [];
       mocks.getSinglePrompt.mockClear();
+      mocks.updatePrompt.mockClear();
     });
+
+    const view = () =>
+      container.querySelector<HTMLElement>('[data-slot="prompt-view"]');
+    const viewText = () => view()!.querySelector('textarea')!;
+    const save = () => buttonByText('modals.prompts.save', view()!);
 
     const renderWithPrompt = async (promptId: string) => {
       mocks.getAgent.mockImplementation(() =>
@@ -3024,33 +3169,92 @@ describe('NewAgent drafter', () => {
       });
     };
 
-    it('opens a saved prompt to improve with the agent as context', async () => {
+    it('edits an own prompt in the view and saves it', async () => {
       await renderWithPrompt('p1');
       expect(buttonByText('drafter.prompt.improveCopy')).toBeUndefined();
+      await act(async () => buttonByText('settings.prompts.edit')!.click());
+      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('p1', null);
+      expect(view()!.textContent).toContain('Deal Desk');
+      expect(view()!.textContent).toContain('Tone');
+      expect(viewText().value).toBe('Text of p1');
+      await act(async () => setNativeValue(viewText(), 'Shorter.'));
+      await act(async () => save()!.click());
+      expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
+        id: 'p1',
+        name: 'Tone',
+        content: 'Shorter.',
+        expected_updated_at: 'v1',
+      });
+      expect(view()).toBeNull();
+    });
+
+    it('asks before leaving the view with unsaved text', async () => {
+      await renderWithPrompt('p1');
+      await act(async () => buttonByText('settings.prompts.edit')!.click());
+      await act(async () => setNativeValue(viewText(), 'Shorter.'));
+      await act(async () =>
+        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
+      );
+      expect(view()).not.toBeNull();
+      // Save and leave.
+      await act(async () =>
+        document
+          .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
+          .click(),
+      );
+      await act(async () => {
+        await mocks.submitResult;
+      });
+      expect(mocks.updatePrompt).toHaveBeenCalledTimes(1);
+      expect(view()).toBeNull();
+    });
+
+    it('improves an own prompt with the drawer, filling the view instead of creating one', async () => {
+      await renderWithPrompt('p1');
       await act(async () =>
         buttonByText('drafter.prompt.improvePrompt')!.click(),
       );
-      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('p1', null);
-      const modal = openModal()!;
-      expect(modal.type).toBe('EDIT');
-      expect(modal.currentPromptEdit.id).toBe('p1');
-      expect(modal.autoFocusAsk).toBe(true);
-      expect(modal.drafterAgent).toEqual({
-        sources: [],
-        tools: [],
-        agent_type: 'research',
+      expect(view()).not.toBeNull();
+      expect(panel()).not.toBeNull();
+      expect(
+        buttonByText('drafter.improve', view()!)!.getAttribute('aria-expanded'),
+      ).toBe('true');
+      drafter.scripts = [
+        [
+          proposal({
+            prompt: { kind: 'new', name: 'Other', content: 'Tighter.' },
+          }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('Tighten it');
+      expect(lastRequest().context.form.prompt_draft).toBeNull();
+      // A saved prompt keeps its name; the text is drafted.
+      expect(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!.value,
+      ).toBe('Tone');
+      expect(viewText().value).toBe('Tighter.');
+      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      await ask('More');
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        name: 'Tone',
+        content: 'Tighter.',
       });
     });
 
-    it("improves a copy of a prompt the caller can't edit", async () => {
+    it("shows a prompt the caller can't edit read-only, and improves a copy", async () => {
       await renderWithPrompt('p2');
-      await act(async () =>
-        buttonByText('drafter.prompt.improveCopy')!.click(),
-      );
-      const modal = openModal()!;
-      expect(modal.type).toBe('ADD');
-      expect(modal.newPromptName).toBe('Team tone copy');
-      expect(modal.newPromptContent).toBe('Text of p2');
+      await act(async () => buttonByText('settings.prompts.view')!.click());
+      expect(viewText().readOnly).toBe(true);
+      expect(save()).toBeUndefined();
+      // Improve on the crumb row makes the copy.
+      await act(async () => buttonByText('drafter.improve', view()!)!.click());
+      expect(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!.value,
+      ).toBe('Team tone copy');
+      expect(viewText().value).toBe('Text of p2');
+      expect(save()).toBeDefined();
+      expect(panel()).not.toBeNull();
     });
 
     it('improves a copy of a built-in, and saving picks the copy', async () => {
@@ -3066,67 +3270,65 @@ describe('NewAgent drafter', () => {
         buttonByText('drafter.prompt.improveCopy')!.click(),
       );
       expect(mocks.getSinglePrompt).toHaveBeenCalledWith('default', null);
-      const modal = openModal()!;
-      expect(modal.type).toBe('ADD');
-      expect(modal.pendingEdit).toBeFalsy();
-      expect(modal.autoFocusAsk).toBe(true);
-      expect(modal.drafterAgent).toEqual({
-        sources: [],
-        tools: [],
-        agent_type: 'classic',
+      expect(view()!.textContent).toContain('modals.prompts.duplicatePrompt');
+      expect(panel()).not.toBeNull();
+      // "default copy" is listed already: the name has to change first.
+      const name =
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!;
+      await act(async () => setNativeValue(name, 'Mine'));
+      await act(async () => save()!.click());
+      expect(mocks.createPrompt.mock.calls[0][0]).toEqual({
+        name: 'Mine',
+        content: 'Text of default',
       });
-      await act(async () => {
-        await modal.handleAddPrompt();
-      });
-      expect(mocks.createPrompt).toHaveBeenCalledTimes(1);
+      expect(view()).toBeNull();
       expect(
         container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
       ).toContain('default copy');
-      expect(buttonByText('drafter.prompt.improvePrompt')).toBeDefined();
+      expect(buttonByText('settings.prompts.edit')).toBeDefined();
     });
 
-    it('edits a pending prompt in place instead of creating one', async () => {
-      drafter.scripts = [
-        [
-          proposal({
-            prompt: {
-              kind: 'new',
-              name: 'Shipping support',
-              content: PROMPT_TEXT,
-            },
-          }),
-          { type: 'end' },
-        ],
-      ];
+    it("adds a prompt from the picker's footer in the view", async () => {
+      mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'p1' }));
       await render();
-      await ask('Shipping agent');
-      expect(buttonByText('drafter.prompt.improvePrompt')).toBeUndefined();
-      await act(async () => buttonByText('drafter.agent.editPrompt')!.click());
-      const modal = openModal()!;
-      expect(modal.type).toBe('ADD');
-      // Titled Edit: the agent's save creates it.
-      expect(modal.pendingEdit).toBe(true);
-      expect(modal.newPromptContent).toBe(PROMPT_TEXT);
-      expect(modal.drafterAgent).toEqual({
-        sources: [],
-        tools: [],
-        agent_type: 'classic',
-      });
-      await act(async () => modal.setNewPromptContent('Friendlier text.'));
+      const trigger = container.querySelector<HTMLButtonElement>(
+        '[data-slot="combobox-trigger"]',
+      )!;
       await act(async () => {
-        await openModal()!.handleAddPrompt();
+        trigger.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+        );
+        trigger.click();
       });
-      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      await act(async () =>
+        Array.from(document.body.querySelectorAll('button'))
+          .find((b) => b.textContent === 'settings.prompts.addPrompt')!
+          .click(),
+      );
+      expect(view()!.textContent).toContain('modals.prompts.addPrompt');
+      expect(save()!.disabled).toBe(true);
+      await act(async () =>
+        setNativeValue(
+          view()!.querySelector<HTMLInputElement>('input[type="text"]')!,
+          'Brand voice',
+        ),
+      );
+      await act(async () => setNativeValue(viewText(), 'Be brief.'));
+      await act(async () => save()!.click());
+      expect(mocks.createPrompt.mock.calls[0][0]).toEqual({
+        name: 'Brand voice',
+        content: 'Be brief.',
+      });
       expect(
         container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
-      ).toContain('drafter.agent.pendingPrompt');
-      expect(container.textContent).toContain('Friendlier text.');
+      ).toContain('Tone');
     });
 
     it('offers no Improve while the drafter is off', async () => {
       drafter.config = { enabled: false, model: null, reason: null };
       await render();
       expect(buttonByText('drafter.prompt.improveCopy')).toBeUndefined();
+      expect(buttonByText('settings.prompts.view')).toBeDefined();
     });
   }
 });

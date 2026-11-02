@@ -72,7 +72,13 @@ function Host({
 }: { open?: boolean } & Partial<
   Pick<
     DraftPanelProps,
-    'announceProposal' | 'progress' | 'before' | 'placeholder' | 'suggestions'
+    | 'announceProposal'
+    | 'progress'
+    | 'before'
+    | 'placeholder'
+    | 'suggestions'
+    | 'continueAction'
+    | 'after'
   >
 >) {
   const session = useDrafterSession({
@@ -357,6 +363,51 @@ describe('DraftPanel', () => {
       { role: 'user', content: 'Draft it' },
     ]);
     expect(askBar().value).toBe('');
+  });
+
+  // Decision 63: after Stop or an error the step can go on (Continue).
+  it('offers the way on beside Retry in the latest error, and after a Stop', async () => {
+    await act(async () =>
+      root.render(
+        <Host continueAction={<button type="button">Continue</button>} />,
+      ),
+    );
+    expect(button('Continue')).toBeUndefined();
+    stream.scripts = [
+      [{ type: 'error', code: 'model_error' }, { type: 'end' }],
+    ];
+    await ask('Draft it');
+    const alert = container.querySelector('[data-item="error"]')!;
+    const row = button('drafter.retry')!.parentElement!;
+    expect(row.contains(button('Continue')!)).toBe(true);
+    expect(alert.contains(row)).toBe(true);
+
+    stream.hold = true;
+    await ask('Again');
+    expect(button('Continue')).toBeUndefined();
+    await act(async () => button('drafter.stop')!.click());
+    const stopped = container.querySelector('[data-slot="drafter-stopped"]')!;
+    expect(stopped.contains(button('Continue')!)).toBe(true);
+    // A new turn takes it away.
+    await ask('Once more');
+    expect(button('Continue')).toBeUndefined();
+  });
+
+  it("shows the host's own turn end after the conversation, not while a turn runs", async () => {
+    await act(async () =>
+      root.render(<Host after={<p data-testid="after">Saved.</p>} />),
+    );
+    stream.scripts = [proposalTurn({ message: 'Done.' })];
+    await ask('Draft it');
+    const after = container.querySelector('[data-testid="after"]')!;
+    const proposal = container.querySelector('[data-item="proposal"]')!;
+    expect(
+      proposal.compareDocumentPosition(after) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    stream.hold = true;
+    await ask('More');
+    expect(container.querySelector('[data-testid="after"]')).toBeNull();
   });
 
   it('asks for a change by default and takes the caller placeholder', async () => {

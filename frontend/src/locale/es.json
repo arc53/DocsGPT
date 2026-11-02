@@ -2550,10 +2550,6 @@
     },
     "prompts": {
       "addPrompt": "Agregar prompt",
-      "addDescription": "Agrega tu prompt personalizado y guárdalo en DocsGPT",
-      "editPrompt": "Editar prompt",
-      "editDescription": "Edita tu prompt personalizado y guárdalo en DocsGPT",
-      "viewPrompt": "Ver prompt",
       "viewDescription": "Los prompts integrados no se pueden editar. Duplícalo para crear tu propia copia editable.",
       "duplicate": "Duplicar",
       "duplicatePrompt": "Duplicar prompt",
@@ -2561,7 +2557,6 @@
       "promptName": "Nombre del prompt",
       "promptText": "Texto del prompt",
       "save": "Guardar",
-      "cancel": "Cancelar",
       "nameExists": "El nombre ya existe",
       "deleteConfirmation": "¿Eliminar \"{{name}}\"?",
       "variablesLabel": "Variables",
@@ -2580,9 +2575,7 @@
         "systemRequestId": "Identificador único de solicitud",
         "systemUserId": "ID del usuario actual",
         "artifactsLookup": "Metadatos de artefactos por id"
-      },
-      "learnAboutPrompts": "Aprende sobre los prompts",
-      "pendingDescription": "Se crea al guardar el agente."
+      }
     },
     "chunk": {
       "add": "Agregar fragmento",
@@ -4587,13 +4580,8 @@
       "write": "Escribir",
       "improvePrompt": "Mejorar prompt",
       "improveCopy": "Mejorar una copia",
-      "askLabel": "¿Qué debe cambiar o escribir DocsGPT?",
       "improvePlaceholder": "Di qué cambiar, p. ej. que no dé precios…",
       "writePlaceholder": "Describe el prompt, p. ej. un asistente amable para nuestro manual de RR. HH.…",
-      "errors": {
-        "invalid_output": "No se pudo usar la respuesta del modelo. El prompt no ha cambiado.",
-        "model_error": "Algo salió mal al redactar. El prompt no ha cambiado."
-      },
       "warningsTitle": "Revisa antes de guardar",
       "checks": {
         "to_template": "Esto añade variables de plantilla, así que DocsGPT usará el prompt tal cual y dejará de añadir sus propias secciones: la fecha, las reglas de respuesta, las citas, el formato y los límites.",
@@ -4616,9 +4604,6 @@
       "acceptAll": "Aceptar todo",
       "reviewOneByOne": "Revisar uno a uno",
       "discard": "Descartar",
-      "usedBy_one": "Lo usa {{formatted}} agente. Al guardar, también cambia allí.",
-      "usedBy_many": "Lo usan {{formatted}} agentes. Al guardar, cambia en todos ellos.",
-      "usedBy_other": "Lo usan {{formatted}} agentes. Al guardar, cambia en todos ellos.",
       "introImprove": "Puedo revisar este prompt o cambiar algo concreto. No se guardará nada hasta que guardes.",
       "introImproveUsedBy_one": "Puedo revisar este prompt o cambiar algo concreto. Lo usa {{formatted}} agente, así que un cambio guardado también le llega.",
       "introImproveUsedBy_many": "Puedo revisar este prompt o cambiar algo concreto. Lo usan {{formatted}} agentes, así que un cambio guardado les llega a todos.",
@@ -4707,10 +4692,6 @@
       "draftedCount_one": "Se redactó {{count}} campo. Revísalo antes de guardar.",
       "draftedCount_many": "Se redactaron {{count}} campos. Revísalos antes de guardar.",
       "draftedCount_other": "Se redactaron {{count}} campos. Revísalos antes de guardar.",
-      "pendingPrompt": "{{name}} · nuevo, se crea al guardar",
-      "promptText": "Texto del prompt",
-      "editPrompt": "Editar prompt",
-      "promptCreateFailed": "No se pudo crear el prompt redactado, así que no se guardó nada. Vuelve a intentarlo.",
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
         "not_found": "un elemento que no existe",
@@ -4768,7 +4749,8 @@
           "topics_one": "{{count}} tema de Información",
           "topics_other": "{{count}} temas de Información",
           "topics_many": "{{count}} temas de Información"
-        }
+        },
+        "continueStep": "Continuar: {{step}}"
       },
       "improve": {
         "intro": "¿Qué debería cambiar en {{name}}?",
@@ -4781,7 +4763,24 @@
       },
       "fields": {
         "limits": "Límite de uso"
-      }
+      },
+      "prompt": {
+        "wrote_one": "Escribí un prompt nuevo · {{count}} palabra",
+        "wrote_other": "Escribí un prompt nuevo · {{count}} palabras",
+        "wrote_many": "Escribí un prompt nuevo · {{count}} palabras",
+        "viewHint": "Revísalo en la vista del prompt: cámbialo ahí o dímelo aquí, y luego pulsa Usar este prompt. Se guarda en tus prompts cuando lo hagas.",
+        "newPrompt": "Nuevo prompt",
+        "use": "Usar este prompt",
+        "saved_one": "Prompt guardado y asignado. Escribí {{count}} pregunta de inicio a partir de él: revísala en Preguntas de inicio.",
+        "saved_other": "Prompt guardado y asignado. Escribí {{count}} preguntas de inicio a partir de él: revísalas en Preguntas de inicio.",
+        "saved_many": "Prompt guardado y asignado. Escribí {{count}} preguntas de inicio a partir de él: revísalas en Preguntas de inicio.",
+        "savedOnly": "Prompt guardado y asignado.",
+        "parked": "El prompt que escribí sigue abierto, sin guardar.",
+        "open": "Abrir prompt",
+        "keep": "Mantener {{name}} en su lugar",
+        "changePlaceholder": "O dime qué cambiar en el prompt…"
+      },
+      "formEdited": "Cambiaste {{fields}} en el formulario."
     },
     "topics": {
       "suggest": "Sugerir a partir de conversaciones",

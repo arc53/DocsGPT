@@ -20,7 +20,7 @@ const form = (over: Partial<AgentDraftForm> = {}): AgentDraftForm => ({
   sources: [],
   tools: [],
   starters: [],
-  prompt: { prompt_id: 'default', pending: null },
+  prompt: 'default',
   limits: { limited_request_mode: false, limited_token_mode: false },
   guardrails: undefined,
   analytics: DEFAULT_ANALYTICS,
@@ -142,8 +142,8 @@ describe('agentDraft', () => {
     expect(changes[5].next).toEqual(['Where is my parcel?']);
     expect(changes[6]).toEqual({
       field: 'prompt',
-      next: { prompt_id: 'creative', pending: null },
-      previous: { prompt_id: 'default', pending: null },
+      next: 'creative',
+      previous: 'default',
     });
   });
 
@@ -165,16 +165,16 @@ describe('agentDraft', () => {
     ).toEqual([]);
   });
 
-  it('keeps the picked prompt under a new pending one', () => {
-    const [change] = planAgentPatch(
-      { prompt: { kind: 'new', name: 'Support', content: 'You help.' } },
-      form({ prompt: { prompt_id: 'p9', pending: null } }),
-      [],
-    );
-    expect(change.next).toEqual({
-      prompt_id: 'p9',
-      pending: { name: 'Support', content: 'You help.' },
-    });
+  // A new prompt opens in the prompt view; the form's prompt changes only
+  // once it is saved there (Use this prompt).
+  it('leaves the picked prompt alone for a new prompt', () => {
+    expect(
+      planAgentPatch(
+        { prompt: { kind: 'new', name: 'Support', content: 'You help.' } },
+        form({ prompt: 'p9' }),
+        [],
+      ),
+    ).toEqual([]);
   });
 
   it('sets one limit at a time, and none turns both off', () => {
@@ -315,16 +315,7 @@ describe('agentDraft', () => {
     expect(isAgentFormEmpty(form())).toBe(true);
     expect(isAgentFormEmpty(form({ starters: ['  '] }))).toBe(true);
     expect(isAgentFormEmpty(form({ sources: ['s1'] }))).toBe(false);
-    expect(
-      isAgentFormEmpty(
-        form({
-          prompt: {
-            prompt_id: 'default',
-            pending: { name: 'a', content: 'b' },
-          },
-        }),
-      ),
-    ).toBe(false);
+    expect(isAgentFormEmpty(form({ prompt: 'p1' }))).toBe(false);
   });
 
   it('reads safety as never set with no limit and guardrails off', () => {
@@ -358,7 +349,7 @@ describe('agentDraft', () => {
           name: 'N',
           tools: [track],
           starters: ['Hi'],
-          prompt: { prompt_id: 'p1', pending: { name: 'P', content: 'C' } },
+          prompt: 'p1',
           limits: {
             limited_request_mode: false,
             limited_token_mode: true,
@@ -397,6 +388,7 @@ describe('agentDraft', () => {
           },
         }),
         { step: 'knowledge', earlier: ['A shipping agent'] },
+        { name: 'P', content: 'C' },
       ),
     ).toEqual({
       agent_id: null,
@@ -408,9 +400,9 @@ describe('agentDraft', () => {
         agent_type: 'classic',
         sources: [],
         tools: ['t1'],
-        // The pending prompt stays in the form; the picked one is sent.
+        // The prompt view's unsaved text goes beside the picked prompt.
         prompt_id: 'p1',
-        prompt_draft: null,
+        prompt_draft: { name: 'P', content: 'C' },
         starters: ['Hi'],
         limits: { mode: 'tokens', value: 50000 },
         guardrails: { enabled: true, mode: 'monitor_only', checks: ['pii'] },
@@ -418,8 +410,9 @@ describe('agentDraft', () => {
       },
     });
     expect(
-      agentDraftContext('a1', form(), { step: null, earlier: [] }).form,
+      agentDraftContext('a1', form(), { step: null, earlier: [] }, null).form,
     ).toMatchObject({
+      prompt_draft: null,
       limits: { mode: 'none', value: null },
       guardrails: { enabled: false, mode: 'monitor_only', checks: [] },
     });
@@ -453,6 +446,37 @@ describe('agentDraft', () => {
     ]);
     // Without a record of the changes, every reason shows.
     expect(agentProposalSummary(proposal, t).rows).toHaveLength(3);
+  });
+
+  // The prompt it wrote isn't on the form yet: one row says so, with its
+  // length, in place of the prompt's reason.
+  it('gives a new prompt one row with its word count', () => {
+    const proposal = parseAgentProposal({
+      fields: {
+        prompt: {
+          kind: 'new',
+          name: 'Support',
+          content: ' You help\n people. ',
+        },
+        starters: ['Hi'],
+      },
+      reasons: [
+        { field: 'prompt', summary: 'Written for customers' },
+        { field: 'starters', summary: 'One per task' },
+      ],
+    })!;
+    expect(agentProposalSummary(proposal, t, ['starters']).rows).toEqual([
+      {
+        key: 'prompt-new',
+        label: 'agents.form.sections.prompt',
+        summary: 'drafter.agent.prompt.wrote:3',
+      },
+      {
+        key: 'starters-0',
+        label: 'agents.form.sections.starters',
+        summary: 'One per task',
+      },
+    ]);
   });
 
   it('names what each finished step holds', () => {

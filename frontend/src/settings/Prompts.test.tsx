@@ -84,13 +84,6 @@ vi.mock('../modals/ConfirmationModal', () => ({
     return null;
   },
 }));
-const promptsModalProps = vi.fn();
-vi.mock('../preferences/PromptsModal', () => ({
-  default: (props: { modalState: string }) => {
-    promptsModalProps(props);
-    return null;
-  },
-}));
 const shareModalProps = vi.fn();
 vi.mock('../teams/ShareToTeamModal', () => ({
   default: (props: unknown) => {
@@ -184,7 +177,6 @@ describe('Prompts page', () => {
     drafter.config = null;
     drafter.scripts = [];
     drafter.requests = [];
-    promptsModalProps.mockReset();
     shareModalProps.mockReset();
     confirm.props = null;
     store = makeStore();
@@ -723,7 +715,7 @@ describe('Prompts page', () => {
       response({ content, updated_at: updatedAt }),
     );
 
-  it('opens a prompt as a view in place of the list, not in the modal', async () => {
+  it('opens a prompt as a view in place of the list', async () => {
     withText('You check vendors.');
     await render();
     await openCard('Vendor checks');
@@ -741,7 +733,6 @@ describe('Prompts page', () => {
       'settings.prompts.shareWithTeam',
       'settings.prompts.delete',
     ]);
-    expect(promptsModalProps).not.toHaveBeenCalled();
   });
 
   it("opens a viewer's prompt read-only with no Save", async () => {

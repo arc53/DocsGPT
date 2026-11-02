@@ -17,14 +17,8 @@ import type {
   ToolSummary,
 } from './types';
 
-/** A prompt the drafter wrote for the form, created when the agent saves. */
-export type PendingPrompt = { name: string; content: string };
-
-/** The Prompt field's whole value: the picked prompt, or a pending one over it. */
-export type AgentPromptValue = {
-  prompt_id: string;
-  pending: PendingPrompt | null;
-};
+/** A prompt's unsaved name and text, as the prompt view holds them. */
+export type PromptDraft = { name: string; content: string };
 
 /** The agent's request and token limits, as the form holds them. */
 export type AgentLimitsValue = {
@@ -127,7 +121,8 @@ export type AgentDraftForm = {
   sources: string[];
   tools: ToolSummary[];
   starters: string[];
-  prompt: AgentPromptValue;
+  /** The picked prompt's id. */
+  prompt: string;
   limits: AgentLimitsValue;
   /** `config.guardrails`; undefined while the agent has none. */
   guardrails: GuardrailsConfig | undefined;
@@ -379,7 +374,8 @@ function analyticsWith(
  * they apply (sources, tools, type, name, description, starters, prompt,
  * limits, guardrails, Insights). Fields the proposal leaves out, or sets to
  * what the form already holds, are not changes. A tool id the caller has no
- * row for is left out.
+ * row for is left out. A new prompt is no change either: the host opens it
+ * in the prompt view, and the form's prompt changes once it is saved there.
  *
  * Args:
  *   fields: The proposal's fields.
@@ -407,17 +403,7 @@ export function planAgentPatch(
   if (fields.name !== undefined) next.name = fields.name;
   if (fields.description !== undefined) next.description = fields.description;
   if (fields.starters) next.starters = cleanStarters(fields.starters);
-  if (fields.prompt)
-    next.prompt =
-      fields.prompt.kind === 'existing'
-        ? { prompt_id: fields.prompt.id, pending: null }
-        : {
-            prompt_id: form.prompt.prompt_id,
-            pending: {
-              name: fields.prompt.name,
-              content: fields.prompt.content,
-            },
-          };
+  if (fields.prompt?.kind === 'existing') next.prompt = fields.prompt.id;
   if (fields.limits) next.limits = limitsOf(fields.limits, form.limits);
   if (fields.guardrails)
     next.guardrails = guardrailsWith(fields.guardrails.checks, form.guardrails);
@@ -441,8 +427,7 @@ export function isAgentFormEmpty(form: AgentDraftForm): boolean {
     form.sources.length === 0 &&
     form.tools.length === 0 &&
     cleanStarters(form.starters).length === 0 &&
-    form.prompt.pending === null &&
-    (!form.prompt.prompt_id || form.prompt.prompt_id === 'default')
+    (!form.prompt || form.prompt === 'default')
   );
 }
 
@@ -473,6 +458,7 @@ function limitsContext(limits: AgentLimitsValue) {
  *   form: The form now.
  *   build: The running step (null in improve mode) and what the user wrote
  *     in the finished steps.
+ *   promptDraft: The prompt view's unsaved name and text, or null.
  *
  * Returns:
  *   `{ agent_id, step, earlier, form }` as the drafter contract describes it.
@@ -481,6 +467,7 @@ export function agentDraftContext(
   agentId: string | null,
   form: AgentDraftForm,
   build: { step: AgentBuildStep | null; earlier: string[] },
+  promptDraft: PromptDraft | null,
 ) {
   const guardrails = form.guardrails ?? DEFAULT_GUARDRAILS;
   return {
@@ -493,8 +480,8 @@ export function agentDraftContext(
       agent_type: form.agent_type,
       sources: form.sources,
       tools: form.tools.map((tool) => tool.id),
-      prompt_id: form.prompt.prompt_id || null,
-      prompt_draft: null,
+      prompt_id: form.prompt || null,
+      prompt_draft: promptDraft,
       starters: form.starters,
       limits: limitsContext(form.limits),
       guardrails: {
@@ -528,9 +515,14 @@ export const AGENT_FIELD_LABEL_KEYS: Record<AgentDraftField, string> = {
 
 const DROPPED_REASONS = ['not_found', 'no_access', 'invalid', 'not_allowed'];
 
+/** How many words a prompt's text has, for "Wrote a new prompt · 131 words". */
+const wordCount = (text: string): number =>
+  text.trim() ? text.trim().split(/\s+/).length : 0;
+
 /**
- * The proposal summary's rows and lines: a reason per changed field, and
- * what the server left out.
+ * The proposal summary's rows and lines: a reason per changed field (a new
+ * prompt, still unsaved in the prompt view, gets one row with its length),
+ * and what the server left out.
  *
  * Args:
  *   proposal: The parsed proposal.
@@ -551,14 +543,30 @@ export function agentProposalSummary(
     field in AGENT_FIELD_LABEL_KEYS
       ? t(AGENT_FIELD_LABEL_KEYS[field as AgentDraftField])
       : field;
-  const reasons = changed
-    ? proposal.reasons.filter((reason) => changed.includes(reason.field))
-    : proposal.reasons;
-  const rows = reasons.map((reason, index) => ({
-    key: `${reason.field}-${index}`,
-    label: labelOf(reason.field),
-    summary: reason.summary,
-  }));
+  const written = proposal.fields.prompt;
+  const reasons = proposal.reasons.filter(
+    (reason) =>
+      (!changed || changed.includes(reason.field)) &&
+      !(written?.kind === 'new' && reason.field === 'prompt'),
+  );
+  const rows = [
+    ...(written?.kind === 'new'
+      ? [
+          {
+            key: 'prompt-new',
+            label: labelOf('prompt'),
+            summary: t('drafter.agent.prompt.wrote', {
+              count: wordCount(written.content),
+            }),
+          },
+        ]
+      : []),
+    ...reasons.map((reason, index) => ({
+      key: `${reason.field}-${index}`,
+      label: labelOf(reason.field),
+      summary: reason.summary,
+    })),
+  ];
   const dropped = proposal.dropped.map((item) =>
     t('drafter.agent.droppedLine', {
       field: labelOf(item.field),
@@ -582,7 +590,7 @@ export function agentProposalSummary(
  *   step: The step.
  *   form: The form now.
  *   t: The translator.
- *   promptName: The picked (or pending) prompt's name.
+ *   promptName: The picked prompt's name.
  *
  * Returns:
  *   The step's result line.

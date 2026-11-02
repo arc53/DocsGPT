@@ -153,7 +153,6 @@ export default function Prompts() {
     },
   });
   const { menuOptions, dialogs } = usePromptActions({
-    prompts,
     onSaved: () => loadPrompts(true),
     onDeleted: (deleted) => {
       showList(prompts.filter((prompt) => prompt.id !== deleted.id));

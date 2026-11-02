@@ -87,10 +87,8 @@ describe('PromptEditor', () => {
     expect(menus()).toHaveLength(2);
   });
 
-  it('sits on a card by default and on the background on a page', async () => {
+  it("sits on the page's background", async () => {
     await render();
-    for (const label of labels()) expect(label.className).toContain('bg-card');
-    await render({ surface: 'background' });
     for (const label of labels())
       expect(label.className).toContain('bg-background');
     expect(

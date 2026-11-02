@@ -2456,10 +2456,6 @@
     },
     "prompts": {
       "addPrompt": "新增提示",
-      "addDescription": "新增自定義提示並儲存到 DocsGPT",
-      "editPrompt": "編輯提示",
-      "editDescription": "編輯自定義提示並儲存到 DocsGPT",
-      "viewPrompt": "檢視提示",
       "viewDescription": "內建提示無法編輯。建立副本後即可自行編輯。",
       "duplicate": "建立副本",
       "duplicatePrompt": "建立提示副本",
@@ -2467,7 +2463,6 @@
       "promptName": "提示名稱",
       "promptText": "提示文字",
       "save": "儲存",
-      "cancel": "取消",
       "nameExists": "名稱已存在",
       "deleteConfirmation": "要刪除「{{name}}」嗎？",
       "variablesLabel": "變數",
@@ -2486,9 +2481,7 @@
         "systemRequestId": "唯一請求識別碼",
         "systemUserId": "目前使用者 ID",
         "artifactsLookup": "依 ID 查詢 Artifact 中繼資料"
-      },
-      "learnAboutPrompts": "了解提示",
-      "pendingDescription": "儲存代理時會建立它。"
+      }
     },
     "chunk": {
       "add": "新增區塊",
@@ -4439,13 +4432,8 @@
       "write": "撰寫",
       "improvePrompt": "改進提示詞",
       "improveCopy": "改進副本",
-      "askLabel": "要讓 DocsGPT 修改或撰寫什麼？",
       "improvePlaceholder": "說明要改什麼，例如：不要報價…",
       "writePlaceholder": "描述這個提示詞，例如：我們員工手冊的友善助理…",
-      "errors": {
-        "invalid_output": "無法使用模型的回答。提示詞沒有變更。",
-        "model_error": "起草時發生問題。提示詞沒有變更。"
-      },
       "warningsTitle": "儲存前請檢查",
       "checks": {
         "to_template": "這會加入範本變數，DocsGPT 將完全依原文使用提示詞，不再加入自己的段落：日期、回答規則、引用、格式和界線。",
@@ -4468,7 +4456,6 @@
       "acceptAll": "全部接受",
       "reviewOneByOne": "逐項檢視",
       "discard": "捨棄",
-      "usedBy_other": "有 {{formatted}} 個代理在使用。儲存後會套用到所有代理。",
       "introImprove": "我可以檢查這個提示詞，或修改某個具體的地方。在你儲存之前不會儲存任何內容。",
       "introImproveUsedBy_one": "我可以檢查這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更也會套用到它。",
       "introImproveUsedBy_other": "我可以檢查這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更會套用到所有這些代理。",
@@ -4544,10 +4531,6 @@
     },
     "agent": {
       "draftedCount_other": "已起草 {{count}} 個欄位。儲存前請檢查。",
-      "pendingPrompt": "{{name}} · 新增，儲存時建立",
-      "promptText": "提示詞內容",
-      "editPrompt": "編輯提示詞",
-      "promptCreateFailed": "無法建立起草的提示詞，因此沒有儲存任何內容。請重試。",
       "droppedLine": "{{field}}：{{reason}}",
       "droppedReasons": {
         "not_found": "一個不存在的項目",
@@ -4599,7 +4582,8 @@
           "checks_other": "{{count}} 項檢查（{{mode}}）",
           "topics_one": "{{count}} 個洞察主題",
           "topics_other": "{{count}} 個洞察主題"
-        }
+        },
+        "continueStep": "繼續：{{step}}"
       },
       "improve": {
         "intro": "{{name}} 需要改什麼？",
@@ -4612,7 +4596,22 @@
       },
       "fields": {
         "limits": "使用限制"
-      }
+      },
+      "prompt": {
+        "wrote_one": "寫了一個新提示詞 · {{count}} 個詞",
+        "wrote_other": "寫了一個新提示詞 · {{count}} 個詞",
+        "viewHint": "在提示詞檢視中查看：在那裡修改，或在這裡告訴我，然後按「使用此提示詞」。按下後它會儲存到你的提示詞中。",
+        "newPrompt": "新提示詞",
+        "use": "使用此提示詞",
+        "saved_one": "提示詞已儲存並設定。我據此寫了 {{count}} 個開場問題：請在「開場問題」中查看。",
+        "saved_other": "提示詞已儲存並設定。我據此寫了 {{count}} 個開場問題：請在「開場問題」中查看。",
+        "savedOnly": "提示詞已儲存並設定。",
+        "parked": "我寫的提示詞仍是開啟狀態，尚未儲存。",
+        "open": "開啟提示詞",
+        "keep": "改為保留 {{name}}",
+        "changePlaceholder": "或告訴我提示詞要改什麼…"
+      },
+      "formEdited": "你在表單中變更了 {{fields}}。"
     },
     "topics": {
       "suggest": "根據對話建議",

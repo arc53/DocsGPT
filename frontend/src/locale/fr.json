@@ -2550,10 +2550,6 @@
     },
     "prompts": {
       "addPrompt": "Ajouter un prompt",
-      "addDescription": "Ajoutez votre prompt personnalisé et enregistrez-le dans DocsGPT",
-      "editPrompt": "Modifier le prompt",
-      "editDescription": "Modifiez votre prompt personnalisé et enregistrez-le dans DocsGPT",
-      "viewPrompt": "Afficher le prompt",
       "viewDescription": "Les prompts intégrés ne sont pas modifiables. Dupliquez-les pour créer votre propre copie modifiable.",
       "duplicate": "Dupliquer",
       "duplicatePrompt": "Dupliquer le prompt",
@@ -2561,7 +2557,6 @@
       "promptName": "Nom du prompt",
       "promptText": "Texte du prompt",
       "save": "Enregistrer",
-      "cancel": "Annuler",
       "nameExists": "Ce nom existe déjà",
       "deleteConfirmation": "Supprimer « {{name}} » ?",
       "variablesLabel": "Variables",
@@ -2580,9 +2575,7 @@
         "systemRequestId": "Identifiant unique de la requête",
         "systemUserId": "ID de l’utilisateur actuel",
         "artifactsLookup": "Métadonnées de l’artefact par ID"
-      },
-      "learnAboutPrompts": "En savoir plus sur les prompts",
-      "pendingDescription": "Il est créé lorsque vous enregistrez l’agent."
+      }
     },
     "chunk": {
       "add": "Ajouter un fragment",
@@ -4587,13 +4580,8 @@
       "write": "Rédiger",
       "improvePrompt": "Améliorer le prompt",
       "improveCopy": "Améliorer une copie",
-      "askLabel": "Que doit modifier ou rédiger DocsGPT ?",
       "improvePlaceholder": "Dites ce qu’il faut changer, p. ex. ne plus citer de prix…",
       "writePlaceholder": "Décrivez le prompt, p. ex. un assistant aimable pour notre manuel RH…",
-      "errors": {
-        "invalid_output": "La réponse du modèle n’a pas pu être utilisée. Le prompt n’a pas changé.",
-        "model_error": "Un problème est survenu pendant la rédaction. Le prompt n’a pas changé."
-      },
       "warningsTitle": "À vérifier avant d’enregistrer",
       "checks": {
         "to_template": "Cela ajoute des variables de modèle : DocsGPT utilisera le prompt tel quel et n’ajoutera plus ses propres sections (date, règles de réponse, citations, mise en forme et limites).",
@@ -4616,9 +4604,6 @@
       "acceptAll": "Tout accepter",
       "reviewOneByOne": "Examiner une par une",
       "discard": "Abandonner",
-      "usedBy_one": "Utilisé par {{formatted}} agent. L’enregistrer le modifie aussi là-bas.",
-      "usedBy_many": "Utilisé par {{formatted}} agents. L’enregistrer le modifie pour tous.",
-      "usedBy_other": "Utilisé par {{formatted}} agents. L’enregistrer le modifie pour tous.",
       "introImprove": "Je peux relire ce prompt ou y changer quelque chose de précis. Rien n’est enregistré tant que vous n’enregistrez pas.",
       "introImproveUsedBy_one": "Je peux relire ce prompt ou y changer quelque chose de précis. {{formatted}} agent l’utilise, donc une modification enregistrée s’y applique aussi.",
       "introImproveUsedBy_many": "Je peux relire ce prompt ou y changer quelque chose de précis. {{formatted}} agents l’utilisent, donc une modification enregistrée s’applique à tous.",
@@ -4707,10 +4692,6 @@
       "draftedCount_one": "{{count}} champ rédigé. Vérifiez-le avant d’enregistrer.",
       "draftedCount_many": "{{count}} champs rédigés. Vérifiez-les avant d’enregistrer.",
       "draftedCount_other": "{{count}} champs rédigés. Vérifiez-les avant d’enregistrer.",
-      "pendingPrompt": "{{name}} · nouveau, créé à l’enregistrement",
-      "promptText": "Texte du prompt",
-      "editPrompt": "Modifier le prompt",
-      "promptCreateFailed": "Le prompt rédigé n’a pas pu être créé, donc rien n’a été enregistré. Réessayez.",
       "droppedLine": "{{field}} : {{reason}}",
       "droppedReasons": {
         "not_found": "un élément qui n’existe pas",
@@ -4768,7 +4749,8 @@
           "topics_one": "{{count}} sujet d’analyse",
           "topics_other": "{{count}} sujets d’analyse",
           "topics_many": "{{count}} sujets d’analyse"
-        }
+        },
+        "continueStep": "Continuer : {{step}}"
       },
       "improve": {
         "intro": "Que faut-il changer dans {{name}} ?",
@@ -4781,7 +4763,24 @@
       },
       "fields": {
         "limits": "Limite d’utilisation"
-      }
+      },
+      "prompt": {
+        "wrote_one": "Nouveau prompt rédigé · {{count}} mot",
+        "wrote_other": "Nouveau prompt rédigé · {{count}} mots",
+        "wrote_many": "Nouveau prompt rédigé · {{count}} mots",
+        "viewHint": "Vérifiez-le dans la vue du prompt : modifiez-le là, ou dites-le-moi ici, puis appuyez sur Utiliser ce prompt. Il est enregistré dans vos prompts à ce moment-là.",
+        "newPrompt": "Nouveau prompt",
+        "use": "Utiliser ce prompt",
+        "saved_one": "Prompt enregistré et défini. J’en ai tiré {{count}} question de départ : vérifiez-la sous Questions de départ.",
+        "saved_other": "Prompt enregistré et défini. J’en ai tiré {{count}} questions de départ : vérifiez-les sous Questions de départ.",
+        "saved_many": "Prompt enregistré et défini. J’en ai tiré {{count}} questions de départ : vérifiez-les sous Questions de départ.",
+        "savedOnly": "Prompt enregistré et défini.",
+        "parked": "Le prompt que j’ai rédigé est toujours ouvert, non enregistré.",
+        "open": "Ouvrir le prompt",
+        "keep": "Garder {{name}} à la place",
+        "changePlaceholder": "Ou dites-moi quoi modifier dans le prompt…"
+      },
+      "formEdited": "Vous avez modifié {{fields}} dans le formulaire."
     },
     "topics": {
       "suggest": "Suggérer à partir des conversations",

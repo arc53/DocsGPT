@@ -18,7 +18,6 @@ import { Textarea } from '../components/ui/textarea';
 import { DraftedField } from '../drafter/DraftedBadge';
 import { PromptEditReview } from '../drafter/PromptEditReview';
 import type { PromptDecision, PromptReview } from '../drafter/usePromptDrafter';
-import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import { UserToolType } from '../settings/types';
 
@@ -179,7 +178,6 @@ type PromptTextareaProps = {
   value: string;
   onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   readOnly?: boolean;
-  surface: PromptEditorSurface;
 };
 
 function PromptTextarea({
@@ -187,7 +185,6 @@ function PromptTextarea({
   value,
   onChange,
   readOnly = false,
-  surface,
 }: PromptTextareaProps) {
   const [scrollOffsets, setScrollOffsets] = React.useState({ top: 0, left: 0 });
   const highlightedValue = React.useMemo(
@@ -209,10 +206,7 @@ function PromptTextarea({
   return (
     <div className="relative w-full">
       <div
-        className={cn(
-          SURFACE_CLASSES[surface],
-          'pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-2xl border border-transparent px-4 py-3',
-        )}
+        className="bg-background pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-2xl border border-transparent px-4 py-3"
         aria-hidden="true"
       >
         <div
@@ -228,8 +222,7 @@ function PromptTextarea({
         </div>
       </div>
       {/* Capped to the window height so the variable menus below it stay in
-          view on a short laptop screen; the modal body or the page scrolls
-          past that. */}
+          view on a short laptop screen; the page scrolls past that. */}
       <Textarea
         id={id}
         size="lg"
@@ -309,15 +302,6 @@ const useToolVariables = () => {
   return toolVariables;
 };
 
-/** What the editor sits on: a modal's card or a page's background. */
-export type PromptEditorSurface = 'card' | 'background';
-
-// The text's highlight layer fills the field in the surface's colour.
-const SURFACE_CLASSES: Record<PromptEditorSurface, string> = {
-  card: 'bg-card',
-  background: 'bg-background',
-};
-
 /** A field's Drafted mark and its undo. */
 export type DraftedSlot = {
   drafted: boolean;
@@ -335,8 +319,6 @@ export type PromptEditorProps = {
   isReadOnly?: boolean;
   /** A shared prompt the caller's role can't change (not a built-in one). */
   showViewOnlyNotice?: boolean;
-  /** Above the name: the prompt modal's ask bar or "Improve a copy". */
-  top?: React.ReactNode;
   /** An improve proposal under review, shown in place of the text and the menus. */
   review?: PromptReview | null;
   /** Accept or reject one of the review's changes; null takes a choice back. */
@@ -345,17 +327,13 @@ export type PromptEditorProps = {
   draftedContent?: DraftedSlot;
   /** Under the name field, in red ("Name already exists"). */
   nameError?: string;
-  /** Under the text field (the modal's "Used by 3 agents" note). */
-  contentHint?: React.ReactNode;
   /** The name and text are read-only while a draft runs. */
   locked?: boolean;
-  /** `card` in a modal (the default), `background` on a page. */
-  surface?: PromptEditorSurface;
 };
 
 /**
- * A prompt's name and text with the variable menus, the editor the prompt
- * modal and the prompt view share. The text highlights its `{{ }}`
+ * A prompt's name and text with the variable menus, on the page's
+ * background (the prompt view's editor). The text highlights its `{{ }}`
  * variables, and the System and Tool variables menus insert one at the
  * cursor. The drafter's parts: the Drafted marks with undo, an improve
  * proposal's review in place of the text (its per-change Accept and Reject
@@ -370,15 +348,12 @@ export function PromptEditor({
   setContent,
   isReadOnly = false,
   showViewOnlyNotice = false,
-  top,
   review,
   onDecide,
   draftedName,
   draftedContent,
   nameError,
-  contentHint,
   locked = false,
-  surface = 'card',
 }: PromptEditorProps) {
   const { t } = useTranslation();
   const systemVariableOptions = React.useMemo(
@@ -392,7 +367,6 @@ export function PromptEditor({
     <div>
       <div className="flex flex-col gap-5">
         {showViewOnlyNotice && <ViewOnlyNotice />}
-        {top}
         <DraftedField
           drafted={draftedName?.drafted ?? false}
           onUndo={draftedName?.onUndo ?? (() => undefined)}
@@ -401,7 +375,7 @@ export function PromptEditor({
           <FormField
             label={t('modals.prompts.promptName')}
             error={nameError}
-            labelSurface={surface}
+            labelSurface="background"
           >
             <Input
               type="text"
@@ -414,11 +388,7 @@ export function PromptEditor({
         </DraftedField>
 
         {review && onDecide ? (
-          <PromptEditReview
-            review={review}
-            onDecide={onDecide}
-            surface={surface}
-          />
+          <PromptEditReview review={review} onDecide={onDecide} />
         ) : (
           <DraftedField
             drafted={draftedContent?.drafted ?? false}
@@ -427,15 +397,13 @@ export function PromptEditor({
           >
             <FormField
               label={t('modals.prompts.promptText')}
-              hint={contentHint}
-              labelSurface={surface}
+              labelSurface="background"
             >
               <PromptTextarea
                 id={textareaId}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 readOnly={isReadOnly || locked}
-                surface={surface}
               />
             </FormField>
           </DraftedField>

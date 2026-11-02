@@ -1,6 +1,6 @@
 /**
  * The prompt recipe's proposals and the pure helpers its review uses: which
- * mode the ask bar runs in, reading a proposal off the stream, applying the
+ * mode the drawer runs in, reading a proposal off the stream, applying the
  * accepted edits and splitting the text into the diff the review shows.
  */
 

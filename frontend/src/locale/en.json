@@ -2465,10 +2465,6 @@
     },
     "prompts": {
       "addPrompt": "Add prompt",
-      "addDescription": "Add your custom prompt and save it to DocsGPT",
-      "editPrompt": "Edit prompt",
-      "editDescription": "Edit your custom prompt and save it to DocsGPT",
-      "viewPrompt": "View prompt",
       "viewDescription": "Built-in prompts can't be edited. Duplicate to create your own editable copy.",
       "duplicate": "Duplicate",
       "duplicatePrompt": "Duplicate prompt",
@@ -2476,7 +2472,6 @@
       "promptName": "Prompt name",
       "promptText": "Prompt text",
       "save": "Save",
-      "cancel": "Cancel",
       "nameExists": "Name already exists",
       "deleteConfirmation": "Delete \"{{name}}\"?",
       "variablesLabel": "Variables",
@@ -2495,9 +2490,7 @@
         "systemRequestId": "Unique request identifier",
         "systemUserId": "Current user ID",
         "artifactsLookup": "Artifact metadata by id"
-      },
-      "learnAboutPrompts": "Learn about prompts",
-      "pendingDescription": "It's created when you save the agent."
+      }
     },
     "chunk": {
       "add": "Add chunk",
@@ -4480,13 +4473,8 @@
       "write": "Write",
       "improvePrompt": "Improve prompt",
       "improveCopy": "Improve a copy",
-      "askLabel": "What should DocsGPT change or write?",
       "improvePlaceholder": "Say what to change, e.g. stop it from quoting prices…",
       "writePlaceholder": "Describe the prompt, e.g. a friendly helper for our HR handbook…",
-      "errors": {
-        "invalid_output": "The model's answer couldn't be used. The prompt didn't change.",
-        "model_error": "Something went wrong while drafting. The prompt didn't change."
-      },
       "warningsTitle": "Check before you save",
       "checks": {
         "to_template": "This adds template variables, so DocsGPT will use the prompt exactly as written and stop adding its own sections: the date, answering rules, citations, formatting and boundaries.",
@@ -4509,8 +4497,6 @@
       "acceptAll": "Accept all",
       "reviewOneByOne": "Review one by one",
       "discard": "Discard",
-      "usedBy_one": "Used by {{formatted}} agent. Saving changes it there too.",
-      "usedBy_other": "Used by {{formatted}} agents. Saving changes it for all of them.",
       "introImprove": "I can look over this prompt or change something specific. Nothing is saved until you save.",
       "introImproveUsedBy_one": "I can look over this prompt or change something specific. It's used by {{formatted}} agent, so a saved change reaches it.",
       "introImproveUsedBy_other": "I can look over this prompt or change something specific. It's used by {{formatted}} agents, so a saved change reaches all of them.",
@@ -4592,10 +4578,6 @@
     "agent": {
       "draftedCount_one": "Drafted {{count}} field. Check it before you save.",
       "draftedCount_other": "Drafted {{count}} fields. Check them before you save.",
-      "pendingPrompt": "{{name}} · new, created on save",
-      "promptText": "Prompt text",
-      "editPrompt": "Edit prompt",
-      "promptCreateFailed": "Couldn't create the drafted prompt, so nothing was saved. Try again.",
       "droppedLine": "{{field}}: {{reason}}",
       "droppedReasons": {
         "not_found": "an item that doesn't exist",
@@ -4647,7 +4629,8 @@
           "checks_other": "{{count}} checks in {{mode}}",
           "topics_one": "{{count}} Insights topic",
           "topics_other": "{{count}} Insights topics"
-        }
+        },
+        "continueStep": "Continue: {{step}}"
       },
       "improve": {
         "intro": "What should change in {{name}}?",
@@ -4660,7 +4643,22 @@
       },
       "fields": {
         "limits": "Usage limit"
-      }
+      },
+      "prompt": {
+        "wrote_one": "Wrote a new prompt · {{count}} word",
+        "wrote_other": "Wrote a new prompt · {{count}} words",
+        "viewHint": "Check it in the prompt view: change it there, or tell me here, then press Use this prompt. It's saved to your prompts when you do.",
+        "newPrompt": "New prompt",
+        "use": "Use this prompt",
+        "saved_one": "Prompt saved and set. I wrote {{count}} starter from it: check it under Starters.",
+        "saved_other": "Prompt saved and set. I wrote {{count}} starters from it: check them under Starters.",
+        "savedOnly": "Prompt saved and set.",
+        "parked": "The prompt I wrote is still open, not saved.",
+        "open": "Open prompt",
+        "keep": "Keep {{name}} instead",
+        "changePlaceholder": "Or tell me what to change in the prompt…"
+      },
+      "formEdited": "You changed {{fields}} in the form."
     },
     "topics": {
       "suggest": "Suggest from conversations",
