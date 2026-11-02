@@ -5,7 +5,8 @@ the upload/webhook flows; this file pins the repository contract:
 
 - TTL-aware upsert: stale-row replacement is atomic, fresh-row conflict
   still returns ``None``.
-- ``cleanup_expired`` deletes only past-TTL rows from both tables.
+- ``cleanup_expired`` deletes only past-TTL rows from both tables, and keeps
+  a task row whose lease is live or lapsed within the TTL.
 """
 
 from __future__ import annotations
@@ -316,6 +317,59 @@ class TestCleanupExpired:
         counts = repo.cleanup_expired()
         assert counts["task_dedup_deleted"] == 0
         assert _read_task(pg_conn, "t-edge") is not None
+
+    def test_old_row_with_live_lease_survives(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(
+            key="t-running", task_name="ingest", task_id="t1", owner_id="w1",
+        )
+        _backdate_task(pg_conn, "t-running", secs_ago=30 * 3600)
+
+        counts = repo.cleanup_expired()
+        assert counts["task_dedup_deleted"] == 0
+        row = _read_task(pg_conn, "t-running")
+        assert row is not None
+        assert row["lease_owner_id"] == "w1"
+        assert repo.refresh_lease("t-running", "w1") is True
+
+    def test_old_row_whose_lease_lapsed_recently_survives(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(
+            key="t-crashed", task_name="ingest", task_id="t1", owner_id="w1",
+        )
+        _backdate_task(pg_conn, "t-crashed", secs_ago=30 * 3600)
+        _expire_lease(pg_conn, "t-crashed", secs_ago=3600)
+
+        counts = repo.cleanup_expired()
+        assert counts["task_dedup_deleted"] == 0
+        # The redelivered run keeps counting attempts toward the poison guard.
+        assert repo.try_claim_lease(
+            key="t-crashed", task_name="ingest", task_id="t1", owner_id="w2",
+        ) == 2
+
+    def test_old_pending_row_with_long_expired_lease_is_deleted(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(
+            key="t-dead", task_name="ingest", task_id="t1", owner_id="w1",
+        )
+        _backdate_task(pg_conn, "t-dead", secs_ago=30 * 3600)
+        _expire_lease(pg_conn, "t-dead", secs_ago=25 * 3600)
+
+        counts = repo.cleanup_expired()
+        assert counts["task_dedup_deleted"] == 1
+        assert _read_task(pg_conn, "t-dead") is None
+
+    def test_old_completed_row_is_deleted(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(
+            key="t-done", task_name="ingest", task_id="t1", owner_id="w1",
+        )
+        repo.finalize_task("t-done", result_json={"ok": True}, status="completed")
+        _backdate_task(pg_conn, "t-done", secs_ago=25 * 3600)
+
+        counts = repo.cleanup_expired()
+        assert counts["task_dedup_deleted"] == 1
+        assert _read_task(pg_conn, "t-done") is None
 
 
 # ----------------------------------------------------------------------

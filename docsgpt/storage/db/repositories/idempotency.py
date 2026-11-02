@@ -347,12 +347,23 @@ class IdempotencyRepository:
         writers: a same-key INSERT racing the DELETE will either find no
         row (acts as a fresh insert) or find a fresh row (re-created
         between DELETE and conflict-check), neither of which is wrong.
+
+        A pending ``task_dedup`` row ages from its last lease heartbeat, not
+        from ``created_at``: a task that runs (or waits) past the TTL keeps
+        its row, so a broker redelivery finds the live lease instead of
+        starting a second copy, and a crashed run's ``attempt_count`` still
+        reaches the poison guard.
         """
         task_deleted = self._conn.execute(
             text(
                 """
                 DELETE FROM task_dedup
                 WHERE created_at <= now() - CAST(:ttl AS interval)
+                  AND NOT (
+                      status = 'pending'
+                      AND lease_expires_at IS NOT NULL
+                      AND lease_expires_at > now() - CAST(:ttl AS interval)
+                  )
                 """
             ),
             {"ttl": DEDUP_TTL_INTERVAL},
