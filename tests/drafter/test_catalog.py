@@ -97,13 +97,27 @@ class TestScoping:
 
     def test_the_agent_being_edited_needs_edit_access(self, pg_conn):
         agent = AgentsRepository(pg_conn).create(BOB, "Bob's agent", "draft")
-        assert _load(pg_conn, agent_id=str(agent["id"])).agent is None
+        unseen = _load(pg_conn, agent_id=str(agent["id"]))
+        assert unseen.agent is None and unseen.policy_editable is False
         _share(pg_conn, "agent", agent["id"], ALICE, level="viewer")
         assert _load(pg_conn, agent_id=str(agent["id"])).agent is None
         _share(pg_conn, "agent", agent["id"], ALICE, level="editor")
-        assert _load(pg_conn, agent_id=str(agent["id"])).agent == {
+        editing = _load(pg_conn, agent_id=str(agent["id"]))
+        assert editing.agent == {
             "id": str(agent["id"]), "name": "Bob's agent", "status": "draft", "agent_type": "classic",
         }
+        assert editing.policy_editable is True
+
+    def test_a_new_agent_is_the_callers_own_so_its_policy_is_editable(self, pg_conn):
+        assert _load(pg_conn).policy_editable is True
+
+    def test_policy_access_follows_the_agent_routes_rule(self, pg_conn):
+        agent = AgentsRepository(pg_conn).create(BOB, "Bob's agent", "draft")
+        _share(pg_conn, "agent", agent["id"], ALICE, level="editor")
+        with patch("docsgpt.api.user.resource_access.ResourceAccess.can",
+                   lambda self, action: action != "edit_policy"):
+            ws = _load(pg_conn, agent_id=str(agent["id"]))
+        assert ws.agent is not None and ws.policy_editable is False
 
 
 @pytest.mark.unit

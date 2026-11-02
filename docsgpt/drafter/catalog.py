@@ -57,6 +57,8 @@ class Workspace:
         prompts: Compact prompt rows ``{id, name, kind, preview?, template?}``.
         models: ``{id, name}`` rows of the models the caller can pick.
         agent: The saved agent being edited ``{id, name, status, agent_type}``, or None.
+        policy_editable: Whether the caller may change the agent's guardrails and limits (``edit_policy``, the
+            rule the agent update route applies); True for a new agent, which the caller will own.
         prompt_texts: Prompt id -> full text (capped), for ``get_prompt``.
         source_files: Source id -> file paths (capped), for ``get_source``.
         tool_details: Tool id -> actions with full descriptions, for ``get_tool``.
@@ -68,6 +70,7 @@ class Workspace:
     prompts: list[dict] = field(default_factory=list)
     models: list[dict] = field(default_factory=list)
     agent: Optional[dict] = None
+    policy_editable: bool = True
     prompt_texts: dict[str, str] = field(default_factory=dict)
     source_files: dict[str, list[str]] = field(default_factory=dict)
     tool_details: dict[str, dict] = field(default_factory=dict)
@@ -318,18 +321,23 @@ def load_models(user_id: str, ws: Workspace) -> None:
 
 
 def load_agent(conn, user_id: str, agent_id: Optional[str], ws: Workspace) -> None:
-    """Fill ``ws.agent`` with the saved agent being edited, when the caller may open its edit page."""
+    """Fill ``ws.agent`` with the saved agent being edited, when the caller may open its edit page.
+
+    Sets ``ws.policy_editable``: an agent id the caller can't open leaves it False.
+    """
     from docsgpt.api.user.resource_access import resolve
     from docsgpt.storage.db.repositories.agents import AgentsRepository
 
     if not agent_id or not isinstance(agent_id, str):
         return
+    ws.policy_editable = False
     ra = resolve(conn, "agent", agent_id, user_id)
     if ra is None or not ra.can("view"):
         return
     row = AgentsRepository(conn).get_any(ra.resource_id, ra.owner_id)
     if not row:
         return
+    ws.policy_editable = ra.can("edit_policy")
     ws.agent = {
         "id": str(row["id"]),
         "name": clean_text(row.get("name"), NAME_CHARS),

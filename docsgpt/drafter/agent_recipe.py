@@ -1,24 +1,56 @@
-"""The agent recipe: draft an agent's basics, knowledge, tools, prompt and starters from a description.
+"""The agent recipe: draft an agent step by step, or improve a saved one, from what the user writes.
 
-It may touch only ``name``, ``description``, ``agent_type`` (``classic`` or
-``research``, the two the form offers), ``sources``, ``tools``, ``prompt`` (an
-existing prompt or a new *pending* prompt the form creates on save) and
-``starters``. Models, guardrails, limits, origins, the API write allowlist, the
-JSON schema, analytics and sharing are never in a proposal.
+A new agent is built in four steps (:data:`STEPS`): ``basics`` (name,
+description), ``knowledge`` (sources, tools, ``agent_type``: ``classic`` or
+``research``, the two the form offers), ``prompt`` (an existing prompt, or a
+new one the user reviews in the prompt editor, and starters) and ``safety``
+(request or token limits, guardrail checks from :data:`GUARDRAIL_MENU`, and
+starting Insights topics). A step sets its own fields and, when the user's
+words call for them, later steps' fields except safety's; a new prompt is
+written only in the prompt step, and safety is asked about before anything
+is set. Improve mode (no step, a saved agent) touches the first three steps'
+fields only. Models, origins, the API write allowlist, the JSON schema and
+sharing are never in a proposal.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from pydantic import ValidationError
+
+from docsgpt.analytics.config import AnalyticsTopic, TOPIC_DESCRIPTION_UNITS, TOPIC_NAME_CHARS
+from docsgpt.core.settings import settings
 from docsgpt.drafter.catalog import is_template, load_workspace, Workspace
 from docsgpt.drafter.fencing import clean_text
 from docsgpt.drafter.prompt_rules import COMPOSER_ADDS, TEMPLATE_PROBLEM, template_parses, tool_variables_problem
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
+from docsgpt.drafter.runner import question_rounds
 
 AGENT_TYPES = ("classic", "research")
 BUILTIN_PROMPTS = ("default", "creative", "strict")
-FIELDS = ("name", "description", "agent_type", "sources", "tools", "prompt", "starters")
+
+#: The guided build's steps, in order, and the fields each one sets.
+STEPS = ("basics", "knowledge", "prompt", "safety")
+STEP_FIELDS: dict[str, tuple[str, ...]] = {
+    "basics": ("name", "description"),
+    "knowledge": ("sources", "tools", "agent_type"),
+    "prompt": ("prompt", "starters"),
+    "safety": ("limits", "guardrails", "analytics"),
+}
+SAFETY_FIELDS = STEP_FIELDS["safety"]
+FIELDS = tuple(name for step in STEPS for name in STEP_FIELDS[step])
+
+#: The guardrail checks the safety step offers, each as the ``(stage, action)`` controls it adds.
+GUARDRAIL_MENU: dict[str, tuple[tuple[str, str], ...]] = {
+    "pii": (("input", "redact"), ("output", "redact")),
+    "injection": (("input", "block"),),
+    "groundedness": (("output", "flag"),),
+    "secrets": (("output", "redact"),),
+}
+LIMIT_MODES = ("requests", "tokens", "none")
+GUARDRAIL_MODES = ("monitor_only", "scan_all")
 
 #: Lengths a drafted value may have. The agent routes store text without a cap; these keep a draft card-sized.
 NAME_MAX = 100
@@ -27,6 +59,10 @@ PROMPT_NAME_MAX = 100
 PROMPT_CONTENT_MAX = 20000
 #: Most sources and tools a proposal attaches.
 MAX_REFS = 30
+#: Largest request or token limit a proposal sets.
+LIMIT_MAX = 1_000_000_000
+#: Most Insights topics one proposal adds.
+MAX_NEW_TOPICS = 4
 MESSAGE_MAX = 600
 REASON_SUMMARY_MAX = 200
 REASON_DETAIL_MAX = 400
@@ -37,12 +73,39 @@ NOTE_MAX = 300
 #: Caps on the form values a request sends.
 _FORM_TEXT = {"name": 200, "description": 2000, "agent_type": 40}
 _FORM_MAX_REFS = 200
+_FORM_MAX_NAMES = 100
 _ID_CHARS = 100
+#: Most of the user's messages from finished steps a request sends, and characters of one.
+MAX_EARLIER = 12
+EARLIER_CHARS = 2000
+#: The id a drafted topic is checked under (the form gives it its own).
+_CHECK_TOPIC_ID = "drafttopic"
+
+ASK_FIRST = (
+    "Ask the user first: call ask_user with a question for each part of this step you can set (limits, "
+    "guardrails, topics), the recommended option first, then set only what they pick."
+)
 
 
 # ---------------------------------------------------------------------------
 # Context
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class AgentWorkspace(Workspace):
+    """The caller's workspace plus what the safety step may set on this instance.
+
+    Attributes:
+        guardrail_menu: The :data:`GUARDRAIL_MENU` checks this instance can add (empty while guardrails are off).
+        insights: Whether Insights labels conversations here (``DECISION_ANALYTICS_ENABLED`` with the decision
+            model available, as ``/api/config`` reports it).
+        max_topics: ``ANALYTICS_MAX_TOPICS``, the most one-per-question topics an agent has.
+    """
+
+    guardrail_menu: list[str] = field(default_factory=list)
+    insights: bool = False
+    max_topics: int = 15
 
 
 def _ids(value: Any) -> list[str]:
@@ -55,14 +118,51 @@ def _ids(value: Any) -> list[str]:
     return out
 
 
+def _names(value: Any, limit: int, *, lower: bool = False) -> list[str]:
+    """Distinct non-empty strings of a list, cleaned and capped (lowercased when ``lower``)."""
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value[:_FORM_MAX_NAMES]:
+        name = clean_text(item, limit)
+        name = name.lower() if lower else name
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _parse_policy(form_raw: dict) -> dict:
+    """The form's limits, guardrails and Insights values, with defaults for what is missing or wrong."""
+    limits = form_raw.get("limits") if isinstance(form_raw.get("limits"), dict) else {}
+    mode = limits.get("mode") if limits.get("mode") in LIMIT_MODES else "none"
+    value = limits.get("value")
+    if mode == "none" or isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        value = None
+    guardrails = form_raw.get("guardrails") if isinstance(form_raw.get("guardrails"), dict) else {}
+    analytics = form_raw.get("analytics") if isinstance(form_raw.get("analytics"), dict) else {}
+    return {
+        "limits": {"mode": mode, "value": value},
+        "guardrails": {
+            "enabled": guardrails.get("enabled") is True,
+            "mode": guardrails.get("mode") if guardrails.get("mode") in GUARDRAIL_MODES else "monitor_only",
+            "checks": _names(guardrails.get("checks"), 40, lower=True),
+        },
+        # Collecting insights is on by default for an agent.
+        "analytics": {
+            "enabled": analytics.get("enabled") is not False,
+            "topics": _names(analytics.get("topics"), TOPIC_NAME_CHARS),
+        },
+    }
+
+
 def parse_context(raw: Any) -> dict:
-    """Clean the agent form's values: ``{agent_id, form: {...}}``.
+    """Clean the agent form's values: ``{agent_id, step, earlier, form: {...}}``.
 
     Wrong-typed values are left out rather than refused; only a ``form`` that
-    isn't an object is.
+    isn't an object, or an unknown ``step``, is.
 
     Raises:
-        BadDraftRequest: ``form`` is present but not an object.
+        BadDraftRequest: ``form`` is present but not an object, or ``step`` is not one of :data:`STEPS` or null.
     """
     raw = raw if isinstance(raw, dict) else {}
     form_raw = raw.get("form")
@@ -70,55 +170,138 @@ def parse_context(raw: Any) -> dict:
         form_raw = {}
     if not isinstance(form_raw, dict):
         raise BadDraftRequest("context.form must be an object")
+    step = raw.get("step")
+    if step is not None and step not in STEPS:
+        raise BadDraftRequest(f"context.step must be one of {', '.join(STEPS)}, or null")
     form: dict[str, Any] = {key: clean_text(form_raw.get(key), cap) for key, cap in _FORM_TEXT.items()}
     form["sources"] = _ids(form_raw.get("sources"))
     form["tools"] = _ids(form_raw.get("tools"))
     prompt_id = form_raw.get("prompt_id")
     form["prompt_id"] = prompt_id.strip()[:_ID_CHARS] if isinstance(prompt_id, str) and prompt_id.strip() else None
-    pending = form_raw.get("pending_prompt")
-    form["pending_prompt"] = None
-    if isinstance(pending, dict) and isinstance(pending.get("content"), str):
-        form["pending_prompt"] = {
-            "name": clean_text(pending.get("name"), PROMPT_NAME_MAX),
-            "content": clean_text(pending.get("content"), PROMPT_CONTENT_MAX),
+    draft = form_raw.get("prompt_draft")
+    form["prompt_draft"] = None
+    if isinstance(draft, dict) and isinstance(draft.get("content"), str):
+        form["prompt_draft"] = {
+            "name": clean_text(draft.get("name"), PROMPT_NAME_MAX),
+            "content": clean_text(draft.get("content"), PROMPT_CONTENT_MAX),
         }
     starters = form_raw.get("starters")
     form["starters"] = [clean_text(s, 300) for s in starters[:10] if isinstance(s, str) and s.strip()] \
         if isinstance(starters, list) else []
+    form.update(_parse_policy(form_raw))
+    earlier = raw.get("earlier") if isinstance(raw.get("earlier"), list) else []
     agent_id = raw.get("agent_id")
     return {
         "agent_id": agent_id.strip()[:_ID_CHARS] if isinstance(agent_id, str) and agent_id.strip() else None,
+        "step": step,
+        "earlier": [text for text in (clean_text(t, EARLIER_CHARS) for t in earlier) if text][:MAX_EARLIER],
         "form": form,
     }
 
 
-def _load(user_id: str, context: dict) -> Workspace:
-    return load_workspace(user_id, agent_id=context.get("agent_id"))
+def guardrail_menu() -> list[str]:
+    """The :data:`GUARDRAIL_MENU` checks this instance can add: guardrails on, every control of the check valid.
+
+    A check that isn't registered, isn't allowed by ``GUARDRAILS_CHECKS_ENABLED`` or can't run without settings
+    of its own fails the same validation a save applies, and is left out.
+    """
+    from docsgpt.guardrails.config import GuardrailControl
+
+    if not settings.GUARDRAILS_ENABLED:
+        return []
+    out = []
+    for check, controls in GUARDRAIL_MENU.items():
+        try:
+            for stage, action in controls:
+                GuardrailControl.model_validate({"check": check, "stage": stage, "action": action})
+        except ValueError:
+            continue
+        out.append(check)
+    return out
+
+
+def insights_available() -> bool:
+    """Whether Insights labels conversations on this instance (``decision_analytics_enabled`` in ``/api/config``)."""
+    from docsgpt import decisions
+
+    try:
+        return bool(settings.DECISION_ANALYTICS_ENABLED) and bool(decisions.available())
+    except Exception:
+        return False
+
+
+def _load(user_id: str, context: dict) -> AgentWorkspace:
+    ws = load_workspace(user_id, agent_id=context.get("agent_id"))
+    return AgentWorkspace(
+        **vars(ws),
+        guardrail_menu=guardrail_menu(),
+        insights=insights_available(),
+        max_topics=int(settings.ANALYTICS_MAX_TOPICS),
+    )
 
 
 def _current_prompt(form: dict, ws: Workspace) -> tuple[Optional[str], str]:
-    """The form's prompt as ``(id or None for pending, text)``; text is empty when unknown."""
-    pending = form.get("pending_prompt")
-    if pending:
-        return None, pending.get("content") or ""
+    """The form's prompt as ``(id or None for unsaved text, text)``; text is empty when unknown."""
+    draft = form.get("prompt_draft")
+    if draft:
+        return None, draft.get("content") or ""
     prompt_id = form.get("prompt_id") or "default"
     return prompt_id, ws.prompt_texts.get(prompt_id, "")
 
 
+def _topic_room(form: dict, ws: AgentWorkspace) -> int:
+    """How many more Insights topics the agent has room for."""
+    return max(0, ws.max_topics - len(form["analytics"]["topics"]))
+
+
+def _safety_options(form: dict, ws: AgentWorkspace) -> dict:
+    """What the safety step may set for this caller on this instance, for the model."""
+    no_access = {"available": False, "why": "no_access"}
+    defaults = settings.DEFAULT_AGENT_LIMITS
+    limits = {
+        "available": True,
+        "recommended": {"requests": defaults["request_limit"], "tokens": defaults["token_limit"]},
+    } if ws.policy_editable else no_access
+    if not ws.policy_editable:
+        guardrails = no_access
+    elif not ws.guardrail_menu:
+        guardrails = {"available": False, "why": "off_on_this_instance"}
+    else:
+        guardrails = {"available": True, "checks": [
+            {"id": check, "controls": [{"stage": stage, "action": action} for stage, action in GUARDRAIL_MENU[check]]}
+            for check in ws.guardrail_menu
+        ]}
+    room = _topic_room(form, ws)
+    if not ws.insights:
+        topics = {"available": False, "why": "off_on_this_instance"}
+    elif not form["analytics"]["enabled"]:
+        topics = {"available": False, "why": "turned_off_for_this_agent"}
+    elif not room:
+        topics = {"available": False, "why": "no_room"}
+    else:
+        topics = {"available": True, "room": room}
+    return {"limits": limits, "guardrails": guardrails, "insights_topics": topics}
+
+
 def context_data(req: DraftRequest, ws: Workspace) -> dict:
-    """The form as the model reads it: current values, and the current prompt's text when it is custom."""
+    """The form as the model reads it: the step, current values, and the current prompt's text when it is custom."""
     form = req.context["form"]
-    data: dict[str, Any] = {
-        "editing_saved_agent": bool(ws.agent),
+    step = req.context["step"]
+    data: dict[str, Any] = {"editing_saved_agent": bool(ws.agent)}
+    if step:
+        data["step"] = step
+    if req.context["earlier"]:
+        data["users_earlier_messages"] = req.context["earlier"]
+    data.update({
         "name": form["name"],
         "description": form["description"],
         "agent_type": form["agent_type"] or "classic",
         "sources": form["sources"],
         "tools": form["tools"],
         "starters": form["starters"],
-    }
-    if form.get("pending_prompt"):
-        data["prompt"] = {"kind": "new (not saved yet)", **form["pending_prompt"]}
+    })
+    if form.get("prompt_draft"):
+        data["prompt"] = {"kind": "new (open in the prompt editor, not saved yet)", **form["prompt_draft"]}
     else:
         prompt_id = form.get("prompt_id") or "default"
         data["prompt"] = {"kind": "existing", "id": prompt_id}
@@ -127,6 +310,9 @@ def context_data(req: DraftRequest, ws: Workspace) -> dict:
             data["prompt"]["content"] = text
     _, current = _current_prompt(form, ws)
     data["prompt"]["mode"] = "template" if is_template(current) else "persona"
+    if step == "safety":
+        data.update({key: form[key] for key in SAFETY_FIELDS})
+        data["safety_options"] = _safety_options(form, ws)
     return data
 
 
@@ -134,7 +320,7 @@ def context_data(req: DraftRequest, ws: Workspace) -> dict:
 # Instructions
 # ---------------------------------------------------------------------------
 
-INSTRUCTIONS = f"""You are drafting an AI agent in DocsGPT. The user may be new to this: turn their description into \
+AGENT_FIELDS = f"""You are drafting an AI agent in DocsGPT. The user may be new to this: turn their description into \
 a good agent and explain your choices simply.
 
 What an agent has, and what you may set (only these fields):
@@ -145,18 +331,24 @@ and Q&A. "research" plans, searches several times and writes longer, deeper answ
 in-depth questions across many documents. Prefer classic unless the user wants research-style work.
 - sources: knowledge sources, by id, from the workspace.
 - tools: tools, by id, from the workspace.
-- prompt: an existing prompt by id, or a new prompt (name + content) that the form creates when the user saves.
+- prompt: an existing prompt by id, or a new prompt (name + content) that the user reviews in the prompt editor \
+before it is saved.
 - starters: up to 4 example first questions shown in a new chat, each at most 200 characters, written the way \
-the agent's users would ask.
-Never set or mention changing models, guardrails, limits, allowed websites, API write permissions, a JSON \
-response schema, analytics or sharing: those stay as they are.
+the agent's users would ask."""
 
-Designing it well:
+NEVER_POLICY = """Never set or mention changing models, guardrails, limits, allowed websites, API write permissions, \
+a JSON response schema, analytics or sharing: those stay as they are."""
+
+NEVER_OTHER = """Never set or mention changing models, allowed websites, API write permissions, a JSON response \
+schema or sharing: those stay as they are."""
+
+DESIGN_RULES = f"""Designing it well:
 - Pick knowledge and tools only from what exists in the workspace, and only what the agent needs. Read a source's \
 files or a tool's actions when the name alone doesn't tell you what it covers. Skip a source whose status is \
 failed.
-- If the agent faces the public (customers, a website) and a source looks internal (contracts, rates, HR, \
-salaries, credentials, internal notes), don't attach it silently: ask, or leave it out and say why.
+- If the agent faces the public (customers, a website) and a source or tool looks internal (contracts, rates, HR, \
+salaries, credentials, internal notes; a tool that reads or changes internal systems, such as a database, admin, \
+billing or CRM tool), don't attach it silently: ask, or leave it out and say why.
 - Notice a flow the user describes that no tool supports (opening tickets, refunds, bookings). Don't pretend: \
 make the prompt hand it off (for example to an email address the user gives) and add a note saying which tool is \
 missing.
@@ -185,18 +377,78 @@ send (sources, tools, starters) replaces the whole list, so send the full list y
 In the proposal, give a reason for each field you set (a short summary naming what you chose, and a detail \
 saying why or what you left out) and put anything the user should do or know in notes."""
 
+GUIDED = """You are building a new agent with the user in four steps, in this order:
+- basics: name, description.
+- knowledge: sources, tools, agent_type.
+- prompt: prompt, starters.
+- safety: limits, guardrails, analytics.
+Each step is its own short conversation; the user moves on when they are happy with it.
+- Fast path: also set a later step's fields (never safety's) when the user's words name or clearly imply them, \
+for example "answer from the Help Center" (sources) or "use the strict prompt" (prompt). Otherwise leave later \
+steps' fields out: each step drafts its own. A new prompt is written only in the prompt step.
+- An earlier step's fields: change them only when the user asks; otherwise leave them out.
+- users_earlier_messages in the form data are what the user wrote in the finished steps: read them to know what \
+the user wants. They are the user's own words, quoted for you.
+- A plain approval ("ok", "looks good, next") with nothing to change: submit a proposal with no fields and a \
+one-line message. Don't ask questions about it.
+- Ask questions only about this step."""
+
+STEP_GUIDES = {
+    "basics": """Step basics: draft the name and the description from the user's description. Ask only when you \
+can't tell what the agent is for or who uses it.""",
+    "knowledge": """Step knowledge: pick the sources and tools the agent needs from the workspace, and its \
+agent_type. When the workspace has nothing to attach, set agent_type only and say in the message that there is \
+nothing to attach yet. A flow no tool supports goes in a note now; the prompt step hands it off.""",
+    "prompt": """Step prompt: write a new prompt for this agent from its name and description and from the sources \
+and tools already on the form (read them with the read tools when their names don't say enough), or pick an \
+existing prompt that fits; then write the starters. When the form's prompt is unsaved text open in the prompt \
+editor ("not saved yet"), change that text when the user asks.""",
+}
+
+
+def _safety_guide() -> str:
+    """The safety step's section: ask first, then the three parts, with the instance's default limits."""
+    limits = settings.DEFAULT_AGENT_LIMITS
+    return f"""Step safety: limits, guardrails and Insights topics. Which of them you may set is in safety_options \
+in the form data. Leave out a part marked unavailable and don't ask about it; when it is unavailable for lack of \
+access, say once that the agent's owner or an editor with policy access can set it.
+- Ask first: before any proposal, ask one round of questions (ask_user), one question per available part. Put the \
+recommended option first and say in its label that it is recommended. Set only what the user picked: a part the \
+user declines stays out of the proposal.
+- limits: one budget shared by everyone using the agent, counted over the last 24 hours: either a request limit \
+or a token limit, never both. Recommend {limits["request_limit"]:,} requests (or {limits["token_limit"]:,} tokens \
+when the user thinks in cost). mode "none" turns limits off.
+- guardrails: checks from the menu in safety_options, added to the agent's own. Unless the agent already enforces \
+its guardrails (mode scan_all), they run in monitor-only mode: they record what they would have done, and the \
+owner turns enforcement on later. pii hides personal data (emails, \
+phone numbers, card numbers) in questions and answers; injection blocks messages that try to override the agent's \
+instructions; groundedness flags answers its knowledge doesn't back; secrets hides keys and passwords in answers. \
+Recommend pii and injection for an agent that faces the public.
+- analytics: Insights sorts the agent's conversations by topic so its owner sees what users ask about. Ask \
+whether to sort conversations into these starting topics, naming up to {MAX_NEW_TOPICS} topics drawn from what \
+the agent is for, each a name of at most {TOPIC_NAME_CHARS} characters and a description of at most \
+{TOPIC_DESCRIPTION_UNITS} characters listing concrete things users ask ("Late or stuck parcels, missed delivery \
+windows"). Never reuse a topic the agent already has."""
+
 
 def instructions(req: DraftRequest, ws: Workspace) -> str:
-    """The agent recipe's system instructions."""
+    """The agent recipe's system instructions: the shared rules, then the current step's or improve mode's."""
+    step = req.context["step"]
     form = req.context["form"]
+    parts = [AGENT_FIELDS, NEVER_OTHER if step == "safety" else NEVER_POLICY, DESIGN_RULES]
+    if step:
+        own = ", ".join(STEP_FIELDS[step])
+        parts += [GUIDED, f"The current step is {step}. In this step set only: {own}.",
+                  _safety_guide() if step == "safety" else STEP_GUIDES[step]]
+        return "\n\n".join(parts)
     has_values = any(form.get(k) for k in ("name", "description", "sources", "tools", "starters")) \
-        or bool(form.get("pending_prompt")) or (form.get("prompt_id") not in (None, "default"))
-    situation = (
+        or bool(form.get("prompt_draft")) or (form.get("prompt_id") not in (None, "default"))
+    parts.append(
         "The form already has values: treat the user's message as a change request."
         if has_values or ws.agent
         else "The form is empty: draft the whole agent from the user's description."
     )
-    return f"{INSTRUCTIONS}\n\n{situation}"
+    return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +480,38 @@ PROPOSAL_SCHEMA: dict = {
                     "required": ["kind"],
                 },
                 "starters": {"type": "array", "items": {"type": "string"}},
+                "limits": {
+                    "type": "object",
+                    "description": 'Step safety only. mode "requests" or "tokens" with value, or "none" (no limit).',
+                    "properties": {
+                        "mode": {"type": "string", "enum": list(LIMIT_MODES)},
+                        "value": {"type": "integer", "description": "Requests or tokens per 24 hours."},
+                    },
+                    "required": ["mode"],
+                },
+                "guardrails": {
+                    "type": "object",
+                    "description": "Step safety only. Checks to add, from the menu.",
+                    "properties": {
+                        "checks": {"type": "array", "items": {"type": "string", "enum": list(GUARDRAIL_MENU)}},
+                    },
+                    "required": ["checks"],
+                },
+                "analytics": {
+                    "type": "object",
+                    "description": f"Step safety only. Insights topics to add, at most {MAX_NEW_TOPICS}.",
+                    "properties": {
+                        "topics": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {"name": {"type": "string"}, "description": {"type": "string"}},
+                                "required": ["name", "description"],
+                            },
+                        },
+                    },
+                    "required": ["topics"],
+                },
             },
         },
         "reasons": {
@@ -297,20 +581,158 @@ def _new_prompt(raw: dict, req: DraftRequest, ws: Workspace, notes: list[str]) -
     return {"kind": "new", "name": name, "content": content}
 
 
+def _for_step(raw_fields: dict, step: Optional[str]) -> dict:
+    """The proposal's fields the step may set: policy only in the safety step, a new prompt only in the prompt
+    step or improve mode. Anything else is left out without a problem: the model drafted ahead."""
+    out = {key: value for key, value in raw_fields.items() if step == "safety" or key not in SAFETY_FIELDS}
+    prompt = out.get("prompt")
+    if step not in (None, "prompt") and isinstance(prompt, dict) and prompt.get("kind") == "new":
+        del out["prompt"]
+    return out
+
+
+def _limits(raw: Any) -> dict:
+    """A drafted limit: ``{mode: "none"}`` or ``{mode, value}``.
+
+    Raises:
+        ProposalInvalid: An unknown mode, or a request or token limit without a whole number in range.
+    """
+    mode = raw.get("mode") if isinstance(raw, dict) else None
+    if mode not in LIMIT_MODES:
+        raise ProposalInvalid(['limits.mode is "requests", "tokens" or "none".'])
+    if mode == "none":
+        return {"mode": "none"}
+    value = raw.get("value")
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= LIMIT_MAX:
+        raise ProposalInvalid([f"A {mode} limit needs a whole number from 1 to {LIMIT_MAX:,}."])
+    return {"mode": mode, "value": value}
+
+
+def _checks(raw: Any, form: dict, ws: AgentWorkspace) -> list[str]:
+    """The menu checks to add, in the model's order: available here, and not already on (an agent whose
+    guardrails are off gets a check it has again, since adding it turns them on)."""
+    checks = raw.get("checks") if isinstance(raw, dict) else None
+    guardrails = form["guardrails"]
+    present = set(guardrails["checks"]) if guardrails["enabled"] else set()
+    out: list[str] = []
+    for check in checks if isinstance(checks, list) else []:
+        key = str(check).strip().lower()
+        if key in ws.guardrail_menu and key not in present and key not in out:
+            out.append(key)
+    return out
+
+
+def _topics(raw: Any, form: dict, ws: AgentWorkspace) -> list[dict]:
+    """The Insights topics to add, checked with the rules the agent's analytics config applies on save.
+
+    A name the agent (or an earlier topic of the proposal) already has is left out.
+
+    Raises:
+        ProposalInvalid: Too many topics, a name or description the analytics config refuses, or more topics
+            than the agent has room for.
+    """
+    items = raw.get("topics") if isinstance(raw, dict) else None
+    items = [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+    if len(items) > MAX_NEW_TOPICS:
+        raise ProposalInvalid([f"Suggest at most {MAX_NEW_TOPICS} topics."])
+    taken = {name.lower() for name in form["analytics"]["topics"]}
+    out: list[dict] = []
+    problems: list[str] = []
+    for item in items:
+        name = clean_text(item.get("name"), TOPIC_NAME_CHARS + 50)
+        description = clean_text(item.get("description"), TOPIC_DESCRIPTION_UNITS * 2)
+        if not description:
+            problems.append(f"Topic {name!r} needs a description.")
+            continue
+        try:
+            topic = AnalyticsTopic.model_validate({"id": _CHECK_TOPIC_ID, "name": name, "description": description})
+        except ValidationError as err:
+            problems.append(f"Topic {name!r}: {err.errors()[0].get('msg', err)}.".replace("Value error, ", ""))
+            continue
+        if topic.name.lower() in taken:
+            continue
+        taken.add(topic.name.lower())
+        out.append({"name": topic.name, "description": topic.description})
+    if problems:
+        raise ProposalInvalid(problems[:5])
+    room = _topic_room(form, ws)
+    if len(out) > room:
+        raise ProposalInvalid([f"The agent has room for {room} more topics: suggest at most {room}."])
+    return out
+
+
+def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dict, dropped: list[dict]) -> None:
+    """Check the safety step's limits, guardrails and topics into ``fields``.
+
+    Limits and guardrails need ``edit_policy`` (listed in ``dropped`` as ``not_allowed`` without it); a part the
+    instance or the agent has turned off is left out. What remains is accepted only after a questions round.
+
+    Raises:
+        ProposalInvalid: Policy proposed before asking the user, or a value the model can fix.
+    """
+    form = req.context["form"]
+    available = {
+        "limits": ws.policy_editable,
+        "guardrails": ws.policy_editable and bool(ws.guardrail_menu),
+        "analytics": ws.insights and form["analytics"]["enabled"] and _topic_room(form, ws) > 0,
+    }
+    wanted = []
+    for key in SAFETY_FIELDS:
+        if key not in raw_fields:
+            continue
+        if key != "analytics" and not ws.policy_editable:
+            dropped.append({"field": key, "reason": "not_allowed"})
+        elif available[key]:
+            wanted.append(key)
+    if wanted and not question_rounds(req.messages):
+        raise ProposalInvalid([ASK_FIRST])
+    if "limits" in wanted:
+        fields["limits"] = _limits(raw_fields["limits"])
+    if "guardrails" in wanted:
+        checks = _checks(raw_fields["guardrails"], form, ws)
+        if checks:
+            fields["guardrails"] = {"checks": checks}
+    if "analytics" in wanted:
+        topics = _topics(raw_fields["analytics"], form, ws)
+        if topics:
+            fields["analytics"] = {"topics": topics}
+
+
+def _progress(step: Optional[str], fields: dict) -> tuple[list[str], Optional[str]]:
+    """The steps a proposal fills (the current one and the later ones it drafted ahead) and the next step to run.
+
+    The prompt step counts as filled only with a prompt: starters alone leave it to write one.
+    """
+    if step is None:
+        return [], None
+    later = STEPS[STEPS.index(step) + 1:]
+    filled = [step] + [
+        s for s in later
+        if ("prompt" in fields if s == "prompt" else any(key in fields for key in STEP_FIELDS[s]))
+    ]
+    return filled, next((s for s in later if s not in filled), None)
+
+
 def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     """Turn ``submit_proposal`` arguments into the agent ``proposal`` payload.
 
-    Unknown fields are left out. Ids the caller can't attach are dropped and
-    listed in ``dropped``. A field equal to the form's value is left out, so
-    the form marks only real changes.
+    Unknown fields, and fields the step may not set, are left out. Ids the
+    caller can't attach, and policy they may not change, are dropped and listed
+    in ``dropped``. A field equal to the form's value is left out, so the form
+    marks only real changes. ``steps`` and ``next_step`` say where the guided
+    build goes next (empty and None in improve mode).
 
     Raises:
-        ProposalInvalid: A value the model can fix (length, empty name, starters, prompt rules).
+        ProposalInvalid: A value the model can fix (length, empty name, starters, prompt rules, limits, topics),
+            or policy proposed before asking the user.
     """
     from docsgpt.api.user.agents.starters import normalize_starters, StartersError
 
+    step = req.context["step"]
     form = req.context["form"]
-    raw_fields = args.get("fields") or {}
+    raw_fields = _for_step(args.get("fields") or {}, step)
     fields: dict[str, Any] = {}
     dropped: list[dict] = []
     notes = [clean_text(n, NOTE_MAX) for n in args.get("notes") or [] if clean_text(n, NOTE_MAX)][:MAX_NOTES]
@@ -353,6 +775,8 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
                 fields["prompt"] = {"kind": "existing", "id": prompt_id}
             else:
                 dropped.append({"field": "prompt", "id": prompt_id[:_ID_CHARS], "reason": "not_found"})
+    if step == "safety":
+        _policy(raw_fields, req, ws, fields, dropped)
 
     _drop_unchanged(fields, form)
     reasons = []
@@ -367,12 +791,15 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         if detail:
             entry["detail"] = detail
         reasons.append(entry)
+    steps, next_step = _progress(step, fields)
     return {
         "message": clean_text(args.get("message"), MESSAGE_MAX),
         "fields": fields,
         "reasons": reasons[:MAX_REASONS],
         "notes": notes[:MAX_NOTES],
         "dropped": dropped,
+        "steps": steps,
+        "next_step": next_step,
     }
 
 
@@ -389,13 +816,16 @@ def _drop_unchanged(fields: dict, form: dict) -> None:
     for key, value in current.items():
         if key in fields and fields[key] == value:
             del fields[key]
+    limits = fields.get("limits")
+    if limits and limits["mode"] == form["limits"]["mode"] and limits.get("value") == form["limits"]["value"]:
+        del fields["limits"]
     prompt = fields.get("prompt")
     if prompt:
-        pending = form.get("pending_prompt")
-        if prompt["kind"] == "existing" and not pending and prompt["id"] == (form.get("prompt_id") or "default"):
+        draft = form.get("prompt_draft")
+        if prompt["kind"] == "existing" and not draft and prompt["id"] == (form.get("prompt_id") or "default"):
             del fields["prompt"]
-        elif prompt["kind"] == "new" and pending and pending.get("content") == prompt["content"] \
-                and pending.get("name") == prompt["name"]:
+        elif prompt["kind"] == "new" and draft and draft.get("content") == prompt["content"] \
+                and draft.get("name") == prompt["name"]:
             del fields["prompt"]
 
 

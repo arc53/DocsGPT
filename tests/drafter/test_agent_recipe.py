@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
+from unittest.mock import patch
+
 import pytest
 
+from docsgpt.drafter import agent_recipe
 from docsgpt.drafter.agent_recipe import (
     AGENT_RECIPE,
+    AgentWorkspace,
     context_data,
+    guardrail_menu,
     instructions,
     NAME_MAX,
     parse_context,
@@ -15,33 +21,42 @@ from docsgpt.drafter.agent_recipe import (
 from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid
 from docsgpt.drafter.runner import build_messages
+from tests.drafter.fakes import QUESTIONS
 
 TOOL_ID = "11111111-1111-1111-1111-111111111111"
 SOURCE_ID = "22222222-2222-2222-2222-222222222222"
 PROMPT_ID = "33333333-3333-3333-3333-333333333333"
+MENU = ["pii", "injection", "groundedness", "secrets"]
 
 
-def _ws(**kwargs) -> Workspace:
-    ws = Workspace(
+def _ws(**kwargs) -> AgentWorkspace:
+    ws = AgentWorkspace(
         sources=[{"id": SOURCE_ID, "name": "Help Center"}],
         tools=[{"id": TOOL_ID, "name": "Tracking", "kind": "api_tool", "actions": []}],
         prompts=[{"id": p, "name": p, "kind": "built-in"} for p in ("default", "creative", "strict")]
         + [{"id": PROMPT_ID, "name": "Support", "kind": "own"}],
         prompt_texts={"default": "You are DocsGPT {{ system.date }}", PROMPT_ID: "You help customers."},
+        guardrail_menu=list(MENU),
+        insights=True,
+        max_topics=15,
     )
     for key, value in kwargs.items():
         setattr(ws, key, value)
     return ws
 
 
-def _req(form=None, *user_messages) -> DraftRequest:
+def _req(form=None, *user_messages, step=None, earlier=None, asked=False) -> DraftRequest:
     messages = [{"role": "user", "content": m} for m in (user_messages or ("Build me a support agent",))]
-    return DraftRequest("alice", "agent", messages, parse_context({"form": form or {}}), "drafter:t")
+    if asked:
+        messages = [messages[0], {"role": "assistant", "content": json.dumps(QUESTIONS)},
+                    {"role": "user", "content": "Recommended limits, PII, yes to the topics"}]
+    context = parse_context({"form": form or {}, "step": step, "earlier": earlier or []})
+    return DraftRequest("alice", "agent", messages, context, "drafter:t")
 
 
-def _validate(fields, form=None, ws=None, messages=(), **extra):
+def _validate(fields, form=None, ws=None, messages=(), step=None, asked=False, **extra):
     args = {"message": "Done.", "fields": fields, **extra}
-    return validate(args, _req(form, *messages), ws or _ws())
+    return validate(args, _req(form, *messages, step=step, asked=asked), ws or _ws())
 
 
 @pytest.mark.unit
@@ -49,19 +64,45 @@ class TestContext:
     def test_values_are_cleaned_and_capped(self):
         ctx = parse_context({
             "agent_id": " a1 ",
+            "step": "knowledge",
+            "earlier": ["Build a help desk", "", 5] + ["x" * 2500] + [f"m{i}" for i in range(20)],
             "form": {"name": "N\x00ame", "sources": ["s1", "s1", 3, ""], "tools": "nope",
-                     "prompt_id": "strict", "pending_prompt": {"name": "P", "content": "x"},
+                     "prompt_id": "strict", "prompt_draft": {"name": "P", "content": "x"},
+                     "pending_prompt": {"name": "Old", "content": "y"},
                      "starters": ["Hi", "", 5], "models": ["gpt"]},
         })
-        assert ctx["agent_id"] == "a1"
+        assert ctx["agent_id"] == "a1" and ctx["step"] == "knowledge"
+        assert len(ctx["earlier"]) == 12 and ctx["earlier"][0] == "Build a help desk"
+        assert len(ctx["earlier"][1]) <= 2000
         form = ctx["form"]
         assert form["name"] == "Name" and form["sources"] == ["s1"] and form["tools"] == []
-        assert form["pending_prompt"] == {"name": "P", "content": "x"} and form["starters"] == ["Hi"]
-        assert "models" not in form
+        assert form["prompt_draft"] == {"name": "P", "content": "x"} and form["starters"] == ["Hi"]
+        assert "models" not in form and "pending_prompt" not in form
 
-    def test_a_form_that_is_not_an_object_is_refused(self):
+    def test_policy_values_get_defaults_and_wrong_values_are_left_out(self):
+        form = parse_context({"form": {}})["form"]
+        assert form["limits"] == {"mode": "none", "value": None}
+        assert form["guardrails"] == {"enabled": False, "mode": "monitor_only", "checks": []}
+        assert form["analytics"] == {"enabled": True, "topics": []}
+        form = parse_context({"form": {
+            "limits": {"mode": "tokens", "value": 50000},
+            "guardrails": {"enabled": True, "mode": "scan_all", "checks": ["PII", "pii", 3]},
+            "analytics": {"enabled": False, "topics": ["Billing", "", 4]},
+        }})["form"]
+        assert form["limits"] == {"mode": "tokens", "value": 50000}
+        assert form["guardrails"] == {"enabled": True, "mode": "scan_all", "checks": ["pii"]}
+        assert form["analytics"] == {"enabled": False, "topics": ["Billing"]}
+        form = parse_context({"form": {"limits": {"mode": "forever", "value": True}}})["form"]
+        assert form["limits"] == {"mode": "none", "value": None}
+
+    @pytest.mark.parametrize("raw", [{"form": ["x"]}, {"step": "publish"}, {"step": 3}])
+    def test_a_bad_form_or_step_is_refused(self, raw):
         with pytest.raises(BadDraftRequest):
-            parse_context({"form": ["x"]})
+            parse_context(raw)
+
+    def test_no_step_is_improve_mode(self):
+        assert parse_context({"step": None})["step"] is None
+        assert parse_context({})["step"] is None
 
     def test_the_model_reads_a_custom_prompts_text_and_its_mode(self):
         data = context_data(_req({"prompt_id": PROMPT_ID}), _ws())
@@ -70,6 +111,70 @@ class TestContext:
         data = context_data(_req({}), _ws())
         assert data["prompt"] == {"kind": "existing", "id": "default", "mode": "template"}
         assert data["agent_type"] == "classic"
+
+    def test_the_prompt_views_unsaved_text_is_the_current_prompt(self):
+        data = context_data(_req({"prompt_id": PROMPT_ID, "prompt_draft": {"name": "D", "content": "Be kind."}}),
+                            _ws())
+        assert data["prompt"]["content"] == "Be kind." and data["prompt"]["name"] == "D"
+        assert data["prompt"]["mode"] == "persona" and "not saved" in data["prompt"]["kind"]
+
+    def test_the_step_and_earlier_messages_are_given(self):
+        data = context_data(_req({}, step="knowledge", earlier=["A help desk for parcels"]), _ws())
+        assert data["step"] == "knowledge"
+        assert data["users_earlier_messages"] == ["A help desk for parcels"]
+        assert "limits" not in data and "safety_options" not in data
+        assert "users_earlier_messages" not in context_data(_req({}), _ws())
+
+    def test_the_safety_step_says_what_is_available(self):
+        data = context_data(_req({"analytics": {"enabled": True, "topics": ["Billing"]}}, step="safety"), _ws())
+        options = data["safety_options"]
+        assert options["limits"]["available"] is True
+        assert options["limits"]["recommended"] == {"requests": 500, "tokens": 50000}
+        assert [c["id"] for c in options["guardrails"]["checks"]] == MENU
+        assert options["insights_topics"] == {"available": True, "room": 14}
+        assert data["limits"] == {"mode": "none", "value": None}
+
+    def test_without_policy_access_or_insights_the_parts_are_unavailable(self):
+        ws = _ws(policy_editable=False, insights=False)
+        options = context_data(_req({}, step="safety"), ws)["safety_options"]
+        assert options["limits"] == {"available": False, "why": "no_access"}
+        assert options["guardrails"] == {"available": False, "why": "no_access"}
+        assert options["insights_topics"]["available"] is False
+        off = context_data(_req({"analytics": {"enabled": False}}, step="safety"), _ws())["safety_options"]
+        assert off["insights_topics"]["available"] is False
+
+
+@pytest.mark.unit
+class TestAvailability:
+    def test_the_menu_holds_the_checks_the_instance_allows(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GUARDRAILS_ENABLED", True)
+        monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", [])
+        assert guardrail_menu() == MENU
+        monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", ["pii", "secrets"])
+        assert guardrail_menu() == ["pii", "secrets"]
+        monkeypatch.setattr(settings, "GUARDRAILS_ENABLED", False)
+        assert guardrail_menu() == []
+
+    def test_the_workspace_carries_the_instance_flags(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+        monkeypatch.setattr(settings, "GUARDRAILS_ENABLED", True)
+        monkeypatch.setattr(settings, "GUARDRAILS_CHECKS_ENABLED", [])
+        loaded = Workspace(sources=[{"id": SOURCE_ID, "name": "Help"}], policy_editable=False)
+        with patch.object(agent_recipe, "load_workspace", return_value=loaded), patch(
+            "docsgpt.decisions.available", return_value=True
+        ):
+            ws = AGENT_RECIPE.load_workspace("alice", {"agent_id": None})
+        assert isinstance(ws, AgentWorkspace) and ws.sources == loaded.sources
+        assert ws.policy_editable is False and ws.insights is True and ws.guardrail_menu == MENU
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", False)
+        with patch.object(agent_recipe, "load_workspace", return_value=Workspace()), patch(
+            "docsgpt.decisions.available", return_value=True
+        ):
+            assert AGENT_RECIPE.load_workspace("alice", {"agent_id": None}).insights is False
 
 
 @pytest.mark.unit
@@ -88,10 +193,41 @@ class TestInstructions:
         ):
             assert rule in text, rule
         assert "{{ source.citation_rules }}" not in text
+        assert "The current step" not in text
+
+    def test_internal_looking_tools_are_asked_about_too(self):
+        text = instructions(_req(), _ws())
+        assert "a source or tool looks internal" in text
 
     def test_a_filled_form_is_a_change_request(self):
         assert "change request" in instructions(_req({"name": "Shipping help"}), _ws())
         assert "change request" in instructions(_req(), _ws(agent={"id": "a"}))
+        assert "change request" in instructions(_req({"prompt_draft": {"name": "P", "content": "x"}}), _ws())
+
+    @pytest.mark.parametrize("step,own", [
+        ("basics", "name, description"),
+        ("knowledge", "sources, tools, agent_type"),
+        ("prompt", "prompt, starters"),
+        ("safety", "limits, guardrails, analytics"),
+    ])
+    def test_each_step_sets_only_its_own_fields(self, step, own):
+        text = instructions(_req({}, step=step), _ws())
+        assert f"The current step is {step}" in text
+        assert f"In this step set only: {own}" in text
+        assert "Fast path" in text and "plain approval" in text and "users_earlier_messages" in text
+
+    def test_the_prompt_step_writes_from_the_attached_knowledge(self):
+        text = instructions(_req({}, step="prompt"), _ws())
+        assert "from the sources and tools already on the form" in text
+
+    def test_only_the_safety_step_may_talk_about_policy(self):
+        for step in ("basics", "knowledge", "prompt"):
+            assert "Never set or mention changing models, guardrails" in instructions(_req({}, step=step), _ws())
+        text = instructions(_req({}, step="safety"), _ws())
+        assert "Never set or mention changing models, guardrails" not in text
+        for rule in ("Ask first", "recommended", "500 requests", "50,000 tokens", "last 24 hours",
+                     "either a request limit or a token limit", "starting topics", "Set only what the user picked"):
+            assert rule in text, rule
 
     def test_system_prompt_carries_the_recipe_and_the_tool_protocol(self):
         messages = build_messages(_req(), AGENT_RECIPE, _ws(), tool_mode=True, allow_questions=True)
@@ -117,7 +253,7 @@ class TestValidate:
         assert proposal["fields"]["tools"] == ["owners-tool", TOOL_ID] and proposal["dropped"] == []
 
     def test_unknown_fields_never_reach_the_form(self):
-        proposal = _validate({"name": "Help", "models": ["gpt"], "guardrails": {}, "json_schema": {}})
+        proposal = _validate({"name": "Help", "models": ["gpt"], "json_schema": {}})
         assert proposal["fields"] == {"name": "Help"}
 
     def test_unchanged_fields_are_left_out(self):
@@ -128,6 +264,11 @@ class TestValidate:
                                                  {"field": "description", "summary": "Says what it does"}])
         assert proposal["fields"] == {"description": "New"}
         assert proposal["reasons"] == [{"field": "description", "summary": "Says what it does"}]
+
+    def test_the_unsaved_prompt_redrafted_the_same_is_left_out(self):
+        draft = {"name": "P", "content": "You help."}
+        proposal = _validate({"prompt": {"kind": "new", **draft}}, form={"prompt_draft": draft}, step="prompt")
+        assert proposal["fields"] == {}
 
     def test_starters_are_normalised(self):
         proposal = _validate({"starters": [" Where is my parcel? ", "where is my parcel?", ""]})
@@ -170,3 +311,158 @@ class TestValidate:
         proposal = _validate({"prompt": {"kind": "new", "name": "Copy", "content": template + " Be brief."}},
                              ws=ws)
         assert proposal["fields"]["prompt"]["name"] == "Copy"
+
+
+NEW_PROMPT = {"kind": "new", "name": "Help desk", "content": "You answer parcel questions."}
+
+
+@pytest.mark.unit
+class TestSteps:
+    def test_a_step_fills_itself_and_points_at_the_next(self):
+        proposal = _validate({"name": "Help desk", "description": "Answers parcels."}, step="basics")
+        assert proposal["steps"] == ["basics"] and proposal["next_step"] == "knowledge"
+
+    def test_the_fast_path_fills_later_steps(self):
+        proposal = _validate({"name": "Help desk", "sources": [SOURCE_ID],
+                              "prompt": {"kind": "existing", "id": "strict"}}, step="basics")
+        assert proposal["steps"] == ["basics", "knowledge", "prompt"] and proposal["next_step"] == "safety"
+
+    def test_starters_alone_leave_the_prompt_step_to_run(self):
+        proposal = _validate({"name": "Help desk", "starters": ["Where is my parcel?"]}, step="basics")
+        assert proposal["fields"]["starters"] == ["Where is my parcel?"]
+        assert proposal["steps"] == ["basics"] and proposal["next_step"] == "knowledge"
+
+    @pytest.mark.parametrize("step", ["basics", "knowledge", "safety"])
+    def test_a_new_prompt_outside_the_prompt_step_is_dropped(self, step):
+        proposal = _validate({"agent_type": "research", "prompt": NEW_PROMPT}, step=step, asked=True)
+        assert "prompt" not in proposal["fields"] and proposal["dropped"] == []
+        assert "prompt" not in proposal["steps"]
+
+    @pytest.mark.parametrize("step", ["prompt", None])
+    def test_a_new_prompt_is_kept_in_the_prompt_step_and_improve_mode(self, step):
+        assert _validate({"prompt": NEW_PROMPT}, step=step)["fields"]["prompt"] == NEW_PROMPT
+
+    @pytest.mark.parametrize("step", ["basics", "prompt", None])
+    def test_policy_fields_outside_the_safety_step_are_dropped(self, step):
+        proposal = _validate({"name": "Help desk", "limits": {"mode": "requests", "value": 500},
+                              "guardrails": {"checks": ["pii"]},
+                              "analytics": {"topics": [{"name": "Billing", "description": "Invoices"}]}},
+                             step=step, asked=True)
+        assert proposal["fields"] == {"name": "Help desk"} and proposal["dropped"] == []
+
+    @pytest.mark.parametrize("step,next_step", [("basics", "knowledge"), ("prompt", "safety"), ("safety", None)])
+    def test_a_plain_approval_is_an_empty_proposal(self, step, next_step):
+        proposal = _validate({}, step=step)
+        assert proposal["fields"] == {} and proposal["steps"] == [step] and proposal["next_step"] == next_step
+
+    def test_unchanged_later_fields_do_not_fill_their_step(self):
+        proposal = _validate({"name": "Help", "agent_type": "classic"}, step="basics")
+        assert proposal["steps"] == ["basics"]
+
+    def test_improve_mode_has_no_steps(self):
+        proposal = _validate({"name": "Help desk"})
+        assert proposal["steps"] == [] and proposal["next_step"] is None
+
+
+@pytest.mark.unit
+class TestSafety:
+    def test_policy_needs_a_questions_round_first(self):
+        with pytest.raises(ProposalInvalid, match="Ask the user first"):
+            _validate({"limits": {"mode": "requests", "value": 500}}, step="safety")
+        assert _validate({}, step="safety")["fields"] == {}
+
+    def test_limits_are_either_or(self):
+        proposal = _validate({"limits": {"mode": "requests", "value": 500}}, step="safety", asked=True,
+                             reasons=[{"field": "limits", "summary": "500 requests a day"}])
+        assert proposal["fields"] == {"limits": {"mode": "requests", "value": 500}}
+        assert proposal["reasons"] == [{"field": "limits", "summary": "500 requests a day"}]
+        proposal = _validate({"limits": {"mode": "none", "value": 7}}, form={"limits": {"mode": "tokens",
+                             "value": 50000}}, step="safety", asked=True)
+        assert proposal["fields"] == {"limits": {"mode": "none"}}
+
+    @pytest.mark.parametrize("limits", [{"mode": "tokens"}, {"mode": "requests", "value": 0},
+                                        {"mode": "requests", "value": 2.5}, {"mode": "tokens", "value": 10 ** 12}])
+    def test_a_limit_needs_a_sensible_number(self, limits):
+        with pytest.raises(ProposalInvalid):
+            _validate({"limits": limits}, step="safety", asked=True)
+
+    def test_unchanged_limits_are_left_out(self):
+        proposal = _validate({"limits": {"mode": "tokens", "value": 50000}},
+                             form={"limits": {"mode": "tokens", "value": 50000}}, step="safety", asked=True)
+        assert proposal["fields"] == {} and proposal["steps"] == ["safety"]
+
+    def test_guardrails_add_menu_checks_the_agent_lacks(self):
+        proposal = _validate({"guardrails": {"checks": ["pii", "pii", "secrets", "moderation", "injection"]}},
+                             form={"guardrails": {"enabled": True, "checks": ["secrets"]}},
+                             ws=_ws(guardrail_menu=["pii", "injection", "secrets"]), step="safety", asked=True)
+        assert proposal["fields"] == {"guardrails": {"checks": ["pii", "injection"]}}
+
+    def test_a_check_the_agent_has_switched_off_is_proposed_again(self):
+        proposal = _validate({"guardrails": {"checks": ["pii"]}},
+                             form={"guardrails": {"enabled": False, "checks": ["pii"]}}, step="safety", asked=True)
+        assert proposal["fields"] == {"guardrails": {"checks": ["pii"]}}
+
+    def test_guardrails_off_on_the_instance_are_left_out(self):
+        proposal = _validate({"guardrails": {"checks": ["pii"]}}, ws=_ws(guardrail_menu=[]),
+                             step="safety", asked=True)
+        assert proposal["fields"] == {} and proposal["dropped"] == []
+
+    def test_without_edit_policy_limits_and_guardrails_are_dropped(self):
+        topics = [{"name": "Billing", "description": "Invoices, refunds and failed payments"}]
+        proposal = _validate({"limits": {"mode": "requests", "value": 500}, "guardrails": {"checks": ["pii"]},
+                              "analytics": {"topics": topics}},
+                             ws=_ws(policy_editable=False), step="safety", asked=True)
+        assert proposal["fields"] == {"analytics": {"topics": topics}}
+        assert proposal["dropped"] == [{"field": "limits", "reason": "not_allowed"},
+                                       {"field": "guardrails", "reason": "not_allowed"}]
+
+    def test_topics_are_added_without_duplicates(self):
+        proposal = _validate({"analytics": {"topics": [
+            {"name": " Billing ", "description": "Invoices"},
+            {"name": "billing", "description": "Again"},
+            {"name": "Shipping", "description": "Late parcels"},
+        ]}}, form={"analytics": {"enabled": True, "topics": ["Shipping"]}}, step="safety", asked=True)
+        assert proposal["fields"] == {"analytics": {"topics": [{"name": "Billing", "description": "Invoices"}]}}
+
+    @pytest.mark.parametrize("ws,form", [
+        (_ws(insights=False), {}),
+        (_ws(), {"analytics": {"enabled": False}}),
+    ])
+    def test_topics_need_insights_on(self, ws, form):
+        proposal = _validate({"analytics": {"topics": [{"name": "Billing", "description": "Invoices"}]}},
+                             form=form, ws=ws, step="safety", asked=True)
+        assert proposal["fields"] == {}
+
+    @pytest.mark.parametrize("topics", [
+        [{"name": f"T{i}", "description": "d"} for i in range(5)],
+        [{"name": "x" * 61, "description": "d"}],
+        [{"name": "Billing", "description": "x" * 151}],
+        [{"name": "Billing", "description": "账" * 51}],
+        [{"name": "None of these", "description": "d"}],
+        [{"name": "Billing", "description": ""}],
+    ])
+    def test_topics_follow_the_analytics_rules(self, topics):
+        with pytest.raises(ProposalInvalid):
+            _validate({"analytics": {"topics": topics}}, step="safety", asked=True)
+
+    def test_topics_fit_the_room_left(self):
+        form = {"analytics": {"enabled": True, "topics": [f"T{i}" for i in range(14)]}}
+        two = [{"name": "A", "description": "a"}, {"name": "B", "description": "b"}]
+        with pytest.raises(ProposalInvalid, match="room for 1"):
+            _validate({"analytics": {"topics": two}}, form=form, step="safety", asked=True)
+
+
+@pytest.mark.unit
+def test_the_loop_sends_an_unasked_policy_proposal_back_to_ask():
+    from docsgpt.drafter.runner import run_draft
+    from tests.drafter.fakes import calls, FakeLLM, tool_call
+
+    fake = FakeLLM(
+        calls(tool_call("submit_proposal", {"message": "Set.", "fields": {"limits": {"mode": "requests",
+                                                                                     "value": 500}}})),
+        calls(tool_call("ask_user", QUESTIONS)),
+    )
+    events = list(run_draft(_req({}, "Continue with Limits and safety.", step="safety"), AGENT_RECIPE, _ws(),
+                            {"id": "m", "display_name": "M", "supports_tools": True}, llm_factory=fake.factory))
+    assert [e["type"] for e in events][-1] == "questions"
+    assert "Ask the user first" in fake.calls[1]["messages"][-1]["content"]
