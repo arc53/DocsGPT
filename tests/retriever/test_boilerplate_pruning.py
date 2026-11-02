@@ -83,6 +83,15 @@ class TestBoilerplatePruningRules:
             cleaned = prune_chunk_text(line, query="database configuration")
             assert cleaned == line, f"Prose was pruned: {line!r}"
 
+    def test_preserves_indentation_on_first_code_line(self):
+        """Preserves 4-space markdown code line indentation when trimming leading/trailing blank lines."""
+        raw = "\n\n    def hello_world():\n        return True\n\n"
+        cleaned = prune_chunk_text(raw, query="")
+        assert cleaned == "    def hello_world():\n        return True"
+
+        indented_nav = "    Next page: The API returns 401"
+        assert prune_chunk_text(indented_nav, query="") == indented_nav
+
     def test_breadcrumb_matching_variations_and_non_breadcrumbs(self):
         # Breadcrumbs should be pruned when they are purely navigation boilerplate
         assert prune_chunk_text("Home > API", query="database configuration") == ""

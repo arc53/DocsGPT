@@ -253,7 +253,12 @@ def prune_chunk_text(text: str, query: str = "", seen_boilerplate: Optional[Set[
         result.append(line_text)
         prev_empty = is_empty
 
-    return "\n".join(result).strip()
+    while result and not result[0].strip():
+        result.pop(0)
+    while result and not result[-1].strip():
+        result.pop()
+
+    return "\n".join(result)
 
 
 def prune_boilerplate(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[str, Any]]:
