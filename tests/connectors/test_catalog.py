@@ -182,6 +182,17 @@ class TestPresets:
         assert definition.capabilities == ("read", "write")
         assert definition.docs_url == "https://resend.com/docs/knowledge-base/mcp-server"
 
+    def test_motherduck_preset(self):
+        definition = catalog.get_definition("mcp:motherduck")
+
+        assert definition.name == "MotherDuck"
+        assert definition.category == "database"
+        assert definition.icon == "motherduck"
+        assert definition.mcp_url == "https://api.motherduck.com/mcp"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://motherduck.com/docs/sql-reference/mcp/"
+
     def test_presets_load_from_yaml(self, tmp_path, monkeypatch):
         presets = tmp_path / "mcp.yaml"
         presets.write_text(
