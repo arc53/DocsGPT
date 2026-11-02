@@ -4587,8 +4587,7 @@
         "to_template": "Cela ajoute des variables de modèle : DocsGPT utilisera le prompt tel quel et n’ajoutera plus ses propres sections (date, règles de réponse, citations, mise en forme et limites).",
         "to_persona": "Cela retire toutes les variables de modèle : DocsGPT traitera le prompt comme du texte brut et l’entourera de ses propres sections (date, règles de réponse, citations, mise en forme et limites).",
         "boundaries_removed": "La section Boundaries a disparu. Sans elle, l’agent risque de suivre des instructions cachées dans des documents ou des résultats d’outils.",
-        "citations_removed": "La variable des règles de citation (source.citation_rules) a disparu, les réponses ne citeront donc plus leurs sources sous la forme [1], [2].",
-        "agentic_copy": "C’est une copie d’un prompt intégré classique. Sur un agent de recherche, elle remplace les consignes de recherche (chercher plusieurs fois avant de répondre), les réponses risquent donc d’être plus superficielles."
+        "citations_removed": "La variable des règles de citation (source.citation_rules) a disparu, les réponses ne citeront donc plus leurs sources sous la forme [1], [2]."
       },
       "reviewLabel": "Modifications proposées",
       "removedText": "Supprimé : ",

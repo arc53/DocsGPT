@@ -959,7 +959,6 @@ describe('Prompts page', () => {
       context: {
         mode: 'improve',
         prompt: { id: 'p-own', name: 'Vendor checks' },
-        agent: null,
       },
     });
     // The changes are in the editor with their Accept and Reject; the

@@ -4480,8 +4480,7 @@
         "to_template": "This adds template variables, so DocsGPT will use the prompt exactly as written and stop adding its own sections: the date, answering rules, citations, formatting and boundaries.",
         "to_persona": "This removes every template variable, so DocsGPT will treat the prompt as plain text and add its own sections around it: the date, answering rules, citations, formatting and boundaries.",
         "boundaries_removed": "The Boundaries section is gone. Without it, the agent may follow instructions hidden in documents or tool results.",
-        "citations_removed": "The citation rules variable (source.citation_rules) is gone, so answers will stop citing sources as [1], [2].",
-        "agentic_copy": "This is a copy of a classic built-in prompt. On a research agent it replaces the research instructions (search several times before answering), so answers may be shallower."
+        "citations_removed": "The citation rules variable (source.citation_rules) is gone, so answers will stop citing sources as [1], [2]."
       },
       "reviewLabel": "Proposed changes",
       "removedText": "Removed: ",

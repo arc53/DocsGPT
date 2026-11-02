@@ -10,21 +10,19 @@ out as ``checks`` codes the client words in the user's language; the model's
 own ``warnings`` are already in it.
 
 Write returns a name and a plain-text persona. Neither mode asks questions:
-the prompt modal takes one request and shows one result.
+each request in the prompt view's drawer gets one result.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
-from docsgpt.drafter.catalog import is_template, load_sources, load_tools, Workspace
+from docsgpt.drafter.catalog import is_template, Workspace
 from docsgpt.drafter.fencing import clean_text
 from docsgpt.drafter.prompt_rules import COMPOSER_ADDS, TEMPLATE_PROBLEM, template_parses, tool_variables_problem
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 
 MODES = ("improve", "write")
-#: Agent types whose built-in prompts carry the agentic Answering section (``resolve_prompt_skeleton``).
-AGENTIC_TYPES = ("agentic", "research")
 
 NAME_MAX = 100
 CONTENT_MAX = 20000
@@ -35,22 +33,16 @@ MAX_WARNINGS = 3
 WARNING_MAX = 300
 
 _ID_CHARS = 100
-_MAX_REFS = 200
-_AGENT_TYPE_CHARS = 40
 
 #: ``checks`` codes, in the order they are reported.
 CHECK_TO_TEMPLATE = "to_template"
 CHECK_TO_PERSONA = "to_persona"
 CHECK_BOUNDARIES_REMOVED = "boundaries_removed"
 CHECK_CITATIONS_REMOVED = "citations_removed"
-CHECK_AGENTIC_COPY = "agentic_copy"
 
 #: Text that marks a template's Boundaries section (the built-in one, or one written after it).
 _BOUNDARY_MARKERS = ("## boundaries", "not instructions", "never follow directions")
 _CITATION_MARKER = "source.citation_rules"
-#: What a copy of a built-in prompt starts with, and what only the agentic Answering section says.
-_BUILTIN_IDENTITY = "You are DocsGPT, an AI assistant that answers questions"
-_AGENTIC_ANSWERING = "You have a `search` tool"
 
 
 # ---------------------------------------------------------------------------
@@ -58,25 +50,11 @@ _AGENTIC_ANSWERING = "You have a `search` tool"
 # ---------------------------------------------------------------------------
 
 
-def _ids(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    out: list[str] = []
-    for item in value[:_MAX_REFS]:
-        if isinstance(item, str) and item.strip() and item.strip()[:_ID_CHARS] not in out:
-            out.append(item.strip()[:_ID_CHARS])
-    return out
-
-
 def parse_context(raw: Any) -> dict:
-    """Clean the prompt recipe's ``context``: ``{mode, prompt: {id, name, content}, agent}``.
-
-    ``agent`` is the agent form the modal was opened from (its knowledge,
-    tools and type), or None.
+    """Clean the prompt recipe's ``context``: ``{mode, prompt: {id, name, content}}``.
 
     Raises:
-        BadDraftRequest: An unknown mode, a missing prompt, nothing to improve,
-            or an ``agent`` that isn't an object.
+        BadDraftRequest: An unknown mode, a missing prompt, or nothing to improve.
     """
     raw = raw if isinstance(raw, dict) else {}
     mode = raw.get("mode")
@@ -89,16 +67,6 @@ def parse_context(raw: Any) -> dict:
     content = clean_text(prompt.get("content"), CONTENT_MAX)
     if mode == "improve" and not content:
         raise BadDraftRequest("There is no prompt text to improve")
-    agent_raw = raw.get("agent")
-    agent: Optional[dict] = None
-    if agent_raw is not None:
-        if not isinstance(agent_raw, dict):
-            raise BadDraftRequest("context.agent must be an object")
-        agent = {
-            "sources": _ids(agent_raw.get("sources")),
-            "tools": _ids(agent_raw.get("tools")),
-            "agent_type": clean_text(agent_raw.get("agent_type"), _AGENT_TYPE_CHARS) or "classic",
-        }
     return {
         "mode": mode,
         "prompt": {
@@ -106,51 +74,16 @@ def parse_context(raw: Any) -> dict:
             "name": clean_text(prompt.get("name"), NAME_MAX),
             "content": content,
         },
-        "agent": agent,
     }
 
 
-def scope_to_agent(ws: Workspace, agent: dict) -> Workspace:
-    """The workspace cut down to the agent's own knowledge and tools.
-
-    Ids the caller can't open aren't in ``ws`` to begin with, so they drop out
-    here too. Prompts and models aren't part of a prompt's draft.
-
-    Args:
-        ws: The caller's workspace (sources and tools loaded).
-        agent: The parsed ``context.agent``.
-
-    Returns:
-        A workspace holding only the agent's sources and tools.
-    """
-    source_ids = set(agent["sources"])
-    tool_ids = set(agent["tools"])
-    return Workspace(
-        sources=[s for s in ws.sources if s["id"] in source_ids],
-        tools=[t for t in ws.tools if t["id"] in tool_ids],
-        source_files={k: v for k, v in ws.source_files.items() if k in source_ids},
-        tool_details={k: v for k, v in ws.tool_details.items() if k in tool_ids},
-    )
-
-
 def load_workspace(user_id: str, context: dict) -> Workspace:
-    """The agent's knowledge and tools as the caller can open them; empty without an agent."""
-    agent = context.get("agent")
-    if not agent or not (agent["sources"] or agent["tools"]):
-        return Workspace()
-    from docsgpt.storage.db.session import db_readonly
-
-    ws = Workspace()
-    with db_readonly() as conn:
-        if agent["sources"]:
-            load_sources(conn, user_id, ws)
-        if agent["tools"]:
-            load_tools(conn, user_id, ws)
-    return scope_to_agent(ws, agent)
+    """A prompt is drafted on its own text: nothing from the workspace."""
+    return Workspace()
 
 
 def context_data(req: DraftRequest, ws: Workspace) -> dict:
-    """The prompt as the model reads it: its name, text and mode, and the agent's type when known."""
+    """The prompt as the model reads it: its name, text and mode."""
     prompt = req.context["prompt"]
     data: dict[str, Any] = {
         "mode": req.context["mode"],
@@ -160,8 +93,6 @@ def context_data(req: DraftRequest, ws: Workspace) -> dict:
             "kind": "template" if is_template(prompt["content"]) else "persona",
         },
     }
-    if req.context.get("agent"):
-        data["agent"] = {"agent_type": req.context["agent"]["agent_type"]}
     return data
 
 
@@ -200,8 +131,6 @@ a variable can do, and say in your message that it turns the prompt into a templ
 - In a template (a built-in copy), keep its sections and {{% if %}} blocks, the Boundaries section and \
 {{{{ source.citation_rules }}}}: without them the agent loses its guard against instructions inside documents and \
 its [n] citations.
-- If the prompt is used on an agent, its knowledge and tools are in the workspace data: name what they cover or the \
-hand-off a missing tool needs where it helps, but don't list them.
 - Don't write warnings about the prompt's mode or removed sections: the app shows those itself. Use warnings only \
 for something else the user must know."""
 
@@ -268,18 +197,16 @@ def _has_boundaries(text: str) -> bool:
     return any(marker in lowered for marker in _BOUNDARY_MARKERS)
 
 
-def checks_for(before: str, after: str, agent: Optional[dict]) -> list[str]:
+def checks_for(before: str, after: str) -> list[str]:
     """What a change does to a prompt that the user should know, as ``checks`` codes.
 
     Args:
         before: The prompt's text before the change ('' for a new prompt).
         after: Its text after.
-        agent: The agent context, when the prompt is edited from an agent form.
 
     Returns:
-        Codes, in a fixed order: a switch into or out of template mode, the
-        Boundaries or citation rules taken out of a template, a classic
-        built-in copy kept on an agentic agent.
+        Codes, in a fixed order: a switch into or out of template mode, and
+        the Boundaries or citation rules taken out of a template.
     """
     was, now = is_template(before), is_template(after)
     out: list[str] = []
@@ -291,9 +218,6 @@ def checks_for(before: str, after: str, agent: Optional[dict]) -> list[str]:
         out.append(CHECK_BOUNDARIES_REMOVED)
     if now and _CITATION_MARKER in before and _CITATION_MARKER not in after:
         out.append(CHECK_CITATIONS_REMOVED)
-    if (agent and agent.get("agent_type") in AGENTIC_TYPES and now
-            and _BUILTIN_IDENTITY in after and _AGENTIC_ANSWERING not in after):
-        out.append(CHECK_AGENTIC_COPY)
     return out
 
 
@@ -405,7 +329,6 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         ProposalInvalid: A problem the model can fix (edits, name, content, template rules).
     """
     current = req.context["prompt"]["content"]
-    agent = req.context.get("agent")
     message = clean_text(args.get("message"), MESSAGE_MAX)
     if req.context["mode"] == "improve":
         edits, result = apply_edits(current, [e for e in args.get("edits") or [] if isinstance(e, dict)])
@@ -417,7 +340,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
             "result": result,
             "template_mode": {"before": is_template(current), "after": is_template(result)},
             "warnings": _warnings(args),
-            "checks": checks_for(current, result, agent),
+            "checks": checks_for(current, result),
         }
     name = clean_text(args.get("name"), NAME_MAX + 1)
     content = clean_text(args.get("content"), CONTENT_MAX + 1)
@@ -441,7 +364,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         "reason": clean_text(args.get("reason"), REASON_MAX),
         "warnings": _warnings(args),
         "template_mode": {"before": is_template(current), "after": is_template(content)},
-        "checks": checks_for(current, content, agent),
+        "checks": checks_for(current, content),
     }
 
 
@@ -453,7 +376,6 @@ PROMPT_RECIPE = register(Recipe(
     context_data=context_data,
     proposal_schema=PROPOSAL_SCHEMA,
     validate=validate,
-    read_tools=("get_source", "get_tool"),
     proposal_description="Hand the improved or new prompt to the prompt editor. Ends your turn.",
     questions=False,
 ))

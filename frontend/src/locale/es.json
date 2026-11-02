@@ -4587,8 +4587,7 @@
         "to_template": "Esto añade variables de plantilla, así que DocsGPT usará el prompt tal cual y dejará de añadir sus propias secciones: la fecha, las reglas de respuesta, las citas, el formato y los límites.",
         "to_persona": "Esto quita todas las variables de plantilla, así que DocsGPT tratará el prompt como texto sin formato y le añadirá sus propias secciones: la fecha, las reglas de respuesta, las citas, el formato y los límites.",
         "boundaries_removed": "Ya no está la sección Boundaries. Sin ella, el agente podría seguir instrucciones ocultas en documentos o resultados de herramientas.",
-        "citations_removed": "Ya no está la variable de reglas de citas (source.citation_rules), así que las respuestas dejarán de citar fuentes como [1], [2].",
-        "agentic_copy": "Es una copia de un prompt integrado clásico. En un agente de investigación sustituye las instrucciones de investigación (buscar varias veces antes de responder), así que las respuestas pueden ser más superficiales."
+        "citations_removed": "Ya no está la variable de reglas de citas (source.citation_rules), así que las respuestas dejarán de citar fuentes como [1], [2]."
       },
       "reviewLabel": "Cambios propuestos",
       "removedText": "Eliminado: ",

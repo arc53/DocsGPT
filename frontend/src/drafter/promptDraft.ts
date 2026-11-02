@@ -14,18 +14,13 @@ export type PromptEdit = {
 
 /** What a change does to the prompt that the user should know (server codes). */
 export type PromptCheck =
-  | 'to_template'
-  | 'to_persona'
-  | 'boundaries_removed'
-  | 'citations_removed'
-  | 'agentic_copy';
+  'to_template' | 'to_persona' | 'boundaries_removed' | 'citations_removed';
 
 export const PROMPT_CHECKS: PromptCheck[] = [
   'to_template',
   'to_persona',
   'boundaries_removed',
   'citations_removed',
-  'agentic_copy',
 ];
 
 export type PromptImproveProposal = {

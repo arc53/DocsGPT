@@ -4459,8 +4459,7 @@
         "to_template": "Damit kommen Vorlagenvariablen hinzu: DocsGPT verwendet den Prompt dann genau wie geschrieben und fügt seine eigenen Abschnitte nicht mehr hinzu (Datum, Antwortregeln, Quellenangaben, Formatierung und Grenzen).",
         "to_persona": "Damit fallen alle Vorlagenvariablen weg: DocsGPT behandelt den Prompt dann als reinen Text und fügt seine eigenen Abschnitte hinzu (Datum, Antwortregeln, Quellenangaben, Formatierung und Grenzen).",
         "boundaries_removed": "Der Abschnitt „Boundaries“ fehlt. Ohne ihn folgt der Agent womöglich Anweisungen, die in Dokumenten oder Tool-Ergebnissen versteckt sind.",
-        "citations_removed": "Die Variable für die Zitierregeln (source.citation_rules) fehlt, daher nennen Antworten ihre Quellen nicht mehr als [1], [2].",
-        "agentic_copy": "Das ist eine Kopie eines klassischen integrierten Prompts. Bei einem Recherche-Agenten ersetzt sie die Recherche-Anweisungen (vor dem Antworten mehrmals suchen), daher können Antworten oberflächlicher ausfallen."
+        "citations_removed": "Die Variable für die Zitierregeln (source.citation_rules) fehlt, daher nennen Antworten ihre Quellen nicht mehr als [1], [2]."
       },
       "reviewLabel": "Vorgeschlagene Änderungen",
       "removedText": "Entfernt: ",

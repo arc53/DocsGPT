@@ -11,7 +11,6 @@ from docsgpt.drafter.prompt_recipe import (
     MAX_EDITS,
     parse_context,
     PROMPT_RECIPE,
-    scope_to_agent,
     validate,
 )
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, get_recipe, ProposalInvalid
@@ -27,16 +26,15 @@ PERSONA = (
 MODEL = {"id": "m", "display_name": "M", "supports_tools": True}
 
 
-def _req(mode="improve", content=PERSONA, agent=None, *user_messages, name="Support reply") -> DraftRequest:
+def _req(mode="improve", content=PERSONA, *user_messages, name="Support reply") -> DraftRequest:
     messages = [{"role": "user", "content": m} for m in (user_messages or ("Stop it from making up prices",))]
-    context = parse_context({"mode": mode, "prompt": {"id": "p1", "name": name, "content": content},
-                             "agent": agent})
+    context = parse_context({"mode": mode, "prompt": {"id": "p1", "name": name, "content": content}})
     return DraftRequest("alice", "prompt", messages, context, "drafter:t")
 
 
-def _improve(edits, content=PERSONA, agent=None, messages=(), **extra):
+def _improve(edits, content=PERSONA, messages=(), **extra):
     args = {"message": "Done.", "edits": edits, **extra}
-    return validate(args, _req("improve", content, agent, *messages), Workspace())
+    return validate(args, _req("improve", content, *messages), Workspace())
 
 
 def _edit(find, replace, reason="Because."):
@@ -49,44 +47,23 @@ class TestContext:
         ctx = parse_context({
             "mode": "improve",
             "prompt": {"id": " p1 ", "name": "Sup\x00port", "content": "Hi\r\nthere"},
-            "agent": {"sources": ["s1", "s1", 3], "tools": "nope", "agent_type": "research", "models": ["x"]},
         })
-        assert ctx["prompt"] == {"id": "p1", "name": "Support", "content": "Hi\nthere"}
-        assert ctx["agent"] == {"sources": ["s1"], "tools": [], "agent_type": "research"}
-
-    def test_no_agent_is_none(self):
-        assert parse_context({"mode": "write", "prompt": {"name": "", "content": ""}})["agent"] is None
+        assert ctx == {"mode": "improve", "prompt": {"id": "p1", "name": "Support", "content": "Hi\nthere"}}
 
     @pytest.mark.parametrize("raw", [
         {"mode": "rewrite", "prompt": {"content": "x"}},
         {"mode": "improve", "prompt": {"content": "   "}},
         {"mode": "improve"},
         {"mode": "write", "prompt": ["x"]},
-        {"mode": "write", "prompt": {"content": "x"}, "agent": "a1"},
     ])
     def test_unusable_contexts_are_refused(self, raw):
         with pytest.raises(BadDraftRequest):
             parse_context(raw)
 
     def test_the_model_reads_the_prompt_and_its_mode(self):
-        data = context_data(_req(agent={"sources": [], "tools": [], "agent_type": "classic"}), Workspace())
-        assert data["mode"] == "improve"
-        assert data["prompt"] == {"name": "Support reply", "content": PERSONA, "kind": "persona"}
-        assert data["agent"] == {"agent_type": "classic"}
+        data = context_data(_req(), Workspace())
+        assert data == {"mode": "improve", "prompt": {"name": "Support reply", "content": PERSONA, "kind": "persona"}}
         assert context_data(_req(content="Hi {{ system.date }}"), Workspace())["prompt"]["kind"] == "template"
-        assert "agent" not in context_data(_req(), Workspace())
-
-    def test_the_workspace_keeps_only_the_agents_knowledge_and_tools(self):
-        ws = Workspace(
-            sources=[{"id": "s1", "name": "Help"}, {"id": "s2", "name": "Contracts"}],
-            tools=[{"id": "t1", "name": "Tracking", "actions": []}, {"id": "t2", "name": "Mail", "actions": []}],
-            prompts=[{"id": "p", "name": "P"}], models=[{"id": "m", "name": "M"}],
-            prompt_texts={"p": "x"}, hidden={"sources": 3},
-        )
-        scoped = scope_to_agent(ws, {"sources": ["s2", "foreign"], "tools": ["t1"], "agent_type": "classic"})
-        assert [s["id"] for s in scoped.sources] == ["s2"] and [t["id"] for t in scoped.tools] == ["t1"]
-        assert scoped.prompts == [] and scoped.models == [] and scoped.hidden == {}
-        assert scoped.counts() == {"sources": 1, "tools": 1, "prompts": 0, "models": 0}
 
 
 @pytest.mark.unit
@@ -182,14 +159,6 @@ class TestImprove:
         proposal = _improve([_edit(boundaries, ""), _edit(citations, "")], content=template)
         assert proposal["checks"] == ["boundaries_removed", "citations_removed"]
 
-    def test_a_classic_copy_on_a_research_agent_is_flagged(self):
-        template = compose_preset("default")
-        edit = [_edit("## Formatting", "## Formatting\n- Keep answers short.")]
-        research = _improve(edit, content=template, agent={"sources": [], "tools": [], "agent_type": "research"})
-        assert research["checks"] == ["agentic_copy"]
-        classic = _improve(edit, content=template, agent={"sources": [], "tools": [], "agent_type": "classic"})
-        assert classic["checks"] == []
-
     def test_a_result_that_does_not_parse_goes_back_to_the_model(self):
         with pytest.raises(ProposalInvalid, match="parse"):
             _improve([_edit("Hi {{ system.date }}", "Hi {{ system.date ")], content="Hi {{ system.date }}")
@@ -214,7 +183,7 @@ class TestImprove:
 class TestWrite:
     def _write(self, content, name="HR handbook assistant", messages=(), **extra):
         args = {"message": "Wrote it.", "name": name, "content": content, "reason": "A persona.", **extra}
-        return validate(args, _req("write", "", None, *(messages or ("HR helper",))), Workspace())
+        return validate(args, _req("write", "", *(messages or ("HR helper",))), Workspace())
 
     def test_a_persona_is_returned(self):
         proposal = self._write("You help employees with the HR handbook.")
@@ -248,7 +217,7 @@ class TestTurn:
     def test_ask_user_is_never_offered(self):
         fake, events = self._run(calls(tool_call("submit_proposal", {
             "message": "Done.", "edits": [_edit("Be polite", "Be warm")]})))
-        assert [t["function"]["name"] for t in fake.calls[0]["tools"]] == ["get_source", "get_tool", "submit_proposal"]
+        assert [t["function"]["name"] for t in fake.calls[0]["tools"]] == ["submit_proposal"]
         assert events[-1]["type"] == "proposal"
         assert events[-1]["proposal"]["result"].endswith("Be warm and concise.")
 
@@ -261,7 +230,7 @@ class TestTurn:
                               "message": "The draft didn't come out right. Try again, or rephrase your request."}
 
     def test_a_template_that_does_not_parse_is_retried_then_accepted(self):
-        req = _req("write", "", None, "HR helper")
+        req = _req("write", "", "HR helper")
         bad = calls(tool_call("submit_proposal", {"message": "x", "name": "HR", "content": "Hi {{ x", "reason": "r"}))
         good = calls(tool_call("submit_proposal", {"message": "x", "name": "HR", "content": "Hi there", "reason": "r"}))
         fake, events = self._run(bad, good, req=req)

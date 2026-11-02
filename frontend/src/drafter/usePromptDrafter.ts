@@ -94,7 +94,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
         draftedRef.current.mark('content', open.original, content);
     }
     sent.current = content;
-    return { mode, prompt: { id: promptId, name, content }, agent: null };
+    return { mode, prompt: { id: promptId, name, content } };
   }, []);
 
   const onProposal = useCallback((raw: unknown) => {

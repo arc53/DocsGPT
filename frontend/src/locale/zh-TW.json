@@ -4439,8 +4439,7 @@
         "to_template": "這會加入範本變數，DocsGPT 將完全依原文使用提示詞，不再加入自己的段落：日期、回答規則、引用、格式和界線。",
         "to_persona": "這會移除所有範本變數，DocsGPT 將把提示詞視為純文字，並在外面加上自己的段落：日期、回答規則、引用、格式和界線。",
         "boundaries_removed": "Boundaries 段落已被移除。沒有它，代理可能會執行文件或工具結果中隱藏的指示。",
-        "citations_removed": "引用規則變數（source.citation_rules）已被移除，回答將不再以 [1]、[2] 的形式引用來源。",
-        "agentic_copy": "這是經典內建提示詞的副本。在研究型代理上，它會取代研究指示（回答前多次搜尋），回答可能會變得較淺。"
+        "citations_removed": "引用規則變數（source.citation_rules）已被移除，回答將不再以 [1]、[2] 的形式引用來源。"
       },
       "reviewLabel": "建議的修改",
       "removedText": "已移除：",
