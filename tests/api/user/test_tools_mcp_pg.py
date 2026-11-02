@@ -511,6 +511,7 @@ class TestMCPServerSave:
         team = repo.get_any(str(existing["id"]), user)["actions"][0]["parameters"]["properties"]["team"]
         assert team["filled_by_llm"] is False and team["value"] == "ENG"
 
+    @pytest.mark.fresh_db
     def test_failed_tool_save_does_not_reconnect_no_auth_connection(self, app, pg_engine):
         from docsgpt.api.user.tools.mcp import MCPServerSave
         from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
@@ -561,6 +562,7 @@ class TestMCPServerSave:
         assert saved["status"] == "disconnected"
         assert saved["last_error"] == "Disconnected"
 
+    @pytest.mark.fresh_db
     def test_disconnect_during_discovery_is_not_overwritten(self, app, pg_engine):
         from docsgpt.api.user.tools.mcp import MCPServerSave
         from docsgpt.connectors import service
