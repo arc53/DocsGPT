@@ -42,6 +42,7 @@ Beat schedules these tasks. Each runs on the worker, so the worker must also be 
 | `dispatch-scheduled-runs` | 30 s | Queues [scheduled agent runs](/Agents/schedules) that are due. | `SCHEDULE_DISPATCHER_INTERVAL` (`30`, minimum 15 s). |
 | `cleanup-schedule-runs` | day | Deletes scheduled-run records and their output older than the retention window, keeping the 50 most recent runs of each schedule. | `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS` (`90`). |
 | `reconciliation` | 30 s | Marks stuck work as failed and logs an alert: answers that stopped streaming, tool calls left mid-way, stalled ingests, stuck idempotency claims and scheduled runs. An ingest that a restart killed is queued again first; see [Ingests stopped by a restart](#ingests-stopped-by-a-restart). | `INGEST_RESUME_MAX_ATTEMPTS` (`3`). |
+| `cleanup-orphaned-ingests` | hour | Deletes the vectors of ingests that ended without a source, and their progress records. See [Vectors of failed ingests](#vectors-of-failed-ingests). | `INGEST_ORPHAN_TTL_HOURS` (`72`; `0` keeps them). |
 | `cleanup-pending-tool-state` | 60 s | Deletes paused conversations waiting for a tool approval or a client-side tool result once they expire (30 minutes), and clears their approval prompts. | None. |
 | `cleanup-idempotency-dedup` | hour | Deletes idempotency keys for uploads, tasks and webhooks older than 24 hours. A task's key is kept while the task is still running, and for 24 hours after its last heartbeat. | None. |
 | `cleanup-message-events` | day | Deletes the per-chunk stream journal that lets a client reconnect to an answer, and the markers left by regenerated answers. Conversations themselves are kept. | `MESSAGE_EVENTS_RETENTION_DAYS` (`14`). |
@@ -106,6 +107,14 @@ docsgpt analytics backfill --days 30             # label them; --agent <id> limi
 ```
 
 Run it where a worker runs, with the worker's settings: in a Docker stack, `docker compose exec worker python -m docsgpt analytics backfill --days 30` from the stack's folder; in Kubernetes, `kubectl exec deploy/docsgpt-worker -- python -m docsgpt analytics backfill --days 30`. Its model calls go where the worker's go, at background priority, so chat still comes first. `--days` can't exceed `ANALYTICS_RETENTION_DAYS`, since older labels would be deleted and made again. `--dry-run` counts the messages that have no labels from the model a real run would use; with a decision server (`DECISION_MODE=api`) it first asks the server which model it runs, and if the server does not answer, or `DECISION_BASE_URL` is not set, the output carries a `warning` that the counts assume the default model. The estimate in `--dry-run` comes from this server's measured speed, and is `null` until the model has been timed; the wall time is longer than the compute time, since background work takes at most a quarter of the cores. The command does nothing while `DECISION_ANALYTICS_ENABLED` is off. While a scheduled sweep is running it says so and waits for it to finish, for up to one sweep's length (`ANALYTICS_SWEEP_BUDGET_SECONDS` plus `DECISION_BACKGROUND_TIMEOUT` plus a minute); `--no-wait` exits with `{"skipped": "locked"}` instead. `--agent` takes an agent's id.
+
+## Vectors of failed ingests
+
+An ingest writes its chunks to the vector store as it goes, and saves the source only at the end. An ingest that fails, runs out of [resumes](#ingests-stopped-by-a-restart), or stops after the last chunk but before the source is saved leaves vectors that no source owns and no search reaches.
+
+Every hour, `cleanup-orphaned-ingests` deletes them once the ingest has made no progress for `INGEST_ORPHAN_TTL_HOURS` (`72`). It deletes them through the configured vector store, 1,000 at a time on pgvector, then removes the progress record. It never touches the vectors of a source that exists, so a sync or re-ingest of an existing source is safe, and it skips an ingest that may still be resumed. On FAISS an unfinished index is never saved, so only the progress record goes.
+
+`docsgpt ingest orphans` reports what is left; see the [CLI reference](/Deploying/cli#database-and-maintenance-commands). On pgvector it also lists vectors with no ingest record at all, such as those left by older versions. The cleanup does not delete those; delete them yourself after checking the source IDs, for example `DELETE FROM documents WHERE source_id = '<id>'`.
 
 ## Kept until deleted
 

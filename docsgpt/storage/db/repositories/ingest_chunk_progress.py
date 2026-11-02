@@ -11,6 +11,18 @@ from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 
 
+# An ingest whose vectors no source will ever own: no ``sources`` row, over
+# (stalled for good, or embedded but the source never saved), and quiet for
+# ``:ttl`` hours. An unfinished ``active`` row is the reconciler's to resume
+# or stall first; a row with a source is never matched, so a source's own
+# vectors (a sync or reingest reuses the source id) are never touched.
+_ORPHAN = """(
+    NOT EXISTS (SELECT 1 FROM sources s WHERE s.id = icp.source_id)
+    AND (icp.status = 'stalled' OR icp.embedded_chunks >= icp.total_chunks)
+    AND icp.last_updated < now() - make_interval(hours => :ttl)
+)"""
+
+
 class IngestChunkProgressRepository:
     """Read/write helpers for ``ingest_chunk_progress``."""
 
@@ -221,3 +233,78 @@ class IngestChunkProgressRepository:
             ),
             {"source_id": str(source_id)},
         )
+
+    def list_orphans(self, ttl_hours: int, limit: int = 100) -> list[dict]:
+        """Ingests whose vectors no source owns, quiet for ``ttl_hours``, oldest first.
+
+        Args:
+            ttl_hours: Hours since the last progress.
+            limit: Most rows to return.
+
+        Returns:
+            Their progress rows.
+        """
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT icp.* FROM ingest_chunk_progress icp
+                WHERE {_ORPHAN}
+                ORDER BY icp.last_updated ASC
+                LIMIT :limit
+                """
+            ),
+            {"ttl": int(ttl_hours), "limit": int(limit)},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def lock_orphan(self, source_id: str, ttl_hours: int) -> Optional[dict]:
+        """Lock ``source_id``'s row if it is still an orphan; ``None`` if not, or held.
+
+        Held until the caller's transaction ends, so a new ingest of the same
+        source waits in ``init_progress`` until its old vectors are gone.
+
+        Args:
+            source_id: The source.
+            ttl_hours: Hours since the last progress.
+
+        Returns:
+            The locked row, or ``None``.
+        """
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT icp.* FROM ingest_chunk_progress icp
+                WHERE icp.source_id = CAST(:sid AS uuid) AND {_ORPHAN}
+                FOR UPDATE OF icp SKIP LOCKED
+                """
+            ),
+            {"sid": str(source_id), "ttl": int(ttl_hours)},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def without_source(self, ttl_hours: int, source_ids: Optional[list[str]] = None) -> list[dict]:
+        """Every row with no ``sources`` row, with ``swept`` saying whether it is an orphan yet.
+
+        Args:
+            ttl_hours: Hours since the last progress; ``0`` means nothing is swept.
+            source_ids: Only these sources (UUID strings), when given.
+
+        Returns:
+            Progress rows, each with a boolean ``swept``.
+        """
+        only = "AND icp.source_id = ANY(CAST(:ids AS uuid[]))" if source_ids is not None else ""
+        swept = f"(:ttl > 0 AND {_ORPHAN})"
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT icp.*, {swept} AS swept FROM ingest_chunk_progress icp
+                WHERE NOT EXISTS (SELECT 1 FROM sources s WHERE s.id = icp.source_id)
+                {only}
+                ORDER BY icp.last_updated ASC
+                """
+            ),
+            {"ttl": int(ttl_hours), "ids": list(source_ids or [])},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+

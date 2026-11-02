@@ -223,6 +223,16 @@ class IngestionSettings(SettingsGroup):
         ),
     )
 
+    INGEST_ORPHAN_TTL_HOURS: int = Field(
+        default=72,
+        ge=0,
+        description=(
+            "Hours after its last progress that an ingest which ended without a source (failed, stalled past its "
+            "resumes, or stopped before the source was saved) has its vectors deleted by the hourly "
+            "cleanup-orphaned-ingests task. 0 keeps them."
+        ),
+    )
+
     # read_document parsing on a dedicated Celery queue (backend parser).
     DOCUMENT_PARSE_QUEUE: str = Field(default="parsing", description="Celery queue the parse_document task is routed to.")
     DOCUMENT_PARSE_TIMEOUT: int = Field(

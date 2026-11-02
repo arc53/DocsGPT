@@ -987,6 +987,9 @@ def setup_periodic_tasks(sender, **kwargs):
         name="cleanup-background-jobs",
     )
     sender.add_periodic_task(timedelta(hours=24), cleanup_trigger_hits.s(), name="cleanup-trigger-hits")
+    # Vectors of ingests that ended without a source, once they are
+    # INGEST_ORPHAN_TTL_HOURS old.
+    sender.add_periodic_task(timedelta(hours=1), cleanup_orphaned_ingests.s(), name="cleanup-orphaned-ingests")
     # Conversation analytics (``docsgpt.analytics.tasks``). The sweep and the
     # digest run on ANALYTICS_QUEUE and are only scheduled while
     # DECISION_ANALYTICS_ENABLED is on (beat reads it when it starts; RedBeat
@@ -1112,6 +1115,14 @@ def cleanup_idempotency_dedup(self):
     engine = get_engine()
     with engine.begin() as conn:
         return IdempotencyRepository(conn).cleanup_expired()
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_orphaned_ingests(self):
+    """Delete the vectors of ingests that ended without a source, past ``INGEST_ORPHAN_TTL_HOURS``."""
+    from docsgpt.api.user.ingest_orphans import sweep_orphaned_ingests
+
+    return sweep_orphaned_ingests()
 
 
 @celery.task(bind=True, acks_late=False)

@@ -409,6 +409,37 @@ def _connectors(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ingest(args: argparse.Namespace) -> int:
+    """``docsgpt ingest orphans``: vectors no source owns, and whether the hourly sweep deletes them.
+
+    On pgvector it counts every source's chunks (one scan of the vectors
+    table); on other stores it lists the ingests that ended without a
+    source, with no count.
+    """
+    if getattr(args, "ingest_action", None) != "orphans":
+        print("usage: docsgpt ingest orphans", file=sys.stderr)
+        return 2
+    from docsgpt.api.user.ingest_orphans import orphan_report_now
+
+    rows = orphan_report_now()
+    if not rows:
+        print("docsgpt: no orphaned vectors found", file=sys.stderr)
+        return 0
+    print(f"{'source_id':<38} {'vectors':>9}  {'ingest':<10} {'last progress':<32} swept")
+    for row in rows:
+        vectors = "?" if row["vectors"] is None else str(row["vectors"])
+        status = row["status"] or "-"
+        updated = str(row["last_updated"] or "-")
+        swept = "yes" if row["swept"] else "no"
+        print(f"{row['source_id']:<38} {vectors:>9}  {status:<10} {updated:<32} {swept}")
+    print(
+        "docsgpt: 'swept' rows are deleted by the hourly cleanup-orphaned-ingests task; rows with no ingest "
+        "are not, and need deleting by hand.",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def _decisions_status() -> int:
     """This machine's decision-model settings and files, without loading the model.
 
@@ -603,6 +634,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     connectors.set_defaults(func=_connectors)
+
+    ingest = commands.add_parser("ingest", help="inspect ingests")
+    ingest_actions = ingest.add_subparsers(dest="ingest_action", metavar="<action>")
+    ingest_actions.add_parser(
+        "orphans",
+        help=(
+            "report vectors that no source owns (counted on pgvector) and whether the "
+            "hourly cleanup-orphaned-ingests task deletes them"
+        ),
+    )
+    ingest.set_defaults(func=_ingest)
 
     decisions = commands.add_parser("decisions", help="manage the decision model's files")
     decision_actions = decisions.add_subparsers(dest="decisions_action", metavar="<action>")

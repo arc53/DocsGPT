@@ -1306,6 +1306,12 @@ Type `int`, default `3`, must be `>= 0`.
 
 Times the reconciler queues an ingest again after a restart or crash killed it mid-embed. The new task resumes from the last embedded chunk when the files still chunk the same way. Past this many the ingest is marked failed. 0 turns resuming off.
 
+### `INGEST_ORPHAN_TTL_HOURS`
+
+Type `int`, default `72`, must be `>= 0`.
+
+Hours after its last progress that an ingest which ended without a source (failed, stalled past its resumes, or stopped before the source was saved) has its vectors deleted by the hourly cleanup-orphaned-ingests task. 0 keeps them.
+
 ### `DOCUMENT_PARSE_QUEUE`
 
 Type `str`, default `parsing`.
