@@ -787,8 +787,12 @@ def _resume_spies(*, inputs: bool = True):
 
 class TestResumeStalledIngests:
     @pytest.mark.unit
-    def test_a_retriable_ingest_is_requeued_once_per_sweep(self, pg_conn):
+    def test_a_retriable_ingest_is_requeued_once_per_sweep(self, pg_conn, monkeypatch):
         from docsgpt.api.user.reconciliation import run_reconciliation
+        from docsgpt.core.settings import settings
+
+        # A store that keeps a partial index; FAISS restarts from chunk 0.
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
 
         sid = "1a000000-0000-0000-0000-0000000000c1"
         dispatch = _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c1")
