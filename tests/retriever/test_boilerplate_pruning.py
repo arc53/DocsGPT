@@ -83,6 +83,51 @@ class TestBoilerplatePruningRules:
             cleaned = prune_chunk_text(line, query="database configuration")
             assert cleaned == line, f"Prose was pruned: {line!r}"
 
+    def test_preserves_fenced_code_context_across_chunk_boundaries_via_initial_fence(self):
+        """Preserves unindented code lines in continuation chunks carrying active fence state."""
+        continuation_chunk = (
+            "Next page: Authentication\n"
+            "```\n"
+            "Home > API\n"
+            "Factual prose outside code fence."
+        )
+        # Without initial_active_fence, 'Next page: Authentication' would be treated as nav and pruned
+        without_fence = prune_chunk_text(continuation_chunk, query="")
+        assert "Next page: Authentication" not in without_fence
+        assert "Factual prose outside code fence." in without_fence
+
+        # With initial_active_fence, the code line inside the active fence is preserved regardless of nav match
+        with_fence = prune_chunk_text(continuation_chunk, query="", initial_active_fence=("`", 3))
+        assert "Next page: Authentication" in with_fence
+        assert "```" in with_fence
+        assert "Home > API" not in with_fence
+        assert "Factual prose outside code fence." in with_fence
+
+    def test_prune_boilerplate_carries_active_fence_from_metadata(self):
+        """prune_boilerplate inspects chunk metadata to preserve continuation code blocks."""
+        docs = [
+            {
+                "id": 1,
+                "text": "Next page: Authentication\n```\nHome > API\nFactual content.",
+                "metadata": {"active_fence": ("`", 3)},
+            },
+            {
+                "id": 2,
+                "text": "previous page: Overview\n~~~\nFactual text.",
+                "metadata": {"fenced_code": "~~~"},
+            },
+            {
+                "id": 3,
+                "text": "skip to content\n```\nFactual text.",
+                "extra_info": {"in_code_fence": True},
+            },
+        ]
+        pruned = prune_boilerplate(docs, query="")
+        assert "Next page: Authentication" in pruned[0]["text"]
+        assert "Home > API" not in pruned[0]["text"]
+        assert "previous page: Overview" in pruned[1]["text"]
+        assert "skip to content" in pruned[2]["text"]
+
     def test_preserves_indentation_on_first_code_line(self):
         """Preserves 4-space markdown code line indentation when trimming leading/trailing blank lines."""
         raw = "\n\n    def hello_world():\n        return True\n\n"

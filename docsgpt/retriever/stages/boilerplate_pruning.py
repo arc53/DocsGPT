@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,23 @@ def _is_boilerplate_candidate(line: str) -> bool:
     return False
 
 
-def prune_chunk_text(text: str, query: str = "", seen_boilerplate: Optional[Set[str]] = None) -> str:
+def _normalize_fence_state(fence_state: Any) -> Optional[Tuple[str, int]]:
+    """Normalizes chunk metadata representations of active code fences into (fence_char, fence_length)."""
+    if isinstance(fence_state, (list, tuple)) and len(fence_state) == 2:
+        return (str(fence_state[0]), int(fence_state[1]))
+    if isinstance(fence_state, str) and fence_state:
+        return (fence_state[0], len(fence_state))
+    if fence_state is True:
+        return ("`", 3)
+    return None
+
+
+def prune_chunk_text(
+    text: str,
+    query: str = "",
+    seen_boilerplate: Optional[Set[str]] = None,
+    initial_active_fence: Optional[Union[Tuple[str, int], str, bool]] = None,
+) -> str:
     """Extractive pruning of navigation boilerplate and duplicate lines from a single chunk."""
     if not text:
         return ""
@@ -195,7 +211,7 @@ def prune_chunk_text(text: str, query: str = "", seen_boilerplate: Optional[Set[
     chunk_boilerplate: Set[str] = set()
 
     # State tracking for code fences: (fence_char, fence_length)
-    active_fence: Optional[Tuple[str, int]] = None
+    active_fence: Optional[Tuple[str, int]] = _normalize_fence_state(initial_active_fence)
 
     for line in lines:
         stripped = line.strip()
@@ -277,6 +293,25 @@ def prune_boilerplate(docs: List[Dict[str, Any]], query: str = "") -> List[Dict[
 
         text = doc.get("text")
         if isinstance(text, str) and text:
-            doc["text"] = prune_chunk_text(text, query=query, seen_boilerplate=seen_boilerplate)
+            metadata = (
+                doc.get("metadata")
+                if isinstance(doc.get("metadata"), dict)
+                else (doc.get("extra_info") if isinstance(doc.get("extra_info"), dict) else doc)
+            )
+            initial_active_fence = None
+            if isinstance(metadata, dict):
+                initial_active_fence = _normalize_fence_state(
+                    metadata.get("active_fence")
+                    or metadata.get("in_code_fence")
+                    or metadata.get("fenced_code")
+                    or metadata.get("in_code_block")
+                )
+
+            doc["text"] = prune_chunk_text(
+                text,
+                query=query,
+                seen_boilerplate=seen_boilerplate,
+                initial_active_fence=initial_active_fence,
+            )
 
     return docs
