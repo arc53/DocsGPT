@@ -475,7 +475,8 @@ class TestAttribution:
         from docsgpt.connectors.attribution import ConnectorLabelCache
 
         found = {"s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "show_links": show_links}}
-        with patch("docsgpt.connectors.attribution.connector_labels", return_value=found):
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value=found), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
             labels = ConnectorLabelCache().for_source("s1", {"url": url} if url else {})
         assert labels.get("url") == expected
         assert labels["connector_key"] == "google_drive"
@@ -484,8 +485,81 @@ class TestAttribution:
     def test_uploaded_chunk_gets_no_link(self):
         from docsgpt.connectors.attribution import ConnectorLabelCache
 
-        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}):
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
             assert ConnectorLabelCache().for_source("s1", {"url": "https://example.com/x"}) == {}
+
+    def test_source_names_cover_uploads_and_synced_sources(self, pg_conn):
+        from docsgpt.connectors.attribution import source_names
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth")
+        synced = str(pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name, connection_id) VALUES ('alice', 'Handbook', CAST(:c AS uuid)) "
+            "RETURNING id"
+        ), {"c": cid}).scalar())
+        upload = str(pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name) VALUES ('alice', 'test-1') RETURNING id"
+        )).scalar())
+        with _db(pg_conn):
+            names = source_names([synced, upload, "not-a-uuid"])
+        assert names == {synced: "Handbook", upload: "test-1"}
+
+    def test_retrieved_chunk_carries_its_source_name(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={"s1": "test-1"}) as lookup:
+            cache = ConnectorLabelCache()
+            first = cache.for_source("s1")
+            again = cache.for_source("s1")
+        assert first == again == {"source_name": "test-1"}
+        assert lookup.call_count == 1
+
+    def test_prefetch_looks_up_every_source_in_one_query_each(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        found = {"s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "show_links": False}}
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value=found) as labels, \
+                patch("docsgpt.connectors.attribution.source_names",
+                      return_value={"s1": "Handbook", "s2": "test-1"}) as names:
+            cache = ConnectorLabelCache()
+            cache.prefetch(["s1", "s2", "s3", None, "s1"])
+            cache.prefetch(["s2"])
+            got = {sid: cache.for_source(sid) for sid in ("s1", "s2", "s3")}
+        labels.assert_called_once_with(["s1", "s2", "s3"])
+        names.assert_called_once_with(["s1", "s2", "s3"])
+        assert got == {
+            "s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "source_name": "Handbook"},
+            "s2": {"source_name": "test-1"},
+            "s3": {},
+        }
+
+    def test_prefetch_never_raises(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        with patch("docsgpt.connectors.attribution.connector_labels", side_effect=RuntimeError("db down")), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
+            cache = ConnectorLabelCache()
+            cache.prefetch(["s1"])
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={"s1": "test-1"}):
+            # A failed prefetch caches nothing, so the per-source lookup still runs.
+            assert cache.for_source("s1") == {"source_name": "test-1"}
+
+    def test_client_sources_leave_out_the_knowledge_name(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "x", "source_name": "test-1", "connector_name": "Google Drive"}, "not-a-dict"]
+        sent = client_sources(docs)
+        assert sent == [{"text": "x", "connector_name": "Google Drive"}, "not-a-dict"]
+        # The caller's chunks still carry the name for the prompt.
+        assert docs[0]["source_name"] == "test-1"
+
+    @pytest.mark.parametrize("docs", [None, [], "oops"])
+    def test_client_sources_pass_non_lists_through(self, docs):
+        from docsgpt.connectors.attribution import client_sources
+
+        assert client_sources(docs) == docs
 
     def test_classic_retriever_stamps_connector(self, pg_conn):
         from docsgpt.retriever.classic_rag import ClassicRAG
@@ -493,7 +567,8 @@ class TestAttribution:
         retriever = ClassicRAG.__new__(ClassicRAG)
         with patch("docsgpt.connectors.attribution.connector_labels",
                    return_value={"s1": {"connector_key": "google_drive", "connector_name": "Google Drive",
-                                        "show_links": True}}) as lookup:
+                                        "show_links": True}}) as lookup, \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
             first = retriever._connector_labels.for_source("s1")
             again = retriever._connector_labels.for_source("s1")
         assert first == again == {"connector_key": "google_drive", "connector_name": "Google Drive"}

@@ -102,24 +102,28 @@
       "cancelled": "Background job cancelled"
     }
   },
-  "demo": [
-    {
-      "header": "Learn about DocsGPT",
-      "query": "What is DocsGPT?"
-    },
-    {
-      "header": "Summarize documentation",
-      "query": "Summarize current context"
-    },
-    {
-      "header": "Write Code",
-      "query": "Write code for api request to /api/answer"
-    },
-    {
-      "header": "Learning Assistance",
-      "query": "Write potential questions for context"
+  "hero": {
+    "suggestions": {
+      "label": "Suggestions",
+      "summarize": "Summarize {{name}}",
+      "compare": "Compare {{first}} with {{second}}",
+      "service": {
+        "files": "Find my most recent files in {{name}}",
+        "knowledge": "What changed in {{name}} this week?",
+        "projects": "What's in progress in {{name}} this week?",
+        "dev": "What changed in {{name}} this week?",
+        "business": "What's new in {{name}} this week?",
+        "messaging": "Summarize this week's messages in {{name}}",
+        "database": "What data is in {{name}}?",
+        "other": "What can you find in {{name}}?"
+      },
+      "continue": "Continue \"{{name}}\"",
+      "addKnowledge": "Add knowledge to ask about your own documents",
+      "connect": "Connect {{names}}",
+      "more": "more",
+      "createAgent": "Create an agent for a specific job"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "Sign in to continue to DocsGPT",
     "signInWithSSO": "Sign in with SSO",
@@ -3045,7 +3049,8 @@
         "basics": "Basics",
         "knowledge": "Knowledge and behaviour",
         "model": "Model",
-        "analytics": "Insights"
+        "analytics": "Insights",
+        "starters": "Starters"
       },
       "placeholders": {
         "agentName": "Agent name",
@@ -3363,6 +3368,12 @@
         "title": "Leave without saving?",
         "description": "The changes you made here will be lost.",
         "submit": "Leave"
+      },
+      "starters": {
+        "description": "Optional. Questions shown under the agent's card when someone starts a new chat with it, such as \"What can you help me with?\" Up to four.",
+        "label": "Starter {{number}}",
+        "add": "Add a starter",
+        "remove": "Remove starter {{number}}"
       }
     },
     "logs": {
@@ -3728,7 +3739,7 @@
         "deleteNode": "Delete node",
         "deleteConfirmUnnamed": "Delete this workflow agent?",
         "detailsTitle": "Workflow details",
-        "detailsDescription": "Name, description and image shown on the agent card.",
+        "detailsDescription": "The agent's card and its chat settings.",
         "unsavedChanges": "Unsaved changes",
         "editDetailsMenu": "Edit details",
         "loopHint": "Run nodes for each item in a list",
@@ -4062,11 +4073,6 @@
         "model": "{{model}} ({{tokens}} tokens)"
       }
     }
-  },
-  "connectHero": {
-    "title": "Connect your data",
-    "body": "Chat with {{names}}.",
-    "more": "more"
   },
   "common": {
     "close": "Close",

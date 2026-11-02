@@ -1,7 +1,7 @@
 ---
 title: Personal Access Tokens
 description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-01
 ---
 
 # Personal Access Tokens
@@ -167,7 +167,7 @@ A `write` scope includes the matching `read` scope.
 | `teams:read` | View teams, members and resource shares |
 | `runs:read` | View the workflow runs you started: status, steps, final state and the files they produced |
 | `artifacts:read` | Download files your workflow runs produced, and view and download your artifacts |
-| `chat:run` | Ask agents and search sources (`/api/answer`, `/stream`, `/api/search`); used for benchmarking |
+| `chat:run` | Ask agents, search sources and list an agent's starters (`/api/answer`, `/stream`, `/api/search`, `/api/agent_starters`); used for benchmarking |
 
 `agents:keys` is separate from `agents:write` on purpose. Creating, publishing or adopting an agent mints its API key; a token without `agents:keys` gets the key back masked (`1234...90ab`), because an agent key keeps working after the token that saw it is revoked. Put differently: a deployment token that updates agents does not need to be able to read or rotate the secrets other systems use to call them.
 
@@ -222,6 +222,7 @@ Restrictions and chat (`chat:run`):
 - A token restricted on **prompts** or **workflows** must also be restricted to agents to chat.
 - A token restricted on **tools** cannot use chat at all, and a tools restriction cannot be combined with `chat:run` when the token is created. Chat executes tools (an agent's own, or your default tools when there is no agent) and those cannot be held to a list.
 - A `conversation_id` must belong to the agent being run (or to no agent, for agent-less chat). Otherwise the server would continue, append to, or resume pending tool calls of another agent's conversation.
+- Listing an agent's starters (`/api/agent_starters`) takes only the agent's `api_key`, so a restricted token cannot call it. The endpoint needs no token at all: the agent key is its credential.
 
 `agents:write` and import: applying an agent definition can create the prompt and tools it references and rewrite the agent's workflow, all under `agents:write` alone. It does not need `prompts:write`, `tools:write` or `workflows:write`, so treat `agents:write` as able to create those through an import.
 

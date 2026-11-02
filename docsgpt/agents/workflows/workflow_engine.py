@@ -273,6 +273,9 @@ class WorkflowEngine:
         # A loop item's own retrieved documents. Items run side by side, so
         # they keep these here rather than on the shared ``self.agent``.
         self._item_docs: Optional[List[Dict[str, Any]]] = None
+        # What the current agent node's retrieval searched and which sources
+        # failed (see ``_retrieve_node_sources``); None when it searched nothing.
+        self._node_search_outcome = None
         # Serializes code nodes on the run's one sandbox session: concurrent loop
         # items would otherwise overwrite each other's state.json and captures.
         self._sandbox_lock = threading.Lock()
@@ -856,6 +859,7 @@ class WorkflowEngine:
 
         node_config = AgentNodeConfig(**node.config.get("config", node.config))
 
+        self._node_search_outcome = None
         node_docs = (
             self._retrieve_node_sources(node_config) if node_config.sources else []
         )
@@ -944,6 +948,7 @@ class WorkflowEngine:
                 node_config.prompt_template
             ),
             "sources_were_searched": bool(node_config.sources),
+            "search_outcome": self._node_search_outcome,
             # The workflow agent's context limit; a node on a smaller model
             # still budgets against that model's own window.
             "context_window_limit": getattr(self.agent, "context_window_limit", None),
@@ -2377,13 +2382,16 @@ class WorkflowEngine:
         Returns:
             list: Retrieved documents, empty when there was nothing to fetch.
         """
+        from docsgpt.retriever.base import SearchOutcome, search_outcome_of
         from docsgpt.retriever.retriever_creator import RetrieverCreator
         from docsgpt.retriever.stages.relevance import apply_relevance
 
+        self._node_search_outcome = None
         query = self.state.get("query", "")
         if not query:
             return []
 
+        sources: list = []
         try:
             sources = self._authorized_node_sources(node_config.sources)
             retriever = RetrieverCreator.create_retriever(
@@ -2395,6 +2403,7 @@ class WorkflowEngine:
                 decoded_token=self.agent.decoded_token,
             )
             docs = retriever.search(query)
+            self._node_search_outcome = search_outcome_of(retriever, sources)
             if docs:
                 try:
                     rerankers = self._node_rerankers(sources)
@@ -2419,6 +2428,12 @@ class WorkflowEngine:
             return docs or []
         except Exception:
             logger.exception("Failed to retrieve docs for workflow node")
+            if self._node_search_outcome is None:
+                # The search itself raised, which is not "nothing matched":
+                # the node agent is told the sources could not be searched.
+                # Only the authorized ones: the raw configured ids may name
+                # another user's source, whose name would reach the model.
+                self._node_search_outcome = SearchOutcome.of(sources, sources)
             return []
 
     @staticmethod

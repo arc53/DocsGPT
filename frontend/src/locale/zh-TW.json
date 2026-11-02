@@ -101,24 +101,28 @@
       "cancelled": "背景工作已取消"
     }
   },
-  "demo": [
-    {
-      "header": "了解 DocsGPT",
-      "query": "什麼是 DocsGPT？"
-    },
-    {
-      "header": "摘要文件",
-      "query": "摘要目前的內容"
-    },
-    {
-      "header": "撰寫程式碼",
-      "query": "為 /api/answer 撰寫 API 請求程式碼"
-    },
-    {
-      "header": "學習輔助",
-      "query": "為此內容撰寫可能的問題"
+  "hero": {
+    "suggestions": {
+      "label": "建議",
+      "summarize": "摘要「{{name}}」",
+      "compare": "比較「{{first}}」和「{{second}}」",
+      "service": {
+        "files": "尋找我在 {{name}} 中的最新檔案",
+        "knowledge": "{{name}} 本週有哪些變更？",
+        "projects": "{{name}} 本週有哪些進行中的工作？",
+        "dev": "{{name}} 本週有哪些變更？",
+        "business": "{{name}} 本週有什麼新動態？",
+        "messaging": "摘要 {{name}} 本週的訊息",
+        "database": "{{name}} 中有哪些資料？",
+        "other": "能在 {{name}} 中找到什麼？"
+      },
+      "continue": "繼續「{{name}}」",
+      "addKnowledge": "新增知識，就能詢問你自己的文件",
+      "connect": "連線 {{names}}",
+      "more": "更多服務",
+      "createAgent": "為特定任務建立代理"
     }
-  ],
+  },
   "auth": {
     "signInToContinue": "登入以繼續使用 DocsGPT",
     "signInWithSSO": "使用 SSO 登入",
@@ -3027,7 +3031,8 @@
         "basics": "基本資訊",
         "knowledge": "知識與行為",
         "model": "模型",
-        "analytics": "洞察"
+        "analytics": "洞察",
+        "starters": "開場問題"
       },
       "placeholders": {
         "agentName": "代理名稱",
@@ -3344,6 +3349,12 @@
         "title": "要不儲存就離開嗎？",
         "description": "您在此處所做的變更將會遺失。",
         "submit": "離開"
+      },
+      "starters": {
+        "description": "選填。有人與此代理開始新對話時，顯示在其卡片下方的問題，例如「你能幫我做什麼？」。最多四個。",
+        "label": "問題 {{number}}",
+        "add": "新增問題",
+        "remove": "移除問題 {{number}}"
       }
     },
     "logs": {
@@ -3704,7 +3715,7 @@
         "deleteNode": "刪除節點",
         "deleteConfirmUnnamed": "要刪除此工作流程代理嗎？",
         "detailsTitle": "工作流程詳細資料",
-        "detailsDescription": "顯示在代理卡片上的名稱、說明和圖片。",
+        "detailsDescription": "代理的卡片和對話設定。",
         "unsavedChanges": "未儲存的變更",
         "editDetailsMenu": "編輯詳細資料",
         "loopHint": "為清單中的每個項目執行節點",
@@ -4021,11 +4032,6 @@
   },
   "prompts": {
     "textAriaLabel": "提示文字"
-  },
-  "connectHero": {
-    "title": "連線你的資料",
-    "body": "與 {{names}} 進行對話。",
-    "more": "更多服務"
   },
   "common": {
     "close": "關閉",

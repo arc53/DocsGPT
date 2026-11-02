@@ -1525,6 +1525,48 @@ describe('NewAgent form', () => {
     expect(limitSwitch('historyLimit').disabled).toBe(true);
   });
 
+  it('edits the starters and saves them cleaned', async () => {
+    await renderEdit({ starters: ['Run due diligence on a new vendor'] });
+    const fields = () =>
+      Array.from(
+        container.querySelectorAll<HTMLInputElement>('input[maxlength="200"]'),
+      );
+    // The saved starter, and a link for another (they are optional).
+    expect(fields().map((f) => f.value)).toEqual([
+      'Run due diligence on a new vendor',
+    ]);
+    await act(async () => buttonByText('agents.form.starters.add').click());
+    await act(async () => buttonByText('agents.form.starters.add').click());
+    const save = buttonByText('agents.form.buttons.save');
+    await act(async () => setNativeValue(fields()[2], '  Which DPAs?  '));
+    await act(async () => save.click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(JSON.parse(sent.get('starters') as string)).toEqual([
+      'Run due diligence on a new vendor',
+      'Which DPAs?',
+    ]);
+  });
+
+  it('shows no starter fields until one is added', async () => {
+    await renderEdit({ starters: [] });
+    expect(container.querySelectorAll('input[maxlength="200"]')).toHaveLength(
+      0,
+    );
+    expect(buttonByText('agents.form.starters.add')).toBeTruthy();
+  });
+
+  it('places Starters between Model and Advanced', async () => {
+    await renderEdit({ starters: [] });
+    const text = container.textContent ?? '';
+    const at = (key: string) => text.indexOf(key);
+    expect(at('agents.form.sections.model')).toBeLessThan(
+      at('agents.form.sections.starters'),
+    );
+    expect(at('agents.form.sections.starters')).toBeLessThan(
+      at('agents.form.sections.advanced'),
+    );
+  });
+
   it('removes a stopped item from the agent', async () => {
     await renderEdit(withStoppedTool({ reason: 'deleted', sponsor: null }));
     expect(container.textContent).toContain(

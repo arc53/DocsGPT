@@ -245,7 +245,7 @@ class TestAgentBudgets:
         assert len(uncapped.retrieved_docs) == len(docs)
 
     def test_shedding_stops_when_no_documents_are_left(self, make):
-        """A searched turn keeps its "nothing matched" note, which shedding cannot remove.
+        """A searched turn keeps its "passages left out" note, which shedding cannot remove.
 
         A question between the limit's turn budget and the model's used to
         spin forever, dropping documents from an empty list.
@@ -265,7 +265,7 @@ class TestAgentBudgets:
             messages = agent._build_messages("sys", query)
 
         assert agent.retrieved_docs == []
-        assert agent.EMPTY_RETRIEVAL_NOTE in messages[-1]["content"]
+        assert agent.DOCUMENTS_SHED_NOTE in messages[-1]["content"]
         assert query in messages[-1]["content"]
 
     def test_a_message_longer_than_the_limit_is_still_sent(self, make):
