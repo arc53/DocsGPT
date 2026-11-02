@@ -379,7 +379,7 @@ class TestBoilerplatePruningRules:
 class TestCompressingRetrieverIntegration:
     def test_positional_and_keyword_query_handling(self):
         mock_inner = Mock()
-        mock_inner.search.return_value = [{"id": "d1", "text": "Home > API\nThe primary endpoint is /v1/chat."}]
+        mock_inner.search.side_effect = lambda *args, **kwargs: [{"id": "d1", "text": "Home > API\nThe primary endpoint is /v1/chat."}]
         retriever = CompressingRetriever(mock_inner)
 
         # Test positional query invocation (e.g. from headless_runner / internal_search)
@@ -390,6 +390,12 @@ class TestCompressingRetrieverIntegration:
         # Test keyword query invocation
         res_kw = retriever.search(query="endpoint")
         assert res_kw[0]["text"] == "The primary endpoint is /v1/chat."
+
+        # Test stored question fallback when search() receives no query argument
+        mock_inner.original_question = "API"
+        res_stored = retriever.search()
+        mock_inner.search.assert_called_with()
+        assert "Home > API" in res_stored[0]["text"]
 
     def test_build_dispatcher_disabled_returns_raw_retriever(self, monkeypatch):
         monkeypatch.setattr("docsgpt.retriever.dispatcher.settings.CHUNK_COMPRESSION_ENABLED", False)

@@ -564,11 +564,20 @@ class CompressingRetriever(BaseRetriever):
         return self._inner.__class__
 
     def search(self, *args, **kwargs) -> List[Dict[str, Any]]:
-        query = args[0] if args else kwargs.get("query", "")
+        if args:
+            query = args[0]
+        elif "query" in kwargs:
+            query = kwargs["query"]
+        else:
+            query = (
+                getattr(self._inner, "original_question", None)
+                or getattr(self._inner, "question", None)
+                or ""
+            )
         docs = self._inner.search(*args, **kwargs)
         from docsgpt.retriever.stages.boilerplate_pruning import prune_boilerplate
 
-        return prune_boilerplate(docs, query=query)
+        return prune_boilerplate(docs, query=query or "")
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
