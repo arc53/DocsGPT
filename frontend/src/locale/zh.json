@@ -1662,7 +1662,11 @@
       },
       "kindFilterLabel": "按类型筛选",
       "chatPromptOn": "用于无智能体的聊天",
-      "chatPromptOff": "在无智能体的聊天中使用"
+      "chatPromptOff": "在无智能体的聊天中使用",
+      "loadPromptError": "无法加载这个提示词。",
+      "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
+      "saveAndLeave": "保存并离开",
+      "leaveWithoutSaving": "不保存离开"
     },
     "devices": {
       "label": "设备",
@@ -2465,12 +2469,8 @@
       "cancel": "取消",
       "nameExists": "名称已存在",
       "deleteConfirmation": "删除“{{name}}”？",
-      "placeholderText": "在此输入提示内容...",
-      "addExamplePlaceholder": "請總結此文本：",
       "variablesLabel": "變數",
-      "variablesSubtext": "点击以插入提示中",
       "variablesDescription": "點擊以插入到提示中",
-      "systemVariables": "點擊以插入提示中",
       "toolVariables": "工具变量",
       "systemVariablesDropdownLabel": "系统变量",
       "systemVariableOptions": {
@@ -2487,9 +2487,6 @@
         "artifactsLookup": "按 ID 查询工件元数据"
       },
       "learnAboutPrompts": "了解提示",
-      "publicPromptEditDisabled": "公共提示無法編輯",
-      "promptTypePublic": "公共",
-      "promptTypePrivate": "私人",
       "pendingDescription": "保存智能体时会创建它。"
     },
     "chunk": {
@@ -4469,7 +4466,18 @@
       "acceptAll": "全部接受",
       "reviewOneByOne": "逐条查看",
       "discard": "放弃",
-      "usedBy_other": "有 {{formatted}} 个智能体在使用。保存后会对所有智能体生效。"
+      "usedBy_other": "有 {{formatted}} 个智能体在使用。保存后会对所有智能体生效。",
+      "introImprove": "我可以检查这个提示词，或修改某个具体的地方。在你保存之前不会保存任何内容。",
+      "introImproveUsedBy_one": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改也会作用于它。",
+      "introImproveUsedBy_other": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改会作用于所有这些智能体。",
+      "introWrite": "描述你想要的提示词，我来写。在你保存之前不会保存任何内容。",
+      "suggestions": {
+        "lookOver": "检查一下并提出修改建议",
+        "noPrices": "不要报价",
+        "language": "用客户的语言回答",
+        "handbook": "我们员工手册的友好助手",
+        "support": "拿不准时转交给人工的客服智能体"
+      }
     },
     "title": "用 DocsGPT 起草",
     "draft": "起草",

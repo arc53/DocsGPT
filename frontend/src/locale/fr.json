@@ -1730,7 +1730,11 @@
       },
       "kindFilterLabel": "Filtrer par type",
       "chatPromptOn": "Utilisé dans les conversations sans agent",
-      "chatPromptOff": "Utiliser dans les conversations sans agent"
+      "chatPromptOff": "Utiliser dans les conversations sans agent",
+      "loadPromptError": "Impossible de charger ce prompt.",
+      "unsavedChanges": "Vos modifications non enregistrées seront perdues si vous quittez sans enregistrer.",
+      "saveAndLeave": "Enregistrer et quitter",
+      "leaveWithoutSaving": "Quitter sans enregistrer"
     },
     "devices": {
       "label": "Appareils",
@@ -2560,12 +2564,8 @@
       "cancel": "Annuler",
       "nameExists": "Ce nom existe déjà",
       "deleteConfirmation": "Supprimer « {{name}} » ?",
-      "placeholderText": "Saisissez le texte de votre prompt ici…",
-      "addExamplePlaceholder": "Veuillez résumer ce texte :",
       "variablesLabel": "Variables",
-      "variablesSubtext": "Cliquez pour insérer dans le prompt",
       "variablesDescription": "Cliquez pour insérer dans le prompt",
-      "systemVariables": "Cliquez pour insérer dans le prompt",
       "toolVariables": "Variables d’outils",
       "systemVariablesDropdownLabel": "Variables système",
       "systemVariableOptions": {
@@ -2582,9 +2582,6 @@
         "artifactsLookup": "Métadonnées de l’artefact par ID"
       },
       "learnAboutPrompts": "En savoir plus sur les prompts",
-      "publicPromptEditDisabled": "Les prompts publics ne sont pas modifiables",
-      "promptTypePublic": "public",
-      "promptTypePrivate": "privé",
       "pendingDescription": "Il est créé lorsque vous enregistrez l’agent."
     },
     "chunk": {
@@ -4621,7 +4618,19 @@
       "discard": "Abandonner",
       "usedBy_one": "Utilisé par {{formatted}} agent. L’enregistrer le modifie aussi là-bas.",
       "usedBy_many": "Utilisé par {{formatted}} agents. L’enregistrer le modifie pour tous.",
-      "usedBy_other": "Utilisé par {{formatted}} agents. L’enregistrer le modifie pour tous."
+      "usedBy_other": "Utilisé par {{formatted}} agents. L’enregistrer le modifie pour tous.",
+      "introImprove": "Je peux relire ce prompt ou y changer quelque chose de précis. Rien n’est enregistré tant que vous n’enregistrez pas.",
+      "introImproveUsedBy_one": "Je peux relire ce prompt ou y changer quelque chose de précis. {{formatted}} agent l’utilise, donc une modification enregistrée s’y applique aussi.",
+      "introImproveUsedBy_many": "Je peux relire ce prompt ou y changer quelque chose de précis. {{formatted}} agents l’utilisent, donc une modification enregistrée s’applique à tous.",
+      "introImproveUsedBy_other": "Je peux relire ce prompt ou y changer quelque chose de précis. {{formatted}} agents l’utilisent, donc une modification enregistrée s’applique à tous.",
+      "introWrite": "Décrivez le prompt souhaité et je l’écrirai. Rien n’est enregistré tant que vous n’enregistrez pas.",
+      "suggestions": {
+        "lookOver": "Relisez-le et proposez des corrections",
+        "noPrices": "Ne plus citer de prix",
+        "language": "Répondre dans la langue du client",
+        "handbook": "Un assistant aimable pour notre manuel RH",
+        "support": "Un agent de support qui passe la main à une personne en cas de doute"
+      }
     },
     "title": "Rédiger avec DocsGPT",
     "draft": "Rédiger",

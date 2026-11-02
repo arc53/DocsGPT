@@ -1666,7 +1666,11 @@
       },
       "kindFilterLabel": "Nach Art filtern",
       "chatPromptOn": "In Chats ohne Agenten verwendet",
-      "chatPromptOff": "In Chats ohne Agenten verwenden"
+      "chatPromptOff": "In Chats ohne Agenten verwenden",
+      "loadPromptError": "Dieser Prompt konnte nicht geladen werden.",
+      "unsavedChanges": "Du hast ungespeicherte Änderungen, die verloren gehen, wenn du ohne Speichern verlässt.",
+      "saveAndLeave": "Speichern und verlassen",
+      "leaveWithoutSaving": "Ohne Speichern verlassen"
     },
     "devices": {
       "label": "Geräte",
@@ -2475,12 +2479,8 @@
       "cancel": "Abbrechen",
       "nameExists": "Name existiert bereits",
       "deleteConfirmation": "\"{{name}}\" löschen?",
-      "placeholderText": "Gib hier deinen Prompt-Text ein...",
-      "addExamplePlaceholder": "Bitte fasse diesen Text zusammen:",
       "variablesLabel": "Variablen",
-      "variablesSubtext": "Klicken zum Einfügen in den Prompt",
       "variablesDescription": "Klicken zum Einfügen in den Prompt",
-      "systemVariables": "Klicken zum Einfügen in den Prompt",
       "toolVariables": "Werkzeug-Variablen",
       "systemVariablesDropdownLabel": "System-Variablen",
       "systemVariableOptions": {
@@ -2497,9 +2497,6 @@
         "artifactsLookup": "Artefakt-Metadaten nach ID"
       },
       "learnAboutPrompts": "Mehr über Prompts erfahren",
-      "publicPromptEditDisabled": "Öffentliche Prompts können nicht bearbeitet werden",
-      "promptTypePublic": "öffentlich",
-      "promptTypePrivate": "privat",
       "pendingDescription": "Er wird erstellt, wenn du den Agenten speicherst."
     },
     "chunk": {
@@ -4492,7 +4489,18 @@
       "reviewOneByOne": "Einzeln prüfen",
       "discard": "Verwerfen",
       "usedBy_one": "Wird von {{formatted}} Agenten verwendet. Das Speichern ändert ihn auch dort.",
-      "usedBy_other": "Wird von {{formatted}} Agenten verwendet. Das Speichern ändert ihn für alle."
+      "usedBy_other": "Wird von {{formatted}} Agenten verwendet. Das Speichern ändert ihn für alle.",
+      "introImprove": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. Gespeichert wird erst, wenn du speicherst.",
+      "introImproveUsedBy_one": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agent nutzt ihn, eine gespeicherte Änderung gilt also auch dort.",
+      "introImproveUsedBy_other": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agenten nutzen ihn, eine gespeicherte Änderung gilt also für alle.",
+      "introWrite": "Beschreibe den Prompt, den du möchtest, und ich schreibe ihn. Gespeichert wird erst, wenn du speicherst.",
+      "suggestions": {
+        "lookOver": "Durchsehen und Verbesserungen vorschlagen",
+        "noPrices": "Keine Preise mehr nennen",
+        "language": "In der Sprache des Kunden antworten",
+        "handbook": "Ein freundlicher Helfer für unser Personalhandbuch",
+        "support": "Ein Support-Agent, der bei Unsicherheit an einen Menschen übergibt"
+      }
     },
     "title": "Mit DocsGPT entwerfen",
     "draft": "Entwerfen",

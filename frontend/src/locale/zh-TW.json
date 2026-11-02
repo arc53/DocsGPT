@@ -1662,7 +1662,11 @@
       },
       "kindFilterLabel": "依類型篩選",
       "chatPromptOn": "用於無代理的聊天",
-      "chatPromptOff": "在無代理的聊天中使用"
+      "chatPromptOff": "在無代理的聊天中使用",
+      "loadPromptError": "無法載入這個提示詞。",
+      "unsavedChanges": "您有未儲存的變更，如果不儲存就離開將會遺失。",
+      "saveAndLeave": "儲存並離開",
+      "leaveWithoutSaving": "不儲存離開"
     },
     "devices": {
       "label": "裝置",
@@ -2466,12 +2470,8 @@
       "cancel": "取消",
       "nameExists": "名稱已存在",
       "deleteConfirmation": "要刪除「{{name}}」嗎？",
-      "placeholderText": "在此輸入提示內容...",
-      "addExamplePlaceholder": "請總結此文本：",
       "variablesLabel": "變數",
-      "variablesSubtext": "點擊以插入提示中",
       "variablesDescription": "點擊以插入到提示中",
-      "systemVariables": "點擊以插入提示中",
       "toolVariables": "工具變數",
       "systemVariablesDropdownLabel": "系統變數",
       "systemVariableOptions": {
@@ -2488,9 +2488,6 @@
         "artifactsLookup": "依 ID 查詢 Artifact 中繼資料"
       },
       "learnAboutPrompts": "了解提示",
-      "publicPromptEditDisabled": "公共提示無法編輯",
-      "promptTypePublic": "公共",
-      "promptTypePrivate": "私人",
       "pendingDescription": "儲存代理時會建立它。"
     },
     "chunk": {
@@ -4471,7 +4468,18 @@
       "acceptAll": "全部接受",
       "reviewOneByOne": "逐項檢視",
       "discard": "捨棄",
-      "usedBy_other": "有 {{formatted}} 個代理在使用。儲存後會套用到所有代理。"
+      "usedBy_other": "有 {{formatted}} 個代理在使用。儲存後會套用到所有代理。",
+      "introImprove": "我可以檢查這個提示詞，或修改某個具體的地方。在你儲存之前不會儲存任何內容。",
+      "introImproveUsedBy_one": "我可以檢查這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更也會套用到它。",
+      "introImproveUsedBy_other": "我可以檢查這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更會套用到所有這些代理。",
+      "introWrite": "描述你想要的提示詞，我來寫。在你儲存之前不會儲存任何內容。",
+      "suggestions": {
+        "lookOver": "檢查一下並提出修改建議",
+        "noPrices": "不要報價",
+        "language": "用客戶的語言回答",
+        "handbook": "我們員工手冊的友善助理",
+        "support": "拿不準時轉交給真人的客服代理"
+      }
     },
     "title": "用 DocsGPT 起草",
     "draft": "起草",

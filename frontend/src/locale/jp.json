@@ -1662,7 +1662,11 @@
       },
       "kindFilterLabel": "種類で絞り込む",
       "chatPromptOn": "エージェントなしのチャットで使用中",
-      "chatPromptOff": "エージェントなしのチャットで使用"
+      "chatPromptOff": "エージェントなしのチャットで使用",
+      "loadPromptError": "このプロンプトを読み込めませんでした。",
+      "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
+      "saveAndLeave": "保存して離れる",
+      "leaveWithoutSaving": "保存せずに離れる"
     },
     "devices": {
       "label": "デバイス",
@@ -2466,12 +2470,8 @@
       "cancel": "キャンセル",
       "nameExists": "この名前はすでに存在します",
       "deleteConfirmation": "「{{name}}」を削除しますか？",
-      "placeholderText": "ここにプロンプトのテキストを入力してください…",
-      "addExamplePlaceholder": "このテキストを要約してください：",
       "variablesLabel": "変数",
-      "variablesSubtext": "クリックしてプロンプトに挿入",
       "variablesDescription": "クリックしてプロンプトに挿入",
-      "systemVariables": "システム変数",
       "toolVariables": "ツール変数",
       "systemVariablesDropdownLabel": "システム変数",
       "systemVariableOptions": {
@@ -2488,9 +2488,6 @@
         "artifactsLookup": "IDによるアーティファクトメタデータ"
       },
       "learnAboutPrompts": "プロンプトについて学ぶ",
-      "publicPromptEditDisabled": "公開プロンプトは編集できません",
-      "promptTypePublic": "公開",
-      "promptTypePrivate": "非公開",
       "pendingDescription": "エージェントを保存すると作成されます。"
     },
     "chunk": {
@@ -4471,7 +4468,18 @@
       "acceptAll": "すべて採用",
       "reviewOneByOne": "1 件ずつ確認",
       "discard": "破棄",
-      "usedBy_other": "{{formatted}} 件のエージェントが使用しています。保存するとすべてに反映されます。"
+      "usedBy_other": "{{formatted}} 件のエージェントが使用しています。保存するとすべてに反映されます。",
+      "introImprove": "このプロンプトを見直したり、特定の箇所を変更したりできます。保存するまで何も保存されません。",
+      "introImproveUsedBy_one": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はそちらにも反映されます。",
+      "introImproveUsedBy_other": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はすべてに反映されます。",
+      "introWrite": "必要なプロンプトを説明してください。私が書きます。保存するまで何も保存されません。",
+      "suggestions": {
+        "lookOver": "見直して修正点を提案して",
+        "noPrices": "価格を答えないようにして",
+        "language": "顧客の言語で回答して",
+        "handbook": "人事ハンドブックの親切なアシスタント",
+        "support": "迷ったときは担当者に引き継ぐサポートエージェント"
+      }
     },
     "title": "DocsGPT で下書き",
     "draft": "下書き",

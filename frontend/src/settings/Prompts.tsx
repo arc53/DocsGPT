@@ -6,7 +6,7 @@ import userService from '../api/services/userService';
 import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
 import RoleMeta from '../components/RoleMeta';
-import { isOwner } from '../utils/accessUtils';
+import { can, isOwner } from '../utils/accessUtils';
 import { MetaLine } from '../components/ui/meta-line';
 import {
   Tooltip,
@@ -27,6 +27,13 @@ import { EmptyState } from '../components/ui/empty-state';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { SectionHeader } from '../components/ui/section-header';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import ConfirmationModal from '../modals/ConfirmationModal';
+import SectionShell from '../navigation/SectionShell';
+import { promptDrafterMode } from '../drafter/promptDraft';
+import { useDrafterConfig } from '../drafter/useDrafterConfig';
+import { usePromptDrafter } from '../drafter/usePromptDrafter';
+import { WandButton } from '../drafter/WandButton';
+import { useLeaveGuard } from '../hooks/useLeaveGuard';
 import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
 import type { Prompt } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -36,6 +43,10 @@ import {
   selectToken,
   setPrompts,
 } from '../preferences/preferenceSlice';
+import type { MenuOption } from '../components/ui/dropdown-menu';
+import { PromptDraftPanel } from '../prompts/PromptDraftPanel';
+import { PromptView } from '../prompts/PromptView';
+import { type PromptDetail, usePromptDetail } from '../prompts/usePromptDetail';
 import type { AppDispatch } from '../store';
 import { agentUseCount } from '../utils/resourceUsage';
 import UsedByAgents from './UsedByAgents';
@@ -68,6 +79,8 @@ const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
  * Settings › Prompts: the presets, the user's own prompts and the ones shared
  * with them, as cards. A radio on each card picks the prompt chats without an
  * agent use (kept on the server); the ⋯ opens, duplicates, shares or deletes.
+ * Opening a prompt, Add and Duplicate show it as a detail view in place of
+ * the list (PromptDetailPage).
  */
 export default function Prompts() {
   const { t } = useTranslation();
@@ -131,14 +144,30 @@ export default function Prompts() {
     loadPrompts();
   }, [token]);
 
-  const { openPrompt, addPrompt, menuOptions, modals } = usePromptActions({
+  const detail = usePromptDetail({
+    prompts,
+    // Saved: back on the list, which loads again.
+    onSaved: () => {
+      detail.close();
+      loadPrompts(true);
+    },
+  });
+  const { menuOptions, dialogs } = usePromptActions({
     prompts,
     onSaved: () => loadPrompts(true),
     onDeleted: (deleted) => {
       showList(prompts.filter((prompt) => prompt.id !== deleted.id));
       // The server reads a deleted chat prompt back as default.
       dispatch(chatPromptDeleted(deleted.id, token));
+      // Deleted from its own ⋯: back on the list.
+      if (
+        detail.target?.kind === 'edit' &&
+        detail.target.prompt.id === deleted.id
+      )
+        detail.close();
     },
+    onOpen: detail.open,
+    onDuplicate: (prompt) => void detail.duplicate(prompt),
   });
 
   /** In use: an agent uses it, or chats without an agent do. */
@@ -227,7 +256,7 @@ export default function Prompts() {
       >
         <button
           type="button"
-          onClick={() => openPrompt(prompt)}
+          onClick={() => detail.open(prompt)}
           className="flex w-full min-w-0 cursor-pointer pr-9 text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
         >
           <CardTitle
@@ -287,8 +316,19 @@ export default function Prompts() {
     );
   };
 
+  if (detail.target)
+    return (
+      <PromptDetailPage
+        key={detail.key}
+        detail={detail}
+        prompts={prompts}
+        menuOptions={menuOptions}
+        dialogs={dialogs}
+      />
+    );
+
   return (
-    <div>
+    <SectionShell>
       <PageToolbar
         intro={t('settings.prompts.subtitle')}
         search={
@@ -302,7 +342,7 @@ export default function Prompts() {
           />
         }
         action={
-          <Button type="button" size="field" shape="pill" onClick={addPrompt}>
+          <Button type="button" size="field" shape="pill" onClick={detail.add}>
             {t('settings.prompts.addPrompt')}
           </Button>
         }
@@ -398,7 +438,211 @@ export default function Prompts() {
           </div>
         </RadioGroup>
       )}
-      {modals}
+      {dialogs}
+    </SectionShell>
+  );
+}
+
+/**
+ * An open prompt in place of the list (PATTERNS "A detail page inside a list
+ * section"): the crumb row with Improve (Write on an empty new prompt), Save
+ * and the prompt's ⋯, the agents using it, and the editor; Improve docks the
+ * drafter's drawer beside the page. A built-in or view-only prompt is a
+ * read-only view whose Improve makes a copy first and drafts on the copy.
+ * Leaving through the crumb with unsaved changes asks first, as an open
+ * tool does.
+ */
+function PromptDetailPage({
+  detail,
+  prompts,
+  menuOptions,
+  dialogs,
+}: {
+  detail: PromptDetail;
+  prompts: Prompt[];
+  menuOptions: (prompt: Prompt, detail?: boolean) => MenuOption[];
+  dialogs: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  const { target, readOnly } = detail;
+  // The open prompt as the list last loaded it (a share changes it).
+  const saved =
+    target?.kind === 'edit'
+      ? (prompts.find((prompt) => prompt.id === target.prompt.id) ??
+        target.prompt)
+      : null;
+  const builtIn = saved?.type === 'public';
+  const usedBy = agentUseCount(saved?.used_by);
+
+  const drafterConfig = useDrafterConfig();
+  const mode = promptDrafterMode(saved ? 'EDIT' : 'ADD', detail.content);
+  const drafter = usePromptDrafter({
+    mode,
+    promptId: saved?.id ?? null,
+    name: detail.name,
+    content: detail.content,
+    setName: detail.setName,
+    setContent: detail.setContent,
+  });
+  const streaming = drafter.session.streaming;
+  // A copy made by Improve opens with the drawer.
+  const [drawerOpen, setDrawerOpen] = React.useState(
+    target?.kind === 'new' && target.draft,
+  );
+  const [leaving, setLeaving] = React.useState(false);
+  // The drawer's Change model link asks before leaving unsaved changes.
+  const leaveGuard = useLeaveGuard(detail.dirty);
+
+  const drafterOn =
+    drafterConfig?.enabled === true && detail.status === 'ready';
+  // A prompt the caller can't change is improved as a copy.
+  const canImprove =
+    drafterOn && (!readOnly || (!!saved && can(saved, 'duplicate')));
+  const improve = () => {
+    if (readOnly && saved) void detail.duplicate(saved, { draft: true });
+    else setDrawerOpen((open) => !open);
+  };
+
+  const back = () => (detail.dirty ? setLeaving(true) : detail.close());
+
+  const draftedSlot = (field: 'name' | 'content') => ({
+    drafted: drafter.drafted.isDrafted(field),
+    onUndo: () => drafter.drafted.undo(field),
+  });
+
+  const options = saved ? menuOptions(saved, true) : [];
+  const byline = [
+    builtIn ? t('modals.prompts.viewDescription') : null,
+    target?.kind === 'new' && target.copyOf
+      ? t('modals.prompts.duplicateDescription', {
+          name: target.copyOf,
+          interpolation: { escapeValue: false },
+        })
+      : null,
+    usedBy > 0 ? <UsedByAgents key="used-by" usage={saved?.used_by} /> : null,
+  ].filter(Boolean);
+
+  return (
+    // The drafter's docked panel sits beside the page's scroller, not in it.
+    <div className="relative flex h-full overflow-hidden">
+      <div className="h-full min-w-0 flex-1">
+        <SectionShell>
+          <PromptView
+            parent={{ label: t('settings.prompts.label'), onClick: back }}
+            label={
+              saved
+                ? saved.name
+                : target?.kind === 'new' && target.copyOf
+                  ? t('modals.prompts.duplicatePrompt')
+                  : t('modals.prompts.addPrompt')
+            }
+            actions={
+              <>
+                {canImprove && (
+                  <WandButton
+                    mode={readOnly ? 'improve' : mode}
+                    open={readOnly ? undefined : drawerOpen}
+                    compactOnPhone
+                    onClick={improve}
+                  />
+                )}
+                {!readOnly && (
+                  <Button
+                    type="button"
+                    size="field"
+                    shape="pill"
+                    onClick={() => void detail.save()}
+                    // Mid-review the text holds only the changes chosen so
+                    // far: the drawer's Accept all or Discard ends it first.
+                    disabled={
+                      !detail.canSave || streaming || drafter.review !== null
+                    }
+                    loading={detail.saving}
+                  >
+                    {t('modals.prompts.save')}
+                  </Button>
+                )}
+              </>
+            }
+            menu={
+              options.length > 0 ? (
+                <ActionMenu
+                  size="toolbar"
+                  options={options}
+                  triggerLabel={t('settings.prompts.actions', {
+                    interpolation: { escapeValue: false },
+                    name: saved?.name,
+                  })}
+                />
+              ) : undefined
+            }
+            byline={byline.length > 0 ? <MetaLine>{byline}</MetaLine> : null}
+            loading={detail.status === 'loading'}
+            onRetry={detail.status === 'error' ? detail.retry : undefined}
+            idPrefix={saved ? 'edit' : 'new'}
+            name={detail.name}
+            setName={detail.setName}
+            content={detail.content}
+            setContent={detail.setContent}
+            isReadOnly={readOnly}
+            // A built-in prompt says so in the byline; a shared one the role
+            // can't change gets the shared notice.
+            showViewOnlyNotice={readOnly && !builtIn}
+            review={drafter.review}
+            onDecide={drafter.decide}
+            draftedName={draftedSlot('name')}
+            draftedContent={draftedSlot('content')}
+            nameError={
+              detail.nameExists && detail.name
+                ? t('modals.prompts.nameExists')
+                : undefined
+            }
+            locked={streaming}
+          />
+          {dialogs}
+          {leaveGuard.dialog}
+          {leaving && (
+            <ConfirmationModal
+              message={t('settings.prompts.unsavedChanges')}
+              modalState="ACTIVE"
+              setModalState={(state) => setLeaving(state === 'ACTIVE')}
+              submitLabel={t('settings.prompts.saveAndLeave')}
+              // Pending while the save runs; a refused save rejects, so its
+              // error stays in this dialog and the page stays put. A prompt
+              // that can't be saved yet (no name) just stays.
+              handleSubmit={async () => {
+                if (!detail.canSave || drafter.review !== null) {
+                  setLeaving(false);
+                  return;
+                }
+                const result = await detail.save({ quiet: true });
+                if (result !== 'saved') throw new Error(result);
+              }}
+              error={(reason) =>
+                reason instanceof Error && reason.message === 'conflict'
+                  ? t('settings.prompts.editConflict')
+                  : t('settings.prompts.saveFailed')
+              }
+              cancelLabel={t('settings.prompts.leaveWithoutSaving')}
+              handleCancel={() => {
+                setLeaving(false);
+                detail.close();
+              }}
+            />
+          )}
+        </SectionShell>
+      </div>
+      {drafterOn && !readOnly && (
+        <PromptDraftPanel
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          drafter={drafter}
+          mode={mode}
+          usedBy={usedBy}
+          modelName={drafterConfig?.model?.display_name ?? null}
+          onNavigate={leaveGuard.onNavigate()}
+        />
+      )}
     </div>
   );
 }

@@ -1,29 +1,12 @@
 import { ExternalLink, WandSparkles } from 'lucide-react';
 import { ActiveState } from '../models/misc';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Textarea } from '../components/ui/textarea';
-import { FormField } from '../components/ui/form-field';
-import { SectionHeader } from '../components/ui/section-header';
-import ViewOnlyNotice from '../components/ViewOnlyNotice';
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
 import { Modal, ModalActions } from '../components/ui/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
-import userService from '../api/services/userService';
-import { selectToken } from '../preferences/preferenceSlice';
-import { ResourceUsage, UserToolType } from '../settings/types';
-import { DraftedField } from '../drafter/DraftedBadge';
+import { ResourceUsage } from '../settings/types';
 import { PromptAskBar } from '../drafter/PromptAskBar';
-import { PromptEditReview } from '../drafter/PromptEditReview';
 import { promptDrafterMode } from '../drafter/promptDraft';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import {
@@ -32,411 +15,7 @@ import {
 } from '../drafter/usePromptDrafter';
 import { formatCount } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
-
-const variablePattern = /(\{\{\s*[^{}]+\s*\}\}|\{(?!\{)[^{}]+\})/g;
-
-const highlightPromptVariables = (text: string): React.ReactNode[] => {
-  if (!text) {
-    return ['\u200B'];
-  }
-  variablePattern.lastIndex = 0;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let key = 0;
-
-  while ((match = variablePattern.exec(text)) !== null) {
-    const precedingText = text.slice(lastIndex, match.index);
-    if (precedingText) {
-      parts.push(precedingText);
-    }
-    parts.push(
-      <span key={key++} className="prompt-variable-highlight">
-        {match[0]}
-      </span>,
-    );
-    lastIndex = match.index + match[0].length;
-  }
-
-  const remainingText = text.slice(lastIndex);
-  if (remainingText) {
-    parts.push(remainingText);
-  }
-
-  return parts.length > 0 ? parts : ['\u200B'];
-};
-
-const systemVariableOptionDefinitions = [
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.sourceContent',
-    value: 'source.content',
-  },
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.sourceSummaries',
-    value: 'source.summaries',
-  },
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.sourceDocuments',
-    value: 'source.documents',
-  },
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.sourceCount',
-    value: 'source.count',
-  },
-  {
-    // The built-in prompts' Citations section: a template prompt cites
-    // with [n] once it has this (docs: Agents › Prompts › Citations).
-    labelKey: 'modals.prompts.systemVariableOptions.citationRules',
-    value: 'source.citation_rules',
-  },
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.systemDate',
-    value: 'system.date',
-  },
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.systemTime',
-    value: 'system.time',
-  },
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.systemTimestamp',
-    value: 'system.timestamp',
-  },
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.systemRequestId',
-    value: 'system.request_id',
-  },
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.systemUserId',
-    value: 'system.user_id',
-  },
-  {
-    labelKey: 'modals.prompts.systemVariableOptions.artifactsLookup',
-    value: 'artifacts.artifact(id)',
-  },
-];
-
-const buildSystemVariableOptions = (translate: (key: string) => string) =>
-  systemVariableOptionDefinitions.map(({ value, labelKey }) => ({
-    value,
-    label: translate(labelKey),
-  }));
-
-type VariableMenuProps = {
-  options: { label: string; value: string }[];
-  label: string;
-  textareaId: string;
-  content: string;
-  setContent: (content: string) => void;
-};
-
-function VariableMenu({
-  options,
-  label,
-  textareaId,
-  content,
-  setContent,
-}: VariableMenuProps) {
-  const handleSelect = (value: string) => {
-    const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
-    if (!textarea) return;
-    const cursorPosition = textarea.selectionStart;
-    const textBefore = content.slice(0, cursorPosition);
-    const textAfter = content.slice(cursorPosition);
-
-    // Add leading space if needed
-    const needsSpace =
-      cursorPosition > 0 && content.charAt(cursorPosition - 1) !== ' ';
-
-    const newText =
-      textBefore + (needsSpace ? ' ' : '') + `{{ ${value} }}` + textAfter;
-    setContent(newText);
-
-    setTimeout(() => {
-      textarea.focus();
-      const insertedLen = value.length + 6 + (needsSpace ? 1 : 0);
-      textarea.setSelectionRange(
-        cursorPosition + insertedLen,
-        cursorPosition + insertedLen,
-      );
-    }, 0);
-  };
-
-  // An insert menu on a Select that never keeps a value: the placeholder
-  // stands in for the label, and every pick inserts and resets to "".
-  return (
-    <Select value="" onValueChange={handleSelect}>
-      <SelectTrigger
-        // Sized to the label; a phone stacks the two menus full width.
-        className="w-full sm:w-fit"
-      >
-        <SelectValue placeholder={label} />
-      </SelectTrigger>
-      {/* As wide as its longest option and opening leftward from the
-          trigger's right end, so a long tool action never runs off the
-          dialog; capped so it scrolls instead of filling the window. */}
-      <SelectContent align="end" fit capped>
-        {options.map((opt) => (
-          <SelectItem key={opt.value} value={opt.value}>
-            {opt.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-type PromptTextareaProps = {
-  id: string;
-  value: string;
-  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  readOnly?: boolean;
-};
-
-function PromptTextarea({
-  id,
-  value,
-  onChange,
-  readOnly = false,
-}: PromptTextareaProps) {
-  const [scrollOffsets, setScrollOffsets] = React.useState({ top: 0, left: 0 });
-  const highlightedValue = React.useMemo(
-    () => highlightPromptVariables(value),
-    [value],
-  );
-
-  const handleScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
-    const { scrollTop, scrollLeft } = event.currentTarget;
-    setScrollOffsets({
-      top: scrollTop,
-      left: scrollLeft,
-    });
-  };
-
-  // One relative box holding the highlight overlay and the Textarea, so it
-  // can be a FormField's single child; the FormField label comes later in
-  // the DOM, so at the Textarea's z-10 it still paints on top.
-  return (
-    <div className="relative w-full">
-      <div
-        className="bg-card pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-2xl border border-transparent px-4 py-3"
-        aria-hidden="true"
-      >
-        <div
-          className="min-h-full translate-x-(--scroll-x) translate-y-(--scroll-y) text-base wrap-break-word whitespace-pre-wrap text-transparent md:text-sm"
-          style={
-            {
-              '--scroll-x': `${-scrollOffsets.left}px`,
-              '--scroll-y': `${-scrollOffsets.top}px`,
-            } as React.CSSProperties
-          }
-        >
-          {highlightedValue}
-        </div>
-      </div>
-      {/* Capped to the window height so the variable menus below it stay in
-          view on a short laptop screen; the modal body scrolls past that. */}
-      <Textarea
-        id={id}
-        size="lg"
-        resize="none"
-        className="relative z-10 h-48 max-h-[35dvh] md:h-64 lg:h-80"
-        value={value}
-        onChange={onChange}
-        onScroll={handleScroll}
-        readOnly={readOnly}
-      />
-    </div>
-  );
-}
-
-// Custom hook for fetching tool variables
-const useToolVariables = () => {
-  const token = useSelector(selectToken);
-  const [toolVariables, setToolVariables] = React.useState<
-    { label: string; value: string }[]
-  >([]);
-
-  React.useEffect(() => {
-    const fetchToolVariables = async () => {
-      try {
-        const response = await userService.getUserTools(token);
-        const data = await response.json();
-
-        if (data.success && data.tools) {
-          const filteredActions: { label: string; value: string }[] = [];
-
-          data.tools.forEach((tool: UserToolType) => {
-            if (tool.actions && tool.status) {
-              // Only include active tools
-              tool.actions.forEach((action: any) => {
-                if (action.active) {
-                  const canUseAction =
-                    !action.parameters?.properties ||
-                    Object.entries(action.parameters.properties).every(
-                      ([paramName, param]: [string, any]) => {
-                        // Parameter is usable if:
-                        // 1. It's filled by LLM (true) OR
-                        // 2. It has a value in the tool config
-                        return (
-                          param.filled_by_llm === true ||
-                          (tool.config &&
-                            tool.config[paramName] &&
-                            tool.config[paramName] !== '')
-                        );
-                      },
-                    );
-
-                  if (canUseAction) {
-                    const toolIdentifier = tool.id ?? tool.name;
-                    if (!toolIdentifier) {
-                      return;
-                    }
-                    filteredActions.push({
-                      label: `${action.name} (${tool.displayName || tool.name})`,
-                      value: `tools['${toolIdentifier}'].${action.name}`,
-                    });
-                  }
-                }
-              });
-            }
-          });
-
-          setToolVariables(filteredActions);
-        }
-      } catch (error) {
-        console.error('Error fetching tool variables:', error);
-      }
-    };
-
-    fetchToolVariables();
-  }, [token]);
-
-  return toolVariables;
-};
-
-type DraftedSlot = {
-  drafted: boolean;
-  onUndo: () => void;
-};
-
-/**
- * A prompt's name and text with the variable menus, for Add (`new`) and
- * Edit (`edit`). The drafter's slots: `top` (the ask bar or "Improve a
- * copy"), `review` (an improve proposal shown in place of the text and the
- * menus), the Drafted marks, and `locked` (the name and text are read-only
- * while a draft runs).
- */
-function PromptFields({
-  idPrefix,
-  name,
-  setName,
-  content,
-  setContent,
-  isReadOnly = false,
-  showViewOnlyNotice = false,
-  top,
-  review,
-  draftedName,
-  draftedContent,
-  contentHint,
-  locked = false,
-}: {
-  idPrefix: 'new' | 'edit';
-  name: string;
-  setName: (name: string) => void;
-  content: string;
-  setContent: (content: string) => void;
-  isReadOnly?: boolean;
-  /** A shared prompt the caller's role can't change (not a built-in one). */
-  showViewOnlyNotice?: boolean;
-  top?: React.ReactNode;
-  review?: React.ReactNode;
-  draftedName?: DraftedSlot;
-  draftedContent?: DraftedSlot;
-  contentHint?: React.ReactNode;
-  locked?: boolean;
-}) {
-  const { t } = useTranslation();
-  const systemVariableOptions = React.useMemo(
-    () => buildSystemVariableOptions(t),
-    [t],
-  );
-  const toolVariables = useToolVariables();
-  const textareaId = `${idPrefix}-prompt-content`;
-
-  return (
-    <div>
-      <div className="flex flex-col gap-5">
-        {showViewOnlyNotice && <ViewOnlyNotice />}
-        {top}
-        <DraftedField
-          drafted={draftedName?.drafted ?? false}
-          onUndo={draftedName?.onUndo ?? (() => undefined)}
-          fieldLabel={t('modals.prompts.promptName')}
-        >
-          <FormField label={t('modals.prompts.promptName')}>
-            <Input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={isReadOnly}
-              readOnly={locked}
-            />
-          </FormField>
-        </DraftedField>
-
-        {review ?? (
-          <DraftedField
-            drafted={draftedContent?.drafted ?? false}
-            onUndo={draftedContent?.onUndo ?? (() => undefined)}
-            fieldLabel={t('modals.prompts.promptText')}
-          >
-            <FormField
-              label={t('modals.prompts.promptText')}
-              hint={contentHint}
-            >
-              <PromptTextarea
-                id={textareaId}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                readOnly={isReadOnly || locked}
-              />
-            </FormField>
-          </DraftedField>
-        )}
-      </div>
-
-      {!isReadOnly && !review && (
-        <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
-          <SectionHeader
-            as="h3"
-            size="xs"
-            title={t('modals.prompts.variablesLabel')}
-            description={t('modals.prompts.variablesDescription')}
-          />
-
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
-            <VariableMenu
-              options={systemVariableOptions}
-              label={t('modals.prompts.systemVariablesDropdownLabel')}
-              textareaId={textareaId}
-              content={content}
-              setContent={setContent}
-            />
-
-            <VariableMenu
-              options={toolVariables}
-              label={t('modals.prompts.toolVariables')}
-              textareaId={textareaId}
-              content={content}
-              setContent={setContent}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+import { PromptEditor } from '../prompts/PromptEditor';
 
 export default function PromptsModal({
   existingPrompts,
@@ -600,10 +179,6 @@ export default function PromptsModal({
       reviewing={drafter.review !== null}
     />
   );
-  const review = drafter.review ? (
-    <PromptEditReview review={drafter.review} onDecide={drafter.decide} />
-  ) : undefined;
-
   // Save shows pending while the caller's request runs; a second click
   // meanwhile is ignored.
   const [saving, setSaving] = React.useState(false);
@@ -634,14 +209,15 @@ export default function PromptsModal({
           })
         : t('modals.prompts.addDescription');
     view = (
-      <PromptFields
+      <PromptEditor
         idPrefix="new"
         name={newPromptName}
         setName={setNewPromptName}
         content={newPromptContent}
         setContent={setNewPromptContent}
         top={drafterTop}
-        review={review}
+        review={drafter.review}
+        onDecide={drafter.decide}
         draftedName={draftedSlot('name')}
         draftedContent={draftedSlot('content')}
         locked={drafter.session.streaming}
@@ -657,7 +233,7 @@ export default function PromptsModal({
         ? undefined
         : t('modals.prompts.editDescription');
     view = (
-      <PromptFields
+      <PromptEditor
         idPrefix="edit"
         name={editPromptName}
         setName={setEditPromptName}
@@ -666,7 +242,8 @@ export default function PromptsModal({
         isReadOnly={isReadOnly}
         showViewOnlyNotice={showViewOnlyNotice}
         top={drafterTop}
-        review={review}
+        review={drafter.review}
+        onDecide={drafter.decide}
         draftedName={draftedSlot('name')}
         draftedContent={draftedSlot('content')}
         locked={drafter.session.streaming}

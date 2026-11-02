@@ -1666,7 +1666,11 @@
       },
       "kindFilterLabel": "Filter by kind",
       "chatPromptOn": "Used in chats without an agent",
-      "chatPromptOff": "Use in chats without an agent"
+      "chatPromptOff": "Use in chats without an agent",
+      "loadPromptError": "Couldn't load this prompt.",
+      "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
+      "saveAndLeave": "Save and leave",
+      "leaveWithoutSaving": "Leave without saving"
     },
     "devices": {
       "label": "Devices",
@@ -2475,12 +2479,8 @@
       "cancel": "Cancel",
       "nameExists": "Name already exists",
       "deleteConfirmation": "Delete \"{{name}}\"?",
-      "placeholderText": "Type your prompt text here...",
-      "addExamplePlaceholder": "Please summarize this text:",
       "variablesLabel": "Variables",
-      "variablesSubtext": "Click to insert into prompt",
       "variablesDescription": "Click to insert into prompt",
-      "systemVariables": "Click to insert into prompt",
       "toolVariables": "Tool variables",
       "systemVariablesDropdownLabel": "System variables",
       "systemVariableOptions": {
@@ -2497,9 +2497,6 @@
         "artifactsLookup": "Artifact metadata by id"
       },
       "learnAboutPrompts": "Learn about prompts",
-      "publicPromptEditDisabled": "Public prompts cannot be edited",
-      "promptTypePublic": "public",
-      "promptTypePrivate": "private",
       "pendingDescription": "It's created when you save the agent."
     },
     "chunk": {
@@ -4513,7 +4510,18 @@
       "reviewOneByOne": "Review one by one",
       "discard": "Discard",
       "usedBy_one": "Used by {{formatted}} agent. Saving changes it there too.",
-      "usedBy_other": "Used by {{formatted}} agents. Saving changes it for all of them."
+      "usedBy_other": "Used by {{formatted}} agents. Saving changes it for all of them.",
+      "introImprove": "I can look over this prompt or change something specific. Nothing is saved until you save.",
+      "introImproveUsedBy_one": "I can look over this prompt or change something specific. It's used by {{formatted}} agent, so a saved change reaches it.",
+      "introImproveUsedBy_other": "I can look over this prompt or change something specific. It's used by {{formatted}} agents, so a saved change reaches all of them.",
+      "introWrite": "Describe the prompt you want and I'll write it. Nothing is saved until you save.",
+      "suggestions": {
+        "lookOver": "Look it over and suggest fixes",
+        "noPrices": "Stop it from quoting prices",
+        "language": "Answer in the customer's language",
+        "handbook": "A friendly helper for our HR handbook",
+        "support": "A support agent that hands off to a person when unsure"
+      }
     },
     "title": "Draft with DocsGPT",
     "draft": "Draft",

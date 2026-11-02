@@ -13,19 +13,23 @@ import type { PromptDecision, PromptReview } from './usePromptDrafter';
  * text with each change inline (the removed passage struck through in muted
  * text, the new one on the brand tint), numbered, and below it the list of
  * changes with their reasons and Accept / Reject each. "Review one by one"
- * (the modal's footer) marks the change being decided and moves on after
- * each choice. The footer's Accept all and Discard finish the review.
+ * (the modal's footer, or the drawer's turn) marks the change being decided
+ * and moves on after each choice. Accept all and Discard there finish the
+ * review.
  *
  * Args:
  *   review: The proposal, the text it was made for and the choices so far.
  *   onDecide: Accept or reject a change; null takes a choice back.
+ *   surface: The text box's fill: `card` in a modal, `background` on a page.
  */
 export function PromptEditReview({
   review,
   onDecide,
+  surface = 'card',
 }: {
   review: PromptReview;
   onDecide: (id: string, decision: PromptDecision | null) => void;
+  surface?: 'card' | 'background';
 }) {
   const { t } = useTranslation();
   const { proposal, original, decisions, current } = review;
@@ -101,7 +105,8 @@ export function PromptEditReview({
         className={cn(
           focusRing,
           fieldFrame,
-          'bg-card focus-visible:border-ring scrollbar-overlay max-h-[35dvh] min-h-32 overflow-y-auto rounded-2xl px-4 py-3 text-base wrap-break-word whitespace-pre-wrap md:text-sm',
+          surface === 'card' ? 'bg-card' : 'bg-background',
+          'focus-visible:border-ring scrollbar-overlay max-h-[35dvh] min-h-32 overflow-y-auto rounded-2xl px-4 py-3 text-base wrap-break-word whitespace-pre-wrap md:text-sm',
         )}
       >
         {segments.map((segment, index) =>

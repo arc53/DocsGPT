@@ -1730,7 +1730,11 @@
       },
       "kindFilterLabel": "Filtrar por tipo",
       "chatPromptOn": "Se usa en chats sin agente",
-      "chatPromptOff": "Usar en chats sin agente"
+      "chatPromptOff": "Usar en chats sin agente",
+      "loadPromptError": "No se pudo cargar este prompt.",
+      "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
+      "saveAndLeave": "Guardar y salir",
+      "leaveWithoutSaving": "Salir sin guardar"
     },
     "devices": {
       "label": "Dispositivos",
@@ -2560,12 +2564,8 @@
       "cancel": "Cancelar",
       "nameExists": "El nombre ya existe",
       "deleteConfirmation": "¿Eliminar \"{{name}}\"?",
-      "placeholderText": "Escribe tu texto de prompt aquí...",
-      "addExamplePlaceholder": "Por favor, resume este texto:",
       "variablesLabel": "Variables",
-      "variablesSubtext": "Haz clic para insertar en el prompt",
       "variablesDescription": "Haz clic para insertar en el prompt",
-      "systemVariables": "Variables del sistema",
       "toolVariables": "Variables de herramientas",
       "systemVariablesDropdownLabel": "Variables del sistema",
       "systemVariableOptions": {
@@ -2582,9 +2582,6 @@
         "artifactsLookup": "Metadatos de artefactos por id"
       },
       "learnAboutPrompts": "Aprende sobre los prompts",
-      "publicPromptEditDisabled": "Los prompts públicos no se pueden editar",
-      "promptTypePublic": "público",
-      "promptTypePrivate": "privado",
       "pendingDescription": "Se crea al guardar el agente."
     },
     "chunk": {
@@ -4621,7 +4618,19 @@
       "discard": "Descartar",
       "usedBy_one": "Lo usa {{formatted}} agente. Al guardar, también cambia allí.",
       "usedBy_many": "Lo usan {{formatted}} agentes. Al guardar, cambia en todos ellos.",
-      "usedBy_other": "Lo usan {{formatted}} agentes. Al guardar, cambia en todos ellos."
+      "usedBy_other": "Lo usan {{formatted}} agentes. Al guardar, cambia en todos ellos.",
+      "introImprove": "Puedo revisar este prompt o cambiar algo concreto. No se guardará nada hasta que guardes.",
+      "introImproveUsedBy_one": "Puedo revisar este prompt o cambiar algo concreto. Lo usa {{formatted}} agente, así que un cambio guardado también le llega.",
+      "introImproveUsedBy_many": "Puedo revisar este prompt o cambiar algo concreto. Lo usan {{formatted}} agentes, así que un cambio guardado les llega a todos.",
+      "introImproveUsedBy_other": "Puedo revisar este prompt o cambiar algo concreto. Lo usan {{formatted}} agentes, así que un cambio guardado les llega a todos.",
+      "introWrite": "Describe el prompt que quieres y lo escribiré. No se guardará nada hasta que guardes.",
+      "suggestions": {
+        "lookOver": "Revísalo y sugiere mejoras",
+        "noPrices": "Que no dé precios",
+        "language": "Responder en el idioma del cliente",
+        "handbook": "Un asistente amable para nuestro manual de RR. HH.",
+        "support": "Un agente de soporte que pasa a una persona cuando no está seguro"
+      }
     },
     "title": "Redactar con DocsGPT",
     "draft": "Redactar",

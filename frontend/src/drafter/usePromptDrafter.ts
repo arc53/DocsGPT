@@ -63,11 +63,13 @@ export type PromptDrafter = {
 };
 
 /**
- * The prompt modal's drafter: it sends the prompt (and the agent it is used
- * on) with each request, turns an improve proposal into a review whose
- * accepted changes write into the modal's text as they are chosen, and fills
- * a written prompt's text (and its name when empty), each marked Drafted with
- * undo. Nothing is saved: the modal's Save still does that.
+ * The prompt drafter (the prompt modal's ask bar, the prompt view's drawer):
+ * it sends the prompt (and the agent it is used on) with each request, turns
+ * an improve proposal into a review whose accepted changes write into the
+ * text as they are chosen, and fills a written prompt's text (and its name
+ * when empty), each marked Drafted with undo. A request while a review is
+ * open ends the review with the choices so far. Nothing is saved: the
+ * host's Save still does that.
  *
  * Args:
  *   options: The mode, the prompt's current values and setters, the agent.
@@ -100,9 +102,20 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   );
   const draftedRef = useRef(drafted);
   draftedRef.current = drafted;
+  const reviewRef = useRef(review);
+  reviewRef.current = review;
 
   const getContext = useCallback(() => {
     const { mode, promptId, name, content, agent } = latest.current;
+    // A new request while a review is open (the drawer's ask bar stays
+    // open) ends it with the choices made so far: the text already holds
+    // them, and a change not chosen stays as it was.
+    const open = reviewRef.current;
+    if (open) {
+      setReview(null);
+      if (content !== open.original)
+        draftedRef.current.mark('content', open.original, content);
+    }
     sent.current = content;
     setResult(null);
     return {
