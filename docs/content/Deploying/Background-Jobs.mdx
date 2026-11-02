@@ -92,6 +92,14 @@ The file cap defaults to `UPLOAD_MAX_ARCHIVE_FILES`, so any zip that unpacks als
 
 When a user adds a remote source they are already ingesting (the same GitHub repository, website, crawler or sitemap address, S3 bucket or subreddit), no second ingest starts: the request answers with the running ingest's `task_id` and `source_id`, and `in_flight: true`. A double click or a second tab therefore costs one ingest. Addresses are compared with the host in lower case and without a trailing slash, fragment or `.git`. Once that ingest has finished or failed, the same address starts a new one; so does an address whose ingest is waiting out a retry after an error, or whose worker died. Uploaded files and connector selections are not compared.
 
+## Ingests per user
+
+`INGEST_MAX_CONCURRENT_PER_USER` (`3`) caps the whole-source ingests one user runs at a time: uploads, remote and connector ingests, re-ingests and syncs. A further task for that user goes back on the ingest queue for 30 to 45 seconds without starting, so the other worker slots stay free for other users, and it starts once one of the user's ingests ends. The worker logs `ingest <task id> deferred` each time.
+
+Waiting for a slot is not an attempt: it doesn't count toward the task's retries or the idempotency guard's attempt limit, and a resumed ingest that waits keeps its progress fresh, so the reconciler doesn't take the wait for a stall. Each running ingest holds a lease in Redis (`user:<id>:ingest_slots`) and renews it while it runs; the lease of a worker that was killed lapses within two minutes. With `0`, or without Redis, nothing is capped.
+
+Three running ingests per user leave room for a few uploads at once while a multi-user instance keeps slots for everyone else. On a single-user instance with many worker processes, raise it or set `0`; on a busy shared one, `1` is the fairest.
+
 ## The analytics queue
 
 The analytics sweep spends most of its time waiting for the [decision model](/Models/decision-model#conversation-analytics), up to a few minutes per run, so it has a queue of its own, `analytics` (`ANALYTICS_QUEUE`). The worker only reads messages, builds the model's input and writes labels; it never loads the model. The sweep holds a lock in Redis, so overlapping runs and several workers are safe.

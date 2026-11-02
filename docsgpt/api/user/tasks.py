@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.exc import DataError
 
 from docsgpt.api.user.idempotency import with_idempotency
+from docsgpt.api.user.ingest_slots import with_ingest_slot
 from docsgpt.celery_init import celery
 from docsgpt.parser.file.base_parser import DocumentParseError
 from docsgpt.parser.ingest_limits import IngestTooLarge
@@ -146,7 +147,10 @@ def _emit_ingest_poison_event(task_name, bound):
 # a file that cannot be converted to text fails identically on every attempt,
 # so retrying only multiplies the log noise before the same failure — go
 # straight to the poison/failure path.
+# ``with_ingest_slot`` goes outside ``with_idempotency``: a task waiting for one
+# of its user's ingest slots claims no lease and spends no attempt.
 @celery.task(**DURABLE_TASK)
+@with_ingest_slot
 @with_idempotency(task_name="ingest", on_poison=_emit_ingest_poison_event)
 def ingest(
     self,
@@ -183,6 +187,7 @@ def ingest(
 # A GitHub rate limit lasts up to an hour: retrying after 60/120/240 s
 # cannot help, so the failed event tells the user when to try again instead.
 @celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, GitHubRateLimited)))
+@with_ingest_slot
 @with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,
@@ -201,6 +206,7 @@ def ingest_remote(
 
 
 @celery.task(**DURABLE_TASK)
+@with_ingest_slot
 @with_idempotency(
     task_name="reingest_source_task", on_poison=_emit_ingest_poison_event,
 )
@@ -311,6 +317,7 @@ def website_pages(
 
 
 @celery.task(bind=True)
+@with_ingest_slot
 @with_idempotency(task_name="sync_source")
 def sync_source(
     self,
@@ -542,6 +549,7 @@ except Exception:
 # A revoked or disconnected connection will not heal by retrying; the
 # service has already paused the source and told its owner to reconnect.
 @celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, _connection_unavailable())))
+@with_ingest_slot
 @with_idempotency(
     task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,
 )

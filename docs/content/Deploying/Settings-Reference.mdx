@@ -1312,6 +1312,12 @@ Type `int`, default `20000000`, must be `>= 0`.
 
 Most tokens of chunked text one source ingest or sync may embed, counted after parsing and before any embedding; a source over it fails with reason too_many_tokens. 20 million tokens is about 80 MB of plain text, several hours of embedding on a CPU model. 0 disables.
 
+### `INGEST_MAX_CONCURRENT_PER_USER`
+
+Type `int`, default `3`, must be `>= 0`.
+
+Whole-source ingests (upload, remote, connector, re-ingest, sync) one user may run at the same time. A task over it goes back on the queue for about 30 seconds without starting, so the other worker slots stay free for other users. Each running task holds a slot lease in Redis that it renews while it runs; a killed worker's slot frees itself within two minutes. 0 disables.
+
 ### `INGEST_RESUME_MAX_ATTEMPTS`
 
 Type `int`, default `3`, must be `>= 0`.

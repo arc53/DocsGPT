@@ -232,6 +232,17 @@ class IngestionSettings(SettingsGroup):
             "of plain text, several hours of embedding on a CPU model. 0 disables."
         ),
     )
+    INGEST_MAX_CONCURRENT_PER_USER: int = Field(
+        default=3,
+        ge=0,
+        description=(
+            "Whole-source ingests (upload, remote, connector, re-ingest, sync) one user may run at the same time. "
+            "A task over it goes back on the queue for about 30 seconds without starting, so the other worker "
+            "slots stay free for other users. Each running task holds a slot lease in Redis that it renews while "
+            "it runs; a killed worker's slot frees itself within two minutes. 0 disables."
+        ),
+    )
+
     INGEST_RESUME_MAX_ATTEMPTS: int = Field(
         default=3,
         ge=0,
