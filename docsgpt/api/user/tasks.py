@@ -7,6 +7,7 @@ from sqlalchemy.exc import DataError
 from docsgpt.api.user.idempotency import with_idempotency
 from docsgpt.celery_init import celery
 from docsgpt.parser.file.base_parser import DocumentParseError
+from docsgpt.parser.ingest_limits import IngestTooLarge
 from docsgpt.parser.remote.github_loader import GitHubRateLimited
 from docsgpt.worker import (
     AttachmentRejectedError,
@@ -71,11 +72,14 @@ logger = logging.getLogger(__name__)
 # ``/api/task_status`` (the wiki-convert and GraphRAG-enable modals) just keeps
 # reporting "pending". It is the DEFAULT here so a new durable task cannot
 # forget it; tasks needing a wider set pass their own via ``durable_task()``.
+# A source over ``INGEST_MAX_FILES`` / ``INGEST_MAX_TOKENS`` (``IngestTooLarge``)
+# is the same on every attempt too.
+NO_RETRY = (DocumentParseError, IngestTooLarge)
 DURABLE_TASK = dict(
     bind=True,
     acks_late=True,
     autoretry_for=(Exception,),
-    dont_autoretry_for=(DocumentParseError,),
+    dont_autoretry_for=NO_RETRY,
     max_retries=3,
     retry_backoff=60,
 )
@@ -178,7 +182,7 @@ def ingest(
 
 # A GitHub rate limit lasts up to an hour: retrying after 60/120/240 s
 # cannot help, so the failed event tells the user when to try again instead.
-@celery.task(**durable_task(dont_autoretry_for=(DocumentParseError, GitHubRateLimited)))
+@celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, GitHubRateLimited)))
 @with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,
@@ -537,7 +541,7 @@ except Exception:
 
 # A revoked or disconnected connection will not heal by retrying; the
 # service has already paused the source and told its owner to reconnect.
-@celery.task(**durable_task(dont_autoretry_for=(DocumentParseError, _connection_unavailable())))
+@celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, _connection_unavailable())))
 @with_idempotency(
     task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,
 )

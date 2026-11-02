@@ -213,6 +213,25 @@ class IngestionSettings(SettingsGroup):
         ),
     )
 
+    INGEST_MAX_FILES: int = Field(
+        default=10_000,
+        ge=0,
+        description=(
+            "Most files one source ingest or sync may hold. Checked once the files are listed (a GitHub repo's "
+            "tree, an S3 prefix, a connector's download, an upload's extracted files) and again after loading, "
+            "before anything is embedded; a source over it fails with reason too_many_files. The default is "
+            "UPLOAD_MAX_ARCHIVE_FILES's, so a zip that unpacks passes it. 0 disables."
+        ),
+    )
+    INGEST_MAX_TOKENS: int = Field(
+        default=20_000_000,
+        ge=0,
+        description=(
+            "Most tokens of chunked text one source ingest or sync may embed, counted after parsing and before "
+            "any embedding; a source over it fails with reason too_many_tokens. 20 million tokens is about 80 MB "
+            "of plain text, several hours of embedding on a CPU model. 0 disables."
+        ),
+    )
     INGEST_RESUME_MAX_ATTEMPTS: int = Field(
         default=3,
         ge=0,

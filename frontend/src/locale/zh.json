@@ -2308,7 +2308,9 @@
         "dismiss": "关闭上传通知",
         "uploadProgress": "上传进度 {{progress}}%",
         "clear": "清除",
-        "ingestionFailed": "导入失败。"
+        "ingestionFailed": "导入失败。",
+        "tooManyFiles": "此来源的文件数超过上限 {{limit}} 个。请选择更小的文件夹、路径或选择范围。",
+        "tooManyTokens": "此来源的文本超过 {{limit}} 个令牌的上限。请将其拆分为更小的来源。"
       },
       "ingestors": {
         "local_file": {

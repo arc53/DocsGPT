@@ -38,6 +38,7 @@ from docsgpt.parser.embedding_pipeline import (
 from docsgpt.parser.file.base_parser import DocumentParseError, NoTextLayerError
 from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS, is_attachment_archive
+from docsgpt.parser.ingest_limits import check_file_count, check_token_count, failure_fields
 from docsgpt.parser.file.image_parser import (
     VISION_CONVERTIBLE_MIME_TYPES,
     convert_image_to_png,
@@ -956,6 +957,7 @@ def ingest_worker(
                 exclude_hidden=exclude,
                 file_metadata=metadata_from_filename,
             )
+            check_file_count(len(getattr(reader, "input_files", None) or []))
             # Parsing/OCR owns 1-50% of the bar; embedding takes 50-100%.
             raw_docs = reader.load_data(
                 progress_callback=_make_parse_progress_callback(
@@ -994,6 +996,8 @@ def ingest_worker(
             raw_docs = chunker.chunk(documents=raw_docs)
 
             docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
+            tokens = count_tokens_docs(docs)
+            check_token_count(tokens)
 
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
@@ -1012,8 +1016,6 @@ def ingest_worker(
             # record of how many chunks landed; mismatch raises so the
             # task fails loud rather than caching a partial index.
             assert_index_complete(source_uuid)
-
-            tokens = count_tokens_docs(docs)
 
             self.update_state(state="PROGRESS", meta={"current": 100})
 
@@ -1065,6 +1067,7 @@ def ingest_worker(
                 "filename": filename,
                 "operation": "upload",
                 "error": str(e)[:1024],
+                **failure_fields(e),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
@@ -1586,6 +1589,27 @@ def _publish_source_event(
         publish_user_event(str(actor_id), event_type, payload, **kwargs)
 
 
+def _loaded_file_count(docs: Iterable[Any]) -> int:
+    """How many files a remote loader returned, keyed as the source's file tree keys them.
+
+    Args:
+        docs: The loader's documents.
+
+    Returns:
+        The number of distinct file paths (a document without one counts once).
+    """
+    paths = set()
+    unnamed = 0
+    for doc in docs:
+        info = getattr(doc, "extra_info", None) or {}
+        path = info.get("file_path") or info.get("key") or info.get("title") or getattr(doc, "doc_id", None)
+        if path:
+            paths.add(path)
+        else:
+            unnamed += 1
+    return len(paths) + unnamed
+
+
 def remote_worker(
     self,
     source_data,
@@ -1686,6 +1710,7 @@ def remote_worker(
             raise connection_service.ConnectionUnavailable(
                 str(exc), connection_id=str(connection_id),
             ) from exc
+        check_file_count(_loaded_file_count(raw_docs))
 
         cfg = SourceConfig.parse(config)
         chunker = ChunkerCreator.create_chunker(
@@ -1700,6 +1725,7 @@ def remote_worker(
         docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
         tokens = count_tokens_docs(docs)
         logging.info("Total tokens calculated: %d", tokens)
+        check_token_count(tokens)
 
         # Build directory structure from loaded documents
         # Format matches local file uploads: nested structure with type, size_bytes, token_count
@@ -1882,6 +1908,7 @@ def remote_worker(
                 "loader": loader,
                 "operation": operation_mode,
                 "error": str(e)[:1024],
+                **failure_fields(e),
                 **_task_id_field(self),
             },
             scope={"kind": "source", "id": source_id_for_events},
@@ -4818,6 +4845,7 @@ def _ingest_connector(
                 exclude_hidden=True,
                 file_metadata=metadata_from_filename,
             )
+            check_file_count(len(getattr(reader, "input_files", None) or []))
             # Parsing/OCR fills 40-60% of the bar; embedding takes 60-100%.
             raw_docs = reader.load_data(
                 progress_callback=_make_parse_progress_callback(
@@ -4857,6 +4885,8 @@ def _ingest_connector(
                         doc.extra_info["url"] = url
 
             docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
+            tokens = count_tokens_docs(docs)
+            check_token_count(tokens)
 
             # Validate operation_mode here too (the source_uuid path
             # at the top of the function only branches on the
@@ -4884,8 +4914,6 @@ def _ingest_connector(
                 progress_start=60, progress_end=100,
             )
             assert_index_complete(source_uuid)
-
-            tokens = count_tokens_docs(docs)
 
             # The fingerprint lets the next sync skip an unchanged selection.
             # It is left out when a file failed, so that sync tries again.
@@ -4988,6 +5016,7 @@ def _ingest_connector(
                 "operation": operation_mode,
                 **_task_id_field(self),
                 "error": str(e)[:1024],
+                **failure_fields(e),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )

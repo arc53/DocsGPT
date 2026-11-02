@@ -1300,6 +1300,18 @@ Type `str`, default `ingest`.
 
 Celery queue for whole-source jobs (upload, remote and connector ingest, re-ingest, scheduled sync, graph build, wiki conversion). A worker started without -Q consumes it; run a separate -Q ingest worker so a long ingest cannot hold the slots that beat tasks and attachments need. The shipped Compose and Kubernetes worker commands name `ingest` in -Q: if you change this, put the new name in every worker's explicit -Q list, or nothing runs ingests.
 
+### `INGEST_MAX_FILES`
+
+Type `int`, default `10000`, must be `>= 0`.
+
+Most files one source ingest or sync may hold. Checked once the files are listed (a GitHub repo's tree, an S3 prefix, a connector's download, an upload's extracted files) and again after loading, before anything is embedded; a source over it fails with reason too_many_files. The default is UPLOAD_MAX_ARCHIVE_FILES's, so a zip that unpacks passes it. 0 disables.
+
+### `INGEST_MAX_TOKENS`
+
+Type `int`, default `20000000`, must be `>= 0`.
+
+Most tokens of chunked text one source ingest or sync may embed, counted after parsing and before any embedding; a source over it fails with reason too_many_tokens. 20 million tokens is about 80 MB of plain text, several hours of embedding on a CPU model. 0 disables.
+
 ### `INGEST_RESUME_MAX_ATTEMPTS`
 
 Type `int`, default `3`, must be `>= 0`.
