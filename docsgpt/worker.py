@@ -2160,14 +2160,16 @@ def _scheduled_sync_key(task: Any, doc_id: str) -> str:
     return f"scheduled-sync:{tick}:{doc_id}"
 
 
-def _dispatch_scheduled_sync(key: str, **sync_kwargs: Any) -> bool:
+def _dispatch_scheduled_sync(key: str, **sync_kwargs: Any) -> str:
     """Queue one scheduled ``sync_source`` on the ingest queue, once per ``key``.
 
     A source busy with another change is skipped without a notice
     (``lock_wait_seconds=0``) and left to the next schedule.
 
     Returns:
-        False when ``key`` was already claimed, so nothing was queued.
+        ``"dispatched"``; ``"already_queued"`` when ``key`` was already
+        claimed; or ``"failed"`` when the task could not be queued, whose
+        claim is then dropped so the same tick can queue it again.
     """
     from docsgpt.api.user.tasks import sync_source
     from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
@@ -2178,14 +2180,36 @@ def _dispatch_scheduled_sync(key: str, **sync_kwargs: Any) -> bool:
             claimed = IdempotencyRepository(conn).claim_task(key=key, task_name="sync_source", task_id=task_id)
         if claimed is None:
             logging.info("Scheduled sync %s is already queued; not queuing it again", key)
-            return False
+            return "already_queued"
     except Exception:  # noqa: BLE001 - the task's own lease still keeps one run per key
         logging.exception("Could not claim scheduled sync %s; queuing it anyway", key)
-    sync_source.apply_async(
-        kwargs={**sync_kwargs, "idempotency_key": key, "lock_wait_seconds": 0, "notify_skip": False},
-        task_id=task_id,
-    )
-    return True
+    try:
+        sync_source.apply_async(
+            kwargs={**sync_kwargs, "idempotency_key": key, "lock_wait_seconds": 0, "notify_skip": False},
+            task_id=task_id,
+        )
+    except Exception:  # noqa: BLE001 - one source the broker refused must not stop the rest
+        logging.exception("Could not queue scheduled sync %s", key)
+        _release_scheduled_sync_claim(key, task_id)
+        return "failed"
+    return "dispatched"
+
+
+def _release_scheduled_sync_claim(key: str, task_id: str) -> None:
+    """Best-effort delete of a scheduled sync's pending claim that never got queued."""
+    from sqlalchemy import text as sql_text
+
+    try:
+        with db_session() as conn:
+            conn.execute(
+                sql_text(
+                    "DELETE FROM task_dedup WHERE idempotency_key = :key "
+                    "AND task_id = :task_id AND status = 'pending'"
+                ),
+                {"key": key, "task_id": task_id},
+            )
+    except Exception:  # noqa: BLE001 - the row expires with the TTL
+        logging.exception("Could not release the claim of scheduled sync %s", key)
 
 
 def sync_worker(self, frequency):
@@ -2259,7 +2283,7 @@ def sync_worker(self, frequency):
             sync_counts["sync_skipped"] += 1
             continue
 
-        queued = _dispatch_scheduled_sync(
+        outcome = _dispatch_scheduled_sync(
             _scheduled_sync_key(self, doc_id),
             source_data=source_data,
             job_name=name,
@@ -2270,7 +2294,9 @@ def sync_worker(self, frequency):
             doc_id=doc_id,
             connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
         )
-        sync_counts["sync_dispatched" if queued else "sync_skipped"] += 1
+        sync_counts[
+            {"dispatched": "sync_dispatched", "already_queued": "sync_skipped"}.get(outcome, "sync_failure")
+        ] += 1
     return {
         key: sync_counts[key]
         for key in [

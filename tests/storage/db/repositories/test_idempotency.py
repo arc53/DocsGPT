@@ -200,6 +200,39 @@ class TestClaimTask:
         assert row["status"] == "completed"
         assert row["task_id"] == "winner-id"
 
+    def test_old_row_with_a_live_lease_is_not_replaced(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.claim_task(key="k-run", task_name="ingest", task_id="original")
+        repo.try_claim_lease(key="k-run", task_name="ingest", task_id="original", owner_id="w1")
+        _backdate_task(pg_conn, "k-run", secs_ago=30 * 3600)
+
+        assert repo.claim_task(key="k-run", task_name="ingest", task_id="second") is None
+        row = _read_task(pg_conn, "k-run")
+        assert row["task_id"] == "original"
+        assert row["attempt_count"] == 1
+        # The same-key request is handed the running task, not told it vanished.
+        assert repo.get_task("k-run")["task_id"] == "original"
+
+    def test_old_row_whose_lease_lapsed_recently_is_not_replaced(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(key="k-crash", task_name="ingest", task_id="original", owner_id="w1")
+        _backdate_task(pg_conn, "k-crash", secs_ago=30 * 3600)
+        _expire_lease(pg_conn, "k-crash", secs_ago=3600)
+
+        assert repo.claim_task(key="k-crash", task_name="ingest", task_id="second") is None
+        assert _read_task(pg_conn, "k-crash")["attempt_count"] == 1
+
+    def test_old_row_whose_lease_lapsed_past_the_ttl_is_replaced(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.try_claim_lease(key="k-dead", task_name="ingest", task_id="original", owner_id="w1")
+        _backdate_task(pg_conn, "k-dead", secs_ago=30 * 3600)
+        _expire_lease(pg_conn, "k-dead", secs_ago=25 * 3600)
+
+        assert repo.get_task("k-dead") is None
+        row = repo.claim_task(key="k-dead", task_name="ingest", task_id="second")
+        assert row["task_id"] == "second"
+        assert row["attempt_count"] == 0
+
     def test_pending_row_still_blocks_within_ttl(self, pg_conn):
         """Concurrency contract: while a task is in flight, same-key
         requests still collapse onto the in-flight ``task_id``.

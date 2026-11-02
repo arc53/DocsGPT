@@ -17,6 +17,16 @@ from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 # future change moves both directions in lockstep.
 DEDUP_TTL_INTERVAL = "24 hours"
 
+# A pending task row ages from its last lease heartbeat, not from
+# ``created_at``: while its lease is live, or lapsed within the TTL, the row
+# still guards a task that runs (or waits) past the TTL. Read, claim and
+# cleanup share this predicate so none of them drops a row the others keep.
+_TASK_LEASE_HELD = """(
+    task_dedup.status = 'pending'
+    AND task_dedup.lease_expires_at IS NOT NULL
+    AND task_dedup.lease_expires_at > now() - CAST(:ttl AS interval)
+)"""
+
 
 def _jsonb(value: Any) -> Any:
     if value is None:
@@ -92,13 +102,14 @@ class IdempotencyRepository:
     # --- task_dedup --------------------------------------------------------
 
     def get_task(self, key: str) -> Optional[dict]:
-        """Return the cached task row for ``key`` if still within the 24h window."""
+        """Return the task row for ``key`` if within the 24h window or its lease is still held."""
         row = self._conn.execute(
             text(
-                """
+                f"""
                 SELECT * FROM task_dedup
                 WHERE idempotency_key = :key
-                  AND created_at > now() - CAST(:ttl AS interval)
+                  AND (created_at > now() - CAST(:ttl AS interval)
+                       OR {_TASK_LEASE_HELD})
                 """
             ),
             {"key": key, "ttl": DEDUP_TTL_INTERVAL},
@@ -123,7 +134,10 @@ class IdempotencyRepository:
           (see ``run_reconciliation`` Q5 docstring) — letting the row
           block for 24 h would silently undo that intent.
         - **created_at past TTL**: a stale claim from any status no
-          longer represents a meaningful dedup signal.
+          longer represents a meaningful dedup signal — unless it is a
+          pending row whose lease is live or lapsed within the TTL: its
+          task is still running (or was, recently), so the row keeps its
+          task id and ``attempt_count``.
 
         ``status='completed'`` rows still block within TTL — that's the
         cached-success contract callers rely on. ``status='pending'``
@@ -133,7 +147,7 @@ class IdempotencyRepository:
         """
         result = self._conn.execute(
             text(
-                """
+                f"""
                 INSERT INTO task_dedup (
                     idempotency_key, task_name, task_id, result_json, status
                 )
@@ -148,8 +162,9 @@ class IdempotencyRepository:
                        attempt_count = 0,
                        created_at    = now()
                    WHERE task_dedup.status = 'failed'
-                      OR task_dedup.created_at
-                         <= now() - CAST(:ttl AS interval)
+                      OR (task_dedup.created_at
+                              <= now() - CAST(:ttl AS interval)
+                          AND NOT {_TASK_LEASE_HELD})
                 RETURNING *
                 """
             ),
@@ -356,14 +371,10 @@ class IdempotencyRepository:
         """
         task_deleted = self._conn.execute(
             text(
-                """
+                f"""
                 DELETE FROM task_dedup
                 WHERE created_at <= now() - CAST(:ttl AS interval)
-                  AND NOT (
-                      status = 'pending'
-                      AND lease_expires_at IS NOT NULL
-                      AND lease_expires_at > now() - CAST(:ttl AS interval)
-                  )
+                  AND NOT {_TASK_LEASE_HELD}
                 """
             ),
             {"ttl": DEDUP_TTL_INTERVAL},

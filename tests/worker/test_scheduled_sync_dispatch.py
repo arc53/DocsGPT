@@ -83,6 +83,35 @@ class TestScheduledSyncDispatch:
         assert worker.sync_worker(task_self, "daily")["sync_dispatched"] == 1
         assert dispatched.call_count == 2
 
+    def test_a_failed_enqueue_releases_its_claim_and_the_rest_still_queue(
+        self, pg_conn, patch_worker_db, task_self, dispatched,
+    ):
+        from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+
+        first = _seed(pg_conn, "Docs", type="website", remote_data=SITE)
+        second = _seed(pg_conn, "Feed", type="url", remote_data={"url": "http://example.com"})
+        task_self.request.id = "tick-1"
+
+        def _broker_down_for_first(**kwargs):
+            if kwargs["kwargs"]["doc_id"] == first:
+                raise ConnectionError("broker down")
+
+        dispatched.side_effect = _broker_down_for_first
+        counts = worker.sync_worker(task_self, "daily")
+
+        assert counts["sync_failure"] == 1
+        assert counts["sync_dispatched"] == 1
+        assert {call.kwargs["kwargs"]["doc_id"] for call in dispatched.call_args_list} == {first, second}
+        repo = IdempotencyRepository(pg_conn)
+        assert repo.get_task(f"scheduled-sync:tick-1:{first}") is None
+
+        # The same tick, delivered again, queues the source it could not queue before.
+        dispatched.side_effect = None
+        dispatched.reset_mock()
+        again = worker.sync_worker(task_self, "daily")
+        assert again["sync_dispatched"] == 1
+        assert [call.kwargs["kwargs"]["doc_id"] for call in dispatched.call_args_list] == [first]
+
     def test_the_queued_task_id_is_the_claimed_one(
         self, pg_conn, patch_worker_db, task_self, dispatched,
     ):
