@@ -614,3 +614,52 @@ class TestLiveLeaseKeys:
 
         assert repo.live_lease_keys(["live", "expired", "released", "done", "absent"]) == {"live"}
         assert repo.live_lease_keys([]) == set()
+
+
+class TestInFlightIngest:
+    """A marker names a user's remote source and points at the ingest running it."""
+
+    def _mark(self, repo, task_key, task_id, source_id="s1"):
+        return repo.claim_in_flight_ingest("u:ingest-in-flight:x", task_key=task_key, task_id=task_id,
+                                           source_id=source_id)
+
+    def test_a_queued_ingest_blocks_and_is_reported(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.claim_task("u:k1", "ingest_remote", "t1")
+        assert self._mark(repo, "u:k1", "t1") is not None
+
+        repo.claim_task("u:k2", "ingest_remote", "t2")
+        assert self._mark(repo, "u:k2", "t2", "s2") is None
+        assert repo.in_flight_ingest("u:ingest-in-flight:x") == {"task_id": "t1", "source_id": "s1"}
+
+    def test_a_resumed_ingest_counts_under_its_resume_task_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.claim_task("u:k1", "ingest_remote", "t1")
+        self._mark(repo, "u:k1", "t1")
+        repo.try_claim_lease("u:k1", "ingest_remote", "t1", "dead", ttl_seconds=1)
+        pg_conn.execute(text(
+            "UPDATE task_dedup SET lease_expires_at = now() - interval '1 hour' WHERE idempotency_key = 'u:k1'"
+        ))
+        assert repo.in_flight_ingest("u:ingest-in-flight:x") is None
+
+        repo.reset_for_resume("u:k1", "t1-resumed")
+
+        assert repo.in_flight_ingest("u:ingest-in-flight:x") == {"task_id": "t1-resumed", "source_id": "s1"}
+
+    def test_a_marker_whose_task_row_is_gone_is_replaced(self, pg_conn):
+        repo = _repo(pg_conn)
+        self._mark(repo, "u:never-claimed", "t1")
+        repo.claim_task("u:k2", "ingest_remote", "t2")
+
+        assert self._mark(repo, "u:k2", "t2", "s2") is not None
+        assert repo.in_flight_ingest("u:ingest-in-flight:x") == {"task_id": "t2", "source_id": "s2"}
+
+    def test_markers_are_never_swept_as_stuck_tasks(self, pg_conn):
+        from docsgpt.storage.db.repositories.reconciliation import ReconciliationRepository
+
+        repo = _repo(pg_conn)
+        repo.claim_task("u:k1", "ingest_remote", "t1")
+        self._mark(repo, "u:k1", "t1")
+
+        stuck = ReconciliationRepository(pg_conn).find_stuck_idempotency_pending(max_attempts=0)
+        assert "u:ingest-in-flight:x" not in {row["idempotency_key"] for row in stuck}

@@ -28,6 +28,25 @@ _TASK_LEASE_HELD = """(
 )"""
 
 
+# A task row whose work is still ahead or under way: queued and not started
+# yet (a fresh claim, or one reset for a resume), or running with a live lease
+# (or one lapsed by less than :lease_grace seconds, a missed heartbeat). A row
+# whose last attempt raised has its lease released, so a task waiting out a
+# retry, or out of retries, does not count; neither does a finished one.
+_TASK_IN_FLIGHT = """(
+    t.status = 'pending'
+    AND (
+        t.lease_expires_at > now() - make_interval(secs => :lease_grace)
+        OR (t.lease_expires_at IS NULL
+            AND t.attempt_count = 0
+            AND t.created_at > now() - CAST(:ttl AS interval))
+    )
+)"""
+
+# ``task_name`` of the rows that point a user's remote source at its ingest.
+IN_FLIGHT_MARKER = "ingest_in_flight"
+
+
 def _jsonb(value: Any) -> Any:
     if value is None:
         return None
@@ -329,6 +348,100 @@ class IdempotencyRepository:
             {"key": key, "task_id": task_id},
         )
         return result.rowcount > 0
+
+    def claim_in_flight_ingest(
+        self,
+        key: str,
+        *,
+        task_key: str,
+        task_id: str,
+        source_id: str,
+        lease_grace_seconds: int = 60,
+    ) -> Optional[dict]:
+        """Point ``key`` at the ingest about to be queued, unless the one it points at is in flight.
+
+        ``key`` names one user's remote source (its normalised address). The
+        row it writes is a marker, never run or leased itself: it holds the
+        ingest's own ``task_dedup`` key, and that row says whether the ingest
+        is still in flight. A marker pointing at a finished, failed or dead
+        ingest is replaced, so only a live one blocks a fresh submit.
+
+        Args:
+            key: The marker key.
+            task_key: The ``task_dedup`` key the new ingest runs under; its
+                row must exist (claimed) before this is called.
+            task_id: The new ingest's Celery task id.
+            source_id: The source id the new ingest was given.
+            lease_grace_seconds: How long past its lease a running ingest
+                still counts as in flight.
+
+        Returns:
+            The marker row, or ``None`` when the ingest already marked is in flight.
+        """
+        pointer = {"task_key": task_key, "source_id": str(source_id)}
+        result = self._conn.execute(
+            text(
+                f"""
+                INSERT INTO task_dedup (
+                    idempotency_key, task_name, task_id, result_json, status
+                )
+                VALUES (
+                    :key, :marker, :task_id, CAST(:pointer AS jsonb), 'pending'
+                )
+                ON CONFLICT (idempotency_key) DO UPDATE
+                   SET task_id     = EXCLUDED.task_id,
+                       result_json = EXCLUDED.result_json,
+                       created_at  = now()
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM task_dedup t
+                       WHERE t.idempotency_key = task_dedup.result_json ->> 'task_key'
+                         AND {_TASK_IN_FLIGHT}
+                   )
+                RETURNING *
+                """
+            ),
+            {
+                "key": key,
+                "marker": IN_FLIGHT_MARKER,
+                "task_id": task_id,
+                "pointer": _jsonb(pointer),
+                "lease_grace": int(lease_grace_seconds),
+                "ttl": DEDUP_TTL_INTERVAL,
+            },
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def in_flight_ingest(self, key: str, *, lease_grace_seconds: int = 60) -> Optional[dict]:
+        """The ingest the marker ``key`` points at, while it is in flight.
+
+        Args:
+            key: The marker key.
+            lease_grace_seconds: As in :meth:`claim_in_flight_ingest`.
+
+        Returns:
+            ``{"task_id", "source_id"}`` (the task id the ingest runs under
+            now), or ``None``.
+        """
+        row = self._conn.execute(
+            text(
+                f"""
+                SELECT t.task_id, m.result_json ->> 'source_id' AS source_id
+                FROM task_dedup m
+                JOIN task_dedup t ON t.idempotency_key = m.result_json ->> 'task_key'
+                WHERE m.idempotency_key = :key
+                  AND m.task_name = :marker
+                  AND {_TASK_IN_FLIGHT}
+                """
+            ),
+            {
+                "key": key,
+                "marker": IN_FLIGHT_MARKER,
+                "lease_grace": int(lease_grace_seconds),
+                "ttl": DEDUP_TTL_INTERVAL,
+            },
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
 
     def release_lease(self, key: str, owner_id: str) -> bool:
         """Clear ``lease_owner_id`` / ``lease_expires_at`` on the

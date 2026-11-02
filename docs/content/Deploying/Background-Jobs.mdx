@@ -88,6 +88,10 @@ A source over a cap fails at once, without retries. Its `source.ingest.failed` e
 
 The file cap defaults to `UPLOAD_MAX_ARCHIVE_FILES`, so any zip that unpacks also fits. 20 million tokens is about 80 MB of plain text, more than a 100 MB upload (`UPLOAD_MAX_FILE_BYTES`) of documents usually holds, and several hours of embedding on a CPU model. Raise either cap if your sources are bigger and your workers can take it.
 
+### The same source twice
+
+When a user adds a remote source they are already ingesting (the same GitHub repository, website, crawler or sitemap address, S3 bucket or subreddit), no second ingest starts: the request answers with the running ingest's `task_id` and `source_id`, and `in_flight: true`. A double click or a second tab therefore costs one ingest. Addresses are compared with the host in lower case and without a trailing slash, fragment or `.git`. Once that ingest has finished or failed, the same address starts a new one; so does an address whose ingest is waiting out a retry after an error, or whose worker died. Uploaded files and connector selections are not compared.
+
 ## The analytics queue
 
 The analytics sweep spends most of its time waiting for the [decision model](/Models/decision-model#conversation-analytics), up to a few minutes per run, so it has a queue of its own, `analytics` (`ANALYTICS_QUEUE`). The worker only reads messages, builds the model's input and writes labels; it never loads the model. The sweep holds a lock in Redis, so overlapping runs and several workers are safe.

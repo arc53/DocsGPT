@@ -1,5 +1,6 @@
 """Source document management upload functionality."""
 
+import hashlib
 import json
 import os
 import posixpath
@@ -7,6 +8,7 @@ import tempfile
 import uuid
 import zipfile
 from typing import Container, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -14,6 +16,7 @@ from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
+from docsgpt.api.user.idempotency import _synthesize_guard_key
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.task_owners import TaskOwnersUnavailable, get_task_owner
@@ -23,6 +26,8 @@ from docsgpt.core.settings import settings
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from docsgpt.parser.remote.base import normalize_page_url
+from docsgpt.parser.remote.github_loader import GitHubLoader
 from docsgpt.parser.remote.website_loader import parse_website_config
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
@@ -218,6 +223,71 @@ def _release_claim(key):
         current_app.logger.exception(
             "Failed to release task_dedup claim for key=%s", key,
         )
+
+def _normalized_address(value: str) -> str:
+    """A remote address as compared for duplicates: case-folded host, no fragment, sorted query, no trailing slash."""
+    value = value.strip()
+    try:
+        parts = urlsplit(normalize_page_url(value))
+    except ValueError:
+        return value
+    if not parts.netloc:
+        return value
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query, ""))
+
+
+def _remote_in_flight_key(user: str, loader: str, source_data, connection_id: Optional[str]) -> Optional[str]:
+    """The marker key naming ``user``'s remote source, or ``None`` when there is no address to compare.
+
+    Args:
+        user: The submitting user.
+        loader: The remote loader (``github``, ``crawler``, ``website``, ...).
+        source_data: What the loader is given: an address, or a config dict.
+        connection_id: The connection whose credentials it reads, if any.
+
+    Returns:
+        ``{user}:ingest-in-flight:{digest}``, or ``None``.
+    """
+    if isinstance(source_data, str):
+        address = (GitHubLoader.normalize_repo(source_data).lower() if loader == "github" else "")
+        address = address or _normalized_address(source_data)
+    elif isinstance(source_data, (dict, list)):
+        address = json.dumps(source_data, sort_keys=True, default=str)
+    else:
+        return None
+    if not address:
+        return None
+    digest = hashlib.sha256(f"{loader}\n{connection_id or ''}\n{address}".encode("utf-8")).hexdigest()
+    return f"{user}:ingest-in-flight:{digest}"
+
+
+def _join_in_flight_ingest(marker_key: str, task_key: str, task_id: str, source_id: str) -> Optional[dict]:
+    """Mark this ingest as its source's one in flight, or return the one already in flight.
+
+    Args:
+        marker_key: From :func:`_remote_in_flight_key`.
+        task_key: The ``task_dedup`` key the new ingest runs under (claimed).
+        task_id: Its predetermined Celery task id.
+        source_id: Its source id.
+
+    Returns:
+        ``{"task_id", "source_id"}`` of the ingest already in flight, or
+        ``None`` when the new one should be queued.
+    """
+    # Twice: the marked ingest can end between the claim and the read.
+    for _ in range(2):
+        with db_session() as conn:
+            marked = IdempotencyRepository(conn).claim_in_flight_ingest(
+                marker_key, task_key=task_key, task_id=task_id, source_id=source_id,
+            )
+        if marked is not None:
+            return None
+        with db_readonly() as conn:
+            existing = IdempotencyRepository(conn).in_flight_ingest(marker_key)
+        if existing is not None:
+            return {"task_id": existing["task_id"], "source_id": existing["source_id"]}
+    return None
+
 
 def _enforce_audio_path_size_limit(file_path: str, filename: str) -> None:
     if not is_audio_filename(filename):
@@ -748,6 +818,8 @@ class UploadRemote(Resource):
         source_uuid = (
             _derive_source_id(scoped_key) if scoped_key else uuid.uuid4()
         )
+        # The task_dedup key this request holds a claim on, released on failure.
+        claimed_key = scoped_key
         try:
             config = json.loads(data["data"])
             source_data = None
@@ -853,6 +925,26 @@ class UploadRemote(Resource):
                     "source_id": str(source_uuid),
                 }
                 return make_response(jsonify(response_payload), 200)
+            # The same user submitting a source already being ingested (a
+            # double click, a second tab) joins that ingest instead of
+            # starting another.
+            in_flight_key = _remote_in_flight_key(user, data["source"], source_data, connection_id)
+            if in_flight_key:
+                if claimed_key is None:
+                    # Keyless: claim the guard key the worker makes from
+                    # source_id, so the ingest counts as in flight while queued.
+                    claimed_key = _synthesize_guard_key("ingest_remote", {"source_id": str(source_uuid)})
+                    predetermined_task_id = str(uuid.uuid4())
+                    with db_session() as conn:
+                        IdempotencyRepository(conn).claim_task(
+                            key=claimed_key, task_name="ingest_remote", task_id=predetermined_task_id,
+                        )
+                joined = _join_in_flight_ingest(
+                    in_flight_key, claimed_key, predetermined_task_id, str(source_uuid),
+                )
+                if joined is not None:
+                    _release_claim(claimed_key)
+                    return make_response(jsonify({"success": True, **joined, "in_flight": True}), 200)
             remote_kwargs = {
                 "kwargs": {
                     "source_data": source_data,
@@ -873,8 +965,8 @@ class UploadRemote(Resource):
             current_app.logger.error(
                 f"Error uploading remote source: {err}", exc_info=True
             )
-            if scoped_key:
-                _release_claim(scoped_key)
+            if claimed_key:
+                _release_claim(claimed_key)
             return make_response(jsonify({"success": False}), 400)
         response_task_id = predetermined_task_id or task.id
         _audit_source_created(

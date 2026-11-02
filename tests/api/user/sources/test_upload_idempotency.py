@@ -1208,3 +1208,163 @@ class TestManageSourceFilesIdempotency:
         ).fetchone()
         assert row is not None
         assert row[0] == "pending"
+
+
+def _post_remote(app, pg_conn, apply_mock, *, user="u", repo="https://github.com/x/y", key=None, source="github"):
+    from docsgpt.api.user.sources.upload import UploadRemote
+
+    data = (
+        {"repo_url": repo} if source == "github" else {"url": repo}
+    )
+    headers = {"Idempotency-Key": key} if key else {}
+    with _patch_db(pg_conn), patch(
+        "docsgpt.api.user.sources.upload.ingest_remote.apply_async", apply_mock,
+    ), app.test_request_context(
+        "/api/remote", method="POST",
+        data={"user": user, "source": source, "name": "g", "data": json.dumps(data)},
+        content_type="multipart/form-data",
+        headers=headers,
+    ):
+        from flask import request
+        request.decoded_token = {"sub": user}
+        return UploadRemote().post()
+
+
+def _task_key(pg_conn, task_id):
+    from sqlalchemy import text
+
+    return pg_conn.execute(
+        text("SELECT idempotency_key FROM task_dedup WHERE task_id = :t AND task_name = 'ingest_remote'"),
+        {"t": task_id},
+    ).scalar()
+
+
+class TestRemoteInFlightDedup:
+    """A second submit of a URL the user is already ingesting joins that ingest."""
+
+    def test_second_submit_while_in_flight_returns_the_first_task(self, app, pg_conn):
+        apply_mock = _apply_async_mock()
+        first = _post_remote(app, pg_conn, apply_mock, key="click-1")
+        second = _post_remote(app, pg_conn, apply_mock, key="click-2")
+
+        assert first.status_code == second.status_code == 200
+        assert apply_mock.call_count == 1
+        assert second.json["task_id"] == first.json["task_id"]
+        assert second.json["source_id"] == first.json["source_id"]
+        assert second.json["in_flight"] is True
+
+    def test_the_url_is_compared_normalised(self, app, pg_conn):
+        apply_mock = _apply_async_mock()
+        first = _post_remote(app, pg_conn, apply_mock, repo="https://github.com/Owner/Repo")
+        second = _post_remote(app, pg_conn, apply_mock, repo="github.com/owner/repo.git/")
+
+        assert apply_mock.call_count == 1
+        assert second.json["task_id"] == first.json["task_id"]
+
+    def test_a_crawler_url_is_compared_normalised(self, app, pg_conn):
+        apply_mock = _apply_async_mock()
+        _post_remote(app, pg_conn, apply_mock, source="crawler", repo="https://Docs.Example.com/guide/")
+        _post_remote(app, pg_conn, apply_mock, source="crawler", repo="https://docs.example.com/guide#intro")
+
+        assert apply_mock.call_count == 1
+
+    def test_without_keys_the_second_submit_joins_too(self, app, pg_conn):
+        apply_mock = _apply_async_mock()
+        first = _post_remote(app, pg_conn, apply_mock)
+        second = _post_remote(app, pg_conn, apply_mock)
+
+        assert apply_mock.call_count == 1
+        assert second.json["task_id"] == first.json["task_id"]
+        assert second.json["source_id"] == first.json["source_id"]
+        # The worker still runs keyless, under the guard it makes from source_id.
+        assert apply_mock.call_args.kwargs["kwargs"]["idempotency_key"] is None
+        assert _task_key(pg_conn, first.json["task_id"]) == f"auto:ingest_remote:{first.json['source_id']}"
+
+    def test_a_running_ingest_still_counts(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+
+        apply_mock = _apply_async_mock()
+        first = _post_remote(app, pg_conn, apply_mock, key="click-1")
+        IdempotencyRepository(pg_conn).try_claim_lease(
+            _task_key(pg_conn, first.json["task_id"]), "ingest_remote", first.json["task_id"], "owner-1",
+        )
+        second = _post_remote(app, pg_conn, apply_mock, key="click-2")
+
+        assert apply_mock.call_count == 1
+        assert second.json["task_id"] == first.json["task_id"]
+
+    @pytest.mark.parametrize("status", ["completed", "failed"])
+    def test_a_finished_ingest_does_not_block_a_fresh_submit(self, app, pg_conn, status):
+        from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+
+        apply_mock = _apply_async_mock()
+        first = _post_remote(app, pg_conn, apply_mock, key="click-1")
+        IdempotencyRepository(pg_conn).finalize_task(
+            _task_key(pg_conn, first.json["task_id"]), result_json={"ok": True}, status=status,
+        )
+        second = _post_remote(app, pg_conn, apply_mock, key="click-2")
+
+        assert apply_mock.call_count == 2
+        assert second.json["task_id"] != first.json["task_id"]
+        assert "in_flight" not in second.json
+        # The new ingest is the one a third submit joins.
+        third = _post_remote(app, pg_conn, apply_mock, key="click-3")
+        assert third.json["task_id"] == second.json["task_id"]
+
+    def test_an_ingest_whose_retries_ran_out_does_not_block(self, app, pg_conn):
+        from sqlalchemy import text
+
+        apply_mock = _apply_async_mock()
+        first = _post_remote(app, pg_conn, apply_mock, key="click-1")
+        # The wrapper releases the lease after the last attempt raises.
+        pg_conn.execute(
+            text("UPDATE task_dedup SET attempt_count = 4, lease_expires_at = NULL WHERE idempotency_key = :k"),
+            {"k": _task_key(pg_conn, first.json["task_id"])},
+        )
+        _post_remote(app, pg_conn, apply_mock, key="click-2")
+
+        assert apply_mock.call_count == 2
+
+    def test_a_killed_ingest_whose_lease_lapsed_does_not_block(self, app, pg_conn):
+        from sqlalchemy import text
+
+        apply_mock = _apply_async_mock()
+        first = _post_remote(app, pg_conn, apply_mock, key="click-1")
+        pg_conn.execute(
+            text(
+                "UPDATE task_dedup SET attempt_count = 1, lease_owner_id = 'dead', "
+                "lease_expires_at = now() - interval '10 minutes' WHERE idempotency_key = :k"
+            ),
+            {"k": _task_key(pg_conn, first.json["task_id"])},
+        )
+        _post_remote(app, pg_conn, apply_mock, key="click-2")
+
+        assert apply_mock.call_count == 2
+
+    def test_another_user_or_url_is_not_joined(self, app, pg_conn):
+        apply_mock = _apply_async_mock()
+        _post_remote(app, pg_conn, apply_mock, user="u")
+        _post_remote(app, pg_conn, apply_mock, user="v")
+        _post_remote(app, pg_conn, apply_mock, user="u", repo="https://github.com/x/other")
+
+        assert apply_mock.call_count == 3
+
+    def test_a_refused_enqueue_does_not_block_the_next_submit(self, app, pg_conn):
+        broken = MagicMock(side_effect=RuntimeError("broker down"))
+        refused = _post_remote(app, pg_conn, broken, key="click-1")
+        assert refused.status_code == 400
+
+        apply_mock = _apply_async_mock()
+        _post_remote(app, pg_conn, apply_mock, key="click-2")
+        assert apply_mock.call_count == 1
+
+    def test_a_joined_submit_leaves_no_claim_of_its_own(self, app, pg_conn):
+        from sqlalchemy import text
+
+        apply_mock = _apply_async_mock()
+        _post_remote(app, pg_conn, apply_mock, key="click-1")
+        _post_remote(app, pg_conn, apply_mock, key="click-2")
+
+        assert pg_conn.execute(
+            text("SELECT count(*) FROM task_dedup WHERE idempotency_key = 'u:click-2'"),
+        ).scalar() == 0
