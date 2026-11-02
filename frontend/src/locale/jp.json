@@ -2309,7 +2309,9 @@
         "dismiss": "アップロード通知を閉じる",
         "uploadProgress": "アップロード進行状況 {{progress}}%",
         "clear": "クリア",
-        "ingestionFailed": "取り込みに失敗しました。"
+        "ingestionFailed": "取り込みに失敗しました。",
+        "tooManyFiles": "このソースのファイル数が上限の {{limit}} 件を超えています。より小さいフォルダ、パス、または選択範囲を選んでください。",
+        "tooManyTokens": "このソースのテキストが上限の {{limit}} トークンを超えています。より小さいソースに分割してください。"
       },
       "ingestors": {
         "local_file": {

@@ -2318,7 +2318,9 @@
         "dismiss": "Upload-Benachrichtigung schließen",
         "uploadProgress": "Upload-Fortschritt {{progress}}%",
         "clear": "Löschen",
-        "ingestionFailed": "Aufnahme fehlgeschlagen."
+        "ingestionFailed": "Aufnahme fehlgeschlagen.",
+        "tooManyFiles": "Diese Quelle hat mehr als {{limit}} Dateien, mehr als eine Quelle enthalten kann. Wähle einen kleineren Ordner, Pfad oder eine kleinere Auswahl.",
+        "tooManyTokens": "Diese Quelle hat mehr als {{limit}} Tokens Text, mehr als eine Quelle enthalten kann. Teile sie in kleinere Quellen auf."
       },
       "ingestors": {
         "local_file": {

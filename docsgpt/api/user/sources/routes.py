@@ -1003,10 +1003,15 @@ class ReingestSource(Resource):
             if cached is not None:
                 return make_response(jsonify({"success": True, "task_id": cached["task_id"]}), 200)
         # Drop the stale chunk-progress row so the sources list stops
-        # deriving a 'failed' status; reingest never rewrites it itself.
+        # deriving a 'failed' status; reingest never rewrites it itself. A
+        # rebuild goes through the embed loop, so an unfinished checkpoint is
+        # reopened instead: the rebuild resumes it when the content chunks
+        # the same way, and starts over otherwise.
         try:
             with db_session() as conn:
-                IngestChunkProgressRepository(conn).delete(resolved_source_id)
+                progress = IngestChunkProgressRepository(conn)
+                if rebuild is None or not progress.reopen(resolved_source_id):
+                    progress.delete(resolved_source_id)
         except Exception as err:
             current_app.logger.warning(
                 f"Could not clear ingest progress for {resolved_source_id}: "
