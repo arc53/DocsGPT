@@ -4637,7 +4637,6 @@
     "improve": "Mejorar",
     "drafted": "Redactado",
     "undoField": "Deshacer {{field}}",
-    "undoAll": "Deshacer todo",
     "somethingElse": "Otra cosa…",
     "somethingElseLabel": "Tu respuesta",
     "somethingElsePlaceholder": "Escribe tu propia respuesta",
@@ -4650,7 +4649,6 @@
       "drafting": "Redactando…"
     },
     "askLabel": "Mensaje para DocsGPT",
-    "startPlaceholder": "Describe lo que quieres…",
     "askPlaceholder": "Pide un cambio…",
     "stop": "Detener",
     "send": "Enviar",
@@ -4706,25 +4704,9 @@
       }
     },
     "agent": {
-      "introNew": "Cuéntame qué debe hacer este agente y para quién es. Revisaré tu conocimiento, herramientas y prompts, y luego rellenaré el formulario. No se guarda nada hasta que guardes.",
-      "introImprove": "¿Qué quieres cambiar? Actualizaré el formulario y no se guardará nada hasta que guardes.",
-      "examples": {
-        "support": "Agente de soporte para nuestro centro de ayuda",
-        "research": "Asistente de investigación sobre nuestros contratos",
-        "helpdesk": "Soporte informático interno",
-        "shorter": "Acorta la descripción",
-        "starters": "Sugiere preguntas iniciales"
-      },
-      "describeTitle": "Empieza con una descripción",
-      "describeDescription": "Di qué debe hacer el agente. DocsGPT elige conocimiento y herramientas de lo que ya tienes y escribe el prompt.",
-      "describeDismiss": "Ocultar el cuadro de descripción",
-      "describeLabel": "¿Qué debe hacer el agente?",
-      "describeHint": "O rellena tú mismo el formulario de abajo.",
-      "describePlaceholder": "Un agente en nuestra web que responde preguntas sobre envíos…",
       "draftedCount_one": "Se redactó {{count}} campo. Revísalo antes de guardar.",
       "draftedCount_many": "Se redactaron {{count}} campos. Revísalos antes de guardar.",
       "draftedCount_other": "Se redactaron {{count}} campos. Revísalos antes de guardar.",
-      "review": "Revisar",
       "pendingPrompt": "{{name}} · nuevo, se crea al guardar",
       "promptText": "Texto del prompt",
       "editPrompt": "Editar prompt",
@@ -4734,7 +4716,71 @@
         "not_found": "un elemento que no existe",
         "no_access": "un elemento que no puedes abrir",
         "invalid": "un elemento no válido",
-        "other": "un elemento que no se pudo usar"
+        "other": "un elemento que no se pudo usar",
+        "not_allowed": "un ajuste que tu rol no puede cambiar"
+      },
+      "build": {
+        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento y las herramientas, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nCuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
+        "examples": {
+          "support": "Agente de soporte para nuestro centro de ayuda",
+          "research": "Asistente de investigación sobre nuestros contratos",
+          "helpdesk": "Soporte informático interno"
+        },
+        "describePlaceholder": "Describe el agente…",
+        "changePlaceholder": "O dime qué cambiar…",
+        "steps": {
+          "basics": "Básico",
+          "knowledge": "Conocimiento y herramientas",
+          "prompt": "Prompt y preguntas de inicio",
+          "safety": "Límites y seguridad"
+        },
+        "progress": "Paso {{number}} de {{total}} · {{step}}",
+        "filledAtOnce_one": "{{count}} paso de una vez",
+        "filledAtOnce_other": "{{count}} pasos de una vez",
+        "filledAtOnce_many": "{{count}} pasos de una vez",
+        "allFilled": "Todos los pasos completados",
+        "continue": "Continúa con {{step}}.",
+        "next": "Siguiente: {{step}}",
+        "nextShort": "Siguiente",
+        "finish": "Terminar",
+        "checkForm": "Revisar primero el formulario",
+        "check": "Revisa {{step}}",
+        "folded": "{{step}}: {{result}}",
+        "skipped": "{{step}}: aquí no hay nada que configurar",
+        "done": "Ya están todas las partes. Todavía no se ha guardado nada del agente: publícalo y pruébalo en la vista previa, o guarda un borrador para volver más tarde.",
+        "resume": "Reanudar",
+        "resumeLabel": "Reanudar la redacción: paso {{number}} de {{total}}",
+        "result": {
+          "none": "nada configurado",
+          "noLimit": "sin límite",
+          "starters_one": "{{count}} pregunta de inicio",
+          "starters_other": "{{count}} preguntas de inicio",
+          "starters_many": "{{count}} preguntas de inicio",
+          "requests_one": "{{count, number}} solicitud cada 24 horas",
+          "requests_other": "{{count, number}} solicitudes cada 24 horas",
+          "requests_many": "{{count, number}} solicitudes cada 24 horas",
+          "tokens_one": "{{count, number}} token cada 24 horas",
+          "tokens_other": "{{count, number}} tokens cada 24 horas",
+          "tokens_many": "{{count, number}} tokens cada 24 horas",
+          "checks_one": "{{count}} comprobación en modo {{mode}}",
+          "checks_other": "{{count}} comprobaciones en modo {{mode}}",
+          "checks_many": "{{count}} comprobaciones en modo {{mode}}",
+          "topics_one": "{{count}} tema de Información",
+          "topics_other": "{{count}} temas de Información",
+          "topics_many": "{{count}} temas de Información"
+        }
+      },
+      "improve": {
+        "intro": "¿Qué debería cambiar en {{name}}?",
+        "introPublished": "¿Qué debería cambiar en {{name}}? Está publicado, así que un cambio guardado llega a todos los que lo usan.",
+        "introShared": "¿Qué debería cambiar en {{name}}? Está compartido, así que un cambio guardado llega a todos los que lo usan.",
+        "finishSetup": "Terminar la configuración: límites y seguridad",
+        "shorter": "Acorta la descripción",
+        "tightenPrompt": "Haz el prompt más conciso",
+        "starters": "Sugiere preguntas iniciales"
+      },
+      "fields": {
+        "limits": "Límite de uso"
       }
     },
     "topics": {

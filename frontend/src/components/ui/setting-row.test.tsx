@@ -1,5 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
 
 import { Input } from './input';
 import { SettingRow, SettingRows } from './setting-row';
@@ -178,5 +182,36 @@ describe('SettingRows / SettingRow', () => {
     const limit = host.querySelector('[data-testid="limit"]')!;
     expect(limit.id).not.toBe('token-limiting');
     expect(limit.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('puts the Drafted badge after the title of a drafted row', () => {
+    const host = render(
+      <SettingRow
+        label="Request limiting"
+        htmlFor="request-limiting"
+        drafted
+        onUndo={() => undefined}
+      >
+        <Switch />
+      </SettingRow>,
+    );
+    const row = host.firstElementChild as HTMLElement;
+    expect(row.dataset.drafted).toBe('true');
+    const badge = row.querySelector('[data-slot="drafted-badge"]')!;
+    expect(badge.previousElementSibling?.tagName).toBe('LABEL');
+    expect(badge.querySelector('button')!.getAttribute('aria-label')).toBe(
+      'drafter.undoField',
+    );
+  });
+
+  it('shows no badge on a row that is not drafted', () => {
+    const host = render(
+      <SettingRow label="Request limiting" onUndo={() => undefined}>
+        <Switch />
+      </SettingRow>,
+    );
+    const row = host.firstElementChild as HTMLElement;
+    expect(row.hasAttribute('data-drafted')).toBe(false);
+    expect(row.querySelector('[data-slot="drafted-badge"]')).toBeNull();
   });
 });

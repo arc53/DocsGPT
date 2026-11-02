@@ -4507,7 +4507,6 @@
     "improve": "Verbessern",
     "drafted": "Entworfen",
     "undoField": "{{field}} rückgängig machen",
-    "undoAll": "Alles rückgängig",
     "somethingElse": "Etwas anderes…",
     "somethingElseLabel": "Deine Antwort",
     "somethingElsePlaceholder": "Eigene Antwort eingeben",
@@ -4520,7 +4519,6 @@
       "drafting": "Entwirft…"
     },
     "askLabel": "Nachricht an DocsGPT",
-    "startPlaceholder": "Beschreibe, was du möchtest…",
     "askPlaceholder": "Um eine Änderung bitten…",
     "stop": "Stoppen",
     "send": "Senden",
@@ -4571,24 +4569,8 @@
       }
     },
     "agent": {
-      "introNew": "Sag mir, was dieser Agent tun soll und für wen er gedacht ist. Ich sehe mir deine Wissensquellen, Tools und Prompts an und fülle dann das Formular aus. Gespeichert wird erst, wenn du speicherst.",
-      "introImprove": "Was möchtest du ändern? Ich passe das Formular an; gespeichert wird erst, wenn du speicherst.",
-      "examples": {
-        "support": "Support-Agent für unser Hilfecenter",
-        "research": "Rechercheassistent für unsere Verträge",
-        "helpdesk": "Interner IT-Helpdesk",
-        "shorter": "Die Beschreibung kürzen",
-        "starters": "Gesprächseinstiege vorschlagen"
-      },
-      "describeTitle": "Mit einer Beschreibung beginnen",
-      "describeDescription": "Sag, was der Agent tun soll. DocsGPT wählt Wissensquellen und Tools aus deinem Bestand und schreibt den Prompt.",
-      "describeDismiss": "Beschreibungsfeld ausblenden",
-      "describeLabel": "Was soll der Agent tun?",
-      "describeHint": "Oder fülle das Formular unten selbst aus.",
-      "describePlaceholder": "Ein Agent auf unserer Website, der Fragen zum Versand beantwortet…",
       "draftedCount_one": "{{count}} Feld entworfen. Prüfe es vor dem Speichern.",
       "draftedCount_other": "{{count}} Felder entworfen. Prüfe sie vor dem Speichern.",
-      "review": "Ansehen",
       "pendingPrompt": "{{name}} · neu, wird beim Speichern erstellt",
       "promptText": "Prompt-Text",
       "editPrompt": "Prompt bearbeiten",
@@ -4598,7 +4580,65 @@
         "not_found": "ein Element, das nicht existiert",
         "no_access": "ein Element, das du nicht öffnen kannst",
         "invalid": "ein ungültiges Element",
-        "other": "ein Element, das nicht verwendet werden konnte"
+        "other": "ein Element, das nicht verwendet werden konnte",
+        "not_allowed": "eine Einstellung, die deine Rolle nicht ändern darf"
+      },
+      "build": {
+        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen und Tools, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nSag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
+        "examples": {
+          "support": "Support-Agent für unser Hilfecenter",
+          "research": "Rechercheassistent für unsere Verträge",
+          "helpdesk": "Interner IT-Helpdesk"
+        },
+        "describePlaceholder": "Beschreibe den Agenten…",
+        "changePlaceholder": "Oder sag mir, was ich ändern soll…",
+        "steps": {
+          "basics": "Grundlagen",
+          "knowledge": "Wissen und Tools",
+          "prompt": "Prompt und Einstiegsfragen",
+          "safety": "Limits und Sicherheit"
+        },
+        "progress": "Schritt {{number}} von {{total}} · {{step}}",
+        "filledAtOnce_one": "{{count}} Schritt auf einmal",
+        "filledAtOnce_other": "{{count}} Schritte auf einmal",
+        "allFilled": "Alle Schritte ausgefüllt",
+        "continue": "Weiter mit {{step}}.",
+        "next": "Weiter: {{step}}",
+        "nextShort": "Weiter",
+        "finish": "Fertigstellen",
+        "checkForm": "Erst das Formular prüfen",
+        "check": "{{step}} prüfen",
+        "folded": "{{step}}: {{result}}",
+        "skipped": "{{step}}: hier gibt es nichts einzustellen",
+        "done": "Das waren alle Schritte. Am Agenten ist noch nichts gespeichert: Veröffentliche ihn und probiere ihn in der Vorschau aus, oder speichere einen Entwurf, um später weiterzumachen.",
+        "resume": "Fortsetzen",
+        "resumeLabel": "Entwurf fortsetzen: Schritt {{number}} von {{total}}",
+        "result": {
+          "none": "nichts festgelegt",
+          "noLimit": "kein Limit",
+          "starters_one": "{{count}} Einstiegsfrage",
+          "starters_other": "{{count}} Einstiegsfragen",
+          "requests_one": "{{count, number}} Anfrage pro 24 Stunden",
+          "requests_other": "{{count, number}} Anfragen pro 24 Stunden",
+          "tokens_one": "{{count, number}} Token pro 24 Stunden",
+          "tokens_other": "{{count, number}} Token pro 24 Stunden",
+          "checks_one": "{{count}} Prüfung im Modus {{mode}}",
+          "checks_other": "{{count}} Prüfungen im Modus {{mode}}",
+          "topics_one": "{{count}} Thema für Einblicke",
+          "topics_other": "{{count}} Themen für Einblicke"
+        }
+      },
+      "improve": {
+        "intro": "Was soll sich an {{name}} ändern?",
+        "introPublished": "Was soll sich an {{name}} ändern? Der Agent ist veröffentlicht, eine gespeicherte Änderung erreicht also alle, die ihn nutzen.",
+        "introShared": "Was soll sich an {{name}} ändern? Der Agent ist geteilt, eine gespeicherte Änderung erreicht also alle, die ihn nutzen.",
+        "finishSetup": "Einrichtung abschließen: Limits und Sicherheit",
+        "shorter": "Die Beschreibung kürzen",
+        "tightenPrompt": "Den Prompt straffen",
+        "starters": "Gesprächseinstiege vorschlagen"
+      },
+      "fields": {
+        "limits": "Nutzungslimit"
       }
     },
     "topics": {

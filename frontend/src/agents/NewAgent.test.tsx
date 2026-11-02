@@ -94,7 +94,12 @@ const drafter = vi.hoisted(() => ({
   requests: [] as {
     recipe: string;
     messages: { role: string; content: string }[];
-    context: { agent_id: string | null; form: Record<string, unknown> };
+    context: {
+      agent_id: string | null;
+      step?: string | null;
+      earlier?: string[];
+      form: Record<string, unknown>;
+    };
   }[],
 }));
 vi.mock('../drafter/useDrafterConfig', () => ({
@@ -227,7 +232,8 @@ vi.mock('../components/MultiSelectPopover', () => ({
 }));
 
 vi.mock('./AgentPreview', () => ({ default: () => null }));
-vi.mock('./components/GuardrailsSection', () => ({
+vi.mock('./components/GuardrailsSection', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./components/GuardrailsSection')>()),
   default: (props: { disabled?: boolean }) => {
     mocks.guardrailsProps(props);
     return null;
@@ -2353,7 +2359,10 @@ describe('NewAgent drafter', () => {
   let root: Root;
 
   const PROMPT_TEXT = 'You help customers with shipping.';
-  const proposal = (fields: Record<string, unknown>) => ({
+  const proposal = (
+    fields: Record<string, unknown>,
+    progress: { steps?: string[]; next_step?: string | null } = {},
+  ) => ({
     type: 'proposal',
     proposal: {
       message: 'The draft is in the form.',
@@ -2361,6 +2370,8 @@ describe('NewAgent drafter', () => {
       reasons: [{ field: 'name', summary: 'Shipping help' }],
       notes: [],
       dropped: [],
+      steps: progress.steps ?? [],
+      next_step: progress.next_step ?? null,
     },
   });
 
@@ -2373,7 +2384,6 @@ describe('NewAgent drafter', () => {
       model: { id: 'm1', display_name: 'Fast model' },
       reason: null,
     };
-    localStorage.removeItem('docsgpt-drafter:agent-describe-dismissed');
   });
 
   afterEach(async () => {
@@ -2390,6 +2400,7 @@ describe('NewAgent drafter', () => {
     mocks.createPrompt.mockImplementation(() => jsonResponse({}));
     mocks.getAgent.mockReset();
     mocks.getAgent.mockImplementation(() => jsonResponse({}));
+    mocks.guardrailsProps.mockClear();
     mocks.tools = null;
     media.isMobile = false;
     media.isDesktop = true;
@@ -2405,7 +2416,10 @@ describe('NewAgent drafter', () => {
     });
   };
 
-  const renderEdit = async (allowed: string[]) => {
+  const renderEdit = async (
+    allowed: string[],
+    over: Record<string, unknown> = {},
+  ) => {
     mocks.getAgent.mockImplementation(() =>
       jsonResponse({
         id: 'agent-1',
@@ -2416,6 +2430,7 @@ describe('NewAgent drafter', () => {
         prompt_id: 'default',
         access: 'viewer',
         allowed_actions: allowed,
+        ...over,
       }),
     );
     await act(async () => {
@@ -2442,9 +2457,9 @@ describe('NewAgent drafter', () => {
     buttons().find(
       (b) => b.hasAttribute('data-drafter-entry') && b.textContent !== '',
     );
-  const describeBox = () =>
-    container.querySelector<HTMLTextAreaElement>(
-      'textarea[placeholder="drafter.agent.describePlaceholder"]',
+  const panel = () =>
+    document.querySelector<HTMLElement>(
+      '[data-slot="side-panel"], [data-slot="sheet-content"]',
     );
   const nameInput = () =>
     container.querySelector<HTMLInputElement>(
@@ -2454,24 +2469,30 @@ describe('NewAgent drafter', () => {
     Array.from(container.querySelectorAll('[data-drafted]')).map(
       (el) => el.querySelector('label')?.textContent,
     );
+  const lastRequest = () => drafter.requests.at(-1)!;
 
-  /** Send a description from the describe box. */
-  const describe = async (text: string) => {
-    await act(async () => setNativeValue(describeBox()!, text));
-    await act(async () =>
-      buttonByText(
-        'drafter.draft',
-        describeBox()!.closest('[data-slot=card]')!,
-      )!.click(),
-    );
+  /** Open the drawer (unless it is open) and send a message from its composer. */
+  const ask = async (text: string) => {
+    if (!panel()) await act(async () => wand()!.click());
+    const input = panel()!.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="drafter.askLabel"]',
+    )!;
+    await act(async () => setNativeValue(input, text));
+    await act(async () => buttonByLabel('drafter.send', panel()!)!.click());
   };
+  /** The latest turn's Next (or Finish). */
+  const next = () =>
+    buttons(panel()!).find(
+      (b) =>
+        b.textContent === 'drafter.agent.build.next' ||
+        b.textContent === 'drafter.agent.build.finish',
+    );
 
-  it('shows no wand and no describe box while the drafter is off', async () => {
+  it('shows no wand while the drafter is off', async () => {
     drafter.config = { enabled: false, model: null, reason: null };
     await render();
     expect(wand()).toBeUndefined();
-    expect(describeBox()).toBeNull();
-    expect(container.querySelector('[data-slot="side-panel"]')).toBeNull();
+    expect(panel()).toBeNull();
   });
 
   it("hides the wand from someone who can't edit the agent", async () => {
@@ -2487,21 +2508,34 @@ describe('NewAgent drafter', () => {
         b === wand() || b.textContent?.includes('agents.form.sections.preview'),
     );
     expect(row[0]).toBe(wand());
-    expect(describeBox()).toBeNull();
   });
 
-  it('sends the description from the describe box and opens the panel', async () => {
+  it('greets an empty new agent with the plan and starts at Basics', async () => {
     await render();
     expect(wand()!.textContent).toContain('drafter.draft');
-    await describe('An agent that answers shipping questions');
+    // No describe box on the form.
+    expect(container.querySelector('textarea[rows="3"]')).toBeNull();
+    await act(async () => wand()!.click());
+    expect(panel()!.textContent).toContain('drafter.agent.build.intro');
+    expect(
+      panel()!
+        .querySelector('textarea[aria-label="drafter.askLabel"]')
+        ?.getAttribute('placeholder'),
+    ).toBe('drafter.agent.build.describePlaceholder');
+    // A suggestion row sends its text.
+    await act(async () =>
+      buttonByText('drafter.agent.build.examples.support', panel()!)!.click(),
+    );
     expect(drafter.requests).toHaveLength(1);
     expect(drafter.requests[0]).toMatchObject({
       recipe: 'agent',
       messages: [
-        { role: 'user', content: 'An agent that answers shipping questions' },
+        { role: 'user', content: 'drafter.agent.build.examples.support' },
       ],
       context: {
         agent_id: null,
+        step: 'basics',
+        earlier: [],
         form: {
           name: '',
           description: '',
@@ -2509,33 +2543,17 @@ describe('NewAgent drafter', () => {
           sources: [],
           tools: [],
           prompt_id: 'default',
-          pending_prompt: null,
+          prompt_draft: null,
           starters: [],
+          limits: { mode: 'none', value: null },
+          analytics: { enabled: true, topics: [] },
         },
       },
     });
-    const panel = container.querySelector('[data-slot="side-panel"]')!;
-    expect(panel.textContent).toContain('drafter.title');
-    expect(panel.textContent).toContain(
-      'An agent that answers shipping questions',
+    expect(drafter.requests[0].context.form).not.toHaveProperty(
+      'pending_prompt',
     );
-    expect(describeBox()).toBeNull();
-  });
-
-  it('remembers that the describe box was closed', async () => {
-    await render();
-    await act(async () =>
-      buttonByLabel('drafter.agent.describeDismiss')!.click(),
-    );
-    expect(describeBox()).toBeNull();
-    expect(
-      localStorage.getItem('docsgpt-drafter:agent-describe-dismissed'),
-    ).toBe('1');
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await render();
-    expect(describeBox()).toBeNull();
-    expect(wand()).toBeDefined();
+    expect(panel()!.textContent).toContain('drafter.agent.build.progress');
   });
 
   it('fills the form from a proposal, marks each field, and undoes one', async () => {
@@ -2555,7 +2573,7 @@ describe('NewAgent drafter', () => {
       ],
     ];
     await render();
-    await describe('Shipping agent');
+    await ask('Shipping agent');
     expect(nameInput().value).toBe('Shipping help');
     expect(drafted()).toEqual([
       'agents.form.labels.name',
@@ -2567,9 +2585,10 @@ describe('NewAgent drafter', () => {
     expect(
       container.querySelector('[data-drafted] [data-slot="drafted-badge"]'),
     ).not.toBeNull();
-    const panel = container.querySelector('[data-slot="side-panel"]')!;
-    expect(panel.textContent).toContain('The draft is in the form.');
-    expect(wand()!.textContent).toContain('drafter.improve');
+    expect(panel()!.textContent).toContain('The draft is in the form.');
+    // No drafted strip and no Undo all over the form.
+    expect(container.querySelector('[data-slot="drafted-strip"]')).toBeNull();
+    expect(buttonByText('drafter.undoAll')).toBeUndefined();
 
     await act(async () => buttonByLabel('drafter.undoField')!.click());
     expect(nameInput().value).toBe('');
@@ -2597,31 +2616,242 @@ describe('NewAgent drafter', () => {
       ],
     ];
     await render();
-    await describe('Shipping agent');
-    const panel = container.querySelector('[data-slot="side-panel"]')!;
-    const summary = panel.querySelector('[data-slot="proposal-summary"]')!;
+    await ask('Shipping agent');
+    const summary = panel()!.querySelector('[data-slot="proposal-summary"]')!;
     expect(summary.textContent).toContain('Says what it does');
     expect(summary.textContent).not.toContain('Classic suits Q&A');
     expect(
-      panel.querySelector('[data-slot="drafter-live"] .sr-only')?.textContent,
+      panel()!.querySelector('[data-slot="drafter-live"] .sr-only')
+        ?.textContent,
     ).toBe('drafter.agent.draftedCount');
   });
 
-  it('asks for a change in the panel on a filled agent', async () => {
-    await renderEdit(['edit', 'publish', 'use', 'view']);
-    await act(async () => wand()!.click());
-    const panel = container.querySelector('[data-slot="side-panel"]')!;
+  it('moves to the next step on Next, with the earlier words and a hidden message', async () => {
+    drafter.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help desk', description: 'Answers shipping.' },
+          { steps: ['basics'], next_step: 'knowledge' },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent for our website');
     expect(
-      panel
+      panel()!
         .querySelector('textarea[aria-label="drafter.askLabel"]')
         ?.getAttribute('placeholder'),
-    ).toBe('drafter.askPlaceholder');
+    ).toBe('drafter.agent.build.changePlaceholder');
+    await act(async () => next()!.click());
+    expect(drafter.requests).toHaveLength(2);
+    expect(lastRequest().messages).toEqual([
+      { role: 'user', content: 'drafter.agent.build.continue' },
+    ]);
+    expect(lastRequest().context).toMatchObject({
+      step: 'knowledge',
+      earlier: ['A shipping agent for our website'],
+      form: { name: 'Shipping help desk' },
+    });
+    // The step folds to a line; the hidden message draws no bubble.
+    expect(
+      panel()!.querySelector('[data-slot="build-finished"]')?.textContent,
+    ).toContain('drafter.agent.build.folded');
+    expect(panel()!.querySelector('[data-item="user"]')).toBeNull();
+    // The step's marks stay on the form.
+    expect(drafted()).toContain('agents.form.labels.name');
+  });
+
+  it('takes an empty proposal as the step approved and moves on', async () => {
+    drafter.scripts = [
+      [
+        proposal({ name: 'Shipping help desk' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+      [
+        proposal({}, { steps: ['basics'], next_step: 'knowledge' }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent');
+    await ask('ok, next');
+    expect(drafter.requests).toHaveLength(3);
+    expect(lastRequest().context.step).toBe('knowledge');
+    expect(lastRequest().context.earlier).toEqual([
+      'A shipping agent',
+      'ok, next',
+    ]);
+  });
+
+  it('jumps past the steps one description covered', async () => {
+    drafter.scripts = [
+      [
+        proposal(
+          {
+            name: 'Ops customs desk',
+            prompt: { kind: 'existing', id: 'creative' },
+          },
+          { steps: ['basics', 'knowledge', 'prompt'], next_step: 'safety' },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('Internal agent for the ops team, use the creative prompt');
+    expect(
+      buttonByText('drafter.agent.build.checkForm', panel()!),
+    ).toBeTruthy();
+    await act(async () => next()!.click());
+    expect(lastRequest().context.step).toBe('safety');
+    const header = panel()!.textContent!;
+    expect(header).toContain('drafter.agent.build.filledAtOnce');
+    // Three finished steps fold into one line.
+    expect(
+      panel()!.querySelectorAll(
+        '[data-slot="build-finished"] > [data-slot="drafter-step-row"]',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('applies limits and guardrails from the safety step, and undoes them', async () => {
+    drafter.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help desk' },
+          { steps: ['basics', 'knowledge', 'prompt'], next_step: 'safety' },
+        ),
+        { type: 'end' },
+      ],
+      [
+        proposal(
+          {
+            limits: { mode: 'requests', value: 500 },
+            guardrails: { checks: ['pii', 'injection'] },
+          },
+          { steps: ['safety'] },
+        ),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A public shipping agent');
+    await act(async () => next()!.click());
+    const requestLimit = () =>
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="agents.form.advanced.requestLimit"]',
+      )!;
+    // Advanced opens itself for the drafted limit.
+    const advanced = buttonByText('agents.form.sections.advanced')!;
+    expect(advanced.getAttribute('aria-expanded')).toBe('true');
+    expect(requestLimit().value).toBe('500');
+    expect(requestLimit().disabled).toBe(false);
+    const requestRow = requestLimit().closest('[data-slot="setting-row"]')!;
+    expect(requestRow.getAttribute('data-drafted')).toBe('true');
+    const guardrails = mocks.guardrailsProps.mock.calls.at(-1)![0] as {
+      drafted: boolean;
+      value: { enabled: boolean; mode: string; controls: { check: string }[] };
+    };
+    expect(guardrails.drafted).toBe(true);
+    expect(guardrails.value.enabled).toBe(true);
+    expect(guardrails.value.mode).toBe('monitor_only');
+    expect(guardrails.value.controls.map((c) => c.check)).toEqual([
+      'pii',
+      'pii',
+      'injection',
+    ]);
+    expect(next()!.textContent).toBe('drafter.agent.build.finish');
+
+    // The row's badge undoes the limit: both limits off again.
+    await act(async () =>
+      buttonByLabel('drafter.undoField', requestRow)!.click(),
+    );
+    expect(requestLimit().disabled).toBe(true);
+    expect(
+      requestLimit()
+        .closest('[data-slot="setting-row"]')!
+        .hasAttribute('data-drafted'),
+    ).toBe(false);
+    await act(async () =>
+      (
+        mocks.guardrailsProps.mock.calls.at(-1)![0] as { onUndo: () => void }
+      ).onUndo(),
+    );
+    expect(
+      (mocks.guardrailsProps.mock.calls.at(-1)![0] as { drafted: boolean })
+        .drafted,
+    ).toBe(false);
+
+    await act(async () => next()!.click());
+    expect(panel()!.textContent).toContain('drafter.agent.build.done');
+    expect(panel()!.textContent).toContain('drafter.agent.build.allFilled');
+  });
+
+  it('reads Resume while a build is unfinished', async () => {
+    drafter.scripts = [
+      [
+        proposal({ name: 'Shipping help desk' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+    ];
+    await render();
+    await ask('A shipping agent');
+    await act(async () => wand()!.click());
+    expect(panel()).toBeNull();
+    expect(wand()!.textContent).toContain('drafter.agent.build.resume');
+    expect(wand()!.getAttribute('aria-label')).toBe(
+      'drafter.agent.build.resumeLabel',
+    );
+    expect(wand()!.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('offers improve rows on a saved agent, and Finish setup asks for safety', async () => {
+    await renderEdit(['edit', 'edit_policy', 'publish', 'use', 'view']);
+    await act(async () => wand()!.click());
+    const text = panel()!.textContent!;
+    expect(text).toContain('drafter.agent.improve.introPublished');
+    expect(text).not.toContain('drafter.agent.build.progress');
+    expect(
+      buttons(panel()!)
+        .map((b) => b.textContent)
+        .filter((label) => label?.startsWith('drafter.agent.improve.')),
+    ).toEqual([
+      'drafter.agent.improve.finishSetup',
+      'drafter.agent.improve.shorter',
+      'drafter.agent.improve.tightenPrompt',
+      'drafter.agent.improve.starters',
+    ]);
+    await act(async () =>
+      buttonByText('drafter.agent.improve.finishSetup', panel()!)!.click(),
+    );
+    expect(lastRequest().context).toMatchObject({
+      agent_id: 'agent-1',
+      step: 'safety',
+    });
+    await ask('Make it friendlier');
+    // The rest of the conversation stays on limits and safety.
+    expect(lastRequest().context.step).toBe('safety');
+  });
+
+  it('leaves out Finish setup once limits or guardrails are set', async () => {
+    await renderEdit(['edit', 'edit_policy', 'publish', 'use', 'view'], {
+      status: 'draft',
+      limited_request_mode: true,
+      request_limit: 100,
+    });
+    await act(async () => wand()!.click());
+    expect(panel()!.textContent).toContain('drafter.agent.improve.intro');
+    expect(
+      buttonByText('drafter.agent.improve.finishSetup', panel()!),
+    ).toBeUndefined();
+    await ask('Shorter');
+    expect(lastRequest().context.step).toBeNull();
   });
 
   it('drops the mark of a field edited by hand', async () => {
     drafter.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
     await render();
-    await describe('Shipping agent');
+    await ask('Shipping agent');
     expect(drafted()).toEqual(['agents.form.labels.name']);
     await act(async () => setNativeValue(nameInput(), 'My own name'));
     expect(drafted()).toEqual([]);
@@ -2644,7 +2874,7 @@ describe('NewAgent drafter', () => {
     ];
     mocks.createPrompt.mockImplementation(() => jsonResponse({ id: 'np1' }));
     await render();
-    await describe('Shipping agent');
+    await ask('Shipping agent');
     expect(
       container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
     ).toContain('drafter.agent.pendingPrompt');
@@ -2677,7 +2907,7 @@ describe('NewAgent drafter', () => {
     expect(container.textContent).not.toContain(PROMPT_TEXT);
   });
 
-  it('sends the form, pending prompt and starters with every message', async () => {
+  it('sends the picked prompt and starters with every message, not the pending one', async () => {
     drafter.scripts = [
       [
         proposal({
@@ -2692,13 +2922,8 @@ describe('NewAgent drafter', () => {
       ],
     ];
     await render();
-    await describe('Shipping agent');
-    const panel = container.querySelector('[data-slot="side-panel"]')!;
-    const ask = panel.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="drafter.askLabel"]',
-    )!;
-    await act(async () => setNativeValue(ask, 'Make it friendlier'));
-    await act(async () => buttonByLabel('drafter.send', panel)!.click());
+    await ask('Shipping agent');
+    await ask('Make it friendlier');
     expect(drafter.requests[1].messages.map((m) => m.role)).toEqual([
       'user',
       'assistant',
@@ -2706,25 +2931,42 @@ describe('NewAgent drafter', () => {
     ]);
     expect(drafter.requests[1].context.form).toMatchObject({
       starters: ['Where is my parcel?'],
-      pending_prompt: { name: 'Shipping support', content: PROMPT_TEXT },
+      prompt_id: 'default',
+      prompt_draft: null,
     });
   });
 
-  it('closes the sheet on a phone after a draft and shows what changed inline', async () => {
+  it('steps the sheet aside on a phone and keeps the step in a strip', async () => {
     media.isMobile = true;
     media.isDesktop = false;
-    drafter.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
+    drafter.scripts = [
+      [
+        proposal({ name: 'Shipping help' }, { steps: ['basics'] }),
+        { type: 'end' },
+      ],
+    ];
     await render();
-    await describe('Shipping agent');
+    await ask('Shipping agent');
     expect(nameInput().value).toBe('Shipping help');
-    const strip = container.querySelector('[data-slot="drafted-strip"]')!;
-    expect(strip.textContent).toContain('drafter.agent.draftedCount');
-    await act(async () => buttonByText('drafter.undoAll', strip)!.click());
-    expect(nameInput().value).toBe('');
-    expect(container.querySelector('[data-slot="drafted-strip"]')).toBeNull();
+    const strip = () =>
+      container.querySelector<HTMLElement>('[data-slot="build-step-strip"]');
+    expect(strip()).not.toBeNull();
+    expect(strip()!.className).toContain('lg:hidden');
+    expect(strip()!.textContent).toContain('drafter.agent.build.check');
+    // The strip brings the sheet back.
+    await act(async () =>
+      buttonByText('drafter.agent.build.check', strip()!)!.click(),
+    );
+    expect(strip()).toBeNull();
+    // Closed again, the strip is back; its Next runs the step's Next.
+    await act(async () => wand()!.click());
+    await act(async () =>
+      buttonByText('drafter.agent.build.nextShort', strip()!)!.click(),
+    );
+    expect(lastRequest().context.step).toBe('knowledge');
   });
 
-  // Improving the prompt (`describe` is the describe box's helper here).
+  // Improving the prompt.
   {
     type ModalProps = Record<string, unknown> & {
       type: 'ADD' | 'EDIT';
@@ -2857,7 +3099,7 @@ describe('NewAgent drafter', () => {
         ],
       ];
       await render();
-      await describe('Shipping agent');
+      await ask('Shipping agent');
       expect(buttonByText('drafter.prompt.improvePrompt')).toBeUndefined();
       await act(async () => buttonByText('drafter.agent.editPrompt')!.click());
       const modal = openModal()!;

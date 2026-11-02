@@ -1,5 +1,7 @@
 import {
+  ArrowRight,
   CircleCheck,
+  CircleMinus,
   CircleX,
   FileSearch,
   Headset,
@@ -7,9 +9,10 @@ import {
   MonitorCog,
   PencilLine,
   Play,
+  Scissors,
+  ShieldCheck,
   SquarePen,
   WandSparkles,
-  X,
 } from 'lucide-react';
 import React, {
   useCallback,
@@ -31,7 +34,6 @@ import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Combobox, type ComboboxGroup } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
-import { IconButton } from '@/components/ui/icon-button';
 import { Input } from '@/components/ui/input';
 
 import {
@@ -79,7 +81,11 @@ import { useMediaQuery } from '../hooks';
 import { DraftPanel } from '../drafter/DraftPanel';
 import { suggestionIconClass } from '../hero/SuggestionRows';
 import { DraftedField } from '../drafter/DraftedBadge';
-import { ProposalSummary } from '../drafter/ProposalSummary';
+import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
+import {
+  ProposalSummary,
+  type ProposalReasonRow,
+} from '../drafter/ProposalSummary';
 import { useDraftedFields } from '../drafter/useDraftedFields';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import { useDrafterSession } from '../drafter/useDrafterSession';
@@ -118,6 +124,7 @@ import AllowedOriginsSetting, {
 import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
+import { BuildStepStrip } from './components/BuildStepStrip';
 import KnowledgePicker from './components/KnowledgePicker';
 import ToolsPicker from './components/ToolsPicker';
 import SectionShell from '../navigation/SectionShell';
@@ -132,19 +139,26 @@ import { useBuilderDirtyState } from './hooks/useBuilderDirtyState';
 import { useSponsoredSave } from './hooks/useSponsoredSave';
 import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 import {
+  AGENT_BUILD_STEPS,
   AGENT_FIELD_LABEL_KEYS,
+  AGENT_STEP_FIELDS,
+  type AgentBuildStep,
   type AgentDraftField,
   type AgentDraftForm,
+  type AgentLimitsValue,
   type AgentPromptValue,
   type PendingPrompt,
   agentDraftContext,
   agentDraftValues,
   agentProposalSummary,
+  agentStepResult,
   draftValueOf,
   isAgentFormEmpty,
+  isSafetyUnset,
   parseAgentProposal,
   planAgentPatch,
 } from './agentDraft';
+import { useAgentBuild } from './useAgentBuild';
 
 import type { Model } from '../models/types';
 
@@ -161,25 +175,6 @@ const promptOfKind = (kind: PromptKind, prompt: Prompt): boolean =>
 const PROMPT_PRESETS = ['default', 'creative', 'strict'];
 // The Prompt picker's value while a drafted prompt waits to be created.
 const PENDING_PROMPT_VALUE = '__drafted_prompt__';
-
-// Remembers that the user closed the new-agent form's describe box.
-const DESCRIBE_DISMISSED_KEY = 'docsgpt-drafter:agent-describe-dismissed';
-
-function readDescribeDismissed(): boolean {
-  try {
-    return localStorage.getItem(DESCRIBE_DISMISSED_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeDescribeDismissed() {
-  try {
-    localStorage.setItem(DESCRIBE_DISMISSED_KEY, '1');
-  } catch {
-    // A blocked store only shows the box again next time.
-  }
-}
 
 /**
  * What a save sends, in a shape two copies compare by: the unsaved-changes
@@ -768,14 +763,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   // The drafter ("Draft with DocsGPT"): it reads the form, and each proposal
   // fills it as unsaved edits, every changed field marked Drafted with undo.
+  // On an empty new agent it builds the agent step by step (useAgentBuild).
   const drafterConfig = useDrafterConfig();
   const { isMobile } = useMediaQuery();
   const [drafterOpen, setDrafterOpen] = useState(false);
-  const [describeDismissed, setDescribeDismissed] = useState(
-    readDescribeDismissed,
-  );
-  const [describeText, setDescribeText] = useState('');
-  const describeId = useId();
+  const formColumnRef = useRef<HTMLDivElement>(null);
   const [promptTextOpen, setPromptTextOpen] = useState(false);
   const promptTextId = useId();
   // Hidden while the server says it is off, and from anyone who can't edit.
@@ -793,6 +785,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         prompt_id: agent.prompt_id || 'default',
         pending: pendingPrompt,
       },
+      limits: {
+        limited_request_mode: Boolean(agent.limited_request_mode),
+        request_limit: agent.request_limit,
+        limited_token_mode: Boolean(agent.limited_token_mode),
+        token_limit: agent.token_limit,
+      },
+      guardrails: agent.config?.guardrails,
+      analytics: analyticsOf(agent.config?.analytics),
     }),
     [
       agent.name,
@@ -800,6 +800,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.agent_type,
       agent.starters,
       agent.prompt_id,
+      agent.limited_request_mode,
+      agent.request_limit,
+      agent.limited_token_mode,
+      agent.token_limit,
+      agent.config?.guardrails,
+      agent.config?.analytics,
       selectedSourceIds,
       selectedTools,
       pendingPrompt,
@@ -829,6 +835,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         case 'starters':
           setAgent((prev) => ({ ...prev, starters: value as string[] }));
           return;
+        case 'limits':
+          setAgent((prev) => ({ ...prev, ...(value as AgentLimitsValue) }));
+          return;
+        case 'guardrails':
+        case 'analytics':
+          setAgent((prev) => ({
+            ...prev,
+            config: { ...(prev.config ?? {}), [field]: value },
+          }));
+          return;
         default:
           setAgent((prev) => ({ ...prev, [field]: value as string }));
       }
@@ -856,6 +872,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // The fields each proposal changed when it was applied, so its summary
   // gives reasons only for those (keyed by the session's proposal object).
   const appliedFieldsRef = useRef(new WeakMap<object, AgentDraftField[]>());
+  // The latest reason for each field a build drafted: a finished step's
+  // folded line opens them.
+  const buildRowsRef = useRef(new Map<AgentDraftField, ProposalReasonRow>());
+
+  /** Bring the first drafted field into view, after the form has drawn it. */
+  const scrollToDrafted = () =>
+    requestAnimationFrame(() =>
+      formColumnRef.current
+        ?.querySelector('[data-drafted]')
+        ?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }),
+    );
 
   /** Fill the form from a proposal, marking every field it changed. */
   const applyDraft = (raw: unknown) => {
@@ -866,10 +893,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       draftFormRef.current,
       draftToolOptions,
     );
-    appliedFieldsRef.current.set(
-      raw as object,
-      changes.map((change) => change.field),
-    );
+    const changed = changes.map((change) => change.field);
+    appliedFieldsRef.current.set(raw as object, changed);
     changes.forEach((change) => {
       writeDraftField(change.field, change.next);
       drafted.mark(
@@ -878,33 +903,72 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         draftValueOf(change.field, change.next),
       );
     });
-    // A drafted prompt's text shows under its picker.
-    if (changes.some((change) => change.field === 'prompt'))
-      setPromptTextOpen(true);
-    // A phone's sheet covers the form: close it to show what changed.
-    if (changes.length > 0 && isMobile) setDrafterOpen(false);
+    proposal.reasons.forEach((reason) => {
+      const field = reason.field as AgentDraftField;
+      if (changed.includes(field))
+        buildRowsRef.current.set(field, {
+          key: field,
+          label: t(AGENT_FIELD_LABEL_KEYS[field]),
+          summary: reason.summary,
+        });
+    });
+    // A drafted prompt's text shows under its picker, a drafted limit in
+    // Advanced.
+    if (changed.includes('prompt')) setPromptTextOpen(true);
+    if (changed.includes('limits')) setIsAdvancedSectionExpanded(true);
+    if (changed.length > 0 && buildRef.current.guided) scrollToDrafted();
+    buildRef.current.onProposal(proposal);
   };
 
   const drafterSession = useDrafterSession({
     recipe: 'agent',
-    getContext: () => agentDraftContext(agent.id || null, draftFormRef.current),
+    getContext: () =>
+      agentDraftContext(
+        agent.id || null,
+        draftFormRef.current,
+        buildRef.current.context(),
+      ),
     onProposal: applyDraft,
   });
 
-  const formEmpty = isAgentFormEmpty(draftForm);
-  const showDescribeBox =
-    drafterEnabled &&
-    effectiveMode === 'new' &&
-    !describeDismissed &&
-    drafterSession.items.length === 0 &&
-    formEmpty;
+  // A step can't be drafted when nothing in it is the caller's to set: the
+  // limits and guardrails need policy access, the topics need Insights.
+  const skippedSteps = useMemo<AgentBuildStep[]>(
+    () =>
+      !can(agent, 'edit_policy') && !analyticsAvailability.enabled
+        ? ['safety']
+        : [],
+    [agent, analyticsAvailability.enabled],
+  );
+  const stepName = (step: AgentBuildStep) =>
+    t(`drafter.agent.build.steps.${step}`);
+  const build = useAgentBuild({
+    session: drafterSession,
+    skipped: skippedSteps,
+    continueText: (step) =>
+      t('drafter.agent.build.continue', {
+        step: stepName(step),
+        interpolation: { escapeValue: false },
+      }),
+    doneText: t('drafter.agent.build.done'),
+  });
+  const buildRef = useRef(build);
+  buildRef.current = build;
 
-  const sendDescription = () => {
-    const text = describeText.trim();
-    if (!text) return;
-    setDrafterOpen(true);
-    drafterSession.send(text);
-    setDescribeText('');
+  const formEmpty = isAgentFormEmpty(draftForm);
+  // Draft on an empty new agent builds it step by step; anything else is
+  // improve mode, free-form.
+  const buildable = formEmpty && !agent.id && !build.guided;
+  const finishSetupText = t('drafter.agent.improve.finishSetup');
+  // What the panel sends: the first message on an empty new agent starts the
+  // build, and Finish setup asks for limits and safety alone.
+  const panelSession = {
+    ...drafterSession,
+    send: (text: string, options?: { hidden?: boolean }) => {
+      if (text === finishSetupText) build.focus('safety');
+      else if (buildable && drafterSession.items.length === 0) build.start();
+      drafterSession.send(text, options);
+    },
   };
 
   const draftedProps = (field: AgentDraftField) => ({
@@ -913,7 +977,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     fieldLabel: t(AGENT_FIELD_LABEL_KEYS[field]),
   });
 
-  const renderAgentProposal = (raw: unknown) => {
+  /** Close the drawer and bring the first drafted field into view. */
+  const checkForm = () => {
+    setDrafterOpen(false);
+    scrollToDrafted();
+  };
+
+  const nextLabel = build.nextStep
+    ? t('drafter.agent.build.next', {
+        step: stepName(build.nextStep),
+        interpolation: { escapeValue: false },
+      })
+    : t('drafter.agent.build.finish');
+
+  const renderAgentProposal = (raw: unknown, latest: boolean) => {
     const proposal = parseAgentProposal(raw);
     if (!proposal) return null;
     const { rows, dropped } = agentProposalSummary(
@@ -927,9 +1004,166 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         rows={rows}
         notes={proposal.notes}
         dropped={dropped}
+        actions={
+          latest && build.ready ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                shape="pill"
+                disabled={drafterSession.streaming}
+                onClick={build.next}
+              >
+                {nextLabel}
+                {build.nextStep && <ArrowRight />}
+              </Button>
+              {build.filledAhead && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  onClick={checkForm}
+                >
+                  {t('drafter.agent.build.checkForm')}
+                </Button>
+              )}
+            </>
+          ) : undefined
+        }
       />
     );
   };
+
+  const progressLabel = build.done
+    ? t('drafter.agent.build.allFilled')
+    : [
+        t('drafter.agent.build.progress', {
+          number: build.number,
+          total: build.total,
+          step: build.step ? stepName(build.step) : '',
+          interpolation: { escapeValue: false },
+        }),
+        build.filledAtOnce > 0 &&
+          t('drafter.agent.build.filledAtOnce', { count: build.filledAtOnce }),
+      ]
+        .filter(Boolean)
+        .join(' · ');
+  const progress = build.guided
+    ? {
+        label: progressLabel,
+        value: build.done
+          ? 100
+          : (build.finished.filter((step) => !build.skipped.includes(step))
+              .length /
+              build.total) *
+            100,
+      }
+    : null;
+
+  /** A finished step's folded line opens the reasons for its fields. */
+  const stepRows = (step: AgentBuildStep) =>
+    AGENT_STEP_FIELDS[step].flatMap((field) => {
+      const row = buildRowsRef.current.get(field);
+      return row ? [row] : [];
+    });
+  const stepResult = (step: AgentBuildStep) =>
+    agentStepResult(
+      step,
+      draftForm,
+      t,
+      pendingPrompt?.name ?? pickedPromptLabel,
+    );
+  // Skipped steps the build has passed, each one line.
+  const passedSkips = build.skipped.filter(
+    (step) =>
+      build.done ||
+      (build.step &&
+        AGENT_BUILD_STEPS.indexOf(step) <
+          AGENT_BUILD_STEPS.indexOf(build.step)),
+  );
+  const foldedSteps =
+    build.guided && (build.finished.length > 0 || passedSkips.length > 0) ? (
+      <div className="flex flex-col" data-slot="build-finished">
+        {!build.done && build.finished.length >= 3 ? (
+          // Three or more steps fold into one line that opens a row each.
+          <DrafterStepRow
+            icon={CircleCheck}
+            label={build.finished.map(stepName).join(', ')}
+          >
+            {build.finished.map((step) => (
+              <FilledRow
+                key={step}
+                label={stepName(step)}
+                value={stepResult(step)}
+              />
+            ))}
+          </DrafterStepRow>
+        ) : (
+          build.finished.map((step) => {
+            const rows = stepRows(step);
+            return (
+              <DrafterStepRow
+                key={step}
+                icon={CircleCheck}
+                label={t('drafter.agent.build.folded', {
+                  step: stepName(step),
+                  result: stepResult(step),
+                  interpolation: { escapeValue: false },
+                })}
+              >
+                {rows.length > 0
+                  ? rows.map((row) => (
+                      <FilledRow
+                        key={row.key}
+                        label={row.label}
+                        value={row.summary}
+                      />
+                    ))
+                  : undefined}
+              </DrafterStepRow>
+            );
+          })
+        )}
+        {passedSkips.map((step) => (
+          <DrafterStepRow
+            key={step}
+            icon={CircleMinus}
+            label={t('drafter.agent.build.skipped', {
+              step: stepName(step),
+              interpolation: { escapeValue: false },
+            })}
+          />
+        ))}
+      </div>
+    ) : undefined;
+
+  // A phone's sheet covers the form: when a turn ends on a proposal the
+  // sheet steps aside (once per proposal), and a step's Next waits in the
+  // strip.
+  const steppedAsideRef = useRef<number | null>(null);
+  useEffect(() => {
+    const last = drafterSession.items.at(-1);
+    if (
+      !isMobile ||
+      drafterSession.streaming ||
+      last?.kind !== 'proposal' ||
+      steppedAsideRef.current === last.id
+    )
+      return;
+    steppedAsideRef.current = last.id;
+    const changed = appliedFieldsRef.current.get(last.proposal as object);
+    if (build.guided ? build.ready : (changed?.length ?? 0) > 0)
+      setDrafterOpen(false);
+  }, [
+    drafterSession.streaming,
+    drafterSession.items,
+    isMobile,
+    build.guided,
+    build.ready,
+  ]);
+  const showStepStrip =
+    isMobile && !drafterOpen && build.ready && !drafterSession.streaming;
 
   /** "Drafted 3 fields…" for a screen reader once a draft is applied. */
   const announceAgentProposal = (raw: unknown) => {
@@ -1169,6 +1403,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       initialAgentRef.current = updatedAgent;
       markSaved({ ...saving, prompt_id: promptId });
       drafted.clear();
+      // Publishing ends a drafting session.
+      drafterSession.reset();
+      build.reset();
+      buildRowsRef.current.clear();
       setAttachedTools(selectedTools);
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());
@@ -1498,6 +1736,71 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const agentDisplayName =
     agent.name?.trim() || t('agents.pageHeader.fallbackName');
 
+  // A drafted limit marks the row it switched on, or both rows when it
+  // turned limits off.
+  const limitRowDrafted = (row: 'request' | 'token') =>
+    drafted.isDrafted('limits') &&
+    (row === 'request'
+      ? !!agent.limited_request_mode || !agent.limited_token_mode
+      : !!agent.limited_token_mode || !agent.limited_request_mode);
+
+  // The drawer's greeting: the build's plan on an empty new agent; on a
+  // filled one what to change, and who a saved change reaches.
+  const drafterIntro = buildable
+    ? t('drafter.agent.build.intro')
+    : t(
+        isPublished
+          ? 'drafter.agent.improve.introPublished'
+          : agent.shared || agent.ownership === 'team'
+            ? 'drafter.agent.improve.introShared'
+            : 'drafter.agent.improve.intro',
+        { name: agentDisplayName, interpolation: { escapeValue: false } },
+      );
+  const drafterSuggestions = (
+    buildable
+      ? [
+          {
+            key: 'support',
+            Icon: Headset,
+            text: t('drafter.agent.build.examples.support'),
+          },
+          {
+            key: 'research',
+            Icon: FileSearch,
+            text: t('drafter.agent.build.examples.research'),
+          },
+          {
+            key: 'helpdesk',
+            Icon: MonitorCog,
+            text: t('drafter.agent.build.examples.helpdesk'),
+          },
+        ]
+      : [
+          // Offered until limits and safety were ever set.
+          ...(isSafetyUnset(draftForm) && !skippedSteps.includes('safety')
+            ? [{ key: 'safety', Icon: ShieldCheck, text: finishSetupText }]
+            : []),
+          {
+            key: 'shorter',
+            Icon: PencilLine,
+            text: t('drafter.agent.improve.shorter'),
+          },
+          {
+            key: 'prompt',
+            Icon: Scissors,
+            text: t('drafter.agent.improve.tightenPrompt'),
+          },
+          {
+            key: 'starters',
+            Icon: MessageSquare,
+            text: t('drafter.agent.improve.starters'),
+          },
+        ]
+  ).map(({ Icon, ...suggestion }) => ({
+    ...suggestion,
+    icon: <Icon className={suggestionIconClass} aria-hidden="true" />,
+  }));
+
   // Page-level actions live in the ⋯ at the end of the toolbar row. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
   // menu item then and a toolbar button after.
@@ -1547,7 +1850,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       )}
       {drafterEnabled && (
         <WandButton
-          mode={formEmpty ? 'draft' : 'improve'}
+          mode={
+            build.guided && !build.done
+              ? 'resume'
+              : formEmpty
+                ? 'draft'
+                : 'improve'
+          }
+          label={
+            build.guided && !build.done
+              ? t('drafter.agent.build.resumeLabel', {
+                  number: build.number,
+                  total: build.total,
+                })
+              : undefined
+          }
           open={drafterOpen}
           compactOnPhone
           onClick={() => setDrafterOpen((open) => !open)}
@@ -1635,97 +1952,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </Alert>
             )}
           </AgentPageToolbar>
-          <div className="flex flex-col gap-5">
-            {showDescribeBox && (
-              <Card variant="subtle" padding="lg" className="gap-4">
-                <SectionHeader
-                  title={
-                    <span className="inline-flex items-center gap-2">
-                      <WandSparkles
-                        className="text-link size-5 shrink-0"
-                        aria-hidden="true"
-                      />
-                      {t('drafter.agent.describeTitle')}
-                    </span>
-                  }
-                  description={t('drafter.agent.describeDescription')}
-                  actions={
-                    <IconButton
-                      variant="ghost-muted"
-                      size="icon-sm"
-                      label={t('drafter.agent.describeDismiss')}
-                      icon={X}
-                      onClick={() => {
-                        setDescribeDismissed(true);
-                        writeDescribeDismissed();
-                      }}
-                    />
-                  }
-                />
-                <FormField
-                  id={describeId}
-                  labelSurface="background"
-                  label={t('drafter.agent.describeLabel')}
-                  hint={t('drafter.agent.describeHint')}
-                >
-                  <Textarea
-                    rows={3}
-                    value={describeText}
-                    placeholder={t('drafter.agent.describePlaceholder')}
-                    onChange={(event) => setDescribeText(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (
-                        event.key === 'Enter' &&
-                        (event.metaKey || event.ctrlKey)
-                      ) {
-                        event.preventDefault();
-                        sendDescription();
-                      }
-                    }}
-                  />
-                </FormField>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="self-end"
-                  disabled={!describeText.trim()}
-                  onClick={sendDescription}
-                >
-                  <WandSparkles />
-                  {t('drafter.draft')}
-                </Button>
-              </Card>
-            )}
-            {drafted.fields.length > 0 && !drafterOpen && (
-              <Alert variant="info" role="status" data-slot="drafted-strip">
-                <AlertDescription>
-                  <span>
-                    {t('drafter.agent.draftedCount', {
-                      count: drafted.fields.length,
-                    })}
-                  </span>{' '}
-                  <Button
-                    type="button"
-                    variant="link"
-                    size="text"
-                    tone="current"
-                    onClick={() => setDrafterOpen(true)}
-                  >
-                    {t('drafter.agent.review')}
-                  </Button>
-                  {' · '}
-                  <Button
-                    type="button"
-                    variant="link"
-                    size="text"
-                    tone="current"
-                    onClick={drafted.undoAll}
-                  >
-                    {t('drafter.undoAll')}
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            )}
+          <div ref={formColumnRef} className="flex flex-col gap-5">
             <Card variant="subtle" padding="lg" className="gap-5">
               <SectionHeader title={t('agents.form.sections.basics')} />
               {/* Phone: the avatar beside Name, Description across the row.
@@ -2277,27 +2504,37 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                           'agents.form.advanced.tokenLimitingDescription',
                         )}
                         htmlFor={tokenLimitSwitchId}
+                        drafted={limitRowDrafted('token')}
+                        onUndo={() => drafted.undo('limits')}
                         after={
-                          <Input
-                            type="number"
-                            min="0"
-                            value={agent.token_limit || ''}
-                            onChange={(e) =>
-                              setAgent({
-                                ...agent,
-                                token_limit: e.target.value
-                                  ? parseInt(e.target.value)
-                                  : undefined,
-                              })
+                          <DraftedField
+                            {...draftedProps('limits')}
+                            drafted={
+                              limitRowDrafted('token') &&
+                              !!agent.limited_token_mode
                             }
-                            disabled={
-                              !agent.limited_token_mode || !canEditPolicy
-                            }
-                            placeholder={t(
-                              'agents.form.placeholders.enterTokenLimit',
-                            )}
-                            aria-label={t('agents.form.advanced.tokenLimit')}
-                          />
+                          >
+                            <Input
+                              type="number"
+                              min="0"
+                              value={agent.token_limit || ''}
+                              onChange={(e) =>
+                                setAgent({
+                                  ...agent,
+                                  token_limit: e.target.value
+                                    ? parseInt(e.target.value)
+                                    : undefined,
+                                })
+                              }
+                              disabled={
+                                !agent.limited_token_mode || !canEditPolicy
+                              }
+                              placeholder={t(
+                                'agents.form.placeholders.enterTokenLimit',
+                              )}
+                              aria-label={t('agents.form.advanced.tokenLimit')}
+                            />
+                          </DraftedField>
                         }
                       >
                         <Switch
@@ -2321,27 +2558,39 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                           'agents.form.advanced.requestLimitingDescription',
                         )}
                         htmlFor={requestLimitSwitchId}
+                        drafted={limitRowDrafted('request')}
+                        onUndo={() => drafted.undo('limits')}
                         after={
-                          <Input
-                            type="number"
-                            min="0"
-                            value={agent.request_limit || ''}
-                            onChange={(e) =>
-                              setAgent({
-                                ...agent,
-                                request_limit: e.target.value
-                                  ? parseInt(e.target.value)
-                                  : undefined,
-                              })
+                          <DraftedField
+                            {...draftedProps('limits')}
+                            drafted={
+                              limitRowDrafted('request') &&
+                              !!agent.limited_request_mode
                             }
-                            disabled={
-                              !agent.limited_request_mode || !canEditPolicy
-                            }
-                            placeholder={t(
-                              'agents.form.placeholders.enterRequestLimit',
-                            )}
-                            aria-label={t('agents.form.advanced.requestLimit')}
-                          />
+                          >
+                            <Input
+                              type="number"
+                              min="0"
+                              value={agent.request_limit || ''}
+                              onChange={(e) =>
+                                setAgent({
+                                  ...agent,
+                                  request_limit: e.target.value
+                                    ? parseInt(e.target.value)
+                                    : undefined,
+                                })
+                              }
+                              disabled={
+                                !agent.limited_request_mode || !canEditPolicy
+                              }
+                              placeholder={t(
+                                'agents.form.placeholders.enterRequestLimit',
+                              )}
+                              aria-label={t(
+                                'agents.form.advanced.requestLimit',
+                              )}
+                            />
+                          </DraftedField>
                         }
                       >
                         <Switch
@@ -2398,6 +2647,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               // Guardrails are policy (`edit_policy`): editors and the owner
               // change them; anyone else sees them read-only.
               disabled={!canEditPolicy}
+              drafted={drafted.isDrafted('guardrails')}
+              onUndo={() => drafted.undo('guardrails')}
               onChange={(guardrails) =>
                 setAgent({
                   ...agent,
@@ -2414,6 +2665,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               maxOverlapping={analyticsAvailability.maxOverlapping}
               // Not policy: anyone who can save the agent changes it.
               disabled={!canSubmit}
+              drafted={drafted.isDrafted('analytics')}
+              onUndo={() => drafted.undo('analytics')}
               onChange={(analytics) =>
                 setAgent((prev) => ({
                   ...prev,
@@ -2421,7 +2674,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 }))
               }
             />
+            {/* Room for the phone's step strip under the last section. */}
+            {showStepStrip && <div aria-hidden="true" className="h-20" />}
           </div>
+          {showStepStrip && build.step && (
+            <BuildStepStrip
+              title={t('drafter.agent.build.check', {
+                step: stepName(build.step),
+                interpolation: { escapeValue: false },
+              })}
+              line={progressLabel}
+              nextLabel={
+                build.nextStep
+                  ? t('drafter.agent.build.nextShort')
+                  : t('drafter.agent.build.finish')
+              }
+              onOpen={() => setDrafterOpen(true)}
+              onNext={build.next}
+            />
+          )}
           {sponsoredSave.modal}
           {agentMenu.modals}
           <AgentDetailsModal
@@ -2560,49 +2831,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         <DraftPanel
           open={drafterOpen}
           onOpenChange={setDrafterOpen}
-          session={drafterSession}
+          session={panelSession}
           modelName={drafterConfig?.model?.display_name ?? null}
           announceProposal={announceAgentProposal}
-          intro={
-            formEmpty
-              ? t('drafter.agent.introNew')
-              : t('drafter.agent.introImprove')
+          intro={drafterIntro}
+          placeholder={
+            buildable
+              ? t('drafter.agent.build.describePlaceholder')
+              : build.guided && !build.done
+                ? t('drafter.agent.build.changePlaceholder')
+                : undefined
           }
-          placeholder={formEmpty ? t('drafter.startPlaceholder') : undefined}
-          suggestions={(formEmpty
-            ? [
-                {
-                  key: 'support',
-                  Icon: Headset,
-                  text: t('drafter.agent.examples.support'),
-                },
-                {
-                  key: 'research',
-                  Icon: FileSearch,
-                  text: t('drafter.agent.examples.research'),
-                },
-                {
-                  key: 'helpdesk',
-                  Icon: MonitorCog,
-                  text: t('drafter.agent.examples.helpdesk'),
-                },
-              ]
-            : [
-                {
-                  key: 'shorter',
-                  Icon: PencilLine,
-                  text: t('drafter.agent.examples.shorter'),
-                },
-                {
-                  key: 'starters',
-                  Icon: MessageSquare,
-                  text: t('drafter.agent.examples.starters'),
-                },
-              ]
-          ).map(({ Icon, ...suggestion }) => ({
-            ...suggestion,
-            icon: <Icon className={suggestionIconClass} aria-hidden="true" />,
-          }))}
+          progress={progress}
+          before={foldedSteps}
+          suggestions={drafterSuggestions}
           renderProposal={renderAgentProposal}
           onNavigate={leaveGuard.onNavigate()}
         />

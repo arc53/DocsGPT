@@ -177,6 +177,12 @@ type Props = {
    * state, disabled, under the shared view-only notice.
    */
   disabled?: boolean;
+  /**
+   * The drafter turned guardrails on or added checks: the panel opens and
+   * the on/off row carries the Drafted badge with `onUndo`.
+   */
+  drafted?: boolean;
+  onUndo?: () => void;
 };
 
 /** The agent form's Guardrails panel: a section toggle over `GuardrailsEditor`. */
@@ -185,10 +191,17 @@ export default function GuardrailsSection({
   onChange,
   token,
   disabled = false,
+  drafted = false,
+  onUndo,
 }: Props) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = React.useState(false);
   const bodyId = React.useId();
+
+  // A drafted change opens the panel, so it shows without a click.
+  React.useEffect(() => {
+    if (drafted) setExpanded(true);
+  }, [drafted]);
   const { catalog, loadError, retry } = useGuardrailCatalog(token);
 
   const config = value ?? DEFAULT_GUARDRAILS;
@@ -246,6 +259,8 @@ export default function GuardrailsSection({
             loadError={loadError}
             onRetry={retry}
             disabled={disabled}
+            drafted={drafted}
+            onUndo={onUndo}
           />
         </Collapsible>
       </div>
@@ -269,6 +284,9 @@ type EditorProps = {
   /** The on/off row's title and description, where the config is not one agent's. */
   enableLabel?: string;
   enableDescription?: string;
+  /** The drafter set the config: the on/off row carries the Drafted badge. */
+  drafted?: boolean;
+  onUndo?: () => void;
   /** Layout only. */
   className?: string;
 };
@@ -290,6 +308,8 @@ export function GuardrailsEditor({
   showFloor = true,
   enableLabel,
   enableDescription,
+  drafted = false,
+  onUndo,
   className,
 }: EditorProps) {
   const { t } = useTranslation();
@@ -324,7 +344,7 @@ export function GuardrailsEditor({
       return;
     }
     if (controlFor(info.name, stage)) return;
-    const settings = defaultSettingsFor(info, catalog);
+    const settings = defaultControlSettings(info.name, catalog);
     patch({
       controls: [
         ...config.controls,
@@ -416,6 +436,9 @@ export function GuardrailsEditor({
           enableDescription ?? t('agents.form.guardrails.enableDescription')
         }
         htmlFor={enabledId}
+        drafted={drafted}
+        onUndo={onUndo}
+        fieldLabel={t('agents.form.sections.guardrails')}
       >
         <Switch
           id={enabledId}
@@ -614,13 +637,26 @@ function NumberField({
   );
 }
 
-function defaultSettingsFor(
-  info: GuardrailCheckInfo,
+/** The server's `DEFAULT_PII_ENTITIES`, until the catalog says otherwise. */
+const DEFAULT_PII_ENTITIES = ['EMAIL', 'PHONE', 'US_SSN', 'CREDIT_CARD'];
+
+/**
+ * The settings a new control of `check` starts with: what the editor's stage
+ * chips add, and what a drafted check gets.
+ *
+ * Args:
+ *   check: The check's name (`pii`, `groundedness`…).
+ *   catalog: The instance's catalog, for its PII defaults; null before it loads.
+ */
+export function defaultControlSettings(
+  check: string,
   catalog: GuardrailCatalog | null,
 ): Record<string, any> {
-  switch (info.name) {
+  switch (check) {
     case 'pii':
-      return { entities: catalog?.default_pii_entities ?? ['EMAIL'] };
+      return {
+        entities: catalog?.default_pii_entities ?? DEFAULT_PII_ENTITIES,
+      };
     case 'denylist':
       return { terms: [], match: 'word', case_sensitive: false };
     case 'url':

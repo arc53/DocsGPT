@@ -55,11 +55,10 @@ describe('useDraftedFields', () => {
     expect(harness.drafted!.isDrafted('tools')).toBe(true);
   });
 
-  it('undoes everything, and a field drafted twice goes back to the start', async () => {
+  it('undoes a field drafted twice back to before the first draft', async () => {
     await draft('name', 'New');
     await draft('name', 'Newer');
-    await draft('tools', []);
-    await act(async () => harness.drafted!.undoAll());
+    await act(async () => harness.drafted!.undo('name'));
     expect(harness.form).toEqual({ name: 'Old', tools: ['a'] });
     expect(harness.drafted!.fields).toEqual([]);
   });

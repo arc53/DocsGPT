@@ -4637,7 +4637,6 @@
     "improve": "Améliorer",
     "drafted": "Rédigé",
     "undoField": "Annuler {{field}}",
-    "undoAll": "Tout annuler",
     "somethingElse": "Autre chose…",
     "somethingElseLabel": "Votre réponse",
     "somethingElsePlaceholder": "Saisissez votre propre réponse",
@@ -4650,7 +4649,6 @@
       "drafting": "Rédaction…"
     },
     "askLabel": "Message à DocsGPT",
-    "startPlaceholder": "Décrivez ce que vous voulez…",
     "askPlaceholder": "Demandez une modification…",
     "stop": "Arrêter",
     "send": "Envoyer",
@@ -4706,25 +4704,9 @@
       }
     },
     "agent": {
-      "introNew": "Dites-moi ce que cet agent doit faire et à qui il s’adresse. J’examinerai vos connaissances, outils et prompts, puis je remplirai le formulaire. Rien n’est enregistré tant que vous n’enregistrez pas.",
-      "introImprove": "Que voulez-vous changer ? Je mettrai à jour le formulaire, et rien n’est enregistré tant que vous n’enregistrez pas.",
-      "examples": {
-        "support": "Agent d’assistance pour notre centre d’aide",
-        "research": "Assistant de recherche sur nos contrats",
-        "helpdesk": "Support informatique interne",
-        "shorter": "Raccourcir la description",
-        "starters": "Suggérer des amorces de conversation"
-      },
-      "describeTitle": "Partir d’une description",
-      "describeDescription": "Dites ce que l’agent doit faire. DocsGPT choisit les connaissances et les outils parmi les vôtres et rédige le prompt.",
-      "describeDismiss": "Masquer le champ de description",
-      "describeLabel": "Que doit faire l’agent ?",
-      "describeHint": "Ou remplissez vous-même le formulaire ci-dessous.",
-      "describePlaceholder": "Un agent sur notre site qui répond aux questions sur les expéditions…",
       "draftedCount_one": "{{count}} champ rédigé. Vérifiez-le avant d’enregistrer.",
       "draftedCount_many": "{{count}} champs rédigés. Vérifiez-les avant d’enregistrer.",
       "draftedCount_other": "{{count}} champs rédigés. Vérifiez-les avant d’enregistrer.",
-      "review": "Vérifier",
       "pendingPrompt": "{{name}} · nouveau, créé à l’enregistrement",
       "promptText": "Texte du prompt",
       "editPrompt": "Modifier le prompt",
@@ -4734,7 +4716,71 @@
         "not_found": "un élément qui n’existe pas",
         "no_access": "un élément que vous ne pouvez pas ouvrir",
         "invalid": "un élément non valide",
-        "other": "un élément inutilisable"
+        "other": "un élément inutilisable",
+        "not_allowed": "un réglage que votre rôle ne permet pas de modifier"
+      },
+      "build": {
+        "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances et les outils, le prompt et les questions de départ, puis les limites et la sécurité.\n\nDites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",
+        "examples": {
+          "support": "Agent d’assistance pour notre centre d’aide",
+          "research": "Assistant de recherche sur nos contrats",
+          "helpdesk": "Support informatique interne"
+        },
+        "describePlaceholder": "Décrivez l’agent…",
+        "changePlaceholder": "Ou dites-moi quoi modifier…",
+        "steps": {
+          "basics": "Informations de base",
+          "knowledge": "Connaissances et outils",
+          "prompt": "Prompt et questions de départ",
+          "safety": "Limites et sécurité"
+        },
+        "progress": "Étape {{number}} sur {{total}} · {{step}}",
+        "filledAtOnce_one": "{{count}} étape d’un coup",
+        "filledAtOnce_other": "{{count}} étapes d’un coup",
+        "filledAtOnce_many": "{{count}} étapes d’un coup",
+        "allFilled": "Toutes les étapes remplies",
+        "continue": "Continuez avec {{step}}.",
+        "next": "Suivant : {{step}}",
+        "nextShort": "Suivant",
+        "finish": "Terminer",
+        "checkForm": "Vérifier d’abord le formulaire",
+        "check": "Vérifiez {{step}}",
+        "folded": "{{step}} : {{result}}",
+        "skipped": "{{step}} : rien à régler ici",
+        "done": "Toutes les parties sont faites. Rien n’est encore enregistré pour cet agent : publiez-le puis essayez-le dans l’aperçu, ou enregistrez le brouillon pour y revenir plus tard.",
+        "resume": "Reprendre",
+        "resumeLabel": "Reprendre la rédaction : étape {{number}} sur {{total}}",
+        "result": {
+          "none": "rien de défini",
+          "noLimit": "aucune limite",
+          "starters_one": "{{count}} question de départ",
+          "starters_other": "{{count}} questions de départ",
+          "starters_many": "{{count}} questions de départ",
+          "requests_one": "{{count, number}} requête par 24 heures",
+          "requests_other": "{{count, number}} requêtes par 24 heures",
+          "requests_many": "{{count, number}} requêtes par 24 heures",
+          "tokens_one": "{{count, number}} jeton par 24 heures",
+          "tokens_other": "{{count, number}} jetons par 24 heures",
+          "tokens_many": "{{count, number}} jetons par 24 heures",
+          "checks_one": "{{count}} contrôle en mode {{mode}}",
+          "checks_other": "{{count}} contrôles en mode {{mode}}",
+          "checks_many": "{{count}} contrôles en mode {{mode}}",
+          "topics_one": "{{count}} sujet d’analyse",
+          "topics_other": "{{count}} sujets d’analyse",
+          "topics_many": "{{count}} sujets d’analyse"
+        }
+      },
+      "improve": {
+        "intro": "Que faut-il changer dans {{name}} ?",
+        "introPublished": "Que faut-il changer dans {{name}} ? Il est publié : une modification enregistrée s’applique à tous ceux qui l’utilisent.",
+        "introShared": "Que faut-il changer dans {{name}} ? Il est partagé : une modification enregistrée s’applique à tous ceux qui l’utilisent.",
+        "finishSetup": "Terminer la configuration : limites et sécurité",
+        "shorter": "Raccourcir la description",
+        "tightenPrompt": "Resserrer le prompt",
+        "starters": "Suggérer des amorces de conversation"
+      },
+      "fields": {
+        "limits": "Limite d’utilisation"
       }
     },
     "topics": {

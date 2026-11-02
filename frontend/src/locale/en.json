@@ -4528,7 +4528,6 @@
     "improve": "Improve",
     "drafted": "Drafted",
     "undoField": "Undo {{field}}",
-    "undoAll": "Undo all",
     "somethingElse": "Something else…",
     "somethingElseLabel": "Your answer",
     "somethingElsePlaceholder": "Type your own answer",
@@ -4541,7 +4540,6 @@
       "drafting": "Drafting…"
     },
     "askLabel": "Message to DocsGPT",
-    "startPlaceholder": "Describe what you want…",
     "askPlaceholder": "Ask for a change…",
     "stop": "Stop",
     "send": "Send",
@@ -4592,24 +4590,8 @@
       }
     },
     "agent": {
-      "introNew": "Tell me what this agent should do and who it's for. I'll look at your knowledge, tools and prompts, then fill in the form. Nothing is saved until you save.",
-      "introImprove": "What do you want to change? I'll update the form, and nothing is saved until you save.",
-      "examples": {
-        "support": "Support agent for our help center",
-        "research": "Research assistant over our contracts",
-        "helpdesk": "Internal IT helpdesk",
-        "shorter": "Make the description shorter",
-        "starters": "Suggest conversation starters"
-      },
-      "describeTitle": "Start from a description",
-      "describeDescription": "Say what the agent should do. DocsGPT picks knowledge and tools from what you have and writes the prompt.",
-      "describeDismiss": "Hide the description box",
-      "describeLabel": "What should the agent do?",
-      "describeHint": "Or fill in the form yourself below.",
-      "describePlaceholder": "An agent on our website that answers shipping questions…",
       "draftedCount_one": "Drafted {{count}} field. Check it before you save.",
       "draftedCount_other": "Drafted {{count}} fields. Check them before you save.",
-      "review": "Review",
       "pendingPrompt": "{{name}} · new, created on save",
       "promptText": "Prompt text",
       "editPrompt": "Edit prompt",
@@ -4619,7 +4601,65 @@
         "not_found": "an item that doesn't exist",
         "no_access": "an item you can't open",
         "invalid": "an item that isn't valid",
-        "other": "an item it couldn't use"
+        "other": "an item it couldn't use",
+        "not_allowed": "a setting your role can't change"
+      },
+      "build": {
+        "intro": "Let's build this agent together, one part at a time: basics, knowledge and tools, the prompt and starters, then limits and safety.\n\nTell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
+        "examples": {
+          "support": "Support agent for our help center",
+          "research": "Research assistant over our contracts",
+          "helpdesk": "Internal IT helpdesk"
+        },
+        "describePlaceholder": "Describe the agent…",
+        "changePlaceholder": "Or tell me what to change…",
+        "steps": {
+          "basics": "Basics",
+          "knowledge": "Knowledge and tools",
+          "prompt": "Prompt and starters",
+          "safety": "Limits and safety"
+        },
+        "progress": "Step {{number}} of {{total}} · {{step}}",
+        "filledAtOnce_one": "{{count}} filled at once",
+        "filledAtOnce_other": "{{count}} filled at once",
+        "allFilled": "All steps filled",
+        "continue": "Continue with {{step}}.",
+        "next": "Next: {{step}}",
+        "nextShort": "Next",
+        "finish": "Finish",
+        "checkForm": "Check the form first",
+        "check": "Check {{step}}",
+        "folded": "{{step}}: {{result}}",
+        "skipped": "{{step}}: nothing to set here",
+        "done": "That's every part. Nothing about the agent is saved yet: Publish, then try it in Preview, or Save Draft to come back later.",
+        "resume": "Resume",
+        "resumeLabel": "Resume drafting: step {{number}} of {{total}}",
+        "result": {
+          "none": "nothing set",
+          "noLimit": "no limit",
+          "starters_one": "{{count}} starter",
+          "starters_other": "{{count}} starters",
+          "requests_one": "{{count, number}} request per 24 hours",
+          "requests_other": "{{count, number}} requests per 24 hours",
+          "tokens_one": "{{count, number}} token per 24 hours",
+          "tokens_other": "{{count, number}} tokens per 24 hours",
+          "checks_one": "{{count}} check in {{mode}}",
+          "checks_other": "{{count}} checks in {{mode}}",
+          "topics_one": "{{count}} Insights topic",
+          "topics_other": "{{count}} Insights topics"
+        }
+      },
+      "improve": {
+        "intro": "What should change in {{name}}?",
+        "introPublished": "What should change in {{name}}? It's published, so a saved change reaches everyone using it.",
+        "introShared": "What should change in {{name}}? It's shared, so a saved change reaches everyone using it.",
+        "finishSetup": "Finish setup: limits and safety",
+        "shorter": "Make the description shorter",
+        "tightenPrompt": "Tighten the prompt",
+        "starters": "Suggest conversation starters"
+      },
+      "fields": {
+        "limits": "Usage limit"
       }
     },
     "topics": {

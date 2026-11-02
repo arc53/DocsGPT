@@ -16,15 +16,13 @@ export type DraftedFields<K extends string> = {
   mark: (field: K, previous: unknown, applied: unknown) => void;
   /** Put a field's previous value back and drop its mark. */
   undo: (field: K) => void;
-  /** Undo every drafted field, last marked first. */
-  undoAll: () => void;
   /** Drop every mark, keeping the values (after a save). */
   clear: () => void;
 };
 
 /**
  * Per-field "Drafted" marks for a form the drafter filled. Each mark holds
- * the value from before the draft, so undo and undo-all restore it through
+ * the value from before the draft, so undo restores it through
  * `restore`, and the value the draft set, so a field the user then edits by
  * hand loses its mark (compared with `values` after each render).
  *
@@ -81,14 +79,6 @@ export function useDraftedFields<K extends string>(
     });
   }, []);
 
-  const undoAll = useCallback(() => {
-    const entries = [...markersRef.current.entries()].reverse();
-    entries.forEach(([field, marker]) =>
-      restoreRef.current(field, marker.previous),
-    );
-    setMarkers(new Map());
-  }, []);
-
   const clear = useCallback(() => setMarkers(new Map()), []);
 
   const isDrafted = useCallback((field: K) => markers.has(field), [markers]);
@@ -98,7 +88,6 @@ export function useDraftedFields<K extends string>(
     isDrafted,
     mark,
     undo,
-    undoAll,
     clear,
   };
 }

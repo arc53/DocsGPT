@@ -4486,7 +4486,6 @@
     "improve": "改進",
     "drafted": "已起草",
     "undoField": "復原{{field}}",
-    "undoAll": "全部復原",
     "somethingElse": "其他…",
     "somethingElseLabel": "你的回答",
     "somethingElsePlaceholder": "輸入你自己的回答",
@@ -4499,7 +4498,6 @@
       "drafting": "正在起草…"
     },
     "askLabel": "給 DocsGPT 的訊息",
-    "startPlaceholder": "描述你想要的內容…",
     "askPlaceholder": "提出修改…",
     "stop": "停止",
     "send": "送出",
@@ -4545,23 +4543,7 @@
       }
     },
     "agent": {
-      "introNew": "告訴我這個代理要做什麼、面向誰。我會查看你的知識、工具和提示詞，然後填寫表單。在你儲存之前不會儲存任何內容。",
-      "introImprove": "你想改什麼？我會更新表單，在你儲存之前不會儲存任何內容。",
-      "examples": {
-        "support": "說明中心的客服代理",
-        "research": "研究我們合約的助理",
-        "helpdesk": "內部 IT 服務台",
-        "shorter": "把描述寫短一點",
-        "starters": "建議開場問題"
-      },
-      "describeTitle": "從描述開始",
-      "describeDescription": "說說這個代理要做什麼。DocsGPT 會從你已有的知識和工具中挑選，並撰寫提示詞。",
-      "describeDismiss": "隱藏描述框",
-      "describeLabel": "這個代理要做什麼？",
-      "describeHint": "也可以自己填寫下方的表單。",
-      "describePlaceholder": "我們網站上回答物流問題的代理…",
       "draftedCount_other": "已起草 {{count}} 個欄位。儲存前請檢查。",
-      "review": "檢視",
       "pendingPrompt": "{{name}} · 新增，儲存時建立",
       "promptText": "提示詞內容",
       "editPrompt": "編輯提示詞",
@@ -4571,7 +4553,65 @@
         "not_found": "一個不存在的項目",
         "no_access": "一個你無法開啟的項目",
         "invalid": "一個無效的項目",
-        "other": "一個無法使用的項目"
+        "other": "一個無法使用的項目",
+        "not_allowed": "你的角色無法變更的設定"
+      },
+      "build": {
+        "intro": "我們一起一步步建立這個代理：基本資訊、知識與工具、提示詞與開場問題，最後是限制與安全。\n\n告訴我它要做什麼、誰會使用它。你說得越詳細，我要問的問題就越少。",
+        "examples": {
+          "support": "說明中心的客服代理",
+          "research": "研究我們合約的助理",
+          "helpdesk": "內部 IT 服務台"
+        },
+        "describePlaceholder": "描述這個代理…",
+        "changePlaceholder": "或告訴我要改什麼…",
+        "steps": {
+          "basics": "基本資訊",
+          "knowledge": "知識與工具",
+          "prompt": "提示詞與開場問題",
+          "safety": "限制與安全"
+        },
+        "progress": "第 {{number}} 步，共 {{total}} 步 · {{step}}",
+        "filledAtOnce_one": "一次填寫了 {{count}} 步",
+        "filledAtOnce_other": "一次填寫了 {{count}} 步",
+        "allFilled": "所有步驟已填寫",
+        "continue": "繼續：{{step}}。",
+        "next": "下一步：{{step}}",
+        "nextShort": "下一步",
+        "finish": "完成",
+        "checkForm": "先檢查表單",
+        "check": "檢查{{step}}",
+        "folded": "{{step}}：{{result}}",
+        "skipped": "{{step}}：這裡沒有可設定的內容",
+        "done": "所有部分都完成了。代理還沒有儲存：發佈後在預覽中試用，或儲存草稿稍後繼續。",
+        "resume": "繼續",
+        "resumeLabel": "繼續起草：第 {{number}} 步，共 {{total}} 步",
+        "result": {
+          "none": "未設定",
+          "noLimit": "不限制",
+          "starters_one": "{{count}} 個開場問題",
+          "starters_other": "{{count}} 個開場問題",
+          "requests_one": "每 24 小時 {{count, number}} 次請求",
+          "requests_other": "每 24 小時 {{count, number}} 次請求",
+          "tokens_one": "每 24 小時 {{count, number}} 個權杖",
+          "tokens_other": "每 24 小時 {{count, number}} 個權杖",
+          "checks_one": "{{count}} 項檢查（{{mode}}）",
+          "checks_other": "{{count}} 項檢查（{{mode}}）",
+          "topics_one": "{{count}} 個洞察主題",
+          "topics_other": "{{count}} 個洞察主題"
+        }
+      },
+      "improve": {
+        "intro": "{{name}} 需要改什麼？",
+        "introPublished": "{{name}} 需要改什麼？它已發佈，儲存的修改會影響所有使用它的人。",
+        "introShared": "{{name}} 需要改什麼？它已共用，儲存的修改會影響所有使用它的人。",
+        "finishSetup": "完成設定：限制與安全",
+        "shorter": "把描述寫短一點",
+        "tightenPrompt": "精簡提示詞",
+        "starters": "建議開場問題"
+      },
+      "fields": {
+        "limits": "使用限制"
       }
     },
     "topics": {

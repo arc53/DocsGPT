@@ -4484,7 +4484,6 @@
     "improve": "改进",
     "drafted": "已起草",
     "undoField": "撤销{{field}}",
-    "undoAll": "全部撤销",
     "somethingElse": "其他…",
     "somethingElseLabel": "你的回答",
     "somethingElsePlaceholder": "输入你自己的回答",
@@ -4497,7 +4496,6 @@
       "drafting": "正在起草…"
     },
     "askLabel": "发给 DocsGPT 的消息",
-    "startPlaceholder": "描述你想要的内容…",
     "askPlaceholder": "提出修改…",
     "stop": "停止",
     "send": "发送",
@@ -4543,23 +4541,7 @@
       }
     },
     "agent": {
-      "introNew": "告诉我这个智能体要做什么、面向谁。我会查看你的知识、工具和提示词，然后填写表单。在你保存之前不会保存任何内容。",
-      "introImprove": "你想改什么？我会更新表单，在你保存之前不会保存任何内容。",
-      "examples": {
-        "support": "帮助中心的客服智能体",
-        "research": "研究我们合同的助手",
-        "helpdesk": "内部 IT 服务台",
-        "shorter": "把描述写短一些",
-        "starters": "建议开场问题"
-      },
-      "describeTitle": "从描述开始",
-      "describeDescription": "说说这个智能体要做什么。DocsGPT 会从你已有的知识和工具中挑选，并撰写提示词。",
-      "describeDismiss": "隐藏描述框",
-      "describeLabel": "这个智能体要做什么？",
-      "describeHint": "也可以自己填写下面的表单。",
-      "describePlaceholder": "我们网站上回答物流问题的智能体…",
       "draftedCount_other": "已起草 {{count}} 个字段。保存前请检查。",
-      "review": "查看",
       "pendingPrompt": "{{name}} · 新建，保存时创建",
       "promptText": "提示词内容",
       "editPrompt": "编辑提示词",
@@ -4569,7 +4551,65 @@
         "not_found": "一个不存在的项目",
         "no_access": "一个你无法打开的项目",
         "invalid": "一个无效的项目",
-        "other": "一个无法使用的项目"
+        "other": "一个无法使用的项目",
+        "not_allowed": "你的角色无法更改的设置"
+      },
+      "build": {
+        "intro": "我们一起一步步搭建这个智能体：基本信息、知识与工具、提示词与开场问题，最后是限制与安全。\n\n告诉我它要做什么、谁会使用它。你说得越详细，我要问的问题就越少。",
+        "examples": {
+          "support": "帮助中心的客服智能体",
+          "research": "研究我们合同的助手",
+          "helpdesk": "内部 IT 服务台"
+        },
+        "describePlaceholder": "描述这个智能体…",
+        "changePlaceholder": "或告诉我要改什么…",
+        "steps": {
+          "basics": "基本信息",
+          "knowledge": "知识与工具",
+          "prompt": "提示词与开场问题",
+          "safety": "限制与安全"
+        },
+        "progress": "第 {{number}} 步，共 {{total}} 步 · {{step}}",
+        "filledAtOnce_one": "一次填写了 {{count}} 步",
+        "filledAtOnce_other": "一次填写了 {{count}} 步",
+        "allFilled": "所有步骤已填写",
+        "continue": "继续：{{step}}。",
+        "next": "下一步：{{step}}",
+        "nextShort": "下一步",
+        "finish": "完成",
+        "checkForm": "先检查表单",
+        "check": "检查{{step}}",
+        "folded": "{{step}}：{{result}}",
+        "skipped": "{{step}}：这里没有可设置的内容",
+        "done": "所有部分都完成了。智能体还没有保存：发布后在预览中试用，或保存草稿稍后继续。",
+        "resume": "继续",
+        "resumeLabel": "继续起草：第 {{number}} 步，共 {{total}} 步",
+        "result": {
+          "none": "未设置",
+          "noLimit": "不限制",
+          "starters_one": "{{count}} 个开场问题",
+          "starters_other": "{{count}} 个开场问题",
+          "requests_one": "每 24 小时 {{count, number}} 次请求",
+          "requests_other": "每 24 小时 {{count, number}} 次请求",
+          "tokens_one": "每 24 小时 {{count, number}} 个令牌",
+          "tokens_other": "每 24 小时 {{count, number}} 个令牌",
+          "checks_one": "{{count}} 项检查（{{mode}}）",
+          "checks_other": "{{count}} 项检查（{{mode}}）",
+          "topics_one": "{{count}} 个洞察主题",
+          "topics_other": "{{count}} 个洞察主题"
+        }
+      },
+      "improve": {
+        "intro": "{{name}} 需要改什么？",
+        "introPublished": "{{name}} 需要改什么？它已发布，保存的修改会影响所有使用它的人。",
+        "introShared": "{{name}} 需要改什么？它已共享，保存的修改会影响所有使用它的人。",
+        "finishSetup": "完成设置：限制与安全",
+        "shorter": "把描述写短一些",
+        "tightenPrompt": "精简提示词",
+        "starters": "建议开场问题"
+      },
+      "fields": {
+        "limits": "使用限制"
       }
     },
     "topics": {

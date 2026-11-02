@@ -4486,7 +4486,6 @@
     "improve": "改善",
     "drafted": "下書き済み",
     "undoField": "{{field}} を元に戻す",
-    "undoAll": "すべて元に戻す",
     "somethingElse": "その他…",
     "somethingElseLabel": "あなたの回答",
     "somethingElsePlaceholder": "回答を入力",
@@ -4499,7 +4498,6 @@
       "drafting": "下書きしています…"
     },
     "askLabel": "DocsGPT へのメッセージ",
-    "startPlaceholder": "作りたいものを説明してください…",
     "askPlaceholder": "変更を依頼…",
     "stop": "停止",
     "send": "送信",
@@ -4545,23 +4543,7 @@
       }
     },
     "agent": {
-      "introNew": "このエージェントに何をさせたいか、誰向けかを教えてください。ナレッジ、ツール、プロンプトを確認してからフォームに入力します。保存するまで何も保存されません。",
-      "introImprove": "何を変更しますか？フォームを更新しますが、保存するまで何も保存されません。",
-      "examples": {
-        "support": "ヘルプセンター向けのサポートエージェント",
-        "research": "契約書を調べるリサーチアシスタント",
-        "helpdesk": "社内 IT ヘルプデスク",
-        "shorter": "説明を短くして",
-        "starters": "会話のきっかけを提案して"
-      },
-      "describeTitle": "説明から始める",
-      "describeDescription": "エージェントにさせたいことを書いてください。DocsGPT が手持ちのナレッジとツールを選び、プロンプトを書きます。",
-      "describeDismiss": "説明欄を隠す",
-      "describeLabel": "エージェントは何をしますか？",
-      "describeHint": "または下のフォームに自分で入力してください。",
-      "describePlaceholder": "配送に関する質問に答える、Web サイト上のエージェント…",
       "draftedCount_other": "{{count}} 個のフィールドを下書きしました。保存する前に確認してください。",
-      "review": "確認",
       "pendingPrompt": "{{name}} · 新規、保存時に作成",
       "promptText": "プロンプトの本文",
       "editPrompt": "プロンプトを編集",
@@ -4571,7 +4553,65 @@
         "not_found": "存在しない項目",
         "no_access": "開けない項目",
         "invalid": "無効な項目",
-        "other": "使用できない項目"
+        "other": "使用できない項目",
+        "not_allowed": "あなたのロールでは変更できない設定"
+      },
+      "build": {
+        "intro": "このエージェントを一緒に、一つずつ作っていきましょう: 基本情報、ナレッジとツール、プロンプトと最初の質問、最後に制限と安全性です。\n\n何をするエージェントで、誰が使うのかを教えてください。詳しく書いていただくほど、質問は少なくなります。",
+        "examples": {
+          "support": "ヘルプセンター向けのサポートエージェント",
+          "research": "契約書を調べるリサーチアシスタント",
+          "helpdesk": "社内 IT ヘルプデスク"
+        },
+        "describePlaceholder": "エージェントについて説明…",
+        "changePlaceholder": "または変更点を教えてください…",
+        "steps": {
+          "basics": "基本情報",
+          "knowledge": "ナレッジとツール",
+          "prompt": "プロンプトと最初の質問",
+          "safety": "制限と安全性"
+        },
+        "progress": "ステップ {{number}}/{{total}} · {{step}}",
+        "filledAtOnce_one": "{{count}} ステップをまとめて入力",
+        "filledAtOnce_other": "{{count}} ステップをまとめて入力",
+        "allFilled": "すべてのステップを入力しました",
+        "continue": "{{step}} に進んでください。",
+        "next": "次へ: {{step}}",
+        "nextShort": "次へ",
+        "finish": "完了",
+        "checkForm": "先にフォームを確認",
+        "check": "{{step}} を確認",
+        "folded": "{{step}}: {{result}}",
+        "skipped": "{{step}}: ここで設定する項目はありません",
+        "done": "これですべてのステップが終わりました。エージェントはまだ保存されていません。公開してプレビューで試すか、下書きを保存して後で続けてください。",
+        "resume": "再開",
+        "resumeLabel": "下書きを再開: ステップ {{number}}/{{total}}",
+        "result": {
+          "none": "設定なし",
+          "noLimit": "制限なし",
+          "starters_one": "最初の質問 {{count}} 件",
+          "starters_other": "最初の質問 {{count}} 件",
+          "requests_one": "24 時間あたり {{count, number}} リクエスト",
+          "requests_other": "24 時間あたり {{count, number}} リクエスト",
+          "tokens_one": "24 時間あたり {{count, number}} トークン",
+          "tokens_other": "24 時間あたり {{count, number}} トークン",
+          "checks_one": "{{count}} 件のチェック（{{mode}}）",
+          "checks_other": "{{count}} 件のチェック（{{mode}}）",
+          "topics_one": "インサイトのトピック {{count}} 件",
+          "topics_other": "インサイトのトピック {{count}} 件"
+        }
+      },
+      "improve": {
+        "intro": "{{name}} の何を変更しますか？",
+        "introPublished": "{{name}} の何を変更しますか？公開済みのため、保存した変更は利用している全員に反映されます。",
+        "introShared": "{{name}} の何を変更しますか？共有されているため、保存した変更は利用している全員に反映されます。",
+        "finishSetup": "設定を完了: 制限と安全性",
+        "shorter": "説明を短くして",
+        "tightenPrompt": "プロンプトを引き締めて",
+        "starters": "会話のきっかけを提案して"
+      },
+      "fields": {
+        "limits": "利用制限"
       }
     },
     "topics": {

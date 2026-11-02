@@ -3,17 +3,25 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 /**
  * The drafter's entry button: "Draft" on an empty form, "Improve" on a filled
- * one ("Write" for an empty prompt), with the WandSparkles icon, as a
- * bordered brand pill in page chrome.
+ * one ("Write" for an empty prompt), "Resume" while a guided build is
+ * unfinished, with the WandSparkles icon, as a bordered brand pill in page
+ * chrome. Its open panel shows only through aria-expanded.
  * With `compactOnPhone` it is an icon-only button below `sm`, so a toolbar
  * row with three other buttons still fits a phone.
  *
  * Args:
- *   mode: `draft` (empty form), `improve` (filled form) or `write` (an
- *     empty prompt).
+ *   mode: `draft` (empty form), `improve` (filled form), `write` (an empty
+ *     prompt) or `resume` (a build left halfway).
+ *   label: The accessible name and tooltip when they say more than the
+ *     button's word ("Resume drafting: step 3 of 4").
  *   onClick: Opens the drafter (or sends the prompt modal's request).
  *   disabled: Nothing to send yet.
  *   open: Whether the panel it opens is open (aria-expanded).
@@ -22,13 +30,15 @@ import { IconButton } from '@/components/ui/icon-button';
  */
 export function WandButton({
   mode,
+  label,
   onClick,
   open,
   size = 'field',
   compactOnPhone = false,
   disabled,
 }: {
-  mode: 'draft' | 'improve' | 'write';
+  mode: 'draft' | 'improve' | 'write' | 'resume';
+  label?: string;
   onClick: () => void;
   disabled?: boolean;
   open?: boolean;
@@ -36,12 +46,31 @@ export function WandButton({
   compactOnPhone?: boolean;
 }) {
   const { t } = useTranslation();
-  const label =
+  const word =
     mode === 'draft'
       ? t('drafter.draft')
       : mode === 'write'
         ? t('drafter.prompt.write')
-        : t('drafter.improve');
+        : mode === 'resume'
+          ? t('drafter.agent.build.resume')
+          : t('drafter.improve');
+  const button = (
+    <Button
+      type="button"
+      variant="outline-primary"
+      size={size}
+      shape="pill"
+      className={compactOnPhone ? 'hidden sm:inline-flex' : undefined}
+      aria-label={label}
+      aria-expanded={open}
+      data-drafter-entry=""
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <WandSparkles />
+      {word}
+    </Button>
+  );
   return (
     <>
       {compactOnPhone && (
@@ -50,7 +79,7 @@ export function WandButton({
           size="icon"
           shape="pill"
           className="sm:hidden"
-          label={label}
+          label={label ?? word}
           icon={WandSparkles}
           aria-expanded={open}
           data-drafter-entry=""
@@ -58,20 +87,14 @@ export function WandButton({
           onClick={onClick}
         />
       )}
-      <Button
-        type="button"
-        variant="outline-primary"
-        size={size}
-        shape="pill"
-        className={compactOnPhone ? 'hidden sm:inline-flex' : undefined}
-        aria-expanded={open}
-        data-drafter-entry=""
-        disabled={disabled}
-        onClick={onClick}
-      >
-        <WandSparkles />
-        {label}
-      </Button>
+      {label ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{button}</TooltipTrigger>
+          <TooltipContent side="bottom">{label}</TooltipContent>
+        </Tooltip>
+      ) : (
+        button
+      )}
     </>
   );
 }
