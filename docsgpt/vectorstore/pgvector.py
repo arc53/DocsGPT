@@ -976,15 +976,15 @@ class PGVectorStore(BaseVectorStore):
             pass
 
 
-def chunk_counts_by_source(*, connection_string: Optional[str] = None, table_name: str = "documents") -> Dict[str, int]:
+def chunk_counts_by_source(*, connection_string: Optional[str] = None) -> Dict[str, int]:
     """Count the chunks of every source in the vectors table, without building a store.
 
-    One ``GROUP BY`` over the whole table: meant for an operator's report,
+    One ``GROUP BY`` over the whole ``documents`` table (the store's default,
+    the only one ``VectorCreator`` builds): meant for an operator's report,
     not a request path.
 
     Args:
         connection_string: The vectors database; defaults like ``PGVectorStore``.
-        table_name: The vectors table.
 
     Returns:
         ``{source_id: chunk count}``.
@@ -1000,5 +1000,5 @@ def chunk_counts_by_source(*, connection_string: Optional[str] = None, table_nam
 
     with psycopg.connect(dsn) as conn:
         with conn.cursor() as cursor:
-            cursor.execute(f"SELECT source_id, count(*) FROM {table_name} GROUP BY source_id;")
+            cursor.execute("SELECT source_id, count(*) FROM documents GROUP BY source_id;")
             return {str(source_id): int(count) for source_id, count in cursor.fetchall()}

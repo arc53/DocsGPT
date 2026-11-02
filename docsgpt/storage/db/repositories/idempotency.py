@@ -299,7 +299,10 @@ class IdempotencyRepository:
         Only a pending row with no live lease is reset: its runs died (a
         restart killed them), so their claims say nothing about the resumed
         task. The reconciler counts resumes itself. ``task_id`` is the id the
-        resume runs under, which a same-key request is handed.
+        resume runs under, which a same-key request is handed. ``created_at``
+        restarts too: with the lease cleared, an old row would otherwise be
+        past the TTL, so cleanup could drop it or a same-key claim replace it
+        before the resumed task takes the lease.
 
         Args:
             key: The task's idempotency key.
@@ -314,6 +317,7 @@ class IdempotencyRepository:
                 UPDATE task_dedup
                 SET attempt_count    = 0,
                     task_id          = :task_id,
+                    created_at       = now(),
                     lease_owner_id   = NULL,
                     lease_expires_at = NULL
                 WHERE idempotency_key = :key

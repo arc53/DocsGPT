@@ -261,8 +261,10 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
             reason = _ingest_resume_refusal(dedup, row, dispatch, key)
             if reason is None:
                 task_id = str(row.get("attempt_id") or uuid.uuid4())
+                if not dedup.reset_for_resume(key, task_id) and dedup.get_task(key) is not None:
+                    # A worker took the lease since the check above: it runs.
+                    continue
                 repo.mark_ingest_resumed(source_id, restart=settings.VECTOR_STORE == "faiss")
-                dedup.reset_for_resume(key, task_id)
                 resumes.append((dispatch, task_id, source_id))
                 summary["ingests_resumed"] += 1
                 logger.warning(

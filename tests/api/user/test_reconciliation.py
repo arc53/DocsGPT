@@ -872,15 +872,24 @@ class TestResumeStalledIngests:
         sid = "1a000000-0000-0000-0000-0000000000c5"
         _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c5")
         _seed_dedup(pg_conn, key="k-c5", attempts=3)
+        # Claimed long ago: the ingest ran past the 24 h window before it died.
+        pg_conn.execute(
+            text("UPDATE task_dedup SET created_at = now() - interval '30 hours' WHERE idempotency_key = 'k-c5'")
+        )
 
         with _route_engine_to(pg_conn), _resume_spies() as calls:
             run_reconciliation()
 
         assert len(calls) == 1
         row = pg_conn.execute(
-            text("SELECT attempt_count, task_id, lease_expires_at FROM task_dedup WHERE idempotency_key = 'k-c5'")
+            text(
+                "SELECT attempt_count, task_id, lease_expires_at, created_at > now() - interval '1 minute' AS fresh "
+                "FROM task_dedup WHERE idempotency_key = 'k-c5'"
+            )
         ).fetchone()
         assert row.attempt_count == 0
+        # A fresh TTL window, so cleanup and same-key claims keep the row until the resume takes the lease.
+        assert row.fresh is True
         assert row.task_id == "task-c5"
         assert row.lease_expires_at is None
 
@@ -916,6 +925,27 @@ class TestResumeStalledIngests:
         # The partial FAISS index died with the task's temp dir.
         assert row["last_index"] == -1
         assert row["embedded_chunks"] == 0
+
+    @pytest.mark.unit
+    def test_a_lease_taken_between_the_check_and_the_reset_stops_the_resume(self, pg_conn):
+        """A worker claimed the lease after the live-lease check: no resume is counted or queued."""
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000c9"
+        _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c9")
+        _seed_dedup(pg_conn, key="k-c9", lease_secs=60)
+
+        with _route_engine_to(pg_conn), _resume_spies() as calls, patch(
+            "docsgpt.storage.db.repositories.idempotency.IdempotencyRepository.live_lease_keys",
+            return_value=set(),
+        ):
+            r = run_reconciliation()
+
+        assert calls == []
+        assert r["ingests_resumed"] == 0
+        assert r["ingests_stalled"] == 0
+        row = _progress(pg_conn, sid)
+        assert (row["status"], row["resume_attempts"]) == ("active", 0)
 
     @pytest.mark.unit
     def test_a_failed_queue_send_still_counts(self, pg_conn):
