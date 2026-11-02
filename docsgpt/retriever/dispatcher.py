@@ -573,6 +573,16 @@ class CompressingRetriever(BaseRetriever):
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
 
+    @property
+    def last_outcome(self):
+        # BaseRetriever defines a class-level ``last_outcome``, which shadows ``__getattr__``.
+        return getattr(self._inner, "last_outcome", None)
+
+    @last_outcome.setter
+    def last_outcome(self, value):
+        if hasattr(self, "_inner"):
+            self._inner.last_outcome = value
+
 
 class CompressingDispatcher(CompressingRetriever, Dispatcher):
     """Compressing retriever that is statically and dynamically a Dispatcher.

@@ -43,7 +43,8 @@ _PROTECTED_QUALIFIERS = {
 # Regex for clearly identifiable breadcrumb patterns:
 # Supports 'Home > API', 'Home / Guides / Setup', 'Docs » Reference', markdown link breadcrumbs
 _BREADCRUMB_RE = re.compile(
-    r"^(?:(?:\*?\s*\[[^\]]+\]\([^\)]+\)\s*|\b[\w\-]+(?:\s+[\w\-]+)*\s*)(?:[›»>]|/(?!\S))\s*)+(?:\[?[^\]]*\]?|\b[\w\-]+(?:\s+[\w\-]+)*)$",
+    r"^(?:(?:\*?\s*\[[^\]]+\]\([^\)]+\)\s*|[\w\-&]+(?:\s+[\w\-&]+){0,2}\s*)(?:[›»>]|/(?!\S))\s*)+"
+    r"(?:\[[^\]]+\]\([^\)]+\)|[\w\-&]+(?:\s+[\w\-&]+){0,2})?\s*$",
     re.IGNORECASE,
 )
 

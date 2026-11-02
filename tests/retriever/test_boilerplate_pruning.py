@@ -69,6 +69,20 @@ class TestBoilerplatePruningRules:
         assert "Other text here." in cleaned
         assert "Home > Security > Guidelines" not in cleaned
 
+    def test_preserves_prose_containing_slash_and_greater_than(self):
+        """Prose containing ' / ' or ' > ' with or without terminal punctuation must not be pruned."""
+        cases = [
+            "Read / write access is controlled by roles.",
+            "Read / write access is controlled by roles",
+            "Input > Output mapping is shown below.",
+            "Input > Output mapping is shown below",
+            "A / B testing evaluates model variants.",
+            "A / B testing evaluates model variants",
+        ]
+        for line in cases:
+            cleaned = prune_chunk_text(line, query="database configuration")
+            assert cleaned == line, f"Prose was pruned: {line!r}"
+
     def test_breadcrumb_matching_variations_and_non_breadcrumbs(self):
         # Breadcrumbs should be pruned when they are purely navigation boilerplate
         assert prune_chunk_text("Home > API", query="database configuration") == ""
@@ -372,6 +386,28 @@ class TestCompressingRetrieverIntegration:
         assert res[0]["text"] == "Factual chunk 1."
         assert retriever.last_candidates[0]["doc"] is doc1
         assert retriever.last_candidates[0]["snapshot"]["text"] == "Home > API\nFactual chunk 1."
+
+    def test_compressing_retriever_delegates_last_outcome(self):
+        """CompressingRetriever and CompressingDispatcher must expose inner last_outcome."""
+        from unittest.mock import MagicMock
+        from docsgpt.retriever.base import SearchOutcome, search_outcome_of
+        from docsgpt.retriever.dispatcher import CompressingRetriever, CompressingDispatcher
+
+        mock_inner = MagicMock()
+        mock_outcome = SearchOutcome.of(["s1", "s2"], failed=["s2"])
+        mock_inner.last_outcome = mock_outcome
+
+        wrapper = CompressingRetriever(mock_inner)
+        assert wrapper.last_outcome == mock_outcome
+        assert search_outcome_of(wrapper, ["s1", "s2"]) == mock_outcome
+
+        dispatcher_wrapper = CompressingDispatcher(mock_inner)
+        assert dispatcher_wrapper.last_outcome == mock_outcome
+        assert search_outcome_of(dispatcher_wrapper, ["s1", "s2"]) == mock_outcome
+
+        # When inner has no outcome
+        mock_inner.last_outcome = None
+        assert wrapper.last_outcome is None
 
     def test_workflow_node_sources_compression(self, monkeypatch):
         pytest.importorskip("celpy")
