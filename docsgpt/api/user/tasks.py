@@ -646,6 +646,56 @@ def cleanup_schedule_runs(self):
 
 
 @celery.task(bind=True, acks_late=False)
+def sse_connections_gauge_task(self):
+    """Log a point-in-time gauge of open SSE connections and Celery queues.
+
+    Counts the live leases in the per-user ``user:*:sse_leases`` sorted
+    sets that SSE streams hold and emits a structured ``sse_gauge`` event
+    with ``connected_users`` / ``connections`` attributes. An idle fleet
+    still logs a zero so a chart has continuous data.
+
+    The same event carries the Celery queue gauge
+    (``queue_<name>_depth`` / ``_wait_s`` / ``_in_flight`` for every
+    declared queue, see ``docsgpt/events/queue_gauge.py``). A broker
+    error drops only those fields, never the event.
+    """
+    from docsgpt.cache import get_redis_instance
+    from docsgpt.events.gauge import measure_sse_connections
+    from docsgpt.events import queue_gauge
+
+    redis_client = get_redis_instance()
+    if redis_client is None:
+        return {"skipped": "redis unavailable"}
+    try:
+        snapshot = measure_sse_connections(redis_client)
+    except Exception:
+        # Transient Redis hiccup — the next minute's sweep will cover it.
+        logging.warning("sse_gauge sweep failed", exc_info=True)
+        return {"skipped": "redis error"}
+    queues = None
+    try:
+        broker = queue_gauge.broker_redis()
+        if broker is not None:
+            from docsgpt.celeryconfig import task_queues
+
+            queues = queue_gauge.measure_celery_queues(broker, [q.name for q in task_queues])
+    except Exception:
+        logging.warning("queue gauge sweep failed", exc_info=True)
+        queues = None
+    logging.info(
+        "sse_gauge",
+        extra={
+            "connected_users": snapshot["connected_users"],
+            "connections": snapshot["connections"],
+            **(queue_gauge.queue_log_fields(queues) if queues else {}),
+        },
+    )
+    if queues:
+        return {**snapshot, "queues": queues}
+    return snapshot
+
+
+@celery.task(bind=True, acks_late=False)
 def reap_sandbox_sessions(self):
     """Let go of sandbox sessions idle past their TTL in this worker process.
 
@@ -901,6 +951,13 @@ def setup_periodic_tasks(sender, **kwargs):
         timedelta(hours=24),
         cleanup_schedule_runs.s(),
         name="cleanup-schedule-runs",
+    )
+    # Open SSE connections and Celery queue depth, wait and in-flight, once a
+    # minute; the sweep is a few SCAN / pipelined round-trips.
+    sender.add_periodic_task(
+        timedelta(seconds=60),
+        sse_connections_gauge_task.s(),
+        name="sse-connections-gauge",
     )
     # Close idle-past-TTL sandbox sessions roughly every minute. The on-open
     # opportunistic reap still runs in the API processes; this covers worker

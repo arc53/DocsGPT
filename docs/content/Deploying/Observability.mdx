@@ -1,7 +1,7 @@
 ---
 title: Observability
 description: Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).
-lastUpdated: 2026-10-21
+lastUpdated: 2026-11-02
 ---
 
 import { Callout } from 'nextra/components'
@@ -283,6 +283,51 @@ This adds the same redacted previews the app stores (for example
 
 The GenAI conventions are still in development upstream, so attribute names
 may change in later releases.
+
+## Queue and connection gauge
+
+Once a minute, the `sse-connections-gauge` beat task logs a line whose message is `sse_gauge`. Its attributes
+describe the live-update connections and every Celery queue the worker declares (`docsgpt`, `parsing`,
+`embeddings`, `ingest`, `analytics`, or the names you set for them):
+
+| Attribute | Meaning |
+| --- | --- |
+| `connected_users` | Users with at least one open live-update (SSE) connection. Counted only while `SSE_MAX_CONCURRENT_PER_USER` is above 0. |
+| `connections` | Open live-update connections in total. |
+| `queue_<name>_depth` | Messages waiting in the queue, across all priorities. |
+| `queue_<name>_wait_s` | How long the task at the head of the queue has been waiting there, in seconds. It is measured between gauge runs, so it lags by up to a minute, and it starts again from 0 whenever the head task changes. |
+| `queue_<name>_in_flight` | Tasks from the queue that a worker is running now. |
+
+`<name>` is the queue name in lower case, with any character other than a letter or digit replaced by `_`,
+such as `queue_ingest_wait_s`.
+
+Workers report their running tasks themselves, every 30 seconds, so `in_flight` keeps counting an ingest that
+runs for hours, past the broker's visibility timeout (`CELERY_VISIBILITY_TIMEOUT`). A task whose worker was killed
+stops counting about 90 seconds later. The queue numbers need a Redis broker: with another broker, the line carries
+only the two connection counts. If the broker can't be read, the line is still logged without the queue fields.
+
+The attributes reach your backend when [OTLP log export](#enabling) is on (`OTEL_LOGS_EXPORTER=otlp`). On stdout,
+the worker's `Task ...sse_connections_gauge_task[...] succeeded` line prints the same numbers.
+
+### Example alert: a stuck lane
+
+A lane that has stopped draining shows a growing `wait_s` while `in_flight` stays at the number of worker slots.
+To be told when the ingest lane's head task has waited more than 30 minutes, alert on the largest
+`queue_ingest_wait_s` over the last 10 minutes of `sse_gauge` lines:
+
+```kusto
+['docsgpt']
+| where body == "sse_gauge"
+| summarize wait_s = max(toint(['attributes.queue_ingest_wait_s'])) by bin(_time, 10m)
+| where wait_s > 1800
+```
+
+The query is in Axiom's APL, for logs exported over OTLP into a dataset named `docsgpt`; any backend that can filter
+on a log attribute and compare its maximum to a threshold works the same way. Set the threshold above your longest
+normal wait: with one `-Q ingest` slot, a new source waits for the one ahead of it to finish. The other queues carry
+short tasks, so a lower threshold, such as 5 minutes on `queue_docsgpt_wait_s`, `queue_parsing_wait_s` and
+`queue_embeddings_wait_s`, catches a backed-up control lane. Also alert when no `sse_gauge` line arrives for 10
+minutes, which means beat or the worker that runs it has stopped.
 
 ## Backend examples
 
