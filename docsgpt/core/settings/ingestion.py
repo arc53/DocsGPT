@@ -213,6 +213,16 @@ class IngestionSettings(SettingsGroup):
         ),
     )
 
+    INGEST_RESUME_MAX_ATTEMPTS: int = Field(
+        default=3,
+        ge=0,
+        description=(
+            "Times the reconciler queues an ingest again after a restart or crash killed it mid-embed. The new "
+            "task resumes from the last embedded chunk when the files still chunk the same way. Past this many "
+            "the ingest is marked failed. 0 turns resuming off."
+        ),
+    )
+
     # read_document parsing on a dedicated Celery queue (backend parser).
     DOCUMENT_PARSE_QUEUE: str = Field(default="parsing", description="Celery queue the parse_document task is routed to.")
     DOCUMENT_PARSE_TIMEOUT: int = Field(

@@ -293,6 +293,39 @@ class IdempotencyRepository:
         )
         return {row[0] for row in result.fetchall()}
 
+    def reset_for_resume(self, key: str, task_id: str) -> bool:
+        """Give a task the reconciler queues again a fresh attempt budget.
+
+        Only a pending row with no live lease is reset: its runs died (a
+        restart killed them), so their claims say nothing about the resumed
+        task. The reconciler counts resumes itself. ``task_id`` is the id the
+        resume runs under, which a same-key request is handed.
+
+        Args:
+            key: The task's idempotency key.
+            task_id: The resumed task's Celery id.
+
+        Returns:
+            ``True`` when a row was reset.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE task_dedup
+                SET attempt_count    = 0,
+                    task_id          = :task_id,
+                    lease_owner_id   = NULL,
+                    lease_expires_at = NULL
+                WHERE idempotency_key = :key
+                  AND status = 'pending'
+                  AND (lease_expires_at IS NULL
+                       OR lease_expires_at <= clock_timestamp())
+                """
+            ),
+            {"key": key, "task_id": task_id},
+        )
+        return result.rowcount > 0
+
     def release_lease(self, key: str, owner_id: str) -> bool:
         """Clear ``lease_owner_id`` / ``lease_expires_at`` on the
         wrapper's exception path so Celery's autoretry_for doesn't have

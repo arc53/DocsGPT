@@ -41,7 +41,7 @@ Beat schedules these tasks. Each runs on the worker, so the worker must also be 
 | `schedule-syncs-monthly` | 30 days | The same for **Monthly** sources. | The source's **Keep up to date** setting. |
 | `dispatch-scheduled-runs` | 30 s | Queues [scheduled agent runs](/Agents/schedules) that are due. | `SCHEDULE_DISPATCHER_INTERVAL` (`30`, minimum 15 s). |
 | `cleanup-schedule-runs` | day | Deletes scheduled-run records and their output older than the retention window, keeping the 50 most recent runs of each schedule. | `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS` (`90`). |
-| `reconciliation` | 30 s | Marks stuck work as failed and logs an alert: answers that stopped streaming, tool calls left mid-way, stalled ingests, stuck idempotency claims and scheduled runs. | None. |
+| `reconciliation` | 30 s | Marks stuck work as failed and logs an alert: answers that stopped streaming, tool calls left mid-way, stalled ingests, stuck idempotency claims and scheduled runs. An ingest that a restart killed is queued again first; see [Ingests stopped by a restart](#ingests-stopped-by-a-restart). | `INGEST_RESUME_MAX_ATTEMPTS` (`3`). |
 | `cleanup-pending-tool-state` | 60 s | Deletes paused conversations waiting for a tool approval or a client-side tool result once they expire (30 minutes), and clears their approval prompts. | None. |
 | `cleanup-idempotency-dedup` | hour | Deletes idempotency keys for uploads, tasks and webhooks older than 24 hours. A task's key is kept while the task is still running, and for 24 hours after its last heartbeat. | None. |
 | `cleanup-message-events` | day | Deletes the per-chunk stream journal that lets a client reconnect to an answer, and the markers left by regenerated answers. Conversations themselves are kept. | `MESSAGE_EVENTS_RETENTION_DAYS` (`14`). |
@@ -59,6 +59,20 @@ Beat schedules these tasks. Each runs on the worker, so the worker must also be 
 | `version-check` | 7 hours | Checks gptcloud.arc53.com for security advisories for your version and logs any it finds. | `VERSION_CHECK` (`true`); set `false` to turn it off. |
 
 All the settings above are listed in the [Settings Reference](/Deploying/Settings-Reference).
+
+## Ingests stopped by a restart
+
+A deploy, reboot or out-of-memory kill can stop an ingest halfway through embedding. The broker usually hands the task to another worker, but not always. When the progress of an ingest has not moved for 30 minutes and nothing holds its task, the `reconciliation` task queues it again on the ingest queue, under its original task id.
+
+The new task reads and chunks the files again. If the chunks and the embeddings model are the same, it continues after the last embedded chunk. Otherwise it starts again from the first chunk. FAISS keeps an unfinished index only in the stopped task's temporary folder, so on FAISS a resumed ingest always starts again.
+
+An ingest is not queued again, and is marked failed, when:
+
+- it has been queued again `INGEST_RESUME_MAX_ATTEMPTS` times (`3`; `0` turns this off),
+- its uploaded files are no longer in storage, or
+- its task already finished or failed.
+
+Upload, remote and source sync ingests can be queued again. Connector ingests (Google Drive and the like) are marked failed, as before. **Re-ingest** on a Website, crawler or connector source resumes its unfinished embed the same way.
 
 ## The analytics queue
 

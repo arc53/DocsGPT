@@ -13,8 +13,10 @@ from sqlalchemy import Connection, Engine
 from docsgpt.api.user.idempotency import MAX_TASK_ATTEMPTS
 from docsgpt.core.settings import settings
 from docsgpt.notifications.notify import mark_unread_unless_watching
+from docsgpt.parser import ingest_resume
 from docsgpt.storage.db.engine import get_engine
 from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
+from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.repositories.pending_tool_state import (
     PendingToolStateRepository,
 )
@@ -42,6 +44,7 @@ def zero_summary() -> Dict[str, int]:
         "messages_failed": 0,
         "tool_calls_failed": 0,
         "ingests_stalled": 0,
+        "ingests_resumed": 0,
         "idempotency_pending_failed": 0,
         "schedule_runs_failed": 0,
         "archive_members_failed": 0,
@@ -234,46 +237,88 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                 },
             )
 
-    # Q4: ingest checkpoints whose heartbeat has gone silent. Each is
-    # escalated to terminal ``status='stalled'`` and alerted once — no
-    # worker kill, no rollback of the partial embed. The 'stalled' flag
+    # Q4: ingest checkpoints whose heartbeat has gone silent. A restart or
+    # OOM that killed the task leaves nothing to run it again once the
+    # broker's redelivery is spent, so an ingest that stored its dispatch
+    # is queued again (on the ingest queue, under its own task id) and
+    # resumes from the checkpoint. One that cannot be resumed — no stored
+    # dispatch, its files gone, its task finished, or out of resumes — is
+    # escalated to terminal ``status='stalled'`` and alerted once, with no
+    # worker kill and no rollback of the partial embed. The 'stalled' flag
     # ends the re-alert loop and drives the "indexing failed" badge the
-    # sources list derives from this row.
+    # sources list derives from this row. A task still holding its lease
+    # (reading its files before the first chunk) is left alone.
+    resumes: list[tuple[dict, str, str]] = []
     with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)
+        dedup = IdempotencyRepository(conn)
         for row in repo.find_and_lock_stalled_ingests():
+            source_id = str(row["source_id"])
+            dispatch = row.get("dispatch") if isinstance(row.get("dispatch"), dict) else None
+            key = ingest_resume.guard_key(dispatch) if dispatch else None
+            if key and dedup.live_lease_keys([key]):
+                continue
+            reason = _ingest_resume_refusal(dedup, row, dispatch, key)
+            if reason is None:
+                task_id = str(row.get("attempt_id") or uuid.uuid4())
+                repo.mark_ingest_resumed(source_id, restart=settings.VECTOR_STORE == "faiss")
+                dedup.reset_for_resume(key, task_id)
+                resumes.append((dispatch, task_id, source_id))
+                summary["ingests_resumed"] += 1
+                logger.warning(
+                    "reconciler: queuing stalled ingest of %s again", source_id,
+                    extra={
+                        "source_id": source_id,
+                        "task_id": task_id,
+                        "resume_attempt": int(row.get("resume_attempts") or 0) + 1,
+                        "embedded_chunks": row.get("embedded_chunks"),
+                        "total_chunks": row.get("total_chunks"),
+                    },
+                )
+                continue
             summary["ingests_stalled"] += 1
             _emit_alert(
                 conn,
                 name="reconciler_ingest_stalled",
                 user_id=row.get("user_id"),
                 detail={
-                    "source_id": str(row.get("source_id")),
+                    "source_id": source_id,
                     "embedded_chunks": row.get("embedded_chunks"),
                     "total_chunks": row.get("total_chunks"),
                     "last_updated": str(row.get("last_updated")),
+                    "resume_attempts": row.get("resume_attempts"),
+                    "reason": reason,
                 },
             )
-            repo.mark_ingest_stalled(str(row["source_id"]))
+            repo.mark_ingest_stalled(source_id)
             # Tell the upload toast the ingest is done-for. Without it the
             # toast spins on "Training…" for the whole live session; only
-            # ``source.ingest.failed`` flips it to a terminal error.
-            user_id = row.get("user_id")
-            source_id = row.get("source_id")
-            if user_id and source_id:
+            # ``source.ingest.failed`` flips it to a terminal error. A first
+            # upload has no sources row yet: its stored dispatch names the user.
+            stored = (dispatch or {}).get("kwargs") or {}
+            user_id = row.get("user_id") or stored.get("user")
+            if user_id:
                 staged.append(
                     (
                         str(user_id),
                         "source.ingest.failed",
                         {
-                            "source_id": str(source_id),
-                            "filename": row.get("source_name") or "",
+                            "source_id": source_id,
+                            "filename": row.get("source_name") or stored.get("filename")
+                            or stored.get("job_name") or "",
                             "operation": "upload",
-                            "error": "Indexing stopped after a stall.",
+                            "error": reason,
                         },
-                        {"kind": "source", "id": str(source_id)},
+                        {"kind": "source", "id": source_id},
                     )
                 )
+    for dispatch, task_id, source_id in resumes:
+        try:
+            ingest_resume.requeue(dispatch, task_id)
+        except Exception:
+            # Counted already: the row comes back after the stale window
+            # and is queued again, or given up once out of resumes.
+            logger.exception("reconciler: could not queue the ingest of %s again", source_id)
 
     # Q5: idempotency rows whose lease expired with attempts exhausted.
     # The wrapper's poison-loop guard normally finalises these, but if
@@ -439,6 +484,42 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
             logger.exception("reconciler: failed to dispatch zip member %s", member_info.get("attachment_id"))
 
     return summary
+
+
+_INGEST_STALLED = "Indexing stopped after a stall."
+
+
+def _ingest_resume_refusal(
+    dedup: IdempotencyRepository,
+    row: Dict[str, Any],
+    dispatch: Optional[dict],
+    key: Optional[str],
+) -> Optional[str]:
+    """Why a stalled ingest cannot be queued again, or ``None`` when it can.
+
+    Args:
+        dedup: Repository on the sweep's connection.
+        row: The locked progress row.
+        dispatch: Its stored dispatch, if any.
+        key: The dispatch's guard key, if any.
+
+    Returns:
+        The reason the user is shown, or ``None``.
+    """
+    if dispatch is None or key is None:
+        return _INGEST_STALLED
+    cap = int(settings.INGEST_RESUME_MAX_ATTEMPTS)
+    attempts = int(row.get("resume_attempts") or 0)
+    if cap <= 0:
+        return _INGEST_STALLED
+    if attempts >= cap:
+        return f"Indexing stopped after {attempts} restarts."
+    claim = dedup.get_task(key)
+    if claim is not None and claim.get("status") != "pending":
+        return _INGEST_STALLED
+    if not ingest_resume.inputs_available(dispatch):
+        return "Indexing stopped after a stall, and its files are no longer available."
+    return None
 
 
 def _terminal_flip_once_schedule(
