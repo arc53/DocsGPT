@@ -50,7 +50,7 @@ _BREADCRUMB_RE = re.compile(
 _NAV_CONTROL_RE = re.compile(
     r"^(?:#+\s*)?(?:table of contents|on this page|in this article|quick links|"
     r"skip to (?:main )?content|back to top|return to top|"
-    r"previous page:?.*|next page:?.*|«\s*previous\s*|\s*next\s*»|"
+    r"previous page:?(?:\s+[^\s.!?]+){0,6}|next page:?(?:\s+[^\s.!?]+){0,6}|«\s*previous\s*|\s*next\s*»|"
     r"edit this page(?: on github)?|was this (?:page|article) helpful\??|"
     r"share this page|print this page)$",
     re.IGNORECASE,
@@ -74,21 +74,22 @@ def _tokenize_query(query: str) -> Set[str]:
     """Extract lowercase alphanumeric query keywords for term preservation."""
     if not query:
         return set()
-    return {
-        term
-        for term in _tokenize_terms(query)
-        if len(term.rstrip("+#")) >= 2 or term.endswith(("+", "#"))
-    }
+    return _tokenize_terms(query)
 
 
 def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
     """Determine whether a line contains protected syntax, qualifiers, or query terms."""
-    stripped = line.strip()
-    if not stripped:
+    if not line.strip():
         return True
 
+    # Indented code blocks (4 spaces or tab)
+    if line.startswith("    ") or line.startswith("\t"):
+        return True
+
+    stripped = line.strip()
+
     # 1. Code blocks, markdown tables, and inline code
-    if stripped.startswith("```") or stripped.startswith("~~~") or stripped.startswith("|") or stripped.endswith("|"):
+    if stripped.startswith("```") or stripped.startswith("~~~") or "|" in stripped:
         return True
     if "`" in stripped:
         return True

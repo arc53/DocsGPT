@@ -21,6 +21,7 @@ import { SectionHeader } from '../components/ui/section-header';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { syncTargets } from '../connectors/catalogCards';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
+import type { LeaveTo } from '../hooks/useLeaveGuard';
 import { connectorName } from '../connectors/i18n';
 import {
   connectionNeedsSignIn,
@@ -127,6 +128,7 @@ function Upload({
   onSuccessfulUpload = () => undefined,
   selectUploadedDoc = true,
   onBrowseConnectors,
+  onNavigate,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
@@ -147,6 +149,12 @@ function Upload({
    * closes first.
    */
   onBrowseConnectors?: () => void;
+  /**
+   * How a connect run started here leaves for a page (Open in Knowledge,
+   * Try it in chat); a builder passes its leave guard's `leaveTo`. The
+   * router's navigate otherwise.
+   */
+  onNavigate?: LeaveTo;
 }) {
   const token = useSelector(selectToken);
   const connectorCatalog = useSelector(selectConnectorCatalog);
@@ -586,6 +594,7 @@ function Upload({
   const { launch, modals: connectModals } = useConnectorLauncher({
     onConnected: () => close(),
     onCancel: () => setHandedOver(false),
+    onNavigate,
     onSynced: (sourceIds) => {
       const batch = new Set(sourceIds);
       sourceIds.forEach((sourceId) => trackTraining(sourceId, sourceId, batch));

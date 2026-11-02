@@ -1,6 +1,6 @@
-import { act } from 'react';
+import { act, type MouseEvent } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -194,5 +194,48 @@ describe('AgentPageHeader sub-nav', () => {
       '/agents/manage/insights/a1',
       '/agents/manage/logs/a1',
     ]);
+  });
+  // The builder covers the sidebar, so the crumb and the tabs are its exits:
+  // each goes through the builder's leave guard.
+  it('routes the Agents crumb and every tab link through onNavigate', () => {
+    server.analytics = true;
+    const seen: string[] = [];
+    const onNavigate = vi.fn((event: MouseEvent<HTMLAnchorElement>) => {
+      seen.push(event.currentTarget.getAttribute('href') ?? '');
+      event.preventDefault();
+    });
+    act(() => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/workflow/edit/a1']}>
+          <Routes>
+            <Route
+              path="/agents/workflow/edit/a1"
+              element={
+                <AgentPageHeader
+                  agentId="a1"
+                  agentName="Renewals"
+                  onNameClick={vi.fn()}
+                  onNavigate={onNavigate}
+                />
+              }
+            />
+            <Route path="*" element={<p>left</p>} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    const links = Array.from(container.querySelectorAll('a'));
+    expect(links.length).toBe(5);
+    for (const link of links) act(() => link.click());
+    expect(onNavigate).toHaveBeenCalledTimes(5);
+    expect(seen).toEqual([
+      '/agents/manage',
+      '/agents/manage/schedules/a1',
+      '/agents/manage/analytics/a1',
+      '/agents/manage/insights/a1',
+      '/agents/manage/logs/a1',
+    ]);
+    // The guard held every click: the builder is still there.
+    expect(container.textContent).not.toContain('left');
   });
 });

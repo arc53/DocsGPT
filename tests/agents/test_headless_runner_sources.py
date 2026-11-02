@@ -26,6 +26,7 @@ def _run(
     sources: list,
     prompt_id: str = "default",
     prompt_text: str = "system prompt",
+    retriever: MagicMock = None,
     **run_kwargs,
 ) -> dict:
     """Run a headless agent over ``sources``; return what the run was built with."""
@@ -34,8 +35,9 @@ def _run(
     agent = MagicMock(name="agent")
     agent.gen.return_value = iter([{"answer": "ok"}])
     agent.llm.token_usage = {"prompt_tokens": 1, "generated_tokens": 1}
-    retriever = MagicMock(name="retriever")
-    retriever.search.return_value = [{"text": "chunk", "source": "s"}]
+    if retriever is None:
+        retriever = MagicMock(name="retriever")
+        retriever.search.return_value = [{"text": "chunk", "source": "s"}]
     tool_executor = MagicMock(name="tool_executor")
     tool_executor.headless_denials = []
     seen: dict = {"dispatchers": [], "prompts": []}
@@ -189,3 +191,36 @@ class TestHeadlessCitations:
         kwargs = seen["agent_kwargs"]
         assert "## Citations" in kwargs["prompt"]
         assert kwargs["prompt_cites_sources"] is True
+
+
+@pytest.mark.unit
+class TestHeadlessSearchOutcome:
+    """The run's agent learns which pre-fetched sources could not be searched."""
+
+    def test_the_retrievers_outcome_reaches_the_agent(self, monkeypatch):
+        from docsgpt.retriever.base import SearchOutcome
+
+        retriever = MagicMock(name="retriever")
+        retriever.search.return_value = []
+        retriever.last_outcome = SearchOutcome.of(["s1", "s2"], ["s2"])
+
+        seen = _run(monkeypatch, "classic", [_source("s1"), _source("s2")], retriever=retriever)
+
+        assert seen["agent_kwargs"]["search_outcome"] == SearchOutcome(("s1", "s2"), ("s2",))
+
+    def test_a_retrieval_that_raises_fails_every_prefetched_source(self, monkeypatch):
+        from docsgpt.retriever.base import SearchOutcome
+
+        retriever = MagicMock(name="retriever")
+        retriever.search.side_effect = RuntimeError("no embeddings worker answered")
+
+        seen = _run(
+            monkeypatch, "agentic", [_source("s1"), _source("s2", "agentic_tool")], retriever=retriever
+        )
+
+        assert seen["agent_kwargs"]["search_outcome"] == SearchOutcome(("s1",), ("s1",))
+
+    def test_no_prefetch_hands_over_no_outcome(self, monkeypatch):
+        seen = _run(monkeypatch, "agentic", [_source("s1")])
+
+        assert seen["agent_kwargs"]["search_outcome"] is None

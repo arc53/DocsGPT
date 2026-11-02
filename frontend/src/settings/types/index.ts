@@ -181,6 +181,30 @@ export type ParameterGroupType = {
   };
 };
 
+/**
+ * Which agents use a tool, prompt or source (`used_by` on the Workspace
+ * lists). An agent uses it when running the agent would reach it.
+ */
+export type ResourceUsage = {
+  /**
+   * The agents the caller can open. `can_edit`: they may open its editor
+   * (the agent action `view`); otherwise they can only use it. `status`:
+   * `draft` or `published` (missing from an older server).
+   */
+  agents: {
+    id: string;
+    name: string;
+    agent_type?: string;
+    can_edit?: boolean;
+    status?: string;
+  }[];
+  /**
+   * Agents the caller can't open that use it (a teammate's), counted only
+   * for the caller's own resources; 0 otherwise.
+   */
+  others: number;
+};
+
 export type UserToolType = {
   id: string;
   name: string;
@@ -219,6 +243,9 @@ export type UserToolType = {
   shared_via?: string | null;
   // The owner's email or name, when the server can resolve it.
   owner_label?: string | null;
+  // The agents that use it. An older server leaves it out: unknown, read
+  // as used by none.
+  used_by?: ResourceUsage;
   config: {
     [key: string]: any;
   };

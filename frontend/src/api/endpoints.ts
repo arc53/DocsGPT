@@ -3,6 +3,7 @@ const endpoints = {
     CONFIG: '/api/config',
     ME: '/api/user/me',
     QUOTA: '/api/user/quota',
+    PREFERENCES: '/api/user/preferences',
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',

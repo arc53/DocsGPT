@@ -12,8 +12,6 @@ from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.default_tools import (
     BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
-    is_server_attached_tool,
-    is_server_attached_tool_id,
     is_synthesized_tool_id,
     resolve_tool_by_id,
     synthesized_default_tools,
@@ -52,6 +50,10 @@ API_TOOL_SECRETS_KEY = "encrypted_action_secrets"
 API_TOOL_SECRET_SECTIONS = ("headers", "query_params")
 # Tools that label their hits ``[n]`` from the answer's citation registry.
 CITING_TOOLS = frozenset({"internal_search", "graph_search"})
+# The actions whose result is made of hits the agent's ``retrieval_screen``
+# already scored one by one; any other action of those tools (file listings,
+# graph entities) never passed it.
+SCREENED_SEARCH_ACTIONS = frozenset({("internal_search", "search"), ("graph_search", "read_entity_pages")})
 
 
 def api_tool_action_with_secrets(tool_data: Dict, action_name: str, fallback_owner: Optional[str] = None) -> Dict:
@@ -727,11 +729,8 @@ class ToolExecutor:
         # Who an explicit tool-id scope resolves as: the workflow owner for a
         # node, so whoever runs it gets the owner's tools. None = ``user``.
         self.tool_owner: Optional[str] = None
-        # Tool id -> the user to resolve it as, for a workflow node's tools
-        # sponsored by an editor (see resource_access.active_sponsor).
-        self.tool_principals: Dict[str, str] = {}
-        # The workflow row a node's tools belong to, so a dropped one is
-        # logged with why it doesn't run.
+        # The workflow row a node's tools belong to: its sponsors are checked
+        # live, and a dropped tool is logged with why it doesn't run.
         self.tool_holder: Optional[Dict] = None
         self.conversation_id: Optional[str] = None
         # Set by the workflow engine for agent nodes so run-scoped tools
@@ -755,6 +754,11 @@ class ToolExecutor:
         # handed to the search tools so each hit is screened as a retrieved
         # document before it is formatted into their result.
         self.retrieval_screen: Optional[Callable[[List[Dict]], List[Dict]]] = None
+        # The agent's per-name screen (``BaseAgent._screen_names_one_by_one``)
+        # for the source names a search tool's result lists that are not hits
+        # ("Could not be searched"); the tool-result stage skips its item-level
+        # controls for those tools, so nothing else would score them.
+        self.source_name_screen: Optional[Callable[[Dict[str, str]], Dict[str, str]]] = None
         # Images the last tool call returned for the model to see (references,
         # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
         # that call's tool message; ``images_shown`` counts them per turn.
@@ -848,46 +852,21 @@ class ToolExecutor:
         """Resolve an explicit tool-id scope — exactly these ids, no defaults.
 
         Used by workflow agent nodes: the node's configured tools (builtin
-        synthetic ids like Artifact/Code Executor/Read Document, or the
-        ``user_tools`` rows of ``tool_owner``) are the node's WHOLE toolset.
-        Rows resolve as the workflow owner, then as the editor who attached
-        them, never as whoever runs the workflow — the same rule as an agent's
-        own tools. An unresolvable id is dropped with a warning rather than
-        failing the node.
+        synthetic ids like Artifact/Code Executor/Read Document, or
+        ``user_tools`` rows) are the node's WHOLE toolset. They resolve as the
+        workflow owner (``tool_owner``), then as the editor who attached them,
+        never as whoever runs the workflow — the same resolver an agent's own
+        tools use (``resource_access.resolve_holder_tools``). A tool that
+        doesn't run is dropped and logged rather than failing the node.
         """
         if not tool_ids:
             return {}
-        principal = self.tool_owner or self.user
-        with db_readonly() as conn:
-            tools_repo = UserToolsRepository(conn)
-            tools: List[Dict] = []
-            for tid in tool_ids:
-                row = resolve_tool_by_id(tid, principal, user_tools_repo=tools_repo)
-                if row is None and str(tid) in self.tool_principals:
-                    row = resolve_tool_by_id(tid, self.tool_principals[str(tid)], user_tools_repo=tools_repo)
-                if row is None:
-                    self._log_dropped_scoped_tool(conn, tid, principal)
-                    continue
-                if self.headless and is_headless_excluded_tool(row.get("name")):
-                    continue
-                tools.append(row)
-        return {str(tool["id"]): tool for tool in tools}
-
-    def _log_dropped_scoped_tool(self, conn, tool_id: str, principal: Optional[str]) -> None:
-        """Log a node tool the scoped toolset leaves out, with why when the workflow is known."""
         # Lazy: docsgpt.api's package import pulls in every route module.
-        from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+        from docsgpt.api.user.resource_access import resolve_holder_tools
 
-        holder = {**(self.tool_holder or {}), "user_id": principal}
-        reason = None
-        try:
-            _row, access = resolve_holder_tool(conn, "workflow", holder, tool_id)
-            reason = access.reason
-        except Exception as exc:
-            if is_budget_exhausted(exc):
-                raise
-            logger.exception("Could not tell why tool %s does not resolve", tool_id)
-        log_stopped("workflow", holder, "tool", tool_id, reason)
+        holder = {**(self.tool_holder or {}), "user_id": self.tool_owner or self.user}
+        with db_readonly() as conn:
+            return resolve_holder_tools(conn, "workflow", holder, tool_ids, headless=self.headless)
 
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
         """Resolve an agent's toolset — exactly ``agents.tools``, no defaults."""
@@ -909,38 +888,18 @@ class ToolExecutor:
             return self._agent_tools(conn, agent_data)
 
     def _agent_tools(self, conn, agent_data: Optional[Dict]) -> Dict[str, Dict]:
-        """Exactly the tools in ``agent_data["tools"]``, resolved as the agent's owner."""
-        tool_ids = (agent_data.get("tools") or []) if agent_data else []
-        tools_repo = UserToolsRepository(conn)
-        owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
-        tools: List[Dict] = []
-        for tid in tool_ids:
-            # check_job, once pickable, is attached by the server now; a saved id is not a choice.
-            if is_server_attached_tool_id(tid):
-                continue
-            row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
-            if row is None:
-                # A tool the owner can't use runs as the editor who
-                # attached it, while they still qualify: the same check
-                # the agent page's run state uses.
-                # Lazy: docsgpt.api's package import pulls in every route module.
-                from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+        """Exactly the tools in ``agent_data["tools"]``, resolved as the agent's owner, else a live sponsor."""
+        if not agent_data:
+            return {}
+        # Lazy: docsgpt.api's package import pulls in every route module.
+        from docsgpt.api.user.resource_access import resolve_holder_tools
 
-                row, access = resolve_holder_tool(conn, "agent", agent_data, tid, tools_repo=tools_repo)
-                if row is None:
-                    log_stopped("agent", agent_data, "tool", tid, access.reason)
-            if row is None or is_server_attached_tool(row.get("name")):
-                continue
-            # Workflow-only builtins (read_document) never resolve for a
-            # chat/scheduled agent — nodes get them via the scoped-id path.
-            if row.get("workflow_only"):
-                continue
-            # Headless runs (scheduled / webhook) drop chat-only tools
-            # like ``scheduler`` so a fire-time LLM can't chain schedules.
-            if self.headless and is_headless_excluded_tool(row.get("name")):
-                continue
-            tools.append(row)
-        return {str(tool["id"]): tool for tool in tools}
+        holder = dict(agent_data)
+        holder["user_id"] = agent_data.get("user_id") or agent_data.get("user")
+        return resolve_holder_tools(
+            conn, "agent", holder, agent_data.get("tools") or [], headless=self.headless,
+            tools_repo=UserToolsRepository(conn),
+        )
 
     def _get_user_tools(self, user: str = "local") -> Dict[str, Dict]:
         """Resolve an agentless chat's toolset: explicit user tools plus defaults."""
@@ -1251,11 +1210,11 @@ class ToolExecutor:
         text = _scan_text(result)
         if not text:
             return result
-        # A search tool's hits were screened one by one as retrieved documents
+        # A search action's hits were screened one by one as retrieved documents
         # (``retrieval_screen``); its result, which joins them, then gets only
         # the whole-text controls, so the model check never scores them twice.
         screened = (
-            tool_name in CITING_TOOLS
+            (tool_name, action_name) in SCREENED_SEARCH_ACTIONS
             and self.retrieval_screen is not None
             and bool(engine.config.controls_for(GuardrailStage.RETRIEVAL, item_level=True))
         )
@@ -2411,6 +2370,7 @@ class ToolExecutor:
             if isinstance(cached_config, dict) and tool_data["name"] in CITING_TOOLS:
                 cached_config["citation_registry"] = self.citation_registry
                 cached_config["retrieval_screen"] = self.retrieval_screen
+                cached_config["source_name_screen"] = self.source_name_screen
             return cached
 
         tm = ToolManager(config={})
@@ -2499,6 +2459,7 @@ class ToolExecutor:
             if tool_data["name"] in CITING_TOOLS:
                 tool_config["citation_registry"] = self.citation_registry
                 tool_config["retrieval_screen"] = self.retrieval_screen
+                tool_config["source_name_screen"] = self.source_name_screen
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's

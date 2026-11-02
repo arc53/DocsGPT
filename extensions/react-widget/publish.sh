@@ -42,6 +42,9 @@ publish_package() {
         echo "Cleaning dist directory..."
         rm -rf dist
     fi
+    # A stale Parcel cache can build a bundle that loads but renders nothing
+    # (a hoisted import left undefined), with no build error.
+    rm -rf .parcel-cache
 
     # Update version based on input parameter or default to patch
     if [[ "$VERSION_UPDATE_TYPE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

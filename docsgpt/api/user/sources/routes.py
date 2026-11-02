@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from docsgpt.agents.tools.path_utils import validate_tool_path
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
-from docsgpt.api.pat.rules import filter_listing
+from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.user.tasks import (
     convert_source_to_wiki,
     extract_graph,
@@ -40,6 +40,14 @@ from docsgpt.api.user.sources.upload import (
     _read_idempotency_key,
     _release_claim,
     reingest_idempotency_key,
+)
+from docsgpt.api.user.resource_usage import (
+    attach_used_by,
+    deletable_ids_of,
+    deletable_row_ids,
+    empty_usage,
+    is_in_use,
+    used_by_many,
 )
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.api.user.utils import error_response
@@ -192,6 +200,84 @@ def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -
     return entry
 
 
+#: The ``kind`` filter of the paginated listing; ``all`` first.
+SOURCE_KINDS = ("all", "files", "websites", "synced", "wikis", "shared")
+
+#: The ``usage`` filter of the paginated listing.
+USAGE_FILTERS = ("all", "in_use", "unused")
+
+def source_kind(row: dict) -> str:
+    """Which of the content kinds a source is: ``wikis``, ``websites``, ``synced`` or ``files``.
+
+    Mirrors the frontend (``settings/sourceKinds.ts``) so the counts the
+    listing returns match the filter the UI draws. The four kinds partition
+    the sources; a source matching more than one takes the first that fits:
+
+    1. ``wikis``: ``config.kind`` is ``wiki`` or the type is ``wiki``
+       (``isWikiSource``). A wiki never syncs, whatever schedule it kept.
+    2. ``websites``: a Website source, or one made by the url, crawler or
+       sitemap loaders (the rows that carry a ``website`` summary). A
+       website on a schedule stays a website.
+    3. ``synced``: content from a connection or a schedule
+       (``isSyncedSource``): a ``connection_id``, a ``connector*`` type, or a
+       ``sync_frequency`` other than ``never``.
+    4. ``files``: everything else: uploads, a graph source, a remote loader
+       that never syncs.
+
+    ``shared`` is not one of them: it cuts across the four (a team's file is
+    both ``files`` and ``shared``), see :func:`matches_kind`.
+
+    Args:
+        row: A ``sources`` row; only ``type``, ``config``, ``remote_data``,
+            ``sync_frequency`` and ``connection_id`` are read.
+
+    Returns:
+        str: The kind.
+    """
+    try:
+        is_wiki = _is_wiki(row)
+    except Exception:  # noqa: BLE001 - an unreadable config is not a wiki
+        is_wiki = False
+    if is_wiki or row.get("type") == "wiki":
+        return "wikis"
+    try:
+        is_website = config_from_legacy(row.get("type"), row.get("remote_data")) is not None
+    except Exception:  # noqa: BLE001 - as in _website_summary, a bad row is not a website
+        is_website = False
+    if is_website:
+        return "websites"
+    frequency = row.get("sync_frequency")
+    if row.get("connection_id") or str(row.get("type") or "").startswith("connector") or (
+        frequency and frequency != "never"
+    ):
+        return "synced"
+    return "files"
+
+
+def matches_kind(kind: str, content_kind: str, shared: bool) -> bool:
+    """Whether a source passes the listing's ``kind`` filter.
+
+    Args:
+        kind: The filter, one of :data:`SOURCE_KINDS`.
+        content_kind: The source's :func:`source_kind`.
+        shared: Whether a team shares the source with the caller (they don't own it).
+
+    Returns:
+        bool: True for ``all``; for ``shared``, the team's sources of any
+        kind; otherwise the sources of that content kind, own and shared.
+    """
+    if kind == "all":
+        return True
+    if kind == "shared":
+        return shared
+    return content_kind == kind
+
+
+def matches_usage(usage: str, in_use: bool) -> bool:
+    """Whether a source passes the listing's ``usage`` filter (``all``, ``in_use`` or ``unused``)."""
+    return usage == "all" or (usage == "in_use") == in_use
+
+
 @sources_ns.route("/sources")
 class CombinedJson(Resource):
     @api.doc(description="Provide JSON file with combined available indexes")
@@ -208,13 +294,15 @@ class CombinedJson(Resource):
         try:
             with db_readonly() as conn:
                 repo = SourcesRepository(conn)
-                indexes = repo.list_for_user(user)
-                owned_ids = {str(i["id"]) for i in indexes}
                 # Sources shared with the caller's teams — surfaced here so they
                 # are attachable to the member's own agents (direct sharing).
+                # One query for both, so the team's rows carry ``ingest_status`` too.
                 team_shared = visible_with_access(conn, user, "source")
-                shared_ids = [sid for sid in team_shared if sid not in owned_ids]
-                shared_sources = repo.list_by_ids(shared_ids)
+                rows = repo.list_for_user(user, extra_ids=list(team_shared))
+                indexes = [r for r in rows if str(r.get("user_id")) == str(user)]
+                owned_ids = {str(i["id"]) for i in indexes}
+                shared_sources = [r for r in rows if str(r["id"]) not in owned_ids]
+                shared_ids = [str(r["id"]) for r in shared_sources]
                 switches = settings_many(conn, "source", [*owned_ids, *shared_ids])
             # list_for_user sorts by created_at DESC; legacy shape sorted by
             # "date" DESC. Both are monotonic on creation so the ordering is
@@ -248,6 +336,8 @@ class CombinedJson(Resource):
                     # to this list, and a website source opens as one.
                     "website": _website_summary(index),
                     "files": _file_count(index),
+                    # As in the paginated listing (SourcesRepository.list_for_user).
+                    "ingestStatus": index.get("ingest_status"),
                 }
                 return _with_access(
                     entry,
@@ -265,15 +355,40 @@ class CombinedJson(Resource):
                         team_access=team_shared.get(str(index["id"])),
                     )
                 )
+            data = filter_listing(request, "sources", data)
+            with db_readonly() as conn:
+                attach_used_by(
+                    conn, user, "source", data,
+                    deletable_ids=deletable_ids_of(data), agent_allowlist=used_by_agent_allowlist(request),
+                )
         except Exception as err:
             current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(filter_listing(request, "sources", data)), 200)
+        return make_response(jsonify(data), 200)
 
 
 @sources_ns.route("/sources/paginated")
 class PaginatedSources(Resource):
-    @api.doc(description="Get document with pagination, sorting and filtering")
+    @api.doc(
+        description=(
+            "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` "
+            "(the agents using it). ``kind_counts`` counts every kind with the search and usage "
+            "filters applied; ``usage_counts`` counts all/in_use/unused with the search and kind "
+            "filters applied."
+        ),
+        params={
+            "page": "Page number, from 1",
+            "rows": "Rows per page",
+            "sort": "date (default), name, tokens, type, created_at or updated_at",
+            "order": "asc or desc (default)",
+            "search": "Substring of the name, case-insensitive",
+            "kind": (
+                "all (default), files, websites, synced, wikis, or shared (sources a team shares "
+                "with the caller, of any kind)"
+            ),
+            "usage": "all (default), in_use (some agent uses it) or unused",
+        },
+    )
     def get(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -284,6 +399,14 @@ class PaginatedSources(Resource):
         page = max(1, int(request.args.get("page", 1)))
         rows_per_page = max(1, int(request.args.get("rows", 10)))
         search_term = request.args.get("search", "").strip() or None
+        kind = request.args.get("kind", "all").strip() or "all"
+        usage = request.args.get("usage", "all").strip() or "all"
+        if kind not in SOURCE_KINDS or usage not in USAGE_FILTERS:
+            return error_response(
+                f"kind must be one of {', '.join(SOURCE_KINDS)}; usage one of {', '.join(USAGE_FILTERS)}",
+                400,
+                code="invalid_filter",
+            )
 
         try:
             with db_readonly() as conn:
@@ -293,9 +416,36 @@ class PaginatedSources(Resource):
                 # by id so count/sort/search/pagination stay correct.
                 team_shared = visible_with_access(conn, user, "source")
                 extra_ids = list(team_shared.keys())
-                total_documents = repo.count_for_user(
-                    user, search_term=search_term, extra_ids=extra_ids,
+                # Kind and usage are judged in Python over every row the search
+                # matches (light columns only); the window is then read in SQL,
+                # narrowed to the ids that pass, so sorting and paging stay there.
+                facets = repo.list_facets_for_user(user, search_term=search_term, extra_ids=extra_ids)
+                ids = [str(row["id"]) for row in facets]
+                used_by = used_by_many(
+                    conn, user, "source", ids,
+                    deletable_ids=deletable_row_ids(conn, user, "source", facets, team_shared),
+                    agent_allowlist=used_by_agent_allowlist(request),
                 )
+                kind_counts = dict.fromkeys(SOURCE_KINDS, 0)
+                usage_counts = dict.fromkeys(USAGE_FILTERS, 0)
+                matching: list[str] = []
+                for row in facets:
+                    sid = str(row["id"])
+                    content_kind = source_kind(row)
+                    shared = str(row.get("user_id")) != str(user)
+                    in_use = is_in_use(used_by.get(sid))
+                    kind_ok = matches_kind(kind, content_kind, shared)
+                    usage_ok = matches_usage(usage, in_use)
+                    if usage_ok:
+                        for name in SOURCE_KINDS:
+                            kind_counts[name] += matches_kind(name, content_kind, shared)
+                    if kind_ok:
+                        for name in USAGE_FILTERS:
+                            usage_counts[name] += matches_usage(name, in_use)
+                    if kind_ok and usage_ok:
+                        matching.append(sid)
+                filtered = kind != "all" or usage != "all"
+                total_documents = len(matching)
                 # Prior in-Python implementation returned ``totalPages = 1``
                 # for empty result sets (``max(1, ceil(0/rows))``); we
                 # preserve that contract so the frontend pager stays stable.
@@ -310,6 +460,7 @@ class PaginatedSources(Resource):
                     sort_field=sort_field,
                     sort_order=sort_order,
                     extra_ids=extra_ids,
+                    only_ids=matching if filtered else None,
                 )
                 switches = settings_many(
                     conn, "source", [str(doc["id"]) for doc in window]
@@ -348,6 +499,7 @@ class PaginatedSources(Resource):
                     "connectionId": _connection_id(doc),
                     "website": _website_summary(doc),
                     "files": _file_count(doc),
+                    "used_by": used_by.get(str(doc["id"])) or empty_usage(),
                 }
                 paginated_docs.append(
                     _with_access(
@@ -361,6 +513,8 @@ class PaginatedSources(Resource):
                 "totalPages": total_pages,
                 "currentPage": effective_page,
                 "paginated": paginated_docs,
+                "kind_counts": kind_counts,
+                "usage_counts": usage_counts,
             }
             return make_response(jsonify(response), 200)
         except Exception as err:

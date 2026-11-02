@@ -273,6 +273,9 @@ class WorkflowEngine:
         # A loop item's own retrieved documents. Items run side by side, so
         # they keep these here rather than on the shared ``self.agent``.
         self._item_docs: Optional[List[Dict[str, Any]]] = None
+        # What the current agent node's retrieval searched and which sources
+        # failed (see ``_retrieve_node_sources``); None when it searched nothing.
+        self._node_search_outcome = None
         # Serializes code nodes on the run's one sandbox session: concurrent loop
         # items would otherwise overwrite each other's state.json and captures.
         self._sandbox_lock = threading.Lock()
@@ -856,6 +859,7 @@ class WorkflowEngine:
 
         node_config = AgentNodeConfig(**node.config.get("config", node.config))
 
+        self._node_search_outcome = None
         node_docs = (
             self._retrieve_node_sources(node_config) if node_config.sources else []
         )
@@ -872,9 +876,8 @@ class WorkflowEngine:
                 f"{formatted_prompt}\n\n{_INVALID_OUTPUT_FEEDBACK.format(error=self._retry_feedback)}"
             )
         node_model_id = node_config.model_id or self.agent.model_id
-        # Inherit BYOM scope from parent agent so owner-stored BYOM
-        # resolves on shared workflows.
-        node_user_id = getattr(self.agent, "model_user_id", None) or (
+        node_model_user_id = self._node_model_user_id(node_config)
+        node_user_id = node_model_user_id or (
             self.agent.decoded_token.get("sub")
             if isinstance(self.agent.decoded_token, dict)
             else None
@@ -927,11 +930,10 @@ class WorkflowEngine:
             "endpoint": self.agent.endpoint,
             "llm_name": node_llm_name,
             "model_id": node_model_id,
-            "model_user_id": getattr(self.agent, "model_user_id", None),
+            "model_user_id": node_model_user_id,
             "api_key": node_api_key,
             "tool_ids": node_config.tools,
             "tool_owner": self._workflow_owner_id(),
-            "tool_principals": self._node_tool_principals(node_config.tools),
             "tool_holder": getattr(self.agent, "workflow_row", None),
             "prompt": node_prompt,
             "chat_history": self.agent.chat_history,
@@ -946,6 +948,7 @@ class WorkflowEngine:
                 node_config.prompt_template
             ),
             "sources_were_searched": bool(node_config.sources),
+            "search_outcome": self._node_search_outcome,
             # The workflow agent's context limit; a node on a smaller model
             # still budgets against that model's own window.
             "context_window_limit": getattr(self.agent, "context_window_limit", None),
@@ -962,6 +965,7 @@ class WorkflowEngine:
                 "retriever_name": node_config.retriever or "classic",
                 "chunks": int(node_config.chunks) if node_config.chunks else 6,
                 "model_id": node_model_id,
+                "model_user_id": node_model_user_id,
                 "llm_name": node_llm_name,
                 "api_key": node_api_key,
                 "decoded_token": self.agent.decoded_token,
@@ -2297,6 +2301,25 @@ class WorkflowEngine:
         for attr in ("tool_allowlist", "api_write_allowlist"):
             setattr(node_executor, attr, set(getattr(run_executor, attr, None) or ()))
 
+    def _node_model_user_id(self, node_config: AgentNodeConfig) -> Optional[str]:
+        """The account a node's model is looked up in (its BYOM scope).
+
+        A model set on the node was chosen by the workflow's author, so it
+        resolves in the owner's account whoever runs the workflow: custom
+        model ids are per-user, and the caller has no copy of the owner's.
+        A node without one runs on the run's model, in the run's scope.
+
+        Args:
+            node_config: The agent node's configuration.
+
+        Returns:
+            The owner's id for a node that sets ``model_id``; otherwise the
+            parent agent's ``model_user_id``, which may be None (the caller).
+        """
+        if node_config.model_id:
+            return self._workflow_owner_id()
+        return getattr(self.agent, "model_user_id", None)
+
     def _workflow_owner_id(self) -> Optional[str]:
         """The workflow's owner, whom node tools and sources run as.
 
@@ -2305,36 +2328,6 @@ class WorkflowEngine:
         """
         resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
         return (resolve_owner() if callable(resolve_owner) else None) or self._resolve_user_id()
-
-    def _node_tool_principals(self, tool_ids) -> Dict[str, str]:
-        """Node tool id -> the editor to resolve it as, for sponsored tools.
-
-        Only tools with a live sponsor on the workflow appear; the executor
-        still tries the owner first.
-
-        Args:
-            tool_ids: The node's configured tool ids.
-
-        Returns:
-            dict: ``tool_id -> sponsor`` user id.
-        """
-        workflow_row = getattr(self.agent, "workflow_row", None)
-        if not tool_ids or not workflow_row or not workflow_row.get("resource_sponsors"):
-            return {}
-        from docsgpt.api.user.resource_access import active_sponsor
-        from docsgpt.storage.db.session import db_readonly
-
-        principals: Dict[str, str] = {}
-        try:
-            with db_readonly() as conn:
-                for tid in tool_ids:
-                    sponsor = active_sponsor(conn, "workflow", workflow_row, "tool", str(tid))
-                    if sponsor:
-                        principals[str(tid)] = sponsor
-        except Exception:
-            logger.exception("Workflow node tool sponsor lookup failed; using the owner only.")
-            return {}
-        return principals
 
     def _authorized_node_sources(self, sources) -> list:
         """Filter a node's configured source ids to those its owner may read.
@@ -2362,25 +2355,19 @@ class WorkflowEngine:
             logger.warning("Workflow node sources dropped: no owner to authorize.")
             return []
 
-        from docsgpt.api.user.resource_access import log_stopped, ref_access
+        from docsgpt.api.user.resource_access import authorized_holder_sources
         from docsgpt.storage.db.session import db_readonly
 
-        # The same check the workflow page's run state uses: the owner, else
-        # the editor who attached it while they still qualify.
+        # The same check the workflow page's run state uses, and an agent's
+        # own sources: the owner, else the editor who attached it while they
+        # still qualify.
         holder = {**(getattr(self.agent, "workflow_row", None) or {}), "user_id": owner}
-        allowed = []
         try:
             with db_readonly() as conn:
-                for sid in ids:
-                    access = ref_access(conn, "workflow", holder, "source", str(sid)) if sid else None
-                    if access is not None and access.principal:
-                        allowed.append(sid)
-                    else:
-                        log_stopped("workflow", holder, "source", sid, access.reason if access else None)
+                return authorized_holder_sources(conn, "workflow", holder, ids)
         except Exception:
             logger.exception("Workflow node source authorization failed; dropping all.")
             return []
-        return allowed
 
     def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> list:
         """Retrieve this node's source documents.
@@ -2396,14 +2383,17 @@ class WorkflowEngine:
             list: Retrieved documents, empty when there was nothing to fetch.
         """
         from docsgpt.core.settings import settings
+        from docsgpt.retriever.base import SearchOutcome, search_outcome_of
         from docsgpt.retriever.retriever_creator import RetrieverCreator
         from docsgpt.retriever.stages.boilerplate_pruning import prune_boilerplate
         from docsgpt.retriever.stages.relevance import apply_relevance
 
+        self._node_search_outcome = None
         query = self.state.get("query", "")
         if not query:
             return []
 
+        sources: list = []
         try:
             sources = self._authorized_node_sources(node_config.sources)
             retriever = RetrieverCreator.create_retriever(
@@ -2415,6 +2405,7 @@ class WorkflowEngine:
                 decoded_token=self.agent.decoded_token,
             )
             docs = retriever.search(query)
+            self._node_search_outcome = search_outcome_of(retriever, sources)
             if docs:
                 try:
                     rerankers = self._node_rerankers(sources)
@@ -2441,6 +2432,12 @@ class WorkflowEngine:
             return docs or []
         except Exception:
             logger.exception("Failed to retrieve docs for workflow node")
+            if self._node_search_outcome is None:
+                # The search itself raised, which is not "nothing matched":
+                # the node agent is told the sources could not be searched.
+                # Only the authorized ones: the raw configured ids may name
+                # another user's source, whose name would reach the model.
+                self._node_search_outcome = SearchOutcome.of(sources, sources)
             return []
 
     @staticmethod

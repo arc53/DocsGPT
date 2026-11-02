@@ -10,7 +10,6 @@ import { Agent, AgentFolder } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
 import {
-  getLocalPrompt,
   getLocalRecentDocs,
   setLocalApiKey,
   setLocalRecentDocs,
@@ -38,9 +37,13 @@ export interface Preference {
   chunks: string;
   selectedDocs: Doc[];
   sourceDocs: Doc[] | null;
+  /** The last source list fetch failed; `sourceDocs` is then null. */
+  sourceDocsFailed: boolean;
   conversations: {
     data: ConversationSummary[] | null;
     loading: boolean;
+    /** The last newest-page fetch failed; `data` is then null. */
+    failed?: boolean;
     /** Older chats exist past the last one loaded. */
     hasMore?: boolean;
   };
@@ -91,6 +94,7 @@ const initialState: Preference = {
   chunks: '6',
   selectedDocs: [],
   sourceDocs: null,
+  sourceDocsFailed: false,
   conversations: {
     data: null,
     loading: false,
@@ -127,8 +131,10 @@ export const prefSlice = createSlice({
     setSelectedDocs: (state, action) => {
       state.selectedDocs = action.payload;
     },
+    /** A source list fetch's answer; null when it failed. */
     setSourceDocs: (state, action) => {
       state.sourceDocs = action.payload;
+      state.sourceDocsFailed = action.payload === null;
     },
     setPaginatedDocuments: (state, action) => {
       state.paginatedDocuments = action.payload;
@@ -176,7 +182,7 @@ export const prefSlice = createSlice({
       }>,
     ) => {
       if (!action.payload.data) {
-        state.conversations = { data: null, loading: false };
+        state.conversations = { data: null, loading: false, failed: true };
         return;
       }
       prefSlice.caseReducers.setConversationsHead(state, {
@@ -362,16 +368,6 @@ prefListenerMiddleware.startListening({
 });
 
 prefListenerMiddleware.startListening({
-  matcher: isAnyOf(setPrompt),
-  effect: (action, listenerApi) => {
-    localStorage.setItem(
-      'DocsGPTPrompt',
-      JSON.stringify((listenerApi.getState() as RootState).preference.prompt),
-    );
-  },
-});
-
-prefListenerMiddleware.startListening({
   matcher: isAnyOf(setChunks),
   effect: (action, listenerApi) => {
     localStorage.setItem(
@@ -395,24 +391,24 @@ prefListenerMiddleware.startListening({
   },
 });
 
+// The chat prompt follows the list: a rename shows, and a prompt deleted or
+// no longer shared falls back to default, as the server reads it back.
 prefListenerMiddleware.startListening({
   matcher: isAnyOf(setPrompts),
   effect: (_action, listenerApi) => {
-    const state = listenerApi.getState() as RootState;
-    const availablePrompts = state.preference.prompts;
-    if (availablePrompts && availablePrompts.length > 0) {
-      const validatedPrompt = getLocalPrompt(availablePrompts);
-      if (validatedPrompt !== null) {
-        listenerApi.dispatch(setPrompt(validatedPrompt));
-      } else {
-        const defaultPrompt =
-          availablePrompts.find((p) => p.id === 'default') ||
-          availablePrompts[0];
-        if (defaultPrompt) {
-          listenerApi.dispatch(setPrompt(defaultPrompt));
-        }
-      }
+    const { prompt, prompts } = (listenerApi.getState() as RootState)
+      .preference;
+    if (!prompts || prompts.length === 0) return;
+    const listed = prompts.find((p) => p.id === prompt.id);
+    if (listed) {
+      if (listed.name !== prompt.name)
+        listenerApi.dispatch(setPrompt({ ...prompt, name: listed.name }));
+      return;
     }
+    const fallback = prompts.find((p) => p.id === 'default') ?? prompts[0];
+    listenerApi.dispatch(
+      setPrompt({ id: fallback.id, name: fallback.name, type: fallback.type }),
+    );
   },
 });
 
@@ -452,6 +448,8 @@ export const selectSelectedDocsStatus = (state: RootState) =>
   state.preference.selectedDocs.length > 0;
 export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
+export const selectSourceDocsFailed = (state: RootState) =>
+  state.preference.sourceDocsFailed;
 export const selectModalStateDeleteConv = (state: RootState) =>
   state.preference.modalState;
 export const selectSelectedDocs = (state: RootState) =>

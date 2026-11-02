@@ -4093,14 +4093,12 @@ def agent_webhook_worker(self, agent_id, payload):
                 # Access without user scoping — webhooks authenticate via
                 # the incoming token, not a user context.
                 from sqlalchemy import text as sql_text
-                from docsgpt.storage.db.base_repository import row_to_dict
+                from docsgpt.storage.db.repositories.agents import agent_row_to_dict
                 result = conn.execute(
                     sql_text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"),
                     {"id": str(agent_id)},
                 )
-                row = result.fetchone()
-                if row is not None:
-                    agent_config = row_to_dict(row)
+                agent_config = agent_row_to_dict(result.fetchone())
             if agent_config is None:
                 agent_config = repo.get_by_legacy_id(str(agent_id))
         if not agent_config:

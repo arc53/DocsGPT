@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react';
-import { type ReactNode } from 'react';
+import { type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
@@ -46,6 +46,13 @@ type AgentPageHeaderProps = {
    * page. Omitted (a new workflow, not yet loaded), every tab shows.
    */
   access?: (AccessFields & { status?: string }) | null;
+  /**
+   * The click handler for the header's links (the Agents crumb and the
+   * tabs). The builder covers the sidebar, so these are its main exits; it
+   * passes its leave guard's `onNavigate()` so they ask before leaving
+   * unsaved work.
+   */
+  onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
 };
 
 /**
@@ -56,7 +63,8 @@ type AgentPageHeaderProps = {
  * (`buildAgentSection`), flat and in its order, with Overview (the builder)
  * always current. The current crumb is the agent's avatar,
  * name and a chevron in a `ghost sm` Button that opens the details, like the
- * phone top bar's chat title. Section pages use
+ * phone top bar's chat title. Its links go through `onNavigate`, the
+ * builder's leave guard. Section pages use
  * `components/AgentPageToolbar` and the sidebar instead.
  */
 export default function AgentPageHeader({
@@ -68,6 +76,7 @@ export default function AgentPageHeader({
   onNameClick,
   status,
   access,
+  onNavigate,
 }: AgentPageHeaderProps) {
   const { t } = useTranslation();
   const analyticsEnabled = useSelector(selectAnalyticsEnabled);
@@ -93,7 +102,7 @@ export default function AgentPageHeader({
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link to={AGENTS_MANAGE_ROOT}>
+                <Link to={AGENTS_MANAGE_ROOT} onClick={onNavigate}>
                   {t('agents.pageHeader.crumbs.agents')}
                 </Link>
               </BreadcrumbLink>
@@ -152,7 +161,9 @@ export default function AgentPageHeader({
               {tab.key === 'overview' ? (
                 <span>{t(tab.labelKey)}</span>
               ) : (
-                <Link to={tab.path}>{t(tab.labelKey)}</Link>
+                <Link to={tab.path} onClick={onNavigate}>
+                  {t(tab.labelKey)}
+                </Link>
               )}
             </NavTab>
           ))}

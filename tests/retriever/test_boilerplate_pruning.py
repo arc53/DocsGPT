@@ -178,6 +178,36 @@ class TestBoilerplatePruningRules:
             cleaned = prune_chunk_text(line, query=query)
             assert cleaned == expected, f"Failed for query {query!r}: got {cleaned!r}, expected {expected!r}"
 
+    def test_preserves_one_character_query_terms(self):
+        """Single-letter queries like 'C' or 'R' must protect matching navigation-like lines."""
+        raw = "Next page: C memory model"
+        cleaned = prune_chunk_text(raw, query="C")
+        assert cleaned == raw
+
+    def test_preserves_factual_sentences_with_nav_prefixes(self):
+        """Lines starting with 'Next page:' containing full factual sentences or punctuation must not be pruned."""
+        cases = [
+            "Next page: The API returns 401 for expired credentials.",
+            "Next page: What is the default timeout?",
+            "Previous page: This requires administrative privileges!",
+        ]
+        for line in cases:
+            cleaned = prune_chunk_text(line, query="")
+            assert cleaned == line, f"Factual line was pruned: {line!r}"
+
+    def test_preserves_indented_markdown_code_and_pipe_tables(self):
+        """Four-space indented lines and tables without edge pipes must survive pruning."""
+        raw = (
+            "Example code block:\n"
+            "    Next page: Authentication\n"
+            "Summary text."
+        )
+        cleaned = prune_chunk_text(raw, query="")
+        assert "    Next page: Authentication" in cleaned
+
+        table_row = "Next page: Authentication | Description"
+        assert prune_chunk_text(table_row, query="") == table_row
+
     def test_preserves_negations_and_qualifiers(self):
         raw = (
             "Quick Links\n"

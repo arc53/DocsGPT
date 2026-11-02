@@ -16,6 +16,11 @@ interface ConfigToolModalProps {
   setModalState: (state: ActiveState) => void;
   tool: AvailableToolType | null;
   getUserTools: () => void;
+  /**
+   * The new tool's id, once it is created; given, it stands in for
+   * `getUserTools` (the opener reloads its list to put the tool on).
+   */
+  onCreated?: (toolId: string) => void;
 }
 
 export default function ConfigToolModal({
@@ -23,6 +28,7 @@ export default function ConfigToolModal({
   setModalState,
   tool,
   getUserTools,
+  onCreated,
 }: ConfigToolModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -105,9 +111,13 @@ export default function ConfigToolModal({
         },
         token,
       )
-      .then(() => {
+      .then(async (response) => {
+        const data = response.ok
+          ? await response.json().catch(() => null)
+          : null;
         handleClose();
-        getUserTools();
+        if (onCreated && typeof data?.id === 'string') onCreated(data.id);
+        else getUserTools();
       })
       .finally(() => setSaving(false));
   };
