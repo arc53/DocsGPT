@@ -68,7 +68,7 @@ field grid, then Advanced, Guardrails and Insights. Schedules shows a
 `StatCard` row, Recurring / One-time as `ui/tabs`, and
 each schedule as a `ScheduleRow` (see Agent pages).
 
-A detail page inside a list section (an open team, tool or remote device)
+A detail page inside a list section (an open team, tool, prompt or remote device)
 swaps the list's `PageToolbar` for a crumb row at the 38px field height
 (`min-h-9.5`): `DetailBreadcrumb` on the left; on the right the page's
 buttons (`field` pills: the tool's Save) and the object's ⋯ (`ActionMenu
