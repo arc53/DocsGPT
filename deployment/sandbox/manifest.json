@@ -77,7 +77,7 @@
       "use": "YAML"
     },
     {
-      "spec": "pypdf==6.21.2",
+      "spec": "pypdf==6.21.4",
       "import": "pypdf",
       "use": "read, merge and split PDFs"
     },
