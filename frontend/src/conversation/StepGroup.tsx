@@ -34,6 +34,7 @@ const STEP_ICONS: Record<string, LucideIcon> = {
   wiki: BookOpen,
   brave: Search,
   duckduckgo: Search,
+  keenable: Search,
   telegram: Send,
   ntfy: Bell,
   postgres: Database,

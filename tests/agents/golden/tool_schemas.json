@@ -308,6 +308,40 @@
       }
     }
   },
+  "keenable.keenable_fetch_page": {
+    "type": "object",
+    "required": [
+      "url"
+    ],
+    "properties": {
+      "url": {
+        "type": "string"
+      },
+      "live": {
+        "type": "boolean"
+      }
+    }
+  },
+  "keenable.keenable_web_search": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "max_results": {
+        "type": "integer"
+      },
+      "site": {
+        "type": "string"
+      },
+      "published_after": {
+        "type": "string"
+      }
+    }
+  },
   "memory.memory_create": {
     "type": "object",
     "required": [
