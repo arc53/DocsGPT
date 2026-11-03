@@ -168,6 +168,83 @@ def test_markdown_fence_closes_with_crlf_line_endings():
     assert "run it" in tups[1][1]
 
 
+def test_markdown_text_before_first_heading_is_kept():
+    content = "Intro paragraph.\n\n# Install\nrun it\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert tups == [(None, "Intro paragraph.\n\n"), ("Install", "run it\n\n")]
+
+
+@pytest.mark.parametrize(
+    "preamble",
+    [
+        "\n\n",
+        "<!-- markdownlint-disable MD033 -->\n",
+        '<p align="center"><img src="logo.png"></p>\n',
+        "---\ntitle: Install\n---\n\nimport { Callout } from 'nextra/components';\n\n",
+        "---\r\ntitle: Install\r\n---\r\n",
+        '+++\ntitle = "Install"\n+++\n',
+        "---\ntitle: Install\n---\n\n{/* Generated file, do not edit. */}\n",
+        '<VersionBadge version="2.10.0" />\n',
+        "\ufeff---\ntitle: Install\n---\n",
+        "---\n# Generated, do not edit\ntitle: Install\n---\n",
+        "import {\n  Callout,\n  Tabs,\n} from 'nextra/components';\n",
+        "import Image from 'next/image'; // used further down\n",
+        "import\n  Callout from 'nextra/components';\n",
+        "import Callout from\n  'nextra/components';\n",
+        "export const meta = {\n  title: 'Install',\n};\n",
+        '<Badge text="v1 -> v0" />\n',
+        "<Chart data={x > 1} />\n",
+        '<Badge style={{ color: "red" }} />\n',
+        "---\n",
+    ],
+)
+def test_markdown_preamble_without_text_adds_no_section(preamble):
+    tups = MarkdownParser().markdown_to_tups(preamble + "# Install\nrun it\n")
+    assert tups == [("Install", "run it\n\n")]
+
+
+def test_markdown_horizontal_rule_and_heading_are_not_front_matter():
+    content = "---\n# Introduction\nRead this first.\n\n- Step 1\n---\n# Usage\nrun it\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert [h for h, _ in tups] == ["Introduction", "Usage"]
+    assert "Read this first." in tups[0][1]
+
+
+def test_markdown_import_followed_by_long_whitespace_is_parsed():
+    # The import pattern's words and whitespace never overlap, so this is quick.
+    tups = MarkdownParser().markdown_to_tups("import" + " " * 50_000 + "\n# Install\nrun it\n")
+    assert tups[-1] == ("Install", "run it\n\n")
+
+
+def test_markdown_prose_starting_with_import_is_kept():
+    tups = MarkdownParser().markdown_to_tups("import the SDK before setup.\n# Install\nrun it\n")
+    assert tups[0] == (None, "import the SDK before setup.\n")
+
+
+def test_markdown_comment_left_open_before_first_heading_adds_no_section():
+    # A "#" line inside an HTML comment is still taken for a heading; the
+    # comment's opening line alone is not text.
+    tups = MarkdownParser().markdown_to_tups("<!--\n# Note\n-->\n# Install\nrun it\n")
+    assert None not in [h for h, _ in tups]
+
+
+def test_markdown_front_matter_stays_with_the_intro_after_it():
+    content = "---\ntitle: Guide\n---\nIntro paragraph.\n## Setup\nsteps\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert tups == [
+        (None, "---\ntitle: Guide\n---\nIntro paragraph.\n"),
+        ("Setup", "steps\n\n"),
+    ]
+
+
+def test_markdown_parse_file_keeps_text_before_first_heading():
+    content = "Project summary.\n## Usage\ntext\n"
+    parser = MarkdownParser()
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("doc.md"))
+    assert result == ["Project summary.\n", "\n\nUsage\ntext\n\n"]
+
+
 def test_tups_chunk_append_small_text_golden():
     parser = MarkdownParser(max_tokens=4)
     assert parser.tups_chunk_append([], None, "ab\n") == [(None, "ab\n")]
