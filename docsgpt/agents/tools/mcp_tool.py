@@ -146,9 +146,18 @@ def _secret_token(secret: str) -> str:
         token = _secret_tokens.get(secret)
         if token is None:
             while len(_secret_tokens) >= SECRET_TOKENS_MAX:
-                del _secret_tokens[next(iter(_secret_tokens))]
+                _forget_secret_token(_secret_tokens.pop(next(iter(_secret_tokens))))
             token = _secret_tokens[secret] = secrets.token_hex(8)
         return token
+
+
+def _forget_secret_token(token: str) -> None:
+    """Drop what was cached under an evicted token: the secret gets a new one, so nothing would find it again."""
+    suffix = f":{token}"
+    for key in [k for k in list(_mcp_clients_cache) if k.endswith(suffix)]:
+        _mcp_clients_cache.pop(key, None)
+    for key in [k for k in list(_ui_resource_cache) if str(k[0]).endswith(suffix)]:
+        _ui_resource_cache.pop(key, None)
 
 
 def param_header_maps(schemas: Dict[str, Any]) -> Dict[str, Dict[tuple, str]]:
