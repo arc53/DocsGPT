@@ -150,13 +150,14 @@ class TestViewOnTheCall:
         assert "ui" not in completed["data"]
         assert any(isinstance(r, dict) and "structuredContent" in r for r in scanned)
 
-    def test_an_exposed_secret_the_server_echoes_is_a_reference_in_the_view(
+    def test_the_views_copy_is_sanitized_and_redacted(
         self, apps, mock_tool_manager, monkeypatch
     ):
         _route(monkeypatch, "create_view")
         tool = mock_tool_manager.load_tool.return_value
+        # A control character too: the view's copy is sanitized like every other.
         tool.take_app_result = Mock(return_value={
-            "content": [{"type": "text", "text": "key=raw-secret"}], "structuredContent": {"key": "raw-secret"},
+            "content": [{"type": "text", "text": "key=raw-secret\x07"}], "structuredContent": {"key": "raw-secret"},
         })
         executor = ToolExecutor(user="u1")
         monkeypatch.setattr(executor, "exposed_secrets", lambda: {"raw-secret": "{{link_secret:ABCDEF}}"})

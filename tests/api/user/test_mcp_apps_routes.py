@@ -73,6 +73,7 @@ def _executor(resolved=None, connection_pins=None):
     executor = MagicMock()
     executor._resolve_connection.return_value = resolved
     executor._connection_parameters.return_value = connection_pins or {}
+    executor.redact_app_result.side_effect = lambda result: result
     return executor
 
 
@@ -248,6 +249,36 @@ class TestCall:
         with _found(_row()):
             response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_checkpoint", "arguments": [1]})
         assert response.status_code == 400
+
+    def test_the_result_is_cleaned_as_an_agents_calls_is(self, app, tool, monkeypatch):
+        # Control characters out, and an exposed secret the server echoes back as its reference.
+        from docsgpt.agents.tool_executor import ToolExecutor
+
+        executor = ToolExecutor(user="alice")
+        monkeypatch.setattr(executor, "exposed_secrets", lambda: {"raw-secret": "{{link_secret:ABCDEF}}"})
+        tool.call_app_tool.return_value = {
+            "content": [{"type": "text", "text": "key=raw-secret\x07"}],
+            "structuredContent": {"key": "raw-secret"},
+            "isError": False,
+        }
+        with _found(_row(), executor):
+            response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_checkpoint"})
+        assert response.status_code == 200
+        assert response.get_json()["result"] == {
+            "content": [{"type": "text", "text": "key={{link_secret:ABCDEF}}"}],
+            "structuredContent": {"key": "{{link_secret:ABCDEF}}"},
+            "isError": False,
+        }
+
+    def test_an_unusable_connection_answers_a_fixed_message(self, app, tool):
+        # The exception's own text may quote the provider; the caller gets the connector routes' answer.
+        from docsgpt.connectors.service import ConnectionUnavailable
+
+        tool.call_app_tool.side_effect = ConnectionUnavailable("upstream said: token xyz revoked")
+        with _found(_row()):
+            response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_checkpoint"})
+        assert response.status_code == 409
+        assert response.get_json() == {"success": False, "error": "Reconnect to continue", "code": "reconnect"}
 
     def test_a_body_that_is_not_an_object(self, app, tool):
         with _found(_row()):

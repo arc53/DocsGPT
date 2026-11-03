@@ -239,6 +239,7 @@ describe('isUsableSandbox', () => {
     ['http://127.0.0.2:7091/sb', 'https://app.example.com/c', true],
     ['http://api.localhost:7091/sb', 'https://app.example.com/c', true],
     ['http://127evil.example.com/sb', 'https://app.example.com/c', false],
+    ['http://127.example.com/sb', 'https://app.example.com/c', false],
     // On the page's own origin the view would run where the session lives.
     ['https://app.example.com/sb', 'https://app.example.com/c', false],
     ['not a url', 'https://app.example.com/c', false],

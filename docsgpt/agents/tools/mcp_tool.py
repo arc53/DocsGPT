@@ -1,9 +1,9 @@
 import asyncio
 import base64
 import concurrent.futures
-import hashlib
 import json
 import logging
+import secrets
 import threading
 import time
 import weakref
@@ -126,14 +126,29 @@ OAUTH_TASK_KEY_TTL = 900
 OAUTH_CANCELLED = "1"
 
 
-def _secret_fingerprint(secret: str) -> str:
-    """A short digest of a whole secret, for telling cached clients apart.
+#: Secret -> the opaque token that stands for it in this process's cache keys.
+_secret_tokens: Dict[str, str] = {}
+_secret_tokens_guard = threading.Lock()
+SECRET_TOKENS_MAX = 1024
+
+
+def _secret_token(secret: str) -> str:
+    """An opaque token for a whole secret, for telling cached clients apart.
 
     A prefix of the secret itself is not enough: every fine-grained GitHub
     token starts with ``github_pat_``, so two users' tokens would share (and
-    reuse) one cached client carrying the first user's token.
+    reuse) one cached client carrying the first user's token. The token is
+    random, not a digest: the caches are in-process, so it only has to be
+    the same for the same secret within this process, and then no hash of a
+    password or key exists anywhere to crack.
     """
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
+    with _secret_tokens_guard:
+        token = _secret_tokens.get(secret)
+        if token is None:
+            while len(_secret_tokens) >= SECRET_TOKENS_MAX:
+                del _secret_tokens[next(iter(_secret_tokens))]
+            token = _secret_tokens[secret] = secrets.token_hex(8)
+        return token
 
 
 def param_header_maps(schemas: Dict[str, Any]) -> Dict[str, Dict[tuple, str]]:
@@ -342,16 +357,16 @@ class MCPTool(Tool):
             token = self.auth_credentials.get(
                 "bearer_token", ""
             ) or self.auth_credentials.get("access_token", "")
-            auth_key = f"bearer:{_secret_fingerprint(token)}" if token else "bearer:none"
+            auth_key = f"bearer:{_secret_token(token)}" if token else "bearer:none"
         elif self.auth_type == "api_key":
             api_key = self.auth_credentials.get("api_key", "")
-            auth_key = f"apikey:{_secret_fingerprint(api_key)}" if api_key else "apikey:none"
+            auth_key = f"apikey:{_secret_token(api_key)}" if api_key else "apikey:none"
         elif self.auth_type == "basic":
             username = self.auth_credentials.get("username", "")
             password = self.auth_credentials.get("password", "")
             # The password too: two rows with one username and different
             # passwords must not share a client or a cached view.
-            auth_key = f"basic:{username}:{_secret_fingerprint(password)}" if password else f"basic:{username}"
+            auth_key = f"basic:{username}:{_secret_token(password)}" if password else f"basic:{username}"
         else:
             auth_key = "none"
         return f"{self.server_url}#{self.transport_type}#{auth_key}"

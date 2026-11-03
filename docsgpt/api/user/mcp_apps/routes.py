@@ -135,8 +135,9 @@ class McpAppResource(Resource):
 
         try:
             view = _load(*found).read_ui_resource(uri)
-        except ConnectionUnavailable as exc:
-            return _error(str(exc), 409)
+        except ConnectionUnavailable:
+            # A fixed message, as the connector routes answer: the exception's own may quote the provider.
+            return _error("Reconnect to continue", 409, code="reconnect")
         except Exception as exc:
             logger.warning("MCP App view %s could not be read: %s", uri, exc)
             return _error("The view could not be loaded from its MCP server", 502)
@@ -207,9 +208,10 @@ class McpAppCall(Resource):
 
         try:
             result = _load(executor, row).call_app_tool(name, arguments)
-        except ConnectionUnavailable as exc:
-            return _error(str(exc), 409)
+        except ConnectionUnavailable:
+            return _error("Reconnect to continue", 409, code="reconnect")
         except Exception as exc:
             logger.warning("MCP App call to %s failed: %s", name, exc)
             return _error("The tool call failed", 502)
-        return make_response(jsonify({"success": True, "result": result}), 200)
+        # As the view's copy of an agent's call: no control characters, no raw exposed secrets.
+        return make_response(jsonify({"success": True, "result": executor.redact_app_result(result)}), 200)

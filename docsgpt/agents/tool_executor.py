@@ -2662,14 +2662,32 @@ class ToolExecutor:
             return None
         view: Dict[str, Any] = {"resource_uri": uri, "tool_id": str(tool_data["id"])}
         if isinstance(result, dict):
-            secrets = {**secrets, **self.exposed_secrets()}
-            if secrets:
-                result = secret_refs.redact(result, secrets)
+            result = self.redact_app_result(result, secrets)
             screened = self._guardrail_tool_result(result, tool_data.get("name", ""), str(action.get("name") or ""))
             if screened is not result:
                 return None
             view["result"] = result
         return view
+
+    def redact_app_result(self, result: Dict, secrets: Optional[Dict[str, str]] = None) -> Dict:
+        """A ``CallToolResult`` as it may leave the server for an MCP App view.
+
+        Control characters are stripped, as from any tool result, and raw
+        secrets are put back to their references: the ones filled into this
+        turn's calls (``secrets``) and the ones the user exposed to the model,
+        which the journal does too. Shared with ``/api/mcp_apps/call``, whose
+        results go to the view alone.
+
+        Args:
+            result: The result, ``structuredContent`` included.
+            secrets: ``{secret: reference}`` filled into this turn's calls, if any.
+
+        Returns:
+            A clean copy, or ``result`` itself when nothing had to change.
+        """
+        result = sanitize_tool_result(result)
+        secrets = {**(secrets or {}), **self.exposed_secrets()}
+        return secret_refs.redact(result, secrets) if secrets else result
 
     def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:
         """Take the images a tool queued for the model, up to the turn's limit.

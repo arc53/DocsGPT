@@ -113,10 +113,14 @@ export function isOpenableLink(url: unknown): url is string {
   }
 }
 
-/** Loopback as the browser counts it for mixed content: 127/8, ::1 and the localhost names. */
+/**
+ * Loopback as the browser counts it for mixed content: 127/8, ::1 and the
+ * localhost names. The URL parser writes an IPv4 host in dotted decimal, so
+ * the pattern matches addresses only, never a name such as 127.example.com.
+ */
 function isLoopback(hostname: string): boolean {
   return (
-    /^127\./.test(hostname) ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
     hostname === '[::1]' ||
     hostname === 'localhost' ||
     hostname.endsWith('.localhost')
@@ -162,9 +166,11 @@ export class McpAppHost {
     const message = event.data as JsonRpcMessage;
     if (!message || message.jsonrpc !== '2.0') return;
     if (message.method === undefined) {
-      if (message.id !== undefined) {
-        this.waiting.get(message.id)?.();
+      // An answer to a request of ours (teardown): settle it, if it is one we sent.
+      if (typeof message.id === 'string' || typeof message.id === 'number') {
+        const settle = this.waiting.get(message.id);
         this.waiting.delete(message.id);
+        if (typeof settle === 'function') settle();
       }
       return;
     }
