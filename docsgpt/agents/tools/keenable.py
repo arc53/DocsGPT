@@ -19,18 +19,36 @@ class KeenableSearchTool(Tool):
     Works without an API key (rate limited per IP); an optional key lifts the limit.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: dict) -> None:
+        """Initialize the tool from its configuration.
+
+        Args:
+            config: Tool configuration with an optional ``token`` and ``timeout``.
+        """
         self.config = config
         self.token = (config.get("token") or "").strip()
         self.timeout = config.get("timeout", DEFAULT_TIMEOUT)
 
-    def _endpoint(self, name):
+    def _endpoint(self, name: str) -> str:
+        """Return the keyed or keyless endpoint URL for an API.
+
+        Args:
+            name: API name, ``search`` or ``fetch``.
+
+        Returns:
+            The full endpoint URL.
+        """
         # Keyless calls go to the public endpoints, which require an app title header.
         if self.token:
             return f"{BASE_URL}/{name}"
         return f"{BASE_URL}/{name}/public"
 
-    def _headers(self):
+    def _headers(self) -> dict:
+        """Build request headers: ``X-API-Key`` when keyed, else the app title.
+
+        Returns:
+            The HTTP headers for a Keenable request.
+        """
         headers = {"Accept": "application/json"}
         if self.token:
             headers["X-API-Key"] = self.token
@@ -38,7 +56,19 @@ class KeenableSearchTool(Tool):
             headers["X-Keenable-Title"] = APP_TITLE
         return headers
 
-    def execute_action(self, action_name, **kwargs):
+    def execute_action(self, action_name: str, **kwargs) -> dict:
+        """Run one of the tool's actions.
+
+        Args:
+            action_name: ``keenable_web_search`` or ``keenable_fetch_page``.
+            **kwargs: Arguments for the action.
+
+        Returns:
+            The action's result dict.
+
+        Raises:
+            ValueError: If the action name is unknown.
+        """
         actions = {
             "keenable_web_search": self._web_search,
             "keenable_fetch_page": self._fetch_page,
@@ -51,13 +81,21 @@ class KeenableSearchTool(Tool):
 
     def _web_search(
         self,
-        query,
-        max_results=10,
-        site=None,
-        published_after=None,
-    ):
-        """
-        Performs a web search with the Keenable Search API.
+        query: str,
+        max_results: int = 10,
+        site: str | None = None,
+        published_after: str | None = None,
+    ) -> dict:
+        """Perform a web search with the Keenable Search API.
+
+        Args:
+            query: The search query.
+            max_results: Number of results, clamped to 1-50.
+            site: Optional site to restrict results to.
+            published_after: Optional ``YYYY-MM-DD`` lower bound on publish date.
+
+        Returns:
+            A dict with ``status_code``, ``results`` and ``message``.
         """
         logger.debug("Performing Keenable web search for: %s", query)
 
@@ -110,9 +148,16 @@ class KeenableSearchTool(Tool):
             "message": f"Search failed with status code: {response.status_code}.",
         }
 
-    def _fetch_page(self, url, max_chars=20000, live=False):
-        """
-        Fetches a page as clean markdown with the Keenable Fetch API.
+    def _fetch_page(self, url: str, max_chars: int = 20000, live: bool = False) -> dict:
+        """Fetch a page as clean markdown with the Keenable Fetch API.
+
+        Args:
+            url: The page URL.
+            max_chars: Maximum characters of content to return.
+            live: Fetch live instead of from the index.
+
+        Returns:
+            A dict with ``status_code``, ``url``, ``title``, ``content`` and ``message``.
         """
         logger.debug("Fetching page with Keenable: %s", url)
 
@@ -145,7 +190,12 @@ class KeenableSearchTool(Tool):
             "message": f"Fetch failed with status code: {response.status_code}.",
         }
 
-    def get_actions_metadata(self):
+    def get_actions_metadata(self) -> list[dict]:
+        """Return the JSON schemas of the tool's actions.
+
+        Returns:
+            One metadata dict per action.
+        """
         return [
             {
                 "name": "keenable_web_search",
@@ -193,6 +243,10 @@ class KeenableSearchTool(Tool):
                             "type": "string",
                             "description": "The URL of the page to fetch",
                         },
+                        "max_chars": {
+                            "type": "integer",
+                            "description": "Maximum characters of page content to return (default: 20000)",
+                        },
                         "live": {
                             "type": "boolean",
                             "description": "Fetch the page live instead of from the index (for pages that are not indexed)",
@@ -204,7 +258,12 @@ class KeenableSearchTool(Tool):
             },
         ]
 
-    def get_config_requirements(self):
+    def get_config_requirements(self) -> dict:
+        """Return the tool's configuration fields.
+
+        Returns:
+            A dict describing the optional API key field.
+        """
         return {
             "token": {
                 "type": "string",

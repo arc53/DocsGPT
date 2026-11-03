@@ -122,6 +122,8 @@ class TestKeenableExecuteAction:
 
         assert result["status_code"] == 200
         assert result["content"] == "# Example"
+        assert result["title"] == "Example"
+        assert result["url"] == "https://example.com"
         args, kwargs = mock_get.call_args
         assert args[0] == "https://api.keenable.ai/v1/fetch/public"
         assert kwargs["params"]["url"] == "https://example.com"

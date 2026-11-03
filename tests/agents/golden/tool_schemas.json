@@ -317,6 +317,9 @@
       "url": {
         "type": "string"
       },
+      "max_chars": {
+        "type": "integer"
+      },
       "live": {
         "type": "boolean"
       }
