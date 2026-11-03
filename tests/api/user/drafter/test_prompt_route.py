@@ -40,8 +40,9 @@ class TestPromptStream:
         with patch("docsgpt.storage.db.session.db_readonly") as reader:
             events = _events(_stream(client, _body(context), fake))
         reader.assert_not_called()
-        assert _types(events) == ["status:reading", "status:drafting", "proposal", "end"]
-        proposal = events[2]["proposal"]
+        # Nothing was read, so there is no "Looked at your workspace" line.
+        assert _types(events) == ["status:drafting", "proposal", "end"]
+        proposal = events[1]["proposal"]
         assert proposal["result"] == "You answer shipping questions.\nBe brief."
         assert proposal["template_mode"] == {"before": True, "after": False}
         assert proposal["checks"] == ["to_persona"]
@@ -52,7 +53,7 @@ class TestPromptStream:
         })))
         context = {"mode": "write", "prompt": {"id": None, "name": "", "content": ""}}
         events = _events(_stream(client, _body(context, "An HR handbook helper"), fake))
-        assert events[2]["proposal"]["name"] == "HR helper"
+        assert events[1]["proposal"]["name"] == "HR helper"
 
     def test_nothing_to_improve_is_a_bad_request(self, client):
         context = {"mode": "improve", "prompt": {"id": "p1", "name": "x", "content": " "}}

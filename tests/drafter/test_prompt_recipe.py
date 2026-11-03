@@ -128,6 +128,9 @@ class TestInstructions:
     def test_it_is_registered(self):
         assert get_recipe("prompt") is PROMPT_RECIPE
 
+    def test_it_reads_no_workspace(self):
+        assert PROMPT_RECIPE.reads_workspace is False
+
 
 @pytest.mark.unit
 class TestImprove:

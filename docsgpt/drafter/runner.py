@@ -385,7 +385,8 @@ def run_draft(
         Event dicts.
     """
     stop = should_stop or (lambda: False)
-    yield {"type": "status", "step": "reading", "counts": ws.counts()}
+    if recipe.reads_workspace:
+        yield {"type": "status", "step": "reading", "counts": ws.counts()}
     yield {"type": "status", "step": "drafting"}
     try:
         llm = (llm_factory or build_llm)(req.user_id, model["id"], req.request_id)

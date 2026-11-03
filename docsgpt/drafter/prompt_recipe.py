@@ -462,4 +462,5 @@ PROMPT_RECIPE = register(Recipe(
     validate=validate,
     proposal_description="Hand the improved or new prompt to the prompt editor. Ends your turn.",
     questions=asks,
+    reads_workspace=False,
 ))

@@ -70,6 +70,8 @@ class Recipe:
         proposal_description: The ``submit_proposal`` tool description.
         questions: Whether the model may ask questions (``ask_user``) before proposing, or a
             ``(request) -> bool`` deciding it per turn (the prompt recipe asks only before writing).
+        reads_workspace: Whether ``load_workspace`` reads anything; a recipe that drafts on the
+            screen's own values (a prompt) sends no ``reading`` status, so the panel shows no counts.
     """
 
     id: str
@@ -82,6 +84,7 @@ class Recipe:
     read_tools: tuple[str, ...] = field(default_factory=tuple)
     proposal_description: str = "Hand the finished draft to the user's form. Ends your turn."
     questions: Union[bool, Callable[[DraftRequest], bool]] = True
+    reads_workspace: bool = True
 
     def asks(self, req: DraftRequest) -> bool:
         """Whether this turn of ``req`` may ask questions at all."""
