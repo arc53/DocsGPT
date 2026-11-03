@@ -59,6 +59,15 @@ def _post(app, resource, body, user="alice"):
         return resource().post()
 
 
+def _post_raw(app, resource, body, user="alice"):
+    """``_post`` with the body sent as given: no body, or text that is not a JSON object."""
+    with app.test_request_context("/", method="POST", data=body, content_type="application/json"):
+        from flask import request
+
+        request.decoded_token = {"sub": user} if user else None
+        return resource().post()
+
+
 def _executor(resolved=None, connection_pins=None):
     """The executor the routes load a row with: no connection and no connection pins unless given."""
     executor = MagicMock()
@@ -132,6 +141,13 @@ class TestResource:
         assert response.status_code == 400
         tool.read_ui_resource.assert_not_called()
 
+    @pytest.mark.parametrize("body", [None, "null", "{nope"], ids=["missing", "null", "malformed"])
+    def test_a_missing_or_malformed_body(self, app, tool, body):
+        with _found(_row()):
+            response = _post_raw(app, routes.McpAppResource, body)
+        assert response.status_code == 400
+        tool.read_ui_resource.assert_not_called()
+
 
 @pytest.mark.unit
 class TestCall:
@@ -157,6 +173,19 @@ class TestCall:
         tool.call_app_tool.assert_called_once_with(
             "read_checkpoint", {"id": "from-connection", "board": "pinned-board"}
         )
+
+    def test_a_hidden_parameter_without_a_value_stays_out(self, app, tool):
+        # As for the model: the owner hid it, so the view does not get to set it either.
+        hidden = {"read_checkpoint": {"parameters": {"type": "object", "properties": {
+            "id": {"type": "string", "filled_by_llm": True, "value": ""},
+            "board": {"type": "string", "filled_by_llm": False, "value": ""},
+        }}}}
+        with _found(_row(**hidden)):
+            _post(
+                app, routes.McpAppCall,
+                {"tool_id": ROW_ID, "name": "read_checkpoint", "arguments": {"id": "c", "board": "mine"}},
+            )
+        tool.call_app_tool.assert_called_once_with("read_checkpoint", {"id": "c"})
 
     def test_a_model_only_tool_is_refused(self, app, tool):
         with _found(_row()):
@@ -223,6 +252,13 @@ class TestCall:
     def test_a_body_that_is_not_an_object(self, app, tool):
         with _found(_row()):
             response = _post(app, routes.McpAppCall, [ROW_ID, "read_checkpoint"])
+        assert response.status_code == 400
+        tool.call_app_tool.assert_not_called()
+
+    @pytest.mark.parametrize("body", [None, "null", "{nope"], ids=["missing", "null", "malformed"])
+    def test_a_missing_or_malformed_body(self, app, tool, body):
+        with _found(_row()):
+            response = _post_raw(app, routes.McpAppCall, body)
         assert response.status_code == 400
         tool.call_app_tool.assert_not_called()
 

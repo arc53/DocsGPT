@@ -113,7 +113,15 @@ export function isOpenableLink(url: unknown): url is string {
   }
 }
 
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+/** Loopback as the browser counts it for mixed content: 127/8, ::1 and the localhost names. */
+function isLoopback(hostname: string): boolean {
+  return (
+    /^127\./.test(hostname) ||
+    hostname === '[::1]' ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost')
+  );
+}
 
 /**
  * Whether the page at `page` can run a view in the sandbox at `sandbox`. Not
@@ -133,9 +141,7 @@ export function isUsableSandbox(sandbox: unknown, page: string): boolean {
   }
   if (url.origin === host.origin) return false;
   if (host.protocol === 'https:' && url.protocol === 'http:')
-    return (
-      LOOPBACK_HOSTS.has(url.hostname) || url.hostname.endsWith('.localhost')
-    );
+    return isLoopback(url.hostname);
   return url.protocol === 'https:' || url.protocol === 'http:';
 }
 

@@ -2335,7 +2335,14 @@ class ToolExecutor:
         if tool_data["name"] != "api_tool":
             # A clean verdict hands the result back as it was; a masked or blocked
             # one never reaches the view, which would get the raw result.
-            view = self._app_view(tool, tool_data, action_data, known_secrets, withheld=result is not unscreened)
+            try:
+                view = self._app_view(
+                    tool, tool_data, action_data, known_secrets, withheld=result is not unscreened
+                )
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    keep_interrupted(artifact_id or None)
+                raise
             if view:
                 tool_call_data["ui"] = view
         result_full = journal_executed(artifact_id or None)
@@ -2620,9 +2627,8 @@ class ToolExecutor:
             for action in tool_data.get("actions") or []
         )
 
-    @staticmethod
     def _app_view(
-        tool: Any, tool_data: Dict, action: Dict, secrets: Dict[str, str], withheld: bool = False
+        self, tool: Any, tool_data: Dict, action: Dict, secrets: Dict[str, str], withheld: bool = False
     ) -> Optional[Dict]:
         """The MCP App view a call renders in the chat: its ``ui://`` resource, its tool row and full result.
 
@@ -2630,15 +2636,24 @@ class ToolExecutor:
         the chat reads the view's HTML from ``/api/mcp_apps/resource`` by
         ``tool_id``, and hands it ``result`` as ``ui/notifications/tool-result``.
 
+        The result is the full ``CallToolResult``, ``structuredContent``
+        included, which the model's copy drops when there is content. So it
+        gets the journal's treatment of its own: exposed secrets put back to
+        their references, and the tool-result guardrail; a verdict that would
+        change it withholds the view.
+
         Args:
             tool: The tool that ran; its ``take_app_result`` is drained either way.
             tool_data: Its row.
             action: The action that ran.
             secrets: ``{secret: reference}`` filled into this turn's calls, kept out of the result.
-            withheld: The tool-result guardrail masked or blocked the result; no view then.
+            withheld: The tool-result guardrail masked or blocked the model's copy; no view then.
 
         Returns:
             ``{"resource_uri", "tool_id", "result"}``, or None when the action has no view.
+
+        Raises:
+            Whatever the guardrail raises when the turn's budget runs out.
         """
         take = getattr(tool, "take_app_result", None)
         result = take() if callable(take) else None
@@ -2647,7 +2662,13 @@ class ToolExecutor:
             return None
         view: Dict[str, Any] = {"resource_uri": uri, "tool_id": str(tool_data["id"])}
         if isinstance(result, dict):
-            view["result"] = secret_refs.redact(result, secrets) if secrets else result
+            secrets = {**secrets, **self.exposed_secrets()}
+            if secrets:
+                result = secret_refs.redact(result, secrets)
+            screened = self._guardrail_tool_result(result, tool_data.get("name", ""), str(action.get("name") or ""))
+            if screened is not result:
+                return None
+            view["result"] = result
         return view
 
     def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:

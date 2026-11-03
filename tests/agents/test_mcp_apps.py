@@ -241,6 +241,25 @@ class TestResourceHtml:
             with pytest.raises(ValueError, match="too large"):
                 mcp_apps.resource_view([item], listing_meta=None)
 
+    def test_a_view_at_the_size_limit_is_accepted(self, monkeypatch):
+        # The estimate from the base64 length must not count the padding as content.
+        monkeypatch.setattr(mcp_apps, "VIEW_MAX_BYTES", 10)
+        at_limit = b"<p>" + b"x" * 7
+
+        class Text:
+            mime_type = "text/html;profile=mcp-app"
+            text = at_limit.decode()
+            meta = None
+
+        class Blob:
+            mime_type = "text/html;profile=mcp-app"
+            blob = base64.b64encode(at_limit).decode()
+            meta = None
+
+        assert Blob.blob.endswith("==")
+        for item in (Text(), Blob()):
+            assert mcp_apps.resource_view([item], listing_meta=None)["html"] == at_limit.decode()
+
     def test_whether_the_view_item_declares_its_ui(self):
         class Contents:
             mime_type = "text/html;profile=mcp-app"

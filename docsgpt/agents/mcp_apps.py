@@ -249,8 +249,8 @@ def resource_view(contents: Iterable[Any], listing_meta: Any) -> dict:
     text = _field(item, "text", "text")
     if text is None:
         blob = _field(item, "blob", "blob") or ""
-        # Checked before decoding: base64 is 4 characters per 3 bytes.
-        if len(blob) * 3 // 4 > VIEW_MAX_BYTES:
+        # Checked before decoding: base64 is 4 characters per 3 bytes, less the padding.
+        if len(blob.rstrip("=")) * 3 // 4 > VIEW_MAX_BYTES:
             raise too_large
         text = base64.b64decode(blob).decode("utf-8")
     if len(text.encode("utf-8")) > VIEW_MAX_BYTES:

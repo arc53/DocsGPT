@@ -58,10 +58,8 @@ def _load(executor: ToolExecutor, row: dict):
 
 
 def _json_object() -> Optional[dict]:
-    """The request's JSON body when it is an object, else None."""
+    """The request's JSON body when it is an object; None when it is missing, malformed or not one."""
     data = request.get_json(silent=True)
-    if data is None:
-        return {}
     return data if isinstance(data, dict) else None
 
 
@@ -200,7 +198,10 @@ class McpAppCall(Resource):
         arguments = data.get("arguments")
         if arguments is not None and not isinstance(arguments, dict):
             return _error("arguments must be an object", 400)
-        # Fixed values win over the view's, as they do over the model's.
+        # The view's arguments follow the model's rules: a fixed value wins over the
+        # view's, and a parameter hidden from the model (``filled_by_llm`` false)
+        # takes its stored value or stays out, whatever the view sends. The view is
+        # the server's HTML, so it is trusted no further than the model is.
         arguments = resolve_arguments(action, arguments or {}, executor._connection_parameters(row))["parameters"]
         from docsgpt.connectors.service import ConnectionUnavailable
 

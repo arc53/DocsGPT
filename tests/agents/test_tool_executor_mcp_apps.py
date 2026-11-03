@@ -128,6 +128,47 @@ class TestViewOnTheCall:
         assert all("ui" not in c for c in executor.get_truncated_tool_calls())
         tool.take_app_result.assert_called_once()
 
+    def test_the_views_result_is_screened_on_its_own(self, apps, mock_tool_manager, monkeypatch):
+        # The model's copy drops structuredContent when there is content; the view keeps it.
+        _route(monkeypatch, "create_view")
+        tool = mock_tool_manager.load_tool.return_value
+        tool.take_app_result = Mock(return_value={
+            "content": [{"type": "text", "text": "ok"}], "structuredContent": {"token": "sk-secret"},
+        })
+        executor = ToolExecutor(user="u1")
+        scanned = []
+
+        def guardrail(result, *_):
+            scanned.append(result)
+            return "[masked]" if "sk-secret" in str(result) else result
+
+        monkeypatch.setattr(executor, "_guardrail_tool_result", guardrail)
+
+        events = list(_drain(executor.execute(_tools_dict(), _call("create_view"), "MockLLM")))
+
+        completed = next(e for e in events if e["data"].get("status") == "completed")
+        assert "ui" not in completed["data"]
+        assert any(isinstance(r, dict) and "structuredContent" in r for r in scanned)
+
+    def test_an_exposed_secret_the_server_echoes_is_a_reference_in_the_view(
+        self, apps, mock_tool_manager, monkeypatch
+    ):
+        _route(monkeypatch, "create_view")
+        tool = mock_tool_manager.load_tool.return_value
+        tool.take_app_result = Mock(return_value={
+            "content": [{"type": "text", "text": "key=raw-secret"}], "structuredContent": {"key": "raw-secret"},
+        })
+        executor = ToolExecutor(user="u1")
+        monkeypatch.setattr(executor, "exposed_secrets", lambda: {"raw-secret": "{{link_secret:ABCDEF}}"})
+
+        events = list(_drain(executor.execute(_tools_dict(), _call("create_view"), "MockLLM")))
+
+        completed = next(e for e in events if e["data"].get("status") == "completed")
+        assert completed["data"]["ui"]["result"] == {
+            "content": [{"type": "text", "text": "key={{link_secret:ABCDEF}}"}],
+            "structuredContent": {"key": "{{link_secret:ABCDEF}}"},
+        }
+
     def test_a_call_without_a_view_carries_none(self, apps, mock_tool_manager, monkeypatch):
         _route(monkeypatch, "read_me")
         mock_tool_manager.load_tool.return_value.take_app_result = Mock(return_value={"content": []})
