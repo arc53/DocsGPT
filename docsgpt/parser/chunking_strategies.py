@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import List
+from typing import List, Optional, Set
 
 from docsgpt.parser.chunking import Chunker
 from docsgpt.parser.chunking_creator import ChunkerCreator
+from docsgpt.parser.file.markdown_parser import MarkdownParser
 from docsgpt.parser.limits import MAX_CHUNK_TOKENS, SEMANTIC_EMBED_BATCH_SIZE
 from docsgpt.parser.schema.base import Document
 from docsgpt.parser.tokenization import get_token_counter, split_to_token_limit
@@ -238,15 +239,37 @@ class RecursiveChunker(_BaseStrategyChunker):
 class MarkdownChunker(_BaseStrategyChunker):
     """Split on markdown heading boundaries, then token-cap oversized sections.
 
-    Each ``^#{1,6}\\s`` heading starts a new section; sections over
-    ``max_tokens`` are further split by token window so no chunk exceeds the
-    cap.
+    Each ``^#{1,6}\\s`` heading outside a fenced code block starts a new
+    section; sections over ``max_tokens`` are further split by token window
+    so no chunk exceeds the cap.
     """
 
     _HEADING = re.compile(r"^#{1,6}\s", re.MULTILINE)
 
+    @staticmethod
+    def _fenced_line_starts(text: str) -> Set[int]:
+        """Offsets of the lines that sit inside a fenced code block.
+
+        Args:
+            text: The markdown text being split into sections.
+
+        Returns:
+            The start offset of every line after an open fence, up to and including its closing fence.
+        """
+        starts: Set[int] = set()
+        open_fence: Optional[str] = None
+        offset = 0
+        for line in text.split("\n"):
+            if open_fence is not None:
+                starts.add(offset)
+            open_fence = MarkdownParser._next_fence_state(line, open_fence)
+            offset += len(line) + 1
+        return starts
+
     def _sections(self, text: str) -> List[str]:
-        boundaries = [m.start() for m in self._HEADING.finditer(text)]
+        # A "#" line inside a fenced code block is code (a shell comment, say), not a heading.
+        code_lines = self._fenced_line_starts(text)
+        boundaries = [m.start() for m in self._HEADING.finditer(text) if m.start() not in code_lines]
         if not boundaries:
             return [text] if text.strip() else []
         if boundaries[0] != 0:
