@@ -119,6 +119,12 @@ class TestInstructions:
     def test_improve_suggests_next_changes(self):
         assert "suggestions" in instructions(_req(), Workspace())
 
+    @pytest.mark.parametrize("mode,content", [("write", ""), ("improve", PERSONA)])
+    def test_follow_ups_stay_on_the_prompts_text(self, mode, content):
+        text = instructions(_req(mode, content), Workspace())
+        assert "changes to the prompt's text" in text
+        assert "knowledge or tools" in text
+
     def test_it_is_registered(self):
         assert get_recipe("prompt") is PROMPT_RECIPE
 

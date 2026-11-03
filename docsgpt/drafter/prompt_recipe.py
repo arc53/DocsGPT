@@ -167,8 +167,13 @@ plus the new text.
 Keep each edit small and separate, so the user can accept or reject it on its own. If nothing needs to change, \
 send no edits and say why in your message."""
 
-IMPROVE_NEXT = """suggestions: up to 3 further changes this prompt could use, each worded as the short request the \
-user would send (e.g. "Add what to do when it doesn't know"). Leave out what you just changed."""
+#: Follow-ups and guesses are about the text: this drawer edits only the prompt, and the recipe can't see the
+#: knowledge or tools of the agents that use it.
+TEXT_ONLY = """Suggestions and assumptions are changes to the prompt's text only: never suggest attaching \
+knowledge or tools, and don't guess what an agent using the prompt has attached; you can't see it."""
+
+IMPROVE_NEXT = f"""suggestions: up to 3 further changes this prompt could use, each worded as the short request the \
+user would send (e.g. "Add what to do when it doesn't know"). Leave out what you just changed. {TEXT_ONLY}"""
 
 WRITE = """Write a new prompt from the user's description: a short name (at most 100 characters) and the prompt \
 text as a plain-text persona, plus one sentence on why it is written that way (reason). If the prompt has text \
@@ -186,7 +191,8 @@ the user already said, and don't ask at all when the description covers it.
 - assumptions: up to 3 short sentences, each a guess the user should check (e.g. "Hand-offs go to your support \
 team; you didn't name a contact.").
 - suggestions: up to 3 next changes this prompt could use, each worded as the short request the user would send \
-(e.g. "Add your opening hours")."""
+(e.g. "Add your opening hours").
+""" + TEXT_ONLY
 
 #: Briefs for the drawer's starting points, by ``starter`` id.
 STARTERS: dict[str, str] = {
