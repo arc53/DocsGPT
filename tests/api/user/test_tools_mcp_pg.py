@@ -563,10 +563,60 @@ class TestMCPServerSave:
         assert saved["last_error"] == "Disconnected"
 
     @pytest.mark.fresh_db
+    def test_a_no_auth_save_reconnects_a_disconnected_connection(self, app, pg_engine):
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        user = "u-mcp-reconnect-save"
+        with pg_engine.begin() as conn:
+            repo = ConnectorSessionsRepository(conn)
+            connection = repo.create(
+                user,
+                "custom_mcp",
+                connector_key="custom_mcp",
+                auth_kind="none",
+                display_name="Excalidraw",
+                account_label="mcp.excalidraw.com",
+                server_url="https://mcp.excalidraw.com",
+            )
+            connection_id = str(connection["id"])
+            repo.update(connection_id, {"status": "disconnected", "last_error": "Disconnected"})
+
+        fake_tool = MagicMock()
+        fake_tool.get_actions_metadata.return_value = [{"name": "read_me"}]
+        with patch(
+            "docsgpt.storage.db.session.get_engine", return_value=pg_engine,
+        ), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=fake_tool,
+        ), app.test_request_context(
+            "/api/mcp_server/save",
+            method="POST",
+            json={
+                "displayName": "Excalidraw",
+                "config": {
+                    "transport_type": "http",
+                    "server_url": "https://mcp.excalidraw.com/mcp",
+                    "auth_type": "none",
+                },
+            },
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = MCPServerSave().post()
+
+        assert response.status_code == 200
+        with pg_engine.connect() as conn:
+            saved = ConnectorSessionsRepository(conn).get(connection_id)
+        assert saved["status"] == "connected"
+        assert saved["last_error"] is None
+
+    @pytest.mark.fresh_db
     def test_disconnect_during_discovery_is_not_overwritten(self, app, pg_engine):
         from docsgpt.api.user.tools.mcp import MCPServerSave
         from docsgpt.connectors import service
         from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         user = "u-mcp-disconnect-race"
         with pg_engine.begin() as conn:
@@ -615,7 +665,10 @@ class TestMCPServerSave:
         assert response.status_code == 200
         with pg_engine.connect() as conn:
             saved = ConnectorSessionsRepository(conn).get(connection_id)
+            tool = UserToolsRepository(conn).get(response.get_json()["id"], user)
         assert saved["status"] == "disconnected"
+        # The tool still points at the connection it was saved against.
+        assert str(tool["connection_id"]) == connection_id
 
 
 class TestSignInServerWithoutAConnection:
