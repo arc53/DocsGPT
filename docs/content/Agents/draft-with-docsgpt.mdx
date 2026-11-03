@@ -47,7 +47,7 @@ When every step is done, the panel says nothing is saved yet: **Publish**, then 
 
 ### Questions
 
-When something changes the draft, such as whether the agent faces customers or staff, DocsGPT asks first: up to three questions, each a list of options to choose (one, or several where the question allows it) and **Something else…** for your own answer. **Send answers** sends them. It asks at most two rounds of questions in a step, then drafts with what it knows.
+When something changes the draft, such as whether the agent faces customers or staff, DocsGPT asks first: up to three questions, each a list of options to choose (one, or several where the question allows it) and **Something else…** for your own answer, or a box to type in for something only you know, such as the company name. **Send answers** sends them. It asks at most two rounds of questions in a step, then drafts with what it knows.
 
 Before it gives an agent that faces the public anything that looks internal, a source (contracts, negotiated rates, HR) or a tool (one that returns live prices), it asks, with the item unticked.
 
@@ -103,11 +103,17 @@ To pick knowledge, tools and prompts, DocsGPT reads your workspace as the form's
 
 A prompt opens as a page of its own, under **Settings → Prompts** or from the agent form's **Prompt** list (**Add prompt**, or a prompt's pencil or eye), with **Improve** (or **Write**, on a new, empty prompt) next to **Save**. It opens the Draft with DocsGPT panel beside the prompt.
 
-- **Improve**, on a prompt with text: choose **Look it over and suggest fixes**, or describe a change, such as "stop it from quoting prices". DocsGPT answers with a list of **Proposed changes** under the text, each showing the removed and added text and its reason. **Accept** or **Reject** each one (**Undo** reverses your choice); in the panel, **Accept all**, **Review one by one** or **Discard** finishes the review. Accepted changes go into the text; nothing is saved until you choose **Save**.
-- **Write**, on a new, empty prompt: describe the prompt, such as "a friendly helper for our HR handbook". DocsGPT fills in the name and the text, each marked **Drafted** with an undo.
+- **Improve**, on a prompt with text: choose **Look it over and suggest fixes**, **Make it clearer and shorter** or **Add what to do when it doesn't know**, or describe a change, such as "stop it from quoting prices". DocsGPT answers with a list of **Proposed changes** under the text, each showing the removed and added text and its reason. **Accept** or **Reject** each one (**Undo** reverses your choice); in the panel, **Accept all**, **Review one by one** or **Discard** finishes the review. Accepted changes go into the text; nothing is saved until you choose **Save**.
+- **Write**, on a new, empty prompt: pick a starting point (**Website chat for customers**, **Internal helpdesk** or **Research assistant**) or describe the prompt in your own words, such as "a friendly helper for our HR handbook". DocsGPT fills in the name and the text, each marked **Drafted** with an undo. See [Write a new prompt](#write-a-new-prompt).
 - On a prompt you can't edit (a built-in **default**, **creative** or **strict** prompt, or a shared prompt you can only view), **Improve** makes an editable copy first.
 
 The page names the agents that use the prompt, and the panel reminds you that a saved change reaches all of them. On the agent form, the same page opens in place of the form, and the panel there is the agent's: ask it to change the prompt and it rewrites the text, marked **Drafted**.
+
+### Write a new prompt
+
+Before it writes, DocsGPT asks about what your description leaves out: usually the company or product (you type the answer), where the assistant sends people it can't help, and the tone. A starting point tells it what that kind of prompt needs, so a website chat asks about the hand-off, and a research assistant about your documents and how answers should look. It asks at most two rounds, and none when your description already covers it. **Skip and draft** writes the prompt straight away with what it knows.
+
+With the draft in the text, the panel lists what DocsGPT guessed under **I assumed**, such as "Hand-offs go to your support team", since it never leaves blanks like "[support email]" in the prompt. **Change** next to a guess puts it in the ask bar for your correction. Read the prompt through, then choose **Save prompt** in the panel (the same as **Save**), or ask for a change. Under **You could also**, the panel offers up to three next changes that fit the prompt, such as "Add your opening hours"; choosing one sends it. Improvements end with these suggestions too.
 
 ### Plain text by default
 
