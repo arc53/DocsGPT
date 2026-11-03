@@ -15,6 +15,7 @@ MAX_OPTIONS = 5
 QUESTION_CHARS = 300
 NOTE_CHARS = 300
 OPTION_CHARS = 150
+PLACEHOLDER_CHARS = 100
 MESSAGE_CHARS = 1000
 
 #: Arguments of the ``ask_user`` terminal tool.
@@ -39,8 +40,13 @@ QUESTIONS_SCHEMA: dict = {
                     "multi": {"type": "boolean", "description": "True when several options may be picked."},
                     "options": {
                         "type": "array",
-                        "description": "Two to five short answers to click. The user can always type their own.",
+                        "description": "Two to five short answers to click; the user can always type their own. "
+                                       "Empty for an answer only the user can type (a company name, a contact).",
                         "items": {"type": "string"},
+                    },
+                    "placeholder": {
+                        "type": "string",
+                        "description": "With no options: a short example answer shown in the empty field.",
                     },
                 },
                 "required": ["text", "options"],
@@ -119,7 +125,8 @@ def normalize_questions(arguments: dict) -> tuple[Optional[str], list[dict]]:
     """Check and shape ``ask_user`` arguments into the ``questions`` event payload.
 
     Ids are assigned here (``q1``…, options ``a``…); at most three questions
-    and five options are kept.
+    and five options are kept. A question with no options takes a typed
+    answer: it keeps its ``placeholder`` and is never ``multi``.
 
     Args:
         arguments: The ``ask_user`` arguments.
@@ -128,7 +135,7 @@ def normalize_questions(arguments: dict) -> tuple[Optional[str], list[dict]]:
         ``(message, questions)``.
 
     Raises:
-        ProposalInvalid: No usable question, or a question with fewer than two options.
+        ProposalInvalid: No usable question, or a question with exactly one option.
     """
     problems = schema_problems(QUESTIONS_SCHEMA, arguments)
     if problems:
@@ -144,14 +151,17 @@ def normalize_questions(arguments: dict) -> tuple[Optional[str], list[dict]]:
                 labels.append(label)
         if not text:
             raise ProposalInvalid(["Every question needs text."])
-        if len(labels) < MIN_OPTIONS:
-            raise ProposalInvalid([f"Question {text!r} needs at least {MIN_OPTIONS} different options."])
+        if 0 < len(labels) < MIN_OPTIONS:
+            raise ProposalInvalid([f"Question {text!r} needs at least two different options, or none for an "
+                                   "answer the user types."])
+        typed = not labels
         out.append({
             "id": f"q{len(out) + 1}",
             "text": text,
             "note": clean_text(raw.get("note"), NOTE_CHARS) or None,
-            "multi": bool(raw.get("multi")),
+            "multi": bool(raw.get("multi")) and not typed,
             "options": [{"id": chr(ord("a") + i), "label": label} for i, label in enumerate(labels[:MAX_OPTIONS])],
+            "placeholder": (clean_text(raw.get("placeholder"), PLACEHOLDER_CHARS) or None) if typed else None,
         })
     if not out:
         raise ProposalInvalid(["Ask at least one question, or submit the proposal instead."])

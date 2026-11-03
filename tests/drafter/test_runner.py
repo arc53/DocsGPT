@@ -65,8 +65,18 @@ class TestOutput:
         assert [o["id"] for o in questions[0]["options"]] == ["a", "b", "c", "d", "e"]
 
     def test_a_question_needs_two_different_options(self):
-        with pytest.raises(ProposalInvalid):
+        with pytest.raises(ProposalInvalid, match="two different options, or none"):
             normalize_questions({"questions": [{"text": "Q", "options": ["Yes", "yes"]}]})
+
+    def test_a_question_without_options_takes_a_typed_answer(self):
+        _, questions = normalize_questions({"questions": [
+            {"text": "Which company is it for?", "options": [], "placeholder": "e.g. Meridian Freight", "multi": True},
+            {"text": "Tone?", "options": ["Friendly", "Formal"], "placeholder": "ignored"},
+        ]})
+        assert questions[0] == {"id": "q1", "text": "Which company is it for?", "note": None, "multi": False,
+                                "options": [], "placeholder": "e.g. Meridian Freight"}
+        assert questions[1]["placeholder"] is None
+        assert [o["label"] for o in questions[1]["options"]] == ["Friendly", "Formal"]
 
     def test_question_rounds_count_earlier_questions(self):
         messages = [

@@ -149,6 +149,78 @@ describe('DrafterQuestions', () => {
   });
 });
 
+describe('DrafterQuestions, a typed answer', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const onAnswer = vi.fn();
+  const TYPED: DrafterQuestion[] = [
+    {
+      id: 'q1',
+      text: 'Which company is it for?',
+      note: null,
+      multi: false,
+      options: [],
+      placeholder: 'e.g. Meridian Freight',
+    },
+    { ...QUESTIONS[0], id: 'q2' },
+  ];
+
+  beforeEach(async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () =>
+      root.render(
+        <DrafterQuestions questions={TYPED} active onAnswer={onAnswer} />,
+      ),
+    );
+  });
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    onAnswer.mockReset();
+  });
+
+  it('asks a question with no options as a text field', async () => {
+    const card = container.querySelector<HTMLElement>('[data-question="q1"]')!;
+    expect(card.querySelector('[role="radio"]')).toBeNull();
+    const input = card.querySelector('input')!;
+    expect(input.getAttribute('aria-label')).toBe('Which company is it for?');
+    expect(input.placeholder).toBe('e.g. Meridian Freight');
+    // Not indented: there is no option row to line up with.
+    expect(input.closest('.pl-7')).toBeNull();
+    await act(async () => setValue(input, 'Meridian Freight Group'));
+    await act(async () =>
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      ),
+    );
+    expect(onAnswer).toHaveBeenCalledWith(
+      'Which company is it for? → Meridian Freight Group',
+    );
+  });
+
+  it('shows the typed answer once answered', async () => {
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-question="q1"] input',
+    )!;
+    await act(async () => setValue(input, 'Meridian'));
+    await act(async () =>
+      root.render(
+        <DrafterQuestions
+          questions={TYPED}
+          active={false}
+          onAnswer={onAnswer}
+        />,
+      ),
+    );
+    expect(container.querySelector('input')).toBeNull();
+    expect(
+      container.querySelector('[data-question="q1"]')!.textContent,
+    ).toContain('Meridian');
+  });
+});
+
 describe('composeAnswers', () => {
   it('skips questions with no answer', () => {
     expect(

@@ -28,7 +28,10 @@ export type DrafterQuestion = {
   text: string;
   note: string | null;
   multi: boolean;
+  /** Empty for a question the user answers by typing. */
   options: DrafterOption[];
+  /** A typed-answer question's example, shown in the empty field. */
+  placeholder?: string | null;
 };
 
 export type DrafterErrorCode =

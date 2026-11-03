@@ -54,7 +54,8 @@ export function composeAnswers(
 /**
  * The drafter's questions as cards of option rows: radios for a one-pick
  * question, checkboxes for a pick-any one (`multi`), and "Something else…"
- * last, which opens a free-text field under it. One Send answers button sends
+ * last, which opens a free-text field under it. A question with no options
+ * is a text field alone. One Send answers button sends
  * every answer as one message. An answered (or passed-over) card shows only
  * the question and what was picked.
  *
@@ -134,6 +135,59 @@ export function DrafterQuestions({
                   {t('drafter.notAnswered')}
                 </p>
               )}
+            </Card>
+          );
+        }
+
+        const note = question.note && (
+          <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            {question.note}
+          </p>
+        );
+        const textField = (
+          value: string,
+          label: string,
+          placeholder: string,
+          autoFocus: boolean,
+        ) => (
+          <Input
+            size="sm"
+            autoFocus={autoFocus}
+            value={value}
+            aria-label={label}
+            placeholder={placeholder}
+            onChange={(event) =>
+              update(question.id, { ...answer, other: event.target.value })
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && message) {
+                event.preventDefault();
+                onAnswer(message);
+              }
+            }}
+          />
+        );
+
+        // No options: the answer is only the user's to type (a name, a
+        // contact), so the card is the question and one field.
+        if (question.options.length === 0) {
+          return (
+            <Card
+              key={question.id}
+              variant="subtle"
+              padding="sm"
+              className="gap-2"
+              data-question={question.id}
+            >
+              {title}
+              {textField(
+                answer.other ?? '',
+                question.text,
+                question.placeholder || t('drafter.somethingElsePlaceholder'),
+                index === 0,
+              )}
+              {note}
             </Card>
           );
         }
@@ -229,33 +283,15 @@ export function DrafterQuestions({
             {answer.other !== null && (
               // In line with the row labels: the 16px control and its gap-3.
               <div className="pl-7">
-                <Input
-                  size="sm"
-                  autoFocus
-                  value={answer.other}
-                  aria-label={t('drafter.somethingElseLabel')}
-                  placeholder={t('drafter.somethingElsePlaceholder')}
-                  onChange={(event) =>
-                    update(question.id, {
-                      ...answer,
-                      other: event.target.value,
-                    })
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && message) {
-                      event.preventDefault();
-                      onAnswer(message);
-                    }
-                  }}
-                />
+                {textField(
+                  answer.other,
+                  t('drafter.somethingElseLabel'),
+                  t('drafter.somethingElsePlaceholder'),
+                  true,
+                )}
               </div>
             )}
-            {question.note && (
-              <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
-                <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                {question.note}
-              </p>
-            )}
+            {note}
           </Card>
         );
       })}
