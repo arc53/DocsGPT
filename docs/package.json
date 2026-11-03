@@ -2,7 +2,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
-    "postbuild": "pagefind --site .next/server/app --output-path public/_pagefind",
+    "postbuild": "node scripts/pagefind-index.mjs",
     "start": "next start",
     "llms": "node scripts/generate-llms.mjs",
     "llms:check": "node scripts/generate-llms.mjs --check",
