@@ -4452,8 +4452,6 @@
   "drafter": {
     "prompt": {
       "write": "Schreiben",
-      "improvePrompt": "Prompt verbessern",
-      "improveCopy": "Kopie verbessern",
       "improvePlaceholder": "Sag, was sich ändern soll, z. B. keine Preise nennen…",
       "writePlaceholder": "Beschreibe den Prompt, z. B. ein freundlicher Helfer für unser Personalhandbuch…",
       "warningsTitle": "Vor dem Speichern prüfen",

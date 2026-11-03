@@ -3131,12 +3131,13 @@ describe('NewAgent drafter', () => {
     expect(lastRequest().context.step).toBe('knowledge');
   });
 
-  // The picker's Edit, View, Add and Improve open the same prompt view.
+  // The picker's Add prompt and each row's Edit or View open the same
+  // prompt view; Improve on its crumb row opens the drawer.
   {
     const PROMPTS = [
       { id: 'default', name: 'default', type: 'public' },
       { id: 'p1', name: 'Tone', type: 'private', access: 'owner' },
-      { id: 'p2', name: 'Team tone', type: 'shared', access: 'viewer' },
+      { id: 'p2', name: 'Team tone', type: 'team', access: 'viewer' },
     ];
     beforeEach(() => {
       mockState.preference.prompts = PROMPTS as never[];
@@ -3151,6 +3152,36 @@ describe('NewAgent drafter', () => {
       container.querySelector<HTMLElement>('[data-slot="prompt-view"]');
     const viewText = () => view()!.querySelector('textarea')!;
     const save = () => buttonByText('modals.prompts.save', view()!);
+    // The crumb row's wand: Draft on a new agent, Improve on a saved one.
+    const viewWand = () =>
+      view()!.querySelector<HTMLButtonElement>('[data-drafter-entry]');
+    const promptTrigger = () =>
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="combobox-trigger"]',
+        ),
+      ).find(
+        (button) =>
+          button.closest('[data-slot="form-field"]')?.querySelector('label')
+            ?.textContent === 'agents.form.sections.prompt',
+      )!;
+    /** Open the Prompt picker and press a row's Edit or View. */
+    const openFromRow = async (id: string) => {
+      const trigger = promptTrigger();
+      await act(async () => {
+        trigger.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+        );
+        trigger.click();
+      });
+      await act(async () =>
+        document.body
+          .querySelector<HTMLButtonElement>(
+            `[cmdk-item][data-value="${id}"] [data-slot="combobox-row-action"]`,
+          )!
+          .click(),
+      );
+    };
 
     const renderWithPrompt = async (promptId: string) => {
       mocks.getAgent.mockImplementation(() =>
@@ -3180,8 +3211,7 @@ describe('NewAgent drafter', () => {
 
     it('edits an own prompt in the view and saves it', async () => {
       await renderWithPrompt('p1');
-      expect(buttonByText('drafter.prompt.improveCopy')).toBeUndefined();
-      await act(async () => buttonByText('settings.prompts.edit')!.click());
+      await openFromRow('p1');
       expect(mocks.getSinglePrompt).toHaveBeenCalledWith('p1', null);
       expect(view()!.textContent).toContain('Deal Desk');
       expect(view()!.textContent).toContain('Tone');
@@ -3199,31 +3229,7 @@ describe('NewAgent drafter', () => {
 
     it('opens a prompt from its picker row without picking it', async () => {
       await renderWithPrompt('p1');
-      const trigger = Array.from(
-        container.querySelectorAll<HTMLButtonElement>(
-          '[data-slot="combobox-trigger"]',
-        ),
-      ).find(
-        (button) =>
-          button.closest('[data-slot="form-field"]')?.querySelector('label')
-            ?.textContent === 'agents.form.sections.prompt',
-      )!;
-      await act(async () => {
-        trigger.dispatchEvent(
-          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
-        );
-        trigger.click();
-      });
-      const row = document.body.querySelector<HTMLElement>(
-        '[cmdk-item][data-value="default"]',
-      )!;
-      await act(async () =>
-        row
-          .querySelector<HTMLButtonElement>(
-            '[data-slot="combobox-row-action"]',
-          )!
-          .click(),
-      );
+      await openFromRow('default');
       expect(document.body.querySelector('[cmdk-list]')).toBeNull();
       // A built-in opens read-only.
       expect(mocks.getSinglePrompt).toHaveBeenCalledWith('default', null);
@@ -3234,12 +3240,12 @@ describe('NewAgent drafter', () => {
         view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
       );
       expect(view()).toBeNull();
-      expect(trigger.textContent).toContain('Tone');
+      expect(promptTrigger().textContent).toContain('Tone');
     });
 
     it('asks before leaving the view with unsaved text', async () => {
       await renderWithPrompt('p1');
-      await act(async () => buttonByText('settings.prompts.edit')!.click());
+      await openFromRow('p1');
       await act(async () => setNativeValue(viewText(), 'Shorter.'));
       await act(async () =>
         view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
@@ -3260,9 +3266,8 @@ describe('NewAgent drafter', () => {
 
     it('improves an own prompt with the drawer, filling the view instead of creating one', async () => {
       await renderWithPrompt('p1');
-      await act(async () =>
-        buttonByText('drafter.prompt.improvePrompt')!.click(),
-      );
+      await openFromRow('p1');
+      await act(async () => buttonByText('drafter.improve', view()!)!.click());
       expect(view()).not.toBeNull();
       expect(panel()).not.toBeNull();
       expect(
@@ -3293,7 +3298,7 @@ describe('NewAgent drafter', () => {
 
     it("shows a prompt the caller can't edit read-only, and improves a copy", async () => {
       await renderWithPrompt('p2');
-      await act(async () => buttonByText('settings.prompts.view')!.click());
+      await openFromRow('p2');
       expect(viewText().readOnly).toBe(true);
       expect(save()).toBeUndefined();
       // Improve on the crumb row makes the copy.
@@ -3315,9 +3320,8 @@ describe('NewAgent drafter', () => {
         jsonResponse({ id: 'p-new' }),
       );
       await render();
-      await act(async () =>
-        buttonByText('drafter.prompt.improveCopy')!.click(),
-      );
+      await openFromRow('default');
+      await act(async () => viewWand()!.click());
       expect(mocks.getSinglePrompt).toHaveBeenCalledWith('default', null);
       expect(view()!.textContent).toContain('modals.prompts.duplicatePrompt');
       expect(panel()).not.toBeNull();
@@ -3334,7 +3338,6 @@ describe('NewAgent drafter', () => {
       expect(
         container.querySelector('[data-slot="combobox-trigger"]')?.textContent,
       ).toContain('default copy');
-      expect(buttonByText('settings.prompts.edit')).toBeDefined();
     });
 
     it("adds a prompt from the picker's footer in the view", async () => {
@@ -3376,8 +3379,9 @@ describe('NewAgent drafter', () => {
     it('offers no Improve while the drafter is off', async () => {
       drafter.config = { enabled: false, model: null, reason: null };
       await render();
-      expect(buttonByText('drafter.prompt.improveCopy')).toBeUndefined();
-      expect(buttonByText('settings.prompts.view')).toBeDefined();
+      await openFromRow('default');
+      expect(view()).not.toBeNull();
+      expect(viewWand()).toBeNull();
     });
   }
 });

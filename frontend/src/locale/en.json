@@ -4473,8 +4473,6 @@
   "drafter": {
     "prompt": {
       "write": "Write",
-      "improvePrompt": "Improve prompt",
-      "improveCopy": "Improve a copy",
       "improvePlaceholder": "Say what to change, e.g. stop it from quoting prices…",
       "writePlaceholder": "Describe the prompt, e.g. a friendly helper for our HR handbook…",
       "warningsTitle": "Check before you save",

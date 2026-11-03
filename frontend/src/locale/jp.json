@@ -4432,8 +4432,6 @@
   "drafter": {
     "prompt": {
       "write": "作成",
-      "improvePrompt": "プロンプトを改善",
-      "improveCopy": "コピーを改善",
       "improvePlaceholder": "変更内容を入力（例: 価格を答えないようにする）…",
       "writePlaceholder": "プロンプトの内容を説明（例: 人事ハンドブックの親切なアシスタント）…",
       "warningsTitle": "保存前に確認してください",

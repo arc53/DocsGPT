@@ -593,7 +593,7 @@ describe('Combobox rowAction', () => {
         onValueChange={onValueChange}
         placeholder="Pick"
         rowAction={(option) =>
-          option.value === options[0].value
+          option.value !== options[2].value
             ? {
                 label: `Edit ${option.label}`,
                 icon: <span />,
@@ -607,12 +607,21 @@ describe('Combobox rowAction', () => {
     const actions = document.body.querySelectorAll<HTMLButtonElement>(
       '[data-slot="combobox-row-action"]',
     );
-    expect(actions).toHaveLength(1);
+    expect(actions).toHaveLength(2);
     expect(actions[0].getAttribute('aria-label')).toBe(
       `Edit ${options[0].label}`,
     );
-    // A pointer shortcut, out of the tab order.
-    expect(actions[0].tabIndex).toBe(-1);
+    // Only the highlighted row's (cmdk's first) is a tab stop, and its
+    // Enter doesn't reach cmdk's root, which would pick the row.
+    expect(actions[0].tabIndex).toBe(0);
+    expect(actions[1].tabIndex).toBe(-1);
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => actions[0].dispatchEvent(enter));
+    expect(onValueChange).not.toHaveBeenCalled();
     await act(async () => actions[0].click());
     expect(onOpen).toHaveBeenCalledWith(options[0].value);
     expect(onValueChange).not.toHaveBeenCalled();

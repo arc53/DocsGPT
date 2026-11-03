@@ -14,7 +14,6 @@ import {
   Scissors,
   ShieldCheck,
   SquarePen,
-  WandSparkles,
 } from 'lucide-react';
 import React, {
   useCallback,
@@ -552,8 +551,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // The prompt view (decision 64): a prompt shown in place of the form, the
   // form kept as it is under it. The drafter opens a prompt it wrote there
   // (`drafter`: Use this prompt saves it and sets it on the agent); the
-  // picker's Add, Edit, View and Improve open one too (`picker`: Save). A
-  // history entry makes browser Back return to the form.
+  // picker's Add prompt and each row's Edit or View open one too (`picker`:
+  // Save). A history entry makes browser Back return to the form.
   const location = useLocation();
   const [promptOrigin, setPromptOrigin] = useState<'drafter' | 'picker'>(
     'picker',
@@ -780,12 +779,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     promptDrafted.clear();
     closePromptView();
   };
-
-  const pickedPrompt: Prompt | undefined =
-    prompts.find((prompt) => prompt.id === pickedPromptId) ??
-    (PROMPT_PRESETS.includes(pickedPromptId)
-      ? { id: pickedPromptId, name: pickedPromptId, type: 'public' }
-      : undefined);
 
   // Who added a source or tool, joined to its picker row's line.
   const sourceAddedBy = useCallback(
@@ -2601,51 +2594,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         />
                       </FormField>
                     </DraftedField>
-                    {/* The picked prompt opens in the prompt view to edit (or
-                  read) or to improve with the drawer, a copy when the caller
-                  can't change it; the mark of it running with an editor's
+                    {/* The mark of the prompt running with an editor's
                   access is a hint, seen without opening the picker. */}
-                    {(pickedPrompt || promptAddedBy) && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-                        {pickedPrompt && (
-                          <Button
-                            type="button"
-                            variant="link"
-                            size="inline"
-                            onClick={() => openPickerPrompt(pickedPrompt)}
-                          >
-                            {canEditPrompt(pickedPrompt)
-                              ? t('settings.prompts.edit')
-                              : t('settings.prompts.view')}
-                          </Button>
-                        )}
-                        {drafterEnabled &&
-                          pickedPrompt &&
-                          (canEditPrompt(pickedPrompt) ||
-                            can(pickedPrompt, 'duplicate')) && (
-                            <Button
-                              type="button"
-                              variant="link"
-                              size="inline"
-                              onClick={() => {
-                                if (canEditPrompt(pickedPrompt)) {
-                                  openPickerPrompt(pickedPrompt);
-                                  setDrafterOpen(true);
-                                } else improvePromptCopy(pickedPrompt);
-                              }}
-                            >
-                              <WandSparkles className="size-4" />
-                              {canEditPrompt(pickedPrompt)
-                                ? t('drafter.prompt.improvePrompt')
-                                : t('drafter.prompt.improveCopy')}
-                            </Button>
-                          )}
-                        {promptAddedBy && (
-                          <p className="text-muted-foreground text-xs">
-                            {promptAddedBy}
-                          </p>
-                        )}
-                      </div>
+                    {promptAddedBy && (
+                      <p className="text-muted-foreground mt-1.5 text-xs">
+                        {promptAddedBy}
+                      </p>
                     )}
                   </div>
                   <ResourceStatusNotice

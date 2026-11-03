@@ -4580,8 +4580,6 @@
   "drafter": {
     "prompt": {
       "write": "Escribir",
-      "improvePrompt": "Mejorar prompt",
-      "improveCopy": "Mejorar una copia",
       "improvePlaceholder": "Di qué cambiar, p. ej. que no dé precios…",
       "writePlaceholder": "Describe el prompt, p. ej. un asistente amable para nuestro manual de RR. HH.…",
       "warningsTitle": "Revisa antes de guardar",

@@ -1,3 +1,4 @@
+import { useCommandState } from 'cmdk';
 import { Check, ChevronDown } from 'lucide-react';
 import * as React from 'react';
 
@@ -92,9 +93,9 @@ type ComboboxProps = {
   ) => React.ReactNode;
   /**
    * A trailing icon button on each row it returns one for, shown while the
-   * row is highlighted (and always on touch). It is a pointer shortcut,
-   * out of the tab order: the host offers the same action for the picked
-   * item outside the list.
+   * row is hovered or highlighted (and always on touch). Only the
+   * highlighted row's is in the tab order, so Tab from the search reaches
+   * it in one stop.
    */
   rowAction?: (option: ComboboxOption) => ComboboxRowAction | undefined;
   open?: boolean;
@@ -253,24 +254,11 @@ function Combobox({
     const action = rowAction?.(option);
     if (!action) return null;
     return (
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        tabIndex={-1}
-        aria-label={action.label}
-        title={action.label}
-        data-slot="combobox-row-action"
-        className="shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 group-data-[selected=true]/row:opacity-100 pointer-coarse:opacity-100"
-        // The row picks on click; this button doesn't.
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpen(false);
-          action.onSelect();
-        }}
-      >
-        {action.icon}
-      </Button>
+      <ComboboxRowActionButton
+        value={option.value}
+        action={action}
+        onClose={() => setOpen(false)}
+      />
     );
   };
 
@@ -436,6 +424,43 @@ function Combobox({
         {body}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * A row's action button. cmdk keeps focus in the search and highlights a
+ * row by its value; only that row's button takes a tab stop.
+ */
+function ComboboxRowActionButton({
+  value,
+  action,
+  onClose,
+}: {
+  value: string;
+  action: ComboboxRowAction;
+  onClose: () => void;
+}) {
+  const highlighted = useCommandState((state) => state.value === value);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      tabIndex={highlighted ? 0 : -1}
+      aria-label={action.label}
+      title={action.label}
+      data-slot="combobox-row-action"
+      className="shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 group-data-[selected=true]/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+      // The row picks on click, and cmdk's root on Enter; this button doesn't.
+      onClick={(event) => {
+        event.stopPropagation();
+        onClose();
+        action.onSelect();
+      }}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      {action.icon}
+    </Button>
   );
 }
 

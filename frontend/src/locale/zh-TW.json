@@ -4432,8 +4432,6 @@
   "drafter": {
     "prompt": {
       "write": "撰寫",
-      "improvePrompt": "改進提示詞",
-      "improveCopy": "改進副本",
       "improvePlaceholder": "說明要改什麼，例如：不要報價…",
       "writePlaceholder": "描述這個提示詞，例如：我們員工手冊的友善助理…",
       "warningsTitle": "儲存前請檢查",

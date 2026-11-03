@@ -4430,8 +4430,6 @@
   "drafter": {
     "prompt": {
       "write": "撰写",
-      "improvePrompt": "改进提示词",
-      "improveCopy": "改进副本",
       "improvePlaceholder": "说明要改什么，例如：不要报价…",
       "writePlaceholder": "描述这个提示词，例如：我们员工手册的友好助手…",
       "warningsTitle": "保存前请检查",
