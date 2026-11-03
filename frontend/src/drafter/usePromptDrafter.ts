@@ -28,8 +28,15 @@ export type PromptDrafterOptions = {
   setContent: (content: string) => void;
 };
 
+/** The drawer's starting points for a new prompt (the recipe's `STARTERS`). */
+export type PromptStarter = 'website' | 'helpdesk' | 'research';
+
 export type PromptDrafter = {
   session: DrafterSession;
+  /** Send a starting point's text, with its id going along for the session. */
+  start: (starter: PromptStarter, text: string) => void;
+  /** Send `text` and draft from here on without asking questions. */
+  skipQuestions: (text: string) => void;
   review: PromptReview | null;
   drafted: DraftedFields<'name' | 'content'>;
   /** Accept or reject one change (null clears the choice). */
@@ -63,6 +70,9 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   latest.current = options;
   // The text the running turn was sent with: a proposal's edits fit it.
   const sent = useRef('');
+  // The starting point picked and a Skip on questions hold for the session.
+  const starter = useRef<PromptStarter | null>(null);
+  const skipped = useRef(false);
   const [review, setReview] = useState<PromptReview | null>(null);
 
   const values = useMemo(
@@ -94,7 +104,12 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
         draftedRef.current.mark('content', open.original, content);
     }
     sent.current = content;
-    return { mode, prompt: { id: promptId, name, content } };
+    return {
+      mode,
+      prompt: { id: promptId, name, content },
+      starter: starter.current,
+      skip_questions: skipped.current,
+    };
   }, []);
 
   const onProposal = useCallback((raw: unknown) => {
@@ -195,8 +210,26 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     setReview(null);
   }, [review]);
 
+  const send = session.send;
+  const start = useCallback(
+    (picked: PromptStarter, text: string) => {
+      starter.current = picked;
+      send(text);
+    },
+    [send],
+  );
+  const skipQuestions = useCallback(
+    (text: string) => {
+      skipped.current = true;
+      send(text);
+    },
+    [send],
+  );
+
   const resetSession = session.reset;
   const reset = useCallback(() => {
+    starter.current = null;
+    skipped.current = false;
     resetSession();
     setReview(null);
     draftedRef.current.clear();
@@ -204,6 +237,8 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
 
   return {
     session,
+    start,
+    skipQuestions,
     review,
     drafted,
     decide,

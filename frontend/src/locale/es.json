@@ -4581,7 +4581,7 @@
     "prompt": {
       "write": "Escribir",
       "improvePlaceholder": "Di qué cambiar, p. ej. que no dé precios…",
-      "writePlaceholder": "Describe el prompt, p. ej. un asistente amable para nuestro manual de RR. HH.…",
+      "writePlaceholder": "Describe para qué es y quién lo usará…",
       "warningsTitle": "Revisa antes de guardar",
       "checks": {
         "to_template": "Esto añade variables de plantilla, así que DocsGPT usará el prompt tal cual y dejará de añadir sus propias secciones: la fecha, las reglas de respuesta, las citas, el formato y los límites.",
@@ -4607,14 +4607,34 @@
       "introImproveUsedBy_one": "Puedo revisar este prompt o cambiar algo concreto. Lo usa {{formatted}} agente, así que un cambio guardado también le llega.",
       "introImproveUsedBy_many": "Puedo revisar este prompt o cambiar algo concreto. Lo usan {{formatted}} agentes, así que un cambio guardado les llega a todos.",
       "introImproveUsedBy_other": "Puedo revisar este prompt o cambiar algo concreto. Lo usan {{formatted}} agentes, así que un cambio guardado les llega a todos.",
-      "introWrite": "Describe el prompt que quieres y lo escribiré. No se guardará nada hasta que guardes.",
+      "introWrite": "¿Para qué es este prompt? Elige un punto de partida o descríbelo, y te preguntaré lo que necesito antes de escribir. No se guardará nada hasta que guardes.",
       "suggestions": {
         "lookOver": "Revísalo y sugiere mejoras",
-        "noPrices": "Que no dé precios",
-        "language": "Responder en el idioma del cliente",
-        "handbook": "Un asistente amable para nuestro manual de RR. HH.",
-        "support": "Un agente de soporte que pasa a una persona cuando no está seguro"
-      }
+        "clearer": "Hazlo más claro y breve",
+        "unsure": "Añade qué hacer cuando no sepa algo"
+      },
+      "skipMessage": "Redáctalo con lo que sabes.",
+      "starters": {
+        "website": {
+          "title": "Chat web para clientes",
+          "description": "Responde a visitantes y deriva si no está seguro"
+        },
+        "helpdesk": {
+          "title": "Mesa de ayuda interna",
+          "description": "Preguntas de RR. HH., TI y políticas de tu equipo"
+        },
+        "research": {
+          "title": "Asistente de investigación",
+          "description": "Busca en tus documentos y los cita"
+        }
+      },
+      "assumptionsTitle": "Lo que supuse",
+      "changeAssumption": "Cambiar",
+      "changeAssumptionLabel": "Cambiar: {{assumption}}",
+      "changeAssumptionPrefill": "Sobre «{{assumption}}»: ",
+      "readAndSave": "Léelo en el editor y luego guárdalo o dime qué cambiar.",
+      "savePrompt": "Guardar prompt",
+      "nextTitle": "También podrías"
     },
     "title": "Redactar con DocsGPT",
     "draft": "Redactar",
@@ -4828,6 +4848,7 @@
     "filled_many": "Se rellenaron {{count}} campos",
     "filled_other": "Se rellenaron {{count}} campos",
     "notAnswered": "Sin responder",
-    "suggestionsLabel": "Formas de empezar"
+    "suggestionsLabel": "Formas de empezar",
+    "skipQuestions": "Omitir y redactar"
   }
 }

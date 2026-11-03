@@ -4431,7 +4431,7 @@
     "prompt": {
       "write": "撰写",
       "improvePlaceholder": "说明要改什么，例如：不要报价…",
-      "writePlaceholder": "描述这个提示词，例如：我们员工手册的友好助手…",
+      "writePlaceholder": "描述它的用途和使用者…",
       "warningsTitle": "保存前请检查",
       "checks": {
         "to_template": "这会加入模板变量，DocsGPT 将完全按原文使用提示词，不再添加自己的部分：日期、回答规则、引用、格式和边界。",
@@ -4456,14 +4456,34 @@
       "introImprove": "我可以检查这个提示词，或修改某个具体的地方。在你保存之前不会保存任何内容。",
       "introImproveUsedBy_one": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改也会作用于它。",
       "introImproveUsedBy_other": "我可以检查这个提示词，或修改某个具体的地方。有 {{formatted}} 个智能体在使用它，所以保存的更改会作用于所有这些智能体。",
-      "introWrite": "描述你想要的提示词，我来写。在你保存之前不会保存任何内容。",
+      "introWrite": "这个提示词是做什么用的？选择一个起点或描述一下，我会在写之前问清需要的信息。在你保存之前不会保存任何内容。",
       "suggestions": {
         "lookOver": "检查一下并提出修改建议",
-        "noPrices": "不要报价",
-        "language": "用客户的语言回答",
-        "handbook": "我们员工手册的友好助手",
-        "support": "拿不准时转交给人工的客服智能体"
-      }
+        "clearer": "写得更清楚、更简短",
+        "unsure": "补充不知道答案时该怎么做"
+      },
+      "skipMessage": "就用你已知的信息起草吧。",
+      "starters": {
+        "website": {
+          "title": "面向客户的网站聊天",
+          "description": "回答访客问题，不确定时转人工"
+        },
+        "helpdesk": {
+          "title": "内部服务台",
+          "description": "团队的人事、IT 和制度问题"
+        },
+        "research": {
+          "title": "研究助手",
+          "description": "检索你的文档并注明出处"
+        }
+      },
+      "assumptionsTitle": "我的假设",
+      "changeAssumption": "修改",
+      "changeAssumptionLabel": "修改：{{assumption}}",
+      "changeAssumptionPrefill": "关于“{{assumption}}”：",
+      "readAndSave": "请在编辑器中通读，然后保存，或告诉我要改什么。",
+      "savePrompt": "保存提示词",
+      "nextTitle": "你还可以"
     },
     "title": "用 DocsGPT 起草",
     "draft": "起草",
@@ -4640,6 +4660,7 @@
     "filled_one": "已填写 {{count}} 个字段",
     "filled_other": "已填写 {{count}} 个字段",
     "notAnswered": "未回答",
-    "suggestionsLabel": "开始方式"
+    "suggestionsLabel": "开始方式",
+    "skipQuestions": "跳过并起草"
   }
 }

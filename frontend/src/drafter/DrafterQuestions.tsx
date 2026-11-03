@@ -60,18 +60,22 @@ export function composeAnswers(
  * the question and what was picked.
  *
  * Args:
- *   questions: At most three questions, two to five options each.
+ *   questions: At most three questions, two to five options each (or none).
  *   active: Whether they can still be answered.
  *   onAnswer: Sends the composed answers.
+ *   onSkip: When given, a Skip button beside Send answers drafts without
+ *     answering.
  */
 export function DrafterQuestions({
   questions,
   active,
   onAnswer,
+  onSkip,
 }: {
   questions: DrafterQuestion[];
   active: boolean;
   onAnswer: (message: string) => void;
+  onSkip?: () => void;
 }) {
   const { t } = useTranslation();
   const baseId = useId();
@@ -296,16 +300,28 @@ export function DrafterQuestions({
         );
       })}
       {active && (
-        <Button
-          type="button"
-          size="sm"
-          shape="pill"
-          className="self-start"
-          disabled={!message}
-          onClick={() => onAnswer(message)}
-        >
-          {t('drafter.sendAnswers')}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            shape="pill"
+            disabled={!message}
+            onClick={() => onAnswer(message)}
+          >
+            {t('drafter.sendAnswers')}
+          </Button>
+          {onSkip && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              shape="pill"
+              onClick={onSkip}
+            >
+              {t('drafter.skipQuestions')}
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

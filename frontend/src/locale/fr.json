@@ -4581,7 +4581,7 @@
     "prompt": {
       "write": "Rédiger",
       "improvePlaceholder": "Dites ce qu’il faut changer, p. ex. ne plus citer de prix…",
-      "writePlaceholder": "Décrivez le prompt, p. ex. un assistant aimable pour notre manuel RH…",
+      "writePlaceholder": "Décrivez à quoi il sert et qui l’utilisera…",
       "warningsTitle": "À vérifier avant d’enregistrer",
       "checks": {
         "to_template": "Cela ajoute des variables de modèle : DocsGPT utilisera le prompt tel quel et n’ajoutera plus ses propres sections (date, règles de réponse, citations, mise en forme et limites).",
@@ -4607,14 +4607,34 @@
       "introImproveUsedBy_one": "Je peux relire ce prompt ou y changer quelque chose de précis. {{formatted}} agent l’utilise, donc une modification enregistrée s’y applique aussi.",
       "introImproveUsedBy_many": "Je peux relire ce prompt ou y changer quelque chose de précis. {{formatted}} agents l’utilisent, donc une modification enregistrée s’applique à tous.",
       "introImproveUsedBy_other": "Je peux relire ce prompt ou y changer quelque chose de précis. {{formatted}} agents l’utilisent, donc une modification enregistrée s’applique à tous.",
-      "introWrite": "Décrivez le prompt souhaité et je l’écrirai. Rien n’est enregistré tant que vous n’enregistrez pas.",
+      "introWrite": "À quoi sert ce prompt ? Choisissez un point de départ ou décrivez-le, et je vous demanderai ce qu’il me faut avant d’écrire. Rien n’est enregistré tant que vous n’enregistrez pas.",
       "suggestions": {
         "lookOver": "Relisez-le et proposez des corrections",
-        "noPrices": "Ne plus citer de prix",
-        "language": "Répondre dans la langue du client",
-        "handbook": "Un assistant aimable pour notre manuel RH",
-        "support": "Un agent de support qui passe la main à une personne en cas de doute"
-      }
+        "clearer": "Rendez-le plus clair et plus court",
+        "unsure": "Ajoutez quoi faire quand il ne sait pas"
+      },
+      "skipMessage": "Rédigez-le avec ce que vous savez.",
+      "starters": {
+        "website": {
+          "title": "Chat web pour les clients",
+          "description": "Répond aux visiteurs, passe la main en cas de doute"
+        },
+        "helpdesk": {
+          "title": "Assistance interne",
+          "description": "Questions RH, IT et règlements de votre équipe"
+        },
+        "research": {
+          "title": "Assistant de recherche",
+          "description": "Fouille vos documents et les cite"
+        }
+      },
+      "assumptionsTitle": "Mes hypothèses",
+      "changeAssumption": "Modifier",
+      "changeAssumptionLabel": "Modifier : {{assumption}}",
+      "changeAssumptionPrefill": "À propos de « {{assumption}} » : ",
+      "readAndSave": "Relisez-le dans l’éditeur, puis enregistrez-le ou dites-moi quoi changer.",
+      "savePrompt": "Enregistrer le prompt",
+      "nextTitle": "Vous pourriez aussi"
     },
     "title": "Rédiger avec DocsGPT",
     "draft": "Rédiger",
@@ -4828,6 +4848,7 @@
     "filled_many": "{{count}} champs remplis",
     "filled_other": "{{count}} champs remplis",
     "notAnswered": "Sans réponse",
-    "suggestionsLabel": "Pour commencer"
+    "suggestionsLabel": "Pour commencer",
+    "skipQuestions": "Passer et rédiger"
   }
 }

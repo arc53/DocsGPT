@@ -4433,7 +4433,7 @@
     "prompt": {
       "write": "撰寫",
       "improvePlaceholder": "說明要改什麼，例如：不要報價…",
-      "writePlaceholder": "描述這個提示詞，例如：我們員工手冊的友善助理…",
+      "writePlaceholder": "描述它的用途和使用者…",
       "warningsTitle": "儲存前請檢查",
       "checks": {
         "to_template": "這會加入範本變數，DocsGPT 將完全依原文使用提示詞，不再加入自己的段落：日期、回答規則、引用、格式和界線。",
@@ -4458,14 +4458,34 @@
       "introImprove": "我可以檢查這個提示詞，或修改某個具體的地方。在你儲存之前不會儲存任何內容。",
       "introImproveUsedBy_one": "我可以檢查這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更也會套用到它。",
       "introImproveUsedBy_other": "我可以檢查這個提示詞，或修改某個具體的地方。有 {{formatted}} 個代理在使用它，所以儲存的變更會套用到所有這些代理。",
-      "introWrite": "描述你想要的提示詞，我來寫。在你儲存之前不會儲存任何內容。",
+      "introWrite": "這個提示詞是做什麼用的？選擇一個起點或描述一下，我會在寫之前問清需要的資訊。在你儲存之前不會儲存任何內容。",
       "suggestions": {
         "lookOver": "檢查一下並提出修改建議",
-        "noPrices": "不要報價",
-        "language": "用客戶的語言回答",
-        "handbook": "我們員工手冊的友善助理",
-        "support": "拿不準時轉交給真人的客服代理"
-      }
+        "clearer": "寫得更清楚、更簡短",
+        "unsure": "補充不知道答案時該怎麼做"
+      },
+      "skipMessage": "就用你已知的資訊起草吧。",
+      "starters": {
+        "website": {
+          "title": "面向客戶的網站聊天",
+          "description": "回答訪客問題，不確定時轉真人"
+        },
+        "helpdesk": {
+          "title": "內部服務台",
+          "description": "團隊的人資、IT 和規章問題"
+        },
+        "research": {
+          "title": "研究助理",
+          "description": "檢索你的文件並註明出處"
+        }
+      },
+      "assumptionsTitle": "我的假設",
+      "changeAssumption": "修改",
+      "changeAssumptionLabel": "修改：{{assumption}}",
+      "changeAssumptionPrefill": "關於「{{assumption}}」：",
+      "readAndSave": "請在編輯器中通讀，然後儲存，或告訴我要改什麼。",
+      "savePrompt": "儲存提示詞",
+      "nextTitle": "你還可以"
     },
     "title": "用 DocsGPT 起草",
     "draft": "起草",
@@ -4642,6 +4662,7 @@
     "filled_one": "已填寫 {{count}} 個欄位",
     "filled_other": "已填寫 {{count}} 個欄位",
     "notAnswered": "未回答",
-    "suggestionsLabel": "開始方式"
+    "suggestionsLabel": "開始方式",
+    "skipQuestions": "略過並起草"
   }
 }

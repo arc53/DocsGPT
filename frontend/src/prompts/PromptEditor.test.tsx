@@ -29,6 +29,7 @@ const REVIEW: PromptReview = {
     templateMode: { before: false, after: false },
     warnings: [],
     checks: [],
+    suggestions: [],
   },
   original: 'Be brief.',
   decisions: {},

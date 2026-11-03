@@ -31,6 +31,8 @@ export type PromptImproveProposal = {
   templateMode: { before: boolean; after: boolean };
   warnings: string[];
   checks: PromptCheck[];
+  /** Next changes the model offers, each worded as the user's request. */
+  suggestions: string[];
 };
 
 export type PromptWriteProposal = {
@@ -41,6 +43,9 @@ export type PromptWriteProposal = {
   reason: string;
   warnings: string[];
   checks: PromptCheck[];
+  /** Guesses the model made that the user should check. */
+  assumptions: string[];
+  suggestions: string[];
 };
 
 export type PromptProposal = PromptImproveProposal | PromptWriteProposal;
@@ -104,6 +109,7 @@ export function readPromptProposal(raw: unknown): PromptProposal | null {
       },
       warnings: strings(value.warnings),
       checks: checks(value.checks),
+      suggestions: strings(value.suggestions),
     };
   }
   if (
@@ -119,6 +125,8 @@ export function readPromptProposal(raw: unknown): PromptProposal | null {
       reason: isString(value.reason) ? value.reason : '',
       warnings: strings(value.warnings),
       checks: checks(value.checks),
+      assumptions: strings(value.assumptions),
+      suggestions: strings(value.suggestions),
     };
   }
   return null;

@@ -4453,7 +4453,7 @@
     "prompt": {
       "write": "Schreiben",
       "improvePlaceholder": "Sag, was sich ändern soll, z. B. keine Preise nennen…",
-      "writePlaceholder": "Beschreibe den Prompt, z. B. ein freundlicher Helfer für unser Personalhandbuch…",
+      "writePlaceholder": "Beschreibe, wofür er ist und wer ihn nutzt…",
       "warningsTitle": "Vor dem Speichern prüfen",
       "checks": {
         "to_template": "Damit kommen Vorlagenvariablen hinzu: DocsGPT verwendet den Prompt dann genau wie geschrieben und fügt seine eigenen Abschnitte nicht mehr hinzu (Datum, Antwortregeln, Quellenangaben, Formatierung und Grenzen).",
@@ -4478,14 +4478,34 @@
       "introImprove": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. Gespeichert wird erst, wenn du speicherst.",
       "introImproveUsedBy_one": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agent nutzt ihn, eine gespeicherte Änderung gilt also auch dort.",
       "introImproveUsedBy_other": "Ich kann diesen Prompt durchsehen oder etwas Bestimmtes ändern. {{formatted}} Agenten nutzen ihn, eine gespeicherte Änderung gilt also für alle.",
-      "introWrite": "Beschreibe den Prompt, den du möchtest, und ich schreibe ihn. Gespeichert wird erst, wenn du speicherst.",
+      "introWrite": "Wofür ist dieser Prompt? Wähle einen Ausgangspunkt oder beschreibe ihn, und ich frage nach, was ich brauche, bevor ich schreibe. Gespeichert wird erst, wenn du speicherst.",
       "suggestions": {
         "lookOver": "Durchsehen und Verbesserungen vorschlagen",
-        "noPrices": "Keine Preise mehr nennen",
-        "language": "In der Sprache des Kunden antworten",
-        "handbook": "Ein freundlicher Helfer für unser Personalhandbuch",
-        "support": "Ein Support-Agent, der bei Unsicherheit an einen Menschen übergibt"
-      }
+        "clearer": "Mach ihn klarer und kürzer",
+        "unsure": "Ergänze, was er tun soll, wenn er etwas nicht weiß"
+      },
+      "skipMessage": "Entwirf ihn mit dem, was du weißt.",
+      "starters": {
+        "website": {
+          "title": "Website-Chat für Kunden",
+          "description": "Beantwortet Besucherfragen, übergibt bei Unsicherheit"
+        },
+        "helpdesk": {
+          "title": "Interner Helpdesk",
+          "description": "HR-, IT- und Richtlinienfragen deines Teams"
+        },
+        "research": {
+          "title": "Rechercheassistent",
+          "description": "Durchsucht deine Dokumente und zitiert sie"
+        }
+      },
+      "assumptionsTitle": "Meine Annahmen",
+      "changeAssumption": "Ändern",
+      "changeAssumptionLabel": "Ändern: {{assumption}}",
+      "changeAssumptionPrefill": "Zu „{{assumption}}“: ",
+      "readAndSave": "Lies ihn im Editor durch, dann speichere ihn oder sag mir, was ich ändern soll.",
+      "savePrompt": "Prompt speichern",
+      "nextTitle": "Du könntest auch"
     },
     "title": "Mit DocsGPT entwerfen",
     "draft": "Entwerfen",
@@ -4676,6 +4696,7 @@
     "filled_one": "{{count}} Feld ausgefüllt",
     "filled_other": "{{count}} Felder ausgefüllt",
     "notAnswered": "Nicht beantwortet",
-    "suggestionsLabel": "Möglichkeiten zum Einstieg"
+    "suggestionsLabel": "Möglichkeiten zum Einstieg",
+    "skipQuestions": "Überspringen und entwerfen"
   }
 }

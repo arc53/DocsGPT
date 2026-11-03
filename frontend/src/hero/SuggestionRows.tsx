@@ -19,6 +19,8 @@ export type SuggestionRow = {
   key: string;
   icon: ReactNode;
   text: string;
+  /** A muted second line under the text. */
+  description?: string;
   /** Sends `text` as a question; otherwise the row opens something. */
   asks: boolean;
   onSelect: () => void;
@@ -47,7 +49,7 @@ export default function SuggestionRows({
       className={cn('flex flex-col', className)}
       data-testid="hero-suggestions"
     >
-      {rows.map(({ key, icon, text, asks, onSelect }) => (
+      {rows.map(({ key, icon, text, description, asks, onSelect }) => (
         <ListRow
           key={key}
           size="md"
@@ -57,6 +59,7 @@ export default function SuggestionRows({
           className="group/row"
           leading={icon}
           title={text}
+          description={description}
           trailing={
             asks ? (
               <ArrowUp className={trailingIconClass} />

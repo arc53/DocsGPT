@@ -35,6 +35,7 @@ describe('readPromptProposal', () => {
       template_mode: { before: false, after: true },
       warnings: ['w', 3],
       checks: ['to_template', 'unknown'],
+      suggestions: ['Add a hand-off', 4],
     });
     expect(proposal).toEqual({
       mode: 'improve',
@@ -44,6 +45,7 @@ describe('readPromptProposal', () => {
       templateMode: { before: false, after: true },
       warnings: ['w'],
       checks: ['to_template'],
+      suggestions: ['Add a hand-off'],
     });
   });
 
@@ -55,6 +57,7 @@ describe('readPromptProposal', () => {
         name: 'HR',
         content: 'You help.',
         reason: 'Persona',
+        assumptions: ['Hand-offs go to HR.'],
       }),
     ).toEqual({
       mode: 'write',
@@ -64,6 +67,8 @@ describe('readPromptProposal', () => {
       reason: 'Persona',
       warnings: [],
       checks: [],
+      assumptions: ['Hand-offs go to HR.'],
+      suggestions: [],
     });
   });
 

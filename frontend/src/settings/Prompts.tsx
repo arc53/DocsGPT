@@ -640,6 +640,15 @@ function PromptDetailPage({
           usedBy={usedBy}
           modelName={drafterConfig?.model?.display_name ?? null}
           onNavigate={leaveGuard.onNavigate()}
+          save={{
+            onSave: () => void detail.save(),
+            disabled:
+              !detail.canSave ||
+              !detail.dirty ||
+              streaming ||
+              drafter.review !== null,
+            saving: detail.saving,
+          }}
         />
       )}
     </div>

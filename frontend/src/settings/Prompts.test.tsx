@@ -928,15 +928,149 @@ describe('Prompts page', () => {
       Array.from(panel()!.querySelectorAll('[data-suggestion]')).map((b) =>
         b.getAttribute('data-suggestion'),
       ),
-    ).toEqual(['lookOver', 'noPrices', 'language']);
+    ).toEqual(['lookOver', 'clearer', 'unsure']);
   });
 
-  it('offers Write on an empty new prompt', async () => {
+  it('offers Write on an empty new prompt, with three starting points', async () => {
     drafter.config = { enabled: true };
     await render();
     await click(button('settings.prompts.addPrompt')!);
     await click(button('drafter.prompt.write', view()!)!);
     expect(panel()!.textContent).toContain('drafter.prompt.introWrite');
+    const rows = Array.from(
+      panel()!.querySelectorAll<HTMLElement>('[data-slot="list-row"]'),
+    );
+    expect(
+      rows.map((row) =>
+        row.querySelector('[data-suggestion]')!.getAttribute('data-suggestion'),
+      ),
+    ).toEqual(['website', 'helpdesk', 'research']);
+    expect(rows[0].textContent).toBe(
+      'drafter.prompt.starters.website.titledrafter.prompt.starters.website.description',
+    );
+  });
+
+  const WRITE = {
+    mode: 'write',
+    message: 'A first draft for Meridian.',
+    name: 'Meridian website chat',
+    content: 'You answer visitors of Meridian Freight.',
+    reason: 'A persona.',
+    warnings: [],
+    template_mode: { before: false, after: false },
+    checks: [],
+    assumptions: ['Hand-offs go to your support team.'],
+    suggestions: ['Add your opening hours', 'Make it shorter'],
+  };
+
+  it('asks before writing from a starter, and drafts at once on Skip', async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [
+      [
+        {
+          type: 'questions',
+          questions: [
+            {
+              id: 'q1',
+              text: 'Which company is it for?',
+              note: null,
+              multi: false,
+              options: [],
+              placeholder: 'e.g. Northwind',
+            },
+          ],
+        },
+        { type: 'end' },
+      ],
+      proposal(WRITE),
+    ];
+    service.createPrompt.mockImplementation(() => response({ id: 'p-new' }));
+    await render();
+    await click(button('settings.prompts.addPrompt')!);
+    await click(button('drafter.prompt.write', view()!)!);
+    await click(
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="website"]')!,
+    );
+    expect(drafter.requests[0]).toMatchObject({
+      messages: [
+        { role: 'user', content: 'drafter.prompt.starters.website.title' },
+      ],
+      context: { mode: 'write', starter: 'website', skip_questions: false },
+    });
+    const field = panel()!.querySelector<HTMLInputElement>(
+      '[data-question="q1"] input',
+    )!;
+    expect(field.placeholder).toBe('e.g. Northwind');
+    await click(button('drafter.skipQuestions', panel()!)!);
+    expect(drafter.requests[1].messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'drafter.prompt.skipMessage',
+    });
+    expect(drafter.requests[1].context).toMatchObject({
+      mode: 'write',
+      starter: 'website',
+      skip_questions: true,
+    });
+    // The draft is in the editor; the drawer lists what to check and saves.
+    expect(textArea()!.value).toBe('You answer visitors of Meridian Freight.');
+    expect(nameInput().value).toBe('Meridian website chat');
+    const assumed = panel()!.querySelector(
+      '[data-slot="prompt-draft-assumptions"]',
+    )!;
+    expect(assumed.textContent).toContain('drafter.prompt.assumptionsTitle');
+    expect(assumed.textContent).toContain('Hand-offs go to your support team.');
+    expect(panel()!.textContent).toContain('drafter.prompt.readAndSave');
+    await click(button('drafter.prompt.savePrompt', panel()!)!);
+    expect(service.createPrompt).toHaveBeenCalledWith(
+      {
+        name: 'Meridian website chat',
+        content: 'You answer visitors of Meridian Freight.',
+      },
+      'tok',
+    );
+  });
+
+  it("offers the model's next changes and puts an assumption in the ask bar", async () => {
+    drafter.config = { enabled: true };
+    drafter.scripts = [proposal(WRITE), [{ type: 'end' }]];
+    await render();
+    await click(button('settings.prompts.addPrompt')!);
+    await click(button('drafter.prompt.write', view()!)!);
+    const composer = panel()!.querySelector<HTMLTextAreaElement>('textarea')!;
+    await type(composer, 'A website chat for Meridian Freight');
+    await act(async () => {
+      composer.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    expect(drafter.requests[0].context).toMatchObject({ starter: null });
+    await click(
+      panel()!.querySelector<HTMLButtonElement>(
+        '[data-slot="prompt-draft-assumptions"] button',
+      )!,
+    );
+    expect(composer.value).toBe(
+      'drafter.prompt.changeAssumptionPrefill:{"assumption":"Hand-offs go to your support team."}',
+    );
+    expect(document.activeElement).toBe(composer);
+    const next = Array.from(
+      panel()!.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="prompt-draft-next"] [data-suggestion]',
+      ),
+    );
+    expect(next.map((b) => b.textContent)).toEqual([
+      'Add your opening hours',
+      'Make it shorter',
+    ]);
+    await click(next[0]);
+    expect(drafter.requests[1]).toMatchObject({
+      messages: [
+        { role: 'user', content: 'A website chat for Meridian Freight' },
+        { role: 'assistant' },
+        { role: 'user', content: 'Add your opening hours' },
+      ],
+      context: { mode: 'improve' },
+    });
   });
 
   it('reviews an improvement inline and finishes it from the drawer', async () => {
@@ -999,9 +1133,7 @@ describe('Prompts page', () => {
     await openCard('Vendor checks');
     await click(button('drafter.improve', view()!)!);
     await click(
-      panel()!.querySelector<HTMLButtonElement>(
-        '[data-suggestion="noPrices"]',
-      )!,
+      panel()!.querySelector<HTMLButtonElement>('[data-suggestion="clearer"]')!,
     );
     const composer = panel()!.querySelector<HTMLTextAreaElement>('textarea')!;
     await type(composer, 'Also be brief.');

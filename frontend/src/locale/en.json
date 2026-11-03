@@ -4474,7 +4474,7 @@
     "prompt": {
       "write": "Write",
       "improvePlaceholder": "Say what to change, e.g. stop it from quoting prices…",
-      "writePlaceholder": "Describe the prompt, e.g. a friendly helper for our HR handbook…",
+      "writePlaceholder": "Describe what it's for and who will use it…",
       "warningsTitle": "Check before you save",
       "checks": {
         "to_template": "This adds template variables, so DocsGPT will use the prompt exactly as written and stop adding its own sections: the date, answering rules, citations, formatting and boundaries.",
@@ -4499,14 +4499,34 @@
       "introImprove": "I can look over this prompt or change something specific. Nothing is saved until you save.",
       "introImproveUsedBy_one": "I can look over this prompt or change something specific. It's used by {{formatted}} agent, so a saved change reaches it.",
       "introImproveUsedBy_other": "I can look over this prompt or change something specific. It's used by {{formatted}} agents, so a saved change reaches all of them.",
-      "introWrite": "Describe the prompt you want and I'll write it. Nothing is saved until you save.",
+      "introWrite": "What's this prompt for? Pick a starting point or describe it, and I'll ask what I need before I write. Nothing is saved until you save.",
       "suggestions": {
         "lookOver": "Look it over and suggest fixes",
-        "noPrices": "Stop it from quoting prices",
-        "language": "Answer in the customer's language",
-        "handbook": "A friendly helper for our HR handbook",
-        "support": "A support agent that hands off to a person when unsure"
-      }
+        "clearer": "Make it clearer and shorter",
+        "unsure": "Add what to do when it doesn't know"
+      },
+      "skipMessage": "Draft it with what you know.",
+      "starters": {
+        "website": {
+          "title": "Website chat for customers",
+          "description": "Answers visitors and hands off when unsure"
+        },
+        "helpdesk": {
+          "title": "Internal helpdesk",
+          "description": "HR, IT and policy questions from your team"
+        },
+        "research": {
+          "title": "Research assistant",
+          "description": "Digs through your documents and cites them"
+        }
+      },
+      "assumptionsTitle": "I assumed",
+      "changeAssumption": "Change",
+      "changeAssumptionLabel": "Change: {{assumption}}",
+      "changeAssumptionPrefill": "About “{{assumption}}”: ",
+      "readAndSave": "Read it through in the editor, then save it or tell me what to change.",
+      "savePrompt": "Save prompt",
+      "nextTitle": "You could also"
     },
     "title": "Draft with DocsGPT",
     "draft": "Draft",
@@ -4697,6 +4717,7 @@
     "filled_one": "Filled {{count}} field",
     "filled_other": "Filled {{count}} fields",
     "notAnswered": "Not answered",
-    "suggestionsLabel": "Ways to start"
+    "suggestionsLabel": "Ways to start",
+    "skipQuestions": "Skip and draft"
   }
 }

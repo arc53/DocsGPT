@@ -44,8 +44,23 @@ export const RETRYABLE: DrafterErrorCode[] = [
   'model_error',
 ];
 
-/** A first-screen suggestion: a click sends its text. */
-export type DraftSuggestion = { key: string; icon: ReactNode; text: string };
+/**
+ * A first-screen suggestion: a click sends its text, or runs `onSelect`
+ * when the host sends it itself (a starter that adds to the context).
+ */
+export type DraftSuggestion = {
+  key: string;
+  icon: ReactNode;
+  text: string;
+  description?: string;
+  onSelect?: () => void;
+};
+
+/** What a rendered proposal can do in the panel. */
+export type DraftPanelHelpers = {
+  /** Put `text` in the ask bar and focus it, for the user to finish. */
+  compose: (text: string) => void;
+};
 
 export type DraftPanelProps = {
   open: boolean;
@@ -72,7 +87,16 @@ export type DraftPanelProps = {
   /** The ask bar's placeholder; "Ask for a change…" when left out. */
   placeholder?: string;
   /** Renders a proposal item (the recipe's summary). */
-  renderProposal: (proposal: unknown, latest: boolean) => ReactNode;
+  renderProposal: (
+    proposal: unknown,
+    latest: boolean,
+    helpers: DraftPanelHelpers,
+  ) => ReactNode;
+  /**
+   * When given, open questions offer Skip, which calls it instead of
+   * sending answers.
+   */
+  onSkipQuestions?: () => void;
   /**
    * What a screen reader hears once the latest proposal is applied ("Drafted
    * 3 fields…"); null announces nothing.
@@ -114,6 +138,7 @@ export function DraftPanel({
   before,
   placeholder,
   renderProposal,
+  onSkipQuestions,
   announceProposal,
   continueAction,
   after,
@@ -123,6 +148,13 @@ export function DraftPanel({
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const wasOpen = useRef(false);
+  const [draft, setDraft] = useState('');
+  const helpers: DraftPanelHelpers = {
+    compose: (text) => {
+      setDraft(text);
+      inputRef.current?.focus();
+    },
+  };
   const { items, step, streaming } = session;
   // The latest turn was stopped here: the way on shows until the next one.
   const [stopped, setStopped] = useState(false);
@@ -182,12 +214,13 @@ export function DraftPanel({
             questions={item.questions}
             active={!streaming && index > lastUser}
             onAnswer={(message) => session.send(message)}
+            onSkip={onSkipQuestions}
           />
         );
       case 'proposal':
         return (
           <div key={item.id} data-item="proposal">
-            {renderProposal(item.proposal, index === lastProposal)}
+            {renderProposal(item.proposal, index === lastProposal, helpers)}
           </div>
         );
       case 'error':
@@ -254,7 +287,9 @@ export function DraftPanel({
                 rows={suggestions.map((suggestion) => ({
                   ...suggestion,
                   asks: true,
-                  onSelect: () => session.send(suggestion.text),
+                  onSelect:
+                    suggestion.onSelect ??
+                    (() => session.send(suggestion.text)),
                 }))}
               />
             </div>
@@ -282,6 +317,8 @@ export function DraftPanel({
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <Composer
             inputRef={inputRef}
+            draft={draft}
+            setDraft={setDraft}
             streaming={streaming}
             placeholder={placeholder ?? t('drafter.askPlaceholder')}
             onSend={(text) => session.send(text)}
@@ -319,19 +356,23 @@ export function DraftPanel({
  */
 function Composer({
   inputRef,
+  draft,
+  setDraft,
   streaming,
   placeholder,
   onSend,
   onStop,
 }: {
   inputRef: RefObject<HTMLTextAreaElement | null>;
+  /** The ask bar's text, held by the panel so a proposal can prefill it. */
+  draft: string;
+  setDraft: (draft: string) => void;
   streaming: boolean;
   placeholder: string;
   onSend: (text: string) => void;
   onStop: () => void;
 }) {
   const { t } = useTranslation();
-  const [draft, setDraft] = useState('');
   const empty = !draft.trim();
 
   // Grow with the text; max-h-36 (six lines) caps it, then it scrolls.

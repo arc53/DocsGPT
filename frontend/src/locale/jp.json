@@ -4433,7 +4433,7 @@
     "prompt": {
       "write": "作成",
       "improvePlaceholder": "変更内容を入力（例: 価格を答えないようにする）…",
-      "writePlaceholder": "プロンプトの内容を説明（例: 人事ハンドブックの親切なアシスタント）…",
+      "writePlaceholder": "用途と使う人を説明してください…",
       "warningsTitle": "保存前に確認してください",
       "checks": {
         "to_template": "テンプレート変数が追加されるため、DocsGPT はプロンプトを書かれたとおりに使用し、独自のセクション（日付、回答ルール、引用、書式、境界）を追加しなくなります。",
@@ -4458,14 +4458,34 @@
       "introImprove": "このプロンプトを見直したり、特定の箇所を変更したりできます。保存するまで何も保存されません。",
       "introImproveUsedBy_one": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はそちらにも反映されます。",
       "introImproveUsedBy_other": "このプロンプトを見直したり、特定の箇所を変更したりできます。{{formatted}} 個のエージェントが使っているため、保存した変更はすべてに反映されます。",
-      "introWrite": "必要なプロンプトを説明してください。私が書きます。保存するまで何も保存されません。",
+      "introWrite": "このプロンプトの用途は？ 出発点を選ぶか説明してください。書く前に必要なことを質問します。保存するまで何も保存されません。",
       "suggestions": {
         "lookOver": "見直して修正点を提案して",
-        "noPrices": "価格を答えないようにして",
-        "language": "顧客の言語で回答して",
-        "handbook": "人事ハンドブックの親切なアシスタント",
-        "support": "迷ったときは担当者に引き継ぐサポートエージェント"
-      }
+        "clearer": "もっと明確で短くして",
+        "unsure": "わからない時の対応を追加して"
+      },
+      "skipMessage": "わかっている内容で下書きしてください。",
+      "starters": {
+        "website": {
+          "title": "顧客向けウェブサイトチャット",
+          "description": "訪問者に回答し、不明な時は引き継ぎ"
+        },
+        "helpdesk": {
+          "title": "社内ヘルプデスク",
+          "description": "チームからの人事・IT・規程の質問"
+        },
+        "research": {
+          "title": "リサーチアシスタント",
+          "description": "ドキュメントを調べて出典を示す"
+        }
+      },
+      "assumptionsTitle": "想定したこと",
+      "changeAssumption": "変更",
+      "changeAssumptionLabel": "変更: {{assumption}}",
+      "changeAssumptionPrefill": "「{{assumption}}」について: ",
+      "readAndSave": "エディターで内容を確認し、保存するか、変更点を教えてください。",
+      "savePrompt": "プロンプトを保存",
+      "nextTitle": "ほかにも"
     },
     "title": "DocsGPT で下書き",
     "draft": "下書き",
@@ -4642,6 +4662,7 @@
     "filled_one": "{{count}} 個のフィールドを入力しました",
     "filled_other": "{{count}} 個のフィールドを入力しました",
     "notAnswered": "未回答",
-    "suggestionsLabel": "始め方の例"
+    "suggestionsLabel": "始め方の例",
+    "skipQuestions": "スキップして下書き"
   }
 }
