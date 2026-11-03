@@ -1,7 +1,7 @@
 ---
 title: Connectors
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-11-02
+lastUpdated: 2026-11-03
 ---
 
 import { Callout } from 'nextra/components'
@@ -323,7 +323,7 @@ draw.io is a remote MCP preset that needs no account or credentials. Pick its ca
 
 CoinGecko is also a no-sign-in preset: pick its card and click **Connect**. Agents can then answer crypto questions with live prices, market caps, volumes, trending coins and price history. The server has two tools: its `search_docs` looks up CoinGecko SDK documentation (methods, parameters and request structure), and `execute` runs the TypeScript the agent writes against the CoinGecko SDK in a sandbox. The keyless server shares rate limits across all users, so heavy use can be throttled. See [CoinGecko's MCP server docs](https://docs.coingecko.com/docs/mcp-server).
 
-Excalidraw is another no-sign-in preset: pick its card and click **Connect**. Ask an agent to draw a diagram and return an editable Excalidraw link; `export_to_excalidraw` uploads the diagram and returns a link that opens at excalidraw.com. DocsGPT does not yet render the interactive MCP Apps canvas inline, so `create_view` alone does not provide a viewable diagram in chat.
+Excalidraw is another no-sign-in preset: pick its card and click **Connect**. Ask an agent to draw a diagram and its `create_view` call draws a live, hand-drawn canvas inline in the answer, an MCP App (see [MCP Apps](/Tools/mcp-tools#mcp-apps)). The canvas's own tools (`export_to_excalidraw`, `save_checkpoint`, `read_checkpoint`) are for the canvas, not the agent: exporting to an editable excalidraw.com link is a button on the canvas. `export_to_excalidraw` and `save_checkpoint` change things, so the canvas asks before it runs them until you set them to **Always allow**. Where MCP Apps are off, the agent calls `export_to_excalidraw` itself and returns the link.
 
 Canva's server covers designs end to end: search and read designs, pages and content, create and edit them, generate images, upload assets, organize folders, read and write comments, and export to PDF, PNG, JPG, PPTX or MP4. Brand kits, brand templates, autofill and resizing a design to new dimensions need Canva Pro or above; the rest works on a free account.
 

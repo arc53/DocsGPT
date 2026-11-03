@@ -1,7 +1,7 @@
 ---
 title: MCP Tool Integration
 description: Connect any MCP (Model Context Protocol) server to DocsGPT agents as a tool, with bearer, API key, basic or OAuth sign-in, a worked example and troubleshooting.
-lastUpdated: 2026-11-02
+lastUpdated: 2026-11-03
 ---
 
 import { Callout } from 'nextra/components'
@@ -37,7 +37,7 @@ In your agent configuration, enable the MCP tools you want the agent to use.
 
 </Steps>
 
-Presets need no URL entry. Most sign in with OAuth; draw.io, CoinGecko and Excalidraw connect with one click and need no credentials. draw.io's `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. CoinGecko gives agents live crypto market data through two tools: CoinGecko's `search_docs` looks up its SDK documentation (methods, parameters and request structure), and `execute` runs the TypeScript the agent writes against the CoinGecko SDK in a sandbox. Its keyless server shares rate limits across all users. Neon's consent screen lets each member choose a project, turn off write access and pick tool categories; its URL parameters — `readonly=true`, `projectId=<project-id>` and `category=<name>` — fix those choices instead, so add it as a custom MCP server only when a grant has to be fixed; see [Neon](/Sources/Connectors#neon). For Excalidraw, `read_me` describes the diagram format and `export_to_excalidraw` returns an editable `https://excalidraw.com/#json=…` link. DocsGPT does not yet render MCP Apps widgets inline, so `create_view` alone only reports that the canvas is rendering. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+Presets need no URL entry. Most sign in with OAuth; draw.io, CoinGecko and Excalidraw connect with one click and need no credentials. draw.io's `create_diagram` tool returns a link to an editable diagram in draw.io. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option. CoinGecko gives agents live crypto market data through two tools: CoinGecko's `search_docs` looks up its SDK documentation (methods, parameters and request structure), and `execute` runs the TypeScript the agent writes against the CoinGecko SDK in a sandbox. Its keyless server shares rate limits across all users. Neon's consent screen lets each member choose a project, turn off write access and pick tool categories; its URL parameters — `readonly=true`, `projectId=<project-id>` and `category=<name>` — fix those choices instead, so add it as a custom MCP server only when a grant has to be fixed; see [Neon](/Sources/Connectors#neon). For Excalidraw, `read_me` describes the diagram format and `create_view` draws the diagram as an interactive canvas in the answer (see [MCP Apps](#mcp-apps)); the canvas exports it to an editable `https://excalidraw.com/#json=…` link. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
 
 A server's tool descriptions reach the model verbatim, so a hostile server can plant instructions in them. While an admin has turned on **Warn about tool descriptions that look like prompt injection** in **Admin > Guardrails**, and the operator has turned the decision model on, each action is scored when the server is saved or refreshed, and an action that reads like a prompt injection is marked in the tool's permissions. Nothing is turned off; check the action under **Customize** before you allow it. See [MCP tool descriptions](/Agents/guardrails#mcp-tool-descriptions).
 
@@ -84,6 +84,12 @@ OAuth servers, including the OAuth presets, also need `ENABLE_SSE_PUSH=true` (th
 | `/api/mcp_server/auth_status` | GET | Batch check auth status for all MCP tools |
 
 For an OAuth server, `/api/mcp_server/test` answers with `requires_oauth: true` and a `task_id`, and the sign-in runs in the background. Its progress arrives on the user event stream, `GET /api/events`, as `mcp.oauth.in_progress`, `mcp.oauth.awaiting_redirect` (with the `authorization_url` to open), `mcp.oauth.completed` or `mcp.oauth.failed` events whose `scope.id` is that `task_id`. After `completed`, call `/api/mcp_server/save` with `oauth_task_id` set to the `task_id` in the config. See [Realtime events](/API/realtime-events); the event stream needs the API served through the ASGI app.
+
+## MCP Apps
+
+Some MCP servers ship an interactive view with a tool, an [MCP App](https://modelcontextprotocol.io/extensions/apps/overview): Excalidraw's `create_view` draws a live canvas. DocsGPT renders the view inline in the answer, in a sandboxed frame that reaches only the domains the server declares, and renders it again when you reopen the conversation. A tool the server marks as the view's own (`visibility: ["app"]`) is not offered to the agent; the view calls it through DocsGPT under the tool's permission, so a tool set to **Needs approval** asks on the card first.
+
+The view runs on a sandbox origin, which must differ from the app's. On a local install with `API_URL` on `localhost` or `127.0.0.1`, DocsGPT uses the other loopback name and needs no setup. On your own domain, point a second hostname (for example `sandbox.docs.example.com`) at the API and set `MCP_APPS_SANDBOX_URL=https://sandbox.docs.example.com/api/mcp_apps/sandbox`. Without a sandbox origin, or with `MCP_APPS_ENABLED=false`, tools show as ordinary steps and the agent keeps every tool. A connection made before this release shows its view once you open it in **Settings** > **Connectors** and click **Refresh tools**.
 
 ## Troubleshooting
 
