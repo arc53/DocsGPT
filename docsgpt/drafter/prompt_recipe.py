@@ -9,8 +9,12 @@ sections, any ``{{ }}`` makes it a template used verbatim. Those findings go
 out as ``checks`` codes the client words in the user's language; the model's
 own ``warnings`` are already in it.
 
-Write returns a name and a plain-text persona. Neither mode asks questions:
-each request in the prompt view's drawer gets one result.
+Write returns a name and a plain-text persona, and may first ask what the
+description leaves out (the company, the hand-off, the tone); a ``starter``
+(one of :data:`STARTERS`, picked from the drawer's first screen) adds a brief
+for that kind of prompt, and ``skip_questions`` drafts at once. Improve never
+asks. Both return up to three ``suggestions`` (next changes, worded as the
+user's request); write also lists the ``assumptions`` the user should check.
 """
 
 from __future__ import annotations
@@ -31,6 +35,10 @@ REASON_MAX = 300
 MESSAGE_MAX = 600
 MAX_WARNINGS = 3
 WARNING_MAX = 300
+MAX_ASSUMPTIONS = 3
+ASSUMPTION_MAX = 200
+MAX_SUGGESTIONS = 3
+SUGGESTION_MAX = 120
 
 _ID_CHARS = 100
 
@@ -51,7 +59,10 @@ _CITATION_MARKER = "source.citation_rules"
 
 
 def parse_context(raw: Any) -> dict:
-    """Clean the prompt recipe's ``context``: ``{mode, prompt: {id, name, content}}``.
+    """Clean the prompt recipe's ``context``: ``{mode, prompt: {id, name, content}, starter?, skip_questions?}``.
+
+    ``starter`` and ``skip_questions`` only mean something to write mode; an
+    unknown starter is dropped.
 
     Raises:
         BadDraftRequest: An unknown mode, a missing prompt, or nothing to improve.
@@ -67,6 +78,8 @@ def parse_context(raw: Any) -> dict:
     content = clean_text(prompt.get("content"), CONTENT_MAX)
     if mode == "improve" and not content:
         raise BadDraftRequest("There is no prompt text to improve")
+    writing = mode == "write"
+    starter = raw.get("starter")
     return {
         "mode": mode,
         "prompt": {
@@ -74,7 +87,14 @@ def parse_context(raw: Any) -> dict:
             "name": clean_text(prompt.get("name"), NAME_MAX),
             "content": content,
         },
+        "starter": starter if writing and starter in STARTERS else None,
+        "skip_questions": writing and raw.get("skip_questions") is True,
     }
+
+
+def asks(req: DraftRequest) -> bool:
+    """Write mode asks before drafting, unless the user chose to skip; improve never does."""
+    return req.context["mode"] == "write" and not req.context.get("skip_questions")
 
 
 def load_workspace(user_id: str, context: dict) -> Workspace:
@@ -147,14 +167,50 @@ plus the new text.
 Keep each edit small and separate, so the user can accept or reject it on its own. If nothing needs to change, \
 send no edits and say why in your message."""
 
+IMPROVE_NEXT = """suggestions: up to 3 further changes this prompt could use, each worded as the short request the \
+user would send (e.g. "Add what to do when it doesn't know"). Leave out what you just changed."""
+
 WRITE = """Write a new prompt from the user's description: a short name (at most 100 characters) and the prompt \
 text as a plain-text persona, plus one sentence on why it is written that way (reason). If the prompt has text \
-already, treat it as the user's starting point."""
+already, treat it as the user's starting point.
+
+A good persona knows: who it serves and for which company or product; what it covers and what is off-limits; \
+where it sends people when it can't help (a team, an email, a form, a person in live chat); and its tone.
+- When you may ask (ask_user is offered), ask first about what the description and the brief below leave out, in \
+one round, most important first. The company or product is a typed answer: a question with no options and a \
+placeholder such as "e.g. Northwind Travel". Offer options for the rest (where it sends people, tone, off-limits \
+topics as a pick-any question). Ask a second round only when something important is still open. Don't ask what \
+the user already said, and don't ask at all when the description covers it.
+- Never leave placeholders such as [company] or [support email] in the prompt: write around what you don't know \
+(e.g. "point them to the support team") and list each such guess in assumptions.
+- assumptions: up to 3 short sentences, each a guess the user should check (e.g. "Hand-offs go to your support \
+team; you didn't name a contact.").
+- suggestions: up to 3 next changes this prompt could use, each worded as the short request the user would send \
+(e.g. "Add your opening hours")."""
+
+#: Briefs for the drawer's starting points, by ``starter`` id.
+STARTERS: dict[str, str] = {
+    "website": """The user picked "Website chat for customers": a chat on the company's public website. Its \
+users are visitors and customers who may know nothing about the company. Find out the company or product, where \
+it sends people it can't help, and the tone. Usually off-limits: prices, discounts or delivery dates the documents \
+don't confirm, legal or medical advice, and anything internal. It answers in the visitor's language.""",
+    "helpdesk": """The user picked "Internal helpdesk": answers the company's own staff on HR, IT and policy \
+questions. Find out the company, which areas it covers (HR, IT, policies, office and facilities), and who staff \
+contact when it can't help (a team, an email, a ticket portal). Personal cases (pay, health, disputes, \
+complaints) go to a person; it never guesses a policy the documents don't state.""",
+    "research": """The user picked "Research assistant": digs through the user's documents and answers from them. \
+Find out what the documents are (contracts, reports, papers, case files), who uses it, and how answers should \
+look (a short answer first, then detail; quotes; tables). It says plainly when the documents are silent, and \
+points out where documents disagree rather than picking one.""",
+}
 
 
 def instructions(req: DraftRequest, ws: Workspace) -> str:
-    """The prompt recipe's system instructions for the request's mode."""
-    return f"{COMMON}\n\n{IMPROVE if req.context['mode'] == 'improve' else WRITE}"
+    """The prompt recipe's system instructions for the request's mode (and the write starter's brief)."""
+    if req.context["mode"] == "improve":
+        return f"{COMMON}\n\n{IMPROVE}\n{IMPROVE_NEXT}"
+    starter = STARTERS.get(req.context.get("starter") or "")
+    return "\n\n".join(filter(None, [COMMON, WRITE, starter]))
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +242,16 @@ PROPOSAL_SCHEMA: dict = {
             "type": "array",
             "items": {"type": "string"},
             "description": "Anything else the user must know (not the prompt's mode).",
+        },
+        "assumptions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Write: up to 3 guesses the user should check.",
+        },
+        "suggestions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Up to 3 next changes, each worded as the user's short request.",
         },
     },
     "required": ["message"],
@@ -221,13 +287,22 @@ def checks_for(before: str, after: str) -> list[str]:
     return out
 
 
-def _warnings(args: dict) -> list[str]:
-    out = []
-    for warning in args.get("warnings") or []:
-        text = clean_text(warning, WARNING_MAX)
-        if text:
+def _texts(args: dict, key: str, chars: int, most: int) -> list[str]:
+    """A list of short texts from the proposal: cleaned, blanks and repeats (any case) dropped, capped."""
+    out: list[str] = []
+    for raw in args.get(key) or []:
+        text = clean_text(raw, chars)
+        if text and text.casefold() not in {x.casefold() for x in out}:
             out.append(text)
-    return out[:MAX_WARNINGS]
+    return out[:most]
+
+
+def _warnings(args: dict) -> list[str]:
+    return _texts(args, "warnings", WARNING_MAX, MAX_WARNINGS)
+
+
+def _suggestions(args: dict) -> list[str]:
+    return _texts(args, "suggestions", SUGGESTION_MAX, MAX_SUGGESTIONS)
 
 
 def _occurrences(content: str, find: str) -> list[int]:
@@ -341,6 +416,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
             "template_mode": {"before": is_template(current), "after": is_template(result)},
             "warnings": _warnings(args),
             "checks": checks_for(current, result),
+            "suggestions": _suggestions(args),
         }
     name = clean_text(args.get("name"), NAME_MAX + 1)
     content = clean_text(args.get("content"), CONTENT_MAX + 1)
@@ -365,6 +441,8 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         "warnings": _warnings(args),
         "template_mode": {"before": is_template(current), "after": is_template(content)},
         "checks": checks_for(current, content),
+        "assumptions": _texts(args, "assumptions", ASSUMPTION_MAX, MAX_ASSUMPTIONS),
+        "suggestions": _suggestions(args),
     }
 
 
@@ -377,5 +455,5 @@ PROMPT_RECIPE = register(Recipe(
     proposal_schema=PROPOSAL_SCHEMA,
     validate=validate,
     proposal_description="Hand the improved or new prompt to the prompt editor. Ends your turn.",
-    questions=False,
+    questions=asks,
 ))

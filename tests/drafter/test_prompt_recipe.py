@@ -1,4 +1,4 @@
-"""The prompt recipe: improving a prompt with checked edits, writing a new one, and its no-questions turn."""
+"""The prompt recipe: improving a prompt with checked edits, writing a new one after questions, and starters."""
 
 from __future__ import annotations
 
@@ -26,9 +26,9 @@ PERSONA = (
 MODEL = {"id": "m", "display_name": "M", "supports_tools": True}
 
 
-def _req(mode="improve", content=PERSONA, *user_messages, name="Support reply") -> DraftRequest:
+def _req(mode="improve", content=PERSONA, *user_messages, name="Support reply", **extra) -> DraftRequest:
     messages = [{"role": "user", "content": m} for m in (user_messages or ("Stop it from making up prices",))]
-    context = parse_context({"mode": mode, "prompt": {"id": "p1", "name": name, "content": content}})
+    context = parse_context({"mode": mode, "prompt": {"id": "p1", "name": name, "content": content}, **extra})
     return DraftRequest("alice", "prompt", messages, context, "drafter:t")
 
 
@@ -48,7 +48,17 @@ class TestContext:
             "mode": "improve",
             "prompt": {"id": " p1 ", "name": "Sup\x00port", "content": "Hi\r\nthere"},
         })
-        assert ctx == {"mode": "improve", "prompt": {"id": "p1", "name": "Support", "content": "Hi\nthere"}}
+        assert ctx == {"mode": "improve", "prompt": {"id": "p1", "name": "Support", "content": "Hi\nthere"},
+                       "starter": None, "skip_questions": False}
+
+    def test_a_starter_and_skip_are_read_for_write_only(self):
+        write = parse_context({"mode": "write", "prompt": {"content": ""}, "starter": "website",
+                               "skip_questions": True})
+        assert (write["starter"], write["skip_questions"]) == ("website", True)
+        assert parse_context({"mode": "write", "prompt": {}, "starter": "space-station"})["starter"] is None
+        improve = parse_context({"mode": "improve", "prompt": {"content": "x"}, "starter": "website",
+                                 "skip_questions": True})
+        assert (improve["starter"], improve["skip_questions"]) == (None, False)
 
     @pytest.mark.parametrize("raw", [
         {"mode": "rewrite", "prompt": {"content": "x"}},
@@ -84,11 +94,30 @@ class TestInstructions:
         assert "Write a new prompt" in text and "name" in text
         assert "exactly once" not in text
 
-    def test_the_turn_offers_no_questions(self):
-        assert PROMPT_RECIPE.questions is False
-        system = build_messages(_req(), PROMPT_RECIPE, Workspace(), tool_mode=True, allow_questions=False)[0]
+    def test_improve_offers_no_questions(self):
+        req = _req()
+        assert PROMPT_RECIPE.asks(req) is False
+        system = build_messages(req, PROMPT_RECIPE, Workspace(), tool_mode=True, allow_questions=False)[0]
         assert "submit_proposal" in system["content"] and "ask_user" not in system["content"]
         assert "asked enough questions" not in system["content"]
+
+    def test_write_asks_first_unless_skipped(self):
+        assert PROMPT_RECIPE.asks(_req("write", "")) is True
+        assert PROMPT_RECIPE.asks(_req("write", "", skip_questions=True)) is False
+        text = instructions(_req("write", ""), Workspace())
+        for rule in ("company or product", "where it sends people", "no options", "placeholder",
+                     "Never leave placeholders", "assumptions", "suggestions"):
+            assert rule in text, rule
+
+    @pytest.mark.parametrize("starter,marker", [
+        ("website", "public website"), ("helpdesk", "staff"), ("research", "documents disagree"),
+    ])
+    def test_a_starter_brings_its_brief(self, starter, marker):
+        assert marker in instructions(_req("write", "", starter=starter), Workspace())
+        assert marker not in instructions(_req("write", ""), Workspace())
+
+    def test_improve_suggests_next_changes(self):
+        assert "suggestions" in instructions(_req(), Workspace())
 
     def test_it_is_registered(self):
         assert get_recipe("prompt") is PROMPT_RECIPE
@@ -174,6 +203,11 @@ class TestImprove:
         asked = _improve(edit, messages=("Add {{ tools.memory.memory_view }}",))
         assert "memory_view" in asked["result"]
 
+    def test_suggestions_come_with_the_edits(self):
+        proposal = _improve([_edit("Be polite", "Be warm")], suggestions=["Add a hand-off"], assumptions=["x"])
+        assert proposal["suggestions"] == ["Add a hand-off"]
+        assert "assumptions" not in proposal
+
     def test_model_warnings_are_kept_and_capped(self):
         proposal = _improve([], warnings=["One", "", "Two", "Three", "Four"])
         assert proposal["warnings"] == ["One", "Two", "Three"]
@@ -191,7 +225,18 @@ class TestWrite:
             "mode": "write", "message": "Wrote it.", "name": "HR handbook assistant",
             "content": "You help employees with the HR handbook.", "reason": "A persona.",
             "warnings": [], "template_mode": {"before": False, "after": False}, "checks": [],
+            "assumptions": [], "suggestions": [],
         }
+
+    def test_assumptions_and_suggestions_are_cleaned_and_capped(self):
+        proposal = self._write(
+            "You help employees.",
+            assumptions=["Hand-offs go to HR.", " ", "x" * 500, "Three", "Four"],
+            suggestions=["Add office hours", "add office hours", "Make it shorter", "Four", "Five"],
+        )
+        assert proposal["assumptions"][:2] == ["Hand-offs go to HR.", "x" * 199 + "…"]
+        assert len(proposal["assumptions"]) == 3
+        assert proposal["suggestions"] == ["Add office hours", "Make it shorter", "Four"]
 
     @pytest.mark.parametrize("name,content", [("", "x"), ("N", ""), ("x" * 101, "x"), ("N", "Hi {{ broken")])
     def test_fixable_problems_go_back_to_the_model(self, name, content):
@@ -213,6 +258,24 @@ class TestTurn:
         fake = FakeLLM(*answers)
         events = list(run_draft(req or _req(), PROMPT_RECIPE, Workspace(), MODEL, llm_factory=fake.factory))
         return fake, events
+
+    def test_write_may_ask_with_a_typed_question(self):
+        req = _req("write", "", "Website chat for customers", starter="website")
+        fake, events = self._run(calls(tool_call("ask_user", {"questions": [
+            {"text": "Which company is it for?", "options": [], "placeholder": "e.g. Meridian Freight"},
+            {"text": "Where should it send people?", "options": ["Support email", "Live chat"]},
+        ]})), req=req)
+        assert "ask_user" in [t["function"]["name"] for t in fake.calls[0]["tools"]]
+        assert events[-1]["type"] == "questions"
+        assert events[-1]["questions"][0]["options"] == []
+
+    def test_a_skipped_round_drafts_without_asking(self):
+        req = _req("write", "", "Website chat for customers", starter="website", skip_questions=True)
+        fake, events = self._run(calls(tool_call("submit_proposal", {
+            "message": "Wrote it.", "name": "Website chat", "content": "You help visitors.", "reason": "r",
+            "assumptions": ["Hand-offs go to the support team."]})), req=req)
+        assert [t["function"]["name"] for t in fake.calls[0]["tools"]] == ["submit_proposal"]
+        assert events[-1]["proposal"]["assumptions"] == ["Hand-offs go to the support team."]
 
     def test_ask_user_is_never_offered(self):
         fake, events = self._run(calls(tool_call("submit_proposal", {

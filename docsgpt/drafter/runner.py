@@ -79,7 +79,7 @@ TOOL_PROTOCOL = f"""Finish every turn by calling exactly one of these tools:
 Use the read tools before that when a detail matters (a prompt's full text, a source's files, a tool's actions). \
 Don't answer in plain text."""
 
-PROPOSAL_ONLY_PROTOCOL = f"""This screen takes no questions: draft with what you have and say in your message what \
+PROPOSAL_ONLY_PROTOCOL = f"""This turn takes no questions: draft with what you have and say in your message what \
 you assumed. Finish the turn by calling {SUBMIT_PROPOSAL}. Use the read tools before that when a detail matters. \
 Don't answer in plain text."""
 
@@ -154,9 +154,9 @@ def build_messages(
     system = "\n\n".join(filter(None, [
         COMMON_RULES,
         recipe.instructions(req, ws),
-        (TOOL_PROTOCOL if recipe.questions else PROPOSAL_ONLY_PROTOCOL) if tool_mode
+        (TOOL_PROTOCOL if recipe.asks(req) else PROPOSAL_ONLY_PROTOCOL) if tool_mode
         else _json_protocol(recipe, allow_questions),
-        None if allow_questions or not recipe.questions else NO_MORE_QUESTIONS,
+        None if allow_questions or not recipe.asks(req) else NO_MORE_QUESTIONS,
     ]))
     data = "\n\n".join([
         fence("Workspace", ws.summary()),
@@ -219,7 +219,7 @@ class _Turn:
         self.llm = llm
         self.model_id = model_id
         self.tool_mode = tool_mode
-        self.allow_questions = recipe.questions and question_rounds(req.messages) < MAX_QUESTION_ROUNDS
+        self.allow_questions = recipe.asks(req) and question_rounds(req.messages) < MAX_QUESTION_ROUNDS
         self.messages = build_messages(
             req, recipe, ws, tool_mode=tool_mode, allow_questions=self.allow_questions
         )
@@ -236,7 +236,7 @@ class _Turn:
             raise ProposalInvalid(["The arguments are not a JSON object."])
         if name == ASK_USER:
             if not self.allow_questions:
-                raise ProposalInvalid([NO_MORE_QUESTIONS if self.recipe.questions
+                raise ProposalInvalid([NO_MORE_QUESTIONS if self.recipe.asks(self.req)
                                        else "This screen takes no questions. Submit the proposal instead."])
             message, questions = normalize_questions(args)
             events = [{"type": "message", "text": message}] if message else []

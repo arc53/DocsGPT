@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 from docsgpt.drafter.catalog import Workspace
 
@@ -68,8 +68,8 @@ class Recipe:
             ``(arguments, request, workspace) -> dict``; raises :class:`ProposalInvalid` on a fixable problem.
         read_tools: Names of the read tools offered (``docsgpt/drafter/read_tools.py``).
         proposal_description: The ``submit_proposal`` tool description.
-        questions: Whether the model may ask questions (``ask_user``) before proposing; a screen
-            that takes one request and returns one result (a prompt) turns it off.
+        questions: Whether the model may ask questions (``ask_user``) before proposing, or a
+            ``(request) -> bool`` deciding it per turn (the prompt recipe asks only before writing).
     """
 
     id: str
@@ -81,7 +81,11 @@ class Recipe:
     validate: Callable[[dict, DraftRequest, Workspace], dict]
     read_tools: tuple[str, ...] = field(default_factory=tuple)
     proposal_description: str = "Hand the finished draft to the user's form. Ends your turn."
-    questions: bool = True
+    questions: Union[bool, Callable[[DraftRequest], bool]] = True
+
+    def asks(self, req: DraftRequest) -> bool:
+        """Whether this turn of ``req`` may ask questions at all."""
+        return self.questions(req) if callable(self.questions) else self.questions
 
 
 _RECIPES: dict[str, Recipe] = {}
