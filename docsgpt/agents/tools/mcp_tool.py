@@ -4,7 +4,9 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import threading
 import time
+import weakref
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -59,6 +61,11 @@ from docsgpt.security.safe_url import UnsafeUserUrlError, guarded_async_client, 
 logger = logging.getLogger(__name__)
 
 _mcp_clients_cache = {}
+# One lock per client: a cached client is shared by every tool on its server, and
+# its session belongs to the event loop that opened it, so a second loop using it
+# at the same time waits on that session for good.
+_client_locks: "weakref.WeakKeyDictionary[Any, threading.RLock]" = weakref.WeakKeyDictionary()
+_client_locks_guard = threading.Lock()
 
 # MCP App views read from servers: (client cache key, ui:// URI) -> (read at, view).
 _ui_resource_cache: Dict[tuple, tuple] = {}
@@ -75,6 +82,24 @@ def _mcp_http_client(
     if timeout is None:
         timeout = httpx2.Timeout(MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT)
     return guarded_async_client(headers=headers, timeout=timeout, auth=auth)
+
+
+def _client_lock(client: Any) -> threading.RLock:
+    """The lock a client's operations take, one at a time; a fresh one for no client.
+
+    Args:
+        client: The FastMCP client an operation runs on.
+
+    Returns:
+        That client's lock.
+    """
+    if client is None:
+        return threading.RLock()
+    with _client_locks_guard:
+        lock = _client_locks.get(client)
+        if lock is None:
+            lock = _client_locks[client] = threading.RLock()
+        return lock
 
 
 def forget_cached_clients(*identities: str) -> None:
@@ -551,14 +576,15 @@ class MCPTool(Tool):
             raise self._map_error(operation, e) from e
 
     def _run_in_new_loop(self, operation, *args, **kwargs):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                self._execute_with_client(operation, *args, **kwargs)
-            )
-        finally:
-            loop.close()
+        with _client_lock(self._client):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(
+                    self._execute_with_client(operation, *args, **kwargs)
+                )
+            finally:
+                loop.close()
 
     def _map_error(self, operation: str, exc: Exception) -> Exception:
         for exc_type, msg_fn in self._ERROR_MAP:

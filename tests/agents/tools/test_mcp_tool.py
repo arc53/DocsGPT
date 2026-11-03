@@ -1696,6 +1696,63 @@ class TestRunAsyncOperation:
             result = tool._run_in_new_loop("ping")
             assert result == "ok"
 
+    def test_a_shared_client_runs_one_operation_at_a_time(self, mcp_config):
+        # A cached client is shared by every tool on the same server; its session
+        # is bound to the loop that opened it, so two loops at once hang.
+        import threading
+        import time as _time
+
+        shared = MagicMock()
+        tools = [_make_tool(mcp_config) for _ in range(2)]
+        lock = threading.Lock()
+        state = {"inside": 0, "most": 0}
+
+        async def fake_execute(*args, **kwargs):
+            with lock:
+                state["inside"] += 1
+                state["most"] = max(state["most"], state["inside"])
+            await asyncio.sleep(0.05)
+            with lock:
+                state["inside"] -= 1
+            return "ok"
+
+        for tool in tools:
+            tool._client = shared
+        with patch.object(tools[0], "_execute_with_client", side_effect=fake_execute), \
+             patch.object(tools[1], "_execute_with_client", side_effect=fake_execute):
+            threads = [threading.Thread(target=t._run_in_new_loop, args=("ping",)) for t in tools]
+            started = _time.monotonic()
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=5)
+        assert state["most"] == 1
+        assert _time.monotonic() - started < 5
+
+    def test_separate_clients_run_side_by_side(self, mcp_config):
+        import threading
+
+        tools = [_make_tool(mcp_config) for _ in range(2)]
+        both_inside = threading.Barrier(2, timeout=5)
+
+        async def fake_execute(*args, **kwargs):
+            both_inside.wait()
+            return "ok"
+
+        for tool in tools:
+            tool._client = MagicMock()
+        results = []
+        with patch.object(tools[0], "_execute_with_client", side_effect=fake_execute), \
+             patch.object(tools[1], "_execute_with_client", side_effect=fake_execute):
+            threads = [
+                threading.Thread(target=lambda t=t: results.append(t._run_in_new_loop("ping"))) for t in tools
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+        assert results == ["ok", "ok"]
+
 
 # =====================================================================
 # Resolve Redirect URI (additional coverage)
