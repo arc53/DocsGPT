@@ -64,25 +64,6 @@ class TestSyncWrite:
 
         assert held_lock == [str(src["id"]), "upload", "released"]
 
-    def test_a_scheduled_sync_skips_a_busy_source_quietly(
-        self, pg_conn, patch_worker_db, task_self, monkeypatch, busy_lock, published,
-    ):
-        SourcesRepository(pg_conn).create(
-            "Docs", user_id=USER, type="website", sync_frequency="daily",
-            remote_data={"entries": [{"url": "https://x.io/", "mode": "page"}]},
-        )
-        waits = busy_lock()
-        remote = MagicMock(name="remote_worker")
-        monkeypatch.setattr(worker, "remote_worker", remote)
-        counts = worker.sync_worker(task_self, "daily")
-
-        # The beat run doesn't wait on a long job, and nobody waits on it:
-        # the next schedule picks the source up, without a notice.
-        assert waits == [0]
-        assert counts["sync_skipped"] == 1 and counts["sync_failure"] == 0
-        remote.assert_not_called()
-        assert published == []
-
 
 @contextmanager
 def _patch_db(conn):

@@ -2319,7 +2319,9 @@
         "dismiss": "Dismiss upload toast",
         "uploadProgress": "Upload progress {{progress}}%",
         "clear": "Clear",
-        "ingestionFailed": "Ingestion failed."
+        "ingestionFailed": "Ingestion failed.",
+        "tooManyFiles": "This source has more than {{limit}} files, the most one source can hold. Choose a smaller folder, path or selection.",
+        "tooManyTokens": "This source has more than {{limit}} tokens of text, the most one source can hold. Split it into smaller sources."
       },
       "ingestors": {
         "local_file": {

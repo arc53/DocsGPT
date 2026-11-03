@@ -2404,7 +2404,9 @@
         "dismiss": "Descartar notificación de subida",
         "uploadProgress": "Progreso de subida {{progress}}%",
         "clear": "Limpiar",
-        "ingestionFailed": "La ingesta falló."
+        "ingestionFailed": "La ingesta falló.",
+        "tooManyFiles": "Esta fuente tiene más de {{limit}} archivos, el máximo que admite una fuente. Elige una carpeta, ruta o selección más pequeña.",
+        "tooManyTokens": "Esta fuente tiene más de {{limit}} tokens de texto, el máximo que admite una fuente. Divídela en fuentes más pequeñas."
       },
       "ingestors": {
         "local_file": {

@@ -2310,7 +2310,9 @@
         "dismiss": "關閉上傳通知",
         "uploadProgress": "上傳進度 {{progress}}%",
         "clear": "清除",
-        "ingestionFailed": "匯入失敗。"
+        "ingestionFailed": "匯入失敗。",
+        "tooManyFiles": "此來源的檔案數超過上限 {{limit}} 個。請選擇較小的資料夾、路徑或選取範圍。",
+        "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。"
       },
       "ingestors": {
         "local_file": {

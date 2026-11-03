@@ -187,3 +187,18 @@ class TestInstanceTokenVisibilityCheck:
                 patch("docsgpt.parser.remote.github_loader.time.sleep") as sleep:
             loader.ensure_instance_token_allowed("owner/repo")
         sleep.assert_called_once_with(3)
+
+
+@pytest.mark.unit
+class TestArchiveFileCap:
+    def test_a_repo_over_ingest_max_files_stops_while_the_archive_is_read(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.parser.ingest_limits import IngestTooLarge
+
+        monkeypatch.setattr(settings, "INGEST_MAX_FILES", 2)
+        body = _tarball({"a.md": b"a", "b.md": b"b", "c.md": b"c"})
+        loader = _loader(monkeypatch)
+        with patch("docsgpt.parser.remote.github_loader.requests.get", return_value=_archive_response(body)):
+            with pytest.raises(IngestTooLarge) as caught:
+                loader.load_data("owner/repo")
+        assert caught.value.reason == "too_many_files"

@@ -2404,7 +2404,9 @@
         "dismiss": "Fermer la notification d’import",
         "uploadProgress": "Progression de l’import {{progress}} %",
         "clear": "Effacer",
-        "ingestionFailed": "Échec de l’ingestion."
+        "ingestionFailed": "Échec de l’ingestion.",
+        "tooManyFiles": "Cette source contient plus de {{limit}} fichiers, le maximum pour une source. Choisissez un dossier, un chemin ou une sélection plus petits.",
+        "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites."
       },
       "ingestors": {
         "local_file": {
