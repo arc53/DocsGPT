@@ -456,10 +456,10 @@ describe('NewAgent form', () => {
     }
   });
 
-  // The prompt is picked like a tool or a source: a plain picker whose
-  // footer goes to the Prompts page or adds one; no row actions, no Add
-  // button beside it.
-  it('picks the prompt from a plain Combobox with a Go to Prompts footer', async () => {
+  // The prompt is picked like a tool or a source: a picker whose footer
+  // goes to the Prompts page or adds one, no Add button beside it; a row's
+  // only action opens the prompt (Edit, or View for one the role can't).
+  it('picks the prompt from a Combobox with a Go to Prompts footer', async () => {
     mockState.preference.prompts = [
       { id: 'default', name: 'default', type: 'public' },
       { id: 'p1', name: 'Tone', type: 'private', access: 'owner' },
@@ -487,8 +487,17 @@ describe('NewAgent form', () => {
         'default',
         'p1',
       ]);
-      // No edit, duplicate, share or delete icons in a row.
-      expect(list.querySelector('button')).toBeNull();
+      // Edit or View only: duplicate, share and delete are on the page.
+      expect(
+        Array.from(list.querySelectorAll('button')).map((button) =>
+          button.getAttribute('aria-label'),
+        ),
+      ).toEqual(['settings.prompts.viewNamed', 'settings.prompts.editNamed']);
+      // Half width on a wide screen, like Default model.
+      expect(
+        trigger.closest('[data-slot="form-field"]')!.parentElement!
+          .parentElement!.className,
+      ).not.toContain('col-span-2');
       const link = Array.from(document.body.querySelectorAll('a')).find(
         (a) => a.textContent === 'settings.prompts.manage',
       )!;
@@ -3186,6 +3195,46 @@ describe('NewAgent drafter', () => {
         expected_updated_at: 'v1',
       });
       expect(view()).toBeNull();
+    });
+
+    it('opens a prompt from its picker row without picking it', async () => {
+      await renderWithPrompt('p1');
+      const trigger = Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="combobox-trigger"]',
+        ),
+      ).find(
+        (button) =>
+          button.closest('[data-slot="form-field"]')?.querySelector('label')
+            ?.textContent === 'agents.form.sections.prompt',
+      )!;
+      await act(async () => {
+        trigger.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+        );
+        trigger.click();
+      });
+      const row = document.body.querySelector<HTMLElement>(
+        '[cmdk-item][data-value="default"]',
+      )!;
+      await act(async () =>
+        row
+          .querySelector<HTMLButtonElement>(
+            '[data-slot="combobox-row-action"]',
+          )!
+          .click(),
+      );
+      expect(document.body.querySelector('[cmdk-list]')).toBeNull();
+      // A built-in opens read-only.
+      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('default', null);
+      expect(viewText().value).toBe('Text of default');
+      expect(viewText().readOnly).toBe(true);
+      // Back on the form, the agent still has its prompt.
+      await act(async () =>
+        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
+      );
+      expect(view()).toBeNull();
+      expect(trigger.textContent).toContain('Tone');
     });
 
     it('asks before leaving the view with unsaved text', async () => {

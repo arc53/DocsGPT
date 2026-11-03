@@ -1734,7 +1734,9 @@
       "loadPromptError": "Impossible de charger ce prompt.",
       "unsavedChanges": "Vos modifications non enregistrées seront perdues si vous quittez sans enregistrer.",
       "saveAndLeave": "Enregistrer et quitter",
-      "leaveWithoutSaving": "Quitter sans enregistrer"
+      "leaveWithoutSaving": "Quitter sans enregistrer",
+      "editNamed": "Modifier {{name}}",
+      "viewNamed": "Afficher {{name}}"
     },
     "devices": {
       "label": "Appareils",

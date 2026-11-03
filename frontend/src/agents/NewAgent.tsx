@@ -3,10 +3,12 @@ import {
   CircleCheck,
   CircleMinus,
   CircleX,
+  Eye,
   FileSearch,
   Headset,
   MessageSquare,
   MonitorCog,
+  Pencil,
   PencilLine,
   Play,
   Scissors,
@@ -2538,7 +2540,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       />
                     </FormField>
                   </DraftedField>
-                  <div className="flex flex-col sm:col-span-2">
+                  <div className="flex flex-col">
                     <DraftedField {...draftedProps('prompt')}>
                       <FormField
                         id={promptPickerId}
@@ -2557,6 +2559,28 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                           onValueChange={(id) =>
                             setAgent((prev) => ({ ...prev, prompt_id: id }))
                           }
+                          // Any listed prompt opens in the prompt view
+                          // from its row, without picking it.
+                          rowAction={(option) => {
+                            const prompt = prompts.find(
+                              (item) => item.id === option.value,
+                            );
+                            if (!prompt) return undefined;
+                            const editable = canEditPrompt(prompt);
+                            return {
+                              label: t(
+                                editable
+                                  ? 'settings.prompts.editNamed'
+                                  : 'settings.prompts.viewNamed',
+                                {
+                                  name: prompt.name,
+                                  interpolation: { escapeValue: false },
+                                },
+                              ),
+                              icon: editable ? <Pencil /> : <Eye />,
+                              onSelect: () => openPickerPrompt(prompt),
+                            };
+                          }}
                           placeholder={t('settings.prompts.select')}
                           searchPlaceholder={t(
                             'settings.prompts.searchPlaceholder',

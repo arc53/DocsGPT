@@ -1666,7 +1666,9 @@
       "loadPromptError": "无法加载这个提示词。",
       "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
       "saveAndLeave": "保存并离开",
-      "leaveWithoutSaving": "不保存离开"
+      "leaveWithoutSaving": "不保存离开",
+      "editNamed": "编辑 {{name}}",
+      "viewNamed": "查看 {{name}}"
     },
     "devices": {
       "label": "设备",

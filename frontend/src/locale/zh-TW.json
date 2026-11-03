@@ -1666,7 +1666,9 @@
       "loadPromptError": "無法載入這個提示詞。",
       "unsavedChanges": "您有未儲存的變更，如果不儲存就離開將會遺失。",
       "saveAndLeave": "儲存並離開",
-      "leaveWithoutSaving": "不儲存離開"
+      "leaveWithoutSaving": "不儲存離開",
+      "editNamed": "編輯 {{name}}",
+      "viewNamed": "檢視 {{name}}"
     },
     "devices": {
       "label": "裝置",

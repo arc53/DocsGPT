@@ -582,6 +582,46 @@ describe('Combobox footer', () => {
   });
 });
 
+describe('Combobox rowAction', () => {
+  it('opens an item from its row without picking it', async () => {
+    const onValueChange = vi.fn();
+    const onOpen = vi.fn();
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={onValueChange}
+        placeholder="Pick"
+        rowAction={(option) =>
+          option.value === options[0].value
+            ? {
+                label: `Edit ${option.label}`,
+                icon: <span />,
+                onSelect: () => onOpen(option.value),
+              }
+            : undefined
+        }
+      />,
+    );
+    await open();
+    const actions = document.body.querySelectorAll<HTMLButtonElement>(
+      '[data-slot="combobox-row-action"]',
+    );
+    expect(actions).toHaveLength(1);
+    expect(actions[0].getAttribute('aria-label')).toBe(
+      `Edit ${options[0].label}`,
+    );
+    // A pointer shortcut, out of the tab order.
+    expect(actions[0].tabIndex).toBe(-1);
+    await act(async () => actions[0].click());
+    expect(onOpen).toHaveBeenCalledWith(options[0].value);
+    expect(onValueChange).not.toHaveBeenCalled();
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]'),
+    ).toBeNull();
+  });
+});
+
 describe('Combobox picker chrome', () => {
   const prompts: ComboboxOption[] = [
     {

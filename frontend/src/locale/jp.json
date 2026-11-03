@@ -1666,7 +1666,9 @@
       "loadPromptError": "このプロンプトを読み込めませんでした。",
       "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
       "saveAndLeave": "保存して離れる",
-      "leaveWithoutSaving": "保存せずに離れる"
+      "leaveWithoutSaving": "保存せずに離れる",
+      "editNamed": "{{name}} を編集",
+      "viewNamed": "{{name}} を表示"
     },
     "devices": {
       "label": "デバイス",

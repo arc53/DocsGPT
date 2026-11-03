@@ -1670,7 +1670,9 @@
       "loadPromptError": "Couldn't load this prompt.",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "saveAndLeave": "Save and leave",
-      "leaveWithoutSaving": "Leave without saving"
+      "leaveWithoutSaving": "Leave without saving",
+      "editNamed": "Edit {{name}}",
+      "viewNamed": "View {{name}}"
     },
     "devices": {
       "label": "Devices",

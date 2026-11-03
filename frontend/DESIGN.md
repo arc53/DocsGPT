@@ -278,7 +278,8 @@ size="xs"`. It is the same tint as a pressed toggle; the difference is that
   beside it. The agent form's pickers are `combobox field`, each labelled by
   a `FormField`; the Prompt picker is a `Combobox` with the pickers' `title`,
   row lines, kind track and phone sheet, whose footer goes to Prompts or adds
-  one, like the tool and knowledge pickers. Their footers'
+  one, like the tool and knowledge pickers. It takes one column, as Default
+  model does, with its Edit / View and Improve links under it. Their footers'
   Add is the only `outline-primary` on the agent pages themselves (the Access
   details modal they open has its own).
 - **Shape by place.** Form controls (Input, SelectTrigger, a combobox Button,
@@ -767,8 +768,15 @@ labels and wires it (see FormField).
 - A server-searched list passes `shouldFilter={false}` with `search` /
   `onSearchChange`, and `valueOption` when the picked option isn't in the
   current results.
-- Rows carry no actions: what you do to an item (a prompt's Edit, Share or
-  Delete) is on its page, and the picker's footer links there.
+- A row's only action opens the item (`rowAction`: the agent form's Prompt
+  picker has Edit, `Pencil`, or View, `Eye`, for a prompt the role can't
+  change). It is a `ghost icon-sm` at the row's end, shown while the row is
+  hovered or highlighted and always on touch (`pointer-coarse:`, as
+  SuggestionRows), closes the picker and doesn't pick the row. It is a
+  pointer shortcut out of the tab order, so the host offers the same action
+  for the picked item outside the list (the field's Edit / View link). What
+  else you do to an item (Duplicate, Share, Delete) is on its page, and the
+  picker's footer links there.
 - `mode="add"` is a picker that adds something (Share's "Add people or
   teams"): the trigger always shows the placeholder and no row is marked.
 - `footer` pins a row under the list, the same `PickerFooter` row as the

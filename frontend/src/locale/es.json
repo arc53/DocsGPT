@@ -1734,7 +1734,9 @@
       "loadPromptError": "No se pudo cargar este prompt.",
       "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
       "saveAndLeave": "Guardar y salir",
-      "leaveWithoutSaving": "Salir sin guardar"
+      "leaveWithoutSaving": "Salir sin guardar",
+      "editNamed": "Editar {{name}}",
+      "viewNamed": "Ver {{name}}"
     },
     "devices": {
       "label": "Dispositivos",

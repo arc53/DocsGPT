@@ -45,6 +45,15 @@ export interface ComboboxOption {
   leading?: React.ReactNode;
 }
 
+/** A row's own action, beside picking it (a prompt's Edit or View). */
+export interface ComboboxRowAction {
+  /** Names the item: "Edit default". */
+  label: string;
+  icon: React.ReactNode;
+  /** Called with the picker already closed; the row isn't picked. */
+  onSelect: () => void;
+}
+
 export interface ComboboxGroup {
   heading: React.ReactNode;
   options: ComboboxOption[];
@@ -81,6 +90,13 @@ type ComboboxProps = {
     option: ComboboxOption,
     state: { checked: boolean },
   ) => React.ReactNode;
+  /**
+   * A trailing icon button on each row it returns one for, shown while the
+   * row is highlighted (and always on touch). It is a pointer shortcut,
+   * out of the tab order: the host offers the same action for the picked
+   * item outside the list.
+   */
+  rowAction?: (option: ComboboxOption) => ComboboxRowAction | undefined;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
@@ -143,6 +159,7 @@ function Combobox({
   search,
   onSearchChange,
   renderItem,
+  rowAction,
   open: openProp,
   onOpenChange,
   modal = true,
@@ -232,6 +249,31 @@ function Combobox({
     </Button>
   );
 
+  const renderAction = (option: ComboboxOption) => {
+    const action = rowAction?.(option);
+    if (!action) return null;
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        tabIndex={-1}
+        aria-label={action.label}
+        title={action.label}
+        data-slot="combobox-row-action"
+        className="shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 group-data-[selected=true]/row:opacity-100 pointer-coarse:opacity-100"
+        // The row picks on click; this button doesn't.
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(false);
+          action.onSelect();
+        }}
+      >
+        {action.icon}
+      </Button>
+    );
+  };
+
   const renderRow = (option: ComboboxOption, checked: boolean) => {
     if (renderItem) return renderItem(option, { checked });
     const hint = option.hint && (
@@ -250,6 +292,7 @@ function Combobox({
             {option.label}
           </span>
           {hint}
+          {renderAction(option)}
         </>
       );
     }
@@ -274,6 +317,7 @@ function Combobox({
         {checked ? (
           <Check aria-hidden="true" className="size-4 text-current" />
         ) : null}
+        {renderAction(option)}
       </>
     );
   };
@@ -331,6 +375,7 @@ function Combobox({
                     ]}
                     checked={checked}
                     onSelect={() => select(option)}
+                    className={rowAction ? 'group/row' : undefined}
                   >
                     {renderRow(option, checked)}
                   </CommandItem>

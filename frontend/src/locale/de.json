@@ -1670,7 +1670,9 @@
       "loadPromptError": "Dieser Prompt konnte nicht geladen werden.",
       "unsavedChanges": "Du hast ungespeicherte Änderungen, die verloren gehen, wenn du ohne Speichern verlässt.",
       "saveAndLeave": "Speichern und verlassen",
-      "leaveWithoutSaving": "Ohne Speichern verlassen"
+      "leaveWithoutSaving": "Ohne Speichern verlassen",
+      "editNamed": "{{name}} bearbeiten",
+      "viewNamed": "{{name}} ansehen"
     },
     "devices": {
       "label": "Geräte",
