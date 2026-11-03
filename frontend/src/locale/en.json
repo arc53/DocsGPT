@@ -2837,6 +2837,22 @@
       "notRunMovedOn": "Not run: the conversation moved on before this was approved.",
       "notRunExpired": "Not run: the approval request expired."
     },
+    "mcpApp": {
+      "state": {
+        "loading": "Loading the app…",
+        "ready": "Interactive",
+        "failed": "Failed"
+      },
+      "loading": "Loading the app…",
+      "allow": "Allow",
+      "deny": "Deny",
+      "reload": "Reload app",
+      "approvalAsk": "The app wants to run {{tool}}. Allow it?",
+      "failedTitle": "The app couldn't load",
+      "failedDescription": "Its MCP server didn't answer, or the view failed to start.",
+      "frameTitle": "{{name}} (interactive app)",
+      "callFailed": "The tool call failed"
+    },
     "quotaExceeded": {
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",
       "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}."

@@ -2824,6 +2824,22 @@
       "notRunMovedOn": "未執行：在核准之前，對話已繼續。",
       "notRunExpired": "未執行：核准請求已過期。"
     },
+    "mcpApp": {
+      "state": {
+        "loading": "正在載入應用程式…",
+        "ready": "可互動",
+        "failed": "失敗"
+      },
+      "loading": "正在載入應用程式…",
+      "allow": "允許",
+      "deny": "拒絕",
+      "reload": "重新載入應用程式",
+      "approvalAsk": "應用程式想要執行 {{tool}}。要允許嗎？",
+      "failedTitle": "無法載入應用程式",
+      "failedDescription": "其 MCP 伺服器沒有回應，或檢視無法啟動。",
+      "frameTitle": "{{name}}（互動式應用程式）",
+      "callFailed": "工具呼叫失敗"
+    },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。",
       "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。"

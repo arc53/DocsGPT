@@ -2822,6 +2822,22 @@
       "notRunMovedOn": "未运行：在批准之前，对话已继续。",
       "notRunExpired": "未运行：批准请求已过期。"
     },
+    "mcpApp": {
+      "state": {
+        "loading": "正在加载应用…",
+        "ready": "可交互",
+        "failed": "失败"
+      },
+      "loading": "正在加载应用…",
+      "allow": "允许",
+      "deny": "拒绝",
+      "reload": "重新加载应用",
+      "approvalAsk": "应用想要运行 {{tool}}。是否允许？",
+      "failedTitle": "无法加载应用",
+      "failedDescription": "其 MCP 服务器没有响应，或视图未能启动。",
+      "frameTitle": "{{name}}（交互式应用）",
+      "callFailed": "工具调用失败"
+    },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",
       "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。"

@@ -14,6 +14,7 @@ import {
 import { layoutAnswer } from './answerLayout';
 import { AnswerSegment, getAnswerSegments } from './answerSegments';
 import MarkdownAnswer from './MarkdownAnswer';
+import McpAppView from './McpAppView';
 import { type SandboxArtifact } from './sandboxLinks';
 import StepGroup, { NotRunBadge, StepIcon, ToolCallDetail } from './StepGroup';
 import StreamingStatusLine from './StreamingStatusLine';
@@ -174,6 +175,17 @@ export default function AnswerFlow({
                 agentId={agentId}
               />
             </div>
+          );
+
+        if (call.ui)
+          return (
+            <McpAppView
+              key={`app-${call.call_id}`}
+              toolCall={call}
+              fallback={
+                <InlineToolCallChip toolCall={call} isLive={isLiveCall(call)} />
+              }
+            />
           );
 
         const monitorLink =

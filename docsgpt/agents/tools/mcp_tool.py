@@ -16,6 +16,7 @@ from fastmcp.client.transports import (
     StreamableHttpTransport,
 )
 import httpx2
+from mcp.client import advertise
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
@@ -45,6 +46,7 @@ from mcp.shared.auth import (
 from pydantic import AnyHttpUrl, ValidationError
 from redis import Redis
 
+from docsgpt.agents import mcp_apps
 from docsgpt.agents.tools.base import Tool
 from docsgpt.llm.tool_images import image_ref
 from docsgpt.api.user.tasks import mcp_oauth_task
@@ -57,6 +59,11 @@ from docsgpt.security.safe_url import UnsafeUserUrlError, guarded_async_client, 
 logger = logging.getLogger(__name__)
 
 _mcp_clients_cache = {}
+
+# MCP App views read from servers: (client cache key, ui:// URI) -> (read at, view).
+_ui_resource_cache: Dict[tuple, tuple] = {}
+UI_RESOURCE_TTL = 600
+UI_RESOURCE_CACHE_SIZE = 32
 
 
 def _mcp_http_client(
@@ -257,6 +264,8 @@ class MCPTool(Tool):
         self.query_mode = config.get("query_mode", False)
         # Images the last call returned, for the model to see (``drain_native_parts``).
         self._native_queue: List[Dict] = []
+        # The last call's full result, for an MCP App view (``take_app_result``).
+        self._app_result: Optional[Dict] = None
 
         if self.server_url and self.auth_type != "oauth":
             self._setup_client()
@@ -370,7 +379,13 @@ class MCPTool(Tool):
             ) or self.auth_credentials.get("access_token", "")
             if token:
                 auth = BearerAuth(token)
-        self._client = Client(transport, auth=auth)
+        # Servers send their MCP App views only to a client that says it renders them.
+        extensions = (
+            {"extensions": [advertise(mcp_apps.EXTENSION_ID, {"mimeTypes": [mcp_apps.APP_MIME_TYPE]})]}
+            if mcp_apps.enabled()
+            else {}
+        )
+        self._client = Client(transport, auth=auth, **extensions)
         if not shareable:
             return
         _mcp_clients_cache[self._cache_key] = {
@@ -461,6 +476,9 @@ class MCPTool(Tool):
                 annotations = _annotation_hints(getattr(tool, "annotations", None))
                 if annotations:
                     tool_dict["annotations"] = annotations
+                ui = mcp_apps.tool_ui_metadata(getattr(tool, "meta", None))
+                if ui:
+                    tool_dict["ui"] = ui
                 tools_dict.append(tool_dict)
             elif isinstance(tool, dict):
                 tools_dict.append(tool)
@@ -493,6 +511,11 @@ class MCPTool(Tool):
                 tool_name = args[0]
                 tool_args = kwargs
                 return await self._client.call_tool(tool_name, tool_args)
+            elif operation == "call_tool_raw":
+                # An MCP App's own call: a failed tool comes back as its result, not an exception.
+                return await self._client.call_tool(args[0], args[1], raise_on_error=False)
+            elif operation == "read_resource":
+                return await self._client.read_resource(args[0])
             elif operation == "list_resources":
                 return await self._client.list_resources()
             elif operation == "list_prompts":
@@ -569,6 +592,7 @@ class MCPTool(Tool):
     def execute_action(self, action_name: str, **kwargs) -> Any:
         # Images a failed earlier call queued are not this call's.
         self._native_queue = []
+        self._app_result = None
         if not self.server_url:
             raise Exception("No MCP server configured")
         if not self._client:
@@ -674,6 +698,7 @@ class MCPTool(Tool):
         """
         if not hasattr(result, "content"):
             return result
+        self._app_result = mcp_apps.app_result(result)
         content_list = []
         for item in result.content:
             kind = getattr(item, "type", None)
@@ -723,6 +748,79 @@ class MCPTool(Tool):
         """Images the last call returned, emptied as they are taken."""
         parts, self._native_queue = self._native_queue, []
         return parts
+
+    def take_app_result(self) -> Optional[Dict]:
+        """The last call's ``CallToolResult`` for an MCP App view, emptied as it is taken."""
+        result, self._app_result = getattr(self, "_app_result", None), None
+        return result
+
+    def read_ui_resource(self, uri: str) -> Dict:
+        """Read the MCP App view at ``uri``, cached per server sign-in for ``UI_RESOURCE_TTL``.
+
+        Args:
+            uri: The tool's ``_meta.ui.resourceUri``.
+
+        Returns:
+            ``html`` plus the resource's ``csp``, ``permissions`` and
+            ``prefersBorder``; see :func:`mcp_apps.resource_view`.
+
+        Raises:
+            ValueError: ``uri`` is not ``ui://`` or the resource is not an MCP App.
+        """
+        if not isinstance(uri, str) or not uri.startswith("ui://"):
+            raise ValueError("Not a ui:// resource")
+        if not self.server_url:
+            raise Exception("No MCP server configured")
+        key = (self._cache_key, uri)
+        cached = _ui_resource_cache.get(key)
+        if cached and time.time() - cached[0] < UI_RESOURCE_TTL:
+            return cached[1]
+        if not self._client:
+            self._setup_client()
+        contents = self._run_async_operation("read_resource", uri)
+        listing_meta = None
+        if not any(isinstance(getattr(item, "meta", None), dict) for item in contents or []):
+            listing_meta = self._listed_resource_meta(uri)
+        view = mcp_apps.resource_view(contents, listing_meta)
+        while len(_ui_resource_cache) >= UI_RESOURCE_CACHE_SIZE:
+            _ui_resource_cache.pop(next(iter(_ui_resource_cache)))
+        _ui_resource_cache[key] = (time.time(), view)
+        return view
+
+    def _listed_resource_meta(self, uri: str) -> Optional[Dict]:
+        """The ``_meta`` ``resources/list`` gives ``uri``, for a read that carried none."""
+        try:
+            listing = self._run_async_operation("list_resources")
+        except Exception:
+            logger.warning("MCP resources/list failed while reading %s", uri)
+            return None
+        for resource in listing or []:
+            if str(getattr(resource, "uri", "")) == uri:
+                meta = getattr(resource, "meta", None)
+                return meta if isinstance(meta, dict) else None
+        return None
+
+    def call_app_tool(self, action_name: str, arguments: Optional[Dict] = None) -> Dict:
+        """Run a tool an MCP App view asked for, and hand its full result back to the view.
+
+        The caller has checked the tool's visibility and permission.
+
+        Args:
+            action_name: The tool.
+            arguments: Its arguments.
+
+        Returns:
+            The ``CallToolResult`` as :func:`mcp_apps.app_result` projects it.
+        """
+        if not self.server_url:
+            raise Exception("No MCP server configured")
+        if not self._client:
+            self._setup_client()
+        arguments = dict(arguments or {})
+        conflict = self._pinned_param_conflict(action_name, arguments)
+        if conflict:
+            return {"content": [{"type": "text", "text": conflict}], "isError": True}
+        return mcp_apps.app_result(self._run_async_operation("call_tool_raw", action_name, arguments))
 
     def test_connection(self) -> Dict:
         if not self.server_url:
@@ -898,6 +996,10 @@ class MCPTool(Tool):
             annotations = _annotation_hints(tool.get("annotations"))
             if annotations:
                 action["annotations"] = annotations
+            # The MCP App view this action renders, and who may call it (model, app).
+            ui = tool.get("ui") or mcp_apps.tool_ui_metadata(tool.get("_meta") or tool.get("meta"))
+            if ui:
+                action["ui"] = ui
             actions.append(action)
         return actions
 

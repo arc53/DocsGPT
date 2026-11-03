@@ -1,3 +1,5 @@
+import type { McpCallToolResult } from '../../api/services/mcpAppsService';
+
 export type ToolCallsType = {
   tool_name: string;
   action_name: string;
@@ -72,6 +74,16 @@ export type ToolCallsType = {
   job_finished_at?: string;
   /** What the job's card says beyond its status (patched on when it ends; absent on older calls). */
   job_notices?: { code: string; pid?: number }[];
+  /**
+   * The MCP App view the call renders inline (`docsgpt/agents/mcp_apps.py`):
+   * its `ui://` resource, the tool row to read it through, and the call's full
+   * `CallToolResult`, which the view is handed.
+   */
+  ui?: {
+    resource_uri: string;
+    tool_id: string;
+    result?: McpCallToolResult;
+  };
 };
 
 /** The arguments to show for a call: what it sends, not what the model asked. */

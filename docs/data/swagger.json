@@ -957,6 +957,48 @@
       ],
       "type": "object"
     },
+    "McpAppCallModel": {
+      "properties": {
+        "approved": {
+          "description": "The user approved this call, for a tool that needs approval",
+          "type": "boolean"
+        },
+        "arguments": {
+          "description": "Its arguments",
+          "type": "object"
+        },
+        "name": {
+          "description": "The tool the view calls",
+          "type": "string"
+        },
+        "tool_id": {
+          "description": "The MCP tool row the view belongs to",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "tool_id"
+      ],
+      "type": "object"
+    },
+    "McpAppResourceModel": {
+      "properties": {
+        "tool_id": {
+          "description": "The MCP tool row the call ran on",
+          "type": "string"
+        },
+        "uri": {
+          "description": "The view's ui:// resource",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_id",
+        "uri"
+      ],
+      "type": "object"
+    },
     "MoveAgent": {
       "properties": {
         "agent_id": {
@@ -4791,6 +4833,79 @@
         ]
       }
     },
+    "/api/mcp_apps/call": {
+      "post": {
+        "description": "Run a tool an MCP App view calls. Only tools visible to the app; a tool that needs approval answers 409 needs_approval until the call is sent approved.",
+        "operationId": "post_mcp_app_call",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/McpAppCallModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "mcp_apps"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/mcp_apps/resource": {
+      "post": {
+        "description": "Read an MCP App view's HTML and its declared CSP and permissions.",
+        "operationId": "post_mcp_app_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/McpAppResourceModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "mcp_apps"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/mcp_apps/sandbox": {
+      "get": {
+        "description": "The sandbox page an MCP App view runs in, served with a CSP built from the view's declared domains. Only on the sandbox origin (MCP_APPS_SANDBOX_URL), never one of the app's.",
+        "operationId": "get_mcp_app_sandbox",
+        "parameters": [
+          {
+            "description": "The view's _meta.ui.csp, as JSON",
+            "in": "query",
+            "name": "csp",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "mcp_apps"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/mcp_server/auth_status": {
       "get": {
         "description": "Batch check auth status for all MCP tools. Lightweight DB-only check — no network calls to MCP servers.",
@@ -7886,6 +8001,10 @@
     {
       "description": "Current user identity and roles",
       "name": "me"
+    },
+    {
+      "description": "MCP Apps: interactive tool views in chat",
+      "name": "mcp_apps"
     },
     {
       "description": "Available models",

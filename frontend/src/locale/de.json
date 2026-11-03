@@ -2837,6 +2837,22 @@
       "notRunMovedOn": "Nicht ausgeführt: Das Gespräch ging weiter, bevor dies genehmigt wurde.",
       "notRunExpired": "Nicht ausgeführt: Die Genehmigungsanfrage ist abgelaufen."
     },
+    "mcpApp": {
+      "state": {
+        "loading": "App wird geladen…",
+        "ready": "Interaktiv",
+        "failed": "Fehlgeschlagen"
+      },
+      "loading": "App wird geladen…",
+      "allow": "Erlauben",
+      "deny": "Ablehnen",
+      "reload": "App neu laden",
+      "approvalAsk": "Die App möchte {{tool}} ausführen. Erlauben?",
+      "failedTitle": "Die App konnte nicht geladen werden",
+      "failedDescription": "Ihr MCP-Server hat nicht geantwortet, oder die Ansicht ließ sich nicht starten.",
+      "frameTitle": "{{name}} (interaktive App)",
+      "callFailed": "Der Tool-Aufruf ist fehlgeschlagen"
+    },
     "quotaExceeded": {
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt."

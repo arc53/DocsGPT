@@ -519,3 +519,145 @@ class TestDBTokenStorage:
         key = storage.get_db_key()
         assert key["server_url"] == "https://mcp.example.com"
         assert key["user_id"] == "user1"
+
+
+@pytest.mark.unit
+class TestMcpAppsMetadata:
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_format_tools_keeps_ui_metadata(self, mock_setup, mcp_config):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = MCPTool(mcp_config)
+        listed = MagicMock()
+        listed.name = "create_view"
+        listed.description = "Draw"
+        listed.inputSchema = {"type": "object", "properties": {}}
+        listed.annotations = None
+        listed.meta = {"ui": {"resourceUri": "ui://excalidraw/mcp-app.html"}, "ui/resourceUri": "ui://excalidraw/mcp-app.html"}
+        app_only = MagicMock()
+        app_only.name = "save_checkpoint"
+        app_only.description = "Save"
+        app_only.inputSchema = {"type": "object", "properties": {}}
+        app_only.annotations = None
+        app_only.meta = {"ui": {"visibility": ["app"]}}
+
+        formatted = tool._format_tools([listed, app_only])
+        assert formatted[0]["ui"] == {"resourceUri": "ui://excalidraw/mcp-app.html"}
+        assert formatted[1]["ui"] == {"visibility": ["app"]}
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_actions_metadata_carries_ui(self, mock_setup, mcp_config):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = MCPTool(mcp_config)
+        tool.available_tools = [
+            {"name": "create_view", "description": "", "ui": {"resourceUri": "ui://a/b.html"}},
+            {"name": "read_me", "description": "", "_meta": {"ui": {"visibility": ["model"]}}},
+            {"name": "plain", "description": ""},
+        ]
+        actions = {a["name"]: a for a in tool.get_actions_metadata()}
+        assert actions["create_view"]["ui"] == {"resourceUri": "ui://a/b.html"}
+        assert actions["read_me"]["ui"] == {"visibility": ["model"]}
+        assert "ui" not in actions["plain"]
+
+
+@pytest.mark.unit
+class TestMcpAppsResource:
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_reads_and_caches_the_view(self, mock_setup, mcp_config):
+        from mcp.types import TextResourceContents
+
+        from docsgpt.agents.tools import mcp_tool as module
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        module._ui_resource_cache.clear()
+        tool = MCPTool(mcp_config)
+        tool._client = MagicMock()
+        contents = [
+            TextResourceContents(
+                uri="ui://excalidraw/mcp-app.html",
+                mime_type="text/html;profile=mcp-app",
+                text="<html>app</html>",
+                _meta={"ui": {"csp": {"connectDomains": ["https://esm.sh"]}, "permissions": {"clipboardWrite": {}}}},
+            )
+        ]
+        with patch.object(MCPTool, "_run_async_operation", return_value=contents) as run:
+            first = tool.read_ui_resource("ui://excalidraw/mcp-app.html")
+            second = tool.read_ui_resource("ui://excalidraw/mcp-app.html")
+        assert first == second
+        assert first["html"] == "<html>app</html>"
+        assert first["csp"] == {"connectDomains": ["https://esm.sh"]}
+        assert first["permissions"] == {"clipboardWrite": {}}
+        run.assert_called_once_with("read_resource", "ui://excalidraw/mcp-app.html")
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_falls_back_to_the_listing_meta(self, mock_setup, mcp_config):
+        from mcp.types import Resource, TextResourceContents
+
+        from docsgpt.agents.tools import mcp_tool as module
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        module._ui_resource_cache.clear()
+        tool = MCPTool(mcp_config)
+        tool._client = MagicMock()
+        contents = [TextResourceContents(uri="ui://a/b.html", mime_type="text/html;profile=mcp-app", text="<p>")]
+        listing = [Resource(uri="ui://a/b.html", name="b", _meta={"ui": {"prefersBorder": False}})]
+
+        def run(operation, *args, **kwargs):
+            return contents if operation == "read_resource" else listing
+
+        with patch.object(MCPTool, "_run_async_operation", side_effect=run):
+            view = tool.read_ui_resource("ui://a/b.html")
+        assert view == {"html": "<p>", "prefersBorder": False}
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_refuses_other_schemes(self, mock_setup, mcp_config):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        with pytest.raises(ValueError):
+            MCPTool(mcp_config).read_ui_resource("https://example.com/app.html")
+
+
+@pytest.mark.unit
+class TestMcpAppsResults:
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_execute_keeps_the_typed_result_for_the_view(self, mock_setup, mcp_config):
+        from fastmcp.client.client import CallToolResult
+        from mcp.types import TextContent
+
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = MCPTool(mcp_config)
+        tool._client = MagicMock()
+        result = CallToolResult(
+            content=[TextContent(type="text", text="Diagram displayed!")],
+            structured_content={"checkpointId": "abc"},
+            meta=None,
+        )
+        with patch.object(MCPTool, "_run_async_operation", return_value=result):
+            model_copy = tool.execute_action("create_view", elements="[]")
+        assert model_copy["content"] == [{"type": "text", "text": "Diagram displayed!"}]
+        assert tool.take_app_result() == {
+            "content": [{"type": "text", "text": "Diagram displayed!"}],
+            "structuredContent": {"checkpointId": "abc"},
+            "isError": False,
+        }
+        assert tool.take_app_result() is None
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_app_call_returns_errors_in_band(self, mock_setup, mcp_config):
+        from fastmcp.client.client import CallToolResult
+        from mcp.types import TextContent
+
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = MCPTool(mcp_config)
+        tool._client = MagicMock()
+        result = CallToolResult(
+            content=[TextContent(type="text", text="no such checkpoint")], structured_content=None, meta=None,
+            is_error=True,
+        )
+        with patch.object(MCPTool, "_run_async_operation", return_value=result) as run:
+            answer = tool.call_app_tool("read_checkpoint", {"id": "x"})
+        run.assert_called_once_with("call_tool_raw", "read_checkpoint", {"id": "x"})
+        assert answer == {"content": [{"type": "text", "text": "no such checkpoint"}], "isError": True}

@@ -17,6 +17,7 @@ from docsgpt.agents.default_tools import (
     synthesized_default_tools,
 )
 from docsgpt import tracing
+from docsgpt.agents import mcp_apps
 from docsgpt.agents.tool_pins import (
     PARAM_SECTIONS,
     iter_parameters,
@@ -1025,6 +1026,8 @@ class ToolExecutor:
 
         # Stable sort: preserves the caller's order within each group.
         ordered_tools = sorted(tools_dict.items(), key=lambda kv: is_synthesized_tool_id(kv[0]))
+        # An MCP App's app-only tools (``visibility: ["app"]``) are its view's, never the model's.
+        apps_on = mcp_apps.enabled()
 
         for tool_id, tool in ordered_tools:
             is_api = tool["name"] == "api_tool"
@@ -1039,6 +1042,8 @@ class ToolExecutor:
 
             for action in actions:
                 if not action.get("active", True):
+                    continue
+                if apps_on and not mcp_apps.visible_to_model(action):
                     continue
                 tool_name = tool.get("name", "")
                 if tool_name in dedupable:
@@ -1706,6 +1711,7 @@ class ToolExecutor:
         correctable error exists to break.
         """
         names = set()
+        apps_on = mcp_apps.enabled()
         for tool in (tools_dict or {}).values():
             tool = tool or {}
             if tool.get("name") == "api_tool":
@@ -1715,6 +1721,8 @@ class ToolExecutor:
                 actions = tool.get("actions") or []
             for action in actions:
                 if not isinstance(action, dict) or not action.get("active", True):
+                    continue
+                if apps_on and not mcp_apps.visible_to_model(action):
                     continue
                 if action.get("name"):
                     names.add(str(action["name"]))
@@ -1954,6 +1962,13 @@ class ToolExecutor:
             "arguments": call_args,
         }
         tool_data = tools_dict[tool_id]
+        if self._app_only(tool_data, action_name):
+            refused = f"'{llm_name}' is called only by its app's view in the chat, not by the model. Nothing ran."
+            tool_call_data["result"] = refused
+            tool_call_data["status"] = "error"
+            yield {"type": "tool_call", "data": {**tool_call_data}}
+            self.tool_calls.append(tool_call_data)
+            return refused, call_id
         # Name the service a connection-backed tool used, so the chip can show
         # its logo ("Searched Notion"). Never the account behind it.
         resolved = self._resolve_connection(tool_data)
@@ -2304,6 +2319,10 @@ class ToolExecutor:
                 )
             if artifacts:
                 tool_call_data["artifacts"] = artifacts
+        if tool_data["name"] != "api_tool":
+            view = self._app_view(tool, tool_data, action_data, known_secrets)
+            if view:
+                tool_call_data["ui"] = view
         result_full = journal_executed(artifact_id or None)
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
@@ -2573,8 +2592,45 @@ class ToolExecutor:
     # after a reload as it did live.
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
-        "job_id", "error", "error_type",
+        "job_id", "error", "error_type", "ui",
     )
+
+    @staticmethod
+    def _app_only(tool_data: Dict, action_name: Optional[str]) -> bool:
+        """Whether ``action_name`` is an MCP App's app-only tool, which the model may not call."""
+        if not mcp_apps.enabled():
+            return False
+        return any(
+            isinstance(action, dict) and action.get("name") == action_name and not mcp_apps.visible_to_model(action)
+            for action in tool_data.get("actions") or []
+        )
+
+    @staticmethod
+    def _app_view(tool: Any, tool_data: Dict, action: Dict, secrets: Dict[str, str]) -> Optional[Dict]:
+        """The MCP App view a call renders in the chat: its ``ui://`` resource, its tool row and full result.
+
+        ``ui`` on the call event and the saved call (``_PRESERVED_TOOL_CALL_KEYS``):
+        the chat reads the view's HTML from ``/api/mcp_apps/resource`` by
+        ``tool_id``, and hands it ``result`` as ``ui/notifications/tool-result``.
+
+        Args:
+            tool: The tool that ran; its ``take_app_result`` is drained either way.
+            tool_data: Its row.
+            action: The action that ran.
+            secrets: ``{secret: reference}`` filled into this turn's calls, kept out of the result.
+
+        Returns:
+            ``{"resource_uri", "tool_id", "result"}``, or None when the action has no view.
+        """
+        take = getattr(tool, "take_app_result", None)
+        result = take() if callable(take) else None
+        uri = mcp_apps.resource_uri(action or {})
+        if not uri or not tool_data.get("id") or not mcp_apps.enabled():
+            return None
+        view: Dict[str, Any] = {"resource_uri": uri, "tool_id": str(tool_data["id"])}
+        if isinstance(result, dict):
+            view["result"] = secret_refs.redact(result, secrets) if secrets else result
+        return view
 
     def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:
         """Take the images a tool queued for the model, up to the turn's limit.

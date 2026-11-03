@@ -1,0 +1,186 @@
+"""MCP Apps routes: the sandbox page, a view's HTML, and the tool calls a view makes.
+
+The chat renders an MCP tool's view (``docsgpt/agents/mcp_apps.py``) in the
+sandbox page this API serves on an origin other than the app's. The view's
+HTML and its own ``tools/call`` requests go through the user's session here,
+on the tool row the call that drew it ran on.
+"""
+
+import json
+import logging
+from typing import Any, Optional, Tuple
+
+from flask import jsonify, make_response, request
+from flask_restx import Namespace, Resource, fields
+
+from docsgpt.agents import mcp_apps
+from docsgpt.agents.default_tools import resolve_tool_by_id
+from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.api import api
+from docsgpt.connectors.permissions import (
+    ACCESS_WRITE,
+    PERMISSION_ASK,
+    PERMISSION_OFF,
+    action_access,
+    action_permission,
+)
+from docsgpt.security.origins import normalize_origin
+from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.storage.db.session import db_readonly
+
+logger = logging.getLogger(__name__)
+
+mcp_apps_ns = Namespace("mcp_apps", description="MCP Apps: interactive tool views in chat", path="/api/mcp_apps")
+
+
+def _error(message: str, status: int, **extra: Any):
+    return make_response(jsonify({"success": False, "error": message, **extra}), status)
+
+
+def _app_tool(user: str, tool_id: Any) -> Optional[Tuple[ToolExecutor, dict]]:
+    """The MCP tool row ``user`` may use, and an executor to load it with; None when there is none.
+
+    The row resolves as an agent's call to it does: the user's own, or one a
+    live team grant lets them use.
+    """
+    if not isinstance(tool_id, str) or not tool_id:
+        return None
+    with db_readonly() as conn:
+        row = resolve_tool_by_id(tool_id, user, user_tools_repo=UserToolsRepository(conn))
+    if not row or row.get("name") != "mcp_tool":
+        return None
+    return ToolExecutor(user=user), row
+
+
+def _load(executor: ToolExecutor, row: dict):
+    return executor._get_or_load_tool(row, str(row["id"]), "")
+
+
+@mcp_apps_ns.route("/sandbox")
+class McpAppSandbox(Resource):
+    @api.doc(
+        description=(
+            "The sandbox page an MCP App view runs in, served with a CSP built from the view's declared domains. "
+            "Only on the sandbox origin (MCP_APPS_SANDBOX_URL), never one of the app's."
+        ),
+        params={"csp": "The view's _meta.ui.csp, as JSON"},
+    )
+    def get(self):
+        if not mcp_apps.enabled():
+            return _error("MCP Apps are off", 404)
+        hosts = mcp_apps.host_origins()
+        # On an app origin the view's code would run where the session lives.
+        if normalize_origin(request.host_url) in hosts:
+            return _error("Not the MCP Apps sandbox origin", 404)
+        try:
+            csp = json.loads(request.args.get("csp") or "null")
+        except ValueError:
+            csp = None
+        response = make_response(mcp_apps.sandbox_page(hosts))
+        response.headers["Content-Type"] = "text/html; charset=utf-8"
+        response.headers["Content-Security-Policy"] = mcp_apps.build_csp(csp, hosts)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+
+@mcp_apps_ns.route("/resource")
+class McpAppResource(Resource):
+    @api.expect(
+        api.model(
+            "McpAppResourceModel",
+            {
+                "tool_id": fields.String(required=True, description="The MCP tool row the call ran on"),
+                "uri": fields.String(required=True, description="The view's ui:// resource"),
+            },
+        )
+    )
+    @api.doc(description="Read an MCP App view's HTML and its declared CSP and permissions.")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return _error("Unauthorized", 401)
+        if not mcp_apps.enabled():
+            return _error("MCP Apps are off", 404)
+        data = request.get_json(silent=True) or {}
+        found = _app_tool(decoded_token.get("sub"), data.get("tool_id"))
+        uri = data.get("uri")
+        if found is None or not any(
+            isinstance(a, dict) and mcp_apps.resource_uri(a) == uri for a in found[1].get("actions") or []
+        ):
+            return _error("No such view", 404)
+        from docsgpt.connectors.service import ConnectionUnavailable
+
+        try:
+            view = _load(*found).read_ui_resource(uri)
+        except ConnectionUnavailable as exc:
+            return _error(str(exc), 409)
+        except Exception as exc:
+            logger.warning("MCP App view %s could not be read: %s", uri, exc)
+            return _error("The view could not be loaded from its MCP server", 502)
+        return make_response(jsonify({"success": True, **view, "sandbox_url": mcp_apps.sandbox_url()}), 200)
+
+
+@mcp_apps_ns.route("/call")
+class McpAppCall(Resource):
+    @api.expect(
+        api.model(
+            "McpAppCallModel",
+            {
+                "tool_id": fields.String(required=True, description="The MCP tool row the view belongs to"),
+                "name": fields.String(required=True, description="The tool the view calls"),
+                "arguments": fields.Raw(required=False, description="Its arguments"),
+                "approved": fields.Boolean(
+                    required=False, description="The user approved this call, for a tool that needs approval"
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description=(
+            "Run a tool an MCP App view calls. Only tools visible to the app; a tool that needs approval answers "
+            "409 needs_approval until the call is sent approved."
+        )
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return _error("Unauthorized", 401)
+        if not mcp_apps.enabled():
+            return _error("MCP Apps are off", 404)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        found = _app_tool(user, data.get("tool_id"))
+        if found is None:
+            return _error("No such tool", 404)
+        executor, row = found
+        name = data.get("name")
+        action = next(
+            (a for a in row.get("actions") or [] if isinstance(a, dict) and a.get("name") == name), None
+        )
+        if action is None or not mcp_apps.visible_to_app(action):
+            return _error("The view may not call this tool", 403)
+        # The same gate as an agent's call: the action's permission, or the row's own approval switch.
+        permission = action_permission(action)
+        if permission != PERMISSION_OFF and (row.get("config") or {}).get("require_approval"):
+            permission = PERMISSION_ASK
+        if permission == PERMISSION_OFF:
+            return _error("This tool is turned off", 403)
+        writes = action_access(row.get("name"), action) == ACCESS_WRITE
+        if writes and row.get("user_id") != user:
+            return _error("A view can't change things on a shared tool's account", 403)
+        if permission == PERMISSION_ASK and data.get("approved") is not True:
+            return _error("This tool needs your approval", 409, needs_approval=True)
+        arguments = data.get("arguments")
+        if arguments is not None and not isinstance(arguments, dict):
+            return _error("arguments must be an object", 400)
+        from docsgpt.connectors.service import ConnectionUnavailable
+
+        try:
+            result = _load(executor, row).call_app_tool(name, arguments)
+        except ConnectionUnavailable as exc:
+            return _error(str(exc), 409)
+        except Exception as exc:
+            logger.warning("MCP App call to %s failed: %s", name, exc)
+            return _error("The tool call failed", 502)
+        return make_response(jsonify({"success": True, "result": result}), 200)

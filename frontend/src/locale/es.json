@@ -2929,6 +2929,22 @@
       "notRunMovedOn": "No ejecutado: la conversación siguió antes de que se aprobara.",
       "notRunExpired": "No ejecutado: la solicitud de aprobación caducó."
     },
+    "mcpApp": {
+      "state": {
+        "loading": "Cargando la app…",
+        "ready": "Interactiva",
+        "failed": "Error"
+      },
+      "loading": "Cargando la app…",
+      "allow": "Permitir",
+      "deny": "Denegar",
+      "reload": "Recargar la app",
+      "approvalAsk": "La app quiere ejecutar {{tool}}. ¿Lo permites?",
+      "failedTitle": "No se pudo cargar la app",
+      "failedDescription": "Su servidor MCP no respondió o la vista no pudo iniciarse.",
+      "frameTitle": "{{name}} (app interactiva)",
+      "callFailed": "La llamada a la herramienta falló"
+    },
     "quotaExceeded": {
       "tokens": "Has usado {{used}} de tu cuota de {{limit}} tokens. Se restablece el {{resetsAt}}.",
       "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}."

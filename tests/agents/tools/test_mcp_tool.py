@@ -3271,7 +3271,7 @@ class TestSignInClientsAreNotShared:
         with patch("docsgpt.agents.tools.mcp_tool.get_redis_instance", return_value=redis), \
                 patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
                 patch("docsgpt.agents.tools.mcp_tool.Client",
-                      side_effect=lambda transport, auth=None: MagicMock(auth=auth)):
+                      side_effect=lambda transport, auth=None, **_kwargs: MagicMock(auth=auth)):
             tool._setup_client()
 
     def test_a_retry_after_a_cancel_reaches_the_provider(self):
