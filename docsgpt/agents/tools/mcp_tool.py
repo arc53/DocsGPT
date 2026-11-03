@@ -348,7 +348,10 @@ class MCPTool(Tool):
             auth_key = f"apikey:{_secret_fingerprint(api_key)}" if api_key else "apikey:none"
         elif self.auth_type == "basic":
             username = self.auth_credentials.get("username", "")
-            auth_key = f"basic:{username}"
+            password = self.auth_credentials.get("password", "")
+            # The password too: two rows with one username and different
+            # passwords must not share a client or a cached view.
+            auth_key = f"basic:{username}:{_secret_fingerprint(password)}" if password else f"basic:{username}"
         else:
             auth_key = "none"
         return f"{self.server_url}#{self.transport_type}#{auth_key}"
@@ -564,19 +567,26 @@ class MCPTool(Tool):
         try:
             try:
                 asyncio.get_running_loop()
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        self._run_in_new_loop, operation, *args, **kwargs
-                    )
-                    return future.result(timeout=self.timeout)
             except RuntimeError:
                 return self._run_in_new_loop(operation, *args, **kwargs)
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            try:
+                future = executor.submit(self._run_in_new_loop, operation, *args, **kwargs)
+                return future.result(timeout=self.timeout)
+            finally:
+                # The caller waits no longer than the timeout; a late worker finishes on its own.
+                executor.shutdown(wait=False)
         except Exception as e:
             raise self._map_error(operation, e) from e
             raise self._map_error(operation, e) from e
 
     def _run_in_new_loop(self, operation, *args, **kwargs):
-        with _client_lock(self._client):
+        lock = _client_lock(self._client)
+        # A wait for another call on a shared client counts against the timeout too.
+        timeout = self.timeout if isinstance(self.timeout, (int, float)) and self.timeout > 0 else -1
+        if not lock.acquire(timeout=timeout):
+            raise concurrent.futures.TimeoutError()
+        try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
@@ -585,6 +595,8 @@ class MCPTool(Tool):
                 )
             finally:
                 loop.close()
+        finally:
+            lock.release()
 
     def _map_error(self, operation: str, exc: Exception) -> Exception:
         for exc_type, msg_fn in self._ERROR_MAP:
@@ -804,9 +816,7 @@ class MCPTool(Tool):
         if not self._client:
             self._setup_client()
         contents = self._run_async_operation("read_resource", uri)
-        listing_meta = None
-        if not any(isinstance(getattr(item, "meta", None), dict) for item in contents or []):
-            listing_meta = self._listed_resource_meta(uri)
+        listing_meta = None if mcp_apps.declares_ui(contents) else self._listed_resource_meta(uri)
         view = mcp_apps.resource_view(contents, listing_meta)
         while len(_ui_resource_cache) >= UI_RESOURCE_CACHE_SIZE:
             _ui_resource_cache.pop(next(iter(_ui_resource_cache)))
@@ -846,7 +856,18 @@ class MCPTool(Tool):
         conflict = self._pinned_param_conflict(action_name, arguments)
         if conflict:
             return {"content": [{"type": "text", "text": conflict}], "isError": True}
-        return mcp_apps.app_result(self._run_async_operation("call_tool_raw", action_name, arguments))
+        try:
+            result = self._run_async_operation("call_tool_raw", action_name, arguments)
+        except Exception as e:
+            if not _is_header_mismatch(e):
+                raise
+            # As ``execute_action``: the stored schema predates the server's header annotations.
+            self._run_async_operation("list_tools")
+            conflict = self._pinned_param_conflict(action_name, arguments)
+            if conflict:
+                return {"content": [{"type": "text", "text": conflict}], "isError": True}
+            result = self._run_async_operation("call_tool_raw", action_name, arguments)
+        return mcp_apps.app_result(result)
 
     def test_connection(self) -> Dict:
         if not self.server_url:

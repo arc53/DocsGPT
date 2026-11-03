@@ -135,6 +135,23 @@ class TestGenerateCacheKey:
         )
         assert "basic:user1" in tool._cache_key
 
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_basic_auth_tells_passwords_apart(self, mock_setup):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        def key(password):
+            return MCPTool(
+                {
+                    "server_url": "https://mcp.example.com",
+                    "auth_type": "basic",
+                    "auth_credentials": {"username": "user1", "password": password},
+                }
+            )._cache_key
+
+        assert key("one") != key("two")
+        assert key("one") == key("one")
+        assert "one" not in key("one")
+
 
 @pytest.mark.unit
 class TestCreateTransport:
@@ -611,6 +628,51 @@ class TestMcpAppsResource:
         assert view == {"html": "<p>", "prefersBorder": False}
 
     @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_reads_the_listing_when_the_view_item_declares_no_ui(self, mock_setup, mcp_config):
+        # Other ``_meta`` on the item is no reason to skip the listing's CSP.
+        from mcp.types import Resource, TextResourceContents
+
+        from docsgpt.agents.tools import mcp_tool as module
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        module._ui_resource_cache.clear()
+        tool = MCPTool(mcp_config)
+        tool._client = MagicMock()
+        contents = [
+            TextResourceContents(
+                uri="ui://a/b.html", mime_type="text/html;profile=mcp-app", text="<p>", _meta={"other": 1}
+            )
+        ]
+        listing = [Resource(uri="ui://a/b.html", name="b", _meta={"ui": {"csp": {"connectDomains": ["https://x.io"]}}})]
+
+        def run(operation, *args, **kwargs):
+            return contents if operation == "read_resource" else listing
+
+        with patch.object(MCPTool, "_run_async_operation", side_effect=run):
+            view = tool.read_ui_resource("ui://a/b.html")
+        assert view["csp"] == {"connectDomains": ["https://x.io"]}
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_skips_the_listing_when_the_view_item_declares_its_ui(self, mock_setup, mcp_config):
+        from mcp.types import TextResourceContents
+
+        from docsgpt.agents.tools import mcp_tool as module
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        module._ui_resource_cache.clear()
+        tool = MCPTool(mcp_config)
+        tool._client = MagicMock()
+        contents = [
+            TextResourceContents(
+                uri="ui://a/b.html", mime_type="text/html;profile=mcp-app", text="<p>",
+                _meta={"ui": {"prefersBorder": True}},
+            )
+        ]
+        with patch.object(MCPTool, "_run_async_operation", return_value=contents) as run:
+            tool.read_ui_resource("ui://a/b.html")
+        run.assert_called_once_with("read_resource", "ui://a/b.html")
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
     def test_refuses_other_schemes(self, mock_setup, mcp_config):
         from docsgpt.agents.tools.mcp_tool import MCPTool
 
@@ -661,3 +723,38 @@ class TestMcpAppsResults:
             answer = tool.call_app_tool("read_checkpoint", {"id": "x"})
         run.assert_called_once_with("call_tool_raw", "read_checkpoint", {"id": "x"})
         assert answer == {"content": [{"type": "text", "text": "no such checkpoint"}], "isError": True}
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_app_call_retries_with_listed_schemas_after_a_header_mismatch(self, mock_setup, mcp_config):
+        from fastmcp.client.client import CallToolResult
+        from mcp.shared.exceptions import MCPError
+        from mcp.types import HEADER_MISMATCH, TextContent
+
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = MCPTool(mcp_config)
+        tool._client = MagicMock()
+        result = CallToolResult(content=[TextContent(type="text", text="ok")], structured_content=None, meta=None)
+        calls = []
+
+        def run(operation, *args, **kwargs):
+            calls.append(operation)
+            if operation == "call_tool_raw" and calls.count("call_tool_raw") == 1:
+                raise MCPError(HEADER_MISMATCH, "missing Mcp-Param-repo")
+            return [] if operation == "list_tools" else result
+
+        with patch.object(MCPTool, "_run_async_operation", side_effect=run):
+            answer = tool.call_app_tool("read_checkpoint", {"id": "x"})
+        assert calls == ["call_tool_raw", "list_tools", "call_tool_raw"]
+        assert answer["content"] == [{"type": "text", "text": "ok"}]
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_app_call_does_not_retry_other_failures(self, mock_setup, mcp_config):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = MCPTool(mcp_config)
+        tool._client = MagicMock()
+        with patch.object(MCPTool, "_run_async_operation", side_effect=Exception("boom")) as run:
+            with pytest.raises(Exception, match="boom"):
+                tool.call_app_tool("save_checkpoint", {"id": "x"})
+        run.assert_called_once()

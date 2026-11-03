@@ -223,3 +223,35 @@ class TestResourceHtml:
 
         with pytest.raises(ValueError):
             mcp_apps.resource_view([Contents()], listing_meta=None)
+
+    def test_a_view_over_the_size_limit_is_refused(self, monkeypatch):
+        monkeypatch.setattr(mcp_apps, "VIEW_MAX_BYTES", 10)
+
+        class Text:
+            mime_type = "text/html;profile=mcp-app"
+            text = "<html>" + "x" * 10 + "</html>"
+            meta = None
+
+        class Blob:
+            mime_type = "text/html;profile=mcp-app"
+            blob = base64.b64encode(b"<html>" + b"x" * 10 + b"</html>").decode()
+            meta = None
+
+        for item in (Text(), Blob()):
+            with pytest.raises(ValueError, match="too large"):
+                mcp_apps.resource_view([item], listing_meta=None)
+
+    def test_whether_the_view_item_declares_its_ui(self):
+        class Contents:
+            mime_type = "text/html;profile=mcp-app"
+            text = "<p>"
+            meta = {"other": 1}
+
+        class Other:
+            mime_type = "text/plain"
+            text = "notes"
+            meta = {"ui": {"prefersBorder": True}}
+
+        assert mcp_apps.declares_ui([Other(), Contents()]) is False
+        Contents.meta = {"ui": {"prefersBorder": True}}
+        assert mcp_apps.declares_ui([Other(), Contents()]) is True

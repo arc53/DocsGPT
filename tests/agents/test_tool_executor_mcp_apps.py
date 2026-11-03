@@ -83,6 +83,20 @@ class TestModelVisibility:
         assert "app" in events[-1]["data"]["result"]
         mock_tool_manager.load_tool.return_value.execute_action.assert_not_called()
 
+    def test_the_refusal_is_journaled_like_other_refused_calls(self, apps, mock_tool_manager, monkeypatch):
+        _route(monkeypatch, "save_checkpoint")
+        proposed, failed = Mock(return_value=True), Mock()
+        monkeypatch.setattr("docsgpt.agents.tool_executor._record_proposed", proposed)
+        monkeypatch.setattr("docsgpt.agents.tool_executor._mark_failed", failed)
+        executor = ToolExecutor(user="u1")
+
+        list(_drain(executor.execute(_tools_dict(), _call("save_checkpoint", call_id="c9"), "MockLLM")))
+
+        args, kwargs = proposed.call_args
+        assert args[:3] == ("c9", "mcp_tool", "save_checkpoint")
+        assert kwargs["tool_id"] == TOOL_ROW_ID
+        assert failed.call_args.args[0] == "c9"
+
 
 @pytest.mark.unit
 class TestViewOnTheCall:
@@ -99,6 +113,20 @@ class TestViewOnTheCall:
         assert completed["data"]["ui"] == {"resource_uri": VIEW, "tool_id": TOOL_ROW_ID, "result": typed}
         # Saved with the conversation, so the view renders again on reload.
         assert executor.get_truncated_tool_calls()[0]["ui"]["resource_uri"] == VIEW
+
+    def test_a_result_the_guardrail_changed_shows_no_view(self, apps, mock_tool_manager, monkeypatch):
+        # Masked or blocked output must not reach the view or the saved call in the clear.
+        _route(monkeypatch, "create_view")
+        tool = mock_tool_manager.load_tool.return_value
+        tool.take_app_result = Mock(return_value={"content": [{"type": "text", "text": "sk-secret"}]})
+        executor = ToolExecutor(user="u1")
+        monkeypatch.setattr(executor, "_guardrail_tool_result", lambda result, *_: "[masked]")
+
+        events = list(_drain(executor.execute(_tools_dict(), _call("create_view"), "MockLLM")))
+
+        assert all("ui" not in e["data"] for e in events)
+        assert all("ui" not in c for c in executor.get_truncated_tool_calls())
+        tool.take_app_result.assert_called_once()
 
     def test_a_call_without_a_view_carries_none(self, apps, mock_tool_manager, monkeypatch):
         _route(monkeypatch, "read_me")

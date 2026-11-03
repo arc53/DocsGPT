@@ -29,6 +29,8 @@ SANDBOX_PATH = "/api/mcp_apps/sandbox"
 DEFAULT_VISIBILITY = ("model", "app")
 # Ceiling on the tool result handed to a view; it is streamed and saved with the call.
 APP_RESULT_MAX_CHARS = 200_000
+# Ceiling on a view's HTML, which is cached and sent to the chat (Excalidraw's is ~430 KB).
+VIEW_MAX_BYTES = 5_000_000
 
 # A CSP source a resource may declare: an http(s)/ws(s) origin, a ``*.`` subdomain
 # wildcard allowed, an optional path. Anything else (keywords, ``;``, spaces) could
@@ -198,41 +200,72 @@ def host_origins() -> list[str]:
     return [origin for origin in _app_origins() if origin != sandbox]
 
 
+def _field(item: Any, key: str, attribute: str) -> Any:
+    return item.get(key) if isinstance(item, dict) else getattr(item, attribute, None)
+
+
+def _app_item(contents: Iterable[Any]) -> Any:
+    """The first ``text/html;profile=mcp-app`` item of a ``resources/read`` answer, or None."""
+    for item in contents or []:
+        if is_app_mime_type(_field(item, "mimeType", "mime_type")):
+            return item
+    return None
+
+
+def _item_ui(item: Any) -> Optional[dict]:
+    meta = _field(item, "_meta", "meta")
+    ui = meta.get("ui") if isinstance(meta, dict) else None
+    return ui if isinstance(ui, dict) else None
+
+
+def declares_ui(contents: Iterable[Any]) -> bool:
+    """Whether the view item of a ``resources/read`` answer carries its own ``_meta.ui``.
+
+    When it doesn't, the ``csp`` and ``permissions`` may be on the
+    resource's ``resources/list`` entry instead.
+    """
+    item = _app_item(contents)
+    return item is not None and _item_ui(item) is not None
+
+
 def resource_view(contents: Iterable[Any], listing_meta: Any) -> dict:
     """A ``resources/read`` answer as the view the chat renders.
 
     Args:
         contents: The read's contents; the first ``text/html;profile=mcp-app`` one is used.
         listing_meta: The resource's ``_meta`` from ``resources/list``, used when
-            the contents carry none.
+            the view item carries no ``_meta.ui``.
 
     Returns:
         ``html`` plus ``csp``, ``permissions`` and ``prefersBorder`` when declared.
 
     Raises:
-        ValueError: No contents are an MCP App.
+        ValueError: No contents are an MCP App, or its HTML is over ``VIEW_MAX_BYTES``.
     """
-    for item in contents or []:
-        mime = item.get("mimeType") if isinstance(item, dict) else getattr(item, "mime_type", None)
-        if not is_app_mime_type(mime):
-            continue
-        text = item.get("text") if isinstance(item, dict) else getattr(item, "text", None)
-        if text is None:
-            blob = item.get("blob") if isinstance(item, dict) else getattr(item, "blob", None)
-            text = base64.b64decode(blob or "").decode("utf-8")
-        meta = item.get("_meta") if isinstance(item, dict) else getattr(item, "meta", None)
-        ui = (meta or {}).get("ui") if isinstance(meta, dict) else None
-        if not isinstance(ui, dict):
-            ui = (listing_meta or {}).get("ui") if isinstance(listing_meta, dict) else None
-        ui = ui if isinstance(ui, dict) else {}
-        view: dict = {"html": text}
-        for key in ("csp", "permissions"):
-            if isinstance(ui.get(key), dict):
-                view[key] = ui[key]
-        if isinstance(ui.get("prefersBorder"), bool):
-            view["prefersBorder"] = ui["prefersBorder"]
-        return view
-    raise ValueError("The resource is not an MCP App (text/html;profile=mcp-app)")
+    item = _app_item(contents)
+    if item is None:
+        raise ValueError("The resource is not an MCP App (text/html;profile=mcp-app)")
+    too_large = ValueError(f"The view is too large (over {VIEW_MAX_BYTES} bytes)")
+    text = _field(item, "text", "text")
+    if text is None:
+        blob = _field(item, "blob", "blob") or ""
+        # Checked before decoding: base64 is 4 characters per 3 bytes.
+        if len(blob) * 3 // 4 > VIEW_MAX_BYTES:
+            raise too_large
+        text = base64.b64decode(blob).decode("utf-8")
+    if len(text.encode("utf-8")) > VIEW_MAX_BYTES:
+        raise too_large
+    ui = _item_ui(item)
+    if ui is None:
+        listed = listing_meta.get("ui") if isinstance(listing_meta, dict) else None
+        ui = listed if isinstance(listed, dict) else {}
+    view: dict = {"html": text}
+    for key in ("csp", "permissions"):
+        if isinstance(ui.get(key), dict):
+            view[key] = ui[key]
+    if isinstance(ui.get("prefersBorder"), bool):
+        view["prefersBorder"] = ui["prefersBorder"]
+    return view
 
 
 def _dump(item: Any) -> Any:

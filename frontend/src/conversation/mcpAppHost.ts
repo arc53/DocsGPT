@@ -113,6 +113,32 @@ export function isOpenableLink(url: unknown): url is string {
   }
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Whether the page at `page` can run a view in the sandbox at `sandbox`. Not
+ * on the page's own origin, where the view would run beside the session, and
+ * not an http sandbox on an https page, which the browser blocks unless it is
+ * loopback.
+ */
+export function isUsableSandbox(sandbox: unknown, page: string): boolean {
+  if (typeof sandbox !== 'string') return false;
+  let url: URL;
+  let host: URL;
+  try {
+    url = new URL(sandbox);
+    host = new URL(page);
+  } catch {
+    return false;
+  }
+  if (url.origin === host.origin) return false;
+  if (host.protocol === 'https:' && url.protocol === 'http:')
+    return (
+      LOOPBACK_HOSTS.has(url.hostname) || url.hostname.endsWith('.localhost')
+    );
+  return url.protocol === 'https:' || url.protocol === 'http:';
+}
+
 export class McpAppHost {
   private initialized = false;
   private nextId = 1;

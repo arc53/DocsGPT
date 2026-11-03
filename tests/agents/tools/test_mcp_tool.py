@@ -1718,16 +1718,45 @@ class TestRunAsyncOperation:
 
         for tool in tools:
             tool._client = shared
+        results = []
         with patch.object(tools[0], "_execute_with_client", side_effect=fake_execute), \
              patch.object(tools[1], "_execute_with_client", side_effect=fake_execute):
-            threads = [threading.Thread(target=t._run_in_new_loop, args=("ping",)) for t in tools]
+            threads = [
+                threading.Thread(target=lambda t=t: results.append(t._run_in_new_loop("ping"))) for t in tools
+            ]
             started = _time.monotonic()
             for thread in threads:
                 thread.start()
             for thread in threads:
                 thread.join(timeout=5)
+        assert results == ["ok", "ok"]
         assert state["most"] == 1
         assert _time.monotonic() - started < 5
+
+    def test_a_wait_for_a_busy_client_gives_up_after_the_timeout(self, mcp_config):
+        import threading
+
+        from docsgpt.agents.tools import mcp_tool as mcp_mod
+
+        tool = _make_tool({**mcp_config, "timeout": 0.05})
+        tool._client = MagicMock()
+        busy = threading.Event()
+        release = threading.Event()
+
+        def hold():
+            with mcp_mod._client_lock(tool._client):
+                busy.set()
+                release.wait(5)
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        try:
+            busy.wait(5)
+            with pytest.raises(Exception, match="Timed out"):
+                tool._run_async_operation("ping")
+        finally:
+            release.set()
+            holder.join(5)
 
     def test_separate_clients_run_side_by_side(self, mcp_config):
         import threading

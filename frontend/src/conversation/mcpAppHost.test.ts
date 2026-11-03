@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   isOpenableLink,
+  isUsableSandbox,
   MCP_APPS_PROTOCOL_VERSION,
   McpAppError,
   McpAppHost,
@@ -223,5 +224,23 @@ describe('isOpenableLink', () => {
     [42, false],
   ])('%s → %s', (url, expected) => {
     expect(isOpenableLink(url)).toBe(expected);
+  });
+});
+
+describe('isUsableSandbox', () => {
+  it.each([
+    ['http://127.0.0.1:7091/sb', 'http://localhost:5173/c', true],
+    ['https://sandbox.example.com/sb', 'https://app.example.com/c', true],
+    // The browser blocks an http frame on an https page, unless it is loopback.
+    ['http://sandbox.example.com/sb', 'https://app.example.com/c', false],
+    ['http://127.0.0.1:7091/sb', 'https://app.example.com/c', true],
+    ['http://localhost:7091/sb', 'https://app.example.com/c', true],
+    ['http://[::1]:7091/sb', 'https://app.example.com/c', true],
+    // On the page's own origin the view would run where the session lives.
+    ['https://app.example.com/sb', 'https://app.example.com/c', false],
+    ['not a url', 'https://app.example.com/c', false],
+    [null, 'https://app.example.com/c', false],
+  ])('%s on %s → %s', (sandbox, page, expected) => {
+    expect(isUsableSandbox(sandbox, page)).toBe(expected);
   });
 });

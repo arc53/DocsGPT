@@ -24,6 +24,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { getToolChipLabel } from '../utils/streamingStatusUtils';
 import {
   hostStyleVariables,
+  isUsableSandbox,
   McpAppError,
   McpAppHost,
   type McpAppHostContext,
@@ -116,9 +117,8 @@ export default function McpAppView({
       .then((view) => {
         window.clearTimeout(timeout);
         if (cancelled) return;
-        const sandbox = view?.sandbox_url ? new URL(view.sandbox_url) : null;
-        // A sandbox on the app's own origin would run the view where the session lives.
-        if (!view || !sandbox || sandbox.origin === window.location.origin) {
+        // A sandbox the page can't use shows the ordinary step, not a failed load.
+        if (!view || !isUsableSandbox(view.sandbox_url, window.location.href)) {
           setPhase('unavailable');
           return;
         }

@@ -14,7 +14,11 @@ VIEW = "ui://excalidraw/mcp-app.html"
 def _row(user="alice", **action_overrides):
     actions = [
         {"name": "create_view", "active": True, "access": "read", "ui": {"resourceUri": VIEW}},
-        {"name": "read_checkpoint", "active": True, "access": "read", "ui": {"visibility": ["app"]}},
+        {"name": "read_checkpoint", "active": True, "access": "read", "ui": {"visibility": ["app"]},
+         "parameters": {"type": "object", "properties": {
+             "id": {"type": "string", "filled_by_llm": True, "value": ""},
+             "board": {"type": "string", "filled_by_llm": False, "value": "pinned-board"},
+         }}},
         {"name": "save_checkpoint", "active": True, "access": "write", "require_approval": True,
          "ui": {"visibility": ["app"]}},
         {"name": "read_me", "active": True, "access": "read", "ui": {"visibility": ["model"]}},
@@ -55,8 +59,16 @@ def _post(app, resource, body, user="alice"):
         return resource().post()
 
 
-def _found(row):
-    return patch.object(routes, "_app_tool", return_value=(MagicMock(), row))
+def _executor(resolved=None, connection_pins=None):
+    """The executor the routes load a row with: no connection and no connection pins unless given."""
+    executor = MagicMock()
+    executor._resolve_connection.return_value = resolved
+    executor._connection_parameters.return_value = connection_pins or {}
+    return executor
+
+
+def _found(row, executor=None):
+    return patch.object(routes, "_app_tool", return_value=(executor or _executor(), row))
 
 
 @pytest.mark.unit
@@ -114,6 +126,12 @@ class TestResource:
     def test_needs_a_session(self, app):
         assert _post(app, routes.McpAppResource, {"tool_id": ROW_ID, "uri": VIEW}, user=None).status_code == 401
 
+    def test_a_body_that_is_not_an_object(self, app, tool):
+        with _found(_row()):
+            response = _post(app, routes.McpAppResource, [ROW_ID, VIEW])
+        assert response.status_code == 400
+        tool.read_ui_resource.assert_not_called()
+
 
 @pytest.mark.unit
 class TestCall:
@@ -123,7 +141,22 @@ class TestCall:
                 app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_checkpoint", "arguments": {"id": "c"}}
             )
         assert response.status_code == 200
-        tool.call_app_tool.assert_called_once_with("read_checkpoint", {"id": "c"})
+        tool.call_app_tool.assert_called_once_with("read_checkpoint", {"id": "c", "board": "pinned-board"})
+
+    def test_a_fixed_value_wins_over_the_views(self, app, tool):
+        with _found(_row()):
+            _post(
+                app, routes.McpAppCall,
+                {"tool_id": ROW_ID, "name": "read_checkpoint", "arguments": {"id": "c", "board": "other"}},
+            )
+        tool.call_app_tool.assert_called_once_with("read_checkpoint", {"id": "c", "board": "pinned-board"})
+
+    def test_a_value_the_connection_fixes_wins_too(self, app, tool):
+        with _found(_row(), _executor(connection_pins={"id": "from-connection"})):
+            _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_checkpoint", "arguments": {"id": "c"}})
+        tool.call_app_tool.assert_called_once_with(
+            "read_checkpoint", {"id": "from-connection", "board": "pinned-board"}
+        )
 
     def test_a_model_only_tool_is_refused(self, app, tool):
         with _found(_row()):
@@ -168,10 +201,30 @@ class TestCall:
             response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "save_checkpoint"})
         assert response.status_code == 403
 
+    def test_no_writes_through_the_owners_connection(self, app, tool):
+        row = _row(user="owner", save_checkpoint={"require_approval": False})
+        with _found(row, _executor(resolved=MagicMock(delegated=True))):
+            response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "save_checkpoint"})
+        assert response.status_code == 403
+        tool.call_app_tool.assert_not_called()
+
+    def test_a_shared_tool_writes_on_the_members_own_connection(self, app, tool):
+        # Member mode: the shared row runs on the caller's own account.
+        row = _row(user="owner", save_checkpoint={"require_approval": False})
+        with _found(row, _executor(resolved=MagicMock(delegated=False))):
+            response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "save_checkpoint"})
+        assert response.status_code == 200
+
     def test_arguments_must_be_an_object(self, app, tool):
         with _found(_row()):
             response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_checkpoint", "arguments": [1]})
         assert response.status_code == 400
+
+    def test_a_body_that_is_not_an_object(self, app, tool):
+        with _found(_row()):
+            response = _post(app, routes.McpAppCall, [ROW_ID, "read_checkpoint"])
+        assert response.status_code == 400
+        tool.call_app_tool.assert_not_called()
 
 
 @pytest.mark.unit

@@ -1966,6 +1966,18 @@ class ToolExecutor:
             refused = f"'{llm_name}' is called only by its app's view in the chat, not by the model. Nothing ran."
             tool_call_data["result"] = refused
             tool_call_data["status"] = "error"
+            # Journaled like the other refused calls, so tool analytics count it.
+            if _record_proposed(
+                call_id,
+                tool_data["name"],
+                action_name,
+                call_args if isinstance(call_args, dict) else {},
+                tool_id=tool_data.get("id"),
+                message_id=self.message_id,
+                user_id=self.user,
+                agent_id=self.agent_id,
+            ):
+                _mark_failed(call_id, refused, message_id=self.message_id, user_id=self.user)
             yield {"type": "tool_call", "data": {**tool_call_data}}
             self.tool_calls.append(tool_call_data)
             return refused, call_id
@@ -2253,6 +2265,7 @@ class ToolExecutor:
         result = sanitize_tool_result(result)
         # Read before the scan: a redacted dict comes back as text.
         status = result_status(result)
+        unscreened = result
         try:
             result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
         except Exception as exc:
@@ -2320,7 +2333,9 @@ class ToolExecutor:
             if artifacts:
                 tool_call_data["artifacts"] = artifacts
         if tool_data["name"] != "api_tool":
-            view = self._app_view(tool, tool_data, action_data, known_secrets)
+            # A clean verdict hands the result back as it was; a masked or blocked
+            # one never reaches the view, which would get the raw result.
+            view = self._app_view(tool, tool_data, action_data, known_secrets, withheld=result is not unscreened)
             if view:
                 tool_call_data["ui"] = view
         result_full = journal_executed(artifact_id or None)
@@ -2606,7 +2621,9 @@ class ToolExecutor:
         )
 
     @staticmethod
-    def _app_view(tool: Any, tool_data: Dict, action: Dict, secrets: Dict[str, str]) -> Optional[Dict]:
+    def _app_view(
+        tool: Any, tool_data: Dict, action: Dict, secrets: Dict[str, str], withheld: bool = False
+    ) -> Optional[Dict]:
         """The MCP App view a call renders in the chat: its ``ui://`` resource, its tool row and full result.
 
         ``ui`` on the call event and the saved call (``_PRESERVED_TOOL_CALL_KEYS``):
@@ -2618,6 +2635,7 @@ class ToolExecutor:
             tool_data: Its row.
             action: The action that ran.
             secrets: ``{secret: reference}`` filled into this turn's calls, kept out of the result.
+            withheld: The tool-result guardrail masked or blocked the result; no view then.
 
         Returns:
             ``{"resource_uri", "tool_id", "result"}``, or None when the action has no view.
@@ -2625,7 +2643,7 @@ class ToolExecutor:
         take = getattr(tool, "take_app_result", None)
         result = take() if callable(take) else None
         uri = mcp_apps.resource_uri(action or {})
-        if not uri or not tool_data.get("id") or not mcp_apps.enabled():
+        if withheld or not uri or not tool_data.get("id") or not mcp_apps.enabled():
             return None
         view: Dict[str, Any] = {"resource_uri": uri, "tool_id": str(tool_data["id"])}
         if isinstance(result, dict):

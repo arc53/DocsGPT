@@ -16,6 +16,7 @@ from flask_restx import Namespace, Resource, fields
 from docsgpt.agents import mcp_apps
 from docsgpt.agents.default_tools import resolve_tool_by_id
 from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.agents.tool_pins import resolve_arguments
 from docsgpt.api import api
 from docsgpt.connectors.permissions import (
     ACCESS_WRITE,
@@ -54,6 +55,27 @@ def _app_tool(user: str, tool_id: Any) -> Optional[Tuple[ToolExecutor, dict]]:
 
 def _load(executor: ToolExecutor, row: dict):
     return executor._get_or_load_tool(row, str(row["id"]), "")
+
+
+def _json_object() -> Optional[dict]:
+    """The request's JSON body when it is an object, else None."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return {}
+    return data if isinstance(data, dict) else None
+
+
+def _delegated(executor: ToolExecutor, row: dict, user: str) -> bool:
+    """Whether a call on ``row`` runs on an account other than ``user``'s.
+
+    A connection-backed row runs on the connection it resolves to: the
+    owner's, or in member mode the caller's own. Any other row runs on its
+    owner's credentials.
+    """
+    resolved = executor._resolve_connection(row)
+    if resolved is not None:
+        return bool(resolved.delegated)
+    return row.get("user_id") != user
 
 
 @mcp_apps_ns.route("/sandbox")
@@ -102,7 +124,9 @@ class McpAppResource(Resource):
             return _error("Unauthorized", 401)
         if not mcp_apps.enabled():
             return _error("MCP Apps are off", 404)
-        data = request.get_json(silent=True) or {}
+        data = _json_object()
+        if data is None:
+            return _error("Send a JSON object", 400)
         found = _app_tool(decoded_token.get("sub"), data.get("tool_id"))
         uri = data.get("uri")
         if found is None or not any(
@@ -149,7 +173,9 @@ class McpAppCall(Resource):
         if not mcp_apps.enabled():
             return _error("MCP Apps are off", 404)
         user = decoded_token.get("sub")
-        data = request.get_json(silent=True) or {}
+        data = _json_object()
+        if data is None:
+            return _error("Send a JSON object", 400)
         found = _app_tool(user, data.get("tool_id"))
         if found is None:
             return _error("No such tool", 404)
@@ -167,13 +193,15 @@ class McpAppCall(Resource):
         if permission == PERMISSION_OFF:
             return _error("This tool is turned off", 403)
         writes = action_access(row.get("name"), action) == ACCESS_WRITE
-        if writes and row.get("user_id") != user:
+        if writes and _delegated(executor, row, user):
             return _error("A view can't change things on a shared tool's account", 403)
         if permission == PERMISSION_ASK and data.get("approved") is not True:
             return _error("This tool needs your approval", 409, needs_approval=True)
         arguments = data.get("arguments")
         if arguments is not None and not isinstance(arguments, dict):
             return _error("arguments must be an object", 400)
+        # Fixed values win over the view's, as they do over the model's.
+        arguments = resolve_arguments(action, arguments or {}, executor._connection_parameters(row))["parameters"]
         from docsgpt.connectors.service import ConnectionUnavailable
 
         try:
