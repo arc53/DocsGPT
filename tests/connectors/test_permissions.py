@@ -19,6 +19,11 @@ class TestActionAccess:
         assert p.action_access("api_tool", {"name": "x", "method": "get"}) == "read"
         assert p.action_access("api_tool", {"name": "x", "method": "POST"}) == "write"
 
+    def test_query_rw_defaults_to_write_approval(self):
+        stamped = p.apply_default_permissions("mcp_tool", [{"name": "query_rw"}])[0]
+        assert stamped["access"] == "write"
+        assert stamped["require_approval"] is True
+
     @pytest.mark.parametrize(
         "name,expected",
         [("search_pages", "read"), ("list_issues", "read"), ("create_issue", "write"), ("send_message", "write")],
