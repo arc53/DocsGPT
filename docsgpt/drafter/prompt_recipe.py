@@ -172,9 +172,11 @@ Keep each edit small and separate, so the user can accept or reject it on its ow
 send no edits and say why in your message."""
 
 #: Follow-ups and guesses are about the text: this drawer edits only the prompt, and the recipe can't see the
-#: knowledge or tools of the agents that use it.
+#: knowledge or tools of the agents that use it. They complete the user's choices, never swap them.
 TEXT_ONLY = """Suggestions and assumptions are changes to the prompt's text only: never suggest attaching \
-knowledge or tools, and don't guess what an agent using the prompt has attached; you can't see it."""
+knowledge or tools, and don't guess what an agent using the prompt has attached; you can't see it. Build on what \
+the user said and chose: never suggest replacing it (e.g. a support email when they picked live chat) or asking it \
+again; suggest what would complete it instead (e.g. "Add your live chat's opening hours")."""
 
 IMPROVE_NEXT = f"""suggestions: up to 3 further changes this prompt could use, each worded as the short request the \
 user would send (e.g. "Add what to do when it doesn't know"). Leave out what you just changed. {TEXT_ONLY}"""

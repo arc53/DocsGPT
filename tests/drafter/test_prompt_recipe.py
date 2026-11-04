@@ -146,6 +146,12 @@ class TestInstructions:
     def test_a_person_is_offered_as_a_way_to_reach_one(self):
         assert "a person (live chat or phone)" in instructions(_req("write", ""), Workspace())
 
+    @pytest.mark.parametrize("mode,content", [("write", ""), ("improve", PERSONA)])
+    def test_suggestions_build_on_the_users_choices(self, mode, content):
+        text = instructions(_req(mode, content), Workspace())
+        assert "Build on what the user said and chose" in text
+        assert "never suggest replacing it" in text
+
     def test_it_is_registered(self):
         assert get_recipe("prompt") is PROMPT_RECIPE
 
