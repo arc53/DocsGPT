@@ -1,2 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Encoding ranks are SHA256-checked (docsgpt/utils.py); CRLF conversion breaks them.
+*.tiktoken binary
