@@ -121,6 +121,32 @@ def schema_problems(schema: dict, value: Any) -> list[str]:
     return problems
 
 
+def _option_label(option: Any) -> Any:
+    """An option sent as an object (``{"text": …}`` or ``{"label": …}``) as its text; anything else as it is."""
+    if isinstance(option, dict):
+        for key in ("label", "text"):
+            if isinstance(option.get(key), str):
+                return option[key]
+    return option
+
+
+def _with_option_labels(arguments: dict) -> dict:
+    """``ask_user`` arguments with options sent as objects turned into their text.
+
+    Models mix up the question and option shapes and send ``{"text": …, "multi": …}``
+    as an option; reading its text spares a correction round.
+    """
+    questions = arguments.get("questions")
+    if not isinstance(questions, list):
+        return arguments
+    shaped = [
+        {**q, "options": [_option_label(o) for o in q["options"]]}
+        if isinstance(q, dict) and isinstance(q.get("options"), list) else q
+        for q in questions
+    ]
+    return {**arguments, "questions": shaped}
+
+
 def normalize_questions(arguments: dict) -> tuple[Optional[str], list[dict]]:
     """Check and shape ``ask_user`` arguments into the ``questions`` event payload.
 
@@ -137,6 +163,7 @@ def normalize_questions(arguments: dict) -> tuple[Optional[str], list[dict]]:
     Raises:
         ProposalInvalid: No usable question, or a question with exactly one option.
     """
+    arguments = _with_option_labels(arguments)
     problems = schema_problems(QUESTIONS_SCHEMA, arguments)
     if problems:
         raise ProposalInvalid(problems)

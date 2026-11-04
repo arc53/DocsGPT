@@ -78,6 +78,16 @@ class TestOutput:
         assert questions[1]["placeholder"] is None
         assert [o["label"] for o in questions[1]["options"]] == ["Friendly", "Formal"]
 
+    def test_options_sent_as_objects_are_read_by_their_text(self):
+        _, questions = normalize_questions({"questions": [{"text": "Tone?", "options": [
+            {"text": "Friendly", "multi": False}, {"label": "Formal"}, "Plain",
+        ]}]})
+        assert [o["label"] for o in questions[0]["options"]] == ["Friendly", "Formal", "Plain"]
+
+    def test_an_option_object_without_text_is_still_rejected(self):
+        with pytest.raises(ProposalInvalid, match="not of type 'string'"):
+            normalize_questions({"questions": [{"text": "Tone?", "options": [{"multi": True}, "Formal"]}]})
+
     def test_question_rounds_count_earlier_questions(self):
         messages = [
             {"role": "user", "content": "x"},
