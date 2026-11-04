@@ -131,6 +131,18 @@ class TestInstructions:
         assert "can't transfer the chat to a person" in text
         assert "never \"I'll connect you\"" in text
 
+    def test_the_first_round_fits_the_question_cap(self):
+        text = instructions(_req("write", ""), Workspace())
+        assert "one round of at most 3 questions" in text
+        assert "Don't ask about off-limits topics" in text
+        assert "off-limits topics as a pick-any question" not in text
+
+    def test_a_second_round_asks_for_the_details_a_pick_needs(self):
+        text = instructions(_req("write", ""), Workspace())
+        for rule in ("a detail only the user knows", "the email address", "the form or page link",
+                     "how people reach a person", "only for what the user picked"):
+            assert rule in text, rule
+
     def test_a_person_is_offered_as_a_way_to_reach_one(self):
         assert "a person (live chat or phone)" in instructions(_req("write", ""), Workspace())
 

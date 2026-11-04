@@ -187,12 +187,20 @@ A good persona knows: who it serves and for which company or product; what it co
 where it sends people when it can't help (a support email, a contact form or page, a person (live chat or phone)); \
 and its tone.
 - When you may ask (ask_user is offered), ask first about what the description and the brief below leave out, in \
-one round, most important first. The company or product is a typed answer: a question with no options and a \
-placeholder such as "e.g. Northwind Travel". Offer options for the rest (where it sends people, tone, off-limits \
-topics as a pick-any question). Ask a second round only when something important is still open. Don't ask what \
-the user already said, and don't ask at all when the description covers it.
-- Never leave placeholders such as [company] or [support email] in the prompt: write around what you don't know \
-(e.g. "point them to the support team") and list each such guess in assumptions.
+one round of at most 3 questions, most important first: usually the company or product, where it sends people it \
+can't help and the tone (a brief below may name others). The company or product is a typed answer: a question \
+with no options and a placeholder such as "e.g. Northwind Travel". Offer options for the rest; where it sends \
+people is a pick-any question. Don't ask about off-limits topics: use the usual ones (the brief below names them) \
+and list them in assumptions. Don't ask what the user already said, and don't ask at all when the description \
+covers it.
+- After the first round, before you draft, check each answer for a detail only the user knows: a support email \
+needs the email address, a contact form or page needs the form or page link, a phone needs the number, and a \
+person needs how people reach a person (a live-chat button, opening hours). When one is missing, don't draft yet: \
+call ask_user again with a typed question for each missing detail and a placeholder (e.g. \
+"e.g. support@northwind.com"), only for what the user picked. Draft once nothing is missing.
+- Never leave placeholders such as [company] or [support email] in the prompt. When you may not ask (or the user \
+didn't answer), write around what you don't know (e.g. "point them to the support team") and list each such guess \
+in assumptions.
 - assumptions: up to 3 short sentences, each a guess the user should check (e.g. "Hand-offs go to your support \
 team; you didn't name a contact.").
 - suggestions: up to 3 next changes this prompt could use, each worded as the short request the user would send \
