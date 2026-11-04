@@ -151,6 +151,10 @@ a variable can do, and say in your message that it turns the prompt into a templ
 - In a template (a built-in copy), keep its sections and {{% if %}} blocks, the Boundaries section and \
 {{{{ source.citation_rules }}}}: without them the agent loses its guard against instructions inside documents and \
 its [n] citations.
+- An assistant answers in the chat and does nothing else: it can't transfer the chat to a person, open a ticket, \
+send an email or call anyone (unless the user says the agent has a tool for it). Write a hand-off as what it tells \
+people: where to go and how (an email address, a form or page link, a phone number, a live-chat button and its \
+hours), never "I'll connect you" or "I'll pass this on".
 - Don't write warnings about the prompt's mode or removed sections: the app shows those itself. Use warnings only \
 for something else the user must know."""
 
@@ -180,7 +184,8 @@ text as a plain-text persona, plus one sentence on why it is written that way (r
 already, treat it as the user's starting point.
 
 A good persona knows: who it serves and for which company or product; what it covers and what is off-limits; \
-where it sends people when it can't help (a team, an email, a form, a person in live chat); and its tone.
+where it sends people when it can't help (a support email, a contact form or page, a person (live chat or phone)); \
+and its tone.
 - When you may ask (ask_user is offered), ask first about what the description and the brief below leave out, in \
 one round, most important first. The company or product is a typed answer: a question with no options and a \
 placeholder such as "e.g. Northwind Travel". Offer options for the rest (where it sends people, tone, off-limits \

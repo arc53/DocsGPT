@@ -125,6 +125,15 @@ class TestInstructions:
         assert "changes to the prompt's text" in text
         assert "knowledge or tools" in text
 
+    @pytest.mark.parametrize("mode,content", [("write", ""), ("improve", PERSONA)])
+    def test_hand_offs_say_where_to_go_not_promise_a_transfer(self, mode, content):
+        text = instructions(_req(mode, content), Workspace())
+        assert "can't transfer the chat to a person" in text
+        assert "never \"I'll connect you\"" in text
+
+    def test_a_person_is_offered_as_a_way_to_reach_one(self):
+        assert "a person (live chat or phone)" in instructions(_req("write", ""), Workspace())
+
     def test_it_is_registered(self):
         assert get_recipe("prompt") is PROMPT_RECIPE
 
