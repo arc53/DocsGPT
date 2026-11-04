@@ -1500,6 +1500,13 @@ class MCPOAuthManager:
         """
         Handle OAuth callback from provider.
 
+        The callback is only accepted for a sign-in this server actually
+        started. The flow writes ``auth_url:<state>`` before the user is sent
+        to the provider, and removes it once the flow ends, so the key's
+        presence is the record of a live sign-in. A callback for any other
+        state is refused, so a stray or forged redirect cannot be reported
+        as a successful authorization.
+
         Args:
             state: The state parameter from OAuth callback
             code: The authorization code from OAuth callback
@@ -1512,6 +1519,9 @@ class MCPOAuthManager:
         try:
             if not self.redis_client or not state:
                 raise Exception("Redis client or state not provided")
+            if not self._state_is_pending(state):
+                logger.warning("Refused an OAuth callback for an unknown state")
+                return False
             if error:
                 error_key = f"{self.redis_prefix}error:{state}"
                 self.redis_client.setex(error_key, 300, error)
@@ -1528,6 +1538,23 @@ class MCPOAuthManager:
             return True
         except Exception as e:
             logger.error("Error handling OAuth callback: %s", e)
+            return False
+
+    def _state_is_pending(self, state: str) -> bool:
+        """Check whether a sign-in is waiting for the callback of ``state``.
+
+        Args:
+            state: The state parameter from the OAuth callback.
+
+        Returns:
+            True when a sign-in for ``state`` is in flight.
+        """
+        if not self.redis_client or not state:
+            return False
+        try:
+            return bool(self.redis_client.exists(f"{self.redis_prefix}auth_url:{state}"))
+        except Exception as e:
+            logger.warning("Could not check the pending OAuth state: %s", e)
             return False
 
     def get_oauth_status(self, task_id: str, user_id: str) -> Dict[str, Any]:
