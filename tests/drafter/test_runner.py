@@ -142,6 +142,65 @@ class TestLoop:
         assert fake.calls[1]["messages"][-1]["role"] == "user"
         assert "not accepted" in fake.calls[1]["messages"][-1]["content"]
 
+    @pytest.mark.parametrize("answer", [
+        text(json.dumps({"type": "proposal", "proposal": PROPOSAL})),
+        calls(tool_call("submit_proposal", {"type": "proposal", "proposal": PROPOSAL})),
+    ])
+    def test_a_copied_proposal_event_is_read_as_its_proposal(self, answer):
+        fake = FakeLLM(answer)
+        events = _run(fake)
+        assert events[-1]["type"] == "proposal"
+        assert events[-1]["proposal"]["fields"]["name"] == "Shipping help"
+        assert len(fake.calls) == 1
+
+    def test_earlier_turns_replay_as_the_calls_that_made_them(self):
+        asked = {"type": "questions", "questions": [{
+            "id": "q1", "text": "Where should refunds go?", "note": None, "multi": False, "placeholder": None,
+            "options": [{"id": "a", "label": "Email support"}, {"id": "b", "label": "Stop"}],
+        }]}
+        proposed = {"type": "proposal", "proposal": {**PROPOSAL, "checks": [{"id": "x"}]}}
+        history = [
+            {"role": "user", "content": "x"}, {"role": "assistant", "content": json.dumps(asked)},
+            {"role": "user", "content": "y"}, {"role": "assistant", "content": json.dumps(proposed)},
+            {"role": "user", "content": "z"},
+        ]
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake, *history)
+        sent = fake.calls[0]["messages"]
+        assert [m["role"] for m in sent] == ["system", "user", "assistant", "tool", "user", "assistant", "tool", "user"]
+        ask, submit = sent[2]["tool_calls"][0], sent[5]["tool_calls"][0]
+        assert ask["function"]["name"] == "ask_user"
+        assert json.loads(ask["function"]["arguments"]) == {"questions": [
+            {"text": "Where should refunds go?", "multi": False, "options": ["Email support", "Stop"]},
+        ]}
+        assert submit["function"]["name"] == "submit_proposal"
+        assert json.loads(submit["function"]["arguments"]) == PROPOSAL
+        assert sent[3]["tool_call_id"] == ask["id"] and sent[6]["tool_call_id"] == submit["id"]
+        assert ask["id"] != submit["id"]
+
+    def test_without_tools_earlier_turns_replay_in_the_json_protocol(self):
+        history = [
+            {"role": "user", "content": "x"},
+            {"role": "assistant", "content": json.dumps({"type": "proposal", "proposal": {**PROPOSAL, "checks": []}})},
+            {"role": "user", "content": "y"},
+        ]
+        fake = FakeLLM(text(json.dumps({"type": "proposal", **PROPOSAL})))
+        _run(fake, *history, model={**MODEL, "supports_tools": False})
+        assert json.loads(fake.calls[0]["messages"][2]["content"]) == {"type": "proposal", **PROPOSAL}
+
+    def test_questions_replay_as_text_when_the_turn_takes_none(self):
+        asked = json.dumps({"type": "questions", "questions": [{"id": "q1", "text": "Q?", "options": []}]})
+        history = [
+            {"role": "user", "content": "x"}, {"role": "assistant", "content": asked},
+            {"role": "user", "content": "y"}, {"role": "assistant", "content": asked},
+            {"role": "user", "content": "z"},
+        ]
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        _run(fake, *history)
+        replayed = fake.calls[0]["messages"][2]
+        assert "tool_calls" not in replayed
+        assert json.loads(replayed["content"]) == {"type": "questions", "questions": [{"text": "Q?", "options": []}]}
+
     def test_a_stop_before_the_first_call_ends_quietly(self):
         fake = FakeLLM()
         events = _run(fake, should_stop=lambda: True)

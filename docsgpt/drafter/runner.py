@@ -136,10 +136,58 @@ def question_rounds(messages: list[dict]) -> int:
     return rounds
 
 
+def _replayed_turn(recipe: Recipe, content: Any) -> Optional[tuple[str, dict]]:
+    """An earlier drafter turn (the JSON of its questions or proposal event) as the terminal call that made it.
+
+    The event carries what the server built (ids, option objects, checks); the
+    model is shown only the arguments it could have sent, so it has no event
+    shape to copy into its next answer.
+
+    Returns:
+        ``(tool name, arguments)``, or None when the content is no such event.
+    """
+    event = parse_json_object(content)
+    if not isinstance(event, dict):
+        return None
+    if event.get("type") == "questions" and isinstance(event.get("questions"), list):
+        questions = []
+        for question in event["questions"]:
+            if not isinstance(question, dict):
+                continue
+            args = {k: question[k] for k in ("text", "note", "multi", "placeholder") if question.get(k) is not None}
+            args["options"] = [o["label"] for o in question.get("options") or []
+                               if isinstance(o, dict) and isinstance(o.get("label"), str)]
+            questions.append(args)
+        return ASK_USER, {"questions": questions}
+    if event.get("type") == "proposal" and isinstance(event.get("proposal"), dict):
+        fields = recipe.proposal_schema.get("properties", {})
+        return SUBMIT_PROPOSAL, {k: v for k, v in event["proposal"].items() if k in fields}
+    return None
+
+
+def _replay(name: str, args: dict, call_id: str, as_call: bool) -> list[dict]:
+    """The messages that show the model an earlier turn: its tool call and result, or its JSON answer."""
+    if not as_call:
+        kind = "questions" if name == ASK_USER else "proposal"
+        return [{"role": "assistant", "content": json.dumps({"type": kind, **args}, ensure_ascii=False)}]
+    return [
+        {"role": "assistant", "content": None, "tool_calls": [{
+            "id": call_id,
+            "type": "function",
+            "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)},
+        }]},
+        {"role": "tool", "tool_call_id": call_id, "content": "Shown to the user."},
+    ]
+
+
 def build_messages(
     req: DraftRequest, recipe: Recipe, ws: Workspace, *, tool_mode: bool, allow_questions: bool
 ) -> list[dict]:
     """The system prompt and the conversation, with the workspace fenced next to the latest request.
+
+    Earlier drafter turns are replayed as the terminal calls that made them
+    (as JSON answers without tool calling, and for ``ask_user`` when this turn
+    doesn't offer it).
 
     Args:
         req: The draft request.
@@ -167,6 +215,12 @@ def build_messages(
     last = len(req.messages) - 1
     for index, message in enumerate(req.messages):
         content = message["content"]
+        replayed = _replayed_turn(recipe, content) if message["role"] == "assistant" else None
+        if replayed is not None:
+            name, args = replayed
+            offered = tool_mode and (name == SUBMIT_PROPOSAL or allow_questions)
+            messages.extend(_replay(name, args, f"call_turn_{index}", offered))
+            continue
         if index == last:
             content = f"{data}\n\nThe user's request:\n{content}"
         messages.append({"role": message["role"], "content": content})
@@ -241,6 +295,9 @@ class _Turn:
             message, questions = normalize_questions(args)
             events = [{"type": "message", "text": message}] if message else []
             return events + [{"type": "questions", "questions": questions}]
+        if isinstance(args.get("proposal"), dict) and set(args) <= {"type", "proposal"}:
+            # The model copied a proposal event ({"type": "proposal", "proposal": {…}}): read what's inside.
+            args = args["proposal"]
         args = {k: v for k, v in args.items() if k != "type"}
         problems = schema_problems(self.recipe.proposal_schema, args)
         if problems:
