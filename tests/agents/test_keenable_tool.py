@@ -98,6 +98,26 @@ class TestKeenableExecuteAction:
         assert "failed" in result["message"].lower()
 
     @patch("docsgpt.agents.tools.keenable.requests.post")
+    def test_search_invalid_json(self, mock_post, keyless_tool):
+        resp = _response()
+        resp.json.side_effect = ValueError("not json")
+        mock_post.return_value = resp
+
+        result = keyless_tool.execute_action("keenable_web_search", query="test")
+
+        assert result["status_code"] == 500
+        assert result["results"] == []
+
+    @patch("docsgpt.agents.tools.keenable.requests.post")
+    def test_search_null_results(self, mock_post, keyless_tool):
+        mock_post.return_value = _response(payload={"results": None})
+
+        result = keyless_tool.execute_action("keenable_web_search", query="test")
+
+        assert result["status_code"] == 500
+        assert result["results"] == []
+
+    @patch("docsgpt.agents.tools.keenable.requests.post")
     def test_search_network_error(self, mock_post, keyless_tool):
         mock_post.side_effect = requests.ConnectionError("boom")
 
@@ -110,7 +130,7 @@ class TestKeenableExecuteAction:
     def test_fetch_page_keyless(self, mock_get, keyless_tool):
         mock_get.return_value = _response(
             payload={
-                "url": "https://example.com",
+                "url": "https://example.com/canonical",
                 "title": "Example",
                 "content": "# Example",
             }
@@ -123,12 +143,48 @@ class TestKeenableExecuteAction:
         assert result["status_code"] == 200
         assert result["content"] == "# Example"
         assert result["title"] == "Example"
-        assert result["url"] == "https://example.com"
+        assert result["url"] == "https://example.com/canonical"
         args, kwargs = mock_get.call_args
         assert args[0] == "https://api.keenable.ai/v1/fetch/public"
         assert kwargs["params"]["url"] == "https://example.com"
         assert kwargs["params"]["live"] == "true"
         assert kwargs["headers"]["X-Keenable-Title"] == "DocsGPT"
+
+    @patch("docsgpt.agents.tools.keenable.requests.get")
+    def test_fetch_page_forwards_max_chars(self, mock_get, keyless_tool):
+        mock_get.return_value = _response(
+            payload={"url": "https://example.com", "title": "", "content": ""}
+        )
+
+        keyless_tool.execute_action(
+            "keenable_fetch_page", url="https://example.com", max_chars=40000
+        )
+
+        _, kwargs = mock_get.call_args
+        assert kwargs["params"]["max_chars"] == 40000
+
+    @patch("docsgpt.agents.tools.keenable.requests.get")
+    def test_fetch_page_clamps_max_chars_to_one(self, mock_get, keyless_tool):
+        mock_get.return_value = _response(
+            payload={"url": "https://example.com", "title": "", "content": ""}
+        )
+
+        keyless_tool.execute_action(
+            "keenable_fetch_page", url="https://example.com", max_chars=0
+        )
+
+        _, kwargs = mock_get.call_args
+        assert kwargs["params"]["max_chars"] == 1
+
+    @patch("docsgpt.agents.tools.keenable.requests.get")
+    def test_fetch_page_invalid_json(self, mock_get, keyless_tool):
+        resp = _response()
+        resp.json.side_effect = ValueError("not json")
+        mock_get.return_value = resp
+
+        result = keyless_tool.execute_action("keenable_fetch_page", url="https://x.y")
+
+        assert result["status_code"] == 500
 
     @patch("docsgpt.agents.tools.keenable.requests.get")
     def test_fetch_page_error(self, mock_get, keyed_tool):

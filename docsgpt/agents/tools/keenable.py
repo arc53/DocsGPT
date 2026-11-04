@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import requests
 
@@ -56,7 +57,7 @@ class KeenableSearchTool(Tool):
             headers["X-Keenable-Title"] = APP_TITLE
         return headers
 
-    def execute_action(self, action_name: str, **kwargs) -> dict:
+    def execute_action(self, action_name: str, **kwargs: Any) -> dict:
         """Run one of the tool's actions.
 
         Args:
@@ -128,15 +129,23 @@ class KeenableSearchTool(Tool):
             }
 
         if response.status_code == 200:
-            results = [
-                {
-                    "title": item.get("title", ""),
-                    "url": item.get("url", ""),
-                    "snippet": item.get("snippet") or item.get("description", ""),
-                    "published_at": item.get("published_at"),
+            try:
+                results = [
+                    {
+                        "title": item.get("title", ""),
+                        "url": item.get("url", ""),
+                        "snippet": item.get("snippet") or item.get("description", ""),
+                        "published_at": item.get("published_at"),
+                    }
+                    for item in response.json().get("results", [])
+                ]
+            except (AttributeError, TypeError, ValueError) as e:
+                logger.error("Keenable web search returned an invalid response: %s", e)
+                return {
+                    "status_code": 500,
+                    "results": [],
+                    "message": f"Search failed: invalid response ({e})",
                 }
-                for item in response.json().get("results", [])
-            ]
             return {
                 "status_code": response.status_code,
                 "results": results,
@@ -161,6 +170,10 @@ class KeenableSearchTool(Tool):
         """
         logger.debug("Fetching page with Keenable: %s", url)
 
+        try:
+            max_chars = max(1, int(max_chars))
+        except (TypeError, ValueError):
+            max_chars = 20000
         params = {"url": url, "max_chars": max_chars}
         if live:
             params["live"] = "true"
@@ -177,7 +190,13 @@ class KeenableSearchTool(Tool):
             return {"status_code": 500, "message": f"Fetch failed: {e}"}
 
         if response.status_code == 200:
-            data = response.json()
+            try:
+                data = response.json()
+                if not isinstance(data, dict):
+                    raise TypeError(f"expected an object, got {type(data).__name__}")
+            except (TypeError, ValueError) as e:
+                logger.error("Keenable fetch returned an invalid response: %s", e)
+                return {"status_code": 500, "message": f"Fetch failed: invalid response ({e})"}
             return {
                 "status_code": response.status_code,
                 "url": data.get("url", url),
@@ -246,6 +265,7 @@ class KeenableSearchTool(Tool):
                         "max_chars": {
                             "type": "integer",
                             "description": "Maximum characters of page content to return (default: 20000)",
+                            "minimum": 1,
                         },
                         "live": {
                             "type": "boolean",
