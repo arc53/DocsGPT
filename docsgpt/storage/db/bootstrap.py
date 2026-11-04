@@ -461,7 +461,12 @@ def _run_migrations(log: logging.Logger) -> None:
     if not alembic_ini.exists():
         raise RuntimeError(f"alembic.ini not found at {alembic_ini}")
 
-    cfg = Config(str(alembic_ini))
+    # Config(path) reads the ini with the locale-default encoding (GBK on
+    # Chinese Windows), and alembic.ini's script_location needs ``here``,
+    # which a bare Config() doesn't define — so read UTF-8 and set it.
+    cfg = Config()
+    cfg.file_config["DEFAULT"]["here"] = alembic_ini.parent.as_posix()
+    cfg.file_config.read(alembic_ini, encoding="utf-8")
     cfg.set_main_option("script_location", str(alembic_ini.parent / "alembic"))
     # We migrate in-process, after setup_logging() has configured the root
     # logger. env.py honours this by skipping fileConfig, which would
