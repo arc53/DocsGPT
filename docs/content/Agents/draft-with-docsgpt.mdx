@@ -1,7 +1,7 @@
 ---
 title: Draft with DocsGPT
 description: Build an agent step by step with DocsGPT in a side panel, improve or write a prompt, or get Insights topics suggested from an agent's conversations. You review every drafted field and save it yourself. Covers the steps, what it may change, the model it runs on, usage, privacy and the operator settings.
-lastUpdated: 2026-11-03
+lastUpdated: 2026-11-04
 ---
 
 import { Callout } from 'nextra/components'
@@ -111,9 +111,9 @@ The page names the agents that use the prompt, and the panel reminds you that a 
 
 ### Write a new prompt
 
-Before it writes, DocsGPT asks about what your description leaves out: usually the company or product (you type the answer), where the assistant sends people it can't help, and the tone. A starting point tells it what that kind of prompt needs, so a website chat asks about the hand-off, and a research assistant about your documents and how answers should look. It asks at most two rounds, and none when your description already covers it. **Skip and draft** writes the prompt straight away with what it knows.
+Before it writes, DocsGPT asks about what your description leaves out: usually the company or product (you type the answer), where the assistant sends people it can't help, and the tone. A starting point tells it what that kind of prompt needs, so a website chat asks about the hand-off, and a research assistant about your documents and how answers should look. When an answer needs a detail only you know, a second round asks for it: the support email address, the contact form's link, or how people reach a person (a live-chat button and its hours). The prompt then tells people exactly where to go, because an assistant can't transfer a chat or contact anyone itself; it never promises "I'll connect you". It asks at most two rounds, and none when your description already covers it. **Skip and draft** writes the prompt straight away with what it knows.
 
-With the draft in the text, the panel lists what DocsGPT guessed under **I assumed**, such as "Hand-offs go to your support team", since it never leaves blanks like "[support email]" in the prompt. **Change** next to a guess puts it in the ask bar for your correction. Read the prompt through, then choose **Save prompt** in the panel (the same as **Save**), or ask for a change. Under **You could also**, the panel offers up to three next changes that fit the prompt, such as "Add your opening hours"; choosing one sends it. Improvements end with these suggestions too.
+With the draft in the text, the panel lists what DocsGPT guessed under **I assumed**, such as "Hand-offs go to your support team", since it never leaves blanks like "[support email]" in the prompt. **Change** next to a guess puts it in the ask bar for your correction. Read the prompt through, then choose **Save prompt** in the panel (the same as **Save**), or ask for a change. Under **You could also**, the panel offers up to three next changes that build on your answers, such as "Add your opening hours"; choosing one sends it. Improvements end with these suggestions too.
 
 ### Plain text by default
 
