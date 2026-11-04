@@ -48,10 +48,17 @@ _BREADCRUMB_RE = re.compile(
     re.IGNORECASE,
 )
 
+_NAV_VERBS = (
+    r"is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|shall|should|"
+    r"may|might|must|can|could|returns?|returning|returned|requires?|requiring|required|"
+    r"fails?|failing|failed|sends?|sending|sent|receives?|receiving|received|responds?|responding|responded"
+)
+
 _NAV_CONTROL_RE = re.compile(
     r"^(?:#+\s*)?(?:table of contents|on this page|in this article|quick links|"
     r"skip to (?:main )?content|back to top|return to top|"
-    r"previous page:?(?:\s+[^\s.!?]+){0,6}|next page:?(?:\s+[^\s.!?]+){0,6}|«\s*previous\s*|\s*next\s*»|"
+    r"(?:previous|next)\s+page(?::\s*(?:\[[^\]]+\]|[«»<>‹›←→]|\d+|(?!.*?\b(?:" + _NAV_VERBS + r")\b)[\w-]+(?:\s+[\w-]+){0,3}))?|"
+    r"«\s*previous\s*|\s*next\s*»|"
     r"edit this page(?: on github)?|was this (?:page|article) helpful\??|"
     r"share this page|print this page)$",
     re.IGNORECASE,

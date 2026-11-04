@@ -258,6 +258,7 @@ class TestBoilerplatePruningRules:
             "Next page: The API returns 401 for expired credentials.",
             "Next page: What is the default timeout?",
             "Previous page: This requires administrative privileges!",
+            "Next page: The API returns 401",
         ]
         for line in cases:
             cleaned = prune_chunk_text(line, query="")
