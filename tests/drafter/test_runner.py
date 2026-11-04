@@ -88,6 +88,13 @@ class TestOutput:
         with pytest.raises(ProposalInvalid, match="not of type 'string'"):
             normalize_questions({"questions": [{"text": "Tone?", "options": [{"multi": True}, "Formal"]}]})
 
+    def test_a_question_without_an_options_list_takes_a_typed_answer(self):
+        _, questions = normalize_questions({"questions": [
+            {"text": "Which company?", "placeholder": "e.g. Northwind", "note": None, "multi": None},
+        ]})
+        assert questions[0]["options"] == [] and questions[0]["placeholder"] == "e.g. Northwind"
+        assert questions[0]["note"] is None and questions[0]["multi"] is False
+
     def test_question_rounds_count_earlier_questions(self):
         messages = [
             {"role": "user", "content": "x"},

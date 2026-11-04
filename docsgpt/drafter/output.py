@@ -130,20 +130,24 @@ def _option_label(option: Any) -> Any:
     return option
 
 
-def _with_option_labels(arguments: dict) -> dict:
-    """``ask_user`` arguments with options sent as objects turned into their text.
+def _shaped_questions(arguments: dict) -> dict:
+    """``ask_user`` arguments with the slips models make in the question shape undone.
 
-    Models mix up the question and option shapes and send ``{"text": …, "multi": …}``
-    as an option; reading its text spares a correction round.
+    Models mix up the question and option shapes: they send ``{"text": …, "multi": …}``
+    as an option, ``null`` for an optional field, or no ``options`` for a typed
+    answer. Reading those as meant spares a correction round.
     """
     questions = arguments.get("questions")
     if not isinstance(questions, list):
         return arguments
-    shaped = [
-        {**q, "options": [_option_label(o) for o in q["options"]]}
-        if isinstance(q, dict) and isinstance(q.get("options"), list) else q
-        for q in questions
-    ]
+    shaped = []
+    for question in questions:
+        if isinstance(question, dict):
+            question = {k: v for k, v in question.items() if v is not None}
+            options = question.get("options", [])
+            if isinstance(options, list):
+                question["options"] = [_option_label(o) for o in options]
+        shaped.append(question)
     return {**arguments, "questions": shaped}
 
 
@@ -163,7 +167,7 @@ def normalize_questions(arguments: dict) -> tuple[Optional[str], list[dict]]:
     Raises:
         ProposalInvalid: No usable question, or a question with exactly one option.
     """
-    arguments = _with_option_labels(arguments)
+    arguments = _shaped_questions(arguments)
     problems = schema_problems(QUESTIONS_SCHEMA, arguments)
     if problems:
         raise ProposalInvalid(problems)
