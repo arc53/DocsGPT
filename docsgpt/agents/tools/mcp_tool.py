@@ -51,7 +51,7 @@ from docsgpt.api.user.tasks import mcp_oauth_task
 from docsgpt.cache import get_redis_instance
 from docsgpt.core.settings import settings
 from docsgpt.events.keys import stream_key
-from docsgpt.security.encryption import decrypt_credentials
+from docsgpt.security.encryption import decrypt_tool_credentials
 from docsgpt.security.safe_url import UnsafeUserUrlError, guarded_async_client, validate_user_base_url
 
 logger = logging.getLogger(__name__)
@@ -228,7 +228,7 @@ class MCPTool(Tool):
 
         self.auth_credentials = {}
         if config.get("encrypted_credentials") and user_id:
-            self.auth_credentials = decrypt_credentials(
+            self.auth_credentials = decrypt_tool_credentials(
                 config["encrypted_credentials"], user_id
             )
         else:

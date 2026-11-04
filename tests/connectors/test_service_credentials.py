@@ -450,7 +450,7 @@ class TestReencrypt:
 
 
 class TestReencryptSavedSecrets:
-    """Secrets saved on tools and custom models, outside connections (v1 blobs)."""
+    """Secrets saved on tools and custom models, outside connections."""
 
     def _tool(self, conn, config, user="alice") -> str:
         return str(conn.execute(
@@ -477,7 +477,7 @@ class TestReencryptSavedSecrets:
 
     def test_rewrites_tool_and_custom_model_secrets_so_the_previous_key_can_go(self, pg_conn, monkeypatch):
         from docsgpt.core.settings import settings
-        from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+        from docsgpt.security.encryption import decrypt_tool_credentials, encrypt_credentials
 
         monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "old-key")
         tool = self._tool(pg_conn, {
@@ -496,12 +496,56 @@ class TestReencryptSavedSecrets:
         monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
         config = self._config(pg_conn, tool)
         assert config["server_url"] == "https://mcp.example.com"
-        assert decrypt_credentials(config["encrypted_credentials"], "alice") == {"api_key": "t"}
-        assert decrypt_credentials(config["encrypted_action_secrets"], "alice") == {"get": {"headers": {"X": "s"}}}
+        assert config["encrypted_credentials"].startswith("v2:")
+        assert decrypt_tool_credentials(config["encrypted_credentials"], "alice") == {"api_key": "t"}
+        assert decrypt_tool_credentials(config["encrypted_action_secrets"], "alice") == {"get": {"headers": {"X": "s"}}}
         blob = pg_conn.execute(
             text("SELECT api_key_encrypted FROM user_custom_models WHERE id = CAST(:i AS uuid)"), {"i": model}
         ).scalar()
-        assert decrypt_credentials(blob, "alice") == {"api_key": "m"}
+        assert blob.startswith("v2:")
+        assert decrypt_tool_credentials(blob, "alice") == {"api_key": "m"}
+
+    def test_v2_rows_on_the_previous_key_rotate_and_survive_key_removal(self, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.security.encryption import (
+            decrypt_tool_credentials,
+            encrypt_tool_credentials,
+        )
+
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "old-key")
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        tool = self._tool(pg_conn, {
+            "server_url": "https://mcp.example.com",
+            "encrypted_credentials": encrypt_tool_credentials({"api_key": "t"}, "alice"),
+            "encrypted_action_secrets": encrypt_tool_credentials(
+                {"get": {"headers": {"X": "s"}}}, "alice"
+            ),
+        })
+        model = self._model(pg_conn, encrypt_tool_credentials({"api_key": "m"}, "alice"))
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "new-key")
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-key")
+
+        with _patch_service_db(pg_conn):
+            counts = service.reencrypt_saved_secrets()
+
+        assert counts == {"rewritten": 3, "current": 0, "failed": 0}
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        config = self._config(pg_conn, tool)
+        assert config["encrypted_credentials"].startswith("v2:")
+        assert decrypt_tool_credentials(config["encrypted_credentials"], "alice") == {"api_key": "t"}
+        assert decrypt_tool_credentials(
+            config["encrypted_action_secrets"], "alice"
+        ) == {"get": {"headers": {"X": "s"}}}
+        blob = pg_conn.execute(
+            text("SELECT api_key_encrypted FROM user_custom_models WHERE id = CAST(:i AS uuid)"), {"i": model}
+        ).scalar()
+        assert decrypt_tool_credentials(blob, "alice") == {"api_key": "m"}
+
+        after_first = self._config(pg_conn, tool)
+        with _patch_service_db(pg_conn):
+            second = service.reencrypt_saved_secrets()
+        assert second == {"rewritten": 0, "current": 3, "failed": 0}
+        assert self._config(pg_conn, tool) == after_first
 
     def test_a_second_run_changes_nothing(self, pg_conn, monkeypatch):
         from docsgpt.core.settings import settings

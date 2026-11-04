@@ -22,7 +22,7 @@ from docsgpt.cache import get_redis_instance
 from docsgpt.connectors.resolve import REMOVED_CONNECTION_KEY
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.guardrails import tool_descriptions
-from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import decrypt_tool_credentials, encrypt_tool_credentials
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
 )
@@ -211,7 +211,7 @@ def _stored_mcp_credentials(existing_doc: dict, owner_id: str) -> dict:
 
     existing_config = existing_doc.get("config") or {}
     if existing_config.get("encrypted_credentials"):
-        return decrypt_credentials(existing_config["encrypted_credentials"], owner_id)
+        return decrypt_tool_credentials(existing_config["encrypted_credentials"], owner_id)
     connection_id = existing_doc.get("connection_id")
     if not connection_id:
         return {}
@@ -490,7 +490,7 @@ class MCPServerSave(Resource):
             storage_config = config.copy()
 
             if merged_credentials:
-                storage_config["encrypted_credentials"] = encrypt_credentials(
+                storage_config["encrypted_credentials"] = encrypt_tool_credentials(
                     merged_credentials, owner_id
                 )
 

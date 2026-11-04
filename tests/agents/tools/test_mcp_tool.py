@@ -107,7 +107,7 @@ class TestMCPToolInit:
         from docsgpt.agents.tools.mcp_tool import MCPTool
 
         with patch.object(MCPTool, "_setup_client"), \
-             patch("docsgpt.agents.tools.mcp_tool.decrypt_credentials",
+             patch("docsgpt.agents.tools.mcp_tool.decrypt_tool_credentials",
                    return_value={"bearer_token": "decrypted_tok"}):
             tool = MCPTool(
                 {
