@@ -51,13 +51,23 @@ _BREADCRUMB_RE = re.compile(
 _NAV_VERBS = (
     r"is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|shall|should|"
     r"may|might|must|can|could|returns?|returning|returned|requires?|requiring|required|"
-    r"fails?|failing|failed|sends?|sending|sent|receives?|receiving|received|responds?|responding|responded"
+    r"fails?|failing|failed|sends?|sending|sent|receives?|receiving|received|responds?|responding|responded|"
+    r"access(?:es|ed|ing)?|allows?|allowing|allowed|provides?|providing|provided|uses?|using|used"
+)
+
+_NAV_LABEL_PAT = (
+    r"(?:"
+    r"\[(?!.*?\b(?:" + _NAV_VERBS + r")\b)[^\]\r\n.!?]{1,60}\](?:\([^\)]+\))?|"
+    r"[«»<>‹›←→]|\d+|"
+    r"(?!.*?\b(?:" + _NAV_VERBS + r")\b)[\w\-&/]+(?:\s+[\w\-&/]+){0,5}"
+    r")"
 )
 
 _NAV_CONTROL_RE = re.compile(
     r"^(?:#+\s*)?(?:table of contents|on this page|in this article|quick links|"
     r"skip to (?:main )?content|back to top|return to top|"
-    r"(?:previous|next)\s+page(?::\s*(?:\[[^\]]+\]|[«»<>‹›←→]|\d+|(?!.*?\b(?:" + _NAV_VERBS + r")\b)[\w-]+(?:\s+[\w-]+){0,3}))?|"
+    r"(?:previous|next)\s+page(?::\s*|\s+)" + _NAV_LABEL_PAT + r"|"
+    r"(?:previous|next)\s+page|"
     r"«\s*previous\s*|\s*next\s*»|"
     r"edit this page(?: on github)?|was this (?:page|article) helpful\??|"
     r"share this page|print this page)$",

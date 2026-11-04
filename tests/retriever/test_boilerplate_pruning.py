@@ -259,10 +259,25 @@ class TestBoilerplatePruningRules:
             "Next page: What is the default timeout?",
             "Previous page: This requires administrative privileges!",
             "Next page: The API returns 401",
+            "Next page The API returns 401",
+            "Next page: [Administrators can access all records.]",
+            "Next page [Administrators can access all records.]",
         ]
         for line in cases:
             cleaned = prune_chunk_text(line, query="")
             assert cleaned == line, f"Factual line was pruned: {line!r}"
+
+    def test_prunes_navigation_labels_with_or_without_colon_and_bracketed(self):
+        cases = [
+            "Next page Authentication",
+            "previous page Overview",
+            "Next page: API Reference Guide and Setup Overview",
+            "Next page API Reference Guide and Setup Overview",
+            "Next page: [Getting Started]",
+            "Next page [Getting Started]",
+        ]
+        for line in cases:
+            assert prune_chunk_text(line, query="") == "", f"Navigation line was not pruned: {line!r}"
 
     def test_preserves_indented_markdown_code_and_pipe_tables(self):
         """Four-space indented lines and tables without edge pipes must survive pruning."""
