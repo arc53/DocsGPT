@@ -39,6 +39,12 @@ def test_script_and_style_contents_stay_out():
     assert _text(html) == "x\ny"
 
 
+def test_template_contents_leave_the_line_alone():
+    """A <template> is not rendered, so its line breaks and blocks are not either."""
+    assert _text("<p>before<template><br></template>after</p>") == "beforeafter"
+    assert _text("<p>a<template><div>hidden</div></template>b</p>") == "ab"
+
+
 def test_empty_blocks_leave_no_blank_lines():
     assert _text("<div></div><p>only this</p><div>   </div>") == "only this"
 

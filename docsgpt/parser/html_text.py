@@ -135,6 +135,9 @@ def html_to_text(soup: "BeautifulSoup") -> str:
             if id(node) in wanted:
                 sink.append(node if pre_depth else _COLLAPSIBLE_WHITESPACE.sub(" ", node))
                 after_inline[-1] = False
+        elif node.name == "template":
+            # Not rendered: its <br> and blocks must not break the line around it.
+            continue
         elif node.name == "br":
             sink.append("\n")
             after_inline[-1] = False
