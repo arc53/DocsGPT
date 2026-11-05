@@ -548,7 +548,11 @@ export function agentDraftContext(
       },
       analytics: {
         enabled: form.analytics.enabled,
-        topics: form.analytics.topics.map((topic) => topic.name),
+        topics: form.analytics.topics.map(({ name, overlap }) => ({
+          name,
+          overlap,
+        })),
+        hidden_folders: form.analytics.hidden_folders,
       },
     },
   };

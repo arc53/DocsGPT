@@ -37,6 +37,7 @@ from docsgpt.drafter.prompt_rules import (
 )
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 from docsgpt.drafter.runner import question_rounds
+from docsgpt.drafter.topics_recipe import TopicsWorkspace
 
 AGENT_TYPES = ("classic", "research")
 BUILTIN_PROMPTS = ("default", "creative", "strict")
@@ -110,12 +111,15 @@ class AgentWorkspace(Workspace):
         guardrail_menu: The :data:`GUARDRAIL_MENU` checks this instance can add (empty while guardrails are off).
         insights: Whether Insights labels conversations here (``DECISION_ANALYTICS_ENABLED`` with the decision
             model available, as ``/api/config`` reports it).
-        max_topics: ``ANALYTICS_MAX_TOPICS``, the most one-per-question topics an agent has.
+        max_topics: ``ANALYTICS_MAX_TOPICS``, the most one-per-question topics an agent has, folders included.
+        folders: The source folders of the form's sources ``{name, description}``, largest first (safety step
+            only): each is already an option of the agent's topic question.
     """
 
     guardrail_menu: list[str] = field(default_factory=list)
     insights: bool = False
     max_topics: int = 15
+    folders: list[dict] = field(default_factory=list)
 
 
 def _ids(value: Any) -> list[str]:
@@ -150,6 +154,9 @@ def _parse_policy(form_raw: dict) -> dict:
         value = None
     guardrails = form_raw.get("guardrails") if isinstance(form_raw.get("guardrails"), dict) else {}
     analytics = form_raw.get("analytics") if isinstance(form_raw.get("analytics"), dict) else {}
+    topics = analytics.get("topics") if isinstance(analytics.get("topics"), list) else []
+    overlapping = [t.get("name") for t in topics if isinstance(t, dict) and t.get("overlap") is True]
+    names = [t.get("name") if isinstance(t, dict) else t for t in topics]
     return {
         "limits": {"mode": mode, "value": value},
         "guardrails": {
@@ -160,7 +167,9 @@ def _parse_policy(form_raw: dict) -> dict:
         # Collecting insights is on by default for an agent.
         "analytics": {
             "enabled": analytics.get("enabled") is not False,
-            "topics": _names(analytics.get("topics"), TOPIC_NAME_CHARS),
+            "topics": _names(names, TOPIC_NAME_CHARS),
+            "overlapping": _names(overlapping, TOPIC_NAME_CHARS),
+            "hidden_folders": _names(analytics.get("hidden_folders"), TOPIC_NAME_CHARS),
         },
     }
 
@@ -242,14 +251,31 @@ def insights_available() -> bool:
         return False
 
 
+def source_folders(source_ids: list[str]) -> list[dict]:
+    """The folders of these sources, as the agent's topic question offers them (``topics.folders``)."""
+    from docsgpt.analytics import topics as analytics_topics
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+    from docsgpt.storage.db.session import db_readonly
+
+    if not source_ids:
+        return []
+    with db_readonly() as conn:
+        rows = SourcesRepository(conn).list_by_ids(source_ids)
+    return analytics_topics.folders(rows)
+
+
 def _load(user_id: str, context: dict) -> AgentWorkspace:
     ws = load_workspace(user_id, agent_id=context.get("agent_id"))
-    return AgentWorkspace(
+    out = AgentWorkspace(
         **vars(ws),
         guardrail_menu=guardrail_menu(),
         insights=insights_available(),
         max_topics=int(settings.ANALYTICS_MAX_TOPICS),
     )
+    if context.get("step") == "safety" and out.insights:
+        attachable = ws.ids("sources")
+        out.folders = source_folders([s for s in (context.get("form") or {}).get("sources", []) if s in attachable])
+    return out
 
 
 def _current_prompt(form: dict, ws: Workspace) -> tuple[Optional[str], str]:
@@ -261,9 +287,19 @@ def _current_prompt(form: dict, ws: Workspace) -> tuple[Optional[str], str]:
     return prompt_id, ws.prompt_texts.get(prompt_id, "")
 
 
-def _topic_room(form: dict, ws: AgentWorkspace) -> int:
-    """How many more Insights topics the agent has room for."""
-    return max(0, ws.max_topics - len(form["analytics"]["topics"]))
+def _topic_view(form: dict, ws: AgentWorkspace) -> TopicsWorkspace:
+    """The form's topics and the sources' folders, for the topics recipe's room rules."""
+    analytics = form["analytics"]
+    overlapping = {name.lower() for name in analytics["overlapping"]}
+    own = [{"name": name, "overlap": name.lower() in overlapping} for name in analytics["topics"]]
+    return TopicsWorkspace(own=own, folders=ws.folders, hidden_folders=analytics["hidden_folders"],
+                           max_topics=ws.max_topics)
+
+
+def _topic_room(form: dict, ws: AgentWorkspace) -> dict[str, int]:
+    """One-per-question topics that push no folder out (``free``), and the most that fit at all (``max``)."""
+    room = _topic_view(form, ws).capacity()
+    return {"free": room["one_per_question_free"], "max": room["one_per_question_max"]}
 
 
 def _safety_options(form: dict, ws: AgentWorkspace) -> dict:
@@ -288,10 +324,15 @@ def _safety_options(form: dict, ws: AgentWorkspace) -> dict:
         topics = {"available": False, "why": "off_on_this_instance"}
     elif not form["analytics"]["enabled"]:
         topics = {"available": False, "why": "turned_off_for_this_agent"}
-    elif not room:
+    elif not room["max"]:
         topics = {"available": False, "why": "no_room"}
     else:
-        topics = {"available": True, "room": room}
+        topics = {"available": True, "room": room["free"]}
+        if room["max"] > room["free"]:
+            topics["room_pushing_folders_out"] = room["max"] - room["free"]
+        offered = [folder["name"] for folder in _topic_view(form, ws).offered_folders()]
+        if offered:
+            topics["source_folders"] = offered
     return {"limits": limits, "guardrails": guardrails, "insights_topics": topics}
 
 
@@ -324,6 +365,7 @@ def context_data(req: DraftRequest, ws: Workspace) -> dict:
     data["prompt"]["mode"] = "template" if is_template(current) else "persona"
     if step == "safety":
         data.update({key: form[key] for key in SAFETY_FIELDS})
+        data["analytics"] = {key: form["analytics"][key] for key in ("enabled", "topics")}
         data["safety_options"] = _safety_options(form, ws)
     return data
 
@@ -482,7 +524,10 @@ Recommend pii and injection for an agent that faces the public.
 whether to sort conversations into these starting topics, naming up to {MAX_NEW_TOPICS} topics drawn from what \
 the agent is for, each a name of at most {TOPIC_NAME_CHARS} characters and a description of at most \
 {TOPIC_DESCRIPTION_UNITS} characters listing concrete things users ask ("Late or stuck parcels, missed delivery \
-windows"). Never reuse a topic the agent already has."""
+windows"). Never reuse a topic the agent already has. The folders of its sources (source_folders in \
+safety_options) already sort conversations as topics: never suggest a topic a folder already covers, only what \
+they miss, and at most room topics. Past room, each topic pushes the smallest folder out (up to \
+room_pushing_folders_out more): suggest that only when the user asks for more topics, and say which folder."""
 
 
 def instructions(req: DraftRequest, ws: Workspace) -> str:
@@ -684,10 +729,11 @@ def _checks(raw: Any, form: dict, ws: AgentWorkspace) -> list[str]:
     return out
 
 
-def _topics(raw: Any, form: dict, ws: AgentWorkspace) -> list[dict]:
+def _topics(raw: Any, form: dict, ws: AgentWorkspace, notes: list[str]) -> list[dict]:
     """The Insights topics to add, checked with the rules the agent's analytics config applies on save.
 
-    A name the agent (or an earlier topic of the proposal) already has is left out.
+    A name the agent, one of its source folders (or an earlier topic of the proposal) already has is left out.
+    Topics that push folders out of the topic question add a note naming them.
 
     Raises:
         ProposalInvalid: Too many topics, a name or description the analytics config refuses, or more topics
@@ -697,7 +743,7 @@ def _topics(raw: Any, form: dict, ws: AgentWorkspace) -> list[dict]:
     items = [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
     if len(items) > MAX_NEW_TOPICS:
         raise ProposalInvalid([f"Suggest at most {MAX_NEW_TOPICS} topics."])
-    taken = {name.lower() for name in form["analytics"]["topics"]}
+    taken = {name.lower() for name in form["analytics"]["topics"]} | {f["name"].lower() for f in ws.folders}
     out: list[dict] = []
     problems: list[str] = []
     for item in items:
@@ -717,13 +763,19 @@ def _topics(raw: Any, form: dict, ws: AgentWorkspace) -> list[dict]:
         out.append({"name": topic.name, "description": topic.description})
     if problems:
         raise ProposalInvalid(problems[:5])
-    room = _topic_room(form, ws)
+    room = _topic_room(form, ws)["max"]
     if len(out) > room:
         raise ProposalInvalid([f"The agent has room for {room} more topics: suggest at most {room}."])
+    pushed = _topic_view(form, ws).pushes_out(len(out))
+    if pushed:
+        names = pushed[0] if len(pushed) == 1 else ", ".join(pushed[:-1]) + " and " + pushed[-1]
+        notes.append(f"Insights offers {ws.max_topics} topics, source folders included: these leave out the "
+                     f"folder{'s' if len(pushed) > 1 else ''} {names}.")
     return out
 
 
-def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dict, dropped: list[dict]) -> None:
+def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dict, dropped: list[dict],
+            notes: list[str]) -> None:
     """Check the safety step's limits, guardrails and topics into ``fields``.
 
     Limits and guardrails need ``edit_policy`` (listed in ``dropped`` as ``not_allowed`` without it); a part the
@@ -736,7 +788,7 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
     available = {
         "limits": ws.policy_editable,
         "guardrails": ws.policy_editable and bool(ws.guardrail_menu),
-        "analytics": ws.insights and form["analytics"]["enabled"] and _topic_room(form, ws) > 0,
+        "analytics": ws.insights and form["analytics"]["enabled"] and _topic_room(form, ws)["max"] > 0,
     }
     wanted = []
     for key in SAFETY_FIELDS:
@@ -755,7 +807,7 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
         if checks:
             fields["guardrails"] = {"checks": checks}
     if "analytics" in wanted:
-        topics = _topics(raw_fields["analytics"], form, ws)
+        topics = _topics(raw_fields["analytics"], form, ws, notes)
         if topics:
             fields["analytics"] = {"topics": topics}
 
@@ -836,7 +888,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
             else:
                 dropped.append({"field": "prompt", "id": prompt_id[:_ID_CHARS], "reason": "not_found"})
     if step == "safety":
-        _policy(raw_fields, req, ws, fields, dropped)
+        _policy(raw_fields, req, ws, fields, dropped, notes)
 
     _drop_unchanged(fields, form)
     reasons = []

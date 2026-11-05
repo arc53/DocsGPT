@@ -27,6 +27,8 @@ TOOL_ID = "11111111-1111-1111-1111-111111111111"
 SOURCE_ID = "22222222-2222-2222-2222-222222222222"
 PROMPT_ID = "33333333-3333-3333-3333-333333333333"
 MENU = ["pii", "injection", "groundedness", "secrets"]
+FOLDERS = [{"name": n, "description": f"Pages such as: {n}"}
+           for n in ("deploying", "overview", "sources", "extensions", "tools", "agents")]
 
 
 def _ws(**kwargs) -> AgentWorkspace:
@@ -83,7 +85,7 @@ class TestContext:
         form = parse_context({"form": {}})["form"]
         assert form["limits"] == {"mode": "none", "value": None}
         assert form["guardrails"] == {"enabled": False, "mode": "monitor_only", "checks": []}
-        assert form["analytics"] == {"enabled": True, "topics": []}
+        assert form["analytics"] == {"enabled": True, "topics": [], "overlapping": [], "hidden_folders": []}
         form = parse_context({"form": {
             "limits": {"mode": "tokens", "value": 50000},
             "guardrails": {"enabled": True, "mode": "scan_all", "checks": ["PII", "pii", 3]},
@@ -91,9 +93,17 @@ class TestContext:
         }})["form"]
         assert form["limits"] == {"mode": "tokens", "value": 50000}
         assert form["guardrails"] == {"enabled": True, "mode": "scan_all", "checks": ["pii"]}
-        assert form["analytics"] == {"enabled": False, "topics": ["Billing"]}
+        assert form["analytics"] == {"enabled": False, "topics": ["Billing"], "overlapping": [], "hidden_folders": []}
         form = parse_context({"form": {"limits": {"mode": "forever", "value": True}}})["form"]
         assert form["limits"] == {"mode": "none", "value": None}
+
+    def test_topics_may_say_whether_they_overlap_and_folders_may_be_hidden(self):
+        analytics = parse_context({"form": {"analytics": {
+            "topics": ["Billing", {"name": "Asks for a person", "overlap": True}, {"name": " "}, {"overlap": True}],
+            "hidden_folders": ["overview", "", 3],
+        }}})["form"]["analytics"]
+        assert analytics == {"enabled": True, "topics": ["Billing", "Asks for a person"],
+                             "overlapping": ["Asks for a person"], "hidden_folders": ["overview"]}
 
     @pytest.mark.parametrize("raw", [{"form": ["x"]}, {"step": "publish"}, {"step": 3}])
     def test_a_bad_form_or_step_is_refused(self, raw):
@@ -139,6 +149,26 @@ class TestContext:
         assert options["insights_topics"] == {"available": True, "room": 14}
         assert data["limits"] == {"mode": "none", "value": None}
 
+    def test_the_safety_step_counts_the_source_folders_as_topics(self):
+        ws = _ws(folders=FOLDERS)
+        form = {"analytics": {"topics": ["Billing", {"name": "Asks for a person", "overlap": True}],
+                              "hidden_folders": ["overview"]}}
+        data = context_data(_req(form, step="safety"), ws)
+        topics = data["safety_options"]["insights_topics"]
+        # 15 options: Billing and the five folders not hidden leave 9; the overlapping topic takes none.
+        assert topics == {"available": True, "room": 9, "room_pushing_folders_out": 5,
+                          "source_folders": ["deploying", "sources", "extensions", "tools", "agents"]}
+        assert data["analytics"] == {"enabled": True, "topics": ["Billing", "Asks for a person"]}
+
+    def test_past_the_free_room_topics_push_folders_out(self):
+        form = {"analytics": {"topics": [f"T{i}" for i in range(12)]}}
+        topics = context_data(_req(form, step="safety"), _ws(folders=FOLDERS))["safety_options"]["insights_topics"]
+        assert topics == {"available": True, "room": 0, "room_pushing_folders_out": 3,
+                          "source_folders": ["deploying", "overview", "sources"]}
+        full = {"analytics": {"topics": [f"T{i}" for i in range(15)]}}
+        options = context_data(_req(full, step="safety"), _ws(folders=FOLDERS))["safety_options"]
+        assert options["insights_topics"] == {"available": False, "why": "no_room"}
+
     def test_without_policy_access_or_insights_the_parts_are_unavailable(self):
         ws = _ws(policy_editable=False, insights=False)
         options = context_data(_req({}, step="safety"), ws)["safety_options"]
@@ -180,6 +210,22 @@ class TestAvailability:
             "docsgpt.decisions.available", return_value=True
         ):
             assert AGENT_RECIPE.load_workspace("alice", {"agent_id": None}).insights is False
+
+    def test_the_safety_step_reads_the_folders_of_the_sources_the_caller_may_attach(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+        loaded = Workspace(sources=[{"id": SOURCE_ID, "name": "Help"}])
+        context = {"agent_id": None, "step": "safety", "form": {"sources": [SOURCE_ID, "not-mine"]}}
+        with patch.object(agent_recipe, "load_workspace", return_value=loaded), patch(
+            "docsgpt.decisions.available", return_value=True
+        ), patch.object(agent_recipe, "source_folders", return_value=FOLDERS) as read:
+            ws = AGENT_RECIPE.load_workspace("alice", context)
+            assert ws.folders == FOLDERS
+            read.assert_called_once_with([SOURCE_ID])
+            read.reset_mock()
+            AGENT_RECIPE.load_workspace("alice", {**context, "step": "knowledge"})
+            read.assert_not_called()
 
 
 @pytest.mark.unit
@@ -272,6 +318,12 @@ class TestInstructions:
         assert "Never set or mention changing models, guardrails" not in text
         for rule in ("Ask first", "recommended", "500 requests", "50,000 tokens", "last 24 hours",
                      "either a request limit or a token limit", "starting topics", "Set only what the user picked"):
+            assert rule in text, rule
+
+    def test_the_safety_step_suggests_only_what_the_source_folders_miss(self):
+        text = instructions(_req({}, step="safety"), _ws())
+        for rule in ("source_folders", "never suggest a topic a folder already covers",
+                     "room_pushing_folders_out"):
             assert rule in text, rule
 
     def test_system_prompt_carries_the_recipe_and_the_tool_protocol(self):
@@ -479,6 +531,25 @@ class TestSafety:
             {"name": "Shipping", "description": "Late parcels"},
         ]}}, form={"analytics": {"enabled": True, "topics": ["Shipping"]}}, step="safety", asked=True)
         assert proposal["fields"] == {"analytics": {"topics": [{"name": "Billing", "description": "Invoices"}]}}
+
+    def test_a_topic_a_source_folder_already_is_is_left_out(self):
+        proposal = _validate({"analytics": {"topics": [
+            {"name": "Deploying", "description": "Docker, Kubernetes"},
+            {"name": "Billing", "description": "Invoices"},
+        ]}}, ws=_ws(folders=FOLDERS), step="safety", asked=True)
+        assert proposal["fields"] == {"analytics": {"topics": [{"name": "Billing", "description": "Invoices"}]}}
+        assert proposal["notes"] == []
+
+    def test_topics_past_the_free_room_say_which_folders_they_push_out(self):
+        form = {"analytics": {"topics": [f"T{i}" for i in range(8)]}}
+        two = [{"name": "A", "description": "a"}, {"name": "B", "description": "b"}]
+        proposal = _validate({"analytics": {"topics": two}}, form=form, ws=_ws(folders=FOLDERS),
+                             step="safety", asked=True)
+        assert proposal["fields"]["analytics"]["topics"] == two
+        # 8 topics and 6 folders leave one free option: the second topic pushes out the smallest folder.
+        assert proposal["notes"] == [
+            "Insights offers 15 topics, source folders included: these leave out the folder agents."
+        ]
 
     @pytest.mark.parametrize("ws,form", [
         (_ws(insights=False), {}),

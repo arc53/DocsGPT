@@ -2575,7 +2575,7 @@ describe('NewAgent drafter', () => {
           prompt_draft: null,
           starters: [],
           limits: { mode: 'none', value: null },
-          analytics: { enabled: true, topics: [] },
+          analytics: { enabled: true, topics: [], hidden_folders: [] },
         },
       },
     });

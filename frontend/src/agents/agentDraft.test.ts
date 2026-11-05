@@ -427,7 +427,14 @@ describe('agentDraft', () => {
                 description: '',
                 overlap: false,
               },
+              {
+                id: 'def67890',
+                name: 'Asks for a person',
+                description: '',
+                overlap: true,
+              },
             ],
+            hidden_folders: ['overview'],
           },
         }),
         {
@@ -454,7 +461,15 @@ describe('agentDraft', () => {
         starters: ['Hi'],
         limits: { mode: 'tokens', value: 50000 },
         guardrails: { enabled: true, mode: 'monitor_only', checks: ['pii'] },
-        analytics: { enabled: true, topics: ['Rates'] },
+        // Folders and overlapping topics change how many topics fit.
+        analytics: {
+          enabled: true,
+          topics: [
+            { name: 'Rates', overlap: false },
+            { name: 'Asks for a person', overlap: true },
+          ],
+          hidden_folders: ['overview'],
+        },
       },
     });
     // Improve mode began from no starting point.
