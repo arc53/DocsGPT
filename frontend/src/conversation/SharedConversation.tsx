@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -55,6 +55,12 @@ export const SharedConversation = () => {
     }
   }, [queries[queries.length - 1]]);
 
+  // Before the paint: coming back to a share whose read had finished must
+  // not draw its emptied slice as a loaded chat.
+  useLayoutEffect(() => {
+    setLoadedFor(null);
+  }, [identifier]);
+
   useEffect(() => {
     if (!identifier) return;
     let cancelled = false;
@@ -65,11 +71,16 @@ export const SharedConversation = () => {
     conversationService
       .getSharedConversation(identifier, token)
       .then((res) => {
-        if (res.status === 404 || res.status === 400) navigate('/pagenotfound');
+        // A read for a share the reader has left must not redirect them.
+        if (cancelled) return null;
+        if (res.status === 404 || res.status === 400) {
+          navigate('/pagenotfound');
+          return null;
+        }
         return res.json();
       })
       .then((data) => {
-        if (cancelled) return;
+        if (!data || cancelled) return;
         if (data.success) {
           dispatch(
             setFetchedData({
