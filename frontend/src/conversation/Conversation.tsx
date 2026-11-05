@@ -144,18 +144,22 @@ export default function Conversation() {
   // Agent context follows the URL. ``cancelled`` covers two races:
   // the user switches agents before the fetch resolves, or leaves the
   // agent route entirely; either way the late dispatch must be dropped.
+  // Read again once an agent route's chat has applied: if the agent it
+  // brought is not the URL's (the read failed, or the URL moved on while it
+  // loaded), the URL's is read here. Never flips on a route with no agent.
+  const agentChatApplied = Boolean(urlAgentId) && !isLoadingUrlChat;
   useEffect(() => {
     let cancelled = false;
-    // A chat of the agent's that is about to load brings the agent with it.
-    const chatLoads = !isNewChatRoute && urlConversationId !== conversationId;
     if (urlAgentId) {
-      if (selectedAgent?.id !== urlAgentId && !chatLoads) {
+      // A chat of the agent's that is about to load brings the agent with it.
+      if (selectedAgent?.id !== urlAgentId && !isLoadingUrlChat) {
         userService
           .getAgent(urlAgentId, token)
           .then((response) => (response.ok ? response.json() : null))
           .then((agent: Agent | null) => {
             if (cancelled) return;
-            if (agent) dispatch(setSelectedAgent(agent));
+            // Not another agent's card under this agent's URL.
+            dispatch(setSelectedAgent(agent));
           })
           .catch((err) => {
             if (!cancelled) console.error('Failed to load agent:', err);
@@ -167,7 +171,7 @@ export default function Conversation() {
     return () => {
       cancelled = true;
     };
-  }, [urlAgentId, token]);
+  }, [urlAgentId, token, agentChatApplied]);
 
   // State → URL. ``replace`` so Back doesn't return to /c/new and
   // reset the just-streamed chat.
