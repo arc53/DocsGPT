@@ -10,7 +10,7 @@ tables, headings and byte-exact code blocks at a few ms per page.
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from docsgpt.core.settings import settings
 from docsgpt.parser.file.base_parser import BaseParser
@@ -40,6 +40,170 @@ _DROP_TAGS = ("title", "script", "style", "noscript", "template")
 # link/image targets: one inline image is megabytes of base64 "text" for the
 # chunker and embedder (a 5 MB data-URI ``<img>`` measured 7 MB of output).
 _URI_ATTRIBUTES = ("src", "href", "srcset", "poster", "data")
+
+
+def _span_number(value) -> Optional[int]:
+    """A span attribute's ASCII digits as a number, clamped to 1000, or ``None``.
+
+    ``str.isdigit`` also accepts digits such as ``²`` that ``int()`` rejects, and
+    ``int()`` refuses a digit run past Python's conversion limit, so a run longer
+    than the clamp is clamped by its length instead of converted.
+    """
+    if not (isinstance(value, str) and value.isascii() and value.isdigit()):
+        return None
+    digits = value.lstrip("0")
+    return 1000 if len(digits) > 4 else min(1000, int(digits or "0"))
+
+
+def _span(cell, attribute: str) -> int:
+    """A cell's ``rowspan`` or ``colspan``, clamped the way markdownify clamps colspan."""
+    number = _span_number(cell.get(attribute))
+    return 1 if number is None else max(1, number)
+
+
+def _spans_row_group(cell) -> bool:
+    """Whether the cell carries ``rowspan="0"``: the rest of its row group.
+
+    HTML keeps ``rowspan="0"`` (``colspan="0"`` was dropped in HTML5 and is
+    one column): a browser reports ``rowSpan === 0`` and lays the cell out to
+    the last row of its ``thead``/``tbody``/``tfoot``, so the rows below it
+    are short a cell exactly as they are under a numeric ``rowspan``.
+
+    Args:
+        cell: A ``td``/``th`` tag.
+
+    Returns:
+        True when ``rowspan`` reads as zero.
+    """
+    return _span_number(cell.get("rowspan")) == 0
+
+
+def _readable_colspan(cell) -> None:
+    """Rewrite a ``colspan`` that markdownify would fail to read.
+
+    markdownify reads it with ``str.isdigit()`` and ``int()``, so a digit such as
+    ``²`` or a run past the conversion limit raises. The first is no number to a
+    browser either and is dropped; the second is written as its clamp.
+    """
+    value = cell.get("colspan")
+    if isinstance(value, str) and value.isdigit():
+        number = _span_number(value)
+        if number is None:
+            del cell["colspan"]
+        else:
+            cell["colspan"] = str(number)
+
+
+# A span attribute must not be able to make the output, or the conversion, much
+# larger than the page: a table gets its placeholders only while they stay within
+# a few per real cell, and is otherwise converted as markdownify converts it.
+_PLACEHOLDERS_PER_CELL = 8
+_MIN_PLACEHOLDERS = 64
+
+
+def _fill_row_spans(soup) -> None:
+    """Give every row the cells a ``rowspan`` from an earlier row takes up.
+
+    A GFM table cannot merge cells downwards, so a ``rowspan`` cell is written
+    once and the rows it reaches into come out one cell short. Every value in
+    those rows then reads under the wrong column: a table whose first column is
+    a region spanning several product rows puts the product under ``Region``
+    and the count under ``Product``.
+    """
+    for table in soup.find_all("table"):
+        # A nested table's rows are its own grid; it comes up in this loop itself.
+        rows = [row for row in table.find_all("tr") if row.find_parent("table") is table]
+        cells = [row.find_all(["td", "th"], recursive=False) for row in rows]
+        for row_cells in cells:
+            for cell in row_cells:
+                _readable_colspan(cell)
+        layout = _row_span_layout(cells, _row_group_ends(rows))
+        if layout is None:
+            continue
+        placed, covered = layout
+        for row, row_placed, row_covered in zip(rows, placed, covered):
+            if row_covered:
+                _pad_row(soup, row, row_placed, sorted(row_covered))
+
+
+def _row_group_ends(rows: list) -> List[int]:
+    """For each row, the index of the last row of the row group it sits in.
+
+    A row group is the row's ``thead``/``tbody``/``tfoot``; rows written
+    directly under the table are grouped by the table itself. A rowspan never
+    reaches past its group: ``rowspan="0"`` ends at its last row, and a numeric
+    rowspan stops there too.
+
+    Args:
+        rows: The table's ``tr`` tags, in document order.
+
+    Returns:
+        One index per row, positional with ``rows``.
+    """
+    groups: List[int] = []
+    last: Dict[int, int] = {}
+    for index, row in enumerate(rows):
+        group = row.find_parent(["thead", "tbody", "tfoot", "table"])
+        groups.append(id(group))
+        last[id(group)] = index
+    return [last[group] for group in groups]
+
+
+def _row_span_layout(cells: List[list], group_ends: List[int]) -> Optional[Tuple[List[list], List[set]]]:
+    """Where each row's own cells sit, and which columns earlier rowspans take.
+
+    Returns ``None`` once the placeholders would pass the table's budget.
+    """
+    budget = _MIN_PLACEHOLDERS + _PLACEHOLDERS_PER_CELL * sum(map(len, cells))
+    covered: List[set] = [set() for _ in cells]
+    placed: List[list] = []
+    needed = 0
+    for index, row_cells in enumerate(cells):
+        column = 0
+        row_placed = []
+        for cell in row_cells:
+            while column in covered[index]:
+                column += 1
+            row_placed.append((column, cell))
+            columns = _span(cell, "colspan")
+            if _spans_row_group(cell):
+                # ``rowspan="0"``: down to the last row of the row group.
+                rows_below = group_ends[index] - index
+            else:
+                # A rowspan never reaches past its row group.
+                rows_below = min(_span(cell, "rowspan") - 1, group_ends[index] - index)
+            needed += columns * rows_below
+            if needed > budget:
+                return None
+            for below in range(index + 1, index + 1 + rows_below):
+                covered[below].update(range(column, column + columns))
+            column += columns
+        placed.append(row_placed)
+    return placed, covered
+
+
+def _pad_row(soup, row, placed: list, columns: List[int]) -> None:
+    """Put an empty cell in front of the first own cell after each column.
+
+    The row is rebuilt in one pass. Its children are taken out front to back,
+    so every ``extract()`` finds its node at index 0, and put back in order; a
+    placeholder inserted with ``insert_before`` would scan its siblings instead.
+    """
+    column_of = {id(cell): at for at, cell in placed}
+    children = list(row.contents)
+    for child in children:
+        child.extract()
+    pending = iter(columns)
+    column = next(pending, None)
+    for child in children:
+        at = column_of.get(id(child))
+        while at is not None and column is not None and column < at:
+            row.append(soup.new_tag("td"))
+            column = next(pending, None)
+        row.append(child)
+    while column is not None:
+        row.append(soup.new_tag("td"))
+        column = next(pending, None)
 
 
 class MarkupTooDeepError(ValueError):
@@ -86,6 +250,7 @@ def soup_to_markdown(soup, converter=None, plain_when_too_deep: bool = True) -> 
                 value = " ".join(value)
             if isinstance(value, str) and "data:" in value.lower():
                 del tag[attribute]
+    _fill_row_spans(soup)
     converter = converter or MarkdownConverter(**MARKDOWNIFY_OPTIONS)
     try:
         markdown = converter.convert_soup(soup)
