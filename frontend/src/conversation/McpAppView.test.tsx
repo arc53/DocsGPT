@@ -14,15 +14,20 @@ vi.mock('react-i18next', () => ({
 
 const readMcpAppView = vi.fn();
 const readMcpAppResult = vi.fn();
+const callMcpAppTool = vi.fn();
 vi.mock('../api/services/mcpAppsService', () => ({
   readMcpAppView: (...args: unknown[]) => readMcpAppView(...args),
   readMcpAppResult: (...args: unknown[]) => readMcpAppResult(...args),
-  callMcpAppTool: vi.fn(),
+  callMcpAppTool: (...args: unknown[]) => callMcpAppTool(...args),
 }));
 
 // The host the view builds, with what it sent; the protocol is mcpAppHost.test's.
+type HostOptions = {
+  onInitialized: () => void;
+  callTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+};
 type FakeHost = {
-  options: { onInitialized: () => void };
+  options: HostOptions;
   sendToolInput: ReturnType<typeof vi.fn>;
   sendToolResult: ReturnType<typeof vi.fn>;
   sendToolCancelled: ReturnType<typeof vi.fn>;
@@ -37,7 +42,7 @@ vi.mock('./mcpAppHost', async (importOriginal) => {
     sendContext = vi.fn();
     handle = vi.fn();
     teardown = vi.fn(async () => {});
-    constructor(public options: { onInitialized: () => void }) {
+    constructor(public options: HostOptions) {
       hosts.push(this as unknown as FakeHost);
     }
   }
@@ -77,6 +82,7 @@ afterEach(() => {
   container.remove();
   readMcpAppView.mockReset();
   readMcpAppResult.mockReset();
+  callMcpAppTool.mockReset();
   hosts.length = 0;
 });
 
@@ -195,6 +201,27 @@ describe('McpAppView', () => {
     expect(hosts[0].sendToolCancelled).toHaveBeenCalledWith(
       'conversation.mcpApp.resultUnavailable',
     );
+  });
+
+  it('shows what a view call would send before asking to allow it', async () => {
+    readMcpAppView.mockResolvedValue(VIEW);
+    callMcpAppTool.mockResolvedValue({ kind: 'needs_approval' });
+    await render();
+    let call: Promise<unknown> | undefined;
+    act(() => {
+      call = hosts[0].options.callTool('save_checkpoint', { id: 'board-7' });
+      call.catch(() => {});
+    });
+    await act(async () => {});
+    expect(container.textContent).toContain('conversation.mcpApp.approvalAsk');
+    expect(container.querySelector('pre')?.textContent).toContain(
+      '"id": "board-7"',
+    );
+    const deny = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'conversation.mcpApp.deny',
+    );
+    await act(async () => deny?.click());
+    await expect(call).rejects.toThrow('declined');
   });
 
   it('shows a retryable error when the view fails to load', async () => {

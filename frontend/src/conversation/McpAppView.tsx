@@ -19,6 +19,7 @@ import {
 } from '../api/services/mcpAppsService';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { CodeBlock } from '../components/ui/code-block';
 import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
 import { LoadingState } from '../components/ui/loading-state';
@@ -54,7 +55,22 @@ const PERMISSIONS: Record<string, string> = {
 
 type Phase = 'loading' | 'ready' | 'failed' | 'unavailable';
 
-type PendingApproval = { name: string; decide: (allowed: boolean) => void };
+type PendingApproval = {
+  name: string;
+  args: Record<string, unknown>;
+  decide: (allowed: boolean) => void;
+};
+
+/** The most of a view call's arguments the approval prompt shows. */
+const ARGS_PREVIEW_MAX = 2000;
+
+/** A view call's arguments as the approval prompt shows them: JSON, cut short past `ARGS_PREVIEW_MAX`. */
+function argsPreview(args: Record<string, unknown>): string {
+  const text = JSON.stringify(args, null, 2) ?? '';
+  return text.length > ARGS_PREVIEW_MAX
+    ? `${text.slice(0, ARGS_PREVIEW_MAX - 1)}…`
+    : text;
+}
 
 const isDark = () => document.documentElement.classList.contains('dark');
 
@@ -174,7 +190,7 @@ export default function McpAppView({
   );
 
   const askApproval = useCallback(
-    (name: string) =>
+    (name: string, args: Record<string, unknown>) =>
       new Promise<boolean>((resolve) => {
         setApproval((current) => {
           // One question at a time: a second call while one waits is declined.
@@ -184,6 +200,7 @@ export default function McpAppView({
           }
           return {
             name,
+            args,
             decide: (allowed) => {
               setApproval(null);
               resolve(allowed);
@@ -208,7 +225,7 @@ export default function McpAppView({
         const { token: current } = latest.current;
         let outcome = await callMcpAppTool(toolId, name, args, current);
         if (outcome.kind === 'needs_approval') {
-          if (!(await askApproval(name)))
+          if (!(await askApproval(name, args)))
             throw new McpAppError(-32000, 'The user declined this tool call');
           outcome = await callMcpAppTool(toolId, name, args, current, true);
         }
@@ -335,12 +352,24 @@ export default function McpAppView({
           }
         >
           {approval && (
-            <p className="mb-2">
-              {t('conversation.mcpApp.approvalAsk', {
-                tool: approval.name,
-                interpolation: { escapeValue: false },
-              })}
-            </p>
+            <div className="mb-2 flex flex-col gap-2">
+              <p>
+                {t('conversation.mcpApp.approvalAsk', {
+                  tool: approval.name,
+                  interpolation: { escapeValue: false },
+                })}
+              </p>
+              {Object.keys(approval.args).length > 0 && (
+                <>
+                  <p className="text-muted-foreground text-xs font-medium">
+                    {t('conversation.inlineSteps.arguments')}
+                  </p>
+                  <CodeBlock surface="subtle" maxHeight="sm">
+                    {argsPreview(approval.args)}
+                  </CodeBlock>
+                </>
+              )}
+            </div>
           )}
           {phase === 'failed' ? (
             <EmptyState
