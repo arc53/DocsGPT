@@ -220,6 +220,12 @@ class TestInstructions:
         text = instructions(_req({}, step="prompt"), _ws())
         assert "from the sources and tools already on the form" in text
 
+    def test_basics_asks_who_uses_it_unless_the_user_said(self):
+        text = instructions(_req({}, step="basics"), _ws())
+        for rule in ("Who uses the agent decides", "unless the user's words say or clearly imply it",
+                     "Customers on our public website", "Our own staff", "say in the description who it serves"):
+            assert rule in text, rule
+
     def test_the_prompt_step_asks_about_the_hand_off_first(self):
         text = instructions(_req({}, step="prompt"), _ws())
         for rule in ("Before writing a new prompt, ask", "where it sends people it can't help",

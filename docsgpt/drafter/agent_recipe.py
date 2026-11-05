@@ -405,8 +405,11 @@ one-line message. Don't ask questions about it.
 - Ask questions only about this step."""
 
 STEP_GUIDES = {
-    "basics": """Step basics: draft the name and the description from the user's description. Ask only when you \
-can't tell what the agent is for or who uses it.""",
+    "basics": """Step basics: draft the name and the description from the user's description, and say in the \
+description who it serves. Who uses the agent decides what is safe to attach, how its prompt talks and which \
+checks it needs: unless the user's words say or clearly imply it (customers, website visitors, staff, a team), \
+ask, as a question with options such as "Customers on our public website" and "Our own staff". Otherwise ask \
+only when you can't tell what the agent is for.""",
     "knowledge": """Step knowledge: pick the sources and tools the agent needs from the workspace, and its \
 agent_type. When the workspace has nothing to attach, set agent_type only and say in the message that there is \
 nothing to attach yet. A flow no tool supports goes in a note now; the prompt step hands it off.""",
