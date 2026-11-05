@@ -141,10 +141,11 @@ def _secret_token(secret: str) -> str:
     A prefix of the secret itself is not enough: every fine-grained GitHub
     token starts with ``github_pat_``, so two users' tokens would share (and
     reuse) one cached client carrying the first user's token. The token is
-    PBKDF2-HMAC-SHA256 under a salt that lives only in this process (a
-    password-grade KDF, since the secret may be a password): the same secret
-    always gets the same token, no table of raw secrets is kept, and the
-    token is worthless outside the process.
+    PBKDF2-HMAC-SHA256 under a salt that lives only in this process: the same
+    secret always gets the same token, no table of raw secrets is kept, and
+    the token is worthless outside the process. The salt, not the round
+    count, is what protects it; the rounds are kept low because this runs
+    every time a tool is built.
     """
     digest = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), _SECRET_TOKEN_SALT, _SECRET_TOKEN_ROUNDS)
     return digest.hex()[:32]
