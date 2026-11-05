@@ -23,6 +23,7 @@ import {
 import { AppDispatch } from '../store';
 import { ChatCompanionContext, type AnswerSource } from './chatCompanion';
 import { handleSendFeedback } from './conversationHandlers';
+import { AgentCardSkeleton } from './ChatLoadingSkeleton';
 import ConversationMessages from './ConversationMessages';
 import SourcesPanel from './SourcesPanel';
 import { FEEDBACK, Query } from './conversationModels';
@@ -92,6 +93,10 @@ export default function Conversation() {
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
+
+  // The URL names a chat that has not been applied yet: it is loading.
+  const isLoadingUrlChat =
+    !isNewChatRoute && urlConversationId !== conversationId;
 
   const fetchAgent = async (id: string): Promise<Agent | null> => {
     if (selectedAgent?.id === id) return selectedAgent;
@@ -538,6 +543,7 @@ export default function Conversation() {
                 queries={queries}
                 status={status}
                 showHeroOnEmpty={selectedAgent ? false : true}
+                isLoading={isLoadingUrlChat}
                 starters={selectedAgent?.starters}
                 onOpenArtifact={handleOpenArtifact}
                 onToolAction={handleToolAction}
@@ -559,6 +565,11 @@ export default function Conversation() {
                             : undefined
                         }
                       />
+                    </div>
+                  ) : isLoadingUrlChat && urlAgentId ? (
+                    // The agent arrives with its chat; hold its card's place.
+                    <div className="flex w-full items-center justify-center py-4">
+                      <AgentCardSkeleton />
                     </div>
                   ) : undefined
                 }

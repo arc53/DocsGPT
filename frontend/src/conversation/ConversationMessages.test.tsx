@@ -86,7 +86,7 @@ vi.mock('../components/ui/message-scroller', async (importOriginal) => {
   };
 });
 
-vi.mock('../Hero', () => ({ default: () => null }));
+vi.mock('../Hero', () => ({ default: () => <div data-testid="hero" /> }));
 
 vi.mock('./StreamingStatusLine', () => ({ default: () => null }));
 
@@ -201,6 +201,32 @@ describe('ConversationMessages', () => {
     expect(notice?.className).toContain('bg-warning/10');
     expect(notice?.querySelector('svg')).not.toBeNull();
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('draws a chat that is still loading as one, not as the new-chat hero', () => {
+    const renderEmpty = (isLoading: boolean) =>
+      act(() => {
+        root.render(
+          <ConversationMessages
+            handleQuestion={() => undefined}
+            handleQuestionSubmission={() => undefined}
+            queries={[]}
+            status="idle"
+            isLoading={isLoading}
+            headerContent={<div data-testid="agent-card" />}
+          />,
+        );
+      });
+    renderEmpty(true);
+    expect(container.querySelector('[data-testid="hero"]')).toBeNull();
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="agent-card"]'),
+    ).not.toBeNull();
+    renderEmpty(false);
+    expect(container.querySelector('[data-testid="hero"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
   });
 
   it('collapses the pin spacer once it has scrolled below the fold', () => {

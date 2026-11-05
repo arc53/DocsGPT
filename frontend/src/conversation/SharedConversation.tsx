@@ -6,7 +6,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import conversationService from '../api/services/conversationService';
 import MessageInput from '../components/MessageInput';
 import { Button } from '../components/ui/button';
-import { LoadingState } from '../components/ui/loading-state';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { formatDateTime } from '../utils/dateTimeUtils';
@@ -44,8 +43,9 @@ export const SharedConversation = () => {
   const dispatch = useDispatch<AppDispatch>();
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
-  // The share whose chat has loaded. Until then the page shows it loading:
-  // the empty chat's hero (and its clickable suggestions) is not this page's.
+  // The share whose chat has loaded. Until then the page draws a loading
+  // chat: the empty chat's hero (and its clickable suggestions) is not this
+  // page's.
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
 
   useEffect(() => {
@@ -162,17 +162,15 @@ export const SharedConversation = () => {
           </p>
           <p className="text-muted-foreground min-h-5 text-sm">{date}</p>
         </div>
-        {loadedFor === identifier ? (
-          <ConversationMessages
-            handleQuestion={handleQuestion}
-            handleQuestionSubmission={handleQuestionSubmission}
-            queries={queries}
-            status={status}
-            showHeroOnEmpty={false}
-          />
-        ) : (
-          <LoadingState className="min-h-0 flex-1" />
-        )}
+        <ConversationMessages
+          handleQuestion={handleQuestion}
+          handleQuestionSubmission={handleQuestionSubmission}
+          // Not the last share's chat while this one loads.
+          queries={loadedFor === identifier ? queries : []}
+          status={status}
+          showHeroOnEmpty={false}
+          isLoading={loadedFor !== identifier}
+        />
         <div className="flex w-full max-w-290 flex-col items-center gap-4 pb-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12">
           {apiKey ? (
             <div className="w-full px-2">

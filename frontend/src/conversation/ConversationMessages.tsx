@@ -28,6 +28,7 @@ import { deriveArtifactChips } from './artifactChips';
 import JobCancelledRows from '../backgroundJobs/JobCancelledRow';
 import WakeEventRow from '../backgroundJobs/WakeEventRow';
 import type { OpenArtifactRequest } from './artifactCards';
+import ChatLoadingSkeleton from './ChatLoadingSkeleton';
 import ConversationBubble from './ConversationBubble';
 import {
   FEEDBACK,
@@ -54,6 +55,11 @@ type ConversationMessagesProps = {
   queries: Query[];
   status: Status;
   showHeroOnEmpty?: boolean;
+  /**
+   * The chat is still being read (opened by its URL): with nothing to show
+   * yet, it draws as a loading chat, not as the empty one's hero.
+   */
+  isLoading?: boolean;
   /** The agent's starters, under `headerContent` while the chat is empty. */
   starters?: string[] | null;
   headerContent?: ReactNode;
@@ -121,6 +127,7 @@ export default function ConversationMessages({
   status,
   handleFeedback,
   showHeroOnEmpty = true,
+  isLoading = false,
   starters,
   headerContent,
   onOpenArtifact,
@@ -528,6 +535,17 @@ export default function ConversationMessages({
 
     return null;
   };
+
+  if (queries.length === 0 && isLoading) {
+    return (
+      <div className="flex h-full w-full justify-center overflow-hidden sm:pt-6 lg:pt-12">
+        <div className={columnClass}>
+          {headerContent}
+          <ChatLoadingSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   if (queries.length === 0) {
     return (
