@@ -329,6 +329,26 @@ export default function ConversationMessages({
     if (stickToBottomRef.current && dist > 0) vp.scrollTop += dist;
   }, [status, lastTurnContentLength, hasMessages]);
 
+  // The primitive re-pins to the bottom a frame after a resize, so content
+  // resizing in view while the chat sat at its end (an image with no size, a
+  // diagram rendering, an MCP App sizing itself, a run's artifact cards, the
+  // action row at the end of a stream) painted one frame with the end pushed
+  // below the fold. A ResizeObserver runs after layout and before paint, so
+  // following here lands in the same frame. Growth above the viewport is the
+  // browser's scroll anchoring, and a pinned question the primitive's.
+  const [contentEl, setContentEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const vp = contentEl?.closest<HTMLElement>(MS_VIEWPORT_SELECTOR);
+    if (!contentEl || !vp || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (!stickToBottomRef.current || isPinned(vp)) return;
+      const dist = contentEndDistance(vp);
+      if (dist > 0) vp.scrollTop += dist;
+    });
+    observer.observe(contentEl);
+    return () => observer.disconnect();
+  }, [contentEl]);
+
   const columnClass = isSplitView
     ? 'w-full max-w-325 px-2'
     : 'w-full max-w-325 px-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12';
@@ -541,6 +561,7 @@ export default function ConversationMessages({
       <MessageScroller>
         <MessageScrollerViewport className="sm:pt-6 lg:pt-12">
           <MessageScrollerContent
+            ref={setContentEl}
             spacerClassName={spacerCollapsed ? 'max-h-0' : undefined}
             className={cn('mx-auto pb-7', columnClass)}
           >

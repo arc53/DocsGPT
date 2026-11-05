@@ -492,6 +492,75 @@ describe('ConversationMessages', () => {
     });
   });
 
+  describe('a resize while the chat sits at its end', () => {
+    let observers: { cb: ResizeObserverCallback; el?: Element }[];
+
+    beforeEach(() => {
+      observers = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          cb: ResizeObserverCallback;
+          el?: Element;
+          constructor(cb: ResizeObserverCallback) {
+            this.cb = cb;
+            observers.push(this);
+          }
+          observe(el: Element) {
+            this.el = el;
+          }
+          unobserve() {}
+          disconnect() {}
+        },
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    // jsdom has no layout: a viewport at the bottom whose content then grows
+    // by 300px (an image loading), reported as the browser would.
+    const growContent = (spacerHeight: number) => {
+      render([{ prompt: 'hi', response: 'hello ![chart](chart.png)' }]);
+      const viewport = container.querySelector<HTMLElement>(
+        '[data-slot="message-scroller-viewport"]',
+      )!;
+      const content = container.querySelector<HTMLElement>(
+        '[data-slot="message-scroller-content"]',
+      )!;
+      const spacer = container.querySelector<HTMLElement>(
+        '[data-message-scroller-spacer]',
+      )!;
+      Object.defineProperty(spacer, 'offsetHeight', { value: spacerHeight });
+      Object.defineProperty(viewport, 'clientHeight', { value: 500 });
+      let scrollHeight = 1000 + spacerHeight;
+      Object.defineProperty(viewport, 'scrollHeight', {
+        get: () => scrollHeight,
+        configurable: true,
+      });
+      viewport.scrollTop = 500;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+      scrollHeight += 300;
+      // The primitive observes the content too; its re-pin waits a frame.
+      act(() => {
+        for (const observer of observers.filter((o) => o.el === content))
+          observer.cb([], observer as unknown as ResizeObserver);
+      });
+      return viewport;
+    };
+
+    it('keeps the end in view in the same frame', () => {
+      expect(growContent(0).scrollTop).toBe(800);
+    });
+
+    it('leaves a pinned question to the primitive', () => {
+      expect(growContent(200).scrollTop).toBe(500);
+    });
+  });
+
   it('renders Retry like the other answer actions: 32px ghost pill, lucide glyph', () => {
     render([{ prompt: 'hi', error: 'boom' }]);
     const retry = container.querySelector<HTMLButtonElement>(
