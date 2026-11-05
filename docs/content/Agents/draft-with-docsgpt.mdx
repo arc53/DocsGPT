@@ -1,7 +1,7 @@
 ---
 title: Draft with DocsGPT
 description: Build an agent step by step with DocsGPT in a side panel, improve or write a prompt, or get Insights topics suggested from an agent's conversations. You review every drafted field and save it yourself. Covers the steps, what it may change, the model it runs on, usage, privacy and the operator settings.
-lastUpdated: 2026-11-04
+lastUpdated: 2026-11-05
 ---
 
 import { Callout } from 'nextra/components'
@@ -32,12 +32,12 @@ Draft with DocsGPT is on the form of a classic agent, for anyone who can edit th
 
 On a new agent, DocsGPT builds the agent with you in four steps, in the order the form needs them:
 
-1. **Basics**: the name and the description, from what you wrote.
+1. **Basics**: the name and the description, from what you wrote. When you don't say who uses the agent, customers or your own staff, it asks: that decides what is safe to attach, how the prompt talks and which checks it recommends.
 2. **Knowledge and tools**: the sources and tools the agent needs, and its agent type.
 3. **Prompt and starters**: one of your prompts if it fits, otherwise a new one written for the knowledge and tools now attached; then the conversation starters.
 4. **Limits and safety**: a usage limit, guardrail checks and Insights topics, each only if you pick it.
 
-Describe the agent in the panel (**Describe the agent…**), or pick one of the examples, such as "Support agent for our help center". Each step ends with a short message, a **Filled 2 fields** line you can open to see what changed, and a button for the next step, such as **Next: Knowledge and tools**. Before you go on, check the step's fields in the form: change them there, or tell DocsGPT what to change (**Or tell me what to change…**). If you edit a field DocsGPT just set, the step says so (**You changed Name in the form.**), and its next turn reads the form as you left it. Writing an approval such as "looks good" works like the button.
+Pick a starting point (**Website chat for customers**, **Internal helpdesk** or **Research assistant**), or describe the agent in the panel (**Describe the agent…**). A starting point tells every step what that kind of agent needs: a website chat, for example, asks for your company, attaches only what is safe for the public, and recommends the personal-information and prompt-injection checks. Each step ends with a short message, a **Filled 2 fields** line you can open to see what changed, and a button for the next step, such as **Next: Knowledge and tools**. Before you go on, check the step's fields in the form: change them there, or tell DocsGPT what to change (**Or tell me what to change…**). If you edit a field DocsGPT just set, the step says so (**You changed Name in the form.**), and its next turn reads the form as you left it. Writing an approval such as "looks good" works like the button.
 
 The panel's header shows where you are (**Step 2 of 4 · Knowledge and tools**) with a progress bar, and each finished step folds into one line, such as **Basics: Shipping help desk**. A step with nothing to set, such as Limits and safety for an editor who can't change the agent's policy, is skipped.
 
@@ -53,7 +53,9 @@ Before it gives an agent that faces the public anything that looks internal, a s
 
 ### The prompt step
 
-When none of your prompts fits, DocsGPT writes one, and the prompt opens in place of the form, with the panel still beside it. Read it and change it there, or ask DocsGPT for a change. **Use this prompt** saves it to your prompts and sets it on the agent, then the form comes back with the starters DocsGPT wrote from the prompt. A later change in this step updates the same prompt rather than making another.
+When none of your prompts fits, DocsGPT writes one. First it asks where the agent sends people it can't help and what tone it takes, then asks for the detail your answer needs: the support email address, the contact form's link, or how people reach a person. The prompt then tells people exactly where to go, because an agent can't transfer a chat or contact anyone itself unless one of its tools does that.
+
+The new prompt opens in place of the form, with the panel still beside it. Read it and change it there, or ask DocsGPT for a change. **Use this prompt** saves it to your prompts and sets it on the agent, then the form comes back with the starters DocsGPT wrote from the prompt. A later change in this step updates the same prompt rather than making another.
 
 The prompt is saved when you use it, even if you leave the agent unsaved; it stays under **Settings → Prompts**, where you can delete it. The crumb back to the agent keeps the text unsaved in the step; the panel then offers **Open prompt**, or keeping the agent's current prompt (**Keep default instead**).
 
@@ -69,7 +71,7 @@ The usage limit and guardrails are the agent's policy: they're offered only to s
 
 ### Change an existing agent
 
-On a saved agent, **Draft** opens the panel for changes: write what to change, such as "make the description shorter", and DocsGPT changes only that and leaves the other fields as they are. The panel offers a few, such as **Tighten the prompt** or **Suggest conversation starters**, and **Finish setup: limits and safety** when the agent has neither a usage limit nor guardrails. On a published or shared agent, the panel reminds you that a saved change reaches everyone using it.
+On a saved agent, **Draft** opens the panel for changes: write what to change, such as "make the description shorter", and DocsGPT changes only that and leaves the other fields as they are. The panel offers what the agent lacks first: **Finish setup: limits and safety** when it has neither a usage limit nor guardrails, **Attach knowledge it can answer from**, **Write a prompt for this agent** while it uses a built-in prompt, and **Suggest conversation starters**. After those come **Make the description shorter** for a long description and **Tighten the prompt** for a prompt of its own. On a published or shared agent, the panel reminds you that a saved change reaches everyone using it.
 
 ### What lands in the form
 
