@@ -198,16 +198,31 @@ export default function ConversationMessages({
   // folding) shrank the content, and the browser clamps the scroll a frame
   // before the scroller re-pins: the turn jumped and snapped back. Each growth
   // raises the answer's min-height to match, so a shrink leaves blank space at
-  // its end instead; released when the stream ends.
+  // its end instead. The end of the stream (or a pause for approval) is such
+  // a shrink too: the live step window folds, and with no text there is no
+  // action row to take the status line's place. So the hold stays until the
+  // row stops being the latest answer, when the next question arrives.
   const [streamingAnswer, setStreamingAnswer] = useState<HTMLElement | null>(
     null,
   );
   const holdStreamingAnswer = status === 'loading';
+  const prevStatusRef = useRef(status);
+  useLayoutEffect(() => {
+    const el = streamingAnswer;
+    if (!el) return;
+    return () => {
+      el.style.minHeight = '';
+    };
+  }, [streamingAnswer]);
   useLayoutEffect(() => {
     const el = streamingAnswer;
     if (!el || !holdStreamingAnswer || typeof ResizeObserver === 'undefined')
       return;
-    let tallest = 0;
+    // A retry streams a new answer into the same row, so it starts its own
+    // hold; a turn resuming after an approval keeps the one it had.
+    if (prevStatusRef.current !== 'awaiting_tool_actions')
+      el.style.minHeight = '';
+    let tallest = parseFloat(el.style.minHeight) || 0;
     const observer = new ResizeObserver(([entry]) => {
       const height =
         entry.borderBoxSize?.[0]?.blockSize ??
@@ -217,11 +232,12 @@ export default function ConversationMessages({
       el.style.minHeight = `${height}px`;
     });
     observer.observe(el);
-    return () => {
-      observer.disconnect();
-      el.style.minHeight = '';
-    };
+    return () => observer.disconnect();
   }, [streamingAnswer, holdStreamingAnswer]);
+  // After the hold effect, so it reads the status the last commit had.
+  useLayoutEffect(() => {
+    prevStatusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     if (!hasMessages) return;

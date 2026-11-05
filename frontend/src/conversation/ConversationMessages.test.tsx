@@ -352,7 +352,10 @@ describe('ConversationMessages', () => {
       vi.unstubAllGlobals();
     });
 
-    const renderTurn = (status: 'loading' | 'idle') =>
+    const renderTurn = (
+      status: 'loading' | 'idle' | 'awaiting_tool_actions',
+      next?: Query,
+    ) =>
       act(() => {
         root.render(
           <ConversationMessages
@@ -361,6 +364,7 @@ describe('ConversationMessages', () => {
             queries={[
               { prompt: 'first', response: 'done' },
               { prompt: 'second', response: 'streaming' },
+              ...(next ? [next] : []),
             ]}
             status={status}
           />,
@@ -397,11 +401,34 @@ describe('ConversationMessages', () => {
       expect(answer(0).style.minHeight).toBe('');
     });
 
-    it('releases the hold when the stream ends', () => {
+    // The end of a stream shrinks the turn too (a step window folding, the
+    // status line going); releasing then dropped the pinned question.
+    it('keeps the hold after the stream ends', () => {
       renderTurn('loading');
       const item = answer(1);
       resize(item, 300);
       renderTurn('idle');
+      expect(item.style.minHeight).toBe('300px');
+    });
+
+    it('releases the hold when the next question arrives', () => {
+      renderTurn('loading');
+      const item = answer(1);
+      resize(item, 300);
+      renderTurn('idle');
+      renderTurn('loading', { prompt: 'third' });
+      expect(item.style.minHeight).toBe('');
+    });
+
+    it('keeps the hold across an approval, not into a retry', () => {
+      renderTurn('loading');
+      const item = answer(1);
+      resize(item, 300);
+      renderTurn('awaiting_tool_actions');
+      renderTurn('loading');
+      expect(item.style.minHeight).toBe('300px');
+      renderTurn('idle');
+      renderTurn('loading');
       expect(item.style.minHeight).toBe('');
     });
   });
