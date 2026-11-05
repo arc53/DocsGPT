@@ -26,7 +26,7 @@ def _row(user="alice", **action_overrides):
     ]
     for action in actions:
         action.update(action_overrides.get(action["name"], {}))
-    return {"id": ROW_ID, "name": "mcp_tool", "user_id": user, "config": {}, "actions": actions}
+    return {"id": ROW_ID, "name": "mcp_tool", "user_id": user, "status": True, "config": {}, "actions": actions}
 
 
 @pytest.fixture
@@ -188,6 +188,14 @@ class TestCall:
             )
         tool.call_app_tool.assert_called_once_with("read_checkpoint", {"id": "c"})
 
+    def test_a_server_that_ships_no_view_takes_no_view_calls(self, app, tool):
+        # Its app-visible tools exist, but no view of its can be the one calling.
+        no_view = _row(create_view={"ui": {}})
+        with _found(no_view):
+            response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_checkpoint"})
+        assert response.status_code == 403
+        tool.call_app_tool.assert_not_called()
+
     def test_a_model_only_tool_is_refused(self, app, tool):
         with _found(_row()):
             response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_me"})
@@ -299,6 +307,13 @@ class TestAppTool:
     def test_only_mcp_tool_rows(self, monkeypatch):
         monkeypatch.setattr(routes, "db_readonly", MagicMock())
         monkeypatch.setattr(routes, "resolve_tool_by_id", lambda *a, **k: {"id": ROW_ID, "name": "api_tool"})
+        assert routes._app_tool("alice", ROW_ID) is None
+
+    @pytest.mark.parametrize("status", [False, None])
+    def test_a_row_switched_off_is_not_usable(self, monkeypatch, status):
+        # An old view must not keep driving a tool the user turned off.
+        monkeypatch.setattr(routes, "db_readonly", MagicMock())
+        monkeypatch.setattr(routes, "resolve_tool_by_id", lambda *a, **k: {**_row(), "status": status})
         assert routes._app_tool("alice", ROW_ID) is None
 
     def test_resolves_as_the_user(self, monkeypatch):

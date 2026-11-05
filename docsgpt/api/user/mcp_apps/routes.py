@@ -46,15 +46,21 @@ def _app_tool(user: str, tool_id: Any) -> Optional[Tuple[ToolExecutor, dict]]:
     """The MCP tool row ``user`` may use, and an executor to load it with; None when there is none.
 
     The row resolves as an agent's call to it does: the user's own, or one a
-    live team grant lets them use.
+    live team grant lets them use. A row switched off (``status``) is left
+    out, as the chat leaves it out, so an open view can't keep driving it.
     """
     if not isinstance(tool_id, str) or not tool_id:
         return None
     with db_readonly() as conn:
         row = resolve_tool_by_id(tool_id, user, user_tools_repo=UserToolsRepository(conn))
-    if not row or row.get("name") != "mcp_tool":
+    if not row or row.get("name") != "mcp_tool" or row.get("status") is not True:
         return None
     return ToolExecutor(user=user), row
+
+
+def _ships_view(row: dict) -> bool:
+    """Whether any of ``row``'s actions renders an MCP App view."""
+    return any(isinstance(a, dict) and mcp_apps.resource_uri(a) for a in row.get("actions") or [])
 
 
 def _load(executor: ToolExecutor, row: dict):
@@ -183,6 +189,9 @@ class McpAppCall(Resource):
         if found is None:
             return _error("No such tool", 404)
         executor, row = found
+        # Only a server that ships a view has calls a view makes.
+        if not _ships_view(row):
+            return _error("This tool has no app view", 403)
         name = data.get("name")
         action = next(
             (a for a in row.get("actions") or [] if isinstance(a, dict) and a.get("name") == name), None
@@ -210,6 +219,7 @@ class McpAppCall(Resource):
         arguments = resolve_arguments(action, arguments or {}, executor._connection_parameters(row))["parameters"]
         from docsgpt.connectors.service import ConnectionUnavailable
 
+        logger.info("MCP App view call: tool row %s, %s, by %s", row.get("id"), name, user)
         try:
             result = _load(executor, row).call_app_tool(name, arguments)
         except ConnectionUnavailable:
