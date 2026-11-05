@@ -48,7 +48,9 @@ def _consistent_column_count(
     try:
         reader = csv.reader(io.StringIO(sample, newline=""), delimiter=separator, **(dialect or {}))
         for row in reader:
-            if not any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
+            # A blank or whitespace-only line says nothing. QUOTE_NONNUMERIC turns an
+            # unquoted cell into a float, which is never blank.
+            if not any(not isinstance(cell, str) or cell.strip() for cell in row):
                 continue
             if len(rows) == _SAMPLE_ROWS:
                 break

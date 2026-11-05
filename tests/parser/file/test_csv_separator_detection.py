@@ -185,3 +185,13 @@ def test_dialect_options_csv_cannot_apply_keep_the_comma() -> None:
     text = "\n".join(ROWS) + "\n"
 
     assert detect_separator(text, dialect={"quoting": 2}) == ","
+
+
+def test_numeric_cells_under_quote_nonnumeric_do_not_break_detection(tmp_path: Path) -> None:
+    """QUOTE_NONNUMERIC reads an unquoted cell as a float, which has no strip()."""
+    assert detect_separator('"a","b"\n1,2\n', dialect={"quoting": 2}) == ","
+    assert detect_separator('"a";"b"\n1;2\n', dialect={"quoting": 2}) == ";"
+
+    text = '"Name";"Units"\n"Widget";12\n"Gadget";7\n'
+    result = PandasCSVParser(pandas_config={"quoting": 2}).parse_file(_write(tmp_path, text))
+    assert result == "HEADERS: Name, Units\nWidget, 12\nGadget, 7"
