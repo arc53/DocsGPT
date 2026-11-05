@@ -520,12 +520,15 @@ def _mark_executed(
     tool_id: Optional[str] = None,
     user_id: Optional[str] = None,
     agent_id: Optional[str] = None,
+    app_result: Optional[Dict] = None,
 ) -> None:
     """Flip the row to ``executed``. If ``proposed_ok`` is False (the
     proposed write failed earlier), upsert a fresh row in ``executed`` so
     the reconciler can still see the attempt — without this, the side
     effect would be invisible to the journal. Both paths are scoped to
     the owning ``user_id`` so a reused ``call_id`` can't cross tenants.
+    ``app_result`` is the MCP App view's screened result, kept for
+    ``/api/mcp_apps/result`` when the conversation is reopened.
     """
     key = _journal_key(call_id, message_id)
     try:
@@ -538,6 +541,7 @@ def _mark_executed(
                     message_id=_parent_column(message_id),
                     artifact_id=artifact_id,
                     user_id=user_id,
+                    app_result=app_result,
                 )
                 if updated:
                     return
@@ -553,6 +557,7 @@ def _mark_executed(
                 artifact_id=artifact_id,
                 user_id=user_id,
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
+                app_result=app_result,
             )
     except Exception as exc:
         if is_budget_exhausted(exc):
@@ -2209,7 +2214,9 @@ class ToolExecutor:
                 yield from self._handed_off(tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome)
             )
 
-        def journal_executed(artifact_id: Optional[str] = None, stored: Optional[str] = None) -> str:
+        def journal_executed(
+            artifact_id: Optional[str] = None, stored: Optional[str] = None, app_result: Optional[Dict] = None
+        ) -> str:
             # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
             exposed = self.exposed_secrets()
             if stored is not None:
@@ -2232,6 +2239,7 @@ class ToolExecutor:
                 tool_id=tool_data.get("id"),
                 user_id=self.user,
                 agent_id=self.agent_id,
+                app_result=app_result,
             )
             return result_full
 
@@ -2332,6 +2340,7 @@ class ToolExecutor:
                 )
             if artifacts:
                 tool_call_data["artifacts"] = artifacts
+        app_result = None
         if tool_data["name"] != "api_tool":
             # A clean verdict hands the result back as it was; a masked or blocked
             # one never reaches the view, which would get the raw result.
@@ -2344,8 +2353,11 @@ class ToolExecutor:
                     keep_interrupted(artifact_id or None)
                 raise
             if view:
+                # The saved call keeps only where the view is; its result goes to the
+                # live event and the journal, which ``/api/mcp_apps/result`` reads.
+                app_result = view.pop("result", None)
                 tool_call_data["ui"] = view
-        result_full = journal_executed(artifact_id or None)
+        result_full = journal_executed(artifact_id or None, app_result=app_result)
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
         tool_call_data["result"] = truncate_tool_result(result_full)
@@ -2356,6 +2368,8 @@ class ToolExecutor:
         stream_tool_call_data = {
             key: value for key, value in tool_call_data.items() if key not in {"result_full", "resolved_arguments"}
         }
+        if app_result is not None:
+            stream_tool_call_data["ui"] = {**tool_call_data["ui"], "result": app_result}
         yield {"type": "tool_call", "data": {**stream_tool_call_data}}
         self.tool_calls.append(tool_call_data)
 
@@ -2614,7 +2628,7 @@ class ToolExecutor:
     # after a reload as it did live.
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
-        "job_id", "error", "error_type", "ui",
+        "job_id", "error", "error_type",
     )
 
     @staticmethod
@@ -2632,9 +2646,11 @@ class ToolExecutor:
     ) -> Optional[Dict]:
         """The MCP App view a call renders in the chat: its ``ui://`` resource, its tool row and full result.
 
-        ``ui`` on the call event and the saved call (``_PRESERVED_TOOL_CALL_KEYS``):
-        the chat reads the view's HTML from ``/api/mcp_apps/resource`` by
+        The chat reads the view's HTML from ``/api/mcp_apps/resource`` by
         ``tool_id``, and hands it ``result`` as ``ui/notifications/tool-result``.
+        Only the live call event carries ``result``; the saved call keeps
+        ``resource_uri`` and ``tool_id``, and a reopened chat reads the result
+        back from the journal through ``/api/mcp_apps/result``.
 
         The result is the full ``CallToolResult``, ``structuredContent``
         included, which the model's copy drops when there is content. So it
@@ -2752,5 +2768,9 @@ class ToolExecutor:
                 value = tool_call.get(key)
                 if value:
                     entry[key] = value
+            ui = tool_call.get("ui")
+            if isinstance(ui, dict) and ui.get("resource_uri") and ui.get("tool_id"):
+                # Where the view is, never its result: that stays in the journal.
+                entry["ui"] = {"resource_uri": ui["resource_uri"], "tool_id": ui["tool_id"]}
             projected.append(entry)
         return projected

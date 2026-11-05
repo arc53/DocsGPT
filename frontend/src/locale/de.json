@@ -2853,7 +2853,8 @@
       "failedTitle": "Die App konnte nicht geladen werden",
       "failedDescription": "Ihr MCP-Server hat nicht geantwortet, oder die Ansicht ließ sich nicht starten.",
       "frameTitle": "{{name}} (interaktive App)",
-      "callFailed": "Der Tool-Aufruf ist fehlgeschlagen"
+      "callFailed": "Der Tool-Aufruf ist fehlgeschlagen",
+      "resultUnavailable": "Das Ergebnis ist nicht mehr verfügbar"
     },
     "quotaExceeded": {
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",

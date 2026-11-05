@@ -2840,7 +2840,8 @@
       "failedTitle": "アプリを読み込めませんでした",
       "failedDescription": "MCP サーバーが応答しないか、ビューを開始できませんでした。",
       "frameTitle": "{{name}}（インタラクティブアプリ）",
-      "callFailed": "ツールの呼び出しに失敗しました"
+      "callFailed": "ツールの呼び出しに失敗しました",
+      "resultUnavailable": "結果はもう利用できません"
     },
     "quotaExceeded": {
       "tokens": "トークンクォータ {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。",

@@ -13,6 +13,8 @@ import { useSelector } from 'react-redux';
 import {
   callMcpAppTool,
   type McpAppResource,
+  type McpCallToolResult,
+  readMcpAppResult,
   readMcpAppView,
 } from '../api/services/mcpAppsService';
 import { Badge } from '../components/ui/badge';
@@ -76,13 +78,18 @@ function sandboxSrc(resource: McpAppResource): string {
  * page on its own origin and talks to the chat through `McpAppHost`; its own
  * tool calls go through `/api/mcp_apps/call` and ask first when the tool needs
  * approval. When MCP Apps are off, `fallback` (the ordinary step) shows.
+ * A saved call keeps no result, so a reopened chat reads it back by
+ * `messageId`.
  */
 export default function McpAppView({
   toolCall,
   fallback,
+  messageId,
 }: {
   toolCall: ToolCallsType;
   fallback: ReactNode;
+  /** The message the call belongs to, to read a saved call's result back. */
+  messageId?: string;
 }) {
   const { t, i18n } = useTranslation();
   const token = useSelector(selectToken);
@@ -98,8 +105,13 @@ export default function McpAppView({
   // Read by the host's callbacks, which outlive the render that made them.
   const latest = useRef({ toolCall, token, language: i18n.language, t });
   latest.current = { toolCall, token, language: i18n.language, t };
+  // The live result outlives a later update of the call without it (the
+  // saved shape), and a result read back fills in for it.
+  const result = useRef<McpCallToolResult | null>(ui?.result ?? null);
+  if (ui?.result) result.current = ui.result;
   const toolId = ui?.tool_id;
   const resourceUri = ui?.resource_uri;
+  const callId = toolCall.call_id;
 
   useEffect(() => {
     if (!toolId || !resourceUri) return;
@@ -113,10 +125,19 @@ export default function McpAppView({
     }, LOAD_TIMEOUT_MS);
     setPhase('loading');
     setResource(null);
-    readMcpAppView(toolId, resourceUri, latest.current.token, controller.signal)
-      .then((view) => {
+    const { token: current } = latest.current;
+    const savedResult =
+      result.current || !messageId
+        ? Promise.resolve(result.current)
+        : readMcpAppResult(messageId, callId, current, controller.signal);
+    Promise.all([
+      readMcpAppView(toolId, resourceUri, current, controller.signal),
+      savedResult,
+    ])
+      .then(([view, saved]) => {
         window.clearTimeout(timeout);
         if (cancelled) return;
+        if (saved) result.current = saved;
         // A sandbox the page can't use shows the ordinary step, not a failed load.
         if (!view || !isUsableSandbox(view.sandbox_url, window.location.href)) {
           setPhase('unavailable');
@@ -133,7 +154,7 @@ export default function McpAppView({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [toolId, resourceUri, attempt]);
+  }, [toolId, resourceUri, messageId, callId, attempt]);
 
   const context = useCallback(
     (): McpAppHostContext => ({
@@ -203,13 +224,18 @@ export default function McpAppView({
       },
       onSize: (next) => setHeight(Math.min(Math.ceil(next), MAX_HEIGHT)),
       onInitialized: () => {
-        const call = latest.current.toolCall;
+        const { toolCall: call, t: translate } = latest.current;
         setPhase('ready');
         host.sendToolInput(call.arguments ?? {});
-        if (call.ui?.result) host.sendToolResult(call.ui.result);
-        else if (call.status === 'error')
+        // Never left waiting: a view with no result to show is told why.
+        if (result.current) host.sendToolResult(result.current);
+        else
           host.sendToolCancelled(
-            latest.current.t('conversation.mcpApp.callFailed'),
+            translate(
+              call.status === 'error'
+                ? 'conversation.mcpApp.callFailed'
+                : 'conversation.mcpApp.resultUnavailable',
+            ),
           );
       },
     });

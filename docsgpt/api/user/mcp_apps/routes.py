@@ -1,4 +1,4 @@
-"""MCP Apps routes: the sandbox page, a view's HTML, and the tool calls a view makes.
+"""MCP Apps routes: the sandbox page, a view's HTML and saved result, and the tool calls a view makes.
 
 The chat renders an MCP tool's view (``docsgpt/agents/mcp_apps.py``) in the
 sandbox page this API serves on an origin other than the app's. The view's
@@ -12,6 +12,7 @@ from typing import Any, Optional, Tuple
 
 from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource, fields
+from sqlalchemy import text
 
 from docsgpt.agents import mcp_apps
 from docsgpt.agents.default_tools import resolve_tool_by_id
@@ -26,6 +27,9 @@ from docsgpt.connectors.permissions import (
     action_permission,
 )
 from docsgpt.security.origins import normalize_origin
+from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.tool_call_attempts import ToolCallAttemptsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.session import db_readonly
 
@@ -215,3 +219,50 @@ class McpAppCall(Resource):
             return _error("The tool call failed", 502)
         # As the view's copy of an agent's call: no control characters, no raw exposed secrets.
         return make_response(jsonify({"success": True, "result": executor.redact_app_result(result)}), 200)
+
+
+@mcp_apps_ns.route("/result")
+class McpAppResult(Resource):
+    @api.expect(
+        api.model(
+            "McpAppResultModel",
+            {
+                "message_id": fields.String(required=True, description="The message the call belongs to"),
+                "call_id": fields.String(required=True, description="The call that drew the view"),
+            },
+        )
+    )
+    @api.doc(
+        description=(
+            "Read back the tool result an MCP App view was handed live, for a reopened conversation. "
+            "The caller needs the access that reloading the conversation needs."
+        )
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return _error("Unauthorized", 401)
+        if not mcp_apps.enabled():
+            return _error("MCP Apps are off", 404)
+        data = _json_object()
+        if data is None:
+            return _error("Send a JSON object", 400)
+        message_id, call_id = data.get("message_id"), data.get("call_id")
+        if not isinstance(message_id, str) or not looks_like_uuid(message_id):
+            return _error("No such result", 404)
+        if not isinstance(call_id, str) or not call_id:
+            return _error("No such result", 404)
+        with db_readonly() as conn:
+            message = conn.execute(
+                text("SELECT conversation_id FROM conversation_messages WHERE id = CAST(:id AS uuid)"),
+                {"id": message_id},
+            ).fetchone()
+            # The access a reload of the conversation needs: its owner, or a user it is shared with.
+            if message is None or not ConversationsRepository(conn).get_any(
+                str(message._mapping["conversation_id"]), decoded_token.get("sub")
+            ):
+                return _error("No such result", 404)
+            result = ToolCallAttemptsRepository(conn).get_app_result(message_id, call_id)
+        if result is None:
+            return _error("No such result", 404)
+        return make_response(jsonify({"success": True, "result": result}), 200)

@@ -344,6 +344,7 @@ export default function ConversationMessages({
               onOpenArtifact={onOpenArtifact}
               onToolAction={onToolAction}
               agentId={agentId}
+              messageId={query.messageId}
               isStreaming={false}
             />
           ) : null}
@@ -415,6 +416,7 @@ export default function ConversationMessages({
             feedback={query.feedback}
             isStreaming={isCurrentlyStreaming}
             agentId={agentId}
+            messageId={query.messageId}
             handleFeedback={
               handleFeedback
                 ? (feedback) => handleFeedback(query, feedback, index)

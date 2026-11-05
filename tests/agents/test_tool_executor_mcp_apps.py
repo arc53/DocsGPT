@@ -111,8 +111,21 @@ class TestViewOnTheCall:
 
         completed = next(e for e in events if e["data"].get("status") == "completed")
         assert completed["data"]["ui"] == {"resource_uri": VIEW, "tool_id": TOOL_ROW_ID, "result": typed}
-        # Saved with the conversation, so the view renders again on reload.
-        assert executor.get_truncated_tool_calls()[0]["ui"]["resource_uri"] == VIEW
+        # Saved with the conversation without its result, which stays in the journal.
+        assert executor.get_truncated_tool_calls()[0]["ui"] == {"resource_uri": VIEW, "tool_id": TOOL_ROW_ID}
+        assert "result" not in executor.tool_calls[0]["ui"]
+
+    def test_the_views_result_is_journaled(self, apps, mock_tool_manager, monkeypatch):
+        _route(monkeypatch, "create_view")
+        typed = {"content": [], "structuredContent": {"checkpointId": "c"}, "isError": False}
+        mock_tool_manager.load_tool.return_value.take_app_result = Mock(return_value=typed)
+        executed = Mock()
+        monkeypatch.setattr("docsgpt.agents.tool_executor._mark_executed", executed)
+        executor = ToolExecutor(user="u1")
+
+        list(_drain(executor.execute(_tools_dict(), _call("create_view"), "MockLLM")))
+
+        assert executed.call_args.kwargs["app_result"] == typed
 
     def test_a_result_the_guardrail_changed_shows_no_view(self, apps, mock_tool_manager, monkeypatch):
         # Masked or blocked output must not reach the view or the saved call in the clear.
@@ -127,6 +140,19 @@ class TestViewOnTheCall:
         assert all("ui" not in e["data"] for e in events)
         assert all("ui" not in c for c in executor.get_truncated_tool_calls())
         tool.take_app_result.assert_called_once()
+
+    def test_a_withheld_view_journals_no_result(self, apps, mock_tool_manager, monkeypatch):
+        _route(monkeypatch, "create_view")
+        tool = mock_tool_manager.load_tool.return_value
+        tool.take_app_result = Mock(return_value={"content": [{"type": "text", "text": "sk-secret"}]})
+        executed = Mock()
+        monkeypatch.setattr("docsgpt.agents.tool_executor._mark_executed", executed)
+        executor = ToolExecutor(user="u1")
+        monkeypatch.setattr(executor, "_guardrail_tool_result", lambda result, *_: "[masked]")
+
+        list(_drain(executor.execute(_tools_dict(), _call("create_view"), "MockLLM")))
+
+        assert executed.call_args.kwargs["app_result"] is None
 
     def test_the_views_result_is_screened_on_its_own(self, apps, mock_tool_manager, monkeypatch):
         # The model's copy drops structuredContent when there is content; the view keeps it.

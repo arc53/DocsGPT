@@ -314,3 +314,73 @@ class TestAppTool:
         assert seen == {"tool_id": ROW_ID, "user": "alice"}
         assert executor.user == "alice"
         assert row["id"] == ROW_ID
+
+
+RESULT = {"content": [], "structuredContent": {"elements": []}, "isError": False}
+
+
+@pytest.fixture
+def saved(pg_conn, monkeypatch):
+    """A message of alice's whose call ``c1`` drew a view, with its result journaled."""
+    from contextlib import contextmanager
+
+    from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+    from docsgpt.storage.db.repositories.tool_call_attempts import ToolCallAttemptsRepository
+
+    @contextmanager
+    def _conn():
+        yield pg_conn
+
+    monkeypatch.setattr(routes, "db_readonly", _conn)
+    conversations = ConversationsRepository(pg_conn)
+    conversation_id = str(conversations.create("alice", "c")["id"])
+    message_id = str(conversations.append_message(conversation_id, {"prompt": "p", "response": "r"})["id"])
+    journal = ToolCallAttemptsRepository(pg_conn)
+    for call_id, app_result in (("c1", RESULT), ("c2", None)):
+        key = f"{message_id}:{call_id}"
+        journal.record_proposed(key, "mcp_tool", "create_view", {}, message_id=message_id, user_id="alice")
+        journal.mark_executed(key, "ok", message_id=message_id, user_id="alice", app_result=app_result)
+    return {"conversation_id": conversation_id, "message_id": message_id, "conn": pg_conn}
+
+
+@pytest.mark.unit
+class TestResult:
+    def test_the_owner_reads_it_back(self, app, saved):
+        response = _post(app, routes.McpAppResult, {"message_id": saved["message_id"], "call_id": "c1"})
+        assert response.status_code == 200
+        assert response.json == {"success": True, "result": RESULT}
+
+    def test_a_user_the_conversation_is_shared_with_reads_it_too(self, app, saved):
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        ConversationsRepository(saved["conn"]).add_shared_user(saved["conversation_id"], "bob")
+        response = _post(app, routes.McpAppResult, {"message_id": saved["message_id"], "call_id": "c1"}, user="bob")
+        assert response.status_code == 200
+
+    def test_another_user_gets_nothing(self, app, saved):
+        response = _post(app, routes.McpAppResult, {"message_id": saved["message_id"], "call_id": "c1"}, user="eve")
+        assert response.status_code == 404
+
+    def test_a_deleted_message(self, app, saved):
+        from sqlalchemy import text
+
+        saved["conn"].execute(
+            text("DELETE FROM conversation_messages WHERE id = CAST(:id AS uuid)"), {"id": saved["message_id"]}
+        )
+        response = _post(app, routes.McpAppResult, {"message_id": saved["message_id"], "call_id": "c1"})
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize("call_id", ["c2", "c9"])
+    def test_a_call_with_no_saved_result(self, app, saved, call_id):
+        response = _post(app, routes.McpAppResult, {"message_id": saved["message_id"], "call_id": call_id})
+        assert response.status_code == 404
+
+    def test_a_malformed_message_id(self, app, saved):
+        assert _post(app, routes.McpAppResult, {"message_id": "nope", "call_id": "c1"}).status_code == 404
+
+    def test_needs_a_session(self, app):
+        assert _post(app, routes.McpAppResult, {"message_id": "m", "call_id": "c1"}, user=None).status_code == 401
+
+    def test_off(self, app, monkeypatch):
+        monkeypatch.setattr(routes.mcp_apps, "enabled", lambda: False)
+        assert _post(app, routes.McpAppResult, {"message_id": "m", "call_id": "c1"}).status_code == 404

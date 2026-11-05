@@ -13,10 +13,36 @@ vi.mock('react-i18next', () => ({
 }));
 
 const readMcpAppView = vi.fn();
+const readMcpAppResult = vi.fn();
 vi.mock('../api/services/mcpAppsService', () => ({
   readMcpAppView: (...args: unknown[]) => readMcpAppView(...args),
+  readMcpAppResult: (...args: unknown[]) => readMcpAppResult(...args),
   callMcpAppTool: vi.fn(),
 }));
+
+// The host the view builds, with what it sent; the protocol is mcpAppHost.test's.
+type FakeHost = {
+  options: { onInitialized: () => void };
+  sendToolInput: ReturnType<typeof vi.fn>;
+  sendToolResult: ReturnType<typeof vi.fn>;
+  sendToolCancelled: ReturnType<typeof vi.fn>;
+};
+const hosts: FakeHost[] = [];
+vi.mock('./mcpAppHost', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./mcpAppHost')>();
+  class McpAppHost {
+    sendToolInput = vi.fn();
+    sendToolResult = vi.fn();
+    sendToolCancelled = vi.fn();
+    sendContext = vi.fn();
+    handle = vi.fn();
+    teardown = vi.fn(async () => {});
+    constructor(public options: { onInitialized: () => void }) {
+      hosts.push(this as unknown as FakeHost);
+    }
+  }
+  return { ...actual, McpAppHost };
+});
 
 import { TooltipProvider } from '../components/ui/tooltip';
 import McpAppView from './McpAppView';
@@ -50,9 +76,22 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   readMcpAppView.mockReset();
+  readMcpAppResult.mockReset();
+  hosts.length = 0;
 });
 
-const render = async () => {
+const VIEW = {
+  html: '<html>',
+  sandbox_url: 'http://127.0.0.1:7091/api/mcp_apps/sandbox',
+};
+
+/** The call as a saved message keeps it: where its view is, no result. */
+const saved: ToolCallsType = {
+  ...call,
+  ui: { resource_uri: 'ui://excalidraw/mcp-app.html', tool_id: 'row-1' },
+};
+
+const render = async (toolCall = call, messageId?: string) => {
   const store = configureStore({
     reducer: { preference: () => ({ token: 'tok' }) },
   });
@@ -60,7 +99,11 @@ const render = async () => {
     root.render(
       <Provider store={store}>
         <TooltipProvider>
-          <McpAppView toolCall={call} fallback={<div>FALLBACK_CHIP</div>} />
+          <McpAppView
+            toolCall={toolCall}
+            messageId={messageId}
+            fallback={<div>FALLBACK_CHIP</div>}
+          />
         </TooltipProvider>
       </Provider>,
     );
@@ -116,6 +159,42 @@ describe('McpAppView', () => {
     );
     expect(frame.getAttribute('allow')).toBe('clipboard-write');
     expect(container.textContent).not.toContain('FALLBACK_CHIP');
+  });
+
+  it('hands the view its inline result without reading it back', async () => {
+    readMcpAppView.mockResolvedValue(VIEW);
+    await render(call, 'm1');
+    act(() => hosts[0].options.onInitialized());
+    expect(readMcpAppResult).not.toHaveBeenCalled();
+    expect(hosts[0].sendToolInput).toHaveBeenCalledWith({ elements: '[]' });
+    expect(hosts[0].sendToolResult).toHaveBeenCalledWith(call.ui?.result);
+  });
+
+  it('reads a saved call’s result back and hands it to the view', async () => {
+    const result = { content: [], structuredContent: { checkpointId: 'y' } };
+    readMcpAppView.mockResolvedValue(VIEW);
+    readMcpAppResult.mockResolvedValue(result);
+    await render(saved, 'm1');
+    expect(readMcpAppResult).toHaveBeenCalledWith(
+      'm1',
+      'c1',
+      'tok',
+      expect.any(AbortSignal),
+    );
+    act(() => hosts[0].options.onInitialized());
+    expect(hosts[0].sendToolInput).toHaveBeenCalled();
+    expect(hosts[0].sendToolResult).toHaveBeenCalledWith(result);
+  });
+
+  it('tells the view when a saved result is gone', async () => {
+    readMcpAppView.mockResolvedValue(VIEW);
+    readMcpAppResult.mockResolvedValue(null);
+    await render(saved, 'm1');
+    act(() => hosts[0].options.onInitialized());
+    expect(hosts[0].sendToolResult).not.toHaveBeenCalled();
+    expect(hosts[0].sendToolCancelled).toHaveBeenCalledWith(
+      'conversation.mcpApp.resultUnavailable',
+    );
   });
 
   it('shows a retryable error when the view fails to load', async () => {

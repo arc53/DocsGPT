@@ -34,6 +34,8 @@ type AnswerFlowProps = {
   /** Opens a cited source's reader; see `MarkdownAnswer`. */
   onOpenSource?: (index: number) => void;
   agentId?: string;
+  /** The saved message this answer is, so an MCP App view can read its result back. */
+  messageId?: string;
   /** Set when the bubble already carries its own progress UI (a research run). */
   suppressStatusLine?: boolean;
   /** Every artifact in the conversation, so ``sandbox:`` links can reach them. */
@@ -64,6 +66,7 @@ export default function AnswerFlow({
   sourceCount,
   onOpenSource,
   agentId,
+  messageId,
   suppressStatusLine,
   artifacts,
   turnArtifacts,
@@ -182,6 +185,7 @@ export default function AnswerFlow({
             <McpAppView
               key={`app-${call.call_id}`}
               toolCall={call}
+              messageId={messageId}
               fallback={
                 <InlineToolCallChip toolCall={call} isLive={isLiveCall(call)} />
               }

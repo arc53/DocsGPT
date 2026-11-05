@@ -132,6 +132,8 @@ const ConversationBubble = forwardRef<
     ) => void;
     /** Active agent id; refreshes the Schedules tab from SchedulerToolCallCard. */
     agentId?: string;
+    /** The saved message behind this answer, for an MCP App view to read its result back. */
+    messageId?: string;
   }
 >(function ConversationBubble(
   {
@@ -158,6 +160,7 @@ const ConversationBubble = forwardRef<
     onOpenArtifact,
     onToolAction,
     agentId,
+    messageId,
   },
   ref,
 ) {
@@ -581,6 +584,7 @@ const ConversationBubble = forwardRef<
             sourceCount={showSources ? (sources?.length ?? 0) : 0}
             onOpenSource={openSources}
             agentId={agentId}
+            messageId={messageId}
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
             suppressStatusLine={

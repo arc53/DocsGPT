@@ -457,6 +457,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/mcp_apps/sandbox": ("*",),
     "/api/mcp_apps/resource": ("*",),
     "/api/mcp_apps/call": ("*",),
+    "/api/mcp_apps/result": ("*",),
     "/api/artifact/<artifact_id>": ("*",),
     # Reading artifacts is ``artifacts:read`` (RULES); changing them needs a session.
     "/api/artifacts/<artifact_id>": ("DELETE",),

@@ -77,7 +77,8 @@ export type ToolCallsType = {
   /**
    * The MCP App view the call renders inline (`docsgpt/agents/mcp_apps.py`):
    * its `ui://` resource, the tool row to read it through, and the call's full
-   * `CallToolResult`, which the view is handed.
+   * `CallToolResult`, which the view is handed. `result` is on the live call
+   * only; a saved one reads it back from `/api/mcp_apps/result`.
    */
   ui?: {
     resource_uri: string;

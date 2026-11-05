@@ -8,6 +8,7 @@ import apiClient from '../client';
 export const MCP_APPS_PATHS = {
   RESOURCE: '/api/mcp_apps/resource',
   CALL: '/api/mcp_apps/call',
+  RESULT: '/api/mcp_apps/result',
 } as const;
 
 /** A tool's `CallToolResult`, as the view is handed it. */
@@ -43,8 +44,9 @@ export type McpAppCallOutcome =
 /**
  * Read the view a tool call renders.
  *
- * @returns The view, or null when MCP Apps are off on this install (the chat
- *   then shows the ordinary tool step).
+ * @returns The view, or null when MCP Apps are off on this install or the
+ *   user may no longer use the tool row (the chat then shows the ordinary
+ *   tool step).
  * @throws When the view could not be loaded.
  */
 export async function readMcpAppView(
@@ -60,11 +62,38 @@ export async function readMcpAppView(
     {},
     signal,
   );
-  if (response.status === 404) return null;
+  if ([401, 403, 404].includes(response.status)) return null;
   const body = await response.json().catch(() => ({}));
   if (!response.ok || !body?.success)
     throw new Error(body?.error || `HTTP ${response.status}`);
   return body as McpAppResource;
+}
+
+/**
+ * Read back the result a view was handed live, for a call of a saved message
+ * (the saved call keeps only where its view is).
+ *
+ * @returns The result, or null when there is none to read back.
+ * @throws When it could not be read.
+ */
+export async function readMcpAppResult(
+  messageId: string,
+  callId: string,
+  token: string | null,
+  signal?: AbortSignal,
+): Promise<McpCallToolResult | null> {
+  const response: Response = await apiClient.post(
+    MCP_APPS_PATHS.RESULT,
+    { message_id: messageId, call_id: callId },
+    token,
+    {},
+    signal,
+  );
+  if ([401, 403, 404].includes(response.status)) return null;
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body?.success)
+    throw new Error(body?.error || `HTTP ${response.status}`);
+  return body.result as McpCallToolResult;
 }
 
 /** Run a tool the view calls; `approved` once the user allowed a tool that needs approval. */

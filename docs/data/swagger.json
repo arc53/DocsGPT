@@ -999,6 +999,23 @@
       ],
       "type": "object"
     },
+    "McpAppResultModel": {
+      "properties": {
+        "call_id": {
+          "description": "The call that drew the view",
+          "type": "string"
+        },
+        "message_id": {
+          "description": "The message the call belongs to",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "message_id"
+      ],
+      "type": "object"
+    },
     "MoveAgent": {
       "properties": {
         "agent_id": {
@@ -4869,6 +4886,31 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/McpAppResourceModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "mcp_apps"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/mcp_apps/result": {
+      "post": {
+        "description": "Read back the tool result an MCP App view was handed live, for a reopened conversation. The caller needs the access that reloading the conversation needs.",
+        "operationId": "post_mcp_app_result",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/McpAppResultModel"
             }
           }
         ],

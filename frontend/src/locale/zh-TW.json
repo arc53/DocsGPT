@@ -2840,7 +2840,8 @@
       "failedTitle": "無法載入應用程式",
       "failedDescription": "其 MCP 伺服器沒有回應，或檢視無法啟動。",
       "frameTitle": "{{name}}（互動式應用程式）",
-      "callFailed": "工具呼叫失敗"
+      "callFailed": "工具呼叫失敗",
+      "resultUnavailable": "結果已無法使用"
     },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。",

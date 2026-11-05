@@ -2945,7 +2945,8 @@
       "failedTitle": "No se pudo cargar la app",
       "failedDescription": "Su servidor MCP no respondió o la vista no pudo iniciarse.",
       "frameTitle": "{{name}} (app interactiva)",
-      "callFailed": "La llamada a la herramienta falló"
+      "callFailed": "La llamada a la herramienta falló",
+      "resultUnavailable": "El resultado ya no está disponible"
     },
     "quotaExceeded": {
       "tokens": "Has usado {{used}} de tu cuota de {{limit}} tokens. Se restablece el {{resetsAt}}.",

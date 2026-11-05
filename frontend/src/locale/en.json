@@ -2853,7 +2853,8 @@
       "failedTitle": "The app couldn't load",
       "failedDescription": "Its MCP server didn't answer, or the view failed to start.",
       "frameTitle": "{{name}} (interactive app)",
-      "callFailed": "The tool call failed"
+      "callFailed": "The tool call failed",
+      "resultUnavailable": "The result is no longer available"
     },
     "quotaExceeded": {
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",

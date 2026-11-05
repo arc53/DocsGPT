@@ -2838,7 +2838,8 @@
       "failedTitle": "无法加载应用",
       "failedDescription": "其 MCP 服务器没有响应，或视图未能启动。",
       "frameTitle": "{{name}}（交互式应用）",
-      "callFailed": "工具调用失败"
+      "callFailed": "工具调用失败",
+      "resultUnavailable": "结果已不可用"
     },
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",
