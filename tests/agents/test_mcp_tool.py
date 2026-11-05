@@ -152,34 +152,23 @@ class TestGenerateCacheKey:
         assert key("one") == key("one")
 
     @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
-    def test_an_evicted_secret_token_takes_its_cached_client_along(self, mock_setup, monkeypatch):
-        # A secret seen again gets a new token and so a new key; what the old key held must not linger.
+    def test_a_secret_is_never_kept_in_the_key(self, mock_setup):
         from docsgpt.agents.tools import mcp_tool
 
-        monkeypatch.setattr(mcp_tool, "SECRET_TOKENS_MAX", 1)
-        monkeypatch.setattr(mcp_tool, "_secret_tokens", {})
-        monkeypatch.setattr(mcp_tool, "_mcp_clients_cache", {})
-        monkeypatch.setattr(mcp_tool, "_ui_resource_cache", {})
-
-        def key(password):
+        def key(token):
             return mcp_tool.MCPTool(
                 {
                     "server_url": "https://mcp.example.com",
-                    "auth_type": "basic",
-                    "auth_credentials": {"username": "user1", "password": password},
+                    "auth_type": "bearer",
+                    "auth_credentials": {"bearer_token": token},
                 }
             )._cache_key
 
-        first = key("one")
-        mcp_tool._mcp_clients_cache[first] = {"client": object()}
-        mcp_tool._ui_resource_cache[(first, "ui://x")] = (0, {"html": ""})
-
-        key("two")
-
-        assert first not in mcp_tool._mcp_clients_cache
-        assert (first, "ui://x") not in mcp_tool._ui_resource_cache
-        assert key("one") != first
-        assert "one" not in key("one")
+        first = key("github_pat_one")
+        assert "github_pat" not in first
+        assert first == key("github_pat_one")
+        assert first != key("github_pat_two")
+        assert not hasattr(mcp_tool, "_secret_tokens")
 
 
 @pytest.mark.unit

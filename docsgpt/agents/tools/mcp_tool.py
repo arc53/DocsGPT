@@ -1,6 +1,8 @@
 import asyncio
 import base64
 import concurrent.futures
+import hashlib
+import hmac
 import json
 import logging
 import secrets
@@ -127,10 +129,8 @@ OAUTH_TASK_KEY_TTL = 900
 OAUTH_CANCELLED = "1"
 
 
-#: Secret -> the opaque token that stands for it in this process's cache keys.
-_secret_tokens: Dict[str, str] = {}
-_secret_tokens_guard = threading.Lock()
-SECRET_TOKENS_MAX = 1024
+# Keys the tokens that stand for secrets in cache keys; random per process, never stored.
+_SECRET_TOKEN_KEY = secrets.token_bytes(32)
 
 
 def _secret_token(secret: str) -> str:
@@ -139,26 +139,11 @@ def _secret_token(secret: str) -> str:
     A prefix of the secret itself is not enough: every fine-grained GitHub
     token starts with ``github_pat_``, so two users' tokens would share (and
     reuse) one cached client carrying the first user's token. The token is
-    random, not a digest: the caches are in-process, so it only has to be
-    the same for the same secret within this process, and then no hash of a
-    password or key exists anywhere to crack.
+    an HMAC under a key that lives only in this process: the same secret
+    always gets the same token, no table of raw secrets is kept, and the
+    token is worthless outside the process.
     """
-    with _secret_tokens_guard:
-        token = _secret_tokens.get(secret)
-        if token is None:
-            while len(_secret_tokens) >= SECRET_TOKENS_MAX:
-                _forget_secret_token(_secret_tokens.pop(next(iter(_secret_tokens))))
-            token = _secret_tokens[secret] = secrets.token_hex(8)
-        return token
-
-
-def _forget_secret_token(token: str) -> None:
-    """Drop what was cached under an evicted token: the secret gets a new one, so nothing would find it again."""
-    suffix = f":{token}"
-    for key in [k for k in list(_mcp_clients_cache) if k.endswith(suffix)]:
-        _mcp_clients_cache.pop(key, None)
-    for key in [k for k in list(_ui_resource_cache) if str(k[0]).endswith(suffix)]:
-        _ui_resource_cache.pop(key, None)
+    return hmac.new(_SECRET_TOKEN_KEY, secret.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
 
 
 def param_header_maps(schemas: Dict[str, Any]) -> Dict[str, Dict[tuple, str]]:
