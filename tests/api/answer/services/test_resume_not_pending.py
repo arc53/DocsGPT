@@ -92,6 +92,16 @@ class TestResumeRefusesWhatIsNotPending:
         assert result[3][0]["call_id"] == "call-5"
         service.release_claim.assert_not_called()
 
+    def test_the_paused_turns_passthrough_comes_back(self, resume):
+        sp, service = resume
+        state = _state(["call-5"])
+        state["agent_config"]["passthrough"] = {"user_id": "emp-42"}
+        service.claim_state.return_value = state
+
+        sp.resume_from_tool_actions([{"call_id": "call-5", "decision": "approved"}], CONV_ID)
+
+        assert sp.passthrough == {"user_id": "emp-42"}
+
 
 @pytest.fixture
 def stream_processor_mock():

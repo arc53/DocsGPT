@@ -21,7 +21,7 @@ from docsgpt.vectorstore.faiss_docstore import (
     LegacyDocument,
     dump_json_sidecar,
     dump_pickle_sidecar,
-    load_json_sidecar,
+    load_json_sidecar_with_fingerprint,
     load_pickle_sidecar,
 )
 
@@ -31,6 +31,11 @@ DOCUMENTS = {
 }
 MAPPING = {0: "id-1", 1: "id-2"}
 LEGACY_INDEX_PKL = Path(__file__).parent / "fixtures" / "legacy_langchain_index.pkl"
+
+
+def load_json_sidecar(data: bytes):
+    """The sidecar's ``(documents, mapping)``, without the fingerprint."""
+    return load_json_sidecar_with_fingerprint(data)[:2]
 
 
 def _emitted_symbols(data: bytes):
@@ -169,6 +174,13 @@ class TestJsonSidecar:
     def test_empty_index(self):
         documents, mapping = load_json_sidecar(dump_json_sidecar({}, {}))
         assert documents == {} and mapping == {}
+
+    def test_the_index_fingerprint_round_trips(self):
+        data = dump_json_sidecar(DOCUMENTS, MAPPING, "ab" * 32)
+        assert load_json_sidecar_with_fingerprint(data) == (DOCUMENTS, MAPPING, "ab" * 32)
+
+    def test_a_sidecar_without_a_fingerprint_reads_as_none(self):
+        assert load_json_sidecar_with_fingerprint(dump_json_sidecar(DOCUMENTS, MAPPING))[2] is None
 
 
 @pytest.mark.unit

@@ -15,6 +15,9 @@ from docsgpt.core.settings import settings
 from docsgpt.llm.handlers.base import ToolCall
 from docsgpt.monitors import secret_refs, service, triggers
 
+
+pytestmark = pytest.mark.fresh_db
+
 GITHUB_TOOL_ID = "00000000-0000-0000-0000-0000000061f7"
 
 

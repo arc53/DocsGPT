@@ -27,7 +27,6 @@ class RstParser(BaseParser):
             remove_interpreters: bool = True,
             remove_directives: bool = True,
             remove_whitespaces_excess: bool = True,
-            # Be careful with remove_characters_excess, might cause data loss
             remove_characters_excess: bool = True,
             **kwargs: Any,
     ) -> None:
@@ -136,22 +135,41 @@ class RstParser(BaseParser):
         return rst_tups
 
     def chunk_by_token_count(self, text: str, max_tokens: int = 100) -> List[str]:
-        """Chunk text by token count."""
-    
+        """Chunk text by approximate token count without losing any content.
+
+        Each chunk is at most ``max_tokens * 5`` characters long. A chunk is cut at the last
+        whitespace inside its window so words are not split; the next chunk starts exactly
+        where the previous one ended. A single word longer than the window is hard-split.
+
+        Args:
+            text: The text to split.
+            max_tokens: Approximate maximum number of tokens per chunk.
+
+        Returns:
+            The non-empty, whitespace-stripped chunks, in order.
+        """
         avg_token_length = 5
-    
+        if max_tokens <= 0:
+            raise ValueError(f"max_tokens must be a positive integer, got {max_tokens}")
+
         chunk_size = max_tokens * avg_token_length
 
-        chunks = []
-        for i in range(0, len(text), chunk_size):
-            chunk = text[i:i+chunk_size]
-            if i + chunk_size < len(text):
-                last_space = chunk.rfind(' ')
-                if last_space != -1:
-                    chunk = chunk[:last_space]
-            
-            chunks.append(chunk.strip())
-        
+        chunks: List[str] = []
+        start = 0
+        while start < len(text):
+            end = min(start + chunk_size, len(text))
+            if end < len(text) and not text[end].isspace():
+                # The window ends inside a word: back up to the last whitespace in it.
+                cut = end
+                while cut > start and not text[cut - 1].isspace():
+                    cut -= 1
+                if cut > start:
+                    end = cut
+            chunk = text[start:end].strip()
+            if chunk:
+                chunks.append(chunk)
+            start = end
+
         return chunks
     
     def remove_images(self, content: str) -> str:
@@ -182,16 +200,35 @@ class RstParser(BaseParser):
         return content
 
     def remove_whitespaces_excess(self, content: List[Tuple[str, Any]]) -> List[Tuple[str, Any]]:
-        """Pattern to match 2 or more consecutive whitespaces"""
-        pattern = r"\s{2,}"
-        content = [(key, re.sub(pattern, "  ", value)) for key, value in content]
-        return content
+        """Collapse extra spaces that sit inside a line.
+
+        A run of spaces or tabs is reduced to two spaces only when it follows
+        a visible character. Newlines and leading indentation are left as they
+        are, so a blank line and a code block keep their shape.
+
+        Args:
+            content: Header and body pairs from ``rst_to_tups``.
+
+        Returns:
+            The same pairs, with in-line space runs shortened.
+        """
+        pattern = r"(?<=\S)[ \t]{2,}"
+        return [(key, re.sub(pattern, "  ", value)) for key, value in content]
 
     def remove_characters_excess(self, content: List[Tuple[str, Any]]) -> List[Tuple[str, Any]]:
-        """Pattern to match 2 or more consecutive characters"""
-        pattern = r"(\S)\1{2,}"
-        content = [(key, re.sub(pattern, r"\1\1\1", value, flags=re.MULTILINE)) for key, value in content]
-        return content
+        """Shorten a long run of the same punctuation mark to three.
+
+        Letters and digits are left alone. A value such as ``100000`` used to
+        be rewritten because the old pattern matched any repeated character.
+
+        Args:
+            content: Header and body pairs from ``rst_to_tups``.
+
+        Returns:
+            The same pairs, with repeated punctuation shortened.
+        """
+        pattern = r"([^\w\s])\1{2,}"
+        return [(key, re.sub(pattern, r"\1\1\1", value)) for key, value in content]
 
     def _init_parser(self) -> Dict:
         """Initialize the parser with the config."""

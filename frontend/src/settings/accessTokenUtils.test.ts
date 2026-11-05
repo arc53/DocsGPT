@@ -95,6 +95,13 @@ describe('eligibleFilterFamilies', () => {
     ]);
   });
 
+  it('run and artifact reads permit an agent restriction', () => {
+    expect(eligibleFilterFamilies(['runs:read'], FAMILIES)).toEqual(['agents']);
+    expect(eligibleFilterFamilies(['artifacts:read'], FAMILIES)).toEqual([
+      'agents',
+    ]);
+  });
+
   it('respects the families the server says are filterable', () => {
     expect(eligibleFilterFamilies(['chat:run'], ['sources'])).toEqual([
       'sources',

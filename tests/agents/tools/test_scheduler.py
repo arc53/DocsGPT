@@ -130,6 +130,12 @@ class TestScheduleTask:
         out = tool.execute_action("schedule_task", instruction="x", run_at=far)
         assert "horizon" in out
 
+    def test_rejects_a_delay_past_the_calendar(self, pg_conn, patch_sessions):
+        agent_id = _make_agent(pg_conn)
+        tool = _make_tool(user_id="u1", agent_id=agent_id)
+        out = tool.execute_action("schedule_task", instruction="x", delay="999999999d")
+        assert out.startswith("Error:") and "too long" in out
+
 
 class TestQuota:
     def test_quota_enforced(self, pg_conn, patch_sessions, monkeypatch):

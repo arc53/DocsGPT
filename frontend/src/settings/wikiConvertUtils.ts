@@ -12,8 +12,25 @@ export type ConvertStart =
   | { status: 'enabled' }
   | { status: 'task'; taskId: string }
   | { status: 'forbidden' }
+  | { status: 'unsupported' }
   | { status: 'conflict'; message?: string }
   | { status: 'error'; message?: string };
+
+/**
+ * Whether an answer from a wiki route (create, convert, a page write) says
+ * the vector store can't change single chunks, so it can't hold a wiki
+ * (`code: wiki_unsupported`). Its message is English; the UI words it with
+ * `settings.sources.wiki.unsupported`.
+ *
+ * @param body The response's JSON, if it parsed.
+ */
+export function isWikiUnsupported(body: unknown): boolean {
+  return (
+    !!body &&
+    typeof body === 'object' &&
+    (body as Record<string, unknown>).code === 'wiki_unsupported'
+  );
+}
 
 export type ConvertPoll =
   | { status: 'pending' }
@@ -42,6 +59,7 @@ export async function startWikiConversion(
     return { status: 'enabled' };
   }
   if (response.status === 403) return { status: 'forbidden' };
+  if (isWikiUnsupported(data)) return { status: 'unsupported' };
   if (response.status === 409)
     return { status: 'conflict', message: data?.message };
   return { status: 'error', message: data?.message };

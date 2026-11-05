@@ -89,7 +89,8 @@ export default function PairDeviceModal({
       setPairing(res);
       setStage('waiting');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'pairing failed');
+      console.error('start pairing failed', err);
+      setError(t('common.actionFailed'));
     } finally {
       setSubmitting(false);
     }

@@ -721,6 +721,7 @@ class FakeDrive:
         self.get_errors = get_errors or {}
         self.retries = []
         self.list_calls = []
+        self.media_calls = []
         self.service = MagicMock()
         self.service.files.return_value = self
 
@@ -744,9 +745,11 @@ class FakeDrive:
         return _Request(lambda: {"files": children}, self.retries)
 
     def get_media(self, fileId, supportsAllDrives):
+        self.media_calls.append(fileId)
         return ("media", fileId)
 
     def export_media(self, fileId, mimeType):
+        self.media_calls.append(fileId)
         return ("export", fileId)
 
 
@@ -837,6 +840,29 @@ class TestDownloadToDirectory:
         loader, _ = drive_loader({"f1": {"name": "invoice", "mimeType": "application/pdf"}})
         loader.download_to_directory(str(tmp_path), {"file_ids": ["f1"]})
         assert _files(tmp_path) == ["invoice.pdf"]
+
+    @pytest.mark.unit
+    def test_file_urls_name_each_downloaded_file(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "Reports", "mimeType": FOLDER},
+            "f1": {"name": "q1.pdf", "mimeType": "application/pdf", "parent": "root",
+                   "webViewLink": "https://drive.google.com/file/d/f1/view"},
+            "d1": {"name": "Plan", "mimeType": GDOC, "webViewLink": "https://docs.google.com/document/d/d1/edit"},
+            "f2": {"name": "bad.pdf", "mimeType": "application/pdf",
+                   "webViewLink": "https://drive.google.com/file/d/f2/view"},
+            "f3": {"name": "nolink.pdf", "mimeType": "application/pdf"},
+        }, errors={"f2": _http_error(500, "backendError")})
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"], "file_ids": ["d1", "f2", "f3"]})
+        assert result["file_urls"] == {
+            "Reports/q1.pdf": "https://drive.google.com/file/d/f1/view",
+            "Plan.docx": "https://docs.google.com/document/d/d1/edit",
+        }
+
+    @pytest.mark.unit
+    def test_item_fields_ask_for_the_web_link(self):
+        from docsgpt.parser.connectors.google_drive.loader import _ITEM_FIELDS
+
+        assert "webViewLink" in _ITEM_FIELDS.split(",")
 
     @pytest.mark.unit
     def test_unsupported_types_skipped(self, drive_loader, tmp_path):
@@ -1285,3 +1311,136 @@ class TestEnsureService:
         loader.auth.build_drive_service.side_effect = Exception("fail")
         with pytest.raises(ValueError, match="Cannot access Google Drive"):
             loader._ensure_service()
+
+
+SHORTCUT = "application/vnd.google-apps.shortcut"
+
+
+@pytest.fixture
+def scoped_loader():
+    """A loader whose sign-in sees ``user_items`` and whose service account sees ``sa_items``.
+
+    ``whole_drive`` says whether the sign-in reads the whole Drive; ``sa_items``
+    of None means no service account is configured.
+    """
+    def build(user_items, sa_items=None, whole_drive=False):
+        user = FakeDrive(user_items)
+        sa = FakeDrive(sa_items) if sa_items is not None else None
+        FakeDownloader.drive = user
+        loader = _make_loader(user.service)
+        loader.auth.reads_whole_drive.return_value = whole_drive
+        loader.auth.build_service_account_service.return_value = sa.service if sa else None
+        loader.auth.service_account_email.return_value = "reader@project.iam.gserviceaccount.com" if sa else None
+        return loader, user, sa
+
+    with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload", FakeDownloader):
+        yield build
+
+
+REPORTS = {
+    "root": {"name": "Reports", "mimeType": FOLDER},
+    "sub": {"name": "2026", "mimeType": FOLDER, "parent": "root"},
+    "f1": {"name": "q1.pdf", "mimeType": "application/pdf", "parent": "root"},
+    "f2": {"name": "q2.pdf", "mimeType": "application/pdf", "parent": "sub"},
+}
+
+
+class TestFolderAccess:
+
+    @pytest.mark.unit
+    def test_per_file_sign_in_reads_a_picked_folder_through_the_service_account(self, scoped_loader, tmp_path):
+        loader, user, sa = scoped_loader({"root": REPORTS["root"]}, REPORTS)
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 2
+        assert _files(tmp_path) == ["Reports/2026/q2.pdf", "Reports/q1.pdf"]
+        assert user.list_calls == []
+        assert [c["parent"] for c in sa.list_calls] == ["root", "sub"]
+        assert sorted(sa.media_calls) == ["f1", "f2"]
+
+    @pytest.mark.unit
+    def test_picked_files_are_read_with_the_users_own_sign_in(self, scoped_loader, tmp_path):
+        loader, user, sa = scoped_loader(
+            {"f1": {"name": "a.pdf", "mimeType": "application/pdf"}}, {},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1"]})
+        assert result["files_downloaded"] == 1
+        assert user.media_calls == ["f1"]
+        assert sa.media_calls == []
+
+    @pytest.mark.unit
+    def test_whole_drive_sign_in_reads_folders_itself(self, scoped_loader, tmp_path):
+        loader, user, sa = scoped_loader(REPORTS, REPORTS, whole_drive=True)
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 2
+        assert sa.list_calls == [] and sa.media_calls == []
+        loader.auth.build_service_account_service.assert_not_called()
+
+    @pytest.mark.unit
+    def test_folder_the_user_did_not_pick_is_never_read(self, scoped_loader, tmp_path):
+        # The service account can see the folder, but the user's sign-in
+        # cannot: it was not picked, so nothing in it is read.
+        loader, _, sa = scoped_loader({}, REPORTS)
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 0
+        assert sa.list_calls == []
+
+    @pytest.mark.unit
+    def test_folder_not_shared_with_the_service_account_is_skipped(self, scoped_loader, tmp_path):
+        loader, _, sa = scoped_loader(
+            {"root": REPORTS["root"], "f9": {"name": "solo.pdf", "mimeType": "application/pdf"}}, {},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"], "file_ids": ["f9"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_skipped"] == 1
+        assert sa.list_calls == []
+        assert _files(tmp_path) == ["solo.pdf"]
+
+    @pytest.mark.unit
+    def test_without_a_service_account_folders_are_skipped_and_files_kept(self, scoped_loader, tmp_path):
+        loader, _, _ = scoped_loader(
+            {"root": REPORTS["root"], "f9": {"name": "solo.pdf", "mimeType": "application/pdf"}}, None,
+        )
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"], "file_ids": ["f9"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_skipped"] == 1
+        assert result["sync_fingerprint"] is not None
+
+    @pytest.mark.unit
+    def test_limited_access_items_inside_a_shared_folder_are_skipped(self, scoped_loader, tmp_path):
+        items = {
+            **REPORTS,
+            "locked": {"name": "Board", "mimeType": FOLDER, "parent": "root", "inheritedPermissionsDisabled": True},
+            "f3": {"name": "minutes.pdf", "mimeType": "application/pdf", "parent": "locked"},
+        }
+        loader, _, sa = scoped_loader({"root": REPORTS["root"]}, items)
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert _files(tmp_path) == ["Reports/2026/q2.pdf", "Reports/q1.pdf"]
+        assert "locked" not in [c["parent"] for c in sa.list_calls]
+        assert result["files_skipped"] == 1
+
+    @pytest.mark.unit
+    def test_shortcut_in_a_shared_folder_needs_the_users_own_access(self, scoped_loader, tmp_path):
+        items = {
+            **REPORTS,
+            "link": {
+                "name": "elsewhere", "mimeType": SHORTCUT, "parent": "root",
+                "shortcutDetails": {"targetId": "secret", "targetMimeType": "application/pdf"},
+            },
+            "secret": {"name": "secret.pdf", "mimeType": "application/pdf"},
+        }
+        loader, _, sa = scoped_loader({"root": REPORTS["root"]}, items)
+        loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert "secret" not in sa.media_calls
+        assert _files(tmp_path) == ["Reports/2026/q2.pdf", "Reports/q1.pdf"]
+
+    @pytest.mark.unit
+    def test_sync_fingerprint_walks_folders_through_the_service_account(self, scoped_loader):
+        loader, user, sa = scoped_loader({"root": REPORTS["root"]}, REPORTS)
+        assert loader.sync_fingerprint({"folder_ids": ["root"]}) is not None
+        assert [c["parent"] for c in sa.list_calls] == ["root", "sub"]
+        assert user.list_calls == []
+
+    @pytest.mark.unit
+    def test_item_fields_ask_whether_access_is_inherited(self):
+        from docsgpt.parser.connectors.google_drive.loader import _ITEM_FIELDS
+        assert "inheritedPermissionsDisabled" in _ITEM_FIELDS.split(",")

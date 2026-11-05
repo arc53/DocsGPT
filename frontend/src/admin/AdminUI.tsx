@@ -132,6 +132,9 @@ const EVENT_LABELS: Record<string, string> = {
   quota_policy_set: 'Quota set',
   quota_policy_deleted: 'Quota removed',
   connector_policy_set: 'Connector policy changed',
+  source_defaults_set: 'Source defaults changed',
+  agent_defaults_set: 'Agent defaults changed',
+  guardrails_settings_set: 'Guardrails changed',
   pat_created: 'Token created',
   pat_revoked: 'Token revoked',
   pat_regenerated: 'Token regenerated',
@@ -157,6 +160,7 @@ const EVENT_LABELS: Record<string, string> = {
   'guardrail.retrieval': 'Guardrail (retrieval)',
   'guardrail.tool_result': 'Guardrail (tool result)',
   'guardrail.output': 'Guardrail (output)',
+  'guardrail.attachment': 'Guardrail (attachment)',
 };
 
 export function eventLabel(event: string): string {

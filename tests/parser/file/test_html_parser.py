@@ -58,7 +58,13 @@ def test_html_parser_metadata_unreadable_file(tmp_path):
 
 # --- HTMLMarkdownParser: the anydoc engine's HTML path ---------------------------
 
-from docsgpt.parser.file.html_parser import HTMLMarkdownParser, html_to_markdown  # noqa: E402
+from bs4 import BeautifulSoup  # noqa: E402
+
+from docsgpt.parser.file.html_parser import HTMLMarkdownParser, soup_to_markdown  # noqa: E402
+
+
+def _markdown(html: str) -> str:
+    return soup_to_markdown(BeautifulSoup(html, "html.parser"))
 
 RICH_HTML = """<html><head><title>Doc Title</title>
 <style>.x { color: red }</style><script>var secret = 1;</script></head>
@@ -128,7 +134,7 @@ def test_markdown_parser_init():
 
 
 def test_html_to_markdown_collapses_blank_runs():
-    out = html_to_markdown("<p>a</p><br/><br/><br/><br/><p>b</p>")
+    out = soup_to_markdown(BeautifulSoup("<p>a</p><br/><br/><br/><br/><p>b</p>", "html.parser"))
     assert "\n\n\n" not in out
     assert out.startswith("a") and out.endswith("b")
 
@@ -257,7 +263,7 @@ def test_data_uris_are_stripped_from_images_and_links():
         f'<p>before</p><img src="{payload}" alt="chart"><a href="{payload}">dl</a>'
         f'<img srcset="{payload} 1x" alt="x"><p>after</p>'
     )
-    text = html_to_markdown(html)
+    text = soup_to_markdown(BeautifulSoup(html, "html.parser"))
     assert "AAAA" not in text
     assert "before" in text and "after" in text
     assert len(text) < 200
@@ -297,7 +303,6 @@ def test_a_rowspan_keeps_the_rows_below_it_in_their_columns():
 
     Without them ``Hub`` reads under ``Region`` and ``7`` under ``Product``.
     """
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
     html = (
         "<table><tr><th>Region</th><th>Product</th><th>Units</th></tr>"
@@ -306,7 +311,7 @@ def test_a_rowspan_keeps_the_rows_below_it_in_their_columns():
         "<tr><td>US</td><td>Cable</td><td>3</td></tr></table>"
     )
 
-    assert _table_rows(html_to_markdown(html)) == [
+    assert _table_rows(_markdown(html)) == [
         ["Region", "Product", "Units"],
         ["---", "---", "---"],
         ["EU", "Cable", "12"],
@@ -316,25 +321,23 @@ def test_a_rowspan_keeps_the_rows_below_it_in_their_columns():
 
 
 def test_a_rowspan_in_the_last_column_is_filled_at_the_end():
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
     html = (
         "<table><tr><th>A</th><th>B</th></tr>"
         "<tr><td>1</td><td rowspan='2'>y</td></tr><tr><td>2</td></tr></table>"
     )
 
-    assert _table_rows(html_to_markdown(html))[2:] == [["1", "y"], ["2", ""]]
+    assert _table_rows(_markdown(html))[2:] == [["1", "y"], ["2", ""]]
 
 
 def test_a_cell_that_spans_in_both_directions_fills_both_columns():
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
     html = (
         "<table><tr><th>A</th><th>B</th><th>C</th></tr>"
         "<tr><td rowspan='2' colspan='2'>x</td><td>1</td></tr><tr><td>2</td></tr></table>"
     )
 
-    assert _table_rows(html_to_markdown(html))[3] == ["", "", "2"]
+    assert _table_rows(_markdown(html))[3] == ["", "", "2"]
 
 
 @pytest.mark.parametrize(
@@ -352,9 +355,8 @@ def test_a_cell_that_spans_in_both_directions_fills_both_columns():
     ],
 )
 def test_a_table_without_a_rowspan_is_unchanged(html, expected):
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
-    assert _table_rows(html_to_markdown(html)) == expected
+    assert _table_rows(_markdown(html)) == expected
 
 
 
@@ -364,7 +366,6 @@ def test_a_span_attribute_does_not_blow_up_the_output():
     without the padding, so the output stays the size of the page."""
     import time
 
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
     html = (
         "<table><tr><td rowspan='1000' colspan='1000'>x</td></tr>"
@@ -373,7 +374,7 @@ def test_a_span_attribute_does_not_blow_up_the_output():
     )
 
     started = time.perf_counter()
-    markdown = html_to_markdown(html)
+    markdown = _markdown(html)
     elapsed = time.perf_counter() - started
 
     assert elapsed < 5
@@ -386,7 +387,6 @@ def test_many_rowspans_are_filled_in_linear_time():
     30,000 of them in front of one cell took quadratic time."""
     import time
 
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
     spans = 30_000
     html = (
@@ -396,7 +396,7 @@ def test_many_rowspans_are_filled_in_linear_time():
     )
 
     started = time.perf_counter()
-    rows = _table_rows(html_to_markdown(html))
+    rows = _table_rows(_markdown(html))
     elapsed = time.perf_counter() - started
 
     assert elapsed < 5
@@ -410,7 +410,6 @@ def test_a_rowspan_of_zero_covers_the_rest_of_its_row_group():
     whole ``tbody``, so ``Hub`` reads under ``Region`` and ``7`` under
     ``Product`` unless every remaining row of the group gets the column.
     """
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
     html = (
         "<table><thead><tr><th>Region</th><th>Product</th><th>Units</th></tr></thead>"
@@ -419,7 +418,7 @@ def test_a_rowspan_of_zero_covers_the_rest_of_its_row_group():
         "<tr><td>Dock</td><td>3</td></tr></tbody></table>"
     )
 
-    assert _table_rows(html_to_markdown(html)) == [
+    assert _table_rows(_markdown(html)) == [
         ["Region", "Product", "Units"],
         ["---", "---", "---"],
         ["EU", "Cable", "12"],
@@ -430,7 +429,6 @@ def test_a_rowspan_of_zero_covers_the_rest_of_its_row_group():
 
 def test_a_rowspan_of_zero_stops_at_the_end_of_its_row_group():
     """The next group starts a fresh grid, so its rows keep the first column."""
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
     html = (
         "<table><thead><tr><th>Region</th><th>Units</th></tr></thead>"
@@ -438,7 +436,7 @@ def test_a_rowspan_of_zero_stops_at_the_end_of_its_row_group():
         "<tfoot><tr><td>Total</td><td>19</td></tr></tfoot></table>"
     )
 
-    rows = _table_rows(html_to_markdown(html))
+    rows = _table_rows(_markdown(html))
 
     assert rows[2:4] == [["EU", "12"], ["", "7"]]
     # markdownify writes a separator next to a <tfoot> row, so the footer is
@@ -447,19 +445,17 @@ def test_a_rowspan_of_zero_stops_at_the_end_of_its_row_group():
 
 
 def test_a_rowspan_of_zero_without_a_row_group_covers_the_table():
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
     html = (
         "<table><tr><th>A</th><th>B</th></tr>"
         "<tr><td rowspan='0'>x</td><td>1</td></tr><tr><td>2</td></tr></table>"
     )
 
-    assert _table_rows(html_to_markdown(html))[3] == ["", "2"]
+    assert _table_rows(_markdown(html))[3] == ["", "2"]
 
 
 def test_a_rowspan_of_zero_stays_inside_the_span_budget():
     """The budget bounds ``rowspan="0"`` the way it bounds a numeric span."""
-    from docsgpt.parser.file.html_parser import html_to_markdown
 
     html = (
         "<table><tr><td rowspan='0' colspan='1000'>x</td></tr>"
@@ -467,7 +463,7 @@ def test_a_rowspan_of_zero_stays_inside_the_span_budget():
         + "</table><p>after</p>"
     )
 
-    markdown = html_to_markdown(html)
+    markdown = _markdown(html)
 
     assert len(markdown) < 10 * len(html)
     assert markdown.rstrip().endswith("after")
@@ -486,9 +482,7 @@ def test_a_rowspan_of_zero_stays_inside_the_span_budget():
 )
 def test_a_table_without_th_keeps_its_first_row_as_the_header(html):
     """Without it the column names are read as data under a blank header."""
-    from docsgpt.parser.file.html_parser import html_to_markdown
-
-    rows = [line for line in html_to_markdown(html).splitlines() if line.startswith("|")]
+    rows = [line for line in soup_to_markdown(BeautifulSoup(html, "html.parser")).splitlines() if line.startswith("|")]
 
     assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
 
@@ -502,16 +496,14 @@ def test_a_table_without_th_keeps_its_first_row_as_the_header(html):
     ],
 )
 def test_a_table_that_marks_its_header_is_unchanged(html):
-    from docsgpt.parser.file.html_parser import html_to_markdown
-
-    rows = [line for line in html_to_markdown(html).splitlines() if line.startswith("|")]
+    rows = [line for line in soup_to_markdown(BeautifulSoup(html, "html.parser")).splitlines() if line.startswith("|")]
 
     assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
 
 
-def test_the_crawler_gives_a_crawled_table_the_same_shape():
+def test_the_web_extractor_gives_a_crawled_table_the_same_shape():
     """File and web ingestion are meant to produce the same Markdown."""
-    from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
+    from docsgpt.parser.remote.page_content import extract_page
 
     html = (
         "<html><head><title>T</title></head><body>"
@@ -519,7 +511,18 @@ def test_the_crawler_gives_a_crawled_table_the_same_shape():
         "<tr><td>Cable</td><td>USB-C</td></tr></table></body></html>"
     )
 
-    _, _, markdown = CrawlerLoader()._process_html_to_markdown(html, "https://example.com/")
+    markdown = extract_page(html, "https://example.com/").text
 
     rows = [line for line in markdown.splitlines() if line.startswith("|")]
     assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+def test_markup_nested_too_deep_to_convert_keeps_its_text():
+    # markdownify converts recursively; a few hundred unclosed tags (which
+    # html.parser nests) used to raise RecursionError and lose the file.
+    html = "<html><body><h1>Changelog</h1>" + "".join(f"<span>entry {i}\n" for i in range(3000)) + "</body></html>"
+
+    text = soup_to_markdown(BeautifulSoup(html, "html.parser"))
+
+    assert "Changelog" in text
+    assert "entry 0" in text and "entry 2999" in text

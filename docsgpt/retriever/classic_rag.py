@@ -8,7 +8,7 @@ from docsgpt.tracing.retrieval import (
     start_source_search_span,
 )
 from docsgpt.llm.llm_creator import LLMCreator
-from docsgpt.retriever.base import BaseRetriever
+from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text
 from docsgpt.retriever.fanout import fetch_per_source, max_parallel_sources
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.utils import num_tokens_from_string
@@ -26,6 +26,11 @@ class ClassicRAG(BaseRetriever):
     # The group's real top-k, set by the Dispatcher when it inflates ``chunks``
     # for a prescreen fetch. None → ``chunks`` is already the top-k.
     base_chunks = None
+    # Set by the Dispatcher when a rerank stage chooses from a wider pool: the
+    # pool size and its token budget. Every candidate is then tagged ``_base``,
+    # True for the docs this retrieval returns without the pool. None → no pool.
+    candidate_k = None
+    candidate_tokens = None
 
     def __init__(
         self,
@@ -81,6 +86,7 @@ class ClassicRAG(BaseRetriever):
             model_id=self.model_id,
             agent_id=self.agent_id,
             model_user_id=self.model_user_id,
+            stateless=True,
         )
         # Query-rephrase LLM is a side channel — tag it so its rows
         # land as ``source='rag_condense'`` in cost-attribution, and stamp
@@ -109,6 +115,11 @@ class ClassicRAG(BaseRetriever):
             self._rephrased_question = self.question
         self.decoded_token = decoded_token
         self._validate_vectorstore_config()
+
+    @property
+    def search_query(self) -> str:
+        """The query this retrieval searched with: the rephrase when one ran and is non-empty, else the raw message."""
+        return self._rephrased_question or self.original_question
 
     def _get_rephrased_question(self) -> str:
         """Return the rephrased query, computing it once and caching it."""
@@ -171,6 +182,7 @@ class ClassicRAG(BaseRetriever):
         src_k: int,
         score_threshold: Optional[float],
         query_vector: Optional[List[float]] = None,
+        candidate_k: Optional[int] = None,
     ):
         """Fetch candidate hits for one vector store (vector search).
 
@@ -183,12 +195,14 @@ class ClassicRAG(BaseRetriever):
             query_vector: Query embedding computed once for the whole
                 retrieval. Forwarded so the store skips embedding the query
                 again; stores that don't support it ignore the kwarg.
+            candidate_k: The source's share of a rerank pool, passed only when
+                there is one; the fetch is raised to it.
         """
         # ``score_threshold`` is honoured by the cosine-similarity stores
         # (pgvector, mongodb, qdrant, milvus) and safely ignored by stores
         # whose ``search`` swallows kwargs (faiss, elasticsearch). The candidate count is
         # clamped to a ceiling to bound memory/latency.
-        k = min(max(src_k * 2, 20), 500)
+        k = min(max(src_k * 2, 20, candidate_k or 0), 500)
         search_kwargs = {"k": k}
         if score_threshold is not None:
             search_kwargs["score_threshold"] = score_threshold
@@ -286,12 +300,14 @@ class ClassicRAG(BaseRetriever):
                 docsearch = VectorCreator.create_vectorstore(
                     settings.VECTOR_STORE, plan["id"], settings.EMBEDDINGS_KEY
                 )
+            pool = {"candidate_k": plan["candidate_k"]} if plan.get("candidate_k") else {}
             docs_temp = self._fetch_candidates(
                 docsearch,
                 plan["question"],
                 plan["src_k"],
                 plan["score_threshold"],
                 query_vector=query_vector,
+                **pool,
             )
             score_kind = self._score_kind(docsearch) if self.include_scores else None
             try:
@@ -332,6 +348,7 @@ class ClassicRAG(BaseRetriever):
                 f"ClassicRAG._get_data: Skipping retrieval - chunks={self.chunks}, "
                 f"vectorstores_count={len(self.vectorstores) if self.vectorstores else 0}"
             )
+            self.last_outcome = SearchOutcome()
             return []
 
         all_docs = []
@@ -344,18 +361,38 @@ class ClassicRAG(BaseRetriever):
         chunks_per_source = max(1, base_chunks // len(self.vectorstores))
         token_budget = max(int(self.doc_token_limit * 0.9), 100)
         cumulative_tokens = 0
+        # A rerank pool runs a second selection beside the usual one, with its
+        # own size and budget: a doc joins if either takes it, and ``_base``
+        # says whether the usual one did, so the stage can fall back to exactly
+        # that. Without a pool only the usual selection runs, as it always has.
+        pooled = self.candidate_k is not None
+        pool_budget = max(int(max(self.doc_token_limit, self.candidate_tokens or 0) * 0.9), 100)
+        pool_tokens = 0
 
         # Resolve every source, then fetch them all (one query embedding, one
         # bounded fan-out). The merge below stays serial and in source order, so
         # dedupe/budget/trim semantics are exactly what they were.
         plans = self._plan_sources(chunks_per_source)
+        if pooled:
+            share = max(1, self.candidate_k // len(self.vectorstores))
+            for plan in plans:
+                plan["candidate_k"] = max(plan["src_k"], share)
         results = self._fetch_all(plans) if plans else []
+        # A source whose plan, store, query embedding or search failed (each
+        # already logged) contributes nothing, exactly like one that matched
+        # nothing; recorded so the answer can tell the two apart.
+        planned = {plan["id"] for plan in plans}
+        failed = [vs_id for vs_id in self.vectorstores if vs_id and vs_id not in planned]
+        failed += [plan["id"] for plan, result in zip(plans, results) if result is None]
+        # Every searched source's labels in one lookup, not one per source.
+        self._connector_labels.prefetch([plan["id"] for plan, result in zip(plans, results) if result is not None])
 
         for plan, result in zip(plans, results):
             if result is None:
                 continue
             vectorstore_id = plan["id"]
             src_k = plan["src_k"]
+            pool_k = plan.get("candidate_k", 0)
             docs_temp, score_kind = result
             try:
                 # ``_fetch_candidates`` over-fetches (k >= 20) so a prescreen
@@ -364,9 +401,12 @@ class ClassicRAG(BaseRetriever):
                 # prescreen on, src_k is already raised to candidate_k above,
                 # so the stage still sees its full candidate set.
                 kept = 0
+                pool_kept = 0
 
                 for doc in docs_temp:
-                    if kept >= src_k or cumulative_tokens >= token_budget:
+                    in_selection = kept < src_k and cumulative_tokens < token_budget
+                    in_pool = pooled and pool_kept < pool_k and pool_tokens < pool_budget
+                    if not in_selection and not in_pool:
                         break
 
                     score = None
@@ -381,24 +421,32 @@ class ClassicRAG(BaseRetriever):
                         metadata = doc.get("metadata", {})
 
                     labels = labels_from_metadata(metadata, page_content, vectorstore_id)
+                    attribution = self._connector_labels.for_source(vectorstore_id, metadata)
 
-                    doc_text_with_header = f"{labels['filename']}\n{page_content}"
-                    doc_tokens = num_tokens_from_string(doc_text_with_header)
+                    doc_tokens = num_tokens_from_string(
+                        budget_text(labels["filename"], page_content, attribution.get("source_name"))
+                    )
 
-                    if cumulative_tokens + doc_tokens < token_budget:
+                    selected = in_selection and cumulative_tokens + doc_tokens < token_budget
+                    if selected or (in_pool and pool_tokens + doc_tokens < pool_budget):
                         entry = {
                             "text": page_content,
                             **labels,
-                            **self._connector_labels.for_source(vectorstore_id),
+                            **attribution,
                         }
                         if self.include_scores:
                             entry["score"] = score
                             entry["score_kind"] = score_kind
+                        if pooled:
+                            entry["_base"] = selected
+                            pool_tokens += doc_tokens
+                            pool_kept += 1
                         all_docs.append(entry)
-                        cumulative_tokens += doc_tokens
-                        kept += 1
+                        if selected:
+                            cumulative_tokens += doc_tokens
+                            kept += 1
 
-                if cumulative_tokens >= token_budget:
+                if cumulative_tokens >= token_budget and not (pooled and pool_tokens < pool_budget):
                     break
 
             except Exception as e:
@@ -406,6 +454,7 @@ class ClassicRAG(BaseRetriever):
                     f"Error searching vectorstore {vectorstore_id}: {e}",
                     exc_info=True,
                 )
+                failed.append(vectorstore_id)
                 continue
 
         # ``chunks_per_source`` has a floor of 1 so no attached source is
@@ -417,7 +466,17 @@ class ClassicRAG(BaseRetriever):
         # ``base_chunks``: under prescreen the former is the inflated
         # candidate_k the Dispatcher asked for and trims itself later.
         ceiling = max(self.chunks, len(self.vectorstores))
-        if len(all_docs) > ceiling:
+        if pooled:
+            # The ceiling bounds the usual selection; the pool keeps every doc
+            # of it and at most ``candidate_k`` (or that ceiling) in all.
+            taken = 0
+            for entry in all_docs:
+                if entry["_base"]:
+                    taken += 1
+                    entry["_base"] = taken <= ceiling
+            pool_ceiling = max(ceiling, self.candidate_k)
+            all_docs = [entry for i, entry in enumerate(all_docs) if i < pool_ceiling or entry["_base"]]
+        elif len(all_docs) > ceiling:
             logger.info(
                 "ClassicRAG._get_data: trimming %d documents to the %d ceiling "
                 "(top-k=%d across %d sources).",
@@ -425,6 +484,7 @@ class ClassicRAG(BaseRetriever):
             )
             all_docs = all_docs[:ceiling]
 
+        self.last_outcome = SearchOutcome.of(self.vectorstores, failed)
         logger.info(
             f"ClassicRAG._get_data: Retrieval complete - retrieved {len(all_docs)} documents "
             f"(requested chunks={self.chunks}, chunks_per_source={chunks_per_source}, "

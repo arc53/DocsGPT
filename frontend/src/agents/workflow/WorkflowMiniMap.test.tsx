@@ -131,4 +131,21 @@ describe('WorkflowMiniMap', () => {
     );
     expect(done).not.toContain('hover:bg-accent');
   });
+
+  it('says a running step is retrying', () => {
+    act(() => {
+      root.render(
+        <WorkflowMiniMap
+          nodes={nodes}
+          activeNodeId="busy"
+          executionSteps={[
+            { ...step('busy', 'running'), attempt: 2, maxAttempts: 3 },
+          ]}
+        />,
+      );
+    });
+    expect(container.textContent).toContain(
+      'agents.workflow.preview.retryingOf',
+    );
+  });
 });

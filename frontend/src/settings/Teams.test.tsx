@@ -113,10 +113,12 @@ vi.mock('../teams/ShareToTeamModal', () => ({
 vi.mock('../components/ui/dropdown-menu', () => ({
   ActionMenu: ({
     options,
+    size,
   }: {
     options: Array<{ label: string; onClick: () => void }>;
+    size?: string;
   }) => (
-    <div data-testid="team-menu">
+    <div data-testid="team-menu" data-size={size}>
       {options.map((o) => (
         <button key={o.label} type="button" onClick={o.onClick}>
           {o.label}
@@ -263,11 +265,15 @@ describe('Teams page', () => {
     return <div data-testid="where">{useLocation().pathname}</div>;
   }
 
-  const render = async () => {
+  // Opens team t1 unless `list`; the list's toolbar (New team) shows only
+  // on the list.
+  const render = async ({ list = false } = {}) => {
     act(() => {
       root.render(
         <MemoryRouter
-          initialEntries={[{ pathname: '/teams', state: { openTeamId: 't1' } }]}
+          initialEntries={[
+            { pathname: '/teams', state: list ? null : { openTeamId: 't1' } },
+          ]}
         >
           <Teams />
           <Where />
@@ -422,8 +428,22 @@ describe('Teams page', () => {
   });
 
   // The verb says "add": page actions carry no plus.
-  it('puts no plus on the New team page action', async () => {
+  it('swaps the list toolbar for the team crumb row when a team is open', async () => {
     await render();
+    expect(body().querySelector('[data-slot="page-toolbar"]')).toBeNull();
+    const menu = body().querySelector<HTMLElement>(
+      '[data-testid="team-menu"]',
+    )!;
+    expect(menu.dataset.size).toBe('toolbar');
+    // Ends the crumb row (the breadcrumb is mocked away here), not the name.
+    expect(menu.parentElement!.className).toBe(
+      'flex min-h-9.5 items-center justify-between gap-3',
+    );
+    expect(menu.parentElement!.querySelector('h3')).toBeNull();
+  });
+
+  it('puts no plus on the New team page action', async () => {
+    await render({ list: true });
     const action = Array.from(
       body().querySelectorAll('[data-slot="page-toolbar"] button'),
     ).find((b) => b.textContent === 'settings.teams.newTeam')!;
@@ -752,7 +772,7 @@ describe('Teams page', () => {
       dispatchEvent: () => false,
     })) as typeof window.matchMedia;
     try {
-      await render();
+      await render({ list: true });
       const action = Array.from(
         body().querySelectorAll('[data-slot="page-toolbar"] button'),
       ).find((b) => b.textContent === 'settings.teams.newTeam')!;
@@ -816,7 +836,7 @@ describe('Teams page', () => {
     mockUnwrap.mockImplementation(
       () => new Promise<void>((resolve) => (finish = resolve as never)),
     );
-    await render();
+    await render({ list: true });
     const action = Array.from(
       body().querySelectorAll('[data-slot="page-toolbar"] button'),
     ).find((b) => b.textContent === 'settings.teams.newTeam')!;

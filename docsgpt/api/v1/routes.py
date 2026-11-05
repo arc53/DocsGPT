@@ -464,6 +464,8 @@ def chat_completions():
                     internal_data["tool_actions"],
                     conversation_id,
                     claimed_state=pending_state,
+                    # Files the client adds with its tool results join the turn.
+                    extra_attachment_ids=internal_data.get("attachments") or None,
                 )
                 processor.conversation_id = conversation_id
                 claimed_conversation_id = conversation_id
@@ -743,6 +745,7 @@ def _stream_response(
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,
         trace=getattr(processor, "trace", None),
+        passthrough=processor.passthrough,
     )
 
     translation_state = StreamTranslationState()
@@ -833,6 +836,7 @@ def _non_stream_response(
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
         request_id=processor.request_id,
         trace=getattr(processor, "trace", None),
+        passthrough=processor.passthrough,
     )
 
     result = helper.process_response_stream(stream)

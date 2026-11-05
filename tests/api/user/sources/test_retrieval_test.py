@@ -482,3 +482,214 @@ class TestModelResolution:
 
         assert response.status_code == 200
         assert "model_id" not in dispatcher.call_args.kwargs
+
+
+# ── The decision model's relevance stages ────────────────────────────────────
+
+
+class _RankedStore:
+    """A store that ranks ``texts`` in order and cuts them to ``k``, as real stores rank."""
+
+    score_kind = "cosine_similarity"
+
+    def __init__(self, texts):
+        self.hits = [
+            MagicMock(page_content=text, metadata={"title": text, "source": "f.md"})
+            for text in texts
+        ]
+
+    def search(self, question, k, **kwargs):
+        return self.hits[:k]
+
+    def search_with_scores(self, question, k, **kwargs):
+        return [(hit, 1 - i / 100) for i, hit in enumerate(self.hits[:k])]
+
+
+def _relevance_by_number(state, question):
+    """Later chunks score higher, so the rerank reverses retriever order."""
+    return int(state["passage"].split("-")[1]) / 100
+
+
+@pytest.fixture
+def corpus(monkeypatch):
+    """The real Dispatcher over a 40-chunk store, with the decision model's settings at their defaults."""
+    from docsgpt.core.settings import settings
+
+    store = _RankedStore([f"chunk-{i:02d}" for i in range(40)])
+    monkeypatch.setattr(
+        "docsgpt.retriever.classic_rag.VectorCreator.create_vectorstore",
+        lambda *args, **kwargs: store,
+    )
+    monkeypatch.setattr(
+        "docsgpt.retriever.classic_rag.LLMCreator.create_llm", MagicMock()
+    )
+    monkeypatch.setattr(
+        "docsgpt.api.user.sources.retrieval_test.get_default_model_id",
+        lambda: None,
+    )
+    for name, value in {
+        "DECISION_MODE": None,
+        "DECISION_MODEL": None,
+        "DECISION_RELEVANCE_ENABLED": False,
+        "DECISION_RELEVANCE_ROLLOUT_PERCENT": 100,
+        "DECISION_RELEVANCE_MAX_PASSAGES": 100,
+    }.items():
+        monkeypatch.setattr(settings, name, value)
+
+    def configure(**values):
+        for key, value in values.items():
+            monkeypatch.setattr(settings, key, value)
+
+    return configure
+
+
+#: A source config with relevance on: reorder, over the default pool of 20.
+REORDER = {"chunks": 6, "reranker": {"type": "decision"}}
+
+
+class TestRelevance:
+    def test_passes_the_feature_label_and_reports_no_model_run(self, app, pg_conn):
+        src = _seed_source(pg_conn, user="u-rel-mock")
+        fake = MagicMock()
+        fake.search.return_value = [{"text": "a", "filename": "f.md", "relevance": 0.81}]
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher", return_value=fake
+        ) as dispatcher:
+            response = _post(app, str(src["id"]), {"query": "q"}, user="u-rel-mock")
+        assert response.status_code == 200
+        kwargs = dispatcher.call_args.kwargs
+        assert kwargs["relevance_feature"] == "retrieval_test"
+        assert kwargs["apply_rollout"] is False and kwargs["record_candidates"] is False
+        assert response.json["chunks"][0]["relevance"] == 0.81
+        assert response.json["relevance"] is None
+        assert "candidates" not in response.json
+
+    def test_relevance_orders_the_chunks_and_compare_lists_the_pool(self, app, pg_conn, corpus):
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        corpus(DECISION_RELEVANCE_ENABLED=True)
+        src = _seed_source(pg_conn, user="u-rel-on", config={"retrieval": REORDER})
+        fake = FakeDecider({"relevant": _relevance_by_number})
+        with _patch_db(pg_conn), installed(fake):
+            response = _post(
+                app, str(src["id"]), {"query": "q", "compare": True}, user="u-rel-on"
+            )
+        assert response.status_code == 200
+        data = response.json
+        (call,) = fake.calls
+        assert call.feature == "retrieval_test" and len(call.requests) == 20
+        assert [c["text"] for c in data["chunks"]] == [f"chunk-{i:02d}" for i in range(19, 13, -1)]
+        assert [c["relevance"] for c in data["chunks"]] == [0.19, 0.18, 0.17, 0.16, 0.15, 0.14]
+        assert data["relevance"]["applied"] is True and data["relevance"]["fallback"] is None
+        assert isinstance(data["relevance"]["latency_ms"], int)
+
+        candidates = data["candidates"]
+        assert [c["rank_before"] for c in candidates] == list(range(1, 21))
+        assert all(c["relevance"] == int(c["text"][-2:]) / 100 for c in candidates)
+        # Retriever order kept 0-5; the model dropped those and promoted 14-19.
+        assert [c["baseline"] for c in candidates] == [True] * 6 + [False] * 14
+        assert [c["kept"] for c in candidates] == [False] * 14 + [True] * 6
+        assert candidates[19]["rank"] == 1 and candidates[0]["rank"] is None
+
+    def test_a_tested_threshold_filters(self, app, pg_conn, corpus):
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        corpus(DECISION_RELEVANCE_ENABLED=True)
+        src = _seed_source(pg_conn, user="u-rel-filter")
+        retrieval = {"chunks": 6, "reranker": {"type": "decision", "min_relevance": 0.17}}
+        with _patch_db(pg_conn), installed(FakeDecider({"relevant": _relevance_by_number})):
+            data = _post(app, str(src["id"]), {"query": "q", "retrieval": retrieval}, user="u-rel-filter").json
+        assert [c["text"] for c in data["chunks"]] == ["chunk-19", "chunk-18", "chunk-17"]
+
+    def test_a_source_without_relevance_asks_nothing(self, app, pg_conn, corpus):
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        corpus(DECISION_RELEVANCE_ENABLED=True)
+        src = _seed_source(pg_conn, user="u-rel-none")
+        fake = FakeDecider({"relevant": 0.9})
+        with _patch_db(pg_conn), installed(fake):
+            data = _post(app, str(src["id"]), {"query": "q"}, user="u-rel-none").json
+        assert fake.calls == [] and data["relevance"] is None
+
+    def test_with_the_switch_off_nothing_asks_the_model(self, app, pg_conn, corpus):
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        src = _seed_source(pg_conn, user="u-rel-off")
+        fake = FakeDecider({"relevant": 0.9})
+        # A source's own reranker cannot turn on what the operator left off.
+        with _patch_db(pg_conn), installed(fake):
+            response = _post(
+                app,
+                str(src["id"]),
+                {"query": "q", "compare": True, "retrieval": REORDER},
+                user="u-rel-off",
+            )
+        assert response.status_code == 200
+        data = response.json
+        assert fake.calls == [] and fake.warmed == 0
+        assert data["relevance"] is None
+        assert [c["text"] for c in data["chunks"]] == [f"chunk-{i:02d}" for i in range(6)]
+        assert all(c["relevance"] is None for c in data["chunks"])
+        assert [(c["rank_before"], c["rank"], c["kept"], c["baseline"]) for c in data["candidates"]] == [
+            (i, i, True, True) for i in range(1, 7)
+        ]
+
+    def test_a_failed_call_reports_the_fallback(self, app, pg_conn, corpus):
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        corpus(DECISION_RELEVANCE_ENABLED=True)
+        src = _seed_source(pg_conn, user="u-rel-fail", config={"retrieval": REORDER})
+        with _patch_db(pg_conn), installed(FakeDecider(reasons={"*": "timeout"})):
+            data = _post(app, str(src["id"]), {"query": "q"}, user="u-rel-fail").json
+        assert [c["text"] for c in data["chunks"]] == [f"chunk-{i:02d}" for i in range(6)]
+        assert data["relevance"]["applied"] is False and data["relevance"]["fallback"] == "timeout"
+
+    def test_the_rollout_does_not_apply_to_a_test(self, app, pg_conn, corpus):
+        from docsgpt.decisions.testing import FakeDecider, installed
+
+        corpus(DECISION_RELEVANCE_ENABLED=True, DECISION_RELEVANCE_ROLLOUT_PERCENT=0)
+        src = _seed_source(pg_conn, user="u-rel-roll", config={"retrieval": REORDER})
+        fake = FakeDecider({"relevant": _relevance_by_number})
+        with _patch_db(pg_conn), installed(fake):
+            data = _post(app, str(src["id"]), {"query": "q"}, user="u-rel-roll").json
+        assert fake.calls and data["relevance"]["applied"] is True
+
+    def test_relevance_and_llm_screening_together_are_refused(self, app, pg_conn, corpus):
+        from docsgpt.storage.db.source_config import RELEVANCE_OR_PRESCREEN
+
+        src = _seed_source(pg_conn, user="u-rel-both")
+        retrieval = {**REORDER, "prescreen": {"candidate_k": 20}}
+        with _patch_db(pg_conn), patch("docsgpt.api.user.sources.retrieval_test.Dispatcher") as dispatcher:
+            response = _post(app, str(src["id"]), {"query": "q", "retrieval": retrieval}, user="u-rel-both")
+        assert response.status_code == 400 and response.json["message"] == RELEVANCE_OR_PRESCREEN
+        dispatcher.assert_not_called()
+
+
+class TestRelevanceCostCeiling:
+    def test_an_llm_prescreen_keeps_its_cap(self, app, pg_conn, corpus):
+        src = _seed_source(pg_conn, user="u-cap-llm")
+        retrieval = {"chunks": 2, "prescreen": {"candidate_k": 100, "batch_size": 1, "max_keep": 2}}
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher"
+        ) as dispatcher:
+            response = _post(app, str(src["id"]), {"query": "q", "retrieval": retrieval}, user="u-cap-llm")
+        assert response.status_code == 400 and "LLM calls" in response.json["message"]
+        dispatcher.assert_not_called()
+
+    @pytest.mark.parametrize("enabled, status", [(True, 400), (False, 200)])
+    def test_a_source_reranker_pool_is_capped_while_the_switch_is_on(self, app, pg_conn, corpus, enabled, status):
+        corpus(DECISION_RELEVANCE_ENABLED=enabled, DECISION_RELEVANCE_MAX_PASSAGES=30)
+        src = _seed_source(pg_conn, user=f"u-cap-rr-{enabled}")
+        fake = MagicMock()
+        fake.search.return_value = []
+        retrieval = {"chunks": 2, "reranker": {"type": "decision", "candidate_k": 40}}
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher", return_value=fake
+        ), patch("docsgpt.retriever.stages.relevance.decisions.get_decider") as decider:
+            decider.return_value.enabled = True
+            response = _post(
+                app, str(src["id"]), {"query": "q", "retrieval": retrieval}, user=f"u-cap-rr-{enabled}"
+            )
+        assert response.status_code == status
+        if status == 400:
+            assert "decision model (limit 30)" in response.json["message"]

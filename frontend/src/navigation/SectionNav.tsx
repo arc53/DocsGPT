@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 
 import ConnectionHealthDot from '../connectors/ConnectionHealthDot';
 import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
+import { selectAnalyticsEnabled } from '../preferences/preferenceSlice';
 import { getVisibleGroups, type Section, type SectionItem } from './sections';
 import { useSidebarLevel } from './SidebarLevelProvider';
 
@@ -39,9 +40,10 @@ export default function SectionNav({
   const { t } = useTranslation();
   const { goToLevel } = useSidebarLevel();
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const analyticsEnabled = useSelector(selectAnalyticsEnabled);
   const groups = getVisibleGroups(section, {
     isAdmin,
-    features: { connectors: connectorsEnabled },
+    features: { connectors: connectorsEnabled, analytics: analyticsEnabled },
   });
   const sectionTitle = section.title ?? t(section.titleKey);
 

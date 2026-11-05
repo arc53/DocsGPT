@@ -129,6 +129,8 @@ def test_a_kernel_that_dies_mid_run_ends_the_call_at_once(monkeypatch, state):
     assert "s" not in sb._kernels
     assert result.out_of_memory is False
     assert "memory" in result.error_value
+    # The code may have killed its kernel, so the same run is not retried as an outage.
+    assert result.sandbox_error is False
 
 
 def test_a_kernel_killed_for_memory_is_reported_as_out_of_memory(monkeypatch):

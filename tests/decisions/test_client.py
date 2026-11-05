@@ -13,7 +13,7 @@ from docsgpt.decisions.client import DecisionClient
 from docsgpt.decisions.models import V02
 from docsgpt.decisions.latency import SpeedProfile
 from docsgpt.decisions.testing import FakeDecider, installed
-from docsgpt.decisions.types import Decision, FeatureSpec, Shape
+from docsgpt.decisions.types import BatchResult, Decision, FeatureSpec, Shape
 
 from .fakes import expected_p
 
@@ -71,9 +71,17 @@ class TestModes:
             "model": "arc53/arc-decide-0.4b-v0.2",
             "version": "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907",
             "runtime": "onnx-int8", "speed": None,
-            "features": {"injection_input": {
-                "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 0.5, "reason": "configured",
-            }},
+            "features": {
+                "injection_input": {
+                    "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 2.0, "reason": "configured",
+                },
+                "analytics_turn": {
+                    "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 120.0, "reason": "configured",
+                },
+                "rag_rerank": {
+                    "mode": "off", "effective": "off", "predicted_s": None, "budget_s": 2.0, "reason": "configured",
+                },
+            },
         }
         assert decisions.get_decider()._backend is None  # reporting status loads nothing
 
@@ -139,6 +147,10 @@ class TestCalls:
         batch = decisions.decide_batch([Request("a", {"q": NOUL}), Request(object(), {"q": NOUL})], feature="test")
         assert isinstance(batch[0], Decision) and batch[1] is None
         assert batch.reasons == [None, "bad_item"] and batch.status == "partial"
+
+    def test_a_batch_the_backend_failed_whole_is_unavailable(self):
+        assert BatchResult([None, None], ["backend_error", "backend_error"]).status == "unavailable"
+        assert BatchResult([None, None], ["bad_item", "bad_item"]).status == "partial"
 
     def test_status_once_loaded(self, local):
         status = decisions.status()
@@ -241,6 +253,32 @@ class TestStart:
         with installed(fake):
             decisions.start()
         assert fake.warmed == 1
+
+    def test_relevance_turned_on_warms(self, monkeypatch):
+        # The first relevance call would otherwise fail open while the model loads.
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        fake = FakeDecider()
+        with installed(fake):
+            decisions.start()
+        assert fake.warmed == 1
+
+    def test_every_feature_off_never_warms(self, monkeypatch):
+        for spec in features.specs():
+            off = False if isinstance(getattr(settings, spec.mode_setting), bool) else "off"
+            monkeypatch.setattr(settings, spec.mode_setting, off)
+        monkeypatch.setattr(settings, "DECISION_PRELOAD", False)
+        fake = FakeDecider()
+        with installed(fake):
+            decisions.start()
+        assert fake.warmed == 0
+
+    def test_mode_none_never_warms_for_relevance(self, monkeypatch):
+        monkeypatch.setattr(settings, "DECISION_RELEVANCE_ENABLED", True)
+        fake = FakeDecider()
+        fake.enabled = False
+        with installed(fake):
+            decisions.start()
+        assert fake.warmed == 0
 
     def test_mode_none_never_warms(self, monkeypatch, feature):
         monkeypatch.setattr(settings, "DECISION_PRELOAD", True)

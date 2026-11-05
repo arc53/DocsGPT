@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mergeLoadedPages, uniqueLogs } from './logsPage';
+import { mergeLoadedPages, retriedSteps, uniqueLogs } from './logsPage';
 import type { LogData } from './types';
 
 const row = (id: string, timestamp: string, running = false): LogData => ({
@@ -112,5 +112,50 @@ describe('uniqueLogs', () => {
     const a = row('a', '2026-10-14T10:05:00Z');
     const b = row('b', '2026-10-14T10:04:00Z');
     expect(uniqueLogs([[a, b], [b]]).map((log) => log.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('retriedSteps', () => {
+  const attempt = (n: number, status = 'failed') => ({
+    attempt: n,
+    status,
+    started_at: '2026-10-29T10:00:00Z',
+    completed_at: '2026-10-29T10:00:01Z',
+    duration_ms: 1000,
+  });
+
+  it('lists the steps that ran more than once, loop bodies included', () => {
+    expect(
+      retriedSteps([
+        { node_id: 'start', attempts: [] },
+        {
+          node_id: 'summarize',
+          attempts: [attempt(1), attempt(2), attempt(3, 'completed')],
+        },
+        {
+          node_id: 'each',
+          attempts: [],
+          items: [
+            {
+              index: 0,
+              steps: [
+                {
+                  node_id: 'extract',
+                  attempts: [attempt(1), attempt(2, 'completed')],
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      { nodeId: 'summarize', attempts: 3 },
+      { nodeId: 'extract', attempts: 2 },
+    ]);
+  });
+
+  it('finds none in a run without retries or steps', () => {
+    expect(retriedSteps([{ node_id: 'a' }])).toEqual([]);
+    expect(retriedSteps(undefined)).toEqual([]);
   });
 });

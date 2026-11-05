@@ -16,6 +16,9 @@ from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsReposi
 from docsgpt.storage.db.repositories.devices import DevicesRepository
 from tests.devices.conftest import FakeRedis
 
+
+pytestmark = pytest.mark.fresh_db
+
 DEVICE_ID = "dev_bg"
 
 

@@ -23,17 +23,25 @@ export function canOpenAgentEditor(
   return Boolean(agent.allowed_actions) && can(agent, 'view');
 }
 
+/**
+ * Page actions only the frontend names, and the server action each needs:
+ * Analytics and Insights need `view_logs` like Logs, but only Logs opens on
+ * a draft.
+ */
+const PAGE_ACTIONS: Record<string, string> = { view_analytics: 'view_logs' };
+
 /** Actions that only make sense once an agent is published. */
-const PUBLISHED_ONLY = new Set(['view_logs', 'manage_schedules', 'pin']);
+const PUBLISHED_ONLY = new Set(['view_analytics', 'manage_schedules', 'pin']);
 
 /**
- * `can()` for an agent, minus what a draft can't have: a draft has no runs
- * to log, no schedule that fires and nothing to pin, so Logs, Schedules and
- * Pin wait until it's published. An agent without a status (a record still
+ * `can()` for an agent, minus what a draft can't have: a draft has no real
+ * traffic to chart, no schedule that fires and nothing to pin, so Analytics,
+ * Insights, Schedules and Pin wait until it's published. Logs opens on a
+ * draft too, for its preview runs. An agent without a status (a record still
  * loading) is treated as published.
  *
  * @param agent The agent, with its access fields and status.
- * @param action The agent action to check.
+ * @param action The agent action to check, or `view_analytics`.
  * @returns True when the role allows it and the agent's state makes sense.
  */
 export function canAgent(
@@ -47,5 +55,5 @@ export function canAgent(
     agent.status !== 'published'
   )
     return false;
-  return can(agent, action);
+  return can(agent, PAGE_ACTIONS[action] ?? action);
 }

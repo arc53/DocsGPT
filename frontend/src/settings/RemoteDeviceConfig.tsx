@@ -1,3 +1,4 @@
+import { Trash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -13,12 +14,13 @@ import DeviceAuditList from './DeviceAuditList';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card } from '../components/ui/card';
+import { ActionMenu } from '../components/ui/dropdown-menu';
 import { Collapsible, CollapsibleTrigger } from '../components/ui/collapsible';
 import {
   DescriptionItem,
   DescriptionList,
 } from '../components/ui/description-list';
+import { EmptyState } from '../components/ui/empty-state';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { LoadingState } from '../components/ui/loading-state';
@@ -38,17 +40,8 @@ import {
   formatRelative,
   formatTimestamp,
 } from '../utils/dateTimeUtils';
+import { isDeviceOnline } from '../utils/deviceUtils';
 import { UserToolType } from './types';
-
-/** ms-since-last-seen threshold for the online pill. */
-const ONLINE_WINDOW_MS = 30_000;
-
-function isOnline(device: Device | null): boolean {
-  if (!device?.last_seen_at) return false;
-  const t = Date.parse(device.last_seen_at);
-  if (Number.isNaN(t)) return false;
-  return Date.now() - t < ONLINE_WINDOW_MS;
-}
 
 interface Props {
   tool: UserToolType;
@@ -69,7 +62,9 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const [description, setDescription] = React.useState<string>('');
   const [approvalMode, setApprovalMode] = React.useState<ApprovalMode>('ask');
   const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = React.useState(false);
+  const [saveFailed, setSaveFailed] = React.useState(false);
+  const loadRequestId = React.useRef(0);
 
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
   const [auditOpen, setAuditOpen] = React.useState(false);
@@ -85,19 +80,30 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
   const loadDevice = React.useCallback(() => {
     if (!deviceId) return;
+    const requestId = ++loadRequestId.current;
     setLoading(true);
+    setLoadFailed(false);
+    setSaveFailed(false);
     devicesService
       .get(deviceId, token)
-      .then((d) => applyDevice(d))
-      .catch((err) => {
-        console.error('load device failed', err);
-        setError(err instanceof Error ? err.message : 'load failed');
+      .then((d) => {
+        if (requestId === loadRequestId.current) applyDevice(d);
       })
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (requestId !== loadRequestId.current) return;
+        console.error('load device failed', err);
+        setLoadFailed(true);
+      })
+      .finally(() => {
+        if (requestId === loadRequestId.current) setLoading(false);
+      });
   }, [deviceId, token, applyDevice]);
 
   React.useEffect(() => {
     loadDevice();
+    return () => {
+      loadRequestId.current += 1;
+    };
   }, [loadDevice]);
 
   const hasUnsavedChanges =
@@ -119,12 +125,13 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       payload.approval_mode = approvalMode;
 
     setSaving(true);
-    setError(null);
+    setSaveFailed(false);
     try {
       const next = await devicesService.update(deviceId, payload, token);
       applyDevice(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'update failed');
+      console.error('update device failed', err);
+      setSaveFailed(true);
     } finally {
       setSaving(false);
     }
@@ -137,7 +144,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
     handleGoBack();
   };
 
-  const online = isOnline(device);
+  const online = isDeviceOnline(device);
   const lastSeenAgo = formatRelative(device?.last_seen_at);
   const pillText =
     (online ? t('settings.devices.online') : t('settings.devices.offline')) +
@@ -145,13 +152,33 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       ? ` · ${t('settings.devices.seen', { time: lastSeenAgo })}`
       : '');
 
-  if (loading && !device) {
+  if (loading) {
     return <LoadingState fill="block" size="lg" />;
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="mb-4 flex min-h-9.5 items-center">
+          <DetailBreadcrumb
+            parentLabel={t('settings.tools.label')}
+            currentLabel={tool.customName || tool.displayName || tool.name}
+            onParentClick={handleGoBack}
+          />
+        </div>
+        <EmptyState
+          tone="destructive"
+          illustration="none"
+          title={t('settings.devices.loadError')}
+          onRetry={loadDevice}
+        />
+      </div>
+    );
   }
 
   return (
     <div className="scrollbar-overlay flex flex-col gap-6">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex min-h-9.5 items-center justify-between gap-3">
         <DetailBreadcrumb
           parentLabel={t('settings.tools.label')}
           currentLabel={
@@ -159,21 +186,36 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           }
           onParentClick={handleGoBack}
         />
-        <Button
-          type="button"
-          size="sm"
-          shape="pill"
-          onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges || loading}
-          loading={saving}
-        >
-          {t('settings.tools.save')}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            size="field"
+            shape="pill"
+            onClick={handleSaveChanges}
+            disabled={!hasUnsavedChanges || loading}
+            loading={saving}
+          >
+            {t('settings.tools.save')}
+          </Button>
+          {/* Revoke is the device's ⋯, as Delete is an open tool's. */}
+          <ActionMenu
+            size="toolbar"
+            triggerLabel={t('settings.tools.toolActions')}
+            options={[
+              {
+                label: t('settings.devices.revoke'),
+                icon: Trash2,
+                variant: 'destructive',
+                onClick: () => setRevokeState('ACTIVE'),
+              },
+            ]}
+          />
+        </div>
       </div>
 
-      {error && (
+      {saveFailed && (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{t('common.actionFailed')}</AlertDescription>
         </Alert>
       )}
 
@@ -334,31 +376,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           {auditLoaded && <DeviceAuditList deviceId={deviceId} token={token} />}
         </Collapsible>
       </section>
-
-      {/* Danger zone */}
-      <Card
-        tone="destructive"
-        padding="lg"
-        className="flex-row flex-wrap items-center justify-between"
-      >
-        <SectionHeader
-          as="h3"
-          tone="destructive"
-          title={t('settings.devices.dangerZone')}
-          description={t('settings.devices.dangerZoneDescription')}
-          className="min-w-0 flex-1"
-        />
-        <Button
-          type="button"
-          variant="destructive-outline"
-          size="field"
-          shape="pill"
-          className="shrink-0"
-          onClick={() => setRevokeState('ACTIVE')}
-        >
-          {t('settings.devices.revoke')}
-        </Button>
-      </Card>
 
       <ConfirmationModal
         message={

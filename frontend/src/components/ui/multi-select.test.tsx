@@ -8,7 +8,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-import { MultiSelect } from './multi-select';
+import { MultiSelect, MultiSelectTrigger } from './multi-select';
 
 const options = [
   { value: 'identity', label: 'Identity' },
@@ -196,5 +196,75 @@ describe('MultiSelect option description', () => {
     expect(item.textContent).toContain('Added by Lena');
     await act(async () => root.unmount());
     host.remove();
+  });
+});
+
+describe('MultiSelect chosen rows', () => {
+  it('marks a chosen row with CommandItem checked, so it gets the tint', async () => {
+    const { act } = await import('react');
+    const { createRoot } = await import('react-dom/client');
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <MultiSelect
+          options={options}
+          selected={['access']}
+          onChange={() => undefined}
+        />,
+      ),
+    );
+    const trigger = host.querySelector<HTMLElement>('[role="combobox"]')!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    const rows = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="command-item"]'),
+    );
+    const checkedOf = (label: string) =>
+      rows.find((el) => el.textContent?.includes(label))!.dataset.checked;
+    expect(checkedOf('Access')).toBe('true');
+    expect(checkedOf('Identity')).toBeUndefined();
+    expect(checkedOf('Safety')).toBeUndefined();
+    await act(async () => root.unmount());
+    host.remove();
+  });
+});
+
+describe('MultiSelectTrigger', () => {
+  // The trigger on its own, for a picker that draws its own list
+  // (MultiSelectPopover in the workflow agent node).
+  const renderTrigger = (labels: string[]) => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(
+      <MultiSelectTrigger labels={labels} placeholder="Select tools" />,
+    );
+    return host.querySelector<HTMLElement>('[role="combobox"]')!;
+  };
+
+  it('is the same combobox field trigger as MultiSelect', () => {
+    const trigger = renderTrigger([]);
+    expect(trigger.dataset.slot).toBe('multi-select-trigger');
+    expect(trigger.dataset.variant).toBe('combobox');
+    expect(trigger.dataset.size).toBe('field');
+    expect(trigger.className.split(' ')).toEqual(
+      expect.arrayContaining(['group', 'h-auto', 'min-h-9.5', 'w-full']),
+    );
+    expect(trigger.hasAttribute('data-placeholder')).toBe(true);
+    expect(trigger.textContent).toBe('Select tools');
+    expect(trigger.querySelector('.lucide-chevron-down')).not.toBeNull();
+  });
+
+  it('shows the first two names as Badges and counts the rest', () => {
+    const trigger = renderTrigger(['Jira', 'Slack', 'Notion']);
+    expect(trigger.hasAttribute('data-placeholder')).toBe(false);
+    const chips = Array.from(trigger.querySelectorAll('[data-slot="badge"]'));
+    expect(chips.map((chip) => chip.textContent)).toEqual(['Jira', 'Slack']);
+    expect(trigger.textContent).toContain('components.multiSelect.more:1');
   });
 });

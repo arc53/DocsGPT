@@ -370,6 +370,9 @@ class GetSingleConversation(Resource):
             "is_shared_usage": conversation.get("is_shared_usage", False),
             "shared_token": conversation.get("shared_token", None),
         }
+        if conversation.get("passthrough"):
+            # The latest turn's request values (an API or widget end user's id).
+            data["passthrough"] = conversation["passthrough"]
         return make_response(jsonify(data), 200)
 
 

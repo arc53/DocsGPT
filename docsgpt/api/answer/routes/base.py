@@ -23,6 +23,7 @@ from docsgpt.api.answer.services.conversation_service import (
     ConversationService,
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
+from docsgpt.connectors.attribution import client_sources
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
@@ -32,6 +33,7 @@ from docsgpt.core.model_utils import (
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
 from docsgpt.error import bounded_error_text, sanitize_api_error, user_facing_error
+from docsgpt.llm.deadlines import interruptible
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
 from docsgpt.quotas.service import QuotaService
@@ -45,7 +47,7 @@ from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.activity.flags import clear_stop, stop_requested
 from docsgpt.events.publisher import publish_user_event
-from docsgpt.streaming.event_replay import format_sse_event
+from docsgpt.streaming.event_replay import format_sse_event, sse_json
 from docsgpt.streaming.message_journal import (
     BatchedJournalWriter,
     record_event,
@@ -158,6 +160,60 @@ def _client_gone(agent: Any) -> bool:
     """Whether the route flagged the agent's client as disconnected."""
     event = getattr(agent, "client_disconnected", None)
     return isinstance(event, threading.Event) and event.is_set()
+
+def _turn_tool_calls(agent: Any, reported: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The turn's tool calls, with those the agent made but had not reported yet.
+
+    An agent reports its calls once, when its turn ends. A stream cut short by
+    a Stop or a dropped connection never reads that line, so without this the
+    message lost its calls, among them a handed-off call's job card and the
+    file the job made.
+
+    Args:
+        agent: The turn's agent.
+        reported: The calls the stream has read so far.
+
+    Returns:
+        ``reported`` merged with the agent's calls.
+    """
+    try:
+        made = agent._get_truncated_tool_calls()
+    except Exception:
+        logger.debug("reading the agent's tool calls failed", exc_info=True)
+        return reported
+    if not isinstance(made, list) or not made:
+        return reported
+    return merge_tool_calls(reported, made)
+
+
+def _stop_background_jobs(context: Any) -> None:
+    """Cancel the jobs a stopped turn handed off, so none of them resumes the chat. Never raises."""
+    if context is None or not getattr(context, "origin_message_id", None):
+        return
+    from docsgpt.background.service import stop_turn_jobs
+
+    try:
+        stop_turn_jobs(context.conversation_id, context.origin_message_id, context.user_id)
+    except Exception:
+        logger.exception("stopping the background jobs of message %s failed", context.origin_message_id)
+
+
+def _show_finished_jobs(context: Any, tool_calls: List[Dict[str, Any]]) -> None:
+    """Put the outcome of jobs that ended mid-stream on the saved entries. Never raises.
+
+    Only a turn whose saved calls carry a job looks anything up.
+    """
+    if context is None or not getattr(context, "origin_message_id", None):
+        return
+    if not any(isinstance(call, dict) and call.get("job_id") for call in tool_calls or []):
+        return
+    from docsgpt.background.service import show_finished_jobs
+
+    try:
+        show_finished_jobs(context.conversation_id, context.origin_message_id, context.user_id)
+    except Exception:
+        logger.exception("showing the finished jobs of message %s failed", context.origin_message_id)
+
 
 def _record_answered_by(agent: Any, query_metadata: Dict[str, Any]) -> None:
     """Keep the models that answered on the message, once a fallback answered.
@@ -330,6 +386,8 @@ class BaseAnswerResource:
         attachment_ids: Optional[List[str]],
         request_id: Optional[str],
         message_id: Optional[str],
+        conversation_id: Optional[str] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
@@ -350,6 +408,8 @@ class BaseAnswerResource:
             attachment_ids: Attached file ids.
             request_id: The turn's request id (links its trace).
             message_id: The reserved message id.
+            conversation_id: The conversation the turn belongs to.
+            passthrough: The request's stored passthrough values.
             error: What failed the turn, if it failed.
             extra: More fields for the row (structured-output details).
         """
@@ -368,7 +428,10 @@ class BaseAnswerResource:
             # Links the Logs row to this turn's execution trace.
             "request_id": request_id,
             "message_id": message_id,
+            "conversation_id": str(conversation_id) if conversation_id else None,
         }
+        if passthrough:
+            log_data["passthrough"] = passthrough
         if error:
             log_data["error"] = error
         if extra:
@@ -563,6 +626,7 @@ class BaseAnswerResource:
         finalize_tool_pause_as_complete: bool = False,
         request_id: Optional[str] = None,
         trace: Optional["tracing.Trace"] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -594,6 +658,8 @@ class BaseAnswerResource:
                 the pre-fetch retrieval); :func:`_traced_stream` activates it
                 and writes it when the stream ends. A new one is started when
                 omitted.
+            passthrough: The request's passthrough values bounded for
+                storage; kept on the conversation and the Logs row.
             finalize_tool_pause_as_complete: Stateless-tool-round mode for
                 the OpenAI-compatible ``/v1/chat/completions`` endpoint.
                 OpenAI clients resume a tool call by re-POSTing the full
@@ -700,6 +766,7 @@ class BaseAnswerResource:
                     model_id=model_id or self.default_model_id,
                     request_id=request_id,
                     index=index,
+                    passthrough=passthrough,
                 )
                 conversation_id = reservation["conversation_id"]
                 reserved_message_id = reservation["message_id"]
@@ -930,7 +997,7 @@ class BaseAnswerResource:
         # A slow tool call in this turn may be handed off to a background job.
         # A resumed round with no row of its own (the first /v1 pause finalized
         # it) has nothing to report back to: its jobs are poll-only.
-        bind_background_turn(
+        background_turn = bind_background_turn(
             getattr(agent, "tool_executor", None),
             conversation_id=conversation_id,
             message_id=reserved_message_id,
@@ -1000,7 +1067,7 @@ class BaseAnswerResource:
                 if turn_files:
                     payload = {**payload, "attachments": turn_files}
             if not reserved_message_id or journal_writer is None:
-                return f"data: {json.dumps(payload)}\n\n"
+                return f"data: {sse_json(payload)}\n\n"
             sequence_no += 1
             seq = sequence_no
             event_type = (
@@ -1049,6 +1116,19 @@ class BaseAnswerResource:
                     if folded:
                         query_metadata["folded_background"] = folded
                 gen_iter = agent.gen(query=model_question)
+
+            if background_turn is not None and background_turn.auto_resume():
+                from docsgpt.agents.workflow_agent import WorkflowAgent
+                from docsgpt.core.run_budget import bounded_round
+
+                # Workflow nodes can't defer mid-graph, so a workflow runs unbounded.
+                if not isinstance(agent, WorkflowAgent):
+                    gen_iter = bounded_round(gen_iter)
+
+            # A Stop the ticker saw ends an in-flight provider read, not just the
+            # next chunk. ``StreamStopped`` reaches the abort handler below from
+            # any depth; a supersede still waits for the next chunk or boundary.
+            gen_iter = interruptible(gen_iter, lambda: StreamStopped() if stop_asked.is_set() else None)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
@@ -1125,8 +1205,10 @@ class BaseAnswerResource:
                 elif "sources" in line:
                     _mark_streaming_once()
                     truncated_sources = []
-                    source_log_docs = line["sources"]
-                    for source in line["sources"]:
+                    # Copies without the prompt-only keys: these go to the
+                    # client and the stored turn; the agent keeps its own.
+                    source_log_docs = client_sources(line["sources"])
+                    for source in source_log_docs:
                         truncated_source = source.copy()
                         if "text" in truncated_source:
                             truncated_source["text"] = (
@@ -1282,6 +1364,7 @@ class BaseAnswerResource:
                             reserved_message_id=None,
                             request_id=request_id,
                             tool_calls=tool_calls,
+                            passthrough=passthrough,
                         )
                     # Flush the held pause event now (after the state is
                     # saved), in its original position ahead of the terminal
@@ -1340,6 +1423,7 @@ class BaseAnswerResource:
                                 model_id=model_id,
                                 agent_id=agent_id,
                                 model_user_id=model_user_id,
+                                stateless=True,
                             )
                             conversation_id = (
                                 self.conversation_service.save_conversation(
@@ -1378,6 +1462,7 @@ class BaseAnswerResource:
                         reserved_message_id=reserved_message_id,
                         request_id=request_id,
                         tool_calls=tool_calls,
+                        passthrough=passthrough,
                     )
 
                     # Notify the user out-of-band so they can navigate back and
@@ -1477,6 +1562,7 @@ class BaseAnswerResource:
                     model_id=title_model_id,
                     agent_id=agent_id,
                     model_user_id=model_user_id,
+                    stateless=True,
                 )
                 llm._token_usage_source = "title"
 
@@ -1520,6 +1606,24 @@ class BaseAnswerResource:
                         # It ran to the end: unread unless the user watches it.
                         mark_unread_when_away=True,
                     )
+                    if finalize_outcome is MessageUpdateOutcome.UPDATED:
+                        # A Stop that landed after the last event still stops the turn's jobs.
+                        if stop_requested(reserved_message_id):
+                            _stop_background_jobs(background_turn)
+                        else:
+                            if query_metadata.get("budget_deferred") and background_turn is not None:
+                                from docsgpt.background.continuation import defer_round
+
+                                # Guarded: the answer is already saved, and a raise
+                                # would reach the generic ``except`` below.
+                                try:
+                                    defer_round(
+                                        {"id": conversation_id, "user_id": background_turn.user_id},
+                                        reserved_message_id,
+                                    )
+                                except Exception:
+                                    logger.exception("deferring the next round of %s failed", reserved_message_id)
+                            _show_finished_jobs(background_turn, tool_calls)
                     # The outcome used to be discarded here, which is how a
                     # finished answer could vanish silently: if the row was
                     # deleted mid-stream (retry/edit truncation) the write
@@ -1668,6 +1772,8 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
+                conversation_id=conversation_id,
+                passthrough=passthrough,
                 # A yielded error (a failed workflow node) ends the turn
                 # normally but still failed it.
                 error=stream_error,
@@ -1695,6 +1801,12 @@ class BaseAnswerResource:
                 journal_writer.flush()
                 journal_writer.close()
             response_full, thought = _seal_exposed_text(agent, decoded_token, response_full, thought)
+            tool_calls = _turn_tool_calls(agent, tool_calls)
+            # The chat's own Stop stores the request and then closes the
+            # stream, so a close can arrive before the ticker has seen it.
+            stopped_by_user = isinstance(stream_exit, StreamStopped) or (
+                reserved_message_id is not None and stop_requested(reserved_message_id)
+            )
             # Save partial response
 
             # Whether the DB row was flipped to ``complete`` during this
@@ -1735,6 +1847,7 @@ class BaseAnswerResource:
                             model_id=title_model_id,
                             agent_id=agent_id,
                             model_user_id=model_user_id,
+                            stateless=True,
                         )
                         llm._token_usage_source = "title"
                     if reserved_message_id is not None:
@@ -1839,12 +1952,8 @@ class BaseAnswerResource:
                         # reconnecting client surfaces the same failure
                         # the UI would show on a live error. A Stop says
                         # so: its code keeps the chat out of the failed ones
-                        # the sidebar marks. The chat's own Stop stores the
-                        # request and then closes the stream, so a close can
-                        # arrive before the ticker has seen it.
-                        stopped = isinstance(stream_exit, StreamStopped) or stop_requested(
-                            reserved_message_id
-                        )
+                        # the sidebar marks.
+                        stopped = stopped_by_user
                         failure_metadata = dict(query_metadata or {})
                         if stopped:
                             failure_metadata["error"] = "Stopped by its user before any response was produced."
@@ -1896,12 +2005,16 @@ class BaseAnswerResource:
                         f"Failed to journal terminal event on abort: {journal_err}",
                         exc_info=True,
                     )
+            if stopped_by_user:
+                # After the message is saved, so a job that already ended
+                # can show its outcome on the message's entry.
+                _stop_background_jobs(background_turn)
+            else:
+                _show_finished_jobs(background_turn, tool_calls)
             # A Stop is the user's own end of the turn: it keeps its Logs
             # entry, as a turn that runs out or fails does. A dropped
             # connection writes none.
-            if not turn_logged and reserved_message_id is not None and (
-                isinstance(stream_exit, StreamStopped) or stop_requested(reserved_message_id)
-            ):
+            if not turn_logged and reserved_message_id is not None and stopped_by_user:
                 self._persist_turn_log(
                     decoded_token=decoded_token,
                     user_api_key=user_api_key,
@@ -1913,6 +2026,8 @@ class BaseAnswerResource:
                     attachment_ids=attachment_ids,
                     request_id=request_id,
                     message_id=reserved_message_id,
+                    conversation_id=conversation_id,
+                    passthrough=passthrough,
                     extra={"stopped": True},
                 )
             if isinstance(stream_exit, StreamStopped) and terminal is not None:
@@ -2039,6 +2154,8 @@ class BaseAnswerResource:
                 attachment_ids=attachment_ids,
                 request_id=request_id,
                 message_id=reserved_message_id,
+                conversation_id=conversation_id,
+                passthrough=passthrough,
                 error=bounded_error_text(e),
             )
             yield _emit(
@@ -2098,6 +2215,7 @@ class BaseAnswerResource:
         reserved_message_id: Optional[str],
         request_id: Optional[str],
         tool_calls: List[Dict[str, Any]],
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Save a paused turn's continuation state so a later request can resume it.
 
@@ -2116,6 +2234,8 @@ class BaseAnswerResource:
                 its answer).
             request_id: The turn's request id.
             tool_calls: Every call of the turn so far.
+            passthrough: The request's stored passthrough values; the resume
+                logs the turn with them.
 
         Returns:
             Whether the state was saved.
@@ -2176,6 +2296,7 @@ class BaseAnswerResource:
                     # Every round's calls so far, so the message
                     # the resumed turn finalizes keeps them all.
                     "prior_tool_calls": json.loads(json.dumps(tool_calls or [], default=str)),
+                    "passthrough": passthrough,
                     # The turn's files (so ``F`` refs still
                     # resolve), its compression point and
                     # backup models.
@@ -2417,7 +2538,7 @@ class BaseAnswerResource:
         payload: Dict[str, Any] = {"type": "error", "error": err_response}
         if code:
             payload["code"] = code
-        yield f"data: {json.dumps(payload)}\n\n"
+        yield f"data: {sse_json(payload)}\n\n"
 
     def curated_error_stream_generate(self, error: BaseException):
         """One SSE ``error`` event with the curated message, code and params.
@@ -2432,4 +2553,4 @@ class BaseAnswerResource:
         payload: Dict[str, Any] = {"type": "error", "error": public.message, "code": public.code}
         if public.params:
             payload["params"] = public.params
-        yield f"data: {json.dumps(payload)}\n\n"
+        yield f"data: {sse_json(payload)}\n\n"

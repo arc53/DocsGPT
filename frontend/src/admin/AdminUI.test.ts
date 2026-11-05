@@ -13,6 +13,7 @@ describe('eventLabel', () => {
     expect(eventLabel('oidc_login_denied')).toBe('Login denied');
     expect(eventLabel('source.deleted')).toBe('Source deleted');
     expect(eventLabel('device.run_command')).toBe('Device command');
+    expect(eventLabel('source_defaults_set')).toBe('Source defaults changed');
   });
 
   it('stays legible for an event a newer release added', () => {

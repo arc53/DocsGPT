@@ -1,9 +1,11 @@
 import type { TFunction } from 'i18next';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { RefreshCw, Search, UserRound, Zap } from 'lucide-react';
 import { useSelector } from 'react-redux';
 
 import { Badge } from '../components/ui/badge';
+import { MetaItem, MetaLine } from '../components/ui/meta-line';
 import { formatCount } from '../utils/dateTimeUtils';
 import ConnectorIcon from './ConnectorIcon';
 import ConnectorTile from './ConnectorTile';
@@ -85,9 +87,38 @@ export function ConnectorStateBadge({
   }
 }
 
+const CAPABILITY_ICONS: Record<
+  Capability,
+  ReactElement<{ className?: string }>
+> = {
+  sync: <RefreshCw />,
+  read: <Search />,
+  write: <Zap />,
+};
+
 /**
- * A tile's meta row: which account is connected ("2 connected" for
- * several), or a muted Connect cue for a service that can be connected.
+ * What a service can do, as items in a tile's meta line: a short label
+ * ("Syncs", "Looks up", "Acts") with its icon, the full wording on hover.
+ * Facts, not states, so never Badges on a tile.
+ */
+export function capabilityMetaItems(
+  t: TFunction,
+  capabilities: Capability[],
+): ReactNode[] {
+  return capabilities.map((capability) => (
+    <MetaItem
+      key={capability}
+      icon={CAPABILITY_ICONS[capability]}
+      title={t(`settings.connectors.capabilityPlain.${capability}`)}
+    >
+      {t(`settings.connectors.capabilityShort.${capability}`)}
+    </MetaItem>
+  ));
+}
+
+/**
+ * The account part of a tile's meta line: which account is connected ("2
+ * connected" for several), or nothing for a service that isn't.
  *
  * Args:
  *   t: The translate function.
@@ -95,33 +126,31 @@ export function ConnectorStateBadge({
  *   accounts: The caller's connections of this service (and of its parts).
  *
  * Returns:
- *   The footer content, or null when there is nothing to say.
+ *   A `MetaItem`, or null when there is nothing to say.
  */
 export function connectorMeta(
   t: TFunction,
   connector: ConnectorDefinition,
   accounts: Connection[],
 ): ReactNode {
-  // An available service has no footer: no badge already says it isn't
-  // connected, and the whole tile is the Connect action.
   if (connector.state !== 'connected' && connector.state !== 'reconnect')
     return null;
   const count = Math.max(connector.connection_count, accounts.length);
   if (count > 1)
     return (
-      <span className="min-w-0 truncate">
+      <MetaItem icon={<UserRound />}>
         {t('settings.connectors.status.connectedCount', {
           count,
           formatted: formatCount(count),
         })}
-      </span>
+      </MetaItem>
     );
   if (accounts.length === 1) {
     const line = accountLine(t, accounts[0]);
     return (
-      <span className="min-w-0 truncate" title={line}>
+      <MetaItem icon={<UserRound />} title={line}>
         {line}
-      </span>
+      </MetaItem>
     );
   }
   return null;
@@ -136,12 +165,19 @@ export default function ConnectorCard({
   onOpen,
   variant = 'filled',
   testId,
+  connectedBadge = true,
 }: {
   connector: ConnectorDefinition;
   onOpen: (connector: ConnectorDefinition) => void;
   /** `outline` where the tile is a choice in a picker (Add a tool). */
   variant?: 'filled' | 'outline';
   testId?: string;
+  /**
+   * Off where a section already says Connected (the Connectors page), so the
+   * pill isn't repeated on every tile there; the states that need the reader
+   * keep theirs.
+   */
+  connectedBadge?: boolean;
 }) {
   const { t } = useTranslation();
   const catalog = useSelector(selectConnectorCatalog);
@@ -158,12 +194,17 @@ export default function ConnectorCard({
       title={connectorName(t, connector)}
       description={connectorDescription(t, connector)}
       badges={
-        <>
+        connector.state === 'connected' && !connectedBadge ? undefined : (
           <ConnectorStateBadge connector={connector} />
-          <CapabilityBadgeItems capabilities={connector.capabilities} />
-        </>
+        )
       }
-      footer={connectorMeta(t, connector, accounts)}
+      // The account, then what the service can do: facts, in the meta line.
+      footer={
+        <MetaLine>
+          {connectorMeta(t, connector, accounts)}
+          {capabilityMetaItems(t, connector.capabilities)}
+        </MetaLine>
+      }
       disabled={connector.state === 'disabled'}
       onClick={() => onOpen(connector)}
       testId={testId ?? `connector-card-${connector.key}`}

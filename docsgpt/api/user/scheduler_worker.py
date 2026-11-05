@@ -18,8 +18,8 @@ from docsgpt.agents.headless_runner import run_agent_headless
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.quotas.service import QuotaExceededError
-from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.engine import get_engine
+from docsgpt.storage.db.repositories.agents import agent_row_to_dict
 from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
 )
@@ -52,7 +52,7 @@ def _agent_config_for_schedule(schedule: Dict[str, Any]) -> Optional[Dict[str, A
                 sql_text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"),
                 {"id": str(schedule["agent_id"])},
             ).fetchone()
-        return row_to_dict(row) if row is not None else None
+        return agent_row_to_dict(row)
     return _ephemeral_agent_for_agentless(schedule)
 
 

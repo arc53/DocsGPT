@@ -95,7 +95,7 @@ class TestServe:
         backend = FakeBackend()
         monkeypatch.setattr(server, "build_backend", lambda device: backend)
         monkeypatch.setattr(settings, "DECISION_PRELOAD", False)
-        monkeypatch.setattr(settings, "GUARDRAILS_INJECTION_INPUT_MODE", "off")
+        monkeypatch.setattr(settings, "DECISION_INJECTION_ENABLED", False)
         return runs, backend
 
     def test_refuses_a_public_bind_without_a_key(self, started, caplog):
@@ -117,7 +117,8 @@ class TestServe:
         assert runs
 
     @pytest.mark.parametrize("setting, value", [("DECISION_PRELOAD", True),
-                                                ("GUARDRAILS_INJECTION_INPUT_MODE", "monitor")])
+                                                ("DECISION_INJECTION_ENABLED", True),
+                                                ("DECISION_RELEVANCE_ENABLED", True)])
     def test_loads_at_start_when_asked(self, started, monkeypatch, setting, value):
         _, backend = started
         monkeypatch.setattr(settings, setting, value)
@@ -293,8 +294,9 @@ class TestLanes:
         release, inside = threading.Event(), threading.Event()
 
         def blocking(requests, lane, deadline):
-            inside.set()
-            release.wait(5)
+            if lane == "background":
+                inside.set()
+                release.wait(5)
             return [Outcome(answer(), 1, 0, False, 1) for _ in requests]
 
         backend.run = blocking

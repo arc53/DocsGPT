@@ -506,3 +506,48 @@ def test_cel_branches_on_artifact_metadata():
     assert evaluate_cel('report.size > 0 && report.mime_type == "application/pdf"', state) is True
     assert evaluate_cel('report.mime_type == "text/plain"', state) is False
     assert evaluate_cel("report.size > 5000", state) is False
+
+
+def test_code_node_in_a_stopped_loop_item_never_opens_the_session(patch_sandbox):
+    """A loop item that got the sandbox lock after its loop stopped doesn't reopen the run's session."""
+    import threading
+
+    from docsgpt.agents.workflows.workflow_engine import _LoopItemCancelled
+
+    engine = _engine()
+    engine._loop_item = {"parent_node_id": "each", "item_index": 0, "item_count": 1}
+    engine._loop_cancel = threading.Event()
+    engine._loop_cancel.set()
+
+    with pytest.raises(_LoopItemCancelled):
+        list(engine._execute_code_node(_code_node()))
+
+    assert patch_sandbox["manager_holder"]["manager"].opened == []
+
+
+def test_a_stop_inside_a_node_is_not_the_items_own_failure(patch_sandbox):
+    """A cancel raised inside a node ends the item as stopped, not failed with a node error."""
+    import threading
+
+    from docsgpt.agents.workflows.workflow_engine import _LoopItemCancelled
+
+    engine = _engine()
+    engine.graph.nodes = [_code_node(parent_id="each")]
+    engine._loop_item = {"parent_node_id": "each", "item_index": 0, "item_count": 1}
+    engine._loop_cancel = threading.Event()
+    real_lock = engine._sandbox_lock
+
+    class StopOnAcquire:
+        def __enter__(self):
+            engine._loop_cancel.set()
+            return real_lock.__enter__()
+
+        def __exit__(self, *exc):
+            return real_lock.__exit__(*exc)
+
+    engine._sandbox_lock = StopOnAcquire()
+
+    with pytest.raises(_LoopItemCancelled):
+        list(engine._walk("code_1", {}))
+
+    assert engine.execution_log == []

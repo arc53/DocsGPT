@@ -11,12 +11,21 @@ import {
   selectToken,
 } from '../preferences/preferenceSlice';
 import { canAgent } from './agentAccess';
-import { agentsListPath } from './paths';
+import { GuardedAgentContext } from './hooks/useAgent';
+import { agentEditPath, agentsListPath, isWorkflowAgent } from './paths';
 import type { Agent } from './types';
 
 type AgentRouteGuardProps = {
-  /** The action the page needs (`view`, `view_logs`, `manage_schedules`). */
+  /**
+   * The action the page needs (`view`, `view_logs`, `view_analytics`,
+   * `manage_schedules`), as `canAgent` checks it.
+   */
   action: string;
+  /**
+   * The classic edit page: a workflow agent goes on to the workflow editor
+   * instead, since the classic form would save it back as a classic agent.
+   */
+  classicEditor?: boolean;
   children: ReactNode;
 };
 
@@ -28,13 +37,19 @@ type AgentRouteGuardProps = {
  * renders until it knows (a loading ring stands in), so a viewer never sees
  * a flash of the edit form.
  * A caller who may not open the page, or an agent that does not load, goes
- * back to the agent list.
+ * back to the agent list. A record it fetched goes on to the page
+ * (`useAgent`), which then doesn't read it again.
+ * On the classic edit page a workflow agent opens in the workflow editor
+ * (an old `/agents/edit/<id>` link, a typed URL, or a link built before the
+ * agent's type was known).
  *
  * @param action The agent action the wrapped page needs.
+ * @param classicEditor Whether the page is the classic edit form.
  * @param children The page.
  */
 export default function AgentRouteGuard({
   action,
+  classicEditor = false,
   children,
 }: AgentRouteGuardProps) {
   const { agentId } = useParams();
@@ -81,5 +96,14 @@ export default function AgentRouteGuard({
   }
   if (!agent || !canAgent(agent, action))
     return <Navigate to={agentsListPath()} replace />;
-  return <>{children}</>;
+  if (classicEditor && isWorkflowAgent(agent))
+    return <Navigate to={agentEditPath(agentId, true)} replace />;
+  return (
+    // The full record it read, even once the list lands meanwhile.
+    <GuardedAgentContext.Provider
+      value={fetched?.id === agentId ? fetched.agent : null}
+    >
+      {children}
+    </GuardedAgentContext.Provider>
+  );
 }

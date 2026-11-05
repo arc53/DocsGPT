@@ -122,6 +122,17 @@ class TestPasses:
         buffer.extend([7], 0, None, 0)
         assert buffer.cache.ids == [7]
 
+    def test_the_cache_is_cut_by_a_negative_count(self, torch_stub):
+        # transformers 5.20 rejects a positive crop (the length to keep, as 5.17 read it) with a ValueError
+        buffer = engine().new_buffer()
+        buffer.extend([1, 2, 3], 0, None, 0)
+        buffer.extend([4], 3, None, 0)  # the cache holds the state alone: nothing to cut
+        assert buffer.cache.crops == []
+        buffer.extend([5, 6], 3, None, 0)
+        buffer.extend([7], 3, None, 0)
+        assert buffer.cache.crops == [-1, -2]
+        assert buffer.cache.ids == [1, 2, 3, 7]
+
     def test_the_timing_run_fits_the_torch_plan(self, torch_stub):
         backend = loaded()
         assert backend.profile.plan == "torch"

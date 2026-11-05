@@ -40,7 +40,7 @@ class TestModelCapabilities:
     def test_defaults(self):
         caps = ModelCapabilities()
         assert caps.supports_tools is False
-        assert caps.supports_structured_output is False
+        assert caps.supports_structured_output is True
         assert caps.supports_streaming is True
         assert caps.supported_attachment_types == []
         assert caps.context_window == 128000

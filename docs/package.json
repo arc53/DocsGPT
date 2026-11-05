@@ -2,7 +2,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
-    "postbuild": "pagefind --site .next/server/app --output-path public/_pagefind",
+    "postbuild": "node scripts/pagefind-index.mjs",
     "start": "next start",
     "llms": "node scripts/generate-llms.mjs",
     "llms:check": "node scripts/generate-llms.mjs --check",
@@ -11,8 +11,8 @@
   "license": "MIT",
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
-    "docsgpt-react": "^0.8.0",
-    "next": "^16.3.5",
+    "docsgpt-react": "^0.14.0",
+    "next": "^16.4.4",
     "next-themes": "^0.4.6",
     "nextra": "^4.6.1",
     "nextra-theme-docs": "^4.6.1",
@@ -25,6 +25,8 @@
   },
   "overrides": {
     "@xmldom/xmldom": "^0.9.12",
+    "katex": "^0.18.2",
+    "minimatch": "^11.0.4",
     "zod": "~4.3.6"
   }
 }

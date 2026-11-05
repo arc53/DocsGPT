@@ -158,7 +158,7 @@ class GraphSearchTool(Tool):
             return "Error: 'entity' parameter is required."
 
         store = self._get_store()
-        parts: List[str] = []
+        docs: List[Dict[str, Any]] = []
         for source_id in self._sources():
             for page in store.entity_pages(source_id, entity):
                 text = page.get("text") or ""
@@ -167,15 +167,22 @@ class GraphSearchTool(Tool):
                 # citations key on (source, title). Labelling it differently
                 # gives that document two citation numbers.
                 labels = labels_from_metadata(page.get("metadata"), text, source_id)
-                doc = {**labels, "text": text}
-                if doc not in self.retrieved_docs:
-                    self.retrieved_docs.append(doc)
-                header = labels["filename"] or labels["title"]
-                # Numbered from the answer's registry so a ``[n]`` the model
-                # writes for this page opens it.
-                number = register_citation(self.config.get("citation_registry"), doc)
-                label = f"[{number}] {header}" if number else header
-                parts.append(f"--- {label} ---\n{text[:MAX_PAGE_CHARS]}")
+                docs.append({**labels, "text": text})
+        # Inside an agent each page is screened as a retrieved document first,
+        # so a page a retrieval control withholds is replaced on its own.
+        screen = self.config.get("retrieval_screen")
+        if callable(screen):
+            docs = screen(docs)
+        parts: List[str] = []
+        for doc in docs:
+            if doc not in self.retrieved_docs:
+                self.retrieved_docs.append(doc)
+            header = doc["filename"] or doc["title"]
+            # Numbered from the answer's registry so a ``[n]`` the model
+            # writes for this page opens it.
+            number = register_citation(self.config.get("citation_registry"), doc)
+            label = f"[{number}] {header}" if number else header
+            parts.append(f"--- {label} ---\n{doc['text'][:MAX_PAGE_CHARS]}")
         if not parts:
             return f"No documents mention {entity!r}."
         return "\n\n".join(parts)

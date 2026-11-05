@@ -3,14 +3,14 @@
 import logging
 from typing import Any, Dict
 
-from docsgpt.core.model_utils import get_model_capabilities, get_token_limit
+from docsgpt.core.model_utils import cap_context_window, get_model_capabilities, get_token_limit
 from docsgpt.core.settings import settings
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 
 logger = logging.getLogger(__name__)
 
 
-def _uses_responses_api(model_id: str, user_id: str | None) -> bool:
+def uses_responses_api(model_id: str, user_id: str | None) -> bool:
     """Whether ``model_id`` speaks the Responses API, where history replays its reasoning."""
     try:
         capabilities = get_model_capabilities(model_id, user_id=user_id) or {}
@@ -40,6 +40,7 @@ class CompressionThresholdChecker:
         model_id: str,
         current_query_tokens: int = 500,
         user_id: str | None = None,
+        context_window_limit: int | None = None,
     ) -> bool:
         """
         Determine if compression is needed.
@@ -50,6 +51,8 @@ class CompressionThresholdChecker:
             current_query_tokens: Estimated tokens for current query
             user_id: Owner — needed so per-user BYOM custom-model UUIDs
                 resolve when looking up the context window.
+            context_window_limit: The agent's context limit; the threshold
+                is a share of it when it is below the model's window.
 
         Returns:
             True if tokens >= threshold% of context window
@@ -61,12 +64,14 @@ class CompressionThresholdChecker:
             # reasoning, billed in full; left out, the check read 70% of the
             # window while the provider was sent 133%.
             total_tokens = TokenCounter.count_effective_conversation_tokens(
-                conversation, include_reasoning=_uses_responses_api(model_id, user_id)
+                conversation, include_reasoning=uses_responses_api(model_id, user_id)
             )
             total_tokens += current_query_tokens
 
-            # Get context window limit for model
-            context_limit = get_token_limit(model_id, user_id=user_id)
+            # Get context window limit for model, lowered to the agent's limit
+            context_limit = cap_context_window(
+                get_token_limit(model_id, user_id=user_id), context_window_limit
+            )
 
             # Calculate threshold
             threshold = int(context_limit * self.threshold_percentage)
@@ -90,6 +95,44 @@ class CompressionThresholdChecker:
         except Exception as e:
             logger.error(f"Error checking compression need: {str(e)}", exc_info=True)
             return False
+
+    def history_over_limit(
+        self,
+        conversation: Dict[str, Any],
+        model_id: str,
+        history_token_limit: int | None,
+        user_id: str | None = None,
+    ) -> bool:
+        """Whether the messages replayed word for word have reached the agent's history limit.
+
+        The summary is left out: it is bounded by the compression prompt, and
+        counted in it a long summary would compress again on every turn.
+
+        Args:
+            conversation: Full conversation document.
+            model_id: Target model for this request.
+            history_token_limit: The agent's ``config.history_token_limit``;
+                None never trips.
+            user_id: Owner, so a per-user BYOM model's API flavor resolves.
+
+        Returns:
+            True if the recent messages are at or above the limit.
+        """
+        if not history_token_limit:
+            return False
+        try:
+            recent_tokens = TokenCounter.count_recent_conversation_tokens(
+                conversation, include_reasoning=uses_responses_api(model_id, user_id)
+            )
+        except Exception as e:
+            logger.error(f"Error checking history limit: {str(e)}", exc_info=True)
+            return False
+        if recent_tokens >= history_token_limit:
+            logger.info(
+                f"HISTORY LIMIT REACHED: {recent_tokens} recent tokens / {history_token_limit} limit"
+            )
+            return True
+        return False
 
     def check_message_tokens(
         self, messages: list, model_id: str, user_id: str | None = None

@@ -111,6 +111,10 @@ class FakeDecider:
     def warm(self) -> None:
         self.warmed += 1
 
+    def probe(self, timeout: float = 5.0) -> Optional[bool]:
+        """As ``DecisionClient.probe`` for a local model: there is no server to ask."""
+        return None
+
     def model_info(self) -> ModelInfo:
         return self.info
 
