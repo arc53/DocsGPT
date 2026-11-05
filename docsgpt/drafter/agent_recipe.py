@@ -751,8 +751,8 @@ def _edited_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> Optional[dict
     problem = tool_variables_problem(result, current, req)
     if problem:
         raise ProposalInvalid([problem])
-    return {"kind": "edit", "id": target, "edits": edits, "before": current, "result": result,
-            "checks": checks_for(current, result)}
+    # The form applies the edits to the prompt's saved text, not to the capped copy the model read.
+    return {"kind": "edit", "id": target, "edits": edits, "checks": checks_for(current, result)}
 
 
 def _for_step(raw_fields: dict, step: Optional[str]) -> dict:

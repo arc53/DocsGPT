@@ -4780,7 +4780,12 @@
         "parked": "El prompt que escribí sigue abierto, sin guardar.",
         "open": "Abrir prompt",
         "keep": "Mantener {{name}} en su lugar",
-        "changePlaceholder": "O dime qué cambiar en el prompt…"
+        "changePlaceholder": "O dime qué cambiar en el prompt…",
+        "changes_one": "{{count}} cambio por revisar",
+        "changes_other": "{{count}} cambios por revisar",
+        "changes_many": "{{count}} cambios por revisar",
+        "reviewHint": "Acepta o rechaza cada cambio en la vista del prompt y luego guarda el prompt. Todos los agentes que lo usan reciben el texto guardado.",
+        "editsStale": "Ninguno de mis cambios encaja ya con el texto guardado del prompt. Vuelve a pedírmelo y partiré de él."
       },
       "formEdited": "Cambiaste {{fields}} en el formulario."
     },

@@ -1,5 +1,6 @@
 import {
   applyPromptEdits,
+  fittingEdits,
   type PromptEdit,
   promptDiffSegments,
   promptDrafterMode,
@@ -93,6 +94,18 @@ describe('applyPromptEdits', () => {
   it('skips an edit whose text is gone', () => {
     const stale = [{ id: 'e9', find: 'Nope', replace: 'Yes', reason: '' }];
     expect(applyPromptEdits(CONTENT, stale, () => true)).toBe(CONTENT);
+  });
+});
+
+describe('fittingEdits', () => {
+  it('keeps the edits whose text occurs once and that overlap no earlier one', () => {
+    const edits: PromptEdit[] = [
+      { id: 'e1', find: 'Be brief.', replace: 'Be short.', reason: 'r' },
+      { id: 'e2', find: 'Gone.', replace: 'x', reason: 'r' },
+      { id: 'e3', find: 'e', replace: 'x', reason: 'r' },
+      { id: 'e4', find: 'brief', replace: 'short', reason: 'r' },
+    ];
+    expect(fittingEdits(CONTENT, edits).map((edit) => edit.id)).toEqual(['e1']);
   });
 });
 

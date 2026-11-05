@@ -4780,7 +4780,12 @@
         "parked": "Le prompt que j’ai rédigé est toujours ouvert, non enregistré.",
         "open": "Ouvrir le prompt",
         "keep": "Garder {{name}} à la place",
-        "changePlaceholder": "Ou dites-moi quoi modifier dans le prompt…"
+        "changePlaceholder": "Ou dites-moi quoi modifier dans le prompt…",
+        "changes_one": "{{count}} modification à examiner",
+        "changes_other": "{{count}} modifications à examiner",
+        "changes_many": "{{count}} modifications à examiner",
+        "reviewHint": "Acceptez ou refusez chaque modification dans la vue du prompt, puis enregistrez le prompt. Tous les agents qui l’utilisent reçoivent le texte enregistré.",
+        "editsStale": "Aucune de mes modifications ne correspond plus au texte enregistré du prompt. Redemandez-le-moi et je partirai de ce texte."
       },
       "formEdited": "Vous avez modifié {{fields}} dans le formulaire."
     },

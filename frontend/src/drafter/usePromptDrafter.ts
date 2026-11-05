@@ -1,24 +1,16 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
-import {
-  applyPromptEdits,
-  type PromptImproveProposal,
-  readPromptProposal,
-} from './promptDraft';
+import { readPromptProposal } from './promptDraft';
 import type { DrafterStarter } from './starters';
 import { type DraftedFields, useDraftedFields } from './useDraftedFields';
 import { type DrafterSession, useDrafterSession } from './useDrafterSession';
+import {
+  type PromptDecision,
+  type PromptReview,
+  usePromptReview,
+} from './usePromptReview';
 
-export type PromptDecision = 'accepted' | 'rejected';
-
-/** An improve proposal under review: the text it was made for and the choices so far. */
-export type PromptReview = {
-  proposal: PromptImproveProposal;
-  original: string;
-  decisions: Record<string, PromptDecision>;
-  /** The change "Review one by one" is on; null before it starts. */
-  current: string | null;
-};
+export type { PromptDecision, PromptReview } from './usePromptReview';
 
 export type PromptDrafterOptions = {
   mode: 'improve' | 'write';
@@ -71,7 +63,6 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   // The starting point picked and a Skip on questions hold for the session.
   const starter = useRef<DrafterStarter | null>(null);
   const skipped = useRef(false);
-  const [review, setReview] = useState<PromptReview | null>(null);
 
   const values = useMemo(
     () => ({ name: options.name, content: options.content }),
@@ -87,20 +78,19 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   );
   const draftedRef = useRef(drafted);
   draftedRef.current = drafted;
-  const reviewRef = useRef(review);
-  reviewRef.current = review;
+  const reviews = usePromptReview(
+    (content) => latest.current.setContent(content),
+    drafted,
+  );
+  const reviewsRef = useRef(reviews);
+  reviewsRef.current = reviews;
 
   const getContext = useCallback(() => {
     const { mode, promptId, name, content } = latest.current;
     // A new request while a review is open (the drawer's ask bar stays
     // open) ends it with the choices made so far: the text already holds
     // them, and a change not chosen stays as it was.
-    const open = reviewRef.current;
-    if (open) {
-      setReview(null);
-      if (content !== open.original)
-        draftedRef.current.mark('content', open.original, content);
-    }
+    reviewsRef.current.finish(content);
     sent.current = content;
     return {
       mode,
@@ -126,12 +116,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     }
     if (proposal.edits.length === 0) return;
     // The text is read-only while a turn runs, so it is still what was sent.
-    setReview({
-      proposal,
-      original: sent.current,
-      decisions: {},
-      current: null,
-    });
+    reviewsRef.current.start(proposal.edits, sent.current);
   }, []);
 
   const session = useDrafterSession({
@@ -139,74 +124,6 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     getContext,
     onProposal,
   });
-
-  /** Write the review's text, and close it once every change is chosen. */
-  const commit = useCallback(
-    (next: PromptReview) => {
-      const { proposal, original, decisions } = next;
-      const content = applyPromptEdits(
-        original,
-        proposal.edits,
-        (id) => decisions[id] === 'accepted',
-      );
-      latest.current.setContent(content);
-      const done = proposal.edits.every((edit) => decisions[edit.id]);
-      if (!done) {
-        setReview(next);
-        return;
-      }
-      setReview(null);
-      if (content !== original) drafted.mark('content', original, content);
-    },
-    [drafted],
-  );
-
-  const decide = useCallback(
-    (id: string, decision: PromptDecision | null) => {
-      if (!review) return;
-      const decisions = { ...review.decisions };
-      if (decision) decisions[id] = decision;
-      else delete decisions[id];
-      const edits = review.proposal.edits;
-      let current = review.current;
-      if (current !== null && decision) {
-        // One by one: on to the next change still open, after this one.
-        const from = edits.findIndex((edit) => edit.id === id);
-        const order = [...edits.slice(from + 1), ...edits.slice(0, from)];
-        current = order.find((edit) => !decisions[edit.id])?.id ?? null;
-      }
-      commit({ ...review, decisions, current });
-    },
-    [commit, review],
-  );
-
-  const acceptAll = useCallback(() => {
-    if (!review) return;
-    const decisions = { ...review.decisions };
-    review.proposal.edits.forEach((edit) => {
-      decisions[edit.id] ??= 'accepted';
-    });
-    commit({ ...review, decisions });
-  }, [commit, review]);
-
-  const reviewOneByOne = useCallback(() => {
-    setReview((prev) =>
-      prev
-        ? {
-            ...prev,
-            current:
-              prev.proposal.edits.find((edit) => !prev.decisions[edit.id])
-                ?.id ?? null,
-          }
-        : prev,
-    );
-  }, []);
-
-  const discard = useCallback(() => {
-    if (!review) return;
-    latest.current.setContent(review.original);
-    setReview(null);
-  }, [review]);
 
   const send = session.send;
   const start = useCallback(
@@ -229,7 +146,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     starter.current = null;
     skipped.current = false;
     resetSession();
-    setReview(null);
+    reviewsRef.current.clear();
     draftedRef.current.clear();
   }, [resetSession]);
 
@@ -237,12 +154,12 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     session,
     start,
     skipQuestions,
-    review,
+    review: reviews.review,
     drafted,
-    decide,
-    acceptAll,
-    reviewOneByOne,
-    discard,
+    decide: reviews.decide,
+    acceptAll: reviews.acceptAll,
+    reviewOneByOne: reviews.reviewOneByOne,
+    discard: reviews.discard,
     reset,
   };
 }

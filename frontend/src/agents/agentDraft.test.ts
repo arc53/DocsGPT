@@ -547,6 +547,44 @@ describe('agentDraft', () => {
     ]);
   });
 
+  it('reads edits to a saved prompt and gives them one row', () => {
+    const proposal = parseAgentProposal({
+      fields: {
+        prompt: {
+          kind: 'edit',
+          id: 'p1',
+          edits: [
+            { id: 'e1', find: 'Be brief.', replace: 'Be short.', reason: 'r' },
+            { id: 'e2', find: 7 },
+          ],
+          checks: ['to_template', 'nope'],
+        },
+      },
+      reasons: [{ field: 'prompt', summary: 'Shorter answers' }],
+    })!;
+    expect(proposal.fields.prompt).toEqual({
+      kind: 'edit',
+      id: 'p1',
+      edits: [
+        { id: 'e1', find: 'Be brief.', replace: 'Be short.', reason: 'r' },
+      ],
+      checks: ['to_template'],
+    });
+    // The prompt isn't changed on the form: its row counts the changes to review.
+    expect(agentProposalSummary(proposal, t, []).rows).toEqual([
+      {
+        key: 'prompt-edits',
+        label: 'agents.form.sections.prompt',
+        summary: 'drafter.agent.prompt.changes:1',
+      },
+    ]);
+    expect(
+      parseAgentProposal({
+        fields: { prompt: { kind: 'edit', id: 'p1', edits: [] } },
+      })!.fields.prompt,
+    ).toBeUndefined();
+  });
+
   it('names what each finished step holds', () => {
     const filled = form({
       name: 'Shipping help desk',

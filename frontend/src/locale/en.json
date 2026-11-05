@@ -4658,7 +4658,11 @@
         "parked": "The prompt I wrote is still open, not saved.",
         "open": "Open prompt",
         "keep": "Keep {{name}} instead",
-        "changePlaceholder": "Or tell me what to change in the prompt…"
+        "changePlaceholder": "Or tell me what to change in the prompt…",
+        "changes_one": "{{count}} change to review",
+        "changes_other": "{{count}} changes to review",
+        "reviewHint": "Accept or reject each change in the prompt view, then save the prompt. Every agent that uses it gets the saved text.",
+        "editsStale": "None of my changes fit the prompt's saved text any more. Ask me again and I'll work from it."
       },
       "formEdited": "You changed {{fields}} in the form."
     },

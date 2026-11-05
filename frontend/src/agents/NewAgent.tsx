@@ -98,6 +98,8 @@ import {
 import { useDraftedFields } from '../drafter/useDraftedFields';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import { useDrafterSession } from '../drafter/useDrafterSession';
+import { usePromptReview } from '../drafter/usePromptReview';
+import { fittingEdits, type PromptEdit } from '../drafter/promptDraft';
 import { WandButton } from '../drafter/WandButton';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
@@ -597,14 +599,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         typeof previous === 'string' ? previous : '',
       ),
   );
+  // The drafter's changes to a saved prompt, under review in the view.
+  const promptReview = usePromptReview(setPromptContent, promptDrafted);
   // The view's text the drafter reads: the drafter's unused prompt, or an
-  // open new or changed prompt.
+  // open new or changed prompt (with the id of the saved one it changes).
+  const viewTargetId =
+    promptDetail.target?.kind === 'edit' ? promptDetail.target.prompt.id : null;
   const draftOfPrompt: PromptDraft | null =
     promptViewOpen &&
     (promptOrigin === 'drafter' ||
       promptDetail.target?.kind === 'new' ||
       promptDetail.dirty)
-      ? promptValues
+      ? viewTargetId
+        ? { ...promptValues, id: viewTargetId }
+        : promptValues
       : promptDraft;
 
   const viewInHistory =
@@ -628,6 +636,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   /** Close the view and drop its history entry. */
   const closePromptView = () => {
+    promptReview.clear();
     promptDetail.close();
     if (viewInHistory) navigate(-1);
     // Back on the form where the prompt is picked.
@@ -724,6 +733,47 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (written.content !== previous.content)
       promptDrafted.mark('content', previous.content, written.content);
     setPromptDraft(written);
+  };
+
+  // Changes to a saved prompt wait for its text when the view loads it.
+  const pendingEditsRef = useRef<{ id: string; edits: PromptEdit[] } | null>(
+    null,
+  );
+  /** Review the drafter's changes on the open prompt's text, those that fit it. */
+  const reviewPromptEdits = (edits: PromptEdit[]) => {
+    const fitting = fittingEdits(promptDetail.content, edits);
+    if (fitting.length === 0)
+      drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
+    else promptReview.start(fitting, promptDetail.content);
+  };
+  useEffect(() => {
+    const pending = pendingEditsRef.current;
+    if (!pending || promptDetail.status !== 'ready') return;
+    if (viewTargetId !== pending.id) return;
+    pendingEditsRef.current = null;
+    reviewPromptEdits(pending.edits);
+  }, [promptDetail.status, promptDetail.key, viewTargetId]);
+
+  /**
+   * Show the drafter's changes to the agent's own saved prompt: in its view
+   * when that is open, else it opens (loading its saved text and version)
+   * and the review starts once the text is in. The drawer stays the
+   * agent's; nothing is saved until the view's Save.
+   */
+  const showPromptEdits = (id: string, edits: PromptEdit[]) => {
+    if (viewTargetId === id && promptDetail.status === 'ready') {
+      reviewPromptEdits(edits);
+      return;
+    }
+    const prompt = prompts.find((item) => item.id === id);
+    if (!prompt) {
+      drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
+      return;
+    }
+    pendingEditsRef.current = { id, edits };
+    setPromptOrigin('picker');
+    promptDrafted.clear();
+    promptDetail.open(prompt);
   };
 
   /** Turn the drafter's unused prompt down: the agent keeps its prompt. */
@@ -1130,6 +1180,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     // instead turns a written one down. A drafted limit shows in Advanced.
     const prompt = proposal.fields.prompt;
     if (prompt?.kind === 'new') showWrittenPrompt(prompt);
+    else if (prompt?.kind === 'edit') showPromptEdits(prompt.id, prompt.edits);
     else if (prompt?.kind === 'existing') dropPromptDraft();
     if (changed.includes('limits')) setIsAdvancedSectionExpanded(true);
     if (changed.length > 0 && buildRef.current.guided) scrollToDrafted();
@@ -1142,13 +1193,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const drafterSession = useDrafterSession({
     recipe: 'agent',
-    getContext: () =>
-      agentDraftContext(
+    getContext: () => {
+      // A new request ends an open review with the choices so far.
+      promptReview.finish(promptDetail.content);
+      return agentDraftContext(
         agent.id || null,
         draftFormRef.current,
         buildRef.current.context(),
         draftOfPrompt,
-      ),
+      );
+    },
     onProposal: applyDraft,
   });
 
@@ -1245,7 +1299,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   );
   // Next waits while the prompt the drafter wrote is unused, and moves to
   // the end of the turn once Use this prompt saved it.
-  const nextOnProposal = build.ready && !promptDraft && !promptUsed;
+  const nextOnProposal =
+    build.ready && !promptDraft && !promptUsed && !promptReview.review;
 
   /** "You changed Name in the form.": fields the proposal set, edited since. */
   const editedSince = (raw: unknown) => {
@@ -1274,20 +1329,66 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       t,
       appliedFields(raw),
     );
+    const written = proposal.fields.prompt;
+    const notes =
+      written?.kind === 'new'
+        ? [...proposal.notes, t('drafter.agent.prompt.viewHint')]
+        : written?.kind === 'edit'
+          ? [
+              ...written.checks.map((code) =>
+                t(`drafter.prompt.checks.${code}`),
+              ),
+              ...proposal.notes,
+              t('drafter.agent.prompt.reviewHint'),
+            ]
+          : proposal.notes;
+    const review = promptReview.review;
+    const reviewing = latest && written?.kind === 'edit' && review !== null;
     return (
       <ProposalSummary
         message={proposal.message}
         rows={rows}
-        notes={
-          proposal.fields.prompt?.kind === 'new'
-            ? [...proposal.notes, t('drafter.agent.prompt.viewHint')]
-            : proposal.notes
-        }
+        notes={notes}
         dropped={dropped}
         footnote={
           latest && !drafterSession.streaming ? editedSince(raw) : undefined
         }
-        actions={latest && nextOnProposal ? nextActions : undefined}
+        actions={
+          reviewing ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                shape="pill"
+                onClick={promptReview.acceptAll}
+              >
+                {t('drafter.prompt.acceptAll')}
+              </Button>
+              {review.current === null && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  onClick={promptReview.reviewOneByOne}
+                >
+                  {t('drafter.prompt.reviewOneByOne')}
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                shape="pill"
+                onClick={promptReview.discard}
+              >
+                {t('drafter.prompt.discard')}
+              </Button>
+            </>
+          ) : latest && nextOnProposal ? (
+            nextActions
+          ) : undefined
+        }
       />
     );
   };
@@ -2197,7 +2298,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               size="field"
               shape="pill"
               onClick={() => void promptDetail.save()}
-              disabled={!promptDetail.canSave || drafterSession.streaming}
+              // Mid-review the text holds only the changes chosen so far:
+              // the drawer's Accept all or Discard ends it first.
+              disabled={
+                !promptDetail.canSave ||
+                drafterSession.streaming ||
+                promptReview.review !== null
+              }
               loading={promptDetail.saving}
             >
               {promptOrigin === 'drafter'
@@ -2217,6 +2324,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       setContent={setPromptContent}
       isReadOnly={promptDetail.readOnly}
       showViewOnlyNotice={promptDetail.readOnly && !viewBuiltIn}
+      review={promptReview.review}
+      onDecide={promptReview.decide}
       draftedName={{
         drafted: promptDrafted.isDrafted('name'),
         onUndo: () => promptDrafted.undo('name'),
@@ -3061,7 +3170,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               // error stays in this dialog and the view stays. A prompt that
               // can't be saved yet (no name) just stays.
               handleSubmit={async () => {
-                if (!promptDetail.canSave) {
+                if (!promptDetail.canSave || promptReview.review !== null) {
                   setLeavingPrompt(false);
                   return;
                 }

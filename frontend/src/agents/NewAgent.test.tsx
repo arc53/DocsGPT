@@ -3293,10 +3293,122 @@ describe('NewAgent drafter', () => {
       expect(viewText().value).toBe('Tighter.');
       expect(mocks.createPrompt).not.toHaveBeenCalled();
       await ask('More');
+      // The view's unsaved text changes the saved prompt it came from.
       expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'p1',
         name: 'Tone',
         content: 'Tighter.',
       });
+    });
+
+    const promptEdits = (
+      edits: { id: string; find: string; replace: string; reason: string }[],
+    ) => [
+      proposal({ prompt: { kind: 'edit', id: 'p1', edits, checks: [] } }),
+      { type: 'end' },
+    ];
+    const review = () =>
+      view()?.querySelector<HTMLElement>('[data-slot="prompt-review"]') ?? null;
+
+    it("reviews changes to the agent's own prompt in its view, then saves it", async () => {
+      await renderWithPrompt('p1');
+      drafter.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          {
+            id: 'e2',
+            find: 'of p1',
+            replace: 'for p1',
+            reason: 'Reads better.',
+          },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      // The saved prompt opens with its own text, and the drawer stays the agent's.
+      expect(mocks.getSinglePrompt).toHaveBeenCalledWith('p1', null);
+      expect(view()).not.toBeNull();
+      expect(review()).not.toBeNull();
+      expect(review()!.querySelectorAll('[data-change-id]')).toHaveLength(2);
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.changes');
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.reviewHint');
+      // Save waits for the review.
+      expect(save()!.disabled).toBe(true);
+      await act(async () =>
+        buttonByText(
+          'drafter.prompt.reject',
+          review()!.querySelector('[data-change-id="e2"]')!,
+        )!.click(),
+      );
+      await act(async () =>
+        buttonByText('drafter.prompt.acceptAll', panel()!)!.click(),
+      );
+      expect(review()).toBeNull();
+      expect(viewText().value).toBe('Words of p1');
+      expect(
+        buttonByText('drafter.prompt.acceptAll', panel()!),
+      ).toBeUndefined();
+      await act(async () => save()!.click());
+      expect(mocks.updatePrompt.mock.calls[0][0]).toEqual({
+        id: 'p1',
+        name: 'Tone',
+        content: 'Words of p1',
+        expected_updated_at: 'v1',
+      });
+      expect(mocks.createPrompt).not.toHaveBeenCalled();
+      expect(view()).toBeNull();
+    });
+
+    it('ends an open review with the choices so far on a new request, and Discard keeps the text', async () => {
+      await renderWithPrompt('p1');
+      drafter.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          {
+            id: 'e2',
+            find: 'of p1',
+            replace: 'for p1',
+            reason: 'Reads better.',
+          },
+        ]),
+        promptEdits([
+          { id: 'e1', find: 'of p1', replace: 'about p1', reason: 'Clearer.' },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      await act(async () =>
+        review()!
+          .querySelector<HTMLButtonElement>(
+            '[data-change-id="e1"] [data-action="accept"]',
+          )!
+          .click(),
+      );
+      await ask('Something else too');
+      // The accepted change went along as the view's text.
+      expect(lastRequest().context.form.prompt_draft).toEqual({
+        id: 'p1',
+        name: 'Tone',
+        content: 'Words of p1',
+      });
+      expect(review()!.querySelectorAll('[data-change-id]')).toHaveLength(1);
+      await act(async () =>
+        buttonByText('drafter.prompt.discard', panel()!)!.click(),
+      );
+      expect(review()).toBeNull();
+      expect(viewText().value).toBe('Words of p1');
+    });
+
+    it('says so when none of the changes fit the saved text', async () => {
+      await renderWithPrompt('p1');
+      drafter.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Not there', replace: 'x', reason: 'r' },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      expect(view()).not.toBeNull();
+      expect(review()).toBeNull();
+      expect(viewText().value).toBe('Text of p1');
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.editsStale');
     });
 
     it("shows a prompt the caller can't edit read-only, and improves a copy", async () => {

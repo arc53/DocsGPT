@@ -1,5 +1,11 @@
 import type { TFunction } from 'i18next';
 
+import {
+  type PromptCheck,
+  type PromptEdit,
+  readPromptChecks,
+  readPromptEdits,
+} from '../drafter/promptDraft';
 import type { ProposalReasonRow } from '../drafter/ProposalSummary';
 import type { DrafterStarter } from '../drafter/starters';
 import { getToolDisplayName } from '../utils/toolUtils';
@@ -18,8 +24,11 @@ import type {
   ToolSummary,
 } from './types';
 
-/** A prompt's unsaved name and text, as the prompt view holds them. */
-export type PromptDraft = { name: string; content: string };
+/**
+ * A prompt's unsaved name and text, as the prompt view holds them; `id` is
+ * the saved prompt they change (none for a new prompt).
+ */
+export type PromptDraft = { name: string; content: string; id?: string };
 
 /** The agent's request and token limits, as the form holds them. */
 export type AgentLimitsValue = {
@@ -92,7 +101,9 @@ export type AgentProposalFields = {
   tools?: string[];
   prompt?:
     | { kind: 'existing'; id: string }
-    | { kind: 'new'; name: string; content: string };
+    | { kind: 'new'; name: string; content: string }
+    /** Changes to the agent's own saved prompt, reviewed in the prompt view. */
+    | { kind: 'edit'; id: string; edits: PromptEdit[]; checks: PromptCheck[] };
   starters?: string[];
   /** Request and token limits are either-or; `none` turns both off. */
   limits?: { mode: 'requests' | 'tokens'; value: number } | { mode: 'none' };
@@ -220,6 +231,16 @@ export function parseAgentProposal(raw: unknown): AgentProposal | null {
       name: prompt.name.trim(),
       content: prompt.content,
     };
+  else if (prompt?.kind === 'edit' && isString(prompt.id) && prompt.id) {
+    const edits = readPromptEdits(prompt.edits);
+    if (edits.length > 0)
+      fields.prompt = {
+        kind: 'edit',
+        id: prompt.id,
+        edits,
+        checks: readPromptChecks(prompt.checks),
+      };
+  }
   const limits = parseLimits(rawFields.limits);
   if (limits) fields.limits = limits;
   const checks = stringList(
@@ -580,8 +601,9 @@ const wordCount = (text: string): number =>
 
 /**
  * The proposal summary's rows and lines: a reason per changed field (a new
- * prompt, still unsaved in the prompt view, gets one row with its length),
- * and what the server left out.
+ * prompt, still unsaved in the prompt view, gets one row with its length,
+ * and changes to a saved prompt one row with their count), and what the
+ * server left out.
  *
  * Args:
  *   proposal: The parsed proposal.
@@ -606,7 +628,7 @@ export function agentProposalSummary(
   const reasons = proposal.reasons.filter(
     (reason) =>
       (!changed || changed.includes(reason.field)) &&
-      !(written?.kind === 'new' && reason.field === 'prompt'),
+      !(written && written.kind !== 'existing' && reason.field === 'prompt'),
   );
   const rows = [
     ...(written?.kind === 'new'
@@ -616,6 +638,17 @@ export function agentProposalSummary(
             label: labelOf('prompt'),
             summary: t('drafter.agent.prompt.wrote', {
               count: wordCount(written.content),
+            }),
+          },
+        ]
+      : []),
+    ...(written?.kind === 'edit'
+      ? [
+          {
+            key: 'prompt-edits',
+            label: labelOf('prompt'),
+            summary: t('drafter.agent.prompt.changes', {
+              count: written.edits.length,
             }),
           },
         ]

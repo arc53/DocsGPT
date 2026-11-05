@@ -4609,7 +4609,11 @@
         "parked": "我写的提示词仍处于打开状态，尚未保存。",
         "open": "打开提示词",
         "keep": "改为保留 {{name}}",
-        "changePlaceholder": "或告诉我提示词要改什么…"
+        "changePlaceholder": "或告诉我提示词要改什么…",
+        "changes_one": "{{count}} 处修改待审阅",
+        "changes_other": "{{count}} 处修改待审阅",
+        "reviewHint": "在提示词视图中接受或拒绝每处修改，然后保存提示词。所有使用它的智能体都会获得保存后的文本。",
+        "editsStale": "我的修改都已不再适用于提示词保存的文本。请再告诉我一次，我会基于它来修改。"
       },
       "formEdited": "你在表单中更改了 {{fields}}。"
     },

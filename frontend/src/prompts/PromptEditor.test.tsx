@@ -22,14 +22,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const REVIEW: PromptReview = {
   proposal: {
-    mode: 'improve',
-    message: '',
     edits: [{ id: 'e1', find: 'Be brief.', replace: 'Be short.', reason: 'x' }],
-    result: 'Be short.',
-    templateMode: { before: false, after: false },
-    warnings: [],
-    checks: [],
-    suggestions: [],
   },
   original: 'Be brief.',
   decisions: {},

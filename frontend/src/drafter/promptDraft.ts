@@ -79,29 +79,39 @@ function checks(value: unknown): PromptCheck[] {
  * Returns:
  *   The proposal, or null when it isn't one.
  */
-export function readPromptProposal(raw: unknown): PromptProposal | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const value = raw as Record<string, unknown>;
-  const message = isString(value.message) ? value.message : '';
-  if (value.mode === 'improve' && Array.isArray(value.edits)) {
-    const edits = value.edits.filter(
+/** A proposal's `edits`, malformed ones dropped. */
+export function readPromptEdits(raw: unknown): PromptEdit[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
       (edit): edit is PromptEdit =>
         !!edit &&
         typeof edit === 'object' &&
         isString((edit as PromptEdit).id) &&
         isString((edit as PromptEdit).find) &&
         isString((edit as PromptEdit).replace),
-    );
+    )
+    .map(({ id, find, replace, reason }) => ({
+      id,
+      find,
+      replace,
+      reason: isString(reason) ? reason : '',
+    }));
+}
+
+/** A proposal's `checks`, unknown codes dropped. */
+export const readPromptChecks = (raw: unknown): PromptCheck[] => checks(raw);
+
+export function readPromptProposal(raw: unknown): PromptProposal | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Record<string, unknown>;
+  const message = isString(value.message) ? value.message : '';
+  if (value.mode === 'improve' && Array.isArray(value.edits)) {
     const mode = (value.template_mode ?? {}) as Record<string, unknown>;
     return {
       mode: 'improve',
       message,
-      edits: edits.map(({ id, find, replace, reason }) => ({
-        id,
-        find,
-        replace,
-        reason: isString(reason) ? reason : '',
-      })),
+      edits: readPromptEdits(value.edits),
       result: isString(value.result) ? value.result : '',
       templateMode: {
         before: mode.before === true,
@@ -143,6 +153,35 @@ function locate(content: string, edits: PromptEdit[]): Located[] {
     })
     .filter((item) => item.start >= 0)
     .sort((a, b) => a.start - b.start);
+}
+
+/**
+ * The edits that still fit `content`: each one's text occurs there exactly
+ * once and overlaps no edit kept before it. The server checked them against
+ * the copy the model read; the saved text can differ (a long prompt is
+ * read cut short).
+ *
+ * Args:
+ *   content: The text the review will run on.
+ *   edits: The proposal's edits.
+ *
+ * Returns:
+ *   The edits to review, in their order.
+ */
+export function fittingEdits(
+  content: string,
+  edits: PromptEdit[],
+): PromptEdit[] {
+  const taken: [number, number][] = [];
+  return edits.filter((edit) => {
+    const start = content.indexOf(edit.find);
+    if (!edit.find || start < 0 || content.indexOf(edit.find, start + 1) >= 0)
+      return false;
+    const end = start + edit.find.length;
+    if (taken.some(([from, to]) => start < to && from < end)) return false;
+    taken.push([start, end]);
+    return true;
+  });
 }
 
 /**

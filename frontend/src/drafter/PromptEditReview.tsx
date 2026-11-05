@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { cn, fieldFrame, focusRing } from '@/lib/utils';
 
 import { promptDiffSegments, type PromptEdit } from './promptDraft';
-import type { PromptDecision, PromptReview } from './usePromptDrafter';
+import type { PromptDecision, PromptReview } from './usePromptReview';
 
 /**
  * An improve proposal under review, in place of the prompt's textarea: the

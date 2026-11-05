@@ -486,16 +486,18 @@ class TestPromptEdits:
         proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [EDIT]}},
                              form={"prompt_id": PROMPT_ID})
         assert proposal["fields"]["prompt"] == {
-            "kind": "edit", "id": PROMPT_ID, "edits": [{"id": "e1", **EDIT}],
-            "before": "You help customers.", "result": "You help customers of Meridian.", "checks": [],
+            "kind": "edit", "id": PROMPT_ID, "edits": [{"id": "e1", **EDIT}], "checks": [],
         }
 
     def test_edits_fit_the_text_open_in_the_prompt_view(self):
         form = {"prompt_id": PROMPT_ID,
                 "prompt_draft": {"id": PROMPT_ID, "name": "Support", "content": "You help customers. Be brief."}}
         proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [EDIT]}}, form=form)
-        assert proposal["fields"]["prompt"]["before"] == "You help customers. Be brief."
-        assert proposal["fields"]["prompt"]["result"] == "You help customers of Meridian. Be brief."
+        assert proposal["fields"]["prompt"]["edits"] == [{"id": "e1", **EDIT}]
+        # An edit only the saved text has doesn't fit the view's.
+        gone = {"find": "Be kind.", "replace": "Be warm.", "reason": "r"}
+        with pytest.raises(ProposalInvalid, match="not found"):
+            _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [gone]}}, form=form)
 
     @pytest.mark.parametrize("form,prompt_id", [
         ({}, "default"),
