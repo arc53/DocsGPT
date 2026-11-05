@@ -93,6 +93,17 @@ export default function Conversation() {
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
 
+  const fetchAgent = async (id: string): Promise<Agent | null> => {
+    if (selectedAgent?.id === id) return selectedAgent;
+    try {
+      const response = await userService.getAgent(id, token);
+      return response.ok ? ((await response.json()) as Agent) : null;
+    } catch (err) {
+      console.error('Failed to load agent:', err);
+      return null;
+    }
+  };
+
   // URL → state. Thunk short-circuits when Redux already matches.
   useEffect(() => {
     if (isNewChatRoute) {
@@ -104,7 +115,16 @@ export default function Conversation() {
       return;
     }
     if (urlConversationId && urlConversationId !== conversationId) {
-      dispatch(loadConversation({ id: urlConversationId }))
+      dispatch(
+        loadConversation({
+          id: urlConversationId,
+          // An agent's chat opened by its URL: the agent resolves before the
+          // chat applies, so its card and the messages land in one render.
+          // Read on its own, the card landed after the messages and pushed
+          // them down.
+          resolveAgent: urlAgentId ? () => fetchAgent(urlAgentId) : undefined,
+        }),
+      )
         .unwrap()
         .then((result) => {
           if (result.stale) return;
@@ -121,8 +141,10 @@ export default function Conversation() {
   // agent route entirely; either way the late dispatch must be dropped.
   useEffect(() => {
     let cancelled = false;
+    // A chat of the agent's that is about to load brings the agent with it.
+    const chatLoads = !isNewChatRoute && urlConversationId !== conversationId;
     if (urlAgentId) {
-      if (selectedAgent?.id !== urlAgentId) {
+      if (selectedAgent?.id !== urlAgentId && !chatLoads) {
         userService
           .getAgent(urlAgentId, token)
           .then((response) => (response.ok ? response.json() : null))
