@@ -24,6 +24,7 @@ vi.mock('../api/services/mcpAppsService', () => ({
 // The host the view builds, with what it sent; the protocol is mcpAppHost.test's.
 type HostOptions = {
   onInitialized: () => void;
+  onSize: (height: number) => void;
   callTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
 };
 type FakeHost = {
@@ -300,6 +301,34 @@ describe('McpAppView', () => {
     expect(container.textContent).not.toContain(
       'conversation.mcpApp.approvalAsk',
     );
+  });
+
+  it('starts a reopened view at the height it last reported', async () => {
+    readMcpAppView.mockResolvedValue(VIEW);
+    const view = { ...call, call_id: 'sized' };
+    const frameHeight = () =>
+      container
+        .querySelector<HTMLElement>('iframe')
+        ?.parentElement?.style.getPropertyValue('--mcp-app-height');
+    await render(view);
+    expect(frameHeight()).toBe('360px');
+    act(() => hosts[0].options.onInitialized());
+    act(() => hosts[0].options.onSize(485.4));
+    expect(frameHeight()).toBe('486px');
+
+    // Reopened: its loading screen's size neither shrinks it nor sticks.
+    act(() => root.unmount());
+    root = createRoot(container);
+    hosts.length = 0;
+    await render(view);
+    expect(frameHeight()).toBe('486px');
+    act(() => hosts[0].options.onSize(200));
+    expect(frameHeight()).toBe('486px');
+    act(() => root.unmount());
+    root = createRoot(container);
+    hosts.length = 0;
+    await render(view);
+    expect(frameHeight()).toBe('486px');
   });
 
   it('shows a retryable error when the view fails to load', async () => {

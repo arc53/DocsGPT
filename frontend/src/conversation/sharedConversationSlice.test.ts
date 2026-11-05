@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import reducer, { addQuery, raiseError } from './sharedConversationSlice';
+import reducer, {
+  addQuery,
+  raiseError,
+  resetSharedConversation,
+  setClientApiKey,
+} from './sharedConversationSlice';
 
 describe('shared chat curated errors', () => {
   const seeded = () => reducer(undefined, addQuery({ prompt: 'q' }));
@@ -30,5 +35,16 @@ describe('shared chat curated errors', () => {
     );
     state = reducer(state, raiseError({ index: 0, message: 'raw' }));
     expect(state.queries[0].errorCode).toBeUndefined();
+  });
+});
+
+describe('opening another share', () => {
+  it('starts from an empty chat with no key', () => {
+    let state = reducer(undefined, addQuery({ prompt: 'q' }));
+    state = reducer(state, setClientApiKey('key-a'));
+    state = reducer(state, resetSharedConversation());
+    expect(state.queries).toEqual([]);
+    expect(state.apiKey).toBeUndefined();
+    expect(state.status).toBe('idle');
   });
 });

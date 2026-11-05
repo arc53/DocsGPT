@@ -68,6 +68,13 @@ type PendingApproval = {
  */
 const allowedForView = new Map<string, Set<string>>();
 
+/**
+ * The height each view last reported, by view as above. A reopened chat
+ * starts the view at it rather than at DEFAULT_HEIGHT, so it doesn't load
+ * short and then grow under the reader.
+ */
+const viewHeights = new Map<string, number>();
+
 /** The most of a view call's arguments the approval's Details show. */
 const ARGS_DETAIL_MAX = 2000;
 /** The one-line arguments preview beside the title, as on the approval card. */
@@ -121,7 +128,10 @@ export default function McpAppView({
   const [attempt, setAttempt] = useState(0);
   const [resource, setResource] = useState<McpAppResource | null>(null);
   const [phase, setPhase] = useState<Phase>('loading');
-  const [height, setHeight] = useState(DEFAULT_HEIGHT);
+  const viewKey = `${ui?.tool_id ?? ''}:${toolCall.call_id ?? ''}`;
+  const [height, setHeight] = useState(
+    () => viewHeights.get(viewKey) ?? DEFAULT_HEIGHT,
+  );
   // Calls waiting on the user, asked one at a time in the order they came.
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const approvalsRef = useRef<PendingApproval[]>([]);
@@ -199,7 +209,6 @@ export default function McpAppView({
     [],
   );
 
-  const viewKey = `${toolId ?? ''}:${callId ?? ''}`;
   const queueApprovals = useCallback((next: PendingApproval[]) => {
     approvalsRef.current = next;
     setApprovals(next);
@@ -239,6 +248,7 @@ export default function McpAppView({
   useEffect(() => {
     if (!resource || !toolId) return;
     const origin = new URL(resource.sandbox_url as string).origin;
+    let initialized = false;
     const host = new McpAppHost({
       frame: () => frameRef.current?.contentWindow ?? null,
       origin,
@@ -262,8 +272,19 @@ export default function McpAppView({
       openLink: (url) => {
         window.open(url, '_blank', 'noopener,noreferrer');
       },
-      onSize: (next) => setHeight(Math.min(Math.ceil(next), MAX_HEIGHT)),
+      onSize: (next) => {
+        const reported = Math.min(Math.ceil(next), MAX_HEIGHT);
+        // Sizes from before the view initialized are its loading screen's:
+        // they neither shrink a reopened view nor become the one remembered.
+        if (!initialized) {
+          if (!viewHeights.has(viewKey)) setHeight(reported);
+          return;
+        }
+        viewHeights.set(viewKey, reported);
+        setHeight(reported);
+      },
       onInitialized: () => {
+        initialized = true;
         const { toolCall: call, t: translate } = latest.current;
         setPhase('ready');
         host.sendToolInput(call.arguments ?? {});
@@ -306,7 +327,7 @@ export default function McpAppView({
       window.removeEventListener('message', listener);
       hostRef.current = null;
     };
-  }, [resource, toolId, context, askApproval]);
+  }, [resource, toolId, viewKey, context, askApproval]);
 
   useEffect(() => {
     hostRef.current?.sendContext({ locale: i18n.language });
@@ -448,7 +469,10 @@ export default function McpAppView({
                 onRetry={reload}
               />
             ) : (
-              <div className="relative min-w-0">
+              <div
+                className="relative min-w-0"
+                style={{ '--mcp-app-height': `${height}px` } as CSSProperties}
+              >
                 {phase === 'loading' && (
                   <LoadingState
                     fill="parent"
@@ -474,13 +498,12 @@ export default function McpAppView({
                         'border-border rounded-xl border',
                       phase !== 'ready' && 'opacity-0',
                     )}
-                    style={
-                      { '--mcp-app-height': `${height}px` } as CSSProperties
-                    }
                   />
                 )}
-                {/* The frame's height (DEFAULT_HEIGHT) until there is a frame. */}
-                {!resource && <div className="h-90" />}
+                {/* The frame's height until there is a frame. */}
+                {!resource && (
+                  <div className="h-(--mcp-app-height) max-h-[70svh]" />
+                )}
               </div>
             )}
           </div>
