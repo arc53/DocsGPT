@@ -1973,6 +1973,7 @@
         "mcp_neon": "Neon-Postgres-Projekte, -Branches und -Schemas erkunden und SQL ausführen.",
         "mcp_twelvedata": "Kurse, Kursverläufe, technische Indikatoren und Fundamentaldaten für Aktien, Devisen, Kryptowährungen und ETFs abrufen.",
         "mcp_cloudflare": "Workers, DNS, R2 und mehr über die Cloudflare-API verwalten.",
+        "mcp_excalidraw": "Erstelle Diagramme und erhalte einen Link zur Bearbeitung in Excalidraw.",
         "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
@@ -2837,6 +2838,24 @@
       "notRun": "nicht ausgeführt",
       "notRunMovedOn": "Nicht ausgeführt: Das Gespräch ging weiter, bevor dies genehmigt wurde.",
       "notRunExpired": "Nicht ausgeführt: Die Genehmigungsanfrage ist abgelaufen."
+    },
+    "mcpApp": {
+      "state": {
+        "loading": "App wird geladen…",
+        "ready": "Interaktiv",
+        "failed": "Fehlgeschlagen"
+      },
+      "loading": "App wird geladen…",
+      "allow": "Erlauben",
+      "allowForView": "Für diese App erlauben",
+      "deny": "Ablehnen",
+      "reload": "App neu laden",
+      "approvalAsk": "Die App möchte {{tool}} ausführen. Erlauben?",
+      "failedTitle": "Die App konnte nicht geladen werden",
+      "failedDescription": "Ihr MCP-Server hat nicht geantwortet, oder die Ansicht ließ sich nicht starten.",
+      "frameTitle": "{{name}} (interaktive App)",
+      "callFailed": "Der Tool-Aufruf ist fehlgeschlagen",
+      "resultUnavailable": "Das Ergebnis ist nicht mehr verfügbar"
     },
     "quotaExceeded": {
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",

@@ -422,6 +422,46 @@ class TestGetPubliclySharedConversations:
         assert query["segments"] == order
         assert "metadata" not in query
 
+    def test_drops_mcp_app_views_from_shared_tool_calls(self, app, pg_conn):
+        from docsgpt.api.user.sharing.routes import (
+            GetPubliclySharedConversations,
+            ShareConversation,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "user-shared-app"
+        conv_id = _seed_conversation(pg_conn, user, name="App")
+        # A row saved before views kept their result off it, and one saved after.
+        legacy = {"resource_uri": "ui://app/view.html", "tool_id": "t1", "result": {"structuredContent": {"k": 1}}}
+        calls = [
+            {"call_id": "c1", "tool_name": "mcp_tool", "result": "ok", "ui": legacy},
+            {"call_id": "c2", "tool_name": "mcp_tool", "result": "ok",
+             "ui": {"resource_uri": "ui://app/view.html", "tool_id": "t1"}},
+        ]
+        ConversationsRepository(pg_conn).append_message(
+            conv_id, {"prompt": "p", "response": "ok", "tool_calls": calls}
+        )
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=false",
+            method="POST",
+            json={"conversation_id": conv_id},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            identifier = ShareConversation().post().json["identifier"]
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            f"/api/shared_conversation/{identifier}"
+        ):
+            query = GetPubliclySharedConversations().get(identifier).json["queries"][0]
+
+        assert [call["call_id"] for call in query["tool_calls"]] == ["c1", "c2"]
+        assert all("ui" not in call for call in query["tool_calls"])
+
     def test_marks_a_woken_turn_without_its_internal_ids(self, app, pg_conn):
         from docsgpt.api.user.sharing.routes import (
             GetPubliclySharedConversations,
