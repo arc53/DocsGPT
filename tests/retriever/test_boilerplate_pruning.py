@@ -262,6 +262,8 @@ class TestBoilerplatePruningRules:
             "Next page The API returns 401",
             "Next page: [Administrators can access all records.]",
             "Next page [Administrators can access all records.]",
+            "Next page token expires after 24 hours",
+            "Next page: token expires after 24 hours",
         ]
         for line in cases:
             cleaned = prune_chunk_text(line, query="")
@@ -275,6 +277,7 @@ class TestBoilerplatePruningRules:
             "Next page API Reference Guide and Setup Overview",
             "Next page: [Getting Started]",
             "Next page [Getting Started]",
+            "Next page: [Getting Started](https://docs.example.com/start)",
         ]
         for line in cases:
             assert prune_chunk_text(line, query="") == "", f"Navigation line was not pruned: {line!r}"

@@ -52,10 +52,13 @@ _NAV_VERBS = (
     r"is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|shall|should|"
     r"may|might|must|can|could|returns?|returning|returned|requires?|requiring|required|"
     r"fails?|failing|failed|sends?|sending|sent|receives?|receiving|received|responds?|responding|responded|"
-    r"access(?:es|ed|ing)?|allows?|allowing|allowed|provides?|providing|provided|uses?|using|used"
+    r"access(?:es|ed|ing)?|allows?|allowing|allowed|provides?|providing|provided|uses?|using|used|"
+    r"expires?|expiring|expired"
 )
 
-_NAV_LABEL_PAT = (
+# Navigation label after a colon: bracketed links, arrows, page numbers, or
+# short word sequences (up to 6 words) that do not contain a known verb.
+_NAV_LABEL_COLON_PAT = (
     r"(?:"
     r"\[(?!.*?\b(?:" + _NAV_VERBS + r")\b)[^\]\r\n.!?]{1,60}\](?:\([^\)]+\))?|"
     r"[«»<>‹›←→]|\d+|"
@@ -63,10 +66,22 @@ _NAV_LABEL_PAT = (
     r")"
 )
 
+# Navigation label without a colon: same structure but the first word must
+# start with an uppercase letter so that factual prose (e.g. "Next page token
+# expires after 24 hours") is not mistaken for a navigation label.
+_NAV_LABEL_SPACE_PAT = (
+    r"(?:"
+    r"\[(?!.*?\b(?:" + _NAV_VERBS + r")\b)[^\]\r\n.!?]{1,60}\](?:\([^\)]+\))?|"
+    r"[«»<>‹›←→]|\d+|"
+    r"(?!.*?\b(?:" + _NAV_VERBS + r")\b)[A-Z][\w\-&/]*(?:\s+[\w\-&/]+){0,5}"
+    r")"
+)
+
 _NAV_CONTROL_RE = re.compile(
     r"^(?:#+\s*)?(?:table of contents|on this page|in this article|quick links|"
     r"skip to (?:main )?content|back to top|return to top|"
-    r"(?:previous|next)\s+page(?::\s*|\s+)" + _NAV_LABEL_PAT + r"|"
+    r"(?:previous|next)\s+page:\s*" + _NAV_LABEL_COLON_PAT + r"|"
+    r"(?:previous|next)\s+page\s+" + _NAV_LABEL_SPACE_PAT + r"|"
     r"(?:previous|next)\s+page|"
     r"«\s*previous\s*|\s*next\s*»|"
     r"edit this page(?: on github)?|was this (?:page|article) helpful\??|"
@@ -136,9 +151,9 @@ def _is_protected_line(line: str, query_tokens: Set[str]) -> bool:
     if re.search(r"(?:<=?|>=?|≤|≥|!=)\s*[-+]?\d", stripped):
         return True
 
-    # 5. URLs (unless a pagination link)
+    # 5. URLs (unless a pagination link or recognized navigation control)
     if "http://" in stripped or "https://" in stripped:
-        if not _PAGINATION_LINK_RE.match(stripped):
+        if not _PAGINATION_LINK_RE.match(stripped) and not _NAV_CONTROL_RE.match(stripped):
             return True
 
     return False
