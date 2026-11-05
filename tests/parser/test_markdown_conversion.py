@@ -31,6 +31,11 @@ def test_space_between_two_styled_runs_survives():
         ("<p>Hello <b> </b>world</p>", "Hello world"),
         ("<p>Hello<b> </b> world</p>", "Hello world"),
         ("<p>Hello<b>\n  </b>world</p>", "Hello world"),
+        # A run of them gives one space too, whichever side the text brings its own
+        ("<p>Hello<b> </b><i> </i>world</p>", "Hello world"),
+        ("<p>Hello<b>\n</b><i>\t</i><s> </s>world</p>", "Hello world"),
+        ("<p>Hello<b> </b><i> </i> world</p>", "Hello world"),
+        ("<p>Hello <b> </b><i> </i>world</p>", "Hello world"),
     ],
 )
 def test_whitespace_only_element_becomes_one_space(html, expected):

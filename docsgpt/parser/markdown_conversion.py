@@ -37,9 +37,28 @@ _WHITESPACE_ONLY_PRESERVING_TAGS = frozenset(
 )
 
 
+def _whitespace_only_inline(node: Any) -> bool:
+    """Whether ``node`` is an inline element this converter turns into one space or none."""
+    name = getattr(node, "name", None)
+    if not isinstance(name, str) or name.lower() not in _WHITESPACE_ONLY_PRESERVING_TAGS:
+        return False
+    text = node.get_text()
+    return bool(text) and not text.strip(" \t\r\n")
+
+
 def _whitespace_beside(el: Any) -> bool:
-    """Whether the text right before or after ``el`` already separates it from its neighbours."""
-    before, after = el.previous_sibling, el.next_sibling
+    """Whether the text around ``el`` already separates it from its neighbours.
+
+    A run of whitespace-only elements, such as ``<b> </b><i> </i>``, gives one space between
+    the words around it: the first decides, by the text before it and after the run, and the
+    rest give none.
+    """
+    before = el.previous_sibling
+    if _whitespace_only_inline(before):
+        return True
+    after = el.next_sibling
+    while _whitespace_only_inline(after):
+        after = after.next_sibling
     return (isinstance(before, str) and before[-1:].isspace()) or (isinstance(after, str) and after[:1].isspace())
 
 
