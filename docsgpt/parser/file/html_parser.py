@@ -42,12 +42,23 @@ _DROP_TAGS = ("title", "script", "style", "noscript", "template")
 _URI_ATTRIBUTES = ("src", "href", "srcset", "poster", "data")
 
 
+def _span_number(value) -> Optional[int]:
+    """A span attribute's ASCII digits as a number, clamped to 1000, or ``None``.
+
+    ``str.isdigit`` also accepts digits such as ``²`` that ``int()`` rejects, and
+    ``int()`` refuses a digit run past Python's conversion limit, so a run longer
+    than the clamp is clamped by its length instead of converted.
+    """
+    if not (isinstance(value, str) and value.isascii() and value.isdigit()):
+        return None
+    digits = value.lstrip("0")
+    return 1000 if len(digits) > 4 else min(1000, int(digits or "0"))
+
+
 def _span(cell, attribute: str) -> int:
     """A cell's ``rowspan`` or ``colspan``, clamped the way markdownify clamps colspan."""
-    value = cell.get(attribute)
-    if isinstance(value, str) and value.isdigit():
-        return max(1, min(1000, int(value)))
-    return 1
+    number = _span_number(cell.get(attribute))
+    return 1 if number is None else max(1, number)
 
 
 def _spans_row_group(cell) -> bool:
@@ -64,8 +75,23 @@ def _spans_row_group(cell) -> bool:
     Returns:
         True when ``rowspan`` reads as zero.
     """
-    value = cell.get("rowspan")
-    return isinstance(value, str) and value.isdigit() and int(value) == 0
+    return _span_number(cell.get("rowspan")) == 0
+
+
+def _readable_colspan(cell) -> None:
+    """Rewrite a ``colspan`` that markdownify would fail to read.
+
+    markdownify reads it with ``str.isdigit()`` and ``int()``, so a digit such as
+    ``²`` or a run past the conversion limit raises. The first is no number to a
+    browser either and is dropped; the second is written as its clamp.
+    """
+    value = cell.get("colspan")
+    if isinstance(value, str) and value.isdigit():
+        number = _span_number(value)
+        if number is None:
+            del cell["colspan"]
+        else:
+            cell["colspan"] = str(number)
 
 
 # A span attribute must not be able to make the output, or the conversion, much
@@ -85,8 +111,12 @@ def _fill_row_spans(soup) -> None:
     and the count under ``Product``.
     """
     for table in soup.find_all("table"):
-        rows = table.find_all("tr")
+        # A nested table's rows are its own grid; it comes up in this loop itself.
+        rows = [row for row in table.find_all("tr") if row.find_parent("table") is table]
         cells = [row.find_all(["td", "th"], recursive=False) for row in rows]
+        for row_cells in cells:
+            for cell in row_cells:
+                _readable_colspan(cell)
         layout = _row_span_layout(cells, _row_group_ends(rows))
         if layout is None:
             continue
@@ -100,8 +130,9 @@ def _row_group_ends(rows: list) -> List[int]:
     """For each row, the index of the last row of the row group it sits in.
 
     A row group is the row's ``thead``/``tbody``/``tfoot``; rows written
-    directly under the table are grouped by the table itself. Only
-    ``rowspan="0"`` needs this, as the one span that ends with its group.
+    directly under the table are grouped by the table itself. A rowspan never
+    reaches past its group: ``rowspan="0"`` ends at its last row, and a numeric
+    rowspan stops there too.
 
     Args:
         rows: The table's ``tr`` tags, in document order.
@@ -139,8 +170,8 @@ def _row_span_layout(cells: List[list], group_ends: List[int]) -> Optional[Tuple
                 # ``rowspan="0"``: down to the last row of the row group.
                 rows_below = group_ends[index] - index
             else:
-                # A rowspan never reaches past the table.
-                rows_below = min(_span(cell, "rowspan"), len(cells) - index) - 1
+                # A rowspan never reaches past its row group.
+                rows_below = min(_span(cell, "rowspan") - 1, group_ends[index] - index)
             needed += columns * rows_below
             if needed > budget:
                 return None

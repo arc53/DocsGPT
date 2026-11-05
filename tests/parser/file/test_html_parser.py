@@ -321,7 +321,6 @@ def test_a_rowspan_keeps_the_rows_below_it_in_their_columns():
 
 
 def test_a_rowspan_in_the_last_column_is_filled_at_the_end():
-
     html = (
         "<table><tr><th>A</th><th>B</th></tr>"
         "<tr><td>1</td><td rowspan='2'>y</td></tr><tr><td>2</td></tr></table>"
@@ -331,7 +330,6 @@ def test_a_rowspan_in_the_last_column_is_filled_at_the_end():
 
 
 def test_a_cell_that_spans_in_both_directions_fills_both_columns():
-
     html = (
         "<table><tr><th>A</th><th>B</th><th>C</th></tr>"
         "<tr><td rowspan='2' colspan='2'>x</td><td>1</td></tr><tr><td>2</td></tr></table>"
@@ -355,7 +353,6 @@ def test_a_cell_that_spans_in_both_directions_fills_both_columns():
     ],
 )
 def test_a_table_without_a_rowspan_is_unchanged(html, expected):
-
     assert _table_rows(_markdown(html)) == expected
 
 
@@ -444,8 +441,44 @@ def test_a_rowspan_of_zero_stops_at_the_end_of_its_row_group():
     assert ["Total", "19"] in rows
 
 
-def test_a_rowspan_of_zero_without_a_row_group_covers_the_table():
+def test_span_values_int_cannot_read_do_not_break_the_table():
+    """``²`` passes str.isdigit() but not int(), and so does a run past Python's
+    conversion limit. A browser reads ``²`` as no span; a long run is clamped."""
+    html = "<table><tr><th>A</th><th>B</th></tr><tr><td {}>x</td><td>y</td></tr><tr><td>{}</td></tr></table>"
+    huge = "1" + "0" * 5000
 
+    assert _table_rows(_markdown(html.format("rowspan='²'", "z</td><td>w")))[2:] == [["x", "y"], ["z", "w"]]
+    assert _table_rows(_markdown(html.format("colspan='²'", "z</td><td>w")))[2:] == [["x", "y"], ["z", "w"]]
+    assert _table_rows(_markdown(html.format(f"rowspan='{huge}'", "w")))[2:] == [["x", "y"], ["", "w"]]
+    wide = _markdown(f"<table><tr><th>A</th></tr><tr><td colspan='{huge}'>x</td></tr></table>")
+    assert len(_table_rows(wide)[-1]) == 1000
+
+
+def test_a_nested_table_does_not_take_the_outer_rowspan():
+    """The rows of a table inside a cell are its own grid, not the outer table's."""
+    html = (
+        "<table><tr><th>Region</th><th>Detail</th></tr>"
+        "<tr><td rowspan='2'>EU</td><td><table><tr><td>a</td></tr><tr><td>b</td></tr></table></td></tr>"
+        "<tr><td>second</td></tr><tr><td>US</td><td>third</td></tr></table>"
+    )
+
+    assert _table_rows(_markdown(html))[-2:] == [["", "second"], ["US", "third"]]
+
+
+def test_a_numeric_rowspan_stops_at_the_end_of_its_row_group():
+    """A rowspan cannot reach into the next row group, so the footer keeps its columns."""
+    html = (
+        "<table><thead><tr><th>Region</th><th>Units</th></tr></thead>"
+        "<tbody><tr><td rowspan='3'>EU</td><td>12</td></tr><tr><td>7</td></tr></tbody>"
+        "<tfoot><tr><td>Total</td><td>19</td></tr></tfoot></table>"
+    )
+
+    rows = _table_rows(_markdown(html))
+    assert rows[2:4] == [["EU", "12"], ["", "7"]]
+    assert ["Total", "19"] in rows
+
+
+def test_a_rowspan_of_zero_without_a_row_group_covers_the_table():
     html = (
         "<table><tr><th>A</th><th>B</th></tr>"
         "<tr><td rowspan='0'>x</td><td>1</td></tr><tr><td>2</td></tr></table>"
