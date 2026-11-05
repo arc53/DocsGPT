@@ -65,7 +65,8 @@ _mcp_clients_cache = {}
 # One lock per client: a cached client is shared by every tool on its server, and
 # its session belongs to the event loop that opened it, so a second loop using it
 # at the same time waits on that session for good. A call that finds a shared
-# client busy runs on a client of its own instead (``MCPTool._run_in_new_loop``).
+# static-credential client busy runs on a client of its own instead
+# (``MCPTool._run_in_new_loop``); an OAuth client is waited for.
 _client_locks: "weakref.WeakKeyDictionary[Any, threading.RLock]" = weakref.WeakKeyDictionary()
 _client_locks_guard = threading.Lock()
 
