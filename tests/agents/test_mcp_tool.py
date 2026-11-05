@@ -691,6 +691,31 @@ class TestMcpAppsResource:
         run.assert_called_once_with("read_resource", "ui://a/b.html")
 
     @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_an_entry_another_request_evicted_first_does_not_fail_the_read(self, mock_setup, mcp_config, monkeypatch):
+        from mcp.types import TextResourceContents
+
+        from docsgpt.agents.tools import mcp_tool as module
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        class Raced(dict):
+            """The oldest entry is gone by the time this request pops it."""
+
+            def pop(self, key, *default):
+                if not default:
+                    raise KeyError(key)
+                return super().pop(key, *default)
+
+        cache = Raced({(f"k{i}", "ui://x"): (0, {}) for i in range(module.UI_RESOURCE_CACHE_SIZE)})
+        monkeypatch.setattr(module, "_ui_resource_cache", cache)
+        tool = MCPTool(mcp_config)
+        tool._client = MagicMock()
+        contents = [TextResourceContents(uri="ui://a/b.html", mime_type="text/html;profile=mcp-app", text="<p>",
+                                         _meta={"ui": {}})]
+        with patch.object(MCPTool, "_run_async_operation", return_value=contents):
+            assert tool.read_ui_resource("ui://a/b.html")["html"] == "<p>"
+        assert len(cache) == module.UI_RESOURCE_CACHE_SIZE
+
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._setup_client")
     def test_refuses_other_schemes(self, mock_setup, mcp_config):
         from docsgpt.agents.tools.mcp_tool import MCPTool
 

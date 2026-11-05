@@ -71,6 +71,7 @@ _client_locks_guard = threading.Lock()
 
 # MCP App views read from servers: (client cache key, ui:// URI) -> (read at, view).
 _ui_resource_cache: Dict[tuple, tuple] = {}
+_ui_resource_cache_guard = threading.Lock()
 UI_RESOURCE_TTL = 600
 UI_RESOURCE_CACHE_SIZE = 32
 
@@ -858,9 +859,11 @@ class MCPTool(Tool):
         contents = self._run_async_operation("read_resource", uri)
         listing_meta = None if mcp_apps.declares_ui(contents) else self._listed_resource_meta(uri)
         view = mcp_apps.resource_view(contents, listing_meta)
-        while len(_ui_resource_cache) >= UI_RESOURCE_CACHE_SIZE:
-            _ui_resource_cache.pop(next(iter(_ui_resource_cache)))
-        _ui_resource_cache[key] = (time.time(), view)
+        # Request threads share the cache: two evicting at once must not pick the same oldest entry.
+        with _ui_resource_cache_guard:
+            while len(_ui_resource_cache) >= UI_RESOURCE_CACHE_SIZE:
+                _ui_resource_cache.pop(next(iter(_ui_resource_cache)), None)
+            _ui_resource_cache[key] = (time.time(), view)
         return view
 
     def _listed_resource_meta(self, uri: str) -> Optional[Dict]:
