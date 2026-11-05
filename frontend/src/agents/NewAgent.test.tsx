@@ -2484,9 +2484,10 @@ describe('NewAgent drafter', () => {
     buttons().find(
       (b) => b.hasAttribute('data-drafter-entry') && b.textContent !== '',
     );
+  // A closed docked panel stays mounted, inert, while it shrinks out.
   const panel = () =>
     document.querySelector<HTMLElement>(
-      '[data-slot="side-panel"], [data-slot="sheet-content"]',
+      '[data-slot="side-panel"][data-state="open"], [data-slot="sheet-content"]',
     );
   const nameInput = () =>
     container.querySelector<HTMLInputElement>(

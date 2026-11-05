@@ -1707,9 +1707,14 @@ it?
 - **`variant="docked"`** (yes): what you read or tweak beside a live page
   (the chat's artifact or an answer's sources, a workflow node's settings, a
   graph entity). An `<aside>` in the page: no scrim, `border-l` on
-  `bg-background`, the full height of its host. It slides in like the modal
-  one and closes at once (an exit slide snaps back for a frame before it
-  unmounts). The host is a `relative flex overflow-hidden` row with the page
+  `bg-background`, the full height of its host. It opens by growing its
+  width from the host's right edge and closes by shrinking back
+  (`duration-300 ease-in-out`, like the sidebar), so the page narrows and
+  widens with it; the content keeps its width, pinned right, and slides with
+  the edge, and while closing the panel is inert and keeps what it last
+  showed. Full width fades instead. Never a transform: a panel translated
+  off the edge overflows the host, which jumps sideways when the panel
+  focuses a field. The host is a `relative flex overflow-hidden` row with the page
   as a `min-w-0 flex-1` sibling. While open it covers the app's floating Share
   and account menu in the top-right corner (`ActionButtons`, `z-10` under the
   panel's `z-20`); they come back when it closes. One docked slot per page:

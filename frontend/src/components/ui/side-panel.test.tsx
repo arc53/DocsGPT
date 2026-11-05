@@ -158,16 +158,58 @@ describe('SidePanel variant="docked"', () => {
     expect(classes).not.toContain('w-[800px]');
   });
 
-  it('slides in from the right', async () => {
+  it('grows in from the right edge without overflowing its host', async () => {
     await render(panel({ variant: 'docked' }));
-    expect(aside()!.className).toContain('slide-in-from-right');
-    expect(aside()!.className).not.toContain('slide-out');
+    const classes = aside()!.className.split(' ');
+    // Width, not a transform: an offscreen transform overflows the host,
+    // which then scrolls sideways when the panel focuses a field.
+    expect(classes).toEqual(
+      expect.arrayContaining(['starting:w-0', 'overflow-clip']),
+    );
+    expect(aside()!.className).not.toContain('slide-in');
+    const content = aside()!.querySelector<HTMLElement>(
+      '[data-slot="side-panel-content"]',
+    )!;
+    // The content keeps its width, pinned right, so it slides rather than
+    // reflowing while the panel grows.
+    expect(content.className.split(' ')).toEqual(
+      expect.arrayContaining(['absolute', 'right-0', 'min-w-120']),
+    );
   });
 
-  it('disappears at once when it closes, with no exit animation', async () => {
-    await render(panel({ variant: 'docked' }));
-    await render(panel({ variant: 'docked', open: false }));
-    expect(aside()).toBeNull();
+  describe('closing', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('shrinks out, inert, then unmounts', async () => {
+      await render(panel({ variant: 'docked' }));
+      await render(panel({ variant: 'docked', open: false }));
+      const el = aside()!;
+      expect(el.dataset.state).toBe('closed');
+      expect(el.className.split(' ')).toContain('w-0');
+      expect(el.hasAttribute('inert')).toBe(true);
+      await act(async () => vi.advanceTimersByTime(300));
+      expect(aside()).toBeNull();
+    });
+
+    it('keeps its last content while it shrinks out', async () => {
+      await render(panel({ variant: 'docked' }));
+      await render(
+        <SidePanel variant="docked" open={false} onOpenChange={() => {}}>
+          {null}
+        </SidePanel>,
+      );
+      expect(aside()!.textContent).toContain('renewal-note.md');
+    });
+
+    it('stays open when reopened mid-exit', async () => {
+      await render(panel({ variant: 'docked' }));
+      await render(panel({ variant: 'docked', open: false }));
+      await render(panel({ variant: 'docked' }));
+      await act(async () => vi.advanceTimersByTime(300));
+      expect(aside()!.dataset.state).toBe('open');
+      expect(aside()!.hasAttribute('inert')).toBe(false);
+    });
   });
 
   it('has no Expand unless expandable', async () => {
