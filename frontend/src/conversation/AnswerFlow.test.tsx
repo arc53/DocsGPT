@@ -30,6 +30,9 @@ const search = (overrides: Partial<ToolCallsType> = {}): ToolCallsType => ({
   ...overrides,
 });
 
+// The answer text's column; counts the answer bubbles in rendered markup.
+const TEXT_BUBBLE = 'class="my-2 mr-5 ml-6 flex min-w-0 flex-col';
+
 const render = (props: {
   message?: string;
   thought?: string;
@@ -105,7 +108,7 @@ describe('AnswerFlow', () => {
       toolCalls: [search()],
       segments: [{ kind: 'tool', call_id: 'c1' }],
     });
-    expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(1);
+    expect(html.split(TEXT_BUBBLE).length - 1).toBe(1);
     expect(html.indexOf('Searched the web')).toBeLessThan(
       html.indexOf('part one part two'),
     );
@@ -171,6 +174,14 @@ describe('AnswerFlow', () => {
     expect(html).not.toContain('Searched');
   });
 
+  it('slides answer text in only while it streams', () => {
+    const live = render({ message: 'part one', isStreaming: true });
+    const reopened = render({ message: 'part one' });
+    expect(live).toContain('slide-in-from-bottom-1.5');
+    expect(reopened).toContain(TEXT_BUBBLE);
+    expect(reopened).not.toContain('animate-in');
+  });
+
   it('renders steps with no answer text yet', () => {
     const html = render({
       toolCalls: [search({ status: 'pending' })],
@@ -178,7 +189,7 @@ describe('AnswerFlow', () => {
       isStreaming: true,
     });
     expect(html).toContain('Searching the web');
-    expect(html).not.toContain('slide-in-from-bottom-1.5');
+    expect(html).not.toContain(TEXT_BUBBLE);
   });
 });
 
@@ -350,7 +361,7 @@ describe('AnswerFlow step groups', () => {
     expect(html.indexOf('Now step 2:')).toBeLessThan(html.indexOf('>Tools<'));
     expect(html.indexOf('>Tools<')).toBeLessThan(html.indexOf('All done.'));
     // Narration between calls sits in the group, not in an answer bubble.
-    expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(2);
+    expect(html.split(TEXT_BUBBLE).length - 1).toBe(2);
     expect(html).toContain('The price API returned 401, trying again:');
   });
 

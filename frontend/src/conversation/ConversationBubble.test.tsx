@@ -920,6 +920,33 @@ describe('ConversationBubble', () => {
     expect(buttonByText('retry')).toBeDefined();
   });
 
+  it('animates an error and sources in only when they arrive live', async () => {
+    const sources = [{ title: 'Doc', text: 'Excerpt', source: 'doc.pdf' }];
+    await render(
+      <>
+        <ConversationBubble type="ERROR" message="Failed" />
+        <ConversationBubble type="ANSWER" message="Answer" sources={sources} />
+      </>,
+    );
+    expect(container.innerHTML).not.toContain('animate-in');
+
+    await render(
+      <>
+        <ConversationBubble type="ERROR" message="Failed" isLive />
+        <ConversationBubble
+          type="ANSWER"
+          message="Answer"
+          sources={sources}
+          isStreaming
+        />
+      </>,
+    );
+    const alertBox = container.querySelector('[role="alert"]')!.parentElement!;
+    expect(alertBox.className).toContain('slide-in-from-bottom-1.5');
+    const grid = container.querySelector('#source-0')!.parentElement!;
+    expect(grid.parentElement!.className).toContain('animate-in');
+  });
+
   it('makes the Sources header a step row that opens the All sources sheet', async () => {
     const sources = [1, 2, 3, 4].map((n) => ({
       title: `Doc ${n}`,

@@ -282,7 +282,10 @@ export default function MarkdownAnswer({
           {group.type === 'markdown' ? (
             <div
               className={cn(
-                'animate-in fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap duration-160 ease-out motion-reduce:animate-none',
+                'flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap',
+                // A block that streams in fades in; a reopened answer is just there.
+                isStreaming &&
+                  'animate-in fade-in duration-160 ease-out motion-reduce:animate-none',
                 classes.answer,
               )}
             >
