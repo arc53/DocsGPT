@@ -27,6 +27,12 @@ _SAMPLE_ROWS = 20
 _DIALECT_OPTIONS = ("quotechar", "escapechar", "doublequote", "skipinitialspace", "quoting")
 
 
+# QUOTE_NONNUMERIC (and Python 3.12's QUOTE_STRINGS and QUOTE_NOTNULL) change what csv.reader
+# returns for an unquoted field, not where the field ends. Detection splits with QUOTE_MINIMAL
+# under them, or an unquoted text header fails the float conversion for every candidate.
+_CONVERTING_QUOTING = {csv.QUOTE_NONNUMERIC, getattr(csv, "QUOTE_STRINGS", -1), getattr(csv, "QUOTE_NOTNULL", -1)}
+
+
 def _consistent_column_count(
     sample: str, separator: str, truncated: bool, dialect: Mapping[str, Any] | None = None
 ) -> int:
@@ -46,7 +52,10 @@ def _consistent_column_count(
     """
     rows: List[List[str]] = []
     try:
-        reader = csv.reader(io.StringIO(sample, newline=""), delimiter=separator, **(dialect or {}))
+        options = dict(dialect or {})
+        if options.get("quoting") in _CONVERTING_QUOTING:
+            options["quoting"] = csv.QUOTE_MINIMAL
+        reader = csv.reader(io.StringIO(sample, newline=""), delimiter=separator, **options)
         for row in reader:
             # A blank or whitespace-only line says nothing. QUOTE_NONNUMERIC turns an
             # unquoted cell into a float, which is never blank.

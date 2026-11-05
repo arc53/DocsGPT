@@ -181,10 +181,21 @@ def test_detection_splits_the_way_the_configured_dialect_reads(
 
 
 def test_dialect_options_csv_cannot_apply_keep_the_comma() -> None:
-    """QUOTE_NONNUMERIC makes csv.reader convert unquoted fields to float."""
+    """A dialect csv.reader rejects makes every candidate fail."""
     text = "\n".join(ROWS) + "\n"
 
-    assert detect_separator(text, dialect={"quoting": 2}) == ","
+    assert detect_separator(text, dialect={"quotechar": "ab"}) == ","
+
+
+def test_quote_nonnumeric_splits_an_unquoted_header_like_minimal_quoting(tmp_path: Path) -> None:
+    """QUOTE_NONNUMERIC changes what csv.reader returns for an unquoted field, not where it
+    ends, so an unquoted text header must not make every separator fail."""
+    text = "\n".join(ROWS) + "\n"
+
+    assert detect_separator(text, dialect={"quoting": 2}) == ";"
+    assert PandasCSVParser(pandas_config={"quoting": 2}).parse_file(_write(tmp_path, "Name;Units\n1;12\n2;7\n")) == (
+        "HEADERS: Name, Units\n1, 12\n2, 7"
+    )
 
 
 def test_numeric_cells_under_quote_nonnumeric_do_not_break_detection(tmp_path: Path) -> None:
