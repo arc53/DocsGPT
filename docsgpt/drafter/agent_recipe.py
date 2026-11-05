@@ -520,9 +520,10 @@ owner turns enforcement on later. pii hides personal data (emails, \
 phone numbers, card numbers) in questions and answers; injection blocks messages that try to override the agent's \
 instructions; groundedness flags answers its knowledge doesn't back; secrets hides keys and passwords in answers. \
 Recommend pii and injection for an agent that faces the public.
-- analytics: Insights sorts the agent's conversations by topic so its owner sees what users ask about. Ask \
-whether to sort conversations into these starting topics, naming up to {MAX_NEW_TOPICS} topics drawn from what \
-the agent is for, each a name of at most {TOPIC_NAME_CHARS} characters and a description of at most \
+- analytics: Insights sorts the agent's conversations by topic so its owner sees what users ask about. Offer up \
+to {MAX_NEW_TOPICS} starting topics drawn from what the agent is for as a pick-any question (multi true): one \
+option per topic, its label the topic's name (not marked recommended), and a last option "No topics"; set only \
+the topics the user ticks. Each topic is a name of at most {TOPIC_NAME_CHARS} characters and a description of at most \
 {TOPIC_DESCRIPTION_UNITS} characters listing concrete things users ask ("Late or stuck parcels, missed delivery \
 windows"). Never reuse a topic the agent already has. The folders of its sources (source_folders in \
 safety_options) already sort conversations as topics: never suggest a topic a folder already covers, only what \

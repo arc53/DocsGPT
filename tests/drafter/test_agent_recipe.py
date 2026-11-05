@@ -326,6 +326,12 @@ class TestInstructions:
                      "room_pushing_folders_out"):
             assert rule in text, rule
 
+    def test_the_topics_are_offered_one_by_one(self):
+        text = instructions(_req({}, step="safety"), _ws())
+        for rule in ("pick-any question (multi true)", "one option per topic, its label the topic's name",
+                     'a last option "No topics"', "set only the topics the user ticks"):
+            assert rule in text, rule
+
     def test_system_prompt_carries_the_recipe_and_the_tool_protocol(self):
         messages = build_messages(_req(), AGENT_RECIPE, _ws(), tool_mode=True, allow_questions=True)
         system = messages[0]["content"]
