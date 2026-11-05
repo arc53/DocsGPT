@@ -65,7 +65,7 @@ The last step asks, with the recommended choice marked and nothing set until you
 
 - **A usage limit**: one budget shared by everyone who uses the agent, counted over the last 24 hours: a request limit or a token limit, not both. The recommendation is the instance's default (500 requests or 50,000 tokens unless an admin changed it). It lands under **Advanced**, which opens by itself.
 - **Guardrail checks**: **Personal information** (redact), **Prompt injection (heuristic)** (block), **Grounding in sources** (flag) and **Credentials and secrets** (redact), added to the agent's own. They start in **Monitor only**: they record what they would have done and change no answer until you switch the agent to **Enforce everywhere** under **Guardrails**. Offered when guardrails are on for the instance.
-- **Insights topics**: up to four starting topics drawn from what the agent is for, added to its topics. Offered when insights are on for the instance and for the agent.
+- **Insights topics**: up to four starting topics drawn from what the agent is for, each offered by name so you tick the ones you want (or **No topics**). The folders of the agent's sources are already topics, so DocsGPT suggests only what they miss and never a topic a folder covers; if the ticked topics would push folders out of the 15 places topics that sort questions have, the step names those folders. On a saved agent that already has enough recent conversations, it suggests no topics and points you to [Suggest from conversations](#insights-topics), which works from what people actually asked. Offered when insights are on for the instance and for the agent.
 
 The usage limit and guardrails are the agent's policy: they're offered only to someone who can change it (the owner, or an editor with policy access). See [guardrails](/Agents/guardrails) and [insights](/Using/analytics-and-logs#analytics-settings-for-an-agent).
 
@@ -99,7 +99,7 @@ It never changes the agent's models, allowed origins, API write permissions, JSO
 
 ### What it reads
 
-To pick knowledge, tools and prompts, DocsGPT reads your workspace as the form's pickers show it: your own sources, tools, prompts and agents, and those your teams share with you for use on your own agents. It can open a source's file list, a tool's actions and a prompt's full text. It never reads a tool's configuration or secrets. What it reads is treated as data: an instruction written in a document name or a prompt doesn't steer it, only your own messages do.
+To pick knowledge, tools and prompts, DocsGPT reads your workspace as the form's pickers show it: your own sources, tools, prompts and agents, and those your teams share with you for use on your own agents. It can open a source's file list, a tool's actions and a prompt's full text. It never reads a tool's configuration or secrets. The prompt panel reads none of this: it works from the prompt's own text and what you tell it, and its footer says so (**reads only this prompt**). What it reads is treated as data: an instruction written in a document name or a prompt doesn't steer it, only your own messages do.
 
 ## Prompts
 
@@ -174,7 +174,7 @@ When a draft can't run, the panel says why:
 
 ## Privacy
 
-- **What goes to the task model**: your messages, the form's current values, and what DocsGPT reads from your workspace (names and descriptions of sources, tools and prompts, a source's file list, a prompt's text, a tool's actions). Tool configurations and secrets are never sent.
+- **What goes to the task model**: your messages, the form's current values, and, on the agent form, what DocsGPT reads from your workspace (names and descriptions of sources, tools and prompts, a source's file list, a prompt's text, a tool's actions). The prompt panel sends only the prompt and your messages. Tool configurations and secrets are never sent.
 - **Topic suggestions send end users' questions.** **Suggest from conversations** sends up to 300 of the agent's users' recent questions, each cut to 200 characters, to the task model. If the task model is a hosted provider's, those questions leave your stack, as chat messages do. Use a task model you trust with that data, or don't use topic suggestions on agents whose users should not be read this way.
 - **Nothing is stored** beyond the token usage rows. The measured shares come from the decision model, which runs inside your stack unless the operator set up [API mode](/Models/decision-model#api-mode).
 
