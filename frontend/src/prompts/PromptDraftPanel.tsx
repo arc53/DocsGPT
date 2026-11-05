@@ -1,8 +1,5 @@
 import {
   CircleHelp,
-  FileSearch,
-  Globe,
-  LifeBuoy,
   Lightbulb,
   type LucideIcon,
   ScanSearch,
@@ -15,7 +12,8 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { DraftPanel, type DraftPanelHelpers } from '../drafter/DraftPanel';
 import { readPromptProposal } from '../drafter/promptDraft';
-import type { PromptDrafter, PromptStarter } from '../drafter/usePromptDrafter';
+import { DRAFTER_STARTERS } from '../drafter/starters';
+import type { PromptDrafter } from '../drafter/usePromptDrafter';
 import SuggestionRows, { suggestionIconClass } from '../hero/SuggestionRows';
 import { formatCount } from '../utils/dateTimeUtils';
 
@@ -26,11 +24,6 @@ const IMPROVE_SUGGESTIONS: { key: string; Icon: LucideIcon }[] = [
   { key: 'lookOver', Icon: ScanSearch },
   { key: 'clearer', Icon: WrapText },
   { key: 'unsure', Icon: CircleHelp },
-];
-const STARTERS: { key: PromptStarter; Icon: LucideIcon }[] = [
-  { key: 'website', Icon: Globe },
-  { key: 'helpdesk', Icon: LifeBuoy },
-  { key: 'research', Icon: FileSearch },
 ];
 
 /** The drawer's Save prompt: the view's own Save. */
@@ -88,13 +81,13 @@ export function PromptDraftPanel({
         : t('drafter.prompt.introImprove');
   const suggestions =
     mode === 'write'
-      ? STARTERS.map(({ key, Icon }) => {
-          const text = t(`drafter.prompt.starters.${key}.title`);
+      ? DRAFTER_STARTERS.map(({ key, Icon }) => {
+          const text = t(`drafter.starters.${key}.title`);
           return {
             key,
             icon: <Icon className={suggestionIconClass} aria-hidden="true" />,
             text,
-            description: t(`drafter.prompt.starters.${key}.description`),
+            description: t(`drafter.starters.${key}.description`),
             onSelect: () => drafter.start(key, text),
           };
         })

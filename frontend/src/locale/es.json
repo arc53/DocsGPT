@@ -4614,20 +4614,6 @@
         "unsure": "Añade qué hacer cuando no sepa algo"
       },
       "skipMessage": "Redáctalo con lo que sabes.",
-      "starters": {
-        "website": {
-          "title": "Chat web para clientes",
-          "description": "Responde a visitantes y deriva si no está seguro"
-        },
-        "helpdesk": {
-          "title": "Mesa de ayuda interna",
-          "description": "Preguntas de RR. HH., TI y políticas de tu equipo"
-        },
-        "research": {
-          "title": "Asistente de investigación",
-          "description": "Busca en tus documentos y los cita"
-        }
-      },
       "assumptionsTitle": "Lo que supuse",
       "changeAssumption": "Cambiar",
       "changeAssumptionLabel": "Cambiar: {{assumption}}",
@@ -4720,12 +4706,7 @@
         "not_allowed": "un ajuste que tu rol no puede cambiar"
       },
       "build": {
-        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento y las herramientas, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nCuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
-        "examples": {
-          "support": "Agente de soporte para nuestro centro de ayuda",
-          "research": "Asistente de investigación sobre nuestros contratos",
-          "helpdesk": "Soporte informático interno"
-        },
+        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento y las herramientas, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige un punto de partida o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
         "describePlaceholder": "Describe el agente…",
         "changePlaceholder": "O dime qué cambiar…",
         "steps": {
@@ -4849,6 +4830,20 @@
     "filled_other": "Se rellenaron {{count}} campos",
     "notAnswered": "Sin responder",
     "suggestionsLabel": "Formas de empezar",
-    "skipQuestions": "Omitir y redactar"
+    "skipQuestions": "Omitir y redactar",
+    "starters": {
+      "website": {
+        "title": "Chat web para clientes",
+        "description": "Responde a visitantes y deriva si no está seguro"
+      },
+      "helpdesk": {
+        "title": "Mesa de ayuda interna",
+        "description": "Preguntas de RR. HH., TI y políticas de tu equipo"
+      },
+      "research": {
+        "title": "Asistente de investigación",
+        "description": "Busca en tus documentos y los cita"
+      }
+    }
   }
 }

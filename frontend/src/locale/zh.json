@@ -4463,20 +4463,6 @@
         "unsure": "补充不知道答案时该怎么做"
       },
       "skipMessage": "就用你已知的信息起草吧。",
-      "starters": {
-        "website": {
-          "title": "面向客户的网站聊天",
-          "description": "回答访客问题，不确定时转人工"
-        },
-        "helpdesk": {
-          "title": "内部服务台",
-          "description": "团队的人事、IT 和制度问题"
-        },
-        "research": {
-          "title": "研究助手",
-          "description": "检索你的文档并注明出处"
-        }
-      },
       "assumptionsTitle": "我的假设",
       "changeAssumption": "修改",
       "changeAssumptionLabel": "修改：{{assumption}}",
@@ -4557,12 +4543,7 @@
         "not_allowed": "你的角色无法更改的设置"
       },
       "build": {
-        "intro": "我们一起一步步搭建这个智能体：基本信息、知识与工具、提示词与开场问题，最后是限制与安全。\n\n告诉我它要做什么、谁会使用它。你说得越详细，我要问的问题就越少。",
-        "examples": {
-          "support": "帮助中心的客服智能体",
-          "research": "研究我们合同的助手",
-          "helpdesk": "内部 IT 服务台"
-        },
+        "intro": "我们一起一步步搭建这个智能体：基本信息、知识与工具、提示词与开场问题，最后是限制与安全。\n\n选择一个起点，或告诉我它要做什么、谁会使用它。你说得越详细，我要问的问题就越少。",
         "describePlaceholder": "描述这个智能体…",
         "changePlaceholder": "或告诉我要改什么…",
         "steps": {
@@ -4661,6 +4642,20 @@
     "filled_other": "已填写 {{count}} 个字段",
     "notAnswered": "未回答",
     "suggestionsLabel": "开始方式",
-    "skipQuestions": "跳过并起草"
+    "skipQuestions": "跳过并起草",
+    "starters": {
+      "website": {
+        "title": "面向客户的网站聊天",
+        "description": "回答访客问题，不确定时转人工"
+      },
+      "helpdesk": {
+        "title": "内部服务台",
+        "description": "团队的人事、IT 和制度问题"
+      },
+      "research": {
+        "title": "研究助手",
+        "description": "检索你的文档并注明出处"
+      }
+    }
   }
 }

@@ -946,7 +946,7 @@ describe('Prompts page', () => {
       ),
     ).toEqual(['website', 'helpdesk', 'research']);
     expect(rows[0].textContent).toBe(
-      'drafter.prompt.starters.website.titledrafter.prompt.starters.website.description',
+      'drafter.starters.website.titledrafter.starters.website.description',
     );
   });
 
@@ -992,9 +992,7 @@ describe('Prompts page', () => {
       panel()!.querySelector<HTMLButtonElement>('[data-suggestion="website"]')!,
     );
     expect(drafter.requests[0]).toMatchObject({
-      messages: [
-        { role: 'user', content: 'drafter.prompt.starters.website.title' },
-      ],
+      messages: [{ role: 'user', content: 'drafter.starters.website.title' }],
       context: { mode: 'write', starter: 'website', skip_questions: false },
     });
     const field = panel()!.querySelector<HTMLInputElement>(

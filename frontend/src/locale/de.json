@@ -4485,20 +4485,6 @@
         "unsure": "Ergänze, was er tun soll, wenn er etwas nicht weiß"
       },
       "skipMessage": "Entwirf ihn mit dem, was du weißt.",
-      "starters": {
-        "website": {
-          "title": "Website-Chat für Kunden",
-          "description": "Beantwortet Besucherfragen, übergibt bei Unsicherheit"
-        },
-        "helpdesk": {
-          "title": "Interner Helpdesk",
-          "description": "HR-, IT- und Richtlinienfragen deines Teams"
-        },
-        "research": {
-          "title": "Rechercheassistent",
-          "description": "Durchsucht deine Dokumente und zitiert sie"
-        }
-      },
       "assumptionsTitle": "Meine Annahmen",
       "changeAssumption": "Ändern",
       "changeAssumptionLabel": "Ändern: {{assumption}}",
@@ -4585,12 +4571,7 @@
         "not_allowed": "eine Einstellung, die deine Rolle nicht ändern darf"
       },
       "build": {
-        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen und Tools, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nSag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
-        "examples": {
-          "support": "Support-Agent für unser Hilfecenter",
-          "research": "Rechercheassistent für unsere Verträge",
-          "helpdesk": "Interner IT-Helpdesk"
-        },
+        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen und Tools, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nWähle einen Ausgangspunkt oder sag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
         "describePlaceholder": "Beschreibe den Agenten…",
         "changePlaceholder": "Oder sag mir, was ich ändern soll…",
         "steps": {
@@ -4697,6 +4678,20 @@
     "filled_other": "{{count}} Felder ausgefüllt",
     "notAnswered": "Nicht beantwortet",
     "suggestionsLabel": "Möglichkeiten zum Einstieg",
-    "skipQuestions": "Überspringen und entwerfen"
+    "skipQuestions": "Überspringen und entwerfen",
+    "starters": {
+      "website": {
+        "title": "Website-Chat für Kunden",
+        "description": "Beantwortet Besucherfragen, übergibt bei Unsicherheit"
+      },
+      "helpdesk": {
+        "title": "Interner Helpdesk",
+        "description": "HR-, IT- und Richtlinienfragen deines Teams"
+      },
+      "research": {
+        "title": "Rechercheassistent",
+        "description": "Durchsucht deine Dokumente und zitiert sie"
+      }
+    }
   }
 }

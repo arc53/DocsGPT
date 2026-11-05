@@ -100,6 +100,11 @@ class TestContext:
         with pytest.raises(BadDraftRequest):
             parse_context(raw)
 
+    def test_a_starter_is_kept_and_an_unknown_one_dropped(self):
+        assert parse_context({"step": "basics", "starter": "website"})["starter"] == "website"
+        assert parse_context({"step": "basics", "starter": "pirate"})["starter"] is None
+        assert parse_context({})["starter"] is None
+
     def test_no_step_is_improve_mode(self):
         assert parse_context({"step": None})["step"] is None
         assert parse_context({})["step"] is None
@@ -219,6 +224,19 @@ class TestInstructions:
     def test_the_prompt_step_writes_from_the_attached_knowledge(self):
         text = instructions(_req({}, step="prompt"), _ws())
         assert "from the sources and tools already on the form" in text
+
+    @pytest.mark.parametrize("starter,marker", [
+        ("website", 'started from "Website chat for customers"'),
+        ("helpdesk", 'started from "Internal helpdesk"'),
+        ("research", 'started from "Research assistant"'),
+    ])
+    def test_a_starter_brings_its_brief_to_every_step(self, starter, marker):
+        for step in ("basics", "knowledge", "prompt", "safety"):
+            req = DraftRequest("alice", "agent", [{"role": "user", "content": "x"}],
+                               parse_context({"step": step, "starter": starter}), "drafter:t")
+            text = instructions(req, _ws())
+            assert marker in text and "Use the part for the current step" in text, step
+        assert marker not in instructions(_req({}, step="basics"), _ws())
 
     def test_proposals_stay_lean(self):
         text = instructions(_req(), _ws())

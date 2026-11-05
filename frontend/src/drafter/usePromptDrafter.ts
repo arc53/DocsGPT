@@ -5,6 +5,7 @@ import {
   type PromptImproveProposal,
   readPromptProposal,
 } from './promptDraft';
+import type { DrafterStarter } from './starters';
 import { type DraftedFields, useDraftedFields } from './useDraftedFields';
 import { type DrafterSession, useDrafterSession } from './useDrafterSession';
 
@@ -28,13 +29,10 @@ export type PromptDrafterOptions = {
   setContent: (content: string) => void;
 };
 
-/** The drawer's starting points for a new prompt (the recipe's `STARTERS`). */
-export type PromptStarter = 'website' | 'helpdesk' | 'research';
-
 export type PromptDrafter = {
   session: DrafterSession;
   /** Send a starting point's text, with its id going along for the session. */
-  start: (starter: PromptStarter, text: string) => void;
+  start: (starter: DrafterStarter, text: string) => void;
   /** Send `text` and draft from here on without asking questions. */
   skipQuestions: (text: string) => void;
   review: PromptReview | null;
@@ -71,7 +69,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
   // The text the running turn was sent with: a proposal's edits fit it.
   const sent = useRef('');
   // The starting point picked and a Skip on questions hold for the session.
-  const starter = useRef<PromptStarter | null>(null);
+  const starter = useRef<DrafterStarter | null>(null);
   const skipped = useRef(false);
   const [review, setReview] = useState<PromptReview | null>(null);
 
@@ -212,7 +210,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
 
   const send = session.send;
   const start = useCallback(
-    (picked: PromptStarter, text: string) => {
+    (picked: DrafterStarter, text: string) => {
       starter.current = picked;
       send(text);
     },

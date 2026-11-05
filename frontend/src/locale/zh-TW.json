@@ -4465,20 +4465,6 @@
         "unsure": "補充不知道答案時該怎麼做"
       },
       "skipMessage": "就用你已知的資訊起草吧。",
-      "starters": {
-        "website": {
-          "title": "面向客戶的網站聊天",
-          "description": "回答訪客問題，不確定時轉真人"
-        },
-        "helpdesk": {
-          "title": "內部服務台",
-          "description": "團隊的人資、IT 和規章問題"
-        },
-        "research": {
-          "title": "研究助理",
-          "description": "檢索你的文件並註明出處"
-        }
-      },
       "assumptionsTitle": "我的假設",
       "changeAssumption": "修改",
       "changeAssumptionLabel": "修改：{{assumption}}",
@@ -4559,12 +4545,7 @@
         "not_allowed": "你的角色無法變更的設定"
       },
       "build": {
-        "intro": "我們一起一步步建立這個代理：基本資訊、知識與工具、提示詞與開場問題，最後是限制與安全。\n\n告訴我它要做什麼、誰會使用它。你說得越詳細，我要問的問題就越少。",
-        "examples": {
-          "support": "說明中心的客服代理",
-          "research": "研究我們合約的助理",
-          "helpdesk": "內部 IT 服務台"
-        },
+        "intro": "我們一起一步步建立這個代理：基本資訊、知識與工具、提示詞與開場問題，最後是限制與安全。\n\n選擇一個起點，或告訴我它要做什麼、誰會使用它。你說得越詳細，我要問的問題就越少。",
         "describePlaceholder": "描述這個代理…",
         "changePlaceholder": "或告訴我要改什麼…",
         "steps": {
@@ -4663,6 +4644,20 @@
     "filled_other": "已填寫 {{count}} 個欄位",
     "notAnswered": "未回答",
     "suggestionsLabel": "開始方式",
-    "skipQuestions": "略過並起草"
+    "skipQuestions": "略過並起草",
+    "starters": {
+      "website": {
+        "title": "面向客戶的網站聊天",
+        "description": "回答訪客問題，不確定時轉真人"
+      },
+      "helpdesk": {
+        "title": "內部服務台",
+        "description": "團隊的人資、IT 和規章問題"
+      },
+      "research": {
+        "title": "研究助理",
+        "description": "檢索你的文件並註明出處"
+      }
+    }
   }
 }

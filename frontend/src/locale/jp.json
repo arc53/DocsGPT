@@ -4465,20 +4465,6 @@
         "unsure": "わからない時の対応を追加して"
       },
       "skipMessage": "わかっている内容で下書きしてください。",
-      "starters": {
-        "website": {
-          "title": "顧客向けウェブサイトチャット",
-          "description": "訪問者に回答し、不明な時は引き継ぎ"
-        },
-        "helpdesk": {
-          "title": "社内ヘルプデスク",
-          "description": "チームからの人事・IT・規程の質問"
-        },
-        "research": {
-          "title": "リサーチアシスタント",
-          "description": "ドキュメントを調べて出典を示す"
-        }
-      },
       "assumptionsTitle": "想定したこと",
       "changeAssumption": "変更",
       "changeAssumptionLabel": "変更: {{assumption}}",
@@ -4559,12 +4545,7 @@
         "not_allowed": "あなたのロールでは変更できない設定"
       },
       "build": {
-        "intro": "このエージェントを一緒に、一つずつ作っていきましょう: 基本情報、ナレッジとツール、プロンプトと最初の質問、最後に制限と安全性です。\n\n何をするエージェントで、誰が使うのかを教えてください。詳しく書いていただくほど、質問は少なくなります。",
-        "examples": {
-          "support": "ヘルプセンター向けのサポートエージェント",
-          "research": "契約書を調べるリサーチアシスタント",
-          "helpdesk": "社内 IT ヘルプデスク"
-        },
+        "intro": "このエージェントを一緒に、一つずつ作っていきましょう: 基本情報、ナレッジとツール、プロンプトと最初の質問、最後に制限と安全性です。\n\n出発点を選ぶか、何をするエージェントで誰が使うのかを教えてください。詳しく書いていただくほど、質問は少なくなります。",
         "describePlaceholder": "エージェントについて説明…",
         "changePlaceholder": "または変更点を教えてください…",
         "steps": {
@@ -4663,6 +4644,20 @@
     "filled_other": "{{count}} 個のフィールドを入力しました",
     "notAnswered": "未回答",
     "suggestionsLabel": "始め方の例",
-    "skipQuestions": "スキップして下書き"
+    "skipQuestions": "スキップして下書き",
+    "starters": {
+      "website": {
+        "title": "顧客向けウェブサイトチャット",
+        "description": "訪問者に回答し、不明な時は引き継ぎ"
+      },
+      "helpdesk": {
+        "title": "社内ヘルプデスク",
+        "description": "チームからの人事・IT・規程の質問"
+      },
+      "research": {
+        "title": "リサーチアシスタント",
+        "description": "ドキュメントを調べて出典を示す"
+      }
+    }
   }
 }

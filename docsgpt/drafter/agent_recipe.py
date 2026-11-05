@@ -8,8 +8,9 @@ new one the user reviews in the prompt editor, and starters) and ``safety``
 starting Insights topics). A step sets its own fields and, when the user's
 words call for them, later steps' fields except safety's; a new prompt is
 written only in the prompt step, and safety is asked about before anything
-is set. Improve mode (no step, a saved agent) touches the first three steps'
-fields only. Models, origins, the API write allowlist, the JSON schema and
+is set. A ``starter`` (one of :data:`STARTERS`, picked from the drawer's first screen) adds
+a brief for that kind of agent to every step. Improve mode (no step, a saved
+agent) touches the first three steps' fields only. Models, origins, the API write allowlist, the JSON schema and
 sharing are never in a proposal.
 """
 
@@ -165,7 +166,7 @@ def _parse_policy(form_raw: dict) -> dict:
 
 
 def parse_context(raw: Any) -> dict:
-    """Clean the agent form's values: ``{agent_id, step, earlier, form: {...}}``.
+    """Clean the agent form's values: ``{agent_id, step, starter?, earlier, form: {...}}``.
 
     Wrong-typed values are left out rather than refused; only a ``form`` that
     isn't an object, or an unknown ``step``, is.
@@ -200,9 +201,11 @@ def parse_context(raw: Any) -> dict:
     form.update(_parse_policy(form_raw))
     earlier = raw.get("earlier") if isinstance(raw.get("earlier"), list) else []
     agent_id = raw.get("agent_id")
+    starter = raw.get("starter")
     return {
         "agent_id": agent_id.strip()[:_ID_CHARS] if isinstance(agent_id, str) and agent_id.strip() else None,
         "step": step,
+        "starter": starter if starter in STARTERS else None,
         "earlier": [text for text in (clean_text(t, EARLIER_CHARS) for t in earlier) if text][:MAX_EARLIER],
         "form": form,
     }
@@ -426,6 +429,37 @@ what the user already said; don't ask when you reuse an existing prompt or chang
 }
 
 
+#: Briefs for the build's starting points, by ``starter`` id: what each kind of agent needs, step by step.
+STARTERS: dict[str, str] = {
+    "website": """The user started from "Website chat for customers": an agent on the company's public website \
+for visitors and customers who may know nothing about the company. Use the part for the current step:
+- basics: it serves the public. Ask for the company or product as a typed answer unless the user named it or the \
+workspace leaves no doubt.
+- knowledge: attach only what is safe for the public: no internal, commercial or HR sources, and no tools that \
+read or change internal systems.
+- prompt: usually off-limits are prices, discounts or delivery dates the documents don't confirm, legal advice and \
+anything internal. It answers in the visitor's language.
+- safety: recommend pii and injection.""",
+    "helpdesk": """The user started from "Internal helpdesk": an agent for the company's own staff, answering HR, \
+IT and policy questions. Use the part for the current step:
+- basics: it serves staff. Ask which areas it covers (HR, IT, policies, office and facilities) unless the user \
+said.
+- knowledge: internal sources fit, but leave out what not every employee may read (salaries, individual HR \
+cases, credentials) and ask when unsure.
+- prompt: personal cases (pay, health, disputes, complaints) go to a person, and it never guesses a policy the \
+documents don't state. The hand-off is who staff contact: a team, an email or a ticket portal.
+- safety: recommend pii, and secrets when it covers IT.""",
+    "research": """The user started from "Research assistant": an agent that digs through the user's documents \
+and answers from them. Use the part for the current step:
+- basics: ask what the documents are (contracts, reports, papers, case files) and who uses it, unless the user \
+said.
+- knowledge: attach the sources that hold those documents. agent_type research fits long, deep answers across \
+many documents, classic quick lookups: ask when it isn't clear which.
+- prompt: it says plainly when the documents are silent, points out where documents disagree rather than \
+picking one, and names the document an answer comes from. A hand-off is often not needed.
+- safety: recommend groundedness and pii.""",
+}
+
 def _safety_guide() -> str:
     """The safety step's section: ask first, then the three parts, with the instance's default limits."""
     limits = settings.DEFAULT_AGENT_LIMITS
@@ -460,6 +494,8 @@ def instructions(req: DraftRequest, ws: Workspace) -> str:
         own = ", ".join(STEP_FIELDS[step])
         parts += [GUIDED, f"The current step is {step}. In this step set only: {own}.",
                   _safety_guide() if step == "safety" else STEP_GUIDES[step]]
+        if req.context.get("starter"):
+            parts.append(STARTERS[req.context["starter"]])
         return "\n\n".join(parts)
     has_values = any(form.get(k) for k in ("name", "description", "sources", "tools", "starters")) \
         or bool(form.get("prompt_draft")) or (form.get("prompt_id") not in (None, "default"))

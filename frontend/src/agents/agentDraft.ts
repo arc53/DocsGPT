@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 
 import type { ProposalReasonRow } from '../drafter/ProposalSummary';
+import type { DrafterStarter } from '../drafter/starters';
 import { getToolDisplayName } from '../utils/toolUtils';
 import { newTopicId } from './analyticsConfig';
 import {
@@ -456,17 +457,21 @@ function limitsContext(limits: AgentLimitsValue) {
  * Args:
  *   agentId: The saved agent's id, or null for a new one.
  *   form: The form now.
- *   build: The running step (null in improve mode) and what the user wrote
- *     in the finished steps.
+ *   build: The running step (null in improve mode), what the user wrote
+ *     in the finished steps, and the starting point the build began from.
  *   promptDraft: The prompt view's unsaved name and text, or null.
  *
  * Returns:
- *   `{ agent_id, step, earlier, form }` as the drafter contract describes it.
+ *   `{ agent_id, step, earlier, starter, form }` as the drafter contract describes it.
  */
 export function agentDraftContext(
   agentId: string | null,
   form: AgentDraftForm,
-  build: { step: AgentBuildStep | null; earlier: string[] },
+  build: {
+    step: AgentBuildStep | null;
+    earlier: string[];
+    starter?: DrafterStarter | null;
+  },
   promptDraft: PromptDraft | null,
 ) {
   const guardrails = form.guardrails ?? DEFAULT_GUARDRAILS;
@@ -474,6 +479,7 @@ export function agentDraftContext(
     agent_id: agentId || null,
     step: build.step,
     earlier: build.earlier,
+    starter: build.starter ?? null,
     form: {
       name: form.name,
       description: form.description,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { DrafterStarter } from '../drafter/starters';
 import type { DrafterSession } from '../drafter/useDrafterSession';
 import {
   AGENT_BUILD_STEPS,
@@ -21,6 +22,8 @@ type BuildState = {
   mode: BuildMode | null;
   /** The step the conversation is on; null before the build and after it. */
   step: AgentBuildStep | null;
+  /** The starting point the build began from, for every step's brief. */
+  starter: DrafterStarter | null;
   /** The steps done, in build order. */
   finished: AgentBuildStep[];
   /** What the user wrote in the finished steps. */
@@ -36,6 +39,7 @@ type BuildState = {
 const IDLE: BuildState = {
   mode: null,
   step: null,
+  starter: null,
   finished: [],
   earlier: [],
   filledAtOnce: 0,
@@ -75,8 +79,8 @@ export type AgentBuild = {
   approved: boolean;
   /** Where Next goes; null when it finishes the build. */
   nextStep: AgentBuildStep | null;
-  /** Start the guided build at its first step. */
-  start: () => void;
+  /** Start the guided build at its first step, from a starting point or none. */
+  start: (starter?: DrafterStarter) => void;
   /** Ask for one step on a saved agent, for the rest of the conversation. */
   focus: (step: AgentBuildStep) => void;
   /** Record a proposal the session applied. */
@@ -88,8 +92,12 @@ export type AgentBuild = {
   next: () => void;
   /** Forget the build (after Publish). */
   reset: () => void;
-  /** What the recipe's context carries: the step and the earlier words. */
-  context: () => { step: AgentBuildStep | null; earlier: string[] };
+  /** What the recipe's context carries: the step, the earlier words and the starting point. */
+  context: () => {
+    step: AgentBuildStep | null;
+    earlier: string[];
+    starter: DrafterStarter | null;
+  };
 };
 
 /** The first step after `from` that is neither done nor skipped. */
@@ -124,8 +132,10 @@ function nextOf(state: BuildState, skipped: AgentBuildStep[]) {
  * step and those its proposal filled ahead, keeps the user's words for
  * `earlier`, starts the session over and opens the next step with a hidden
  * message, or finishes. Steps with nothing to set are passed over and
- * leave the count. The state is mirrored in a ref, so the context of a
- * message sent right after a change already reads it.
+ * leave the count. A build begun from a starting point carries it to every
+ * step, where the recipe adds that kind of agent's brief. The state is
+ * mirrored in a ref, so the context of a message sent right after a change
+ * already reads it.
  *
  * Args:
  *   options: The session, the skipped steps and the client's messages.
@@ -148,14 +158,18 @@ export function useAgentBuild({
   const latest = useRef({ session, skipped, continueText, doneText });
   latest.current = { session, skipped, continueText, doneText };
 
-  const start = useCallback(() => {
-    if (stateRef.current.mode) return;
-    setState({
-      ...IDLE,
-      mode: 'guided',
-      step: stepAfter(null, [], latest.current.skipped),
-    });
-  }, [setState]);
+  const start = useCallback(
+    (starter?: DrafterStarter) => {
+      if (stateRef.current.mode) return;
+      setState({
+        ...IDLE,
+        mode: 'guided',
+        step: stepAfter(null, [], latest.current.skipped),
+        starter: starter ?? null,
+      });
+    },
+    [setState],
+  );
 
   const focus = useCallback(
     (step: AgentBuildStep) => {
@@ -216,6 +230,7 @@ export function useAgentBuild({
     () => ({
       step: stateRef.current.step,
       earlier: stateRef.current.earlier,
+      starter: stateRef.current.starter,
     }),
     [],
   );

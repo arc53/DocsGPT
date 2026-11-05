@@ -4614,20 +4614,6 @@
         "unsure": "Ajoutez quoi faire quand il ne sait pas"
       },
       "skipMessage": "Rédigez-le avec ce que vous savez.",
-      "starters": {
-        "website": {
-          "title": "Chat web pour les clients",
-          "description": "Répond aux visiteurs, passe la main en cas de doute"
-        },
-        "helpdesk": {
-          "title": "Assistance interne",
-          "description": "Questions RH, IT et règlements de votre équipe"
-        },
-        "research": {
-          "title": "Assistant de recherche",
-          "description": "Fouille vos documents et les cite"
-        }
-      },
       "assumptionsTitle": "Mes hypothèses",
       "changeAssumption": "Modifier",
       "changeAssumptionLabel": "Modifier : {{assumption}}",
@@ -4720,12 +4706,7 @@
         "not_allowed": "un réglage que votre rôle ne permet pas de modifier"
       },
       "build": {
-        "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances et les outils, le prompt et les questions de départ, puis les limites et la sécurité.\n\nDites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",
-        "examples": {
-          "support": "Agent d’assistance pour notre centre d’aide",
-          "research": "Assistant de recherche sur nos contrats",
-          "helpdesk": "Support informatique interne"
-        },
+        "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances et les outils, le prompt et les questions de départ, puis les limites et la sécurité.\n\nChoisissez un point de départ, ou dites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",
         "describePlaceholder": "Décrivez l’agent…",
         "changePlaceholder": "Ou dites-moi quoi modifier…",
         "steps": {
@@ -4849,6 +4830,20 @@
     "filled_other": "{{count}} champs remplis",
     "notAnswered": "Sans réponse",
     "suggestionsLabel": "Pour commencer",
-    "skipQuestions": "Passer et rédiger"
+    "skipQuestions": "Passer et rédiger",
+    "starters": {
+      "website": {
+        "title": "Chat web pour les clients",
+        "description": "Répond aux visiteurs, passe la main en cas de doute"
+      },
+      "helpdesk": {
+        "title": "Assistance interne",
+        "description": "Questions RH, IT et règlements de votre équipe"
+      },
+      "research": {
+        "title": "Assistant de recherche",
+        "description": "Fouille vos documents et les cite"
+      }
+    }
   }
 }

@@ -387,13 +387,18 @@ describe('agentDraft', () => {
             ],
           },
         }),
-        { step: 'knowledge', earlier: ['A shipping agent'] },
+        {
+          step: 'knowledge',
+          earlier: ['A shipping agent'],
+          starter: 'website',
+        },
         { name: 'P', content: 'C' },
       ),
     ).toEqual({
       agent_id: null,
       step: 'knowledge',
       earlier: ['A shipping agent'],
+      starter: 'website',
       form: {
         name: 'N',
         description: '',
@@ -409,6 +414,11 @@ describe('agentDraft', () => {
         analytics: { enabled: true, topics: ['Rates'] },
       },
     });
+    // Improve mode began from no starting point.
+    expect(
+      agentDraftContext('a1', form(), { step: null, earlier: [] }, null)
+        .starter,
+    ).toBeNull();
     expect(
       agentDraftContext('a1', form(), { step: null, earlier: [] }, null).form,
     ).toMatchObject({

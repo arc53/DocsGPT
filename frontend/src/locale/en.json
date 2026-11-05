@@ -4506,20 +4506,6 @@
         "unsure": "Add what to do when it doesn't know"
       },
       "skipMessage": "Draft it with what you know.",
-      "starters": {
-        "website": {
-          "title": "Website chat for customers",
-          "description": "Answers visitors and hands off when unsure"
-        },
-        "helpdesk": {
-          "title": "Internal helpdesk",
-          "description": "HR, IT and policy questions from your team"
-        },
-        "research": {
-          "title": "Research assistant",
-          "description": "Digs through your documents and cites them"
-        }
-      },
       "assumptionsTitle": "I assumed",
       "changeAssumption": "Change",
       "changeAssumptionLabel": "Change: {{assumption}}",
@@ -4606,12 +4592,7 @@
         "not_allowed": "a setting your role can't change"
       },
       "build": {
-        "intro": "Let's build this agent together, one part at a time: basics, knowledge and tools, the prompt and starters, then limits and safety.\n\nTell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
-        "examples": {
-          "support": "Support agent for our help center",
-          "research": "Research assistant over our contracts",
-          "helpdesk": "Internal IT helpdesk"
-        },
+        "intro": "Let's build this agent together, one part at a time: basics, knowledge and tools, the prompt and starters, then limits and safety.\n\nPick a starting point, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
         "describePlaceholder": "Describe the agent…",
         "changePlaceholder": "Or tell me what to change…",
         "steps": {
@@ -4718,6 +4699,20 @@
     "filled_other": "Filled {{count}} fields",
     "notAnswered": "Not answered",
     "suggestionsLabel": "Ways to start",
-    "skipQuestions": "Skip and draft"
+    "skipQuestions": "Skip and draft",
+    "starters": {
+      "website": {
+        "title": "Website chat for customers",
+        "description": "Answers visitors and hands off when unsure"
+      },
+      "helpdesk": {
+        "title": "Internal helpdesk",
+        "description": "HR, IT and policy questions from your team"
+      },
+      "research": {
+        "title": "Research assistant",
+        "description": "Digs through your documents and cites them"
+      }
+    }
   }
 }

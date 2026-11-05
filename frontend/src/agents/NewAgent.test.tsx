@@ -2549,20 +2549,22 @@ describe('NewAgent drafter', () => {
         .querySelector('textarea[aria-label="drafter.askLabel"]')
         ?.getAttribute('placeholder'),
     ).toBe('drafter.agent.build.describePlaceholder');
-    // A suggestion row sends its text.
+    // A starting point sends its title and begins the build from its id.
+    expect(panel()!.textContent).toContain(
+      'drafter.starters.website.titledrafter.starters.website.description',
+    );
     await act(async () =>
-      buttonByText('drafter.agent.build.examples.support', panel()!)!.click(),
+      buttonByText('drafter.starters.website.title', panel()!)!.click(),
     );
     expect(drafter.requests).toHaveLength(1);
     expect(drafter.requests[0]).toMatchObject({
       recipe: 'agent',
-      messages: [
-        { role: 'user', content: 'drafter.agent.build.examples.support' },
-      ],
+      messages: [{ role: 'user', content: 'drafter.starters.website.title' }],
       context: {
         agent_id: null,
         step: 'basics',
         earlier: [],
+        starter: 'website',
         form: {
           name: '',
           description: '',

@@ -4,10 +4,7 @@ import {
   CircleMinus,
   CircleX,
   Eye,
-  FileSearch,
-  Headset,
   MessageSquare,
-  MonitorCog,
   Pencil,
   PencilLine,
   Play,
@@ -91,6 +88,7 @@ import { DraftPanel } from '../drafter/DraftPanel';
 import { suggestionIconClass } from '../hero/SuggestionRows';
 import { DraftedField } from '../drafter/DraftedBadge';
 import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
+import { DRAFTER_STARTERS } from '../drafter/starters';
 import {
   ProposalSummary,
   type ProposalReasonRow,
@@ -2051,23 +2049,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       );
   const drafterSuggestions = (
     buildable
-      ? [
-          {
-            key: 'support',
-            Icon: Headset,
-            text: t('drafter.agent.build.examples.support'),
-          },
-          {
-            key: 'research',
-            Icon: FileSearch,
-            text: t('drafter.agent.build.examples.research'),
-          },
-          {
-            key: 'helpdesk',
-            Icon: MonitorCog,
-            text: t('drafter.agent.build.examples.helpdesk'),
-          },
-        ]
+      ? // Starting points: each sends its title and begins the build from
+        // its id, so every step gets that kind of agent's brief.
+        DRAFTER_STARTERS.map(({ key, Icon }) => {
+          const text = t(`drafter.starters.${key}.title`);
+          return {
+            key,
+            Icon,
+            text,
+            description: t(`drafter.starters.${key}.description`),
+            onSelect: () => {
+              build.start(key);
+              panelSession.send(text);
+            },
+          };
+        })
       : [
           // Offered until limits and safety were ever set.
           ...(isSafetyUnset(draftForm) && !skippedSteps.includes('safety')

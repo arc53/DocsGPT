@@ -81,7 +81,29 @@ describe('useAgentBuild', () => {
       done: false,
       nextStep: 'knowledge',
     });
-    expect(build.context()).toEqual({ step: 'basics', earlier: [] });
+    expect(build.context()).toEqual({
+      step: 'basics',
+      earlier: [],
+      starter: null,
+    });
+  });
+
+  it('keeps the starting point it began from for every step, until reset', async () => {
+    await act(async () => build.start('website'));
+    expect(build.context().starter).toBe('website');
+    await act(async () =>
+      build.onProposal(proposal({ name: 'Ship' }, ['basics'], 'knowledge')),
+    );
+    await act(async () => build.next());
+    expect(build.context()).toMatchObject({
+      step: 'knowledge',
+      starter: 'website',
+    });
+    // A second start while the build runs changes nothing.
+    await act(async () => build.start('research'));
+    expect(build.context().starter).toBe('website');
+    await act(async () => build.reset());
+    expect(build.context().starter).toBeNull();
   });
 
   it('moves on with Next: folds the step, keeps the words, starts the next one hidden', async () => {
