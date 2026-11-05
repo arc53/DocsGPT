@@ -176,6 +176,26 @@ class TestViewOnTheCall:
         assert "ui" not in completed["data"]
         assert any(isinstance(r, dict) and "structuredContent" in r for r in scanned)
 
+    def test_a_result_without_structured_content_is_screened_once(self, apps, mock_tool_manager, monkeypatch):
+        # Its content is the model's copy, which the guardrail already saw.
+        _route(monkeypatch, "create_view")
+        typed = {"content": [{"type": "text", "text": "ok"}], "isError": False}
+        mock_tool_manager.load_tool.return_value.take_app_result = Mock(return_value=typed)
+        executor = ToolExecutor(user="u1")
+        scanned = []
+
+        def guardrail(result, *_):
+            scanned.append(result)
+            return result
+
+        monkeypatch.setattr(executor, "_guardrail_tool_result", guardrail)
+
+        events = list(_drain(executor.execute(_tools_dict(), _call("create_view"), "MockLLM")))
+
+        completed = next(e for e in events if e["data"].get("status") == "completed")
+        assert completed["data"]["ui"]["result"] == typed
+        assert len(scanned) == 1
+
     def test_the_views_copy_is_sanitized_and_redacted(
         self, apps, mock_tool_manager, monkeypatch
     ):

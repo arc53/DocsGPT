@@ -2655,8 +2655,9 @@ class ToolExecutor:
         The result is the full ``CallToolResult``, ``structuredContent``
         included, which the model's copy drops when there is content. So it
         gets the journal's treatment of its own: exposed secrets put back to
-        their references, and the tool-result guardrail; a verdict that would
-        change it withholds the view.
+        their references, and the tool-result guardrail on the structured
+        part (the content was screened as the model's copy); a verdict that
+        would change it withholds the view.
 
         Args:
             tool: The tool that ran; its ``take_app_result`` is drained either way.
@@ -2679,9 +2680,13 @@ class ToolExecutor:
         view: Dict[str, Any] = {"resource_uri": uri, "tool_id": str(tool_data["id"])}
         if isinstance(result, dict):
             result = self.redact_app_result(result, secrets)
-            screened = self._guardrail_tool_result(result, tool_data.get("name", ""), str(action.get("name") or ""))
-            if screened is not result:
-                return None
+            # The content is the model's copy, screened already; only the structured part is the view's alone.
+            structured = result.get("structuredContent")
+            if structured is not None:
+                extra = {"structuredContent": structured}
+                screened = self._guardrail_tool_result(extra, tool_data.get("name", ""), str(action.get("name") or ""))
+                if screened is not extra:
+                    return None
             view["result"] = result
         return view
 
