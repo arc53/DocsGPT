@@ -28,6 +28,7 @@ from docsgpt.drafter.fencing import clean_text
 from docsgpt.drafter.prompt_rules import (
     COMPOSER_ADDS,
     CONTACT_DETAILS_ROUND,
+    EDIT_RULES,
     hand_off_rule,
     HAND_OFF_OPTIONS,
     no_placeholders,
@@ -35,6 +36,7 @@ from docsgpt.drafter.prompt_rules import (
     template_parses,
     tool_variables_problem,
 )
+from docsgpt.drafter.prompt_recipe import apply_edits, checks_for, PROMPT_RECIPE
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 from docsgpt.drafter.runner import question_rounds
 from docsgpt.drafter.topics_recipe import TopicsWorkspace
@@ -207,6 +209,10 @@ def parse_context(raw: Any) -> dict:
             "name": clean_text(draft.get("name"), PROMPT_NAME_MAX),
             "content": clean_text(draft.get("content"), PROMPT_CONTENT_MAX),
         }
+        # The saved prompt whose unsaved changes the view holds; none for a new prompt.
+        draft_id = draft.get("id")
+        if isinstance(draft_id, str) and draft_id.strip():
+            form["prompt_draft"]["id"] = draft_id.strip()[:_ID_CHARS]
     starters = form_raw.get("starters")
     form["starters"] = [clean_text(s, 300) for s in starters[:10] if isinstance(s, str) and s.strip()] \
         if isinstance(starters, list) else []
@@ -297,6 +303,15 @@ def _current_prompt(form: dict, ws: Workspace) -> tuple[Optional[str], str]:
     return prompt_id, ws.prompt_texts.get(prompt_id, "")
 
 
+def _editable_prompt(form: dict, ws: Workspace) -> Optional[str]:
+    """The id of the saved prompt a proposal may change with edits: the caller's own prompt the form uses, or the
+    one whose unsaved changes the prompt view holds. None for a built-in, a shared or a new prompt."""
+    draft = form.get("prompt_draft")
+    target = draft.get("id") if draft else form.get("prompt_id")
+    own = {str(p["id"]) for p in ws.prompts if p.get("kind") == "own"}
+    return target if target in own else None
+
+
 def _topic_view(form: dict, ws: AgentWorkspace) -> TopicsWorkspace:
     """The form's topics and the sources' folders, for the topics recipe's room rules."""
     analytics = form["analytics"]
@@ -365,8 +380,11 @@ def context_data(req: DraftRequest, ws: Workspace) -> dict:
         "tools": form["tools"],
         "starters": form["starters"],
     })
-    if form.get("prompt_draft"):
-        data["prompt"] = {"kind": "new (open in the prompt editor, not saved yet)", **form["prompt_draft"]}
+    draft = form.get("prompt_draft")
+    if draft and draft.get("id"):
+        data["prompt"] = {"kind": "existing, changed in the prompt view (not saved yet)", **draft}
+    elif draft:
+        data["prompt"] = {"kind": "new (open in the prompt editor, not saved yet)", **draft}
     else:
         prompt_id = form.get("prompt_id") or "default"
         data["prompt"] = {"kind": "existing", "id": prompt_id}
@@ -375,6 +393,8 @@ def context_data(req: DraftRequest, ws: Workspace) -> dict:
             data["prompt"]["content"] = text
     _, current = _current_prompt(form, ws)
     data["prompt"]["mode"] = "template" if is_template(current) else "persona"
+    if _editable_prompt(form, ws):
+        data["prompt"]["editable"] = True
     if step == "safety":
         data.update({key: form[key] for key in SAFETY_FIELDS})
         data["analytics"] = {key: form["analytics"][key] for key in ("enabled", "topics")}
@@ -435,8 +455,12 @@ plain-text prompt with sections of its own, so leave out everything they already
 sections. Only use a variable when the user asks for something only a variable can do, and never switch a \
 plain-text prompt to a template without saying so in a note. Never add {{{{ tools... }}}} variables unless the \
 user asks: they run the tool before every message.
-- To change a template (the built-in prompts and their copies are templates), write a new prompt from its full \
-text: keep its sections and {{% if %}} blocks and change only what was asked.
+- To change the agent's own prompt (prompt.editable in the form data), send kind "edit" with its id and edits, \
+never a new prompt: the user accepts or rejects each change. Change only what the user asked for.
+{EDIT_RULES}
+- Write a new prompt instead only when the agent needs a different prompt, or to change one that isn't editable \
+(a built-in or shared prompt): then write it from the full text: keep its sections and {{% if %}} blocks and \
+change only what was asked.
 
 Changing an agent that already has values (the user asks to improve or change something): change only what the \
 user asked for and leave every other field out of the proposal. A field you leave out stays as it is. A list you \
@@ -587,12 +611,14 @@ PROPOSAL_SCHEMA: dict = {
                 "tools": {"type": "array", "items": {"type": "string"}, "description": "Tool ids."},
                 "prompt": {
                     "type": "object",
-                    "description": 'kind "existing" with id, or kind "new" with name and content.',
+                    "description": 'kind "existing" with id, kind "new" with name and content, or kind "edit" '
+                                   "with the editable prompt's id and edits.",
                     "properties": {
-                        "kind": {"type": "string", "enum": ["existing", "new"]},
+                        "kind": {"type": "string", "enum": ["existing", "new", "edit"]},
                         "id": {"type": "string"},
                         "name": {"type": "string"},
                         "content": {"type": "string"},
+                        "edits": PROMPT_RECIPE.proposal_schema["properties"]["edits"],
                     },
                     "required": ["kind"],
                 },
@@ -702,12 +728,39 @@ def _new_prompt(raw: dict, req: DraftRequest, ws: Workspace, notes: list[str]) -
     return {"kind": "new", "name": name, "content": content}
 
 
+def _edited_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> Optional[dict]:
+    """Check edits to the editable prompt against the text the model read; None when they change nothing.
+
+    Raises:
+        ProposalInvalid: No editable prompt, another prompt's id, or edits the prompt recipe refuses (a find that
+            isn't there once, overlaps, no reason, a text that doesn't parse, unasked tool variables).
+    """
+    form = req.context["form"]
+    target = _editable_prompt(form, ws)
+    if not target or str(raw.get("id") or "").strip() != target:
+        raise ProposalInvalid([
+            "Edits change only the agent's own prompt (prompt.editable in the form data): write a new prompt "
+            "instead."
+        ])
+    _, current = _current_prompt(form, ws)
+    edits, result = apply_edits(current, [e for e in raw.get("edits") or [] if isinstance(e, dict)])
+    if not edits:
+        return None
+    if not template_parses(result) and template_parses(current):
+        raise ProposalInvalid([TEMPLATE_PROBLEM])
+    problem = tool_variables_problem(result, current, req)
+    if problem:
+        raise ProposalInvalid([problem])
+    return {"kind": "edit", "id": target, "edits": edits, "before": current, "result": result,
+            "checks": checks_for(current, result)}
+
+
 def _for_step(raw_fields: dict, step: Optional[str]) -> dict:
-    """The proposal's fields the step may set: policy only in the safety step, a new prompt only in the prompt
-    step or improve mode. Anything else is left out without a problem: the model drafted ahead."""
+    """The proposal's fields the step may set: policy only in the safety step, a new or edited prompt only in the
+    prompt step or improve mode. Anything else is left out without a problem: the model drafted ahead."""
     out = {key: value for key, value in raw_fields.items() if step == "safety" or key not in SAFETY_FIELDS}
     prompt = out.get("prompt")
-    if step not in (None, "prompt") and isinstance(prompt, dict) and prompt.get("kind") == "new":
+    if step not in (None, "prompt") and isinstance(prompt, dict) and prompt.get("kind") in ("new", "edit"):
         del out["prompt"]
     return out
 
@@ -897,6 +950,10 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     if isinstance(prompt, dict):
         if prompt.get("kind") == "new":
             fields["prompt"] = _new_prompt(prompt, req, ws, notes)
+        elif prompt.get("kind") == "edit":
+            edited = _edited_prompt(prompt, req, ws)
+            if edited:
+                fields["prompt"] = edited
         else:
             prompt_id = str(prompt.get("id") or "").strip()
             allowed = ws.ids("prompts") | ({form["prompt_id"]} if form.get("prompt_id") else set())

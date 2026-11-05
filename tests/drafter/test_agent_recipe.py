@@ -122,7 +122,7 @@ class TestContext:
     def test_the_model_reads_a_custom_prompts_text_and_its_mode(self):
         data = context_data(_req({"prompt_id": PROMPT_ID}), _ws())
         assert data["prompt"] == {"kind": "existing", "id": PROMPT_ID, "content": "You help customers.",
-                                  "mode": "persona"}
+                                  "mode": "persona", "editable": True}
         data = context_data(_req({}), _ws())
         assert data["prompt"] == {"kind": "existing", "id": "default", "mode": "template"}
         assert data["agent_type"] == "classic"
@@ -132,6 +132,21 @@ class TestContext:
                             _ws())
         assert data["prompt"]["content"] == "Be kind." and data["prompt"]["name"] == "D"
         assert data["prompt"]["mode"] == "persona" and "not saved" in data["prompt"]["kind"]
+
+    def test_the_agents_own_prompt_is_marked_editable(self):
+        data = context_data(_req({"prompt_id": PROMPT_ID}), _ws())
+        assert data["prompt"]["editable"] is True
+        # A built-in prompt, and a new prompt not saved yet, are rewritten instead.
+        assert "editable" not in context_data(_req({}), _ws())["prompt"]
+        new = {"prompt_id": PROMPT_ID, "prompt_draft": {"name": "D", "content": "Be kind."}}
+        assert "editable" not in context_data(_req(new), _ws())["prompt"]
+
+    def test_unsaved_changes_to_a_saved_prompt_are_that_prompt(self):
+        form = {"prompt_id": "default", "prompt_draft": {"id": PROMPT_ID, "name": "Support", "content": "Be kind."}}
+        assert parse_context({"form": form})["form"]["prompt_draft"]["id"] == PROMPT_ID
+        data = context_data(_req(form), _ws())
+        assert data["prompt"]["id"] == PROMPT_ID and data["prompt"]["content"] == "Be kind."
+        assert data["prompt"]["editable"] is True and "changed in the prompt view" in data["prompt"]["kind"]
 
     def test_the_step_and_earlier_messages_are_given(self):
         data = context_data(_req({}, step="knowledge", earlier=["A help desk for parcels"]), _ws())
@@ -460,6 +475,68 @@ class TestValidate:
         proposal = _validate({"prompt": {"kind": "new", "name": "Copy", "content": template + " Be brief."}},
                              ws=ws)
         assert proposal["fields"]["prompt"]["name"] == "Copy"
+
+
+EDIT = {"find": "You help customers.", "replace": "You help customers of Meridian.", "reason": "Names the company."}
+
+
+@pytest.mark.unit
+class TestPromptEdits:
+    def test_the_agents_own_prompt_is_changed_with_edits(self):
+        proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [EDIT]}},
+                             form={"prompt_id": PROMPT_ID})
+        assert proposal["fields"]["prompt"] == {
+            "kind": "edit", "id": PROMPT_ID, "edits": [{"id": "e1", **EDIT}],
+            "before": "You help customers.", "result": "You help customers of Meridian.", "checks": [],
+        }
+
+    def test_edits_fit_the_text_open_in_the_prompt_view(self):
+        form = {"prompt_id": PROMPT_ID,
+                "prompt_draft": {"id": PROMPT_ID, "name": "Support", "content": "You help customers. Be brief."}}
+        proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [EDIT]}}, form=form)
+        assert proposal["fields"]["prompt"]["before"] == "You help customers. Be brief."
+        assert proposal["fields"]["prompt"]["result"] == "You help customers of Meridian. Be brief."
+
+    @pytest.mark.parametrize("form,prompt_id", [
+        ({}, "default"),
+        ({"prompt_id": PROMPT_ID}, "someone-elses"),
+        ({"prompt_id": PROMPT_ID, "prompt_draft": {"name": "New", "content": "You help customers."}}, PROMPT_ID),
+    ])
+    def test_only_the_editable_prompt_takes_edits(self, form, prompt_id):
+        with pytest.raises(ProposalInvalid, match="write a new prompt"):
+            _validate({"prompt": {"kind": "edit", "id": prompt_id, "edits": [EDIT]}}, form=form)
+
+    @pytest.mark.parametrize("edit", [
+        {"find": "not in the prompt", "replace": "x", "reason": "r"},
+        {"find": "You help customers.", "replace": "Hi {{ broken", "reason": "r"},
+        {"find": "You help customers.", "replace": "x", "reason": ""},
+    ])
+    def test_edits_follow_the_prompt_recipes_rules(self, edit):
+        with pytest.raises(ProposalInvalid):
+            _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [edit]}}, form={"prompt_id": PROMPT_ID})
+
+    def test_no_change_leaves_the_prompt_out(self):
+        same = {**EDIT, "replace": EDIT["find"]}
+        proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [same]}},
+                             form={"prompt_id": PROMPT_ID})
+        assert "prompt" not in proposal["fields"]
+
+    def test_a_switch_to_a_template_is_checked(self):
+        edit = {**EDIT, "replace": "You help customers. Today is {{ system.date }}."}
+        proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [edit]}},
+                             form={"prompt_id": PROMPT_ID})
+        assert proposal["fields"]["prompt"]["checks"] == ["to_template"]
+
+    @pytest.mark.parametrize("step", ["basics", "safety"])
+    def test_edits_outside_the_prompt_step_are_dropped(self, step):
+        proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [EDIT]}},
+                             form={"prompt_id": PROMPT_ID}, step=step, asked=True)
+        assert "prompt" not in proposal["fields"]
+
+    def test_the_model_is_told_to_edit_the_editable_prompt(self):
+        text = instructions(_req({"prompt_id": PROMPT_ID}), _ws())
+        for rule in ('kind "edit"', "prompt.editable", "find: an exact passage", "never a new prompt"):
+            assert rule in text, rule
 
 
 NEW_PROMPT = {"kind": "new", "name": "Help desk", "content": "You answer parcel questions."}

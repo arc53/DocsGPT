@@ -74,6 +74,16 @@ def tool_variables(content: str) -> set[str]:
         return set()
 
 
+#: How a change to an existing prompt is sent: edits the user accepts or rejects one by one, not a rewrite.
+EDIT_RULES = """- find: an exact passage copied from the current prompt, character for character (spaces and line breaks too), \
+long enough that it occurs exactly once.
+- replace: its new text; '' deletes it. To insert, find a nearby passage (an anchor) and replace it with itself \
+plus the new text.
+- Edits must not overlap: no two finds may share any text.
+- reason: one short sentence the user reads next to the change, e.g. "DocsGPT already adds the date."
+Keep each edit small and separate, so the user can accept or reject it on its own. If nothing needs to change, \
+send no edits and say why in your message."""
+
 def user_asked_for_variables(req: DraftRequest) -> bool:
     """Whether the user's own messages ask for template variables."""
     text = req.user_text()

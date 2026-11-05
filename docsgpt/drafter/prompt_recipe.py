@@ -26,6 +26,7 @@ from docsgpt.drafter.fencing import clean_text
 from docsgpt.drafter.prompt_rules import (
     COMPOSER_ADDS,
     CONTACT_DETAILS_ROUND,
+    EDIT_RULES,
     hand_off_rule,
     HAND_OFF_OPTIONS,
     no_placeholders,
@@ -168,14 +169,7 @@ IMPROVE = """Improve the current prompt: change only what the user asked for, pl
 already adds to a persona. Leave everything else exactly as it is.
 
 Return the change as edits, not a rewrite:
-- find: an exact passage copied from the current prompt, character for character (spaces and line breaks too), \
-long enough that it occurs exactly once.
-- replace: its new text; '' deletes it. To insert, find a nearby passage (an anchor) and replace it with itself \
-plus the new text.
-- Edits must not overlap: no two finds may share any text.
-- reason: one short sentence the user reads next to the change, e.g. "DocsGPT already adds the date."
-Keep each edit small and separate, so the user can accept or reject it on its own. If nothing needs to change, \
-send no edits and say why in your message."""
+""" + EDIT_RULES
 
 #: Follow-ups and guesses are about the text: this drawer edits only the prompt, and the recipe can't see the
 #: knowledge or tools of the agents that use it. They complete the user's choices, never swap them.
