@@ -29,6 +29,7 @@ import { Pagination } from '../components/ui/pagination';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { EmptyState } from '../components/ui/empty-state';
 import { selectToken } from '../preferences/preferenceSlice';
+import { downloadBlob } from '../utils/browserUtils';
 import {
   LoadError,
   UserIdentity,
@@ -233,15 +234,7 @@ export default function Activity() {
     try {
       const res = await adminService.exportActivity(filters, format, token);
       if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `docsgpt-activity.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadBlob(await res.blob(), `docsgpt-activity.${format}`);
     } finally {
       setExporting(false);
     }
@@ -377,10 +370,12 @@ export default function Activity() {
                 {rows.map((row, idx) => {
                   const key = `${row.feed}:${row.id}`;
                   const isOpen = expanded === key;
-                  // De-emphasize an actor repeated from the row above (ditto),
+                  // Mute an actor repeated from the row above (still named),
                   // so distinct actors stand out in a long single-user stream.
                   const repeat =
-                    idx > 0 && rows[idx - 1].actor_id === row.actor_id;
+                    idx > 0 &&
+                    row.actor_id !== null &&
+                    rows[idx - 1].actor_id === row.actor_id;
                   return [
                     <TableRow key={key}>
                       <TableCell>
@@ -417,12 +412,10 @@ export default function Activity() {
                       <TableCell
                         className={cn(
                           'text-xs',
-                          repeat ? 'text-muted-foreground/50' : '',
+                          repeat ? 'text-muted-foreground' : '',
                         )}
                       >
-                        {repeat ? (
-                          '〃'
-                        ) : row.actor_id ? (
+                        {row.actor_id ? (
                           <UserIdentity
                             userId={row.actor_id}
                             email={row.actor_email}

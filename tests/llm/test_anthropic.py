@@ -155,7 +155,7 @@ class _FakeMessages:
 
 
 class _FakeAnthropic:
-    def __init__(self, api_key=None, base_url=None):
+    def __init__(self, api_key=None, base_url=None, http_client=None):
         self.api_key = api_key
         self.base_url = base_url
         self.messages = _FakeMessages()
@@ -165,6 +165,7 @@ class _FakeAnthropic:
 def patch_anthropic():
     fake = types.ModuleType("anthropic")
     fake.Anthropic = _FakeAnthropic
+    fake.DefaultHttpxClient = lambda **kwargs: kwargs
     # The real schema transformer: pure, and it is what pins the wire shape.
     fake.transform_schema = _real_transform_schema
 
@@ -588,22 +589,21 @@ class TestRawGen:
         )
         assert _sent(llm)["max_tokens"] == 1234
 
-    def test_sampling_params_forwarded(self, llm):
-        """anthropic 1.x dropped the sampling params from
-        ``messages.create``'s signature (passing one is a TypeError), so they
-        ride in ``extra_body``, which the SDK merges into the request JSON
-        as-is. The wire request is unchanged."""
+    def test_sampling_params_dropped(self, llm):
+        """API version 2026-10-21 (anthropic 2.x) 400s on ``temperature``,
+        ``top_p`` and ``top_k``, so they are not sent at all."""
         llm._raw_gen(
             llm,
             model="m",
             messages=[{"role": "user", "content": "hi"}],
             temperature=0.3,
             top_p=0.9,
+            top_k=5,
         )
         sent = _sent(llm)
-        assert sent["extra_body"] == {"temperature": 0.3, "top_p": 0.9}
-        assert "temperature" not in sent
-        assert "top_p" not in sent
+        assert "extra_body" not in sent
+        for key in ("temperature", "top_p", "top_k"):
+            assert key not in sent
 
     def test_openai_only_params_not_forwarded(self, llm):
         """OpenAI-shaped request params reach every provider via

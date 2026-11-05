@@ -347,6 +347,31 @@ describe('ConversationBubble', () => {
     expect(container.innerHTML).toBe('');
   });
 
+  // A run that failed before it wrote anything still shows its steps.
+  it('shows a run with no answer when it has steps', async () => {
+    await render(
+      <ConversationBubble
+        type="ANSWER"
+        workflowRunId="run-1"
+        workflow={{
+          steps: [
+            {
+              nodeId: 'b',
+              nodeType: 'state',
+              title: 'Compute budget',
+              status: 'failed',
+              error: 'division by zero',
+            },
+          ],
+        }}
+        onOpenArtifact={() => {}}
+      />,
+    );
+    expect(
+      container.querySelector('button[aria-expanded]')?.textContent,
+    ).toContain(tr('conversation.workflow.title'));
+  });
+
   it('shows a run with no answer once it has files', async () => {
     runArtifactsMock.mockReturnValueOnce({
       items: [
@@ -449,6 +474,21 @@ describe('ConversationBubble', () => {
       expect(btn.hasAttribute('title')).toBe(false);
       expect(btn.dataset.state).toBe('closed');
     }
+  });
+
+  // An empty row's margins while streaming made the end of the stream a net
+  // shrink (the status line out, the buttons in), which jolts the chat scroll.
+  it('draws the action row only once the answer has finished streaming', async () => {
+    await render(
+      <ConversationBubble type="ANSWER" message="Partial" isStreaming />,
+    );
+    expect(container.querySelector('.my-2.ml-4')).toBeNull();
+
+    await render(<ConversationBubble type="ANSWER" message="Partial" />);
+    const copy = container.querySelector(
+      `button[aria-label="${en.conversation.copy}"]`,
+    );
+    expect(copy?.closest('.my-2.ml-4')).not.toBeNull();
   });
 
   it('renders the question edit actions as pill buttons', async () => {
@@ -741,6 +781,26 @@ describe('ConversationBubble', () => {
       );
       const icon = link.querySelector('svg')!;
       expect(icon.classList.contains('lucide-file-text')).toBe(false);
+    });
+
+    it('says a withheld source was left out instead of showing its placeholder', async () => {
+      await render(
+        <ConversationBubble
+          type="ANSWER"
+          message="Hi"
+          sources={[
+            {
+              title: 'Planted.md',
+              text: '[Withheld by a content policy.]...',
+              source: 'local',
+              withheld: 'policy',
+            },
+          ]}
+        />,
+      );
+      expect(cardButton(0).textContent).toBe(
+        tr('conversation.sources.withheldNote'),
+      );
     });
 
     it('keeps the file glyph on a plain link', async () => {

@@ -1,3 +1,5 @@
+import type { PassthroughValue } from '../types';
+
 interface HistoryItem {
   prompt: string;
   response?: string;
@@ -12,6 +14,8 @@ interface FetchAnswerStreamingProps {
   apiHost?: string;
   /** Server-side ids of attachments to send with this question. */
   attachments?: string[];
+  /** Values for the agent's `{{ passthrough.* }}` prompt variables. */
+  passthrough?: Record<string, PassthroughValue>;
   onEvent?: (event: MessageEvent) => void;
   signal?: AbortSignal;
 }
@@ -32,6 +36,7 @@ export function fetchAnswerStreaming({
   conversationId = null,
   apiHost = '',
   attachments = [],
+  passthrough,
   onEvent = () => {
     console.log('Event triggered, but no handler provided.');
   },
@@ -49,6 +54,8 @@ export function fetchAnswerStreaming({
       api_key: apiKey,
     };
     if (attachments.length > 0) body.attachments = attachments;
+    if (passthrough && Object.keys(passthrough).length > 0)
+      body.passthrough = passthrough;
     fetch(apiHost + '/stream', {
       method: 'POST',
       headers: {

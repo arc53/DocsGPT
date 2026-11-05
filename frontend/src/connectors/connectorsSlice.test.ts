@@ -2,6 +2,10 @@ import reducer, {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnectionsNeedAttention,
+  selectConnectorsSettled,
+  selectStartedSyncs,
+  syncForgotten,
+  syncStarted,
   type ConnectorsState,
 } from './connectorsSlice';
 import type { Connection } from './types';
@@ -58,6 +62,32 @@ describe('connectorsSlice loadConnectors', () => {
     expect(state.failed).toBe(true);
     expect(state.loading).toBe(false);
   });
+
+  // A reload clears `failed` while it runs; what reads the list once it has
+  // answered (the empty chat's suggestions) shouldn't blink meanwhile.
+  it('is settled once any load has answered, through later reloads', () => {
+    let state = pending(undefined, '1');
+    expect(selectConnectorsSettled({ connectors: state })).toBe(false);
+    state = reducer(
+      state,
+      loadConnectors.rejected(new Error('boom'), '1', arg),
+    );
+    state = pending(state, '2');
+    expect(state.failed).toBe(false);
+    expect(selectConnectorsSettled({ connectors: state })).toBe(true);
+    let listed = pending(undefined, '1');
+    listed = reducer(listed, loadConnectors.fulfilled(payload([]), '1', arg));
+    listed = pending(listed, '2');
+    expect(selectConnectorsSettled({ connectors: listed })).toBe(true);
+    // An older request's answer doesn't count.
+    let stale = pending(undefined, 'old');
+    stale = pending(stale, 'new');
+    stale = reducer(
+      stale,
+      loadConnectors.rejected(new Error('boom'), 'old', arg),
+    );
+    expect(selectConnectorsSettled({ connectors: stale })).toBe(false);
+  });
 });
 
 // One definition for every surface (Knowledge, Tools, pickers, the nav dot),
@@ -92,5 +122,43 @@ describe('connectionNeedsSignIn', () => {
     expect(selectConnectionsNeedAttention(state(['connected', 'error']))).toBe(
       true,
     );
+  });
+});
+
+describe('connectorsSlice syncStarted', () => {
+  const sync = (id: string, name: string) => ({
+    id,
+    name,
+    connectionId: 'conn-1',
+    startedAt: '2026-10-23T10:00:00Z',
+  });
+
+  it('keeps one entry per source, the latest start', () => {
+    let state = reducer(
+      undefined,
+      syncStarted([sync('a', 'A'), sync('b', 'B')]),
+    );
+    state = reducer(state, syncStarted([sync('a', 'A again')]));
+    expect(selectStartedSyncs({ connectors: state })).toEqual([
+      sync('b', 'B'),
+      sync('a', 'A again'),
+    ]);
+  });
+
+  it('forgets the syncs it is told to', () => {
+    let state = reducer(
+      undefined,
+      syncStarted([sync('a', 'A'), sync('b', 'B'), sync('c', 'C')]),
+    );
+    state = reducer(state, syncForgotten(['a', 'c', 'unknown']));
+    expect(selectStartedSyncs({ connectors: state })).toEqual([sync('b', 'B')]);
+  });
+
+  it('reads none from a state that never had any', () => {
+    expect(
+      selectStartedSyncs({
+        connectors: { startedSyncs: undefined } as ConnectorsState,
+      }),
+    ).toEqual([]);
   });
 });

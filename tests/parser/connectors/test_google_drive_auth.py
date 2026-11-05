@@ -13,6 +13,8 @@ def mock_settings():
     s.GOOGLE_CLIENT_SECRET = "test-client-secret"
     s.CONNECTOR_REDIRECT_BASE_URI = "https://redirect.example.com/callback"
     s.MONGO_DB_NAME = "test_db"
+    s.GOOGLE_DRIVE_ACCESS = "file"
+    s.GOOGLE_SERVICE_ACCOUNT_KEY = None
     return s
 
 
@@ -396,3 +398,157 @@ class TestValidateCredentials:
         mock_creds = MagicMock()
         with patch.object(auth, 'build_drive_service', side_effect=Exception("fail")):
             assert auth.validate_credentials(mock_creds) is False
+
+
+DRIVE_FILE = "https://www.googleapis.com/auth/drive.file"
+DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
+SA_INFO = {
+    "type": "service_account",
+    "client_email": "reader@project.iam.gserviceaccount.com",
+    "private_key": "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
+    "token_uri": "https://oauth2.googleapis.com/token",
+}
+
+
+def _auth_with(mock_settings, **overrides):
+    for name, value in overrides.items():
+        setattr(mock_settings, name, value)
+    with patch("docsgpt.parser.connectors.google_drive.auth.settings", mock_settings):
+        from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
+        return GoogleDriveAuth()
+
+
+class TestRequestedScope:
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("access, scope", [("file", DRIVE_FILE), ("readonly", DRIVE_READONLY)])
+    def test_scope_follows_the_access_setting(self, mock_settings, access, scope):
+        auth = _auth_with(mock_settings, GOOGLE_DRIVE_ACCESS=access)
+        mock_flow = MagicMock()
+        mock_flow.authorization_url.return_value = ("https://accounts.google.com/auth", "s")
+        with patch("docsgpt.parser.connectors.google_drive.auth.Flow") as MockFlow:
+            MockFlow.from_client_config.return_value = mock_flow
+            auth.get_authorization_url(state="s")
+        assert MockFlow.from_client_config.call_args.kwargs["scopes"] == [scope]
+
+    @pytest.mark.unit
+    def test_exchange_returns_the_granted_scopes(self, auth):
+        mock_creds = MagicMock()
+        mock_creds.token = "at"
+        mock_creds.refresh_token = "rt"
+        mock_creds.scopes = [DRIVE_FILE]
+        mock_creds.granted_scopes = [DRIVE_FILE, "openid"]
+        mock_creds.expiry = None
+        mock_flow = MagicMock()
+        mock_flow.credentials = mock_creds
+        with patch("docsgpt.parser.connectors.google_drive.auth.Flow") as MockFlow:
+            MockFlow.from_client_config.return_value = mock_flow
+            result = auth.exchange_code_for_tokens("code")
+        assert result["scopes"] == [DRIVE_FILE, "openid"]
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("scopes, expected", [
+        ([DRIVE_FILE], [DRIVE_FILE]),
+        (f"{DRIVE_FILE} openid", [DRIVE_FILE, "openid"]),
+        (None, None),
+    ])
+    def test_sanitized_token_info_keeps_the_scopes(self, auth, scopes, expected):
+        sanitized = auth.sanitize_token_info({"access_token": "at", "client_secret": "s", "scopes": scopes})
+        assert sanitized["scopes"] == expected
+        assert "client_secret" not in sanitized
+
+
+class TestReadsWholeDrive:
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("scopes, expected", [
+        ([DRIVE_READONLY], True),
+        (["https://www.googleapis.com/auth/drive"], True),
+        ([DRIVE_FILE], False),
+        ([DRIVE_FILE, "https://www.googleapis.com/auth/drive.metadata.readonly"], False),
+    ])
+    def test_from_stored_scopes(self, auth, scopes, expected):
+        with patch("docsgpt.parser.connectors.google_drive.auth.requests") as mock_requests:
+            assert auth.reads_whole_drive({"access_token": "at", "scopes": scopes}) is expected
+        mock_requests.post.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("granted, expected", [(DRIVE_READONLY, True), (DRIVE_FILE, False)])
+    def test_asks_google_when_scopes_were_not_stored(self, auth, granted, expected):
+        with patch("docsgpt.parser.connectors.google_drive.auth.requests") as mock_requests:
+            mock_requests.post.return_value.status_code = 200
+            mock_requests.post.return_value.json.return_value = {"scope": f"{granted} openid"}
+            assert auth.reads_whole_drive({"access_token": "at"}) is expected
+        assert mock_requests.post.call_args.kwargs["data"] == {"access_token": "at"}
+
+    @pytest.mark.unit
+    def test_unknown_scopes_read_as_per_file_access(self, auth):
+        with patch("docsgpt.parser.connectors.google_drive.auth.requests") as mock_requests:
+            mock_requests.post.side_effect = Exception("network down")
+            assert auth.reads_whole_drive({"access_token": "at"}) is False
+
+
+class TestServiceAccount:
+
+    @pytest.mark.unit
+    def test_not_configured(self, auth):
+        assert auth.service_account_email() is None
+        assert auth.build_service_account_service() is None
+
+    @pytest.mark.unit
+    def test_key_given_as_json(self, mock_settings):
+        import json
+        auth = _auth_with(mock_settings, GOOGLE_SERVICE_ACCOUNT_KEY=json.dumps(SA_INFO))
+        assert auth.service_account_email() == "reader@project.iam.gserviceaccount.com"
+        with patch("docsgpt.parser.connectors.google_drive.auth.service_account") as mock_sa, \
+             patch("docsgpt.parser.connectors.google_drive.auth.build") as mock_build:
+            service = auth.build_service_account_service()
+        mock_sa.Credentials.from_service_account_info.assert_called_once_with(SA_INFO, scopes=[DRIVE_READONLY])
+        mock_build.assert_called_once_with(
+            "drive", "v3", credentials=mock_sa.Credentials.from_service_account_info.return_value,
+            cache_discovery=False,
+        )
+        assert service is mock_build.return_value
+
+    @pytest.mark.unit
+    def test_key_given_as_a_file_path(self, mock_settings, tmp_path):
+        import json
+        key_file = tmp_path / "key.json"
+        key_file.write_text(json.dumps(SA_INFO))
+        auth = _auth_with(mock_settings, GOOGLE_SERVICE_ACCOUNT_KEY=str(key_file))
+        assert auth.service_account_email() == "reader@project.iam.gserviceaccount.com"
+
+    @pytest.mark.unit
+    def test_unreadable_key_raises(self, mock_settings):
+        auth = _auth_with(mock_settings, GOOGLE_SERVICE_ACCOUNT_KEY="/missing/key.json")
+        with pytest.raises(ValueError, match="GOOGLE_SERVICE_ACCOUNT_KEY"):
+            auth.service_account_email()
+
+
+class TestPickerOptions:
+
+    @pytest.mark.unit
+    def test_whole_drive_sign_in_picks_folders_itself(self, auth):
+        options = auth.picker_options({"access_token": "at", "scopes": [DRIVE_READONLY]})
+        assert options == {"folders": "account"}
+
+    @pytest.mark.unit
+    def test_per_file_sign_in_shares_folders_with_the_service_account(self, mock_settings):
+        import json
+        auth = _auth_with(mock_settings, GOOGLE_SERVICE_ACCOUNT_KEY=json.dumps(SA_INFO))
+        options = auth.picker_options({"access_token": "at", "scopes": [DRIVE_FILE]})
+        assert options == {
+            "folders": "service_account",
+            "share_with": "reader@project.iam.gserviceaccount.com",
+        }
+
+    @pytest.mark.unit
+    def test_per_file_sign_in_without_a_service_account_picks_files_only(self, auth):
+        options = auth.picker_options({"access_token": "at", "scopes": [DRIVE_FILE]})
+        assert options == {"folders": "off"}
+
+    @pytest.mark.unit
+    def test_unreadable_service_account_key_picks_files_only(self, mock_settings):
+        auth = _auth_with(mock_settings, GOOGLE_SERVICE_ACCOUNT_KEY="/missing/key.json")
+        options = auth.picker_options({"access_token": "at", "scopes": [DRIVE_FILE]})
+        assert options == {"folders": "off"}

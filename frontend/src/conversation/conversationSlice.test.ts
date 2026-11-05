@@ -38,6 +38,8 @@ import reducer, {
   stopAnswer,
   updateQuery,
   retractResponse,
+  setWorkflowRunId,
+  updateWorkflowStep,
   setConversation,
   setConversationId,
   setStatus,
@@ -419,6 +421,75 @@ describe('resendQuery', () => {
     );
     state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
     expect(state.queries[0].workflow_run_id).toBeUndefined();
+  });
+
+  it('drops the previous workflow run’s steps', () => {
+    let state = reducer(undefined, setConversation([{ prompt: 'p' }]));
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'run-1', stepTotal: 2 }),
+    );
+    state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
+    expect(state.queries[0].workflow).toBeUndefined();
+  });
+});
+
+describe('workflow step progress', () => {
+  const step = (node_id: string, status: 'running' | 'completed') => ({
+    node_id,
+    node_type: 'agent',
+    node_title: node_id.toUpperCase(),
+    status,
+  });
+
+  it('records the run’s step count and each step as it runs', () => {
+    let state = reducer(undefined, setConversation([{ prompt: 'p' }]));
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'run-1', stepTotal: 2 }),
+    );
+    state = reducer(
+      state,
+      updateWorkflowStep({ index: 0, step: step('a', 'running'), at: 1 }),
+    );
+    state = reducer(
+      state,
+      updateWorkflowStep({ index: 0, step: step('a', 'completed'), at: 5 }),
+    );
+    state = reducer(
+      state,
+      updateWorkflowStep({ index: 0, step: step('b', 'running'), at: 5 }),
+    );
+    const workflow = state.queries[0].workflow!;
+    expect(workflow.total).toBe(2);
+    expect(workflow.steps.map((s) => [s.nodeId, s.status])).toEqual([
+      ['a', 'completed'],
+      ['b', 'running'],
+    ]);
+  });
+
+  // A workflow node that runs another workflow announces the inner run too.
+  it('keeps the outer run when a nested workflow starts', () => {
+    let state = reducer(undefined, setConversation([{ prompt: 'p' }]));
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'outer', stepTotal: 4 }),
+    );
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'inner', stepTotal: 1 }),
+    );
+    expect(state.queries[0].workflow_run_id).toBe('outer');
+    expect(state.queries[0].workflow?.total).toBe(4);
+  });
+
+  it('leaves the count open when a branch decides it', () => {
+    let state = reducer(undefined, setConversation([{ prompt: 'p' }]));
+    state = reducer(
+      state,
+      setWorkflowRunId({ index: 0, workflowRunId: 'run', stepTotal: null }),
+    );
+    expect(state.queries[0].workflow).toEqual({ steps: [] });
   });
 });
 
@@ -971,6 +1042,8 @@ describe('stopAnswer', () => {
     // Stored first, so the server saves a stop, not a dropped connection.
     expect(events).toEqual(['stop', 'closed']);
     expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
+    // The closed stream sends no terminal event: the chat must not stay busy.
+    expect(store.getState().conversation.status).toBe('idle');
   });
 
   it('leaves another chat alone when the stop returns after a switch', async () => {
@@ -1020,6 +1093,7 @@ describe('stopAnswer', () => {
     await answer;
     expect(events).toEqual(['closed']);
     expect(store.getState().conversation.queries[0].errorCode).toBeUndefined();
+    expect(store.getState().conversation.status).toBe('idle');
   });
 
   it('stops an answer the chat picked back up, which has no stream of its own', async () => {
@@ -1037,5 +1111,95 @@ describe('stopAnswer', () => {
     await store.dispatch(stopAnswer());
     expect(activityService.stopMessage).toHaveBeenCalledWith('m1', 'tok');
     expect(store.getState().conversation.queries[0].errorCode).toBe('stopped');
+    // Its tail settles the status once the server has saved the stop.
+    expect(store.getState().conversation.status).toBe('loading');
+  });
+
+  it('leaves a later polled answer loading when an earlier stream has ended', async () => {
+    vi.mocked(handleFetchAnswer).mockResolvedValue(null as never);
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockRejectedValue(new Error('Stop failed: 409'));
+    const { store, answer } = running();
+    await answer;
+    // A continuation then streams in, followed by polling.
+    store.dispatch(setStatus('loading'));
+    await store.dispatch(stopAnswer());
+    expect(store.getState().conversation.status).toBe('loading');
+  });
+
+  it('leaves the status to a stream started while the stop was out', async () => {
+    streamUntilClosed([]);
+    let answer: () => void = () => undefined;
+    vi.mocked(activityService.stopMessage)
+      .mockReset()
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (answer = resolve)),
+      );
+    const { store } = running();
+    const stopping = store.dispatch(stopAnswer());
+    store.dispatch(addQuery({ prompt: 'next' }));
+    void store.dispatch(fetchAnswer({ question: 'next' }));
+    answer();
+    await stopping;
+    expect(store.getState().conversation.status).toBe('loading');
+    handleAbort();
+  });
+});
+
+describe('time limit partial answers', () => {
+  it('hydrates failed time-limit responses after a reload', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      response: 'Saved progress',
+      status: 'failed',
+      metadata: { error: 'Stopped: time limit.', error_code: 'time_limit' },
+    });
+    expect(query.response).toBe('Saved progress');
+    expect(query.errorCode).toBe('time_limit');
+  });
+});
+
+it('hydrates supporting details and order from a failed time-limit tail', () => {
+  const tool = {
+    call_id: 'done',
+    tool_name: 'code_executor',
+    action_name: 'run_code',
+    arguments: {},
+    status: 'completed',
+  };
+  const source = { id: 'source', title: 'Result' };
+  const next = reducer(
+    seedSlice(),
+    applyMessageTail({
+      index: 0,
+      tail: {
+        status: 'failed',
+        response: 'Saved progress',
+        thought: 'Plan',
+        sources: [source],
+        tool_calls: [tool],
+        error: 'Stopped: time limit.',
+        error_code: 'time_limit',
+        segments: [
+          { kind: 'thought', length: 4 },
+          { kind: 'tool', call_id: 'done' },
+          { kind: 'text', length: 14 },
+        ],
+      },
+    }),
+  );
+  expect(next.queries[0]).toMatchObject({
+    messageStatus: 'failed',
+    response: 'Saved progress',
+    thought: 'Plan',
+    sources: [source],
+    tool_calls: [tool],
+    errorCode: 'time_limit',
+    segments: [
+      { kind: 'thought', text: 'Plan' },
+      { kind: 'tool', call_id: 'done' },
+      { kind: 'text', text: 'Saved progress' },
+    ],
   });
 });

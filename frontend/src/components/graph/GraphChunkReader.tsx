@@ -6,7 +6,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import userService from '../../api/services/userService';
 import { showActionToast } from '../../notifications/actionToastSlice';
 import { selectToken } from '../../preferences/preferenceSlice';
-import { UNKNOWN_TOKEN_COUNT, formatChunkTokens } from '../chunkUtils';
+import {
+  UNKNOWN_TOKEN_COUNT,
+  formatChunkTokens,
+  isSourceBusy,
+} from '../chunkUtils';
 import SourceMarkdown from '../SourceMarkdown';
 import SourceEditSheet from '../tree/SourceEditSheet';
 import { Alert, AlertDescription } from '../ui/alert';
@@ -54,12 +58,13 @@ export default function GraphChunkReader({
   const [draft, setDraft] = useState('');
   const [draftTitle, setDraftTitle] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
+  // Why the last save failed: the source was busy, or else.
+  const [saveError, setSaveError] = useState<'busy' | 'failed' | null>(null);
 
   // Every newly opened chunk starts in the reader.
   useEffect(() => {
     setEditing(false);
-    setSaveFailed(false);
+    setSaveError(null);
   }, [chunk.chunk_id]);
 
   const file = chunkFileName(chunk.metadata);
@@ -94,14 +99,14 @@ export default function GraphChunkReader({
 
   const close = () => {
     setEditing(false);
-    setSaveFailed(false);
+    setSaveError(null);
     onBack();
   };
 
   // Leaving the edit drawer without saving returns to the reader.
   const leaveEdit = () => {
     setEditing(false);
-    setSaveFailed(false);
+    setSaveError(null);
   };
 
   const savedTitle =
@@ -110,13 +115,13 @@ export default function GraphChunkReader({
   const startEdit = () => {
     setDraft(chunk.text ?? '');
     setDraftTitle(savedTitle);
-    setSaveFailed(false);
+    setSaveError(null);
     setEditing(true);
   };
 
   const save = async () => {
     setSaving(true);
-    setSaveFailed(false);
+    setSaveError(null);
     // The backend merges metadata: send a title only when the chunk had one
     // (clearing it sends '') or one was entered, never '' onto an untitled
     // one. As Chunks does.
@@ -131,7 +136,10 @@ export default function GraphChunkReader({
         },
         token,
       );
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        setSaveError((await isSourceBusy(response)) ? 'busy' : 'failed');
+        return;
+      }
       close();
       onSaved?.();
       dispatch(
@@ -142,7 +150,7 @@ export default function GraphChunkReader({
       );
     } catch (error) {
       console.error('Error saving chunk:', error);
-      setSaveFailed(true);
+      setSaveError('failed');
     } finally {
       setSaving(false);
     }
@@ -212,10 +220,12 @@ export default function GraphChunkReader({
         saving={saving}
         saveLabel={t('modals.chunk.save')}
         alert={
-          saveFailed ? (
+          saveError ? (
             <Alert variant="destructive">
               <AlertDescription>
-                {t('settings.sources.chunkErrors.save')}
+                {saveError === 'busy'
+                  ? t('settings.sources.chunkErrors.busy')
+                  : t('settings.sources.chunkErrors.save')}
               </AlertDescription>
             </Alert>
           ) : null

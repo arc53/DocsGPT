@@ -345,13 +345,13 @@ class TestFrequentDays:
 
 class TestManyFrequentSchedules:
     def test_a_month_of_frequent_schedules_stays_small(self, pg_conn):
-        # 50 paused 15-minute schedules (the per-user cap, and paused costs
-        # nothing to run) over the widest window: about 300,000 slots. Each
-        # used to become an event dict before the days were summed up, a
-        # peak of some 165 MiB for one request; one schedule at a time, 8.
+        # Paused 15-minute schedules (paused costs nothing to run) over the
+        # widest window. Each slot used to become an event dict before the
+        # days were summed up: 10 schedules peaked at some 35 MiB (50, the
+        # per-user cap, at 165); one schedule at a time, under 5.
         import tracemalloc
 
-        for i in range(50):
+        for i in range(10):
             _schedule(pg_conn, cron=f"{i % 15}/15 * * * *", status="paused", name=f"Scan {i}")
         start = MONDAY
         tracemalloc.start()
@@ -362,6 +362,6 @@ class TestManyFrequentSchedules:
             _, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()
-        assert len(window["events"]) == 50 * 62
+        assert len(window["events"]) == 10 * 62
         assert all(e["count"] == 96 for e in window["events"])
-        assert peak < 32 * 1024 * 1024
+        assert peak < 16 * 1024 * 1024

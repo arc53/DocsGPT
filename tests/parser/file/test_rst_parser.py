@@ -515,3 +515,91 @@ Text with `link <http://example.com>`_ and :doc:`reference`.
     assert "+-----+" not in joined_result  # table excess removed
     assert ".. note::" not in joined_result
     assert "This is a note." in joined_result
+
+
+def test_parse_file_keeps_numbers_blank_lines_and_code_indent():
+    """Default cleanup must not rewrite amounts, blank lines, or code indent."""
+    parser = RstParser()
+    content = """Title
+=====
+
+The budget is 100000.
+
+    def add(a, b):
+        return a + b
+
+Paragraph two.
+"""
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("budget.rst"))
+
+    joined = "\n".join(result)
+    assert "100000" in joined
+    assert "The budget is 100000.\n\n    def add(a, b):\n        return a + b" in joined
+def test_chunk_by_token_count_keeps_all_words():
+    """Chunking must not drop or split any word of the input."""
+    parser = RstParser()
+    words = [f"word{i:02d}" for i in range(20)]
+    text = " ".join(words)
+
+    chunks = parser.chunk_by_token_count(text, max_tokens=5)
+
+    assert len(chunks) > 1
+    assert " ".join(chunks).split() == words
+
+
+def test_chunk_by_token_count_respects_chunk_size():
+    """Chunks stay within max_tokens * 5 characters when words are short."""
+    parser = RstParser()
+    text = " ".join(["alpha"] * 40)
+
+    chunks = parser.chunk_by_token_count(text, max_tokens=5)
+
+    assert all(len(chunk) <= 25 for chunk in chunks)
+    assert " ".join(chunks).split() == text.split()
+
+
+def test_chunk_by_token_count_splits_overlong_word():
+    """A single word longer than the chunk size is hard-split, not lost."""
+    parser = RstParser()
+    text = "x" * 60
+
+    chunks = parser.chunk_by_token_count(text, max_tokens=5)
+
+    assert "".join(chunks) == text
+    assert all(len(chunk) <= 25 for chunk in chunks)
+
+
+def test_chunk_by_token_count_short_and_empty_text():
+    """Text shorter than one chunk is returned as is; empty text gives no chunks."""
+    parser = RstParser()
+
+    assert parser.chunk_by_token_count("short text", max_tokens=5) == ["short text"]
+    assert parser.chunk_by_token_count("", max_tokens=5) == []
+
+
+@pytest.mark.parametrize("text", [" ", "   \n\t  ", " " * 200, "\n" * 60])
+def test_chunk_by_token_count_whitespace_only_text(text):
+    """Whitespace-only input, short or longer than one chunk, produces no empty chunks."""
+    parser = RstParser()
+
+    assert parser.chunk_by_token_count(text, max_tokens=5) == []
+
+
+def test_chunk_by_token_count_whitespace_between_words_is_not_a_chunk():
+    """Long runs of whitespace between words must not yield empty chunks or lose words."""
+    parser = RstParser()
+    text = "first" + " " * 80 + "second"
+
+    chunks = parser.chunk_by_token_count(text, max_tokens=5)
+
+    assert all(chunk for chunk in chunks)
+    assert " ".join(chunks).split() == ["first", "second"]
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, -100])
+def test_chunk_by_token_count_rejects_non_positive_max_tokens(bad_value):
+    """Zero or negative max_tokens must raise instead of looping forever."""
+    parser = RstParser()
+    with pytest.raises(ValueError):
+        parser.chunk_by_token_count("some non-empty text", max_tokens=bad_value)

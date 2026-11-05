@@ -124,6 +124,23 @@ class IngestionSettings(SettingsGroup):
             "ingest worker down. 0 disables it."
         ),
     )
+    WEB_DEFAULT_PAGES: int = Field(
+        default=100,
+        ge=1,
+        description=(
+            "Page limit a whole-site Website source gets when it names none: the crawl or sitemap stops after "
+            "this many pages."
+        ),
+    )
+    WEB_MAX_PAGES: int = Field(
+        default=100,
+        ge=1,
+        description=(
+            "Most pages one Website source may hold, across all its pages and sites: pages added by address count "
+            "first, sites share what is left, and Add pages refuses to go past it. A site's own page limit is "
+            "clamped to it. Each page is a fetch plus embedding, so this bounds how long one ingest or sync can run."
+        ),
+    )
     PDF_TRUST_CHECK: bool = Field(
         default=True,
         description=(
@@ -176,6 +193,76 @@ class IngestionSettings(SettingsGroup):
         default=1048576, ge=0, description="Skip GitHub repo blobs larger than this (0 = no cap)."
     )
     GITHUB_INGEST_MAX_WORKERS: int = Field(default=8, ge=1, description="Parallel file fetches per GitHub repo ingest.")
+    GITHUB_INGEST_MAX_ARCHIVE_BYTES: int = Field(
+        default=536_870_912,
+        ge=0,
+        description=(
+            "Largest repository tarball a GitHub ingest downloads (one API request for the whole repo); "
+            "a bigger one falls back to per-file requests. 0 = always per-file."
+        ),
+    )
+
+    INGEST_QUEUE: str = Field(
+        default="ingest",
+        description=(
+            "Celery queue for whole-source jobs (upload, remote and connector ingest, re-ingest, scheduled sync, "
+            "graph build, wiki conversion). A worker started without -Q consumes it; run a separate -Q ingest "
+            "worker so a long ingest cannot hold the slots that beat tasks and attachments need. The shipped "
+            "Compose and Kubernetes worker commands name `ingest` in -Q: if you change this, put the new name in "
+            "every worker's explicit -Q list, or nothing runs ingests."
+        ),
+    )
+
+    INGEST_MAX_FILES: int = Field(
+        default=10_000,
+        ge=0,
+        description=(
+            "Most files one source ingest or sync may hold. Checked once the files are listed (a GitHub repo's "
+            "tree, an S3 prefix, a connector's download, an upload's extracted files) and again after loading, "
+            "before anything is embedded; a source over it fails with reason too_many_files. The default is the "
+            "same number as UPLOAD_MAX_ARCHIVE_FILES's, but the two are separate: raise both to let a bigger zip "
+            "through. 0 disables."
+        ),
+    )
+    INGEST_MAX_TOKENS: int = Field(
+        default=20_000_000,
+        ge=0,
+        description=(
+            "Most tokens of chunked text one source ingest or sync may embed, counted after parsing and before "
+            "any embedding; a source over it fails with reason too_many_tokens. 20 million tokens is about 80 MB "
+            "of plain text, several hours of embedding on a CPU model. 0 disables."
+        ),
+    )
+    INGEST_MAX_CONCURRENT_PER_USER: int = Field(
+        default=3,
+        ge=0,
+        description=(
+            "Whole-source ingests (upload, remote, connector, re-ingest, sync) one user may run at the same time. "
+            "A task over it goes back on the queue for about 30 seconds without starting, so the other worker "
+            "slots stay free for other users. Each running task holds a slot lease in Redis that it renews while "
+            "it runs; a killed worker's slot frees itself within two minutes. 0 disables."
+        ),
+    )
+
+    INGEST_RESUME_MAX_ATTEMPTS: int = Field(
+        default=3,
+        ge=0,
+        description=(
+            "Times the reconciler queues an ingest again after a restart or crash killed it mid-embed. The new "
+            "task resumes from the last embedded chunk when the files still chunk the same way. Past this many "
+            "the ingest is marked failed. 0 turns resuming off."
+        ),
+    )
+
+    INGEST_ORPHAN_TTL_HOURS: int = Field(
+        default=72,
+        ge=0,
+        description=(
+            "Hours after its last progress that an ingest which ended without a source (failed, stalled past its "
+            "resumes, or stopped before the source was saved) has its vectors deleted by the hourly "
+            "cleanup-orphaned-ingests task. 0 keeps them."
+        ),
+    )
 
     # read_document parsing on a dedicated Celery queue (backend parser).
     DOCUMENT_PARSE_QUEUE: str = Field(default="parsing", description="Celery queue the parse_document task is routed to.")

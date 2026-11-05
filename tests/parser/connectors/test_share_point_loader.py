@@ -810,6 +810,42 @@ class TestDownloadToDirectory:
             result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1"], "folder_ids": ["bad"]})
         assert result["files_downloaded"] == 1
 
+    @pytest.mark.unit
+    def test_file_urls_name_each_downloaded_file(self, loader, tmp_path):
+        def resp(data=None, content=b""):
+            r = MagicMock()
+            r.json.return_value = data or {}
+            r.content = content
+            r.raise_for_status = MagicMock()
+            return r
+
+        pdf = {"mimeType": "application/pdf"}
+        responses = [
+            # file_ids: the file's metadata, then its content
+            resp({"name": "a.pdf", "file": pdf, "webUrl": "https://acme.sharepoint.com/a.pdf"}),
+            resp(content=b"a"),
+            # folder_ids: the folder, its children, then the child's metadata and content
+            resp({"name": "Docs"}),
+            resp({"value": [{"id": "f2", "name": "b.pdf", "file": pdf}, {"id": "f3", "name": "c.pdf", "file": pdf}]}),
+            resp({"name": "b.pdf", "file": pdf, "webUrl": "https://acme.sharepoint.com/Docs/b.pdf"}),
+            resp(content=b"b"),
+            resp({"name": "c.pdf", "file": pdf}),
+            resp(content=b"c"),
+        ]
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=responses) as get:
+            result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1"], "folder_ids": ["d1"]})
+        assert result["files_downloaded"] == 3
+        assert result["file_urls"] == {
+            "a.pdf": "https://acme.sharepoint.com/a.pdf",
+            os.path.join("Docs", "b.pdf"): "https://acme.sharepoint.com/Docs/b.pdf",
+        }
+        assert "webUrl" in get.call_args_list[0].kwargs["params"]["$select"].split(",")
+
+    @pytest.mark.unit
+    def test_file_urls_empty_when_nothing_downloaded(self, loader, tmp_path):
+        result = loader.download_to_directory(str(tmp_path), {})
+        assert result["file_urls"] == {}
+
 
 class TestDownloadSingleFile:
 

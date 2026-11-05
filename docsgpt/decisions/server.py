@@ -12,7 +12,7 @@ Every shipped stack runs it as the ``decider`` sidecar, which the API and the Ce
 - **Lanes and deadlines.** ``X-Decision-Priority`` (``hot``, the default, or ``background``) picks the lane of the
   backend's gate, and states not started within ``X-Decision-Deadline-Ms`` come back ``timeout``.
 - **Nothing loads until asked**: a call, ``POST /v1/load``, ``DECISION_PRELOAD``, or a feature in this process's
-  settings set to anything but ``off``.
+  settings set to anything but ``off`` (``DECISION_RELEVANCE_ENABLED`` and ``DECISION_INJECTION_ENABLED`` included).
 - **The key.** With ``DECISION_KEY`` set, every route but ``/health`` needs it as a bearer key, compared in constant
   time. Without one the server binds only to a loopback address.
 - **Logs** hold counts and latencies, never what is decided.
@@ -329,7 +329,7 @@ def serve(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, device: Optional[s
         logger.error("The decide-server cannot start: %s", exc)
         return 2
     service = DecideService(backend)
-    if settings.DECISION_PRELOAD or any(features.configured(spec) != "off" for spec in features.specs()):
+    if features.wanted_at_start():
         backend.warm()
     logger.info("Serving %s (%s) on %s:%d; it loads when a feature first calls", backend.spec.id, backend.runtime,
                 host, port)

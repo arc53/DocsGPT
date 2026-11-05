@@ -412,4 +412,46 @@ describe('ToolPermissions', () => {
       'settings.connectors.permission.hint',
     );
   });
+
+  describe('prompt-injection warnings', () => {
+    const scored = (name: string, p: number | null) => ({
+      ...action(name, 'write', 'ask'),
+      injection: p === null ? null : { p, scorer: 'arc-decide:v0.2' },
+    });
+
+    it('warns once above the groups and marks each flagged action', async () => {
+      await render(
+        tool([
+          scored('create_issue', 0.83),
+          scored('delete_issue', 0.12),
+          scored('archive_issue', null),
+          { ...scored('get_issue', 0.5), access: 'read' as const },
+        ]),
+      );
+      const warning = container.querySelector<HTMLElement>(
+        '[data-testid="tool-injection-warning"]',
+      )!;
+      expect(warning.dataset.slot).toBe('alert');
+      expect(warning.className).toContain('text-warning');
+      expect(warning.textContent).toBe(
+        'settings.connectors.injection.notice:2',
+      );
+      await customize('write');
+      const flagged = Array.from(container.querySelectorAll('li'))
+        .filter((li) =>
+          li.textContent?.includes('settings.connectors.injection.flagged'),
+        )
+        .map((li) => li.querySelector('p')?.title);
+      expect(flagged).toEqual(['create_issue']);
+      // Warn only: the flagged action keeps its permission.
+      expect(connectors.setToolPermissions).not.toHaveBeenCalled();
+    });
+
+    it('says nothing when no description was flagged', async () => {
+      await render(tool([scored('create_issue', 0.2), scored('b', null)]));
+      expect(
+        container.querySelector('[data-testid="tool-injection-warning"]'),
+      ).toBeNull();
+    });
+  });
 });

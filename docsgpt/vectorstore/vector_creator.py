@@ -17,6 +17,12 @@ class VectorCreator:
     }
 
     @classmethod
+    def supports_chunk_edits(cls, type: str) -> bool:
+        """Whether the ``VECTOR_STORE`` named ``type`` can edit single chunks; False when unknown. Loads no store."""
+        vectorstore_class = cls.vectorstores.get((type or "").lower())
+        return bool(vectorstore_class and vectorstore_class.supports_chunk_edits())
+
+    @classmethod
     def create_vectorstore(cls, type, *args, **kwargs):
         vectorstore_class = cls.vectorstores.get(type.lower())
         if not vectorstore_class:

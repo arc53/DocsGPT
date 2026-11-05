@@ -82,7 +82,7 @@ class SchedulerTool(Tool):
                 "name": "schedule_task",
                 "description": (
                     "Schedule a one-time task. Provide either a `delay` "
-                    "(e.g. '30m', '2h', '1d') from now, or a `run_at` ISO-8601 "
+                    "(e.g. '30m', '2h', '1d', '1h20m') from now, or a `run_at` ISO-8601 "
                     "absolute time. Optionally pass an IANA `timezone` to resolve "
                     "naive run_at values. The instruction is the task that will "
                     "execute at fire time (including delivery, e.g. 'send to my "
@@ -98,7 +98,7 @@ class SchedulerTool(Tool):
                         },
                         "delay": {
                             "type": "string",
-                            "description": "Duration like '30m', '2h', '1d'.",
+                            "description": "Duration like '30m', '2h', '1d', or combined like '1h20m'.",
                         },
                         "run_at": {
                             "type": "string",
@@ -158,7 +158,11 @@ class SchedulerTool(Tool):
 
         try:
             if delay:
-                fire = datetime.now(timezone.utc) + parse_delay(delay)
+                try:
+                    fire = datetime.now(timezone.utc) + parse_delay(delay)
+                except OverflowError as exc:
+                    # Parses, but lands past the last date datetime holds.
+                    raise ScheduleValidationError("delay is too long.") from exc
             else:
                 fire = parse_run_at(run_at, tz)
             clamp_once_horizon(fire, settings.SCHEDULE_ONCE_MAX_HORIZON)
@@ -167,12 +171,18 @@ class SchedulerTool(Tool):
 
         with db_readonly() as conn:
             count = SchedulesRepository(conn).count_active_for_user(self.user_id)
+            unfinished = _unfinished_workflow(conn, self.agent_id)
         if (
             settings.SCHEDULE_MAX_PER_USER > 0
             and count >= settings.SCHEDULE_MAX_PER_USER
         ):
             return (
                 "Error: you have reached the maximum number of active schedules."
+            )
+        if unfinished:
+            return (
+                "Error: this workflow agent's graph isn't finished, so it can't be "
+                "scheduled yet."
             )
 
         # Chat-created tasks default to the user's non-approval tools (for the
@@ -288,6 +298,29 @@ def _iso_utc(value: Any) -> Optional[str]:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _unfinished_workflow(conn, agent_id: Optional[str]) -> bool:
+    """Whether the agent is a workflow agent whose stored graph fails the full validation.
+
+    A draft's graph is saved after a shape check only, and a schedule runs it
+    headless, so a task on such an agent is refused.
+
+    Args:
+        conn: Open database connection.
+        agent_id: The agent the task is bound to, or None for an agentless one.
+
+    Returns:
+        bool: True when the task must be refused.
+    """
+    if not agent_id:
+        return False
+    # Imported here: the API package imports this tool module.
+    from docsgpt.api.user.agents.graph_checks import unfinished_graph_errors
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+    agent = AgentsRepository(conn).get_by_id(str(agent_id))
+    return bool(agent and unfinished_graph_errors(conn, agent))
 
 
 def _safe_default_allowlist(

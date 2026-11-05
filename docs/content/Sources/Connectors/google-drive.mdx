@@ -1,7 +1,7 @@
 ---
 title: Google Drive Connector
 description: Connect your Google Drive as an external knowledge base to upload and process files directly from your Google Drive account.
-lastUpdated: 2026-10-14
+lastUpdated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -22,14 +22,14 @@ Members connect this service from **Settings > Connectors**, and one sign-in ser
 ### Step 1: Create a Google Cloud Project
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a new project (or select an existing one)
-2. Navigate to **APIs & Services** > **Library**, search for "Google Drive API", and click **Enable**
+2. Navigate to **APIs & Services** > **Library**, then search for and **Enable** the **Google Drive API** and the **Google Picker API**
 
 ### Step 2: Create OAuth 2.0 Credentials
 
 1. Go to **APIs & Services** > **Credentials** > **Create Credentials** > **OAuth client ID**
 2. If prompted, configure the OAuth consent screen: **Internal** for a Google Workspace organization, otherwise **External** (see the note on verification below), and fill in the required fields
 3. Select **Web application** as the application type
-4. Only if you will use Google's own file picker (`VITE_GOOGLE_CLIENT_ID`, Step 3): add the origin you open DocsGPT from to **Authorized JavaScript origins**, for example `http://localhost:5173` for the frontend dev server or the Docker Compose frontend, or the API origin (`http://localhost:7091`) when the API serves the UI. DocsGPT's own picker and the sign-in don't need it.
+4. Add the origin you open DocsGPT from to **Authorized JavaScript origins**, for example `http://localhost:5173` for the frontend dev server or the Docker Compose frontend, or the API origin (`http://localhost:7091`) when the API serves the UI. Google's file picker runs on that page.
 5. Add your callback URL to **Authorized redirect URIs**:
    - Local: `http://127.0.0.1:7091/api/connectors/callback` (the default `CONNECTOR_REDIRECT_BASE_URI`; Admin > Connectors shows the exact value to copy)
    - Production: `https://yourdomain.com/api/connectors/callback` (the value of `CONNECTOR_REDIRECT_BASE_URI`, registered as-is)
@@ -42,41 +42,77 @@ Add to your backend `.env` file:
 ```env
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-```
-
-Optionally, to use Google's own file picker instead of DocsGPT's, enable the **Google Picker API** in the same project and add to your frontend `.env` file:
-
-```env
-VITE_GOOGLE_CLIENT_ID=your-google-client-id
-VITE_GOOGLE_PICKER_API_KEY=your-google-api-key
+# Optional: lets members sync whole folders (see below)
+GOOGLE_SERVICE_ACCOUNT_KEY=/path/to/service-account-key.json
 ```
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `GOOGLE_CLIENT_ID` | OAuth Client ID from GCP Credentials | Yes |
+| `GOOGLE_CLIENT_ID` | OAuth Client ID from GCP Credentials. Google's file picker opens with it too | Yes |
 | `GOOGLE_CLIENT_SECRET` | OAuth Client Secret from GCP Credentials | Yes |
-| `VITE_GOOGLE_CLIENT_ID` | Same Client ID, used by the frontend for Google's file picker | No |
+| `GOOGLE_DRIVE_ACCESS` | `file` (default): members pick files and folders in Google's picker. `readonly`: the sign-in reads the whole Drive. See [Picked files or the whole Drive](#picked-files-or-the-whole-drive) | No |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | A service account's JSON key, or the path to the key file, for [syncing whole folders](#sync-whole-folders-with-a-service-account) with `GOOGLE_DRIVE_ACCESS=file` | No |
+| `VITE_GOOGLE_CLIENT_ID` | Frontend `.env`. Only with `GOOGLE_DRIVE_ACCESS=readonly`, to use Google's file picker instead of DocsGPT's | No |
 | `VITE_GOOGLE_PICKER_API_KEY` | API key (**APIs & Services** > **Credentials** > **Create Credentials** > **API key**) passed to Google's file picker as its developer key | No |
 | `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins a sign-in may start from and return to, e.g. `https://docsgpt.example.com`. Not needed when the frontend is on the origin of `CONNECTOR_REDIRECT_BASE_URI` or `OIDC_FRONTEND_URL`, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
 
 <Callout type="warning" emoji="⚠️">
-If you set `VITE_GOOGLE_CLIENT_ID`, use the same Client ID as the backend. Publish the OAuth consent screen (or use an internal Workspace app): apps left in Testing get refresh tokens that expire after seven days, which stops background sync.
-</Callout>
-
-<Callout type="info">
-DocsGPT requests the `https://www.googleapis.com/auth/drive.readonly` scope, which Google classifies as **restricted**. An **Internal** Workspace app needs no review. A published **External** app must pass Google's verification for restricted scopes before accounts outside your organization can use it without the unverified-app warning and user cap.
+If you set `VITE_GOOGLE_CLIENT_ID`, use the same Client ID as the backend: Google gives DocsGPT access to a picked file only through the project of the client the picker opened with. Publish the OAuth consent screen (or use an internal Workspace app): apps left in Testing get refresh tokens that expire after seven days, which stops background sync.
 </Callout>
 
 ### Step 4: Restart and Use
 
-Restart your application, then go to **Settings > Connectors** and pick **Google Drive**. You'll be redirected to Google to sign in, then can browse and select files and folders to process.
+Restart your application, then go to **Settings > Connectors** and pick **Google Drive**. You'll be redirected to Google to sign in, then can pick files and folders to process.
 
 </Steps>
 
+## Picked files or the whole Drive
+
+`GOOGLE_DRIVE_ACCESS` sets what the sign-in asks Google for:
+
+| | `file` (default) | `readonly` |
+|---|---|---|
+| Scope | `drive.file` | `drive.readonly` |
+| What DocsGPT can read | The files and folders a member picks in Google's file picker | Everything in the member's Drive |
+| Google's review of an **External** app | None for the scope | Verification for restricted scopes, with a yearly security assessment. Until then, members see the unverified-app warning and Google caps the app at 100 users |
+| Folder contents | Read through a [service account](#sync-whole-folders-with-a-service-account) the folder is shared with | Read with the member's own sign-in |
+
+With `file`, members always pick in Google's file picker, opened with `GOOGLE_CLIENT_ID`. DocsGPT's own file browser would only list what was picked before. An **Internal** Workspace app needs no review in either mode, so `readonly` suits an install used only inside one organization.
+
+A connection keeps the access it signed in with. After switching modes, existing connections work as before until the member reconnects.
+
+## Sync whole folders with a service account
+
+With `GOOGLE_DRIVE_ACCESS=file`, Google gives the sign-in a picked folder but not the files inside it. A service account reads them instead.
+
+<Steps>
+
+### Create the service account
+
+In the Google Cloud Console, go to **IAM & Admin** > **Service accounts** > **Create service account**. It needs no roles. Make sure the **Google Drive API** is enabled in its project.
+
+### Add a key
+
+Open the account, go to **Keys** > **Add key** > **Create new key** > **JSON**, and set `GOOGLE_SERVICE_ACCOUNT_KEY` to the downloaded file's path or to its contents. Restart the API and the worker.
+
+### Share folders with it
+
+Members pick a folder as before. DocsGPT then shows the service account's email: share the folder with that address as a **Viewer**. For a folder in a shared drive, share the folder or add the address to the drive as a Viewer.
+
+</Steps>
+
+How folders stay private:
+
+- DocsGPT reads a folder only after the member's own sign-in can open it. With `drive.file`, that is a folder they picked, so a folder ID alone is not enough.
+- Inside it, items whose sharing is restricted apart from the folder (limited access) are left out, and so are shortcuts to anything the member cannot open themselves.
+- The service account only ever reads. Anything shared with it can be synced by any member who can also open it, so share the folders you mean to sync, not whole drives you don't.
+
+A folder that is not shared with the service account is skipped and the rest of the source still syncs. Once it is shared, the next sync picks it up. Without `GOOGLE_SERVICE_ACCOUNT_KEY`, the picker offers files only.
+
 ## Files, folders and shared drives
 
-- **Folders**: a selected folder is ingested with everything inside it, the folders inside it included, and keeps its layout. A sync picks up files added to it later.
-- **Shared drives**: Google's file picker has a **Shared drives** tab, and DocsGPT's own picker lists shared drives you are a member of.
+- **Folders**: a selected folder is ingested with everything inside it, the folders inside it included, and keeps its layout. A sync picks up files added to it later. With `GOOGLE_DRIVE_ACCESS=file`, this needs the [service account](#sync-whole-folders-with-a-service-account).
+- **Shared drives**: Google's file picker has a **Shared drives** tab, and DocsGPT's own picker (`GOOGLE_DRIVE_ACCESS=readonly`) lists shared drives you are a member of.
 - **Shortcuts**: a shortcut is followed to the file or folder it points to, and saved under the shortcut's name. Something reached twice, such as a shortcut to a folder that is already selected, is read once.
 - **Names**: two files with the same name in one folder are kept apart as `report.pdf` and `report_1.pdf`. Google Docs, Sheets and Slides are converted to `.docx`, `.xlsx` and `.pptx`.
 - **Skipped files**: types DocsGPT cannot read (Forms, Drawings, archives, video) are left out. So are files Google will not export, such as a Google Doc over Google's 10 MB export limit. One skipped or failed file does not stop the rest of the folder.
@@ -93,6 +129,9 @@ A scheduled sync, or **Sync now**, first compares each file's name, location and
 - **Authentication failed** — Check that the redirect URI matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters. Ensure the Google Drive API is enabled.
 - **Sign-in fails with "not an allowed origin"** — The frontend runs on an origin the sign-in may not return to. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Permission denied** — Verify the OAuth consent screen is configured and the user has access to the target files.
+- **A folder syncs no files** — With `GOOGLE_DRIVE_ACCESS=file`, it is not shared with the service account. The worker log names it ("not shared with …"). Share it as a Viewer and sync again.
+- **Folders cannot be selected in the picker** — `GOOGLE_SERVICE_ACCOUNT_KEY` is not set, or the key cannot be read; the API log says which.
+- **The picker does not open** — Enable the **Google Picker API** in the project of `GOOGLE_CLIENT_ID`.
 - **Files not processing** — Check backend logs and verify that backend environment variables are correctly set.
 
 <Callout type="tip" emoji="💡">

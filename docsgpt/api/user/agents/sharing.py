@@ -9,10 +9,12 @@ from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
 from docsgpt.core.settings import settings
+from docsgpt.api.user.agents.graph_checks import refuse_unfinished_graph
+from docsgpt.api.user.agents.starters import stored_starters
 from docsgpt.api.user.base import resolve_tool_details
 from docsgpt.api.user.resource_access import AccessDenied, require, resolve
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import AgentsRepository, expose_prompt_preset
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
@@ -63,6 +65,7 @@ def _serialize_agent_basic(agent: dict) -> dict:
             else ""
         ),
         "description": agent.get("description", ""),
+        "starters": stored_starters(agent),
         "source": str(source_id) if source_id else "",
         "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "0",
         "retriever": agent.get("retriever", "classic") or "classic",
@@ -166,7 +169,7 @@ class SharedAgents(Resource):
                         ),
                         {"ids": uuid_ids},
                     )
-                    shared_agents = [dict(row._mapping) for row in result.fetchall()]
+                    shared_agents = [expose_prompt_preset(dict(row._mapping)) for row in result.fetchall()]
                 else:
                     shared_agents = []
 
@@ -194,6 +197,7 @@ class SharedAgents(Resource):
                         "id": agent_id_str,
                         "name": agent.get("name", ""),
                         "description": agent.get("description", ""),
+                        "starters": stored_starters(agent),
                         "image": (
                             generate_image_url(
                                 agent["image"], agent["id"], agent.get("user_id")
@@ -292,6 +296,11 @@ class ShareAgent(Resource):
                         jsonify({"success": False, "message": "Agent not found"}), 404
                     )
                 if shared:
+                    # Anyone with the link runs the agent's graph: a workflow
+                    # agent's must be a finished one.
+                    refusal = refuse_unfinished_graph(conn, agent)
+                    if refusal is not None:
+                        return refusal
                     shared_metadata = {
                         "shared_by": username,
                         "shared_at": datetime.datetime.now(

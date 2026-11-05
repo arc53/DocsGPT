@@ -308,17 +308,22 @@ export default function AllSchedules() {
                     onSelectRun={setActiveRun}
                     extraMeta={
                       !schedule.agent_id && schedule.origin_conversation_id ? (
-                        <Link
-                          to={`/c/${schedule.origin_conversation_id}`}
-                          className="text-primary inline-flex items-center gap-1 hover:underline"
+                        <Button
+                          variant="link"
+                          size="text"
+                          asChild
+                          /* eslint-disable-next-line shadcn/no-restyle -- the meta line's 4px icon gap, like Next run and Last run beside it; a long chat name wraps beside the icon */
+                          className="min-w-0 shrink gap-1 whitespace-normal"
                         >
-                          <MessageSquare
-                            aria-hidden
-                            className="size-3.5 shrink-0"
-                          />
-                          {schedule.origin_conversation_name ||
-                            t('activity.schedules.openChat')}
-                        </Link>
+                          <Link to={`/c/${schedule.origin_conversation_id}`}>
+                            <MessageSquare
+                              aria-hidden
+                              className="size-3.5 shrink-0"
+                            />
+                            {schedule.origin_conversation_name ||
+                              t('activity.schedules.openChat')}
+                          </Link>
+                        </Button>
                       ) : undefined
                     }
                   />

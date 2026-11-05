@@ -12,6 +12,7 @@ describe('nodeTones', () => {
       state: 'info',
       condition: 'warning',
       code: 'info',
+      loop: 'primary',
     });
   });
 

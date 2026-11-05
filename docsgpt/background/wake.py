@@ -37,7 +37,7 @@ _SCHEDULED_TTL_SECONDS = 30
 
 #: ``monitor_paused`` is a monitor telling the agent it paused (unreachable, errors, the breaker);
 #: ``monitor_expired`` is a monitor or link telling it its lifetime ended without firing.
-WAKE_SOURCES = ("job", "monitor", "monitor_paused", "monitor_expired", "trigger", "approval", "lost")
+WAKE_SOURCES = ("job", "monitor", "monitor_paused", "monitor_expired", "trigger", "approval", "lost", "continuation")
 
 NO_REPLY = "NO_REPLY"
 

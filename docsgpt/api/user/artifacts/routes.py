@@ -129,7 +129,8 @@ class ListArtifacts(Resource):
                     run = WorkflowRunsRepository(conn).get(workflow_run_id)
                     if run is None or run.get("user_id") != user_id:
                         return make_response(jsonify({"success": False, "message": "Forbidden"}), 403)
-                    rows = repo.list_artifacts(workflow_run_id=workflow_run_id)
+                    # The run's attached documents are the caller's own uploads; list only what it produced.
+                    rows = repo.list_artifacts(workflow_run_id=workflow_run_id, include_run_inputs=False)
                 else:
                     if not user_id:
                         return make_response(

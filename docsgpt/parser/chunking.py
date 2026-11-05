@@ -29,6 +29,7 @@ class Chunker:
         max_tokens: int = 2000,
         min_tokens: int = 150,
         duplicate_headers: bool = False,
+        chunk_overlap: int = 0,
     ):
         self.chunking_strategy = chunking_strategy
         # A budget below 1 would ask for a chunk per token; the strategy
@@ -36,6 +37,7 @@ class Chunker:
         self.max_tokens = max(1, int(max_tokens))
         self.min_tokens = min_tokens
         self.duplicate_headers = duplicate_headers
+        self.chunk_overlap = chunk_overlap
         # Counted in the embedding model's tokenizer, not cl100k: ``max_tokens``
         # is compared against a limit the embedding server enforces in its own
         # units, so counting in any other unit is a guess.

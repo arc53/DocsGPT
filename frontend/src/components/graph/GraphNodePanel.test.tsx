@@ -432,6 +432,23 @@ describe('GraphNodePanel', () => {
     expect(onChunkSaved).not.toHaveBeenCalled();
   });
 
+  it('says the source is busy when a page change holds it', async () => {
+    updateChunk.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'busy', code: 'source_busy' }),
+    });
+    await render({ detail: CHUNK_DETAIL });
+    await openTile();
+    await act(async () => bodyButton('modals.chunk.edit')!.click());
+    await typeDraft('Changed');
+    await act(async () => bodyButton('modals.chunk.save')!.click());
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toBe(
+      'settings.sources.chunkErrors.busy',
+    );
+  });
+
   it('falls back to the overview links when the detail has no relationships', async () => {
     const overview = {
       nodes: [

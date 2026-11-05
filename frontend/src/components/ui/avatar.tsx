@@ -91,7 +91,8 @@ function Avatar({
           alt={alt}
           className={imgClassName}
           referrerPolicy="no-referrer"
-          crossOrigin="anonymous"
+          // No crossOrigin: nothing reads the pixels, and CORS mode breaks the
+          // S3 redirect from /api/images when the bucket sends no CORS headers.
           onError={() => {
             if (currentSrc !== fallbackSrc) setCurrentSrc(fallbackSrc);
           }}

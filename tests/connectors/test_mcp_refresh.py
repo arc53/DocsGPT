@@ -112,7 +112,7 @@ class TestRefresh:
         with _db(pg_conn), patch.object(mcp, "_discover") as discover:
             result = mcp.refresh_mcp_tools("alice", connection)
         discover.assert_not_called()
-        assert result == {"added": [], "removed": [], "tools": []}
+        assert result == {"added": [], "removed": [], "tools": [], "injection": None}
 
 
 class TestDiscover:

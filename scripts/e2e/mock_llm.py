@@ -96,6 +96,26 @@ TOOLCALL_DIRECTIVE = re.compile(
     r"(?::([A-Za-z0-9_=\-]+))?\]\]"
 )
 
+# In-band directive: ``[[MOCK_LLM_PLAN:<base64url JSON>]]`` scripts the timing
+# and shape of a reply, so specs can drive provider deadlines and run budgets.
+# Every key is optional:
+#   ``model``       — apply only when the request's model matches (a fallback
+#                     model then answers normally).
+#   ``answer``      — the reply text (default: the generic fallback).
+#   ``first_ms``    — sleep before the first frame (or the whole non-streamed
+#                     reply): a slow first token.
+#   ``think``       — reasoning deltas (``reasoning_content``) sent before the
+#                     answer; ``think_ms`` sleeps after each one.
+#   ``chunks``      — how many content frames the answer is split into.
+#   ``chunk_ms``    — sleep before each content frame after the first.
+#   ``stall_after`` / ``stall_ms`` — after that many content frames, go silent
+#                     for ``stall_ms`` (a mid-stream stall).
+#   ``tool``        — ``{"action", "args", "rounds", "first_ms", "think",
+#                     "think_ms"}``: answer with a tool call while the request
+#                     carries fewer than ``rounds`` tool results (and offered
+#                     tools), then with the answer.
+PLAN_DIRECTIVE = re.compile(r"\[\[MOCK_LLM_PLAN:([A-Za-z0-9_=\-]+)\]\]")
+
 app = Flask(__name__)
 
 
@@ -286,6 +306,45 @@ def _directive_toolcall(
     return found
 
 
+def _directive_plan(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Decoded ``[[MOCK_LLM_PLAN:...]]`` for this request, or None.
+
+    The last plan in the conversation wins; a plan scoped to another model
+    does not apply.
+    """
+
+    found: dict[str, Any] | None = None
+    for match in PLAN_DIRECTIVE.finditer(_messages_text(payload.get("messages")) or ""):
+        raw = match.group(1)
+        try:
+            padded = raw + "=" * (-len(raw) % 4)
+            decoded = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+            sys.stderr.write(f"[mock-llm] bad MOCK_LLM_PLAN payload {raw!r}: {exc}\n")
+            sys.stderr.flush()
+            continue
+        if isinstance(decoded, dict):
+            found = decoded
+    if found is not None and found.get("model") and found["model"] != payload.get("model"):
+        return None
+    return found
+
+
+def _tool_results(messages: list[dict[str, Any]] | None) -> int:
+    return sum(1 for msg in messages or [] if isinstance(msg, dict) and msg.get("role") == "tool")
+
+
+def _plan_toolcall(plan: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any] | None:
+    """The plan's tool call for this round, or None once its rounds are used up."""
+
+    tool = plan.get("tool")
+    if not isinstance(tool, dict) or not payload.get("tools"):
+        return None
+    if _tool_results(payload.get("messages")) >= int(tool.get("rounds", 1)):
+        return None
+    return tool
+
+
 def _toolcall_arg_frames(arguments: str, mode: str) -> list[str]:
     """Split ``arguments`` into the per-frame payloads for ``mode``."""
 
@@ -316,6 +375,41 @@ def _resolve_chat_response(
     fixture is looked up by digest; failing that the generic response is
     returned and the miss is logged so the dev can convert it.
     """
+
+    plan = _directive_plan(payload)
+    if plan is not None:
+        prompt_tokens = _estimate_tokens(_messages_text(payload.get("messages")))
+        tool = _plan_toolcall(plan, payload)
+        if tool is not None:
+            rounds_done = _tool_results(payload.get("messages"))
+            return (
+                "",
+                [
+                    {
+                        "index": 0,
+                        "id": f"call_e2e_{digest[:8]}_{rounds_done}",
+                        "type": "function",
+                        "function": {
+                            "name": tool["action"],
+                            "arguments": json.dumps(tool.get("args") or {}),
+                        },
+                    }
+                ],
+                "tool_calls",
+                {"prompt_tokens": prompt_tokens, "completion_tokens": 8, "total_tokens": prompt_tokens + 8},
+            )
+        content = str(plan.get("answer") or GENERIC_FALLBACK_TEXT)
+        completion_tokens = _estimate_tokens(content)
+        return (
+            content,
+            None,
+            "stop",
+            {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        )
 
     # A real provider can only answer with a tool call when the request
     # actually offered tools. DocsGPT's finalize round deliberately sends
@@ -445,6 +539,7 @@ def _stream_chat_response(
     finish_reason: str,
     chunk_delay_ms: int = 0,
     toolcall_arg_mode: str | None = None,
+    plan: dict[str, Any] | None = None,
 ):
     """Generator yielding SSE frames that match the OpenAI streaming protocol.
 
@@ -476,8 +571,27 @@ def _stream_chat_response(
         if chunk_delay_ms > 0:
             time.sleep(chunk_delay_ms / 1000.0)
 
+    plan = plan or {}
+    first_ms = int(plan.get("first_ms") or 0)
+    if tool_calls and isinstance(plan.get("tool"), dict) and "first_ms" in plan["tool"]:
+        first_ms = int(plan["tool"]["first_ms"] or 0)
+    if first_ms > 0:
+        time.sleep(first_ms / 1000.0)
+
     # Opening role delta — matches OpenAI's real behavior.
     yield _sse(_base_chunk({"role": "assistant", "content": ""}))
+
+    # A tool round reasons per ``plan["tool"]``; the answer round per ``plan``.
+    timing = plan["tool"] if tool_calls and isinstance(plan.get("tool"), dict) else plan
+    if tool_calls and timing is plan:
+        timing = {}
+    thoughts = timing.get("think") or []
+    if isinstance(thoughts, int):
+        thoughts = [f"thinking {i + 1}" for i in range(thoughts)]
+    for thought in thoughts:
+        yield _sse(_base_chunk({"reasoning_content": str(thought)}))
+        if timing.get("think_ms"):
+            time.sleep(int(timing["think_ms"]) / 1000.0)
 
     if tool_calls and toolcall_arg_mode:
         # Frame-split mode: the call's ``arguments`` are spread over several
@@ -521,10 +635,14 @@ def _stream_chat_response(
         yield _sse(_base_chunk({"tool_calls": tool_calls}))
         yield _sse(_base_chunk({}, final=True))
     else:
-        chunks = _split_into_chunks(content, STREAM_CHUNK_COUNT)
+        chunks = _split_into_chunks(content, int(plan.get("chunks") or STREAM_CHUNK_COUNT))
         last_index = len(chunks) - 1
         for i, piece in enumerate(chunks):
             _maybe_sleep()
+            if i and plan.get("chunk_ms"):
+                time.sleep(int(plan["chunk_ms"]) / 1000.0)
+            if i and i == plan.get("stall_after"):
+                time.sleep(int(plan.get("stall_ms") or 0) / 1000.0)
             yield _sse(_base_chunk({"content": piece}, final=(i == last_index)))
 
     yield "data: [DONE]\n\n"
@@ -581,6 +699,7 @@ def chat_completions() -> Response:
     ) or _read_int_env("MOCK_LLM_FORCE_STREAM_CHUNK_DELAY_MS")
     if upfront_delay_ms > 0:
         time.sleep(upfront_delay_ms / 1000.0)
+    plan = _directive_plan(payload)
 
     if stream:
         generator = _stream_chat_response(
@@ -592,9 +711,10 @@ def chat_completions() -> Response:
             chunk_delay_ms=chunk_delay_ms,
             toolcall_arg_mode=(
                 (_directive_toolcall(payload.get("messages")) or (None, None, None))[1]
-                if payload.get("tools")
+                if payload.get("tools") and plan is None
                 else None
             ),
+            plan=plan,
         )
         response = Response(
             stream_with_context(generator),
@@ -605,6 +725,13 @@ def chat_completions() -> Response:
         # Flask strips Content-Length on streamed responses; make sure we don't
         # accidentally set one. Nothing to do here — just documenting.
         return response
+
+    if plan is not None:
+        delay = int(plan.get("first_ms") or 0)
+        if tool_calls and isinstance(plan.get("tool"), dict) and "first_ms" in plan["tool"]:
+            delay = int(plan["tool"]["first_ms"] or 0)
+        if delay > 0:
+            time.sleep(delay / 1000.0)
 
     envelope = _chat_completion_envelope(
         digest=digest,

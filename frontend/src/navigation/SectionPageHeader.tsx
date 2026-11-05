@@ -79,38 +79,24 @@ export default function SectionPageHeader({
   section,
   item,
   title,
-  titleAction,
   className,
 }: {
   section: Section;
   item: SectionItem | null;
   /** Replaces the resolved title. */
   title?: React.ReactNode;
-  /** A control at the end of the title row. */
-  titleAction?: React.ReactNode;
   className?: string;
 }) {
   const { t } = useTranslation();
-  const heading = (
-    <h1 className="text-foreground text-2xl font-bold">
-      {title ??
-        (item && section.pageTitle !== 'section'
-          ? t(item.labelKey)
-          : (section.title ?? t(section.titleKey)))}
-    </h1>
-  );
-
   return (
     <div className={cn('flex flex-col', className)}>
       <SectionBackLink section={section} />
-      {titleAction ? (
-        <div className="flex items-center justify-between gap-3">
-          {heading}
-          {titleAction}
-        </div>
-      ) : (
-        heading
-      )}
+      <h1 className="text-foreground text-2xl font-bold">
+        {title ??
+          (item && section.pageTitle !== 'section'
+            ? t(item.labelKey)
+            : (section.title ?? t(section.titleKey)))}
+      </h1>
     </div>
   );
 }
@@ -122,11 +108,9 @@ export default function SectionPageHeader({
  */
 export function CurrentSectionHeader({
   title,
-  titleAction,
   className,
 }: {
   title?: React.ReactNode;
-  titleAction?: React.ReactNode;
   className?: string;
 }) {
   const { section, item } = useSectionContext();
@@ -137,7 +121,6 @@ export function CurrentSectionHeader({
       section={section}
       item={item}
       title={title}
-      titleAction={titleAction}
       className={className}
     />
   );

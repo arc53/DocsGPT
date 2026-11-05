@@ -44,25 +44,36 @@ export const voiceInputSupported = (): boolean => {
   return recognitionClass() !== undefined;
 };
 
-/** User-facing message, or null for outcomes that are not errors. */
-const errorMessage = (code: string): string | null => {
+/** The message keys a recognition failure can show. */
+export type VoiceError =
+  | 'voiceNoSpeech'
+  | 'voiceBlocked'
+  | 'voiceNoMicrophone'
+  | 'voiceUnavailable'
+  | 'voiceLanguageUnsupported'
+  | 'voiceStopped'
+  | 'voiceNeedsHttps'
+  | 'voiceUnsupported';
+
+/** The message for an error code, or null for outcomes that are not errors. */
+const errorFor = (code: string): VoiceError | null => {
   switch (code) {
     // The user pressed stop.
     case 'aborted':
       return null;
     case 'no-speech':
-      return 'No speech was picked up.';
+      return 'voiceNoSpeech';
     case 'not-allowed':
     case 'service-not-allowed':
-      return 'Microphone access was blocked.';
+      return 'voiceBlocked';
     case 'audio-capture':
-      return 'No microphone was found.';
+      return 'voiceNoMicrophone';
     case 'network':
-      return 'Voice input is unavailable right now.';
+      return 'voiceUnavailable';
     case 'language-not-supported':
-      return 'Voice input does not support this language.';
+      return 'voiceLanguageUnsupported';
     default:
-      return 'Voice input stopped unexpectedly.';
+      return 'voiceStopped';
   }
 };
 
@@ -71,6 +82,8 @@ interface UseVoiceInputOptions {
   /** Final words plus the interim tail. */
   onTranscript: (text: string) => void;
   onEnd?: () => void;
+  /** BCP 47 language to recognise; the browser's language when unset. */
+  lang?: string;
 }
 
 /** Browser speech recognition with interim results. */
@@ -78,10 +91,11 @@ export const useVoiceInput = ({
   onStart,
   onTranscript,
   onEnd,
+  lang,
 }: UseVoiceInputOptions) => {
   const [recordingState, setRecordingState] =
     React.useState<RecordingState>('idle');
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<VoiceError | null>(null);
   const recognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
   // The Web Speech API exposes no audio, so the waveform uses a separate
   // capture. Refs, so drawing does not re-render.
@@ -152,8 +166,8 @@ export const useVoiceInput = ({
       setRecordingState('error');
       setError(
         typeof window !== 'undefined' && !window.isSecureContext
-          ? 'Voice input needs a secure connection (HTTPS).'
-          : 'This browser does not support voice input.',
+          ? 'voiceNeedsHttps'
+          : 'voiceUnsupported',
       );
       return;
     }
@@ -163,7 +177,8 @@ export const useVoiceInput = ({
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    if (typeof navigator !== 'undefined' && navigator.language)
+    if (lang) recognition.lang = lang;
+    else if (typeof navigator !== 'undefined' && navigator.language)
       recognition.lang = navigator.language;
 
     finalTranscriptRef.current = '';
@@ -186,7 +201,7 @@ export const useVoiceInput = ({
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      const message = errorMessage(event.error);
+      const message = errorFor(event.error);
       if (!isMountedRef.current || !message) return;
       setRecordingState('error');
       setError(message);
@@ -216,7 +231,7 @@ export const useVoiceInput = ({
     onStart();
     setRecordingState('recording');
     void startLevelMeter();
-  }, [onEnd, onStart, onTranscript, startLevelMeter, stopLevelMeter]);
+  }, [lang, onEnd, onStart, onTranscript, startLevelMeter, stopLevelMeter]);
 
   const stop = React.useCallback(() => {
     if (recordingState !== 'recording') return;

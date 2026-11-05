@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text as sql_text
 
+from docsgpt.activity.flags import cancel_streams
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.api.answer.services.compression.types import (
@@ -193,6 +194,7 @@ class ConversationService:
                 conv_pg_id = str(conv["id"])
                 repo.update_message_at(conv_pg_id, index, message_payload)
                 repo.truncate_after(conv_pg_id, index)
+            cancel_streams(repo.retired_message_ids)
             return conversation_id
         elif conversation_id:
             with db_session() as conn:
@@ -282,12 +284,15 @@ class ConversationService:
         visibility: str = "hidden",
         status: str = "pending",
         index: Optional[int] = None,
+        passthrough: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
         """Reserve the placeholder message row before the LLM call.
 
         ``index`` triggers regenerate semantics: messages at
         ``position >= index`` are truncated so the new placeholder
         lands at ``position = index`` rather than appending.
+        ``passthrough`` (already bounded) replaces the conversation's
+        stored values; a turn without any clears them.
 
         Returns ``{"conversation_id", "message_id", "request_id"}``.
         """
@@ -321,6 +326,8 @@ class ConversationService:
                 # than appending at the end of the conversation.
                 if isinstance(index, int) and index >= 0:
                     repo.truncate_after(conv_pg_id, keep_up_to=index - 1)
+                # The latest turn's values: a turn without any clears them.
+                repo.set_passthrough(conv_pg_id, passthrough or None)
             else:
                 fallback_name = (question[:50] if question else "New Conversation")
                 conv = repo.create(
@@ -335,6 +342,7 @@ class ConversationService:
                         else None
                     ),
                     visibility=visibility,
+                    passthrough=passthrough,
                 )
                 conv_pg_id = str(conv["id"])
 
@@ -348,6 +356,7 @@ class ConversationService:
                 model_id=model_id,
             )
             message_id = str(row["id"])
+        cancel_streams(repo.retired_message_ids)
 
         return {
             "conversation_id": conv_pg_id,

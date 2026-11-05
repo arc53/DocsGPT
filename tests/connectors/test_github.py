@@ -123,6 +123,54 @@ class TestTokenSignIn:
         assert pg_conn.execute(text("SELECT count(*) FROM connector_sessions")).scalar() == 0
 
 
+class TestRateLimit:
+    """GitHub rate-limited the account: say until when, as a 429, not a generic 502."""
+
+    @staticmethod
+    def _limited():
+        import time
+
+        return _response({"message": "API rate limit exceeded for user ID 1."}, 403, headers={
+            "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(time.time()) + 2800),
+        })
+
+    def test_the_token_check_reports_the_reset_time(self):
+        from docsgpt.connectors import github
+
+        with patch("docsgpt.connectors.github.requests.get", return_value=self._limited()):
+            with pytest.raises(github.RateLimited) as caught:
+                github.token_account("github_pat_abc")
+        # Callers that only know transient errors keep working.
+        assert isinstance(caught.value, service.TransientConnectionError)
+        assert caught.value.reset_at is not None
+        assert "UTC" in str(caught.value)
+
+    def test_connecting_while_rate_limited_is_a_429_with_the_reset(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionsList
+
+        with _db(pg_conn), patch("docsgpt.connectors.github.requests.get", return_value=self._limited()):
+            resp = _call(app, ConnectionsList, "post", "/api/connections",
+                         body={"connector_key": "github", "credentials": {"access_token": "github_pat_abc"}})
+        assert resp.status_code == 429
+        data = resp.get_json()
+        assert data["code"] == "rate_limited"
+        assert data["retry_at"].endswith("+00:00")
+        assert int(resp.headers["Retry-After"]) > 0
+        assert pg_conn.execute(text("SELECT count(*) FROM connector_sessions")).scalar() == 0
+
+    def test_listing_repositories_while_rate_limited_is_a_429(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionRepositories
+
+        cid = _connection(pg_conn)
+        with _db(pg_conn), patch("docsgpt.connectors.github.requests.get", return_value=self._limited()), \
+                patch.object(service, "mark_reconnect_needed") as flag:
+            resp = _call(app, ConnectionRepositories, "get", f"/api/connections/{cid}/repositories", args=[cid])
+        assert resp.status_code == 429
+        assert resp.get_json()["code"] == "rate_limited"
+        # A rate limit is not a bad token.
+        flag.assert_not_called()
+
+
 class TestAppSignIn:
     def test_sign_in_stores_the_app_token_under_the_login(self, app, pg_conn, app_settings):
         from urllib.parse import parse_qs, urlsplit

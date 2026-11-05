@@ -1,7 +1,7 @@
 ---
 title: Interacting with Agents via API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-10-15
+lastUpdated: 2026-11-01
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -14,6 +14,7 @@ DocsGPT Agents can be accessed programmatically through API endpoints. This page
 - Streaming answers over SSE (`/stream`)
 - Tools that need approval (pausing and resuming a turn)
 - Search without a model call (`/api/search`)
+- An agent's starters, the suggested first questions (`/api/agent_starters`)
 - File/image attachments (`/api/store_attachment` + `/api/task_status` + `/stream`)
 - Agent export and import
 
@@ -55,6 +56,8 @@ A key holder can't approve anything on the agent owner's behalf. When the agent 
 
 - `POST /api/answer` (non-streaming)
 - `POST /stream` (SSE streaming)
+- `POST /api/search` (search without a model call)
+- `POST /api/agent_starters` (the agent's starters)
 - `POST /api/store_attachment` (multipart upload)
 - `GET /api/task_status?task_id=...` (Celery task polling)
 
@@ -71,8 +74,8 @@ Common request body fields:
 | `model_id` | `string` | No | `/api/answer`, `/stream` | Override model for this request. |
 | `save_conversation` | `boolean` | No | `/api/answer`, `/stream` | Deprecated, no effect. Conversations are always persisted; use `visibility` to control sidebar listing. |
 | `visibility` | `string` | No | `/api/answer`, `/stream` | `"listed"` shows the conversation in the owner's sidebar. Any other value (or omitting it) persists it hidden. Default `hidden`. |
-| `passthrough` | `object` | No | `/api/answer`, `/stream` | Dynamic values injected into prompt templates. |
-| `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. |
+| `passthrough` | `object` | No | `/api/answer`, `/stream` | Values for the prompt's `{{ passthrough.* }}` variables, such as the end user's id. Strings, numbers, booleans and `null` are kept with the conversation and on each turn's [Logs](/Using/analytics-and-logs) row. |
+| `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. Without it, a chat without an agent uses `default`, not the prompt picked on **Settings → Prompts** (the web app sends that one itself). |
 | `active_docs` | `string` or `string[]` | No | `/api/answer`, `/stream` | Overrides active docs when not using key-owned source config. |
 | `retriever` | `string` | No | `/api/answer`, `/stream` | Retriever type (for example `classic`). Ignored when `api_key` or `agent_id` selects an agent: the agent's retriever is used. |
 | `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `6`: a total for the request, split across its sources. Clamped to `0`-`500`; `0` skips retrieval. Ignored when `api_key` or `agent_id` selects an agent (the agent's value is used), and when a source has its own chunk count configured (the source's value wins). |
@@ -109,7 +112,7 @@ Response fields:
 - `attachments`, the conversation's files with their `F` refs and attachment ids, when it has any
 - Optional structured output metadata (`structured`, `schema`) when enabled
 
-An error during the run returns HTTP `400` with `{"error": "..."}`.
+An error during the run returns HTTP `400` with `{"error": "..."}`. A chat with a draft workflow agent whose saved workflow isn't finished (see [Graph rules](/Agents/nodes#graph-rules)) returns `400` with `"code": "workflow_unfinished"` before anything runs; on `/stream` it is an `error` event with that code.
 
 ### Examples
 
@@ -194,7 +197,7 @@ Each `data:` frame is JSON with `type`:
 | `tool_calls_pending` | `data.pending_tool_calls` | The turn paused on tools that need approval or client-side execution. See [Tools that need approval](#tools-that-need-approval). |
 | `structured_answer` | `answer`, `structured`, `schema` | Final structured payload (when schema mode is active). |
 | `research_plan`, `research_progress` | `data` | Progress of a research agent. |
-| `workflow_run` | `workflow_run_id` | A workflow agent started a run. |
+| `workflow_run` | `workflow_run_id`, `step_total` | A workflow agent started a run. `step_total` is how many steps the run takes, not counting the start and end nodes; `null` when a condition decides it. |
 | `workflow_step` | `node_id`, `node_type`, `node_title`, `status`, and `output`/`state_delta` or `error` | A workflow node is `running`, `completed` or `failed`. |
 | `notice` | `notice` | A non-fatal message for the user (for example, some input documents were skipped). |
 | `guardrail` | `guardrail`, `retract` | A [guardrail](/Agents/guardrails) blocked the answer mid-stream. With `retract: true`, discard the text already shown; an `error` event with the block message follows. |
@@ -372,7 +375,7 @@ The owner allows actions in the agent's **Access Details > Changes others can ma
 - Only the owner can change the list. When a team editor updates the agent, the stored list is kept whatever the request sends.
 - An allowed action runs **without an approval prompt** for these callers, even if the tool asks for approval in the owner's chats.
 
-`config` holds both `api_write_allowlist` and the agent's [guardrails](/Agents/guardrails), and `PUT /api/update_agent/<agent_id>` replaces the whole `config`. Read it first and send it all back, or you clear the other half:
+`config` holds `api_write_allowlist` next to the agent's [allowed origins](#restricting-which-websites-can-use-the-key), its [guardrails](/Agents/guardrails), its insights settings, its [`context_window_limit`](/Agents/context-compression#per-agent-context-limit) and its [`history_token_limit`](/Agents/context-compression#per-agent-history-limit), and `PUT /api/update_agent/<agent_id>` replaces the whole `config`. Read it first and send it all back, or you clear the rest:
 
 ```python
 import requests
@@ -393,7 +396,37 @@ requests.put(
 ).raise_for_status()
 ```
 
+To keep a read-modify-write like this from overwriting someone else's save, send the agent's `updated_at` from `GET /api/get_agent` back as `expected_updated_at`. If the agent changed in between, the update answers `409` with `"code": "stale_write"` and writes nothing; read it again and retry. The check applies to the owner and to team editors alike. `POST /api/create_agent` and `PUT /api/update_agent/<agent_id>` both return the new `updated_at`, so a script can chain saves without reading in between. Without `expected_updated_at`, the last save wins.
+
 Webhook runs are the owner's own automation and are not limited by this list; see [Agent webhooks](/API/webhooks#how-a-webhook-run-behaves).
+
+## Restricting which websites can use the key
+
+An agent's API key works from any website by default, so a key embedded in a page (the chat widget, for example) can be copied and used on another site.
+To stop that, turn on **Allowed origins** in the agent's **Advanced** settings and list the websites that may use the key, such as `https://docs.example.com`.
+
+While it is on, every request that carries the agent's key must come from a listed origin:
+
+- The origin is read from the request's `Origin` header. When a browser leaves that header off (a plain `GET`, such as an image or a download link), the origin of the `Referer` header is used instead.
+- A request from any other origin, or from no origin at all, is refused with `403` and `This origin is not allowed to use this agent's API key.` On `/v1` the error has the OpenAI shape, with `"type": "permission_error"`.
+- This applies wherever the key is accepted: `/api/answer`, `/stream`, `/api/search`, `/api/agent_starters`, attachments, feedback, artifact downloads, `/v1` and the MCP server.
+- This DocsGPT instance's own website is always allowed, so a [promptable shared conversation](/Using/sharing) keeps working: `API_URL`, `OIDC_FRONTEND_URL`, and `http://localhost:5173` when `API_URL` is on localhost. These come from configuration, never from the request's `Host` header, so set `API_URL` to the address browsers use. On a public instance, leaving `API_URL` at its localhost default also trusts the localhost development origins.
+- So are the origins in [`AGENT_TRUSTED_ORIGINS`](/Deploying/Settings-Reference), DocsGPT Cloud's apps by default. Set it to `none` to trust no extra origin.
+- Turning the setting off keeps the list, so you can turn it back on later.
+
+<Callout type="warning">
+Browsers set the `Origin` header themselves, so this keeps other websites from using the key. It does not stop a server or a script, which can send any `Origin` it likes. Keep [usage limits](/Agents/basics) on an agent whose key is public, and call the API from your own server where you can.
+</Callout>
+
+Because a request with no origin is refused, a restricted key no longer works from server-side callers such as `curl` or the Chatwoot extension.
+Use a separate agent for those.
+
+Through the API, the setting is `config.restrict_origins` (a boolean) and `config.allowed_origins` (a list):
+
+- Each entry is an origin: `http://` or `https://`, a host and an optional port, with no path. `https://docs.example.com`, `http://localhost:3000`.
+- Entries are normalized when saved: the scheme and host are lowercased, a trailing `/` and the default port are dropped, and an internationalized host is stored as punycode. Duplicates are removed.
+- A path, query, wildcard or credentials is refused with `400`, as is `restrict_origins` on with an empty list. At most 100 entries.
+- Changing either value needs the same permission as the usage limits: the owner, or a team editor allowed to edit policy.
 
 ## Artifacts
 
@@ -434,6 +467,28 @@ The response is a JSON list, empty when the agent has no sources:
 
 Errors: `400` when `question` or `api_key` is missing, `401` for an unknown key, `500` if the search fails.
 
+## Starters API
+
+`POST /api/agent_starters` returns the agent's starters: the suggested first questions its owner set in the agent's settings. The [chat widget](/Extensions/chat-widget) lists them on its welcome card when the page passes no `suggestedQuestions` of its own. The key goes in the JSON body, as on `/stream`, so it stays out of URLs and access logs.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `api_key` | `string` | Yes | The agent's API key. |
+
+```bash
+curl -X POST http://localhost:7091/api/agent_starters \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your_agent_api_key"}'
+```
+
+The response holds the starters in the order the owner set them, and nothing else about the agent:
+
+```json
+{"starters": ["How do I reset my password?", "Which plans include SSO?"]}
+```
+
+`starters` is an empty list when the agent has none. Errors: `400` when `api_key` is missing, `401` for an unknown key, and `403` from a website the agent's [allowed origins](#restricting-which-websites-can-use-the-key) don't list.
+
 ---
 
 ## Attachments API (Including Images)
@@ -444,6 +499,8 @@ To attach an image (or other file) to a query:
 2. Poll `/api/task_status` until `status=SUCCESS`.
 3. Read `result.attachment_id` from task result.
 4. Send that ID in `/stream` as `attachments: ["..."]`.
+
+A task can be polled only by whoever started it. An upload sent with a JWT or personal access token can be polled with any token for the same user. An upload sent with only an `api_key` is polled without one; its `task_id` is the credential, so keep it private. Any other poll gets `404`.
 
 <Callout type="warning">
 Attachments are processed asynchronously. Do not call `/stream` with an attachment until its task has finished with `SUCCESS`.
@@ -559,7 +616,7 @@ An import is matched to one of your agents by `metadata.id`, then by `metadata.s
 - **No match:** a new agent is created as a **draft**.
 - **Match:** that agent is updated and keeps its status, so a published agent stays published with the same API key.
 
-On an update the file is authoritative: fields it sets are written even when that clears a value, such as removing all models, dropping `json_schema` or switching the prompt back to the default. Re-importing an edited file therefore syncs the agent to it. The response reports `agent_id`, `action` (`created` or `updated`), `status`, `agent_type`, `slug` and any `warnings`.
+On an update the file is authoritative: fields it sets are written even when that clears a value, such as removing all models, dropping `json_schema` or switching the prompt back to the default. The agent's starters are `spec.starters` (up to four questions); a file without them clears the agent's starters. Re-importing an edited file therefore syncs the agent to it. The response reports `agent_id`, `action` (`created` or `updated`), `status`, `agent_type`, `slug` and any `warnings`.
 
 ### The plan
 
@@ -600,7 +657,7 @@ Ids you pass must belong to you; any other id is ignored with a warning. Prompts
 
 ### Workflow agents
 
-A workflow agent exports its graph under `spec.workflow`, and import validates it (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. Tools, sources and custom models used inside the nodes are resolved like the agent's own.
+A workflow agent exports its graph under `spec.workflow`, and import checks its shape (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. The full [graph rules](/Agents/nodes#graph-rules) apply when the agent it updates is published or can otherwise run, as for a builder save; a new agent lands as a draft, so an unfinished workflow exported from a draft imports again. Tools, sources and custom models used inside the nodes are resolved like the agent's own.
 
 Leaving `workflow` out of a file changes nothing. An explicit `workflow: null` imported over a draft workflow agent **deletes** its workflow, with its run history and artifacts; the plan's `workflow` block shows `"action": "delete"` first. A published workflow agent keeps its workflow.
 

@@ -111,8 +111,9 @@ describe('MarkdownAnswer sandbox: links', () => {
     const className = button?.getAttribute('class') ?? '';
     expect(className).not.toMatch(/\bbg-primary\b/);
     expect(className).not.toMatch(/\bh-9\b/);
-    expect(className).not.toMatch(/\bwhitespace-nowrap\b/);
-    expect(className).toContain('whitespace-normal');
+    // size="text" makes a bare label inline text that wraps.
+    expect(className).toContain('not-has-[>svg]:inline');
+    expect(className).toContain('not-has-[>svg]:whitespace-normal');
   });
 
   it('leaves ordinary links alone', () => {
@@ -121,6 +122,40 @@ describe('MarkdownAnswer sandbox: links', () => {
     const anchor = container.querySelector('a');
     expect(anchor?.getAttribute('href')).toBe('https://docs.docsgpt.cloud/');
     expect(anchor?.getAttribute('target')).toBe('_blank');
+  });
+
+  // Tailwind's preflight leaves a bare <a> looking like the text around it.
+  it('draws an ordinary link as a text link that says it opens a new tab', () => {
+    render('See the [Docker setup](https://docs.docsgpt.cloud/) first.');
+
+    const anchor = container.querySelector('a');
+    expect(anchor?.dataset.slot).toBe('button');
+    expect(anchor?.dataset.variant).toBe('link');
+    expect(anchor?.dataset.size).toBe('text');
+    expect(anchor?.textContent).toBe('Docker setup');
+
+    // A hidden description: read by screen readers, never copied with the text.
+    const hintId = anchor?.getAttribute('aria-describedby') ?? '';
+    const hint = hintId ? document.getElementById(hintId) : null;
+    expect(hint?.hidden).toBe(true);
+    expect(hint?.textContent).toBe('conversation.opensInNewTab');
+  });
+
+  // Links with no URL text in the markdown: email autolinks (GFM links a bare
+  // address too) and shortcut references.
+  it.each([
+    ['an email autolink', 'Write to <user@example.com> today.'],
+    ['a bare email address', 'Write to user@example.com today.'],
+    ['a shortcut reference', 'See [the docs].\n\n[the docs]: /docs'],
+  ])('points %s at a hint that exists', (_, content) => {
+    render(content);
+
+    const anchor = container.querySelector('a');
+    const hintId = anchor?.getAttribute('aria-describedby') ?? '';
+    expect(hintId).not.toBe('');
+    expect(document.getElementById(hintId)?.textContent).toBe(
+      'conversation.opensInNewTab',
+    );
   });
 
   it('still blocks javascript: urls', () => {

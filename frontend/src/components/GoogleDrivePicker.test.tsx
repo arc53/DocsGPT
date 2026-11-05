@@ -169,6 +169,9 @@ describe('GoogleDrivePicker', () => {
         supportDrives: true,
       }),
     );
+    // With a type filter set, Google's Select ignores a highlighted folder,
+    // so folders are picked from an unfiltered view.
+    expect(drive.openPicker.mock.calls[0][0].viewMimeTypes).toBeUndefined();
     expect(onSelectionChange).toHaveBeenLastCalledWith(['f1'], ['folder-1']);
     expect(container.textContent).toContain('filePicker.folder');
   });
@@ -216,11 +219,80 @@ describe('GoogleDrivePicker', () => {
         ['setEnableDrives', true],
         ['setIncludeFolders', true],
         ['setSelectFolderEnabled', true],
-        ['setMimeTypes', true],
       ]);
     } finally {
       delete (window as { google?: unknown }).google;
     }
+  });
+
+  it("opens Google's picker with the server's client id", async () => {
+    drive.pickerToken.mockResolvedValue({ success: true, access_token: 'at' });
+    await render({ clientId: '999-server.apps.example' });
+    await act(async () =>
+      button('modals.uploadDoc.connectors.googleDrive.selectFiles')!.click(),
+    );
+    expect(drive.openPicker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: '999-server.apps.example',
+        appId: '999',
+      }),
+    );
+  });
+
+  it('picks files only when the server cannot read folders', async () => {
+    drive.pickerToken.mockResolvedValue({
+      success: true,
+      access_token: 'at',
+      folders: 'off',
+    });
+    await render();
+    await act(async () =>
+      button('modals.uploadDoc.connectors.googleDrive.selectFiles')!.click(),
+    );
+    expect(drive.openPicker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setIncludeFolders: true,
+        setSelectFolderEnabled: false,
+      }),
+    );
+    expect(drive.openPicker.mock.calls[0][0].viewMimeTypes).toContain(
+      'application/pdf',
+    );
+    expect(container.textContent).toContain(
+      'modals.uploadDoc.connectors.googleDrive.filesOnly',
+    );
+  });
+
+  it('asks to share picked folders with the service account', async () => {
+    drive.pickerToken.mockResolvedValue({
+      success: true,
+      access_token: 'at',
+      folders: 'service_account',
+      share_with: 'reader@project.iam.gserviceaccount.com',
+    });
+    drive.openPicker.mockImplementation(({ callbackFunction }) =>
+      callbackFunction({
+        action: 'picked',
+        docs: [
+          {
+            id: 'folder-1',
+            name: 'Policies',
+            mimeType: 'application/vnd.google-apps.folder',
+          },
+        ],
+      }),
+    );
+    await render();
+    await act(async () =>
+      button('modals.uploadDoc.connectors.googleDrive.selectFiles')!.click(),
+    );
+    const hint = container.querySelector('[data-variant="info"]')!;
+    expect(hint.textContent).toContain(
+      'modals.uploadDoc.connectors.googleDrive.shareFolders',
+    );
+    expect(hint.textContent).toContain(
+      'reader@project.iam.gserviceaccount.com',
+    );
   });
 
   it('opens without a shared drives tab before the Picker API loads', async () => {

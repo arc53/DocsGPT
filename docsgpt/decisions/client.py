@@ -376,7 +376,7 @@ class DecisionClient:
 
 
 def _budget(spec) -> Optional[float]:
-    from docsgpt.core.settings import settings
-
-    value = getattr(settings, spec.budget_setting, None)
-    return None if value is None else float(value)
+    try:
+        return features.budget(spec)
+    except (AttributeError, TypeError):
+        return None

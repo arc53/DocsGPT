@@ -1,6 +1,7 @@
 """`docsgpt doctor`, `restart`, following native logs, and settings that apply themselves."""
 
 import argparse
+import re
 import socket
 
 import pytest
@@ -97,6 +98,7 @@ class TestDevCommand:
         from docsgpt.deploy import dev as dev_module
 
         self._checkout(monkeypatch, tmp_path)
+        monkeypatch.setattr("docsgpt.cli.needs_analytics_worker", lambda platform=None: False)
         started = []
         monkeypatch.setattr(dev_module, "run", lambda children, **kwargs: started.append(children) or 0)
         port = self._free_port()
@@ -717,19 +719,27 @@ class TestDoctorDecisions:
         check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=False)
         assert str(folder) in check.detail
 
+    def test_relevance_is_listed_as_rag_rerank_and_counts_as_a_feature_on(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(commands.sys, "platform", "darwin")
+        check = commands._check_decisions({"DECISION_CACHE_DIR": str(tmp_path)}, docker=True)
+        assert check.level == "ok" and "rag_rerank off" in check.detail
+        check = commands._check_decisions({"DECISION_RELEVANCE_ENABLED": "true"}, docker=True)
+        assert "rag_rerank on" in check.detail
+        assert check.level == "warn" and "--device mps" in check.detail
+
     def test_mode_none(self):
         assert commands._check_decisions({"DECISION_MODE": "none"}, docker=False).detail == "off (DECISION_MODE=none)"
 
     def test_a_docker_stack_holds_the_model_in_its_backend(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
-        check = commands._check_decisions({"GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}, docker=True)
+        check = commands._check_decisions({"DECISION_INJECTION_ENABLED": "true"}, docker=True)
         assert check.level == "ok" and "backend container" in check.detail
-        assert "injection_input monitor" in check.detail
+        assert "injection_input on" in check.detail
 
     def test_a_docker_stack_with_the_decider_points_at_it(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
         env = {"COMPOSE_PROFILES": "decider", "DECISION_BASE_URL": "http://decider:7095", "DECISION_KEY": "d",
-               "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+               "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "ok" and "decider container" in check.detail
 
@@ -743,17 +753,17 @@ class TestDoctorDecisions:
 
     def test_a_decider_url_without_its_profile_is_a_warning(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "linux")
-        env = {"DECISION_BASE_URL": "http://decider:7095", "GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}
+        env = {"DECISION_BASE_URL": "http://decider:7095", "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "warn" and "docsgpt up --decider" in check.detail
 
     def test_on_a_mac_a_feature_in_docker_gets_the_mps_hint(self, monkeypatch):
         monkeypatch.setattr(commands.sys, "platform", "darwin")
-        check = commands._check_decisions({"GUARDRAILS_INJECTION_INPUT_MODE": "monitor"}, docker=True)
+        check = commands._check_decisions({"DECISION_INJECTION_ENABLED": "true"}, docker=True)
         assert check.level == "warn" and "--device mps" in check.detail
         assert commands._check_decisions({}, docker=True).level == "ok", "no hint while every feature is off"
 
-    def test_a_server_reports_its_model_and_the_auto_verdicts(self, server):
+    def test_a_server_reports_its_model_and_each_feature_against_its_budget(self, server):
         from docsgpt.decisions.latency import SpeedProfile
 
         seen, reply = server
@@ -762,14 +772,39 @@ class TestDoctorDecisions:
                                      "calibration": "c3bc72ff6907", "runtime": "torch-mps-fp16",
                                      "status": "ready", "speed": speed}]}
         env = {"DECISION_BASE_URL": "http://host.docker.internal:7095", "DECISION_KEY": "k",
-               "GUARDRAILS_INJECTION_INPUT_MODE": "auto"}
+               "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=True)
         assert check.level == "ok"
         assert "torch-mps-fp16" in check.detail and "arc53/arc-decide-0.4b-v0.2/p78cfb276f93a/cc3bc72ff6907" in check.detail
-        assert "injection_input auto, on at" in check.detail
+        assert re.search(r"injection_input on at \d+\.\d\ds of 2s", check.detail)
+        assert "rag_rerank off" in check.detail
         (request,) = seen
         assert str(request.url) == "http://127.0.0.1:7095/v1/models"
         assert request.headers["authorization"] == "Bearer k"
+
+    @pytest.mark.parametrize("plan, tokens", [("onnx", 320), ("torch", 1220)])
+    def test_relevance_on_shows_its_call_against_the_timeout(self, server, monkeypatch, plan, tokens):
+        from docsgpt.decisions.latency import SpeedProfile
+
+        _, reply = server
+        speed = SpeedProfile(0.05, 0.0005, 0.0, overhead=60, threads=0, plan=plan).wire()
+        reply["json"] = {"models": [{"name": "arc53/arc-decide-0.4b-v0.2", "prompt_hash": "78cfb276f93a",
+                                     "calibration": "c3bc72ff6907", "runtime": "onnx-int8", "status": "ready",
+                                     "speed": speed}]}
+        shapes = []
+        real = SpeedProfile.predict_s
+
+        def predict(self, shape):
+            shapes.append(shape)
+            return real(self, shape)
+
+        monkeypatch.setattr(SpeedProfile, "predict_s", predict)
+        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "DECISION_KEY": "k", "DECISION_RELEVANCE_ENABLED": "true"}
+        check = commands._check_decisions(env, docker=False)
+        assert re.search(r"rag_rerank on at \d+\.\d\ds of 2s", check.detail)
+        # A CPU (ONNX) server scores best-window passages; a GPU one whole chunks.
+        (shape,) = shapes
+        assert shape.states == 20 and shape.state_tokens == tokens
 
     @pytest.mark.parametrize("models", [{"name": "x"}, "arc53/arc-decide-0.4b-v0.2", [], ["x"]])
     def test_a_wrong_shaped_model_list_is_reported_not_raised(self, server, models):
@@ -795,10 +830,10 @@ class TestDoctorDecisions:
         _, reply = server
         reply["status"] = status
         reply["error"] = httpx2.ConnectError("refused") if error else None
-        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "GUARDRAILS_INJECTION_INPUT_MODE": "on"}
+        env = {"DECISION_BASE_URL": "http://127.0.0.1:7095", "DECISION_INJECTION_ENABLED": "true"}
         check = commands._check_decisions(env, docker=False)
         assert check.level == "warn" and said in check.detail
-        env["GUARDRAILS_INJECTION_INPUT_MODE"] = "off"
+        env["DECISION_INJECTION_ENABLED"] = "false"
         assert commands._check_decisions(env, docker=False).level == "ok"
 
     def test_vllm(self, server):
@@ -821,3 +856,178 @@ class TestDoctorDecisions:
         (tmp_path / ".env").write_text("LLM_PROVIDER=docsgpt\n", encoding="utf-8")
         _run(["doctor", "--dir", str(tmp_path)], _context())
         assert any(" decisions " in line for line in capsys.readouterr().out.splitlines())
+
+
+class FakeBroker:
+    """A Redis client with lists in a dict; ``down`` makes every call fail as an unreachable server does."""
+
+    def __init__(self, lists=None, down=False):
+        self.lists = lists or {}
+        self.down = down
+        self.read = []
+
+    def llen(self, key):
+        if self.down:
+            raise ConnectionError("Error 61 connecting to localhost:6379. Connection refused.")
+        self.read.append(key)
+        return self.lists.get(key, 0)
+
+
+class TestDoctorAnalytics:
+    """The analytics row: whether anything takes the queue the sweep is sent to; a warning at most."""
+
+    ON = {"DECISION_ANALYTICS_ENABLED": "true"}
+    BROKER = "redis://localhost:6379/0"
+    PRIORITY = "\x06\x16"
+
+    @pytest.fixture
+    def broker(self, monkeypatch):
+        """Route doctor's Redis client to a FakeBroker; no worker answers unless a test says otherwise."""
+        import redis
+
+        fake = FakeBroker()
+        urls = []
+
+        def from_url(cls, url, **kwargs):
+            urls.append(url)
+            return fake
+
+        monkeypatch.setattr(redis.Redis, "from_url", classmethod(from_url))
+        monkeypatch.setattr(commands, "_analytics_consumers", lambda url, queue, timeout=1.0: None)
+        fake.urls = urls
+        return fake
+
+    def test_off_is_reported_and_nothing_is_read(self, broker):
+        check = commands._check_analytics({}, self.BROKER)
+        assert check.level == "ok"
+        assert check.detail == "off (DECISION_ANALYTICS_ENABLED=false)"
+        assert broker.urls == [], "the broker is not touched while analytics is off"
+
+    def test_an_empty_queue_is_fine_with_no_worker_answering(self, broker):
+        """doctor runs before the workers do: a queue that has not filled up says nothing yet."""
+        check = commands._check_analytics(self.ON, self.BROKER)
+        assert check.level == "ok"
+        assert check.detail.startswith("on; 0 messages waiting on the `analytics` queue")
+        assert "analytics" in broker.read
+
+    def test_every_priority_list_of_the_queue_is_counted(self, broker):
+        """kombu keeps a Redis queue as one list per priority step: the name, then name + sep + 3, 6 and 9."""
+        broker.lists = {"analytics": 1, f"analytics{self.PRIORITY}3": 1, f"analytics{self.PRIORITY}9": 1}
+        check = commands._check_analytics(self.ON, self.BROKER)
+        assert check.level == "warn"
+        assert check.detail.startswith("3 messages waiting on the `analytics` queue")
+
+    def test_a_small_backlog_is_not_a_warning(self, broker):
+        broker.lists = {"analytics": commands.ANALYTICS_BACKLOG_WARN - 1}
+        assert commands._check_analytics(self.ON, self.BROKER).level == "ok"
+
+    def test_a_backlog_is_a_warning_that_names_the_fix(self, broker):
+        broker.lists = {"analytics": 12}
+        check = commands._check_analytics({**self.ON, "ANALYTICS_SWEEP_SECONDS": "300"}, self.BROKER)
+        assert check.level == "warn"
+        assert "12 messages waiting on the `analytics` queue (about 60 min of sweeps)" in check.detail
+        assert "`docsgpt worker --analytics`" in check.detail
+        assert "-Q" in check.detail
+
+    def test_the_queue_setting_is_the_key_read(self, broker):
+        broker.lists = {"labels": 5}
+        check = commands._check_analytics({**self.ON, "ANALYTICS_QUEUE": "labels"}, self.BROKER)
+        assert check.level == "warn" and "`labels` queue" in check.detail
+        assert set(broker.read) == {"labels", *(f"labels{self.PRIORITY}{step}" for step in (3, 6, 9))}
+
+    def test_the_broker_url_is_the_one_given(self, broker):
+        commands._check_analytics({**self.ON, "CELERY_BROKER_URL": "redis://stale:6379/0"}, "redis://given:6379/4")
+        assert broker.urls == ["redis://given:6379/4"]
+
+    def test_without_a_broker_url_the_settings_default_is_read(self, broker):
+        commands._check_analytics(self.ON, None)
+        assert broker.urls == ["redis://localhost:6379/0"]
+
+    def test_a_broker_that_does_not_answer_is_not_a_second_failure(self, broker):
+        """The redis row already fails on it; this one says it could not look, and keeps the password out."""
+        broker.down = True
+        check = commands._check_analytics(self.ON, "redis://user:sUpErSeCrEt@localhost:6379/0")
+        assert check.level == "warn"
+        assert "cannot be read" in check.detail
+        assert "sUpErSeCrEt" not in check.detail
+
+    def test_a_worker_that_consumes_the_queue_is_named(self, broker, monkeypatch):
+        monkeypatch.setattr(commands, "_analytics_consumers", lambda url, queue, timeout=1.0: ["analytics@mac"])
+        check = commands._check_analytics(self.ON, self.BROKER)
+        assert check.level == "ok" and "consumed by analytics@mac" in check.detail
+
+    def test_workers_that_answer_without_the_queue_are_not_a_warning(self, broker, monkeypatch):
+        """A solo worker in the middle of a sweep cannot answer, so the ones that do are not the whole story."""
+        monkeypatch.setattr(commands, "_analytics_consumers", lambda url, queue, timeout=1.0: [])
+        check = commands._check_analytics(self.ON, self.BROKER)
+        assert check.level == "ok" and "no worker that answered consumes it" in check.detail
+
+    def test_a_backlog_with_a_consumer_says_it_is_behind(self, broker, monkeypatch):
+        broker.lists = {"analytics": 4}
+        monkeypatch.setattr(commands, "_analytics_consumers", lambda url, queue, timeout=1.0: ["celery@box"])
+        check = commands._check_analytics(self.ON, self.BROKER)
+        assert check.level == "warn" and "celery@box" in check.detail and "behind" in check.detail
+
+    def test_a_backlog_with_workers_answering_without_the_queue_says_so(self, broker, monkeypatch):
+        """The solo-pool `docsgpt worker` answers, and lists every queue but this one."""
+        broker.lists = {"analytics": 31}
+        monkeypatch.setattr(commands, "_analytics_consumers", lambda url, queue, timeout=1.0: [])
+        check = commands._check_analytics(self.ON, self.BROKER)
+        assert check.level == "warn"
+        assert "none of the workers that answered consumes it" in check.detail
+        assert "`docsgpt worker --analytics`" in check.detail
+
+    def test_settings_that_do_not_load_are_left_to_the_model_row(self):
+        check = commands._check_analytics({**self.ON, "ANALYTICS_SWEEP_SECONDS": "often"}, self.BROKER)
+        assert check.level == "warn" and "the settings do not load" in check.detail
+
+    def test_it_is_a_row_of_the_report(self, tmp_path, capsys, monkeypatch, broker):
+        monkeypatch.setattr(commands, "_check_postgres", lambda uri: commands.Check("postgres", "ok", "fine"))
+        monkeypatch.setattr(commands, "_check_redis", lambda urls: commands.Check("redis", "ok", "fine"))
+        broker.lists = {"analytics": 9}
+        (tmp_path / ".env").write_text(
+            "LLM_PROVIDER=docsgpt\nDECISION_ANALYTICS_ENABLED=true\nCELERY_BROKER_URL=redis://localhost:6379/3\n",
+            encoding="utf-8",
+        )
+        assert _run(["doctor", "--dir", str(tmp_path)], _context()) == 0, "a backlog is a warning, not a failure"
+        lines = capsys.readouterr().out.splitlines()
+        assert any(line.startswith("[warn] analytics 9 messages") for line in lines), lines
+        assert broker.urls == ["redis://localhost:6379/3"]
+
+
+class TestAnalyticsConsumers:
+    """The optional ``inspect`` ping: a short wait, and silence or an error is no answer rather than a finding."""
+
+    def test_no_reply_within_the_timeout_is_none(self, monkeypatch):
+        from celery.app.control import Inspect
+
+        seen = {}
+
+        def active_queues(self):
+            seen["timeout"] = self.timeout
+            return None  # what Celery returns when no worker replies in time
+
+        monkeypatch.setattr(Inspect, "active_queues", active_queues)
+        assert commands._analytics_consumers("redis://localhost:6379/0", "analytics", timeout=1.0) is None
+        assert seen["timeout"] == 1.0
+
+    def test_an_error_is_none(self, monkeypatch):
+        from celery.app.control import Inspect
+
+        def active_queues(self):
+            raise OSError("connection refused")
+
+        monkeypatch.setattr(Inspect, "active_queues", active_queues)
+        assert commands._analytics_consumers("redis://localhost:6379/0", "analytics") is None
+
+    def test_the_nodes_that_list_the_queue(self, monkeypatch):
+        from celery.app.control import Inspect
+
+        replies = {
+            "celery@mac": [{"name": "docsgpt"}, {"name": "embeddings"}],
+            "analytics@mac": [{"name": "analytics"}],
+        }
+        monkeypatch.setattr(Inspect, "active_queues", lambda self: replies)
+        assert commands._analytics_consumers("redis://localhost:6379/0", "analytics") == ["analytics@mac"]
+        monkeypatch.setattr(Inspect, "active_queues", lambda self: {"celery@mac": [{"name": "docsgpt"}]})
+        assert commands._analytics_consumers("redis://localhost:6379/0", "analytics") == []

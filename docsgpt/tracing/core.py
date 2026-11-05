@@ -76,7 +76,6 @@ _current: ContextVar[Optional["Trace"]] = ContextVar("docsgpt_trace", default=No
 
 #: Context variables :func:`wrap` hands to other threads along with the trace.
 _carried: List[ContextVar] = []
-_UNSET = object()
 
 
 def _new_id() -> str:
@@ -655,11 +654,12 @@ def wrap(fn: Callable[..., Any]) -> Callable[..., Any]:
 
     Use around work handed to a thread pool or ``threading.Thread``; those do
     not inherit context variables. The variables registered with :func:`carry`
-    are bound whether or not a trace is active. With neither a trace nor a
-    carried value set, ``fn`` is returned unchanged.
+    are bound whether or not a trace is active; one holding ``None`` (unset,
+    or reset after a finalized generator) carries nothing. With neither a
+    trace nor a carried value, ``fn`` is returned unchanged.
     """
     trace = _current.get()
-    values = [(var, value) for var in _carried if (value := var.get(_UNSET)) is not _UNSET]
+    values = [(var, value) for var in _carried if (value := var.get(None)) is not None]
     if trace is None and not values:
         return fn
     parent = trace.current_parent() if trace is not None else None
