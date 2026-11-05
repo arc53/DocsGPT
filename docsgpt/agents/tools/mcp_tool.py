@@ -2,7 +2,6 @@ import asyncio
 import base64
 import concurrent.futures
 import hashlib
-import hmac
 import json
 import logging
 import secrets
@@ -129,8 +128,9 @@ OAUTH_TASK_KEY_TTL = 900
 OAUTH_CANCELLED = "1"
 
 
-# Keys the tokens that stand for secrets in cache keys; random per process, never stored.
-_SECRET_TOKEN_KEY = secrets.token_bytes(32)
+# Salts the tokens that stand for secrets in cache keys; random per process, never stored.
+_SECRET_TOKEN_SALT = secrets.token_bytes(32)
+_SECRET_TOKEN_ROUNDS = 1_000
 
 
 def _secret_token(secret: str) -> str:
@@ -139,11 +139,13 @@ def _secret_token(secret: str) -> str:
     A prefix of the secret itself is not enough: every fine-grained GitHub
     token starts with ``github_pat_``, so two users' tokens would share (and
     reuse) one cached client carrying the first user's token. The token is
-    an HMAC under a key that lives only in this process: the same secret
+    PBKDF2-HMAC-SHA256 under a salt that lives only in this process (a
+    password-grade KDF, since the secret may be a password): the same secret
     always gets the same token, no table of raw secrets is kept, and the
     token is worthless outside the process.
     """
-    return hmac.new(_SECRET_TOKEN_KEY, secret.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    digest = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), _SECRET_TOKEN_SALT, _SECRET_TOKEN_ROUNDS)
+    return digest.hex()[:32]
 
 
 def param_header_maps(schemas: Dict[str, Any]) -> Dict[str, Dict[tuple, str]]:
