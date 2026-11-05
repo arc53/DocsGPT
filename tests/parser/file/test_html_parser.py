@@ -478,6 +478,17 @@ def test_a_numeric_rowspan_stops_at_the_end_of_its_row_group():
     assert ["Total", "19"] in rows
 
 
+def test_a_rowspan_inside_a_page_element_is_filled():
+    """The web extractor converts one element of a page, such as its ``<article>``."""
+    html = (
+        "<html><body><article><table><tr><th>Region</th><th>Units</th></tr>"
+        "<tr><td rowspan='2'>EU</td><td>12</td></tr><tr><td>7</td></tr></table></article></body></html>"
+    )
+    article = BeautifulSoup(html, "html.parser").find("article")
+
+    assert _table_rows(soup_to_markdown(article))[2:] == [["EU", "12"], ["", "7"]]
+
+
 def test_a_rowspan_of_zero_without_a_row_group_covers_the_table():
     html = (
         "<table><tr><th>A</th><th>B</th></tr>"
