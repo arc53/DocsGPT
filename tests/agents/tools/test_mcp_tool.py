@@ -1770,7 +1770,7 @@ class TestRunAsyncOperation:
         fresh = MagicMock()
         ran_on = []
 
-        async def fake_execute_on(client, operation, *args, **kwargs):
+        async def fake_execute_on(client, operation, /, *args, **kwargs):
             ran_on.append(client)
             return "ok"
 
