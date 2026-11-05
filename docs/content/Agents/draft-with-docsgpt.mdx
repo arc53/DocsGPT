@@ -73,6 +73,13 @@ The usage limit and guardrails are the agent's policy: they're offered only to s
 
 On a saved agent, **Draft** opens the panel for changes: write what to change, such as "make the description shorter", and DocsGPT changes only that and leaves the other fields as they are. The panel offers what the agent lacks first: **Finish setup: limits and safety** when it has neither a usage limit nor guardrails, **Attach knowledge it can answer from**, **Write a prompt for this agent** while it uses a built-in prompt, and **Suggest conversation starters**. After those come **Make the description shorter** for a long description and **Tighten the prompt** for a prompt of its own. On a published or shared agent, the panel reminds you that a saved change reaches everyone using it.
 
+A change to the agent's prompt opens the prompt in place of the form, with the panel still beside it:
+
+- **Your own prompt** opens with its saved text and a list of **Proposed changes**, the same review as under **Settings → Prompts**: **Accept** or **Reject** each one in the text, or use **Accept all**, **Review one by one** or **Discard** in the panel. **Save** on the prompt waits until the review is done, and saving changes that prompt for every agent that uses it. Asking for something else mid-review keeps the choices made so far.
+- **A built-in or shared prompt** isn't changed: DocsGPT writes a new prompt from its text, as in [the prompt step](#the-prompt-step).
+
+If a turn also changes the form while the prompt is open, such as new starters, the turn offers **Show in agent** to go back and see them.
+
 ### What lands in the form
 
 Each field a draft changed is marked **Drafted**. **Undo** on the marker puts back what the field held before; editing the field yourself removes the marker and keeps your edit. A setting with a switch, such as **Request limiting**, carries the marker after its title. **Left out** lists anything DocsGPT chose but isn't allowed to use, such as a source you can't open or a setting your role can't change.
@@ -109,7 +116,7 @@ A prompt opens as a page of its own, under **Settings → Prompts** or from the 
 - **Write**, on a new, empty prompt: pick a starting point (**Website chat for customers**, **Internal helpdesk** or **Research assistant**) or describe the prompt in your own words, such as "a friendly helper for our HR handbook". DocsGPT fills in the name and the text, each marked **Drafted** with an undo. See [Write a new prompt](#write-a-new-prompt).
 - On a prompt you can't edit (a built-in **default**, **creative** or **strict** prompt, or a shared prompt you can only view), **Improve** makes an editable copy first.
 
-The page names the agents that use the prompt, and the panel reminds you that a saved change reaches all of them. On the agent form, the same page opens in place of the form, and the panel there is the agent's: ask it to change the prompt and it rewrites the text, marked **Drafted**.
+The page names the agents that use the prompt, and the panel reminds you that a saved change reaches all of them. On the agent form, the same page opens in place of the form, and the panel there is the agent's: a change to your own prompt comes back as the same **Proposed changes**, and a new prompt as text marked **Drafted**. See [Change an existing agent](#change-an-existing-agent).
 
 ### Write a new prompt
 
