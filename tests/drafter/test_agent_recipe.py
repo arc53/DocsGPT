@@ -220,6 +220,21 @@ class TestInstructions:
         text = instructions(_req({}, step="prompt"), _ws())
         assert "from the sources and tools already on the form" in text
 
+    def test_the_prompt_step_asks_about_the_hand_off_first(self):
+        text = instructions(_req({}, step="prompt"), _ws())
+        for rule in ("Before writing a new prompt, ask", "where it sends people it can't help",
+                     "a person (live chat or phone)", "the tone", "a detail only the user knows",
+                     "only for what the user picked", "Never leave placeholders"):
+            assert rule in text, rule
+        assert "Before writing a new prompt, ask" not in instructions(_req({}, step="basics"), _ws())
+
+    @pytest.mark.parametrize("step", [None, "prompt"])
+    def test_a_drafted_hand_off_never_promises_a_transfer(self, step):
+        text = instructions(_req({}, step=step), _ws())
+        assert "can't transfer the chat to a person" in text
+        assert "never \"I'll connect you\"" in text
+        assert "unless the agent has a tool for it" in text
+
     def test_only_the_safety_step_may_talk_about_policy(self):
         for step in ("basics", "knowledge", "prompt"):
             assert "Never set or mention changing models, guardrails" in instructions(_req({}, step=step), _ws())

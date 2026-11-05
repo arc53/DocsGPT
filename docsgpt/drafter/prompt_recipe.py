@@ -23,7 +23,16 @@ from typing import Any
 
 from docsgpt.drafter.catalog import is_template, Workspace
 from docsgpt.drafter.fencing import clean_text
-from docsgpt.drafter.prompt_rules import COMPOSER_ADDS, TEMPLATE_PROBLEM, template_parses, tool_variables_problem
+from docsgpt.drafter.prompt_rules import (
+    COMPOSER_ADDS,
+    CONTACT_DETAILS_ROUND,
+    hand_off_rule,
+    HAND_OFF_OPTIONS,
+    no_placeholders,
+    TEMPLATE_PROBLEM,
+    template_parses,
+    tool_variables_problem,
+)
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 
 MODES = ("improve", "write")
@@ -151,10 +160,7 @@ a variable can do, and say in your message that it turns the prompt into a templ
 - In a template (a built-in copy), keep its sections and {{% if %}} blocks, the Boundaries section and \
 {{{{ source.citation_rules }}}}: without them the agent loses its guard against instructions inside documents and \
 its [n] citations.
-- An assistant answers in the chat and does nothing else: it can't transfer the chat to a person, open a ticket, \
-send an email or call anyone (unless the user says the agent has a tool for it). Write a hand-off as what it tells \
-people: where to go and how (an email address, a form or page link, a phone number, a live-chat button and its \
-hours), never "I'll connect you" or "I'll pass this on".
+- {hand_off_rule("the user says the agent has a tool for it")}
 - Don't write warnings about the prompt's mode or removed sections: the app shows those itself. Use warnings only \
 for something else the user must know."""
 
@@ -186,8 +192,7 @@ text as a plain-text persona, plus one sentence on why it is written that way (r
 already, treat it as the user's starting point.
 
 A good persona knows: who it serves and for which company or product; what it covers and what is off-limits; \
-where it sends people when it can't help (a support email, a contact form or page, a person (live chat or phone)); \
-and its tone.
+where it sends people when it can't help (""" + HAND_OFF_OPTIONS + """); and its tone.
 - When you may ask (ask_user is offered), ask first about what the description and the brief below leave out, in \
 one round of at most 3 questions, most important first: usually the company or product, where it sends people it \
 can't help and the tone (a brief below may name others). The company or product is a typed answer: a question \
@@ -195,14 +200,8 @@ with no options and a placeholder such as "e.g. Northwind Travel". Offer options
 people is a pick-any question. Don't ask about off-limits topics: use the usual ones (the brief below names them) \
 and list them in assumptions. Don't ask what the user already said, and don't ask at all when the description \
 covers it.
-- After the first round, before you draft, check each answer for a detail only the user knows: a support email \
-needs the email address, a contact form or page needs the form or page link, a phone needs the number, and a \
-person needs how people reach a person (a live-chat button, opening hours). When one is missing, don't draft yet: \
-call ask_user again with a typed question for each missing detail and a placeholder (e.g. \
-"e.g. support@northwind.com"), only for what the user picked. Draft once nothing is missing.
-- Never leave placeholders such as [company] or [support email] in the prompt. When you may not ask (or the user \
-didn't answer), write around what you don't know (e.g. "point them to the support team") and list each such guess \
-in assumptions.
+- """ + CONTACT_DETAILS_ROUND + """
+- """ + no_placeholders("assumptions") + """
 - assumptions: up to 3 short sentences, each a guess the user should check (e.g. "Hand-offs go to your support \
 team; you didn't name a contact.").
 - suggestions: up to 3 next changes this prompt could use, each worded as the short request the user would send \

@@ -14,6 +14,41 @@ from typing import Optional
 
 from docsgpt.drafter.recipe import DraftRequest
 
+#: Where a prompt may send people it can't help, as the drafter offers them.
+HAND_OFF_OPTIONS = "a support email, a contact form or page, a person (live chat or phone)"
+
+
+def hand_off_rule(exception: str) -> str:
+    """The rule for a drafted hand-off: it says where to go, it never promises a transfer.
+
+    Args:
+        exception: When the assistant can act after all, e.g. ``"the agent has a tool for it"``.
+    """
+    return f"""An assistant answers in the chat and does nothing else: it can't transfer the chat to a person, \
+open a ticket, send an email or call anyone (unless {exception}). Write a hand-off as what it tells people: where \
+to go and how (an email address, a form or page link, a phone number, a live-chat button and its hours), never \
+"I'll connect you" or "I'll pass this on"."""
+
+
+#: The second question round: the contact details the user's picks need.
+CONTACT_DETAILS_ROUND = """After the first round, before you draft, check each answer for a detail only the user \
+knows: a support email needs the email address, a contact form or page needs the form or page link, a phone needs \
+the number, and a person needs how people reach a person (a live-chat button, opening hours). When one is missing, \
+don't draft yet: call ask_user again with a typed question for each missing detail and a placeholder (e.g. \
+"e.g. support@northwind.com"), only for what the user picked. Draft once nothing is missing."""
+
+
+def no_placeholders(where: str) -> str:
+    """The rule against ``[support email]`` blanks in a drafted prompt.
+
+    Args:
+        where: Where the drafter lists its guesses instead, e.g. ``"assumptions"``.
+    """
+    return f"""Never leave placeholders such as [company] or [support email] in the prompt. When you may not ask \
+(or the user didn't answer), write around what you don't know (e.g. "point them to the support team") and list \
+each such guess in {where}."""
+
+
 #: What DocsGPT adds around a plain-text prompt, for the model to leave out.
 COMPOSER_ADDS = """\
   - who it is and today's date;

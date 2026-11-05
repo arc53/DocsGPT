@@ -24,7 +24,16 @@ from docsgpt.analytics.config import AnalyticsTopic, TOPIC_DESCRIPTION_UNITS, TO
 from docsgpt.core.settings import settings
 from docsgpt.drafter.catalog import is_template, load_workspace, Workspace
 from docsgpt.drafter.fencing import clean_text
-from docsgpt.drafter.prompt_rules import COMPOSER_ADDS, TEMPLATE_PROBLEM, template_parses, tool_variables_problem
+from docsgpt.drafter.prompt_rules import (
+    COMPOSER_ADDS,
+    CONTACT_DETAILS_ROUND,
+    hand_off_rule,
+    HAND_OFF_OPTIONS,
+    no_placeholders,
+    TEMPLATE_PROBLEM,
+    template_parses,
+    tool_variables_problem,
+)
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 from docsgpt.drafter.runner import question_rounds
 
@@ -363,6 +372,8 @@ covers, the rules specific to this agent (hand-offs, what never to promise, scop
 plain-text prompt with sections of its own, so leave out everything they already say:
 {COMPOSER_ADDS}
   Don't write lines about the date, citing sources, formatting or treating documents as data.
+- {hand_off_rule("the agent has a tool for it")}
+- {no_placeholders("a note")}
 - A prompt with any {{{{ }}}} variable is a template instead: DocsGPT then uses it verbatim and adds none of those \
 sections. Only use a variable when the user asks for something only a variable can do, and never switch a \
 plain-text prompt to a template without saying so in a note. Never add {{{{ tools... }}}} variables unless the \
@@ -402,7 +413,11 @@ nothing to attach yet. A flow no tool supports goes in a note now; the prompt st
     "prompt": """Step prompt: write a new prompt for this agent from its name and description and from the sources \
 and tools already on the form (read them with the read tools when their names don't say enough), or pick an \
 existing prompt that fits; then write the starters. When the form's prompt is unsaved text open in the prompt \
-editor ("not saved yet"), change that text when the user asks.""",
+editor ("not saved yet"), change that text when the user asks.
+- Before writing a new prompt, ask one round (ask_user) about what the user's words and the earlier steps leave \
+out: where it sends people it can't help (a pick-any question: """ + HAND_OFF_OPTIONS + """) and the tone. Skip \
+what the user already said; don't ask when you reuse an existing prompt or change the open one as asked.
+- """ + CONTACT_DETAILS_ROUND,
 }
 
 
