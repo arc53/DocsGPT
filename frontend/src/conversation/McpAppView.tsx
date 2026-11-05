@@ -248,6 +248,7 @@ export default function McpAppView({
   useEffect(() => {
     if (!resource || !toolId) return;
     const origin = new URL(resource.sandbox_url as string).origin;
+    let initialized = false;
     const host = new McpAppHost({
       frame: () => frameRef.current?.contentWindow ?? null,
       origin,
@@ -273,10 +274,17 @@ export default function McpAppView({
       },
       onSize: (next) => {
         const reported = Math.min(Math.ceil(next), MAX_HEIGHT);
+        // Sizes from before the view initialized are its loading screen's:
+        // they neither shrink a reopened view nor become the one remembered.
+        if (!initialized) {
+          if (!viewHeights.has(viewKey)) setHeight(reported);
+          return;
+        }
         viewHeights.set(viewKey, reported);
         setHeight(reported);
       },
       onInitialized: () => {
+        initialized = true;
         const { toolCall: call, t: translate } = latest.current;
         setPhase('ready');
         host.sendToolInput(call.arguments ?? {});

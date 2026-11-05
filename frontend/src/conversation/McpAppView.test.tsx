@@ -312,9 +312,18 @@ describe('McpAppView', () => {
         ?.parentElement?.style.getPropertyValue('--mcp-app-height');
     await render(view);
     expect(frameHeight()).toBe('360px');
+    act(() => hosts[0].options.onInitialized());
     act(() => hosts[0].options.onSize(485.4));
     expect(frameHeight()).toBe('486px');
 
+    // Reopened: its loading screen's size neither shrinks it nor sticks.
+    act(() => root.unmount());
+    root = createRoot(container);
+    hosts.length = 0;
+    await render(view);
+    expect(frameHeight()).toBe('486px');
+    act(() => hosts[0].options.onSize(200));
+    expect(frameHeight()).toBe('486px');
     act(() => root.unmount());
     root = createRoot(container);
     hosts.length = 0;
