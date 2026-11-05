@@ -15,6 +15,9 @@ from docsgpt.storage.db.repositories.schedule_runs import (
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -112,6 +115,8 @@ class TestExecuteScheduledRunBody:
         assert sched["consecutive_failure_count"] == 0
         event_types = [e[0] for e in stub_events]
         assert "schedule.run.completed" in event_types
+        # Activity › Now lists the run from its start.
+        assert event_types.index("schedule.run.started") < event_types.index("schedule.run.completed")
 
     def test_agent_exception_marks_failed_and_bumps(
         self, pg_engine, patched_engine, stub_events,

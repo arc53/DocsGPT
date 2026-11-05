@@ -1,0 +1,13 @@
+# The decision model's server, for the API and the worker only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: docsgpt-decider-service
+spec:
+  selector:
+    app: docsgpt-decider
+  ports:
+    - protocol: TCP
+      port: 7095
+      targetPort: 7095
+  type: ClusterIP

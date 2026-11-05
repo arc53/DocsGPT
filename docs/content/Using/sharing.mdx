@@ -1,7 +1,7 @@
 ---
 title: Sharing Conversations
 description: Share a conversation as a public, read-only page or as a page where anyone with the link can keep asking questions on your account, and how to stop a link.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-30
 ---
 
 import { Callout } from 'nextra/components'
@@ -26,7 +26,7 @@ The page shows the messages that existed when you created the link: each questio
 A promptable link doesn't reuse the agent you chatted with. DocsGPT creates a published agent on your account, named after the conversation with `(shared)` at the end, for example `Billing questions(shared)`. The agent has its own API key and uses:
 
 - the source you chose in the dialog,
-- your active prompt, from **Settings → General**, and
+- the prompt your chats use, picked in **Settings → Prompts**, and
 - 6 chunks per query (the default; the web app has no setting to change it).
 
 If you already own an agent with an API key, exactly the same prompt, source and chunk settings, and no retriever set, DocsGPT uses that agent's key instead of creating a new one. Later links with the same settings share that agent too.

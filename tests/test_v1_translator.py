@@ -387,6 +387,47 @@ class TestTranslateRequest:
         assert "system_prompt_override" not in result
 
 
+@pytest.mark.unit
+class TestPassthrough:
+    def test_docsgpt_passthrough_is_forwarded(self):
+        data = {
+            "messages": [{"role": "user", "content": "Hi"}],
+            "docsgpt": {"passthrough": {"user_id": "emp-42"}},
+        }
+        assert translate_request(data, "k")["passthrough"] == {"user_id": "emp-42"}
+
+    def test_openai_user_becomes_passthrough_user(self):
+        data = {"messages": [{"role": "user", "content": "Hi"}], "user": "emp-42"}
+        assert translate_request(data, "k")["passthrough"] == {"user": "emp-42"}
+
+    def test_explicit_passthrough_user_wins(self):
+        data = {
+            "messages": [{"role": "user", "content": "Hi"}],
+            "user": "from-openai",
+            "docsgpt": {"passthrough": {"user": "explicit", "page": "billing"}},
+        }
+        assert translate_request(data, "k")["passthrough"] == {"user": "explicit", "page": "billing"}
+
+    def test_none_given_leaves_it_out(self):
+        data = {"messages": [{"role": "user", "content": "Hi"}], "user": "  "}
+        assert "passthrough" not in translate_request(data, "k")
+
+    def test_continuation_keeps_it(self):
+        data = {
+            "messages": [
+                {"role": "user", "content": "Hi"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": "ok"},
+            ],
+            "user": "emp-42",
+        }
+        assert translate_request(data, "k")["passthrough"] == {"user": "emp-42"}
+
+
 # ---------------------------------------------------------------------------
 # translate_response
 # ---------------------------------------------------------------------------

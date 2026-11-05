@@ -20,7 +20,7 @@ import { LoadingState } from '@/components/ui/loading-state';
 import { SectionHeader } from '@/components/ui/section-header';
 import { EmptyState } from '../components/ui/empty-state';
 import StatCard from '@/components/StatCard';
-import { LoadError, fmtNumber, fmtUsd } from './AdminUI';
+import { LoadError, fmtNumber, fmtUsd, userName } from './AdminUI';
 import { useChartPalette } from '../utils/chartUtils';
 import UsageChart, { usageColors } from './UsageChart';
 
@@ -105,9 +105,12 @@ function SplitTable({
  */
 export default function UserUsageModal({
   userId,
+  email,
   onClose,
 }: {
   userId: string | null;
+  /** The user's email, when on file; names them in the title. */
+  email?: string | null;
   onClose: () => void;
 }) {
   const token = useSelector(selectToken);
@@ -167,7 +170,7 @@ export default function UserUsageModal({
     <Modal
       open={userId !== null}
       onOpenChange={(open) => !open && onClose()}
-      title={userId ? `Usage · ${userId}` : 'Usage'}
+      title={userId ? `Usage · ${userName(userId, email)}` : 'Usage'}
       size="lg"
     >
       <ToggleGroup

@@ -15,8 +15,9 @@ from typing import List
 
 from docsgpt.parser.chunking import Chunker
 from docsgpt.parser.chunking_creator import ChunkerCreator
+from docsgpt.parser.limits import MAX_CHUNK_TOKENS, SEMANTIC_EMBED_BATCH_SIZE
 from docsgpt.parser.schema.base import Document
-from docsgpt.parser.tokenization import get_token_counter
+from docsgpt.parser.tokenization import get_token_counter, split_to_token_limit
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +37,25 @@ class _BaseStrategyChunker:
         max_tokens: int = 2000,
         min_tokens: int = 150,
         duplicate_headers: bool = False,
+        chunk_overlap: int = 0,
     ):
+        """Initialise chunker base settings.
+
+        Args:
+            chunking_strategy: Strategy name (for construction compatibility).
+            max_tokens: Maximum tokens allowed per chunk.
+            min_tokens: Minimum tokens allowed per chunk for merging.
+            duplicate_headers: Whether to duplicate section headers across chunks.
+            chunk_overlap: Number of tokens to overlap across adjacent chunks.
+        """
         self.chunking_strategy = chunking_strategy
         self.max_tokens = max(1, int(max_tokens))
         self.min_tokens = max(0, int(min_tokens))
+        self.chunk_overlap = (
+            max(0, min(int(chunk_overlap), self.max_tokens - 1))
+            if self.max_tokens > 1
+            else 0
+        )
         self.duplicate_headers = duplicate_headers
         # Same unit as the embedding server counts in; see
         # ``docsgpt.parser.tokenization``.
@@ -50,7 +66,7 @@ class _BaseStrategyChunker:
 
     def _split_by_tokens(self, text: str) -> List[str]:
         """Split ``text`` into pieces no larger than ``max_tokens`` tokens."""
-        return self.counter.split(text, self.max_tokens)
+        return split_to_token_limit(self.counter, text, self.max_tokens)
 
     def _emit(self, base: Document, part_index: int, text: str) -> Document:
         """Build a child Document carrying token_count and inherited info."""
@@ -87,18 +103,35 @@ class _BaseStrategyChunker:
 class RecursiveChunker(_BaseStrategyChunker):
     """Split on a separator hierarchy, capping at ``max_tokens``.
 
-    Tries paragraph, line, then sentence boundaries before falling back to a
+    Tries paragraph, line, sentence, and word boundaries before falling back to a
     hard token split, and merges adjacent fragments while their combined size
-    stays under ``max_tokens`` so chunks clear ``min_tokens`` where possible.
+    stays under ``max_tokens`` respecting ``chunk_overlap`` so semantic context
+    survives chunk boundaries.
     """
 
-    _SEPARATORS = ["\n\n", "\n", ". "]
+    _SEPARATORS = ["\n\n", "\n", ". ", " "]
 
     def _recursive_split(self, text: str, sep_idx: int) -> List[str]:
-        if self._token_count(text) <= self.max_tokens:
+        """Split text recursively using the separator hierarchy.
+
+        Args:
+            text: Input string to split.
+            sep_idx: Current index in ``_SEPARATORS`` to split on.
+
+        Returns:
+            List of string fragments each within target size limits.
+        """
+        target_size = (
+            max(1, self.chunk_overlap)
+            if self.chunk_overlap > 0
+            else self.max_tokens
+        )
+        if self._token_count(text) <= target_size:
             return [text] if text.strip() else []
         if sep_idx >= len(self._SEPARATORS):
-            return [p for p in self._split_by_tokens(text) if p.strip()]
+            if self._token_count(text) <= self.max_tokens:
+                return [text] if text.strip() else []
+            return [p for p in split_to_token_limit(self.counter, text, self.max_tokens) if p.strip()]
         sep = self._SEPARATORS[sep_idx]
         parts = text.split(sep)
         out: List[str] = []
@@ -106,19 +139,96 @@ class RecursiveChunker(_BaseStrategyChunker):
             piece = part + sep if i < len(parts) - 1 else part
             if not piece.strip():
                 continue
-            if self._token_count(piece) <= self.max_tokens:
+            if self._token_count(piece) <= target_size:
                 out.append(piece)
             else:
                 out.extend(self._recursive_split(piece, sep_idx + 1))
         return out
 
+    def _merge_fragments(self, fragments: List[str]) -> List[str]:
+        """Merge fragments into chunks respecting max_tokens and chunk_overlap.
+
+        Args:
+            fragments: List of smaller string fragments to combine.
+
+        Returns:
+            List of chunk strings bounded by ``max_tokens`` with overlap.
+        """
+        if not fragments:
+            return []
+
+        frag_tokens = [self._token_count(f) for f in fragments]
+        chunks: List[str] = []
+        i = 0
+        n = len(fragments)
+
+        while i < n:
+            j = i
+            current_tokens = 0
+            while j < n:
+                if current_tokens + frag_tokens[j] <= self.max_tokens:
+                    current_tokens += frag_tokens[j]
+                    j += 1
+                else:
+                    break
+
+            if j == i:
+                chunk_text = fragments[i]
+                j = i + 1
+            else:
+                chunk_text = "".join(fragments[i:j])
+
+            if chunk_text.strip():
+                chunks.append(chunk_text)
+
+            if j >= n:
+                break
+
+            if self.chunk_overlap > 0:
+                budget = min(self.chunk_overlap, self.max_tokens - frag_tokens[j])
+                overlap_tokens = 0
+                next_i = j
+                if budget > 0:
+                    for k in range(j - 1, i, -1):
+                        cand = overlap_tokens + frag_tokens[k]
+                        if cand <= budget:
+                            overlap_tokens = cand
+                            next_i = k
+                        else:
+                            break
+                i = max(i + 1, next_i)
+            else:
+                i = j
+
+        return chunks
+
     def _merge(self, fragments: List[str]) -> List[str]:
-        """Merge small fragments up to ``max_tokens`` to clear ``min_tokens``."""
-        return self._merge_to_min(fragments, "")
+        """Merge small fragments up to ``max_tokens`` respecting chunk_overlap.
+
+        Args:
+            fragments: List of smaller string fragments to combine.
+
+        Returns:
+            List of merged chunk strings.
+        """
+        return self._merge_fragments(fragments)
 
     def chunk(self, documents: List[Document]) -> List[Document]:
+        """Split documents into chunks using recursive splitting with token overlap.
+
+        Args:
+            documents: List of input Document instances to chunk.
+
+        Returns:
+            List of chunked Document instances.
+        """
         processed: List[Document] = []
         for doc in documents:
+            if not doc.text or not doc.text.strip():
+                continue
+            if self._token_count(doc.text) <= self.max_tokens:
+                processed.append(self._emit(doc, 0, doc.text))
+                continue
             fragments = self._recursive_split(doc.text, 0)
             for idx, text in enumerate(self._merge(fragments)):
                 processed.append(self._emit(doc, idx, text))
@@ -186,10 +296,12 @@ class ParentChildChunker(_BaseStrategyChunker):
         child_size = self._child_size()
         for doc in documents:
             part_index = 0
-            for parent_text in self.counter.split(doc.text, self.max_tokens):
+            for parent_text in self._split_by_tokens(doc.text):
                 if not parent_text.strip():
                     continue
-                for child_text in self.counter.split(parent_text, child_size):
+                for child_text in split_to_token_limit(
+                    self.counter, parent_text, child_size
+                ):
                     if not child_text.strip():
                         continue
                     child = Document(
@@ -223,16 +335,42 @@ class SemanticChunker(_BaseStrategyChunker):
     _SENTENCE = re.compile(r"(?<=[.!?])\s+")
     _PERCENTILE = 95.0
 
+    def __init__(
+        self,
+        chunking_strategy: str = "classic_chunk",
+        max_tokens: int = 2000,
+        min_tokens: int = 150,
+        duplicate_headers: bool = False,
+        chunk_overlap: int = 0,
+    ) -> None:
+        """Build a semantic chunker with the embedding ceiling enforced."""
+        super().__init__(
+            chunking_strategy=chunking_strategy,
+            max_tokens=min(int(max_tokens), MAX_CHUNK_TOKENS),
+            min_tokens=min_tokens,
+            duplicate_headers=duplicate_headers,
+            chunk_overlap=chunk_overlap,
+        )
+
     def _split_sentences(self, text: str) -> List[str]:
-        return [s for s in (p.strip() for p in self._SENTENCE.split(text)) if s]
+        sentences: List[str] = []
+        cursor = 0
+        for match in self._SENTENCE.finditer(text):
+            sentences.append(text[cursor : match.end()])
+            cursor = match.end()
+        if cursor < len(text):
+            sentences.append(text[cursor:])
+        return [sentence for sentence in sentences if sentence]
 
     def _fallback(self, documents: List[Document]) -> List[Document]:
         recursive = RecursiveChunker(
             chunking_strategy=self.chunking_strategy,
             max_tokens=self.max_tokens,
             min_tokens=self.min_tokens,
+            chunk_overlap=self.chunk_overlap,
             duplicate_headers=self.duplicate_headers,
         )
+        recursive.counter = self.counter
         return recursive.chunk(documents)
 
     def _breakpoints(self, embeddings) -> set:
@@ -260,10 +398,10 @@ class SemanticChunker(_BaseStrategyChunker):
         for idx, sentence in enumerate(sentences):
             current.append(sentence)
             if idx in breakpoints:
-                groups.append(" ".join(current))
+                groups.append("".join(current))
                 current = []
         if current:
-            groups.append(" ".join(current))
+            groups.append("".join(current))
         return groups
 
     def _enforce_tokens(self, groups: List[str]) -> List[str]:
@@ -273,8 +411,35 @@ class SemanticChunker(_BaseStrategyChunker):
             if self._token_count(group) <= self.max_tokens:
                 capped.append(group)
             else:
-                capped.extend(p for p in self._split_by_tokens(group) if p.strip())
-        return self._merge_to_min(capped, " ")
+                capped.extend(p for p in self._split_by_tokens(group) if p)
+        return self._merge_to_min(capped, "")
+
+    def _embedding_inputs(self, sentences: List[str]) -> List[str]:
+        """Split sentences into inputs that are individually safe to embed."""
+        limit = min(self.max_tokens, MAX_CHUNK_TOKENS)
+        inputs: List[str] = []
+        for sentence in sentences:
+            if self._token_count(sentence) <= limit:
+                inputs.append(sentence)
+            else:
+                inputs.extend(
+                    piece
+                    for piece in split_to_token_limit(self.counter, sentence, limit)
+                    if piece
+                )
+        return inputs
+
+    @staticmethod
+    def _embed_in_batches(embeddings_client, inputs: List[str]):
+        """Embed a bounded number of sentence inputs per provider call."""
+        vectors = []
+        for start in range(0, len(inputs), SEMANTIC_EMBED_BATCH_SIZE):
+            batch = inputs[start : start + SEMANTIC_EMBED_BATCH_SIZE]
+            batch_vectors = embeddings_client.embed_documents(batch)
+            if len(batch_vectors) != len(batch):
+                raise ValueError("embedding provider returned the wrong vector count")
+            vectors.extend(batch_vectors)
+        return vectors
 
     def _chunk_text(self, text: str) -> List[str]:
         sentences = self._split_sentences(text)
@@ -282,7 +447,8 @@ class SemanticChunker(_BaseStrategyChunker):
             raise ValueError("too few sentences for semantic chunking")
         from docsgpt.vectorstore.base import get_embeddings
 
-        embeddings = get_embeddings().embed_documents(sentences)
+        sentences = self._embedding_inputs(sentences)
+        embeddings = self._embed_in_batches(get_embeddings(), sentences)
         breakpoints = self._breakpoints(embeddings)
         groups = self._group(sentences, breakpoints)
         return [g for g in self._enforce_tokens(groups) if g.strip()]
@@ -305,6 +471,7 @@ class SemanticChunker(_BaseStrategyChunker):
 
 
 ChunkerCreator.register("recursive", RecursiveChunker)
+ChunkerCreator.register("recursive_chunk", RecursiveChunker)
 ChunkerCreator.register("markdown", MarkdownChunker)
 ChunkerCreator.register("parent_child", ParentChildChunker)
 ChunkerCreator.register("semantic", SemanticChunker)

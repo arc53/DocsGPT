@@ -101,6 +101,29 @@ class TestListUsers:
         assert [r["user_id"] for r in rows] == ["lu_a"]
 
 
+    def test_filter_matches_literally(self, pg_conn):
+        UsersRepository(pg_conn).upsert("lu_x1")
+        UsersRepository(pg_conn).upsert("luXx1")
+        total, rows = AdminStatsRepository(pg_conn).list_users("lu_x", 0, 200)
+        assert total == 1
+        assert [r["user_id"] for r in rows] == ["lu_x1"]
+
+    def test_rows_carry_email(self, pg_conn):
+        UsersRepository(pg_conn).upsert("lu_mail", email="mail@example.com")
+        UsersRepository(pg_conn).upsert("lu_nomail")
+        _, rows = AdminStatsRepository(pg_conn).list_users("lu_", 0, 200)
+        by_user = {r["user_id"]: r for r in rows}
+        assert by_user["lu_mail"]["email"] == "mail@example.com"
+        assert by_user["lu_nomail"]["email"] is None
+
+    def test_filter_matches_email_case_insensitively(self, pg_conn):
+        UsersRepository(pg_conn).upsert("lu_e1", email="Jane.Doe@Example.com")
+        UsersRepository(pg_conn).upsert("lu_e2", email="other@corp.io")
+        total, rows = AdminStatsRepository(pg_conn).list_users("jane.doe@example", 0, 200)
+        assert total == 1
+        assert [r["user_id"] for r in rows] == ["lu_e1"]
+
+
 class TestTopTokenUsers:
     def test_ordered_by_spend_desc(self, pg_conn):
         since = datetime.now(timezone.utc) - timedelta(days=30)
@@ -116,6 +139,22 @@ class TestTopTokenUsers:
         assert by_user["tt_small"] == 1
         ids = [t["user_id"] for t in top]
         assert ids.index("tt_big") < ids.index("tt_small")
+
+    def test_rows_carry_email(self, pg_conn):
+        since = datetime.now(timezone.utc) - timedelta(days=30)
+        UsersRepository(pg_conn).upsert("tt_mail", email="spender@example.com")
+        TokenUsageRepository(pg_conn).insert(
+            user_id="tt_mail", prompt_tokens=7, generated_tokens=0
+        )
+        TokenUsageRepository(pg_conn).insert(
+            user_id="tt_unknown", prompt_tokens=3, generated_tokens=0
+        )
+        top = AdminStatsRepository(pg_conn).top_token_users(since=since, limit=100)
+        by_user = {t["user_id"]: t for t in top}
+        assert by_user["tt_mail"]["email"] == "spender@example.com"
+        assert by_user["tt_mail"]["tokens"] == 7
+        # A usage row without a users row still lists, with no email.
+        assert by_user["tt_unknown"]["email"] is None
 
 
 class TestUserCounts:

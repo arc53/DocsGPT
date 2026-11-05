@@ -1,0 +1,742 @@
+"""The Activity › Now snapshot: what runs for a user right now, what waits for
+them, and what runs in the next day.
+
+Each kind of work keeps its state in its own table; this module only reads
+them, one bounded query per kind, and folds them into one payload. Live
+updates come from the events each kind already publishes; the client refetches
+this snapshot on them.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
+
+from docsgpt.activity.common import as_datetime, query_rows
+from docsgpt.activity.flags import list_runs
+from docsgpt.activity.labels import tool_labels
+from docsgpt.activity.syncs import LATE_GRACE, due_batches, next_sync_times
+from docsgpt.agents.scheduler_utils import ScheduleValidationError, cron_runs
+from docsgpt.background.service import job_summary
+from docsgpt.core.settings import settings
+from docsgpt.storage.db.base_repository import looks_like_uuid
+
+logger = logging.getLogger(__name__)
+
+#: A chat answer whose heartbeat is older than this is not running any more
+#: (the stream ticker stamps it every 30 s; the reconciler sweeps it later).
+CHAT_FRESH_SECONDS = 90
+
+#: How far ahead "Up next" looks.
+UP_NEXT_WINDOW = timedelta(hours=24)
+
+#: Rows per kind; a user with more than this running at once is an outlier.
+PER_KIND_LIMIT = 50
+
+#: Occurrences counted per recurring schedule inside the window.
+MAX_OCCURRENCES = 500
+
+
+def _iso(value: Any) -> Optional[str]:
+    """A timestamp as ISO text; any other value as text, ``None`` kept."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value) if value is not None else None
+
+
+def _str(value: Any) -> Optional[str]:
+    """``value`` as text (a UUID, say), ``None`` kept."""
+    return str(value) if value is not None else None
+
+
+def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Answers being written in the user's listed chats.
+
+    A row counts while its heartbeat (or, before the first one, its start) is
+    fresh, so an answer whose stream died without ending drops off. An answer
+    paused for a tool approval is left out: it waits under ``needs_you``.
+    """
+    rows = query_rows(
+        conn,
+        """
+        SELECT m.id AS message_id, m.conversation_id, m.status, m.timestamp,
+               c.name AS conversation_name, c.agent_id, a.name AS agent_name
+        FROM conversation_messages m
+        JOIN conversations c ON c.id = m.conversation_id
+        LEFT JOIN agents a ON a.id = c.agent_id
+        WHERE m.user_id = :user_id
+          AND m.status IN ('pending', 'streaming')
+          AND c.visibility = 'listed'
+          AND NOT EXISTS (
+              SELECT 1 FROM pending_tool_state p
+              WHERE p.conversation_id = m.conversation_id AND p.user_id = m.user_id
+                AND p.status = 'pending'
+                AND p.agent_config ->> 'reserved_message_id' = m.id::text
+          )
+          AND COALESCE(
+                (m.message_metadata ->> 'last_heartbeat_at')::timestamptz,
+                m.timestamp
+              ) > now() - make_interval(secs => :fresh)
+        ORDER BY m.timestamp ASC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "fresh": CHAT_FRESH_SECONDS, "limit": PER_KIND_LIMIT},
+    )
+    return [
+        {
+            "kind": "chat",
+            "id": _str(r["message_id"]),
+            "message_id": _str(r["message_id"]),
+            "conversation_id": _str(r["conversation_id"]),
+            "title": r.get("conversation_name") or None,
+            "agent_id": _str(r.get("agent_id")),
+            "agent_name": r.get("agent_name"),
+            "status": r.get("status"),
+            "started_at": _iso(r.get("timestamp")),
+            "workflow": False,
+        }
+        for r in rows
+    ]
+
+
+def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Answers being written through the API on the user's agents, one row per agent.
+
+    API, OpenAI-compatible and shared-agent calls write hidden conversations,
+    some under the caller's user id; a busy agent would flood the list, so
+    each agent is one row whose ``count`` is its requests. The agent's Logs
+    list them one by one. An answer paused for a tool approval is left out,
+    as in ``_running_chats``: it waits under ``needs_you``.
+    """
+    rows = query_rows(
+        conn,
+        """
+        SELECT c.agent_id, a.name AS agent_name, COUNT(*) AS count,
+               MIN(m.timestamp) AS started_at, array_agg(m.id::text) AS message_ids
+        FROM conversation_messages m
+        JOIN conversations c ON c.id = m.conversation_id
+        JOIN agents a ON a.id = c.agent_id
+        WHERE a.user_id = :user_id
+          AND c.visibility <> 'listed'
+          AND m.status IN ('pending', 'streaming')
+          AND NOT EXISTS (
+              SELECT 1 FROM pending_tool_state p
+              WHERE p.conversation_id = m.conversation_id AND p.user_id = m.user_id
+                AND p.status = 'pending'
+                AND p.agent_config ->> 'reserved_message_id' = m.id::text
+          )
+          AND COALESCE(
+                (m.message_metadata ->> 'last_heartbeat_at')::timestamptz,
+                m.timestamp
+              ) > now() - make_interval(secs => :fresh)
+        GROUP BY c.agent_id, a.name
+        ORDER BY MIN(m.timestamp) ASC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "fresh": CHAT_FRESH_SECONDS, "limit": PER_KIND_LIMIT},
+    )
+    return [
+        {
+            "kind": "api",
+            "id": f"api:{r['agent_id']}",
+            "title": r.get("agent_name"),
+            "agent_id": _str(r["agent_id"]),
+            "agent_name": r.get("agent_name"),
+            "count": int(r.get("count") or 0),
+            "started_at": _iso(r.get("started_at")),
+            "workflow": False,
+            # For ``_fold_workflows`` only; it drops them.
+            "message_ids": list(r.get("message_ids") or []),
+        }
+        for r in rows
+    ]
+
+
+def _job_fraction(progress: Any) -> Optional[float]:
+    """A job's ``{"last", "percent"}`` progress as the 0-1 fraction every Now row carries.
+
+    Args:
+        progress: The job's stored progress (see ``background/watch.py``).
+
+    Returns:
+        ``percent / 100`` clamped to 0-1, or ``None`` when the job prints none.
+    """
+    percent = progress.get("percent") if isinstance(progress, dict) else None
+    if not isinstance(percent, (int, float)) or isinstance(percent, bool):
+        return None
+    return min(max(percent / 100, 0.0), 1.0)
+
+
+def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Background jobs still working, with their tool's label and the job's progress."""
+    rows = query_rows(
+        conn,
+        """
+        SELECT j.*, c.name AS conversation_name, a.name AS agent_name
+        FROM background_jobs j
+        LEFT JOIN conversations c ON c.id = j.conversation_id
+        LEFT JOIN agents a ON a.id = j.agent_id
+        WHERE j.user_id = :user_id AND j.status = 'working'
+        ORDER BY j.created_at ASC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+    )
+    labels = tool_labels(conn, user_id, [r.get("tool_name") for r in rows])
+    out = []
+    for r in rows:
+        summary = job_summary(r)
+        out.append(
+            {
+                "kind": "job",
+                "id": summary["job_id"],
+                "job_id": summary["job_id"],
+                "conversation_id": summary.get("conversation_id"),
+                "conversation_name": r.get("conversation_name"),
+                "title": r.get("conversation_name") or None,
+                "agent_id": _str(r.get("agent_id")),
+                "agent_name": r.get("agent_name"),
+                "tool_name": summary.get("tool_name"),
+                "tool_label": labels.get(summary.get("tool_name") or ""),
+                "action_name": summary.get("action_name"),
+                "job_kind": r.get("kind"),
+                "status_message": summary.get("status_message"),
+                "progress": _job_fraction(summary.get("progress")),
+                "output_tail": summary.get("output_tail"),
+                "cancel_requested": summary.get("cancel_requested"),
+                "started_at": summary.get("started_at") or _iso(r.get("created_at")),
+            }
+        )
+    return out
+
+
+def _running_schedule_runs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Scheduled runs pending or running, oldest slot first."""
+    rows = query_rows(
+        conn,
+        """
+        SELECT sr.id, sr.schedule_id, sr.status, sr.started_at, sr.scheduled_for,
+               sr.trigger_source, s.name, s.instruction, s.agent_id,
+               a.name AS agent_name
+        FROM schedule_runs sr
+        JOIN schedules s ON s.id = sr.schedule_id
+        LEFT JOIN agents a ON a.id = s.agent_id
+        WHERE sr.user_id = :user_id AND sr.status IN ('pending', 'running')
+        ORDER BY sr.scheduled_for ASC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+    )
+    return [
+        {
+            "kind": "schedule",
+            "id": _str(r["id"]),
+            "run_id": _str(r["id"]),
+            "schedule_id": _str(r["schedule_id"]),
+            "title": r.get("name") or (r.get("instruction") or "")[:80] or None,
+            "agent_id": _str(r.get("agent_id")),
+            "agent_name": r.get("agent_name"),
+            "status": r.get("status"),
+            "trigger_source": r.get("trigger_source"),
+            "scheduled_for": _iso(r.get("scheduled_for")),
+            "started_at": _iso(r.get("started_at") or r.get("scheduled_for")),
+            "workflow": False,
+        }
+        for r in rows
+    ]
+
+
+def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Workflow runs still going, with the step they are on.
+
+    Most are folded into the chat, scheduled run or webhook that started them
+    (``_fold_workflows``); the agent is the one that ran it (several can share
+    a workflow).
+    """
+    rows = query_rows(
+        conn,
+        """
+        SELECT r.id, r.started_at, r.workflow_id, r.progress, w.name AS workflow_name,
+               r.inputs ->> 'started_by' AS started_by, a.id AS agent_id, a.name AS agent_name
+        FROM workflow_runs r
+        JOIN workflows w ON w.id = r.workflow_id
+        LEFT JOIN LATERAL (
+            -- The agent that ran it; a run from before that was recorded
+            -- falls back to the runner's own oldest, never another user's.
+            SELECT id, name FROM agents
+            WHERE workflow_id = r.workflow_id
+              AND CASE WHEN r.inputs ? 'agent_id' THEN id::text = r.inputs ->> 'agent_id'
+                       ELSE user_id = r.user_id END
+            ORDER BY created_at ASC LIMIT 1
+        ) a ON TRUE
+        WHERE r.user_id = :user_id AND r.status = 'running'
+        ORDER BY r.started_at ASC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+    )
+    return [
+        {
+            "kind": "workflow",
+            "id": _str(r["id"]),
+            "run_id": _str(r["id"]),
+            "workflow_id": _str(r["workflow_id"]),
+            "title": r.get("agent_name") or r.get("workflow_name"),
+            "agent_id": _str(r.get("agent_id")),
+            "agent_name": r.get("agent_name"),
+            "started_at": _iso(r.get("started_at")),
+            "workflow_progress": r.get("progress"),
+            # For ``_fold_workflows`` only; it drops it.
+            "started_by": r.get("started_by"),
+        }
+        for r in rows
+    ]
+
+
+def _marker_started(marker: Dict[str, Any]) -> Optional[str]:
+    """When a Redis run marker was set, as ISO text, or ``None`` when it has no start."""
+    started = marker.get("started_at")
+    if started is None:
+        return None
+    return datetime.fromtimestamp(float(started), tz=timezone.utc).isoformat()
+
+
+def _running_ingests(conn: Connection, user_id: str, markers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Knowledge being indexed: each source's marker and its chunk progress.
+
+    The marker (set when the ingest is queued) gives the start, the name and
+    what kind of ingest it is; it is the only trace of a new upload, which has
+    no source row until it ends, while its files are being read. The progress
+    row, once chunks are embedding, gives how far along it is. A source with
+    progress but no marker (Redis lost it) still shows, without a start.
+    """
+    by_source = {
+        str(marker["source_id"]): marker
+        for marker in markers
+        if marker.get("kind") == "ingest" and marker.get("source_id")
+    }
+    # Two lookups an index can serve, rather than one OR that scans every
+    # source's row: the marked sources by key, whatever their status (a
+    # re-index of a stalled source needs its row), and the user's unfinished
+    # ingests that are still active (stalled ones would fill the limit).
+    rows = query_rows(
+        conn,
+        """
+        SELECT * FROM (
+            SELECT p.source_id, s.name, p.status, p.total_chunks, p.embedded_chunks, p.last_updated
+            FROM ingest_chunk_progress p
+            LEFT JOIN sources s ON s.id = p.source_id
+            WHERE p.source_id = ANY(CAST(:marked AS uuid[]))
+            UNION
+            SELECT p.source_id, s.name, p.status, p.total_chunks, p.embedded_chunks, p.last_updated
+            FROM sources s
+            JOIN ingest_chunk_progress p ON p.source_id = s.id
+            WHERE s.user_id = :user_id
+              AND p.status = 'active'
+              AND p.embedded_chunks < p.total_chunks
+        ) progress
+        ORDER BY last_updated ASC
+        LIMIT :limit
+        """,
+        {
+            "user_id": user_id,
+            "marked": [sid for sid in by_source if looks_like_uuid(sid)],
+            "limit": PER_KIND_LIMIT,
+        },
+    )
+    progress = {str(r["source_id"]): r for r in rows}
+    out = []
+    for source_id in list(by_source) + [sid for sid in progress if sid not in by_source]:
+        marker = by_source.get(source_id) or {}
+        row = progress.get(source_id)
+        name = (row or {}).get("name")
+        started = as_datetime(_marker_started(marker))
+        updated = as_datetime((row or {}).get("last_updated"))
+        if row is not None and started is not None and updated is not None and updated < started:
+            # A re-index or sync: the row is the last run's until this one
+            # starts embedding.
+            row = None
+        if row is not None and row.get("status") == "stalled":
+            continue
+        total = int(row.get("total_chunks") or 0) if row else 0
+        done = int(row.get("embedded_chunks") or 0) if row else 0
+        out.append(
+            {
+                "kind": "ingest",
+                "id": source_id,
+                "source_id": source_id,
+                "title": marker.get("name") or name,
+                "operation": marker.get("operation"),
+                "stage": "embedding" if total else "reading",
+                "progress": (done / total) if total else None,
+                "embedded_chunks": done,
+                "total_chunks": total,
+                "started_at": _marker_started(marker),
+            }
+        )
+    return out
+
+
+def _running_webhooks(markers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Agent webhook runs in flight, from their Redis markers (they write no row until they end)."""
+    out = []
+    for marker in markers:
+        if marker.get("kind", "webhook") != "webhook":
+            continue
+        out.append(
+            {
+                "kind": "webhook",
+                "id": _str(marker.get("id")),
+                "title": marker.get("agent_name"),
+                "agent_id": _str(marker.get("agent_id")),
+                "agent_name": marker.get("agent_name"),
+                "started_at": _marker_started(marker),
+            }
+        )
+    return out
+
+
+def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Fold each workflow run into the chat, scheduled run or webhook run that started it.
+
+    A workflow agent's chat, scheduled run or webhook run also writes a
+    ``workflow_runs`` row; listing both would show one piece of work twice.
+    A run names what started it (``started_by``: the chat or API answer's
+    message id, the scheduled run's id or the webhook's task id), and goes
+    there; the host takes the run's step (``workflow_progress``). A run that
+    names nothing (one from before ``started_by``) is matched by agent,
+    oldest run to oldest host left, one run per host. Runs of API answers go
+    into the agent's API row, which stands for many requests, as do unnamed
+    runs left over; a run with nothing to fold into (a builder preview) is
+    listed on its own.
+    """
+    by_id: Dict[str, Dict[str, Any]] = {}
+    api_by_message: Dict[str, Dict[str, Any]] = {}
+    for item in running:
+        if item["kind"] == "chat" and item.get("message_id"):
+            by_id[item["message_id"]] = item
+        elif item["kind"] in ("schedule", "webhook") and item.get("id"):
+            by_id[item["id"]] = item
+        elif item["kind"] == "api":
+            for message_id in item.pop("message_ids", None) or []:
+                api_by_message[message_id] = item
+    api_rows = {item["agent_id"]: item for item in running if item["kind"] == "api"}
+    claimed = set()
+    unnamed = []
+    standalone = []
+    for flow in workflows:
+        started_by = flow.pop("started_by", None)
+        if not started_by:
+            unnamed.append(flow)
+        elif started_by in by_id and id(by_id[started_by]) not in claimed:
+            host = by_id[started_by]
+            claimed.add(id(host))
+            host["workflow"] = True
+            host["workflow_progress"] = flow.get("workflow_progress")
+        elif started_by in api_by_message:
+            api_by_message[started_by]["workflow"] = True
+        else:
+            standalone.append(flow)
+    hosts: Dict[str, List[Dict[str, Any]]] = {}
+    oldest = datetime.min.replace(tzinfo=timezone.utc)
+    for item in sorted(running, key=lambda entry: as_datetime(entry.get("started_at")) or oldest):
+        if item["kind"] in ("chat", "schedule", "webhook") and item.get("agent_id") and id(item) not in claimed:
+            hosts.setdefault(item["agent_id"], []).append(item)
+    for flow in unnamed:
+        waiting = hosts.get(flow.get("agent_id")) if flow.get("agent_id") else None
+        if waiting:
+            host = waiting.pop(0)
+            host["workflow"] = True
+            host["workflow_progress"] = flow.get("workflow_progress")
+        elif flow.get("agent_id") in api_rows:
+            api_rows[flow["agent_id"]]["workflow"] = True
+        else:
+            standalone.append(flow)
+    return standalone
+
+
+def _approvals(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Paused turns waiting for the user to approve a tool call, soonest to expire first."""
+    rows = query_rows(
+        conn,
+        """
+        SELECT p.conversation_id, p.created_at, p.expires_at, p.pending_tool_calls,
+               c.name AS conversation_name, c.agent_id, a.name AS agent_name
+        FROM pending_tool_state p
+        JOIN conversations c ON c.id = p.conversation_id
+        LEFT JOIN agents a ON a.id = c.agent_id
+        WHERE p.user_id = :user_id
+          AND p.status = 'pending'
+          AND p.expires_at > now()
+          AND EXISTS (
+              SELECT 1 FROM json_array_elements(p.pending_tool_calls) e
+              WHERE e ->> 'pause_type' = 'awaiting_approval'
+          )
+        ORDER BY p.expires_at ASC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+    )
+    out = []
+    for r in rows:
+        calls = r.get("pending_tool_calls") or []
+        tools = []
+        for call in calls if isinstance(calls, list) else []:
+            if isinstance(call, dict) and call.get("pause_type") == "awaiting_approval":
+                name = call.get("tool_name") or call.get("name")
+                if name and name not in tools:
+                    tools.append(name)
+        out.append(
+            {
+                "kind": "approval",
+                "id": f"approval:{r['conversation_id']}",
+                "conversation_id": _str(r["conversation_id"]),
+                "title": r.get("conversation_name") or None,
+                "agent_id": _str(r.get("agent_id")),
+                "agent_name": r.get("agent_name"),
+                "tools": tools,
+                "created_at": _iso(r.get("created_at")),
+                "expires_at": _iso(r.get("expires_at")),
+            }
+        )
+    return out
+
+
+def _autopaused_schedules(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+    """Schedules the scheduler paused after repeated failures, with their last error.
+
+    Only a paused schedule at or past ``SCHEDULE_AUTOPAUSE_FAILURES``
+    consecutive failures counts, so a healthy one paused by hand stays out.
+    """
+    threshold = max(1, int(settings.SCHEDULE_AUTOPAUSE_FAILURES or 1))
+    rows = query_rows(
+        conn,
+        """
+        SELECT s.id, s.name, s.instruction, s.agent_id, s.consecutive_failure_count,
+               s.updated_at, a.name AS agent_name,
+               last.error_type AS last_error_type, last.error AS last_error,
+               last.finished_at AS last_failed_at
+        FROM schedules s
+        LEFT JOIN agents a ON a.id = s.agent_id
+        LEFT JOIN LATERAL (
+            SELECT error_type, error, finished_at FROM schedule_runs
+            WHERE schedule_id = s.id AND status IN ('failed', 'timeout')
+            ORDER BY scheduled_for DESC LIMIT 1
+        ) last ON TRUE
+        WHERE s.user_id = :user_id
+          AND s.status = 'paused'
+          AND s.trigger_type <> 'monitor'
+          AND s.consecutive_failure_count >= :threshold
+        ORDER BY s.updated_at DESC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "threshold": threshold, "limit": PER_KIND_LIMIT},
+    )
+    return [
+        {
+            "kind": "schedule_paused",
+            "id": f"schedule:{r['id']}",
+            "schedule_id": _str(r["id"]),
+            "title": r.get("name") or (r.get("instruction") or "")[:80] or None,
+            "agent_id": _str(r.get("agent_id")),
+            "agent_name": r.get("agent_name"),
+            "failures": int(r.get("consecutive_failure_count") or 0),
+            "last_error_type": r.get("last_error_type"),
+            "last_error": (r.get("last_error") or "")[:300] or None,
+            "last_failed_at": _iso(r.get("last_failed_at")),
+        }
+        for r in rows
+    ]
+
+
+def _occurrences(row: Dict[str, Any], start: datetime, end: datetime) -> int:
+    """How many times a schedule fires in ``[start, end)``.
+
+    An overdue run (``next_run_at`` already past, the scheduler behind) is not
+    counted: it is due now, not planned.
+    """
+    first = as_datetime(row.get("next_run_at"))
+    if first is None or first >= end:
+        return 0
+    if row.get("trigger_type") != "recurring" or not row.get("cron"):
+        return 1 if first >= start else 0
+    stop = end
+    end_at = as_datetime(row.get("end_at"))
+    if end_at is not None:
+        # The dispatcher still runs a slot at end_at itself; the window's
+        # own end stays exclusive.
+        stop = min(stop, end_at + timedelta(microseconds=1))
+    try:
+        if first >= start:
+            # The stored next run counts itself, then the cron from there.
+            if first >= stop:
+                return 0
+            rest = cron_runs(row["cron"], row.get("timezone"), after=first, until=stop, limit=MAX_OCCURRENCES - 1)
+            return 1 + len(rest)
+        return len(
+            cron_runs(
+                row["cron"], row.get("timezone"),
+                after=start - timedelta(seconds=1), until=stop, limit=MAX_OCCURRENCES,
+            )
+        )
+    except ScheduleValidationError:
+        return 1
+
+
+def _up_next(conn: Connection, user_id: str, now: datetime) -> List[Dict[str, Any]]:
+    """Active schedules due in the next ``UP_NEXT_WINDOW``, with how often each fires in it."""
+    end = now + UP_NEXT_WINDOW
+    rows = query_rows(
+        conn,
+        """
+        SELECT s.id, s.name, s.instruction, s.agent_id, s.trigger_type, s.cron,
+               s.timezone, s.next_run_at, s.end_at, s.origin_conversation_id,
+               a.name AS agent_name, c.name AS origin_conversation_name
+        FROM schedules s
+        LEFT JOIN agents a ON a.id = s.agent_id
+        LEFT JOIN conversations c ON c.id = s.origin_conversation_id
+        WHERE s.user_id = :user_id
+          AND s.status = 'active'
+          AND s.trigger_type <> 'monitor'
+          AND s.next_run_at IS NOT NULL
+          AND s.next_run_at < :end
+        ORDER BY s.next_run_at ASC
+        LIMIT :limit
+        """,
+        {"user_id": user_id, "end": end, "limit": PER_KIND_LIMIT},
+    )
+    out = []
+    for r in rows:
+        out.append(
+            {
+                "kind": "schedule",
+                "id": f"schedule:{r['id']}",
+                "schedule_id": _str(r["id"]),
+                "name": r.get("name") or (r.get("instruction") or "")[:80] or None,
+                "agent_id": _str(r.get("agent_id")),
+                "agent_name": r.get("agent_name"),
+                "trigger_type": r.get("trigger_type"),
+                "cron": r.get("cron"),
+                "timezone": r.get("timezone"),
+                "next_run_at": _iso(r.get("next_run_at")),
+                "origin_conversation_id": _str(r.get("origin_conversation_id")),
+                "origin_conversation_name": r.get("origin_conversation_name"),
+                "runs_in_window": _occurrences(r, now, end),
+            }
+        )
+    return out
+
+
+def _failed_last_day(conn: Connection, user_id: str) -> int:
+    """How many scheduled runs and background jobs failed in the last 24 hours."""
+    scalar = conn.execute(
+        text(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM schedule_runs
+               WHERE user_id = :user_id AND status IN ('failed', 'timeout')
+                 AND COALESCE(finished_at, scheduled_for) > now() - interval '24 hours')
+            + (SELECT COUNT(*) FROM background_jobs
+               WHERE user_id = :user_id AND status IN ('failed', 'lost')
+                 AND COALESCE(finished_at, last_updated_at) > now() - interval '24 hours')
+            """
+        ),
+        {"user_id": user_id},
+    ).scalar()
+    return int(scalar or 0)
+
+
+def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
+    """Unread chats whose latest answer, or latest background job, failed.
+
+    An answer its user ended before it wrote anything (stopped it, or left
+    for another chat or reloaded) is failed too, but not counted: the same
+    codes ``finalize_message`` leaves unmarked (``_USER_ENDED_CODES``). A job counts only if it ended after the user last read the
+    chat (``read_at``, or never read): one that failed before was seen, and
+    a later reply must not bring it back. Cleared the way the unread mark
+    is: by opening the chat.
+    """
+    rows = conn.execute(
+        text(
+            """
+            SELECT c.id FROM conversations c
+            WHERE c.user_id = :user_id
+              AND c.unread_at IS NOT NULL
+              AND (
+                (SELECT CASE
+                            WHEN c.read_at IS NULL
+                              OR COALESCE(j.finished_at, j.last_updated_at) > c.read_at
+                            THEN j.status
+                        END
+                 FROM background_jobs j
+                 WHERE j.conversation_id = c.id
+                 ORDER BY j.created_at DESC LIMIT 1) IN ('failed', 'lost')
+                OR (SELECT CASE
+                               WHEN m.message_metadata ->> 'error_code' IN ('stopped', 'client_disconnect')
+                               THEN 'stopped'
+                               ELSE m.status
+                           END
+                    FROM conversation_messages m
+                    WHERE m.conversation_id = c.id
+                    ORDER BY m.position DESC LIMIT 1) = 'failed'
+              )
+            LIMIT :limit
+            """
+        ),
+        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+    ).fetchall()
+    return [str(r[0]) for r in rows]
+
+
+def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Collect what runs now, what waits for the user, and what runs next.
+
+    Args:
+        conn: A read-only connection.
+        user_id: Whose activity.
+        now: The current time (tests).
+
+    Returns:
+        ``{running, needs_you, up_next, approval_conversations,
+        failed_conversations, stats}``. ``running`` and ``needs_you`` items
+        carry a ``kind``; ``stats`` holds ``next_24h`` and ``failed_24h``.
+        The running and needs-you counts are the client's: it adds what it
+        alone knows (answers started since, connections to sign in to).
+    """
+    current = now or datetime.now(timezone.utc)
+    running: List[Dict[str, Any]] = []
+    running += _running_chats(conn, user_id)
+    running += _running_api(conn, user_id)
+    running += _running_jobs(conn, user_id)
+    running += _running_schedule_runs(conn, user_id)
+    markers = list_runs(user_id)
+    running += _running_webhooks(markers)
+    running += _fold_workflows(running, _running_workflows(conn, user_id))
+    running += _running_ingests(conn, user_id, markers)
+
+    approvals = _approvals(conn, user_id)
+    needs_you = approvals + _autopaused_schedules(conn, user_id)
+    up_next = _up_next(conn, user_id, current)
+    # Knowledge syncs join the schedules: one batch per frequency due today.
+    syncs = due_batches(conn, user_id, current, current + UP_NEXT_WINDOW, next_sync_times())
+    for batch in syncs:
+        # As on the calendar: a time more than LATE_GRACE late (beat behind or
+        # stopped) plans nothing. It is still listed, as overdue.
+        at = as_datetime(batch["next_run_at"])
+        batch["runs_in_window"] = 0 if at is not None and at < current - LATE_GRACE else 1
+    up_next = sorted(up_next + syncs, key=lambda item: as_datetime(item["next_run_at"]) or current)
+    return {
+        "running": running,
+        "needs_you": needs_you,
+        "up_next": up_next,
+        "approval_conversations": [item["conversation_id"] for item in approvals],
+        "failed_conversations": _failed_conversations(conn, user_id),
+        "stats": {
+            "next_24h": sum(item["runs_in_window"] for item in up_next),
+            "failed_24h": _failed_last_day(conn, user_id),
+        },
+    }

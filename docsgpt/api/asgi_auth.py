@@ -23,7 +23,10 @@ from docsgpt.core.settings import settings
 
 
 async def authenticate(
-    request: Request, *, pat_scope: Union[str, Sequence[str], None] = None
+    request: Request,
+    *,
+    pat_scope: Union[str, Sequence[str], None] = None,
+    restrictable: Sequence[str] = (),
 ) -> Tuple[Optional[dict], Optional[JSONResponse]]:
     """Decode the caller's JWT the way Flask's ``authenticate_request`` does.
 
@@ -31,8 +34,10 @@ async def authenticate(
         request: The incoming Starlette request.
         pat_scope: Scope (or any-of scopes) a personal access token needs for this route. Left
             unset, the route rejects PATs outright (deny by default, matching
-            the Flask rule table in ``docsgpt/api/pat/rules.py``). A token with
-            a resource filter is always rejected.
+            the Flask rule table in ``docsgpt/api/pat/rules.py``).
+        restrictable: Resource families the route holds a token to itself. A
+            token whose resource filter names only these passes, and the
+            route must apply the filter; any other filter is rejected.
 
     Returns:
         tuple: ``(claims, None)`` for an authenticated caller, ``(None, None)``
@@ -54,7 +59,7 @@ async def authenticate(
                 {"success": False, "message": "Token lacks the required scope", "error": "insufficient_scope"},
                 status_code=403,
             )
-        if decoded.get("resource_filter"):
+        if set(decoded.get("resource_filter") or {}) - set(restrictable):
             # These routes sit outside the Flask rule table and cannot tie what
             # they serve to an allowlist, so a restricted token is kept out.
             return None, JSONResponse(

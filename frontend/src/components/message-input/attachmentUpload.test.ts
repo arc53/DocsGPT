@@ -128,6 +128,46 @@ describe('checkAttachmentTask', () => {
     },
   );
 
+  it('reads a stored file as completed, with what the event would carry', async () => {
+    await expect(
+      checkAttachmentTask(
+        'c',
+        null,
+        answer(200, {
+          status: 'SUCCESS',
+          result: {
+            filename: 'photo.jpg',
+            token_count: 412,
+            mime_type: 'image/jpeg',
+            metadata: { extraction: { status: 'no_text' } },
+          },
+        }),
+      ),
+    ).resolves.toEqual({
+      state: 'completed',
+      tokenCount: 412,
+      mimeType: 'image/jpeg',
+      extractionStatus: 'no_text',
+    });
+  });
+
+  it('reads a zip whose members are still parsing as started', async () => {
+    await expect(
+      checkAttachmentTask(
+        'c',
+        null,
+        answer(200, {
+          status: 'SUCCESS',
+          result: {
+            filename: 'a.zip',
+            mime_type: 'application/zip',
+            members: 3,
+          },
+        }),
+      ),
+    ).resolves.toEqual({ state: 'started' });
+  });
+
   it('reads a failure with its reason', async () => {
     await expect(
       checkAttachmentTask(

@@ -21,6 +21,9 @@ from docsgpt.storage.db.session import db_readonly
 from docsgpt.utils import get_encoding
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 class _StubTask:
     def update_state(self, *args, **kwargs):
         pass

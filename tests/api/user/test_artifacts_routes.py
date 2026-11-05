@@ -183,6 +183,32 @@ class TestListArtifacts:
         assert resp.status_code == 200
         assert len(resp.json["artifacts"]) == 2
 
+    def test_list_carries_the_current_versions_file(
+        self, _patch_db, flask_app, token_owner
+    ):
+        """A run's artifact card shows its file type, so the list names the current file."""
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
+
+        wf_id = _make_workflow(_patch_db, OWNER)
+        run = WorkflowRunsRepository(_patch_db).create(wf_id, OWNER, "completed")
+        _make_artifact(
+            _patch_db,
+            workflow_run_id=str(run["id"]),
+            title="Q3 QBR",
+            filename="qbr.pdf",
+            mime_type="application/pdf",
+        )
+
+        resp = _call(
+            flask_app, ListArtifacts, token=token_owner,
+            query={"workflow_run_id": str(run["id"])},
+        )
+        assert resp.status_code == 200
+        (item,) = resp.json["artifacts"]
+        assert item["filename"] == "qbr.pdf"
+        assert item["mime_type"] == "application/pdf"
+        assert item["current_version"] == 1
+
     def test_stranger_denied_conversation_list(
         self, _patch_db, flask_app
     ):
@@ -1471,3 +1497,50 @@ class TestBearerAgentKeyThroughTheApp:
         with patch("docsgpt.app.handle_auth", return_value=invalid_jwt):
             resp = client.get("/api/get_agents", headers=_bearer())
         assert resp.status_code == 401
+
+
+def _pat(scopes, resource_filter=None, sub=OWNER):
+    return {
+        "sub": sub,
+        "auth_method": "pat",
+        "pat_id": "t1",
+        "scopes": list(scopes),
+        "resource_filter": resource_filter or {},
+    }
+
+
+@pytest.mark.unit
+class TestPersonalAccessTokenDownload:
+    def _artifact(self, conn):
+        conv = _make_conversation(conn)
+        return _make_artifact(
+            conn, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+
+    def test_a_token_with_artifacts_read_downloads_its_owners_artifact(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["artifacts:read"]))
+
+        assert resp.status_code == 200
+        assert resp.content == b"BYTES"
+
+    def test_a_token_without_the_scope_is_refused(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["runs:read"]))
+
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "insufficient_scope"
+
+    def test_a_restricted_token_is_refused(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["artifacts:read"], {"agents": [str(uuid.uuid4())]}))
+
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "resource_not_allowed"

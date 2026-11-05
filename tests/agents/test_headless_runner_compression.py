@@ -60,3 +60,19 @@ class TestHeadlessResponsesMetadata:
         assert outcome["metadata"] == {
             "response_id": "resp_1", "responses_state": {"chain_key": "k"}, "usage": {"prompt_tokens": 10}
         }
+
+
+@pytest.mark.unit
+class TestHeadlessDecisionRecord:
+    def test_the_runs_decisions_are_returned_with_its_metadata(self, monkeypatch):
+        from docsgpt.decisions import record
+
+        def events():
+            record.add("injection_input", {"p": 0.1}, status="ok", applied=False)
+            yield {"answer": "done"}
+
+        outcome: dict = {}
+        _agent_kwargs(monkeypatch, events=events(), outcome=outcome)
+        (entry,) = outcome["metadata"]["decisions"]["entries"]
+        assert (entry["feature"], entry["round"], entry["applied"]) == ("injection_input", 0, False)
+        assert record.current() is None

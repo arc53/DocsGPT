@@ -12,6 +12,7 @@ import {
   type BackgroundState,
 } from './backgroundSlice';
 import { notificationText } from './kinds';
+import { isPageAttended } from './usePageVisible';
 import { safeAppPath, shouldOfferPush, showLocalNotification } from './webPush';
 
 /** Events older than this are backlog replay, not something that just happened. */
@@ -35,12 +36,6 @@ export function isFreshEvent(event: SSEEvent, now = Date.now()): boolean {
   return !Number.isFinite(age) || age <= FRESH_EVENT_MS;
 }
 
-function pageVisible(): boolean {
-  return (
-    typeof document === 'undefined' || document.visibilityState === 'visible'
-  );
-}
-
 function currentPath(): string {
   return typeof window === 'undefined' ? '/' : window.location.pathname;
 }
@@ -57,7 +52,8 @@ type NotificationPayload = {
  * Side effects of the event stream for background work:
  *
  * - A fresh `notification.created` marks its conversation unread (unless this
- *   tab shows it right now) and, when this tab is hidden and the user allowed
+ *   tab shows it and the user can be looking at it: visible, window focused)
+ *   and, when nobody is looking at this tab and the user allowed
  *   notifications, shows a system notification: the server sent a toast
  *   because a tab is open, but nobody is looking at it.
  * - A job that just went to the background (`job.updated` working), a
@@ -80,12 +76,12 @@ backgroundListenerMiddleware.startListening({
       const onIt =
         conversationId !== null &&
         conversationIdFromPath(currentPath()) === conversationId &&
-        pageVisible();
+        isPageAttended();
       // A replayed backlog event is old news: the server's listing says what is still unread.
       if (conversationId && !onIt && isFreshEvent(event)) {
         listenerApi.dispatch(markConversationUnread(conversationId));
       }
-      if (!pageVisible() && isFreshEvent(event)) {
+      if (!isPageAttended() && isFreshEvent(event)) {
         const text = notificationText(payload, (key) => i18n.t(key) ?? key);
         try {
           await showLocalNotification({

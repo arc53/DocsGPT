@@ -12,6 +12,7 @@ import {
   ToastMessage,
   ToastTitle,
 } from '../components/ui/toast';
+import { useToastShown } from '../components/ui/toast-layout';
 
 import {
   dismissShareNotification,
@@ -52,13 +53,16 @@ function ShareToast({
   dismissLabel: string;
   onDismiss: (id: string) => void;
 }) {
+  const [shown, cardRef] = useToastShown();
+
   useEffect(() => {
+    if (!shown) return;
     const timer = window.setTimeout(() => onDismiss(id), AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [id, onDismiss]);
+  }, [id, shown, onDismiss]);
 
   return (
-    <Toast>
+    <Toast ref={cardRef}>
       <ToastHeader variant="default">
         <ToastTitle wrap>{title}</ToastTitle>
         <ToastActions>

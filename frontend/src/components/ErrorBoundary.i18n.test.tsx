@@ -36,10 +36,15 @@ describe('ErrorBoundary fallback in each locale', () => {
       'Beim Anzeigen dieses Inhalts ist ein Fehler aufgetreten.',
       'Erneut versuchen',
     ],
-    ['jp', 'このコンテンツの表示中に問題が発生しました。', '再試行'],
+    [
+      'fr',
+      'Une erreur s’est produite lors de l’affichage de ce contenu.',
+      'Réessayer',
+    ],
+    ['ja', 'このコンテンツの表示中に問題が発生しました。', '再試行'],
     ['ru', 'Не удалось отобразить этот контент.', 'Повторить'],
     ['zh', '显示此内容时出错。', '重试'],
-    ['zhTW', '顯示此內容時發生錯誤。', '重試'],
+    ['zh-TW', '顯示此內容時發生錯誤。', '重試'],
   ])('renders the %s message and button', async (lng, message, button) => {
     await i18n.changeLanguage(lng);
     await act(async () => {

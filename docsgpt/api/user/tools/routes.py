@@ -23,7 +23,7 @@ from docsgpt.agents.tool_pins import iter_parameters, llm_fills, merge_submitted
 from docsgpt.agents.tools.spec_parser import parse_spec
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api import api
-from docsgpt.api.pat.rules import filter_listing
+from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 from docsgpt.api.user.resource_access import (
     AccessDenied,
@@ -33,6 +33,7 @@ from docsgpt.api.user.resource_access import (
     ResourceAccess,
     settings_many,
 )
+from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.connectors.catalog import base_url, definition_for_tool
 from docsgpt.connectors.resolve import carry_removed_connection
@@ -585,17 +586,30 @@ def _load_owned_row(conn: Connection, ra: ResourceAccess) -> Optional[dict]:
     return UserToolsRepository(conn).get_any(ra.resource_id, ra.owner_id)
 
 
-def transform_actions(actions_metadata):
-    """Set default flags on action metadata for storage.
+def transform_actions(actions_metadata: list[dict]) -> list[dict]:
+    """Normalize action properties and set default flags for storage.
 
-    Marks each action as active, sets ``filled_by_llm`` and ``value`` on every
-    parameter property. Used by both the generic create_tool and MCP save routes.
+    Used by both the generic create_tool and MCP save routes. Invalid property
+    maps become empty maps, and invalid definitions are removed before storage.
+
+    Args:
+        actions_metadata: Tool action metadata to normalize in place.
+
+    Returns:
+        Active actions with valid parameter definitions and default flags.
     """
     transformed = []
     for action in actions_metadata:
         action["active"] = True
         if "parameters" in action:
             props = action["parameters"].get("properties", {})
+            if not isinstance(props, dict):
+                props = {}
+            props = {
+                name: details for name, details in props.items()
+                if isinstance(details, dict)
+            }
+            action["parameters"]["properties"] = props
             for param_details in props.values():
                 param_details["filled_by_llm"] = True
                 param_details["value"] = ""
@@ -816,6 +830,11 @@ class GetTools(Resource):
             # A resource-restricted token sees only its allowed tools. Default
             # and builtin rows have ids too, so they follow the same allowlist.
             user_tools = filter_listing(request, "tools", user_tools)
+            with db_readonly() as conn:
+                attach_used_by(
+                    conn, user, "tool", user_tools,
+                    deletable_ids=deletable_ids_of(user_tools), agent_allowlist=used_by_agent_allowlist(request),
+                )
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

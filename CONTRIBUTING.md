@@ -54,7 +54,7 @@ Tech Stack Overview:
 *   **Coding Style:** We follow a strict coding style enforced by ESLint and Prettier. Please ensure your code adheres to the configuration provided in our repository's `frontend/eslint.config.js` and `frontend/prettier.config.cjs` files.  We recommend configuring your editor with ESLint and Prettier to help with this.
 * **Component Structure:** Strive for small, reusable components.  Favor functional components and hooks over class components where possible.
 * **State Management** If you need to add stores, please use Redux.
-* **Translations:** Every user-visible string, attributes such as `aria-label`, `placeholder`, `title` and `alt` included, goes through `t()` with a key in all seven locale files under `frontend/src/locale/` (`de`, `en`, `es`, `jp`, `ru`, `zh`, `zh-TW`). Admin pages stay English.
+* **Translations:** Every user-visible string, attributes such as `aria-label`, `placeholder`, `title` and `alt` included, goes through `t()` with a key in all eight locale files under `frontend/src/locale/` (`de`, `en`, `es`, `fr`, `jp`, `ru`, `zh`, `zh-TW`). Admin pages stay English.
 * **Checks:** From `frontend/`, run `npm run lint`, `npm test` and `npm run build` before opening a PR.
 
 ### 🖥 Backend Contributions (🐍 Python)
@@ -113,7 +113,7 @@ Personal preferences belong in your user settings; `.vscode/settings.json` and a
 
 ### Running the tests
 
-Install the test dependencies first. `uv sync` installs them with the `dev` group; with pip, run `pip install -r tests/requirements.txt` next to `docsgpt/requirements.txt`. `pytest-cov` is required, because `pytest.ini` always passes `--cov`. `tests/requirements.txt` also installs the docling extra so its parser tests run; with uv, use `uv sync --extra docling` for the same coverage.
+Install the test dependencies first. `uv sync` installs them with the `dev` group; with pip, run `pip install -r tests/requirements.txt` next to `docsgpt/requirements.txt`. `tests/requirements.txt` also installs the docling extra so its parser tests run; with uv, use `uv sync --extra docling` for the same coverage.
 
 The database tests do not use your running Postgres. `pytest-postgresql` starts a throwaway cluster with `pg_ctl`, so the PostgreSQL server binaries must be on your `PATH` (or reachable through `pg_config --bindir`):
 
@@ -121,13 +121,20 @@ The database tests do not use your running Postgres. `pytest-postgresql` starts 
 - **Debian/Ubuntu:** `sudo apt install postgresql`, then `export PATH="/usr/lib/postgresql/16/bin:$PATH"` (use the installed version number). The package also starts a server on port 5432, which clashes with the dev compose Postgres; the tests only need the binaries, so you can stop it with `sudo systemctl disable --now postgresql`.
 - Anywhere else, point the plugin at `pg_ctl` with `--postgresql-exec=/path/to/pg_ctl`.
 
+Each test worker clones the migrated schema once, and the database tests share that clone: `pg_conn` runs a test inside a transaction that is rolled back afterwards. A test that has to commit (background work on another thread, code that opens its own engine, a migration) needs `@pytest.mark.fresh_db`, which gives it a database of its own. A test that commits without the marker fails, naming the tables it left rows in. Use the marker only where a commit is unavoidable: each marked test clones a database, which costs about half a second against a fraction of a millisecond for a rollback. Files named `test_migration_*` get it automatically.
+
+Keep tests fast. Network calls, DNS and Redis are already faked for every test (see the autouse fixtures in `tests/conftest.py`). Do not wait out real sleeps, retry back-off or timeouts: patch the sleep and assert the number of attempts instead. Cover a long time range with the shortest window that still shows the behaviour. CI lists the 25 slowest tests at the end of each run.
+
 Then run the suite from the repository root:
 
 ```shell
 python -m pytest            # or: uv run pytest
 python -m pytest -n auto    # in parallel, as CI does
 python -m pytest tests/api  # one area while you work
+python -m pytest -n auto --cov=docsgpt --cov-report=html  # with a coverage report in htmlcov/
 ```
+
+Coverage is off by default, because measuring it and writing the reports takes longer than many test runs; CI measures it on every push.
 
 On **macOS**, set `KMP_DUPLICATE_LIB_OK=TRUE` (for example `KMP_DUPLICATE_LIB_OK=TRUE python -m pytest`). `faiss-cpu` and `torch` each ship their own OpenMP runtime, and loading both into one process aborts the interpreter with `OMP: Error #15`; Linux and CI are not affected.
 
@@ -138,7 +145,7 @@ On **macOS**, set `KMP_DUPLICATE_LIB_OK=TRUE` (for example `KMP_DUPLICATE_LIB_OK
 1. Copy the latest revision to `00NN_<slug>.py` with the next number. Set `revision` to the file name without `.py`, and `down_revision` to the previous revision's ID.
 2. Write both `upgrade()` and `downgrade()`, and make them safe to re-run (`IF NOT EXISTS` / `IF EXISTS`), as the existing revisions do.
 3. Mirror the change in the table definitions in `docsgpt/storage/db/models.py`, and read or write the new columns through a repository in `docsgpt/storage/db/repositories/`.
-4. Add a round-trip test, `tests/storage/db/test_migration_00NN.py`, next to the existing ones.
+4. Add a round-trip test, `tests/storage/db/test_migration_00NN.py`, next to the existing ones. Keep the `test_migration_` prefix: it gives the test a database of its own.
 
 The app applies pending revisions on start (`AUTO_MIGRATE`, on by default); `docsgpt migrate` applies them by hand.
 
@@ -152,7 +159,7 @@ That rewrites `docs/content/Deploying/Settings-Reference.mdx`; commit it with yo
 
 **Adding or changing a REST route.** REST routes are documented in the docs site from the flask-restx Swagger document; after adding or changing a route, regenerate the docs snapshot with `python -m docsgpt.api.reference --write` (CI fails if `docs/data/swagger.json` is stale). The [REST API Reference](https://docs.docsgpt.cloud/API/reference) page renders that snapshot.
 
-**Adding UI text.** Add the key to all seven files in `frontend/src/locale/`, not only `en.json`; see Frontend Contributions above.
+**Adding UI text.** Add the key to all eight files in `frontend/src/locale/`, not only `en.json`; see Frontend Contributions above.
 
 **End-to-end tests.** The Playwright suite in [`tests/e2e/`](tests/e2e/README.md) drives the whole app, with a mock LLM, against a disposable `docsgpt_e2e` database. `scripts/e2e/up.sh` starts the stack natively (mock LLM, API, worker and Vite on their own ports), `scripts/e2e/down.sh` stops it, and `scripts/e2e/bake_template.sh` builds the template database that `reset_db.sh` clones before each run. The scripts expect PostgreSQL on `127.0.0.1:5432` with a `postgres` superuser (set `PG_SUPERUSER` to use another) and a `docsgpt` role (password `docsgpt`), Redis on `127.0.0.1:6379` with `redis-cli` on `PATH`, and `PG_BIN` pointing at the PostgreSQL `bin` directory (the default is a macOS DBngin path). Set `INTERNAL_KEY` (exported, or in `.env`) as well, or uploads fail. `up.sh` serves the ASGI app under uvicorn, as `docsgpt api` does, so the [ASGI-only routes](https://docs.docsgpt.cloud/Deploying/Development-Environment#asgi-only-features) (live notifications, stream resume, device streams, artifact downloads) work in that stack. `scripts/qa/durability_e2e.py` is a separate check of the chat write-ahead log, the reconciler and task redelivery; it uses the Postgres and Redis in your `.env`.
 

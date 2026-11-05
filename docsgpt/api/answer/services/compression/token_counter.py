@@ -1,7 +1,7 @@
 """Token counting utilities for compression."""
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from docsgpt.utils import num_tokens_from_string
 from docsgpt.core.settings import settings
@@ -221,6 +221,38 @@ class TokenCounter:
             return 0
 
     @staticmethod
+    def _replayed_queries(
+        conversation: Dict[str, Any],
+    ) -> tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+        """The latest usable compression point and the queries the next turn replays after it.
+
+        Without a usable point the point is None and the queries are the raw
+        history.
+        """
+        queries = conversation.get("queries", []) or []
+        metadata = conversation.get("compression_metadata") or {}
+        points = metadata.get("compression_points") or []
+        latest = (
+            latest_usable_compression_point(points)
+            if metadata.get("is_compressed") and points
+            else None
+        )
+        if latest is None:
+            # Only unusable (empty) points, or none: the raw history is what
+            # the next turn will replay.
+            return None, queries
+        try:
+            last_index = int(latest.get("query_index", -1))
+        except (TypeError, ValueError):
+            last_index = -1
+        recent = [
+            q
+            for q in queries[last_index + 1 :]
+            if not is_compression_summary_row(q)
+        ]
+        return latest, recent
+
+    @staticmethod
     def count_effective_conversation_tokens(
         conversation: Dict[str, Any], include_reasoning: bool = False
     ) -> int:
@@ -233,35 +265,31 @@ class TokenCounter:
         ``include_reasoning`` adds the Responses reasoning the turns replay.
         """
         try:
-            queries = conversation.get("queries", []) or []
-            metadata = conversation.get("compression_metadata") or {}
-            points = metadata.get("compression_points") or []
-            if not (metadata.get("is_compressed") and points):
-                return TokenCounter.count_query_tokens(
-                    queries, include_reasoning=include_reasoning
+            latest, recent = TokenCounter._replayed_queries(conversation)
+            summary_tokens = (
+                TokenCounter.count_message_tokens(
+                    [{"content": latest.get("compressed_summary") or ""}]
                 )
-            latest = latest_usable_compression_point(points)
-            if latest is None:
-                # Only unusable (empty) points: the raw history is what the
-                # next turn will replay.
-                return TokenCounter.count_query_tokens(
-                    queries, include_reasoning=include_reasoning
-                )
-            try:
-                last_index = int(latest.get("query_index", -1))
-            except (TypeError, ValueError):
-                last_index = -1
-            recent = [
-                q
-                for q in queries[last_index + 1 :]
-                if not is_compression_summary_row(q)
-            ]
-            summary_tokens = TokenCounter.count_message_tokens(
-                [{"content": latest.get("compressed_summary") or ""}]
+                if latest is not None
+                else 0
             )
             return summary_tokens + TokenCounter.count_query_tokens(
                 recent, include_reasoning=include_reasoning
             )
         except Exception as e:
             logger.error(f"Error calculating effective conversation tokens: {str(e)}")
+            return 0
+
+    @staticmethod
+    def count_recent_conversation_tokens(
+        conversation: Dict[str, Any], include_reasoning: bool = False
+    ) -> int:
+        """Tokens of the messages the next turn replays word for word, the summary left out."""
+        try:
+            _, recent = TokenCounter._replayed_queries(conversation)
+            return TokenCounter.count_query_tokens(
+                recent, include_reasoning=include_reasoning
+            )
+        except Exception as e:
+            logger.error(f"Error calculating recent conversation tokens: {str(e)}")
             return 0

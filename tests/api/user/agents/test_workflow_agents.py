@@ -403,7 +403,83 @@ class TestCreateWorkflowAgent:
         assert response.status_code == 404
 
 
+    def test_create_with_a_workflow_another_agent_uses_returns_409(self, app, pg_conn):
+        # One workflow belongs to one agent: deleting either would delete it
+        # under the other, and Activity names its runs after one agent.
+        from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-wf-shared"
+        wf, _, _ = _seed_workflow(pg_conn, user)
+        AgentsRepository(pg_conn).create(
+            user, "First", "published", agent_type="workflow", workflow_id=str(wf["id"]),
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/create_agent",
+            method="POST",
+            json={
+                "name": "Second",
+                "description": "d",
+                "agent_type": "workflow",
+                "status": "published",
+                "workflow": str(wf["id"]),
+            },
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = CreateAgent().post()
+        assert response.status_code == 409
+
+
 class TestUpdateWorkflowAgent:
+    def test_update_to_a_workflow_another_agent_uses_returns_409(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-wf-shared2"
+        wf, _, _ = _seed_workflow(pg_conn, user)
+        repo = AgentsRepository(pg_conn)
+        repo.create(user, "First", "published", agent_type="workflow", workflow_id=str(wf["id"]))
+        second = repo.create(user, "Second", "draft", agent_type="workflow")
+        agent_id = str(second["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent_id}",
+            method="PUT",
+            json={"workflow": str(wf["id"])},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(agent_id)
+        assert response.status_code == 409
+        assert repo.get(agent_id, user)["workflow_id"] is None
+
+    def test_an_agent_already_sharing_its_workflow_can_still_be_saved(self, app, pg_conn):
+        # Rows made before the check: saving the same workflow is no change.
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-wf-shared3"
+        wf, _, _ = _seed_workflow(pg_conn, user)
+        repo = AgentsRepository(pg_conn)
+        repo.create(user, "First", "published", agent_type="workflow", workflow_id=str(wf["id"]))
+        second = repo.create(user, "Second", "published", agent_type="workflow", workflow_id=str(wf["id"]))
+        agent_id = str(second["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent_id}",
+            method="PUT",
+            json={"workflow": str(wf["id"]), "name": "Second, renamed"},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(agent_id)
+        assert response.status_code == 200
+
     def test_update_sets_and_clears_workflow(self, app, pg_conn):
         from docsgpt.api.user.agents.routes import UpdateAgent
         from docsgpt.storage.db.repositories.agents import AgentsRepository

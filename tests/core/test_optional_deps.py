@@ -27,6 +27,11 @@ class TestExtras:
         assert "--extra milvus" in hint
         assert "EXTRAS=milvus" in hint
 
+    def test_the_torch_extra_is_never_offered_for_an_image(self):
+        hint = optional_deps.install_hint("decisions-torch")
+        assert "--extra decisions-torch" in hint and "EXTRAS" not in hint
+        assert optional_deps.extra_for("torch") == "decisions-torch"
+
 
 class TestMissingMessage:
     def test_extra_module_points_at_the_extra(self):

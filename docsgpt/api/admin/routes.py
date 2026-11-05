@@ -84,9 +84,10 @@ class AdminUsersResource(Resource):
     def get(self):
         """List users, paginated, most-recently-seen first.
 
-        Each row carries ``last_seen`` (max auth-event time). Admin status is
-        intentionally not joined here; the dashboard cross-references
-        GET /api/admin/admins for badges.
+        Each row carries ``last_seen`` (max auth-event time) and the stored
+        ``email`` (null when none is on file); ``?user_id=`` matches either.
+        Admin status is intentionally not joined here; the dashboard
+        cross-references GET /api/admin/admins for badges.
         """
         page, page_size, offset = _page()
         user_id_filter = request.args.get("user_id") or None
@@ -97,6 +98,7 @@ class AdminUsersResource(Resource):
         users = [
             {
                 "user_id": row.get("user_id"),
+                "email": row.get("email"),
                 "active": bool(row.get("active", True)),
                 "created_at": row.get("created_at"),
                 "last_seen": row.get("last_seen"),
@@ -132,6 +134,7 @@ class AdminUserResource(Resource):
                 "success": True,
                 "user": {
                     "user_id": user.get("user_id"),
+                    "email": user.get("email"),
                     "active": bool(user.get("active", True)),
                     "created_at": user.get("created_at"),
                     "updated_at": user.get("updated_at"),

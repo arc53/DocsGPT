@@ -277,6 +277,24 @@ class TestStuckMessages:
         )
 
     @pytest.mark.unit
+    def test_a_failed_stream_marks_its_chat_unread(self, pg_conn):
+        # Activity shows a failed chat only while it is unread.
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        msg = _seed_pending_message(pg_conn, status="streaming")
+        with _route_engine_to(pg_conn), patch(
+            "docsgpt.notifications.presence.is_watching", return_value=False,
+        ):
+            for _ in range(3):
+                run_reconciliation()
+
+        unread_at = pg_conn.execute(
+            text("SELECT unread_at FROM conversations WHERE id = CAST(:id AS uuid)"),
+            {"id": msg["conversation_id"]},
+        ).scalar()
+        assert unread_at is not None
+
+    @pytest.mark.unit
     def test_streaming_status_also_eligible(self, pg_conn):
         from docsgpt.api.user.reconciliation import run_reconciliation
 
@@ -699,6 +717,259 @@ class TestStalledIngests:
         assert _ingest_status(pg_conn, sid) == "active"
 
 
+_INGEST_TASK = "docsgpt.api.user.tasks.ingest"
+
+
+def _seed_resumable_ingest(
+    conn,
+    *,
+    source_id: str,
+    key: str,
+    resume_attempts: int = 0,
+    user: str = "u-up",
+    embedded: int = 4,
+    total: int = 40,
+) -> dict:
+    """A stale unfinished checkpoint whose upload ingest stored its dispatch."""
+    _seed_ingest_progress(conn, source_id=source_id, embedded=embedded, total=total)
+    dispatch = {
+        "task": _INGEST_TASK,
+        "kwargs": {
+            "directory": "inputs", "formats": [".md"], "job_name": "notes", "user": user,
+            "file_path": f"inputs/{user}/notes", "filename": "notes.md", "idempotency_key": key,
+            "source_id": source_id,
+        },
+    }
+    conn.execute(
+        text(
+            "UPDATE ingest_chunk_progress SET dispatch = CAST(:d AS jsonb), attempt_id = :att, "
+            "resume_attempts = :n, chunk_fingerprint = 'fp' WHERE source_id = CAST(:sid AS uuid)"
+        ),
+        {"d": json.dumps(dispatch), "att": f"task-{source_id[-2:]}", "n": resume_attempts, "sid": source_id},
+    )
+    return dispatch
+
+
+def _seed_dedup(conn, *, key: str, status: str = "pending", lease_secs: int = -120, attempts: int = 2) -> None:
+    """A ``task_dedup`` row; a positive ``lease_secs`` is a live lease."""
+    conn.execute(
+        text(
+            """
+            INSERT INTO task_dedup (
+                idempotency_key, task_name, task_id, status, attempt_count, lease_owner_id, lease_expires_at
+            ) VALUES (
+                :key, 'ingest', 'task-old', :status, :attempts, 'owner-1',
+                clock_timestamp() + make_interval(secs => :secs)
+            )
+            """
+        ),
+        {"key": key, "status": status, "attempts": attempts, "secs": lease_secs},
+    )
+
+
+def _progress(conn, source_id: str) -> dict:
+    row = conn.execute(
+        text("SELECT * FROM ingest_chunk_progress WHERE source_id = CAST(:sid AS uuid)"),
+        {"sid": source_id},
+    ).fetchone()
+    return dict(row._mapping)
+
+
+@contextmanager
+def _resume_spies(*, inputs: bool = True):
+    """Capture ``requeue`` calls and stub the storage check."""
+    calls: list = []
+    with patch(
+        "docsgpt.parser.ingest_resume.requeue", side_effect=lambda d, tid: calls.append((d, tid)),
+    ), patch("docsgpt.parser.ingest_resume.inputs_available", return_value=inputs):
+        yield calls
+
+
+class TestResumeStalledIngests:
+    @pytest.mark.unit
+    def test_a_retriable_ingest_is_requeued_once_per_sweep(self, pg_conn, monkeypatch):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+        from docsgpt.core.settings import settings
+
+        # A store that keeps a partial index; FAISS restarts from chunk 0.
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
+
+        sid = "1a000000-0000-0000-0000-0000000000c1"
+        dispatch = _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c1")
+
+        with _route_engine_to(pg_conn), _resume_spies() as calls:
+            first = run_reconciliation()
+            second = run_reconciliation()
+
+        assert calls == [(dispatch, "task-c1")]
+        assert first["ingests_resumed"] == 1
+        assert first["ingests_stalled"] == 0
+        assert second["ingests_resumed"] == 0
+        row = _progress(pg_conn, sid)
+        assert row["status"] == "active"
+        assert row["resume_attempts"] == 1
+        # Kept for the resumed task, which picks up after chunk 3.
+        assert row["last_index"] == 3
+
+    @pytest.mark.unit
+    def test_gives_up_after_the_cap_with_a_reason(self, pg_conn, monkeypatch):
+        from docsgpt.api.user import reconciliation as recon
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "INGEST_RESUME_MAX_ATTEMPTS", 2, raising=False)
+        sid = "1a000000-0000-0000-0000-0000000000c2"
+        _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c2", resume_attempts=2)
+
+        ctx, published = _capture_published(pg_conn)
+        with _route_engine_to(pg_conn), _resume_spies() as calls, ctx:
+            r = recon.run_reconciliation()
+
+        assert calls == []
+        assert r["ingests_stalled"] == 1
+        row = _progress(pg_conn, sid)
+        assert row["status"] == "stalled"
+        assert row["dispatch"] is None
+        failed = [p for p in published if p[1] == "source.ingest.failed"]
+        # No sources row yet (an upload): the stored dispatch names the user.
+        assert len(failed) == 1
+        assert failed[0][0] == "u-up"
+        assert "2 restarts" in failed[0][2]["error"]
+        assert failed[0][2]["filename"] == "notes.md"
+
+    @pytest.mark.unit
+    def test_a_running_task_is_left_alone(self, pg_conn):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000c3"
+        _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c3")
+        # Still reading its files: the lease is live, the checkpoint is old.
+        _seed_dedup(pg_conn, key="k-c3", lease_secs=60)
+
+        with _route_engine_to(pg_conn), _resume_spies() as calls:
+            r = run_reconciliation()
+
+        assert calls == []
+        assert r["ingests_stalled"] == 0
+        assert r["ingests_resumed"] == 0
+        row = _progress(pg_conn, sid)
+        assert row["status"] == "active"
+        assert row["resume_attempts"] == 0
+
+    @pytest.mark.unit
+    def test_missing_inputs_end_the_ingest(self, pg_conn):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000c4"
+        _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c4")
+
+        with _route_engine_to(pg_conn), _resume_spies(inputs=False) as calls:
+            r = run_reconciliation()
+
+        assert calls == []
+        assert r["ingests_stalled"] == 1
+        assert _ingest_status(pg_conn, sid) == "stalled"
+
+    @pytest.mark.unit
+    def test_the_resume_gets_a_fresh_attempt_budget(self, pg_conn):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000c5"
+        _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c5")
+        _seed_dedup(pg_conn, key="k-c5", attempts=3)
+        # Claimed long ago: the ingest ran past the 24 h window before it died.
+        pg_conn.execute(
+            text("UPDATE task_dedup SET created_at = now() - interval '30 hours' WHERE idempotency_key = 'k-c5'")
+        )
+
+        with _route_engine_to(pg_conn), _resume_spies() as calls:
+            run_reconciliation()
+
+        assert len(calls) == 1
+        row = pg_conn.execute(
+            text(
+                "SELECT attempt_count, task_id, lease_expires_at, created_at > now() - interval '1 minute' AS fresh "
+                "FROM task_dedup WHERE idempotency_key = 'k-c5'"
+            )
+        ).fetchone()
+        assert row.attempt_count == 0
+        # A fresh TTL window, so cleanup and same-key claims keep the row until the resume takes the lease.
+        assert row.fresh is True
+        assert row.task_id == "task-c5"
+        assert row.lease_expires_at is None
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("status", ["failed", "completed"])
+    def test_a_finished_task_is_not_resumed(self, pg_conn, status):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000c6"
+        _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c6")
+        _seed_dedup(pg_conn, key="k-c6", status=status)
+
+        with _route_engine_to(pg_conn), _resume_spies() as calls:
+            r = run_reconciliation()
+
+        assert calls == []
+        assert r["ingests_stalled"] == 1
+
+    @pytest.mark.unit
+    def test_faiss_restarts_the_resume_from_zero(self, pg_conn, monkeypatch):
+        from docsgpt.api.user.reconciliation import run_reconciliation
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "VECTOR_STORE", "faiss", raising=False)
+        sid = "1a000000-0000-0000-0000-0000000000c7"
+        _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c7")
+
+        with _route_engine_to(pg_conn), _resume_spies() as calls:
+            run_reconciliation()
+
+        assert len(calls) == 1
+        row = _progress(pg_conn, sid)
+        # The partial FAISS index died with the task's temp dir.
+        assert row["last_index"] == -1
+        assert row["embedded_chunks"] == 0
+
+    @pytest.mark.unit
+    def test_a_lease_taken_between_the_check_and_the_reset_stops_the_resume(self, pg_conn):
+        """A worker claimed the lease after the live-lease check: no resume is counted or queued."""
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000c9"
+        _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c9")
+        _seed_dedup(pg_conn, key="k-c9", lease_secs=60)
+
+        with _route_engine_to(pg_conn), _resume_spies() as calls, patch(
+            "docsgpt.storage.db.repositories.idempotency.IdempotencyRepository.live_lease_keys",
+            return_value=set(),
+        ):
+            r = run_reconciliation()
+
+        assert calls == []
+        assert r["ingests_resumed"] == 0
+        assert r["ingests_stalled"] == 0
+        row = _progress(pg_conn, sid)
+        assert (row["status"], row["resume_attempts"]) == ("active", 0)
+
+    @pytest.mark.unit
+    def test_a_failed_queue_send_still_counts(self, pg_conn):
+        """The broker refused: the row waits for the next stale window, counted, not lost."""
+        from docsgpt.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000c8"
+        _seed_resumable_ingest(pg_conn, source_id=sid, key="k-c8")
+
+        with _route_engine_to(pg_conn), patch(
+            "docsgpt.parser.ingest_resume.requeue", side_effect=RuntimeError("broker down"),
+        ), patch("docsgpt.parser.ingest_resume.inputs_available", return_value=True):
+            r = run_reconciliation()
+
+        assert r["ingests_resumed"] == 1
+        row = _progress(pg_conn, sid)
+        assert row["status"] == "active"
+        assert row["resume_attempts"] == 1
+
+
 # ---------------------------------------------------------------------------
 # Q5 — stuck idempotency pending rows (lease expired + attempts exhausted)
 # ---------------------------------------------------------------------------
@@ -1060,6 +1331,7 @@ class TestEventsSurviveAFailedSweep:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.fresh_db
 class TestPublishAfterCommit:
     """``run_reconciliation`` fans events out in a ``finally``; staging keeps
     that from publishing events whose writes Postgres rolled back.

@@ -23,10 +23,19 @@ import {
 import { useDebouncedValue } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { LoadingState } from '@/components/ui/loading-state';
-import { LoadError, fmtDate, fmtNumber, fmtRelative } from './AdminUI';
+import {
+  LoadError,
+  UserIdentity,
+  fmtDate,
+  fmtNumber,
+  fmtRelative,
+  userName,
+} from './AdminUI';
 import QuotaEditor from './QuotaEditor';
 import TeamPicker, { type PickedTeam } from './TeamPicker';
 import { describeBudget, type QuotaPolicy } from './quotaUtils';
+
+type UserPolicy = QuotaPolicy & { email?: string | null };
 
 type TeamPolicy = QuotaPolicy & {
   team_name?: string | null;
@@ -144,7 +153,7 @@ export default function Quotas() {
   const instancePolicy: QuotaPolicy | null =
     (data?.instance ?? []).find(isAll) ?? null;
   const teamPolicies: TeamPolicy[] = data?.teams ?? [];
-  const userPolicies: QuotaPolicy[] = data?.users ?? [];
+  const userPolicies: UserPolicy[] = data?.users ?? [];
 
   if (data === null && loading) return <LoadingState fill="block" />;
   if (!data?.success)
@@ -363,10 +372,13 @@ export default function Quotas() {
                 {userPolicies.map((policy) => (
                   <TableRow key={`${policy.subject_id}:${policy.bucket}`}>
                     <TableCell>
-                      <span className="mr-2 wrap-anywhere">
-                        {policy.subject_id}
-                      </span>
-                      {bucketPill(policy)}
+                      <div className="flex items-start gap-2">
+                        <UserIdentity
+                          userId={policy.subject_id ?? ''}
+                          email={policy.email}
+                        />
+                        {bucketPill(policy)}
+                      </div>
                     </TableCell>
                     <PolicyCells policy={policy} />
                     <TableCell className="text-right">
@@ -378,7 +390,9 @@ export default function Quotas() {
                             setEditing({
                               scope: 'user',
                               subjectId: policy.subject_id,
-                              title: policy.subject_id ?? 'User',
+                              title: policy.subject_id
+                                ? userName(policy.subject_id, policy.email)
+                                : 'User',
                               policy,
                             })
                           }

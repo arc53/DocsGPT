@@ -1,6 +1,10 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-export type ActionToastVariant = 'success' | 'destructive';
+/**
+ * `success` and `destructive` for a result; `info` for work that is still
+ * going, `warning` for one that didn't run and can be tried again.
+ */
+export type ActionToastVariant = 'success' | 'destructive' | 'info' | 'warning';
 
 export type ActionToastState = {
   id: number;

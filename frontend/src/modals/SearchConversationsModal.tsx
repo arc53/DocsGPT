@@ -9,6 +9,8 @@ import {
   CommandItem,
   CommandList,
 } from '../components/ui/command';
+import { EmptyState } from '../components/ui/empty-state';
+import { LoadingState } from '../components/ui/loading-state';
 import { Modal } from '../components/ui/modal';
 import { useMediaQuery } from '../hooks';
 import { searchConversations } from '../preferences/preferenceApi';
@@ -128,15 +130,13 @@ export default function SearchConversationsModal({
 
   const status = (
     <>
-      {isSearching && (
-        <div className="text-muted-foreground px-3 py-3 text-xs">
-          {t('modals.searchConversations.loading')}
-        </div>
-      )}
+      {isSearching && <LoadingState fill="block" size="sm" />}
       {showEmptyState && (
-        <div className="text-muted-foreground px-3 py-3 text-xs">
-          {t('modals.searchConversations.noResults')}
-        </div>
+        <EmptyState
+          size="xs"
+          illustration="none"
+          title={t('modals.searchConversations.noResults')}
+        />
       )}
     </>
   );

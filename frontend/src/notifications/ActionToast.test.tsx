@@ -7,6 +7,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+import { Toast, ToastViewport } from '../components/ui/toast';
 import ActionToast, { ACTION_TOAST_DISMISS_MS } from './ActionToast';
 import actionToastReducer, { showActionToast } from './actionToastSlice';
 
@@ -38,6 +39,7 @@ describe('ActionToast', () => {
     await act(async () => root.unmount());
     container.remove();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   const show = async (variant: 'success' | 'destructive', message: string) =>
@@ -89,6 +91,56 @@ describe('ActionToast', () => {
     await act(async () => vi.advanceTimersByTime(3000));
     expect(container.textContent).toContain('second');
     await act(async () => vi.advanceTimersByTime(1600));
+    expect(container.querySelector('[data-slot="toast"]')).toBeNull();
+  });
+
+  it('shows a new result on a phone even after a newer card folded the last one', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query: string) =>
+        ({
+          matches: true,
+          media: query,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+        }) as unknown as MediaQueryList,
+    );
+    const renderStack = (approval: boolean) =>
+      act(async () => {
+        root.render(
+          <Provider store={store}>
+            <ToastViewport>
+              <ActionToast />
+              {approval && <Toast key="approval">approval</Toast>}
+            </ToastViewport>
+          </Provider>,
+        );
+      });
+    const shown = () =>
+      Array.from(container.querySelectorAll<HTMLElement>('[data-slot="toast"]'))
+        .filter((card) => !card.hidden)
+        .map((card) => card.textContent);
+    await renderStack(false);
+    await show('success', 'saved');
+    await renderStack(true);
+    expect(shown()).toEqual(['approval']);
+
+    await show('destructive', 'delete failed');
+    expect(shown()).toEqual(['delete failed']);
+  });
+
+  it('waits while the stack folds it', async () => {
+    vi.useFakeTimers();
+    await show('success', 'done');
+    const card = container.querySelector<HTMLElement>('[data-slot="toast"]')!;
+    await act(async () => {
+      card.hidden = true;
+    });
+    await act(async () => vi.advanceTimersByTime(ACTION_TOAST_DISMISS_MS + 10));
+    expect(container.querySelector('[data-slot="toast"]')).not.toBeNull();
+    await act(async () => {
+      card.hidden = false;
+    });
+    await act(async () => vi.advanceTimersByTime(ACTION_TOAST_DISMISS_MS + 10));
     expect(container.querySelector('[data-slot="toast"]')).toBeNull();
   });
 });

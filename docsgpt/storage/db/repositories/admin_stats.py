@@ -13,7 +13,7 @@ from typing import Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, row_to_dict
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 
 
@@ -86,13 +86,15 @@ class AdminStatsRepository:
         result = self._conn.execute(
             text(
                 """
-                SELECT user_id,
-                       SUM(prompt_tokens + generated_tokens) AS tokens,
-                       COALESCE(SUM(cost), 0) AS cost
-                FROM token_usage
-                WHERE timestamp >= :since AND user_id IS NOT NULL
-                  AND source <> ALL(:rollup_sources)
-                GROUP BY user_id
+                SELECT t.user_id,
+                       SUM(t.prompt_tokens + t.generated_tokens) AS tokens,
+                       COALESCE(SUM(t.cost), 0) AS cost,
+                       u.email
+                FROM token_usage t
+                LEFT JOIN users u ON u.user_id = t.user_id
+                WHERE t.timestamp >= :since AND t.user_id IS NOT NULL
+                  AND t.source <> ALL(:rollup_sources)
+                GROUP BY t.user_id, u.email
                 ORDER BY tokens DESC
                 LIMIT :limit
                 """
@@ -104,7 +106,7 @@ class AdminStatsRepository:
             },
         )
         return [
-            {"user_id": r[0], "tokens": int(r[1]), "cost": float(r[2])}
+            {"user_id": r[0], "tokens": int(r[1]), "cost": float(r[2]), "email": r[3]}
             for r in result.fetchall()
         ]
 
@@ -221,25 +223,30 @@ class AdminStatsRepository:
 
         ``last_seen`` is max(auth_events.created_at) for the user (NULL = never).
         Ordering surfaces active accounts first, dormant ones last — the natural
-        triage order for an operator.
+        triage order for an operator. Each row carries the stored ``email``
+        (NULL when none is on file), and the filter matches the user id or the
+        email, case-insensitively.
         """
         where = ""
         count_params: dict = {}
         if user_id_filter is not None:
-            where = "WHERE u.user_id ILIKE '%' || :uid || '%'"
-            count_params["uid"] = user_id_filter
+            where = (
+                "WHERE (u.user_id ILIKE :uid ESCAPE '\\'"
+                " OR COALESCE(u.email, '') ILIKE :uid ESCAPE '\\')"
+            )
+            count_params["uid"] = f"%{like_escape(user_id_filter)}%"
         total = self._conn.execute(
             text(f"SELECT count(*) FROM users u {where}"), count_params
         ).scalar_one()
         result = self._conn.execute(
             text(
                 f"""
-                SELECT u.user_id, u.active, u.created_at,
+                SELECT u.user_id, u.email, u.active, u.created_at,
                        max(ae.created_at) AS last_seen
                 FROM users u
                 LEFT JOIN auth_events ae ON ae.user_id = u.user_id
                 {where}
-                GROUP BY u.user_id, u.active, u.created_at
+                GROUP BY u.user_id, u.email, u.active, u.created_at
                 ORDER BY max(ae.created_at) DESC NULLS LAST, u.created_at DESC
                 LIMIT :limit OFFSET :offset
                 """

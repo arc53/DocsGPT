@@ -82,8 +82,9 @@ in `docsgpt/asgi.py`:
 - the `/mcp` FastMCP endpoint,
 - the chat reconnect reader `GET /api/messages/<id>/events`,
 - the notification stream `GET /api/events`,
-- the remote-device command stream `GET /api/devices/sessions/<id>/events`, and
-- artifact downloads `GET /api/artifacts/<id>/download`.
+- the remote-device command stream `GET /api/devices/sessions/<id>/events`,
+- artifact downloads `GET /api/artifacts/<id>/download`, and
+- a workflow run's file downloads `GET /api/workflow_runs/<run_id>/artifacts/<artifact_id>/download`.
 
 These are native-async Starlette routes because they hold a response open
 for a long time; on Flask each would pin a WSGI threadpool slot. Under
@@ -125,21 +126,32 @@ about 660 MB. Without a worker consuming `EMBEDDINGS_QUEUE`, every search fails 
 On macOS, prefer the solo pool for Celery:
 
 ```bash
-python -m celery -A docsgpt.app.celery worker -l INFO -B --pool=solo
+python -m celery -A docsgpt.app.celery worker -l INFO -B --pool=solo -X analytics
 ```
+
+`-X analytics` keeps the conversation-analytics sweep, which holds a worker for
+minutes, off the solo worker. With `DECISION_ANALYTICS_ENABLED` on, run
+`docsgpt worker --analytics` (or `celery ... worker -Q analytics -n analytics@%h`)
+next to it; `docsgpt worker` excludes the queue itself, and `docsgpt dev` starts
+the analytics worker while the setting is on.
 
 Note that `--pool=solo` costs roughly 350 ms per query embed against ~55 ms on the
 default prefork pool — nearly all of it the solo worker picking the message up, not
 the embedding itself. That only affects local dev; production runs prefork.
 
 A bare worker (no `-Q`) consumes every configured queue, so one worker does the
-whole job — app tasks, query embedding, and document parsing (the `read_document`
-tool / workflow native-file parse) alike. Use `-Q` only to split load: run the main
-worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker with
-`-Q parsing` for heavy OCR, and `-Q embeddings` to keep query latency off the ingest
-pool. Note the main `ingest` task parses in-process on `docsgpt`; only
-`read_document` is routed to `parsing`. When you split workers, keep `-B` on
-at least one of them.
+whole job — app tasks, ingests, query embedding, and document parsing (the
+`read_document` tool / workflow native-file parse) alike. Use `-Q` only to split load:
+run the main worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker
+with `-Q parsing` for heavy OCR, `-Q embeddings` to keep query latency off the ingest
+pool, and `-Q ingest` for whole-source jobs (`INGEST_QUEUE`: uploads, remote and
+connector ingests, re-ingests, syncs, graph builds, wiki conversion). One of those can
+hold a slot for hours, so on a shared worker they starve beat tasks; attachments and
+single wiki-page re-embeds stay on `docsgpt`. `analytics` needs a consumer too
+(`-Q analytics -c 1`, or listed in another worker's `-Q`). The ingest tasks parse
+in-process; only `read_document` is routed to `parsing`. A worker started with an
+explicit `-Q` list consumes only that list, so every queue must be covered by some
+worker. When you split workers, keep `-B` on at least one of them.
 
 ### Frontend
 
@@ -166,11 +178,15 @@ python -m pytest
 ```
 
 The suite needs the test dependencies (`uv sync` installs the `dev` group; pip users
-install `tests/requirements.txt`, and pytest-cov is mandatory because `pytest.ini`
-passes `--cov`). DB-backed tests start a throwaway cluster through
+install `tests/requirements.txt`). Coverage is off by default; CI passes `--cov=docsgpt`,
+and `python -m pytest --cov=docsgpt --cov-report=html` gives a local report. DB-backed tests start a throwaway cluster through
 `pytest-postgresql`, so the PostgreSQL server binaries (`pg_ctl`, `initdb`) must be
 on `PATH` or reachable through `pg_config`; a running Postgres is not required.
-See CONTRIBUTING.md "Running the tests".
+DB tests share one database per worker and roll back through `pg_conn`; a test that
+commits needs `@pytest.mark.fresh_db`, or it fails at teardown naming the tables it wrote.
+Mark only tests that must commit (each one clones a database); `test_migration_*` files get it
+automatically. Keep tests fast: patch sleeps and retry back-off and assert the attempt count,
+rather than waiting them out. See CONTRIBUTING.md "Running the tests".
 
 On **macOS**, run the suite with `KMP_DUPLICATE_LIB_OK=TRUE`:
 
@@ -248,7 +264,7 @@ vale .
 - Follow `frontend/DESIGN.md`: compose `components/ui/` parts and pick their look with props, use theme tokens, and
   keep typography, spacing, radius and motion on its roles.
 - Every user-visible string, attributes included (`aria-label`, `label`, `placeholder`, `title`, `alt`), is a `t()`
-  key in all seven locales under `frontend/src/locale/` (`de en es jp ru zh zh-TW`). Admin pages stay English.
+  key in all eight locales under `frontend/src/locale/` (`de en es fr jp ru zh zh-TW`). Admin pages stay English.
 
 #### Icons
 

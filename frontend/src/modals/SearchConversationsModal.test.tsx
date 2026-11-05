@@ -172,6 +172,8 @@ describe('SearchConversationsModal', () => {
     expect(document.body.textContent).toContain(
       'modals.searchConversations.noResults',
     );
+    const empty = document.body.querySelector('[data-slot="empty-state"]');
+    expect(empty?.getAttribute('data-size')).toBe('xs');
   });
 
   it('renders a bottom sheet with title-only rows on phones', async () => {

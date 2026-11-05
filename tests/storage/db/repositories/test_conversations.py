@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.conversations import (
@@ -105,6 +106,16 @@ def _set_date(conn, conv_id: str, when: datetime) -> None:
         text("UPDATE conversations SET date = :d WHERE id = CAST(:id AS uuid)"),
         {"d": when, "id": conv_id},
     )
+
+
+class TestSearchForUser:
+    def test_matches_text_literally(self, pg_conn):
+        # A search box takes a substring: "_" and "%" are not wildcards.
+        repo = _repo(pg_conn)
+        repo.create("u1", "q4_report")
+        repo.create("u1", "q4-report")
+        assert [c["name"] for c in repo.search_for_user("u1", "q4_report")] == ["q4_report"]
+        assert repo.search_for_user("u1", "%") == []
 
 
 class TestListForUserKeyset:
@@ -435,6 +446,7 @@ class TestCompressionMetadata:
         points = repo.get(conv["id"], "user-1")["compression_metadata"]["compression_points"]
         assert [p["query_index"] for p in points] == [3, 5]
 
+    @pytest.mark.fresh_db
     def test_append_compression_point_dedupes_across_concurrent_sessions(self, pg_engine):
         """The duplicate check runs inside the UPDATE, under the row lock, so
         two sessions racing to persist the same point store it once."""
@@ -774,6 +786,7 @@ class TestConcurrentAppend:
     single trickiest invariant, so we exercise it directly with two
     parallel connections."""
 
+    @pytest.mark.fresh_db
     def test_concurrent_appends_get_distinct_positions(self, pg_engine, pg_conn):
         import threading
 
@@ -1040,3 +1053,18 @@ class TestPatchToolCall:
         repo, message_id = self._message(pg_conn, [{"call_id": "c1"}])
         assert repo.patch_tool_call(message_id, "j9", {"status": "error"}) is False
         assert repo.patch_tool_call("not-a-uuid", "j9", {"status": "error"}) is False
+
+
+def test_regenerate_sets_cross_process_cancel_flag(pg_conn, monkeypatch):
+    from unittest.mock import Mock
+    from docsgpt.activity import flags
+
+    client = Mock()
+    monkeypatch.setattr(flags, "_stop_redis", lambda: client)
+    repo = ConversationsRepository(pg_conn)
+    conv = repo.create("u", "chat")
+    old = repo.append_message(str(conv["id"]), {"prompt": "q", "response": "", "status": "streaming"})
+    repo.truncate_after(str(conv["id"]), -1)
+    client.setex.assert_not_called()
+    flags.cancel_streams(repo.retired_message_ids)
+    client.setex.assert_called_once_with(f"stream_cancel:{old['id']}", 3600, "1")

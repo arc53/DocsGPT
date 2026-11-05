@@ -113,6 +113,19 @@ def _row(conn, agent_id):
 # ---------------------------------------------------------------------------
 
 
+
+def _runnable_workflow(conn, owner, name="wf"):
+    """A workflow with a graph that passes the full validation (a published agent may attach it)."""
+    from docsgpt.api.user.workflows.routes import _write_graph
+    from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+    from tests.api.user.test_resource_sponsors import _wf_body
+
+    wf = WorkflowsRepository(conn).create(owner, name)
+    body = _wf_body()
+    _write_graph(conn, str(wf["id"]), 1, body["nodes"], body["edges"])
+    return wf
+
 class TestGetAgent:
     def _get(self, app, conn, agent_id, user):
         from docsgpt.api.user.agents.routes import GetAgent
@@ -249,7 +262,7 @@ class TestUpdateAgent:
     def test_workflow_validated_against_owner_and_owner_only_to_change(self, app, pg_conn):
         from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
-        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        wf = _runnable_workflow(pg_conn, OWNER)
         agent_id = _agent(pg_conn, agent_type="workflow")
         # An editor can't point the agent at another of the owner's workflows.
         resp = self._put(app, pg_conn, agent_id, EDITOR, {"workflow": str(wf["id"])})
@@ -266,6 +279,20 @@ class TestUpdateAgent:
         mine = WorkflowsRepository(pg_conn).create(EDITOR, "editor-wf")
         resp = self._put(app, pg_conn, agent_id, EDITOR, {"workflow": str(mine["id"])})
         assert _status(resp) == 404
+
+    def test_workflow_changes_through_a_legacy_id(self, app, pg_conn):
+        from sqlalchemy import text
+
+        wf = _runnable_workflow(pg_conn, OWNER)
+        agent_id = _agent(pg_conn, agent_type="workflow")
+        legacy = "65a1b2c3d4e5f6a7b8c9d0e1"
+        pg_conn.execute(
+            text("UPDATE agents SET legacy_mongo_id = :legacy WHERE id = CAST(:id AS uuid)"),
+            {"legacy": legacy, "id": agent_id},
+        )
+        resp = self._put(app, pg_conn, legacy, OWNER, {"workflow": str(wf["id"])})
+        assert _status(resp) == 200
+        assert str(_row(pg_conn, agent_id)["workflow_id"]) == str(wf["id"])
 
     def test_tool_gate(self, app, pg_conn):
         from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
@@ -655,6 +682,8 @@ class TestAnalytics:
             ("GetToolAnalytics", "/api/get_tool_analytics"),
             ("GetScheduleAnalytics", "/api/get_schedule_analytics"),
             ("GetUserLogs", "/api/get_user_logs"),
+            ("GetConversationInsights", "/api/get_conversation_insights"),
+            ("GetDocsGaps", "/api/get_docs_gaps"),
         ],
     )
     def test_other_endpoints_gate_viewer(self, app, pg_conn, cls_name, path):
@@ -665,6 +694,27 @@ class TestAnalytics:
         body = {"api_key_id": agent_id}
         assert _status(_call(app, pg_conn, cls, "post", path, VIEWER, json=body)) == 403
         assert _status(_call(app, pg_conn, cls, "post", path, EDITOR, json=body)) == 200
+
+    def test_topic_folders_need_edit(self, app, pg_conn):
+        from docsgpt.api.user.analytics.routes import GetTopicFolders
+
+        agent_id = _agent(pg_conn)
+        path = f"/api/analytics/topic_folders?agent_id={agent_id}"
+        assert _status(_call(app, pg_conn, GetTopicFolders, "get", path, VIEWER)) == 403
+        assert _status(_call(app, pg_conn, GetTopicFolders, "get", path, STRANGER)) == 404
+        resp = _call(app, pg_conn, GetTopicFolders, "get", path, EDITOR)
+        assert _status(resp) == 200
+        assert _json(resp) == {"success": True, "folders": []}
+
+    def test_agent_topics_need_the_logs(self, app, pg_conn):
+        from docsgpt.api.user.analytics.routes import GetAgentTopics
+
+        agent_id = _agent(pg_conn)
+        path = f"/api/analytics/topics?agent_id={agent_id}"
+        assert _status(_call(app, pg_conn, GetAgentTopics, "get", path, VIEWER)) == 403
+        resp = _call(app, pg_conn, GetAgentTopics, "get", path, EDITOR)
+        assert _status(resp) == 200
+        assert _json(resp) == {"success": True, "topics": []}
 
     def test_logs_editor_sees_owner_chats(self, app, pg_conn):
         from docsgpt.api.user.analytics.routes import GetUserLogs

@@ -200,7 +200,7 @@ class TestFacts:
         assert facts["areas"] == ["backend", "frontend", "tests"]
         assert facts["ui_changed"] is True
         assert facts["locales_touched"] == ["en"]
-        assert facts["locales_missing"] == ["de", "es", "jp", "ru", "zh", "zh-TW"]
+        assert facts["locales_missing"] == ["de", "es", "fr", "jp", "ru", "zh", "zh-TW"]
 
     def test_classify_paths_without_locales(self):
         assert relay.classify_paths(["docsgpt/app.py"])["locales_missing"] == []

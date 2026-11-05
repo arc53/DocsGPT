@@ -3,7 +3,7 @@ from typing import List, Tuple
 import logging
 from docsgpt.parser.chunking_creator import ChunkerCreator
 from docsgpt.parser.schema.base import Document
-from docsgpt.parser.tokenization import get_token_counter
+from docsgpt.parser.tokenization import get_token_counter, split_to_token_limit
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ class Chunker:
         max_tokens: int = 2000,
         min_tokens: int = 150,
         duplicate_headers: bool = False,
+        chunk_overlap: int = 0,
     ):
         self.chunking_strategy = chunking_strategy
         # A budget below 1 would ask for a chunk per token; the strategy
@@ -36,6 +37,7 @@ class Chunker:
         self.max_tokens = max(1, int(max_tokens))
         self.min_tokens = min_tokens
         self.duplicate_headers = duplicate_headers
+        self.chunk_overlap = chunk_overlap
         # Counted in the embedding model's tokenizer, not cl100k: ``max_tokens``
         # is compared against a limit the embedding server enforces in its own
         # units, so counting in any other unit is a guess.
@@ -94,10 +96,17 @@ class Chunker:
             duplicate_headers = False
 
         if duplicate_headers:
-            body_pieces = self.counter.split(body, with_header_budget)
+            body_pieces = split_to_token_limit(
+                self.counter,
+                body,
+                with_header_budget,
+            )
         else:
-            body_pieces = self.counter.split(
-                body, self.max_tokens, first_max_tokens=with_header_budget
+            body_pieces = split_to_token_limit(
+                self.counter,
+                body,
+                self.max_tokens,
+                first_max_tokens=with_header_budget,
             )
 
         if not body_pieces and header:

@@ -26,6 +26,8 @@ def _run(
     sources: list,
     prompt_id: str = "default",
     prompt_text: str = "system prompt",
+    retriever: MagicMock = None,
+    **run_kwargs,
 ) -> dict:
     """Run a headless agent over ``sources``; return what the run was built with."""
     from docsgpt.agents import headless_runner as hr
@@ -33,14 +35,17 @@ def _run(
     agent = MagicMock(name="agent")
     agent.gen.return_value = iter([{"answer": "ok"}])
     agent.llm.token_usage = {"prompt_tokens": 1, "generated_tokens": 1}
-    retriever = MagicMock(name="retriever")
-    retriever.search.return_value = [{"text": "chunk", "source": "s"}]
+    if retriever is None:
+        retriever = MagicMock(name="retriever")
+        retriever.search.return_value = [{"text": "chunk", "source": "s"}]
     tool_executor = MagicMock(name="tool_executor")
     tool_executor.headless_denials = []
     seen: dict = {"dispatchers": [], "prompts": []}
 
     def _dispatcher(_legacy, sources=None, **kwargs):
-        seen["dispatchers"].append({"sources": sources, "source": kwargs.get("source")})
+        seen["dispatchers"].append(
+            {"sources": sources, "source": kwargs.get("source"), "conversation_id": kwargs.get("conversation_id")}
+        )
         return retriever
 
     def _create_agent(cls, agent_type, **kwargs):
@@ -71,7 +76,7 @@ def _run(
          patch("docsgpt.core.model_utils.get_api_key_for_provider", return_value="k"), \
          patch("docsgpt.utils.calculate_doc_token_budget", return_value=1000), \
          patch("docsgpt.agents.headless_runner.QuotaService.check", return_value=None):
-        hr.run_agent_headless(config, QUERY, endpoint="webhook")
+        hr.run_agent_headless(config, QUERY, endpoint="webhook", **run_kwargs)
     seen["searches"] = [c.args[0] for c in retriever.search.call_args_list]
     return seen
 
@@ -132,6 +137,11 @@ class TestHeadlessClassicSources:
         assert _ids(seen["dispatchers"][-1]["sources"]) == ["s1"]
         assert _ids(seen["agent_kwargs"]["retriever_config"]["sources"]) == ["s2"]
 
+    def test_the_conversation_keys_the_rerank_arm(self, monkeypatch):
+        # Every turn of a conversation lands in the same rerank rollout arm, run headless or not.
+        seen = _run(monkeypatch, "classic", [_source("s1")], conversation_id="conv-1")
+        assert seen["dispatchers"][-1]["conversation_id"] == "conv-1"
+
 
 @pytest.mark.unit
 class TestHeadlessCitations:
@@ -181,3 +191,36 @@ class TestHeadlessCitations:
         kwargs = seen["agent_kwargs"]
         assert "## Citations" in kwargs["prompt"]
         assert kwargs["prompt_cites_sources"] is True
+
+
+@pytest.mark.unit
+class TestHeadlessSearchOutcome:
+    """The run's agent learns which pre-fetched sources could not be searched."""
+
+    def test_the_retrievers_outcome_reaches_the_agent(self, monkeypatch):
+        from docsgpt.retriever.base import SearchOutcome
+
+        retriever = MagicMock(name="retriever")
+        retriever.search.return_value = []
+        retriever.last_outcome = SearchOutcome.of(["s1", "s2"], ["s2"])
+
+        seen = _run(monkeypatch, "classic", [_source("s1"), _source("s2")], retriever=retriever)
+
+        assert seen["agent_kwargs"]["search_outcome"] == SearchOutcome(("s1", "s2"), ("s2",))
+
+    def test_a_retrieval_that_raises_fails_every_prefetched_source(self, monkeypatch):
+        from docsgpt.retriever.base import SearchOutcome
+
+        retriever = MagicMock(name="retriever")
+        retriever.search.side_effect = RuntimeError("no embeddings worker answered")
+
+        seen = _run(
+            monkeypatch, "agentic", [_source("s1"), _source("s2", "agentic_tool")], retriever=retriever
+        )
+
+        assert seen["agent_kwargs"]["search_outcome"] == SearchOutcome(("s1",), ("s1",))
+
+    def test_no_prefetch_hands_over_no_outcome(self, monkeypatch):
+        seen = _run(monkeypatch, "agentic", [_source("s1")])
+
+        assert seen["agent_kwargs"]["search_outcome"] is None

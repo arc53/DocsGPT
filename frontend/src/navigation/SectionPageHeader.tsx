@@ -40,16 +40,33 @@ export function SectionBackLink({
     ? getSectionForPath(section.parentPath)
     : null;
   return (
+    <BackLink to={to} className={cn('mb-4', className)}>
+      {parent ? t(parent.titleKey) : (section.title ?? t(section.titleKey))}
+    </BackLink>
+  );
+}
+
+/** The muted "← Parent" link that leads a page up one level. */
+export function BackLink({
+  to,
+  className,
+  children,
+}: {
+  to: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
     <Link
       to={to}
       className={cn(
         focusRing,
-        'text-muted-foreground hover:text-foreground mb-4 inline-flex items-center gap-2 rounded-sm text-sm outline-none',
+        'text-muted-foreground hover:text-foreground inline-flex items-center gap-2 rounded-sm text-sm outline-none',
         className,
       )}
     >
       <ArrowLeft className="size-4 shrink-0" aria-hidden />
-      {parent ? t(parent.titleKey) : (section.title ?? t(section.titleKey))}
+      {children}
     </Link>
   );
 }
@@ -62,38 +79,24 @@ export default function SectionPageHeader({
   section,
   item,
   title,
-  titleAction,
   className,
 }: {
   section: Section;
   item: SectionItem | null;
   /** Replaces the resolved title. */
   title?: React.ReactNode;
-  /** A control at the end of the title row. */
-  titleAction?: React.ReactNode;
   className?: string;
 }) {
   const { t } = useTranslation();
-  const heading = (
-    <h1 className="text-foreground text-2xl font-bold">
-      {title ??
-        (item && section.pageTitle !== 'section'
-          ? t(item.labelKey)
-          : (section.title ?? t(section.titleKey)))}
-    </h1>
-  );
-
   return (
     <div className={cn('flex flex-col', className)}>
       <SectionBackLink section={section} />
-      {titleAction ? (
-        <div className="flex items-center justify-between gap-3">
-          {heading}
-          {titleAction}
-        </div>
-      ) : (
-        heading
-      )}
+      <h1 className="text-foreground text-2xl font-bold">
+        {title ??
+          (item && section.pageTitle !== 'section'
+            ? t(item.labelKey)
+            : (section.title ?? t(section.titleKey)))}
+      </h1>
     </div>
   );
 }
@@ -105,11 +108,9 @@ export default function SectionPageHeader({
  */
 export function CurrentSectionHeader({
   title,
-  titleAction,
   className,
 }: {
   title?: React.ReactNode;
-  titleAction?: React.ReactNode;
   className?: string;
 }) {
   const { section, item } = useSectionContext();
@@ -120,7 +121,6 @@ export function CurrentSectionHeader({
       section={section}
       item={item}
       title={title}
-      titleAction={titleAction}
       className={className}
     />
   );

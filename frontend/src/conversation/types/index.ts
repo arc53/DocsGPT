@@ -28,7 +28,15 @@ export type ToolCallsType = {
   // first — the rest had no way into the UI without this.
   // ``ref`` is the model-facing handle (``A1``) — stable per conversation, so
   // a ref the model typed cannot be resolved by position within one turn.
-  artifacts?: { id: string; filename?: string | null; ref?: string | null }[];
+  artifacts?: {
+    id: string;
+    filename?: string | null;
+    ref?: string | null;
+    /** The artifact's title, when its tool named it (the artifact tool). */
+    title?: string | null;
+    /** The version this call produced. */
+    version?: number | null;
+  }[];
   // Remote-device tool calls carry the device id so the approval UI can
   // offer a "don't ask again" sticky-pattern action without a lookup.
   device_id?: string;

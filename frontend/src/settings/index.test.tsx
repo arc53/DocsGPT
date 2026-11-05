@@ -36,11 +36,15 @@ vi.mock('../navigation/SectionShell', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock('../navigation/SectionIndexPage', () => ({ default: () => null }));
-vi.mock('./Analytics', () => ({ default: () => null }));
+vi.mock('./AccountInsights', () => ({ default: () => null }));
+vi.mock('./AccountAnalytics', () => ({ default: () => null }));
 vi.mock('./CustomModels', () => ({ default: () => null }));
 vi.mock('./General', () => ({ default: () => null }));
 vi.mock('./Logs', () => ({ default: () => null }));
 vi.mock('./PersonalAccessTokens', () => ({ default: () => null }));
+vi.mock('./Prompts', () => ({
+  default: () => <div data-testid="prompts-page" />,
+}));
 vi.mock('./Tools', () => ({ default: () => null }));
 // Sources: one button that deletes the only listed source.
 vi.mock('./Sources', () => ({
@@ -117,6 +121,19 @@ describe('Settings source delete', () => {
     expect(actionTypes()).not.toContain('preference/setSourceDocs');
   });
 
+  it('a delete refused while a change holds the source says to try again', async () => {
+    service.deletePath.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ success: false, code: 'source_busy' }),
+    });
+    await clickDelete();
+    await expect(deleted.result).rejects.toThrow(
+      'settings.sources.chunkErrors.busy',
+    );
+    expect(actionTypes()).not.toContain('preference/setSourceDocs');
+  });
+
   it('a failed request rejects with the delete message', async () => {
     service.deletePath.mockRejectedValue(new Error('network'));
     await clickDelete();
@@ -138,5 +155,32 @@ describe('Settings source delete', () => {
       type: 'preference/setSourceDocs',
       payload: [{ id: 'a', name: 'A' }],
     });
+    // A sync it started this session no longer shows as indexing.
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'connectors/syncForgotten',
+      payload: ['b'],
+    });
+  });
+});
+
+describe('Settings routes', () => {
+  it('opens the Prompts page at /settings/prompts', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/settings/prompts']}>
+          <Routes>
+            <Route path="/settings/*" element={<Settings />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    expect(
+      container.querySelector('[data-testid="prompts-page"]'),
+    ).not.toBeNull();
+    await act(async () => root.unmount());
+    container.remove();
   });
 });

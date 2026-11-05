@@ -68,6 +68,9 @@ describe('curatedErrorText', () => {
     expect(curatedErrorText(t, 'x', 'client_disconnect')).toBe(
       'conversation.errors.clientDisconnect',
     );
+    expect(curatedErrorText(t, 'x', 'stopped')).toBe(
+      'conversation.errors.stopped',
+    );
   });
 
   it("keeps the server's text for an unknown code or none", () => {

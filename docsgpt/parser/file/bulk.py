@@ -1,4 +1,5 @@
 """Simple reader that reads files of different formats from a directory."""
+import hashlib
 import logging
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
@@ -16,8 +17,8 @@ from docsgpt.parser.file.pptx_parser import PPTXParser
 from docsgpt.parser.file.image_parser import ImageParser
 from docsgpt.parser.file.audio_parser import AudioParser
 from docsgpt.parser.schema.base import Document
+from docsgpt.parser.tokenization import count_tokens_windowed
 from docsgpt.stt.constants import SUPPORTED_AUDIO_EXTENSIONS
-from docsgpt.utils import num_tokens_from_string
 from docsgpt.core.settings import settings
 from docsgpt.core.optional_deps import install_hint
 
@@ -536,9 +537,9 @@ class SimpleDirectoryReader(BaseReader):
 
             # Calculate token count for this file
             if isinstance(data, List):
-                file_tokens = sum(num_tokens_from_string(str(d)) for d in data)
+                file_tokens = sum(count_tokens_windowed(str(d)) for d in data)
             else:
-                file_tokens = num_tokens_from_string(str(data))
+                file_tokens = count_tokens_windowed(str(data))
             
             full_path = str(input_file.resolve())
             self.file_token_counts[full_path] = file_tokens
@@ -639,7 +640,9 @@ class SimpleDirectoryReader(BaseReader):
                     
                     file_info = {
                         "type": mime_type,
-                        "size_bytes": file_size_bytes
+                        "size_bytes": file_size_bytes,
+                        # Lets a reingest tell an edited file from an unchanged one at the same path.
+                        "sha256": _file_sha256(item),
                     }
                     
                     if hasattr(self, 'file_token_counts') and full_path in self.file_token_counts:
@@ -650,3 +653,12 @@ class SimpleDirectoryReader(BaseReader):
             return result
         
         return build_tree(Path(base_path))
+
+
+def _file_sha256(path: Path) -> str:
+    """The SHA-256 of a file's bytes, read in blocks so a large file is never held in memory."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()

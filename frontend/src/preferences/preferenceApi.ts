@@ -28,9 +28,12 @@ export async function getDocsWithPagination(
   rowsPerPage = 10,
   searchTerm = '',
   token: string | null,
+  { kind = 'all', usage = 'all' }: { kind?: string; usage?: string } = {},
 ): Promise<GetDocsResponse | null> {
   try {
-    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
+    // The kind and usage filters are sent only when set.
+    const filters = `${kind !== 'all' ? `&kind=${kind}` : ''}${usage !== 'all' ? `&usage=${usage}` : ''}`;
+    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}${filters}`;
     const response = await userService.getDocsWithPagination(query, token);
     if (!response.ok)
       throw new Error(`Failed to load sources (${response.status})`);
@@ -46,6 +49,8 @@ export async function getDocsWithPagination(
       totalPages: data.totalPages,
       currentPage: data.currentPage ?? pageNumber,
       nextCursor: data.nextCursor,
+      kindCounts: data.kind_counts,
+      usageCounts: data.usage_counts,
     };
   } catch (error) {
     console.log(error);
@@ -61,6 +66,7 @@ export async function getConversations(
   token: string | null,
   before?: { date: string; id: string },
 ): Promise<GetConversationsResult> {
+  const requestedAt = Date.now();
   try {
     const response = await conversationService.getConversations(token, before);
 
@@ -83,8 +89,11 @@ export async function getConversations(
       name: item.name,
       agent_id: item.agent_id ?? null,
       date: item.date,
+      // The server's unread mark: a failed or finished answer, or a follow-up,
+      // that landed while the user was away. syncUnread reads it.
+      ...(typeof item.unread === 'boolean' ? { unread: item.unread } : {}),
     }));
-    return { data: conversations, loading: false };
+    return { data: conversations, loading: false, requestedAt };
   } catch (error) {
     console.error(
       'An unexpected error occurred while fetching conversations:',
@@ -202,40 +211,8 @@ export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
   return validDocs.length > 0 ? validDocs : null;
 }
 
-export function getLocalPrompt(
-  availablePrompts?: Prompt[] | null,
-): Prompt | null {
-  const promptString = localStorage.getItem('DocsGPTPrompt');
-  const selectedPrompt = promptString
-    ? (JSON.parse(promptString) as Prompt)
-    : null;
-
-  if (!availablePrompts || !selectedPrompt) {
-    return selectedPrompt;
-  }
-
-  const isPromptAvailable = (selected: Prompt) => {
-    return availablePrompts.some((available) => {
-      return available.id === selected.id;
-    });
-  };
-
-  const isValid = isPromptAvailable(selectedPrompt);
-
-  if (!isValid) {
-    localStorage.removeItem('DocsGPTPrompt');
-    return null;
-  }
-
-  return selectedPrompt;
-}
-
 export function setLocalApiKey(key: string): void {
   localStorage.setItem('DocsGPTApiKey', key);
-}
-
-export function setLocalPrompt(prompt: Prompt): void {
-  localStorage.setItem('DocsGPTPrompt', JSON.stringify(prompt));
 }
 
 export function setLocalRecentDocs(docs: Doc[] | null): void {

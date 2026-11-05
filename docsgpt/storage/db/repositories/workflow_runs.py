@@ -7,7 +7,7 @@ written once after workflow execution completes and never updated.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Iterable, Optional
 
 from sqlalchemy import Connection, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -87,6 +87,27 @@ class WorkflowRunsRepository:
         res = self._conn.execute(stmt)
         return res.rowcount > 0
 
+    def set_progress(self, run_id: str, user_id: str, progress: dict) -> bool:
+        """Record the step a running run is on; owner-scoped.
+
+        Args:
+            run_id: The run.
+            user_id: The run's owner (the person who started it).
+            progress: ``{done, total, current: {node_id, title, type, started_at}}``.
+
+        Returns:
+            True when a running run was updated. A finished run keeps its
+            last progress.
+        """
+        stmt = (
+            workflow_runs_table.update()
+            .where(workflow_runs_table.c.id == run_id)
+            .where(workflow_runs_table.c.user_id == user_id)
+            .where(workflow_runs_table.c.status == "running")
+            .values(progress=progress)
+        )
+        return self._conn.execute(stmt).rowcount > 0
+
     def mark_stale_running_failed(self, older_than: datetime) -> int:
         """Fail runs left in ``running`` (no ``ended_at``) since before ``older_than``.
 
@@ -140,5 +161,60 @@ class WorkflowRunsRepository:
                 "ORDER BY started_at DESC"
             ),
             {"wf_id": workflow_id},
+        )
+        return [row_to_dict(r) for r in res.fetchall()]
+
+    def list_for_user(
+        self,
+        user_id: str,
+        *,
+        agent_id: Optional[str] = None,
+        agent_ids: Optional[Iterable[str]] = None,
+        since: Optional[datetime] = None,
+        status: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """The runs a user started, newest first, without their state and steps.
+
+        A run belongs to the agent that ran it, recorded as
+        ``inputs.agent_id``; a run started from the builder preview has none.
+
+        Args:
+            user_id: The person who started the runs.
+            agent_id: Only runs of this agent.
+            agent_ids: An allowlist of agents; runs of other agents, and runs
+                without an agent, are left out. ``None`` means no allowlist.
+            since: Only runs started at or after this moment.
+            status: Only runs in this status.
+            limit: Most rows to return.
+
+        Returns:
+            Run rows with ``step_count`` in place of ``steps`` and no ``result``.
+        """
+        clauses = ["user_id = :user_id"]
+        params: dict = {"user_id": user_id, "limit": int(limit)}
+        if agent_ids is not None:
+            allowed = sorted({str(a).lower() for a in agent_ids})
+            if not allowed:
+                return []
+            clauses.append("lower(inputs ->> 'agent_id') = ANY(:agent_ids)")
+            params["agent_ids"] = allowed
+        if agent_id is not None:
+            clauses.append("lower(inputs ->> 'agent_id') = :agent_id")
+            params["agent_id"] = str(agent_id).lower()
+        if since is not None:
+            clauses.append("started_at >= :since")
+            params["since"] = since
+        if status is not None:
+            clauses.append("status = :status")
+            params["status"] = status
+        res = self._conn.execute(
+            text(
+                "SELECT id, workflow_id, user_id, status, inputs, started_at, ended_at, progress, "
+                "jsonb_array_length(steps) AS step_count "
+                f"FROM workflow_runs WHERE {' AND '.join(clauses)} "
+                "ORDER BY started_at DESC, id DESC LIMIT :limit"
+            ),
+            params,
         )
         return [row_to_dict(r) for r in res.fetchall()]

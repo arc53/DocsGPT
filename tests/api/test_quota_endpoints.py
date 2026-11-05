@@ -280,7 +280,8 @@ class TestQuotaListing:
         assert (len(body["teams"]), body["teams_total"]) == (4, 3)
         assert (len(body["users"]), body["users_total"]) == (3, 3)
         assert [u["subject_id"] for u in body["users"]] == ["alice-sub", "bob-sub", "carol-sub"]
-        assert "email" not in body["users"][0]
+        # Each user row carries the stored email, None when there is none.
+        assert [u["email"] for u in body["users"]] == ["Alice@Example.com", "bob@corp.io", None]
 
     def test_teams_q_matches_name_or_slug_case_insensitively(self, client, db):
         _seed_listing(db)

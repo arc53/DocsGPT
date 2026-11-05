@@ -45,6 +45,9 @@ class FakeServices:
     def is_running(self, name):
         return name in self.running
 
+    def is_installed(self, name):
+        return name in self.units
+
 
 def _names(directory):
     """The two service names an install in ``directory`` gets; a second directory gets its own."""
@@ -99,7 +102,7 @@ class TestNativeUp:
         services = FakeServices()
         assert _run(["up", "--native", "--dir", str(tmp_path), "--yes",
                      "--postgres-uri", "postgresql://localhost/docsgpt"], _native_context(services)) == 0
-        api_name, worker_name = _names(tmp_path)
+        api_name, worker_name = _names(tmp_path)[:2]
         api = services.units[api_name]
         worker = services.units[worker_name]
         assert api.arguments[-5:] == ["api", "--host", "127.0.0.1", "--port", "7091"]
@@ -234,11 +237,13 @@ class TestNativeUp:
             _run([*base, "--domain", "docs.example.com"], _native_context())
         with pytest.raises(DeployError, match=r"docsgpt\[docling\]"):
             _run([*base, "--docling"], _native_context())
+        with pytest.raises(DeployError, match="decide-server"):
+            _run([*base, "--decider"], _native_context())
         assert not (tmp_path / ".env").exists(), "it refuses before writing anything"
 
     def test_the_options_that_describe_what_native_already_does_are_kept(self, tmp_path):
         argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d",
-                "--expose", "local", "--no-docling"]
+                "--expose", "local", "--no-docling", "--no-decider"]
         assert _run(argv, _native_context()) == 0
 
     def test_a_redis_url_keeps_its_credentials_tls_and_query(self, tmp_path):
@@ -333,7 +338,48 @@ class TestNativeUp:
     def test_the_default_install_keeps_the_readable_names(self):
         """They are what shows up in launchctl and systemctl, so the usual install is not a digest."""
         default = Path("/opt/docsgpt")
-        assert native.service_names(default, default) == ("docsgpt-api", "docsgpt-worker")
+        assert native.service_names(default, default, platform="linux") == ("docsgpt-api", "docsgpt-worker")
+        assert native.service_names(default, default, platform="darwin") == (
+            "docsgpt-api", "docsgpt-worker", "docsgpt-analytics"
+        )
+
+    def test_a_second_install_suffixes_the_analytics_service_too(self, tmp_path):
+        names = native.service_names(tmp_path / "other", tmp_path / "default", platform="darwin")
+        assert len(names) == 3
+        assert names[2].startswith("docsgpt-analytics-")
+        assert {name.rsplit("-", 1)[1] for name in names} == {names[0].rsplit("-", 1)[1]}
+
+    def test_a_solo_pool_worker_gets_an_analytics_service_next_to_it(self, tmp_path, monkeypatch):
+        """On macOS the worker runs the solo pool, which a minutes-long sweep would hold while searches time out."""
+        monkeypatch.setattr("docsgpt.cli.needs_analytics_worker", lambda platform=None: True)
+        services = FakeServices()
+        assert _run(["up", "--native", "--dir", str(tmp_path), "--yes",
+                     "--postgres-uri", "postgresql://localhost/docsgpt"], _native_context(services)) == 0
+        api_name, worker_name, analytics_name = _names(tmp_path)
+        assert analytics_name.startswith("docsgpt-analytics")
+        analytics = services.units[analytics_name]
+        assert analytics.arguments[-2:] == ["worker", "--analytics"]
+        assert analytics.log_file == str(tmp_path / "logs" / "analytics.log")
+        assert analytics.environment == services.units[worker_name].environment
+        assert services.started == [api_name, worker_name, analytics_name]
+
+    def test_a_prefork_worker_keeps_the_analytics_queue(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("docsgpt.cli.needs_analytics_worker", lambda platform=None: False)
+        services = FakeServices()
+        assert _run(["up", "--native", "--dir", str(tmp_path), "--yes",
+                     "--postgres-uri", "postgresql://localhost/docsgpt"], _native_context(services)) == 0
+        assert len(services.units) == 2
+        assert not any("--analytics" in unit.arguments for unit in services.units.values())
+
+    def test_logs_show_the_analytics_service_where_there_is_one(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr("docsgpt.cli.needs_analytics_worker", lambda platform=None: True)
+        assert _run(["up", "--native", "--dir", str(tmp_path), "--yes",
+                     "--postgres-uri", "postgresql://localhost/docsgpt"], _native_context()) == 0
+        capsys.readouterr()
+        assert _run(["logs", "--dir", str(tmp_path)], _native_context()) == 0
+        out = capsys.readouterr().out
+        for name in ("api", "worker", "analytics"):
+            assert str(tmp_path / "logs" / f"{name}.log") in out
 
     def test_a_docker_stack_elsewhere_on_the_same_port_is_refused(self, tmp_path):
         """Its API would answer the health check while these services quietly failed to bind."""
@@ -479,6 +525,77 @@ class TestNativeLifecycle:
             _run(["restore", str(tmp_path / "any.tar.gz"), "--dir", str(tmp_path), "--yes"], _native_context())
 
 
+class TestAServiceAnUpgradeAdds:
+    """A native install from before the analytics service, run by a package that expects one."""
+
+    def _older_install(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("docsgpt.cli.needs_analytics_worker", lambda platform=None: False)
+        services = FakeServices()
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
+        assert _run(argv, _native_context(services)) == 0
+        monkeypatch.setattr("docsgpt.cli.needs_analytics_worker", lambda platform=None: True)
+        services.started.clear()
+        services.stopped.clear()
+        api_name, worker_name, analytics_name = _names(tmp_path)
+        assert analytics_name not in services.units
+        return services, api_name, worker_name, analytics_name
+
+    def test_restart_skips_it_and_says_how_to_add_it(self, tmp_path, monkeypatch, capsys):
+        services, api_name, worker_name, analytics_name = self._older_install(tmp_path, monkeypatch)
+        capsys.readouterr()
+        assert _run(["restart", "--dir", str(tmp_path)], _native_context(services)) == 0
+        assert services.stopped == [worker_name, api_name]
+        assert services.started == [api_name, worker_name]
+        err = capsys.readouterr().err
+        assert err.count(f"{analytics_name} is not installed yet") == 1
+        assert "docsgpt upgrade" in err
+
+    def test_restarting_it_by_name_says_how_to_add_it(self, tmp_path, monkeypatch):
+        services, *_ = self._older_install(tmp_path, monkeypatch)
+        with pytest.raises(DeployError, match="not installed yet.*docsgpt upgrade"):
+            _run(["restart", "analytics", "--dir", str(tmp_path)], _native_context(services))
+        assert services.started == [] and services.stopped == []
+
+    def test_down_stops_only_what_is_installed(self, tmp_path, monkeypatch):
+        services, api_name, worker_name, _ = self._older_install(tmp_path, monkeypatch)
+        assert _run(["down", "--dir", str(tmp_path)], _native_context(services)) == 0
+        assert services.stopped == [worker_name, api_name]
+
+    def test_a_settings_change_restarts_only_what_is_installed(self, tmp_path, monkeypatch):
+        services, api_name, worker_name, _ = self._older_install(tmp_path, monkeypatch)
+        argv = ["env", "--dir", str(tmp_path), "set", "LLM_NAME=gpt-4o"]
+        assert _run(argv, _native_context(services)) == 0
+        assert services.started == [api_name, worker_name]
+
+    def test_status_lists_it_as_not_installed(self, tmp_path, monkeypatch, capsys):
+        services, _, _, analytics_name = self._older_install(tmp_path, monkeypatch)
+        assert _run(["status", "--dir", str(tmp_path)], _native_context(services)) == 0
+        out = capsys.readouterr().out
+        assert f"{analytics_name}: not installed yet" in out
+        assert f"{analytics_name}: stopped" not in out
+
+    def test_doctor_counts_only_the_installed_services(self, tmp_path, monkeypatch, capsys):
+        from docsgpt.deploy import commands
+
+        services, _, _, analytics_name = self._older_install(tmp_path, monkeypatch)
+        ok = commands.Check("stub", "ok", "")
+        for check in ("_check_postgres", "_check_redis", "_check_provider", "_check_model", "_check_decisions"):
+            monkeypatch.setattr(commands, check, lambda *args, **kwargs: ok)
+        capsys.readouterr()
+        assert _run(["doctor", "--dir", str(tmp_path)], _native_context(services)) == 0
+        (line,) = [line for line in capsys.readouterr().out.splitlines() if "] services" in line]
+        assert line.startswith("[ok  ]"), line
+        assert "2 of 2 running" in line
+        assert f"{analytics_name} is not installed yet" in line
+
+    def test_up_installs_and_starts_it(self, tmp_path, monkeypatch):
+        services, api_name, worker_name, analytics_name = self._older_install(tmp_path, monkeypatch)
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
+        assert _run(argv, _native_context(services)) == 0
+        assert analytics_name in services.units
+        assert services.started == [api_name, worker_name, analytics_name]
+
+
 class FakeLaunchctl:
     """launchctl, with a bootout that takes `unload_polls` polls to take effect."""
 
@@ -547,6 +664,13 @@ class TestLaunchd:
         assert services.is_running("docsgpt-api") is False
         assert self._services(FakeLaunchctl(state="running"), tmp_path).is_running("docsgpt-api") is True
 
+    def test_is_installed_means_the_plist_exists(self, tmp_path):
+        services = self._services(FakeLaunchctl(), tmp_path)
+        assert services.is_installed("docsgpt-analytics") is False
+        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path,
+                                          ("docsgpt-analytics",))[0])
+        assert services.is_installed("docsgpt-analytics") is True
+
 
 class FakeSystemctl:
     """systemctl, recording what it was asked to do."""
@@ -601,6 +725,13 @@ class TestSystemd:
     def test_is_running_asks_systemd(self, tmp_path):
         assert self._services(FakeSystemctl(active=True), tmp_path).is_running("docsgpt-api") is True
         assert self._services(FakeSystemctl(active=False), tmp_path).is_running("docsgpt-api") is False
+
+    def test_is_installed_means_the_unit_file_exists(self, tmp_path):
+        services = self._services(FakeSystemctl(), tmp_path)
+        assert services.is_installed("docsgpt-analytics") is False
+        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path,
+                                          ("docsgpt-analytics",))[0])
+        assert services.is_installed("docsgpt-analytics") is True
 
     def test_a_stop_that_fails_is_not_reported_as_success(self, tmp_path):
         """`down` saying it stopped while the service still runs is worse than an error."""

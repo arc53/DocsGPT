@@ -10,11 +10,18 @@ It deliberately builds a ``Dispatcher`` — the same object the answer pipeline
 uses — so retriever selection, per-source ``chunks`` / ``score_threshold``, the
 prescreen stage and the token budget all behave exactly as they do at answer
 time, rather than drifting from them.
+
+Where the operator lets the decision model score chunks
+(``DECISION_RELEVANCE_ENABLED``), a config's relevance runs here as it does at
+answer time, outside the rollout, under the feature label ``retrieval_test``. With ``compare`` the
+response also lists every candidate in retriever order, with its relevance and
+whether it was kept, so the model's choice can be read against the retriever's.
 """
 
 import logging
 import math
 import time
+from typing import Optional
 
 from flask import jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -24,10 +31,13 @@ from docsgpt.api import api
 from docsgpt.api.user.resource_access import AccessDenied
 from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.core.model_utils import get_default_model_id
+from docsgpt.core.settings import settings
+from docsgpt.decisions import record
 from docsgpt.retriever.dispatcher import Dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
+from docsgpt.retriever.stages.relevance import relevance_enabled
 from docsgpt.storage.db.session import db_readonly
-from docsgpt.storage.db.source_config import RetrievalConfig, SourceConfig
+from docsgpt.storage.db.source_config import RetrievalConfig, SourceConfig, validation_message
 from docsgpt.utils import num_tokens_from_string
 
 logger = logging.getLogger(__name__)
@@ -43,7 +53,8 @@ MAX_QUERY_LENGTH = 2000
 DOC_TOKEN_LIMIT = 50000
 
 # Cost-attribution tag for any LLM call the preview makes (prescreen only —
-# with no chat history the rephrase side-call is skipped entirely).
+# with no chat history the rephrase side-call is skipped entirely), and the
+# decision feature label of its relevance stages.
 USAGE_SOURCE = "retrieval_test"
 
 # Ceiling on the prescreen LLM calls a single test may trigger.
@@ -62,6 +73,12 @@ class SourceSearch(Resource):
                 required=False,
                 description="Ad-hoc retrieval config to test with. Omit to use "
                 "the source's saved config. Never persisted.",
+            ),
+            "compare": fields.Boolean(
+                required=False,
+                description="Also return `candidates`: every chunk the stages "
+                "received, in retriever order, with its relevance and whether "
+                "it was kept.",
             ),
         },
     )
@@ -122,17 +139,11 @@ class SourceSearch(Resource):
         if body.get("retrieval") is not None:
             try:
                 retrieval = RetrievalConfig.model_validate(body["retrieval"])
-            except ValidationError:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Invalid retrieval config: one or more "
-                            "fields failed validation.",
-                        }
-                    ),
-                    400,
+            except ValidationError as err:
+                message = validation_message(
+                    err, "Invalid retrieval config: one or more fields failed validation."
                 )
+                return make_response(jsonify({"success": False, "message": message}), 400)
         else:
             retrieval = saved
 
@@ -163,6 +174,9 @@ class SourceSearch(Resource):
         # not their ratio. Only an ad-hoc config is capped: a config already
         # saved on the source runs at answer time anyway, so refusing to test it
         # would defeat the endpoint.
+        #
+        # Relevance is one decision-model call, capped at
+        # DECISION_RELEVANCE_MAX_PASSAGES chunks.
         if ad_hoc:
             ps = retrieval.prescreen_config()
             if ps is not None:
@@ -182,6 +196,23 @@ class SourceSearch(Resource):
                         ),
                         400,
                     )
+            reranker = retrieval.reranker_config()
+            scored = reranker.pool if reranker is not None and relevance_enabled() else 0
+            limit = settings.DECISION_RELEVANCE_MAX_PASSAGES
+            if scored > limit:
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": (
+                                f"This config scores {scored} chunks with the "
+                                f"decision model (limit {limit}). Lower "
+                                "candidate_k."
+                            ),
+                        }
+                    ),
+                    400,
+                )
 
         # A test has no chat behind it, so no model was requested. Resolve the
         # same instance default the answer path falls back to: with a bogus id
@@ -194,11 +225,15 @@ class SourceSearch(Resource):
         if default_model_id:
             dispatcher_kwargs["model_id"] = default_model_id
 
+        compare = body.get("compare") is True
+        decisions_seen = record.DecisionRecord()
         try:
             started = time.monotonic()
             # Dispatcher directly, NOT build_dispatcher: the
             # PER_SOURCE_RETRIEVAL_ENABLED kill-switch would fall back to a
-            # stock classic retriever and ignore the config under test.
+            # stock classic retriever and ignore the config under test. The
+            # operator's DECISION_RELEVANCE_ENABLED still applies; the rollout
+            # does not, since a test has no conversation to hash.
             retriever = Dispatcher(
                 source={"active_docs": [resolved_id], "question": query},
                 chat_history=[],  # no history ⇒ no rephrase side-call
@@ -208,9 +243,13 @@ class SourceSearch(Resource):
                 sources=[{"id": resolved_id, "retrieval": retrieval}],
                 include_scores=True,
                 usage_source=USAGE_SOURCE,
+                relevance_feature=USAGE_SOURCE,
+                apply_rollout=False,
+                record_candidates=compare,
                 **dispatcher_kwargs,
             )
-            docs = retriever.search(query) or []
+            with record.activate(decisions_seen):
+                docs = retriever.search(query) or []
             latency_ms = int((time.monotonic() - started) * 1000)
         except Exception as e:
             logger.error(f"Retrieval test failed: {e}", exc_info=True)
@@ -218,33 +257,69 @@ class SourceSearch(Resource):
                 jsonify({"success": False, "message": "Retrieval failed"}), 500
             )
 
-        chunks = [
-            {
-                "rank": idx,
-                "text": d.get("text", ""),
-                "title": d.get("title"),
-                "filename": d.get("filename"),
-                "source": d.get("source"),
-                "tokens": num_tokens_from_string(d.get("text", "")),
-                # None for retrievers/stores that produce no comparable score
-                # (graphrag's PPR ranking, stores without a score seam).
-                "score": d.get("score"),
-                "score_kind": d.get("score_kind"),
-            }
-            for idx, d in enumerate(docs, start=1)
-        ]
-
-        return make_response(
-            jsonify(
+        chunks = [_chunk(d, rank=idx) for idx, d in enumerate(docs, start=1)]
+        payload = {
+            "success": True,
+            "query": query,
+            "retriever": retrieval.retriever,
+            "retrieval": retrieval.model_dump(),
+            "total": len(chunks),
+            "latency_ms": latency_ms,
+            "chunks": chunks,
+            "relevance": _relevance_summary(decisions_seen),
+        }
+        if compare:
+            ranks = {id(d): idx for idx, d in enumerate(docs, start=1)}
+            payload["candidates"] = [
                 {
-                    "success": True,
-                    "query": query,
-                    "retriever": retrieval.retriever,
-                    "retrieval": retrieval.model_dump(),
-                    "total": len(chunks),
-                    "latency_ms": latency_ms,
-                    "chunks": chunks,
+                    **_chunk(c["doc"], rank=ranks.get(id(c["doc"]))),
+                    "rank_before": idx,
+                    "relevance": c["relevance"],
+                    "kept": id(c["doc"]) in ranks,
+                    # In the selection the retrieval makes without the model.
+                    "baseline": c["base"],
                 }
-            ),
-            200,
-        )
+                for idx, c in enumerate(retriever.last_candidates, start=1)
+            ]
+        return make_response(jsonify(payload), 200)
+
+
+def _chunk(doc: dict, *, rank: Optional[int]) -> dict:
+    """One retrieved chunk as the test returns it.
+
+    Args:
+        doc: A retrieved doc.
+        rank: Its 1-based place in the result, or ``None`` when it was not kept.
+    """
+    return {
+        "rank": rank,
+        "text": doc.get("text", ""),
+        "title": doc.get("title"),
+        "filename": doc.get("filename"),
+        "source": doc.get("source"),
+        "tokens": num_tokens_from_string(doc.get("text", "")),
+        # None for retrievers/stores that produce no comparable score
+        # (graphrag's PPR ranking, stores without a score seam).
+        "score": doc.get("score"),
+        "score_kind": doc.get("score_kind"),
+        # The decision model's p(relevant), when a relevance stage ordered the
+        # result by it.
+        "relevance": doc.get("relevance"),
+    }
+
+
+def _relevance_summary(rec: record.DecisionRecord) -> Optional[dict]:
+    """What the decision model did in the test, or ``None`` when no relevance stage ran.
+
+    ``applied`` is whether a stage acted on its scores, ``fallback`` the
+    status of a call that kept the retrieval's own selection,
+    and ``latency_ms`` the time spent waiting for the model.
+    """
+    entries = [e for e in (rec.snapshot() or {}).get("entries", []) if e.get("feature") == USAGE_SOURCE]
+    if not entries:
+        return None
+    return {
+        "applied": any(e.get("applied") for e in entries),
+        "fallback": next((e["status"] for e in entries if e.get("status") != "ok"), None),
+        "latency_ms": int(sum(e.get("ms") or 0 for e in entries)),
+    }

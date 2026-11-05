@@ -1,5 +1,8 @@
+import { ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 
+import { Button } from '@/components/ui/button';
 import { CodeBlock } from '@/components/ui/code-block';
 import {
   DescriptionItem,
@@ -58,6 +61,14 @@ export default function RunDetailDrawer({
             })}
           </DescriptionItem>
         </DescriptionList>
+        {run.conversation_id && (
+          <Button variant="link" size="sm" className="-ml-3 self-start" asChild>
+            <Link to={`/c/${run.conversation_id}`} onClick={onClose}>
+              {t('agents.schedules.runDetails.openConversation')}
+              <ArrowRight aria-hidden className="size-3" />
+            </Link>
+          </Button>
+        )}
         {run.error && (
           <section className="flex flex-col gap-1">
             <SectionHeader

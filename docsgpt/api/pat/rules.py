@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Optional
 
 from docsgpt.api.pat.tokens import is_pat
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
 
 VIEW, QUERY, JSON, FORM, BODY = "view", "query", "json", "form", "body"
 
@@ -59,6 +60,9 @@ def _rule(scope: Optional[str] = None, *ids: Locator, any_of: tuple[str, ...] = 
 #: below and its ASGI sibling GET /api/messages/<id>/events (docsgpt/api/async_sse.py),
 #: which sits outside this table.
 MESSAGE_REPLAY_SCOPES = ("conversations:read", "chat:run")
+
+#: Chat prompt values with no row id: the default and the stored presets.
+CHAT_PROMPT_PRESETS = frozenset({"default", *STORED_PROMPT_PRESETS})
 
 _ALL_FAMILIES = ("agents", "sources", "prompts", "tools", "workflows")
 _WORKFLOW_CONTENT_FAMILIES = ("sources", "tools", "prompts")
@@ -138,12 +142,38 @@ def _agent_body_check(request, resource_filter: dict, user_id: Optional[str]) ->
 
     A token restricted on any of those may attach a workflow to an agent only
     when it is also restricted on workflows, so the workflow is one its owner
-    chose (``refs`` then verifies the id).
+    chose (``refs`` then verifies the id). An inline ``workflow_graph`` is
+    refused to a token restricted on any of them or on workflows.
     """
+    graph = _json_body(request).get("workflow_graph") if request.is_json else request.form.get("workflow_graph")
+    if graph not in (None, "") and set(resource_filter) & {*_WORKFLOW_CONTENT_FAMILIES, "workflows"}:
+        # An inline graph can name any source, tool or prompt and creates or rewrites a workflow
+        # no allowlist can prove; like POST /api/workflows, closed to tokens restricted on those.
+        return "A token restricted to specific sources, tools, prompts or workflows cannot save a workflow graph"
     if "workflows" in resource_filter or not set(resource_filter) & {"sources", "tools", "prompts"}:
         return None
     if _read(request, (BODY, "workflow")):
         return "A token restricted to specific sources, tools or prompts cannot attach a workflow to an agent"
+    return None
+
+
+def _chat_prompt_check(request, resource_filter: dict, user_id: Optional[str]) -> Optional[str]:
+    """A prompt-restricted token may pick a preset (no row id) or a prompt on its allowlist as its chat prompt.
+
+    It may not send ``only_if_unset``: with a chat prompt already stored, the route answers with
+    that one, which may lie outside the allowlist, and the read (GET) is closed to such a token.
+    """
+    if "prompts" not in resource_filter:
+        return None
+    body = _json_body(request)
+    if body.get("only_if_unset") is True:
+        return "This token is restricted to specific prompts and cannot read the stored chat prompt"
+    ids = _as_ids(body.get("chat_prompt_id"))
+    if not ids:
+        return "This token is restricted to specific prompts and cannot use this endpoint"
+    rows = [i for i in ids if i not in CHAT_PROMPT_PRESETS]
+    if rows and not _all_allowed(rows, resource_filter["prompts"]):
+        return "Token is not allowed to access this resource (prompts)"
     return None
 
 
@@ -172,8 +202,18 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/template_agents", "GET"): _rule("agents:read", open=True),
     ("/api/export_agent", "GET"): _rule("agents:read", (QUERY, "id")),
     ("/api/guardrails/catalog", "GET"): _rule("agents:read", open=True),
+    # The admin's defaults for new agents: no agent's data, so open to restricted tokens.
+    ("/api/agents/defaults", "GET"): _rule("agents:read", open=True),
     ("/api/guardrails/events", "GET"): _rule("agents:read", (QUERY, "agent_id")),
     ("/api/guardrails/summary", "GET"): _rule("agents:read", (QUERY, "agent_id")),
+    # Both read one agent's topics and its sources' folder names, so they prove the agent and
+    # are closed to tokens restricted on the families an agent's sources hang off.
+    ("/api/analytics/topic_folders", "GET"): _rule(
+        "agents:read", (QUERY, "agent_id"), blocked_by=_NON_AGENT_FAMILIES
+    ),
+    ("/api/analytics/topics", "GET"): _rule(
+        "analytics:read", (QUERY, "agent_id"), family="agents", blocked_by=_NON_AGENT_FAMILIES
+    ),
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),
     ("/api/agents/folders/<string:folder_id>", "GET"): _rule("agents:read"),
     ("/api/create_agent", "POST"): _rule("agents:write", refs=_AGENT_BODY_REFS, check=_agent_body_check),
@@ -207,6 +247,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/agents/<string:agent_id>/schedules", "POST"): _rule(
         "schedules:write", refs=(("agents", (VIEW, "agent_id")),), blocked_by=_NON_AGENT_FAMILIES
     ),
+    # Lists schedules of every agent, so a token limited to some agents can't use it.
+    ("/api/schedules", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs", "GET"): _rule("schedules:read", blocked_by=_ALL_FAMILIES),
     ("/api/schedules/<string:schedule_id>/runs/<string:run_id>", "GET"): _rule(
@@ -220,6 +262,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/sources", "GET"): _rule("sources:read", listing=True),
     # Counted and paged in SQL, so it cannot be narrowed here; restricted tokens use /api/sources.
     ("/api/sources/paginated", "GET"): _rule("sources:read"),
+    # The admin's defaults for new sources: no source's data, so open to restricted tokens.
+    ("/api/sources/defaults", "GET"): _rule("sources:read", open=True),
     ("/api/directory_structure", "GET"): _rule("sources:read", (QUERY, "id")),
     ("/api/get_chunks", "GET"): _rule("sources:read", (QUERY, "id")),
     # The chunk behind a citation; scoped to its source like get_chunks.
@@ -242,9 +286,15 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/delete_old", "GET"): _rule("sources:write", (QUERY, "source_id")),
     ("/api/manage_sync", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/sync_source", "POST"): _rule("sources:write", (JSON, "source_id")),
+    ("/api/website", "GET"): _rule("sources:read", (QUERY, "id")),
+    ("/api/website", "POST"): _rule("sources:write", (JSON, "source_id")),
+    ("/api/website/pages", "POST"): _rule("sources:write", (JSON, "source_id")),
+    ("/api/website/refresh", "POST"): _rule("sources:write", (JSON, "source_id")),
+    ("/api/website/remove", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/sources/reingest", "POST"): _rule("sources:write", (JSON, "source_id")),
     ("/api/manage_source_files", "POST"): _rule("sources:write", (FORM, "source_id")),
     ("/api/sources/<string:source_id>/config", "PATCH"): _rule("sources:write", (VIEW, "source_id")),
+    ("/api/sources/<string:source_id>/injection_review", "POST"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/page", "PUT"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/convert", "POST"): _rule("sources:write", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/graphrag/enable", "POST"): _rule(
@@ -257,6 +307,11 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_prompts", "GET"): _rule("prompts:read", listing=True),
     ("/api/get_single_prompt", "GET"): _rule("prompts:read", (QUERY, "id")),
     ("/api/create_prompt", "POST"): _rule("prompts:write"),
+    # The caller's chat prompt. Its stored id can't be proven from the request, so the read is
+    # closed to prompt-restricted tokens; a write names the prompt it picks (a preset always passes),
+    # and may not ask for only_if_unset, whose answer carries the stored id.
+    ("/api/user/preferences", "GET"): _rule("prompts:read"),
+    ("/api/user/preferences", "PUT"): _rule("prompts:write", in_route=True, check=_chat_prompt_check),
     ("/api/update_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     ("/api/delete_prompt", "POST"): _rule("prompts:write", (JSON, "id")),
     # Tools
@@ -270,6 +325,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/update_tool_status", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/delete_tool", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/mcp_server/test", "POST"): _rule("tools:write", open=True),
+    # Cancels a sign-in the caller started; the route checks it is theirs.
+    ("/api/mcp_server/oauth_cancel", "POST"): _rule("tools:write", open=True),
     ("/api/mcp_server/save", "POST"): _rule("tools:write", (JSON, "id")),
     # Models
     ("/api/models", "GET"): _rule(any_of=("models:read", "chat:run"), open=True),
@@ -288,6 +345,30 @@ RULES: dict[tuple[str, str], Rule] = {
         "workflows:write", (VIEW, "workflow_id"), blocked_by=_WORKFLOW_CONTENT_FAMILIES
     ),
     ("/api/workflows/<string:workflow_id>", "DELETE"): _rule("workflows:write", (VIEW, "workflow_id")),
+    # Workflow runs belong to the agent that ran them, which is all a run route can prove;
+    # tokens restricted on any other family are kept out. The routes filter by the agent
+    # allowlist themselves, and answer 404 for a run outside it. The download of a run's
+    # files is the native-async route in docsgpt/api/user/workflow_runs/download.py
+    # (``artifacts:read``), outside this table.
+    ("/api/workflow_runs", "GET"): _rule(
+        "runs:read",
+        family="agents",
+        listing=True,
+        refs=(("agents", (QUERY, "agent_id")),),
+        blocked_by=_NON_AGENT_FAMILIES,
+    ),
+    ("/api/workflow_runs/<string:run_id>", "GET"): _rule(
+        "runs:read", family="agents", in_route=True, blocked_by=_NON_AGENT_FAMILIES
+    ),
+    ("/api/workflow_runs/<string:run_id>/steps/<int:step_index>", "GET"): _rule(
+        "runs:read", family="agents", in_route=True, blocked_by=_NON_AGENT_FAMILIES
+    ),
+    # Every artifact of the user (chats and runs alike), so no restricted token may list or read them.
+    ("/api/artifacts", "GET"): _rule("artifacts:read", family=None, blocked_by=_ALL_FAMILIES),
+    ("/api/artifacts/<artifact_id>", "GET"): _rule("artifacts:read", family=None, blocked_by=_ALL_FAMILIES),
+    ("/api/artifacts/<artifact_id>/versions/<int:version>", "GET"): _rule(
+        "artifacts:read", family=None, blocked_by=_ALL_FAMILIES
+    ),
     # Conversations and analytics span every agent and carry cited source text and tool
     # output, so they are closed to every restricted token.
     ("/api/get_conversations", "GET"): _rule("conversations:read", blocked_by=_ALL_FAMILIES),
@@ -319,6 +400,8 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_tool_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_schedule_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_user_logs", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
+    ("/api/get_conversation_insights", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
+    ("/api/get_docs_gaps", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/traces", "GET"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     # Teams (read only)
     ("/api/teams", "GET"): _rule("teams:read"),
@@ -331,6 +414,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/answer", "POST"): _rule("chat:run", **_CHAT),
     ("/stream", "POST"): _rule("chat:run", **_CHAT),
     ("/api/search", "POST"): _rule("chat:run", **_CHAT),
+    ("/api/agent_starters", "POST"): _rule("chat:run", **_CHAT),
     ("/api/store_attachment", "POST"): _rule("chat:run", family=None),
     ("/api/sources/<string:source_id>/search", "POST"): _rule(
         "chat:run", family=None, refs=(("sources", (VIEW, "source_id")),)
@@ -346,6 +430,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/user/tokens": ("*",),
     "/api/user/tokens/<string:token_id>": ("*",),
     "/api/user/tokens/<string:token_id>/regenerate": ("*",),
+    "/api/user/tokens/<string:token_id>/tool": ("*",),
     "/api/generate_token": ("*",),
     "/api/combine": ("*",),
     "/api/download": ("*",),
@@ -354,6 +439,11 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/shared_agent": ("*",),
     "/api/shared_conversation/<string:identifier>": ("*",),
     "/api/webhooks/agents/<string:webhook_token>": ("*",),
+    # Spans every chat, agent and run of the user, like conversations do.
+    "/api/activity/now": ("*",),
+    "/api/activity/planned": ("*",),
+    "/api/activity/history": ("*",),
+    "/api/messages/<string:message_id>/cancel": ("*",),
     # Monitor links: public, the token in the path is the credential (no session or PAT).
     "/api/triggers/<string:token>": ("*",),
     "/api/approvals/<string:token>": ("*",),
@@ -364,10 +454,9 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/mcp_server/callback": ("*",),
     "/api/mcp_server/auth_status": ("*",),
     "/api/artifact/<artifact_id>": ("*",),
-    "/api/artifacts": ("*",),
-    "/api/artifacts/<artifact_id>": ("*",),
+    # Reading artifacts is ``artifacts:read`` (RULES); changing them needs a session.
+    "/api/artifacts/<artifact_id>": ("DELETE",),
     "/api/artifacts/<artifact_id>/restore": ("*",),
-    "/api/artifacts/<artifact_id>/versions/<int:version>": ("*",),
     "/api/stt": ("*",),
     "/api/stt/live/start": ("*",),
     "/api/stt/live/chunk": ("*",),
@@ -396,6 +485,7 @@ DENIED_PREFIXES = (
     "/api/connectors/",
     "/api/connections",
     "/api/devices",
+    "/api/internal/",
     "/scim/",
     "/static/",
     "/swaggerui/",
@@ -539,6 +629,25 @@ def allowed_ids(request, family: str) -> Optional[set[str]]:
     return {_canonical(str(i)) for i in ids}
 
 
+def used_by_agent_allowlist(request) -> Optional[set[str]]:
+    """The agents a listing's ``used_by`` may name, or ``None`` for every agent the caller can open.
+
+    A token without ``agents:read`` may not learn agent names through another family's listing, so it
+    gets an empty allowlist: every agent then counts as one the caller can't open. Otherwise this is
+    the token's agent allowlist (:func:`allowed_ids`).
+
+    Args:
+        request: The current request.
+
+    Returns:
+        The allowed agent ids (empty for a token without ``agents:read``), or None when unrestricted.
+    """
+    decoded = getattr(request, "decoded_token", None)
+    if is_pat(decoded) and "agents:read" not in (decoded.get("scopes") or []):
+        return set()
+    return allowed_ids(request, "agents")
+
+
 def filter_listing(request, family: str, items: list, key: str = "id") -> list:
     """Drop rows outside the caller's allowlist. Rows without a UUID id (built-in presets) are kept."""
     allowed = allowed_ids(request, family)
@@ -558,6 +667,35 @@ def _is_uuid(value: str) -> bool:
     except (ValueError, AttributeError, TypeError):
         return False
     return True
+
+
+def missing_scope_response(request, scope: str) -> Optional[tuple[dict, int]]:
+    """``(body, 403)`` when the caller is a token without ``scope``, else None.
+
+    For a scope a route needs only for part of its body (an agent save that
+    also writes a workflow graph needs ``workflows:write``), which the rule
+    table, keyed on route and method, can't express. Same body as the table's
+    ``insufficient_scope`` refusal.
+
+    Args:
+        request: The current request (``decoded_token`` set).
+        scope: The scope required.
+
+    Returns:
+        The refusal, or None when the caller may go on.
+    """
+    decoded = getattr(request, "decoded_token", None)
+    if not is_pat(decoded) or scope in (decoded.get("scopes") or []):
+        return None
+    return (
+        {
+            "success": False,
+            "error": "insufficient_scope",
+            "message": f"Token lacks the required scope: {scope}",
+            "required_scope": scope,
+        },
+        403,
+    )
 
 
 def may_see_agent_keys(request) -> bool:

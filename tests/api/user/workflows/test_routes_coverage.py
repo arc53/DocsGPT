@@ -787,3 +787,53 @@ class TestWriteGraphEdgesWithUnresolvedNodes:
         )
         assert get_workflow_graph_version({"current_graph_version": -5}) == 1
 
+
+
+class TestRetryDefaults:
+    def _post(self, app, pg_conn, body):
+        from docsgpt.api.user.workflows.routes import WorkflowList
+
+        with _patch_wf_db(pg_conn), app.test_request_context("/api/workflows", method="POST", json=body):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            return WorkflowList().post()
+
+    def _put(self, app, pg_conn, wf_id, body):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        with _patch_wf_db(pg_conn), app.test_request_context(f"/api/workflows/{wf_id}", method="PUT", json=body):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            return WorkflowDetail().put(wf_id)
+
+    def _get(self, app, pg_conn, wf_id):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        with _patch_wf_db(pg_conn), app.test_request_context(f"/api/workflows/{wf_id}", method="GET"):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            return WorkflowDetail().get(wf_id).get_json()["data"]["workflow"]
+
+    def test_round_trips_through_create_update_and_get(self, app, pg_conn):
+        defaults = {"max_attempts": 3, "backoff_seconds": [2, 10, 30], "on": ["transient"]}
+        created = self._post(app, pg_conn, {**_minimal_workflow_body(), "retry_defaults": defaults})
+        wf_id = created.get_json()["data"]["id"]
+        assert self._get(app, pg_conn, wf_id)["retry_defaults"] == defaults
+
+        # A save that doesn't send the key keeps them.
+        assert self._put(app, pg_conn, wf_id, _minimal_workflow_body("renamed")).status_code == 200
+        assert self._get(app, pg_conn, wf_id)["retry_defaults"] == defaults
+
+        # An explicit null clears them.
+        assert self._put(app, pg_conn, wf_id, {**_minimal_workflow_body(), "retry_defaults": None}).status_code == 200
+        assert self._get(app, pg_conn, wf_id)["retry_defaults"] is None
+
+    def test_invalid_defaults_are_refused(self, app, pg_conn):
+        response = self._post(app, pg_conn, {**_minimal_workflow_body(), "retry_defaults": {"max_attempts": 99}})
+        assert response.status_code == 400
+        assert any("retry defaults max_attempts" in error for error in response.get_json()["errors"])
+
+        created = self._post(app, pg_conn, _minimal_workflow_body())
+        wf_id = created.get_json()["data"]["id"]
+        response = self._put(app, pg_conn, wf_id, {**_minimal_workflow_body(), "retry_defaults": {"on": ["x"]}})
+        assert response.status_code == 400

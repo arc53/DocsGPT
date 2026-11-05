@@ -88,8 +88,14 @@ export const isChatPickerToolVisible = (
   },
 ): boolean => isChatToolVisible(tool) && canAddToolToOwn(tool);
 
-// Classic agent and workflow-node pickers: the classic rule, minus shared
-// tools the caller can't add to their own agents (`use_in_own` off).
+// Classic agent picker: the classic rule, minus shared tools the caller
+// can't add to their own agents (`use_in_own` off).
 export const isAgentPickerToolVisible = (
   tool: AccessFields & { workflow_only?: boolean; name?: string | null },
 ): boolean => isClassicAgentToolVisible(tool) && canAddToolToOwn(tool);
+
+// Workflow agent-node picker: like the classic one but `workflow_only`
+// builtins (e.g. ``read_document``) stay, since they belong here.
+export const isWorkflowNodeToolVisible = (
+  tool: AccessFields & { name?: string | null; workflow_only?: boolean },
+): boolean => !isServerAttachedTool(tool) && canAddToolToOwn(tool);

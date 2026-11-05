@@ -1,0 +1,68 @@
+# The decision model on an NVIDIA GPU: stock vLLM serving
+# arc53/arc-decide-0.6b-v0.1 at its pinned revision, which the backend and the
+# worker call instead of the model on the CPU. Layer it on a stack file, e.g.
+#   docker compose --env-file .env -f deployment/docker-compose-hub.yaml \
+#     -f deployment/optional/docker-compose.optional.decide-vllm.yaml up -d
+# and name both files again for every later compose command. A `docsgpt up`
+# stack runs its own file only: run vLLM beside it and set DECISION_BASE_URL and
+# DECISION_PROTOCOL=vllm in its .env instead (see the decision model docs).
+#
+# amd64 hosts with the NVIDIA container toolkit only. Nothing here runs a
+# decision until a decision feature is turned on in .env; vLLM itself loads the
+# model (~1.2 GB of weights, downloaded once into its own volume) when it
+# starts. The backend then loads no model, and the decider profile has nothing
+# to do: leave it off.
+#
+#   DECISION_VLLM_GPU_SHARE  share of the GPU's memory vLLM takes (default 0.2,
+#                            ~4.8 GB of a 24 GB card), leaving room for an LLM
+#                            such as Ollama on the same card. vLLM takes 90%
+#                            by default. If it fails to start on a small card,
+#                            raise the share.
+#
+# vLLM logs no prompts (request logging is off unless --enable-log-requests),
+# and it checks the same DECISION_KEY the backend and worker send. Set it in
+# .env (a long random string, e.g. from openssl rand -hex 32): without it, every
+# compose command that names this file stops with an error rather than run vLLM
+# open to the stack network.
+services:
+  decider-vllm:
+    image: vllm/vllm-openai:v0.31.0
+    entrypoint: ["vllm", "serve"]
+    command:
+      - arc53/arc-decide-0.6b-v0.1
+      - --revision
+      - a03cd6bc45fa7b75e05489454e2084bd3516db17
+      # the decision protocol reads one label token's processed log-probabilities
+      - --logprobs-mode
+      - processed_logprobs
+      - --max-logprobs
+      - "16"
+      - --enable-prefix-caching
+      - --max-model-len
+      - "4096"
+      - --gpu-memory-utilization
+      - "${DECISION_VLLM_GPU_SHARE:-0.2}"
+    environment:
+      - "VLLM_API_KEY=${DECISION_KEY:?set DECISION_KEY in .env and pass --env-file .env; vLLM checks it as its API key}"
+    volumes:
+      - decision_vllm_cache:/root/.cache/huggingface
+    shm_size: 2gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    restart: unless-stopped
+
+  backend:
+    environment:
+      - DECISION_BASE_URL=http://decider-vllm:8000
+      - DECISION_PROTOCOL=vllm
+
+  worker:
+    environment:
+      - DECISION_BASE_URL=http://decider-vllm:8000
+      - DECISION_PROTOCOL=vllm
+
+volumes:
+  decision_vllm_cache:

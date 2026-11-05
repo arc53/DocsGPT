@@ -7,6 +7,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 
 import { conversationIdFromPath } from './backgroundListener';
+import { isPageAttended, subscribeAttention } from './usePageVisible';
 
 /** How often a visible tab re-reports; the server forgets a report after 45 s. */
 export const PRESENCE_HEARTBEAT_MS = 20_000;
@@ -42,10 +43,12 @@ export function shownConversationId(
 }
 
 /**
- * Report what this tab shows to `POST /api/presence`: when the route or the
- * visibility changes, every 20 s while visible, and `closing` when the page
- * goes away. The server uses it to stay quiet about a conversation the user
- * is watching, and to choose a toast or a Web Push otherwise.
+ * Report what this tab shows to `POST /api/presence`: when the route, the
+ * visibility or the window focus changes, every 20 s while visible, and
+ * `closing` when the page goes away. `visible` means the user can be looking
+ * (see `isPageAttended`): a visible tab in an unfocused window reports false.
+ * The server uses it to stay quiet about a conversation the user is
+ * watching, and to choose a toast or a Web Push otherwise.
  */
 export function usePresence(): void {
   const { pathname } = useLocation();
@@ -67,14 +70,14 @@ export function usePresence(): void {
         {
           tab_id: TAB_ID,
           conversation_id: shown,
-          visible: document.visibilityState === 'visible',
+          visible: isPageAttended(),
           ...(closing ? { closing: true } : {}),
         },
         current,
       );
     };
     send();
-    const onVisibility = () => send();
+    const stopAttention = subscribeAttention(() => send());
     const onPageHide = () => send(true);
     // A page restored from the back/forward cache is open again.
     const onPageShow = (event: PageTransitionEvent) => {
@@ -83,12 +86,11 @@ export function usePresence(): void {
     const heartbeat = window.setInterval(() => {
       if (document.visibilityState === 'visible') send();
     }, PRESENCE_HEARTBEAT_MS);
-    document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('pageshow', onPageShow);
     return () => {
       window.clearInterval(heartbeat);
-      document.removeEventListener('visibilitychange', onVisibility);
+      stopAttention();
       window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('pageshow', onPageShow);
     };

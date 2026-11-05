@@ -30,8 +30,16 @@ def _fake_conn():
     yield Mock()
 
 
+def _users(emails: dict | None = None) -> Mock:
+    users = Mock()
+    users.emails_for.side_effect = lambda ids: {
+        uid: email for uid, email in (emails or {}).items() if uid in set(ids)
+    }
+    return users
+
+
 @contextmanager
-def _admin(repo: Mock):
+def _admin(repo: Mock, users: Mock | None = None):
     with ExitStack() as stack:
         stack.enter_context(
             patch("docsgpt.app.handle_auth", return_value={"sub": "admin1"})
@@ -44,6 +52,9 @@ def _admin(repo: Mock):
             patch(
                 "docsgpt.api.admin.activity.ActivityRepository", return_value=repo
             )
+        )
+        stack.enter_context(
+            patch("docsgpt.api.admin.activity.UsersRepository", return_value=users or _users())
         )
         yield
 
@@ -103,6 +114,31 @@ class TestFeed:
         assert body["activity"][0]["created_at"] == "2026-01-02T03:04:05+00:00"
         assert body["total"] == 1
         assert body["has_more"] is False
+
+    def test_rows_carry_actor_and_target_emails(self, client):
+        repo = _repo(
+            [
+                _row(id="1", actor_id="admin1", target_id="u2"),
+                _row(id="2", actor_id="ghost", target_id=None),
+            ]
+        )
+        users = _users({"admin1": "admin@example.com", "u2": "u2@example.com"})
+        with _admin(repo, users):
+            body = json.loads(client.get("/api/admin/activity").data)
+        first, second = body["activity"]
+        assert (first["actor_email"], first["target_email"]) == (
+            "admin@example.com",
+            "u2@example.com",
+        )
+        assert (second["actor_email"], second["target_email"]) == (None, None)
+        # One lookup for the whole page, not one per row.
+        users.emails_for.assert_called_once()
+
+    def test_export_columns_are_unchanged(self, client):
+        repo = _repo()
+        with _admin(repo):
+            text = client.get("/api/admin/activity/export?format=csv").data.decode()
+        assert "actor_email" not in text.splitlines()[0]
 
     def test_has_more_when_the_page_is_short_of_the_total(self, client):
         repo = _repo(total=500)

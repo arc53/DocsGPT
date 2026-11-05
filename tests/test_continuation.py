@@ -1070,6 +1070,7 @@ class TestContinuationServiceMarkResuming:
     """``ContinuationService.mark_resuming`` is the thin wrapper used by
     the resume path; it should flip the repository row in place."""
 
+    @pytest.mark.fresh_db
     def test_mark_resuming_flips_pending_row(self, pg_engine, monkeypatch):
         from contextlib import contextmanager
 

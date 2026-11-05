@@ -28,6 +28,24 @@ OUTSIDE_EDITS_DENIED = (
 )
 
 
+def _store_denied() -> Optional[str]:
+    """An error for the LLM when the vector store can't re-embed single pages, else None.
+
+    Each write re-embeds just its page; a store that can't list and delete
+    single chunks (Elasticsearch) would keep the old ones, so the write is
+    refused before the page changes.
+    """
+    from docsgpt.core.settings import settings
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    if VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        return None
+    return (
+        f"Error: This wiki can't be changed: the {settings.VECTOR_STORE} vector store "
+        "can't update single pages. You can still read it."
+    )
+
+
 class WikiTool(Tool):
     """Wiki
 
@@ -61,7 +79,7 @@ class WikiTool(Tool):
             return "Error: WikiTool requires a source_id."
 
         if action_name in _WRITE_ACTIONS:
-            denied = self._write_denied()
+            denied = _store_denied() or self._write_denied()
             if denied:
                 return denied
 

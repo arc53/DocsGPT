@@ -1,8 +1,13 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import activityReducer, {
+  activityListenerMiddleware,
+} from './activity/activitySlice';
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import { MAX_OVERLAPPING, MAX_TOPICS } from './agents/analyticsConfig';
 import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListener';
 import backgroundReducer from './backgroundJobs/backgroundSlice';
+import chatToolsReducer from './conversation/chatToolsSlice';
 import connectorsReducer from './connectors/connectorsSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
@@ -25,7 +30,6 @@ import teamsReducer from './teams/teamsSlice';
 import uploadReducer from './upload/uploadSlice';
 
 const key = localStorage.getItem('DocsGPTApiKey');
-const prompt = localStorage.getItem('DocsGPTPrompt');
 const chunks = localStorage.getItem('DocsGPTChunks');
 const selectedModel = localStorage.getItem('DocsGPTSelectedModel');
 
@@ -33,10 +37,8 @@ const preloadedState: { preference: Preference } = {
   preference: {
     apiKey: key ?? '',
     token: localStorage.getItem('authToken') ?? null,
-    prompt:
-      prompt !== null
-        ? JSON.parse(prompt)
-        : { name: 'default', id: 'default', type: 'private' },
+    // The server's choice replaces it once loaded (useDataInitializer).
+    prompt: { name: 'default', id: 'default', type: 'public' },
     prompts: [
       { name: 'default', id: 'default', type: 'public' },
       { name: 'creative', id: 'creative', type: 'public' },
@@ -49,6 +51,7 @@ const preloadedState: { preference: Preference } = {
       loading: false,
     },
     sourceDocs: null,
+    sourceDocsFailed: false,
     modalState: 'INACTIVE',
     paginatedDocuments: null,
     templateAgents: null,
@@ -65,6 +68,9 @@ const preloadedState: { preference: Preference } = {
     sttAvailable: true,
     authRequired: false,
     attachmentBudgetShare: null,
+    analyticsEnabled: false,
+    analyticsMaxTopics: MAX_TOPICS,
+    analyticsMaxOverlapping: MAX_OVERLAPPING,
   },
 };
 const store = configureStore({
@@ -82,14 +88,17 @@ const store = configureStore({
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
     connectors: connectorsReducer,
+    chatTools: chatToolsReducer,
     monitors: monitorsReducer,
     background: backgroundReducer,
+    activity: activityReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
       prefListenerMiddleware.middleware,
       conversationListenerMiddleware.middleware,
       backgroundListenerMiddleware.middleware,
+      activityListenerMiddleware.middleware,
     ),
 });
 

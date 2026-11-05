@@ -1,6 +1,7 @@
 import { envVar } from '@/env';
+import { useAvoidToasts } from '@/components/ui/toast-layout';
 import { cn } from '@/lib/utils';
-import { CloudUpload, Database } from 'lucide-react';
+import { CloudUpload } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -44,20 +45,23 @@ import {
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
-import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
-import ToolIcon from './ToolIcon';
-import ConnectorIcon from '../connectors/ConnectorIcon';
+import { toolPickerItems } from './toolPickerItems';
 import {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
-import { toolServiceOf } from '../connectors/toolService';
-import { groupTools } from '../settings/toolGroups';
+import {
+  loadChatTools,
+  selectChatTools,
+  selectChatToolsLoading,
+  setChatToolInChat,
+  settleChatToolToggle,
+} from '../conversation/chatToolsSlice';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
@@ -76,6 +80,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_QUEUE_CHECK_MS,
   ATTACHMENT_QUEUE_MAX_CHECKS,
+  ATTACHMENT_STREAM_DOWN_POLL_MS,
   ATTACHMENT_UPLOAD_CONCURRENCY,
   checkAttachmentTask,
   createTaskQueue,
@@ -83,17 +88,21 @@ import {
 } from './message-input/attachmentUpload';
 import { cannotReadAttachment } from './message-input/attachmentReadability';
 import { exceedsAttachmentBudget } from './message-input/attachmentBudget';
-import { handleAbort } from '../conversation/conversationSlice';
+import { stopAnswer } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
   getFileExtension,
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
-import { UserToolType } from '../settings/types';
-import { sourceItemId, toSourcePickerItems } from '../utils/sourceUtils';
+import { useSourceKindFilter } from '../settings/SourceKindFilter';
+import { useDeviceOnline } from '../hooks/useDeviceOnline';
+import { useToolKindFilter } from '../settings/useToolKindFilter';
+import { sourceItemId } from '../utils/sourceUtils';
+import { toSourcePickerItems } from './sourcePickerItems';
 import { showActionToast } from '../notifications/actionToastSlice';
+import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
-import { isChatPickerToolVisible, toolInChat } from '../utils/toolUtils';
+import { toolInChat } from '../utils/toolUtils';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
@@ -364,13 +373,16 @@ export default function MessageInput({
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // The toast stack sits above the composer rather than over its controls.
+  const composerRef = useRef<HTMLDivElement>(null);
+  useAvoidToasts(composerRef);
   const voiceFileInputRef = useRef<HTMLInputElement>(null);
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
-  const [userTools, setUserTools] = useState<UserToolType[]>([]);
+  const userTools = useSelector(selectChatTools);
   const connections = useSelector(selectConnections);
   const catalog = useSelector(selectConnectorCatalog);
-  const [toolsLoading, setToolsLoading] = useState(false);
+  const toolsLoading = useSelector(selectChatToolsLoading);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [addToolModalState, setAddToolModalState] =
@@ -498,6 +510,30 @@ export default function MessageInput({
     (clientId: string, attachmentId: string, taskId: string) => {
       let handled = false;
 
+      const complete = (details: {
+        tokenCount?: number;
+        mimeType?: string;
+        extractionStatus?: string;
+      }) => {
+        handled = true;
+        dispatch(
+          updateAttachment({
+            id: clientId,
+            updates: {
+              status: 'completed',
+              progress: 100,
+              ...(details.tokenCount !== undefined
+                ? { token_count: details.tokenCount }
+                : {}),
+              ...(details.mimeType ? { mimeType: details.mimeType } : {}),
+              ...(details.extractionStatus
+                ? { extractionStatus: details.extractionStatus }
+                : {}),
+            },
+          }),
+        );
+      };
+
       const check = () => {
         const state = store.getState();
         const row = state.upload.attachments.find((a) => a.id === clientId);
@@ -511,25 +547,17 @@ export default function MessageInput({
           if (event.type === 'attachment.completed') {
             const payload = (event.payload || {}) as Record<string, unknown>;
             const tokenCount = Number(payload.token_count);
-            handled = true;
-            dispatch(
-              updateAttachment({
-                id: clientId,
-                updates: {
-                  status: 'completed',
-                  progress: 100,
-                  ...(Number.isFinite(tokenCount)
-                    ? { token_count: tokenCount }
-                    : {}),
-                  ...(typeof payload.mime_type === 'string'
-                    ? { mimeType: payload.mime_type }
-                    : {}),
-                  ...(typeof payload.extraction_status === 'string'
-                    ? { extractionStatus: payload.extraction_status }
-                    : {}),
-                },
-              }),
-            );
+            complete({
+              tokenCount: Number.isFinite(tokenCount) ? tokenCount : undefined,
+              mimeType:
+                typeof payload.mime_type === 'string'
+                  ? payload.mime_type
+                  : undefined,
+              extractionStatus:
+                typeof payload.extraction_status === 'string'
+                  ? payload.extraction_status
+                  : undefined,
+            });
             return true;
           }
           if (event.type === 'attachment.failed') {
@@ -560,6 +588,8 @@ export default function MessageInput({
       // file still queued waits on, up to an hour. Once the worker has it,
       // an idle window, not a total cap: a big zip (one task per member) or a
       // slow scan keeps reporting progress, and each report restarts it.
+      // While the event stream is down neither clock can hear the outcome,
+      // so the task status is asked every few seconds instead.
       const activityOf = () =>
         store.getState().upload.attachments.find((a) => a.id === clientId)
           ?.activity ?? 0;
@@ -567,14 +597,19 @@ export default function MessageInput({
       let started = lastActivity > 0;
       let queueChecks = 0;
       let timer: number | undefined;
+      let streamDownPoll: number | undefined;
       let unsubscribe: (() => void) | null = null;
       const arm = (ms: number, onElapsed: () => void) => {
         window.clearTimeout(timer);
         timer = window.setTimeout(onElapsed, ms);
       };
-      const fail = (reason: string, errorMessage?: string) => {
+      const stop = () => {
         window.clearTimeout(timer);
+        window.clearInterval(streamDownPoll);
         unsubscribe?.();
+      };
+      const fail = (reason: string, errorMessage?: string) => {
+        stop();
         if (handled) return;
         handled = true;
         console.warn(`trackAttachment: ${reason}`, clientId, attachmentId);
@@ -588,14 +623,22 @@ export default function MessageInput({
           }),
         );
       };
-      const onIdle = () => fail('no progress from the worker');
+      const onIdle = () => {
+        // While the stream is down silence proves nothing: the status poll
+        // decides, and the window starts again when the stream is back.
+        if (streamDownPoll !== undefined) return;
+        fail('no progress from the worker');
+      };
       const onQueueCheck = async () => {
         if (handled || started) return;
         const task = taskId
           ? await checkAttachmentTask(taskId, token)
           : ({ state: 'unknown' } as const);
         if (handled || started) return;
-        if (task.state === 'failed') {
+        if (task.state === 'completed') {
+          stop();
+          complete(task);
+        } else if (task.state === 'failed') {
           fail('the parse task failed', task.message);
         } else if (task.state === 'unavailable') {
           fail('no worker is running');
@@ -608,14 +651,51 @@ export default function MessageInput({
           arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
         }
       };
-      if (started) arm(ATTACHMENT_IDLE_MS, onIdle);
-      else arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
-      unsubscribe = store.subscribe(() => {
+      let polling = false;
+      const pollWhileStreamDown = async () => {
+        if (handled || polling) return;
+        polling = true;
+        const task = await checkAttachmentTask(taskId, token);
+        polling = false;
+        if (handled) return;
         if (check()) {
-          window.clearTimeout(timer);
-          unsubscribe?.();
+          stop();
           return;
         }
+        if (task.state === 'completed') {
+          stop();
+          complete(task);
+        } else if (task.state === 'failed') {
+          fail('the parse task failed', task.message);
+        } else if (task.state === 'started') {
+          // Progress events cannot arrive either: a worker still on the
+          // file is the activity that keeps it alive.
+          started = true;
+          arm(ATTACHMENT_IDLE_MS, onIdle);
+        }
+      };
+      const followStreamHealth = () => {
+        const down = !selectPushChannelHealthy(store.getState());
+        if (down && streamDownPoll === undefined && taskId) {
+          streamDownPoll = window.setInterval(
+            () => void pollWhileStreamDown(),
+            ATTACHMENT_STREAM_DOWN_POLL_MS,
+          );
+        } else if (!down && streamDownPoll !== undefined) {
+          window.clearInterval(streamDownPoll);
+          streamDownPoll = undefined;
+          if (started) arm(ATTACHMENT_IDLE_MS, onIdle);
+        }
+      };
+      if (started) arm(ATTACHMENT_IDLE_MS, onIdle);
+      else arm(ATTACHMENT_QUEUE_CHECK_MS, () => void onQueueCheck());
+      followStreamHealth();
+      unsubscribe = store.subscribe(() => {
+        if (check()) {
+          stop();
+          return;
+        }
+        followStreamHealth();
         const activity = activityOf();
         if (activity !== lastActivity) {
           lastActivity = activity;
@@ -1292,17 +1372,19 @@ export default function MessageInput({
     void _docs;
   };
 
+  // The picker's kind filter, back on All each time it opens.
+  const sourceKinds = useSourceKindFilter(sourceDocs, isSourcesPopupOpen);
   const sourceItems: MultiSelectPopoverItem[] = useMemo(
     () =>
-      toSourcePickerItems(
-        sourceDocs,
-        {
+      toSourcePickerItems(sourceKinds.docs, {
+        t,
+        labels: {
           own: t('conversation.sources.groupOwn'),
           team: t('conversation.sources.groupTeam'),
         },
-        <Database />,
-      ),
-    [sourceDocs, t],
+        connections,
+      }),
+    [sourceKinds.docs, t, connections],
   );
 
   const selectedSourceIds = (
@@ -1325,24 +1407,22 @@ export default function MessageInput({
     handlePostDocumentSelect(updated.length > 0 ? updated : null);
   };
 
+  // The list loads on mount and on each open; the slice applies only the
+  // newest request's answer, from this composer or one a chat switch
+  // unmounted, so a slow older one can't undo a toggle.
   const fetchUserTools = useCallback(() => {
-    setToolsLoading(true);
-    userService
-      .getUserTools(token)
-      .then((res) => res.json())
-      .then((data) => {
-        const filtered = (data.tools || []).filter(isChatPickerToolVisible);
-        setUserTools(filtered);
-      })
-      .catch((error) => {
-        console.error('Error fetching tools:', error);
-      })
-      .finally(() => setToolsLoading(false));
-  }, [token]);
+    (dispatch as AppDispatch)(loadChatTools({ token }));
+  }, [token, dispatch]);
 
   // Launched from the Tools picker; the modals live here because the picker
   // closes when a sign-in opens.
   const signInAgain = useSignInAgain({ onConnected: fetchUserTools });
+
+  // Loaded up front so the Tools pill shows its count before the picker is
+  // opened; opening it refetches.
+  useEffect(() => {
+    if (showToolButton) fetchUserTools();
+  }, [showToolButton, fetchUserTools]);
 
   useEffect(() => {
     if (isToolsPopupOpen) {
@@ -1351,55 +1431,22 @@ export default function MessageInput({
     }
   }, [isToolsPopupOpen, fetchUserTools]);
 
-  // Tools from a connected service sit under that service; the rest are
-  // built in. Groups only appear once some tool comes from a connection.
-  // A teammate's connection is never in the caller's list, so the tool's own
-  // connection id decides, and the service is named from the catalog.
-  const toolService = (tool: UserToolType) =>
-    toolServiceOf(tool, connections, catalog);
-  const anyConnectedTool = userTools.some((tool) => !!tool.connection_id);
-  // Same groups as the Tools page and the agent builder: built in, one per
-  // service, then custom tools (an API tool, an MCP server with no
-  // connection).
-  const toolItems: MultiSelectPopoverItem[] = groupTools(
-    userTools,
+  // Remote devices' online state, asked for when the picker opens.
+  const deviceOnline = useDeviceOnline(isToolsPopupOpen, userTools);
+
+  // The groups the agent builder and the Tools page use: Included, Added,
+  // one per service, then Custom. A teammate's connection is never in the
+  // caller's list, so the tool's own connection id decides, and the
+  // service is named from the catalog.
+  // The picker's kind track (Included · Added · Services · Custom), past
+  // 10 tools; the rows are built from the kind picked.
+  const toolKinds = useToolKindFilter(userTools, isToolsPopupOpen);
+  const toolItems: MultiSelectPopoverItem[] = toolPickerItems(toolKinds.tools, {
+    t,
     connections,
     catalog,
-  )
-    .flatMap((group) => group.tools.map((tool) => ({ tool, group })))
-    .map(({ tool, group }) => {
-      const service = toolService(tool);
-      const connection = service?.connection;
-      return {
-        id: tool.id,
-        label: tool.customName || tool.displayName,
-        icon: service?.icon ? (
-          <ConnectorIcon icon={service.icon} className="size-5" />
-        ) : (
-          <ToolIcon name={tool.name} className="size-5" />
-        ),
-        group: anyConnectedTool
-          ? group.kind === 'service'
-            ? group.service?.name
-            : group.kind === 'custom'
-              ? t('agents.form.toolsPopup.groupCustom')
-              : t('settings.tools.groupBuiltIn')
-          : undefined,
-        // Shared-by line; the sign-in warning below wins when both apply.
-        description:
-          !isOwner(tool) && tool.shared_via
-            ? t('settings.tools.sharedBy', {
-                interpolation: { escapeValue: false },
-                team: tool.shared_via,
-              })
-            : undefined,
-        descriptionNode: connectionNeedsSignIn(connection) ? (
-          <Badge variant="warning">
-            {t('settings.connectors.status.reconnect')}
-          </Badge>
-        ) : undefined,
-      };
-    });
+    deviceOnline,
+  });
   // Each broken connection once, with the tool it would re-sign (an MCP
   // preset keeps its tool rather than gaining a second one).
   const brokenConnections = connections
@@ -1417,25 +1464,19 @@ export default function MessageInput({
     .filter((tool) => toolInChat(tool))
     .map((tool) => tool.id);
 
-  // Ticks at once and unticks again when the server refuses it.
-  const setToolInChat = (id: string, value: boolean) =>
-    setUserTools((prev) =>
-      prev.map((tool) =>
-        tool.id !== id
-          ? tool
-          : isOwner(tool)
-            ? { ...tool, status: value, in_chat: value }
-            : { ...tool, in_chat: value },
-      ),
-    );
-
+  // Ticks at once and unticks again when the server refuses it; the slice
+  // holds the tick over any reload until the update answers.
   const handleToggleTool = (id: string) => {
     const tool = userTools.find((t) => t.id === id);
     if (!tool) return;
     const newStatus = !toolInChat(tool);
-    setToolInChat(id, newStatus);
+    const owner = isOwner(tool);
+    dispatch(setChatToolInChat({ id, value: newStatus, owner }));
+    const settle = () => dispatch(settleChatToolToggle({ id }));
     const fail = () => {
-      setToolInChat(id, !newStatus);
+      dispatch(
+        settleChatToolToggle({ id, rollback: { value: !newStatus, owner } }),
+      );
       dispatch(
         showActionToast({
           variant: 'destructive',
@@ -1446,7 +1487,8 @@ export default function MessageInput({
     userService
       .updateToolStatus({ id, status: newStatus }, token)
       .then((response: Response) => {
-        if (!response.ok) fail();
+        if (response.ok) settle();
+        else fail();
       })
       .catch((error: unknown) => {
         console.error('Failed to update tool status:', error);
@@ -1535,7 +1577,7 @@ export default function MessageInput({
   };
 
   const handleCancel = () => {
-    handleAbort();
+    void (dispatch as AppDispatch)(stopAnswer());
   };
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -1599,6 +1641,7 @@ export default function MessageInput({
           it rewrites text nodes into <font> wrappers and React loses the
           controls (dead Attach button, see AttachFileButton). */}
       <div
+        ref={composerRef}
         translate="no"
         className="border-border bg-card relative flex w-full flex-col rounded-3xl border"
       >
@@ -1683,6 +1726,7 @@ export default function MessageInput({
                 onToggle={handleToggleSource}
                 selectedDocs={selectedDocs}
                 onUploadClick={handleUploadClick}
+                filters={sourceKinds.filters}
               />
             )}
 
@@ -1694,6 +1738,7 @@ export default function MessageInput({
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
                 loading={toolsLoading}
+                filters={toolKinds.filters}
                 onAddTool={() => setAddToolModalState('ACTIVE')}
                 notice={
                   <SignInAgainNotice
@@ -1786,8 +1831,7 @@ export default function MessageInput({
           modalState={addToolModalState}
           setModalState={setAddToolModalState}
           getUserTools={fetchUserTools}
-          onToolAdded={fetchUserTools}
-          onDevicePaired={fetchUserTools}
+          onToolsCreated={() => fetchUserTools()}
         />
       )}
 

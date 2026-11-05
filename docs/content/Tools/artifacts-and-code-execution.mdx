@@ -1,7 +1,7 @@
 ---
 title: Artifacts and Code Execution
 description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
-lastUpdated: 2026-10-11
+lastUpdated: 2026-10-22
 ---
 
 import { Callout } from 'nextra/components';
@@ -131,7 +131,7 @@ Key points:
 
 The self-hosted runner image and the Daytona snapshot hold the same set, listed in `docsgpt/sandbox/manifest.py`, and the Code Executor tells the model what is there so it doesn't have to find out by failing:
 
-- **Python libraries:** pandas, numpy, matplotlib, openpyxl, python-docx, python-pptx, reportlab (with uharfbuzz for shaping, and arabic-reshaper and python-bidi for right-to-left text), lxml, Pillow, requests, beautifulsoup4, PyYAML, pypdf, PyPDF2, pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio.
+- **Python libraries:** pandas, numpy, matplotlib, openpyxl, python-docx, python-pptx, reportlab (with uharfbuzz for shaping, and arabic-reshaper and python-bidi for right-to-left text), lxml, Pillow, requests, beautifulsoup4, PyYAML, pypdf, pdfplumber, pdfminer.six, pypdfium2, pytesseract and imageio.
 - **Commands:** headless LibreOffice, headless Chromium, tesseract OCR (English), poppler's `pdftotext` and `pdftoppm`, `ffmpeg` and `ffprobe`, and Node.js 24 with `npm` and `npx`.
 - **Conversion helpers:** `office-convert FILE --to pdf` (also `docx`, `xlsx`, `pptx`, `png` and more) converts office documents with LibreOffice; `html-to-pdf` and `html-screenshot` render an HTML file or URL with Chromium.
 - **Fonts:** DejaVu, Liberation and Carlito/Caladea (metric-compatible with Arial, Times New Roman, Courier New, Calibri and Cambria), Noto for Arabic, Devanagari and other scripts, and Noto CJK for Chinese, Japanese and Korean.

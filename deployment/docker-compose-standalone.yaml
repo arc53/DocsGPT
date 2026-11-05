@@ -34,6 +34,21 @@
 #   EMBEDDINGS_NAME        defaults to granite here (this stack always starts on
 #                          fresh volumes, so there is no older index to keep
 #                          compatible); the code default stays mpnet for upgrades.
+#   DECISION_MEMORY        the decider's memory limit (default: 2g)
+#
+# The decision model runs in the backend, which the worker calls, and loads and
+# downloads nothing until a decision feature is turned on in .env; see
+# https://docs.docsgpt.cloud/Models/decision-model. To serve it from the decider
+# container instead (`docsgpt up --decider` does this), add three lines to .env:
+#   COMPOSE_PROFILES=decider
+#   DECISION_BASE_URL=http://decider:7095
+#   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
+# (COMPOSE_PROFILES=https,decider with the HTTPS profile below). The decider
+# refuses to start without DECISION_KEY, which the backend and worker send it
+# from the same .env; INTERNAL_KEY never keys it. DECISION_BASE_URL
+# can also name another server, e.g. http://host.docker.internal:7095 for
+# `docsgpt decide-server --device mps` on a Mac. The backend does not wait
+# for it: decisions fail open.
 #
 # HTTPS for a public domain: point the domain's DNS at this machine, open ports
 # 80 and 443, turn on authentication (a public instance is otherwise open to
@@ -74,6 +89,8 @@ services:
       - indexes:/app/indexes
       - inputs:/app/inputs
       - vectors:/app/vectors
+      # the decision model, or only its tokenizer when the decider holds it
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
@@ -85,8 +102,10 @@ services:
     image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-latest}${DOCSGPT_IMAGE_VARIANT:-}
     user: root
     # Consumes the default queue plus `parsing` (read_document) and `embeddings`
-    # (query embedding); without the latter every search times out.
-    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    # (query embedding); without the latter every search times out. `analytics`
+    # carries the conversation-analytics sweep; on a 1-CPU host, see "The analytics
+    # queue" in the Background Jobs docs before turning it on.
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest,analytics
     env_file:
       - path: .env
         required: false
@@ -103,11 +122,30 @@ services:
       - indexes:/app/indexes
       - inputs:/app/inputs
       - vectors:/app/vectors
+      - decision_models:/app/models/decision
     depends_on:
       redis:
         condition: service_started
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  # The decision model (docsgpt decide-server), idle until a decision feature
+  # is turned on, and only with the decider profile (see the top). Always on the
+  # CPU here: a Mac's GPU is reached by a native `docsgpt decide-server --device
+  # mps` instead (DECISION_BASE_URL above).
+  decider:
+    profiles: [decider]
+    image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-latest}${DOCSGPT_IMAGE_VARIANT:-}
+    # root, like the backend and worker that share the model cache volume
+    user: root
+    command: python -m docsgpt decide-server --host 0.0.0.0 --port 7095 --device cpu
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - decision_models:/app/models/decision
+    mem_limit: ${DECISION_MEMORY:-2g}
     restart: unless-stopped
 
   redis:
@@ -162,3 +200,4 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  decision_models:

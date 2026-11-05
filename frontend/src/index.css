@@ -337,6 +337,7 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
+  --color-link: var(--link);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
@@ -382,6 +383,9 @@
      (card, background, muted) and never reads as the neutral ghost hover. */
   --secondary: #7d54d11a; /* primary at 10%; static, so no color-mix fallback */
   --secondary-foreground: var(--primary);
+  /* Link text. An alias: primary in light; the lighter secondary-foreground
+     in dark, where primary as text is 3.45:1 on the background. */
+  --link: var(--primary);
   --muted: #f6f6f6;
   --muted-foreground: #6b6b6b; /* 4.93:1 on muted, 5.33:1 on white */
   --accent: #ececec;
@@ -429,6 +433,8 @@
   --secondary: #976af326; /* #976af3 (the lighter dark purple) at 15% */
   /* A lighter primary: #976af3 on the tint is about 3:1, this is 4.4-5.6:1. */
   --secondary-foreground: #b89cf8;
+  /* 6.84:1 on background, 6.07:1 on card. */
+  --link: var(--secondary-foreground);
   --muted: #35363b;
   --muted-foreground: #a1a1a1;
   --accent: #3e3f45;

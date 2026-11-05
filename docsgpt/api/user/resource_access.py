@@ -31,7 +31,7 @@ from sqlalchemy import Connection, text
 
 from docsgpt.connectors.permissions import holds_owner_credentials, owner_credential_writes
 from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.team_resource_grants import (
@@ -435,6 +435,46 @@ def can_use_ref(conn: Connection, resource_type: str, resource_id: str, user_id:
     return ra is not None and ra.can(REF_USE_ACTION[resource_type])
 
 
+def ref_attachable(conn: Connection, resource_type: str, resource_id: Optional[str], caller: Optional[str]) -> bool:
+    """Whether ``caller`` may newly reference a resource from an agent or a workflow node.
+
+    The one gate for a save that adds a source, prompt or tool: agent create
+    and update and workflow node saves all ask it. The caller's own access
+    counts, not the holder owner's: an editor of a shared agent must not wire
+    in the owner's private tool (run with the owner's credentials), source or
+    prompt. Refs that belong to no one always pass: an empty source or prompt
+    (no reference), the ``default`` source and prompt presets, and the
+    synthetic ids of default and builtin tools. A tool id must be a non-empty
+    string: an empty one names no tool and is refused. A ref already on the
+    holder is the caller's business to skip; this only judges new ones.
+
+    Args:
+        conn: Open database connection.
+        resource_type: ``source``, ``prompt`` or ``tool``.
+        resource_id: The referenced id.
+        caller: The user saving, owner or editor.
+
+    Returns:
+        True when the caller may attach it (see :func:`can_use_ref`).
+    """
+    if resource_type == "tool" and (not isinstance(resource_id, str) or not resource_id.strip()):
+        return False
+    if not resource_id:
+        return True
+    rid = str(resource_id)
+    if resource_type == "source" and rid == "default":
+        return True
+    if resource_type == "prompt" and rid in ("default", *STORED_PROMPT_PRESETS):
+        return True
+    if resource_type == "tool":
+        # Lazy: default_tools imports this module lazily too.
+        from docsgpt.agents.default_tools import is_synthesized_tool_id
+
+        if is_synthesized_tool_id(rid):
+            return True
+    return can_use_ref(conn, resource_type, rid, caller)
+
+
 def can_sponsor_ref(conn: Connection, resource_type: str, resource_id: str, user_id: Optional[str]) -> bool:
     """Whether ``user_id`` may extend ``resource_id`` to someone else's agent.
 
@@ -664,6 +704,98 @@ def resolve_holder_tool(
     return row, access
 
 
+def resolve_holder_tools(
+    conn: Connection,
+    holder_type: str,
+    holder: Optional[dict],
+    tool_ids: Iterable,
+    *,
+    headless: bool = False,
+    tools_repo=None,
+) -> dict[str, dict]:
+    """Exactly the tools a holder runs, keyed by id: the one runtime resolver for agents and workflow nodes.
+
+    Each id resolves through :func:`resolve_holder_tool` (the holder's owner,
+    else a live sponsor), and a tool that doesn't run is logged with why.
+    Left out as well: server-attached tools (``check_job``: the server adds
+    it, a saved id is not a choice), workflow-only builtins outside a
+    workflow (``read_document``), and chat-only tools on a headless run
+    (``scheduler``).
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` (an agent's ``tools``) or ``workflow`` (one
+            agent node's ``tools``).
+        holder: The holder row; its ``user_id`` is who the tools run as.
+        tool_ids: The configured tool ids.
+        headless: True for a scheduled or webhook run.
+        tools_repo: A ``UserToolsRepository`` on ``conn`` to reuse.
+
+    Returns:
+        dict: ``tool_id -> row``, in configured order.
+    """
+    # Lazy: default_tools imports this module lazily too.
+    from docsgpt.agents.default_tools import (
+        is_headless_excluded_tool,
+        is_server_attached_tool,
+        is_server_attached_tool_id,
+    )
+
+    repo = tools_repo or UserToolsRepository(conn)
+    tools: dict[str, dict] = {}
+    for tid in tool_ids or []:
+        if not tid or is_server_attached_tool_id(tid):
+            continue
+        row, access = resolve_holder_tool(conn, holder_type, holder, str(tid), tools_repo=repo)
+        if row is None:
+            log_stopped(holder_type, holder, "tool", tid, access.reason)
+            continue
+        name = row.get("name")
+        if is_server_attached_tool(name):
+            continue
+        if row.get("workflow_only") and holder_type != "workflow":
+            continue
+        if headless and is_headless_excluded_tool(name):
+            continue
+        tools[str(row["id"])] = row
+    return tools
+
+
+def authorized_holder_sources(
+    conn: Connection, holder_type: str, holder: Optional[dict], source_ids: Iterable
+) -> list:
+    """The source ids a holder may retrieve from: the one runtime check for agents and workflow nodes.
+
+    Each is authorized by :func:`ref_access` (the holder's owner, else a live
+    sponsor); one that doesn't run is logged with why. Empty refs are
+    skipped and an id listed twice (any casing) is kept once.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row; its ``user_id`` is who the sources run as.
+        source_ids: The configured ids, in run order.
+
+    Returns:
+        list: The usable ids as given, in order.
+    """
+    allowed: list = []
+    seen: set[str] = set()
+    for sid in source_ids or []:
+        if not sid:
+            continue
+        key = str(sid).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        access = ref_access(conn, holder_type, holder, "source", str(sid))
+        if access.principal:
+            allowed.append(sid)
+        else:
+            log_stopped(holder_type, holder, "source", sid, access.reason)
+    return allowed
+
+
 def log_stopped(
     holder_type: str, holder: Optional[dict], resource_type: str, resource_id, reason: Optional[str]
 ) -> None:
@@ -837,6 +969,30 @@ def plan_sponsors(
             plan.sponsors[key] = previous[key]
     plan.unexpected = sorted(confirmed - eligible)
     return plan
+
+
+def refusal_plan(plans: Iterable[SponsorPlan]) -> SponsorPlan:
+    """One plan for :func:`sponsor_refusal` from several holders saved together.
+
+    An agent save that also writes its workflow graph plans both holders
+    against the same ``confirm_sponsor`` list: what either refuses refuses
+    the save, and a confirmed key is unexpected only when neither holder
+    could use it. ``sponsors`` stays empty; store each plan's own map.
+
+    Args:
+        plans: The plans of every holder the save writes.
+
+    Returns:
+        SponsorPlan: Lists merged for the refusal check.
+    """
+    plans = list(plans)
+    merged = SponsorPlan()
+    for plan in plans:
+        merged.not_allowed.extend(plan.not_allowed)
+        merged.needs_confirmation.extend(plan.needs_confirmation)
+    if plans:
+        merged.unexpected = sorted(set.intersection(*(set(plan.unexpected) for plan in plans)))
+    return merged
 
 
 def prune_sponsors(sponsors: Optional[dict], refs: Iterable[tuple[str, str]]) -> dict:

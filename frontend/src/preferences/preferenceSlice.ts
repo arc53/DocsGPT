@@ -5,11 +5,11 @@ import {
   PayloadAction,
 } from '@reduxjs/toolkit';
 
+import { MAX_OVERLAPPING, MAX_TOPICS } from '../agents/analyticsConfig';
 import { Agent, AgentFolder } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
 import {
-  getLocalPrompt,
   getLocalRecentDocs,
   setLocalApiKey,
   setLocalRecentDocs,
@@ -37,9 +37,13 @@ export interface Preference {
   chunks: string;
   selectedDocs: Doc[];
   sourceDocs: Doc[] | null;
+  /** The last source list fetch failed; `sourceDocs` is then null. */
+  sourceDocsFailed: boolean;
   conversations: {
     data: ConversationSummary[] | null;
     loading: boolean;
+    /** The last newest-page fetch failed; `data` is then null. */
+    failed?: boolean;
     /** Older chats exist past the last one loaded. */
     hasMore?: boolean;
   };
@@ -69,6 +73,14 @@ export interface Preference {
   // Share of the model's window a turn's attached files may take
   // (/api/config ``attachment_budget_share``); null until the config loads.
   attachmentBudgetShare: number | null;
+  // The decision model may label conversations (/api/config
+  // ``decision_analytics_enabled``); off until the config loads.
+  analyticsEnabled: boolean;
+  // The agent editor's limits for the two kinds of topic (/api/config
+  // ``analytics_max_topics`` / ``analytics_max_overlapping_topics``); the server's
+  // defaults until the config loads.
+  analyticsMaxTopics: number;
+  analyticsMaxOverlapping: number;
 }
 
 const initialState: Preference = {
@@ -82,6 +94,7 @@ const initialState: Preference = {
   chunks: '6',
   selectedDocs: [],
   sourceDocs: null,
+  sourceDocsFailed: false,
   conversations: {
     data: null,
     loading: false,
@@ -103,6 +116,9 @@ const initialState: Preference = {
   sttAvailable: true,
   authRequired: false,
   attachmentBudgetShare: null,
+  analyticsEnabled: false,
+  analyticsMaxTopics: MAX_TOPICS,
+  analyticsMaxOverlapping: MAX_OVERLAPPING,
 };
 
 export const prefSlice = createSlice({
@@ -115,8 +131,10 @@ export const prefSlice = createSlice({
     setSelectedDocs: (state, action) => {
       state.selectedDocs = action.payload;
     },
+    /** A source list fetch's answer; null when it failed. */
     setSourceDocs: (state, action) => {
       state.sourceDocs = action.payload;
+      state.sourceDocsFailed = action.payload === null;
     },
     setPaginatedDocuments: (state, action) => {
       state.paginatedDocuments = action.payload;
@@ -160,10 +178,11 @@ export const prefSlice = createSlice({
       action: PayloadAction<{
         data: ConversationSummary[] | null;
         loading: boolean;
+        requestedAt?: number;
       }>,
     ) => {
       if (!action.payload.data) {
-        state.conversations = { data: null, loading: false };
+        state.conversations = { data: null, loading: false, failed: true };
         return;
       }
       prefSlice.caseReducers.setConversationsHead(state, {
@@ -171,25 +190,42 @@ export const prefSlice = createSlice({
         payload: action.payload.data,
       });
     },
-    /** An older page, loaded as the sidebar's end scrolls into view. */
-    appendConversations: (
-      state,
-      action: PayloadAction<ConversationSummary[]>,
-    ) => {
-      const existing = state.conversations.data ?? [];
-      const seen = new Set(existing.map((c) => c.id));
-      state.conversations.data = [
-        ...existing,
-        ...action.payload.filter((c) => !seen.has(c.id)),
-      ];
-      state.conversations.hasMore =
-        action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+    /**
+     * An older page, loaded as the sidebar's end scrolls into view.
+     * `requestedAt`, when its request went out, orders its unread marks.
+     */
+    appendConversations: {
+      reducer: (
+        state,
+        action: PayloadAction<
+          ConversationSummary[],
+          string,
+          { requestedAt?: number }
+        >,
+      ) => {
+        const existing = state.conversations.data ?? [];
+        const seen = new Set(existing.map((c) => c.id));
+        state.conversations.data = [
+          ...existing,
+          ...action.payload.filter((c) => !seen.has(c.id)),
+        ];
+        state.conversations.hasMore =
+          action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+      },
+      prepare: (list: ConversationSummary[], requestedAt?: number) => ({
+        payload: list,
+        meta: { requestedAt },
+      }),
     },
     removeConversation: (state, action: PayloadAction<string>) => {
       if (!state.conversations.data) return;
       state.conversations.data = state.conversations.data.filter(
         (c) => c.id !== action.payload,
       );
+    },
+    /** Every conversation was deleted: the list is empty, with no more pages. */
+    removeAllConversations: (state) => {
+      state.conversations = { data: [], loading: false, hasMore: false };
     },
     /** A rename keeps the chat's place, so it is applied here, not refetched. */
     renameConversation: (
@@ -261,6 +297,18 @@ export const prefSlice = createSlice({
     setAttachmentBudgetShare: (state, action: PayloadAction<number | null>) => {
       state.attachmentBudgetShare = action.payload;
     },
+    setAnalyticsAvailability: (
+      state,
+      action: PayloadAction<{
+        enabled: boolean;
+        maxTopics: number;
+        maxOverlapping: number;
+      }>,
+    ) => {
+      state.analyticsEnabled = action.payload.enabled;
+      state.analyticsMaxTopics = action.payload.maxTopics;
+      state.analyticsMaxOverlapping = action.payload.maxOverlapping;
+    },
   },
 });
 
@@ -273,6 +321,7 @@ export const {
   receiveConversations,
   appendConversations,
   removeConversation,
+  removeAllConversations,
   renameConversation,
   setConversationsLoading,
   setToken,
@@ -294,6 +343,7 @@ export const {
   setSpeechAvailability,
   setAuthRequired,
   setAttachmentBudgetShare,
+  setAnalyticsAvailability,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -313,16 +363,6 @@ prefListenerMiddleware.startListening({
       state.preference.selectedDocs.length > 0
         ? state.preference.selectedDocs
         : null,
-    );
-  },
-});
-
-prefListenerMiddleware.startListening({
-  matcher: isAnyOf(setPrompt),
-  effect: (action, listenerApi) => {
-    localStorage.setItem(
-      'DocsGPTPrompt',
-      JSON.stringify((listenerApi.getState() as RootState).preference.prompt),
     );
   },
 });
@@ -351,24 +391,24 @@ prefListenerMiddleware.startListening({
   },
 });
 
+// The chat prompt follows the list: a rename shows, and a prompt deleted or
+// no longer shared falls back to default, as the server reads it back.
 prefListenerMiddleware.startListening({
   matcher: isAnyOf(setPrompts),
   effect: (_action, listenerApi) => {
-    const state = listenerApi.getState() as RootState;
-    const availablePrompts = state.preference.prompts;
-    if (availablePrompts && availablePrompts.length > 0) {
-      const validatedPrompt = getLocalPrompt(availablePrompts);
-      if (validatedPrompt !== null) {
-        listenerApi.dispatch(setPrompt(validatedPrompt));
-      } else {
-        const defaultPrompt =
-          availablePrompts.find((p) => p.id === 'default') ||
-          availablePrompts[0];
-        if (defaultPrompt) {
-          listenerApi.dispatch(setPrompt(defaultPrompt));
-        }
-      }
+    const { prompt, prompts } = (listenerApi.getState() as RootState)
+      .preference;
+    if (!prompts || prompts.length === 0) return;
+    const listed = prompts.find((p) => p.id === prompt.id);
+    if (listed) {
+      if (listed.name !== prompt.name)
+        listenerApi.dispatch(setPrompt({ ...prompt, name: listed.name }));
+      return;
     }
+    const fallback = prompts.find((p) => p.id === 'default') ?? prompts[0];
+    listenerApi.dispatch(
+      setPrompt({ id: fallback.id, name: fallback.name, type: fallback.type }),
+    );
   },
 });
 
@@ -408,6 +448,8 @@ export const selectSelectedDocsStatus = (state: RootState) =>
   state.preference.selectedDocs.length > 0;
 export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
+export const selectSourceDocsFailed = (state: RootState) =>
+  state.preference.sourceDocsFailed;
 export const selectModalStateDeleteConv = (state: RootState) =>
   state.preference.modalState;
 export const selectSelectedDocs = (state: RootState) =>
@@ -451,3 +493,9 @@ export const selectSttAvailable = (state: RootState) =>
   state.preference.sttAvailable;
 export const selectAttachmentBudgetShare = (state: RootState) =>
   state.preference.attachmentBudgetShare;
+export const selectAnalyticsEnabled = (state: RootState) =>
+  state.preference.analyticsEnabled;
+export const selectAnalyticsMaxTopics = (state: RootState) =>
+  state.preference.analyticsMaxTopics;
+export const selectAnalyticsMaxOverlapping = (state: RootState) =>
+  state.preference.analyticsMaxOverlapping;

@@ -547,6 +547,53 @@ class TestFinalizeMessage:
         assert msgs[0]["status"] == "failed"
         assert msgs[0]["metadata"]["error"] == "RuntimeError: provider down"
 
+    def _finalized_unread_at(self, pg_conn, *, status, visibility="listed", watching=False, metadata=None):
+        """Finalize a fresh answer and return its conversation's ``unread_at``."""
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.notifications.presence.is_watching", return_value=watching,
+        ):
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question="q",
+                decoded_token={"sub": "u-fin-unread"},
+                visibility=visibility,
+            )
+            svc.finalize_message(res["message_id"], "", status=status, metadata=metadata)
+        return pg_conn.execute(
+            sql_text("SELECT unread_at FROM conversations WHERE id = CAST(:id AS uuid)"),
+            {"id": res["conversation_id"]},
+        ).scalar()
+
+    def test_a_failure_nobody_watched_marks_the_chat_unread(self, pg_conn):
+        # Activity's failed mark is an unread chat whose last answer failed.
+        assert self._finalized_unread_at(pg_conn, status="failed") is not None
+
+    def test_a_failure_its_owner_watched_leaves_no_mark(self, pg_conn):
+        assert self._finalized_unread_at(pg_conn, status="failed", watching=True) is None
+
+    def test_a_completed_answer_leaves_no_mark(self, pg_conn):
+        assert self._finalized_unread_at(pg_conn, status="complete") is None
+
+    def test_a_stop_leaves_no_mark(self, pg_conn):
+        # The user ended it on purpose; Activity doesn't count it failed.
+        stopped = {"error_code": "stopped"}
+        assert self._finalized_unread_at(pg_conn, status="failed", metadata=stopped) is None
+
+    def test_a_dropped_connection_leaves_no_mark(self, pg_conn):
+        # New Chat, a reload or a closed tab: the user left on purpose.
+        dropped = {"error_code": "client_disconnect"}
+        assert self._finalized_unread_at(pg_conn, status="failed", metadata=dropped) is None
+
+    def test_a_failure_in_an_unlisted_chat_leaves_no_mark(self, pg_conn):
+        assert self._finalized_unread_at(pg_conn, status="failed", visibility="hidden") is None
+
     def test_finalize_flips_executed_tool_calls(self, pg_conn):
         """finalize_message must mark tool_call_attempts.status='executed'
         rows as 'confirmed' for the same message_id."""
@@ -724,6 +771,239 @@ class TestFinalizeMessage:
         repo = ConversationsRepository(pg_conn)
         conv = repo.get_any(res["conversation_id"], user)
         assert conv["name"] == "Short Title"
+
+
+    @staticmethod
+    def _finalize_with_title(pg_conn, user, *, visibility, title="Short Title"):
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        question = "long question that becomes the fallback name"
+        mock_llm = MagicMock()
+        mock_llm.gen.return_value = title
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.answer.services.conversation_service.publish_user_event"
+        ) as publish:
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question=question,
+                decoded_token={"sub": user},
+                visibility=visibility,
+            )
+            svc.finalize_message(
+                res["message_id"],
+                "answer",
+                status="complete",
+                title_inputs={
+                    "llm": mock_llm,
+                    "question": question,
+                    "response": "answer",
+                    "model_id": "gpt-4",
+                    "fallback_name": question[:50],
+                },
+            )
+        return res, publish
+
+    def test_finalize_title_announces_the_new_name_for_a_listed_chat(self, pg_conn):
+        res, publish = self._finalize_with_title(
+            pg_conn, "u-fin-title-event", visibility="listed"
+        )
+        conversation_id = str(res["conversation_id"])
+        # ``previous`` lets a tab skip the event when the chat was renamed by
+        # hand meanwhile (a replay after the event stream dropped).
+        publish.assert_called_once_with(
+            "u-fin-title-event",
+            "conversation.renamed",
+            {
+                "conversation_id": conversation_id,
+                "name": "Short Title",
+                "previous": "long question that becomes the fallback name"[:50],
+            },
+            scope={"kind": "conversation", "id": conversation_id},
+        )
+
+    def test_finalize_title_is_not_announced_for_an_unlisted_chat(self, pg_conn):
+        _, publish = self._finalize_with_title(
+            pg_conn, "u-fin-title-hidden", visibility="hidden"
+        )
+        publish.assert_not_called()
+
+    def test_title_kept_by_a_renamed_chat_is_not_announced(self, pg_conn):
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        user = "u-fin-title-kept"
+        question = "long question that becomes the fallback name"
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.answer.services.conversation_service.publish_user_event"
+        ) as publish:
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question=question,
+                decoded_token={"sub": user},
+                visibility="listed",
+            )
+            # The user renamed it before the title job ran.
+            pg_conn.execute(
+                sql_text("UPDATE conversations SET name = 'Mine' WHERE id = CAST(:id AS uuid)"),
+                {"id": str(res["conversation_id"])},
+            )
+            mock_llm = MagicMock()
+            mock_llm.gen.return_value = "Short Title"
+            svc.finalize_message(
+                res["message_id"],
+                "answer",
+                status="complete",
+                title_inputs={
+                    "llm": mock_llm,
+                    "question": question,
+                    "response": "answer",
+                    "model_id": "gpt-4",
+                    "fallback_name": question[:50],
+                },
+            )
+        publish.assert_not_called()
+        mock_llm.gen.assert_not_called()
+
+    def test_rename_during_title_generation_is_kept(self, pg_conn):
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-fin-title-race"
+        question = "long question that becomes the fallback name"
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.answer.services.conversation_service.publish_user_event"
+        ) as publish:
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question=question,
+                decoded_token={"sub": user},
+                visibility="listed",
+            )
+
+            # The user renames the chat while the title LLM call runs.
+            def rename_then_title(**_kwargs):
+                pg_conn.execute(
+                    sql_text("UPDATE conversations SET name = 'Mine' WHERE id = CAST(:id AS uuid)"),
+                    {"id": str(res["conversation_id"])},
+                )
+                return "Short Title"
+
+            mock_llm = MagicMock()
+            mock_llm.gen.side_effect = rename_then_title
+            svc.finalize_message(
+                res["message_id"],
+                "answer",
+                status="complete",
+                title_inputs={
+                    "llm": mock_llm,
+                    "question": question,
+                    "response": "answer",
+                    "model_id": "gpt-4",
+                    "fallback_name": question[:50],
+                },
+            )
+        mock_llm.gen.assert_called_once()
+        publish.assert_not_called()
+        conv = ConversationsRepository(pg_conn).get_any(res["conversation_id"], user)
+        assert conv["name"] == "Mine"
+
+    def test_unnamed_chat_gets_a_title(self, pg_conn):
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-fin-title-null"
+        question = "long question that becomes the fallback name"
+        mock_llm = MagicMock()
+        mock_llm.gen.return_value = "Short Title"
+        with _patch_db(pg_conn):
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question=question,
+                decoded_token={"sub": user},
+            )
+            pg_conn.execute(
+                sql_text("UPDATE conversations SET name = NULL WHERE id = CAST(:id AS uuid)"),
+                {"id": str(res["conversation_id"])},
+            )
+            svc.finalize_message(
+                res["message_id"],
+                "answer",
+                status="complete",
+                title_inputs={
+                    "llm": mock_llm,
+                    "question": question,
+                    "response": "answer",
+                    "model_id": "gpt-4",
+                    "fallback_name": question[:50],
+                },
+            )
+        conv = ConversationsRepository(pg_conn).get_any(res["conversation_id"], user)
+        assert conv["name"] == "Short Title"
+
+
+class TestFinalizeMarksUnreadWhenAway:
+    """A finished answer marks its listed chat unread unless the owner watches it."""
+
+    @staticmethod
+    def _finish(pg_conn, user, *, visibility="listed", watching=False, mark=True):
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.notifications.presence.is_watching", return_value=watching
+        ):
+            svc = ConversationService()
+            res = svc.save_user_question(
+                conversation_id=None,
+                question="q",
+                decoded_token={"sub": user},
+                visibility=visibility,
+            )
+            svc.finalize_message(
+                res["message_id"], "answer", status="complete", mark_unread_when_away=mark,
+            )
+        return pg_conn.execute(
+            sql_text("SELECT unread_at FROM conversations WHERE id = CAST(:id AS uuid)"),
+            {"id": str(res["conversation_id"])},
+        ).scalar()
+
+    def test_marked_when_the_owner_is_away(self, pg_conn):
+        assert self._finish(pg_conn, "u-unread-away") is not None
+
+    def test_not_marked_while_the_owner_watches(self, pg_conn):
+        assert self._finish(pg_conn, "u-unread-watch", watching=True) is None
+
+    def test_not_marked_for_a_chat_with_no_sidebar_row(self, pg_conn):
+        assert self._finish(pg_conn, "u-unread-hidden", visibility="hidden") is None
+
+    def test_not_marked_unless_the_caller_asks(self, pg_conn):
+        # A Stop or a dropped connection saves its partial answer as complete
+        # too; those are the user's own doing.
+        assert self._finish(pg_conn, "u-unread-off", mark=False) is None
 
 
 class TestSaveUserQuestionFinalizeFailedFlow:

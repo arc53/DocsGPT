@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import de from './de.json';
 import en from './en.json';
 import es from './es.json';
+import fr from './fr.json';
 import jp from './jp.json';
 import ru from './ru.json';
 import zhTW from './zh-TW.json';
@@ -22,7 +23,7 @@ const block = (locale: object, path: string): Tree =>
     .split('.')
     .reduce<Tree>((node, key) => (node[key] as Tree) ?? {}, locale as Tree);
 
-const LOCALES = { es, de, jp, ru, zh, zhTW };
+const LOCALES = { es, de, fr, jp, ru, zh, zhTW };
 
 // The citation reader's strings and the pill that opens it.
 const READER = 'conversation.sources.reader';

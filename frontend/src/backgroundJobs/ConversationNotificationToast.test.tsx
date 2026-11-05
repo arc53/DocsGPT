@@ -79,7 +79,15 @@ describe('ConversationNotificationToast', () => {
     await act(async () => root.unmount());
     container.remove();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
+
+  // Leave the page for another route: a fresh mount on the same store.
+  const leaveTo = async (path: string) => {
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await renderAt(path);
+  };
 
   const renderAt = async (path: string) => {
     await act(async () => {
@@ -173,6 +181,23 @@ describe('ConversationNotificationToast', () => {
     expect(cards()).toHaveLength(0);
   });
 
+  it('is seen once its chat is on screen, so leaving the chat does not bring it back', async () => {
+    store.dispatch(sseEventReceived(notification('n1')));
+    await renderAt('/c/c1');
+    expect(cards()).toHaveLength(0);
+    await leaveTo('/c/new');
+    expect(cards()).toHaveLength(0);
+  });
+
+  it('is not seen on screen in a window without focus, and shows once the user moves on', async () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    store.dispatch(sseEventReceived(notification('n1')));
+    await renderAt('/c/c1');
+    expect(cards()).toHaveLength(0);
+    await leaveTo('/c/new');
+    expect(cards()).toHaveLength(1);
+  });
+
   it('a dismissed card stays dismissed after a reload replays it', async () => {
     store.dispatch(sseEventReceived(notification('n1')));
     await renderAt('/');
@@ -209,6 +234,33 @@ describe('ConversationNotificationToast', () => {
     expect(cards()).toHaveLength(1);
     await act(async () => {
       vi.advanceTimersByTime(NOTIFICATION_DISMISS_MS + 10);
+    });
+    expect(cards()).toHaveLength(0);
+  });
+
+  it('waits while the stack folds it, and starts over once shown', async () => {
+    // On a phone the stack shows only its newest card; the rest are hidden
+    // behind "N more" and must not time out unseen.
+    vi.useFakeTimers();
+    store.dispatch(sseEventReceived(notification('n1')));
+    await renderAt('/');
+    const card = cards()[0] as HTMLElement;
+    await act(async () => {
+      card.hidden = true;
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(NOTIFICATION_DISMISS_MS + 10);
+    });
+    expect(cards()).toHaveLength(1);
+    await act(async () => {
+      card.hidden = false;
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(NOTIFICATION_DISMISS_MS - 1000);
+    });
+    expect(cards()).toHaveLength(1);
+    await act(async () => {
+      vi.advanceTimersByTime(1010);
     });
     expect(cards()).toHaveLength(0);
   });

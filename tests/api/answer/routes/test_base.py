@@ -408,6 +408,41 @@ class TestCompleteStreamMethod:
             assert seen_conv_id_on_gen["value"] == fresh_conv_id
             assert tool_executor.conversation_id == fresh_conv_id
 
+    def test_agent_knows_its_message_before_gen(self, mock_mongo_db, flask_app):
+        """A workflow run records the message that started it (Activity
+        shows its step on that answer), so the agent has it before ``gen``."""
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            message_id = str(uuid.uuid4())
+            seen: dict = {}
+            mock_agent = MagicMock()
+            mock_agent.started_by = None
+
+            def _gen(**_kwargs):
+                seen["started_by"] = mock_agent.started_by
+                yield {"answer": "ok"}
+
+            mock_agent.gen.side_effect = _gen
+            with patch.object(
+                resource.conversation_service, "save_user_question",
+                return_value={"conversation_id": str(uuid.uuid4()), "message_id": message_id},
+            ), patch.object(
+                resource.conversation_service, "finalize_message", return_value=True,
+            ):
+                list(
+                    resource.complete_stream(
+                        question="run the flow",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "user-flow"},
+                        should_persist=True,
+                    )
+                )
+            assert seen["started_by"] == message_id
+
     def _run_paused(self, resource, pending_calls):
         """Drive complete_stream into its paused branch with the given pending
         tool calls, mocking out the WAL row and continuation save."""
