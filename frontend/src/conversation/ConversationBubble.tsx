@@ -112,11 +112,6 @@ const ConversationBubble = forwardRef<
     errorAction?: React.ReactNode;
     questionNumber?: number;
     isStreaming?: boolean;
-    /**
-     * An ERROR turn that failed just now, not one reloaded with the chat:
-     * only then does its alert animate in.
-     */
-    isLive?: boolean;
     handleUpdatedQuestionSubmission?: (
       updatedquestion?: string,
       updated?: boolean,
@@ -159,7 +154,6 @@ const ConversationBubble = forwardRef<
     errorAction,
     questionNumber,
     isStreaming,
-    isLive,
     handleUpdatedQuestionSubmission,
     filesAttached,
     conversationArtifacts,
@@ -427,16 +421,8 @@ const ConversationBubble = forwardRef<
                   <ChevronRight className="text-muted-foreground" aria-hidden />
                 </Button>
                 {/* Width comes from the stretched parent minus these margins;
-                    w-full here would be the column width plus them. Only
-                    sources arriving live fade in; a reopened chat's are just
-                    there. */}
-                <div
-                  className={cn(
-                    'mr-5 ml-6',
-                    isStreaming &&
-                      'animate-in fade-in duration-160 ease-out motion-reduce:animate-none',
-                  )}
-                >
+                    w-full here would be the column width plus them. */}
+                <div className="animate-in fade-in mr-5 ml-6 duration-160 ease-out motion-reduce:animate-none">
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     {sources?.slice(0, 3)?.map((source, index) => {
                       const href = sourceHref(source);
@@ -562,13 +548,7 @@ const ConversationBubble = forwardRef<
             // under a readable title; a curated error (it has a code) is
             // written for the user and reads as prose.
             // An answer its user stopped is a note: nothing went wrong.
-            <div
-              className={cn(
-                'mr-5 ml-6 self-stretch',
-                isLive &&
-                  'animate-in fade-in slide-in-from-bottom-1.5 duration-260 ease-out motion-reduce:animate-none',
-              )}
-            >
+            <div className="animate-in fade-in slide-in-from-bottom-1.5 mr-5 ml-6 self-stretch duration-260 ease-out motion-reduce:animate-none">
               <Alert
                 variant={errorCode === 'stopped' ? 'info' : 'destructive'}
                 {...(errorCode === 'stopped' && { role: 'note' })}

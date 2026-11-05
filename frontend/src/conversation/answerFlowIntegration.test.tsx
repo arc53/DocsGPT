@@ -86,10 +86,7 @@ describe('stream reducers feeding the answer flow', () => {
       </I18nextProvider>,
     );
 
-    // One answer bubble: the text column's class.
-    expect(
-      html.split('class="my-2 mr-5 ml-6 flex min-w-0 flex-col').length - 1,
-    ).toBe(1);
+    expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(1);
     expect(html.indexOf('I should search.')).toBeLessThan(
       html.indexOf('Searched the web'),
     );

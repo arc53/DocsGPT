@@ -442,7 +442,6 @@ export default function ConversationMessages({
               { offersKnowledge: Boolean(knowledgeFiles) },
             )}
             type="ERROR"
-            isLive={isLastMessage && status !== 'idle'}
             retryBtn={retryButton}
             errorCode={query.errorCode}
             errorAction={

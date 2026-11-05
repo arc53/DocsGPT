@@ -84,15 +84,7 @@ function StepRow({
   const duration =
     step.startedAt && end ? formatDuration(end - step.startedAt, t) : null;
   return (
-    // A step that starts while the run streams fades in; a reopened run's
-    // steps are just there.
-    <div
-      className={cn(
-        'flex items-stretch gap-3',
-        active &&
-          'animate-in fade-in duration-160 ease-out motion-reduce:animate-none',
-      )}
-    >
+    <div className="animate-in fade-in flex items-stretch gap-3 duration-160 ease-out motion-reduce:animate-none">
       <div className="flex flex-col items-center pt-0.5">
         <span className="flex size-4 shrink-0 items-center justify-center">
           <StatusIcon step={step} active={active} />

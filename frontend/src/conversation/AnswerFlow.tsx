@@ -133,16 +133,8 @@ export default function AnswerFlow({
                   Stretched, not ``self-start max-w-full``: a shrink-to-fit box
                   sizes to its longest code line, and ``max-w-full`` caps it at
                   100% before the margins land on top, so the chat scrolled
-                  sideways on a phone. Text that streams in slides in; a
-                  reopened chat's answers are just there, or every switch
-                  would replay the entrance. */}
-              <div
-                className={cn(
-                  'my-2 mr-5 ml-6 flex min-w-0 flex-col',
-                  isStreaming &&
-                    'animate-in fade-in slide-in-from-bottom-1.5 duration-260 ease-out motion-reduce:animate-none',
-                )}
-              >
+                  sideways on a phone. */}
+              <div className="animate-in fade-in slide-in-from-bottom-1.5 my-2 mr-5 ml-6 flex min-w-0 flex-col duration-260 ease-out motion-reduce:animate-none">
                 <MarkdownAnswer
                   content={item.text}
                   isStreaming={Boolean(isStreaming) && position === lastItem}

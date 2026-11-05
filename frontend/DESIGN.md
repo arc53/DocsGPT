@@ -1986,8 +1986,6 @@ New entrances are `animate-in fade-in duration-200 motion-reduce:animate-none`
 `animate-in fade-in duration-160 ease-out` and the answer bubble `animate-in
 fade-in slide-in-from-bottom-1.5 duration-260 ease-out`, both with
 `motion-reduce:animate-none`. `ui/` overlays keep their own enter and exit.
-In the chat they are for live content only (a streaming answer, an error that
-just arrived): a reopened or switched-to chat renders without them.
 
 ## Breakpoints
 
