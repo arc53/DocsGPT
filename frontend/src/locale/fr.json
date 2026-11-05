@@ -4759,7 +4759,9 @@
         "finishSetup": "Terminer la configuration : limites et sécurité",
         "shorter": "Raccourcir la description",
         "tightenPrompt": "Resserrer le prompt",
-        "starters": "Suggérer des amorces de conversation"
+        "starters": "Suggérer des amorces de conversation",
+        "knowledge": "Ajouter des connaissances pour répondre",
+        "writePrompt": "Écrire un prompt pour cet agent"
       },
       "fields": {
         "limits": "Limite d’utilisation"

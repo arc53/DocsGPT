@@ -4759,7 +4759,9 @@
         "finishSetup": "Terminar la configuración: límites y seguridad",
         "shorter": "Acorta la descripción",
         "tightenPrompt": "Haz el prompt más conciso",
-        "starters": "Sugiere preguntas iniciales"
+        "starters": "Sugiere preguntas iniciales",
+        "knowledge": "Añade conocimiento del que pueda responder",
+        "writePrompt": "Escribe un prompt para este agente"
       },
       "fields": {
         "limits": "Límite de uso"

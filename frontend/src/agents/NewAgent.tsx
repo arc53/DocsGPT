@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BookOpen,
   CircleCheck,
   CircleMinus,
   CircleX,
@@ -11,6 +12,7 @@ import {
   Scissors,
   ShieldCheck,
   SquarePen,
+  type LucideIcon,
 } from 'lucide-react';
 import React, {
   useCallback,
@@ -160,6 +162,8 @@ import {
   agentStepResult,
   draftValueOf,
   isAgentFormEmpty,
+  improveSuggestions,
+  type ImproveSuggestion,
   isSafetyUnset,
   parseAgentProposal,
   planAgentPatch,
@@ -179,6 +183,14 @@ type PromptKind = (typeof PROMPT_KINDS)[number];
 const promptOfKind = (kind: PromptKind, prompt: Prompt): boolean =>
   kind === 'all' || prompt.type === PROMPT_KIND_TYPES[kind];
 const PROMPT_PRESETS = ['default', 'creative', 'strict'];
+const IMPROVE_ICONS: Record<ImproveSuggestion, LucideIcon> = {
+  safety: ShieldCheck,
+  knowledge: BookOpen,
+  writePrompt: SquarePen,
+  starters: MessageSquare,
+  shorter: PencilLine,
+  tightenPrompt: Scissors,
+};
 
 /** A field a proposal changed: what it held before and what the draft set. */
 type AppliedChange = {
@@ -2064,27 +2076,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             },
           };
         })
-      : [
-          // Offered until limits and safety were ever set.
-          ...(isSafetyUnset(draftForm) && !skippedSteps.includes('safety')
-            ? [{ key: 'safety', Icon: ShieldCheck, text: finishSetupText }]
-            : []),
-          {
-            key: 'shorter',
-            Icon: PencilLine,
-            text: t('drafter.agent.improve.shorter'),
-          },
-          {
-            key: 'prompt',
-            Icon: Scissors,
-            text: t('drafter.agent.improve.tightenPrompt'),
-          },
-          {
-            key: 'starters',
-            Icon: MessageSquare,
-            text: t('drafter.agent.improve.starters'),
-          },
-        ]
+      : // What the agent lacks first, then what fits it; Finish setup is
+        // offered until limits and safety were ever set.
+        improveSuggestions(draftForm, {
+          safety: isSafetyUnset(draftForm) && !skippedSteps.includes('safety'),
+          promptDraft: !!draftOfPrompt,
+        }).map((key) => ({
+          key,
+          Icon: IMPROVE_ICONS[key],
+          text:
+            key === 'safety'
+              ? finishSetupText
+              : t(`drafter.agent.improve.${key}`),
+        }))
   ).map(({ Icon, ...suggestion }) => ({
     ...suggestion,
     icon: <Icon className={suggestionIconClass} aria-hidden="true" />,

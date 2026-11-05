@@ -4592,7 +4592,9 @@
         "finishSetup": "設定を完了: 制限と安全性",
         "shorter": "説明を短くして",
         "tightenPrompt": "プロンプトを引き締めて",
-        "starters": "会話のきっかけを提案して"
+        "starters": "会話のきっかけを提案して",
+        "knowledge": "回答のもとになるナレッジを追加して",
+        "writePrompt": "このエージェント用のプロンプトを書いて"
       },
       "fields": {
         "limits": "利用制限"

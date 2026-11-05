@@ -441,6 +441,55 @@ export function isSafetyUnset(form: AgentDraftForm): boolean {
   );
 }
 
+/** What an improve row asks for, in the order the drawer offers them. */
+export type ImproveSuggestion =
+  | 'safety'
+  | 'knowledge'
+  | 'writePrompt'
+  | 'starters'
+  | 'shorter'
+  | 'tightenPrompt';
+
+/** Prompts every instance has: an agent on one has no prompt of its own. */
+const BUILTIN_PROMPTS = ['default', 'creative', 'strict'];
+/** Most improve rows the drawer offers. */
+const MAX_IMPROVE_ROWS = 4;
+/** A description longer than this is worth offering to shorten. */
+const SHORTEN_FROM = 120;
+
+/**
+ * The improve drawer's rows for a filled agent: first what it lacks
+ * (limits and safety while never set, something to answer from, a prompt
+ * of its own, starters), then changes that fit what it has (a shorter
+ * description, a tighter prompt). At most four.
+ *
+ * Args:
+ *   form: The form now.
+ *   options: Whether Finish setup applies, and whether the prompt view
+ *     holds unsaved text (a prompt of its own).
+ *
+ * Returns:
+ *   The rows, in order.
+ */
+export function improveSuggestions(
+  form: AgentDraftForm,
+  { safety, promptDraft }: { safety: boolean; promptDraft: boolean },
+): ImproveSuggestion[] {
+  const ownPrompt =
+    promptDraft || (!!form.prompt && !BUILTIN_PROMPTS.includes(form.prompt));
+  const rows: (ImproveSuggestion | false)[] = [
+    safety && 'safety',
+    form.sources.length === 0 && form.tools.length === 0 && 'knowledge',
+    !ownPrompt && 'writePrompt',
+    form.starters.length === 0 && 'starters',
+    form.description.trim().length > SHORTEN_FROM && 'shorter',
+    ownPrompt && 'tightenPrompt',
+  ];
+  return rows
+    .filter((row): row is ImproveSuggestion => !!row)
+    .slice(0, MAX_IMPROVE_ROWS);
+}
+
 /** The limit a save sends, as the recipe reads it. */
 function limitsContext(limits: AgentLimitsValue) {
   if (limits.limited_request_mode && limits.request_limit)

@@ -4618,7 +4618,9 @@
         "finishSetup": "Einrichtung abschließen: Limits und Sicherheit",
         "shorter": "Die Beschreibung kürzen",
         "tightenPrompt": "Den Prompt straffen",
-        "starters": "Gesprächseinstiege vorschlagen"
+        "starters": "Gesprächseinstiege vorschlagen",
+        "knowledge": "Wissen anhängen, aus dem er antwortet",
+        "writePrompt": "Einen Prompt für diesen Agenten schreiben"
       },
       "fields": {
         "limits": "Nutzungslimit"

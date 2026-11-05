@@ -4592,7 +4592,9 @@
         "finishSetup": "完成設定：限制與安全",
         "shorter": "把描述寫短一點",
         "tightenPrompt": "精簡提示詞",
-        "starters": "建議開場問題"
+        "starters": "建議開場問題",
+        "knowledge": "加入它可以據此回答的知識",
+        "writePrompt": "為這個代理寫一個提示詞"
       },
       "fields": {
         "limits": "使用限制"

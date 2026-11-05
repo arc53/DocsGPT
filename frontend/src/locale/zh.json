@@ -4590,7 +4590,9 @@
         "finishSetup": "完成设置：限制与安全",
         "shorter": "把描述写短一些",
         "tightenPrompt": "精简提示词",
-        "starters": "建议开场问题"
+        "starters": "建议开场问题",
+        "knowledge": "添加它可以据此回答的知识",
+        "writePrompt": "为这个智能体写一个提示词"
       },
       "fields": {
         "limits": "使用限制"

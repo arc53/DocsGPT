@@ -2845,9 +2845,10 @@ describe('NewAgent drafter', () => {
         .map((b) => b.textContent)
         .filter((label) => label?.startsWith('drafter.agent.improve.')),
     ).toEqual([
+      // What this agent lacks: no knowledge, the default prompt, no starters.
       'drafter.agent.improve.finishSetup',
-      'drafter.agent.improve.shorter',
-      'drafter.agent.improve.tightenPrompt',
+      'drafter.agent.improve.knowledge',
+      'drafter.agent.improve.writePrompt',
       'drafter.agent.improve.starters',
     ]);
     await act(async () =>

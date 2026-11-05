@@ -4639,7 +4639,9 @@
         "finishSetup": "Finish setup: limits and safety",
         "shorter": "Make the description shorter",
         "tightenPrompt": "Tighten the prompt",
-        "starters": "Suggest conversation starters"
+        "starters": "Suggest conversation starters",
+        "knowledge": "Attach knowledge it can answer from",
+        "writePrompt": "Write a prompt for this agent"
       },
       "fields": {
         "limits": "Usage limit"

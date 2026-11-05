@@ -5,6 +5,7 @@ import {
   agentDraftValues,
   agentProposalSummary,
   agentStepResult,
+  improveSuggestions,
   isAgentFormEmpty,
   isSafetyUnset,
   parseAgentProposal,
@@ -339,6 +340,48 @@ describe('agentDraft', () => {
         }),
       ),
     ).toBe(false);
+  });
+
+  it('offers improve rows for what the agent lacks, then what fits it, at most four', () => {
+    const none = { safety: false, promptDraft: false };
+    // An agent with nothing yet: knowledge, a prompt of its own, starters.
+    expect(improveSuggestions(form({ name: 'Help' }), none)).toEqual([
+      'knowledge',
+      'writePrompt',
+      'starters',
+    ]);
+    // Limits and safety lead while they were never set, and four is the cap.
+    expect(
+      improveSuggestions(form({ description: 'x'.repeat(200) }), {
+        ...none,
+        safety: true,
+      }),
+    ).toEqual(['safety', 'knowledge', 'writePrompt', 'starters']);
+    // A complete agent with its own prompt: tighten it; a long description: shorten it.
+    const complete = form({
+      description: 'x'.repeat(200),
+      sources: ['s1'],
+      starters: ['Hi'],
+      prompt: 'p1',
+    });
+    expect(improveSuggestions(complete, none)).toEqual([
+      'shorter',
+      'tightenPrompt',
+    ]);
+    // A short description isn't worth shortening.
+    expect(
+      improveSuggestions(
+        { ...complete, description: 'Answers shipping questions.' },
+        none,
+      ),
+    ).toEqual(['tightenPrompt']);
+    // A tool counts as something to answer with; unsaved prompt text is a prompt of its own.
+    expect(
+      improveSuggestions(form({ tools: [track], starters: ['Hi'] }), {
+        ...none,
+        promptDraft: true,
+      }),
+    ).toEqual(['tightenPrompt']);
   });
 
   it('sends the form and the step as the contract context', () => {
