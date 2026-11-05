@@ -1758,6 +1758,81 @@ class TestRunAsyncOperation:
             release.set()
             holder.join(5)
 
+    def test_a_busy_shared_client_does_not_hold_up_other_calls(self, mcp_config):
+        # The no-auth Excalidraw preset shares one cached client across users.
+        import threading
+
+        from docsgpt.agents.tools import mcp_tool as mcp_mod
+
+        tool = _make_tool({**mcp_config, "timeout": 5})
+        tool._client = MagicMock()
+        tool._shared_client = True
+        fresh = MagicMock()
+        ran_on = []
+
+        async def fake_execute_on(client, operation, *args, **kwargs):
+            ran_on.append(client)
+            return "ok"
+
+        busy, release = threading.Event(), threading.Event()
+
+        def hold():
+            with mcp_mod._client_lock(tool._client):
+                busy.set()
+                release.wait(5)
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        try:
+            busy.wait(5)
+            with patch.object(tool, "_build_client", return_value=fresh), \
+                 patch.object(tool, "_execute_on", side_effect=fake_execute_on):
+                assert tool._run_in_new_loop("call_tool", "create_view", client="x") == "ok"
+        finally:
+            release.set()
+            holder.join(5)
+        assert ran_on == [fresh]
+
+    def test_a_busy_shared_oauth_client_is_waited_for(self, mcp_config):
+        # Its tokens refresh through it; a second client could race the refresh.
+        import threading
+
+        from docsgpt.agents.tools import mcp_tool as mcp_mod
+
+        tool = _make_tool({**mcp_config, "auth_type": "oauth", "timeout": 0.05})
+        tool._client = MagicMock()
+        tool._shared_client = True
+        busy, release = threading.Event(), threading.Event()
+
+        def hold():
+            with mcp_mod._client_lock(tool._client):
+                busy.set()
+                release.wait(5)
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        try:
+            busy.wait(5)
+            with patch.object(tool, "_build_client") as build, pytest.raises(Exception, match="Timed out"):
+                tool._run_async_operation("ping")
+            build.assert_not_called()
+        finally:
+            release.set()
+            holder.join(5)
+
+    def test_a_cached_client_is_marked_shared(self, mcp_config):
+        from docsgpt.agents.tools import mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        mcp_mod._mcp_clients_cache.clear()
+        try:
+            with patch.object(MCPTool, "_build_client", return_value=MagicMock()):
+                first, second = MCPTool(dict(mcp_config)), MCPTool(dict(mcp_config))
+            assert first._client is second._client
+            assert first._shared_client and second._shared_client
+        finally:
+            mcp_mod._mcp_clients_cache.clear()
+
     def test_separate_clients_run_side_by_side(self, mcp_config):
         import threading
 

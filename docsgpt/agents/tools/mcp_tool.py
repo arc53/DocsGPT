@@ -63,7 +63,8 @@ logger = logging.getLogger(__name__)
 _mcp_clients_cache = {}
 # One lock per client: a cached client is shared by every tool on its server, and
 # its session belongs to the event loop that opened it, so a second loop using it
-# at the same time waits on that session for good.
+# at the same time waits on that session for good. A call that finds a shared
+# client busy runs on a client of its own instead (``MCPTool._run_in_new_loop``).
 _client_locks: "weakref.WeakKeyDictionary[Any, threading.RLock]" = weakref.WeakKeyDictionary()
 _client_locks_guard = threading.Lock()
 
@@ -310,6 +311,8 @@ class MCPTool(Tool):
         self._param_headers = param_header_maps(config.get("action_schemas") or {})
         self._cache_key = self._generate_cache_key()
         self._client = None
+        # Whether ``_client`` is the cached one other tools on the server share.
+        self._shared_client = False
         self.query_mode = config.get("query_mode", False)
         # Images the last call returned, for the model to see (``drain_native_parts``).
         self._native_queue: List[Dict] = []
@@ -393,6 +396,7 @@ class MCPTool(Tool):
             cached_data = _mcp_clients_cache[self._cache_key]
             if time.time() - cached_data["created_at"] < 300:
                 self._client = cached_data["client"]
+                self._shared_client = True
                 # One map per cached client: its hook reads the latest schemas.
                 shared = cached_data.setdefault("param_headers", {})
                 shared.update(self._param_headers)
@@ -400,6 +404,18 @@ class MCPTool(Tool):
                 return
             else:
                 del _mcp_clients_cache[self._cache_key]
+        self._client = self._build_client()
+        self._shared_client = shareable
+        if not shareable:
+            return
+        _mcp_clients_cache[self._cache_key] = {
+            "client": self._client,
+            "created_at": time.time(),
+            "param_headers": self._param_headers,
+        }
+
+    def _build_client(self) -> Client:
+        """A FastMCP client for this server, with its transport and auth."""
         transport = self._create_transport()
         auth = None
 
@@ -437,14 +453,7 @@ class MCPTool(Tool):
             if mcp_apps.enabled()
             else {}
         )
-        self._client = Client(transport, auth=auth, **extensions)
-        if not shareable:
-            return
-        _mcp_clients_cache[self._cache_key] = {
-            "client": self._client,
-            "created_at": time.time(),
-            "param_headers": self._param_headers,
-        }
+        return Client(transport, auth=auth, **extensions)
 
     def _create_transport(self):
         """Create appropriate transport based on configuration."""
@@ -551,27 +560,31 @@ class MCPTool(Tool):
         """Execute operation with FastMCP client."""
         if not self._client:
             raise Exception("FastMCP client not initialized")
-        async with self._client:
+        return await self._execute_on(self._client, operation, *args, **kwargs)
+
+    async def _execute_on(self, client: Client, operation: str, /, *args, **kwargs):
+        """Run ``operation`` in a session of its own on ``client``."""
+        async with client:
             if operation == "ping":
-                return await self._client.ping()
+                return await client.ping()
             elif operation == "list_tools":
-                tools_response = await self._client.list_tools()
+                tools_response = await client.list_tools()
                 self.available_tools = self._format_tools(tools_response)
                 self._refresh_param_headers(self.available_tools)
                 return self.available_tools
             elif operation == "call_tool":
                 tool_name = args[0]
                 tool_args = kwargs
-                return await self._client.call_tool(tool_name, tool_args)
+                return await client.call_tool(tool_name, tool_args)
             elif operation == "call_tool_raw":
                 # An MCP App's own call: a failed tool comes back as its result, not an exception.
-                return await self._client.call_tool(args[0], args[1], raise_on_error=False)
+                return await client.call_tool(args[0], args[1], raise_on_error=False)
             elif operation == "read_resource":
-                return await self._client.read_resource(args[0])
+                return await client.read_resource(args[0])
             elif operation == "list_resources":
-                return await self._client.list_resources()
+                return await client.list_resources()
             elif operation == "list_prompts":
-                return await self._client.list_prompts()
+                return await client.list_prompts()
             else:
                 raise Exception(f"Unknown operation: {operation}")
 
@@ -606,21 +619,37 @@ class MCPTool(Tool):
 
     def _run_in_new_loop(self, operation, *args, **kwargs):
         lock = _client_lock(self._client)
-        # A wait for another call on a shared client counts against the timeout too.
-        timeout = self.timeout if isinstance(self.timeout, (int, float)) and self.timeout > 0 else -1
-        if not lock.acquire(timeout=timeout):
-            raise concurrent.futures.TimeoutError()
+        if not lock.acquire(blocking=False):
+            if self._fresh_client_when_busy():
+                # One slow call on a shared client must not hold up every other user's.
+                return self._run_loop(self._execute_on(self._build_client(), operation, *args, **kwargs))
+            # A wait for another call on the client counts against the timeout too.
+            timeout = self.timeout if isinstance(self.timeout, (int, float)) and self.timeout > 0 else -1
+            if not lock.acquire(timeout=timeout):
+                raise concurrent.futures.TimeoutError()
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(
-                    self._execute_with_client(operation, *args, **kwargs)
-                )
-            finally:
-                loop.close()
+            return self._run_loop(self._execute_with_client(operation, *args, **kwargs))
         finally:
             lock.release()
+
+    def _fresh_client_when_busy(self) -> bool:
+        """Whether a call that finds the client busy may run on a client of its own.
+
+        Only a cached client shared on static credentials: an OAuth client's
+        tokens are refreshed through it, and two clients refreshing one
+        rotating token at once could sign the connection out.
+        """
+        return bool(getattr(self, "_shared_client", False)) and self.auth_type != "oauth"
+
+    @staticmethod
+    def _run_loop(coroutine: Any) -> Any:
+        """Run ``coroutine`` to completion on an event loop of its own."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coroutine)
+        finally:
+            loop.close()
 
     def _map_error(self, operation: str, exc: Exception) -> Exception:
         for exc_type, msg_fn in self._ERROR_MAP:
