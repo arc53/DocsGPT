@@ -302,7 +302,13 @@ export default function McpAppView({
 
   return (
     // Stretched to the column (see BackgroundJobCard) so it never spills on a phone.
-    <div className="w-full min-w-0" data-testid="mcp-app-view">
+    // Kept out of scroll anchoring: the view sizes itself after it loads, and as
+    // the anchor its growth pushed the turn below down for a frame before the
+    // scroller re-pinned to the bottom. The browser anchors on what follows instead.
+    <div
+      className="w-full min-w-0 [overflow-anchor:none]"
+      data-testid="mcp-app-view"
+    >
       <div className="animate-in fade-in my-2 mr-5 ml-6 min-w-0 duration-200 motion-reduce:animate-none">
         <ToolCallCard
           icon={<StepIcon call={toolCall} />}
