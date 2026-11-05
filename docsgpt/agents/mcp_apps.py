@@ -105,32 +105,46 @@ def is_app_mime_type(mime_type: Optional[str]) -> bool:
     return message.get_content_type() == "text/html" and isinstance(profile, str) and profile.lower() == "mcp-app"
 
 
-def _sources(domains: Any) -> list[str]:
+def _reaches(source: str, hosts: set[str]) -> bool:
+    """Whether a CSP source would allow any of ``hosts``, by name or ``*.`` wildcard, whatever its scheme or port."""
+    host = (urlsplit(source).hostname or "").lower()
+    if host.startswith("*."):
+        return any(h.endswith(host[1:]) for h in hosts)
+    return host in hosts
+
+
+def _sources(domains: Any, own_hosts: set[str] = frozenset()) -> list[str]:
     if not isinstance(domains, list):
         return []
-    return [d for d in domains if isinstance(d, str) and _CSP_SOURCE.match(d)]
+    return [d for d in domains if isinstance(d, str) and _CSP_SOURCE.match(d) and not _reaches(d, own_hosts)]
 
 
-def build_csp(csp: Optional[dict], frame_ancestors: Iterable[str]) -> str:
+def build_csp(csp: Optional[dict], frame_ancestors: Iterable[str], sandbox_origin: Optional[str] = None) -> str:
     """The sandbox page's Content-Security-Policy, which the view's frame inherits.
 
     Only the domains the resource declares in ``_meta.ui.csp`` are allowed;
-    without them the view reaches nothing. The sandbox's own origin is never
-    a source: it is this API, and the view has no business calling it.
+    without them the view reaches nothing. A declared domain that would
+    reach the sandbox's own origin (this API) or one of the app's is
+    dropped: the view has no business calling either.
 
     Args:
         csp: The resource's ``_meta.ui.csp``.
         frame_ancestors: The app origins allowed to embed the sandbox.
+        sandbox_origin: The sandbox page's own origin.
 
     Returns:
         The header value.
     """
     csp = csp if isinstance(csp, dict) else {}
-    resources = " ".join(_sources(csp.get("resourceDomains")))
-    connect = " ".join(_sources(csp.get("connectDomains"))) or "'none'"
-    frames = " ".join(_sources(csp.get("frameDomains"))) or "'none'"
-    base = " ".join(_sources(csp.get("baseUriDomains"))) or "'self'"
-    ancestors = " ".join(o for o in (normalize_origin(a) for a in frame_ancestors) if o) or "'none'"
+    ancestor_origins = [o for o in (normalize_origin(a) for a in frame_ancestors) if o]
+    own_hosts = {
+        (urlsplit(o).hostname or "").lower() for o in (*ancestor_origins, normalize_origin(sandbox_origin)) if o
+    }
+    resources = " ".join(_sources(csp.get("resourceDomains"), own_hosts))
+    connect = " ".join(_sources(csp.get("connectDomains"), own_hosts)) or "'none'"
+    frames = " ".join(_sources(csp.get("frameDomains"), own_hosts)) or "'none'"
+    base = " ".join(_sources(csp.get("baseUriDomains"), own_hosts)) or "'self'"
+    ancestors = " ".join(ancestor_origins) or "'none'"
     directives = [
         "default-src 'none'",
         f"script-src 'unsafe-inline' 'unsafe-eval' blob: data: {resources}",

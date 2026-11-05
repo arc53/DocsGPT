@@ -108,7 +108,7 @@ class McpAppSandbox(Resource):
             csp = None
         response = make_response(mcp_apps.sandbox_page(hosts))
         response.headers["Content-Type"] = "text/html; charset=utf-8"
-        response.headers["Content-Security-Policy"] = mcp_apps.build_csp(csp, hosts)
+        response.headers["Content-Security-Policy"] = mcp_apps.build_csp(csp, hosts, mcp_apps.sandbox_url())
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response

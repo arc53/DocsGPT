@@ -103,6 +103,25 @@ class TestBuildCsp:
         csp = mcp_apps.build_csp({"connectDomains": [domain]}, [])
         assert "connect-src 'none'" in csp
 
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            "http://127.0.0.1:7091",
+            "ws://127.0.0.1:9999",
+            "http://localhost:5173/api",
+            "https://app.example.com",
+            "https://*.example.com",
+        ],
+    )
+    def test_the_sandbox_and_app_origins_are_never_sources(self, domain):
+        csp = mcp_apps.build_csp(
+            {"connectDomains": [domain, "https://esm.sh"], "resourceDomains": [domain]},
+            ["http://localhost:5173", "https://app.example.com"],
+            "http://127.0.0.1:7091/api/mcp_apps/sandbox",
+        )
+        assert "connect-src https://esm.sh;" in csp
+        assert domain not in csp.split("frame-ancestors")[0]
+
     def test_frame_ancestors_none_without_hosts(self):
         assert "frame-ancestors 'none'" in mcp_apps.build_csp(None, [])
 
