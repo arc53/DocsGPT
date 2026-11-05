@@ -2834,6 +2834,7 @@
       },
       "loading": "正在載入應用程式…",
       "allow": "允許",
+      "allowForView": "在此應用程式中允許",
       "deny": "拒絕",
       "reload": "重新載入應用程式",
       "approvalAsk": "應用程式想要執行 {{tool}}。要允許嗎？",

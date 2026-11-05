@@ -58,8 +58,15 @@ type Phase = 'loading' | 'ready' | 'failed' | 'unavailable';
 type PendingApproval = {
   name: string;
   args: Record<string, unknown>;
-  decide: (allowed: boolean) => void;
+  resolve: (allowed: boolean) => void;
 };
+
+/**
+ * The tools a user allowed for a whole view, by view (`tool row:call`). Kept
+ * for the page's life, so reopening the chat doesn't ask again for a view's
+ * polling and bookkeeping calls; a page reload asks once more.
+ */
+const allowedForView = new Map<string, Set<string>>();
 
 /** The most of a view call's arguments the approval's Details show. */
 const ARGS_DETAIL_MAX = 2000;
@@ -115,7 +122,10 @@ export default function McpAppView({
   const [resource, setResource] = useState<McpAppResource | null>(null);
   const [phase, setPhase] = useState<Phase>('loading');
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
-  const [approval, setApproval] = useState<PendingApproval | null>(null);
+  // Calls waiting on the user, asked one at a time in the order they came.
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const approvalsRef = useRef<PendingApproval[]>([]);
+  const approval = approvals[0] ?? null;
   const [argsOpen, setArgsOpen] = useState(false);
 
   // Read by the host's callbacks, which outlive the render that made them.
@@ -189,28 +199,40 @@ export default function McpAppView({
     [],
   );
 
+  const viewKey = `${toolId ?? ''}:${callId ?? ''}`;
+  const queueApprovals = useCallback((next: PendingApproval[]) => {
+    approvalsRef.current = next;
+    setApprovals(next);
+  }, []);
+
+  // A call that comes while another waits joins the queue: declining it made
+  // a polling view retry, and the user faced a run of prompts for one tool.
   const askApproval = useCallback(
-    (name: string, args: Record<string, unknown>) =>
-      new Promise<boolean>((resolve) => {
-        setApproval((current) => {
-          // One question at a time: a second call while one waits is declined.
-          if (current) {
-            resolve(false);
-            return current;
-          }
-          return {
-            name,
-            args,
-            decide: (allowed) => {
-              setApproval(null);
-              setArgsOpen(false);
-              resolve(allowed);
-            },
-          };
-        });
-      }),
-    [],
+    (name: string, args: Record<string, unknown>) => {
+      if (allowedForView.get(viewKey)?.has(name)) return Promise.resolve(true);
+      return new Promise<boolean>((resolve) =>
+        queueApprovals([...approvalsRef.current, { name, args, resolve }]),
+      );
+    },
+    [viewKey, queueApprovals],
   );
+
+  /** Answers the first waiting call; `forView` also allows its tool's later calls. */
+  const decide = (allowed: boolean, forView = false) => {
+    const [head, ...rest] = approvalsRef.current;
+    if (!head) return;
+    setArgsOpen(false);
+    head.resolve(allowed);
+    if (!forView) {
+      queueApprovals(rest);
+      return;
+    }
+    const tools = allowedForView.get(viewKey) ?? new Set<string>();
+    tools.add(head.name);
+    allowedForView.set(viewKey, tools);
+    rest.filter((p) => p.name === head.name).forEach((p) => p.resolve(true));
+    queueApprovals(rest.filter((p) => p.name !== head.name));
+  };
 
   // Built once per loaded view: the call is read through ``latest``, since a
   // streamed update replaces the call object and must not restart the view.
@@ -293,7 +315,8 @@ export default function McpAppView({
   if (!ui || phase === 'unavailable') return <>{fallback}</>;
 
   const reload = () => {
-    approval?.decide(false);
+    approvalsRef.current.forEach((p) => p.resolve(false));
+    queueApprovals([]);
     setHeight(DEFAULT_HEIGHT);
     setAttempt((n) => n + 1);
   };
@@ -345,18 +368,22 @@ export default function McpAppView({
           actions={
             approval ? (
               <>
-                <Button
-                  size="xs"
-                  shape="pill"
-                  onClick={() => approval.decide(true)}
-                >
+                <Button size="xs" shape="pill" onClick={() => decide(true)}>
                   {t('conversation.mcpApp.allow')}
                 </Button>
                 <Button
                   size="xs"
                   shape="pill"
                   variant="outline"
-                  onClick={() => approval.decide(false)}
+                  onClick={() => decide(true, true)}
+                >
+                  {t('conversation.mcpApp.allowForView')}
+                </Button>
+                <Button
+                  size="xs"
+                  shape="pill"
+                  variant="outline"
+                  onClick={() => decide(false)}
                 >
                   {t('conversation.mcpApp.deny')}
                 </Button>

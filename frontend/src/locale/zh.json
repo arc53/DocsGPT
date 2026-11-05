@@ -2832,6 +2832,7 @@
       },
       "loading": "正在加载应用…",
       "allow": "允许",
+      "allowForView": "在此应用中允许",
       "deny": "拒绝",
       "reload": "重新加载应用",
       "approvalAsk": "应用想要运行 {{tool}}。是否允许？",

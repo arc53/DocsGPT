@@ -2847,6 +2847,7 @@
       },
       "loading": "Loading the app…",
       "allow": "Allow",
+      "allowForView": "Allow for this app",
       "deny": "Deny",
       "reload": "Reload app",
       "approvalAsk": "The app wants to run {{tool}}. Allow it?",

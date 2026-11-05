@@ -2939,6 +2939,7 @@
       },
       "loading": "Chargement de l’app…",
       "allow": "Autoriser",
+      "allowForView": "Autoriser pour cette app",
       "deny": "Refuser",
       "reload": "Recharger l’app",
       "approvalAsk": "L’app veut exécuter {{tool}}. L’autoriser ?",

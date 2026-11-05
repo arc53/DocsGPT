@@ -234,6 +234,74 @@ describe('McpAppView', () => {
     await expect(call).rejects.toThrow('declined');
   });
 
+  const button = (label: string) =>
+    Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === label,
+    );
+  const askEveryTime = () =>
+    callMcpAppTool.mockImplementation(
+      async (_id, _name, _args, _token, approved) =>
+        approved
+          ? { kind: 'result', result: { content: [] } }
+          : { kind: 'needs_approval' },
+    );
+
+  it('asks for a call that comes while another waits, instead of declining it', async () => {
+    readMcpAppView.mockResolvedValue(VIEW);
+    askEveryTime();
+    await render({ ...call, call_id: 'queued' });
+    let first: Promise<unknown> | undefined;
+    let second: Promise<unknown> | undefined;
+    act(() => {
+      first = hosts[0].options.callTool('poll_job', { id: 'j' });
+      second = hosts[0].options.callTool('track_event', {});
+      second.catch(() => {});
+    });
+    await act(async () => {});
+    expect(container.textContent).toContain('{"id":"j"}');
+    await act(async () => button('conversation.mcpApp.allow')?.click());
+    await expect(first).resolves.toBeDefined();
+    await act(async () => {});
+    expect(container.textContent).toContain('conversation.mcpApp.approvalAsk');
+    await act(async () => button('conversation.mcpApp.deny')?.click());
+    await expect(second).rejects.toThrow('declined');
+  });
+
+  it('allows a tool for the whole view, across a reopen of the chat', async () => {
+    readMcpAppView.mockResolvedValue(VIEW);
+    askEveryTime();
+    const view = { ...call, call_id: 'remembered' };
+    await render(view);
+    let first: Promise<unknown> | undefined;
+    let repeat: Promise<unknown> | undefined;
+    act(() => {
+      first = hosts[0].options.callTool('poll_job', { n: 1 });
+      repeat = hosts[0].options.callTool('poll_job', { n: 2 });
+    });
+    await act(async () => {});
+    await act(async () => button('conversation.mcpApp.allowForView')?.click());
+    // The waiting call of the same tool is covered too.
+    await expect(first).resolves.toBeDefined();
+    await expect(repeat).resolves.toBeDefined();
+    expect(container.textContent).not.toContain(
+      'conversation.mcpApp.approvalAsk',
+    );
+
+    // Reopened, the same view's call runs without asking.
+    act(() => root.unmount());
+    root = createRoot(container);
+    hosts.length = 0;
+    await render(view);
+    let later: Promise<unknown> | undefined;
+    act(() => {
+      later = hosts[0].options.callTool('poll_job', { n: 3 });
+    });
+    await expect(later).resolves.toBeDefined();
+    expect(container.textContent).not.toContain(
+      'conversation.mcpApp.approvalAsk',
+    );
+  });
+
   it('shows a retryable error when the view fails to load', async () => {
     readMcpAppView.mockRejectedValue(new Error('502'));
     await render();
