@@ -69,6 +69,11 @@ export type DraftPanelProps = {
   /** The task model's name for the footer; null hides the model part. */
   modelName: string | null;
   /**
+   * What the footer says the recipe reads: the workspace (agents, knowledge,
+   * tools and prompts; the default) or only the prompt being drafted.
+   */
+  reads?: 'workspace' | 'prompt';
+  /**
    * The footer link's click handler, so a builder can ask before leaving
    * unsaved work (useLeaveGuard's `onNavigate()`).
    */
@@ -131,6 +136,7 @@ export function DraftPanel({
   onOpenChange,
   session,
   modelName,
+  reads = 'workspace',
   onNavigate,
   intro,
   suggestions = [],
@@ -329,11 +335,20 @@ export function DraftPanel({
           />
           <p className="text-muted-foreground text-xs">
             {modelName
-              ? t('drafter.footer', {
-                  model: modelName,
-                  interpolation: { escapeValue: false },
-                })
-              : t('drafter.footerNoModel')}{' '}
+              ? t(
+                  reads === 'prompt'
+                    ? 'drafter.footerPrompt'
+                    : 'drafter.footer',
+                  {
+                    model: modelName,
+                    interpolation: { escapeValue: false },
+                  },
+                )
+              : t(
+                  reads === 'prompt'
+                    ? 'drafter.footerPromptNoModel'
+                    : 'drafter.footerNoModel',
+                )}{' '}
             <Button variant="link" size="text" asChild>
               <Link to={TASK_MODEL_SETTINGS_PATH} onClick={onNavigate}>
                 {t('drafter.changeModel')}

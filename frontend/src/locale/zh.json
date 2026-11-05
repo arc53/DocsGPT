@@ -4658,6 +4658,8 @@
         "title": "研究助手",
         "description": "检索你的文档并注明出处"
       }
-    }
+    },
+    "footerPrompt": "使用 {{model}} · 只读取此提示词。",
+    "footerPromptNoModel": "只读取此提示词。"
   }
 }

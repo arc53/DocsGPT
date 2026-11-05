@@ -4660,6 +4660,8 @@
         "title": "研究助理",
         "description": "檢索你的文件並註明出處"
       }
-    }
+    },
+    "footerPrompt": "使用 {{model}} · 只讀取此提示詞。",
+    "footerPromptNoModel": "只讀取此提示詞。"
   }
 }

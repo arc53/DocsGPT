@@ -79,6 +79,8 @@ function Host({
     | 'suggestions'
     | 'continueAction'
     | 'after'
+    | 'reads'
+    | 'modelName'
   >
 >) {
   const session = useDrafterSession({
@@ -192,6 +194,16 @@ describe('DraftPanel', () => {
     ]);
     // The greeting goes once something is sent.
     expect(container.textContent).not.toContain('Tell me');
+  });
+
+  it('says what the recipe reads in the footer', async () => {
+    await act(async () => root.render(<Host reads="prompt" />));
+    expect(container.textContent).toContain('drafter.footerPrompt:Fast model');
+    expect(container.textContent).not.toContain('drafter.footer:');
+    await act(async () =>
+      root.render(<Host reads="prompt" modelName={null} />),
+    );
+    expect(container.textContent).toContain('drafter.footerPromptNoModel');
   });
 
   it('draws the user message as a chat bubble and the workspace as one muted line', async () => {

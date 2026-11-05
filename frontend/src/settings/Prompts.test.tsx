@@ -937,6 +937,9 @@ describe('Prompts page', () => {
     await click(button('settings.prompts.addPrompt')!);
     await click(button('drafter.prompt.write', view()!)!);
     expect(panel()!.textContent).toContain('drafter.prompt.introWrite');
+    // The prompt drafter reads only the prompt, not the workspace.
+    expect(panel()!.textContent).toContain('drafter.footerPromptNoModel');
+    expect(panel()!.textContent).not.toContain('drafter.footerNoModel');
     const rows = Array.from(
       panel()!.querySelectorAll<HTMLElement>('[data-slot="list-row"]'),
     );

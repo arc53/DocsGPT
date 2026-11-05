@@ -4694,6 +4694,8 @@
         "title": "Rechercheassistent",
         "description": "Durchsucht deine Dokumente und zitiert sie"
       }
-    }
+    },
+    "footerPrompt": "Verwendet {{model}} · liest nur diesen Prompt.",
+    "footerPromptNoModel": "Liest nur diesen Prompt."
   }
 }

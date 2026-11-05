@@ -4660,6 +4660,8 @@
         "title": "リサーチアシスタント",
         "description": "ドキュメントを調べて出典を示す"
       }
-    }
+    },
+    "footerPrompt": "{{model}} を使用 · このプロンプトだけを読み取ります。",
+    "footerPromptNoModel": "このプロンプトだけを読み取ります。"
   }
 }

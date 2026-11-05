@@ -4846,6 +4846,8 @@
         "title": "Assistant de recherche",
         "description": "Fouille vos documents et les cite"
       }
-    }
+    },
+    "footerPrompt": "Utilise {{model}} · ne lit que ce prompt.",
+    "footerPromptNoModel": "Ne lit que ce prompt."
   }
 }

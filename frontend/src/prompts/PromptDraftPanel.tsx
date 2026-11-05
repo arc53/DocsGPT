@@ -189,6 +189,7 @@ export function PromptDraftPanel({
       onOpenChange={onOpenChange}
       session={drafter.session}
       modelName={modelName}
+      reads="prompt"
       onNavigate={onNavigate}
       intro={intro}
       suggestions={suggestions}

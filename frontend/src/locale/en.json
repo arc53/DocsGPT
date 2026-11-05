@@ -4715,6 +4715,8 @@
         "title": "Research assistant",
         "description": "Digs through your documents and cites them"
       }
-    }
+    },
+    "footerPrompt": "Uses {{model}} · reads only this prompt.",
+    "footerPromptNoModel": "Reads only this prompt."
   }
 }
