@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -94,9 +101,19 @@ export default function Conversation() {
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
 
-  // The URL names a chat that has not been applied yet: it is loading.
-  const isLoadingUrlChat =
-    !isNewChatRoute && urlConversationId !== conversationId;
+  // The chat the URL moved to, until it has been applied: while it loads.
+  // Not set by a sidebar click, which applies the chat before the URL
+  // follows; that chat shows in place of the last one, not a loading one.
+  const [urlChat, setUrlChat] = useState<string | null>(() =>
+    isNewChatRoute ? null : (urlConversationId ?? null),
+  );
+  useLayoutEffect(() => {
+    setUrlChat(isNewChatRoute ? null : (urlConversationId ?? null));
+  }, [urlConversationId, isNewChatRoute]);
+  useLayoutEffect(() => {
+    if (urlChat !== null && urlChat === conversationId) setUrlChat(null);
+  }, [urlChat, conversationId]);
+  const isLoadingUrlChat = urlChat !== null && urlChat !== conversationId;
 
   const fetchAgent = async (id: string): Promise<Agent | null> => {
     if (selectedAgent?.id === id) return selectedAgent;
@@ -148,18 +165,24 @@ export default function Conversation() {
   // brought is not the URL's (the read failed, or the URL moved on while it
   // loaded), the URL's is read here. Never flips on a route with no agent.
   const agentChatApplied = Boolean(urlAgentId) && !isLoadingUrlChat;
+  const selectedAgentRef = useRef(selectedAgent);
+  selectedAgentRef.current = selectedAgent;
   useEffect(() => {
     let cancelled = false;
     if (urlAgentId) {
       // A chat of the agent's that is about to load brings the agent with it.
       if (selectedAgent?.id !== urlAgentId && !isLoadingUrlChat) {
+        const selectedAtStart = selectedAgent;
         userService
           .getAgent(urlAgentId, token)
           .then((response) => (response.ok ? response.json() : null))
           .then((agent: Agent | null) => {
             if (cancelled) return;
-            // Not another agent's card under this agent's URL.
-            dispatch(setSelectedAgent(agent));
+            if (agent) dispatch(setSelectedAgent(agent));
+            // Not another agent's card under this agent's URL, but a pick
+            // made while the read was out stands.
+            else if (selectedAgentRef.current === selectedAtStart)
+              dispatch(setSelectedAgent(null));
           })
           .catch((err) => {
             if (!cancelled) console.error('Failed to load agent:', err);
@@ -544,7 +567,8 @@ export default function Conversation() {
                 handleQuestion={handleQuestion}
                 handleQuestionSubmission={handleQuestionSubmission}
                 handleFeedback={handleFeedback}
-                queries={queries}
+                // Not the last chat's turns under the URL of the one loading.
+                queries={isLoadingUrlChat ? [] : queries}
                 status={status}
                 showHeroOnEmpty={selectedAgent ? false : true}
                 isLoading={isLoadingUrlChat}
@@ -608,6 +632,8 @@ export default function Conversation() {
                 queuedQuestion={queuedQuestion}
                 onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
                 loading={status === 'loading'}
+                // A send now would go to the chat still applied, not the URL's.
+                sendBlocked={isLoadingUrlChat}
                 showSourceButton={selectedAgent ? false : true}
                 showToolButton={selectedAgent ? false : true}
               />

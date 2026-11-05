@@ -358,6 +358,9 @@ type MessageInputProps = {
   // input and arms the send so the standard waiting banner takes over.
   queuedQuestion?: string | null;
   onQueuedQuestionConsumed?: () => void;
+  // Typing stays open but nothing sends: the chat it would go to is still
+  // loading. Unlike ``loading`` it shows no stop control.
+  sendBlocked?: boolean;
 };
 
 export default function MessageInput({
@@ -369,6 +372,7 @@ export default function MessageInput({
   allowSendWithoutText = false,
   queuedQuestion = null,
   onQueuedQuestionConsumed,
+  sendBlocked = false,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -1510,6 +1514,7 @@ export default function MessageInput({
     (allowSendWithoutText && attachments.some((a) => a.status !== 'failed'));
   const composerIdle =
     !loading &&
+    !sendBlocked &&
     recordingState !== 'recording' &&
     recordingState !== 'transcribing';
   const canSubmit = hasSubmittableContent && composerIdle;
