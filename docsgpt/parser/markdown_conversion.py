@@ -1,28 +1,16 @@
-"""Shared HTML to Markdown conversion.
+"""The markdownify converter every HTML to Markdown path in DocsGPT uses.
 
-The file parser (``parser/file/html_parser.py``), the crawler
-(``parser/remote/crawler_markdown.py``) and the web tool
-(``agents/tools/read_webpage.py``) all produce Markdown from HTML and are meant to
-produce the same shape, so the options and the converter live here rather than in
-three copies.
+The file parser (``parser/file/html_parser.py``), the web extractor
+(``parser/remote/page_content.py``) and the web tool (``agents/tools/read_webpage.py``)
+convert with ``WhitespacePreservingConverter`` and the shared ``MARKDOWNIFY_OPTIONS``, so
+a word boundary that a styled space carries survives all three.
 """
 
 from typing import Any
 
 from markdownify import MarkdownConverter
 
-# The crawler's conventions, so file and web ingestion produce the same Markdown shape.
-#
-# ``table_infer_header``: a GFM table cannot start with a body row, so without
-# it markdownify puts an empty header above any table that carries no ``<th>``
-# and the column names end up in the first body row. Plenty of pages -- and
-# every Word table converted to HTML -- are written that way, and the header is
-# what gives each value in the table its meaning.
-MARKDOWNIFY_OPTIONS = {
-    "heading_style": "ATX",
-    "newline_style": "BACKSLASH",
-    "table_infer_header": True,
-}
+from docsgpt.parser.file.html_parser import MARKDOWNIFY_OPTIONS
 
 # Inline tags whose markdownify conversion runs the text through ``chomp()``, which
 # lifts the surrounding whitespace out of the text and then returns an empty string
@@ -64,7 +52,10 @@ class WhitespacePreservingConverter(MarkdownConverter):
             return convert_fn
 
         def keep_whitespace_only(el: Any, text: str, *args: Any, **kwargs: Any) -> str:
-            if text.strip():
+            # Inside <pre> markdownify keeps whitespace as written (the ``_noformat``
+            # pseudo-tag), so the tag's own conversion decides there.
+            parent_tags = kwargs.get("parent_tags", args[0] if args else ())
+            if text.strip() or "_noformat" in parent_tags:
                 return convert_fn(el, text, *args, **kwargs)
             # Ordinary whitespace becomes one space, or none when a neighbour already
             # supplies it; a non-breaking space is content and stays as written.

@@ -1,8 +1,8 @@
 """``html_to_markdown_text`` keeps the word boundaries a page carries.
 
 markdownify drops an inline element that holds nothing but whitespace, and takes the
-whitespace with it, so two words are ingested as one. The file parser, the crawler and
-the web tool all convert through here, so one guard covers all three.
+whitespace with it, so two words are ingested as one. The file parser, the web extractor
+and the web tool all convert through here, so one guard covers all three.
 """
 
 import pytest
@@ -64,3 +64,30 @@ def test_crawler_conventions_are_applied_and_overridable():
     assert html_to_markdown_text("<p>a<br>b</p>").strip() == "a\\\nb"
 
     assert html_to_markdown_text("<h1>Title</h1>", heading_style="UNDERLINED").strip() == "Title\n====="
+
+
+@pytest.mark.parametrize(
+    "html, expected",
+    [
+        ("<pre>left<code>   </code>right</pre>", "left   right"),
+        ("<pre>a<b>\t</b>b</pre>", "a\tb"),
+        ("<pre>a<i>\n\n</i>b</pre>", "a\n\nb"),
+    ],
+    ids=["spaces", "tab", "newlines"],
+)
+def test_whitespace_inside_preformatted_text_stays_as_written(html, expected):
+    """In <pre>, markdownify keeps whitespace as written, so it is not collapsed here."""
+    assert html_to_markdown_text(html) == f"```\n{expected}\n```"
+
+
+def test_the_file_parser_and_the_web_extractor_keep_the_word_boundary():
+    from bs4 import BeautifulSoup
+
+    from docsgpt.parser.file.html_parser import soup_to_markdown
+    from docsgpt.parser.remote.page_content import extract_page
+
+    sentence = "The quick brown fox jumps over the lazy dog and keeps running through the tall grass."
+    html = f"<html><body><main><p>{sentence}</p><p>Hello<b> </b>world</p></main></body></html>"
+
+    assert soup_to_markdown(BeautifulSoup(html, "html.parser")).endswith("Hello world")
+    assert extract_page(html, "https://example.com/page").text.endswith("Hello world")

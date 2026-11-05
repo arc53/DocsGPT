@@ -2,7 +2,6 @@ import codecs
 import re
 from urllib.parse import urljoin
 
-
 from docsgpt.agents.tools.base import Tool
 from docsgpt.parser.markdown_conversion import html_to_markdown_text
 from docsgpt.security.safe_url import (
