@@ -214,6 +214,16 @@ describe('McpAppView', () => {
     });
     await act(async () => {});
     expect(container.textContent).toContain('conversation.mcpApp.approvalAsk');
+    expect(container.textContent).toContain(
+      'conversation.toolApproval.state.approval',
+    );
+    // A one-line preview beside the title, the whole of them behind Details.
+    expect(container.textContent).toContain('{"id":"board-7"}');
+    expect(container.querySelector('pre')).toBeNull();
+    const details = container.querySelector<HTMLButtonElement>(
+      'button[aria-expanded]',
+    );
+    await act(async () => details?.click());
     expect(container.querySelector('pre')?.textContent).toContain(
       '"id": "board-7"',
     );

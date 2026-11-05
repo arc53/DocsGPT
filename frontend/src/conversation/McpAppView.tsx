@@ -1,4 +1,4 @@
-import { RotateCw } from 'lucide-react';
+import { ChevronDown, RotateCw } from 'lucide-react';
 import {
   type CSSProperties,
   type ReactNode,
@@ -61,15 +61,14 @@ type PendingApproval = {
   decide: (allowed: boolean) => void;
 };
 
-/** The most of a view call's arguments the approval prompt shows. */
-const ARGS_PREVIEW_MAX = 2000;
+/** The most of a view call's arguments the approval's Details show. */
+const ARGS_DETAIL_MAX = 2000;
+/** The one-line arguments preview beside the title, as on the approval card. */
+const ARGS_LINE_MAX = 60;
 
-/** A view call's arguments as the approval prompt shows them: JSON, cut short past `ARGS_PREVIEW_MAX`. */
-function argsPreview(args: Record<string, unknown>): string {
-  const text = JSON.stringify(args, null, 2) ?? '';
-  return text.length > ARGS_PREVIEW_MAX
-    ? `${text.slice(0, ARGS_PREVIEW_MAX - 1)}…`
-    : text;
+/** `text` cut to `max` characters, ending in an ellipsis when it was longer. */
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 const isDark = () => document.documentElement.classList.contains('dark');
@@ -117,6 +116,7 @@ export default function McpAppView({
   const [phase, setPhase] = useState<Phase>('loading');
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [approval, setApproval] = useState<PendingApproval | null>(null);
+  const [argsOpen, setArgsOpen] = useState(false);
 
   // Read by the host's callbacks, which outlive the render that made them.
   const latest = useRef({ toolCall, token, language: i18n.language, t });
@@ -203,6 +203,7 @@ export default function McpAppView({
             args,
             decide: (allowed) => {
               setApproval(null);
+              setArgsOpen(false);
               resolve(allowed);
             },
           };
@@ -297,6 +298,7 @@ export default function McpAppView({
     setAttempt((n) => n + 1);
   };
   const label = getToolChipLabel(toolCall, t);
+  const argsLine = approval ? JSON.stringify(approval.args) : '';
 
   return (
     // Stretched to the column (see BackgroundJobCard) so it never spills on a phone.
@@ -305,18 +307,34 @@ export default function McpAppView({
         <ToolCallCard
           icon={<StepIcon call={toolCall} />}
           title={label}
+          meta={
+            approval ? (
+              <span
+                className="text-muted-foreground hidden truncate font-mono text-xs md:block"
+                title={argsLine}
+              >
+                {clip(argsLine, ARGS_LINE_MAX)}
+              </span>
+            ) : null
+          }
           state={
-            <Badge
-              variant={
-                phase === 'failed'
-                  ? 'destructive'
-                  : phase === 'ready'
-                    ? 'success'
-                    : 'neutral'
-              }
-            >
-              {t(`conversation.mcpApp.state.${phase}`)}
-            </Badge>
+            approval ? (
+              <Badge variant="info">
+                {t('conversation.toolApproval.state.approval')}
+              </Badge>
+            ) : (
+              <Badge
+                variant={
+                  phase === 'failed'
+                    ? 'destructive'
+                    : phase === 'ready'
+                      ? 'success'
+                      : 'neutral'
+                }
+              >
+                {t(`conversation.mcpApp.state.${phase}`)}
+              </Badge>
+            )
           }
           actions={
             approval ? (
@@ -336,91 +354,103 @@ export default function McpAppView({
                 >
                   {t('conversation.mcpApp.deny')}
                 </Button>
+                <IconButton
+                  label={t('conversation.toolApproval.details')}
+                  variant="ghost-muted"
+                  size="icon-xs"
+                  shape="pill"
+                  onClick={() => setArgsOpen(!argsOpen)}
+                  aria-expanded={argsOpen}
+                >
+                  <ChevronDown
+                    aria-hidden
+                    className={cn(
+                      'transition-transform duration-200',
+                      argsOpen && 'rotate-180',
+                    )}
+                  />
+                </IconButton>
               </>
-            ) : null
-          }
-          meta={
-            <span className="flex justify-end">
+            ) : (
               <IconButton
-                variant="ghost"
+                variant="ghost-muted"
                 size="icon-xs"
+                shape="pill"
                 icon={RotateCw}
                 label={t('conversation.mcpApp.reload')}
                 onClick={reload}
               />
-            </span>
+            )
           }
         >
-          {approval && (
-            <div className="mb-2 flex flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-2">
+            {approval && (
               <p>
                 {t('conversation.mcpApp.approvalAsk', {
                   tool: approval.name,
                   interpolation: { escapeValue: false },
                 })}
               </p>
-              {Object.keys(approval.args).length > 0 && (
-                <>
-                  <p className="text-muted-foreground text-xs font-medium">
-                    {t('conversation.inlineSteps.arguments')}
-                  </p>
-                  <CodeBlock surface="subtle" maxHeight="sm">
-                    {argsPreview(approval.args)}
-                  </CodeBlock>
-                </>
-              )}
-            </div>
-          )}
-          {phase === 'failed' ? (
-            <EmptyState
-              size="xs"
-              illustration="none"
-              tone="destructive"
-              title={t('conversation.mcpApp.failedTitle')}
-              description={t('conversation.mcpApp.failedDescription')}
-              onRetry={reload}
-            />
-          ) : (
-            <div className="relative min-w-0">
-              {phase === 'loading' && (
-                <LoadingState
-                  fill="parent"
-                  size="sm"
-                  label={t('conversation.mcpApp.loading')}
-                  className="absolute inset-0"
-                />
-              )}
-              {resource && (
-                <iframe
-                  key={attempt}
-                  ref={frameRef}
-                  src={sandboxSrc(resource)}
-                  sandbox={SANDBOX}
-                  allow={allowAttribute(resource)}
-                  title={t('conversation.mcpApp.frameTitle', {
-                    name: label,
-                    interpolation: { escapeValue: false },
-                  })}
-                  className={cn(
-                    'block h-(--mcp-app-height) max-h-[70svh] w-full border-0',
-                    resource.prefersBorder && 'border-border rounded-xl border',
-                    phase !== 'ready' && 'opacity-0',
+            )}
+            {approval && argsOpen && (
+              <>
+                <p className="text-muted-foreground text-xs font-medium">
+                  {t('conversation.inlineSteps.arguments')}
+                </p>
+                <CodeBlock surface="subtle" maxHeight="sm">
+                  {clip(
+                    JSON.stringify(approval.args, null, 2),
+                    ARGS_DETAIL_MAX,
                   )}
-                  style={{ '--mcp-app-height': `${height}px` } as CSSProperties}
-                />
-              )}
-              {!resource && (
-                <div
-                  className="h-(--mcp-app-height)"
-                  style={
-                    {
-                      '--mcp-app-height': `${DEFAULT_HEIGHT}px`,
-                    } as CSSProperties
-                  }
-                />
-              )}
-            </div>
-          )}
+                </CodeBlock>
+              </>
+            )}
+            {phase === 'failed' ? (
+              <EmptyState
+                size="xs"
+                illustration="none"
+                tone="destructive"
+                title={t('conversation.mcpApp.failedTitle')}
+                description={t('conversation.mcpApp.failedDescription')}
+                onRetry={reload}
+              />
+            ) : (
+              <div className="relative min-w-0">
+                {phase === 'loading' && (
+                  <LoadingState
+                    fill="parent"
+                    size="sm"
+                    label={t('conversation.mcpApp.loading')}
+                    className="absolute inset-0"
+                  />
+                )}
+                {resource && (
+                  <iframe
+                    key={attempt}
+                    ref={frameRef}
+                    src={sandboxSrc(resource)}
+                    sandbox={SANDBOX}
+                    allow={allowAttribute(resource)}
+                    title={t('conversation.mcpApp.frameTitle', {
+                      name: label,
+                      interpolation: { escapeValue: false },
+                    })}
+                    className={cn(
+                      'block h-(--mcp-app-height) max-h-[70svh] w-full border-0',
+                      resource.prefersBorder &&
+                        'border-border rounded-xl border',
+                      phase !== 'ready' && 'opacity-0',
+                    )}
+                    style={
+                      { '--mcp-app-height': `${height}px` } as CSSProperties
+                    }
+                  />
+                )}
+                {/* The frame's height (DEFAULT_HEIGHT) until there is a frame. */}
+                {!resource && <div className="h-90" />}
+              </div>
+            )}
+          </div>
         </ToolCallCard>
       </div>
     </div>
