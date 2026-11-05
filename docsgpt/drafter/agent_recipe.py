@@ -76,7 +76,7 @@ MESSAGE_MAX = 600
 REASON_SUMMARY_MAX = 200
 REASON_DETAIL_MAX = 400
 MAX_REASONS = 10
-MAX_NOTES = 5
+MAX_NOTES = 3
 NOTE_MAX = 300
 
 #: Caps on the form values a request sends.
@@ -385,8 +385,10 @@ Changing an agent that already has values (the user asks to improve or change so
 user asked for and leave every other field out of the proposal. A field you leave out stays as it is. A list you \
 send (sources, tools, starters) replaces the whole list, so send the full list you want.
 
-In the proposal, give a reason for each field you set (a short summary naming what you chose, and a detail \
-saying why or what you left out) and put anything the user should do or know in notes."""
+In the proposal, give one reason per field you set: a summary naming what you chose, with what you left out in a \
+few words (e.g. "Meridian service guide · left out the internal wiki"), and a detail saying why. Notes are only \
+for what the user must do or know that the reasons don't say (a missing tool, an item to check), at most 3. Never \
+describe the next step, or how to review or save the draft: the panel shows that."""
 
 GUIDED = """You are building a new agent with the user in four steps, in this order:
 - basics: name, description.
@@ -538,13 +540,17 @@ PROPOSAL_SCHEMA: dict = {
                 "type": "object",
                 "properties": {
                     "field": {"type": "string", "enum": list(FIELDS)},
-                    "summary": {"type": "string", "description": "What you chose, by name."},
+                    "summary": {"type": "string", "description": "What you chose, by name, and what you left out."},
                     "detail": {"type": "string", "description": "Why, or what you left out."},
                 },
                 "required": ["field", "summary"],
             },
         },
-        "notes": {"type": "array", "items": {"type": "string"}, "description": "What the user should know or do."},
+        "notes": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "At most 3: what the user must do or know that the reasons don't say.",
+        },
     },
     "required": ["message", "fields"],
 }
@@ -799,7 +805,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     _drop_unchanged(fields, form)
     reasons = []
     for reason in args.get("reasons") or []:
-        if reason.get("field") not in fields:
+        if reason.get("field") not in fields or any(r["field"] == reason["field"] for r in reasons):
             continue
         summary = clean_text(reason.get("summary"), REASON_SUMMARY_MAX)
         if not summary:
@@ -814,7 +820,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         "message": clean_text(args.get("message"), MESSAGE_MAX),
         "fields": fields,
         "reasons": reasons[:MAX_REASONS],
-        "notes": notes[:MAX_NOTES],
+        "notes": notes,
         "dropped": dropped,
         "steps": steps,
         "next_step": next_step,

@@ -220,6 +220,12 @@ class TestInstructions:
         text = instructions(_req({}, step="prompt"), _ws())
         assert "from the sources and tools already on the form" in text
 
+    def test_proposals_stay_lean(self):
+        text = instructions(_req(), _ws())
+        for rule in ("one reason per field", "what you left out in a few words", "at most 3",
+                     "Never describe the next step"):
+            assert rule in text, rule
+
     def test_basics_asks_who_uses_it_unless_the_user_said(self):
         text = instructions(_req({}, step="basics"), _ws())
         for rule in ("Who uses the agent decides", "unless the user's words say or clearly imply it",
@@ -285,6 +291,17 @@ class TestValidate:
                                                  {"field": "description", "summary": "Says what it does"}])
         assert proposal["fields"] == {"description": "New"}
         assert proposal["reasons"] == [{"field": "description", "summary": "Says what it does"}]
+
+    def test_a_field_keeps_its_first_reason_only(self):
+        proposal = _validate({"sources": [SOURCE_ID]}, reasons=[
+            {"field": "sources", "summary": "Help Center · left out the wiki"},
+            {"field": "sources", "summary": "Left out: internal wiki"},
+        ])
+        assert proposal["reasons"] == [{"field": "sources", "summary": "Help Center · left out the wiki"}]
+
+    def test_notes_are_capped_at_three(self):
+        proposal = _validate({"name": "Help"}, notes=[f"Note {i}" for i in range(6)])
+        assert proposal["notes"] == ["Note 0", "Note 1", "Note 2"]
 
     def test_the_unsaved_prompt_redrafted_the_same_is_left_out(self):
         draft = {"name": "P", "content": "You help."}
