@@ -328,8 +328,11 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       }
     >
       <div className="bg-card">
+        {/* The loading box and the diagram's frame share a min-height: the
+            frame is empty until Mermaid has drawn, and the turn shrank by
+            the difference when the answer stopped streaming. */}
         {isCurrentlyLoading ? (
-          <div className="bg-card flex items-center justify-center p-4">
+          <div className="bg-card flex min-h-13 items-center justify-center p-4">
             <div className="text-muted-foreground text-sm">
               {t('mermaid.loading')}
             </div>
@@ -344,7 +347,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           <>
             <div
               ref={containerRef}
-              className="no-scrollbar bg-card relative block w-full p-4"
+              className="no-scrollbar bg-card relative block min-h-13 w-full p-4"
               style={{
                 overflow: 'auto',
                 scrollbarWidth: 'none',
