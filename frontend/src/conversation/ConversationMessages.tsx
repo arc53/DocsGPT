@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -78,6 +79,7 @@ type ConversationMessagesProps = {
 const CONTEXT_LENGTH_EXCEEDED = 'context_length_exceeded';
 
 const MS_VIEWPORT_SELECTOR = '[data-slot="message-scroller-viewport"]';
+const MS_SPACER_SELECTOR = '[data-message-scroller-spacer]';
 const STICK_THRESHOLD_PX = 48;
 // The keys the message-scroller primitive treats as a user scroll.
 const SCROLL_KEYS = new Set([
@@ -89,6 +91,23 @@ const SCROLL_KEYS = new Set([
   'PageUp',
   ' ',
 ]);
+
+/** The pin spacer's rendered height; 0 when the primitive shows none. */
+function spacerHeight(vp: HTMLElement): number {
+  return vp.querySelector<HTMLElement>(MS_SPACER_SELECTOR)?.offsetHeight ?? 0;
+}
+
+/**
+ * How far the content's end lies below the viewport's bottom. The pin spacer
+ * is room, not content: while it shows, the end is above the bottom and this
+ * is negative.
+ */
+function contentEndDistance(
+  vp: HTMLElement,
+  spacer: number = spacerHeight(vp),
+): number {
+  return vp.scrollHeight - spacer - vp.scrollTop - vp.clientHeight;
+}
 
 const DEFAULT_BUBBLE_MARGIN = 'mb-7';
 const FIRST_QUESTION_BUBBLE_MARGIN_TOP = 'mt-5';
@@ -147,9 +166,36 @@ export default function ConversationMessages({
   // on the latest question but leaves the spacer at its height; re-armed when
   // the next question arrives. Before the follow effect, so it runs first.
   const pinReleasedRef = useRef(false);
+  // The primitive goes back to following the bottom whenever the content's
+  // end is in view, measured without the spacer, so with a spacer showing it
+  // always is. After a gesture that meant the next resize scrolled to the end
+  // with the spacer gone, and the turn dropped by the spacer's height; once
+  // the answer has ended, a late diagram that outgrew the spacer scrolled the
+  // question off the top. So while a spacer shows after either, the primitive
+  // does not follow the bottom; it scrolls freely or keeps the question
+  // pinned, and this component follows the answer's end itself.
+  const [pinHeld, setPinHeld] = useState(false);
+  const pinHeldRef = useRef(false);
+  const holdPin = (hold: boolean, sync = false) => {
+    if (pinHeldRef.current === hold) return;
+    pinHeldRef.current = hold;
+    if (sync) flushSync(() => setPinHeld(hold));
+    else setPinHeld(hold);
+  };
   useLayoutEffect(() => {
     pinReleasedRef.current = false;
+    holdPin(false);
   }, [queries.length]);
+  // Whether the question is pinned to the top: the follow and the resize
+  // re-pin below leave the scroll to the primitive then.
+  const isPinned = (vp: HTMLElement) =>
+    !pinReleasedRef.current && (pinHeldRef.current || spacerHeight(vp) > 0);
+
+  useLayoutEffect(() => {
+    if (status !== 'idle' || !hasMessages) return;
+    const vp = document.querySelector<HTMLElement>(MS_VIEWPORT_SELECTOR);
+    if (vp && spacerHeight(vp) > 0) holdPin(true);
+  }, [status, hasMessages]);
 
   useEffect(() => {
     if (!hasMessages) return;
@@ -157,6 +203,8 @@ export default function ConversationMessages({
     if (!vp) return;
     const releasePin = () => {
       pinReleasedRef.current = true;
+      // Synchronous, so the primitive reads it on the scroll this gesture makes.
+      if (spacerHeight(vp) > 0) holdPin(true, true);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (SCROLL_KEYS.has(event.key)) releasePin();
@@ -172,12 +220,8 @@ export default function ConversationMessages({
     const onToggleClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
       if (!target?.closest('[aria-expanded]')) return;
-      const spacer = vp.querySelector<HTMLElement>(
-        '[data-message-scroller-spacer]',
-      );
-      if (!pinReleasedRef.current && spacer && spacer.offsetHeight > 0) return;
-      const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
-      if (dist >= STICK_THRESHOLD_PX) return;
+      if (isPinned(vp)) return;
+      if (contentEndDistance(vp) >= STICK_THRESHOLD_PX) return;
       stickToBottomRef.current = false;
       vp.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
     };
@@ -245,19 +289,25 @@ export default function ConversationMessages({
     if (!vp) return;
     const onScroll = () => {
       const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
-      stickToBottomRef.current = dist < STICK_THRESHOLD_PX;
+      // Reading style.height (the primitive's inline value) avoids a reflow.
+      const spacer = vp.querySelector<HTMLElement>(MS_SPACER_SELECTOR);
+      const spacerH = spacer ? parseFloat(spacer.style.height) || 0 : 0;
+      const shownSpacerH = spacerCollapsedRef.current ? 0 : spacerH;
+      // At the bottom means at the content's end, spacer or not.
+      stickToBottomRef.current =
+        contentEndDistance(vp, shownSpacerH) < STICK_THRESHOLD_PX;
+      // The spacer is gone (the scroll-to-end button, a new pin): nothing
+      // left to hold.
+      if (shownSpacerH === 0) holdPin(false);
       // Collapse only once the spacer has scrolled fully below the fold
       // (dist >= its height) so removing it never shifts the visible content.
-      // Reading style.height (the primitive's inline value) avoids a reflow.
-      if (!spacerCollapsedRef.current) {
-        const spacer = vp.querySelector<HTMLElement>(
-          '[data-message-scroller-spacer]',
-        );
-        const spacerH = spacer ? parseFloat(spacer.style.height) || 0 : 0;
-        if (spacerH > STICK_THRESHOLD_PX && dist >= spacerH) {
-          spacerCollapsedRef.current = true;
-          setSpacerCollapsed(true);
-        }
+      if (
+        !spacerCollapsedRef.current &&
+        spacerH > STICK_THRESHOLD_PX &&
+        dist >= spacerH
+      ) {
+        spacerCollapsedRef.current = true;
+        setSpacerCollapsed(true);
       }
     };
     onScroll();
@@ -272,13 +322,11 @@ export default function ConversationMessages({
     // While the pin spacer holds the latest question at the top, the primitive
     // re-pins on resize a frame later; scrolling to the bottom here first made
     // the turn jump up and back on every growth. Once a gesture has released
-    // the pin, its leftover spacer no longer holds anything: follow.
-    const spacer = vp.querySelector<HTMLElement>(
-      '[data-message-scroller-spacer]',
-    );
-    if (!pinReleasedRef.current && spacer && spacer.offsetHeight > 0) return;
-    const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
-    if (stickToBottomRef.current && dist > 0) vp.scrollTop = vp.scrollHeight;
+    // the pin, its leftover spacer no longer holds anything: follow the
+    // answer's end, not the spacer's, and only once it passes the bottom.
+    if (isPinned(vp)) return;
+    const dist = contentEndDistance(vp);
+    if (stickToBottomRef.current && dist > 0) vp.scrollTop += dist;
   }, [status, lastTurnContentLength, hasMessages]);
 
   const columnClass = isSplitView
@@ -489,7 +537,7 @@ export default function ConversationMessages({
   }
 
   return (
-    <MessageScrollerProvider autoScroll>
+    <MessageScrollerProvider autoScroll={!pinHeld}>
       <MessageScroller>
         <MessageScrollerViewport className="sm:pt-6 lg:pt-12">
           <MessageScrollerContent

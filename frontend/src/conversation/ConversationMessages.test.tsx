@@ -68,6 +68,24 @@ vi.mock('./AddToKnowledgeAction', () => ({
   ),
 }));
 
+// The scroller's own props, to read whether it may follow the bottom.
+const scroller = vi.hoisted(() => ({
+  autoScroll: [] as (boolean | undefined)[],
+}));
+vi.mock('../components/ui/message-scroller', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../components/ui/message-scroller')>();
+  return {
+    ...actual,
+    MessageScrollerProvider: (
+      props: React.ComponentProps<typeof actual.MessageScrollerProvider>,
+    ) => {
+      scroller.autoScroll.push(props.autoScroll);
+      return <actual.MessageScrollerProvider {...props} />;
+    },
+  };
+});
+
 vi.mock('../Hero', () => ({ default: () => null }));
 
 vi.mock('./StreamingStatusLine', () => ({ default: () => null }));
@@ -262,12 +280,14 @@ describe('ConversationMessages', () => {
       expect(growByOneRow(300).scrollTop).toBe(500);
     });
 
+    // The bottom of a 1023px content in a 500px viewport.
     it('keeps the answer’s end in view once nothing is pinned', () => {
-      expect(growByOneRow(0).scrollTop).toBe(1023);
+      expect(growByOneRow(0).scrollTop).toBe(523);
     });
 
     // A scroll gesture releases the primitive's pin but leaves its spacer;
-    // the spacer's height alone must not stop the answer being followed.
+    // the spacer's height alone must not stop the answer being followed. Its
+    // end is followed, not the spacer's: 3px short of the bottom.
     it.each([
       ['a wheel', new WheelEvent('wheel', { deltaY: 40, bubbles: true })],
       ['a touch drag', new Event('touchmove', { bubbles: true })],
@@ -276,7 +296,14 @@ describe('ConversationMessages', () => {
         new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }),
       ],
     ])('follows the answer again once %s releases the pin', (_, gesture) => {
-      expect(growByOneRow(3, gesture).scrollTop).toBe(1023);
+      expect(growByOneRow(3, gesture).scrollTop).toBe(520);
+    });
+
+    // A released pin's spacer still showing under the answer: its end has
+    // not reached the bottom, so following would scroll into the spacer.
+    it('does not follow into a released spacer the answer has not reached', () => {
+      const wheel = new WheelEvent('wheel', { deltaY: -40, bubbles: true });
+      expect(growByOneRow(200, wheel).scrollTop).toBe(500);
     });
 
     // Opening a step resizes the answer; following would scroll the step
@@ -301,12 +328,44 @@ describe('ConversationMessages', () => {
     it('keeps following after a click that toggles nothing', () => {
       const click = new MouseEvent('click', { bubbles: true });
       const plain = document.createElement('span');
-      expect(growByOneRow(0, click, plain).scrollTop).toBe(1023);
+      expect(growByOneRow(0, click, plain).scrollTop).toBe(523);
     });
 
     it('ignores keys that do not scroll', () => {
       const typing = new KeyboardEvent('keydown', { key: 'a', bubbles: true });
       expect(growByOneRow(3, typing).scrollTop).toBe(500);
+    });
+
+    const autoScroll = () =>
+      scroller.autoScroll[scroller.autoScroll.length - 1];
+
+    // The primitive measures its follow without the spacer; following the
+    // bottom from here would scroll the spacer away under the reader.
+    it('stops the primitive following the bottom while a released spacer shows', () => {
+      const wheel = new WheelEvent('wheel', { deltaY: -40, bubbles: true });
+      growByOneRow(200, wheel);
+      expect(autoScroll()).toBe(false);
+      stream('a longer answer', 'third');
+      expect(autoScroll()).toBe(true);
+    });
+
+    it('keeps the question pinned when the answer ends under it', () => {
+      growByOneRow(300);
+      expect(autoScroll()).toBe(true);
+      act(() => {
+        root.render(
+          <ConversationMessages
+            handleQuestion={() => undefined}
+            handleQuestionSubmission={() => undefined}
+            queries={[
+              { prompt: 'first', response: 'done' },
+              { prompt: 'second', response: 'a longer answer' },
+            ]}
+            status="idle"
+          />,
+        );
+      });
+      expect(autoScroll()).toBe(false);
     });
 
     it('pins the next question again after a release', () => {
