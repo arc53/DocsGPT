@@ -116,7 +116,7 @@ def _reaches(source: str, hosts: set[str]) -> bool:
 def _sources(domains: Any, own_hosts: set[str] = frozenset()) -> list[str]:
     if not isinstance(domains, list):
         return []
-    return [d for d in domains if isinstance(d, str) and _CSP_SOURCE.match(d) and not _reaches(d, own_hosts)]
+    return [d for d in domains if isinstance(d, str) and _CSP_SOURCE.fullmatch(d) and not _reaches(d, own_hosts)]
 
 
 def build_csp(csp: Optional[dict], frame_ancestors: Iterable[str], sandbox_origin: Optional[str] = None) -> str:

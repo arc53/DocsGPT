@@ -97,7 +97,15 @@ class TestBuildCsp:
 
     @pytest.mark.parametrize(
         "domain",
-        ["https://a.com; script-src *", "'unsafe-eval'", "https://a.com https://b.com", "*", "javascript:alert(1)"],
+        [
+            "https://a.com; script-src *",
+            "'unsafe-eval'",
+            "https://a.com https://b.com",
+            "*",
+            "javascript:alert(1)",
+            # ``$`` alone would let a trailing newline through, into the header.
+            "https://esm.sh\n",
+        ],
     )
     def test_undeclarable_domains_are_dropped(self, domain):
         csp = mcp_apps.build_csp({"connectDomains": [domain]}, [])
