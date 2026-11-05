@@ -310,11 +310,11 @@ class TestAppTool:
         assert routes._app_tool("alice", ROW_ID) is None
 
     @pytest.mark.parametrize("status", [False, None])
-    def test_a_row_switched_off_is_not_usable(self, monkeypatch, status):
-        # An old view must not keep driving a tool the user turned off.
+    def test_a_row_not_in_chat_by_default_is_usable(self, monkeypatch, status):
+        # A chat can pick a tool that is off by default; its view must render on reopen.
         monkeypatch.setattr(routes, "db_readonly", MagicMock())
         monkeypatch.setattr(routes, "resolve_tool_by_id", lambda *a, **k: {**_row(), "status": status})
-        assert routes._app_tool("alice", ROW_ID) is None
+        assert routes._app_tool("alice", ROW_ID) is not None
 
     def test_resolves_as_the_user(self, monkeypatch):
         seen = {}

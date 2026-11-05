@@ -46,14 +46,14 @@ def _app_tool(user: str, tool_id: Any) -> Optional[Tuple[ToolExecutor, dict]]:
     """The MCP tool row ``user`` may use, and an executor to load it with; None when there is none.
 
     The row resolves as an agent's call to it does: the user's own, or one a
-    live team grant lets them use. A row switched off (``status``) is left
-    out, as the chat leaves it out, so an open view can't keep driving it.
+    live team grant lets them use. ``status`` is not checked: it only says
+    whether the tool is in chat by default, and a chat can still pick it.
     """
     if not isinstance(tool_id, str) or not tool_id:
         return None
     with db_readonly() as conn:
         row = resolve_tool_by_id(tool_id, user, user_tools_repo=UserToolsRepository(conn))
-    if not row or row.get("name") != "mcp_tool" or row.get("status") is not True:
+    if not row or row.get("name") != "mcp_tool":
         return None
     return ToolExecutor(user=user), row
 
