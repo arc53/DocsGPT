@@ -518,6 +518,12 @@ class GoogleLLM(BaseLLM):
                 continue
             elif key == "type" and isinstance(value, str):
                 cleaned[key] = value.upper()
+            elif key == "properties" and isinstance(value, dict):
+                # A name -> schema map: the names are the tool author's, so
+                # they must not go through the keyword filter above.
+                cleaned[key] = {
+                    name: self._clean_schema(prop) for name, prop in value.items()
+                }
             elif isinstance(value, dict):
                 cleaned[key] = self._clean_schema(value)
             elif isinstance(value, list):

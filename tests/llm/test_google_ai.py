@@ -312,40 +312,85 @@ class TestCleanSchema:
         assert result["type"] == "STRING"
 
     def test_nested_properties_cleaned(self, llm):
-        # _clean_schema recursively cleans the properties dict value.
-        # Property names that happen to match allowed_fields survive.
-        # This tests the recursive cleaning on schema values.
         schema = {
             "type": "object",
             "properties": {
-                "type": {"type": "string"},
+                "name": {"type": "string", "title": "Name"},
+                "age": {"type": "integer"},
             },
         }
         result = llm._clean_schema(schema)
-        # "type" is in allowed_fields, so the property survives as a key
-        # Its value gets uppercased since it's a type field
-        assert "properties" in result
-        assert result["properties"]["type"]["type"] == "STRING"
+        assert result["properties"] == {
+            "name": {"type": "STRING"},
+            "age": {"type": "INTEGER"},
+        }
 
-    def test_required_validated_against_properties(self, llm):
-        # Property names must be in allowed_fields to survive _clean_schema
-        # "type" is in allowed_fields so it survives as a property key
+    def test_property_names_are_not_filtered_as_schema_keywords(self, llm):
+        # Only the schema around a property is filtered; the property names
+        # are the caller's own and must all reach the model.
         schema = {
             "type": "object",
-            "properties": {"type": {"type": "string"}},
-            "required": ["type", "nonexistent"],
+            "properties": {
+                "title": {"type": "string"},
+                "additionalProperties": {"type": "boolean"},
+                "$ref": {"type": "string"},
+            },
         }
         result = llm._clean_schema(schema)
-        assert result["required"] == ["type"]
+        assert set(result["properties"]) == {"title", "additionalProperties", "$ref"}
+
+    def test_required_validated_against_properties(self, llm):
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name", "nonexistent"],
+        }
+        result = llm._clean_schema(schema)
+        assert result["required"] == ["name"]
 
     def test_required_removed_when_no_valid_entries(self, llm):
         schema = {
             "type": "object",
-            "properties": {"type": {"type": "string"}},
+            "properties": {"name": {"type": "string"}},
             "required": ["nonexistent"],
         }
         result = llm._clean_schema(schema)
         assert "required" not in result
+
+    def test_array_of_objects_keeps_item_properties_and_required(self, llm):
+        schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"title": {"type": "string"}, "start": {"type": "string"}},
+                "required": ["title"],
+            },
+        }
+        result = llm._clean_schema(schema)
+        assert result["items"] == {
+            "type": "OBJECT",
+            "properties": {"title": {"type": "STRING"}, "start": {"type": "STRING"}},
+            "required": ["title"],
+        }
+
+    def test_deeply_nested_objects_keep_every_level(self, llm):
+        schema = {
+            "type": "object",
+            "properties": {
+                "filter": {
+                    "type": "object",
+                    "properties": {
+                        "range": {
+                            "type": "object",
+                            "properties": {"gte": {"type": "number", "format": "double"}},
+                        },
+                    },
+                },
+            },
+        }
+        result = llm._clean_schema(schema)
+        gte = result["properties"]["filter"]["properties"]["range"]["properties"]["gte"]
+        assert gte == {"type": "NUMBER"}
 
     def test_required_removed_when_no_properties(self, llm):
         schema = {"type": "string", "required": ["x"]}
@@ -407,6 +452,62 @@ class TestCleanToolsFormat:
         ]
         result = llm._clean_tools_format(tools)
         assert len(result) == 1
+
+    def test_object_and_array_of_object_parameters_keep_their_fields(self, llm):
+        # What MCP tools, imported API actions and client tools send: a
+        # parameter that is itself an object, or a list of objects.
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_events",
+                    "description": "Add events to a calendar",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "events": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string"},
+                                        "start": {"type": "string"},
+                                    },
+                                    "required": ["title"],
+                                },
+                            },
+                            "options": {
+                                "type": "object",
+                                "properties": {"notify": {"type": "boolean"}},
+                            },
+                        },
+                        "required": ["events"],
+                    },
+                },
+            }
+        ]
+        declaration = llm._clean_tools_format(tools)[0].function_declarations[0]
+        assert declaration["parameters"] == {
+            "type": "OBJECT",
+            "properties": {
+                "events": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "title": {"type": "STRING"},
+                            "start": {"type": "STRING"},
+                        },
+                        "required": ["title"],
+                    },
+                },
+                "options": {
+                    "type": "OBJECT",
+                    "properties": {"notify": {"type": "BOOLEAN"}},
+                },
+            },
+            "required": ["events"],
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -993,16 +1094,14 @@ class TestCleanSchemaAdditional:
         assert "required" not in result
 
     def test_valid_required_empty_after_filter(self, llm):
-        """Cover line 290: valid_required is non-empty.
-        Note: 'type' is in allowed_fields, so survives as a property key.
-        """
+        """Cover line 290: valid_required is non-empty."""
         schema = {
             "type": "object",
-            "properties": {"type": {"type": "string"}},
-            "required": ["type"],
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
         }
         result = llm._clean_schema(schema)
-        assert result["required"] == ["type"]
+        assert result["required"] == ["name"]
 
 
 # ---------------------------------------------------------------------------
