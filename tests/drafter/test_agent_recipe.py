@@ -169,6 +169,14 @@ class TestContext:
         options = context_data(_req(full, step="safety"), _ws(folders=FOLDERS))["safety_options"]
         assert options["insights_topics"] == {"available": False, "why": "no_room"}
 
+    def test_a_saved_agent_with_enough_conversations_gets_topics_from_them(self):
+        ws = _ws(topics_from_conversations=True)
+        topics = context_data(_req({}, step="safety"), ws)["safety_options"]["insights_topics"]
+        assert topics == {"available": False, "why": "suggest_from_conversations"}
+        proposal = _validate({"analytics": {"topics": [{"name": "Billing", "description": "Invoices"}]}},
+                             ws=ws, step="safety", asked=True)
+        assert proposal["fields"] == {}
+
     def test_without_policy_access_or_insights_the_parts_are_unavailable(self):
         ws = _ws(policy_editable=False, insights=False)
         options = context_data(_req({}, step="safety"), ws)["safety_options"]
@@ -210,6 +218,29 @@ class TestAvailability:
             "docsgpt.decisions.available", return_value=True
         ):
             assert AGENT_RECIPE.load_workspace("alice", {"agent_id": None}).insights is False
+
+    def test_the_safety_step_asks_whether_a_saved_agent_has_enough_conversations(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.drafter import topics_recipe
+
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+        saved = Workspace(agent={"id": "a1", "name": "Docs"})
+        context = {"agent_id": "a1", "step": "safety", "form": {}}
+        with patch.object(agent_recipe, "load_workspace", return_value=saved), patch(
+            "docsgpt.decisions.available", return_value=True
+        ), patch.object(topics_recipe, "topics_status", return_value={"available": True}) as status:
+            assert AGENT_RECIPE.load_workspace("alice", context).topics_from_conversations is True
+            status.assert_called_once_with("alice", "a1")
+            status.side_effect = RuntimeError("no access")
+            assert AGENT_RECIPE.load_workspace("alice", context).topics_from_conversations is False
+            status.reset_mock()
+            AGENT_RECIPE.load_workspace("alice", {**context, "step": "prompt"})
+            status.assert_not_called()
+        with patch.object(agent_recipe, "load_workspace", return_value=Workspace()), patch(
+            "docsgpt.decisions.available", return_value=True
+        ), patch.object(topics_recipe, "topics_status") as status:
+            AGENT_RECIPE.load_workspace("alice", {"agent_id": None, "step": "safety", "form": {}})
+            status.assert_not_called()
 
     def test_the_safety_step_reads_the_folders_of_the_sources_the_caller_may_attach(self, monkeypatch):
         from docsgpt.core.settings import settings
@@ -331,6 +362,10 @@ class TestInstructions:
         for rule in ("pick-any question (multi true)", "one option per topic, its label the topic's name",
                      'a last option "No topics"', "set only the topics the user ticks"):
             assert rule in text, rule
+
+    def test_a_saved_agent_with_conversations_is_pointed_to_suggest_from_conversations(self):
+        text = instructions(_req({}, step="safety"), _ws())
+        assert "suggest_from_conversations" in text and "Suggest from conversations" in text
 
     def test_system_prompt_carries_the_recipe_and_the_tool_protocol(self):
         messages = build_messages(_req(), AGENT_RECIPE, _ws(), tool_mode=True, allow_questions=True)

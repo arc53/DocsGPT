@@ -114,12 +114,15 @@ class AgentWorkspace(Workspace):
         max_topics: ``ANALYTICS_MAX_TOPICS``, the most one-per-question topics an agent has, folders included.
         folders: The source folders of the form's sources ``{name, description}``, largest first (safety step
             only): each is already an option of the agent's topic question.
+        topics_from_conversations: The saved agent has enough recent conversations for Suggest from conversations
+            (safety step only), so the step leaves topics to it rather than guessing them.
     """
 
     guardrail_menu: list[str] = field(default_factory=list)
     insights: bool = False
     max_topics: int = 15
     folders: list[dict] = field(default_factory=list)
+    topics_from_conversations: bool = False
 
 
 def _ids(value: Any) -> list[str]:
@@ -273,8 +276,15 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
         max_topics=int(settings.ANALYTICS_MAX_TOPICS),
     )
     if context.get("step") == "safety" and out.insights:
+        from docsgpt.drafter import topics_recipe
+
         attachable = ws.ids("sources")
         out.folders = source_folders([s for s in (context.get("form") or {}).get("sources", []) if s in attachable])
+        if ws.agent:
+            try:
+                out.topics_from_conversations = bool(topics_recipe.topics_status(user_id, ws.agent["id"])["available"])
+            except Exception:
+                out.topics_from_conversations = False
     return out
 
 
@@ -324,6 +334,8 @@ def _safety_options(form: dict, ws: AgentWorkspace) -> dict:
         topics = {"available": False, "why": "off_on_this_instance"}
     elif not form["analytics"]["enabled"]:
         topics = {"available": False, "why": "turned_off_for_this_agent"}
+    elif ws.topics_from_conversations:
+        topics = {"available": False, "why": "suggest_from_conversations"}
     elif not room["max"]:
         topics = {"available": False, "why": "no_room"}
     else:
@@ -528,7 +540,10 @@ the topics the user ticks. Each topic is a name of at most {TOPIC_NAME_CHARS} ch
 windows"). Never reuse a topic the agent already has. The folders of its sources (source_folders in \
 safety_options) already sort conversations as topics: never suggest a topic a folder already covers, only what \
 they miss, and at most room topics. Past room, each topic pushes the smallest folder out (up to \
-room_pushing_folders_out more): suggest that only when the user asks for more topics, and say which folder."""
+room_pushing_folders_out more): suggest that only when the user asks for more topics, and say which folder. \
+When insights_topics is unavailable as suggest_from_conversations, the agent has enough real conversations: \
+don't guess topics, say once that Suggest from conversations, in the form's Insights section, suggests them from \
+what users actually asked."""
 
 
 def instructions(req: DraftRequest, ws: Workspace) -> str:
@@ -789,7 +804,8 @@ def _policy(raw_fields: dict, req: DraftRequest, ws: AgentWorkspace, fields: dic
     available = {
         "limits": ws.policy_editable,
         "guardrails": ws.policy_editable and bool(ws.guardrail_menu),
-        "analytics": ws.insights and form["analytics"]["enabled"] and _topic_room(form, ws)["max"] > 0,
+        "analytics": ws.insights and form["analytics"]["enabled"] and not ws.topics_from_conversations
+        and _topic_room(form, ws)["max"] > 0,
     }
     wanted = []
     for key in SAFETY_FIELDS:
