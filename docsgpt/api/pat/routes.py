@@ -309,7 +309,11 @@ class PersonalAccessTokenTool(Resource):
             # Agent tools can't reach private addresses, so a tool for one would never work.
             validate_user_base_url(base_url)
         except UnsafeUserUrlError:
-            return _error("Agents can't reach this address: it must be public, not localhost or a private IP", 400)
+            return _error(
+                "Agents can't reach this address: it must be public, not localhost or a private IP. "
+                "An operator can allow a private host by adding it to SAFE_URL_ALLOWED_HOSTS",
+                400,
+            )
 
         with db_readonly() as conn:
             row = PersonalAccessTokensRepository(conn).find_active_by_hash(hash_token(token))

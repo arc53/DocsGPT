@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -15,14 +15,7 @@ import { SectionHeader } from '../components/ui/section-header';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import PageToolbar from '../components/PageToolbar';
 import { useDarkTheme } from '../hooks';
-import {
-  selectPrompt,
-  selectPrompts,
-  setModalStateDeleteConv,
-  setPrompt,
-  setPrompts,
-} from '../preferences/preferenceSlice';
-import Prompts from './Prompts';
+import { setModalStateDeleteConv } from '../preferences/preferenceSlice';
 
 export default function General() {
   const {
@@ -44,7 +37,6 @@ export default function General() {
     { label: '繁體中文（臺灣）', value: 'zh-TW' },
     { label: 'Русский', value: 'ru' },
   ];
-  const prompts = useSelector(selectPrompts);
   const [isDarkTheme, toggleTheme] = useDarkTheme();
   const [selectedTheme, setSelectedTheme] = React.useState(
     isDarkTheme ? 'Dark' : 'Light',
@@ -61,7 +53,6 @@ export default function General() {
     languageOptions.find((option) => option.value === locale) ??
       languageOptions[0],
   );
-  const selectedPrompt = useSelector(selectPrompt);
 
   React.useEffect(() => {
     if (!selectedLanguage?.value) return;
@@ -135,20 +126,6 @@ export default function General() {
                 </SelectContent>
               </Select>
             </SettingRow>
-          </SettingRows>
-        </section>
-        <section className="flex flex-col gap-4">
-          <SectionHeader title={t('settings.general.sections.chat')} />
-          <SettingRows>
-            <Prompts
-              prompts={prompts}
-              selectedPrompt={selectedPrompt}
-              description={t('settings.general.promptDescription')}
-              onSelectPrompt={(name, id, type) =>
-                dispatch(setPrompt({ name: name, id: id, type: type }))
-              }
-              setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-            />
           </SettingRows>
         </section>
         <Card

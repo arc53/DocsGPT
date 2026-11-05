@@ -255,6 +255,105 @@ class TestUpdateLastUsedAt:
         assert datetime.datetime.fromisoformat(fetched["last_used_at"]) == when
 
 
+def _stamp(conn, agent_id):
+    from sqlalchemy import text
+
+    return conn.execute(
+        text("SELECT updated_at FROM agents WHERE id = CAST(:id AS uuid)"), {"id": str(agent_id)},
+    ).scalar()
+
+
+def _age(conn, agent_id):
+    """Move the agent's ``updated_at`` an hour back, past its trigger.
+
+    ``now()`` is fixed inside the test's transaction, so a bump only shows
+    against an older stamp.
+    """
+    from sqlalchemy import text
+
+    conn.execute(text("ALTER TABLE agents DISABLE TRIGGER agents_set_updated_at"))
+    conn.execute(
+        text("UPDATE agents SET updated_at = updated_at - interval '1 hour' WHERE id = CAST(:id AS uuid)"),
+        {"id": str(agent_id)},
+    )
+    conn.execute(text("ALTER TABLE agents ENABLE TRIGGER agents_set_updated_at"))
+    return _stamp(conn, agent_id)
+
+
+class TestUpdatedAtTracksContent:
+    """``updated_at`` is the builders' stale-write token: only a content edit moves it."""
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"last_used_at": "2026-04-01T12:00:00+00:00"},
+            {"key": "regenerated-key"},
+            {"incoming_webhook_token": "hook-token"},
+            {"shared": True, "shared_token": "share-token", "shared_metadata": {"shared_by": "u"}},
+            {"slug": "first-export"},
+        ],
+    )
+    def test_a_bookkeeping_write_keeps_the_stamp(self, pg_conn, fields):
+        repo = _repo(pg_conn)
+        agent = repo.create("u", "a", "draft")
+        stamp = _age(pg_conn, agent["id"])
+        assert repo.update(agent["id"], "u", fields) is True
+        assert _stamp(pg_conn, agent["id"]) == stamp
+        assert repo.update_by_id(agent["id"], fields, expected_updated_at=stamp) is True
+        assert _stamp(pg_conn, agent["id"]) == stamp
+
+    def test_a_content_write_moves_the_stamp(self, pg_conn):
+        repo = _repo(pg_conn)
+        agent = repo.create("u", "a", "draft")
+        stamp = _age(pg_conn, agent["id"])
+        assert repo.update(agent["id"], "u", {"name": "b", "last_used_at": None}) is True
+        moved = _stamp(pg_conn, agent["id"])
+        assert moved > stamp
+        stamp = _age(pg_conn, agent["id"])
+        assert repo.update_by_id(agent["id"], {"description": "d"}, expected_updated_at=stamp) is True
+        assert _stamp(pg_conn, agent["id"]) > stamp
+
+    def test_a_raw_bookkeeping_update_keeps_the_stamp(self, pg_conn):
+        """The trigger, not just the repository: any UPDATE of bookkeeping columns alone."""
+        from sqlalchemy import text
+
+        agent = _repo(pg_conn).create("u", "a", "draft")
+        stamp = _age(pg_conn, agent["id"])
+        pg_conn.execute(
+            text("UPDATE agents SET last_used_at = now(), key = 'k2' WHERE id = CAST(:id AS uuid)"),
+            {"id": str(agent["id"])},
+        )
+        assert _stamp(pg_conn, agent["id"]) == stamp
+        pg_conn.execute(text("UPDATE agents SET chunks = 9 WHERE id = CAST(:id AS uuid)"), {"id": str(agent["id"])})
+        assert _stamp(pg_conn, agent["id"]) > stamp
+
+    def test_a_folder_move_keeps_the_stamp(self, pg_conn):
+        """Folders are the owner's own filing: moving or unfiling an agent isn't an edit to it."""
+        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
+
+        repo = _repo(pg_conn)
+        agent = repo.create("u", "a", "draft")
+        folder = AgentFoldersRepository(pg_conn).create("u", "F")
+        stamp = _age(pg_conn, agent["id"])
+        repo.set_folder(str(agent["id"]), "u", str(folder["id"]))
+        assert _stamp(pg_conn, agent["id"]) == stamp
+        repo.clear_folder_for_all(str(folder["id"]), "u")
+        assert _stamp(pg_conn, agent["id"]) == stamp
+
+    def test_touch_for_workflow_moves_only_the_linked_agents(self, pg_conn):
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+        repo = _repo(pg_conn)
+        wf = WorkflowsRepository(pg_conn).create("u", "wf")
+        linked = repo.create("u", "linked", "draft", workflow_id=wf["id"])
+        other = repo.create("u", "other", "draft")
+        linked_stamp = _age(pg_conn, linked["id"])
+        other_stamp = _age(pg_conn, other["id"])
+        repo.touch_for_workflow(str(wf["id"]))
+        assert _stamp(pg_conn, linked["id"]) > linked_stamp
+        assert _stamp(pg_conn, other["id"]) == other_stamp
+
+
 class TestListForUser:
     def test_lists_only_own_agents(self, pg_conn):
         repo = _repo(pg_conn)
@@ -385,3 +484,146 @@ class TestClearFolderForAll:
         repo.clear_folder_for_all(folder["id"], "user-1")
         assert repo.get(a1["id"], "user-1")["folder_id"] is None
         assert repo.get(a2["id"], "user-1")["folder_id"] is None
+
+
+class TestPromptPresets:
+    """``creative`` / ``strict`` have no ``prompts`` row: they live in ``prompt_preset``."""
+
+    def _raw(self, conn, agent_id):
+        from sqlalchemy import text
+
+        return conn.execute(
+            text("SELECT CAST(prompt_id AS text), prompt_preset FROM agents WHERE id = CAST(:id AS uuid)"),
+            {"id": str(agent_id)},
+        ).one()
+
+    @pytest.mark.parametrize("preset", ["creative", "strict"])
+    def test_create_stores_a_preset_and_reads_it_back_as_prompt_id(self, pg_conn, preset):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft", prompt_id=preset)
+        assert doc["prompt_id"] == preset
+        assert "prompt_preset" not in doc
+        assert tuple(self._raw(pg_conn, doc["id"])) == (None, preset)
+        assert repo.get(doc["id"], "u")["prompt_id"] == preset
+
+    @pytest.mark.parametrize("value", [None, "", "default"])
+    def test_create_with_the_default_stores_nothing(self, pg_conn, value):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft", prompt_id=value)
+        assert doc["prompt_id"] is None
+        assert tuple(self._raw(pg_conn, doc["id"])) == (None, None)
+
+    def test_create_with_a_prompt_row(self, pg_conn):
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
+
+        prompt = PromptsRepository(pg_conn).create("u", "p", "c")
+        doc = _repo(pg_conn).create("u", "a", "draft", prompt_id=str(prompt["id"]))
+        assert doc["prompt_id"] == str(prompt["id"])
+        assert tuple(self._raw(pg_conn, doc["id"])) == (str(prompt["id"]), None)
+
+    def test_update_switches_between_preset_row_and_default(self, pg_conn):
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
+
+        prompt = PromptsRepository(pg_conn).create("u", "p", "c")
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft", prompt_id="creative")
+        agent_id = str(doc["id"])
+
+        assert repo.update(agent_id, "u", {"prompt_id": "strict"})
+        assert repo.get(agent_id, "u")["prompt_id"] == "strict"
+
+        assert repo.update(agent_id, "u", {"prompt_id": str(prompt["id"])})
+        assert repo.get(agent_id, "u")["prompt_id"] == str(prompt["id"])
+        assert tuple(self._raw(pg_conn, agent_id)) == (str(prompt["id"]), None)
+
+        assert repo.update(agent_id, "u", {"prompt_id": "creative"})
+        assert tuple(self._raw(pg_conn, agent_id)) == (None, "creative")
+
+        assert repo.update(agent_id, "u", {"prompt_id": "default"})
+        assert repo.get(agent_id, "u")["prompt_id"] is None
+        assert tuple(self._raw(pg_conn, agent_id)) == (None, None)
+
+        assert repo.update(agent_id, "u", {"prompt_id": "strict"})
+        assert repo.update(agent_id, "u", {"prompt_id": None})
+        assert tuple(self._raw(pg_conn, agent_id)) == (None, None)
+
+    def test_update_by_id_stores_a_preset(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft")
+        assert repo.update_by_id(str(doc["id"]), {"prompt_id": "strict"})
+        assert repo.get_by_id(str(doc["id"]))["prompt_id"] == "strict"
+
+    def test_a_read_row_written_back_is_valid(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft", prompt_id="creative")
+        row = repo.get(doc["id"], "u")
+        assert repo.update(str(doc["id"]), "u", dict(row))
+        assert tuple(self._raw(pg_conn, doc["id"])) == (None, "creative")
+        clone = repo.create("u", "copy", "draft", prompt_id=row["prompt_id"])
+        assert clone["prompt_id"] == "creative"
+
+    def test_every_read_exposes_the_preset(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "u", "a", "published", prompt_id="creative", key="k-preset",
+            shared=True, shared_token="t-preset", incoming_webhook_token="w-preset", slug="s-preset",
+        )
+        agent_id = str(doc["id"])
+        reads = [
+            repo.get(agent_id, "u"),
+            repo.get_any(agent_id, "u"),
+            repo.get_by_id(agent_id),
+            repo.find_by_key("k-preset"),
+            repo.find_by_shared_token("t-preset"),
+            repo.find_by_webhook_token("w-preset"),
+            repo.find_by_slug("u", "s-preset"),
+            repo.list_for_user("u")[0],
+            repo.list_by_ids([agent_id])[0],
+        ]
+        for row in reads:
+            assert row["prompt_id"] == "creative"
+            assert "prompt_preset" not in row
+
+    def test_legacy_reads_and_templates_expose_the_preset(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("__system__", "tpl", "template", prompt_id="strict", legacy_mongo_id="507f1f77bcf86cd799439099")
+        assert repo.get_by_legacy_id("507f1f77bcf86cd799439099")["prompt_id"] == "strict"
+        assert next(t for t in repo.list_templates() if t["name"] == "tpl")["prompt_id"] == "strict"
+
+    def test_agent_row_to_dict_for_raw_selects(self, pg_conn):
+        from sqlalchemy import text
+
+        from docsgpt.storage.db.repositories.agents import agent_row_to_dict
+
+        doc = _repo(pg_conn).create("u", "a", "draft", prompt_id="strict")
+        row = pg_conn.execute(
+            text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"), {"id": str(doc["id"])}
+        ).fetchone()
+        out = agent_row_to_dict(row)
+        assert out["prompt_id"] == "strict"
+        assert "prompt_preset" not in out
+        assert agent_row_to_dict(None) is None
+
+    def test_the_database_rejects_a_preset_beside_a_prompt_row(self, pg_conn):
+        from sqlalchemy import text
+        from sqlalchemy.exc import IntegrityError
+
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
+
+        prompt = PromptsRepository(pg_conn).create("u", "p", "c")
+        doc = _repo(pg_conn).create("u", "a", "draft")
+        with pytest.raises(IntegrityError):
+            with pg_conn.begin_nested():
+                pg_conn.execute(
+                    text(
+                        "UPDATE agents SET prompt_id = CAST(:p AS uuid), prompt_preset = 'creative' "
+                        "WHERE id = CAST(:id AS uuid)"
+                    ),
+                    {"p": str(prompt["id"]), "id": str(doc["id"])},
+                )
+        with pytest.raises(IntegrityError):
+            with pg_conn.begin_nested():
+                pg_conn.execute(
+                    text("UPDATE agents SET prompt_preset = 'default' WHERE id = CAST(:id AS uuid)"),
+                    {"id": str(doc["id"])},
+                )

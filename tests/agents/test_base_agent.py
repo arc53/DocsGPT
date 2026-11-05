@@ -217,6 +217,42 @@ class TestBaseAgentBuildMessages:
 
         agent._build_messages("System prompt", "query")
 
+    def test_scheduled_run_is_told_it_is_the_scheduled_run(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # A reminder firing on time used to answer "I can't send scheduled
+        # reminders": nothing told the model the turn was the schedule itself.
+        agent_base_params["endpoint"] = "schedule"
+        agent = ClassicAgent(**agent_base_params)
+
+        messages = agent._build_messages("System prompt", "Remind me: call Anil at 5pm")
+
+        system = messages[0]["content"]
+        assert system.startswith("System prompt")
+        assert "scheduled run" in system
+        assert "firing now" in system
+        # The task itself is left as the user's message, untouched.
+        assert messages[-1]["content"] == "Remind me: call Anil at 5pm"
+
+    def test_scheduled_run_note_needs_no_system_prompt(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # A workflow agent node may have no system prompt of its own.
+        agent_base_params["endpoint"] = "schedule"
+        agent = ClassicAgent(**agent_base_params)
+
+        system = agent._build_messages("", "check the chart")[0]["content"]
+
+        assert system.lstrip().startswith("This turn is a scheduled run")
+
+    def test_other_runs_get_no_scheduled_run_note(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        for endpoint in ("stream", "webhook", "headless"):
+            agent_base_params["endpoint"] = endpoint
+            agent = ClassicAgent(**agent_base_params)
+            assert agent._build_messages("System prompt", "q")[0]["content"] == "System prompt"
+
 
 @pytest.mark.unit
 class TestBaseAgentTools:

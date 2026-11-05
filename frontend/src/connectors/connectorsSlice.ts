@@ -7,6 +7,19 @@ import {
 import connectorsService from '../api/services/connectorsService';
 import type { Connection, ConnectorDefinition } from './types';
 
+/**
+ * A source a connection's sync just started. The server lists a synced
+ * source only once its first ingest has finished, so the connection drawer
+ * shows these meanwhile, as indexing.
+ */
+export type StartedSync = {
+  id: string;
+  name: string;
+  connectionId: string;
+  /** ISO time the sync was started. */
+  startedAt: string;
+};
+
 export type ConnectorsState = {
   /** False when the backend predates connectors (`/api/config`). */
   enabled: boolean;
@@ -16,11 +29,18 @@ export type ConnectorsState = {
   loaded: boolean;
   failed: boolean;
   /**
+   * A load has answered, listed or failed. Unlike `failed`, a reload
+   * doesn't clear it, so what waits for the first answer stays put.
+   */
+  settled?: boolean;
+  /**
    * The `loadConnectors` call started last. Loads overlap (several screens
    * refresh at once), and only its answer is applied: an older one could
    * hold connections from before a connect.
    */
   latestRequestId?: string | null;
+  /** Syncs started this session, newest last (see `StartedSync`). */
+  startedSyncs?: StartedSync[];
 };
 
 const initialState: ConnectorsState = {
@@ -30,7 +50,9 @@ const initialState: ConnectorsState = {
   loading: false,
   loaded: false,
   failed: false,
+  settled: false,
   latestRequestId: null,
+  startedSyncs: [],
 };
 
 /**
@@ -62,6 +84,24 @@ const connectorsSlice = createSlice({
     setConnectorsEnabled(state, action: PayloadAction<boolean>) {
       state.enabled = action.payload;
     },
+    /** Records the sources a sync started (one entry per source id). */
+    syncStarted(state, action: PayloadAction<StartedSync[]>) {
+      const ids = new Set(action.payload.map((sync) => sync.id));
+      state.startedSyncs = [
+        ...(state.startedSyncs ?? []).filter((sync) => !ids.has(sync.id)),
+        ...action.payload,
+      ];
+    },
+    /**
+     * Drops started syncs that no longer need showing: their source is
+     * listed, deleted, or its first ingest finished elsewhere.
+     */
+    syncForgotten(state, action: PayloadAction<string[]>) {
+      const ids = new Set(action.payload);
+      state.startedSyncs = (state.startedSyncs ?? []).filter(
+        (sync) => !ids.has(sync.id),
+      );
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -75,6 +115,7 @@ const connectorsSlice = createSlice({
         state.latestRequestId = null;
         state.loading = false;
         state.loaded = true;
+        state.settled = true;
         state.catalog = action.payload.catalog;
         state.connections = action.payload.connections;
       })
@@ -83,11 +124,13 @@ const connectorsSlice = createSlice({
         state.latestRequestId = null;
         state.loading = false;
         state.failed = true;
+        state.settled = true;
       });
   },
 });
 
-export const { setConnectorsEnabled } = connectorsSlice.actions;
+export const { setConnectorsEnabled, syncStarted, syncForgotten } =
+  connectorsSlice.actions;
 
 type RootLike = { connectors: ConnectorsState };
 
@@ -123,5 +166,13 @@ export const selectConnectorsLoaded = (state: RootLike) =>
   state.connectors.loaded;
 export const selectConnectorsFailed = (state: RootLike) =>
   state.connectors.failed;
+/** A load has answered, listed or failed (see `settled`). */
+export const selectConnectorsSettled = (state: RootLike) =>
+  state.connectors?.settled ?? false;
+
+const NO_STARTED_SYNCS: StartedSync[] = [];
+/** The syncs started this session (see `StartedSync`). */
+export const selectStartedSyncs = (state: RootLike) =>
+  state.connectors?.startedSyncs ?? NO_STARTED_SYNCS;
 
 export default connectorsSlice.reducer;

@@ -58,6 +58,7 @@ export type ChartPalette = {
   success: string;
   warning: string;
   destructive: string;
+  info: string;
   /** Grid lines and axis borders. */
   border: string;
   /** Tick labels and legend text. */
@@ -77,6 +78,7 @@ export function readChartPalette(): ChartPalette {
     success: readCssVar('--success', '#079455'),
     warning: readCssVar('--warning', '#ca8a04'),
     destructive: readCssVar('--destructive', '#ef4444'),
+    info: readCssVar('--info', '#2563eb'),
     border: readCssVar('--border', '#d9d9d9'),
     mutedForeground: readCssVar('--muted-foreground', '#6b6b6b'),
   };
@@ -129,6 +131,11 @@ const getOrCreateLegendList = (
     listContainer = document.createElement('ul');
     listContainer.style.display = 'flex';
     listContainer.style.flexDirection = 'row';
+    // Several long labels wrap as whole items onto the next line, kept at the
+    // end like a single row.
+    listContainer.style.flexWrap = 'wrap';
+    listContainer.style.justifyContent = 'flex-end';
+    listContainer.style.rowGap = '4px';
     listContainer.style.margin = '0';
     listContainer.style.padding = '0';
 
@@ -157,6 +164,8 @@ export const htmlLegendPlugin = {
       li.style.display = 'flex';
       li.style.flexDirection = 'row';
       li.style.marginLeft = '10px';
+      // A label never breaks inside itself ("Fully / answered").
+      li.style.whiteSpace = 'nowrap';
 
       li.onclick = () => {
         chart.setDatasetVisibility(

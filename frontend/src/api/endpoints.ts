@@ -3,6 +3,7 @@ const endpoints = {
     CONFIG: '/api/config',
     ME: '/api/user/me',
     QUOTA: '/api/user/quota',
+    PREFERENCES: '/api/user/preferences',
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',
@@ -72,10 +73,22 @@ const endpoints = {
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
     TOOL_ANALYTICS: '/api/get_tool_analytics',
     SCHEDULE_ANALYTICS: '/api/get_schedule_analytics',
+    CONVERSATION_INSIGHTS: '/api/get_conversation_insights',
+    DOCS_GAPS: '/api/get_docs_gaps',
+    TOPIC_FOLDERS: (agentId: string) =>
+      `/api/analytics/topic_folders?agent_id=${encodeURIComponent(agentId)}`,
+    AGENT_TOPICS: (agentId: string) =>
+      `/api/analytics/topics?agent_id=${encodeURIComponent(agentId)}`,
     LOGS: `/api/get_user_logs`,
     TRACES: (params: string) => `/api/traces?${params}`,
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
+    WEBSITE: (sourceId: string) =>
+      `/api/website?id=${encodeURIComponent(sourceId)}`,
+    WEBSITE_SAVE: '/api/website',
+    WEBSITE_PAGES: '/api/website/pages',
+    WEBSITE_REFRESH: '/api/website/refresh',
+    WEBSITE_REMOVE: '/api/website/remove',
     REINGEST_SOURCE: '/api/sources/reingest',
     SOURCE_FROM_ATTACHMENTS: '/api/sources/from_attachments',
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
@@ -212,6 +225,8 @@ const endpoints = {
     RESTORE_ARTIFACT: (artifactId: string) =>
       `/api/artifacts/${artifactId}/restore`,
     WORKFLOWS: '/api/workflows',
+    WORKFLOW_RUN_STEP: (workflowRunId: string, stepIndex: number) =>
+      `/api/workflow_runs/${encodeURIComponent(workflowRunId)}/steps/${stepIndex}`,
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
     CUSTOM_MODELS: '/api/user/models',
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,

@@ -209,6 +209,7 @@ class TestGetValidTokenInfo:
                 service.get_valid_token_info(cid)
         assert exc.value.status == "disconnected"
 
+    @pytest.mark.fresh_db
     def test_concurrent_refresh_spends_the_refresh_token_once(self, pg_engine):
         """Two workers with an expiring rotating token: one refresh, both succeed."""
         with pg_engine.begin() as conn:

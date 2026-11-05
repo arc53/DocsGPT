@@ -191,6 +191,36 @@ export function attachmentFailureReason(
   return typeof error === 'string' && error.trim() ? error.trim() : undefined;
 }
 
+// Worded here so the message follows the UI language; the worker's
+// ``error`` is English.
+const CAPPED_INGEST_MESSAGES: Record<string, string> = {
+  too_many_files: 'modals.uploadDoc.progress.tooManyFiles',
+  too_many_tokens: 'modals.uploadDoc.progress.tooManyTokens',
+};
+
+/**
+ * The message a ``source.ingest.failed`` event shows on its upload row.
+ *
+ * Args:
+ *   payload: The event's payload.
+ *
+ * Returns:
+ *   The translated cap message for a source over a size cap, else the
+ *   worker's ``error``, else a generic failure.
+ */
+export function ingestFailureMessage(payload: Record<string, unknown>): string {
+  const key =
+    typeof payload.reason === 'string'
+      ? CAPPED_INGEST_MESSAGES[payload.reason]
+      : undefined;
+  if (key && typeof payload.limit === 'number') {
+    return i18n.t(key, { limit: payload.limit.toLocaleString() });
+  }
+  return typeof payload.error === 'string'
+    ? payload.error
+    : i18n.t('modals.uploadDoc.progress.ingestionFailed');
+}
+
 /**
  * Apply one ``attachment.*`` event to its row. Shared by the live SSE path
  * and the replay of events that arrived before the row knew its id.
@@ -575,10 +605,7 @@ export const uploadSlice = createSlice({
           break;
         case 'source.ingest.failed':
           task.status = 'failed';
-          task.errorMessage =
-            typeof payload.error === 'string'
-              ? payload.error
-              : i18n.t('modals.uploadDoc.progress.ingestionFailed');
+          task.errorMessage = ingestFailureMessage(payload);
           if (!wasTerminal && !sourceWasDismissed) task.dismissed = false;
           break;
         default:

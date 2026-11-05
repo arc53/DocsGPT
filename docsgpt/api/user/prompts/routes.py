@@ -1,11 +1,13 @@
 """Prompt management routes."""
 
 
+from typing import Optional
+
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
-from docsgpt.api.pat.rules import filter_listing
+from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     delete_settings,
@@ -13,6 +15,7 @@ from docsgpt.api.user.resource_access import (
     require,
     settings_many,
 )
+from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
@@ -27,6 +30,25 @@ prompts_ns = Namespace(
 def _denied(err: AccessDenied):
     """JSON response for an :class:`AccessDenied` (403 or 404)."""
     return make_response(jsonify({"success": False, "message": err.message}), err.status)
+
+
+#: Longest ``preview`` a listed prompt carries.
+PREVIEW_LENGTH = 200
+
+#: The built-in prompts, listed by name; they have no row.
+PRESET_PROMPTS = ("default", "creative", "strict")
+
+
+def prompt_preview(content: Optional[str]) -> str:
+    """The start of a prompt's text for its card: whitespace collapsed, at most ``PREVIEW_LENGTH`` characters.
+
+    Args:
+        content: The prompt's text.
+
+    Returns:
+        str: The preview; empty for an empty prompt.
+    """
+    return " ".join((content or "").split())[:PREVIEW_LENGTH]
 
 
 def _iso(value):
@@ -87,11 +109,7 @@ class GetPrompts(Resource):
                 switches = settings_many(
                     conn, "prompt", [*owned_ids, *(str(p["id"]) for p in shared_prompts)]
                 )
-            list_prompts = [
-                {"id": "default", "name": "default", "type": "public"},
-                {"id": "creative", "name": "creative", "type": "public"},
-                {"id": "strict", "name": "strict", "type": "public"},
-            ]
+            list_prompts = [{"id": name, "name": name, "type": "public"} for name in PRESET_PROMPTS]
             for prompt in prompts:
                 pid = str(prompt["id"])
                 list_prompts.append(
@@ -99,6 +117,7 @@ class GetPrompts(Resource):
                         "id": pid,
                         "name": prompt["name"],
                         "type": "private",
+                        "preview": prompt_preview(prompt.get("content")),
                         "updated_at": _iso(prompt.get("updated_at")),
                         **payload_for("prompt", "owner", switches.get(pid)),
                     }
@@ -111,15 +130,22 @@ class GetPrompts(Resource):
                         "name": prompt["name"],
                         "type": "team",
                         "team_access": team_shared.get(pid),
+                        "preview": prompt_preview(prompt.get("content")),
                         "updated_at": _iso(prompt.get("updated_at")),
                         **payload_for("prompt", team_shared.get(pid), switches.get(pid)),
                     }
                 )
+            # Presets (default/creative/strict) have no row id and stay visible to a restricted token.
+            list_prompts = filter_listing(request, "prompts", list_prompts)
+            with db_readonly() as conn:
+                attach_used_by(
+                    conn, user, "prompt", list_prompts,
+                    deletable_ids=deletable_ids_of(list_prompts), agent_allowlist=used_by_agent_allowlist(request),
+                )
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompts: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        # Presets (default/creative/strict) have no row id and stay visible to a restricted token.
-        return make_response(jsonify(filter_listing(request, "prompts", list_prompts)), 200)
+        return make_response(jsonify(list_prompts), 200)
 
 
 @prompts_ns.route("/get_single_prompt")

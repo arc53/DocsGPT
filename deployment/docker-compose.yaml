@@ -95,10 +95,13 @@ services:
     # the read_document await never resolves; without `embeddings` every search
     # fails after EMBEDDINGS_DELEGATE_TIMEOUT, because EMBEDDINGS_DELEGATE_TO_WORKER
     # is on by default. Without `ingest` no upload, sync or remote ingest ever runs.
-    # For heavy/OCR parsing run a separate worker with `-Q parsing`; to keep query
-    # latency off the ingest pool, another with `-Q embeddings`; to keep long
-    # ingests from holding the slots beat tasks need, another with `-Q ingest`.
-    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest
+    # `analytics` carries the conversation-analytics sweep (idle unless
+    # DECISION_ANALYTICS_ENABLED); on a 1-CPU host, see "The analytics queue" in
+    # docs/content/Deploying/Background-Jobs.mdx first. For heavy/OCR parsing run a
+    # separate worker with `-Q parsing`; to keep query latency off the ingest pool,
+    # another with `-Q embeddings`; to keep long ingests from holding the slots beat
+    # tasks need, another with `-Q ingest`.
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest,analytics
     env_file:
       - ../.env
     environment:

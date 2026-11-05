@@ -46,7 +46,8 @@ interface MCPServerModalProps {
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   server?: any;
-  onServerSaved: () => void;
+  /** Called with the saved server's tool id once it is saved. */
+  onServerSaved: (toolId?: string) => void;
 }
 
 /**
@@ -493,7 +494,7 @@ export default function MCPServerModal({
           success: true,
           message: result.message,
         });
-        onServerSaved();
+        onServerSaved(typeof result.id === 'string' ? result.id : undefined);
         setModalState('INACTIVE');
         resetForm();
       } else {

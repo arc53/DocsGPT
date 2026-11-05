@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from contextlib import nullcontext
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import Connection, text
@@ -41,7 +42,9 @@ from docsgpt.background.context import BackgroundContext, auto_resume_allowed
 from docsgpt.background.events import publish_conversation_continued
 from docsgpt.background.live_turn import LiveTurn
 from docsgpt.core.settings import settings
+from docsgpt.guardrails.config import context_window_limit_of
 from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.repositories.agents import agent_row_to_dict
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakesRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository, MessageUpdateOutcome
@@ -201,7 +204,7 @@ def _agent_config(conn: Connection, conversation: Dict[str, Any], model_id: Opti
         row = conn.execute(
             text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"), {"id": str(agent_id)}
         ).fetchone()
-        return row_to_dict(row) if row is not None else None
+        return agent_row_to_dict(row)
     return {
         "id": None,
         "user_id": conversation["user_id"],
@@ -216,8 +219,13 @@ def _agent_config(conn: Connection, conversation: Dict[str, Any], model_id: Opti
     }
 
 
-def _history(messages: List[Dict[str, Any]], model_id: Optional[str], user_id: str) -> List[Dict[str, Any]]:
-    """The conversation as a chat turn would replay it, trimmed to the model's window."""
+def _history(
+    messages: List[Dict[str, Any]],
+    model_id: Optional[str],
+    user_id: str,
+    context_window_limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """The conversation as a chat turn would replay it, trimmed to the model's window or the agent's limit."""
     from docsgpt.api.answer.services.compression.types import is_compression_summary_row
     from docsgpt.utils import limit_chat_history
 
@@ -235,11 +243,15 @@ def _history(messages: List[Dict[str, Any]], model_id: Optional[str], user_id: s
         if message.get("metadata"):
             entry["metadata"] = message["metadata"]
         history.append(entry)
-    return limit_chat_history(history, model_id=model_id, user_id=user_id)
+    return limit_chat_history(history, max_token_limit=context_window_limit, model_id=model_id, user_id=user_id)
 
 
 def _replay(
-    conversation: Dict[str, Any], messages: List[Dict[str, Any]], model_id: Optional[str], user_id: str
+    conversation: Dict[str, Any],
+    messages: List[Dict[str, Any]],
+    model_id: Optional[str],
+    user_id: str,
+    context_window_limit: Optional[int] = None,
 ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     """The compressed summary and the history a chat turn would replay.
 
@@ -253,6 +265,8 @@ def _replay(
         messages: Its messages, in order.
         model_id: The model the turn runs on.
         user_id: The conversation's owner.
+        context_window_limit: The agent's context limit, which the history
+            is trimmed to when set.
 
     Returns:
         ``(summary, history)``: ``summary`` is None when no usable point exists.
@@ -262,11 +276,11 @@ def _replay(
 
     metadata = conversation.get("compression_metadata") or {}
     if not (metadata.get("is_compressed") and latest_usable_compression_point(metadata.get("compression_points"))):
-        return None, _history(messages, model_id, user_id)
+        return None, _history(messages, model_id, user_id, context_window_limit)
     summary, recent = CompressionService(llm=None, model_id=model_id or "").get_compressed_context(
         {**conversation, "queries": messages}
     )
-    return summary or None, _history(recent, model_id, user_id)
+    return summary or None, _history(recent, model_id, user_id, context_window_limit)
 
 
 def _last_model(messages: List[Dict[str, Any]]) -> Optional[str]:
@@ -344,26 +358,33 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
     try:
         outcome = _run_turn(conversation, messages, wakes, message_id=message_id, live=live)
     except Exception as exc:
-        from docsgpt.quotas.service import QuotaExceededError
+        from docsgpt.core.run_budget import is_budget_exhausted
 
-        if isinstance(exc, QuotaExceededError):
-            logger.info("continuation in %s skipped: quota exhausted", conversation_id)
+        if is_budget_exhausted(exc):
+            outcome = live.partial_outcome() if live is not None else {}
+            outcome.update({"error_type": "TimeLimit", "error": "Stopped: time limit."})
         else:
-            logger.exception("continuation turn failed in %s", conversation_id)
-        if live is not None:
-            live.discard()
-        # The results stay deliverable: check_job or the user's next message takes them.
-        _settle(wakes, "failed", job_state="pending", error=str(exc)[:500])
-        return {"state": "failed", "error": type(exc).__name__}
+            from docsgpt.quotas.service import QuotaExceededError
+
+            if isinstance(exc, QuotaExceededError):
+                logger.info("continuation in %s skipped: quota exhausted", conversation_id)
+            else:
+                logger.exception("continuation turn failed in %s", conversation_id)
+            if live is not None:
+                live.discard()
+            # The results stay deliverable: check_job or the user's next message takes them.
+            _settle(wakes, "failed", job_state="pending", error=str(exc)[:500])
+            return {"state": "failed", "error": type(exc).__name__}
 
     answer = (outcome.get("answer") or "").strip()
-    stopped = bool(outcome.get("stopped"))
-    if not stopped and outcome.get("error_type") and not answer:
+    stopped = bool(outcome.get("stopped")) or (live is not None and live.stopped())
+    if not stopped and outcome.get("error_type") not in (None, "TimeLimit") and not answer:
         if live is not None:
             live.discard()
         _settle(wakes, "failed", job_state="pending", error=str(outcome.get("error") or "")[:500])
         return {"state": "failed", "error": outcome.get("error_type")}
-    if not stopped and wake.is_no_reply(answer):
+    deferred_or_failed = outcome.get("budget_deferred") or outcome.get("error_type")
+    if not stopped and not deferred_or_failed and wake.is_no_reply(answer):
         if live is not None:
             live.discard()
         _settle(wakes, "suppressed", job_state="suppressed")
@@ -383,7 +404,11 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
             _settle(wakes, "failed", job_state="pending", error="the continuation's message could not be saved")
             return {"state": "superseded_by_user" if saved is MessageUpdateOutcome.NOT_FOUND else "failed"}
     _link_turn(message_id, outcome)
-    _settle(wakes, "delivered", message_id=message_id)
+    if outcome.get("error_type") == "TimeLimit":
+        # A failed message is left out of replay, so the results stay deliverable to the user's next message.
+        _settle(wakes, "failed", job_state="pending", error="Stopped: time limit.")
+    else:
+        _settle(wakes, "delivered", message_id=message_id)
     publish_conversation_continued(user_id, conversation_id, message_id, wakes[0].get("source") or "job")
     if stopped:
         # The user ended this turn: nothing it started may carry it on.
@@ -394,9 +419,32 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
         except Exception:
             logger.exception("continuation %s: stopping its background jobs failed", message_id)
         return {"state": "stopped", "message_id": message_id, "events": len(wakes)}
+    if outcome.get("budget_deferred"):
+        try:
+            defer_round(conversation, message_id)
+        except Exception:
+            logger.exception("continuation %s: deferring the next round failed", message_id)
+        return {"state": "deferred", "message_id": message_id, "events": len(wakes)}
+    if outcome.get("error_type") == "TimeLimit":
+        # Wakes that arrived during the run are still owed a turn.
+        _schedule_rest(conversation_id)
+        return {"state": "failed", "message_id": message_id, "error": "TimeLimit"}
     _notify(conversation, wakes, answer)
     _schedule_rest(conversation_id)
     return {"state": "delivered", "message_id": message_id, "events": len(wakes)}
+
+
+def defer_round(conversation: Dict[str, Any], message_id: str) -> None:
+    """Queue one durable wake and use the normal deferral path after saving."""
+    with db_session() as conn:
+        ConversationWakesRepository(conn).enqueue(
+            user_id=str(conversation["user_id"]), conversation_id=str(conversation["id"]),
+            source="continuation", ref_id=message_id, title="Continue unfinished work",
+            body="The previous round saved its progress at its time budget. Continue the unfinished request. "
+                 "Use the saved results; do not repeat completed tool calls.",
+            payload=None, dedupe_key=f"round:{message_id}",
+        )
+    _defer(str(conversation["id"]), 0, "round budget reached")
 
 
 def _drop_pending(conversation_id: str) -> None:
@@ -456,7 +504,9 @@ def _run_turn(
     if agent_config is None:
         raise LookupError("the conversation's agent no longer exists")
     query = wake.render_events(wakes)
-    summary, history = _replay(conversation, messages, model_id, user_id)
+    summary, history = _replay(
+        conversation, messages, model_id, user_id, context_window_limit_of(agent_config.get("config"))
+    )
     agent_id = agent_config.get("id")
     background = BackgroundContext(
         user_id=str(user_id),
@@ -465,22 +515,32 @@ def _run_turn(
         agent_id=str(agent_id) if agent_id else None,
         continuation=True,
     )
-    return run_agent_headless(
-        agent_config,
-        query,
-        tool_allowlist=[],
-        model_id_override=model_id,
-        endpoint="continuation",
-        chat_history=history,
-        compressed_summary=summary,
-        conversation_id=str(conversation["id"]),
-        request_id=str(uuid.uuid4()),
-        trace_user_id=user_id,
-        message_id=message_id,
-        background=background,
-        on_event=live.event if live is not None else None,
-        should_stop=live.stopped if live is not None else None,
-    )
+    from docsgpt.core.run_budget import run_budget
+
+    # Workflow nodes can't defer mid-graph, so a workflow runs unbounded.
+    if (agent_config.get("agent_type") or "").strip() == "workflow":
+        budget = nullcontext()
+    else:
+        # A call in flight at the round deadline finishes; only the task's time limit cuts it.
+        save_by = settings.CONTINUATION_RUN_TIMEOUT - 30
+        budget = run_budget(min(570, save_by), hard=save_by)
+    with budget:
+        return run_agent_headless(
+            agent_config,
+            query,
+            tool_allowlist=[],
+            model_id_override=model_id,
+            endpoint="continuation",
+            chat_history=history,
+            compressed_summary=summary,
+            conversation_id=str(conversation["id"]),
+            request_id=str(uuid.uuid4()),
+            trace_user_id=user_id,
+            message_id=message_id,
+            background=background,
+            on_event=live.event if live is not None else None,
+            should_stop=live.stopped if live is not None else None,
+        )
 
 
 #: Characters of an event's detail the chat's event row shows.
@@ -601,7 +661,12 @@ def _append(
                 # The turn's Responses state (response id, reasoning) beside
                 # the wake: without it the user's next turn cannot chain onto
                 # this one and resends the whole history.
-                "metadata": {**_responses_metadata(outcome), **_wake_metadata(wakes)},
+                "status": "failed" if outcome.get("error_type") == "TimeLimit" else "complete",
+                "metadata": {
+                    **_responses_metadata(outcome), **_wake_metadata(wakes),
+                    **({"error": "Stopped: time limit.", "error_code": "time_limit"}
+                       if outcome.get("error_type") == "TimeLimit" else {}),
+                },
             },
         )
 
@@ -619,6 +684,7 @@ def _link_turn(message_id: str, outcome: Dict[str, Any]) -> None:
     try:
         with db_session() as conn:
             ToolCallAttemptsRepository(conn).attach_message(keys, message_id)
+            ConversationsRepository(conn).confirm_executed_tool_calls(message_id)
             repo = BackgroundJobsRepository(conn)
             for job_id in job_ids:
                 job = repo.get(job_id)

@@ -17,6 +17,9 @@ from docsgpt.storage.db.repositories.conversation_unread import ConversationUnre
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 from docsgpt.storage.db.repositories.push_subscriptions import PushSubscriptionsRepository
 
+
+pytestmark = pytest.mark.fresh_db
+
 CID = "11111111-1111-1111-1111-111111111111"
 
 

@@ -20,7 +20,6 @@ export default function SectionShell({
   width = 'default',
   header = true,
   title,
-  titleAction,
   children,
 }: {
   width?: keyof typeof WIDTH_CLASSES;
@@ -28,8 +27,6 @@ export default function SectionShell({
   header?: boolean;
   /** Replaces the section's own title (the new-agent form, which has no nav item). */
   title?: ReactNode;
-  /** A page-level control at the title row's end (the agent Overview's ⋯). */
-  titleAction?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -37,7 +34,7 @@ export default function SectionShell({
       <div className={cn('mx-auto w-full', WIDTH_CLASSES[width])}>
         {header ? (
           <>
-            <CurrentSectionHeader title={title} titleAction={titleAction} />
+            <CurrentSectionHeader title={title} />
             <div className="mt-8">{children}</div>
           </>
         ) : (

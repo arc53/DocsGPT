@@ -13,6 +13,8 @@ export const NO_EXPIRY = 0;
 export const EXPIRY_WARNING_DAYS = 7;
 /** Families `chat:run` acts on, so they may be restricted alongside it. */
 const CHAT_FAMILIES = ['agents', 'sources'];
+/** Scope families whose reads belong to an agent (a workflow run is its agent's). */
+const AGENT_OWNED_FAMILIES = ['runs', 'artifacts'];
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,6 +79,7 @@ export function eligibleFilterFamilies(
   const families = new Set(selected.map(scopeFamily));
   const chat = families.has('chat');
   if (chat) CHAT_FAMILIES.forEach((f) => families.add(f));
+  if (AGENT_OWNED_FAMILIES.some((f) => families.has(f))) families.add('agents');
   // Chat executes tools, which cannot be held to an allowlist, so the server
   // rejects a tools restriction on a token that also has chat:run.
   if (chat) families.delete('tools');

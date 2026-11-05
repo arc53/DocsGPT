@@ -15,6 +15,9 @@ from docsgpt.storage.db.repositories.schedule_runs import (
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 

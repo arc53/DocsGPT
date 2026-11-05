@@ -4,6 +4,8 @@
  * Kept free of React so the logic is unit-testable in isolation.
  */
 
+import { downloadBlob } from '../utils/browserUtils';
+
 export type ArtifactKind =
   | 'document'
   | 'spreadsheet'
@@ -342,17 +344,6 @@ export async function triggerResponseDownload(
     filenameFromContentDisposition(
       response.headers.get('Content-Disposition'),
     ) || fallbackName;
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  try {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  downloadBlob(await response.blob(), name);
   return true;
 }

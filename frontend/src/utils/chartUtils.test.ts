@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { hoverColor, readChartPalette, readCssVar } from './chartUtils';
+import {
+  hoverColor,
+  htmlLegendPlugin,
+  readChartPalette,
+  readCssVar,
+} from './chartUtils';
 
 const TOKENS = [
   '--chart-1',
@@ -74,5 +79,48 @@ describe('hoverColor', () => {
   it('keeps a non-hex colour as it is without color-mix', () => {
     vi.stubGlobal('CSS', { supports: () => false });
     expect(hoverColor('rgb(1, 2, 3)')).toBe('rgb(1, 2, 3)');
+  });
+});
+
+describe('htmlLegendPlugin', () => {
+  it('keeps each label on one line and wraps whole items', () => {
+    const host = document.createElement('div');
+    host.id = 'legend-test';
+    document.body.appendChild(host);
+    const chart = {
+      options: {
+        plugins: {
+          legend: {
+            labels: {
+              generateLabels: () => [
+                { text: 'Fully answered', fillStyle: 'green', datasetIndex: 0 },
+                {
+                  text: "Said it didn't know",
+                  fillStyle: 'red',
+                  datasetIndex: 1,
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    htmlLegendPlugin.afterUpdate(
+      chart as never,
+      {},
+      {
+        containerID: 'legend-test',
+      },
+    );
+    const list = host.querySelector('ul')!;
+    expect(list.style.flexWrap).toBe('wrap');
+    expect(list.style.justifyContent).toBe('flex-end');
+    const items = Array.from(list.querySelectorAll('li'));
+    expect(items.map((item) => item.style.whiteSpace)).toEqual([
+      'nowrap',
+      'nowrap',
+    ]);
+    expect(items[1].textContent).toBe("Said it didn't know");
+    host.remove();
   });
 });

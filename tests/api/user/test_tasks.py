@@ -96,8 +96,31 @@ class TestReingestSourceTask:
 
         result = reingest_source_task("source123", "user1")
 
-        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        mock_worker.assert_called_once_with(ANY, "source123", "user1", actor_id=None)
         assert result == {"status": "ok"}
+
+    @pytest.mark.unit
+    def test_a_busy_skip_does_not_stick_to_the_source_key(self, pg_conn):
+        """The route keys every reingest of a source alike; a busy skip must not replay for 24h."""
+        from docsgpt.api.user.tasks import reingest_source_task
+
+        outcomes = [{"status": "skipped", "reason": "busy"}, {"status": "completed"}]
+        runs = []
+
+        def _fake_worker(self, source_id, user, actor_id=None):
+            runs.append(source_id)
+            return outcomes[len(runs) - 1]
+
+        key = "reingest-source:user1:source123"
+        with _patch_decorator_db(pg_conn), patch(
+            "docsgpt.worker.reingest_source_worker", side_effect=_fake_worker,
+        ):
+            first = reingest_source_task("source123", "user1", idempotency_key=key)
+            second = reingest_source_task("source123", "user1", idempotency_key=key)
+
+        assert first == {"status": "skipped", "reason": "busy"}
+        assert second == {"status": "completed"}
+        assert len(runs) == 2
 
 
 class TestConvertSourceToWikiTask:
@@ -124,7 +147,7 @@ class TestExtractGraphTask:
 
         result = extract_graph("source123", "user1")
 
-        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        mock_worker.assert_called_once_with(ANY, "source123", "user1", chunk_ids=None, sync=False)
         assert result == {"nodes": 2, "edges": 1}
 
     @pytest.mark.unit
@@ -133,7 +156,7 @@ class TestExtractGraphTask:
 
         calls: list[str] = []
 
-        def _fake_worker(self, source_id, user):
+        def _fake_worker(self, source_id, user, chunk_ids=None, sync=False):
             calls.append(source_id)
             return {"nodes": 1, "edges": 0}
 
@@ -179,7 +202,7 @@ class TestSyncSourceTask:
 
         mock_sync.assert_called_once_with(
             ANY, {"data": 1}, "job1", "user1", "web", "daily", "classic", "doc1",
-            connection_id=None,
+            connection_id=None, actor_id=None, notify_skip=True,
         )
         assert result == {"status": "ok"}
 
@@ -191,6 +214,34 @@ class TestSyncSourceTask:
         sync_source({"data": 1}, "job1", "user1", "s3", "daily", "classic", "doc1", connection_id="c-1")
 
         assert mock_sync.call_args.kwargs["connection_id"] == "c-1"
+
+
+EDITOR = "editor-1"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("task_name, target, args, kwargs", [
+    ("website_pages", "docsgpt.worker.website_pages_worker", ("src", "u1", "add"),
+     {"urls": ["https://x.io/a"], "actor_id": EDITOR}),
+    ("website_pages", "docsgpt.worker.website_pages_worker", ("src", "u1", "refresh"),
+     {"file_path": "a.md", "url": "https://x.io/a"}),
+    ("website_pages", "docsgpt.worker.website_pages_worker", ("src", "u1", "remove"),
+     {"pages": [{"path": "a.md", "url": "https://x.io/a"}]}),
+    ("reingest_source_task", "docsgpt.worker.reingest_source_worker", ("src", "u1"), {"actor_id": EDITOR}),
+    ("sync_source", "docsgpt.api.user.tasks.sync", ({}, "Docs", "u1", "website", "never", "classic", "src"),
+     {"actor_id": EDITOR}),
+    ("ingest_connector_task", "docsgpt.worker.ingest_connector", ("job", "u1", "google_drive"),
+     {"actor_id": EDITOR}),
+    ("ingest_connector_task", "docsgpt.worker.ingest_connector", ("job", "u1", "google_drive"),
+     {"sync_frequency": "weekly"}),
+])
+def test_a_task_passes_its_keywords_to_the_worker(task_name, target, args, kwargs):
+    from docsgpt.api.user import tasks
+
+    with patch(target, return_value={"status": "ok"}) as run:
+        getattr(tasks, task_name).run(*args, **kwargs)
+
+    assert {key: run.call_args.kwargs[key] for key in kwargs} == kwargs
 
 
 class TestStoreAttachmentTask:
@@ -275,6 +326,7 @@ class TestIngestConnectorTask:
             config=None,
             idempotency_key=None,
             source_id=None,
+            actor_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -317,6 +369,7 @@ class TestIngestConnectorTask:
             config=None,
             idempotency_key=None,
             source_id=None,
+            actor_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -336,14 +389,16 @@ class TestSetupPeriodicTasks:
         assert names[:3] == ["schedule-syncs-daily", "schedule-syncs-weekly", "schedule-syncs-monthly"]
 
     @pytest.mark.unit
-    def test_registers_periodic_tasks(self):
+    def test_registers_periodic_tasks(self, monkeypatch):
         from docsgpt.api.user.tasks import setup_periodic_tasks
 
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_ANALYTICS_ENABLED", True)
+        monkeypatch.setattr("docsgpt.core.settings.settings.ANALYTICS_SWEEP_SECONDS", 300)
         sender = MagicMock()
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 20
+        assert sender.add_periodic_task.call_count == 25
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -387,17 +442,53 @@ class TestSetupPeriodicTasks:
         # schedule runs cleanup (24h)
         assert calls[14][0][0] == timedelta(hours=24)
         assert calls[14][1].get("name") == "cleanup-schedule-runs"
-        # sandbox session reaper (60s)
+        # SSE connection and Celery queue gauge (60s)
         assert calls[15][0][0] == timedelta(seconds=60)
-        assert calls[15][1].get("name") == "reap-sandbox-sessions"
+        assert calls[15][1].get("name") == "sse-connections-gauge"
+        # sandbox session reaper (60s)
+        assert calls[16][0][0] == timedelta(seconds=60)
+        assert calls[16][1].get("name") == "reap-sandbox-sessions"
         # stale workflow-run reaper (5m)
-        assert calls[16][0][0] == timedelta(seconds=300)
-        assert calls[16][1].get("name") == "reap-stale-workflow-runs"
+        assert calls[17][0][0] == timedelta(seconds=300)
+        assert calls[17][1].get("name") == "reap-stale-workflow-runs"
         # background jobs: lost leases and deadlines (60s), retention (24h)
-        assert calls[17][0][0] == timedelta(seconds=60)
-        assert calls[17][1].get("name") == "sweep-background-jobs"
-        assert calls[18][0][0] == timedelta(hours=24)
-        assert calls[18][1].get("name") == "cleanup-background-jobs"
+        assert calls[18][0][0] == timedelta(seconds=60)
+        assert calls[18][1].get("name") == "sweep-background-jobs"
+        assert calls[19][0][0] == timedelta(hours=24)
+        assert calls[19][1].get("name") == "cleanup-background-jobs"
+        assert calls[20][1].get("name") == "cleanup-trigger-hits"
+        # vectors of ingests that ended without a source (1h)
+        assert calls[21][0][0] == timedelta(hours=1)
+        assert calls[21][1].get("name") == "cleanup-orphaned-ingests"
+        # conversation analytics: the sweep (5 min), retention (24h), the digest (weekly)
+        assert calls[22][0][0] == timedelta(seconds=300)
+        assert calls[22][1].get("name") == "analytics-sweep"
+        assert calls[23][0][0] == timedelta(hours=24)
+        assert calls[23][1].get("name") == "cleanup-conversation-labels"
+        assert calls[24][0][0] == timedelta(weeks=1)
+        assert calls[24][1].get("name") == "analytics-gap-digest"
+        # A sweep or digest a worker receives after its interval is dropped rather than run late, back to back.
+        assert calls[22][1].get("expires") == 300
+        assert calls[23][1].get("expires") == 24 * 3600
+        assert calls[24][1].get("expires") == 6 * 3600
+
+    @pytest.mark.unit
+    def test_the_analytics_queue_gets_nothing_while_analytics_is_off(self, monkeypatch):
+        """Redis keeps an expired message until a worker takes it, so a worker without the queue would pile them up.
+
+        Retention still runs: labels made while analytics was on must still be purged after it goes off.
+        """
+        from docsgpt.api.user.tasks import setup_periodic_tasks
+
+        monkeypatch.setattr("docsgpt.core.settings.settings.DECISION_ANALYTICS_ENABLED", False)
+        sender = MagicMock()
+        setup_periodic_tasks(sender)
+
+        names = [call.kwargs.get("name") for call in sender.add_periodic_task.call_args_list]
+        assert "analytics-sweep" not in names
+        assert "analytics-gap-digest" not in names
+        assert "cleanup-conversation-labels" in names
+        assert sender.add_periodic_task.call_count == 23
 
 
 class TestMcpOauthTask:
@@ -1153,6 +1244,8 @@ INGEST_LANE_TASKS = (
     "docsgpt.api.user.tasks.sync_connector_source",
     "docsgpt.api.user.tasks.extract_graph",
     "docsgpt.api.user.tasks.convert_source_to_wiki",
+    # Up to WEB_MAX_PAGES fetches of up to 30 seconds each.
+    "docsgpt.api.user.tasks.website_pages",
 )
 
 # Work a user or the scheduler is waiting on; it must never queue behind an ingest.
@@ -1311,3 +1404,15 @@ class TestReconciliationTaskShape:
         assert {k: v for k, v in result.items() if k != "skipped"} == (
             reconciliation.zero_summary()
         )
+
+
+class TestCleanupOrphanedIngests:
+    @pytest.mark.unit
+    def test_runs_the_sweep(self):
+        from docsgpt.api.user.tasks import cleanup_orphaned_ingests
+
+        with patch(
+            "docsgpt.api.user.ingest_orphans.sweep_orphaned_ingests", return_value={"orphans_deleted": 2},
+        ):
+            assert cleanup_orphaned_ingests.run() == {"orphans_deleted": 2}
+

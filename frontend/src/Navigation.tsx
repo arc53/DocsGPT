@@ -83,7 +83,6 @@ import {
   removeConversation,
   removeAllConversations,
   renameConversation,
-  setConversations,
   setConversationsLoading,
   setModalStateDeleteConv,
   setSelectedAgent,
@@ -294,7 +293,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       })
       .catch((error) => {
         console.error('Failed to fetch conversations: ', error);
-        dispatch(setConversations({ data: null, loading: false }));
+        dispatch(receiveConversations({ data: null, loading: false }));
       });
   }
 

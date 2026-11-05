@@ -39,7 +39,7 @@ describe('NodePalette', () => {
   it('renders each node type as a draggable button', () => {
     render();
     const buttons = container.querySelectorAll('button');
-    expect(buttons).toHaveLength(6);
+    expect(buttons).toHaveLength(7);
     buttons.forEach((button) => {
       expect(button.getAttribute('type')).toBe('button');
       expect(button.getAttribute('draggable')).toBe('true');

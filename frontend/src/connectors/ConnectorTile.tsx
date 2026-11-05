@@ -60,7 +60,7 @@ export default function ConnectorTile({
           {icon}
           <CardTitle
             as={onClick ? 'div' : titleAs}
-            className="min-w-0 truncate"
+            className="line-clamp-2 min-w-0 wrap-anywhere"
             title={title}
           >
             {title}

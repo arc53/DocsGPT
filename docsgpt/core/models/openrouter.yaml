@@ -10,6 +10,7 @@ models:
     description: Free-tier 480B MoE coder model with strong agentic tool use; rate-limited
     context_window: 262000
     attachments: []
+    supports_structured_output: false
     input_cost_per_million: 0.0
     output_cost_per_million: 0.0
 

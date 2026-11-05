@@ -75,7 +75,7 @@ class VllmBackend(RemoteBackend):
         from docsgpt.core.settings import settings
 
         budget = max(0.0, deadline - start)
-        out: list[Outcome | str] = ["bad_item"] * len(requests)
+        out: list[Outcome | str] = ["bad_item"] * len(requests)  # kept only by a state that does not render
         encoded: dict[int, tuple[list[int], list[list[int]], bool]] = {}
         jobs = []
         submitted = self._clock()
@@ -105,12 +105,16 @@ class VllmBackend(RemoteBackend):
 
     def _complete(self, body: dict, labels: list[int], lane: Lane, deadline: float,
                   budget: float) -> tuple[list[float], float, float] | str:
-        """One completion: the labels' log-probabilities, with its start and end, or the reason it has none."""
+        """One completion: the labels' log-probabilities, with its start and end, or the reason it has none.
+
+        A refusal (an HTTP 4xx) says nothing of whether the item was at fault, and a reply that leaves label tokens
+        out is a server not configured for the model: both are ``backend_error``, as in ``RemoteBackend``.
+        """
         began = self._clock()
         reply = self._send("POST", "/v1/completions", body, lane=lane, deadline=deadline, budget=budget,
                            check=lambda data: isinstance(data["choices"][0]["logprobs"]["top_logprobs"][0], dict))
         if reply.data is None:
-            return "bad_item" if reply.reason == "rejected" else reply.reason
+            return "backend_error" if reply.reason == "rejected" else reply.reason
         top = reply.data["choices"][0]["logprobs"]["top_logprobs"][0]
         by_id = {}
         for token, logprob in top.items():
@@ -120,7 +124,7 @@ class VllmBackend(RemoteBackend):
         if any(t not in by_id for t in labels):
             self._log_once("labels", logging.WARNING, "vLLM left label tokens out of its reply: serve the decision "
                            "model with --logprobs-mode processed_logprobs and --max-logprobs 16")
-            return "bad_item"
+            return "backend_error"
         return [by_id[t] for t in labels], began, self._clock()
 
     def _outcome(self, request: Request, by_key: dict[str, Any], truncated: bool, input_tokens: int,

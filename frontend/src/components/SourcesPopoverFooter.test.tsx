@@ -58,7 +58,7 @@ describe('SourcesPopoverFooter', () => {
     const [link] = Array.from(links);
     expect(link.getAttribute('href')).toBe('/settings/knowledge');
     expect(link.dataset.slot).toBe('button');
-    expect(link.className).toContain('text-primary');
+    expect(link.className).toContain('text-link');
     expect(link.className).toContain('text-sm');
   });
 

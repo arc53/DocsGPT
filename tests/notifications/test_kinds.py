@@ -20,7 +20,9 @@ class TestHeading:
             ("monitor_expired", "Monitor expired"),
             ("trigger", "Webhook received"),
             ("approval", "Approval received"),
+            ("continuation", "Conversation continued"),
             ("schedule", "Scheduled task finished"),
+            ("docs_gaps", "Weekly docs-gap summary"),
         ],
     )
     def test_known_kinds(self, kind, heading):

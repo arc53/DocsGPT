@@ -33,7 +33,7 @@ from docsgpt import decisions
 from docsgpt.core.settings import settings
 from docsgpt.decisions import Budget, Q, Request, states, tokens, usage
 from docsgpt.decisions.features import INJECTION_LAZY
-from docsgpt.decisions.types import ModelInfo
+from docsgpt.decisions.types import BACKEND_REASONS, ModelInfo
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,12 @@ QUESTIONS = {"injection": Q.INJECTION}
 LAZY_MAX_TEXTS = 16
 #: Why a text was not scored because the caller's ``live`` limit was reached.
 DEFERRED = "deferred"
+#: Why the model could not answer one text, which asking again would not change: the text does not render, or the
+#: backend failed on it (``backend_error``: its pass raised, or a server refused it). Neither stops the other texts,
+#: and neither is queued for background scoring.
+ITEM_FAILURES = frozenset({"bad_item", "backend_error"})
+#: Why the model could not answer at all: the rest of the windows are not sent.
+DOWN = BACKEND_REASONS - ITEM_FAILURES
 
 
 @dataclass(frozen=True)
@@ -128,7 +134,8 @@ def windows(text: str, max_windows: Optional[int] = None) -> tuple[list[str], in
 
     The order is the last window, the first, then the rest from the end backwards. Windows are counted in model
     tokens; before the tokenizer has loaded they are counted in characters, one per token at worst, which gives
-    more and shorter windows and still reads every part of the text.
+    more and shorter windows and still reads every part of the text. Either way the windows hold the text as
+    ``tokens.clean`` leaves it: a lone surrogate, which the tokenizer refuses, is read as U+FFFD.
 
     Args:
         text: The text to score.
@@ -139,6 +146,7 @@ def windows(text: str, max_windows: Optional[int] = None) -> tuple[list[str], in
     """
     if max_windows is None:
         max_windows = settings.GUARDRAILS_INJECTION_MAX_WINDOWS
+    text = tokens.clean(text)
     ids = tokens.encode(text)
     units: Any = ids if ids is not None else text
     starts = [0]
@@ -198,7 +206,8 @@ def score(texts: Sequence[str], *, feature: str, budget: Budget, max_windows: Op
 
     In the hot lane the windows go out in calls of at most ``DECISION_MAX_BATCH_STATES`` within ``budget``; in the
     background lane in calls of at most ``GUARDRAILS_INJECTION_BATCH_STATES``, each with ``budget``. A call whose
-    status is ``unavailable`` stops the rest. Cache hits are counted in ``decision_usage`` under status
+    status is ``unavailable`` for a reason in ``DOWN`` stops the rest; one the backend failed on item by item
+    (``backend_error``) does not. Cache hits are counted in ``decision_usage`` under status
     ``cached``, so checked texts per feature need no table of their own.
 
     Args:
@@ -256,7 +265,12 @@ def score(texts: Sequence[str], *, feature: str, budget: Budget, max_windows: Op
     plan = []  # (text index, window) in the order the windows are sent
     totals: List[Optional[int]] = [None] * n
     for i in todo:
-        pieces, totals[i] = windows(texts[i], cap)
+        try:
+            pieces, totals[i] = windows(texts[i], cap)
+        except Exception:  # noqa: BLE001 - a text the tokenizer fails on is that text's failure, not the call's
+            logger.warning("Could not window a text for injection scoring", exc_info=True)
+            reasons[i] = "bad_item"
+            continue
         plan.extend((i, piece) for piece in pieces)
     answers, why, ms = _ask(plan, feature, budget)
     model = next((d.model for d in answers if d is not None), None)
@@ -265,6 +279,8 @@ def score(texts: Sequence[str], *, feature: str, budget: Budget, max_windows: Op
         sent.setdefault(owner, []).append(k)
     rows = []
     for i in todo:
+        if i not in sent:  # never windowed
+            continue
         mine = sent[i]
         answered = [answers[k] for k in mine if answers[k] is not None]
         reasons[i] = next((why[k] for k in mine if why[k]), None)
@@ -303,11 +319,11 @@ def _ask(plan: List[tuple], feature: str, budget: Budget) -> tuple[list, list, f
         )
         for k, decision, reason in zip(part, batch, batch.reasons):
             answers[k], why[k] = decision, reason
-        if batch.status == "unavailable":
+        down = next((r for r in batch.reasons if r in DOWN), None) if batch.status == "unavailable" else None
+        if down is not None:
             # The backend is down or loading: asking again item by item would only wait on it.
-            reason = next((r for r in batch.reasons if r), "unavailable")
             for k in range(part.stop, len(plan)):
-                why[k] = reason
+                why[k] = down
             break
     return answers, why, (time.monotonic() - started) * 1000
 

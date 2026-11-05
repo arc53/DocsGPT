@@ -974,3 +974,122 @@ class TestBaseGetChunkByKey:
     def test_a_blank_excerpt_matches_nothing(self):
         store = _ChunkListStore([{"doc_id": "1", "text": "x", "metadata": {}}])
         assert store.get_chunk_by_key("0" * 32, excerpt="   ") is None
+
+
+@pytest.mark.unit
+class TestBaseChunksBySourcePath:
+    """Listing and deleting a page's chunks by ``metadata.source``."""
+
+    def _store(self):
+        return _ChunkListStore([
+            {"doc_id": "1", "text": "a", "metadata": {"source": "https://x.io/a"}},
+            {"doc_id": "2", "text": "b", "metadata": {"source": "https://x.io/b"}},
+            {"doc_id": "3", "text": "a2", "metadata": {"source": "https://x.io/a"}},
+        ])
+
+    def test_lists_the_ids_of_the_chunks_of_the_given_pages(self):
+        store = self._store()
+        assert store.chunk_ids_by_source_paths(["https://x.io/a"]) == ["1", "3"]
+        assert store.chunk_ids_by_source_paths(["https://x.io/a", "https://x.io/b"]) == ["1", "2", "3"]
+        assert store.chunk_ids_by_source_paths([]) == []
+
+    def test_delete_chunks_deletes_each_id_and_counts_the_deleted(self):
+        store = self._store()
+        store.delete_chunk = Mock(side_effect=lambda chunk_id: chunk_id != "3")
+        assert store.delete_chunks(["1", "3"]) == 1
+        assert [c.args[0] for c in store.delete_chunk.call_args_list] == ["1", "3"]
+
+    def test_delete_by_source_path_deletes_the_pages_chunks_in_one_call(self):
+        store = self._store()
+        store.delete_chunks = Mock(return_value=2)
+        assert store.delete_chunks_by_source_path("https://x.io/a") == 2
+        store.delete_chunks.assert_called_once_with(["1", "3"])
+        assert store.delete_chunks_by_source_path("https://x.io/gone") == 0
+        store.delete_chunks.assert_called_once()
+
+    @pytest.mark.parametrize("call", [
+        lambda store: store.delete_chunks_by_source_path("https://x.io/a"),
+        lambda store: store.chunk_ids_by_source_paths(["https://x.io/a"]),
+        lambda store: store.chunk_ids_by_file_paths(["a.md"]),
+    ], ids=["delete_by_source_path", "ids_by_source_paths", "ids_by_file_paths"])
+    def test_a_failed_listing_is_an_error_not_a_silent_no_op(self, call):
+        # qdrant, milvus and mongodb read a store error in ``get_chunks`` as
+        # "no chunks"; a delete that trusted it would quietly do nothing.
+        class _Down(ConcreteVectorStore):
+            def get_chunks(self, *args, **kwargs):
+                return []
+
+            def _scan_chunks(self):
+                raise RuntimeError("down")
+
+        with pytest.raises(RuntimeError):
+            call(_Down())
+
+    def test_a_store_without_chunk_listing_cannot_delete_by_path(self):
+        with pytest.raises(NotImplementedError):
+            ConcreteVectorStore().delete_chunks_by_source_path("https://x.io/a")
+
+    def test_lists_a_legacy_pages_chunks_by_their_tree_path(self):
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "a", "metadata": {"source": "https://x.io/a", "file_path": "a.md"}},
+            {"doc_id": "2", "text": "b", "metadata": {"source": "https://x.io/b", "file_path": "b.md"}},
+        ])
+        assert store.chunk_ids_by_file_paths(["a.md"]) == ["1"]
+        assert store.chunk_ids_by_file_paths([]) == []
+
+    def test_an_older_chunk_without_a_path_is_found_by_its_key_or_title(self):
+        # An ingest before file_path named the tree entry by key, else title.
+        store = _ChunkListStore([
+            {"doc_id": "1", "text": "a", "metadata": {"source": "https://x.io/a", "key": "a-key"}},
+            {"doc_id": "2", "text": "b", "metadata": {"source": "https://x.io/b", "title": "Page B"}},
+            {"doc_id": "3", "text": "c", "metadata": {"file_path": "c.md", "title": "Page B"}},
+            {"doc_id": "4", "text": "d", "metadata": {"key": "d-key", "title": "a-key"}},
+        ])
+        assert store.chunk_ids_by_file_paths(["a-key", "Page B"]) == ["1", "2"]
+
+    def test_add_chunks_adds_each_in_order(self):
+        store = ConcreteVectorStore()
+        store.add_chunk = Mock(side_effect=["1", "2"])
+        assert store.add_chunks(["a", "b"], [{"source": "x"}, {"source": "y"}]) == ["1", "2"]
+        assert [c.args for c in store.add_chunk.call_args_list] == [("a", {"source": "x"}), ("b", {"source": "y"})]
+
+    def test_add_chunks_takes_the_added_ones_back_out_on_a_failure(self):
+        store = ConcreteVectorStore()
+        store.add_chunk = Mock(side_effect=["1", RuntimeError("embedding down")])
+        store.delete_chunks = Mock(return_value=1)
+        with pytest.raises(RuntimeError, match="embedding down"):
+            store.add_chunks(["a", "b"], [{}, {}])
+        store.delete_chunks.assert_called_once_with(["1"])
+
+    def test_add_chunks_reports_the_original_error_when_the_rollback_fails(self, caplog):
+        store = ConcreteVectorStore()
+        store.add_chunk = Mock(side_effect=["1", RuntimeError("embedding down")])
+        store.delete_chunks = Mock(return_value=0)
+        with pytest.raises(RuntimeError, match="embedding down"):
+            store.add_chunks(["a", "b"], [{}, {}])
+        assert "roll back" in caplog.text
+
+
+@pytest.mark.unit
+class TestSupportsChunkEdits:
+    def test_stores_with_the_chunk_methods_support_them(self):
+        from docsgpt.vectorstore.faiss import FaissStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
+
+        assert FaissStore.supports_chunk_edits()
+        assert PGVectorStore.supports_chunk_edits()
+
+    def test_elasticsearch_does_not(self):
+        # Its add_chunk, get_chunks and delete_chunk are the base no-ops.
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
+
+        assert not ElasticsearchStore.supports_chunk_edits()
+        assert not ConcreteVectorStore.supports_chunk_edits()
+
+    def test_the_creator_answers_by_store_name(self):
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        assert VectorCreator.supports_chunk_edits("faiss")
+        assert VectorCreator.supports_chunk_edits("PGVector")
+        assert not VectorCreator.supports_chunk_edits("elasticsearch")
+        assert not VectorCreator.supports_chunk_edits("nope")

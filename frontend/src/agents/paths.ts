@@ -87,6 +87,12 @@ export const agentEditPathFor = (
 export const agentLogsPath = (agentId: string | undefined): string =>
   `${AGENTS_MANAGE_ROOT}/logs/${agentId}`;
 
+export const agentAnalyticsPath = (agentId: string | undefined): string =>
+  `${AGENTS_MANAGE_ROOT}/analytics/${agentId}`;
+
+export const agentInsightsPath = (agentId: string | undefined): string =>
+  `${AGENTS_MANAGE_ROOT}/insights/${agentId}`;
+
 export const agentSchedulesPath = (agentId: string | undefined): string =>
   `${AGENTS_MANAGE_ROOT}/schedules/${agentId}`;
 
@@ -99,10 +105,11 @@ export const agentChatPath = (
 export const sharedAgentPath = (sharedToken: string | undefined): string =>
   `/agents/shared/${sharedToken}`;
 
-export type AgentScopedPage = 'overview' | 'logs' | 'schedules';
+export type AgentScopedPage =
+  'overview' | 'analytics' | 'logs' | 'insights' | 'schedules';
 
 const AGENT_SCOPED_ROUTE = new RegExp(
-  `^${AGENTS_MANAGE_ROOT}/(?:workflow/)?(edit|logs|schedules)/([^/]+)`,
+  `^${AGENTS_MANAGE_ROOT}/(?:workflow/)?(edit|analytics|logs|insights|schedules)/([^/]+)`,
 );
 
 /**

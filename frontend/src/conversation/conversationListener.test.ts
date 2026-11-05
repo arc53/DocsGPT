@@ -80,6 +80,7 @@ const makeStore = (
     chunks: '2',
     selectedDocs: [],
     sourceDocs: null,
+    sourceDocsFailed: false,
     conversations: { data: null, loading: false },
     token: 'tok-1',
     modalState: 'INACTIVE',
@@ -98,6 +99,9 @@ const makeStore = (
     sttAvailable: true,
     authRequired: false,
     attachmentBudgetShare: null,
+    analyticsEnabled: false,
+    analyticsMaxTopics: 15,
+    analyticsMaxOverlapping: 20,
   };
   const conversation: ConversationState = {
     queries: [],

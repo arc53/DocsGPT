@@ -76,3 +76,32 @@ export function uniqueLogs(pages: LogData[][]): LogData[] {
     return true;
   });
 }
+
+/**
+ * The steps of a workflow run that took more than one attempt, loop bodies
+ * included, in run order.
+ *
+ * Args:
+ *   steps: The run's persisted step logs (`workflow_runs.steps`).
+ *
+ * Returns:
+ *   Each such step's node id and how many attempts it took.
+ */
+export function retriedSteps(
+  steps: Record<string, unknown>[] | undefined,
+): { nodeId: string; attempts: number }[] {
+  return (steps ?? []).flatMap((step) => {
+    const attempts = Array.isArray(step.attempts) ? step.attempts.length : 0;
+    const own =
+      attempts > 1 ? [{ nodeId: String(step.node_id ?? ''), attempts }] : [];
+    const items = Array.isArray(step.items) ? step.items : [];
+    const body = items.flatMap((item) =>
+      retriedSteps(
+        Array.isArray(item?.steps)
+          ? (item.steps as Record<string, unknown>[])
+          : [],
+      ),
+    );
+    return [...own, ...body];
+  });
+}

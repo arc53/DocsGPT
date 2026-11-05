@@ -168,6 +168,7 @@ class ChunkingConfig(BaseModel):
     strategy: str = "classic_chunk"  # ChunkerCreator key
     max_tokens: int = 1250  # matches docsgpt/worker.py MAX_TOKENS
     min_tokens: int = 150  # matches docsgpt/worker.py MIN_TOKENS
+    chunk_overlap: int = 0  # Token overlap across adjacent chunks
     duplicate_headers: bool = False
 
     @field_validator("max_tokens")
@@ -178,6 +179,24 @@ class ChunkingConfig(BaseModel):
             raise ValueError("must be >= 1")
         if value > MAX_CHUNK_TOKENS:
             raise ValueError(f"must be <= {MAX_CHUNK_TOKENS}")
+        return value
+
+    @field_validator("chunk_overlap")
+    @classmethod
+    def _non_negative_chunk_overlap(cls, value: int) -> int:
+        """Validate that chunk_overlap is non-negative.
+
+        Args:
+            value: Number of overlapping tokens between chunks.
+
+        Returns:
+            The validated non-negative chunk_overlap value.
+
+        Raises:
+            ValueError: If value is negative.
+        """
+        if value < 0:
+            raise ValueError("chunk_overlap must be >= 0")
         return value
 
 
@@ -212,6 +231,7 @@ class RetrievalConfig(BaseModel):
     chunks: int = 6  # final top-k
     score_threshold: Optional[float] = None  # pgvector/mongo/qdrant/milvus honor it; others ignore
     rephrase_query: bool = True  # toggle ClassicRAG._rephrase_query side-call
+    show_links: bool = True  # synced sources: citations and the agent get each file's link in its service
     reranker: Optional[dict] = None  # None = relevance off; else RerankerConfig dict
     prescreen: Optional[dict] = None  # None = off; else PreScreenConfig dict (D12)
     graph: GraphRetrievalConfig = GraphRetrievalConfig()  # graphrag retriever only

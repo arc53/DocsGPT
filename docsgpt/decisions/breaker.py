@@ -2,8 +2,8 @@
 
 After ``failures`` consecutive transport failures (no connection, a timeout, a 5xx, a reply that is not the
 contract) the breaker opens and calls are skipped for ``cooldown`` seconds. Then one call is let through: its
-success closes the breaker, its failure opens it for another cooldown. An answer the server refuses for the item's
-sake (``bad_item``, a 4xx) proves the server is up and counts as a success.
+success closes the breaker, its failure opens it for another cooldown. Any other answer, a refusal included (a
+4xx, ``bad_item`` or ``backend_error`` for that item), proves the server is up and counts as a success.
 """
 
 from __future__ import annotations

@@ -35,7 +35,7 @@ on:
 permissions: {}
 
 env:
-  CLI_VERSION: v1.6.1
+  CLI_VERSION: v1.11.0
 
 concurrency:
   group: triage-${{ github.event.issue.number || github.event.pull_request.number || github.event.sha || github.event.workflow_run.head_sha || github.run_id }}

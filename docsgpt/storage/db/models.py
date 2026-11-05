@@ -22,6 +22,7 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     Column,
+    Computed,
     Date,
     DateTime,
     ForeignKey,
@@ -408,6 +409,10 @@ agents_table = Table(
     Column("chunks", Integer),
     Column("retriever", Text),
     Column("prompt_id", UUID(as_uuid=True), ForeignKey("prompts.id", ondelete="SET NULL")),
+    # A built-in preset with no ``prompts`` row (migration 0060). NULL with a
+    # NULL ``prompt_id`` is the default preset; AgentsRepository reads it back
+    # as ``prompt_id``.
+    Column("prompt_preset", Text),
     Column("tools", JSONB, nullable=False, server_default="[]"),
     Column("json_schema", JSONB),
     Column("models", JSONB),
@@ -417,6 +422,8 @@ agents_table = Table(
     # ``"<type>:<id>" -> user_id`` of the editor vouching for a referenced
     # resource the owner can't use (migration 0039, see resource_access.py).
     Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # Up to four questions a new chat with the agent offers (migration 0061).
+    Column("starters", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     Column("default_model_id", Text),
     Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
@@ -433,6 +440,8 @@ agents_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_used_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+    CheckConstraint("prompt_preset IN ('creative', 'strict')", name="agents_prompt_preset_chk"),
+    CheckConstraint("prompt_id IS NULL OR prompt_preset IS NULL", name="agents_prompt_preset_exclusive_chk"),
 )
 
 # Per-user uniqueness of the export/import slug. Mirrors the partial unique
@@ -445,6 +454,11 @@ Index(
     unique=True,
     postgresql_where=agents_table.c.slug.isnot(None),
 )
+
+# The Workspace ``used_by`` lookups (``tools ?| ids``, ``extra_source_ids && ids``).
+# Mirrors migration 0060.
+Index("agents_tools_gin_idx", agents_table.c.tools, postgresql_using="gin")
+Index("agents_extra_source_ids_gin_idx", agents_table.c.extra_source_ids, postgresql_using="gin")
 
 user_custom_models_table = Table(
     "user_custom_models",
@@ -949,6 +963,77 @@ Index(
 Index("ix_guardrail_events_message", guardrail_events_table.c.message_id)
 Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
 
+# What the decision model said about stored conversations: one row per
+# conversation, message (NULL: the conversation itself) and label, written by
+# the analytics sweep. Reaction rows sit on the answer reacted to and name the
+# reply they read; both sides cascade. No user text. Migration 0057.
+conversation_labels_table = Table(
+    "conversation_labels",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False,
+    ),
+    Column("message_id", UUID(as_uuid=True), ForeignKey("conversation_messages.id", ondelete="CASCADE")),
+    Column("reply_message_id", UUID(as_uuid=True), ForeignKey("conversation_messages.id", ondelete="CASCADE")),
+    Column("user_id", Text, nullable=False),
+    Column("agent_id", UUID(as_uuid=True)),
+    # turn | reaction | message | conversation
+    Column("level", Text, nullable=False),
+    # a question key (answer_status, ..., tag:<id>), a derived label or _error
+    Column("label", Text, nullable=False),
+    Column("top", Text),
+    Column("p_top", Float),
+    Column("probabilities", JSONB, nullable=False),
+    Column("derived", Boolean, nullable=False, server_default="false"),
+    Column("lang", Text),
+    Column("options_hash", Text),
+    Column("schema_hash", Text, nullable=False),
+    Column("model_version", Text, nullable=False),
+    Column("occurred_at", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # what the row's state was built from, as the sweep read it: the message's (or the conversation's latest)
+    # updated_at and a hash of its content; NULL on derived rows
+    Column("source_updated_at", DateTime(timezone=True)),
+    Column("source_hash", Text),
+    # a resolution still pending (generated): what the sweep's pending pass looks for
+    Column(
+        "pending",
+        Boolean,
+        Computed(
+            "CASE WHEN label = 'resolution' THEN COALESCE((probabilities->>'pending')::float8, 0) > 0"
+            " ELSE false END",
+            persisted=True,
+        ),
+        nullable=False,
+    ),
+)
+
+Index(
+    "conversation_labels_target_uidx",
+    conversation_labels_table.c.conversation_id,
+    func.coalesce(conversation_labels_table.c.message_id, text("'00000000-0000-0000-0000-000000000000'::uuid")),
+    conversation_labels_table.c.label,
+    unique=True,
+)
+Index(
+    "conversation_labels_agent_time_idx",
+    conversation_labels_table.c.agent_id,
+    conversation_labels_table.c.occurred_at,
+)
+Index(
+    "conversation_labels_user_time_idx",
+    conversation_labels_table.c.user_id,
+    conversation_labels_table.c.occurred_at,
+)
+Index("conversation_labels_message_idx", conversation_labels_table.c.message_id)
+Index("conversation_labels_reply_idx", conversation_labels_table.c.reply_message_id)
+Index(
+    "conversation_labels_resolution_idx",
+    conversation_labels_table.c.occurred_at,
+    postgresql_where=text("pending"),
+)
+
 # Calls to the decision model per day, feature, mode, model version and status:
 # counters only, the denominators of the guardrail journal. Each process
 # upserts increments once a minute. Migration 0053.
@@ -1058,6 +1143,11 @@ ingest_chunk_progress_table = Table(
     # Added in ``0008_ingest_progress_status``. The reconciler flips
     # this to 'stalled'; ``init_progress`` resets it to 'active'.
     Column("status", Text, nullable=False, server_default="active"),
+    # Added in ``0062_ingest_resume``: the chunk set's hash, the task to
+    # queue again after a restart, and how often the reconciler has.
+    Column("chunk_fingerprint", Text),
+    Column("dispatch", JSONB),
+    Column("resume_attempts", Integer, nullable=False, server_default="0"),
 )
 
 
@@ -1071,6 +1161,8 @@ workflows_table = Table(
     Column("current_graph_version", Integer, nullable=False, server_default="1"),
     # Same shape as ``agents.resource_sponsors``, for node tools and sources.
     Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # The retry policy nodes inherit unless they set their own; NULL means none.
+    Column("retry_defaults", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
@@ -1096,6 +1188,22 @@ workflow_nodes_table = Table(
         "id", "workflow_id", "graph_version",
         name="workflow_nodes_id_wf_ver_key",
     ),
+)
+
+# The Workspace ``used_by`` lookups of workflow agents, over the lower-case ids
+# the SQL function ``workflow_node_refs`` reads from an agent node's config.
+# Mirrors migration 0060.
+Index(
+    "workflow_nodes_tool_refs_gin_idx",
+    func.workflow_node_refs(workflow_nodes_table.c.config, text("'tools'")),
+    postgresql_using="gin",
+    postgresql_where=text("node_type = 'agent'"),
+)
+Index(
+    "workflow_nodes_source_refs_gin_idx",
+    func.workflow_node_refs(workflow_nodes_table.c.config, text("'sources'")),
+    postgresql_using="gin",
+    postgresql_where=text("node_type = 'agent'"),
 )
 
 workflow_edges_table = Table(
@@ -1457,7 +1565,8 @@ conversation_wakes_table = Table(
     Column("claimed_at", DateTime(timezone=True)),
     Column("delivered_at", DateTime(timezone=True)),
     CheckConstraint(
-        "source IN ('job', 'monitor', 'monitor_paused', 'monitor_expired', 'trigger', 'approval', 'lost')",
+        "source IN ('job', 'monitor', 'monitor_paused', 'monitor_expired', 'trigger', 'approval', 'lost', "
+        "'continuation')",
         name="conversation_wakes_source_chk",
     ),
     CheckConstraint(

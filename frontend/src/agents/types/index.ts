@@ -106,6 +106,8 @@ export type Agent = {
   name: string;
   slug?: string;
   description: string;
+  /** Up to four questions shown under the agent's card on a new chat. */
+  starters?: string[];
   image: string;
   source: string;
   sources?: string[];
@@ -185,10 +187,52 @@ export type GuardrailsConfig = {
   controls: GuardrailControl[];
 };
 
+/**
+ * One of the owner's topics. One that doesn't overlap is an option of the
+ * question each user message is sorted by, next to the agent's source
+ * folders; one that overlaps is checked on whole conversations, and several
+ * can apply. The id keeps an overlapping topic's history across renames.
+ */
+export type AnalyticsTopic = {
+  id: string;
+  name: string;
+  description: string;
+  overlap: boolean;
+};
+
+/** A folder of the agent's sources: a default topic that doesn't overlap. */
+export type TopicFolder = { name: string; description: string };
+
+/** `agents.config.analytics`: whether and how the agent's conversations are labelled. */
+export type AnalyticsConfig = {
+  enabled: boolean;
+  topics: AnalyticsTopic[];
+  /** Source folders left out of the topic question. */
+  hidden_folders: string[];
+  /** The owner's weekly in-app docs-gap notification. */
+  digest: boolean;
+};
+
 export type AgentConfig = {
   guardrails?: GuardrailsConfig;
   /** `tool_id:action` writes on the owner's accounts API-key callers may run. */
   api_write_allowlist?: string[];
+  analytics?: AnalyticsConfig;
+  /** While on, the agent's API key works only from `allowed_origins`. */
+  restrict_origins?: boolean;
+  /** Origins (`https://example.com`) that may call the agent with its key. */
+  allowed_origins?: string[];
+  /**
+   * Most tokens of history, documents and tool results one request fills,
+   * below the model's window; null or absent uses the whole window.
+   */
+  context_window_limit?: number | null;
+  /**
+   * Most tokens of earlier messages one request replays word for word;
+   * past it, older messages are summarized. Below `context_window_limit`;
+   * null or absent summarizes only near the window.
+   */
+  history_token_limit?: number | null;
 };
 
 export type GuardrailCheckInfo = {

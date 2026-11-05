@@ -10,6 +10,7 @@ vi.mock('@/hooks', () => ({ useMediaQuery: () => ({ isMobile: true }) }));
 import type { Agent } from '../../types';
 import {
   AGENTS_MANAGE_ROOT,
+  agentAnalyticsPath,
   agentEditPath,
   agentLogsPath,
   agentSchedulesPath,
@@ -61,14 +62,31 @@ describe('MobileBlocker', () => {
     expect(html).toContain('agents.workflow.mobileBlocker.title');
   });
 
-  // Logs and Schedules exist only once published, like the builder's tabs.
-  it('leaves the tab links off a draft', () => {
+  // The same tabs, in the same order, as the agent sidebar; Overview is
+  // this page, so it has no link.
+  it("links the agent's other pages in the sidebar's order", () => {
+    const html = render(workflow(), agentEditPath('wf1', true));
+    const hrefs = Array.from(html.matchAll(/<a[^>]*href="([^"]+)"/g))
+      .map(([, href]) => href)
+      .filter((href) => href !== AGENTS_MANAGE_ROOT);
+    expect(hrefs).toEqual([
+      agentSchedulesPath('wf1'),
+      agentAnalyticsPath('wf1'),
+      agentLogsPath('wf1'),
+    ]);
+    expect(html).toContain('lucide-chart-no-axes-column');
+  });
+
+  // A draft keeps Logs for its preview runs; Analytics and Schedules wait
+  // until it's published, like the builder's tabs.
+  it('links only Logs on a draft', () => {
     const html = render(
       workflow({ status: 'draft' }),
       agentEditPath('wf1', true),
     );
     expect(html).toContain('agents.card.draft');
-    expect(html).not.toContain(`href="${agentLogsPath('wf1')}"`);
+    expect(html).toContain(`href="${agentLogsPath('wf1')}"`);
+    expect(html).not.toContain(`href="${agentAnalyticsPath('wf1')}"`);
     expect(html).not.toContain(`href="${agentSchedulesPath('wf1')}"`);
   });
 
@@ -78,6 +96,7 @@ describe('MobileBlocker', () => {
       agentEditPath('wf1', true),
     );
     expect(html).toContain(`href="${agentLogsPath('wf1')}"`);
+    expect(html).toContain(`href="${agentAnalyticsPath('wf1')}"`);
     expect(html).not.toContain(`href="${agentSchedulesPath('wf1')}"`);
   });
 

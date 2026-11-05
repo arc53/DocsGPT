@@ -294,8 +294,9 @@ class TestLanes:
         release, inside = threading.Event(), threading.Event()
 
         def blocking(requests, lane, deadline):
-            inside.set()
-            release.wait(5)
+            if lane == "background":
+                inside.set()
+                release.wait(5)
             return [Outcome(answer(), 1, 0, False, 1) for _ in requests]
 
         backend.run = blocking

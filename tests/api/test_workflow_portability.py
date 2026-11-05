@@ -245,27 +245,109 @@ def test_plan_reports_workflow_block(pg_conn):
     assert other_plan["workflow"]["action"] == "create"
 
 
-def test_import_rejects_invalid_graph(pg_conn):
-    user = "u_wf_invalid"
-    doc = {
+def _unfinished_doc(slug="broken-flow", metadata=None):
+    """A file whose graph is well formed but not runnable: an agent node with no start or end."""
+    return {
         "apiVersion": "docsgpt.arc53.com/v1",
         "kind": "Agent",
-        "metadata": {"slug": "broken-flow"},
+        "metadata": metadata or {"slug": slug},
         "spec": {
             "name": "Broken Flow",
             "agent_type": "workflow",
-            "workflow": {
-                "name": "Broken",
-                # No start/end nodes — the API's validation gate must reject it.
-                "nodes": [{"id": "a", "type": "agent", "config": {}}],
-                "edges": [],
-            },
+            "workflow": {"name": "Broken", "nodes": [{"id": "a", "type": "agent", "config": {}}], "edges": []},
+        },
+    }
+
+
+def test_import_keeps_an_unfinished_graph_on_the_new_draft(pg_conn):
+    """An import creates a draft, which saves a graph checked for shape only, as the builder does."""
+    user = "u_wf_unfinished"
+    result = apply_import(pg_conn, user, _unfinished_doc())
+    assert result["action"] == "created" and result["status"] == "draft"
+    created = AgentsRepository(pg_conn).get(result["agent_id"], user)
+    nodes, _ = _graph(pg_conn, WorkflowsRepository(pg_conn).get(str(created["workflow_id"]), user))
+    assert [n["node_id"] for n in nodes] == ["a"]
+
+
+def test_an_unfinished_draft_round_trips(pg_conn):
+    """Exported and imported again, as a copy or over itself, a draft keeps its unfinished graph."""
+    user = "u_wf_unfinished_rt"
+    first = apply_import(pg_conn, user, _unfinished_doc())
+    agent = AgentsRepository(pg_conn).get(first["agent_id"], user)
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, user)))
+
+    copied = apply_import(pg_conn, "u_wf_unfinished_rt_other", doc)
+    assert copied["action"] == "created"
+    again = apply_import(pg_conn, user, doc)
+    assert again["action"] == "updated" and again["agent_id"] == first["agent_id"]
+    wf = WorkflowsRepository(pg_conn).get(str(agent["workflow_id"]), user)
+    assert wf["current_graph_version"] == 2
+
+
+@pytest.mark.parametrize("runs", ["published", "keyed draft", "public link"])
+def test_import_over_an_agent_that_runs_validates_in_full(pg_conn, runs):
+    user = "u_wf_invalid"
+    agent, wf = _seed_workflow_agent(pg_conn, user)
+    if runs == "keyed draft":
+        AgentsRepository(pg_conn).update(str(agent["id"]), user, {"status": "draft", "key": "k-1"})
+    elif runs == "public link":
+        AgentsRepository(pg_conn).update(str(agent["id"]), user, {"status": "draft", "shared": True})
+    with pytest.raises(AgentImportError, match="Workflow validation failed"):
+        apply_import(pg_conn, user, _unfinished_doc(metadata={"id": str(agent["id"])}))
+    assert WorkflowsRepository(pg_conn).get(str(wf["id"]), user)["current_graph_version"] == 1
+
+
+def test_import_into_a_draft_whose_workflow_a_published_agent_runs_validates_in_full(pg_conn):
+    """Legacy rows can link two agents to one workflow; the graph lands in the one both run."""
+    user = "u_wf_invalid_sibling"
+    _, wf = _seed_workflow_agent(pg_conn, user)
+    draft = AgentsRepository(pg_conn).create(
+        user, "Sibling", "draft", agent_type="workflow", workflow_id=str(wf["id"])
+    )
+    with pytest.raises(AgentImportError, match="Workflow validation failed"):
+        apply_import(pg_conn, user, _unfinished_doc(metadata={"id": str(draft["id"])}))
+    assert WorkflowsRepository(pg_conn).get(str(wf["id"]), user)["current_graph_version"] == 1
+
+
+def test_import_writes_the_next_version_holding_the_workflow_row_lock(pg_conn):
+    """Like a builder save, so an overlapping save can't write into the same version."""
+    from unittest.mock import patch
+
+    user = "u_wf_lock"
+    agent, wf = _seed_workflow_agent(pg_conn, user)
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, user)))
+    real = WorkflowsRepository.get_for_update
+    with patch.object(WorkflowsRepository, "get_for_update", autospec=True, side_effect=real) as locked:
+        apply_import(pg_conn, user, doc)
+    assert [c.args[1] for c in locked.call_args_list] == [str(wf["id"])]
+    assert WorkflowsRepository(pg_conn).get(str(wf["id"]), user)["current_graph_version"] == 2
+
+
+@pytest.mark.parametrize("kind", ["duplicate edge id", "object title"])
+def test_import_rejects_a_graph_the_store_cannot_write(pg_conn, kind):
+    user = "u_wf_malformed"
+    nodes = [
+        {"id": "s", "type": "start"},
+        {"id": "a", "type": "agent", "title": "A", "config": {}},
+        {"id": "e", "type": "end"},
+    ]
+    edges = [{"id": "e1", "source": "s", "target": "a"}, {"id": "e2", "source": "a", "target": "e"}]
+    if kind == "duplicate edge id":
+        edges[1]["id"] = "e1"
+    else:
+        nodes[1]["title"] = {"text": "A"}
+    doc = {
+        "apiVersion": "docsgpt.arc53.com/v1",
+        "kind": "Agent",
+        "metadata": {"slug": "malformed-flow"},
+        "spec": {
+            "name": "Malformed Flow",
+            "agent_type": "workflow",
+            "workflow": {"name": "Malformed", "nodes": nodes, "edges": edges},
         },
     }
     with pytest.raises(AgentImportError, match="Workflow validation failed"):
         apply_import(pg_conn, user, doc)
-    # Nothing half-imported.
-    assert AgentsRepository(pg_conn).list_for_user(user) == []
     assert WorkflowsRepository(pg_conn).list_for_user(user) == []
 
 
@@ -339,9 +421,13 @@ def test_import_route_rejects_invalid_graph_as_client_error(pg_conn):
         "  workflow:\n"
         "    name: Broken\n"
         "    nodes:\n"
-        "      - id: a\n"
-        "        type: agent\n"
-        "    edges: []\n"
+        "      - id: s\n"
+        "        type: start\n"
+        "      - id: e\n"
+        "        type: end\n"
+        "    edges:\n"
+        "      - {id: e1, source: s, target: e}\n"
+        "      - {id: e1, source: s, target: e}\n"
     )
     app = Flask(__name__)
     with patch(
@@ -533,3 +619,29 @@ def test_duplicate_source_names_warn_and_dedupe(pg_conn):
     agent_node = [n for n in graph_nodes if n["node_type"] == "agent"][0]
     # Collapsed onto the oldest match, and not stored twice.
     assert agent_node["config"]["sources"] == [str(older["id"])]
+
+
+def test_retry_defaults_travel_with_the_workflow(pg_conn):
+    owner = "u_wf_retry_owner"
+    agent, wf = _seed_workflow_agent(pg_conn, owner)
+    defaults = {"max_attempts": 3, "backoff_seconds": [2, 10], "on": ["transient"]}
+    WorkflowsRepository(pg_conn).update(str(wf["id"]), owner, {"retry_defaults": defaults})
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, owner)))
+    assert doc["spec"]["workflow"]["retry_defaults"] == defaults
+
+    importer = "u_wf_retry_importer"
+    result = apply_import(pg_conn, importer, doc, {})
+
+    created = AgentsRepository(pg_conn).get(result["agent_id"], importer)
+    wf_row = WorkflowsRepository(pg_conn).get(str(created["workflow_id"]), importer)
+    assert wf_row["retry_defaults"] == defaults
+
+
+def test_import_rejects_invalid_retry_defaults(pg_conn):
+    owner = "u_wf_retry_bad"
+    agent, _ = _seed_workflow_agent(pg_conn, owner)
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, owner)))
+    doc["spec"]["workflow"]["retry_defaults"] = {"max_attempts": 0}
+
+    with pytest.raises(AgentImportError, match="retry defaults"):
+        apply_import(pg_conn, "u_wf_retry_bad_importer", doc, {})

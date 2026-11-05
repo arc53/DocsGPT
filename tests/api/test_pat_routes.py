@@ -448,6 +448,33 @@ class TestCreateAgentTool:
         assert response.status_code == 400
         assert db.execute(text("SELECT count(*) FROM user_tools")).scalar() == 0
 
+    def test_the_refusal_names_the_operator_allowlist(self, client, db, monkeypatch):
+        from docsgpt.security.safe_url import UnsafeUserUrlError
+
+        def _refuse(url):
+            raise UnsafeUserUrlError("private")
+
+        monkeypatch.setattr(pat_routes, "validate_user_base_url", _refuse)
+        token, token_id = _new_token(client, scopes=["analytics:read"])
+        response = _make_tool(client, token, token_id, base_url="https://docs.intranet.example")
+        assert "SAFE_URL_ALLOWED_HOSTS" in json.loads(response.data)["message"]
+
+    def test_an_allowlisted_private_host_is_accepted(self, client, db, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.security import safe_url
+
+        monkeypatch.setattr(pat_routes, "validate_user_base_url", safe_url.validate_user_base_url)
+        monkeypatch.setattr(
+            "docsgpt.security.safe_url.socket.getaddrinfo",
+            lambda *a, **k: [(None, None, None, None, ("10.16.0.5", 0))],
+        )
+        token, token_id = _new_token(client, scopes=["analytics:read"])
+        assert _make_tool(client, token, token_id, base_url="https://docs.intranet.example").status_code == 400
+
+        monkeypatch.setattr(settings, "SAFE_URL_ALLOWED_HOSTS", ["docs.intranet.example"])
+        response = _make_tool(client, token, token_id, base_url="https://docs.intranet.example")
+        assert response.status_code == 201
+
     def test_creates_an_api_tool_with_the_token_sealed(self, client, db):
         token, token_id = _new_token(client, name="analyst", scopes=["analytics:read", "conversations:read"])
 
