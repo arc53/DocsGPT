@@ -4787,7 +4787,8 @@
         "reviewHint": "Acceptez ou refusez chaque modification dans la vue du prompt, puis enregistrez le prompt. Tous les agents qui l’utilisent reçoivent le texte enregistré.",
         "editsStale": "Aucune de mes modifications ne correspond plus au texte enregistré du prompt. Redemandez-le-moi et je partirai de ce texte."
       },
-      "formEdited": "Vous avez modifié {{fields}} dans le formulaire."
+      "formEdited": "Vous avez modifié {{fields}} dans le formulaire.",
+      "showInAgent": "Voir dans l’agent"
     },
     "topics": {
       "suggest": "Suggérer à partir des conversations",

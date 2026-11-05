@@ -4643,7 +4643,8 @@
         "reviewHint": "Übernimm oder verwirf jede Änderung in der Prompt-Ansicht und speichere dann den Prompt. Jeder Agent, der ihn verwendet, erhält den gespeicherten Text.",
         "editsStale": "Keine meiner Änderungen passt mehr zum gespeicherten Text des Prompts. Frag mich noch einmal, dann gehe ich von ihm aus."
       },
-      "formEdited": "Du hast {{fields}} im Formular geändert."
+      "formEdited": "Du hast {{fields}} im Formular geändert.",
+      "showInAgent": "Im Agenten zeigen"
     },
     "topics": {
       "suggest": "Aus Gesprächen vorschlagen",

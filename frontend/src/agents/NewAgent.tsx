@@ -1344,6 +1344,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           : proposal.notes;
     const review = promptReview.review;
     const reviewing = latest && written?.kind === 'edit' && review !== null;
+    // Fields it changed on the form behind the prompt view.
+    const showInAgent =
+      latest && promptViewOpen && (appliedFields(raw) ?? []).length > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          shape="pill"
+          onClick={() => {
+            leavePromptView();
+            scrollToDrafted();
+          }}
+        >
+          {t('drafter.agent.showInAgent')}
+        </Button>
+      ) : null;
     return (
       <ProposalSummary
         message={proposal.message}
@@ -1384,10 +1400,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               >
                 {t('drafter.prompt.discard')}
               </Button>
+              {showInAgent}
             </>
           ) : latest && nextOnProposal ? (
-            nextActions
-          ) : undefined
+            <>
+              {nextActions}
+              {showInAgent}
+            </>
+          ) : (
+            (showInAgent ?? undefined)
+          )
         }
       />
     );

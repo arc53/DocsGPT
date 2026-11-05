@@ -3397,6 +3397,28 @@ describe('NewAgent drafter', () => {
       expect(viewText().value).toBe('Words of p1');
     });
 
+    it('offers Show in agent when a turn changes the form behind the prompt view', async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      drafter.scripts = [
+        [proposal({ starters: ['Where is my deal?'] }), { type: 'end' }],
+        [
+          proposal({ starters: ['Where is my deal?', 'Rates?'] }),
+          { type: 'end' },
+        ],
+      ];
+      await ask('Add a starter');
+      const show = buttonByText('drafter.agent.showInAgent', panel()!)!;
+      expect(show).toBeDefined();
+      await act(async () => show.click());
+      expect(view()).toBeNull();
+      // On the form, nothing to show.
+      await ask('Another one');
+      expect(
+        buttonByText('drafter.agent.showInAgent', panel()!),
+      ).toBeUndefined();
+    });
+
     it('says so when none of the changes fit the saved text', async () => {
       await renderWithPrompt('p1');
       drafter.scripts = [
