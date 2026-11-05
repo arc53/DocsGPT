@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import type { RenderResult } from 'mermaid';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { ChevronDown } from 'lucide-react';
@@ -19,6 +20,28 @@ import { ToggleChip } from './ui/toggle-chip';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { ActionMenu } from './ui/dropdown-menu';
 import { MermaidRendererProps } from './types';
+
+/**
+ * Diagrams already drawn, by theme and source. Mermaid renders
+ * asynchronously, so a reopened chat showed each diagram's empty frame and
+ * then grew it; drawn from here it is there in the first paint. The oldest
+ * entry goes once the cache is full.
+ */
+const DRAWN_CACHE_SIZE = 32;
+const drawnDiagrams = new Map<
+  string,
+  Pick<RenderResult, 'svg' | 'bindFunctions'>
+>();
+
+function rememberDiagram(
+  key: string,
+  diagram: Pick<RenderResult, 'svg' | 'bindFunctions'>,
+): void {
+  drawnDiagrams.delete(key);
+  drawnDiagrams.set(key, diagram);
+  if (drawnDiagrams.size > DRAWN_CACHE_SIZE)
+    drawnDiagrams.delete(drawnDiagrams.keys().next().value as string);
+}
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   code,
@@ -92,8 +115,18 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const isCurrentlyLoading =
     isLoading !== undefined ? isLoading : status === 'loading';
 
-  useEffect(() => {
+  // A layout effect, so a diagram drawn before goes in ahead of the paint.
+  useLayoutEffect(() => {
     let cancelled = false;
+    const key = `${isDarkTheme ? 'dark' : 'light'}\n${code}`;
+    const drawn = drawnDiagrams.get(key);
+    const host = diagramRef.current;
+    if (!isCurrentlyLoading && code && drawn && host) {
+      setError(null);
+      host.innerHTML = drawn.svg;
+      drawn.bindFunctions?.(host);
+      return;
+    }
     const renderDiagram = async () => {
       if (!isCurrentlyLoading && code) {
         try {
@@ -107,6 +140,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             securityLevel: 'strict',
           });
           if (cancelled) return;
+          rememberDiagram(key, { svg, bindFunctions });
 
           const element = diagramRef.current;
           if (element) {
