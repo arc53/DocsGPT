@@ -4,7 +4,7 @@ pytest-cov>=4.1.0
 pytest-xdist>=3.5
 coverage>=7.4.0
 pytest-postgresql>=9.0.0
-psycopg[binary]>=3.1
+psycopg[binary]>=3.3.6
 cryptography>=46.0.0
 # jupyter_client (KernelSpecManager) for the sandbox kernelspec-resolution test.
 jupyter-client>=8.0
