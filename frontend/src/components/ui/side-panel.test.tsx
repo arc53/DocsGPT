@@ -207,6 +207,17 @@ describe('SidePanel variant="docked"', () => {
       expect(aside()!.textContent).toContain('renewal-note.md');
     });
 
+    it('keeps the content it last showed open, not what it first opened with', async () => {
+      await render(panel({ variant: 'docked' }));
+      await render(panel({ variant: 'docked' }, { title: 'later-note.md' }));
+      await render(
+        <SidePanel variant="docked" open={false} onOpenChange={() => {}}>
+          {null}
+        </SidePanel>,
+      );
+      expect(aside()!.textContent).toContain('later-note.md');
+    });
+
     it('fills itself once grown in, so a narrow host never clips it', async () => {
       const content = () =>
         aside()!

@@ -182,9 +182,13 @@ function SidePanel({
   if (open && !present) setPresent(true);
   const closing = present && !open;
   // A ref, not state: the content is a new element on most page renders,
-  // and state would render the panel twice each time to remember it.
+  // and state would render the panel twice each time to remember it. Kept
+  // after each open commit, so the closing render shows what was last on
+  // screen.
   const lastChildren = React.useRef(children);
-  if (open) lastChildren.current = children;
+  React.useLayoutEffect(() => {
+    if (open) lastChildren.current = children;
+  });
   // Settled once it has grown in. Only while it moves does the content keep
   // the compact width; at rest it fills the panel, which a host narrower
   // than compact (or the panel's own border) would otherwise clip.
