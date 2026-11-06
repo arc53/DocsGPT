@@ -13,13 +13,11 @@ export function resetDrafterConfigCache(): void {
 }
 
 /**
- * Whether an answer is worth keeping. `getDrafterConfig` answers a failed
- * read as `reason: 'disabled'`, the same as a server with the drafter off,
- * so that answer is never kept: a network blip mustn't hide the wand until
- * a reload. A server with the drafter off is asked again by the next form.
+ * Whether an answer is worth keeping. A failed read (`reason: 'unavailable'`)
+ * never is: a network blip mustn't hide the wand until a reload.
  */
 const keeps = (config: DrafterConfig): boolean =>
-  config.enabled || config.reason === 'no_model';
+  config.reason !== 'unavailable';
 
 /**
  * The drafter's config for a session token, read once per token and shared

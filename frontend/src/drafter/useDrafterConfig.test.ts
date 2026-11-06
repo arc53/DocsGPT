@@ -11,8 +11,9 @@ const ON = {
   reason: null,
 };
 const NO_MODEL = { enabled: false, model: null, reason: 'no_model' };
+const OFF = { enabled: false, model: null, reason: 'disabled' };
 // What getDrafterConfig gives back when the request fails.
-const UNREAD = { enabled: false, model: null, reason: 'disabled' };
+const UNREAD = { enabled: false, model: null, reason: 'unavailable' };
 
 afterEach(() => {
   resetDrafterConfigCache();
@@ -42,7 +43,14 @@ describe('loadDrafterConfig', () => {
     expect(await loadDrafterConfig('tok')).toEqual(ON);
   });
 
-  it('asks again after a read that may have failed', async () => {
+  it('keeps an answer that the drafter is off on the server', async () => {
+    getDrafterConfig.mockResolvedValue(OFF);
+    await loadDrafterConfig('tok');
+    await loadDrafterConfig('tok');
+    expect(getDrafterConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again after a read that failed', async () => {
     getDrafterConfig.mockResolvedValueOnce(UNREAD).mockResolvedValueOnce(ON);
     expect(await loadDrafterConfig('tok')).toEqual(UNREAD);
     expect(await loadDrafterConfig('tok')).toEqual(ON);
