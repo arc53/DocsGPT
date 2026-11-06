@@ -101,7 +101,8 @@ const drafter = vi.hoisted(() => ({
     model: { id: string; display_name: string } | null;
     reason: null;
   },
-  scripts: [] as unknown[][],
+  // A promise is a turn whose events land when it resolves.
+  scripts: [] as (unknown[] | Promise<unknown[]>)[],
   requests: [] as {
     recipe: string;
     messages: { role: string; content: string }[];
@@ -124,7 +125,7 @@ vi.mock('../drafter/drafterApi', async (importOriginal) => ({
     onEvent: (event: unknown) => void,
   ) => {
     drafter.requests.push(JSON.parse(JSON.stringify(request)));
-    (drafter.scripts.shift() ?? [{ type: 'end' }]).forEach(onEvent);
+    (await (drafter.scripts.shift() ?? [{ type: 'end' }])).forEach(onEvent);
   },
 }));
 
@@ -3620,6 +3621,89 @@ describe('NewAgent drafter', () => {
         id: 'p3',
         content: 'Formal, shorter.',
       });
+    });
+
+    it('opens a rewrite that lands after another prompt opened as a new prompt, leaving that one alone', async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        { id: 'p3', name: 'Formal', type: 'private', access: 'owner' },
+      ] as never[];
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      let land: (events: unknown[]) => void = () => undefined;
+      drafter.scripts = [
+        new Promise((resolve) => {
+          land = resolve;
+        }),
+      ];
+      await ask('Rewrite it');
+      expect(lastRequest().context.form.prompt_draft).toMatchObject({
+        id: 'p1',
+      });
+      // Back on the form, then another prompt opened before the turn ends.
+      await act(async () =>
+        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
+      );
+      await openFromRow('p3');
+      await act(async () =>
+        land([
+          proposal({
+            prompt: { kind: 'new', name: 'Rewrite', content: 'Rewritten.' },
+          }),
+          { type: 'end' },
+        ]),
+      );
+      // The rewrite opens as a prompt of its own; Formal is untouched.
+      expect(view()!.textContent).toContain('drafter.agent.prompt.newPrompt');
+      expect(viewText().value).toBe('Rewritten.');
+      await act(async () =>
+        buttonByText('drafter.agent.prompt.use', view()!)!.click(),
+      );
+      expect(mocks.updatePrompt).not.toHaveBeenCalled();
+      expect(mocks.createPrompt.mock.calls[0][0]).toEqual({
+        name: 'Rewrite',
+        content: 'Rewritten.',
+      });
+    });
+
+    it('keeps the unsaved text of another prompt opened before a rewrite lands', async () => {
+      mockState.preference.prompts = [
+        ...PROMPTS,
+        { id: 'p3', name: 'Formal', type: 'private', access: 'owner' },
+      ] as never[];
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      let land: (events: unknown[]) => void = () => undefined;
+      drafter.scripts = [
+        new Promise((resolve) => {
+          land = resolve;
+        }),
+      ];
+      await ask('Rewrite it');
+      await act(async () =>
+        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
+      );
+      await openFromRow('p3');
+      await act(async () => setNativeValue(viewText(), 'My formal text.'));
+      await act(async () =>
+        land([
+          proposal({
+            prompt: { kind: 'new', name: 'Rewrite', content: 'Rewritten.' },
+          }),
+          { type: 'end' },
+        ]),
+      );
+      // Formal stays open with what the user typed; the rewrite waits.
+      expect(
+        view()!.querySelector<HTMLInputElement>('input[type="text"]')!.value,
+      ).toBe('Formal');
+      expect(viewText().value).toBe('My formal text.');
+      await act(async () => save()!.click());
+      expect(mocks.updatePrompt.mock.calls[0][0]).toMatchObject({
+        id: 'p3',
+        content: 'My formal text.',
+      });
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.parked');
     });
 
     it('opens a prompt it wrote in a view of its own, never in a read-only one', async () => {

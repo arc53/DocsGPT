@@ -720,15 +720,37 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   /**
-   * Put a prompt the drafter wrote in the view: into the open one (a saved
-   * prompt opened from the picker keeps its name), or a new view, which
-   * updates the prompt this conversation already used while the agent
-   * still has it. A prompt the caller can only read is never written into
-   * (it has no Save): the new view takes its place. Each changed field is
-   * marked Drafted with undo.
+   * Which prompt the open view shows, so a turn's answer can tell it is
+   * still the one the turn read: the drafter's own (new, or the update of
+   * the prompt it used), a saved prompt, or one opening of a new prompt.
+   */
+  const promptViewIdentity = (): string | null => {
+    if (!promptDetail.target) return null;
+    if (promptOrigin === 'drafter') return 'drafter';
+    return promptDetail.target.kind === 'edit'
+      ? `edit:${promptDetail.target.prompt.id}`
+      : `new:${promptDetail.key}`;
+  };
+  // The prompt the running turn read (its prompt_draft): the open view's
+  // once loaded, else the drafter's own.
+  const sentPromptRef = useRef<string | null>('drafter');
+
+  /**
+   * Put a prompt the drafter wrote in the view: into the open one when it
+   * is still the prompt the turn read (a saved prompt opened from the
+   * picker keeps its name), or a new view, which updates the prompt this
+   * conversation already used while the agent still has it. A prompt the
+   * caller can only read is never written into (it has no Save): the new
+   * view takes its place. Another prompt opened since, with unsaved text,
+   * stays: the written one waits in the step. Each changed field is marked
+   * Drafted with undo.
    */
   const showWrittenPrompt = (written: PromptDraft) => {
-    if (promptViewOpen && !promptDetail.readOnly) {
+    if (
+      promptViewOpen &&
+      !promptDetail.readOnly &&
+      promptViewIdentity() === sentPromptRef.current
+    ) {
       const keepsName =
         promptOrigin === 'picker' && promptDetail.target?.kind === 'edit';
       if (!keepsName && written.name && written.name !== promptDetail.name) {
@@ -739,6 +761,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         promptDrafted.mark('content', promptDetail.content, written.content);
         setPromptContent(written.content);
       }
+      return;
+    }
+    if (promptViewOpen && promptOrigin === 'picker' && promptDetail.dirty) {
+      setPromptDraft(written);
       return;
     }
     const used = usedPromptRef.current;
@@ -1254,6 +1280,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     getContext: () => {
       // A new request ends an open review with the choices so far.
       promptReview.finish(promptDetail.content);
+      sentPromptRef.current =
+        promptViewOpen && promptDetail.status === 'ready'
+          ? promptViewIdentity()
+          : 'drafter';
       return agentDraftContext(
         agent.id || null,
         draftFormRef.current,
