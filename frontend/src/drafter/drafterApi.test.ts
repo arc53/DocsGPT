@@ -154,6 +154,25 @@ describe('drafterApi', () => {
     ]);
   });
 
+  it('ends a stream that broke off after its draft as a finished turn', async () => {
+    // The proposal or questions are the turn's answer, already applied: only `end` was lost.
+    const proposal = { type: 'proposal', proposal: { fields: {} } };
+    client.post.mockResolvedValueOnce(sseResponse([frame(proposal)]));
+    expect(await run()).toEqual([proposal, { type: 'end' }]);
+    const questions = { type: 'questions', questions: [] };
+    client.post.mockResolvedValueOnce(
+      sseResponse([
+        frame({ type: 'message', text: 'First:' }),
+        frame(questions),
+      ]),
+    );
+    expect(await run()).toEqual([
+      { type: 'message', text: 'First:' },
+      questions,
+      { type: 'end' },
+    ]);
+  });
+
   it('keeps the error a broken stream already sent, adding only the end', async () => {
     client.post.mockResolvedValueOnce(
       sseResponse([frame({ type: 'error', code: 'invalid_output' })]),

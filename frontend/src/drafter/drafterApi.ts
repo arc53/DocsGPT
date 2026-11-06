@@ -198,8 +198,9 @@ export async function cancelDrafterTurn(
 /**
  * Run one drafter turn: POST the whole history and hand each SSE event to
  * `onEvent`. It always ends with an `end` event, after a synthesized `error`
- * when the request was refused or the stream broke off without one. An abort
- * stops it quietly (no error, no end).
+ * when the request was refused or the stream broke off without one. A stream
+ * that broke off after its questions or proposal only lost its `end`: the turn
+ * answered, so it just ends. An abort stops it quietly (no error, no end).
  *
  * Args:
  *   request: The recipe, the history and the recipe's context.
@@ -218,10 +219,14 @@ export async function streamDrafter(
 ): Promise<void> {
   let finished = false;
   let failed = false;
+  // The turn's answer arrived: nothing but `end` comes after it.
+  let answered = false;
   const emit = (event: DrafterEvent) => {
     if (finished) return;
     if (event.type === 'end') finished = true;
     if (event.type === 'error') failed = true;
+    if (event.type === 'questions' || event.type === 'proposal')
+      answered = true;
     onEvent(event);
   };
   const fail = (code: DrafterErrorCode, message?: string) => {
@@ -280,8 +285,9 @@ export async function streamDrafter(
     if (signal.aborted) return;
   }
   if (signal.aborted) return;
-  // The stream broke off before its `end`.
+  // The stream broke off before its `end`. A turn that only said something
+  // fails: its words may have been the start of questions to come.
   if (finished) return;
-  if (failed) emit({ type: 'end' });
+  if (failed || answered) emit({ type: 'end' });
   else fail('model_error');
 }
