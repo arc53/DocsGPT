@@ -405,6 +405,14 @@ class TestValidate:
         proposal = _validate({"tools": ["owners-tool", TOOL_ID]}, form={"tools": ["owners-tool"]})
         assert proposal["fields"]["tools"] == ["owners-tool", TOOL_ID] and proposal["dropped"] == []
 
+    def test_the_attach_cap_counts_only_what_the_proposal_adds(self):
+        many = [f"src-{n}" for n in range(agent_recipe.MAX_REFS + 5)]
+        assert _validate({"sources": many}, form={"sources": many})["fields"] == {}
+        assert _validate({"sources": many[1:]}, form={"sources": many})["fields"] == {"sources": many[1:]}
+        ws = _ws(sources=[{"id": ref, "name": ref} for ref in many])
+        with pytest.raises(ProposalInvalid, match="at most"):
+            _validate({"sources": many}, ws=ws)
+
     def test_unknown_fields_never_reach_the_form(self):
         proposal = _validate({"name": "Help", "models": ["gpt"], "json_schema": {}})
         assert proposal["fields"] == {"name": "Help"}

@@ -70,7 +70,7 @@ NAME_MAX = 100
 DESCRIPTION_MAX = 500
 PROMPT_NAME_MAX = 100
 PROMPT_CONTENT_MAX = 20000
-#: Most sources and tools a proposal attaches.
+#: Most sources, and most tools, a proposal adds to those the form already has.
 MAX_REFS = 30
 #: Largest request or token limit a proposal sets.
 LIMIT_MAX = 1_000_000_000
@@ -679,9 +679,21 @@ PROPOSAL_SCHEMA: dict = {
 }
 
 
-def _refs(field_name: str, value: list, allowed: set[str], dropped: list[dict]) -> list[str]:
+def _refs(field_name: str, value: Any, allowed: set[str], current: list[str], dropped: list[dict]) -> list[str]:
+    """The drafted list of source or tool ids, each once, those the caller can't attach dropped as ``not_found``.
+
+    Args:
+        field_name: ``sources`` or ``tools``.
+        value: The model's list.
+        allowed: Ids the caller can attach, and those already on the form.
+        current: The form's ids: they don't count towards :data:`MAX_REFS`, which caps what the proposal adds.
+        dropped: Where dropped ids are listed.
+
+    Raises:
+        ProposalInvalid: The proposal adds more than :data:`MAX_REFS` ids.
+    """
     out: list[str] = []
-    for item in value:
+    for item in value if isinstance(value, list) else []:
         ref = str(item).strip()
         if not ref or ref in out:
             continue
@@ -689,8 +701,8 @@ def _refs(field_name: str, value: list, allowed: set[str], dropped: list[dict]) 
             dropped.append({"field": field_name, "id": ref[:_ID_CHARS], "reason": "not_found"})
             continue
         out.append(ref)
-    if len(out) > MAX_REFS:
-        raise ProposalInvalid([f"Attach at most {MAX_REFS} {field_name}."])
+    if len([ref for ref in out if ref not in current]) > MAX_REFS:
+        raise ProposalInvalid([f"Add at most {MAX_REFS} {field_name}."])
     return out
 
 
@@ -953,9 +965,10 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         fields["agent_type"] = raw_fields["agent_type"]
     if "sources" in raw_fields:
         fields["sources"] = _refs("sources", raw_fields["sources"], ws.ids("sources") | set(form["sources"]),
-                                  dropped)
+                                  form["sources"], dropped)
     if "tools" in raw_fields:
-        fields["tools"] = _refs("tools", raw_fields["tools"], ws.ids("tools") | set(form["tools"]), dropped)
+        fields["tools"] = _refs("tools", raw_fields["tools"], ws.ids("tools") | set(form["tools"]), form["tools"],
+                                dropped)
     if "starters" in raw_fields:
         try:
             fields["starters"] = normalize_starters(raw_fields["starters"])
