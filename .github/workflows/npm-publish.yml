@@ -45,8 +45,9 @@ jobs:
 
       - name: Bump version (docsgpt)
         id: version_docsgpt
+        env:
+          VERSION: ${{ github.event.inputs.version }}
         run: |
-          VERSION="${{ github.event.inputs.version }}"
           NEW_VER=$(npm version "${VERSION:-patch}" --no-git-tag-version)
           echo "version=${NEW_VER#v}" >> "$GITHUB_OUTPUT"
 
@@ -71,7 +72,9 @@ jobs:
         run: jq 'del(.targets)' package.json > _tmp.json && mv _tmp.json package.json
 
       - name: Bump version (docsgpt-react) to match docsgpt
-        run: npm version "${{ steps.version_docsgpt.outputs.version }}" --no-git-tag-version
+        env:
+          NEW_VERSION: ${{ steps.version_docsgpt.outputs.version }}
+        run: npm version "$NEW_VERSION" --no-git-tag-version
 
       - name: Clean dist before react build
         run: rm -rf dist
@@ -87,28 +90,32 @@ jobs:
       - name: Reset package.json and write final version
         run: |
           git checkout -- package.json
-          jq --arg v "${{ steps.version_docsgpt.outputs.version }}" '.version=$v' \
+          jq --arg v "$NEW_VERSION" '.version=$v' \
             package.json > _tmp.json && mv _tmp.json package.json
           npm install --package-lock-only
+        env:
+          NEW_VERSION: ${{ steps.version_docsgpt.outputs.version }}
 
       - name: Commit version bump and create PR
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          BRANCH="chore/bump-npm-v${{ steps.version_docsgpt.outputs.version }}"
+          BRANCH="chore/bump-npm-v${NEW_VERSION}"
           git checkout -b "$BRANCH"
           git add package.json package-lock.json
-          git commit -m "chore: bump npm libraries to v${{ steps.version_docsgpt.outputs.version }}"
+          git commit -m "chore: bump npm libraries to v${NEW_VERSION}"
           gh auth setup-git
           git push origin "$BRANCH"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.version_docsgpt.outputs.version }}
 
       - name: Create PR
         run: |
           gh pr create \
-            --title "chore: bump npm libraries to v${{ steps.version_docsgpt.outputs.version }}" \
+            --title "chore: bump npm libraries to v${NEW_VERSION}" \
             --body "Automated version bump after npm publish." \
             --base main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.version_docsgpt.outputs.version }}
