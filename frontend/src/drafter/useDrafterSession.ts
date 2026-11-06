@@ -12,6 +12,7 @@ import {
   type DrafterMessage,
   type DrafterQuestion,
   type DrafterRecipe,
+  newDrafterTurnId,
   streamDrafter,
 } from './drafterApi';
 
@@ -103,7 +104,8 @@ export function useDrafterSession({
   const pending = useRef<{ user: DrafterMessage; said: string[] } | null>(null);
   const userWords = useRef<string[]>([]);
   const controller = useRef<AbortController | null>(null);
-  // The running turn's server id (its `turn` event), until it ends.
+  // The running turn's id until it ends: the one the request sent, so a Stop
+  // before the `turn` event still reaches it, or the one that event carried.
   const turnId = useRef<string | null>(null);
   // The current attempt failed: its words are no answer, and Retry runs it again.
   const failed = useRef(false);
@@ -209,6 +211,8 @@ export function useDrafterSession({
     turn.said = [];
     const current = new AbortController();
     controller.current = current;
+    const id = newDrafterTurnId();
+    turnId.current = id;
     setStep('thinking');
     void streamDrafter(
       {
@@ -221,6 +225,7 @@ export function useDrafterSession({
         if (controller.current === current) handle(event);
       },
       current.signal,
+      id,
     ).finally(() => {
       if (controller.current === current) {
         controller.current = null;

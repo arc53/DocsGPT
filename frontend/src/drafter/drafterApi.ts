@@ -59,7 +59,8 @@ export type DrafterCounts = Partial<
 
 /**
  * One SSE frame of `POST /api/drafter/stream`. `turn` comes first, with the id
- * `cancelDrafterTurn` stops; a server that can't stop turns sends none.
+ * `cancelDrafterTurn` stops (the request's `turn_id` when the server took it);
+ * a server that can't stop turns sends none.
  */
 export type DrafterEvent =
   | { type: 'turn'; id: string }
@@ -164,13 +165,23 @@ export function parseDrafterEvent(data: string): DrafterEvent | null {
 }
 
 /**
+ * A new turn id in the form the server takes: 32 lowercase hex characters.
+ * `getRandomValues`, unlike `randomUUID`, also works over plain HTTP.
+ */
+export function newDrafterTurnId(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+/**
  * Stop a running turn on the server before its next model call. Aborting the
  * stream alone doesn't: the production server finishes a turn whose client
  * went away. Best-effort: a failure (the turn already ended, no Redis) is
  * ignored.
  *
  * Args:
- *   turnId: The id from the turn's `turn` event.
+ *   turnId: The id the request sent, or the one its `turn` event carried.
  *   token: The session token.
  */
 export async function cancelDrafterTurn(
@@ -195,12 +206,15 @@ export async function cancelDrafterTurn(
  *   token: The session token.
  *   onEvent: Called with every event, in order.
  *   signal: Stops the turn (the panel's Stop).
+ *   turnId: The turn's id (`newDrafterTurnId`), sent as `turn_id` so a Stop
+ *     before the `turn` event arrives still reaches it.
  */
 export async function streamDrafter(
   request: DrafterRequest,
   token: string | null,
   onEvent: (event: DrafterEvent) => void,
   signal: AbortSignal,
+  turnId?: string,
 ): Promise<void> {
   let finished = false;
   let failed = false;
@@ -219,7 +233,7 @@ export async function streamDrafter(
   try {
     response = await apiClient.post(
       endpoints.USER.DRAFTER_STREAM,
-      request,
+      turnId ? { ...request, turn_id: turnId } : request,
       token,
       {},
       signal,

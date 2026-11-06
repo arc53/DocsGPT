@@ -5,6 +5,7 @@ stopping a turn from another request.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -26,10 +27,13 @@ ASSISTANT_MESSAGE_CHARS = EVENT_CHARS
 #: The rate-limit scope in Redis (``monitors:<scope>:rate:<user>:<minute>``).
 RATE_SCOPE = "drafter"
 
-#: How long a turn's owner and stop request live in Redis: longer than any turn runs.
+#: How long a running turn's mark and a stop request live in Redis: longer than any turn runs.
 TURN_TTL_SECONDS = 30 * 60
-#: ``<prefix><turn id>`` holds the turn's owner; ``<prefix><turn id>:stop`` asks the turn to stop.
+#: ``<prefix><user>:<turn id>`` marks the user's running turn; ``<prefix><user>:<turn id>:stop`` asks it to
+#: stop. Both are keyed by the user, so a stop only ever reaches the caller's own turns.
 _TURN_PREFIX = "drafter:turn:"
+#: A turn id: 32 lowercase hex characters (a UUID's hex). The panel picks it and sends it with the turn.
+TURN_ID = re.compile(r"[0-9a-f]{32}")
 
 
 @dataclass
@@ -152,16 +156,25 @@ def _turn_store() -> Any:
     return _stop_redis()
 
 
-def start_turn(user_id: str) -> Optional[str]:
+def _turn_key(user_id: str, turn_id: str) -> str:
+    """The Redis key that marks the user's running turn; its stop request adds ``:stop``."""
+    return f"{_TURN_PREFIX}{user_id}:{turn_id}"
+
+
+def start_turn(user_id: str, requested: Any = None) -> Optional[str]:
     """Register a turn so another request can stop it (``POST /api/drafter/turns/<id>/cancel``).
 
     A turn only learns that its client went away when the server closes its
     response early. The production ASGI adapter drains the response first, so
     the panel stops a turn it gives up on (Stop, Start over, closing the panel)
-    through this id instead.
+    through this id instead. The panel picks the id and sends it with the turn,
+    so it can stop the turn before the ``turn`` event arrives; a stop stored
+    before the turn starts still stops it.
 
     Args:
         user_id: The turn's owner, the only caller who may stop it.
+        requested: The id the panel sent. One that isn't a turn id, or that
+            names a turn of the caller's still running, is replaced by a new one.
 
     Returns:
         The turn id, or None when Redis is unavailable (the turn then runs to its end).
@@ -169,65 +182,67 @@ def start_turn(user_id: str) -> Optional[str]:
     client = _turn_store()
     if client is None:
         return None
-    turn_id = uuid.uuid4().hex
+    turn_id = requested if isinstance(requested, str) and TURN_ID.fullmatch(requested) else uuid.uuid4().hex
     try:
-        client.set(f"{_TURN_PREFIX}{turn_id}", user_id, ex=TURN_TTL_SECONDS)
+        # nx: two running turns never share an id, so a stop for one never stops the other.
+        if not client.set(_turn_key(user_id, turn_id), "1", ex=TURN_TTL_SECONDS, nx=True):
+            turn_id = uuid.uuid4().hex
+            client.set(_turn_key(user_id, turn_id), "1", ex=TURN_TTL_SECONDS)
     except Exception:
         logger.warning("drafter: could not register a turn", exc_info=True)
         return None
     return turn_id
 
 
-def cancel_turn(user_id: str, turn_id: str) -> Optional[bool]:
-    """Ask the caller's running turn to stop before its next model call.
+def cancel_turn(user_id: str, turn_id: str) -> bool:
+    """Ask the caller's turn to stop before its next model call, whether it has started yet or not.
+
+    The stop is stored under the caller's name, so it reaches only a turn of
+    theirs with that id: one running now, or one that starts later (the panel
+    names its turn before the server has registered it). Another user's turn
+    with the same id is never touched.
 
     Args:
         user_id: The caller.
-        turn_id: The id the turn's ``turn`` event carried.
+        turn_id: The turn's id, checked against :data:`TURN_ID` by the route.
 
     Returns:
-        True when the request was stored, False when the caller has no such
-        turn (unknown, ended, or someone else's), None when Redis is unavailable.
+        True when the stop was stored, False when Redis is unavailable.
     """
     client = _turn_store()
     if client is None:
-        return None
-    key = f"{_TURN_PREFIX}{turn_id}"
+        return False
     try:
-        owner = client.get(key)
-        if owner is None:
-            return False
-        if (owner.decode() if isinstance(owner, bytes) else str(owner)) != user_id:
-            return False
-        client.set(f"{key}:stop", "1", ex=TURN_TTL_SECONDS)
+        client.set(f"{_turn_key(user_id, turn_id)}:stop", "1", ex=TURN_TTL_SECONDS)
     except Exception:
         logger.warning("drafter: could not store a turn stop", exc_info=True)
-        return None
+        return False
     return True
 
 
-def turn_cancelled(turn_id: Optional[str]) -> bool:
-    """Whether someone stopped the turn; False without an id or when Redis can't be read."""
+def turn_cancelled(user_id: str, turn_id: Optional[str]) -> bool:
+    """Whether the user stopped their turn; False without an id or when Redis can't be read."""
     if not turn_id:
         return False
     client = _turn_store()
     if client is None:
         return False
     try:
-        return bool(client.exists(f"{_TURN_PREFIX}{turn_id}:stop"))
+        return bool(client.exists(f"{_turn_key(user_id, turn_id)}:stop"))
     except Exception:
         return False
 
 
-def end_turn(turn_id: Optional[str]) -> None:
-    """Forget an ended turn's owner and stop request (best-effort; they expire anyway)."""
+def end_turn(user_id: str, turn_id: Optional[str]) -> None:
+    """Forget an ended turn's mark and stop request (best-effort; they expire anyway)."""
     if not turn_id:
         return
     client = _turn_store()
     if client is None:
         return
+    key = _turn_key(user_id, turn_id)
     try:
-        client.delete(f"{_TURN_PREFIX}{turn_id}", f"{_TURN_PREFIX}{turn_id}:stop")
+        client.delete(key, f"{key}:stop")
     except Exception:
         # The keys expire on their own; an ended turn only leaves them a while longer.
         logger.debug("drafter: could not forget an ended turn", exc_info=True)

@@ -13,6 +13,7 @@ vi.mock('react-redux', () => ({
 const stream = vi.hoisted(() => ({
   scripts: [] as (DrafterEvent[] | 'hold')[],
   requests: [] as DrafterRequest[],
+  turnIds: [] as (string | undefined)[],
   held: [] as { emit: (event: DrafterEvent) => void; done: () => void }[],
   cancelled: [] as [string, string | null][],
 }));
@@ -26,8 +27,10 @@ vi.mock('./drafterApi', async (importOriginal) => ({
     _token: string | null,
     onEvent: (event: DrafterEvent) => void,
     signal: AbortSignal,
+    turnId?: string,
   ) => {
     stream.requests.push(JSON.parse(JSON.stringify(request)));
+    stream.turnIds.push(turnId);
     const script = stream.scripts.shift() ?? [{ type: 'end' }];
     if (script !== 'hold') {
       script.forEach(onEvent);
@@ -70,6 +73,7 @@ describe('useDrafterSession', () => {
     await act(async () => root.unmount());
     stream.scripts = [];
     stream.requests = [];
+    stream.turnIds = [];
     stream.held = [];
     stream.cancelled = [];
   });
@@ -185,6 +189,22 @@ describe('useDrafterSession', () => {
     await act(async () => root.unmount());
     expect(stream.cancelled.at(-1)).toEqual(['t4', 'tok']);
     root = createRoot(container);
+  });
+
+  it('names each turn, so a Stop before its first event still cancels it', async () => {
+    stream.scripts = ['hold', 'hold'];
+    await act(async () => session.send('One'));
+    const first = stream.turnIds[0];
+    expect(first).toMatch(/^[0-9a-f]{32}$/);
+    // Stopped before the server's `turn` event arrived.
+    await act(async () => session.stop());
+    expect(stream.cancelled).toEqual([[first, 'tok']]);
+    // Each attempt gets its own id; a server that picked another one is followed.
+    await act(async () => session.send('Two'));
+    expect(stream.turnIds[1]).not.toBe(first);
+    await act(async () => stream.held[1].emit({ type: 'turn', id: 'srv' }));
+    await act(async () => session.stop());
+    expect(stream.cancelled.at(-1)).toEqual(['srv', 'tok']);
   });
 
   it('cancels a turn whose stream broke off, as it may still be running', async () => {

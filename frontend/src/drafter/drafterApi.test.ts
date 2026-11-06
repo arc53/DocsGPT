@@ -5,6 +5,7 @@ import {
   cancelDrafterTurn,
   type DrafterEvent,
   getDrafterConfig,
+  newDrafterTurnId,
   parseDrafterEvent,
   streamDrafter,
 } from './drafterApi';
@@ -189,6 +190,22 @@ describe('drafterApi', () => {
     );
     client.post.mockRejectedValueOnce(new Error('offline'));
     await expect(cancelDrafterTurn('abc', 'tok')).resolves.toBeUndefined();
+  });
+
+  it('picks a turn id the server takes, and sends it with the turn', async () => {
+    const id = newDrafterTurnId();
+    expect(id).toMatch(/^[0-9a-f]{32}$/);
+    expect(newDrafterTurnId()).not.toBe(id);
+    client.post.mockResolvedValueOnce(sseResponse([frame({ type: 'end' })]));
+    const request = { recipe: 'agent' as const, messages: [], context: {} };
+    await streamDrafter(
+      request,
+      'tok',
+      () => undefined,
+      new AbortController().signal,
+      id,
+    );
+    expect(client.post.mock.calls[0][1]).toEqual({ ...request, turn_id: id });
   });
 
   it('ignores frames it does not know', () => {

@@ -307,10 +307,15 @@ class TestStream:
 
 
 class _Redis(FakeRedis):
-    """The Activity tests' fake Redis, with ``get``."""
+    """The Activity tests' fake Redis, with ``get`` and ``set(nx=True)``."""
 
     def get(self, key):
         return self.kv.get(key) if self._alive(key) else None
+
+    def set(self, key, value, ex=None, nx=False):
+        if nx and self._alive(key):
+            return None
+        return super().set(key, value, ex=ex)
 
 
 @pytest.fixture
@@ -321,7 +326,8 @@ def redis(monkeypatch):
 
 
 def _turn_ids(redis) -> list[str]:
-    return [key.split(":")[2] for key in redis.kv if key.count(":") == 2]
+    """The ids of the turns running now (``drafter:turn:<user>:<id>``; a stop adds ``:stop``)."""
+    return [key.rsplit(":", 1)[1] for key in redis.kv if not key.endswith(":stop")]
 
 
 @pytest.mark.unit
@@ -365,18 +371,58 @@ class TestCancel:
 
         turn_id = start_turn("alice")
         response = self._cancel(client, turn_id)
-        assert response.status_code == 202 and turn_cancelled(turn_id)
+        assert response.status_code == 202 and turn_cancelled("alice", turn_id)
 
-    def test_another_users_turn_is_not_found(self, client, redis):
+    def test_another_user_cannot_stop_the_turn(self, client, redis):
         from docsgpt.drafter.service import start_turn, turn_cancelled
 
         turn_id = start_turn("alice")
-        response = self._cancel(client, turn_id, user="bob")
-        assert response.status_code == 404 and not turn_cancelled(turn_id)
+        # Bob's stop is kept under Bob's name, so it reaches no turn of Alice's.
+        assert self._cancel(client, turn_id, user="bob").status_code == 202
+        assert not turn_cancelled("alice", turn_id)
 
-    @pytest.mark.parametrize("turn_id", ["b" * 32, "not-a-turn"])
-    def test_an_unknown_turn_is_not_found(self, client, redis, turn_id):
-        assert self._cancel(client, turn_id).status_code == 404
+    def test_a_malformed_turn_id_is_not_found(self, client, redis):
+        assert self._cancel(client, "not-a-turn").status_code == 404
+
+    def test_the_panel_names_its_turn(self, client, pg_conn, redis):
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            events = _events(_stream(client, {**_body(), "turn_id": "d" * 32}, fake))
+        assert events[0] == {"type": "turn", "id": "d" * 32}
+        assert _types(events) == ["turn", "status:reading", "status:drafting", "proposal", "end"]
+
+    @pytest.mark.parametrize("turn_id", ["nope", "D" * 32, 7, None])
+    def test_a_malformed_turn_id_gets_one_of_the_servers(self, client, pg_conn, redis, turn_id):
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            events = _events(_stream(client, {**_body(), "turn_id": turn_id}, fake))
+        assert events[0]["type"] == "turn" and events[0]["id"] != turn_id
+        assert len(events[0]["id"]) == 32 and int(events[0]["id"], 16) >= 0
+
+    def test_a_turn_stopped_before_it_starts_makes_no_model_calls(self, client, pg_conn, redis):
+        # The panel's Stop can reach the server before the stream's first event, or before the stream itself.
+        assert self._cancel(client, "e" * 32).status_code == 202
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            events = _events(_stream(client, {**_body(), "turn_id": "e" * 32}, fake))
+        assert _types(events) == ["turn", "status:reading", "status:drafting", "end"]
+        assert fake.calls == [] and redis.kv == {}
+
+    def test_another_users_early_stop_does_not_reach_the_turn(self, client, pg_conn, redis):
+        assert self._cancel(client, "f" * 32, user="bob").status_code == 202
+        fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
+        with _db(pg_conn):
+            events = _events(_stream(client, {**_body(), "turn_id": "f" * 32}, fake))
+        assert _types(events) == ["turn", "status:reading", "status:drafting", "proposal", "end"]
+
+    def test_two_running_turns_never_share_an_id(self, redis):
+        from docsgpt.drafter.service import cancel_turn, start_turn, turn_cancelled
+
+        first = start_turn("alice", "a" * 32)
+        second = start_turn("alice", "a" * 32)
+        assert first == "a" * 32 and second not in (None, first)
+        assert cancel_turn("alice", second) is True
+        assert turn_cancelled("alice", second) and not turn_cancelled("alice", first)
 
     def test_without_redis_the_turn_runs_and_cancel_is_unavailable(self, client, pg_conn):
         fake = FakeLLM(calls(tool_call("submit_proposal", PROPOSAL)))
