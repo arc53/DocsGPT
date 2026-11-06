@@ -670,6 +670,31 @@ describe('agentDraft', () => {
         summary: 'drafter.agent.prompt.changes:1',
       },
     ]);
+    // Once the view held the text, the row counts the changes that fit it
+    // and a line says how many didn't; with none left there is no row.
+    const twice = parseAgentProposal({
+      fields: {
+        prompt: {
+          kind: 'edit',
+          id: 'p1',
+          edits: [
+            { id: 'e1', find: 'a', replace: 'b', reason: 'r' },
+            { id: 'e2', find: 'c', replace: 'd', reason: 'r' },
+          ],
+        },
+      },
+    })!;
+    expect(agentProposalSummary(twice, t, [], 1)).toEqual({
+      rows: [
+        {
+          key: 'prompt-edits',
+          label: 'agents.form.sections.prompt',
+          summary: 'drafter.agent.prompt.changes:1',
+        },
+      ],
+      dropped: ['drafter.agent.prompt.unfit:1'],
+    });
+    expect(agentProposalSummary(twice, t, [], 0).rows).toEqual([]);
     expect(
       parseAgentProposal({
         fields: { prompt: { kind: 'edit', id: 'p1', edits: [] } },

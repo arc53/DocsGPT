@@ -99,7 +99,7 @@ import { useDraftedFields } from '../drafter/useDraftedFields';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
 import { useDrafterSession } from '../drafter/useDrafterSession';
 import { usePromptReview } from '../drafter/usePromptReview';
-import { fittingEdits, type PromptEdit } from '../drafter/promptDraft';
+import { promptAsRead, type PromptEdit } from '../drafter/promptDraft';
 import { WandButton } from '../drafter/WandButton';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
@@ -735,17 +735,28 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     setPromptDraft(written);
   };
 
-  // Changes to a saved prompt wait for its text when the view loads it.
+  // Changes to a saved prompt wait for its text when the view loads it
+  // (`raw`: the proposal they came in).
   const [pendingEdits, setPendingEdits] = useState<{
+    raw: object;
     id: string;
     edits: PromptEdit[];
   } | null>(null);
-  /** Review the drafter's changes on the open prompt's text, those that fit it. */
-  const reviewPromptEdits = (edits: PromptEdit[]) => {
-    const fitting = fittingEdits(promptDetail.content, edits);
-    if (fitting.length === 0)
+  // How many of a proposal's changes fit the text, for its summary.
+  const fittingRef = useRef(new WeakMap<object, number>());
+  /**
+   * Review the drafter's changes on the open prompt's text, those that fit
+   * it as the server reads it.
+   */
+  const reviewPromptEdits = (raw: object, edits: PromptEdit[]) => {
+    const fitting = promptReview.start(
+      edits,
+      promptAsRead(promptDetail.content),
+      promptDetail.content,
+    );
+    fittingRef.current.set(raw, fitting);
+    if (fitting === 0)
       drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
-    else promptReview.start(fitting, promptDetail.content);
   };
   // They belong to that opening: a view closed or showing another prompt
   // drops them, so opening the prompt later shows no stale review. A load
@@ -755,7 +766,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (viewTargetId !== pendingEdits.id) setPendingEdits(null);
     else if (promptDetail.status === 'ready') {
       setPendingEdits(null);
-      reviewPromptEdits(pendingEdits.edits);
+      reviewPromptEdits(pendingEdits.raw, pendingEdits.edits);
     }
   }, [pendingEdits, promptDetail.status, promptDetail.key, viewTargetId]);
 
@@ -765,9 +776,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
    * and the review starts once the text is in. The drawer stays the
    * agent's; nothing is saved until the view's Save.
    */
-  const showPromptEdits = (id: string, edits: PromptEdit[]) => {
+  const showPromptEdits = (raw: object, id: string, edits: PromptEdit[]) => {
     if (viewTargetId === id && promptDetail.status === 'ready') {
-      reviewPromptEdits(edits);
+      reviewPromptEdits(raw, edits);
       return;
     }
     const prompt = prompts.find((item) => item.id === id);
@@ -775,7 +786,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       drafterSession.addMessage(t('drafter.agent.prompt.editsStale'));
       return;
     }
-    setPendingEdits({ id, edits });
+    setPendingEdits({ raw, id, edits });
     setPromptOrigin('picker');
     promptDrafted.clear();
     promptDetail.open(prompt);
@@ -1190,7 +1201,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const prompt = proposal.fields.prompt;
     if (prompt?.kind === 'new')
       showWrittenPrompt({ name: prompt.name, content: prompt.content });
-    else if (prompt?.kind === 'edit') showPromptEdits(prompt.id, prompt.edits);
+    else if (prompt?.kind === 'edit')
+      showPromptEdits(raw as object, prompt.id, prompt.edits);
     else if (prompt?.kind === 'existing') dropPromptDraft();
     if (changed.includes('limits')) setIsAdvancedSectionExpanded(true);
     if (changed.length > 0 && buildRef.current.guided) scrollToDrafted();
@@ -1346,6 +1358,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       proposal,
       t,
       appliedFields(raw),
+      raw && typeof raw === 'object' ? fittingRef.current.get(raw) : undefined,
     );
     const written = proposal.fields.prompt;
     // What a written or changed prompt does to the one it replaces first.

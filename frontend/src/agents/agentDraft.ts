@@ -77,7 +77,7 @@ export const AGENT_STEP_FIELDS: Record<
  * The guardrail checks the safety step offers and the controls each adds
  * (GUARDRAIL_MENU in agent_recipe.py).
  */
-export const GUARDRAIL_MENU: Record<
+const GUARDRAIL_MENU: Record<
   string,
   readonly (readonly [GuardrailStage, GuardrailAction])[]
 > = {
@@ -634,6 +634,8 @@ const wordCount = (text: string): number =>
  *   changed: The fields applying the draft changed; a reason for any other
  *     field (one the form already held, as Classic on a Classic agent) is
  *     left out. Omitted, every reason shows.
+ *   fitting: How many of its changes to a saved prompt fit the text the
+ *     view loaded (the review shows only those); omitted until then.
  *
  * Returns:
  *   `rows` for ProposalSummary and `dropped` lines.
@@ -642,6 +644,7 @@ export function agentProposalSummary(
   proposal: AgentProposal,
   t: TFunction,
   changed?: readonly string[],
+  fitting?: number,
 ): { rows: ProposalReasonRow[]; dropped: string[] } {
   const labelOf = (field: string) =>
     field in AGENT_FIELD_LABEL_KEYS
@@ -665,13 +668,13 @@ export function agentProposalSummary(
           },
         ]
       : []),
-    ...(written?.kind === 'edit'
+    ...(written?.kind === 'edit' && fitting !== 0
       ? [
           {
             key: 'prompt-edits',
             label: labelOf('prompt'),
             summary: t('drafter.agent.prompt.changes', {
-              count: written.edits.length,
+              count: fitting ?? written.edits.length,
             }),
           },
         ]
@@ -693,6 +696,12 @@ export function agentProposalSummary(
       interpolation: { escapeValue: false },
     }),
   );
+  const unfit =
+    written?.kind === 'edit' && fitting !== undefined
+      ? written.edits.length - fitting
+      : 0;
+  if (unfit > 0)
+    dropped.push(t('drafter.agent.prompt.unfit', { count: unfit }));
   return { rows, dropped };
 }
 

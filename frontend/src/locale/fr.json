@@ -4795,7 +4795,10 @@
         "changes_other": "{{count}} modifications à examiner",
         "changes_many": "{{count}} modifications à examiner",
         "reviewHint": "Acceptez ou refusez chaque modification dans la vue du prompt, puis enregistrez le prompt. Tous les agents qui l’utilisent reçoivent le texte enregistré.",
-        "editsStale": "Aucune de mes modifications ne correspond plus au texte enregistré du prompt. Redemandez-le-moi et je partirai de ce texte."
+        "editsStale": "Aucune de mes modifications ne correspond plus au texte enregistré du prompt. Redemandez-le-moi et je partirai de ce texte.",
+        "unfit_one": "{{count}} modification ne correspond plus au texte du prompt",
+        "unfit_other": "{{count}} modifications ne correspondent plus au texte du prompt",
+        "unfit_many": "{{count}} modifications ne correspondent plus au texte du prompt"
       },
       "formEdited": "Vous avez modifié {{fields}} dans le formulaire.",
       "showInAgent": "Voir dans l’agent"

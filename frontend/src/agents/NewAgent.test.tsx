@@ -3691,6 +3691,41 @@ describe('NewAgent drafter', () => {
       expect(review()).toBeNull();
     });
 
+    it('counts only the changes that fit the saved text, and says how many did not', async () => {
+      await renderWithPrompt('p1');
+      drafter.scripts = [
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+          { id: 'e2', find: 'Not there', replace: 'x', reason: 'r' },
+        ]),
+      ];
+      await ask('Make the prompt plainer');
+      expect(review()!.querySelectorAll('[data-change-id]')).toHaveLength(1);
+      expect(panel()!.textContent).toContain('drafter.agent.prompt.unfit');
+    });
+
+    it('reviews changes to a prompt saved with Windows line ends', async () => {
+      mocks.getSinglePrompt.mockImplementationOnce(() =>
+        jsonResponse({ content: 'Be brief.\r\nBe kind.', updated_at: 'v1' }),
+      );
+      await renderWithPrompt('p1');
+      drafter.scripts = [
+        promptEdits([
+          {
+            id: 'e1',
+            find: 'brief.\nBe',
+            replace: 'short.\nBe',
+            reason: 'Plainer.',
+          },
+        ]),
+      ];
+      await ask('Plainer');
+      expect(review()).not.toBeNull();
+      expect(panel()!.textContent).not.toContain(
+        'drafter.agent.prompt.editsStale',
+      );
+    });
+
     it('says so when none of the changes fit the saved text', async () => {
       await renderWithPrompt('p1');
       drafter.scripts = [

@@ -4623,7 +4623,9 @@
         "changes_one": "{{count}} 处修改待审阅",
         "changes_other": "{{count}} 处修改待审阅",
         "reviewHint": "在提示词视图中接受或拒绝每处修改，然后保存提示词。所有使用它的智能体都会获得保存后的文本。",
-        "editsStale": "我的修改都已不再适用于提示词保存的文本。请再告诉我一次，我会基于它来修改。"
+        "editsStale": "我的修改都已不再适用于提示词保存的文本。请再告诉我一次，我会基于它来修改。",
+        "unfit_one": "{{count}} 处修改已与提示词文本不符",
+        "unfit_other": "{{count}} 处修改已与提示词文本不符"
       },
       "formEdited": "你在表单中更改了 {{fields}}。",
       "showInAgent": "在智能体中查看"
