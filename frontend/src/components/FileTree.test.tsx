@@ -179,4 +179,33 @@ describe('FileTree delete', () => {
     await deleteRow('rates.pdf');
     expect(toasts()).toEqual([]);
   });
+
+  it('sends an idempotency key when managing source files', async () => {
+    manageSourceFiles.mockReturnValue(
+      respond({ success: true, reingest_task_id: 'r1', source_id: 's1' }),
+    );
+    waitForChange.mockResolvedValue({ terminal: 'completed' });
+    await deleteRow('rates.pdf');
+    await deleteRow('rates.pdf');
+    expect(manageSourceFiles).toHaveBeenCalledTimes(2);
+    const key1 = manageSourceFiles.mock.calls[0][2];
+    const key2 = manageSourceFiles.mock.calls[1][2];
+    expect(typeof key1).toBe('string');
+    expect(key1.length).toBeGreaterThan(0);
+    expect(typeof key2).toBe('string');
+    expect(key2.length).toBeGreaterThan(0);
+    expect(key1).not.toBe(key2);
+    expect(waitForChange).toHaveBeenCalledWith('s1', expect.any(Number), {
+      taskId: 'r1',
+    });
+  });
+
+  it('does not wait for change when reingest_task_id is deduplicated', async () => {
+    manageSourceFiles.mockReturnValue(
+      respond({ success: true, reingest_task_id: 'deduplicated' }),
+    );
+    await deleteRow('rates.pdf');
+    expect(waitForChange).not.toHaveBeenCalled();
+    expect(toasts()).toEqual(['settings.sources.deleteItemFailed(rates.pdf)']);
+  });
 });

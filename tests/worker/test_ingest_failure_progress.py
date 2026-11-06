@@ -212,3 +212,26 @@ def test_the_poison_guard_closes_the_row():
     ):
         _emit_ingest_poison_event("ingest", {"user": "u1", "source_id": "src-9"})
     assert seen == [("close", "src-9"), ("source.ingest.failed", "src-9")]
+
+
+@pytest.mark.unit
+def test_poison_guard_includes_task_id_in_payload():
+    from unittest.mock import MagicMock
+    from docsgpt.api.user.tasks import _emit_ingest_poison_event
+
+    fake_self = MagicMock()
+    fake_self.request.id = "tid-poison-123"
+    published = []
+    with patch(
+        "docsgpt.worker.close_failed_ingest_progress",
+    ), patch(
+        "docsgpt.events.publisher.publish_user_event",
+        side_effect=lambda user, kind, payload, **kw: published.append(payload),
+    ):
+        _emit_ingest_poison_event(
+            "reingest_source_task",
+            {"user": "u1", "source_id": "src-9", "self": fake_self},
+        )
+    assert len(published) == 1
+    assert published[0]["task_id"] == "tid-poison-123"
+    assert published[0]["operation"] == "reingest"
