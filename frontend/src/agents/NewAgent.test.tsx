@@ -4041,6 +4041,33 @@ describe('NewAgent drafter', () => {
       });
     });
 
+    it("holds the desktop Next while changes wait for the saved prompt's text", async () => {
+      await render();
+      drafter.scripts = [
+        [
+          proposal(
+            { name: 'Deal Desk', prompt: { kind: 'existing', id: 'p1' } },
+            { steps: ['basics'] },
+          ),
+          { type: 'end' },
+        ],
+        promptEdits([
+          { id: 'e1', find: 'Text', replace: 'Words', reason: 'Plainer.' },
+        ]),
+      ];
+      await ask('A deal desk on my Tone prompt');
+      expect(next()).toBeDefined();
+      // The load fails; the changes stay for the view's Retry.
+      mocks.getSinglePrompt.mockImplementationOnce(() =>
+        jsonResponse({}, false),
+      );
+      await ask('Plainer prompt');
+      expect(view()).not.toBeNull();
+      expect(review()).toBeNull();
+      // Next would leave the undecided changes behind.
+      expect(next()).toBeUndefined();
+    });
+
     it('drops changes that waited for a prompt the view never loaded', async () => {
       await renderWithPrompt('p1');
       mocks.getSinglePrompt.mockImplementationOnce(() =>

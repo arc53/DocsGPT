@@ -1405,10 +1405,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       )}
     </>
   );
-  // Next waits while the prompt the drafter wrote is unused, and moves to
-  // the end of the turn once Use this prompt saved it.
+  // Next waits while the prompt the drafter wrote is unused or its changes
+  // are undecided (under review, or waiting for the saved text), and moves
+  // to the end of the turn once Use this prompt saved it.
   const nextOnProposal =
-    build.ready && !promptDraft && !promptUsed && !promptReview.review;
+    build.ready &&
+    !promptDraft &&
+    !promptUsed &&
+    !promptReview.review &&
+    !pendingEdits;
 
   /** "You changed Name in the form.": fields the proposal set, edited since. */
   const editedSince = (raw: unknown) => {
