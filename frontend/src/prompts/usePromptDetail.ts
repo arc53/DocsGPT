@@ -61,6 +61,9 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
   const [saving, setSaving] = React.useState(false);
   // The latest opening, so a load that lands after another one is dropped.
   const opening = React.useRef(0);
+  // Each prompt's version as last loaded or saved here, so reopening one
+  // with drafted text (openWith) still saves at the version it is on.
+  const versions = React.useRef(new Map<string, string | null>());
 
   const showError = (message: string) =>
     dispatch(showActionToast({ variant: 'destructive', message }));
@@ -91,6 +94,7 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     setStatus('loading');
     fetchText(prompt.id)
       .then((loaded) => {
+        versions.current.set(prompt.id, loaded.updated_at ?? null);
         if (opening.current !== current) return;
         setContent(loaded.content);
         setBaseline({ name: prompt.name, content: loaded.content });
@@ -131,13 +135,17 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
       target.prompt.id === prompt.id &&
       status === 'ready';
     if (!isOpen) {
+      // Another opening while the text loads wins over this copy.
+      const current = opening.current;
       try {
         text = (await fetchText(prompt.id)).content;
       } catch (error) {
         console.error(error);
-        showError(t('settings.prompts.loadPromptError'));
+        if (opening.current === current)
+          showError(t('settings.prompts.loadPromptError'));
         return;
       }
+      if (opening.current !== current) return;
     }
     show(
       { kind: 'new', copyOf: prompt.name, draft },
@@ -149,7 +157,8 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
   /**
    * Opens a prompt holding text the drafter wrote, with nothing to load: a
    * new prompt, or `prompt` (one the host created earlier from a draft), so
-   * Save updates it instead of creating another.
+   * Save updates it instead of creating another, at the version its last
+   * load or save here left (read from the server when there was none).
    */
   const openWith = (
     fields: { name: string; content: string },
@@ -161,8 +170,25 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
         : { kind: 'new', copyOf: null, draft: false },
       fields,
     );
-    setUpdatedAt(null);
     setStatus('ready');
+    if (!prompt) {
+      setUpdatedAt(null);
+      return;
+    }
+    if (versions.current.has(prompt.id)) {
+      setUpdatedAt(versions.current.get(prompt.id) ?? null);
+      return;
+    }
+    setUpdatedAt(null);
+    const current = opening.current;
+    fetchText(prompt.id)
+      .then((loaded) => {
+        versions.current.set(prompt.id, loaded.updated_at ?? null);
+        if (opening.current === current)
+          setUpdatedAt(loaded.updated_at ?? null);
+      })
+      // Unread, the save goes without a version, as it did before.
+      .catch((error: unknown) => console.error(error));
   };
 
   const close = () => {
@@ -188,9 +214,26 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     !!target &&
     !readOnly &&
     status === 'ready' &&
-    !!name &&
+    !!name.trim() &&
     !nameExists &&
     content.trim() !== '';
+
+  /**
+   * Read the version a save left (the save routes don't return it); a view
+   * still open on the prompt saves at it next.
+   */
+  const rememberVersion = (id: string) => {
+    versions.current.delete(id);
+    const current = opening.current;
+    const stillOpen = target?.kind === 'edit' && target.prompt.id === id;
+    fetchText(id)
+      .then((loaded) => {
+        versions.current.set(id, loaded.updated_at ?? null);
+        if (stillOpen && opening.current === current)
+          setUpdatedAt(loaded.updated_at ?? null);
+      })
+      .catch((error: unknown) => console.error(error));
+  };
 
   /**
    * Saves the open prompt: creates a new one, or updates a saved one at the
@@ -235,6 +278,7 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     }
     if (result === 'saved' && savedId) {
       setBaseline({ name, content });
+      rememberVersion(savedId);
       onSaved({ id: savedId, name });
     } else if (!quiet) {
       showError(
