@@ -196,16 +196,15 @@ class PreferencesResource(Resource):
     @api.doc(
         description=(
             "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, "
-            "task_model_unavailable, instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was "
-            "deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was "
-            "ever stored, default included, even when it now reads as default. task_model_id is the model the "
-            "caller's DocsGPT jobs run on, null when they picked none or can no longer use it; "
+            "task_model_unavailable, instance_task_model_id}. chat_prompt_id is default when none was set or "
+            "the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a "
+            "chat prompt was ever stored, default included, even when it now reads as default. task_model_id is "
+            "the model the caller's DocsGPT jobs run on, null when they picked none or can no longer use it; "
             "task_model_unavailable is true when a choice is stored that can no longer run (a disabled or "
             "deleted model): the instance's runs meanwhile, the stored one again if it comes back, until a PUT "
             "with task_model_id null clears it. instance_task_model_id is the one that runs without a usable "
-            "choice, null when no model can. A token gets the chat "
-            "prompt fields with prompts:read (never when restricted to specific prompts) and the task model "
-            "fields with models:read."
+            "choice, null when no model can. A token gets the chat prompt fields with prompts:read (never when "
+            "restricted to specific prompts) and the task model fields with models:read."
         )
     )
     def get(self):

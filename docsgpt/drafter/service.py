@@ -229,4 +229,5 @@ def end_turn(turn_id: Optional[str]) -> None:
     try:
         client.delete(f"{_TURN_PREFIX}{turn_id}", f"{_TURN_PREFIX}{turn_id}:stop")
     except Exception:
-        pass
+        # The keys expire on their own; an ended turn only leaves them a while longer.
+        logger.debug("drafter: could not forget an ended turn", exc_info=True)
