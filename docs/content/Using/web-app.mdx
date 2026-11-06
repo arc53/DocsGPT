@@ -1,7 +1,7 @@
 ---
 title: Using the Web App
 description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -88,11 +88,11 @@ Theme and language are saved in your browser, so set them again on another brows
 
 The task model runs the work DocsGPT does for you outside a chat: drafting an agent, a prompt or Insights topics with [Draft with DocsGPT](/Agents/draft-with-docsgpt), extracting the knowledge graph of a [GraphRAG](/Sources/GraphRAG) source, and judging whether a [monitor](/Tools/monitors)'s condition is met. Chats keep the agent's model.
 
-The list holds the built-in models and your own [custom models](/Models/custom-models). Until you pick one, it shows the model that runs anyway (the order is below). A custom model runs with your own key and endpoint. Your choice applies to your own drafts, to graph builds of the sources you own and to your monitors.
+The list starts with **Use instance default**, which names in brackets the model that runs without a choice of yours (the order is below), and names none when no model can run. It is picked until you choose another, and it follows the instance: when an admin changes the task model, your tasks move with it. After it come the built-in models and your own [custom models](/Models/custom-models). Choosing a named model, even the one the instance runs, makes it your choice, and later admin changes no longer reach you; choose **Use instance default** to follow the instance again. A custom model runs with your own key and endpoint. Your choice applies to your own drafts, to graph builds of the sources you own and to your monitors. It is saved as you pick; if you pick several models quickly, the last one is the one saved.
 
-Without a choice of yours, DocsGPT uses, in order: the model an admin set under **Admin → Defaults**, **Models**; the `TASK_MODEL_ID` setting; the instance's default model. A choice that stops working (the model leaves the catalog, or you delete or turn off your custom model) is skipped the same way, with no error. A source's own extraction model and the `GRAPHRAG_EXTRACTION_MODEL` and `MONITOR_JUDGE_MODEL` settings still come first for their task.
+Without a choice of yours, DocsGPT uses, in order: the model an admin set under **Admin → Defaults**, **Models**; the `TASK_MODEL_ID` setting; the instance's default model, unless it is disabled. A choice that stops working (the model leaves the catalog, or you delete or turn off your custom model) is skipped the same way, with no error. A source's own extraction model and the `GRAPHRAG_EXTRACTION_MODEL` and `MONITOR_JUDGE_MODEL` settings still come first for their task.
 
-Over the API, `GET /api/user/preferences` returns `task_model_id` (`null` when you have no choice, or can no longer use it) and `instance_task_model_id` (the model that runs without one), and `PUT /api/user/preferences` with `{"task_model_id": "<model id>"}` sets it; `null` goes back to the instance default, and a model you can't use answers `400` (`invalid_model`).
+Over the API, `GET /api/user/preferences` returns `task_model_id` (`null` when you have no choice, or can no longer use it) and `instance_task_model_id` (the model that runs without one, `null` when no model can), and `PUT /api/user/preferences` with `{"task_model_id": "<model id>"}` sets it; `null` goes back to the instance default, and a model you can't use answers `400` (`invalid_model`). A [personal access token](/API/personal-access-tokens#scopes) reads these fields with `models:read` and sets the task model with `models:write`.
 
 ## Default tools in chats without an agent
 

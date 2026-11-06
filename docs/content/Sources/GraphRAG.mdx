@@ -1,7 +1,7 @@
 ---
 title: GraphRAG
 description: Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-06
 ---
 
 import { Callout } from 'nextra/components'
@@ -117,8 +117,8 @@ Instance-wide settings (see [App Configuration](/Deploying/DocsGPT-Settings)):
 The extraction model is resolved in this order: the source's `graph.extraction_model`, then
 `GRAPHRAG_EXTRACTION_MODEL`, then the source owner's [task model](/Using/web-app#task-model): their pick in
 **Settings → General**, else the one an admin set under **Admin → Defaults**, else `TASK_MODEL_ID`, else the
-instance's default model. The call goes to the provider that serves that model in the model registry, or to
-`LLM_PROVIDER` when the registry doesn't know it. This is not necessarily the model chat uses, so check the task
+instance's default model unless it is disabled. The call goes to the provider that serves that model in the model
+registry, or to `LLM_PROVIDER` when the registry doesn't know it or none of these models can run. This is not necessarily the model chat uses, so check the task
 model, or set `GRAPHRAG_EXTRACTION_MODEL`, to know which model builds, and pays for, the graph.
 
 Per-source extraction knobs live under the source config's `graph` object and override the instance defaults:
