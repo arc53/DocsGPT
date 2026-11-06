@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from docsgpt.drafter.catalog import Workspace
 from docsgpt.drafter.prompt_recipe import (
+    CONTENT_MAX,
     context_data,
     instructions,
     MAX_EDITS,
     parse_context,
     PROMPT_RECIPE,
+    READ_MAX,
     validate,
 )
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, get_recipe, ProposalInvalid
 from docsgpt.drafter.runner import build_messages, run_draft
+from docsgpt.drafter.service import parse_messages
 from docsgpt.prompts.composer import compose_preset
 from tests.drafter.fakes import calls, FakeLLM, tool_call
 
@@ -73,6 +78,24 @@ class TestContext:
     def test_unusable_contexts_are_refused(self, raw):
         with pytest.raises(BadDraftRequest):
             parse_context(raw)
+
+    def test_a_prompt_over_the_drafting_cap_is_read_whole(self):
+        # The prompt routes save any length: edits must fit the whole saved text, not a cut copy.
+        long = "Be brief.\n" + "x" * CONTENT_MAX + "\nThe end."
+        ctx = parse_context({"mode": "improve", "prompt": {"content": long}})
+        assert ctx["prompt"]["content"] == long
+        assert context_data(DraftRequest("alice", "prompt", [], ctx, "t"), Workspace())["prompt"]["content"] == long
+
+    def test_a_prompt_up_to_the_read_cap_is_read_and_a_longer_one_refused(self):
+        assert len(parse_context({"mode": "improve", "prompt": {"content": "x" * READ_MAX}})["prompt"]["content"]) \
+            == READ_MAX
+        with pytest.raises(BadDraftRequest, match=f"{READ_MAX:,}"):
+            parse_context({"mode": "improve", "prompt": {"content": "x" * (READ_MAX + 1)}})
+
+    def test_the_read_cap_counts_the_text_as_cleaned(self):
+        # Invisible characters the model never reads don't count.
+        ctx = parse_context({"mode": "improve", "prompt": {"content": "x" * READ_MAX + "\u200b" * 10}})
+        assert ctx["prompt"]["content"] == "x" * READ_MAX
 
     def test_the_model_reads_the_prompt_and_its_mode(self):
         data = context_data(_req(), Workspace())
@@ -257,6 +280,13 @@ class TestImprove:
         assert proposal["suggestions"] == ["Add a hand-off"]
         assert "assumptions" not in proposal
 
+    def test_a_prompt_over_the_drafting_cap_takes_edits_anywhere_that_do_not_make_it_longer(self):
+        long = "Be brief.\n" + "x" * CONTENT_MAX + "\nThe end."
+        proposal = _improve([_edit("The end.", "Thanks.")], content=long)
+        assert proposal["result"] == "Be brief.\n" + "x" * CONTENT_MAX + "\nThanks."
+        with pytest.raises(ProposalInvalid, match="already over"):
+            _improve([_edit("The end.", "The very end.")], content=long)
+
     def test_model_warnings_are_kept_and_capped(self):
         proposal = _improve([], warnings=["One", "", "Two", "Three", "Four"])
         assert proposal["warnings"] == ["One", "Two", "Three"]
@@ -332,6 +362,17 @@ class TestTurn:
         assert [t["function"]["name"] for t in fake.calls[0]["tools"]] == ["submit_proposal"]
         assert events[-1]["type"] == "proposal"
         assert events[-1]["proposal"]["result"].endswith("Be warm and concise.")
+
+    def test_a_long_prompts_proposal_is_handed_over_and_taken_back(self):
+        # The panel sends the proposal back as the next request's assistant message.
+        content = "Line.\n" * ((READ_MAX - 10) // 6) + "The end."
+        _, events = self._run(calls(tool_call("submit_proposal", {
+            "message": "Done.", "edits": [_edit("The end.", "Thanks.")]})), req=_req(content=content))
+        assert events[-1]["type"] == "proposal"
+        echoed = json.dumps(events[-1], ensure_ascii=False, separators=(",", ":"))
+        history = [{"role": "user", "content": "x"}, {"role": "assistant", "content": echoed},
+                   {"role": "user", "content": "y"}]
+        assert parse_messages(history)[1]["content"] == echoed
 
     def test_a_bad_edit_is_retried_once_then_invalid_output(self):
         bad = calls(tool_call("submit_proposal", {"message": "x", "edits": [_edit("Nope", "Yes")]}))

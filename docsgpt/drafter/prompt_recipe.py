@@ -40,6 +40,9 @@ MODES = ("improve", "write")
 
 NAME_MAX = 100
 CONTENT_MAX = 20000
+#: Most characters of prompt text the drafter reads. The prompt routes save any length, so a prompt over
+#: :data:`CONTENT_MAX` is read whole (edits must fit the saved text, not a cut copy) and a longer one is refused.
+READ_MAX = 100_000
 MAX_EDITS = 20
 REASON_MAX = 300
 MESSAGE_MAX = 600
@@ -72,10 +75,11 @@ def parse_context(raw: Any) -> dict:
     """Clean the prompt recipe's ``context``: ``{mode, prompt: {id, name, content}, starter?, skip_questions?}``.
 
     ``starter`` and ``skip_questions`` only mean something to write mode; an
-    unknown starter is dropped.
+    unknown starter is dropped. The prompt's text is cleaned but never cut.
 
     Raises:
-        BadDraftRequest: An unknown mode, a missing prompt, or nothing to improve.
+        BadDraftRequest: An unknown mode, a missing prompt, nothing to improve,
+            or a text over :data:`READ_MAX` characters.
     """
     raw = raw if isinstance(raw, dict) else {}
     mode = raw.get("mode")
@@ -85,7 +89,10 @@ def parse_context(raw: Any) -> dict:
     if not isinstance(prompt, dict):
         raise BadDraftRequest("context.prompt must be an object")
     prompt_id = prompt.get("id")
-    content = clean_text(prompt.get("content"), CONTENT_MAX)
+    raw_content = prompt.get("content")
+    content = clean_text(raw_content, len(raw_content)) if isinstance(raw_content, str) else ""
+    if len(content) > READ_MAX:
+        raise BadDraftRequest(f"The prompt is too long to draft with: at most {READ_MAX:,} characters")
     if mode == "improve" and not content:
         raise BadDraftRequest("There is no prompt text to improve")
     writing = mode == "write"

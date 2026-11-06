@@ -254,8 +254,8 @@ function locate(content: string, edits: PromptEdit[]): Located[] {
 /**
  * The edits that still fit `content`: each one's text occurs there exactly
  * once (as the server reads it) and overlaps no edit kept before it. The
- * server checked them against the copy the model read; the saved text can
- * differ (a long prompt is read cut short).
+ * server checked them against the text the model read; the text here can
+ * differ (edited while the model worked, or saved since).
  *
  * Args:
  *   content: The text the review will run on.
