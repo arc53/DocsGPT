@@ -60,6 +60,10 @@ class TestContext:
                                  "skip_questions": True})
         assert (improve["starter"], improve["skip_questions"]) == (None, False)
 
+    @pytest.mark.parametrize("starter", [["website"], {"website": 1}, 5])
+    def test_a_starter_that_is_not_a_string_is_dropped(self, starter):
+        assert parse_context({"mode": "write", "prompt": {}, "starter": starter})["starter"] is None
+
     @pytest.mark.parametrize("raw", [
         {"mode": "rewrite", "prompt": {"content": "x"}},
         {"mode": "improve", "prompt": {"content": "   "}},

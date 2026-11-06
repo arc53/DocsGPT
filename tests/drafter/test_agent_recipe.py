@@ -119,6 +119,17 @@ class TestContext:
         assert parse_context({"step": "basics", "starter": "pirate"})["starter"] is None
         assert parse_context({})["starter"] is None
 
+    @pytest.mark.parametrize("bad", [["website"], {"website": 1}])
+    def test_values_of_the_wrong_type_are_left_out_not_raised(self, bad):
+        keys = ("agent_id", "starter", "earlier")
+        form_keys = ("name", "description", "agent_type", "sources", "tools", "prompt_id", "prompt_draft",
+                     "starters", "limits", "guardrails", "analytics")
+        ctx = parse_context({**{key: bad for key in keys}, "step": "basics", "form": {key: bad for key in form_keys}})
+        assert ctx["starter"] is None and ctx["agent_id"] is None
+        nested = {"limits": {"mode": bad, "value": bad}, "guardrails": {"mode": bad, "checks": bad},
+                  "analytics": {"topics": [bad], "hidden_folders": [bad]}}
+        assert parse_context({"form": nested})["form"]["limits"] == {"mode": "none", "value": None}
+
     def test_no_step_is_improve_mode(self):
         assert parse_context({"step": None})["step"] is None
         assert parse_context({})["step"] is None

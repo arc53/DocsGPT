@@ -97,7 +97,7 @@ def parse_context(raw: Any) -> dict:
             "name": clean_text(prompt.get("name"), NAME_MAX),
             "content": content,
         },
-        "starter": starter if writing and starter in STARTERS else None,
+        "starter": starter if writing and isinstance(starter, str) and starter in STARTERS else None,
         "skip_questions": writing and raw.get("skip_questions") is True,
     }
 

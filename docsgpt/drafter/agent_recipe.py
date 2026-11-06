@@ -228,7 +228,7 @@ def parse_context(raw: Any) -> dict:
     return {
         "agent_id": agent_id.strip()[:_ID_CHARS] if isinstance(agent_id, str) and agent_id.strip() else None,
         "step": step,
-        "starter": starter if starter in STARTERS else None,
+        "starter": starter if isinstance(starter, str) and starter in STARTERS else None,
         "earlier": [text for text in (clean_text(t, EARLIER_CHARS) for t in earlier) if text][:MAX_EARLIER],
         "form": form,
     }
