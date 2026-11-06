@@ -1670,7 +1670,12 @@
       "saveAndLeave": "保存并离开",
       "leaveWithoutSaving": "不保存离开",
       "editNamed": "编辑 {{name}}",
-      "viewNamed": "查看 {{name}}"
+      "viewNamed": "查看 {{name}}",
+      "saveBlocked": {
+        "review": "请先完成审阅：在侧边面板中选择“全部接受”或“放弃”。",
+        "name": "请为提示词命名后再保存。",
+        "content": "请填写提示词文本后再保存。"
+      }
     },
     "devices": {
       "label": "设备",

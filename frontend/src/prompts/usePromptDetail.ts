@@ -21,6 +21,9 @@ export type PromptDetailTarget =
 /** How a save ended: a refused save over someone's newer edit is `conflict`. */
 export type PromptSaveResult = 'saved' | 'conflict' | 'failed';
 
+/** What in the fields keeps an editable, loaded prompt from saving. */
+export type PromptSaveBlocker = 'name' | 'nameExists' | 'content' | 'template';
+
 type PromptDetailOptions = {
   /** The listed prompts: a name must not repeat one, and a copy's is free. */
   prompts: Prompt[];
@@ -41,7 +44,8 @@ type PromptDetailOptions = {
  *   The open `target` (null for none) and a `key` that changes with every
  *   opening; `open`, `add`, `duplicate`, `openWith` and `close`; the
  *   fields and their setters; `status` of the text's load with `retry`;
- *   `readOnly`, `dirty`, `nameExists`, `canSave`, `saving`; and `save`.
+ *   `readOnly`, `dirty`, `nameExists`, `canSave` with `saveBlocker` (what
+ *   in the fields stops it), `saving`; and `save`.
  */
 export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
   const { t } = useTranslation();
@@ -211,14 +215,17 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
       prompt.name === name &&
       (target?.kind !== 'edit' || prompt.id !== target.prompt.id),
   );
+  const saveBlocker: PromptSaveBlocker | null = !name.trim()
+    ? 'name'
+    : nameExists
+      ? 'nameExists'
+      : !content.trim()
+        ? 'content'
+        : templateBroken(content)
+          ? 'template'
+          : null;
   const canSave =
-    !!target &&
-    !readOnly &&
-    status === 'ready' &&
-    !!name.trim() &&
-    !nameExists &&
-    content.trim() !== '' &&
-    !templateBroken(content);
+    !!target && !readOnly && status === 'ready' && saveBlocker === null;
 
   /**
    * Read the version a save left (the save routes don't return it); a view
@@ -312,6 +319,7 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
     dirty,
     nameExists,
     canSave,
+    saveBlocker,
     saving,
     save,
   };

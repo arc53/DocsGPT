@@ -68,6 +68,16 @@ type KindFilter = (typeof KINDS)[number];
 
 const PRESETS = ['default', 'creative', 'strict'];
 
+/** What Save and leave says when it can't save, by the reason it rejected. */
+const LEAVE_ERRORS: Record<string, string> = {
+  conflict: 'settings.prompts.editConflict',
+  review: 'settings.prompts.saveBlocked.review',
+  name: 'settings.prompts.saveBlocked.name',
+  nameExists: 'modals.prompts.nameExists',
+  content: 'settings.prompts.saveBlocked.content',
+  template: 'modals.prompts.templateBroken',
+};
+
 /**
  * Arrow keys move the checked radio card by card; the save waits this long
  * for the next move, so only where the user stops is sent.
@@ -608,19 +618,21 @@ function PromptDetailPage({
               submitLabel={t('settings.prompts.saveAndLeave')}
               // Pending while the save runs; a refused save rejects, so its
               // error stays in this dialog and the page stays put. A prompt
-              // that can't be saved yet (no name) just stays.
+              // that can't be saved yet (no name, an open review) rejects
+              // with what stops it, which the dialog says.
               handleSubmit={async () => {
-                if (!detail.canSave || drafter.review !== null) {
-                  setLeaving(false);
-                  return;
-                }
+                if (drafter.review !== null) throw new Error('review');
+                if (!detail.canSave)
+                  throw new Error(detail.saveBlocker ?? 'failed');
                 const result = await detail.save({ quiet: true });
                 if (result !== 'saved') throw new Error(result);
               }}
               error={(reason) =>
-                reason instanceof Error && reason.message === 'conflict'
-                  ? t('settings.prompts.editConflict')
-                  : t('settings.prompts.saveFailed')
+                t(
+                  LEAVE_ERRORS[
+                    reason instanceof Error ? reason.message : 'failed'
+                  ] ?? 'settings.prompts.saveFailed',
+                )
               }
               cancelLabel={t('settings.prompts.leaveWithoutSaving')}
               handleCancel={() => {

@@ -1738,7 +1738,12 @@
       "saveAndLeave": "Enregistrer et quitter",
       "leaveWithoutSaving": "Quitter sans enregistrer",
       "editNamed": "Modifier {{name}}",
-      "viewNamed": "Afficher {{name}}"
+      "viewNamed": "Afficher {{name}}",
+      "saveBlocked": {
+        "review": "Terminez d’abord la revue : « Tout accepter » ou « Abandonner » dans le panneau.",
+        "name": "Donnez un nom au prompt pour l’enregistrer.",
+        "content": "Écrivez le texte du prompt pour l’enregistrer."
+      }
     },
     "devices": {
       "label": "Appareils",

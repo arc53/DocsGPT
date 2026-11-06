@@ -877,6 +877,36 @@ describe('Prompts page', () => {
     expect(view()).not.toBeNull();
   });
 
+  it("keeps the unsaved-changes confirm open with the reason a save can't go", async () => {
+    await render();
+    await click(button('settings.prompts.addPrompt')!);
+    await type(textArea()!, 'Hello.');
+    await click(button('settings.prompts.label', view()!)!);
+    const submit = async () => {
+      let result: void | Promise<unknown> = undefined;
+      await act(async () => {
+        result = confirm.props!.handleSubmit();
+        (result as Promise<unknown>)?.catch?.(() => undefined);
+      });
+      return result as unknown as Promise<unknown>;
+    };
+    const error = () => confirm.props!.error as (reason: unknown) => string;
+    let reason: unknown = null;
+    await submit().catch((caught: unknown) => (reason = caught));
+    expect(error()(reason)).toBe('settings.prompts.saveBlocked.name');
+    expect(confirm.props).not.toBeNull();
+    expect(view()).not.toBeNull();
+    expect(service.createPrompt).not.toHaveBeenCalled();
+
+    await type(nameInput(), 'Vendor checks');
+    await submit().catch((caught: unknown) => (reason = caught));
+    expect(error()(reason)).toBe('modals.prompts.nameExists');
+    await type(nameInput(), 'Greeter');
+    await type(textArea()!, '{{ source.content }}{% if x %}');
+    await submit().catch((caught: unknown) => (reason = caught));
+    expect(error()(reason)).toBe('modals.prompts.templateBroken');
+  });
+
   // ---- The drafter's drawer ----
 
   const IMPROVE = {

@@ -1670,7 +1670,12 @@
       "saveAndLeave": "保存して離れる",
       "leaveWithoutSaving": "保存せずに離れる",
       "editNamed": "{{name}} を編集",
-      "viewNamed": "{{name}} を表示"
+      "viewNamed": "{{name}} を表示",
+      "saveBlocked": {
+        "review": "先にレビューを終えてください。パネルで「すべて採用」または「破棄」を選びます。",
+        "name": "保存するにはプロンプトに名前を付けてください。",
+        "content": "保存するにはプロンプトの本文を入力してください。"
+      }
     },
     "devices": {
       "label": "デバイス",

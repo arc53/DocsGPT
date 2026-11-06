@@ -1674,7 +1674,12 @@
       "saveAndLeave": "Speichern und verlassen",
       "leaveWithoutSaving": "Ohne Speichern verlassen",
       "editNamed": "{{name}} bearbeiten",
-      "viewNamed": "{{name}} ansehen"
+      "viewNamed": "{{name}} ansehen",
+      "saveBlocked": {
+        "review": "Schließe zuerst die Prüfung ab: „Alle übernehmen“ oder „Verwerfen“ im Seitenbereich.",
+        "name": "Gib dem Prompt einen Namen, um ihn zu speichern.",
+        "content": "Schreib den Text des Prompts, um ihn zu speichern."
+      }
     },
     "devices": {
       "label": "Geräte",

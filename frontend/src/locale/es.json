@@ -1738,7 +1738,12 @@
       "saveAndLeave": "Guardar y salir",
       "leaveWithoutSaving": "Salir sin guardar",
       "editNamed": "Editar {{name}}",
-      "viewNamed": "Ver {{name}}"
+      "viewNamed": "Ver {{name}}",
+      "saveBlocked": {
+        "review": "Termina antes la revisión: «Aceptar todo» o «Descartar» en el panel.",
+        "name": "Ponle un nombre al prompt para guardarlo.",
+        "content": "Escribe el texto del prompt para guardarlo."
+      }
     },
     "devices": {
       "label": "Dispositivos",

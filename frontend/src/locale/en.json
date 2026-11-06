@@ -1674,7 +1674,12 @@
       "saveAndLeave": "Save and leave",
       "leaveWithoutSaving": "Leave without saving",
       "editNamed": "Edit {{name}}",
-      "viewNamed": "View {{name}}"
+      "viewNamed": "View {{name}}",
+      "saveBlocked": {
+        "review": "Finish the review first: Accept all or Discard in the drawer.",
+        "name": "Give the prompt a name to save it.",
+        "content": "Write the prompt's text to save it."
+      }
     },
     "devices": {
       "label": "Devices",

@@ -1670,7 +1670,12 @@
       "saveAndLeave": "儲存並離開",
       "leaveWithoutSaving": "不儲存離開",
       "editNamed": "編輯 {{name}}",
-      "viewNamed": "檢視 {{name}}"
+      "viewNamed": "檢視 {{name}}",
+      "saveBlocked": {
+        "review": "請先完成審閱：在側邊面板中選擇「全部接受」或「捨棄」。",
+        "name": "請為提示詞命名後再儲存。",
+        "content": "請填寫提示詞文字後再儲存。"
+      }
     },
     "devices": {
       "label": "裝置",
