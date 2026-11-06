@@ -33,7 +33,7 @@ from docsgpt.core.model_utils import (
 )
 from docsgpt.graphrag.naming import normalize_entity_name
 from docsgpt.core.settings import settings
-from docsgpt.llm.llm_creator import LLMCreator
+from docsgpt.llm.llm_creator import LLMCreator, ModelNotAvailableError
 from docsgpt.storage.db.source_config import SourceConfig
 # ``EmbeddingsSingleton`` is re-exported here so callers and tests can reach the
 # shared instance cache from this module.
@@ -58,23 +58,58 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _resolve_extraction_model(config: SourceConfig, user: Optional[str]) -> Optional[str]:
+def _disabled_in_registry(model_id: str, user: Optional[str]) -> bool:
+    """Whether the registry holds ``model_id`` (for ``user``) and it is disabled.
+
+    A model the registry doesn't know is not disabled: it still goes to
+    ``LLM_PROVIDER`` (see :func:`_resolve_extraction_provider`).
+    """
+    from docsgpt.core.model_registry import ModelRegistry
+
+    model = ModelRegistry.get_instance().get_model(model_id, user_id=user)
+    return model is not None and not getattr(model, "enabled", True)
+
+
+def _resolve_extraction_model(config: SourceConfig, user: Optional[str]) -> str:
     """Resolve the extraction model: per-source override → setting → the owner's task model.
 
-    The task model (``get_task_model_id``) is the owner's pick in Settings >
-    General, else the instance's, else ``TASK_MODEL_ID``, else the default
-    model: always a registry id, never the raw ``LLM_NAME`` (which may be
-    unset or a comma-separated list).
+    An override or setting the registry holds disabled is skipped, as the
+    task model skips a choice that can't run. The task model
+    (``get_task_model_id``) is the owner's pick in Settings > General, else
+    the instance's, else ``TASK_MODEL_ID``, else the default model unless it
+    is disabled: always a registry id, never the raw ``LLM_NAME`` (which may
+    be unset or a comma-separated list).
 
     Args:
         config: The source's parsed config.
         user: The source owner the build runs as.
+
+    Returns:
+        The model id to extract with.
+
+    Raises:
+        ModelNotAvailableError: No step names a model that can run. Built
+            without a model, the LLM would answer with ``LLM_PROVIDER``'s own
+            (the hosted ``docsgpt`` one, possibly the disabled default).
     """
-    return (
-        config.graph.extraction_model
-        or settings.GRAPHRAG_EXTRACTION_MODEL
-        or get_task_model_id(user)
-    )
+    for label, choice in (
+        ("the source's extraction model", config.graph.extraction_model),
+        ("GRAPHRAG_EXTRACTION_MODEL", settings.GRAPHRAG_EXTRACTION_MODEL),
+    ):
+        if not choice:
+            continue
+        if _disabled_in_registry(choice, user):
+            logger.warning("Graph extraction skips %s %r: the model is disabled", label, choice)
+            continue
+        return choice
+    model_id = get_task_model_id(user)
+    if not model_id:
+        raise ModelNotAvailableError(
+            None,
+            "no extraction model can run. Set a task model (Settings > General or Admin > Defaults), "
+            "TASK_MODEL_ID or GRAPHRAG_EXTRACTION_MODEL, or enable the default model.",
+        )
+    return model_id
 
 
 def extraction_fingerprint(config: SourceConfig) -> str:

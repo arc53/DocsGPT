@@ -95,8 +95,9 @@ class Verdict:
 def judge_model_id(user_id: Optional[str]) -> Optional[str]:
     """The catalog id of the judge model: ``MONITOR_JUDGE_MODEL``, else the owner's task model.
 
-    ``MONITOR_JUDGE_MODEL`` is resolved as a chat turn resolves its model: an
-    id the user's catalog doesn't know falls back. The task model
+    ``MONITOR_JUDGE_MODEL`` must name a model that can run, as
+    ``TASK_MODEL_ID`` must: one the user's catalog doesn't know, or holds
+    disabled, falls back. The task model
     (``get_task_model_id``) is the owner's pick in Settings > General, else
     the instance's, else ``TASK_MODEL_ID``, else the default model.
 
@@ -107,9 +108,11 @@ def judge_model_id(user_id: Optional[str]) -> Optional[str]:
 
     configured = (settings.MONITOR_JUDGE_MODEL or "").strip()
     if configured:
-        if model_utils.validate_model_id(configured, user_id=user_id):
+        if model_utils.model_is_usable(configured, user_id):
             return configured
-        logger.warning("MONITOR_JUDGE_MODEL %r is not in the model catalog; using the task model", configured)
+        logger.warning(
+            "MONITOR_JUDGE_MODEL %r is not an enabled model in the catalog; using the task model", configured
+        )
     return model_utils.get_task_model_id(user_id)
 
 

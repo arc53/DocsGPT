@@ -788,6 +788,41 @@ class TestModelResolution:
         monkeypatch.setattr(extraction_module, "get_task_model_id", lambda user: "model-a")
         assert extraction_module._resolve_extraction_model(SourceConfig(), None) == "model-a"
 
+    @staticmethod
+    def _catalog(monkeypatch, models):
+        """A registry holding ``models`` ({id: enabled}); any other id is unknown to it."""
+        from types import SimpleNamespace
+
+        registry = SimpleNamespace(
+            get_model=lambda model_id, user_id=None: (
+                SimpleNamespace(id=model_id, enabled=models[model_id]) if model_id in models else None
+            )
+        )
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+
+    def test_no_model_that_can_run_fails_clearly(self, monkeypatch):
+        """With no usable task model the call must not go to ``LLM_PROVIDER`` with no model (a disabled default)."""
+        from docsgpt.llm.llm_creator import ModelNotAvailableError
+
+        monkeypatch.setattr(extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", None)
+        monkeypatch.setattr(extraction_module, "get_task_model_id", lambda user: None)
+        with pytest.raises(ModelNotAvailableError, match="no extraction model can run"):
+            extraction_module._resolve_extraction_model(SourceConfig(), "owner")
+
+    def test_a_disabled_override_or_setting_is_skipped(self, monkeypatch):
+        self._catalog(monkeypatch, {"off-model": False, "on-model": True})
+        config = SourceConfig.model_validate({"graph": {"extraction_model": "off-model"}})
+        monkeypatch.setattr(extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "off-model")
+        assert extraction_module._resolve_extraction_model(config, "owner") == "task-model"
+        monkeypatch.setattr(extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "on-model")
+        assert extraction_module._resolve_extraction_model(config, "owner") == "on-model"
+
+    def test_a_model_the_registry_does_not_know_is_kept(self, monkeypatch):
+        """It goes to ``LLM_PROVIDER`` as before: the registry can't say it is disabled."""
+        self._catalog(monkeypatch, {})
+        monkeypatch.setattr(extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "raw-upstream-id")
+        assert extraction_module._resolve_extraction_model(SourceConfig(), "owner") == "raw-upstream-id"
+
     def test_max_chunks_resolution(self, monkeypatch):
         monkeypatch.setattr(
             extraction_module.settings,

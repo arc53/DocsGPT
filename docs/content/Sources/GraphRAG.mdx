@@ -117,8 +117,10 @@ Instance-wide settings (see [App Configuration](/Deploying/DocsGPT-Settings)):
 The extraction model is resolved in this order: the source's `graph.extraction_model`, then
 `GRAPHRAG_EXTRACTION_MODEL`, then the source owner's [task model](/Using/web-app#task-model): their pick in
 **Settings → General**, else the one an admin set under **Admin → Defaults**, else `TASK_MODEL_ID`, else the
-instance's default model unless it is disabled. The call goes to the provider that serves that model in the model
-registry, or to `LLM_PROVIDER` when the registry doesn't know it or none of these models can run. This is not necessarily the model chat uses, so check the task
+instance's default model unless it is disabled. A source model or `GRAPHRAG_EXTRACTION_MODEL` that is disabled in the
+model registry is skipped. The call goes to the provider that serves that model in the model registry, or to
+`LLM_PROVIDER` when the registry doesn't know it. When none of these models can run, the build fails with *No model is
+available: no extraction model can run* rather than falling back to another model. This is not necessarily the model chat uses, so check the task
 model, or set `GRAPHRAG_EXTRACTION_MODEL`, to know which model builds, and pays for, the graph.
 
 Per-source extraction knobs live under the source config's `graph` object and override the instance defaults:

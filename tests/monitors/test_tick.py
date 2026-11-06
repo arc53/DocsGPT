@@ -807,7 +807,7 @@ class TestJudgeCall:
 
         monkeypatch.setattr(judge, "_build_llm", build)
         monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "judge-model")
-        monkeypatch.setattr("docsgpt.core.model_utils.validate_model_id", lambda m, user_id=None: True)
+        monkeypatch.setattr("docsgpt.core.model_utils.model_is_usable", lambda m, user_id=None: True)
         verdict = judge.judge(
             user_id="u1",
             monitor_id="m1",
@@ -907,7 +907,18 @@ class TestJudgeCall:
 
     def test_the_owners_task_model_when_the_setting_is_unknown(self, monkeypatch):
         monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "not-in-the-catalog")
-        monkeypatch.setattr("docsgpt.core.model_utils.validate_model_id", lambda m, user_id=None: False)
+        monkeypatch.setattr("docsgpt.core.model_utils.model_is_usable", lambda m, user_id=None: False)
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
+        assert judge.judge_model_id("u1") == "task-u1"
+
+    def test_the_owners_task_model_when_the_setting_is_disabled(self, monkeypatch):
+        """A disabled model is in the catalog but never runs, as with ``TASK_MODEL_ID``."""
+        registry = SimpleNamespace(
+            get_model=lambda model_id, user_id=None: SimpleNamespace(id=model_id, enabled=False),
+            model_exists=lambda model_id, user_id=None: True,
+        )
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+        monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "disabled-model")
         monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
         assert judge.judge_model_id("u1") == "task-u1"
 
