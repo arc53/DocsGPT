@@ -86,7 +86,10 @@ type ComboboxProps = {
   /** The search text, when the caller owns it. */
   search?: string;
   onSearchChange?: (search: string) => void;
-  /** Replaces a row's body (row actions); `leading`/`hint` are then yours. */
+  /**
+   * Replaces a row's body; `leading`/`hint` are then yours. A `rowAction`
+   * still follows it.
+   */
   renderItem?: (
     option: ComboboxOption,
     state: { checked: boolean },
@@ -263,7 +266,14 @@ function Combobox({
   };
 
   const renderRow = (option: ComboboxOption, checked: boolean) => {
-    if (renderItem) return renderItem(option, { checked });
+    if (renderItem) {
+      return (
+        <>
+          {renderItem(option, { checked })}
+          {renderAction(option)}
+        </>
+      );
+    }
     const hint = option.hint && (
       <span
         data-slot="combobox-hint"

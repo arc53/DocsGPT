@@ -773,7 +773,8 @@ labels and wires it (see FormField).
   picker has Edit, `Pencil`, or View, `Eye`, for a prompt the role can't
   change). It is a `ghost icon-sm` at the row's end, shown while the row is
   hovered or highlighted and always on touch (`pointer-coarse:`, as
-  SuggestionRows), closes the picker and doesn't pick the row. Only the
+  SuggestionRows), follows a `renderItem` body too, closes the picker and
+  doesn't pick the row. Only the
   highlighted row's button is a tab stop (cmdk's `useCommandState`), so Tab
   from the search reaches it in one step, and its Enter stops before cmdk's
   root, which would pick the row. What else you do to an item (Duplicate,

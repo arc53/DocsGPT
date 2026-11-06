@@ -629,6 +629,34 @@ describe('Combobox rowAction', () => {
       document.body.querySelector('[data-slot="popover-content"]'),
     ).toBeNull();
   });
+
+  it('follows a renderItem body', async () => {
+    await render(
+      <Combobox
+        options={options}
+        value={null}
+        onValueChange={() => undefined}
+        placeholder="Pick"
+        renderItem={(option) => (
+          <span data-testid={`row-${option.value}`}>{option.label}</span>
+        )}
+        rowAction={(option) => ({
+          label: `Edit ${option.label}`,
+          icon: <span />,
+          onSelect: () => undefined,
+        })}
+      />,
+    );
+    await open();
+    const row = item(options[0].label);
+    const action = row.querySelector('[data-slot="combobox-row-action"]');
+    expect(action?.getAttribute('aria-label')).toBe(`Edit ${options[0].label}`);
+    expect(
+      row
+        .querySelector(`[data-testid="row-${options[0].value}"]`)!
+        .compareDocumentPosition(action!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
 });
 
 describe('Combobox picker chrome', () => {
