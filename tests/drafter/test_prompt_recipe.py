@@ -351,6 +351,21 @@ class TestTurn:
 
 
 @pytest.mark.unit
+def test_a_prompt_already_over_the_cap_takes_edits_that_do_not_make_it_longer():
+    from docsgpt.drafter.prompt_recipe import apply_edits, CONTENT_MAX
+
+    long = "Be brief. " + "x" * CONTENT_MAX
+    _, shorter = apply_edits(long, [{"find": "Be brief. ", "replace": "", "reason": "Shorter."}])
+    assert len(shorter) == CONTENT_MAX
+    _, same = apply_edits(long, [{"find": "Be brief.", "replace": "Be kind.", "reason": "Kinder."}])
+    assert same.startswith("Be kind.")
+    with pytest.raises(ProposalInvalid, match="longer"):
+        apply_edits(long, [{"find": "Be brief.", "replace": "Be brief and kind.", "reason": "Kinder."}])
+    with pytest.raises(ProposalInvalid, match="at most"):
+        apply_edits("Be brief.", [{"find": "Be brief.", "replace": "x" * (CONTENT_MAX + 1), "reason": "Long."}])
+
+
+@pytest.mark.unit
 def test_an_edits_replacement_loses_invisible_characters_but_keeps_its_line_breaks():
     from docsgpt.drafter.prompt_recipe import apply_edits
 

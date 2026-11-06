@@ -661,6 +661,16 @@ class TestPromptEdits:
         with pytest.raises(ProposalInvalid):
             _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [edit]}}, form={"prompt_id": PROMPT_ID})
 
+    def test_the_agents_own_prompt_over_the_cap_still_takes_edits(self):
+        # The prompt routes store any length; the drafter's cap is for what it writes, not what is there.
+        long = "You help customers. " + "x" * 20100
+        ws = _ws()
+        ws.editable_prompt_text = long
+        edit = {"find": "You help customers. ", "replace": "", "reason": "Shorter."}
+        proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [edit]}},
+                             form={"prompt_id": PROMPT_ID}, ws=ws)
+        assert proposal["fields"]["prompt"]["edits"][0]["find"] == "You help customers. "
+
     def test_no_change_leaves_the_prompt_out(self):
         same = {**EDIT, "replace": EDIT["find"]}
         proposal = _validate({"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [same]}},

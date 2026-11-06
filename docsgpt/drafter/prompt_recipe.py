@@ -357,7 +357,8 @@ def apply_edits(content: str, edits: list[dict]) -> tuple[list[dict], str]:
 
     Raises:
         ProposalInvalid: Too many edits, a find that doesn't occur exactly
-            once, a missing reason, overlapping edits, or an empty result.
+            once, a missing reason, overlapping edits, an empty result, or a
+            result over :data:`CONTENT_MAX` that is longer than ``content``.
     """
     if len(edits) > MAX_EDITS:
         raise ProposalInvalid([f"Send at most {MAX_EDITS} edits; merge nearby changes."])
@@ -405,7 +406,10 @@ def apply_edits(content: str, edits: list[dict]) -> tuple[list[dict], str]:
     result = "".join(parts)
     if not result.strip():
         raise ProposalInvalid(["The edits would leave the prompt empty."])
-    if len(result) > CONTENT_MAX:
+    if len(result) > CONTENT_MAX and len(result) > len(content):
+        # A prompt saved longer than the cap (the prompt routes store any length) may still shrink or stay as long.
+        if len(content) > CONTENT_MAX:
+            raise ProposalInvalid([f"The prompt is already over {CONTENT_MAX} characters: edits can't make it longer."])
         raise ProposalInvalid([f"The prompt can be at most {CONTENT_MAX} characters."])
     return out, result
 
