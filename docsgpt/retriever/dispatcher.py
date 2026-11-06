@@ -575,6 +575,26 @@ class CompressingRetriever(BaseRetriever):
                 or ""
             )
         docs = self._inner.search(*args, **kwargs)
+        if not docs:
+            return docs
+
+        # Integrate SuperCompress between retrieval and generation
+        try:
+            from supercompress import compress_for_turn
+
+            chunks = [doc.get("text", "") for doc in docs if isinstance(doc, dict)]
+            res = compress_for_turn(
+                context="\n\n".join(chunks),
+                user_query=query or "",
+                context_blocks=chunks,
+            )
+            compressed_text = getattr(res, "compressed_text", str(res))
+            adapted_doc = dict(docs[0])
+            adapted_doc["text"] = compressed_text
+            return [adapted_doc]
+        except (ImportError, Exception):
+            pass
+
         from docsgpt.retriever.stages.boilerplate_pruning import prune_boilerplate
 
         return prune_boilerplate(docs, query=query or "")

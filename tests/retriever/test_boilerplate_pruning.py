@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -525,4 +525,42 @@ class TestCompressingRetrieverIntegration:
         monkeypatch.setattr("docsgpt.core.settings.settings.CHUNK_COMPRESSION_ENABLED", True)
         docs_pruned = engine._retrieve_node_sources(mock_config)
         assert docs_pruned[0]["text"] == "Factual chunk."
+    def test_supercompress_integration_delegates_with_retrieved_chunks_and_query(self):
+        """Integrate SuperCompress between retrieval and generation with automated delegation tests."""
+        mock_result = Mock()
+        mock_result.compressed_text = "SuperCompressed query-focused context"
+        mock_compress_for_turn = Mock(return_value=mock_result)
+
+        mock_module = Mock(compress_for_turn=mock_compress_for_turn)
+        mock_inner = Mock()
+        mock_inner.search.return_value = [
+            {"id": "doc1", "text": "Raw retrieved chunk 1"},
+            {"id": "doc2", "text": "Raw retrieved chunk 2"},
+        ]
+
+        with patch.dict("sys.modules", {"supercompress": mock_module}):
+            retriever = CompressingRetriever(mock_inner)
+            result = retriever.search(query="API authentication")
+
+            assert len(result) == 1
+            assert result[0]["id"] == "doc1"
+            assert result[0]["text"] == "SuperCompressed query-focused context"
+            mock_compress_for_turn.assert_called_once()
+            _, kwargs = mock_compress_for_turn.call_args
+            assert kwargs.get("user_query") == "API authentication"
+            assert kwargs.get("context_blocks") == [
+                "Raw retrieved chunk 1",
+                "Raw retrieved chunk 2",
+            ]
+
+    def test_supercompress_fallback_when_absent(self):
+        """Falls back gracefully to in-tree boilerplate pruning when SuperCompress is not installed."""
+        mock_inner = Mock()
+        mock_inner.search.return_value = [
+            {"id": "doc1", "text": "Home > API\nFactual documentation content."}
+        ]
+        with patch.dict("sys.modules", {"supercompress": None}):
+            retriever = CompressingRetriever(mock_inner)
+            result = retriever.search(query="content")
+            assert result[0]["text"] == "Factual documentation content."
 
