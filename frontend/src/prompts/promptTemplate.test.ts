@@ -38,4 +38,36 @@ describe('templateBroken', () => {
     expect(templateBroken('{{ a }} {# note')).toBe(true);
     expect(templateBroken('{{ a }} {% raw %} text')).toBe(true);
   });
+
+  it("leaves a tag named like an object's own property alone", () => {
+    for (const tag of [
+      'constructor',
+      'toString',
+      'hasOwnProperty',
+      '__proto__',
+    ]) {
+      expect(() =>
+        templateBroken(`{{ source.content }}{% ${tag} %}`),
+      ).not.toThrow();
+      expect(templateBroken(`{{ source.content }}{% ${tag} %}`)).toBe(false);
+      expect(templateBroken(`{{ a }}{% end${tag} %}`)).toBe(false);
+    }
+  });
+
+  it('reads a tag name that runs into a bracket or a trim modifier', () => {
+    // Each of these parses in the chat's Jinja environment.
+    for (const text of [
+      '{% if(source.count) %}{{ source.content }}{% endif %}',
+      '{{ a }}{% call(user) m() %}{{ user }}{% endcall %}',
+      '{{ a }}{% if x %}y{% endif +%}',
+      '{{ a }}{% if x %}y{% endif+%}',
+      '{{ a }}{%+ if x +%}y{%+endif-%}',
+      '{{ a }}{% if x %}y{% elif(z) %}w{% else-%}v{%endif%}',
+      '{{ a }}{% for(x) in y %}{{x}}{% endfor %}',
+    ]) {
+      expect(templateBroken(text)).toBe(false);
+    }
+    expect(templateBroken('{{ a }}{% if(x) %}y')).toBe(true);
+    expect(templateBroken('{{ a }}{% endif+%}')).toBe(true);
+  });
 });

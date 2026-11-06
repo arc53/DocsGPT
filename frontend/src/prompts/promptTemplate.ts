@@ -21,14 +21,22 @@ const BLOCKS = new Set([
   'autoescape',
   'set',
 ]);
-// Tags allowed only inside a block, and the blocks each may sit in.
-const MIDDLE: Record<string, string[]> = {
-  elif: ['if'],
-  else: ['if', 'for'],
-};
+// Tags allowed only inside a block, and the blocks each may sit in. A Map,
+// so a tag named like an object property (`constructor`) isn't found here.
+const MIDDLE = new Map<string, string[]>([
+  ['elif', ['if']],
+  ['else', ['if', 'for']],
+]);
 
 const OPENERS = /\{[{%#]/g;
-const CLOSERS: Record<string, string> = { '{': '}}', '%': '%}', '#': '#}' };
+const CLOSERS = new Map([
+  ['{', '}}'],
+  ['%', '%}'],
+  ['#', '#}'],
+]);
+// A tag's name, as Jinja reads it: it ends at the first character that
+// can't be in a name, so `if(x)` and `endif+` are `if` and `endif`.
+const TAG_NAME = /^[A-Za-z_][A-Za-z0-9_]*/;
 const END_RAW = /\{%[-+]?\s*endraw\s*[-+]?%\}/g;
 
 /**
@@ -48,26 +56,26 @@ export function templateBroken(content: string): boolean {
   let match: RegExpExecArray | null;
   while ((match = OPENERS.exec(content)) !== null) {
     const kind = match[0][1];
-    const close = content.indexOf(CLOSERS[kind], match.index + 2);
+    const close = content.indexOf(CLOSERS.get(kind) ?? '', match.index + 2);
     if (close < 0) return true;
     OPENERS.lastIndex = close + 2;
     if (kind !== '%') continue;
-    const words = content
+    const body = content
       .slice(match.index + 2, close)
       .replace(/^[-+]/, '')
-      .replace(/-$/, '')
-      .trim()
-      .split(/\s+/);
-    const tag = words[0];
+      .replace(/[-+]$/, '')
+      .trim();
+    const tag = TAG_NAME.exec(body)?.[0] ?? '';
+    const middle = MIDDLE.get(tag);
     if (tag === 'raw') {
       END_RAW.lastIndex = close + 2;
       const end = END_RAW.exec(content);
       if (!end) return true;
       OPENERS.lastIndex = end.index + end[0].length;
     } else if (BLOCKS.has(tag)) {
-      if (tag !== 'set' || !words.join(' ').includes('=')) open.push(tag);
-    } else if (tag in MIDDLE) {
-      if (!MIDDLE[tag].includes(open[open.length - 1])) return true;
+      if (tag !== 'set' || !body.includes('=')) open.push(tag);
+    } else if (middle) {
+      if (!middle.includes(open[open.length - 1])) return true;
     } else if (tag.startsWith('end') && BLOCKS.has(tag.slice(3))) {
       if (open.pop() !== tag.slice(3)) return true;
     }
