@@ -29,7 +29,8 @@ class RetrievalSettings(SettingsGroup):
         default=None,
         description=(
             "Model for ingest-time graph extraction when the source sets none; unset uses the source owner's "
-            "task model (TASK_MODEL_ID)."
+            "task model: their pick in Settings > General, else the instance's in Admin > Defaults, else "
+            "TASK_MODEL_ID, else the default model."
         ),
     )
     GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION: int = Field(

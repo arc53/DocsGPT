@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-06
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -828,7 +828,7 @@ Gates graph-aware ingestion and retrieval.
 
 Type `str`, default unset.
 
-Model for ingest-time graph extraction when the source sets none; unset uses the source owner's task model (TASK_MODEL_ID).
+Model for ingest-time graph extraction when the source sets none; unset uses the source owner's task model: their pick in Settings > General, else the instance's in Admin > Defaults, else TASK_MODEL_ID, else the default model.
 
 ### `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`
 
@@ -1993,7 +1993,7 @@ Cap on a user's total stored artifact bytes (0 disables).
 
 Type `bool`, default `true`.
 
-Offer "Draft with DocsGPT", which fills the agent form from a description and never saves. It runs on the task model; with no model to run on it is hidden even while this is on.
+Offer "Draft with DocsGPT", which fills the agent form from a description. It never publishes or deletes anything and saves only a prompt it wrote, when the user picks "Use this prompt"; the agent is saved only by the user. It runs on the task model; with no model to run on it is hidden even while this is on.
 
 ### `DRAFTER_RATE_LIMIT_PER_MINUTE`
 
@@ -2293,7 +2293,7 @@ Offer the monitor tool: polled checks of a webpage or any tool, ingest events, w
 
 Type `str`, default unset.
 
-Model that judges a monitor's natural-language condition, only after its deterministic check passed (or on a change when it has none). Unset uses the monitor owner's task model (TASK_MODEL_ID).
+Model that judges a monitor's natural-language condition, only after its deterministic check passed (or on a change when it has none). Unset uses the monitor owner's task model: their pick in Settings > General, else the instance's in Admin > Defaults, else TASK_MODEL_ID, else the default model.
 
 ### `MONITOR_DEFAULT_INTERVAL_SECONDS`
 

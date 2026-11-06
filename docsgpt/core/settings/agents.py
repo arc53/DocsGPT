@@ -173,12 +173,14 @@ class AgentSettings(SettingsGroup):
         default=5 * 1024 * 1024 * 1024, description="Cap on a user's total stored artifact bytes (0 disables)."
     )
 
-    # Draft with DocsGPT (the drafter): fills the agent form from a description, never saves.
+    # Draft with DocsGPT (the drafter): fills the agent form from a description; saves only a prompt it wrote.
     DRAFTER_ENABLED: bool = Field(
         default=True,
         description=(
-            'Offer "Draft with DocsGPT", which fills the agent form from a description and never saves. It runs on '
-            "the task model; with no model to run on it is hidden even while this is on."
+            'Offer "Draft with DocsGPT", which fills the agent form from a description. It never publishes or '
+            'deletes anything and saves only a prompt it wrote, when the user picks "Use this prompt"; the agent '
+            "is saved only by the user. It runs on the task model; with no model to run on it is hidden even "
+            "while this is on."
         ),
     )
     DRAFTER_RATE_LIMIT_PER_MINUTE: int = Field(
