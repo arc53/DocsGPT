@@ -7,7 +7,7 @@ from google.genai import types
 
 from docsgpt.core.settings import settings
 
-from docsgpt.llm.base import BaseLLM
+from docsgpt.llm.base import BaseLLM, optional_int
 from docsgpt.llm.credential_scope import GOOGLE_BASE_URL, check_credential_scope
 from docsgpt.llm.deadlines import provider_event
 from docsgpt.llm.handlers.google import _decode_thought_signature
@@ -73,6 +73,8 @@ class GoogleLLM(BaseLLM):
             http_options={"base_url": GOOGLE_BASE_URL},
         )
         self.storage = StorageCreator.get_storage()
+        self._last_usage = None
+        self._last_usage_claimed = False
 
     def get_supported_attachment_types(self):
         """
@@ -649,6 +651,37 @@ class GoogleLLM(BaseLLM):
             return bool(part.get("thought"))
         return bool(getattr(part, "thought", False))
 
+    def _record_usage(self, usage_metadata) -> None:
+        """Capture Gemini's provider-reported usage for the current call.
+
+        ``prompt_token_count`` already includes cached tokens, while
+        ``candidates_token_count`` excludes thinking tokens, which are billed
+        as output; both sit in billing-parity bins here. Streaming chunks
+        carry cumulative counts, so the latest one wins.
+        """
+        if usage_metadata is None:
+            return
+        try:
+            prompt = int(getattr(usage_metadata, "prompt_token_count", 0) or 0)
+            prompt += int(getattr(usage_metadata, "tool_use_prompt_token_count", 0) or 0)
+            completion = int(getattr(usage_metadata, "candidates_token_count", 0) or 0)
+            completion += int(getattr(usage_metadata, "thoughts_token_count", 0) or 0)
+            cached = optional_int(getattr(usage_metadata, "cached_content_token_count", None))
+        except (TypeError, ValueError):
+            return
+        if not prompt and not completion:
+            # A zeroed usage object must not clobber the tiktoken estimate.
+            return
+        result = {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+        }
+        if cached is not None:
+            result["prompt_tokens_details"] = {"cached_tokens": cached}
+        self._last_usage = result
+        self._last_usage_claimed = False
+
     def _raw_gen(
         self,
         baseself,
@@ -661,6 +694,7 @@ class GoogleLLM(BaseLLM):
         **kwargs,
     ):
         """Generate content using Google AI API without streaming."""
+        self._last_usage = None
         system_instruction = None
         if formatting == "openai":
             messages, system_instruction = self._clean_messages_google(messages, model)
@@ -682,6 +716,7 @@ class GoogleLLM(BaseLLM):
             contents=messages,
             config=config,
         )
+        self._record_usage(getattr(response, "usage_metadata", None))
 
         if tools:
             return response
@@ -705,6 +740,7 @@ class GoogleLLM(BaseLLM):
         **kwargs,
     ):
         """Generate content using Google AI API with streaming."""
+        self._last_usage = None
         system_instruction = None
         if formatting == "openai":
             messages, system_instruction = self._clean_messages_google(messages, model)
@@ -752,6 +788,7 @@ class GoogleLLM(BaseLLM):
         try:
             for chunk in response:
                 provider_event()
+                self._record_usage(getattr(chunk, "usage_metadata", None))
                 if hasattr(chunk, "candidates") and chunk.candidates:
                     for candidate in chunk.candidates:
                         if candidate.content and candidate.content.parts:
