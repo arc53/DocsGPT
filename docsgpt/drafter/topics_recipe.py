@@ -212,23 +212,30 @@ def editable_agent(conn: Connection, user_id: str, agent_id: str) -> dict:
     return agent
 
 
+def insights_on_here() -> bool:
+    """Whether Insights labels conversations on this instance (``decision_analytics_enabled`` in ``/api/config``).
+
+    ``DECISION_ANALYTICS_ENABLED`` with the decision model available; an error reading either counts as off.
+    """
+    from docsgpt import decisions
+    from docsgpt.core.settings import settings
+
+    try:
+        return bool(settings.DECISION_ANALYTICS_ENABLED) and bool(decisions.available())
+    except Exception:
+        return False
+
+
 def insights_off(agent: dict) -> Optional[str]:
     """Why Insights doesn't sort this agent's conversations, or None when it does.
 
     Suggestions read the agent's users' questions only while it does.
 
     Returns:
-        ``off_on_this_instance`` (``DECISION_ANALYTICS_ENABLED`` off, or the decision model unavailable, as
-        ``/api/config`` reports it), ``turned_off_for_this_agent`` (the agent's ``analytics.enabled``), or None.
+        ``off_on_this_instance`` (:func:`insights_on_here` false), ``turned_off_for_this_agent`` (the agent's
+        ``analytics.enabled``), or None.
     """
-    from docsgpt import decisions
-    from docsgpt.core.settings import settings
-
-    try:
-        on_here = bool(settings.DECISION_ANALYTICS_ENABLED) and bool(decisions.available())
-    except Exception:
-        on_here = False
-    if not on_here:
+    if not insights_on_here():
         return "off_on_this_instance"
     if not AnalyticsConfig.parse((agent.get("config") or {}).get("analytics")).enabled:
         return "turned_off_for_this_agent"

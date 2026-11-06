@@ -275,6 +275,21 @@ class TestAvailability:
         ):
             assert AGENT_RECIPE.load_workspace("alice", {"agent_id": None}).insights is False
 
+    def test_both_recipes_read_the_instances_insights_switch_from_one_check(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.drafter import topics_recipe
+
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+        with patch("docsgpt.decisions.available", side_effect=RuntimeError("down")):
+            assert topics_recipe.insights_on_here() is False
+        with patch("docsgpt.decisions.available", return_value=True):
+            assert topics_recipe.insights_on_here() is True
+        with patch.object(topics_recipe, "insights_on_here", return_value=False), patch.object(
+            agent_recipe, "load_workspace", return_value=Workspace()
+        ):
+            assert AGENT_RECIPE.load_workspace("alice", {"agent_id": None}).insights is False
+            assert topics_recipe.insights_off({}) == "off_on_this_instance"
+
     def test_the_safety_step_asks_whether_a_saved_agent_has_enough_conversations(self, monkeypatch):
         from docsgpt.core.settings import settings
         from docsgpt.drafter import topics_recipe

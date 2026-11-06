@@ -39,6 +39,7 @@ from docsgpt.drafter.prompt_rules import (
 from docsgpt.drafter.prompt_recipe import apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 from docsgpt.drafter.runner import question_rounds
+from docsgpt.drafter import topics_recipe
 from docsgpt.drafter.topics_recipe import TopicsWorkspace
 
 AGENT_TYPES = ("classic", "research")
@@ -275,16 +276,6 @@ def guardrail_menu() -> list[str]:
     return out
 
 
-def insights_available() -> bool:
-    """Whether Insights labels conversations on this instance (``decision_analytics_enabled`` in ``/api/config``)."""
-    from docsgpt import decisions
-
-    try:
-        return bool(settings.DECISION_ANALYTICS_ENABLED) and bool(decisions.available())
-    except Exception:
-        return False
-
-
 def source_folders(source_ids: list[str]) -> list[dict]:
     """The folders of these sources, as the agent's topic question offers them (``topics.folders``)."""
     from docsgpt.analytics import topics as analytics_topics
@@ -339,7 +330,7 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
     out = AgentWorkspace(
         **vars(ws),
         guardrail_menu=guardrail_menu(),
-        insights=insights_available(),
+        insights=topics_recipe.insights_on_here(),
         max_topics=int(settings.ANALYTICS_MAX_TOPICS),
     )
     form = context.get("form") or {}
@@ -347,8 +338,6 @@ def _load(user_id: str, context: dict) -> AgentWorkspace:
     if editable and not form.get("prompt_draft"):
         out.editable_prompt_text = saved_prompt_text(user_id, editable)
     if context.get("step") == "safety" and out.insights:
-        from docsgpt.drafter import topics_recipe
-
         # The form's sources the caller may attach, and those already on the saved agent.
         known = ws.ids("sources") | (saved_source_ids(user_id, ws.agent["id"]) if ws.agent else set())
         out.folders = source_folders([s for s in form.get("sources", []) if s in known])
