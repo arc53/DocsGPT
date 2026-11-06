@@ -1218,6 +1218,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     },
     onProposal: applyDraft,
   });
+  // The session as it is now, for a save that ends after a turn began.
+  const drafterSessionRef = useRef(drafterSession);
+  drafterSessionRef.current = drafterSession;
 
   // A step can't be drafted when nothing in it is the caller's to set: the
   // limits and guardrails need policy access, the topics need Insights.
@@ -1655,6 +1658,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const handleSaveDraft = async () => {
     if (savingRef.current) return;
     const saving = savePayload;
+    // Drafted values that go with the save lose their marks; a draft that
+    // lands while it is out keeps its.
+    const savedValues = draftValues;
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -1740,7 +1746,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       // What was sent is saved: the avatar went with it.
       markSaved(saving);
       setImageFile(null);
-      drafted.clear();
+      drafted.clear(savedValues);
 
       if (effectiveMode === 'new') setEffectiveMode('draft');
     } catch (error) {
@@ -1755,6 +1761,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const handlePublish = async () => {
     if (savingRef.current) return;
     const saving = savePayload;
+    const savedValues = draftValues;
+    const turnsAtSave = drafterSession.items.length;
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -1837,15 +1845,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const updatedAgent = { ...agent, ...saved };
       initialAgentRef.current = updatedAgent;
       markSaved(saving);
-      drafted.clear();
-      // Publishing ends a drafting session.
-      drafterSession.reset();
-      build.reset();
-      buildRowsRef.current.clear();
-      setPromptDraft(null);
-      setPromptUsed(false);
-      usedPromptRef.current = null;
-      promptDrafted.clear();
+      drafted.clear(savedValues);
+      // Publishing ends a drafting session, unless a turn began while it
+      // was out: that conversation and what it drafted stay.
+      const session = drafterSessionRef.current;
+      if (!session.streaming && session.items.length === turnsAtSave) {
+        session.reset();
+        build.reset();
+        buildRowsRef.current.clear();
+        setPromptDraft(null);
+        setPromptUsed(false);
+        usedPromptRef.current = null;
+        promptDrafted.clear();
+      }
       setAttachedTools(selectedTools);
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());

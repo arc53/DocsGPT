@@ -18,8 +18,12 @@ export type DraftedFields<K extends string> = {
   mark: (field: K, previous: unknown, applied: unknown) => void;
   /** Put a field's previous value back and drop its mark. */
   undo: (field: K) => void;
-  /** Drop every mark, keeping the values (after a save). */
-  clear: () => void;
+  /**
+   * Drop the marks, keeping the values (after a save). With `saved`, the
+   * values a save sent (in the shape of `values`), only the marks whose
+   * value went with it: a field drafted while the save was out keeps its.
+   */
+  clear: (saved?: Partial<Record<K, unknown>>) => void;
 };
 
 /**
@@ -85,7 +89,20 @@ export function useDraftedFields<K extends string>(
     });
   }, []);
 
-  const clear = useCallback(() => setMarkers(new Map()), []);
+  const clear = useCallback((saved?: Partial<Record<K, unknown>>) => {
+    if (!saved) {
+      setMarkers(new Map());
+      return;
+    }
+    setMarkers(
+      (prev) =>
+        new Map(
+          [...prev].filter(
+            ([field, marker]) => !isEqual(saved[field], marker.applied),
+          ),
+        ),
+    );
+  }, []);
 
   const isDrafted = useCallback((field: K) => markers.has(field), [markers]);
 

@@ -2975,6 +2975,42 @@ describe('NewAgent drafter', () => {
     expect(requestLimit().disabled).toBe(true);
   });
 
+  it('keeps the marks and the conversation of a draft that lands during Publish', async () => {
+    let answer: (value: {
+      ok: boolean;
+      json: () => Promise<unknown>;
+    }) => void = () => undefined;
+    mocks.createAgent.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    drafter.scripts = [
+      [
+        proposal(
+          { name: 'Shipping help', description: 'Answers shipping.' },
+          { steps: ['basics'] },
+        ),
+        { type: 'end' },
+      ],
+      [proposal({ starters: ['Where is my parcel?'] }), { type: 'end' }],
+    ];
+    await render();
+    await ask('Shipping agent');
+    await act(async () => buttonByText('agents.form.buttons.publish')!.click());
+    await ask('Add a starter');
+    await act(async () =>
+      answer({ ok: true, json: () => Promise.resolve({ id: 'new-1' }) }),
+    );
+    // What was published loses its marks; the starter that came after keeps
+    // its, and the drawer its conversation.
+    expect(drafted()).toEqual(['agents.form.starters.label']);
+    expect(
+      panel()!.querySelectorAll('[data-slot="proposal-summary"]'),
+    ).toHaveLength(2);
+  });
+
   it('drops the mark of a field edited by hand', async () => {
     drafter.scripts = [[proposal({ name: 'Shipping help' }), { type: 'end' }]];
     await render();

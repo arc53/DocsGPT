@@ -108,6 +108,18 @@ describe('useDraftedFields', () => {
     expect(harness.form.name).toBe('Typed');
   });
 
+  it('clears only the marks whose values went with a save', async () => {
+    await draft('name', 'New');
+    await draft('tools', ['b']);
+    // The save sent these; tools was drafted again while it was out.
+    const saved = { ...harness.form };
+    await draft('tools', ['c']);
+    await act(async () => harness.drafted!.clear(saved));
+    expect(harness.drafted!.fields).toEqual(['tools']);
+    await act(async () => harness.drafted!.undo('tools'));
+    expect(harness.form.tools).toEqual(['a']);
+  });
+
   it('clears every mark and keeps the values (a save)', async () => {
     await draft('name', 'New');
     await act(async () => harness.drafted!.clear());
