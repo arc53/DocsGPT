@@ -408,7 +408,7 @@ numpy==2.5.4
     #   onnxruntime
     #   pandas
     #   qdrant-client
-oauthlib==4.0.0
+oauthlib==4.0.1
     # via requests-oauthlib
 obstore==0.11.1
     # via daytona
