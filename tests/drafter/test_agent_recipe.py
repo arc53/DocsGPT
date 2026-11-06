@@ -591,6 +591,18 @@ class TestValidate:
         with pytest.raises(ProposalInvalid, match="parse"):
             _validate({"prompt": {"kind": "new", "name": "P", "content": "{{ system.date }} {% for %}"}})
 
+    def test_a_tool_variable_asked_for_in_an_earlier_step_counts(self):
+        # The guided build moves the finished steps' messages to context.earlier and starts a new conversation.
+        fields = {"prompt": {"kind": "new", "name": "P", "content": "Memory: {{ tools.memory.memory_view }}"}}
+        earlier = ["A help desk that reads {{ tools.memory.memory_view }} in its prompt"]
+        proposal = validate({"message": "Done.", "fields": fields},
+                            _req({}, "Write the prompt", step="prompt", earlier=earlier), _ws())
+        assert proposal["fields"]["prompt"]["content"].startswith("Memory:")
+        edit = {"find": "You help customers.", "replace": "Memory: {{ tools.memory.memory_view }}", "reason": "r"}
+        edited = validate({"message": "Done.", "fields": {"prompt": {"kind": "edit", "id": PROMPT_ID, "edits": [edit]}}},
+                          _req({"prompt_id": PROMPT_ID}, "Edit it", step="prompt", earlier=earlier), _ws())
+        assert edited["fields"]["prompt"]["kind"] == "edit"
+
     def test_tool_variables_already_in_the_template_are_kept(self):
         template = "Hi {% if tools.memory.memory_view %}{{ tools.memory.memory_view }}{% endif %}"
         ws = _ws(prompt_texts={"default": template})

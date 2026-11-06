@@ -781,7 +781,7 @@ def _new_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> dict:
     if not template_parses(content):
         raise ProposalInvalid([TEMPLATE_PROBLEM])
     _, current = _current_prompt(req.context["form"], ws)
-    problem = tool_variables_problem(content, current, req)
+    problem = tool_variables_problem(content, current, req, req.context["earlier"])
     if problem:
         raise ProposalInvalid([problem])
     checks = checks_for(current, content)
@@ -812,7 +812,7 @@ def _edited_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> Optional[dict
         return None
     if not template_parses(result) and template_parses(current):
         raise ProposalInvalid([TEMPLATE_PROBLEM])
-    problem = tool_variables_problem(result, current, req)
+    problem = tool_variables_problem(result, current, req, req.context["earlier"])
     if problem:
         raise ProposalInvalid([problem])
     # The edits fit the prompt's whole saved text (or the view's unsaved text), the text the form applies them to.

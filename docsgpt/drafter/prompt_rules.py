@@ -11,7 +11,7 @@ the user asked for them.
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Optional, Sequence
 
 from docsgpt.drafter.recipe import DraftRequest
 
@@ -97,14 +97,18 @@ Keep each edit small and separate, so the user can accept or reject it on its ow
 send no edits and say why in your message."""
 
 
-def requested_tool_variables(req: DraftRequest) -> set[ToolUsage]:
+def requested_tool_variables(req: DraftRequest, earlier: Sequence[str] = ()) -> set[ToolUsage]:
     """The tool variables the user's own messages name, as ``(tool, action)`` pairs (casefolded).
 
     Only a reference in the variable syntax counts (``tools.memory.memory_view``,
     with or without ``{{ }}``): "use my tools" or another variable names none.
+
+    Args:
+        req: The draft request; its user messages are read.
+        earlier: What the user wrote before this conversation (the guided build's finished steps).
     """
     requested: set[ToolUsage] = set()
-    for match in _TOOL_REFERENCE.finditer(req.user_text()):
+    for match in _TOOL_REFERENCE.finditer("\n".join([*earlier, req.user_text()])):
         path = [(attr or key).strip().casefold() for attr, key in _TOOL_REFERENCE_PART.findall(match.group(1))]
         requested.add((path[0], path[1] if len(path) > 1 else None))
     return requested
@@ -115,7 +119,9 @@ def _variable(usage: ToolUsage) -> str:
     return "{{ " + ".".join(["tools", *(part for part in usage if part)]) + " }}"
 
 
-def tool_variables_problem(content: str, previous: str, req: DraftRequest) -> Optional[str]:
+def tool_variables_problem(
+    content: str, previous: str, req: DraftRequest, earlier: Sequence[str] = ()
+) -> Optional[str]:
     """The problem to send back when ``content`` adds tool variables the user didn't ask for, else None.
 
     A variable runs its tool before every message, so each added ``(tool,
@@ -126,11 +132,12 @@ def tool_variables_problem(content: str, previous: str, req: DraftRequest) -> Op
         content: The drafted prompt.
         previous: The prompt it replaces (its tool variables may stay).
         req: The draft request.
+        earlier: What the user wrote before this conversation, which counts as asking too.
     """
     added = tool_variables(content) - tool_variables(previous)
     if not added:
         return None
-    requested = requested_tool_variables(req)
+    requested = requested_tool_variables(req, earlier)
     unasked = sorted(
         (usage for usage in added
          if (usage[0].casefold(), usage[1].casefold() if usage[1] else None) not in requested
