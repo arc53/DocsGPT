@@ -60,6 +60,10 @@ QUESTIONS_SCHEMA: dict = {
 def parse_json_object(raw: Any) -> Optional[dict]:
     """The JSON object in a model's text answer, tolerant of code fences and prose around it.
 
+    The first ``{`` from which a whole object decodes wins. Looking for the
+    object itself rather than for a code fence keeps a fence inside a string
+    value (a prompt with a code block) from being taken for the answer's own.
+
     Args:
         raw: The model's text (or a dict already parsed by the provider).
 
@@ -76,16 +80,17 @@ def parse_json_object(raw: Any) -> Optional[dict]:
         return value if isinstance(value, dict) else None
     except ValueError:
         pass
-    from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
-
-    candidate = WorkflowEngine._strip_json_fence(text)
-    if candidate is None:
-        return None
-    try:
-        value = json.loads(candidate)
-    except ValueError:
-        return None
-    return value if isinstance(value, dict) else None
+    decoder = json.JSONDecoder()
+    start = text.find("{")
+    while start != -1:
+        try:
+            value, _ = decoder.raw_decode(text, start)
+        except ValueError:
+            value = None
+        if isinstance(value, dict):
+            return value
+        start = text.find("{", start + 1)
+    return None
 
 
 def parse_arguments(arguments: Any) -> Optional[dict]:
