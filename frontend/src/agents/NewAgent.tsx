@@ -194,6 +194,16 @@ const IMPROVE_ICONS: Record<ImproveSuggestion, LucideIcon> = {
   tightenPrompt: Scissors,
 };
 
+/** What the prompt view's Save and leave says when it can't save, by reason. */
+const LEAVE_ERRORS: Record<string, string> = {
+  conflict: 'settings.prompts.editConflict',
+  review: 'settings.prompts.saveBlocked.review',
+  name: 'settings.prompts.saveBlocked.name',
+  nameExists: 'modals.prompts.nameExists',
+  content: 'settings.prompts.saveBlocked.content',
+  template: 'modals.prompts.templateBroken',
+};
+
 /** A field a proposal changed: what it held before and what the draft set. */
 type AppliedChange = {
   field: AgentDraftField;
@@ -3237,18 +3247,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               // error stays in this dialog and the view stays. A prompt that
               // can't be saved yet (no name) just stays.
               handleSubmit={async () => {
-                if (!promptDetail.canSave || promptReview.review !== null) {
-                  setLeavingPrompt(false);
-                  return;
-                }
+                // What stops the save (a review, a missing name or text)
+                // stays in the dialog, as a refused save does.
+                const blocker =
+                  promptReview.review !== null
+                    ? 'review'
+                    : promptDetail.saveBlocker;
+                if (blocker) throw new Error(blocker);
                 const result = await promptDetail.save({ quiet: true });
                 if (result !== 'saved') throw new Error(result);
                 setLeavingPrompt(false);
               }}
               error={(reason) =>
-                reason instanceof Error && reason.message === 'conflict'
-                  ? t('settings.prompts.editConflict')
-                  : t('settings.prompts.saveFailed')
+                t(
+                  LEAVE_ERRORS[
+                    reason instanceof Error ? reason.message : 'failed'
+                  ] ?? 'settings.prompts.saveFailed',
+                )
               }
               cancelLabel={t('settings.prompts.leaveWithoutSaving')}
               handleCancel={() => {

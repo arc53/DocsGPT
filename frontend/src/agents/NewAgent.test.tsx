@@ -3424,6 +3424,31 @@ describe('NewAgent drafter', () => {
       expect(view()).toBeNull();
     });
 
+    it("keeps the leave dialog open with the reason when the prompt can't be saved", async () => {
+      await renderWithPrompt('p1');
+      await openFromRow('p1');
+      await act(async () =>
+        setNativeValue(
+          view()!.querySelector<HTMLInputElement>('input[type="text"]')!,
+          '',
+        ),
+      );
+      await act(async () =>
+        view()!.querySelector<HTMLButtonElement>('nav button')!.click(),
+      );
+      await act(async () =>
+        document
+          .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
+          .click(),
+      );
+      await expect(mocks.submitResult).rejects.toThrow('name');
+      expect(mocks.updatePrompt).not.toHaveBeenCalled();
+      expect(
+        document.querySelector('[data-testid="confirm-delete"]'),
+      ).not.toBeNull();
+      expect(view()).not.toBeNull();
+    });
+
     it('improves an own prompt with the drawer, filling the view instead of creating one', async () => {
       await renderWithPrompt('p1');
       await openFromRow('p1');
