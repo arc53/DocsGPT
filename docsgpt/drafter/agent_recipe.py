@@ -36,7 +36,7 @@ from docsgpt.drafter.prompt_rules import (
     template_parses,
     tool_variables_problem,
 )
-from docsgpt.drafter.prompt_recipe import apply_edits, checks_for, PROMPT_RECIPE
+from docsgpt.drafter.prompt_recipe import apply_edits, CHECK_TO_PERSONA, checks_for, PROMPT_RECIPE
 from docsgpt.drafter.recipe import BadDraftRequest, DraftRequest, ProposalInvalid, Recipe, register
 from docsgpt.drafter.runner import question_rounds
 from docsgpt.drafter.topics_recipe import TopicsWorkspace
@@ -733,8 +733,8 @@ def _refs(field_name: str, value: Any, allowed: set[str], current: list[str], dr
     return out
 
 
-def _new_prompt(raw: dict, req: DraftRequest, ws: Workspace, notes: list[str]) -> dict:
-    """Check a new prompt; notes a switch into template mode.
+def _new_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> dict:
+    """Check a new prompt; its ``checks`` say what it does to the prompt it replaces, as an edit's do.
 
     Raises:
         ProposalInvalid: Missing name or content, too long, a template that
@@ -759,12 +759,12 @@ def _new_prompt(raw: dict, req: DraftRequest, ws: Workspace, notes: list[str]) -
     problem = tool_variables_problem(content, current, req)
     if problem:
         raise ProposalInvalid([problem])
-    if is_template(content) and not is_template(current):
-        notes.append(
-            "The new prompt uses template variables, so DocsGPT uses it as written and doesn't add its own "
-            "sections (date, citations, formatting, boundaries)."
-        )
-    return {"kind": "new", "name": name, "content": content}
+    checks = checks_for(current, content)
+    replaced, _ = _current_prompt(req.context["form"], ws)
+    if replaced in BUILTIN_PROMPTS:
+        # A built-in reads as a template only once composed: plain text in its place keeps DocsGPT's sections.
+        checks = [check for check in checks if check != CHECK_TO_PERSONA]
+    return {"kind": "new", "name": name, "content": content, "checks": checks}
 
 
 def _edited_prompt(raw: dict, req: DraftRequest, ws: Workspace) -> Optional[dict]:
@@ -1006,7 +1006,7 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     prompt = raw_fields.get("prompt")
     if isinstance(prompt, dict):
         if prompt.get("kind") == "new":
-            fields["prompt"] = _new_prompt(prompt, req, ws, notes)
+            fields["prompt"] = _new_prompt(prompt, req, ws)
         elif prompt.get("kind") == "edit":
             edited = _edited_prompt(prompt, req, ws)
             if edited:

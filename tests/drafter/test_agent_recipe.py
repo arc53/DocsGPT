@@ -495,13 +495,27 @@ class TestValidate:
     def test_a_new_plain_prompt_is_kept_as_a_persona(self):
         content = "You answer shipping questions for Meridian.\n- Refunds: point to support@meridian.example."
         proposal = _validate({"prompt": {"kind": "new", "name": "Shipping help", "content": content}})
-        assert proposal["fields"]["prompt"] == {"kind": "new", "name": "Shipping help", "content": content}
+        assert proposal["fields"]["prompt"] == {"kind": "new", "name": "Shipping help", "content": content,
+                                                "checks": []}
         assert proposal["notes"] == []
 
-    def test_switching_to_a_template_is_noted(self):
+    def test_switching_to_a_template_is_checked(self):
         proposal = _validate({"prompt": {"kind": "new", "name": "P", "content": "Today is {{ system.date }}."}},
                              form={"prompt_id": PROMPT_ID})
-        assert any("template variables" in note for note in proposal["notes"])
+        assert proposal["fields"]["prompt"]["checks"] == ["to_template"] and proposal["notes"] == []
+
+    def test_plain_text_replacing_a_saved_template_is_checked_but_not_a_built_in(self):
+        ws = _ws(prompt_texts={**_ws().prompt_texts, PROMPT_ID: "Hi {{ system.date }}"})
+        new = {"prompt": {"kind": "new", "name": "P", "content": "You help."}}
+        assert _validate(new, form={"prompt_id": PROMPT_ID}, ws=ws)["fields"]["prompt"]["checks"] == ["to_persona"]
+        assert _validate(new, form={"prompt_id": "default"}, ws=ws)["fields"]["prompt"]["checks"] == []
+
+    def test_a_rewrite_that_drops_the_citation_rules_or_boundaries_is_checked(self):
+        template = "{{ system.date }} You help.\n{{ source.citation_rules }}\n## Boundaries\nStay on topic."
+        ws = _ws(prompt_texts={**_ws().prompt_texts, PROMPT_ID: template})
+        proposal = _validate({"prompt": {"kind": "new", "name": "Copy", "content": "{{ system.date }} You help."}},
+                             form={"prompt_id": PROMPT_ID}, ws=ws, step="prompt")
+        assert proposal["fields"]["prompt"]["checks"] == ["boundaries_removed", "citations_removed"]
 
     def test_tool_variables_need_the_users_ask(self):
         fields = {"prompt": {"kind": "new", "name": "P", "content": "Memory: {{ tools.memory.memory_view }}"}}
@@ -641,7 +655,7 @@ class TestSteps:
 
     @pytest.mark.parametrize("step", ["prompt", None])
     def test_a_new_prompt_is_kept_in_the_prompt_step_and_improve_mode(self, step):
-        assert _validate({"prompt": NEW_PROMPT}, step=step)["fields"]["prompt"] == NEW_PROMPT
+        assert _validate({"prompt": NEW_PROMPT}, step=step)["fields"]["prompt"] == {**NEW_PROMPT, "checks": []}
 
     @pytest.mark.parametrize("step", ["basics", "prompt", None])
     def test_policy_fields_outside_the_safety_step_are_dropped(self, step):
