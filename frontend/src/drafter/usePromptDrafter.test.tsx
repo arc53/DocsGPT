@@ -6,6 +6,9 @@ import type { DrafterEvent, DrafterRequest } from './drafterApi';
 vi.mock('react-redux', () => ({
   useSelector: () => 'token',
 }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
 
 const stream = vi.hoisted(() => ({
   scripts: [] as DrafterEvent[][],
@@ -41,12 +44,17 @@ const IMPROVE = {
   checks: [],
 };
 
-const current = { drafter: null as PromptDrafter | null, content: '' };
+const current = {
+  drafter: null as PromptDrafter | null,
+  content: '',
+  setContent: (_content: string) => undefined as void,
+};
 
 function Host() {
   const [name, setName] = useState('Support');
   const [content, setContent] = useState(ORIGINAL);
   current.content = content;
+  current.setContent = setContent;
   current.drafter = usePromptDrafter({
     mode: 'improve',
     promptId: 'p1',
@@ -87,6 +95,72 @@ describe('usePromptDrafter', () => {
     expect(stream.requests[1].messages).toEqual([
       { role: 'user', content: 'Be formal' },
     ]);
+  });
+
+  const improve = (edits: { id: string; find: string; replace: string }[]) => [
+    {
+      type: 'proposal' as const,
+      proposal: {
+        ...IMPROVE,
+        edits: edits.map((edit) => ({ ...edit, reason: 'x' })),
+      },
+    },
+    { type: 'end' as const },
+  ];
+
+  // The server reads the text with its line ends as \n; its edits do too.
+  it('reviews a text with Windows line ends as the server read it', async () => {
+    await act(async () => current.setContent('Hello.\r\nBe brief.'));
+    stream.scripts = [
+      improve([{ id: 'e1', find: 'Hello.\nBe', replace: 'Hi.\nBe' }]),
+    ];
+    await act(async () => current.drafter!.session.send('Tighten it'));
+    expect(current.drafter!.review!.original).toBe('Hello.\nBe brief.');
+    await act(async () => current.drafter!.acceptAll());
+    expect(current.drafter!.review).toBeNull();
+    expect(current.content).toBe('Hi.\nBe brief.');
+  });
+
+  it('leaves a text with Windows line ends as it was when nothing is accepted', async () => {
+    await act(async () => current.setContent('Hello.\r\nBe brief.'));
+    stream.scripts = [
+      improve([{ id: 'e1', find: 'Be brief.', replace: 'Be short.' }]),
+    ];
+    await act(async () => current.drafter!.session.send('Tighten it'));
+    await act(async () => current.drafter!.decide('e1', 'rejected'));
+    expect(current.content).toBe('Hello.\r\nBe brief.');
+    stream.scripts = [
+      improve([{ id: 'e2', find: 'Be brief.', replace: 'Be short.' }]),
+    ];
+    await act(async () => current.drafter!.session.send('Again'));
+    await act(async () => current.drafter!.discard());
+    expect(current.content).toBe('Hello.\r\nBe brief.');
+  });
+
+  // A long prompt is read cut short: a change past the cut can't be shown.
+  it('reviews only the changes that fit the text, and says so when none do', async () => {
+    stream.scripts = [
+      improve([
+        { id: 'e1', find: 'Hello.', replace: 'Hi.' },
+        { id: 'e2', find: 'Be brief…', replace: 'Be short.' },
+      ]),
+      improve([{ id: 'e3', find: 'Gone…', replace: 'Here.' }]),
+    ];
+    await act(async () => current.drafter!.session.send('Tighten it'));
+    expect(
+      current.drafter!.review!.proposal.edits.map((edit) => edit.id),
+    ).toEqual(['e1']);
+    await act(async () => current.drafter!.decide('e1', 'accepted'));
+    // Every change shown is decided: the review is done.
+    expect(current.drafter!.review).toBeNull();
+    expect(current.content).toBe('Hi.\nBe brief.');
+
+    await act(async () => current.drafter!.session.send('More'));
+    expect(current.drafter!.review).toBeNull();
+    expect(current.drafter!.session.items.at(-1)).toMatchObject({
+      kind: 'message',
+      text: 'drafter.agent.prompt.editsStale',
+    });
   });
 
   // The drawer's ask bar stays open during a review.

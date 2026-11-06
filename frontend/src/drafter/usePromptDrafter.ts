@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { readPromptProposal } from './promptDraft';
+import { promptAsRead, readPromptProposal } from './promptDraft';
 import type { DrafterStarter } from './starters';
 import { type DraftedFields, useDraftedFields } from './useDraftedFields';
 import { type DrafterSession, useDrafterSession } from './useDrafterSession';
@@ -49,7 +50,8 @@ export type PromptDrafter = {
  * The prompt drafter (the prompt view's drawer in Settings › Prompts): it
  * sends the prompt with each request, turns
  * an improve proposal into a review whose accepted changes write into the
- * text as they are chosen, and fills a written prompt's text (and its name
+ * text as they are chosen (those that fit the text as the server read it; a
+ * message says so when none do), and fills a written prompt's text (and its name
  * when empty), each marked Drafted with undo. A request while a review is
  * open ends the review with the choices so far. Nothing is saved: the
  * host's Save still does that.
@@ -61,8 +63,13 @@ export type PromptDrafter = {
  *   The session for the drawer and the review state with its actions.
  */
 export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
+  const { t } = useTranslation();
   const latest = useRef(options);
   latest.current = options;
+  const tRef = useRef(t);
+  tRef.current = t;
+  // The session, for a message from a proposal it delivered.
+  const sessionRef = useRef<DrafterSession | null>(null);
   // The text the running turn was sent with: a proposal's edits fit it.
   const sent = useRef('');
   // The starting point picked and a Skip on questions hold for the session.
@@ -121,7 +128,16 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     }
     if (proposal.edits.length === 0) return;
     // The text is read-only while a turn runs, so it is still what was sent.
-    reviewsRef.current.start(proposal.edits, sent.current);
+    const sentText = sent.current;
+    const reviewed = reviewsRef.current.start(
+      proposal.edits,
+      promptAsRead(sentText),
+      sentText,
+    );
+    if (reviewed === 0)
+      sessionRef.current?.addMessage(
+        tRef.current('drafter.agent.prompt.editsStale'),
+      );
   }, []);
 
   const session = useDrafterSession({
@@ -129,6 +145,7 @@ export function usePromptDrafter(options: PromptDrafterOptions): PromptDrafter {
     getContext,
     onProposal,
   });
+  sessionRef.current = session;
 
   const send = session.send;
   const start = useCallback(

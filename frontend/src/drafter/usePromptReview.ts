@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { applyPromptEdits, type PromptEdit } from './promptDraft';
+import { applyPromptEdits, fittingEdits, type PromptEdit } from './promptDraft';
 import type { DraftedFields } from './useDraftedFields';
 
 export type PromptDecision = 'accepted' | 'rejected';
@@ -9,6 +9,11 @@ export type PromptDecision = 'accepted' | 'rejected';
 export type PromptReview = {
   proposal: { edits: PromptEdit[] };
   original: string;
+  /**
+   * The text as it stood, put back while no change is accepted; it can
+   * differ from `original` in its line ends. `original` when left out.
+   */
+  before?: string;
   decisions: Record<string, PromptDecision>;
   /** The change "Review one by one" is on; null before it starts. */
   current: string | null;
@@ -16,8 +21,12 @@ export type PromptReview = {
 
 export type PromptReviewState = {
   review: PromptReview | null;
-  /** Open a review of `edits`, made for `original` (the text now). */
-  start: (edits: PromptEdit[], original: string) => void;
+  /**
+   * Open a review of the `edits` that fit `original` (the text now, as the
+   * drafter read it; `before` when that differs from the field's text).
+   * Returns how many changes are under review: 0 opens none.
+   */
+  start: (edits: PromptEdit[], original: string, before?: string) => number;
   /** Accept or reject one change (null clears the choice). */
   decide: (id: string, decision: PromptDecision | null) => void;
   acceptAll: () => void;
@@ -38,7 +47,8 @@ export type PromptReviewState = {
  * Accept / Reject review of a prompt's edits, shared by the prompt drawer
  * and the agent form's prompt view: each choice writes the text at once,
  * and once every change is chosen the review closes and a changed text is
- * marked Drafted with undo.
+ * marked Drafted with undo. Only changes that fit the text are reviewed, so
+ * every one the review waits on is shown.
  *
  * Args:
  *   setContent: Writes the prompt's text.
@@ -60,11 +70,11 @@ export function usePromptReview(
   /** Write the review's text, and close it once every change is chosen. */
   const commit = useCallback((next: PromptReview) => {
     const { proposal, original, decisions } = next;
-    const content = applyPromptEdits(
-      original,
-      proposal.edits,
-      (id) => decisions[id] === 'accepted',
-    );
+    const before = next.before ?? original;
+    const accepted = (id: string) => decisions[id] === 'accepted';
+    const content = proposal.edits.some((edit) => accepted(edit.id))
+      ? applyPromptEdits(original, proposal.edits, accepted)
+      : before;
     latest.current.setContent(content);
     const done = proposal.edits.every((edit) => decisions[edit.id]);
     if (!done) {
@@ -72,13 +82,25 @@ export function usePromptReview(
       return;
     }
     setReview(null);
-    if (content !== original)
-      latest.current.drafted.mark('content', original, content);
+    if (content !== before)
+      latest.current.drafted.mark('content', before, content);
   }, []);
 
-  const start = useCallback((edits: PromptEdit[], original: string) => {
-    setReview({ proposal: { edits }, original, decisions: {}, current: null });
-  }, []);
+  const start = useCallback(
+    (edits: PromptEdit[], original: string, before?: string) => {
+      const fitting = fittingEdits(original, edits);
+      if (fitting.length > 0)
+        setReview({
+          proposal: { edits: fitting },
+          original,
+          ...(before !== undefined && before !== original && { before }),
+          decisions: {},
+          current: null,
+        });
+      return fitting.length;
+    },
+    [],
+  );
 
   const decide = useCallback(
     (id: string, decision: PromptDecision | null) => {
@@ -123,7 +145,7 @@ export function usePromptReview(
 
   const discard = useCallback(() => {
     if (!review) return;
-    latest.current.setContent(review.original);
+    latest.current.setContent(review.before ?? review.original);
     setReview(null);
   }, [review]);
 
@@ -131,8 +153,9 @@ export function usePromptReview(
     const open = reviewRef.current;
     if (!open) return;
     setReview(null);
-    if (content !== open.original)
-      latest.current.drafted.mark('content', open.original, content);
+    const before = open.before ?? open.original;
+    if (content !== before)
+      latest.current.drafted.mark('content', before, content);
   }, []);
 
   const clear = useCallback(() => setReview(null), []);

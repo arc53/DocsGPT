@@ -142,6 +142,19 @@ export function readPromptProposal(raw: unknown): PromptProposal | null {
   return null;
 }
 
+/**
+ * The text as the server reads it for its edits: carriage returns dropped
+ * (a Windows line end is a plain `\n` there).
+ *
+ * Args:
+ *   content: The prompt's text.
+ *
+ * Returns:
+ *   The text the server's edits fit.
+ */
+export const promptAsRead = (content: string): string =>
+  content.replace(/\r/g, '');
+
 type Located = { edit: PromptEdit; start: number; end: number };
 
 /** Each edit's place in `content`, in text order; an edit whose text is gone is left out. */
