@@ -162,6 +162,7 @@ function SheetContents({
           maxOverlapping={limits.maxOverlapping}
           disabled={saving}
           token={token}
+          savedEnabled={saved.enabled}
           // A workflow has no agent-level sources: its topics are its own list.
           topicSource={isWorkflowAgent(agent) ? 'none' : 'sources'}
         />

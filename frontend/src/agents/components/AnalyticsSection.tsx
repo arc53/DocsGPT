@@ -24,6 +24,8 @@ type AnalyticsSectionProps = {
   /** The caller can't save the agent: the settings show, read-only. */
   disabled?: boolean;
   token: string | null;
+  /** Insights are on in the agent as saved. */
+  savedEnabled?: boolean;
   /**
    * The drafter added topics: the section opens and its title carries the
    * Drafted badge with `onUndo`.
@@ -49,6 +51,7 @@ export default function AnalyticsSection({
   maxOverlapping,
   disabled = false,
   token,
+  savedEnabled,
   drafted = false,
   onUndo,
 }: AnalyticsSectionProps) {
@@ -118,6 +121,7 @@ export default function AnalyticsSection({
               maxOverlapping={maxOverlapping}
               disabled={disabled}
               token={token}
+              savedEnabled={savedEnabled}
               // The source folders load once the section opens, with the
               // server's switch off too: hidden ones can still come back.
               active={expanded}

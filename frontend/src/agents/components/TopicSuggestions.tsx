@@ -39,6 +39,12 @@ export type TopicSuggestionsOptions = {
   agentId?: string;
   /** The settings can be edited and are on screen with insights on. */
   enabled: boolean;
+  /**
+   * Insights are on in the agent as saved (`config.enabled` when not
+   * given). The status reads the saved agent, so it is read only then, and
+   * again once a save turns them on.
+   */
+  savedEnabled?: boolean;
   /** The session token, from the host. */
   token: string | null;
   config: AnalyticsConfig;
@@ -144,6 +150,7 @@ function useTopicsStatus(
 export function useTopicSuggestions({
   agentId,
   enabled,
+  savedEnabled,
   token,
   config,
   folders,
@@ -155,8 +162,9 @@ export function useTopicSuggestions({
   const wanted = enabled && !!agentId;
   const drafter = useDrafterConfigFor(wanted, token);
   const offered = wanted && drafter?.enabled === true;
+  const saved = savedEnabled ?? config.enabled;
   const { status, failed, retry } = useTopicsStatus(
-    offered && agentId ? agentId : null,
+    offered && saved && agentId ? agentId : null,
     token,
   );
   const [open, setOpen] = React.useState(false);

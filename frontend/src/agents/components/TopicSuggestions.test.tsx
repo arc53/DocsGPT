@@ -67,6 +67,7 @@ vi.mock('../../drafter/drafterApi', async (importOriginal) => ({
   },
 }));
 
+import { analyticsOf } from '../analyticsConfig';
 import InsightsSettingsBody from './InsightsSettingsBody';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -129,11 +130,13 @@ function Harness({
   agentId = 'a1',
   initial,
   maxTopics = 15,
+  savedEnabled,
 }: {
   disabled?: boolean;
   agentId?: string;
   initial?: AnalyticsConfig;
   maxTopics?: number;
+  savedEnabled?: boolean;
 }) {
   const [value, setValue] = useState<AnalyticsConfig | undefined>(initial);
   return (
@@ -148,6 +151,7 @@ function Harness({
       maxOverlapping={20}
       disabled={disabled}
       token="tok"
+      savedEnabled={savedEnabled}
     />
   );
 }
@@ -254,6 +258,34 @@ describe('topic suggestions in the Insights settings', () => {
       expect(container.textContent).not.toContain(`${T}.hold`);
     },
   );
+
+  it('reads the status once insights turned on are saved', async () => {
+    mocks.status = {
+      available: false,
+      conversations: 0,
+      needed: 10,
+      reason: 'turned_off_for_this_agent',
+    };
+    const initial = { ...analyticsOf(undefined), enabled: false };
+    await render({ initial, savedEnabled: false });
+    await act(async () =>
+      container
+        .querySelector<HTMLElement>('[data-testid="analytics-enabled"]')!
+        .click(),
+    );
+    expect(latest?.enabled).toBe(true);
+    // The server reads the saved agent: nothing to ask until it is saved.
+    expect(mocks.statusCalls).toEqual([]);
+    mocks.status = {
+      available: true,
+      conversations: 42,
+      needed: 10,
+      reason: null,
+    };
+    await render({ initial, savedEnabled: true });
+    expect(mocks.statusCalls).toEqual(['a1']);
+    expect(button(`${T}.suggest`)).toBeTruthy();
+  });
 
   it('says when the status could not be read, and retries it', async () => {
     mocks.statusFails = true;

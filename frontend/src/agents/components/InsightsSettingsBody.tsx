@@ -59,6 +59,11 @@ export type InsightsSettingsBodyProps = {
   disabled?: boolean;
   token: string | null;
   /**
+   * Insights are on in the agent as saved (`value`'s when not given): the
+   * suggestions' status is read for the saved agent.
+   */
+  savedEnabled?: boolean;
+  /**
    * Whether the agent has source folders. `none` (a workflow, which has no
    * agent-level sources) offers only the owner's own topics.
    */
@@ -117,6 +122,7 @@ export default function InsightsSettingsBody({
   maxOverlapping,
   disabled = false,
   token,
+  savedEnabled,
   topicSource = 'sources',
   headingLevel = 'h3',
   active = true,
@@ -205,6 +211,7 @@ export default function InsightsSettingsBody({
   const suggestions = useTopicSuggestions({
     agentId,
     enabled: active && !disabled && config.enabled,
+    savedEnabled,
     token,
     config,
     folders: fromSources ? (loaded?.folders ?? null) : [],

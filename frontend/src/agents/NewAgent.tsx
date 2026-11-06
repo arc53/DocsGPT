@@ -3280,6 +3280,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <AnalyticsSection
                 value={agent.config?.analytics}
                 token={token}
+                savedEnabled={
+                  analyticsOf(initialAgentRef.current?.config?.analytics)
+                    .enabled
+                }
                 agentId={agent.id || undefined}
                 available={analyticsAvailability.enabled}
                 maxTopics={analyticsAvailability.maxTopics}
