@@ -164,7 +164,9 @@
       "high": "Alto",
       "unlimited": "Ilimitado",
       "default": "Predeterminado",
-      "taskModelLoadError": "No se pudo cargar el modelo de tareas."
+      "taskModelLoadError": "No se pudo cargar el modelo de tareas.",
+      "taskModelInstanceDefault": "Usar el valor predeterminado de la instancia ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Usar el valor predeterminado de la instancia"
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",

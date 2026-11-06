@@ -22,18 +22,27 @@ import type { Model } from '../models/types';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 
+/** The Select value of "Use instance default": no pick of the user's own (saved as null). */
+const INSTANCE_DEFAULT = '__instance__';
+
 type Loaded = {
-  /** The caller's pick, else what runs without one ('' when unknown). */
+  /** The caller's pick, else `INSTANCE_DEFAULT`. */
   value: string;
   models: Model[];
+  /** What runs without a pick: the admin's, TASK_MODEL_ID or the default model; null when none can. */
+  instanceModelId: string | null;
 };
 
 /**
  * Settings › General › Models: the task model, which runs DocsGPT's own jobs
- * (the drafter, graph extraction, monitor checks) for this user. Saved to
- * the server on change; a failed save puts the previous pick back. A
- * skeleton row stands in while it loads and a load error with Retry when the
- * fetch fails; a server from before the task model hides the section.
+ * (the drafter, graph extraction, monitor checks) for this user. "Use
+ * instance default" (the first option, picked while the user has none)
+ * follows whatever the admin sets; a named model is the user's own pick.
+ * Saved to the server on change, one save at a time: a pick made while one
+ * is in flight waits, and only the latest such pick goes out. A failed save
+ * puts the last saved pick back. A skeleton row stands in while it loads and
+ * a load error with Retry when the fetch fails; a server from before the
+ * task model hides the section.
  */
 export default function TaskModelSection() {
   const { t } = useTranslation();
@@ -45,9 +54,11 @@ export default function TaskModelSection() {
   // An older server has no task model: the section stays hidden.
   const [unsupported, setUnsupported] = React.useState(false);
   const [attempt, setAttempt] = React.useState(0);
-  // Only the latest save may roll the pick back, to the last one saved.
-  const saveSeq = React.useRef(0);
-  const savedValue = React.useRef('');
+  // What the server holds, as a Select value.
+  const savedValue = React.useRef(INSTANCE_DEFAULT);
+  // One save at a time; the latest pick made meanwhile waits here.
+  const saving = React.useRef(false);
+  const queued = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -66,17 +77,18 @@ export default function TaskModelSection() {
           return;
         }
         const models = modelService.transformModels(data?.models || []);
-        const known = (modelId: unknown): modelId is string =>
-          typeof modelId === 'string' && models.some((m) => m.id === modelId);
-        // With no pick, the model that runs anyway (the admin's,
-        // TASK_MODEL_ID or the default) shows as selected.
-        const picked = known(prefs.task_model_id)
-          ? prefs.task_model_id
-          : known(prefs.instance_task_model_id)
+        const picked =
+          typeof prefs.task_model_id === 'string' &&
+          models.some((m) => m.id === prefs.task_model_id)
+            ? prefs.task_model_id
+            : INSTANCE_DEFAULT;
+        const instanceModelId =
+          typeof prefs.instance_task_model_id === 'string' &&
+          prefs.instance_task_model_id
             ? prefs.instance_task_model_id
-            : '';
+            : null;
         savedValue.current = picked;
-        setLoaded({ value: picked, models });
+        setLoaded({ value: picked, models, instanceModelId });
       })
       .catch(() => {
         if (!cancelled) setFailed(true);
@@ -115,26 +127,44 @@ export default function TaskModelSection() {
 
   const builtin = loaded.models.filter((m) => m.source !== 'user');
   const own = loaded.models.filter((m) => m.source === 'user');
+  const instanceModel = loaded.instanceModelId
+    ? (loaded.models.find((m) => m.id === loaded.instanceModelId)
+        ?.display_name ?? loaded.instanceModelId)
+    : null;
 
-  const change = async (next: string) => {
-    if (next === loaded.value) return;
-    setLoaded((current) => (current ? { ...current, value: next } : null));
-    const seq = ++saveSeq.current;
-    let saved = false;
+  const save = async (value: string): Promise<boolean> => {
     try {
       const response = await userService.updatePreferences(
-        { task_model_id: next },
+        { task_model_id: value === INSTANCE_DEFAULT ? null : value },
         token,
       );
-      saved = !!response?.ok;
+      return !!response?.ok;
     } catch {
-      saved = false;
+      return false;
     }
-    if (saved) {
-      savedValue.current = next;
-      resetDrafterConfigCache();
+  };
+
+  // Saves `first`, then whatever was picked while it was in flight, until
+  // nothing waits; only when the last save fails does the pick roll back.
+  const flush = async (first: string) => {
+    saving.current = true;
+    let next: string | null = first;
+    let failed = false;
+    while (next !== null) {
+      const value: string = next;
+      queued.current = null;
+      failed = false;
+      if (value !== savedValue.current) {
+        failed = !(await save(value));
+        if (!failed) {
+          savedValue.current = value;
+          resetDrafterConfigCache();
+        }
+      }
+      next = queued.current;
     }
-    if (saved || seq !== saveSeq.current) return;
+    saving.current = false;
+    if (!failed) return;
     const previous = savedValue.current;
     setLoaded((current) => (current ? { ...current, value: previous } : null));
     dispatch(
@@ -143,6 +173,16 @@ export default function TaskModelSection() {
         message: t('settings.general.taskModelSaveFailed'),
       }),
     );
+  };
+
+  const change = (next: string) => {
+    if (next === loaded.value) return;
+    setLoaded((current) => (current ? { ...current, value: next } : null));
+    if (saving.current) {
+      queued.current = next;
+      return;
+    }
+    void flush(next);
   };
 
   return (
@@ -165,6 +205,13 @@ export default function TaskModelSection() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={INSTANCE_DEFAULT}>
+                {instanceModel
+                  ? t('settings.general.taskModelInstanceDefault', {
+                      model: instanceModel,
+                    })
+                  : t('settings.general.taskModelInstanceDefaultUnnamed')}
+              </SelectItem>
               {builtin.length > 0 && (
                 <SelectGroup>
                   <SelectLabel>

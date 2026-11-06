@@ -163,7 +163,9 @@
       "high": "Hoch",
       "unlimited": "Unbegrenzt",
       "default": "Standard",
-      "taskModelLoadError": "Das Aufgabenmodell konnte nicht geladen werden."
+      "taskModelLoadError": "Das Aufgabenmodell konnte nicht geladen werden.",
+      "taskModelInstanceDefault": "Instanz-Standard verwenden ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Instanz-Standard verwenden"
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",

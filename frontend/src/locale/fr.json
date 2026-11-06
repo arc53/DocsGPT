@@ -164,7 +164,9 @@
       "high": "Élevé",
       "unlimited": "Illimité",
       "default": "Par défaut",
-      "taskModelLoadError": "Impossible de charger le modèle de tâches."
+      "taskModelLoadError": "Impossible de charger le modèle de tâches.",
+      "taskModelInstanceDefault": "Utiliser la valeur par défaut de l’instance ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Utiliser la valeur par défaut de l’instance"
     },
     "sources": {
       "title": "Gérez ici tous les fichiers sources auxquels vous avez accès et ceux que vous avez importés.",

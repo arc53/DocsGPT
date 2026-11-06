@@ -162,7 +162,9 @@
       "high": "高",
       "unlimited": "无限",
       "default": "默认",
-      "taskModelLoadError": "无法加载任务模型。"
+      "taskModelLoadError": "无法加载任务模型。",
+      "taskModelInstanceDefault": "使用实例默认值（{{model}}）",
+      "taskModelInstanceDefaultUnnamed": "使用实例默认值"
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",

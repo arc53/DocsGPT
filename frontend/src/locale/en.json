@@ -163,7 +163,9 @@
       "high": "High",
       "unlimited": "Unlimited",
       "default": "Default",
-      "taskModelLoadError": "Could not load the task model."
+      "taskModelLoadError": "Could not load the task model.",
+      "taskModelInstanceDefault": "Use instance default ({{model}})",
+      "taskModelInstanceDefaultUnnamed": "Use instance default"
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",

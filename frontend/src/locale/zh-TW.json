@@ -162,7 +162,9 @@
       "high": "高",
       "unlimited": "無限制",
       "default": "預設",
-      "taskModelLoadError": "無法載入任務模型。"
+      "taskModelLoadError": "無法載入任務模型。",
+      "taskModelInstanceDefault": "使用執行個體預設值（{{model}}）",
+      "taskModelInstanceDefaultUnnamed": "使用執行個體預設值"
     },
     "sources": {
       "title": "在這裡您可以管理所有可用的來源檔案以及您上傳的檔案。",

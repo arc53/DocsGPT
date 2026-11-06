@@ -91,6 +91,9 @@ const json = (body: unknown, ok = true) => ({
   json: () => Promise.resolve(body),
 });
 
+// The select value of "Use instance default".
+const INSTANCE = '__instance__';
+
 const MODELS = [
   { id: 'gpt-a', display_name: 'GPT A', provider: 'openai', source: 'builtin' },
   { id: 'gpt-b', display_name: 'GPT B', provider: 'openai', source: 'builtin' },
@@ -127,7 +130,7 @@ afterEach(async () => {
 });
 
 describe('Task model row', () => {
-  it('lists built-in then own models, the default picked when none is stored', async () => {
+  it('lists the instance default, then built-in then own models, the instance default picked when none is stored', async () => {
     await render({ task_model_id: null, instance_task_model_id: 'gpt-b' });
     expect(container.querySelector('h2')?.textContent).toBe(
       'settings.general.sections.models',
@@ -136,11 +139,16 @@ describe('Task model row', () => {
     expect(container.textContent).toContain(
       'settings.general.taskModelDescription',
     );
-    expect(select()?.dataset.value).toBe('gpt-b');
+    expect(select()?.dataset.value).toBe(INSTANCE);
     const items = Array.from(
       container.querySelectorAll<HTMLButtonElement>('[data-item]'),
     ).map((b) => b.textContent);
-    expect(items).toEqual(['GPT A', 'GPT B', 'My Llama']);
+    expect(items).toEqual([
+      'settings.general.taskModelInstanceDefault(GPT B)',
+      'GPT A',
+      'GPT B',
+      'My Llama',
+    ]);
     const labels = Array.from(
       container.querySelectorAll('[data-testid="group-label"]'),
     ).map((l) => l.textContent);
@@ -155,7 +163,7 @@ describe('Task model row', () => {
     expect(select()?.dataset.value).toBe('mine');
   });
 
-  it('saves every pick, the default model included', async () => {
+  it('saves every pick, the instance default as null', async () => {
     updatePreferences.mockResolvedValue(json({ success: true }));
     await render({ task_model_id: null, instance_task_model_id: 'gpt-b' });
     await act(async () => item('gpt-a').click());
@@ -164,13 +172,96 @@ describe('Task model row', () => {
       'token',
     );
     expect(select()?.dataset.value).toBe('gpt-a');
+    // The instance's own model, picked by name, is a pick of its own.
     await act(async () => item('gpt-b').click());
     expect(updatePreferences).toHaveBeenLastCalledWith(
       { task_model_id: 'gpt-b' },
       'token',
     );
     expect(select()?.dataset.value).toBe('gpt-b');
+    await act(async () => item(INSTANCE).click());
+    expect(updatePreferences).toHaveBeenLastCalledWith(
+      { task_model_id: null },
+      'token',
+    );
+    expect(select()?.dataset.value).toBe(INSTANCE);
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('saves one pick at a time, then only the latest one made meanwhile', async () => {
+    let finish: (ok: boolean) => void = () => undefined;
+    updatePreferences.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = (ok) => resolve(json({ success: ok }, ok));
+        }),
+    );
+    await render({ task_model_id: null, instance_task_model_id: 'gpt-b' });
+    await act(async () => item('gpt-a').click());
+    await act(async () => item('gpt-b').click());
+    await act(async () => item('mine').click());
+    expect(updatePreferences).toHaveBeenCalledTimes(1);
+    expect(select()?.dataset.value).toBe('mine');
+    await act(async () => finish(true));
+    expect(updatePreferences).toHaveBeenCalledTimes(2);
+    expect(updatePreferences).toHaveBeenLastCalledWith(
+      { task_model_id: 'mine' },
+      'token',
+    );
+    await act(async () => finish(true));
+    expect(updatePreferences).toHaveBeenCalledTimes(2);
+    expect(select()?.dataset.value).toBe('mine');
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('goes on to a newer pick when an earlier save fails, and rolls back to the last saved one when that fails too', async () => {
+    const finishes: ((ok: boolean) => void)[] = [];
+    updatePreferences.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishes.push((ok) => resolve(json({ success: ok }, ok)));
+        }),
+    );
+    await render({ task_model_id: 'gpt-a', instance_task_model_id: 'gpt-b' });
+    await act(async () => item('gpt-b').click());
+    await act(async () => item('mine').click());
+    await act(async () => finishes[0](false));
+    expect(updatePreferences).toHaveBeenLastCalledWith(
+      { task_model_id: 'mine' },
+      'token',
+    );
+    expect(select()?.dataset.value).toBe('mine');
+    expect(dispatch).not.toHaveBeenCalled();
+    await act(async () => finishes[1](false));
+    expect(select()?.dataset.value).toBe('gpt-a');
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends a queued pick only when it differs from what the server holds', async () => {
+    const finishes: ((ok: boolean) => void)[] = [];
+    updatePreferences.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishes.push((ok) => resolve(json({ success: ok }, ok)));
+        }),
+    );
+    await render({ task_model_id: 'gpt-a', instance_task_model_id: 'gpt-b' });
+    // Back to the saved pick while a save fails: nothing more to send.
+    await act(async () => item('mine').click());
+    await act(async () => item('gpt-a').click());
+    await act(async () => finishes[0](false));
+    expect(updatePreferences).toHaveBeenCalledTimes(1);
+    expect(select()?.dataset.value).toBe('gpt-a');
+    expect(dispatch).not.toHaveBeenCalled();
+    // Back to it while a save succeeds: the server now holds the other one.
+    await act(async () => item('mine').click());
+    await act(async () => item('gpt-a').click());
+    await act(async () => finishes[1](true));
+    expect(updatePreferences).toHaveBeenCalledTimes(3);
+    expect(updatePreferences).toHaveBeenLastCalledWith(
+      { task_model_id: 'gpt-a' },
+      'token',
+    );
   });
 
   it('puts the pick back and toasts when the save fails', async () => {
@@ -188,9 +279,12 @@ describe('Task model row', () => {
     );
   });
 
-  it('picks nothing when no default model is known', async () => {
+  it('offers the instance default unnamed when no model would run', async () => {
     await render({ task_model_id: null, instance_task_model_id: null });
-    expect(select()?.dataset.value).toBe('');
+    expect(select()?.dataset.value).toBe(INSTANCE);
+    expect(item(INSTANCE).textContent).toBe(
+      'settings.general.taskModelInstanceDefaultUnnamed',
+    );
   });
 
   it('stays hidden on a server without the setting', async () => {
